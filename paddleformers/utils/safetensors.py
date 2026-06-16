@@ -134,7 +134,7 @@ class PySafeSlice:
         self.base_ptr = base_ptr
 
         self.start = [0 for dim in self.shape]
-        self.stop = [dim for dim in self.shape]
+        self.stop = list(self.shape)
         self.step = [1 for dim in self.shape]
 
     @property
@@ -160,11 +160,17 @@ class PySafeSlice:
         if len(index) < dims:
             index += (slice(None),) * (dims - len(index))
 
-        out_start, out_stop, out_step = copy.deepcopy((self.start, self.stop, self.step))
-        for i, (start, stop, step, slice_) in enumerate(zip(self.start, self.stop, self.step, index)):
+        out_start, out_stop, out_step = copy.deepcopy(
+            (self.start, self.stop, self.step)
+        )
+        for i, (start, stop, step, slice_) in enumerate(
+            zip(self.start, self.stop, self.step, index)
+        ):
             out_start[i] = slice_.start if slice_.start is not None else 0
             out_step[i] = slice_.step if slice_.step is not None else 1
-            out_stop[i] = slice_.stop if slice_.stop is not None else stop - start
+            out_stop[i] = (
+                slice_.stop if slice_.stop is not None else stop - start
+            )
             out_stop[i] = min(stop, out_stop[i])
 
         target_shape = []
@@ -180,7 +186,9 @@ class PySafeSlice:
         # https://github.com/huggingface/safetensors/blob/b947b59079a6197d7930dfb535818ac4896113e8/safetensors/src/slice.rs#L297-L315
         indices = []
         span = self.bits
-        for i, (start, stop, step) in enumerate(zip(out_start[::-1], out_stop[::-1], out_step[::-1])):
+        for i, (start, stop, step) in enumerate(
+            zip(out_start[::-1], out_stop[::-1], out_step[::-1])
+        ):
             if len(indices) == 0:
                 if start == 0 and stop == self.shape[::-1][i]:
                     pass
@@ -195,10 +203,14 @@ class PySafeSlice:
                 newindices = []
                 for n in range(start, stop):
                     offset = n * span
-                    for (old_start, old_stop) in indices:
-                        newindices.append((old_start + offset, old_stop + offset))
+                    for old_start, old_stop in indices:
+                        newindices.append(
+                            (old_start + offset, old_stop + offset)
+                        )
                 indices = newindices
-                assert len(indices) == capacity, f"error {capacity} {len(indices)}"
+                assert len(indices) == capacity, (
+                    f"error {capacity} {len(indices)}"
+                )
             span *= self.shape[::-1][i]
 
         if len(indices) == 0:
@@ -218,18 +230,25 @@ class PySafeSlice:
                 last_end = end
         if last_start != -1:
             merge_indices.append((last_start, last_end))
-        tensor = np.empty(shape=[1] if len(target_shape) == 0 else np.prod(target_shape), dtype=self.dtype)
+        tensor = np.empty(
+            shape=[1] if len(target_shape) == 0 else np.prod(target_shape),
+            dtype=self.dtype,
+        )
 
         tensor_view = memoryview(tensor.view(np.uint8).reshape(-1))
         curr_data_ptr = 0
         # if to many slice and each slice < 1M
-        if len(merge_indices) > 128 and (merge_indices[0][1] - merge_indices[0][0] < 1024 * 1024):
+        if len(merge_indices) > 128 and (
+            merge_indices[0][1] - merge_indices[0][0] < 1024 * 1024
+        ):
             # Use mmap for random access
             for start, end in merge_indices:
                 data_len = end - start
-                tensor_view[curr_data_ptr : curr_data_ptr + data_len] = self.buffermmap[
-                    self.start_offset + start : self.start_offset + end
-                ]
+                tensor_view[curr_data_ptr : curr_data_ptr + data_len] = (
+                    self.buffermmap[
+                        self.start_offset + start : self.start_offset + end
+                    ]
+                )
                 curr_data_ptr += data_len
         else:
             # Use file read for sequence access
@@ -285,11 +304,17 @@ class fast_safe_open:
         self.filename = filename
         self.framework = framework
         self.file = open(self.filename, "rb")
-        self.file_mmap = mmap.mmap(self.file.fileno(), 0, flags=mmap.MAP_PRIVATE)
-        self.base, self.tensors_decs, self.__metadata__ = read_metadata(self.file)
+        self.file_mmap = mmap.mmap(
+            self.file.fileno(), 0, flags=mmap.MAP_PRIVATE
+        )
+        self.base, self.tensors_decs, self.__metadata__ = read_metadata(
+            self.file
+        )
         self.tensors = OrderedDict()
         for key, info in self.tensors_decs.items():
-            self.tensors[key] = PySafeSlice(info, self.file, self.base, self.file_mmap)
+            self.tensors[key] = PySafeSlice(
+                info, self.file, self.base, self.file_mmap
+            )
             self.tensors[key].key = key
 
     def __enter__(self):

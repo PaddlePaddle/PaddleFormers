@@ -16,12 +16,14 @@ import os
 from argparse import ArgumentTypeError
 from enum import Enum
 from pathlib import Path
-from typing import Dict, Literal, Optional, Union
+from typing import Literal, Optional
 
-from huggingface_hub import _CACHED_NO_EXIST
-from huggingface_hub import file_exists as hf_hub_file_exists
-from huggingface_hub import hf_hub_download
-from huggingface_hub import try_to_load_from_cache as hf_hub_try_to_load_from_cache
+from huggingface_hub import (
+    _CACHED_NO_EXIST,
+    file_exists as hf_hub_file_exists,
+    hf_hub_download,
+    try_to_load_from_cache as hf_hub_try_to_load_from_cache,
+)
 from huggingface_hub.utils import (
     EntryNotFoundError,
     LocalEntryNotFoundError,
@@ -62,13 +64,17 @@ def check_repo(model_name_or_path, download_hub):
         home_model_path = os.path.join(home_path, model_name_or_path)
         if os.path.isfile(home_model_path) or os.path.isdir(home_model_path):
             model_name_or_path = home_model_path
-    is_local = os.path.isfile(model_name_or_path) or os.path.isdir(model_name_or_path)
+    is_local = os.path.isfile(model_name_or_path) or os.path.isdir(
+        model_name_or_path
+    )
     if not is_local:
         assert download_hub in [
             DownloadSource.HUGGINGFACE,
             DownloadSource.AISTUDIO,
             DownloadSource.MODELSCOPE,
-        ], f"download_hub must be one of {DownloadSource.HUGGINGFACE}, {DownloadSource.AISTUDIO}, {DownloadSource.MODELSCOPE}"
+        ], (
+            f"download_hub must be one of {DownloadSource.HUGGINGFACE}, {DownloadSource.AISTUDIO}, {DownloadSource.MODELSCOPE}"
+        )
         if model_name_or_path not in HF_MODEL_MAPPINGS.keys():
             # repo id set by user
             return model_name_or_path
@@ -93,21 +99,21 @@ def strtobool(v):
 
 
 def resolve_file_path(
-    repo_id: str = None,
-    filenames: Union[str, list] = None,
+    repo_id: str | None = None,
+    filenames: str | list | None = None,
     subfolder: Optional[str] = None,
     repo_type: Optional[str] = None,
     revision: Optional[str] = None,
     library_version: Optional[str] = __version__,
-    cache_dir: Union[str, Path, None] = None,
-    local_dir: Union[str, Path, None] = None,
-    local_dir_use_symlinks: Union[bool, Literal["auto"]] = "auto",
-    user_agent: Union[Dict, str, None] = None,
+    cache_dir: str | Path | None = None,
+    local_dir: str | Path | None = None,
+    local_dir_use_symlinks: bool | Literal["auto"] = "auto",
+    user_agent: dict | str | None = None,
     force_download: bool = False,
-    proxies: Optional[Dict] = None,
+    proxies: Optional[dict] = None,
     etag_timeout: float = 10,
     resume_download: bool = False,
-    token: Union[bool, str, None] = None,
+    token: bool | str | None = None,
     local_files_only: bool = False,
     endpoint: Optional[str] = None,
     download_hub: Optional[DownloadSource] = None,
@@ -149,25 +155,25 @@ def resolve_file_path(
         repo_id = checked_repo_id
         logger.warning(f"The repo id check failed, changed to {repo_id}")
 
-    download_kwargs = dict(
-        repo_id=repo_id,
-        filename=filenames[0],
-        subfolder=subfolder if subfolder is not None else "",
-        repo_type=repo_type,
-        revision=revision,
-        library_version=library_version,
-        cache_dir=cache_dir,
-        local_dir=local_dir,
-        local_dir_use_symlinks=local_dir_use_symlinks,
-        user_agent=user_agent,
-        force_download=force_download,
-        proxies=proxies,
-        etag_timeout=etag_timeout,
-        resume_download=resume_download,
-        token=token,
-        local_files_only=local_files_only,
-        endpoint=endpoint,
-    )
+    download_kwargs = {
+        "repo_id": repo_id,
+        "filename": filenames[0],
+        "subfolder": subfolder if subfolder is not None else "",
+        "repo_type": repo_type,
+        "revision": revision,
+        "library_version": library_version,
+        "cache_dir": cache_dir,
+        "local_dir": local_dir,
+        "local_dir_use_symlinks": local_dir_use_symlinks,
+        "user_agent": user_agent,
+        "force_download": force_download,
+        "proxies": proxies,
+        "etag_timeout": etag_timeout,
+        "resume_download": resume_download,
+        "token": token,
+        "local_files_only": local_files_only,
+        "endpoint": endpoint,
+    }
     cached_file = None
     log_endpoint = "N/A"
     # log_filename = os.path.join(download_kwargs["subfolder"], filename)
@@ -178,24 +184,41 @@ def resolve_file_path(
     # return the file path from local dir with filename, eg: /local/path
     elif os.path.isdir(repo_id):
         for index, filename in enumerate(filenames):
-            if os.path.exists(os.path.join(repo_id, download_kwargs["subfolder"], filename)):
-                if not os.path.isfile(os.path.join(repo_id, download_kwargs["subfolder"], filename)):
-                    raise EnvironmentError(f"{repo_id} does not appear to have file named {filename}.")
-                return os.path.join(repo_id, download_kwargs["subfolder"], filename)
+            if os.path.exists(
+                os.path.join(repo_id, download_kwargs["subfolder"], filename)
+            ):
+                if not os.path.isfile(
+                    os.path.join(
+                        repo_id, download_kwargs["subfolder"], filename
+                    )
+                ):
+                    raise OSError(
+                        f"{repo_id} does not appear to have file named {filename}."
+                    )
+                return os.path.join(
+                    repo_id, download_kwargs["subfolder"], filename
+                )
             elif index < len(filenames) - 1:
                 continue
             else:
                 if force_return:
                     return None
                 else:
-                    raise FileNotFoundError(f"please make sure one of the {filenames} under the dir {repo_id}")
+                    raise FileNotFoundError(
+                        f"please make sure one of the {filenames} under the dir {repo_id}"
+                    )
 
     # check cache
     existing_files = []
     file_counter = 0
     for filename in filenames:
-        cache_file_name = hf_try_to_load_from_cache(repo_id, filename, cache_dir, subfolder, revision, repo_type)
-        if download_hub == DownloadSource.HUGGINGFACE and cache_file_name is _CACHED_NO_EXIST:
+        cache_file_name = hf_try_to_load_from_cache(
+            repo_id, filename, cache_dir, subfolder, revision, repo_type
+        )
+        if (
+            download_hub == DownloadSource.HUGGINGFACE
+            and cache_file_name is _CACHED_NO_EXIST
+        ):
             cache_file_name = None
         if cache_file_name is not None and os.path.exists(str(cache_file_name)):
             existing_files.append(cache_file_name)
@@ -215,7 +238,14 @@ def resolve_file_path(
                         model_file_download as modelscope_download,
                     )
 
-                    return modelscope_download(repo_id, filename, revision, cache_dir, user_agent, local_files_only)
+                    return modelscope_download(
+                        repo_id,
+                        filename,
+                        revision,
+                        cache_dir,
+                        user_agent,
+                        local_files_only,
+                    )
                 except Exception:
                     if index < len(filenames) - 1:
                         continue
@@ -234,8 +264,18 @@ def resolve_file_path(
                         model_file_download as aistudio_download,
                     )
 
-                    aistudio_cache_dir = os.path.join(cache_dir, repo_id) if cache_dir is not None else None
-                    return aistudio_download(repo_id, filename, revision, local_files_only, aistudio_cache_dir)
+                    aistudio_cache_dir = (
+                        os.path.join(cache_dir, repo_id)
+                        if cache_dir is not None
+                        else None
+                    )
+                    return aistudio_download(
+                        repo_id,
+                        filename,
+                        revision,
+                        local_files_only,
+                        aistudio_cache_dir,
+                    )
                 except Exception:
                     if index < len(filenames) - 1:
                         continue
@@ -266,36 +306,38 @@ def resolve_file_path(
                     if cached_file is not None:
                         return cached_file
     except LocalEntryNotFoundError:
-        raise EnvironmentError(
+        raise OSError(
             "Cannot find the requested files in the cached path and"
             " outgoing traffic has been disabled. To enable model look-ups"
             " and downloads online, set 'local_files_only' to False."
         )
     except RepositoryNotFoundError:
-        raise EnvironmentError(
+        raise OSError(
             f"{repo_id} is not a local folder and is not a valid model identifier "
             f"listed on '{log_endpoint}'\nIf this is a private repository, make sure to pass a "
             "token having permission to this repo."
         )
     except RevisionNotFoundError:
-        raise EnvironmentError(
+        raise OSError(
             f"{revision} is not a valid git identifier (branch name, tag name or commit id) that exists for "
             "this model name. Check the model page at "
             f"'{log_endpoint}' for available revisions."
         )
     except EntryNotFoundError:
-        raise EnvironmentError(f"Does not appear one of the {filenames} in {repo_id}.")
+        raise OSError(f"Does not appear one of the {filenames} in {repo_id}.")
     except HTTPError as err:
-        raise EnvironmentError(f"There was a specific connection error when trying to load {repo_id}:\n{err}")
+        raise OSError(
+            f"There was a specific connection error when trying to load {repo_id}:\n{err}"
+        )
     except ValueError:
-        raise EnvironmentError(
+        raise OSError(
             f"We couldn't connect to '{log_endpoint}' to load this model, couldn't find it"
             f" in the cached files and it looks like {repo_id} is not the path to a"
             f" directory containing one of the {filenames} or"
             " \nCheckout your internet connection or see how to run the library in offline mode."
         )
-    except EnvironmentError:
-        raise EnvironmentError(
+    except OSError:
+        raise OSError(
             f"Can't load the model for '{repo_id}'. If you were trying to load it from "
             f"'{log_endpoint}', make sure you don't have a local directory with the same name. "
             f"Otherwise, make sure '{repo_id}' is the correct path to a directory "
@@ -332,18 +374,18 @@ def hf_file_exist(
 def hf_try_to_load_from_cache(
     repo_id: str,
     filename: str,
-    cache_dir: Union[str, Path, None] = None,
-    subfolder: str = None,
+    cache_dir: str | Path | None = None,
+    subfolder: str | None = None,
     revision: Optional[str] = None,
     repo_type: Optional[str] = None,
 ):
     if subfolder is None:
         subfolder = ""
-    load_kwargs = dict(
-        repo_id=repo_id,
-        filename=os.path.join(subfolder, filename),
-        cache_dir=cache_dir,
-        revision=revision,
-        repo_type=repo_type,
-    )
+    load_kwargs = {
+        "repo_id": repo_id,
+        "filename": os.path.join(subfolder, filename),
+        "cache_dir": cache_dir,
+        "revision": revision,
+        "repo_type": repo_type,
+    }
     return hf_hub_try_to_load_from_cache(**load_kwargs)

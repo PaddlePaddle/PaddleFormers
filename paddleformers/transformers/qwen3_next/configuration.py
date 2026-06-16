@@ -14,7 +14,10 @@
 """Qwen3-Next model configuration"""
 
 from ..configuration_utils import PretrainedConfig
-from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
+from ..modeling_rope_utils import (
+    rope_config_validation,
+    standardize_rope_params,
+)
 
 __all__ = [
     "Qwen3NextConfig",
@@ -222,7 +225,9 @@ class Qwen3NextConfig(PretrainedConfig):
         if self.layer_types is None:
             interval_pattern = kwargs.get("full_attention_interval", 4)
             self.layer_types = [
-                "linear_attention" if bool((i + 1) % interval_pattern) else "full_attention"
+                "linear_attention"
+                if bool((i + 1) % interval_pattern)
+                else "full_attention"
                 for i in range(self.num_hidden_layers)
             ]
 

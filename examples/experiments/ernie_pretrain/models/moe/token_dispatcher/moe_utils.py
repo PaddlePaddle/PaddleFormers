@@ -55,7 +55,9 @@ def inplace_offload_if_needed(x, threshold=2 * 1024 * 1024 * 1024):
     memory_size = np.prod(x.shape) * paddle.core.size_of_dtype(x.dtype)
     if memory_size >= threshold:
         inplace_offload(x)
-        warnings.warn(f"Offload tensor with shape: {x.shape}, dtype: {x.dtype}, memory size {memory_size}")
+        warnings.warn(
+            f"Offload tensor with shape: {x.shape}, dtype: {x.dtype}, memory size {memory_size}"
+        )
 
 
 def topk_to_permuted_indices_single(x, num_tokens, expert_id, topk):
@@ -73,7 +75,9 @@ def topk_to_permuted_indices_single(x, num_tokens, expert_id, topk):
             - prob_permuted_indices: Indices of probabilities for the expert assignments
     """
     x = paddle.flatten(x)
-    prob_permuted_indices = paddle.tensor.search._restrict_nonzero(x == expert_id, num_tokens).flatten()
+    prob_permuted_indices = paddle.tensor.search._restrict_nonzero(
+        x == expert_id, num_tokens
+    ).flatten()
     token_permuted_indices = prob_permuted_indices // topk
     return token_permuted_indices, prob_permuted_indices
 
@@ -156,7 +160,9 @@ def unpermute(
         permuted_tokens = permuted_tokens * permuted_probs.unsqueeze(-1)
 
     output_tokens = paddle.zeros(restore_shape, dtype=permuted_tokens.dtype)
-    output_tokens.scatter_(index=token_permuted_indices, updates=permuted_tokens, overwrite=False)
+    output_tokens.scatter_(
+        index=token_permuted_indices, updates=permuted_tokens, overwrite=False
+    )
     return output_tokens
 
 
@@ -219,7 +225,12 @@ class UnZipNode:
                 - unzipped_probs: Expanded routing probabilities
         """
         with paddle.amp.auto_cast(False):
-            (unzipped_tokens, zipped_expertwise_rowmap, unzipped_probs, _,) = paddle.nn.functional.moe_permute(
+            (
+                unzipped_tokens,
+                zipped_expertwise_rowmap,
+                unzipped_probs,
+                _,
+            ) = paddle.nn.functional.moe_permute(
                 hs_2d_dispatched,
                 None,
                 dispatched_indices,
@@ -237,7 +248,14 @@ class UnZipNode:
         )
 
     @paddle.no_grad()
-    def backward(self, dx, hidden_states_out_grad, probs_grad, dispatched_indices, num_experts):
+    def backward(
+        self,
+        dx,
+        hidden_states_out_grad,
+        probs_grad,
+        dispatched_indices,
+        num_experts,
+    ):
         """Backward pass - collect gradients from experts.
 
         Args:
@@ -253,13 +271,15 @@ class UnZipNode:
                 - probs_grad_zipped: Compressed probability gradients
         """
         with paddle.amp.auto_cast(False):
-            weighted_zipped_tokens, probs_grad_zipped = paddle.nn.functional.moe_unpermute(
-                dx,
-                self.zipped_expertwise_rowmap,
-                dispatched_indices,
-                probs_grad,
-                total_zipped_tokens=hidden_states_out_grad.shape[0],
-                num_experts=num_experts,
+            weighted_zipped_tokens, probs_grad_zipped = (
+                paddle.nn.functional.moe_unpermute(
+                    dx,
+                    self.zipped_expertwise_rowmap,
+                    dispatched_indices,
+                    probs_grad,
+                    total_zipped_tokens=hidden_states_out_grad.shape[0],
+                    num_experts=num_experts,
+                )
             )
         self.reset_status()
         return weighted_zipped_tokens, probs_grad_zipped
@@ -312,13 +332,15 @@ class ZipNode:
             paddle.Tensor: Combined expert outputs.
         """
         with paddle.amp.auto_cast(False):
-            expert_out_zipped, zipped_probs_topk = paddle.nn.functional.moe_unpermute(
-                expert_out,
-                zipped_expertwise_rowmap,
-                routemap_topk,
-                unzipped_probs,
-                total_zipped_tokens,
-                num_experts,
+            expert_out_zipped, zipped_probs_topk = (
+                paddle.nn.functional.moe_unpermute(
+                    expert_out,
+                    zipped_expertwise_rowmap,
+                    routemap_topk,
+                    unzipped_probs,
+                    total_zipped_tokens,
+                    num_experts,
+                )
             )
         return expert_out_zipped
 
@@ -346,7 +368,12 @@ class ZipNode:
             paddle.Tensor: Expanded gradients to be sent to experts.
         """
         with paddle.amp.auto_cast(False):
-            (unzipped_grad, zipped_expertwise_rowmap_grad, unzipped_probs_grad, _,) = paddle.nn.functional.moe_permute(
+            (
+                unzipped_grad,
+                zipped_expertwise_rowmap_grad,
+                unzipped_probs_grad,
+                _,
+            ) = paddle.nn.functional.moe_permute(
                 grad_output,
                 None,
                 dispatched_indices,

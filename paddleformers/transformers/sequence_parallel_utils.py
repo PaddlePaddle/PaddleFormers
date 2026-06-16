@@ -38,11 +38,13 @@ def scatter(input):
     parallelism = group.nranks
     rank = group.rank
     seq_len = input.shape[0]
-    assert (
-        seq_len % parallelism == 0
-    ), "Input sequence length {} can't be divided exactly by sequence parallelism {}".format(seq_len, parallelism)
+    assert seq_len % parallelism == 0, (
+        f"Input sequence length {seq_len} can't be divided exactly by sequence parallelism {parallelism}"
+    )
     interval = seq_len // parallelism
-    input = paddle.slice(input, axes=[0], starts=[interval * rank], ends=[interval * (rank + 1)])
+    input = paddle.slice(
+        input, axes=[0], starts=[interval * rank], ends=[interval * (rank + 1)]
+    )
     input = paddle.assign(input)
     return input
 
@@ -76,7 +78,9 @@ class AllGatherVarlenOp(PyLayer):
 
         shape0 = paddle.to_tensor([input.shape[0]])
         shape0_all = paddle.empty(shape=[group.nranks], dtype=shape0.dtype)
-        dist.stream.all_gather(shape0_all, shape0, group=group, use_calc_stream=True)
+        dist.stream.all_gather(
+            shape0_all, shape0, group=group, use_calc_stream=True
+        )
         shape0_all = shape0_all.numpy()
         max_shape0 = shape0_all.max()
 
@@ -134,6 +138,8 @@ def sequence_parallel_sparse_mask_labels(labels, ignore_label=-100):
         tgt_index = paddle.to_tensor([0])
 
     tgt_index = tgt_index.reshape([-1])
-    labels_local_gather = paddle.take_along_axis(labels_local, tgt_index, axis=0)
+    labels_local_gather = paddle.take_along_axis(
+        labels_local, tgt_index, axis=0
+    )
     labels_all_gather = AllGatherVarlenOp.apply(labels_local_gather)
     return labels_all_gather, tgt_index.reshape([-1, 1])

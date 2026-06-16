@@ -18,7 +18,9 @@ from paddleformers.datasets.reader.mix_datasets import (
 def _make_mock_multi_source_dataset(datasets, probs):
     """Helper to create a mock MultiSourceDataset with task groups."""
     mock = MagicMock()
-    mock._task_group = [{"dataset": datasets[i], "prob": probs[i]} for i in range(len(datasets))]
+    mock._task_group = [
+        {"dataset": datasets[i], "prob": probs[i]} for i in range(len(datasets))
+    ]
     return mock
 
 
@@ -118,7 +120,9 @@ class TestBaseMixDataset(unittest.TestCase):
         _make_mock_multi_source_dataset([ds1], [1.0])
         # Verify BaseMixDataset has abstractmethod decorators on __iter__ and __len__
         # These are the methods subclasses must implement
-        self.assertTrue(hasattr(BaseMixDataset.__iter__, "__isabstractmethod__"))
+        self.assertTrue(
+            hasattr(BaseMixDataset.__iter__, "__isabstractmethod__")
+        )
         self.assertTrue(hasattr(BaseMixDataset.__len__, "__isabstractmethod__"))
 
 
@@ -300,7 +304,9 @@ class TestConcatDataset(unittest.TestCase):
         items = list(dataset)
         self.assertEqual(len(items), 20)
         # Just verify all items are present
-        self.assertTrue(all(i.startswith("a_") or i.startswith("b_") for i in items))
+        self.assertTrue(
+            all(i.startswith("a_") or i.startswith("b_") for i in items)
+        )
 
     def test_epoch_index_increments(self):
         ds1 = _make_simple_dataset(3, "a")

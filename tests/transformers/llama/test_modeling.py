@@ -79,7 +79,9 @@ class LlamaModelTester:
         self.use_cache = use_cache
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
-        self.apply_residual_connection_post_layernorm = apply_residual_connection_post_layernorm
+        self.apply_residual_connection_post_layernorm = (
+            apply_residual_connection_post_layernorm
+        )
         self.hidden_dropout = hidden_dropout
         self.attention_dropout = attention_dropout
         self.attention_softmax_in_fp32 = attention_softmax_in_fp32
@@ -101,22 +103,39 @@ class LlamaModelTester:
         self.return_dict = return_dict
 
     def prepare_config_and_inputs(self):
-        input_ids = ids_tensor([self.batch_size, self.seq_length], self.vocab_size, dtype=paddle.int64)
+        input_ids = ids_tensor(
+            [self.batch_size, self.seq_length],
+            self.vocab_size,
+            dtype=paddle.int64,
+        )
 
         input_mask = None
         if self.use_input_mask:
-            input_mask = random_attention_mask([self.batch_size, self.seq_length])
+            input_mask = random_attention_mask(
+                [self.batch_size, self.seq_length]
+            )
 
         sequence_labels = None
         token_labels = None
         choice_labels = None
         if self.use_labels:
-            sequence_labels = ids_tensor([self.batch_size], self.type_sequence_label_size)
-            token_labels = ids_tensor([self.batch_size, self.seq_length], self.num_labels)
+            sequence_labels = ids_tensor(
+                [self.batch_size], self.type_sequence_label_size
+            )
+            token_labels = ids_tensor(
+                [self.batch_size, self.seq_length], self.num_labels
+            )
             choice_labels = ids_tensor([self.batch_size], self.num_choices)
 
         config = self.get_config()
-        return config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        return (
+            config,
+            input_ids,
+            input_mask,
+            sequence_labels,
+            token_labels,
+            choice_labels,
+        )
 
     def get_config(self) -> LlamaConfig:
         return LlamaConfig(
@@ -141,31 +160,59 @@ class LlamaModelTester:
         )
 
     def create_and_check_model(
-        self, config: LlamaConfig, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        self,
+        config: LlamaConfig,
+        input_ids,
+        input_mask,
+        sequence_labels,
+        token_labels,
+        choice_labels,
     ):
         model = LlamaModel(config)
         model.eval()
         result = model(input_ids)
-        self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.hidden_size])
+        self.parent.assertEqual(
+            result[0].shape,
+            [self.batch_size, self.seq_length, self.hidden_size],
+        )
 
     def create_and_check_model_attention_mask(
-        self, config: LlamaConfig, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        self,
+        config: LlamaConfig,
+        input_ids,
+        input_mask,
+        sequence_labels,
+        token_labels,
+        choice_labels,
     ):
         model = LlamaModel(config)
         model.eval()
         attn_mask_2d = random_attention_mask([self.batch_size, self.seq_length])
         result_2d = model(input_ids, attention_mask=attn_mask_2d)[0]
         batch, seq_length = input_ids.shape
-        causal_mask = paddle.tril(paddle.ones((batch, seq_length, seq_length), dtype=attn_mask_2d.dtype))
+        causal_mask = paddle.tril(
+            paddle.ones(
+                (batch, seq_length, seq_length), dtype=attn_mask_2d.dtype
+            )
+        )
         attn_mask_3d = causal_mask & attn_mask_2d.unsqueeze(-1)
         result_3d = model(input_ids, attention_mask=attn_mask_3d)[0]
         attn_mask_4d = attn_mask_3d.unsqueeze(1)
         result_4d = model(input_ids, attention_mask=attn_mask_4d)[0]
         result_no_attention_mask = model(input_ids, attention_mask=None)[0]
         # Assert non-padding tokens have the same logits with different attention_mask shape
-        self.parent.assertTrue((result_2d[attn_mask_2d] == result_3d[attn_mask_2d]).all())
-        self.parent.assertTrue((result_2d[attn_mask_2d] == result_4d[attn_mask_2d]).all())
-        self.parent.assertTrue((result_2d[attn_mask_2d] == result_no_attention_mask[attn_mask_2d]).all())
+        self.parent.assertTrue(
+            (result_2d[attn_mask_2d] == result_3d[attn_mask_2d]).all()
+        )
+        self.parent.assertTrue(
+            (result_2d[attn_mask_2d] == result_4d[attn_mask_2d]).all()
+        )
+        self.parent.assertTrue(
+            (
+                result_2d[attn_mask_2d]
+                == result_no_attention_mask[attn_mask_2d]
+            ).all()
+        )
 
     def create_and_check_model_past_large_inputs(
         self,
@@ -180,8 +227,15 @@ class LlamaModelTester:
         model.eval()
 
         # first forward pass
-        outputs = model(input_ids, attention_mask=input_mask, use_cache=True, return_dict=self.return_dict)
-        past_key_values = outputs.past_key_values if self.return_dict else outputs[2]
+        outputs = model(
+            input_ids,
+            attention_mask=input_mask,
+            use_cache=True,
+            return_dict=self.return_dict,
+        )
+        past_key_values = (
+            outputs.past_key_values if self.return_dict else outputs[2]
+        )
 
         # create hypothetical multiple next token and extent to next_input_ids
         next_tokens = ids_tensor((self.batch_size, 3), self.vocab_size)
@@ -192,7 +246,10 @@ class LlamaModelTester:
         next_attention_mask = paddle.cat([input_mask, next_mask], axis=-1)
 
         outputs = model(
-            next_input_ids, attention_mask=next_attention_mask, output_hidden_states=True, return_dict=self.return_dict
+            next_input_ids,
+            attention_mask=next_attention_mask,
+            output_hidden_states=True,
+            return_dict=self.return_dict,
         )
 
         output_from_no_past = outputs[2][0]
@@ -209,13 +266,23 @@ class LlamaModelTester:
 
         # select random slice
         random_slice_idx = ids_tensor((1,), output_from_past.shape[-1]).item()
-        output_from_no_past_slice = output_from_no_past[:, -3:, random_slice_idx].detach()
-        output_from_past_slice = output_from_past[:, :, random_slice_idx].detach()
+        output_from_no_past_slice = output_from_no_past[
+            :, -3:, random_slice_idx
+        ].detach()
+        output_from_past_slice = output_from_past[
+            :, :, random_slice_idx
+        ].detach()
 
-        self.parent.assertTrue(output_from_past_slice.shape[1] == next_tokens.shape[1])
+        self.parent.assertTrue(
+            output_from_past_slice.shape[1] == next_tokens.shape[1]
+        )
 
         # test that outputs are equal for slice
-        self.parent.assertTrue(paddle.allclose(output_from_past_slice, output_from_no_past_slice, atol=1e-3))
+        self.parent.assertTrue(
+            paddle.allclose(
+                output_from_past_slice, output_from_no_past_slice, atol=1e-3
+            )
+        )
 
     def prepare_config_and_inputs_for_common(self):
         config_and_inputs = self.prepare_config_and_inputs()
@@ -230,7 +297,9 @@ class LlamaModelTester:
         inputs_dict = {"input_ids": input_ids, "attention_mask": input_mask}
         return config, inputs_dict
 
-    def create_and_check_lm_head_model(self, config, input_ids, input_mask, *args):
+    def create_and_check_lm_head_model(
+        self, config, input_ids, input_mask, *args
+    ):
         model = LlamaForCausalLM(config)
         model.eval()
 
@@ -242,9 +311,15 @@ class LlamaModelTester:
         )
         if self.parent.use_labels:
             self.parent.assertIsInstance(result[0].item(), float)
-            self.parent.assertEqual(result[1].shape, [self.batch_size, self.seq_length, self.vocab_size])
+            self.parent.assertEqual(
+                result[1].shape,
+                [self.batch_size, self.seq_length, self.vocab_size],
+            )
         else:
-            self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
+            self.parent.assertEqual(
+                result[0].shape,
+                [self.batch_size, self.seq_length, self.vocab_size],
+            )
 
     def check_model_position_ids(self, config, input_ids, input_mask, *args):
         model = LlamaForCausalLM(config)
@@ -264,9 +339,13 @@ class LlamaModelTester:
             return_dict=self.parent.return_dict,
         )
         if self.parent.use_labels:
-            self.parent.assertTrue((result_position_id[1] == result_no_position_id[1]).all())
+            self.parent.assertTrue(
+                (result_position_id[1] == result_no_position_id[1]).all()
+            )
         else:
-            self.parent.assertTrue((result_position_id[0] == result_no_position_id[0]).all())
+            self.parent.assertTrue(
+                (result_position_id[0] == result_no_position_id[0]).all()
+            )
 
     def create_and_check_gqa_model(self, config, input_ids, input_mask, *args):
         model = LlamaForCausalLM(config)
@@ -282,12 +361,20 @@ class LlamaModelTester:
         )
         if self.parent.use_labels:
             self.parent.assertIsInstance(result[0].item(), float)
-            self.parent.assertEqual(result[1].shape, [self.batch_size, self.seq_length, self.vocab_size])
+            self.parent.assertEqual(
+                result[1].shape,
+                [self.batch_size, self.seq_length, self.vocab_size],
+            )
         else:
-            self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
+            self.parent.assertEqual(
+                result[0].shape,
+                [self.batch_size, self.seq_length, self.vocab_size],
+            )
 
 
-class LlamaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
+class LlamaModelTest(
+    ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
+):
     base_model_class = LlamaModel
     return_dict = False
     use_labels = False
@@ -300,10 +387,14 @@ class LlamaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
         super().setUp()
 
         self.model_tester = LlamaModelTester(self)
-        self.config_tester = ConfigTester(self, config_class=LlamaConfig, vocab_size=256, hidden_size=24)
+        self.config_tester = ConfigTester(
+            self, config_class=LlamaConfig, vocab_size=256, hidden_size=24
+        )
 
     def _get_input_ids_and_config(self):
-        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+        config, inputs_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
 
         input_ids = inputs_dict[self.input_name]
         attention_mask = paddle.ones_like(input_ids, dtype=paddle.int64)
@@ -340,8 +431,12 @@ class LlamaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
 
             # test save_pretrained
             with tempfile.TemporaryDirectory() as tmpdirname:
-                model2.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
-                model3 = model_class.from_pretrained(tmpdirname, convert_from_hf=True, load_checkpoint_format="")
+                model2.save_pretrained(
+                    tmpdirname, save_checkpoint_format="flex_checkpoint"
+                )
+                model3 = model_class.from_pretrained(
+                    tmpdirname, convert_from_hf=True, load_checkpoint_format=""
+                )
                 model_state_3 = model3.state_dict()
 
                 for k, v in model_state_3.items():
@@ -358,7 +453,9 @@ class LlamaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
 
     def test_model_attention_mask(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
-        self.model_tester.create_and_check_model_attention_mask(*config_and_inputs)
+        self.model_tester.create_and_check_model_attention_mask(
+            *config_and_inputs
+        )
 
     def test_model_position_ids(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
@@ -387,10 +484,14 @@ class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
     @slow
     def test_inference_no_attention(self):
         model = LlamaModel.from_pretrained(
-            "Paddleformers/tiny-random-llama", save_to_hf=False, save_checkpoint_format=""
+            "Paddleformers/tiny-random-llama",
+            save_to_hf=False,
+            save_checkpoint_format="",
         )
         model.eval()
-        input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
+        input_ids = paddle.to_tensor(
+            [[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]]
+        )
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
         with paddle.no_grad():
             output = model(input_ids, attention_mask=attention_mask)[0]
@@ -408,15 +509,22 @@ class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
             ],
             dtype=output.dtype,
         )
-        self.assertTrue(paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4))
+        self.assertTrue(
+            paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4)
+        )
 
     @slow
     def test_inference_with_attention(self):
         model = LlamaModel.from_pretrained(
-            "Paddleformers/tiny-random-llama", download_hub="aistudio", save_to_hf=False, save_checkpoint_format=""
+            "Paddleformers/tiny-random-llama",
+            download_hub="aistudio",
+            save_to_hf=False,
+            save_checkpoint_format="",
         )
         model.eval()
-        input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
+        input_ids = paddle.to_tensor(
+            [[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]]
+        )
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
         with paddle.no_grad():
             output = model(input_ids, attention_mask=attention_mask)[0]
@@ -433,7 +541,9 @@ class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
             ],
             dtype=output.dtype,
         )
-        self.assertTrue(paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4))
+        self.assertTrue(
+            paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4)
+        )
 
 
 class Llama3ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
@@ -452,7 +562,9 @@ class Llama3ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
             load_checkpoint_format="flex_checkpoint",
         )
         model.eval()
-        input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
+        input_ids = paddle.to_tensor(
+            [[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]]
+        )
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
         with paddle.no_grad():
             output = model(input_ids, attention_mask=attention_mask)[0]
@@ -470,7 +582,9 @@ class Llama3ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
             ],
             dtype=output.dtype,
         )
-        self.assertTrue(paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4))
+        self.assertTrue(
+            paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4)
+        )
 
     @slow
     def test_inference_with_attention(self):
@@ -481,7 +595,9 @@ class Llama3ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
             load_checkpoint_format="flex_checkpoint",
         )
         model.eval()
-        input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
+        input_ids = paddle.to_tensor(
+            [[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]]
+        )
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
         with paddle.no_grad():
             output = model(input_ids, attention_mask=attention_mask)[0]
@@ -498,7 +614,9 @@ class Llama3ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
             ],
             dtype=output.dtype,
         )
-        self.assertTrue(paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4))
+        self.assertTrue(
+            paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4)
+        )
 
 
 class LlamaGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
@@ -523,7 +641,9 @@ class LlamaCompatibilityTest(unittest.TestCase):
 
         # when python application is done, `TemporaryDirectory` will be free
         cls.torch_model_path = tempfile.TemporaryDirectory().name
-        config = LlamaConfig(hidden_size=16, num_hidden_layers=1, num_attention_heads=2)
+        config = LlamaConfig(
+            hidden_size=16, num_hidden_layers=1, num_attention_heads=2
+        )
         model = LlamaForCausalLM(config)
         model.save_pretrained(cls.torch_model_path)
 
@@ -567,15 +687,21 @@ class LlamaCompatibilityTest(unittest.TestCase):
             import torch
             from transformers import LlamaForCausalLM
 
-            torch_model = LlamaForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model = LlamaForCausalLM.from_pretrained(
+                self.torch_model_path, torch_dtype=torch.float32
+            )
             torch_model.eval()
             torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+            torch_logit = torch_model(
+                torch.tensor(input_ids), return_dict=False
+            )[0]
 
             # 3. forward the paddle model
             from paddleformers.transformers import LlamaForCausalLM
 
-            paddle_model = LlamaForCausalLM.from_pretrained(tempdir, load_checkpoint_format="flex_checkpoint")
+            paddle_model = LlamaForCausalLM.from_pretrained(
+                tempdir, load_checkpoint_format="flex_checkpoint"
+            )
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 

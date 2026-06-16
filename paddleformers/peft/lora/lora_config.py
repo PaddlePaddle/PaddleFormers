@@ -16,7 +16,7 @@ import json
 import math
 import os
 from dataclasses import asdict, dataclass, field
-from typing import List, Optional, Union
+from typing import Optional
 
 from ...utils.env import LORA_CONFIG_NAME
 from ...utils.log import logger
@@ -37,14 +37,14 @@ class LoRAConfig:
     """
 
     r: int = field(default=8, metadata={"help": "Lora attention dimension"})
-    target_modules: Optional[Union[List[str], str]] = field(
+    target_modules: Optional[list[str] | str] = field(
         default=None,
         metadata={
             "help": "List of module names or regex expression of the module names to replace with Lora."
             "For example, ['q', 'v'] or '.*decoder.*(SelfAttention|EncDecAttention).*(q|v)$' "
         },
     )
-    trainable_modules: Optional[List[str]] = field(
+    trainable_modules: Optional[list[str]] = field(
         default=None,
         metadata={
             "help": "List of module names or regex expression of the module names to train when applying with Lora."
@@ -54,29 +54,48 @@ class LoRAConfig:
     lora_alpha: int = field(default=8, metadata={"help": "Lora alpha"})
     lora_dropout: float = field(default=0.0, metadata={"help": "Lora dropout"})
     merge_weights: bool = field(
-        default=False, metadata={"help": "Merge weights of the original model and the Lora model"}
+        default=False,
+        metadata={
+            "help": "Merge weights of the original model and the Lora model"
+        },
     )
     trainable_bias: Optional[str] = field(
-        default=None, metadata={"help": "Define trainable bias parameters for the Lora model."}
+        default=None,
+        metadata={
+            "help": "Define trainable bias parameters for the Lora model."
+        },
     )
-    enable_lora_list: Optional[Union[List[bool], List[Optional[List[bool]]]]] = field(
+    enable_lora_list: Optional[list[bool] | list[Optional[list[bool]]]] = field(
         default=None,
         metadata={
             "help": "Provides fine-grained control over `MergedLoRALinear`. If None, `LoRALinear` is used instead."
         },
     )
-    tensor_model_parallel_size: int = field(default=-1, metadata={"help": "1 for not use tensor parallel"})
-    dtype: Optional[str] = field(default=None, metadata={"help": "The data type of tensor"})
+    tensor_model_parallel_size: int = field(
+        default=-1, metadata={"help": "1 for not use tensor parallel"}
+    )
+    dtype: Optional[str] = field(
+        default=None, metadata={"help": "The data type of tensor"}
+    )
     head_dim: Optional[int] = field(
         default=None,
         metadata={
             "help": "The model multi head dimension.Only for LoRAMergedLinear and ColumnParallelLoRAMergedLinear."
         },
     )
-    do_qat: bool = field(default=False, metadata={"help": "Whether the lora model would do quant-aware training"})
-    rslora: bool = field(default=False, metadata={"help": "Whether to use RsLoRA"})
+    do_qat: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether the lora model would do quant-aware training"
+        },
+    )
+    rslora: bool = field(
+        default=False, metadata={"help": "Whether to use RsLoRA"}
+    )
     loraga: bool = field(default=False, metadata={"help": "Whether to LoRA-GA"})
-    lora_plus_scale: float = field(default=1.0, metadata={"help": "Lora B scale in LoRA+"})
+    lora_plus_scale: float = field(
+        default=1.0, metadata={"help": "Lora B scale in LoRA+"}
+    )
     base_model_name_or_path: Optional[str] = field(
         default=None, metadata={"help": "The name of the base model to use."}
     )
@@ -110,7 +129,9 @@ class LoRAConfig:
                 The directory where the configuration will be saved.
         """
         if os.path.isfile(save_directory):
-            raise AssertionError(f"Provided path ({save_directory}) should be a directory, not a file")
+            raise AssertionError(
+                f"Provided path ({save_directory}) should be a directory, not a file"
+            )
 
         os.makedirs(save_directory, exist_ok=True)
 
@@ -132,10 +153,16 @@ class LoRAConfig:
             **kwargs:
                 Additional keyword arguments passed along to the child class initialization.
         """
-        if os.path.isfile(os.path.join(pretrained_model_name_or_path, LORA_CONFIG_NAME)):
-            config_file = os.path.join(pretrained_model_name_or_path, LORA_CONFIG_NAME)
+        if os.path.isfile(
+            os.path.join(pretrained_model_name_or_path, LORA_CONFIG_NAME)
+        ):
+            config_file = os.path.join(
+                pretrained_model_name_or_path, LORA_CONFIG_NAME
+            )
         else:
-            raise ValueError(f"Can't find lora_config.json at '{pretrained_model_name_or_path}'")
+            raise ValueError(
+                f"Can't find lora_config.json at '{pretrained_model_name_or_path}'"
+            )
 
         loaded_attributes = cls.from_json_file(config_file)
         loaded_attributes.pop("scaling", None)

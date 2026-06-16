@@ -1,5 +1,4 @@
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# coding=utf-8
 # Copyright 2024 The Qwen team, Alibaba Group and the HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +15,10 @@
 """Qwen3MoE model configuration"""
 
 from ..configuration_utils import PretrainedConfig
-from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
+from ..modeling_rope_utils import (
+    rope_config_validation,
+    standardize_rope_params,
+)
 
 
 class Qwen3MoeConfig(PretrainedConfig):
@@ -189,7 +191,9 @@ class Qwen3MoeConfig(PretrainedConfig):
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
         self.use_sliding_window = use_sliding_window
-        self.sliding_window = sliding_window if self.use_sliding_window else None
+        self.sliding_window = (
+            sliding_window if self.use_sliding_window else None
+        )
 
         self.num_key_value_heads = num_key_value_heads
         self.hidden_act = hidden_act
@@ -216,8 +220,12 @@ class Qwen3MoeConfig(PretrainedConfig):
         self.num_experts = num_experts
         self.norm_topk_prob = norm_topk_prob
         self.output_router_logits = output_router_logits
-        self.mlp_only_layers = [] if mlp_only_layers is None else mlp_only_layers
-        self.moe_subbatch_token_num_before_dispatch = moe_subbatch_token_num_before_dispatch
+        self.mlp_only_layers = (
+            [] if mlp_only_layers is None else mlp_only_layers
+        )
+        self.moe_subbatch_token_num_before_dispatch = (
+            moe_subbatch_token_num_before_dispatch
+        )
 
         super().__init__(
             tie_word_embeddings=tie_word_embeddings,

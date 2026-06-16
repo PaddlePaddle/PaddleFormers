@@ -86,9 +86,13 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--mp_rank", type=int)
     parser.add_argument("--base_path", type=str)
-    parser.add_argument("--output_dir_path", type=str, default="./merged_models")
+    parser.add_argument(
+        "--output_dir_path", type=str, default="./merged_models"
+    )
     parser.add_argument("--include_opt_state", type=strtobool, default=False)
-    parser.add_argument("--ignore_padding_nonzero", type=strtobool, default=False)
+    parser.add_argument(
+        "--ignore_padding_nonzero", type=strtobool, default=False
+    )
 
     parser.add_argument("--node_rank", type=int, default=0)
     parser.add_argument("--nnodes", type=int, default=1)
@@ -97,7 +101,9 @@ def parse_args():
     return parser.parse_args()
 
 
-def save_ckpt(ckpt, save_dir, rank_info, mp_degree, pp_degree=0, ep_degree=0, is_opt=False):
+def save_ckpt(
+    ckpt, save_dir, rank_info, mp_degree, pp_degree=0, ep_degree=0, is_opt=False
+):
     if is_opt:
         prefix = "optimizer"
         suffix = "pdopt"
@@ -121,11 +127,15 @@ def save_ckpt(ckpt, save_dir, rank_info, mp_degree, pp_degree=0, ep_degree=0, is
     with open(save_path, "wb") as f:
         pickle.dump(ckpt, f)
     end_t = time.time()
-    print(f"Saved save_path = {save_path} cost_time = {end_t - start_t} is_opt = {is_opt}")
+    print(
+        f"Saved save_path = {save_path} cost_time = {end_t - start_t} is_opt = {is_opt}"
+    )
 
 
 class Client:
-    def __init__(self, args, base_path, nproc_per_node=8, nnodes=1, node_rank=0):
+    def __init__(
+        self, args, base_path, nproc_per_node=8, nnodes=1, node_rank=0
+    ):
         self.args = args
         self.base_path = base_path
         self.nproc_per_node = nproc_per_node
@@ -142,8 +152,12 @@ class Client:
         self.node_rank = node_rank
         assert self.nnodes == 1
         assert self.node_rank == 0
-        self.pp_stage_num_per_node = [self.pp_degree // self.nnodes] * self.nnodes
-        self.pp_stage_num_per_node[-1] = self.pp_degree - ((self.nnodes - 1) * (self.pp_degree // self.nnodes))
+        self.pp_stage_num_per_node = [
+            self.pp_degree // self.nnodes
+        ] * self.nnodes
+        self.pp_stage_num_per_node[-1] = self.pp_degree - (
+            (self.nnodes - 1) * (self.pp_degree // self.nnodes)
+        )
         self.num_attention_heads = self.config["num_attention_heads"]
         self.num_key_value_heads = self.config["num_key_value_heads"]
         if "num_merge_attn_heads" in self.config:
@@ -158,7 +172,10 @@ class Client:
         assert args.dst_mp_degree == 1
         self.dst_ep_degree = args.dst_mp_degree
         self.dst_mp_degree = args.dst_mp_degree
-        if "moe_sharding_degree" in parallel_config and "ep_degree" in parallel_config:
+        if (
+            "moe_sharding_degree" in parallel_config
+            and "ep_degree" in parallel_config
+        ):
             self.moe_sharding_degree = parallel_config["moe_sharding_degree"]
             self.ep_degree = parallel_config["ep_degree"]
             (
@@ -173,7 +190,9 @@ class Client:
 
     def _get_expert_param_shape(self, meta):
         expert_param_shape = {}
-        for s_name, meta_info in meta["sharding_metas"]["tp00_pp00_ep00"]["param_meta"].items():
+        for s_name, meta_info in meta["sharding_metas"]["tp00_pp00_ep00"][
+            "param_meta"
+        ].items():
             if "mlp.experts" in s_name:
                 parts = s_name.split(".")
                 suffix = ".".join(parts[-2:])
@@ -195,11 +214,15 @@ class Client:
         rank_suffix = "tp00_pp00"
         if self.ep_degree > 1:
             rank_suffix += "_ep00"
-        structure_name_mapping = self.meta["sharding_metas"][rank_suffix]["structure_name_mapping"]
+        structure_name_mapping = self.meta["sharding_metas"][rank_suffix][
+            "structure_name_mapping"
+        ]
 
         max_local_expert_id = -1
         for s_name in structure_name_mapping.keys():
-            max_local_expert_id = max(max_local_expert_id, self._expert_id(s_name))
+            max_local_expert_id = max(
+                max_local_expert_id, self._expert_id(s_name)
+            )
         return max_local_expert_id + 1
 
     def _gen_node_id_map(self):
@@ -210,17 +233,27 @@ class Client:
         for pp in range(self.pp_degree):
             pp_stage_2_nodes_map[pp] = set()
 
-        for sd, pp, mp in itertools.product(range(self.sharding_degree), range(self.pp_degree), range(self.mp_degree)):
+        for sd, pp, mp in itertools.product(
+            range(self.sharding_degree),
+            range(self.pp_degree),
+            range(self.mp_degree),
+        ):
             if self.ep_degree > 1:
                 num_mp_per_ep = self.ep_degree // self.mp_degree
                 moe_sd = sd // num_mp_per_ep
                 sd_idx = sd % num_mp_per_ep
                 ep = sd_idx * self.mp_degree + mp
                 node_rank = (
-                    moe_sd * self.pp_degree * self.ep_degree + pp * self.ep_degree + ep
+                    moe_sd * self.pp_degree * self.ep_degree
+                    + pp * self.ep_degree
+                    + ep
                 ) // self.nproc_per_node
             else:
-                node_rank = (sd * self.pp_degree * self.mp_degree + pp * self.mp_degree + mp) // self.nproc_per_node
+                node_rank = (
+                    sd * self.pp_degree * self.mp_degree
+                    + pp * self.mp_degree
+                    + mp
+                ) // self.nproc_per_node
             parallel_2_node_map[(sd, pp, mp)] = node_rank
             pp_stage_2_nodes_map[pp].add(node_rank)
             if node_rank in node_2_parallel_map:
@@ -249,20 +282,32 @@ class Client:
     ):
         if self.ep_degree > 1:
             parallel_2_ckpt_map = {}
-            for local_stage in range(self.pp_stage_num_per_node[self.node_rank]):
+            for local_stage in range(
+                self.pp_stage_num_per_node[self.node_rank]
+            ):
                 pp_rank = (
-                    local_stage + self.stage_num_prefix[self.node_rank - 1] if self.node_rank > 0 else local_stage
+                    local_stage + self.stage_num_prefix[self.node_rank - 1]
+                    if self.node_rank > 0
+                    else local_stage
                 )
                 logger.warning(f"loading ckpt for pp stage {pp_rank}")
-                parallel_2_ckpt_map.update(self._read_all_ckpts_by_pp_stage(pp_rank, include_opt_state))
+                parallel_2_ckpt_map.update(
+                    self._read_all_ckpts_by_pp_stage(pp_rank, include_opt_state)
+                )
 
-            dense_params = self._merge_sharding_for_dense_params(parallel_2_ckpt_map, ignore_sharding_padding_nonzero)
-            replicated_dnese_params, names_dense_params_to_reshard = self._replicate_dense_params(dense_params)
+            dense_params = self._merge_sharding_for_dense_params(
+                parallel_2_ckpt_map, ignore_sharding_padding_nonzero
+            )
+            replicated_dnese_params, names_dense_params_to_reshard = (
+                self._replicate_dense_params(dense_params)
+            )
 
             expert_params = self._merge_sharding_for_expert_params(
                 parallel_2_ckpt_map, ignore_sharding_padding_nonzero
             )
-            expert_params = self._extend_ep_degree_for_expert_params(expert_params, self.dst_ep_degree)
+            expert_params = self._extend_ep_degree_for_expert_params(
+                expert_params, self.dst_ep_degree
+            )
 
             final_ckpts = self._get_final_ckpts(
                 dense_params,
@@ -308,12 +353,19 @@ class Client:
 
         self.move_useful_file(self.args.output_dir_path)
 
-    def _merge_sharding_for_dense_params(self, parallel_2_ckpt_map, ignore_sharding_padding_nonzero):
+    def _merge_sharding_for_dense_params(
+        self, parallel_2_ckpt_map, ignore_sharding_padding_nonzero
+    ):
         merged_params = {}
         for local_stage, mp_rank in itertools.product(
-            range(self.pp_stage_num_per_node[self.node_rank]), range(self.mp_degree)
+            range(self.pp_stage_num_per_node[self.node_rank]),
+            range(self.mp_degree),
         ):
-            pp_rank = local_stage + self.stage_num_prefix[self.node_rank - 1] if self.node_rank > 0 else local_stage
+            pp_rank = (
+                local_stage + self.stage_num_prefix[self.node_rank - 1]
+                if self.node_rank > 0
+                else local_stage
+            )
             args = []
             for sharding_rank in range(self.sharding_degree):
                 args.append((mp_rank, pp_rank, sharding_rank))
@@ -321,7 +373,13 @@ class Client:
             dense_params = []
             for arg in args:
                 ckpt = parallel_2_ckpt_map[arg]
-                dense_params.append({s_name: v for s_name, v in ckpt.items() if "mlp.experts" not in s_name})
+                dense_params.append(
+                    {
+                        s_name: v
+                        for s_name, v in ckpt.items()
+                        if "mlp.experts" not in s_name
+                    }
+                )
             param_ckpts = self._merge_sharding_param_ckpts(
                 mp_rank,
                 dense_params,
@@ -331,13 +389,21 @@ class Client:
             merged_params[(mp_rank, pp_rank)] = param_ckpts
         return merged_params
 
-    def _replicate_fused_param(self, local_params, indices_or_sections, concat_axis):
+    def _replicate_fused_param(
+        self, local_params, indices_or_sections, concat_axis
+    ):
         splitted_params = []
         for p in local_params:
-            splitted_params.append(np.split(p, indices_or_sections, axis=concat_axis))
+            splitted_params.append(
+                np.split(p, indices_or_sections, axis=concat_axis)
+            )
 
         concated_params = []
-        nparam = indices_or_sections if isinstance(indices_or_sections, int) else len(indices_or_sections)
+        nparam = (
+            indices_or_sections
+            if isinstance(indices_or_sections, int)
+            else len(indices_or_sections)
+        )
         for i in range(nparam):
             param = [p[i] for p in splitted_params]
             concated_params.append(np.concatenate(param, axis=concat_axis))
@@ -347,35 +413,59 @@ class Client:
         replicated_params = {}
         names_param_to_reshard = {}
         for local_stage in range(self.pp_stage_num_per_node[self.node_rank]):
-            pp_rank = local_stage + self.stage_num_prefix[self.node_rank - 1] if self.node_rank > 0 else local_stage
+            pp_rank = (
+                local_stage + self.stage_num_prefix[self.node_rank - 1]
+                if self.node_rank > 0
+                else local_stage
+            )
             replicated_params[pp_rank] = {}
             names_param_to_reshard[pp_rank] = set()
 
             for s_name in dense_params[(0, pp_rank)].keys():
-                replicated_params[pp_rank][s_name] = dense_params[(0, pp_rank)][s_name]
+                replicated_params[pp_rank][s_name] = dense_params[(0, pp_rank)][
+                    s_name
+                ]
 
         return replicated_params, names_param_to_reshard
 
-    def _merge_sharding_for_expert_params(self, parallel_2_ckpt_map, ignore_sharding_padding_nonzero):
+    def _merge_sharding_for_expert_params(
+        self, parallel_2_ckpt_map, ignore_sharding_padding_nonzero
+    ):
         merged_params = {}
         num_mp_per_ep = self.ep_degree // self.mp_degree
 
         for local_stage, ep_rank in itertools.product(
-            range(self.pp_stage_num_per_node[self.node_rank]), range(self.ep_degree)
+            range(self.pp_stage_num_per_node[self.node_rank]),
+            range(self.ep_degree),
         ):
-            pp_rank = local_stage + self.stage_num_prefix[self.node_rank - 1] if self.node_rank > 0 else local_stage
+            pp_rank = (
+                local_stage + self.stage_num_prefix[self.node_rank - 1]
+                if self.node_rank > 0
+                else local_stage
+            )
             args = []
             mp_rank = ep_rank % self.mp_degree
             for moe_sd_rank in range(self.moe_sharding_degree):
-                sharding_rank = moe_sd_rank * num_mp_per_ep + ep_rank // self.mp_degree
+                sharding_rank = (
+                    moe_sd_rank * num_mp_per_ep + ep_rank // self.mp_degree
+                )
                 args.append((mp_rank, pp_rank, sharding_rank))
 
             expert_params = []
             for arg in args:
                 ckpt = parallel_2_ckpt_map[arg]
-                expert_params.append({s_name: v for s_name, v in ckpt.items() if "mlp.experts" in s_name})
+                expert_params.append(
+                    {
+                        s_name: v
+                        for s_name, v in ckpt.items()
+                        if "mlp.experts" in s_name
+                    }
+                )
             param_ckpts = self._merge_sharding_param_ckpts(
-                mp_rank, expert_params, ignore_sharding_padding_nonzero, ep_rank=ep_rank
+                mp_rank,
+                expert_params,
+                ignore_sharding_padding_nonzero,
+                ep_rank=ep_rank,
             )
             merged_params[(ep_rank, pp_rank)] = param_ckpts
         return merged_params
@@ -383,9 +473,14 @@ class Client:
     def _extend_ep_degree_for_expert_params(self, expert_params, dst_ep_degree):
         extended_experts_params = {}
         for local_stage, ep_rank in itertools.product(
-            range(self.pp_stage_num_per_node[self.node_rank]), range(dst_ep_degree)
+            range(self.pp_stage_num_per_node[self.node_rank]),
+            range(dst_ep_degree),
         ):
-            pp_rank = local_stage + self.stage_num_prefix[self.node_rank - 1] if self.node_rank > 0 else local_stage
+            pp_rank = (
+                local_stage + self.stage_num_prefix[self.node_rank - 1]
+                if self.node_rank > 0
+                else local_stage
+            )
             extended_experts_params[(ep_rank, pp_rank)] = {}
 
         new_num_experts_per_rank = self.num_experts // dst_ep_degree
@@ -394,7 +489,9 @@ class Client:
                 if s_name == NAME_MAPPING_KEY:
                     continue
                 local_expert_id = self._expert_id(s_name)
-                global_expert_id = self._global_expert_id(local_expert_id, ep_rank)
+                global_expert_id = self._global_expert_id(
+                    local_expert_id, ep_rank
+                )
                 new_ep_rank = global_expert_id // new_num_experts_per_rank
                 new_local_id = global_expert_id % new_num_experts_per_rank
                 new_s_name = self._modify_expert_id(s_name, new_local_id)
@@ -412,7 +509,11 @@ class Client:
     ):
         final_ckpts = {}
         for local_stage in range(self.pp_stage_num_per_node[self.node_rank]):
-            pp_rank = local_stage + self.stage_num_prefix[self.node_rank - 1] if self.node_rank > 0 else local_stage
+            pp_rank = (
+                local_stage + self.stage_num_prefix[self.node_rank - 1]
+                if self.node_rank > 0
+                else local_stage
+            )
             if dst_ep_degree is None:
                 for tp in range(dst_mp_degree):
                     final_ckpts[(tp, pp_rank)] = {}
@@ -423,7 +524,11 @@ class Client:
 
         num_pieces = dst_mp_degree // self.mp_degree
         for local_stage in range(self.pp_stage_num_per_node[self.node_rank]):
-            pp_rank = local_stage + self.stage_num_prefix[self.node_rank - 1] if self.node_rank > 0 else local_stage
+            pp_rank = (
+                local_stage + self.stage_num_prefix[self.node_rank - 1]
+                if self.node_rank > 0
+                else local_stage
+            )
 
             if dst_ep_degree is not None:
                 for ep in range(dst_ep_degree):
@@ -444,7 +549,9 @@ class Client:
 
                 # set expert params
                 for dst_mp_rank in range(dst_mp_degree):
-                    for s_name, v in expert_params[(dst_mp_rank, pp_rank)].items():
+                    for s_name, v in expert_params[
+                        (dst_mp_rank, pp_rank)
+                    ].items():
                         final_ckpts[(dst_mp_rank, pp_rank)][s_name] = v
 
             # reshard embedding params
@@ -501,11 +608,19 @@ class Client:
 
         return ckpt_map
 
-    def _merge_and_save(self, mp_rank, save_dir, include_opt_state, ignore_sharding_padding_nonzero):
+    def _merge_and_save(
+        self,
+        mp_rank,
+        save_dir,
+        include_opt_state,
+        ignore_sharding_padding_nonzero,
+    ):
         args = []
         for pp_rank in range(self.pp_degree):
             for sharding_rank in range(self.sharding_degree):
-                args.append((mp_rank, pp_rank, sharding_rank, include_opt_state))
+                args.append(
+                    (mp_rank, pp_rank, sharding_rank, include_opt_state)
+                )
 
         start_t = time.time()
         pool = Pool(self.num_process)
@@ -519,7 +634,9 @@ class Client:
 
         param_ckpts = [ckpt[0] for ckpt in ckpts]
         param_ckpts = self._merge_pp_ckpts(args, param_ckpts, is_opt=False)
-        param_ckpts = self._merge_sharding_param_ckpts(mp_rank, param_ckpts, ignore_sharding_padding_nonzero)
+        param_ckpts = self._merge_sharding_param_ckpts(
+            mp_rank, param_ckpts, ignore_sharding_padding_nonzero
+        )
         save_ckpt(
             param_ckpts,
             save_dir,
@@ -536,7 +653,9 @@ class Client:
 
         opt_ckpts = [ckpt[1] for ckpt in ckpts]
         opt_ckpts = self._merge_pp_ckpts(args, opt_ckpts, is_opt=True)
-        opt_ckpts = self._merge_sharding_opt_ckpts(mp_rank, opt_ckpts, ignore_sharding_padding_nonzero)
+        opt_ckpts = self._merge_sharding_opt_ckpts(
+            mp_rank, opt_ckpts, ignore_sharding_padding_nonzero
+        )
         save_ckpt(
             opt_ckpts,
             save_dir,
@@ -557,7 +676,9 @@ class Client:
                     if k in d:
                         print(f"Duplicate keys found: {k}")
                         if not np.array_equal(v, d[k]):
-                            print(f"The value of duplicate keys {k} are different")
+                            print(
+                                f"The value of duplicate keys {k} are different"
+                            )
                 d[k] = v
         return ret
 
@@ -575,7 +696,9 @@ class Client:
                 assert k not in param_meta or "embed" in k, k
                 param_meta[k] = m
 
-            tmp_mapping = self.meta["sharding_metas"][key]["structure_name_mapping"]
+            tmp_mapping = self.meta["sharding_metas"][key][
+                "structure_name_mapping"
+            ]
             for k, m in tmp_mapping.items():
                 assert k not in mapping or "embed" in k, k
                 mapping[k] = m
@@ -600,15 +723,21 @@ class Client:
                 merged_ckpt[k].append(v)
                 if k in last_idx and last_idx[k] + 1 != i:
                     print(f"[WARN] {k} is not contiguous")
-                    assert last_idx[k] + 1 == i, f"assertion failed for {k}, {last_idx[k]}, {i}"
+                    assert last_idx[k] + 1 == i, (
+                        f"assertion failed for {k}, {last_idx[k]}, {i}"
+                    )
                 last_idx[k] = i
 
-        param_meta, structure_name_mapping = self._get_param_meta(mp_rank, ep_rank)
+        param_meta, structure_name_mapping = self._get_param_meta(
+            mp_rank, ep_rank
+        )
         for k in merged_ckpt.keys():
             v = merged_ckpt[k]
             shape = param_meta.pop(k)[0]
             try:
-                v = self._concat_crop_reshape(v, shape, k, ignore_sharding_padding_nonzero)
+                v = self._concat_crop_reshape(
+                    v, shape, k, ignore_sharding_padding_nonzero
+                )
             except Exception:
                 breakpoint()
                 print("Error !!!!")
@@ -617,7 +746,9 @@ class Client:
         assert NAME_MAPPING_KEY not in merged_ckpt
         return merged_ckpt
 
-    def _concat_crop_reshape(self, arrs, shape, name, ignore_sharding_padding_nonzero):
+    def _concat_crop_reshape(
+        self, arrs, shape, name, ignore_sharding_padding_nonzero
+    ):
         if len(arrs) > 1:
             arr = np.concatenate(arrs, axis=0)
         else:
@@ -661,7 +792,9 @@ class Client:
         assert refined_name is not None, name
         return found, refined_name
 
-    def _merge_sharding_opt_ckpts(self, mp_rank, ckpts, ignore_sharding_padding_nonzero):
+    def _merge_sharding_opt_ckpts(
+        self, mp_rank, ckpts, ignore_sharding_padding_nonzero
+    ):
         param_meta, structure_name_mapping = self._get_param_meta(mp_rank)
         p_name_shape_mapping = {}
         for st_name, p_name in structure_name_mapping.items():
@@ -693,7 +826,9 @@ class Client:
                 else:
                     prev_sharding_rank = master_weights[k][-1][0]
                     prev_pk = master_weights[k][-1][1]
-                    assert prev_sharding_rank + 1 == sharding_rank, f"{k}: {prev_sharding_rank} vs {sharding_rank}"
+                    assert prev_sharding_rank + 1 == sharding_rank, (
+                        f"{k}: {prev_sharding_rank} vs {sharding_rank}"
+                    )
                     assert prev_pk == pk, f"{k}: {prev_pk} vs {pk}"
                     master_weights[k].append((sharding_rank, pk, v))
 
@@ -711,13 +846,17 @@ class Client:
                         sub_accs[k] = (k, v)
                     else:
                         prev_acc_value = sub_accs[k][1]
-                        np.testing.assert_array_equal(prev_acc_value, v, err_msg=k)
+                        np.testing.assert_array_equal(
+                            prev_acc_value, v, err_msg=k
+                        )
                 else:
                     if k not in sub_accs:
                         sub_accs[k] = [(sharding_rank, v)]
                     else:
                         prev_sharding_rank = sub_accs[k][-1][0]
-                        assert prev_sharding_rank + 1 == sharding_rank, f"{k}: {prev_sharding_rank} vs {sharding_rank}"
+                        assert prev_sharding_rank + 1 == sharding_rank, (
+                            f"{k}: {prev_sharding_rank} vs {sharding_rank}"
+                        )
                         sub_accs[k].append((sharding_rank, v))
 
         tmp_master_weights = {}
@@ -726,7 +865,9 @@ class Client:
             assert k in p_name_shape_mapping, k
             shape = p_name_shape_mapping[k]
             vs = [v[-1] for v in vs]
-            v = self._concat_crop_reshape(vs, shape, pk, ignore_sharding_padding_nonzero)
+            v = self._concat_crop_reshape(
+                vs, shape, pk, ignore_sharding_padding_nonzero
+            )
             tmp_master_weights[k] = (pk, v)
         master_weights = tmp_master_weights
 
@@ -743,7 +884,9 @@ class Client:
                 assert pk in p_name_shape_mapping, f"{key} {pk}"
                 vs = [v[-1] for v in vs]
                 shape = p_name_shape_mapping[pk]
-                v = self._concat_crop_reshape(vs, shape, key, ignore_sharding_padding_nonzero)
+                v = self._concat_crop_reshape(
+                    vs, shape, key, ignore_sharding_padding_nonzero
+                )
                 tmp_accs[moment_key][key] = (key, v)
         accs = tmp_accs
 
@@ -781,7 +924,9 @@ class Client:
             rank_suffix = f"tp{mp_rank:02d}_pp{pp_rank:02d}_ep{ep_rank:02d}"
         else:
             rank_suffix = f"tp{mp_rank:02d}_pp{pp_rank:02d}"
-        s2p_mapping = self.meta["sharding_metas"][rank_suffix]["structure_name_mapping"]
+        s2p_mapping = self.meta["sharding_metas"][rank_suffix][
+            "structure_name_mapping"
+        ]
         p2s_mapping = {}
         for s_name, p_name in s2p_mapping.items():
             if p_name not in p2s_mapping:
@@ -840,7 +985,9 @@ class Client:
 
     def move_useful_file(self, save_dir):
         for file in USEFUL_FILES:
-            assert os.path.exists(f"{self.base_path}/{file}"), f"{self.base_path}/{file} not exist, please check"
+            assert os.path.exists(f"{self.base_path}/{file}"), (
+                f"{self.base_path}/{file} not exist, please check"
+            )
             subprocess.run(
                 ["cp", f"{self.base_path}/{file}", save_dir],
                 capture_output=True,
@@ -850,7 +997,9 @@ class Client:
 
 def merge_and_save(args):
     start_t = time.time()
-    client = Client(args, args.base_path, nnodes=args.nnodes, node_rank=args.node_rank)
+    client = Client(
+        args, args.base_path, nnodes=args.nnodes, node_rank=args.node_rank
+    )
     client.merge_and_save(
         args.mp_rank,
         args.output_dir_path,

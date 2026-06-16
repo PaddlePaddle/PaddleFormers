@@ -68,7 +68,8 @@ repos:
         exclude: |
           (?x)^(
             \.clang-format|
-            \.github/workflows/cherry-pick\.yml
+            \.github/workflows/cherry-pick\.yml|
+            \.github/ISSUE_TEMPLATE/others\.yml
           )$
   - repo: https://github.com/PFCCLab/ast-grep-pre-commit-mirror
     rev: v0.40.0.1

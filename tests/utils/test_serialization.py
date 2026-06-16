@@ -50,8 +50,12 @@ class SerializationTest(TestCase):
                 {
                     "a": torch.randn(2, 3, dtype=dtype),
                     "b": torch.randn(3, 4, dtype=dtype),
-                    "a_parameter": torch.nn.Parameter(torch.randn(2, 3, dtype=dtype)),  # test torch.nn.Parameter
-                    "b_parameter": torch.nn.Parameter(torch.randn(3, 4, dtype=dtype)),
+                    "a_parameter": torch.nn.Parameter(
+                        torch.randn(2, 3, dtype=dtype)
+                    ),  # test torch.nn.Parameter
+                    "b_parameter": torch.nn.Parameter(
+                        torch.randn(3, 4, dtype=dtype)
+                    ),
                 },
                 weight_file_path,
             )

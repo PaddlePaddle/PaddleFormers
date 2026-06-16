@@ -1,4 +1,3 @@
-# coding:utf-8
 # Copyright (c) 2025  PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"
@@ -27,8 +26,6 @@ def empty_device_cache():
     else:
         if not getattr(empty_device_cache, "has_warned", False):
             logger.warning(
-                "The current device ({}) does not support empty cache, calling empty_device_cache() will have no effect.".format(
-                    device
-                )
+                f"The current device ({device}) does not support empty cache, calling empty_device_cache() will have no effect."
             )
-            setattr(empty_device_cache, "has_warned", True)
+            empty_device_cache.has_warned = True

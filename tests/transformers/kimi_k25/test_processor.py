@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,7 +35,9 @@ class KimiK25ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmpdir = tempfile.mkdtemp()
-        processor = KimiK25Processor.from_pretrained("PaddleFormers/tiny-random-kimi-k25")
+        processor = KimiK25Processor.from_pretrained(
+            "PaddleFormers/tiny-random-kimi-k25"
+        )
         processor.save_pretrained(cls.tmpdir)
 
     # Use GPU 0 to prevent CUDA illegal memory access during resize
@@ -56,7 +57,9 @@ class KimiK25ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         return AutoProcessor.from_pretrained(self.tmpdir, **kwargs).tokenizer
 
     def get_image_processor(self, **kwargs):
-        return AutoProcessor.from_pretrained(self.tmpdir, **kwargs).image_processor
+        return AutoProcessor.from_pretrained(
+            self.tmpdir, **kwargs
+        ).image_processor
 
     def get_processor(self, **kwargs):
         return AutoProcessor.from_pretrained(self.tmpdir, **kwargs)
@@ -94,40 +97,65 @@ class KimiK25ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         tokenizer = self.get_tokenizer()
         image_processor = self.get_image_processor()
 
-        processor = KimiK25Processor(tokenizer=tokenizer, image_processor=image_processor)
+        processor = KimiK25Processor(
+            tokenizer=tokenizer, image_processor=image_processor
+        )
         processor.save_pretrained(self.tmpdir)
         processor = KimiK25Processor.from_pretrained(self.tmpdir)
 
         self.assertEqual(processor.tokenizer.get_vocab(), tokenizer.get_vocab())
-        self.assertEqual(processor.image_processor.to_json_string(), image_processor.to_json_string())
-        self.assertEqual(processor.tokenizer.__class__.__name__, "TikTokenTokenizer")
-        self.assertEqual(processor.image_processor.__class__.__name__, "KimiK25VisionProcessor")
+        self.assertEqual(
+            processor.image_processor.to_json_string(),
+            image_processor.to_json_string(),
+        )
+        self.assertEqual(
+            processor.tokenizer.__class__.__name__, "TikTokenTokenizer"
+        )
+        self.assertEqual(
+            processor.image_processor.__class__.__name__,
+            "KimiK25VisionProcessor",
+        )
 
     def test_image_processor(self):
         image_processor = self.get_image_processor()
         tokenizer = self.get_tokenizer()
 
-        processor = KimiK25Processor(tokenizer=tokenizer, image_processor=image_processor)
+        processor = KimiK25Processor(
+            tokenizer=tokenizer, image_processor=image_processor
+        )
 
         image_input = self.prepare_image_inputs()
 
         input_image_proc = image_processor(image_input, return_tensors="pd")
-        input_processor = processor(medias=image_input, text="dummy", return_tensors="pd")
+        input_processor = processor(
+            medias=image_input, text="dummy", return_tensors="pd"
+        )
 
         for key in input_image_proc:
-            self.assertAlmostEqual(input_image_proc[key].sum(), input_processor[key].sum(), delta=1e-2)
+            self.assertAlmostEqual(
+                input_image_proc[key].sum(),
+                input_processor[key].sum(),
+                delta=1e-2,
+            )
 
     def test_processor(self):
         image_processor = self.get_image_processor()
         tokenizer = self.get_tokenizer()
 
-        processor = KimiK25Processor(tokenizer=tokenizer, image_processor=image_processor)
+        processor = KimiK25Processor(
+            tokenizer=tokenizer, image_processor=image_processor
+        )
 
         input_str = "lower newer"
         image_input = self.prepare_image_inputs()
-        inputs = processor(text=input_str, medias=image_input, return_tensors="pd")
+        inputs = processor(
+            text=input_str, medias=image_input, return_tensors="pd"
+        )
 
-        self.assertListEqual(list(inputs.keys()), ["input_ids", "attention_mask", "pixel_values", "grid_thws"])
+        self.assertListEqual(
+            list(inputs.keys()),
+            ["input_ids", "attention_mask", "pixel_values", "grid_thws"],
+        )
 
         # test if it raises when no input is passed
         with self.assertRaises(ValueError):
@@ -147,12 +175,16 @@ class KimiK25ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         inputs_dict = {"text": text, "medias": image_input}
 
         call_signature = inspect.signature(processor.__call__)
-        input_args = [param.name for param in call_signature.parameters.values()]
+        input_args = [
+            param.name for param in call_signature.parameters.values()
+        ]
         inputs_dict = {k: v for k, v in inputs_dict.items() if k in input_args}
 
         inputs = processor(**inputs_dict, return_tensors="pd")
 
-        self.assertSetEqual(set(inputs.keys()), set(processor.model_input_names))
+        self.assertSetEqual(
+            set(inputs.keys()), set(processor.model_input_names)
+        )
 
     def test_image_inputs(self):
         processor = self.get_processor()
@@ -165,13 +197,18 @@ class KimiK25ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
                     "role": "user",
                     "content": [
                         {"type": "image"},
-                        {"type": "text", "text": "What is shown in this image?"},
+                        {
+                            "type": "text",
+                            "text": "What is shown in this image?",
+                        },
                     ],
                 },
             ]
         ]
 
-        formatted_prompt = processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+        formatted_prompt = processor.apply_chat_template(
+            messages, add_generation_prompt=True, tokenize=False
+        )
         self.assertEqual(len(formatted_prompt), 1)
 
         formatted_prompt_tokenized = processor.apply_chat_template(
@@ -182,8 +219,15 @@ class KimiK25ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         ).input_ids
         self.assertListEqual(expected_output, formatted_prompt_tokenized)
 
-        out_dict = processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=True, return_dict=True)
-        self.assertListEqual(list(out_dict.keys()), ["input_ids", "attention_mask"])
+        out_dict = processor.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
+        )
+        self.assertListEqual(
+            list(out_dict.keys()), ["input_ids", "attention_mask"]
+        )
 
         url = "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_images/example1.jpg"
         image = Image.open(io.BytesIO(requests.get(url).content))
@@ -195,7 +239,9 @@ class KimiK25ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         }
         output = processor(messages[0])
 
-        EXPECTED_INPUT_IDS = paddle.to_tensor([163587, 2482, 163601, 163602, 4017, 163603, 163605, 163604, 198])
+        EXPECTED_INPUT_IDS = paddle.to_tensor(
+            [163587, 2482, 163601, 163602, 4017, 163603, 163605, 163604, 198]
+        )
         EXPECTED_PIXEL_SLICE = paddle.to_tensor(
             [
                 0.69411778,
@@ -214,10 +260,16 @@ class KimiK25ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
 
         self.assertIsInstance(output["input_ids"], paddle.Tensor)
         self.assertEqual(output["input_ids"].shape, [1, 21])
-        self.assertTrue(paddle.allclose(output["input_ids"][0, :9], EXPECTED_INPUT_IDS))
+        self.assertTrue(
+            paddle.allclose(output["input_ids"][0, :9], EXPECTED_INPUT_IDS)
+        )
         self.assertIsInstance(output["pixel_values"], paddle.Tensor)
         self.assertEqual(output["pixel_values"].shape, [6016, 3, 14, 14])
-        self.assertTrue(paddle.allclose(output["pixel_values"][0, 0, 0, 0:10], EXPECTED_PIXEL_SLICE))
+        self.assertTrue(
+            paddle.allclose(
+                output["pixel_values"][0, 0, 0, 0:10], EXPECTED_PIXEL_SLICE
+            )
+        )
         self.assertEqual(output["grid_thws"].shape, [1, 3])
         self.assertEqual(output["grid_thws"].tolist(), EXPECTED_IMAGE_GRID_THW)
 
@@ -232,13 +284,18 @@ class KimiK25ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
                     "role": "user",
                     "content": [
                         {"type": "video_chunk"},
-                        {"type": "text", "text": "What is shown in this video?"},
+                        {
+                            "type": "text",
+                            "text": "What is shown in this video?",
+                        },
                     ],
                 },
             ]
         ]
 
-        formatted_prompt = processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+        formatted_prompt = processor.apply_chat_template(
+            messages, add_generation_prompt=True, tokenize=False
+        )
         self.assertEqual(len(formatted_prompt), 1)
 
         formatted_prompt_tokenized = processor.apply_chat_template(
@@ -249,17 +306,28 @@ class KimiK25ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         ).input_ids
         self.assertListEqual(expected_output, formatted_prompt_tokenized)
 
-        out_dict = processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=True, return_dict=True)
-        self.assertListEqual(list(out_dict.keys()), ["input_ids", "attention_mask"])
+        out_dict = processor.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
+        )
+        self.assertListEqual(
+            list(out_dict.keys()), ["input_ids", "attention_mask"]
+        )
 
         # Add video URL for return dict and load with `num_frames` arg
         messages[0][0]["content"][0] = {
             "type": "video_url",
-            "video_url": {"url": "http://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4"},
+            "video_url": {
+                "url": "http://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4"
+            },
         }
         output = processor(messages[0])
 
-        EXPECTED_INPUT_IDS = paddle.to_tensor([163587, 2482, 163601, 465, 25, 465, 25, 465, 13])
+        EXPECTED_INPUT_IDS = paddle.to_tensor(
+            [163587, 2482, 163601, 465, 25, 465, 25, 465, 13]
+        )
         EXPECTED_PIXEL_SLICE = paddle.to_tensor(
             [
                 -0.15294111,
@@ -278,19 +346,29 @@ class KimiK25ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
 
         self.assertIsInstance(output["input_ids"], paddle.Tensor)
         self.assertEqual(output["input_ids"].shape, [1, 64])
-        self.assertTrue(paddle.allclose(output["input_ids"][0, :9], EXPECTED_INPUT_IDS))
+        self.assertTrue(
+            paddle.allclose(output["input_ids"][0, :9], EXPECTED_INPUT_IDS)
+        )
         self.assertIsInstance(output["pixel_values"], paddle.Tensor)
         self.assertEqual(output["pixel_values"].shape, [66048, 3, 14, 14])
-        self.assertTrue(paddle.allclose(output["pixel_values"][0, 0, 0, 0:10], EXPECTED_PIXEL_SLICE))
+        self.assertTrue(
+            paddle.allclose(
+                output["pixel_values"][0, 0, 0, 0:10], EXPECTED_PIXEL_SLICE
+            )
+        )
         self.assertEqual(output["grid_thws"].shape, [4, 3])
         self.assertEqual(output["grid_thws"].tolist(), EXPECTED_IMAGE_GRID_THW)
 
         # set `num_frames_per_chunk` into different values
         processor = self.get_processor()
-        processor.image_processor.media_proc_cfg["temporal_merge_kernel_size"] = 6
+        processor.image_processor.media_proc_cfg[
+            "temporal_merge_kernel_size"
+        ] = 6
         output = processor(messages[0])
 
-        EXPECTED_INPUT_IDS = paddle.to_tensor([163587, 2482, 163601, 465, 25, 465, 25, 465, 13])
+        EXPECTED_INPUT_IDS = paddle.to_tensor(
+            [163587, 2482, 163601, 465, 25, 465, 25, 465, 13]
+        )
         EXPECTED_PIXEL_SLICE = paddle.to_tensor(
             [
                 -0.15294111,
@@ -309,10 +387,16 @@ class KimiK25ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
 
         self.assertIsInstance(output["input_ids"], paddle.Tensor)
         self.assertEqual(output["input_ids"].shape, [1, 52])
-        self.assertTrue(paddle.allclose(output["input_ids"][0, :9], EXPECTED_INPUT_IDS))
+        self.assertTrue(
+            paddle.allclose(output["input_ids"][0, :9], EXPECTED_INPUT_IDS)
+        )
         self.assertIsInstance(output["pixel_values"], paddle.Tensor)
         self.assertEqual(output["pixel_values"].shape, [74304, 3, 14, 14])
-        self.assertTrue(paddle.allclose(output["pixel_values"][0, 0, 0, 0:10], EXPECTED_PIXEL_SLICE))
+        self.assertTrue(
+            paddle.allclose(
+                output["pixel_values"][0, 0, 0, 0:10], EXPECTED_PIXEL_SLICE
+            )
+        )
         self.assertEqual(output["grid_thws"].shape, [3, 3])
         self.assertEqual(output["grid_thws"].tolist(), EXPECTED_IMAGE_GRID_THW)
 

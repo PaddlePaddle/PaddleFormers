@@ -18,13 +18,12 @@ import os
 import re
 import tempfile
 from collections import OrderedDict
-from typing import Dict, List, Union
 
 import aistudio_sdk
 import numpy as np
 import paddle
 import paddle.distributed as dist
-import paddle.nn as nn
+from paddle import nn
 
 from ...transformers import AutoConfig
 from ...transformers.conversion_utils import ConversionMixin
@@ -52,7 +51,7 @@ class LoRAAutoLinear(LoRALinear):
         lora_dropout: float = 0.0,
         rslora: bool = False,
         lora_plus_scale: float = 1.0,
-        **kwargs
+        **kwargs,
     ):
         self.use_intermediate_api = kwargs.pop("use_intermediate_api", False)
         self.weight_dist_attr = kwargs.pop("weight_dist_attr", None)
@@ -76,9 +75,13 @@ class LoRAAutoLinear(LoRALinear):
     def process_intermediate_api(self):
         if self.parallelize_plan is not None:
             if isinstance(self.parallelize_plan, dist.ColWiseParallel):
-                self._auto_dist_config["mp_config"]["parallelize_plan"] = {"lora_B": dist.ColWiseParallel()}
+                self._auto_dist_config["mp_config"]["parallelize_plan"] = {
+                    "lora_B": dist.ColWiseParallel()
+                }
             elif isinstance(self.parallelize_plan, dist.RowWiseParallel):
-                self._auto_dist_config["mp_config"]["parallelize_plan"] = {"lora_A": dist.RowWiseParallel()}
+                self._auto_dist_config["mp_config"]["parallelize_plan"] = {
+                    "lora_A": dist.RowWiseParallel()
+                }
 
     def process_base_api(self):
         if self.weight_dist_attr is not None:
@@ -87,24 +90,36 @@ class LoRAAutoLinear(LoRALinear):
             if process_mesh is None or placements is None:
                 return
             mp_index = process_mesh.dim_names.index("mp")
-            self.weight = dist.shard_tensor(self.weight, process_mesh, placements)
+            self.weight = dist.shard_tensor(
+                self.weight, process_mesh, placements
+            )
             if placements[mp_index] == dist.Shard(1):
                 # this layer is column_parallel linear
-                self.lora_B = dist.shard_tensor(self.lora_B, process_mesh, placements)
+                self.lora_B = dist.shard_tensor(
+                    self.lora_B, process_mesh, placements
+                )
             elif placements[mp_index] == dist.Shard(0):
                 # this layer is Rowise_parallel linear
-                self.lora_A = dist.shard_tensor(self.lora_A, process_mesh, placements)
+                self.lora_A = dist.shard_tensor(
+                    self.lora_A, process_mesh, placements
+                )
 
     def auto_dist_config(self, prefix=""):
         if prefix != "":
             assert prefix.endswith(".")
         final_config = {"mp_config": {"parallelize_plan": {}}}
         if self._auto_dist_config["mp_config"] is not None:
-            for k, v in self._auto_dist_config["mp_config"]["parallelize_plan"].items():
+            for k, v in self._auto_dist_config["mp_config"][
+                "parallelize_plan"
+            ].items():
                 if final_config["mp_config"] is None:
-                    final_config["mp_config"]["parallelize_plan"] = {f"{prefix}{k}": v}
+                    final_config["mp_config"]["parallelize_plan"] = {
+                        f"{prefix}{k}": v
+                    }
                 else:
-                    final_config["mp_config"]["parallelize_plan"][f"{prefix}{k}"] = v
+                    final_config["mp_config"]["parallelize_plan"][
+                        f"{prefix}{k}"
+                    ] = v
         return final_config
 
 
@@ -119,21 +134,28 @@ AVAILABLE_LAYERS = [
 
 class LoRAAutoModel(nn.Layer):
     # TODO:lugimzzz support restore in following PR
-    restore_layer_map: Dict[nn.Layer, nn.Layer] = {
+    restore_layer_map: dict[nn.Layer, nn.Layer] = {
         LoRAAutoLinear: nn.Linear,
     }
 
     def __init__(self, model, lora_config: LoRAAutoConfig) -> None:
         super().__init__()
-        self.model_config = AutoConfig.from_pretrained(lora_config.base_model_name_or_path)
+        self.model_config = AutoConfig.from_pretrained(
+            lora_config.base_model_name_or_path
+        )
         self.quantized = False
         self.lora_config = lora_config
         if self.lora_config.dtype is None:
             self.lora_config.dtype = paddle.get_default_dtype()
         with dtype_guard(self.lora_config.dtype):
             self.model = self.get_lora_model(model, lora_config)
-        if self.lora_config.tensor_model_parallel_size != self.model.config.tensor_model_parallel_size:
-            self.lora_config.tensor_model_parallel_size = self.model.config.tensor_model_parallel_size
+        if (
+            self.lora_config.tensor_model_parallel_size
+            != self.model.config.tensor_model_parallel_size
+        ):
+            self.lora_config.tensor_model_parallel_size = (
+                self.model.config.tensor_model_parallel_size
+            )
             logger.warning(
                 f"Reset tensor_model_parallel_size of lora_config to {self.model.config.tensor_model_parallel_size}."
             )
@@ -153,15 +175,21 @@ class LoRAAutoModel(nn.Layer):
         if not isinstance(lora_config, LoRAAutoConfig):
             lora_config = LoRAAutoConfig.from_pretrained(lora_path)
         # define a new variable to conserve original lora_config.tensor_model_parallel_size value which will update while initializing lora model
-        lora_config_tensor_model_parallel_size = lora_config.tensor_model_parallel_size
+        lora_config_tensor_model_parallel_size = (
+            lora_config.tensor_model_parallel_size
+        )
         lora_model = cls(model, lora_config)
 
-        lora_model_index_file = os.path.join(lora_path, SAFE_PEFT_WEIGHTS_INDEX_NAME)
+        lora_model_index_file = os.path.join(
+            lora_path, SAFE_PEFT_WEIGHTS_INDEX_NAME
+        )
         if os.path.exists(lora_model_index_file):
             # load safetensors format file.
-            resolved_archieve_file, sharded_metadata = get_checkpoint_shard_files(
-                pretrained_model_name_or_path=lora_path,
-                index_filename=lora_model_index_file,
+            resolved_archieve_file, sharded_metadata = (
+                get_checkpoint_shard_files(
+                    pretrained_model_name_or_path=lora_path,
+                    index_filename=lora_model_index_file,
+                )
             )
             loaded_keys = sharded_metadata["all_checkpoint_keys"]
             expected_keys = set(lora_model.get_trainable_state_dict().keys())
@@ -174,13 +202,19 @@ class LoRAAutoModel(nn.Layer):
                 pre_tensor_parallel_split = False
                 if model.config.tensor_model_parallel_size > 1:
                     pre_tensor_parallel_split = True
-                    tp_actions = lora_model._get_tensor_parallel_convert_actions(loaded_keys, is_split=True)
+                    tp_actions = (
+                        lora_model._get_tensor_parallel_convert_actions(
+                            loaded_keys, is_split=True
+                        )
+                    )
                 state_dict = load_state_dict(
                     shard_file,
                     tp_actions if pre_tensor_parallel_split else None,
                     expected_keys,
                 )
-                error_msgs += _load_state_dict_into_model(lora_model, state_dict, "")
+                error_msgs += _load_state_dict_into_model(
+                    lora_model, state_dict, ""
+                )
                 del state_dict
                 gc.collect()
 
@@ -194,7 +228,9 @@ class LoRAAutoModel(nn.Layer):
 
         # define lora weight name
         if lora_config_tensor_model_parallel_size > 1:
-            lora_weight_name = _add_variant(LORA_WEIGHTS_NAME, f"tp{model.config.tensor_parallel_rank:0>2d}")
+            lora_weight_name = _add_variant(
+                LORA_WEIGHTS_NAME, f"tp{model.config.tensor_parallel_rank:0>2d}"
+            )
         else:
             lora_weight_name = LORA_WEIGHTS_NAME
 
@@ -207,20 +243,28 @@ class LoRAAutoModel(nn.Layer):
 
             if (
                 lora_config_tensor_model_parallel_size > 1
-                and lora_config_tensor_model_parallel_size != model.config.tensor_model_parallel_size
+                and lora_config_tensor_model_parallel_size
+                != model.config.tensor_model_parallel_size
             ):
                 raise NotImplementedError(
                     f"{lora_config_tensor_model_parallel_size} is not equal to {model.config.tensor_model_parallel_size}. Please merge LoRA weights first."
                 )
 
             # convert parameters to tensor parallel for mp model
-            if lora_config_tensor_model_parallel_size <= 1 and model.config.tensor_model_parallel_size > 1:
-                lora_state_dict = lora_model._convert_tensor_parallel(lora_state_dict=lora_state_dict)
+            if (
+                lora_config_tensor_model_parallel_size <= 1
+                and model.config.tensor_model_parallel_size > 1
+            ):
+                lora_state_dict = lora_model._convert_tensor_parallel(
+                    lora_state_dict=lora_state_dict
+                )
 
             # set lora state dict
             lora_model.set_state_dict(lora_state_dict)
         else:
-            logger.error(f"LoRA weights not found under {lora_path}, creating LoRA weights from scratch")
+            logger.error(
+                f"LoRA weights not found under {lora_path}, creating LoRA weights from scratch"
+            )
 
         return lora_model
 
@@ -228,18 +272,28 @@ class LoRAAutoModel(nn.Layer):
         import warnings
 
         warnings.filterwarnings(
-            action="ignore", message=".*Skip loading for.*", category=Warning, lineno=0, append=False
+            action="ignore",
+            message=".*Skip loading for.*",
+            category=Warning,
+            lineno=0,
+            append=False,
         )
 
         model_state_dict = self.model.state_dict()
         if self.lora_config.loraga:
 
-            def process_split_and_assign(name, concat_tensor, axis, init_dict, state_dict):
+            def process_split_and_assign(
+                name, concat_tensor, axis, init_dict, state_dict
+            ):
                 if isinstance(concat_tensor, np.ndarray):
-                    final_lora, init_lora = np.split(concat_tensor, 2, axis=axis)
+                    final_lora, init_lora = np.split(
+                        concat_tensor, 2, axis=axis
+                    )
                     init_lora = paddle.to_tensor(init_lora)
                 else:
-                    final_lora, init_lora = paddle.split(concat_tensor, 2, axis=axis)
+                    final_lora, init_lora = paddle.split(
+                        concat_tensor, 2, axis=axis
+                    )
                 init_dict[name] = init_lora
                 state_dict[name] = final_lora
                 return init_lora
@@ -248,13 +302,21 @@ class LoRAAutoModel(nn.Layer):
                 if "lora_A" in name:
                     concat_lora_A = state_dict[name]
                     init_loraA = process_split_and_assign(
-                        name, concat_lora_A, axis=1, init_dict=self.loraga_init_dict, state_dict=state_dict
+                        name,
+                        concat_lora_A,
+                        axis=1,
+                        init_dict=self.loraga_init_dict,
+                        state_dict=state_dict,
                     )
 
                     loraB_name = name.replace("lora_A", "lora_B")
                     concat_lora_B = state_dict[loraB_name]
                     init_loraB = process_split_and_assign(
-                        loraB_name, concat_lora_B, axis=0, init_dict=self.loraga_init_dict, state_dict=state_dict
+                        loraB_name,
+                        concat_lora_B,
+                        axis=0,
+                        init_dict=self.loraga_init_dict,
+                        state_dict=state_dict,
                     )
 
                     base_name = name.replace("lora_A", "weight")
@@ -262,19 +324,29 @@ class LoRAAutoModel(nn.Layer):
                         # Reinit base model
                         offset = init_loraA.cuda() @ init_loraB.cuda()
                         ori_weight = model_state_dict[base_name]
-                        model_state_dict[base_name].set_value(ori_weight - self.lora_config.scaling * offset)
+                        model_state_dict[base_name].set_value(
+                            ori_weight - self.lora_config.scaling * offset
+                        )
         del model_state_dict
         gc.collect()
         self.model.set_state_dict(state_dict)
         logger.info("Load lora weight successfully")
 
-    def _get_tensor_parallel_convert_actions(self, loaded_keys, is_split=True, ignore_error=False, config=None):
+    def _get_tensor_parallel_convert_actions(
+        self, loaded_keys, is_split=True, ignore_error=False, config=None
+    ):
         if config is None:
             config = self.model.config
-        specific_name_action_mappings = self._get_tensor_parallel_mappings(config, is_split=is_split)
-        name_action_mappings = self.model._get_tensor_parallel_mappings(config, is_split=is_split)
+        specific_name_action_mappings = self._get_tensor_parallel_mappings(
+            config, is_split=is_split
+        )
+        name_action_mappings = self.model._get_tensor_parallel_mappings(
+            config, is_split=is_split
+        )
         state_keys_map = ConversionMixin._resolve_prefix_keys(
-            name_action_mappings.keys(), self.model.state_dict().keys(), ignore_error=ignore_error
+            name_action_mappings.keys(),
+            self.model.state_dict().keys(),
+            ignore_error=ignore_error,
         )
         for k, v in state_keys_map.items():
             if v in loaded_keys:
@@ -282,7 +354,9 @@ class LoRAAutoModel(nn.Layer):
         return specific_name_action_mappings
 
     def _convert_tensor_parallel(self, lora_state_dict):
-        lora_name_action_mappings = self._get_tensor_parallel_convert_actions(lora_state_dict.keys(), is_split=True)
+        lora_name_action_mappings = self._get_tensor_parallel_convert_actions(
+            lora_state_dict.keys(), is_split=True
+        )
 
         for name, action in lora_name_action_mappings.items():
             if name in lora_state_dict:
@@ -292,41 +366,64 @@ class LoRAAutoModel(nn.Layer):
                 logger.warning(f"{name} not found in lora_state_dict!")
         return lora_state_dict
 
-    def save_pretrained(self, save_directory: str, merge_tensor_parallel: bool = False, **kwargs):
+    def save_pretrained(
+        self, save_directory: str, merge_tensor_parallel: bool = False, **kwargs
+    ):
         save_model_config = kwargs.get("save_model_config", True)
 
         if self.is_pipelinemodel:
             self.model._single_to_pp_mapping = None
-        if self.quantized and merge_tensor_parallel and self.lora_config.tensor_model_parallel_size > 1:
+        if (
+            self.quantized
+            and merge_tensor_parallel
+            and self.lora_config.tensor_model_parallel_size > 1
+        ):
             merge_tensor_parallel = False
             logger.warning(
                 "Quantized strategy does not support merge_tensor_parallel. Set merge_tensor_parallel to False."
             )
-        if self.is_pipelinemodel and merge_tensor_parallel and self.lora_config.tensor_model_parallel_size > 1:
+        if (
+            self.is_pipelinemodel
+            and merge_tensor_parallel
+            and self.lora_config.tensor_model_parallel_size > 1
+        ):
             merge_tensor_parallel = False
             logger.warning(
                 "Pipeline parallelism does not support merge_tensor_parallel. Set merge_tensor_parallel to False."
             )
 
         variant = kwargs.get("variant", None)
-        is_main_process = kwargs.get("is_main_process", paddle.distributed.get_rank() == 0)
+        is_main_process = kwargs.get(
+            "is_main_process", paddle.distributed.get_rank() == 0
+        )
 
-        assert not os.path.isfile(
-            save_directory
-        ), f"Saving directory ({save_directory}) should be a directory, not a file"
+        assert not os.path.isfile(save_directory), (
+            f"Saving directory ({save_directory}) should be a directory, not a file"
+        )
         os.makedirs(save_directory, exist_ok=True)
 
         lora_config_to_save = LoRAAutoConfig(**self.lora_config.to_dict())
 
-        trainable_state_dict = self.get_trainable_state_dict(concat_init_lora=lora_config_to_save.loraga)
+        trainable_state_dict = self.get_trainable_state_dict(
+            concat_init_lora=lora_config_to_save.loraga
+        )
 
-        if merge_tensor_parallel and lora_config_to_save.tensor_model_parallel_size > 1:
-            trainable_state_dict = self._merge_trainable_tensor_parallel(trainable_state_dict)
+        if (
+            merge_tensor_parallel
+            and lora_config_to_save.tensor_model_parallel_size > 1
+        ):
+            trainable_state_dict = self._merge_trainable_tensor_parallel(
+                trainable_state_dict
+            )
             if not is_main_process:
-                logger.info("Saving with merge_tensor_parallel, tensor_parallel_rank > 0 don't need save")
+                logger.info(
+                    "Saving with merge_tensor_parallel, tensor_parallel_rank > 0 don't need save"
+                )
                 return
             if variant is not None and "tp" in variant:
-                variant = "_".join([x for x in variant.split("_") if "tp" not in x])
+                variant = "_".join(
+                    [x for x in variant.split("_") if "tp" not in x]
+                )
             lora_config_to_save.tensor_model_parallel_size = -1
         else:
             if lora_config_to_save.tensor_model_parallel_size > 1:
@@ -347,7 +444,14 @@ class LoRAAutoModel(nn.Layer):
                     model_config_to_save.tensor_model_parallel_size = -1
                 model_config_to_save.save_pretrained(save_directory)
 
-    def _find_and_replace_module(self, model, module_name, lora_config, enable_lora, layer_parallelize_plan):
+    def _find_and_replace_module(
+        self,
+        model,
+        module_name,
+        lora_config,
+        enable_lora,
+        layer_parallelize_plan,
+    ):
         parent_module = model
         attribute_chain = module_name.split(".")
         for name in attribute_chain[:-1]:
@@ -365,7 +469,10 @@ class LoRAAutoModel(nn.Layer):
                 lora_plus_scale=lora_config.lora_plus_scale,
                 bias_attr=False if module.bias is None else None,
                 use_intermediate_api=lora_config.use_intermediate_api,
-                weight_dist_attr=tuple((module.weight.process_mesh, module.weight.placements)),
+                weight_dist_attr=(
+                    module.weight.process_mesh,
+                    module.weight.placements,
+                ),
                 parallelize_plan=layer_parallelize_plan,
             )
         if lora_module is None:
@@ -395,7 +502,10 @@ class LoRAAutoModel(nn.Layer):
             parent_module = getattr(parent_module, name)
         module = getattr(parent_module, attribute_chain[-1])
         original_model_class = self.restore_layer_map[module.__class__]
-        original_module = original_model_class(in_features=module.weight.shape[0], out_features=module.weight.shape[1])
+        original_module = original_model_class(
+            in_features=module.weight.shape[0],
+            out_features=module.weight.shape[1],
+        )
         original_module.weight = module.weight
         if module.bias is not None:
             original_module.bias = module.bias
@@ -405,12 +515,20 @@ class LoRAAutoModel(nn.Layer):
         trainable_state_dict = OrderedDict()
         for name, weight in self.model.state_dict().items():
             # get lora parameter & QAT scale parameter
-            if not weight.stop_gradient or "activation_quanter" in name or "weight_quanter" in name:
+            if (
+                not weight.stop_gradient
+                or "activation_quanter" in name
+                or "weight_quanter" in name
+            ):
                 if concat_init_lora:
                     if "lora_A" in name:
-                        trainable_state_dict[name] = paddle.cat([weight, self.loraga_init_dict[name]], axis=1)
+                        trainable_state_dict[name] = paddle.cat(
+                            [weight, self.loraga_init_dict[name]], axis=1
+                        )
                     else:
-                        trainable_state_dict[name] = paddle.cat([weight, self.loraga_init_dict[name]], axis=0)
+                        trainable_state_dict[name] = paddle.cat(
+                            [weight, self.loraga_init_dict[name]], axis=0
+                        )
                 else:
                     trainable_state_dict[name] = weight
 
@@ -432,7 +550,10 @@ class LoRAAutoModel(nn.Layer):
         for _, layer in self.model.named_sublayers():
             if isinstance(layer, LoRAAutoLinear):
                 for name, weight in layer.state_dict().items():
-                    if self.lora_config.trainable_bias in ["lora", "all"] and "bias" in name:
+                    if (
+                        self.lora_config.trainable_bias in ["lora", "all"]
+                        and "bias" in name
+                    ):
                         weight.stop_gradient = False
                     elif "lora" in name:
                         weight.stop_gradient = False
@@ -440,26 +561,34 @@ class LoRAAutoModel(nn.Layer):
                         weight.stop_gradient = True
             else:
                 for name, weight in layer.state_dict().items():
-                    if self.lora_config.trainable_bias == "all" and "bias" in name:
+                    if (
+                        self.lora_config.trainable_bias == "all"
+                        and "bias" in name
+                    ):
                         weight.stop_gradient = False
                     else:
                         weight.stop_gradient = True
         if self.lora_config.trainable_modules is not None:
             for name, weight in self.model.state_dict().items():
                 if any(
-                    re.fullmatch(trainable_module, name) for trainable_module in self.lora_config.trainable_modules
+                    re.fullmatch(trainable_module, name)
+                    for trainable_module in self.lora_config.trainable_modules
                 ):
                     weight.stop_gradient = False
 
-    def get_lora_model(self, model: Union[PretrainedModel, nn.Layer], lora_config: LoRAAutoConfig):
-
+    def get_lora_model(
+        self, model: PretrainedModel | nn.Layer, lora_config: LoRAAutoConfig
+    ):
         if lora_config.target_modules is None:
             return model
         elif isinstance(lora_config.target_modules, str):
             target_modules = [lora_config.target_modules]
             if lora_config.enable_lora_list is None or (
-                isinstance(lora_config.enable_lora_list, List)
-                and all(isinstance(item, bool) for item in lora_config.enable_lora_list)
+                isinstance(lora_config.enable_lora_list, list)
+                and all(
+                    isinstance(item, bool)
+                    for item in lora_config.enable_lora_list
+                )
             ):
                 enable_lora_list = [lora_config.enable_lora_list]
             else:
@@ -470,7 +599,7 @@ class LoRAAutoModel(nn.Layer):
             target_modules = lora_config.target_modules
             if lora_config.enable_lora_list is None:
                 enable_lora_list = [None for _ in range(len(target_modules))]
-            elif isinstance(lora_config.enable_lora_list, List):
+            elif isinstance(lora_config.enable_lora_list, list):
                 enable_lora_list = lora_config.enable_lora_list
                 if len(enable_lora_list) != len(target_modules):
                     raise TypeError(
@@ -479,7 +608,12 @@ class LoRAAutoModel(nn.Layer):
                 for enable_lora in enable_lora_list:
                     if not (
                         enable_lora is None
-                        or (isinstance(enable_lora, List) and all(isinstance(item, bool) for item in enable_lora))
+                        or (
+                            isinstance(enable_lora, list)
+                            and all(
+                                isinstance(item, bool) for item in enable_lora
+                            )
+                        )
                     ):
                         raise TypeError(
                             f"Invalid `enable_lora_list` value: {lora_config.enable_lora_list}. Since `target_modules` is `List[str]`, `enable_lora_list` must be `None` or  `List[Optional[List[bool]]]`"
@@ -502,25 +636,37 @@ class LoRAAutoModel(nn.Layer):
                     key = key.replace(".bias", "")
                 re_find = re.match(key, module_name)
                 if key == module_name or (
-                    re_find is not None and int(re_find.end()) - int(re_find.start()) == len(module_name)
+                    re_find is not None
+                    and int(re_find.end()) - int(re_find.start())
+                    == len(module_name)
                 ):
                     return plan
 
         if lora_config.use_intermediate_api:
-            assert hasattr(
-                model, "auto_dist_config"
-            ), "train lora_model requires auto_dist_config when use intermediate api"
+            assert hasattr(model, "auto_dist_config"), (
+                "train lora_model requires auto_dist_config when use intermediate api"
+            )
             auto_dist_config = model.auto_dist_config()
             if auto_dist_config["mp_config"] is not None:
-                mp_parallelize_plan = auto_dist_config["mp_config"]["parallelize_plan"]
+                mp_parallelize_plan = auto_dist_config["mp_config"][
+                    "parallelize_plan"
+                ]
         for target_module, enable_lora in zip(target_modules, enable_lora_list):
             for i in model.named_sublayers():
                 module_name = i[0]
                 if re.fullmatch(target_module, module_name):
                     layer_parallelize_plan = None
                     if lora_config.use_intermediate_api:
-                        layer_parallelize_plan = _match_layer(module_name, mp_parallelize_plan)
-                    self._find_and_replace_module(model, module_name, lora_config, enable_lora, layer_parallelize_plan)
+                        layer_parallelize_plan = _match_layer(
+                            module_name, mp_parallelize_plan
+                        )
+                    self._find_and_replace_module(
+                        model,
+                        module_name,
+                        lora_config,
+                        enable_lora,
+                        layer_parallelize_plan,
+                    )
         return model
 
     def merge_auto_dist_configs(self, configs):
@@ -562,8 +708,13 @@ class LoRAAutoModel(nn.Layer):
                 else:
                     for k, v in config["mp_config"]["parallelize_plan"].items():
                         assert (
-                            k not in final_config["mp_config"]["parallelize_plan"].keys()
-                        ), f"sublayer mp_config should be a subset of model but got sublayer config {config['mp_config']} and model config {final_config['mp_config']}."
+                            k
+                            not in final_config["mp_config"][
+                                "parallelize_plan"
+                            ].keys()
+                        ), (
+                            f"sublayer mp_config should be a subset of model but got sublayer config {config['mp_config']} and model config {final_config['mp_config']}."
+                        )
                         final_config["mp_config"]["parallelize_plan"][k] = v
             if "sp_config" in config and config["sp_config"] is not None:
                 if final_config["sp_config"] is None:
@@ -571,34 +722,59 @@ class LoRAAutoModel(nn.Layer):
                 else:
                     for k, v in config["sp_config"]["parallelize_plan"].items():
                         assert (
-                            k not in final_config["sp_config"]["parallelize_plan"].keys()
-                        ), f"sublayer sp_config should be a subset of model but got sublayer config {config['sp_config']} and model config {final_config['sp_config']}."
+                            k
+                            not in final_config["sp_config"][
+                                "parallelize_plan"
+                            ].keys()
+                        ), (
+                            f"sublayer sp_config should be a subset of model but got sublayer config {config['sp_config']} and model config {final_config['sp_config']}."
+                        )
                         final_config["sp_config"]["parallelize_plan"][k] = v
             if "pp_config" in config and config["pp_config"] is not None:
 
                 def process_spec(spec_name):
                     if isinstance(config["pp_config"][spec_name], str):
-                        config["pp_config"][spec_name] = [config["pp_config"][spec_name]]
+                        config["pp_config"][spec_name] = [
+                            config["pp_config"][spec_name]
+                        ]
                         if final_config["pp_config"] is None:
                             final_config["pp_config"] = config["pp_config"]
-                        elif config["pp_config"][spec_name] not in final_config["pp_config"][spec_name]:
-                            final_config["pp_config"][spec_name] += config["pp_config"][spec_name]
-                    elif isinstance(config["pp_config"][spec_name], (tuple, list)):
+                        elif (
+                            config["pp_config"][spec_name]
+                            not in final_config["pp_config"][spec_name]
+                        ):
+                            final_config["pp_config"][spec_name] += config[
+                                "pp_config"
+                            ][spec_name]
+                    elif isinstance(
+                        config["pp_config"][spec_name], (tuple, list)
+                    ):
                         if final_config["pp_config"] is None:
                             final_config["pp_config"] = config["pp_config"]
-                        elif config["pp_config"][spec_name] not in final_config["pp_config"][spec_name]:
-                            final_config["pp_config"][spec_name] += config["pp_config"][spec_name]
+                        elif (
+                            config["pp_config"][spec_name]
+                            not in final_config["pp_config"][spec_name]
+                        ):
+                            final_config["pp_config"][spec_name] += config[
+                                "pp_config"
+                            ][spec_name]
 
                 process_spec("split_spec")
                 process_spec("global_spec")
 
         if final_config["pp_config"] is not None:
             if len(final_config["pp_config"]["split_spec"]) == 1:
-                final_config["pp_config"]["split_spec"] = final_config["pp_config"]["split_spec"][0]
+                final_config["pp_config"]["split_spec"] = final_config[
+                    "pp_config"
+                ]["split_spec"][0]
             elif len(final_config["pp_config"]["split_spec"]) > 1:
-                final_config["pp_config"]["split_spec"] = list(set(final_config["pp_config"]["split_spec"]))
+                final_config["pp_config"]["split_spec"] = list(
+                    set(final_config["pp_config"]["split_spec"])
+                )
             if len(final_config["pp_config"]["global_spec"]) > 1:
-                final_config["pp_config"]["global_spec"] = list(set(final_config["pp_config"]["global_spec"]))
+                final_config["pp_config"]["global_spec"] = list(
+                    set(final_config["pp_config"]["global_spec"])
+                )
         return final_config
 
     def _generate_auto_dist_config(self, auto_dist_degree):
@@ -615,7 +791,9 @@ class LoRAAutoModel(nn.Layer):
                 else:
                     prefix = ""
                 layer_config = layer.auto_dist_config(prefix)
-                merged_config = self.merge_auto_dist_configs([merged_config, layer_config])
+                merged_config = self.merge_auto_dist_configs(
+                    [merged_config, layer_config]
+                )
                 layer_name.append(name)
                 # for _, deeper_layer in layer.named_sublayers():
                 #     if hasattr(deeper_layer, "auto_dist_config"):
@@ -626,39 +804,52 @@ class LoRAAutoModel(nn.Layer):
             "mp_config": None,
             "pp_config": None,
         }
-        if "tensor_parallel" in auto_dist_degree and auto_dist_degree["tensor_parallel"]:
+        if auto_dist_degree.get("tensor_parallel"):
             merged_config["mp_config"] is not None
             final_config["mp_config"] = merged_config["mp_config"]
 
-        if "sequence_parallel" in auto_dist_degree and auto_dist_degree["sequence_parallel"]:
+        if auto_dist_degree.get("sequence_parallel"):
             merged_config["sp_config"] is not None
             final_config["mp_config"] = merged_config["sp_config"]
 
-        if "pipeline_parallel" in auto_dist_degree and auto_dist_degree["pipeline_parallel"]:
+        if auto_dist_degree.get("pipeline_parallel"):
             merged_config["pp_config"] is not None
             final_config["pp_config"] = merged_config["pp_config"]
             if final_config["pp_config"]["global_spec"] is not None:
                 temp_specs_name = final_config["pp_config"]["global_spec"]
                 for spec_name_i in temp_specs_name:
                     for spec_name_j in temp_specs_name:
-                        if spec_name_i != spec_name_j and spec_name_i in spec_name_j:
-                            final_config["pp_config"]["global_spec"].remove(spec_name_i)
+                        if (
+                            spec_name_i != spec_name_j
+                            and spec_name_i in spec_name_j
+                        ):
+                            final_config["pp_config"]["global_spec"].remove(
+                                spec_name_i
+                            )
                             break
 
             if final_config["pp_config"]["split_spec"] is not None:
                 temp_specs_name = final_config["pp_config"]["split_spec"]
                 for spec_name_i in temp_specs_name:
                     for spec_name_j in temp_specs_name:
-                        if spec_name_i != spec_name_j and spec_name_i in spec_name_j:
-                            final_config["pp_config"]["split_spec"].remove(spec_name_i)
+                        if (
+                            spec_name_i != spec_name_j
+                            and spec_name_i in spec_name_j
+                        ):
+                            final_config["pp_config"]["split_spec"].remove(
+                                spec_name_i
+                            )
                             break
 
-        if "data_sharding_parallel" in auto_dist_degree and auto_dist_degree["data_sharding_parallel"]:
+        if auto_dist_degree.get("data_sharding_parallel"):
             # to avoid a circular import
             from paddleformers.trainer.trainer_utils import ShardingOption
 
             level = 0
-            if "sharding" in auto_dist_degree and auto_dist_degree["sharding"] is not None:
+            if (
+                "sharding" in auto_dist_degree
+                and auto_dist_degree["sharding"] is not None
+            ):
                 sharding = auto_dist_degree["sharding"]
                 if ShardingOption.SHARD_OP in sharding:
                     level = 1
@@ -668,7 +859,9 @@ class LoRAAutoModel(nn.Layer):
                     level = 3
             final_config["dp_config"] = {
                 "sharding_level": level,
-                "sharding_mesh_dim": auto_dist_degree.get("sharding_mesh_dim", None),
+                "sharding_mesh_dim": auto_dist_degree.get(
+                    "sharding_mesh_dim", None
+                ),
             }
 
         return final_config
@@ -710,7 +903,7 @@ class LoRAAutoModel(nn.Layer):
         exist_ok=True,
         subfolder=None,
         merge_tensor_parallel=False,
-        **kwargs
+        **kwargs,
     ):
         """
         Uploads all elements of this model to a new AiStudio Hub repository.
@@ -723,7 +916,9 @@ class LoRAAutoModel(nn.Layer):
             subfolder (str, optional): Push to a subfolder of the repo instead of the root
             merge_tensor_parallel (bool): Whether to merge the tensor parallel weights. Defaults to False.
         """
-        res = aistudio_sdk.hub.create_repo(repo_id=repo_id, private=private, license=license, **kwargs)
+        res = aistudio_sdk.hub.create_repo(
+            repo_id=repo_id, private=private, license=license, **kwargs
+        )
         if "error_code" in res:
             if res["error_code"] == 10003 and exist_ok:
                 logger.info(
@@ -742,13 +937,18 @@ class LoRAAutoModel(nn.Layer):
             else:
                 save_dir = root_dir
             # save model
-            self.save_pretrained(save_dir, merge_tensor_parallel=merge_tensor_parallel)
+            self.save_pretrained(
+                save_dir, merge_tensor_parallel=merge_tensor_parallel
+            )
 
             # Upload model and return
             logger.info(f"Pushing to the {repo_id}. This might take a while")
             for filename in os.listdir(save_dir):
                 res = aistudio_sdk.hub.upload(
-                    repo_id=repo_id, path_or_fileobj=os.path.join(save_dir, filename), path_in_repo=filename, **kwargs
+                    repo_id=repo_id,
+                    path_or_fileobj=os.path.join(save_dir, filename),
+                    path_in_repo=filename,
+                    **kwargs,
                 )
                 if "error_code" in res:
                     logger.error(
@@ -759,22 +959,30 @@ class LoRAAutoModel(nn.Layer):
 
     def disable_lora(self):
         for _, layer in self.model.named_sublayers():
-            if any(isinstance(layer, lora_layer) for lora_layer in AVAILABLE_LAYERS):
+            if any(
+                isinstance(layer, lora_layer) for lora_layer in AVAILABLE_LAYERS
+            ):
                 layer.disable_lora = True
 
     def enable_lora(self):
         for _, layer in self.model.named_sublayers():
-            if any(isinstance(layer, lora_layer) for lora_layer in AVAILABLE_LAYERS):
+            if any(
+                isinstance(layer, lora_layer) for lora_layer in AVAILABLE_LAYERS
+            ):
                 layer.disable_lora = False
 
     def merge(self):
         for _, layer in self.model.named_sublayers():
-            if any(isinstance(layer, lora_layer) for lora_layer in AVAILABLE_LAYERS):
+            if any(
+                isinstance(layer, lora_layer) for lora_layer in AVAILABLE_LAYERS
+            ):
                 layer.merge()
 
     def unmerge(self):
         for _, layer in self.model.named_sublayers():
-            if any(isinstance(layer, lora_layer) for lora_layer in AVAILABLE_LAYERS):
+            if any(
+                isinstance(layer, lora_layer) for lora_layer in AVAILABLE_LAYERS
+            ):
                 layer.unmerge()
 
     def get_model_config(

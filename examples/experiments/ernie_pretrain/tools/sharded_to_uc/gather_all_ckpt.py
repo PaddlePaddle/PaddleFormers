@@ -31,7 +31,12 @@ def parse_args():
         required=True,
         help="The output path to gather all checkpoints.",
     )
-    parser.add_argument("--hostfile_path", type=str, required=True, help="The file for hostfile.")
+    parser.add_argument(
+        "--hostfile_path",
+        type=str,
+        required=True,
+        help="The file for hostfile.",
+    )
     args = parser.parse_args()
     return args
 
@@ -40,8 +45,12 @@ def parse_path(args):
     pwd = subprocess.run(["pwd"], capture_output=True, text=True).stdout.strip()
     org_path = args.org_path
     tgt_path = args.tgt_path
-    assert not org_path.startswith("/"), "Please path relative path instead of absolute path to org_path."
-    assert not tgt_path.startswith("/"), "Please path relative path instead of absolute path to tgt_path."
+    assert not org_path.startswith("/"), (
+        "Please path relative path instead of absolute path to org_path."
+    )
+    assert not tgt_path.startswith("/"), (
+        "Please path relative path instead of absolute path to tgt_path."
+    )
     assert not os.path.exists(tgt_path), f"{tgt_path} exist, please check"
     os.makedirs(f"{tgt_path}")
     return f"{pwd}/{org_path}", f"{pwd}/{tgt_path}"
@@ -49,14 +58,20 @@ def parse_path(args):
 
 def get_ip_list(args):
     hostfile_path = args.hostfile_path
-    assert os.path.exists(hostfile_path), f"{hostfile_path} not exist, please check"
-    hostnames = subprocess.run(["cat", hostfile_path], capture_output=True, text=True).stdout.split("\n")
+    assert os.path.exists(hostfile_path), (
+        f"{hostfile_path} not exist, please check"
+    )
+    hostnames = subprocess.run(
+        ["cat", hostfile_path], capture_output=True, text=True
+    ).stdout.split("\n")
     for i in range(len(hostnames)):
         hostname = hostnames[i].split(" ")[0]
         hostnames[i] = hostname
     if hostnames[-1] == "":
         hostnames.pop(-1)
-    local_host = subprocess.run(["hostname", "-i"], capture_output=True, text=True).stdout.split("\n")[0]
+    local_host = subprocess.run(
+        ["hostname", "-i"], capture_output=True, text=True
+    ).stdout.split("\n")[0]
     return hostnames, local_host
 
 
@@ -64,34 +79,54 @@ def gather_ckpt(org_path, tgt_path, hostnames, local_host):
     for i, hostname in enumerate(hostnames):
         # moving ckpt
         print(f"ssh moving {hostname}:{org_path} to {hostname}:{tgt_path}_{i}")
-        subprocess.run(["ssh", hostname, f"rm -rf {tgt_path}_{i}"], capture_output=True, text=True)
+        subprocess.run(
+            ["ssh", hostname, f"rm -rf {tgt_path}_{i}"],
+            capture_output=True,
+            text=True,
+        )
         rst = subprocess.run(
             ["ssh", hostname, f"cp -r {org_path} {tgt_path}_{i}"],
             capture_output=True,
             text=True,
         )
-        assert rst.stderr == "", f"error happened when moving ckpt at {hostname} with stderr {rst.stderr}"
+        assert rst.stderr == "", (
+            f"error happened when moving ckpt at {hostname} with stderr {rst.stderr}"
+        )
 
         # non-local, should scp from remote
         if hostname != local_host:
             # compressing
-            print(f"ssh compressing {hostname}:{tgt_path}_{i} to {hostname}:{tgt_path}_{i}.tar")
+            print(
+                f"ssh compressing {hostname}:{tgt_path}_{i} to {hostname}:{tgt_path}_{i}.tar"
+            )
             rst = subprocess.run(
-                ["ssh", hostname, f"tar -cPf {tgt_path}_{i}.tar {tgt_path}_{i}"],
+                [
+                    "ssh",
+                    hostname,
+                    f"tar -cPf {tgt_path}_{i}.tar {tgt_path}_{i}",
+                ],
                 capture_output=True,
                 text=True,
             )
-            assert rst.stderr == "", f"error happend when compressing ckpt at {hostname} with stderr {rst.stderr}"
+            assert rst.stderr == "", (
+                f"error happened when compressing ckpt at {hostname} with stderr {rst.stderr}"
+            )
 
             # scp
             print(f"scp {hostname}:{tgt_path}_{i} to local")
-            subprocess.run(["rm", "-rf", f"{tgt_path}_{i}.tar"], capture_output=True, text=True)
+            subprocess.run(
+                ["rm", "-rf", f"{tgt_path}_{i}.tar"],
+                capture_output=True,
+                text=True,
+            )
             rst = subprocess.run(
                 ["scp", f"{hostname}:{tgt_path}_{i}.tar", "."],
                 capture_output=True,
                 text=True,
             )
-            assert rst.stderr == "", f"error happend when scp ckpt for {hostname} with stderr {rst.stderr}"
+            assert rst.stderr == "", (
+                f"error happened when scp ckpt for {hostname} with stderr {rst.stderr}"
+            )
 
             # clear remote
             subprocess.run(
@@ -107,11 +142,21 @@ def gather_ckpt(org_path, tgt_path, hostnames, local_host):
 
             # decompressing
             print(f"decompressing {tgt_path}_{i}.tar")
-            rst = subprocess.run(["tar", "-xPf", f"{tgt_path}_{i}.tar"], capture_output=True, text=True)
-            assert rst.stderr == "", f"error happend when decompressing {tgt_path}_{i}.tar with stderr {rst.stderr}"
+            rst = subprocess.run(
+                ["tar", "-xPf", f"{tgt_path}_{i}.tar"],
+                capture_output=True,
+                text=True,
+            )
+            assert rst.stderr == "", (
+                f"error happened when decompressing {tgt_path}_{i}.tar with stderr {rst.stderr}"
+            )
 
             # clear local tar
-            subprocess.run(["rm", "-rf", f"{tgt_path}_{i}.tar"], capture_output=True, text=True)
+            subprocess.run(
+                ["rm", "-rf", f"{tgt_path}_{i}.tar"],
+                capture_output=True,
+                text=True,
+            )
 
         # remove useless file
         subprocess.run(
@@ -138,7 +183,9 @@ def gather_ckpt(org_path, tgt_path, hostnames, local_host):
         )
 
         # clear local path
-        subprocess.run(["rm", "-rf", f"{tgt_path}_{i}"], capture_output=True, text=True)
+        subprocess.run(
+            ["rm", "-rf", f"{tgt_path}_{i}"], capture_output=True, text=True
+        )
 
 
 if __name__ == "__main__":

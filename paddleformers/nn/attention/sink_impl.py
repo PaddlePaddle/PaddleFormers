@@ -25,9 +25,13 @@ _C_ops = paddle._C_ops
 
 def _get_fa_version():
     """Get the FlashAttention version based on environment flags."""
-    if paddle.get_flags(["FLAGS_cudnn_deterministic"])["FLAGS_cudnn_deterministic"]:
+    if paddle.get_flags(["FLAGS_cudnn_deterministic"])[
+        "FLAGS_cudnn_deterministic"
+    ]:
         return 2
-    return paddle.base.framework.get_flags(["FLAGS_flash_attn_version"])["FLAGS_flash_attn_version"]
+    return paddle.base.framework.get_flags(["FLAGS_flash_attn_version"])[
+        "FLAGS_flash_attn_version"
+    ]
 
 
 def _flash_attention_forward_dispatch(
@@ -53,7 +57,9 @@ def _flash_attention_forward_dispatch(
 
     # Validate sequence length consistency for FlashAttention
     seq_k, seq_v = key.shape[1], value.shape[1]
-    assert seq_k == seq_v, f"FlashAttention requires equal sequence lengths: seq_k={seq_k}, seq_v={seq_v}"
+    assert seq_k == seq_v, (
+        f"FlashAttention requires equal sequence lengths: seq_k={seq_k}, seq_v={seq_v}"
+    )
 
     fa_version = _get_fa_version()
 
@@ -62,22 +68,52 @@ def _flash_attention_forward_dispatch(
         softmax_scale = softmax_scale or 1.0 / (query.shape[-1] ** 0.5)
         if hasattr(paddle.base.libpaddle.pir.ops, "flash_attn"):
             out, _, lse, _ = _C_ops.flash_attn(
-                query, key, value, fixed_seed_offset, attention_mask, dropout, causal, False, not training, rng_name
+                query,
+                key,
+                value,
+                fixed_seed_offset,
+                attention_mask,
+                dropout,
+                causal,
+                False,
+                not training,
+                rng_name,
             )
         else:
-            assert False, "flash_attn_v2 is not supported, may be due to paddle version"
+            assert False, (
+                "flash_attn_v2 is not supported, may be due to paddle version"
+            )
         lse = lse[:, :, : query.shape[1]]
     elif fa_version == 3:
         # FlashAttention v3 supports custom softmax_scale
         softmax_scale = softmax_scale or 1.0 / (query.shape[-1] ** 0.5)
         if hasattr(paddle.base.libpaddle.pir.ops, "flash_attn_v3"):
             out, lse = _C_ops.flash_attn_v3(
-                query, key, value, None, None, None, None, softmax_scale, causal, -1, -1, 0.0, 1, False, False, 0
+                query,
+                key,
+                value,
+                None,
+                None,
+                None,
+                None,
+                softmax_scale,
+                causal,
+                -1,
+                -1,
+                0.0,
+                1,
+                False,
+                False,
+                0,
             )
         else:
-            assert False, "flash_attn_v3 is not supported, may be due to paddle version"
+            assert False, (
+                "flash_attn_v3 is not supported, may be due to paddle version"
+            )
 
-        assert attention_mask is None, "FA3 do not support dense mask(attention_mask)"
+        assert attention_mask is None, (
+            "FA3 do not support dense mask(attention_mask)"
+        )
     else:
         raise ValueError(f"Unsupported FlashAttention version: {fa_version}")
 
@@ -106,20 +142,46 @@ def _flash_attention_backward_dispatch(
         seed_offset = paddle.zeros(shape=[2], dtype="int64")
         if hasattr(paddle.base.libpaddle.pir.ops, "flash_attn_grad"):
             grad_q, grad_k, grad_v = _C_ops.flash_attn_grad(
-                query, key, value, output, lse, seed_offset, attention_mask, grad_output, dropout, causal
+                query,
+                key,
+                value,
+                output,
+                lse,
+                seed_offset,
+                attention_mask,
+                grad_output,
+                dropout,
+                causal,
             )
         else:
-            assert False, "flash_attn_v2_grad is not supported, may be due to paddle version"
+            assert False, (
+                "flash_attn_v2_grad is not supported, may be due to paddle version"
+            )
     elif fa_version == 3:
         # FlashAttention v3 supports custom softmax_scale
         softmax_scale = softmax_scale or 1.0 / (query.shape[-1] ** 0.5)
         if hasattr(paddle.base.libpaddle.pir.ops, "flash_attn_v3_grad"):
             grad_q, grad_k, grad_v = _C_ops.flash_attn_v3_grad(
-                query, key, value, output, lse, grad_output, softmax_scale, causal, -1, -1, 0.0, 0
+                query,
+                key,
+                value,
+                output,
+                lse,
+                grad_output,
+                softmax_scale,
+                causal,
+                -1,
+                -1,
+                0.0,
+                0,
             )
         else:
-            assert False, "flash_attn_v3_grad is not supported, may be due to paddle version"
-        assert attention_mask is None, "FA3 do not support dense mask(attention_mask)"
+            assert False, (
+                "flash_attn_v3_grad is not supported, may be due to paddle version"
+            )
+        assert attention_mask is None, (
+            "FA3 do not support dense mask(attention_mask)"
+        )
     else:
         raise ValueError(f"Unsupported FlashAttention version: {fa_version}")
 
@@ -145,7 +207,9 @@ def _flashmask_attention_forward_dispatch(
 
     if fa_version == 2:
         # FlashMask v1 doesn't support custom softmax_scale
-        if softmax_scale is not None and softmax_scale != 1.0 / (query.shape[-1] ** 0.5):
+        if softmax_scale is not None and softmax_scale != 1.0 / (
+            query.shape[-1] ** 0.5
+        ):
             print(
                 f"Warning: FlashMask v1 doesn't support custom softmax_scale, ignoring provided value: {softmax_scale}"
             )
@@ -199,20 +263,44 @@ def _flashmask_attention_backward_dispatch(
         seed_offset = paddle.zeros(shape=[2], dtype="int64")
         if hasattr(paddle.base.libpaddle.pir.ops, "flashmask_attention_grad"):
             grad_q, grad_k, grad_v = _C_ops.flashmask_attention_grad(
-                query, key, value, startend_row_indices, output, lse, seed_offset, grad_output, dropout, causal
+                query,
+                key,
+                value,
+                startend_row_indices,
+                output,
+                lse,
+                seed_offset,
+                grad_output,
+                dropout,
+                causal,
             )
         else:
-            assert False, "flashmask_attention_grad is not supported, may be due to paddle version"
+            assert False, (
+                "flashmask_attention_grad is not supported, may be due to paddle version"
+            )
     elif fa_version == 3:
         # FlashMask v2 supports custom softmax_scale
         softmax_scale = softmax_scale or 1.0 / (query.shape[-1] ** 0.5)
-        if hasattr(paddle.base.libpaddle.pir.ops, "flashmask_attention_v2_grad"):
+        if hasattr(
+            paddle.base.libpaddle.pir.ops, "flashmask_attention_v2_grad"
+        ):
             block_mask = None
             grad_q, grad_k, grad_v = _C_ops.flashmask_attention_v2_grad(
-                query, key, value, output, lse, startend_row_indices, block_mask, grad_output, softmax_scale, causal
+                query,
+                key,
+                value,
+                output,
+                lse,
+                startend_row_indices,
+                block_mask,
+                grad_output,
+                softmax_scale,
+                causal,
             )
         else:
-            assert False, "flashmask_attention_v2_grad is not supported, may be due to paddle version"
+            assert False, (
+                "flashmask_attention_v2_grad is not supported, may be due to paddle version"
+            )
     else:
         raise ValueError(f"Unsupported FlashAttention version: {fa_version}")
 
@@ -272,39 +360,43 @@ class FlashMaskSinkPyLayer(PyLayer):
         batch_v, seq_v, num_kv_heads_v, head_dim_v = value.shape
 
         # Validate batch dimensions
-        assert (
-            batch_q == batch_k == batch_v
-        ), f"Batch sizes must match: query={batch_q}, key={batch_k}, value={batch_v}"
+        assert batch_q == batch_k == batch_v, (
+            f"Batch sizes must match: query={batch_q}, key={batch_k}, value={batch_v}"
+        )
 
         # Validate head dimensions
-        assert (
-            head_dim_q == head_dim_k == head_dim_v
-        ), f"Head dimensions must match: query={head_dim_q}, key={head_dim_k}, value={head_dim_v}"
-        assert (
-            num_kv_heads == num_kv_heads_v
-        ), f"Key and value must have same number of heads: key={num_kv_heads}, value={num_kv_heads_v}"
+        assert head_dim_q == head_dim_k == head_dim_v, (
+            f"Head dimensions must match: query={head_dim_q}, key={head_dim_k}, value={head_dim_v}"
+        )
+        assert num_kv_heads == num_kv_heads_v, (
+            f"Key and value must have same number of heads: key={num_kv_heads}, value={num_kv_heads_v}"
+        )
 
         # Validate GQA compatibility
-        assert (
-            num_q_heads % num_kv_heads == 0
-        ), f"Query heads ({num_q_heads}) must be divisible by key/value heads ({num_kv_heads})"
+        assert num_q_heads % num_kv_heads == 0, (
+            f"Query heads ({num_q_heads}) must be divisible by key/value heads ({num_kv_heads})"
+        )
 
         # Validate sink parameter
-        assert (
-            sink.shape[0] == num_q_heads
-        ), f"Sink parameter size ({sink.shape[0]}) must match number of query heads ({num_q_heads})"
+        assert sink.shape[0] == num_q_heads, (
+            f"Sink parameter size ({sink.shape[0]}) must match number of query heads ({num_q_heads})"
+        )
 
         # Sequence length validation based on attention type
         if startend_row_indices is None:
             # FlashAttention requires equal sequence lengths
-            assert (
-                seq_q == seq_k == seq_v
-            ), f"FlashAttention requires equal sequence lengths: seq_q={seq_q}, seq_k={seq_k}, seq_v={seq_v}"
+            assert seq_q == seq_k == seq_v, (
+                f"FlashAttention requires equal sequence lengths: seq_q={seq_q}, seq_k={seq_k}, seq_v={seq_v}"
+            )
 
         else:
             # FlashMask allows variable sequence lengths, but key and value must match
-            assert seq_k == seq_v, f"Key and value sequence lengths must match: seq_k={seq_k}, seq_v={seq_v}"
-            assert attention_mask is None, "Flashmask do not support dense mask(attention_mask)"
+            assert seq_k == seq_v, (
+                f"Key and value sequence lengths must match: seq_k={seq_k}, seq_v={seq_v}"
+            )
+            assert attention_mask is None, (
+                "Flashmask do not support dense mask(attention_mask)"
+            )
 
         # Handle GQA by repeating key/value heads if necessary
         num_attention_heads = query.shape[2]
@@ -362,7 +454,9 @@ class FlashMaskSinkPyLayer(PyLayer):
         lse_transposed = lse_original.transpose(perm=[0, 2, 1]).unsqueeze(-1)
         sink_reshaped = sink.reshape(shape=[1, 1, -1, 1])
 
-        sink_expanded = sink_reshaped.expand([batch_size, seq_len, num_heads, 1])
+        sink_expanded = sink_reshaped.expand(
+            [batch_size, seq_len, num_heads, 1]
+        )
 
         # Compute sink multiplier: 1 / (exp(sink - lse) + 1)
         multiplier = 1 / (paddle.exp(sink_expanded - lse_transposed) + 1)
@@ -370,7 +464,15 @@ class FlashMaskSinkPyLayer(PyLayer):
 
         # Save tensors for backward pass
         ctx.save_for_backward(
-            query, key, value, sink, attention_mask, raw_output, lse_original, multiplier, startend_row_indices
+            query,
+            key,
+            value,
+            sink,
+            attention_mask,
+            raw_output,
+            lse_original,
+            multiplier,
+            startend_row_indices,
         )
         ctx.dropout = dropout
         ctx.causal = causal
@@ -418,42 +520,49 @@ class FlashMaskSinkPyLayer(PyLayer):
 
         # Compute main gradients using appropriate attention backward
         if startend_row_indices is None:
-            grad_q_main, grad_k_repeated, grad_v_repeated = _flash_attention_backward_dispatch(
-                grad_raw_output,
-                query,
-                key_states,
-                value_states,
-                raw_output,
-                lse_original,
-                dropout=dropout,
-                attention_mask=attention_mask,
-                causal=causal,
-                softmax_scale=scale,
+            grad_q_main, grad_k_repeated, grad_v_repeated = (
+                _flash_attention_backward_dispatch(
+                    grad_raw_output,
+                    query,
+                    key_states,
+                    value_states,
+                    raw_output,
+                    lse_original,
+                    dropout=dropout,
+                    attention_mask=attention_mask,
+                    causal=causal,
+                    softmax_scale=scale,
+                )
             )
         else:
-            grad_q_main, grad_k_repeated, grad_v_repeated = _flashmask_attention_backward_dispatch(
-                grad_raw_output,
-                query,
-                key_states,
-                value_states,
-                raw_output,
-                lse_original,
-                startend_row_indices,
-                dropout,
-                causal,
-                scale,
+            grad_q_main, grad_k_repeated, grad_v_repeated = (
+                _flashmask_attention_backward_dispatch(
+                    grad_raw_output,
+                    query,
+                    key_states,
+                    value_states,
+                    raw_output,
+                    lse_original,
+                    startend_row_indices,
+                    dropout,
+                    causal,
+                    scale,
+                )
             )
 
         # Handle GQA: sum gradients across repeated heads
         # Only if grad_k_repeated.shape[2] == num_kv_heads * num_key_value_groups, (kv_head is expanded)
-        if num_key_value_groups > 1 and grad_k_repeated.shape[2] == key.shape[2] * num_key_value_groups:
+        if (
+            num_key_value_groups > 1
+            and grad_k_repeated.shape[2] == key.shape[2] * num_key_value_groups
+        ):
             batch, seq_len, num_kv_heads, head_dim = key.shape
-            grad_k_main = grad_k_repeated.reshape([batch, seq_len, num_kv_heads, num_key_value_groups, head_dim]).sum(
-                axis=3
-            )
-            grad_v = grad_v_repeated.reshape([batch, seq_len, num_kv_heads, num_key_value_groups, head_dim]).sum(
-                axis=3
-            )
+            grad_k_main = grad_k_repeated.reshape(
+                [batch, seq_len, num_kv_heads, num_key_value_groups, head_dim]
+            ).sum(axis=3)
+            grad_v = grad_v_repeated.reshape(
+                [batch, seq_len, num_kv_heads, num_key_value_groups, head_dim]
+            ).sum(axis=3)
         else:
             grad_k_main = grad_k_repeated
             grad_v = grad_v_repeated
@@ -509,14 +618,29 @@ class FlashMaskSinkPyLayer(PyLayer):
                 softmax_scale=scale,
             )
             x = (g_ell.unsqueeze(-1) * query).to(query.dtype)
-            _, grad_k_extra_repeated, _ = _flashmask_attention_backward_dispatch(
-                x, query, key_states, key_states, mu_k, lse_k, startend_row_indices, dropout, causal, scale
+            _, grad_k_extra_repeated, _ = (
+                _flashmask_attention_backward_dispatch(
+                    x,
+                    query,
+                    key_states,
+                    key_states,
+                    mu_k,
+                    lse_k,
+                    startend_row_indices,
+                    dropout,
+                    causal,
+                    scale,
+                )
             )
 
         # Additional gradients from sink mechanism
         grad_q_extra = scale * g_ell.unsqueeze(-1) * mu_k
 
-        if num_key_value_groups > 1 and grad_k_extra_repeated.shape[2] == key.shape[2] * num_key_value_groups:
+        if (
+            num_key_value_groups > 1
+            and grad_k_extra_repeated.shape[2]
+            == key.shape[2] * num_key_value_groups
+        ):
             batch, seq_len, num_kv_heads, head_dim = key.shape
             grad_k_extra_repeated = grad_k_extra_repeated.reshape(
                 [batch, seq_len, num_kv_heads, num_key_value_groups, head_dim]

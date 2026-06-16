@@ -32,7 +32,9 @@ from ..utils.process import is_valid_model_dir
 
 def check_download_repo(model_name_or_path, download_hub=None):
     # Detect torch model.
-    is_local = os.path.isfile(model_name_or_path) or os.path.isdir(model_name_or_path)
+    is_local = os.path.isfile(model_name_or_path) or os.path.isdir(
+        model_name_or_path
+    )
     if is_local:
         config_path = os.path.join(model_name_or_path, "config.json")
         with open(config_path, "r", encoding="utf-8") as f:
@@ -88,7 +90,9 @@ def run_export(args: Optional[dict[str, Any]] = None) -> None:
     """
 
     args = read_args(args)
-    model_args, data_args, generating_args, finetuning_args, export_args = get_export_args(args)
+    model_args, data_args, generating_args, finetuning_args, export_args = (
+        get_export_args(args)
+    )
 
     paddle.set_device(finetuning_args.device)
 
@@ -103,7 +107,9 @@ def run_export(args: Optional[dict[str, Any]] = None) -> None:
     if last_checkpoint is not None:
         logger.info(f"Starting model export from checkpoint: {last_checkpoint}")
     else:
-        raise FileNotFoundError(f"No valid checkpoint found in: {finetuning_args.output_dir}")
+        raise FileNotFoundError(
+            f"No valid checkpoint found in: {finetuning_args.output_dir}"
+        )
 
     if model_args.lora:
         start = time.time()
@@ -132,10 +138,14 @@ def run_export(args: Optional[dict[str, Any]] = None) -> None:
         config = {}
         config["base_model_path"] = resolve_path
         config["lora_model_path"] = last_checkpoint
-        config["output_path"] = os.path.join(finetuning_args.output_dir, "export")
+        config["output_path"] = os.path.join(
+            finetuning_args.output_dir, "export"
+        )
         config["convert_from_hf"] = finetuning_args.convert_from_hf
         config["save_to_hf"] = finetuning_args.save_to_hf
-        config["merge_with_qdq_base_model"] = finetuning_args.merge_with_qdq_base_model
+        config["merge_with_qdq_base_model"] = (
+            finetuning_args.merge_with_qdq_base_model
+        )
 
         if export_args.copy_tokenizer:
             config["copy_file_list"] = [
@@ -146,7 +156,7 @@ def run_export(args: Optional[dict[str, Any]] = None) -> None:
                 "chat_template.jinja",
                 "chat_template.json",
                 "generation_config.json",
-                "vocab.json"
+                "vocab.json",
                 # "config.json",
             ]
 
@@ -159,7 +169,9 @@ def run_export(args: Optional[dict[str, Any]] = None) -> None:
                     config["copy_file_list"].append(file_name)
                     logger.info(f"Found custom file '{file_name}'")
                 else:
-                    logger.warning(f"File '{file_name}' not found in {base_path}")
+                    logger.warning(
+                        f"File '{file_name}' not found in {base_path}"
+                    )
 
         merge_config = MergeConfig(**config)
         mergekit = MergeModel(merge_config)
@@ -170,14 +182,26 @@ def run_export(args: Optional[dict[str, Any]] = None) -> None:
         if os.path.isfile(src_file):
             shutil.copy2(src_file, dst_file)
         else:
-            logger.debug(f'Copy failed: "config.json" not found in {config["base_model_path"]}')
-        src_file = os.path.join(config["base_model_path"], "preprocessor_config.json")
-        dst_file = os.path.join(config["output_path"], "preprocessor_config.json")
+            logger.debug(
+                f'Copy failed: "config.json" not found in {config["base_model_path"]}'
+            )
+        src_file = os.path.join(
+            config["base_model_path"], "preprocessor_config.json"
+        )
+        dst_file = os.path.join(
+            config["output_path"], "preprocessor_config.json"
+        )
         if os.path.isfile(src_file):
             shutil.copy2(src_file, dst_file)
         else:
-            logger.debug(f'Copy failed: "preprocessor_config.json" not found in {config["base_model_path"]}')
+            logger.debug(
+                f'Copy failed: "preprocessor_config.json" not found in {config["base_model_path"]}'
+            )
 
-        logger.info(f"***** Successfully finished merging LoRA model. Time cost: {time.time() - start} s *****")
+        logger.info(
+            f"***** Successfully finished merging LoRA model. Time cost: {time.time() - start} s *****"
+        )
     else:
-        raise ValueError("Only support merge lora checkpoint, but get model_args.lora is False.")
+        raise ValueError(
+            "Only support merge lora checkpoint, but get model_args.lora is False."
+        )

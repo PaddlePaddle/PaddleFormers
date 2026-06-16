@@ -17,7 +17,7 @@
 
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Union
+from typing import Optional
 
 import paddle
 import paddle.nn.functional as F
@@ -27,7 +27,9 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import (
     ScatterOp,
     mark_as_sequence_parallel_parameter,
 )
-from paddle.incubate.nn.functional import fused_rotary_position_embedding as fused_rope
+from paddle.incubate.nn.functional import (
+    fused_rotary_position_embedding as fused_rope,
+)
 
 from paddleformers.triton_kernels import (
     apply_rotary_pos_emb_vision as apply_rotary_pos_emb_vision_triton,
@@ -74,25 +76,34 @@ def _ensure_cos_sin_dim(cos, sin, dim_needed):
         sin = paddle.concat([sin, sin], axis=-1)
         return cos, sin
     else:
-        raise ValueError(f"Unexpected cos/sin last-dim: {last}, expected {dim_needed} or {dim_needed // 2}")
+        raise ValueError(
+            f"Unexpected cos/sin last-dim: {last}, expected {dim_needed} or {dim_needed // 2}"
+        )
 
 
-def apply_multimodal_rotary_pos_emb(q, k, cos, sin, mrope_section, unsqueeze_dim=1):
+def apply_multimodal_rotary_pos_emb(
+    q, k, cos, sin, mrope_section, unsqueeze_dim=1
+):
     """Applies Rotary Position Embedding with Multimodal Sections to the query and key tensors (https://qwenlm.github.io/blog/qwen2-vl/)."""
     mrope_section = mrope_section * 2
-    cos = paddle.concat([m[i % 3] for i, m in enumerate(cos.split(mrope_section, axis=-1))], axis=-1).unsqueeze(
-        unsqueeze_dim
-    )
-    sin = paddle.concat([m[i % 3] for i, m in enumerate(sin.split(mrope_section, axis=-1))], axis=-1).unsqueeze(
-        unsqueeze_dim
-    )
+    cos = paddle.concat(
+        [m[i % 3] for i, m in enumerate(cos.split(mrope_section, axis=-1))],
+        axis=-1,
+    ).unsqueeze(unsqueeze_dim)
+    sin = paddle.concat(
+        [m[i % 3] for i, m in enumerate(sin.split(mrope_section, axis=-1))],
+        axis=-1,
+    ).unsqueeze(unsqueeze_dim)
 
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
     return q_embed, k_embed
 
 
-@dispatch_to(apply_rotary_pos_emb_vision_triton, cond=apply_rotary_pos_emb_vision_triton.is_available)
+@dispatch_to(
+    apply_rotary_pos_emb_vision_triton,
+    cond=apply_rotary_pos_emb_vision_triton.is_available,
+)
 def apply_rotary_pos_emb_vision(q, k, cos, sin):
     """Applies Rotary Position Embedding to the query and key tensors."""
     orig_q_dtype = q.dtype
@@ -100,7 +111,10 @@ def apply_rotary_pos_emb_vision(q, k, cos, sin):
     cos = cos.tile((1, 2))
     sin = sin.tile((1, 2))
     q, k = q.astype(dtype="float32"), k.astype(dtype="float32")
-    cos, sin = cos.unsqueeze(-2).astype(dtype="float32"), sin.unsqueeze(-2).astype(dtype="float32")
+    cos, sin = (
+        cos.unsqueeze(-2).astype(dtype="float32"),
+        sin.unsqueeze(-2).astype(dtype="float32"),
+    )
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
     return q_embed.astype(orig_q_dtype), k_embed.astype(orig_k_dtype)
@@ -113,8 +127,12 @@ def apply_fused_rope(query_states, key_states, rope_theta):
     _, _, num_heads, _ = query_states.shape
     _, kv_seq_len, num_key_value_heads, _ = key_states.shape
     if num_heads != num_key_value_heads:
-        query_states, _, _ = fused_rope(query_states, None, None, rotary_emb_base=rope_theta)
-        key_states, _, _ = fused_rope(key_states, None, None, rotary_emb_base=rope_theta)
+        query_states, _, _ = fused_rope(
+            query_states, None, None, rotary_emb_base=rope_theta
+        )
+        key_states, _, _ = fused_rope(
+            key_states, None, None, rotary_emb_base=rope_theta
+        )
     else:
         query_states, key_states, _ = fused_rope(
             query_states,
@@ -167,17 +185,20 @@ class PaddleOCRAttention(nn.Layer):
         hidden_states: paddle.Tensor,  # [B, L, D]
         attention_mask: Optional[paddle.Tensor] = None,
         output_attentions: Optional[bool] = False,
-        cu_seqlens: Optional[List[paddle.Tensor]] = None,
+        cu_seqlens: Optional[list[paddle.Tensor]] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
-        rope_emb: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,  # (cos, sin)
+        rope_emb: Optional[
+            tuple[paddle.Tensor, paddle.Tensor]
+        ] = None,  # (cos, sin)
     ):
-
         B, L, D = hidden_states.shape
 
         q = self.q_proj(hidden_states)
         k = self.k_proj(hidden_states)
         v = self.v_proj(hidden_states)
-        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        attention_interface = ALL_ATTENTION_FUNCTIONS[
+            self.config._attn_implementation
+        ]
 
         # [B, L, H, Dh]
         q = q.reshape([B, L, self.num_heads, self.head_dim])
@@ -198,7 +219,9 @@ class PaddleOCRAttention(nn.Layer):
             value=v,
             attention_mask=attention_mask,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-            dropout=self.config.get("attention_dropout_prob", 0.0) if self.training else 0.0,
+            dropout=self.config.get("attention_dropout_prob", 0.0)
+            if self.training
+            else 0.0,
             scaling=self.scale,
             is_causal=self.is_causal,
         )
@@ -233,7 +256,9 @@ class PaddleOCRVisionEmbeddings(nn.Layer):
         self.num_patches = (self.image_size // self.patch_size) ** 2  # 729
         self.num_positions = self.num_patches
         self.position_embedding = GeneralEmbedding.create(
-            config=config, num_embeddings=self.num_positions, embedding_dim=self.embed_dim
+            config=config,
+            num_embeddings=self.num_positions,
+            embedding_dim=self.embed_dim,
         )
         # revert packing_position_embedding for vLLM inference compatibility
         self.packing_position_embedding = GeneralEmbedding.create(
@@ -250,11 +275,12 @@ class PaddleOCRVisionEmbeddings(nn.Layer):
         self,
         pixel_values: paddle.Tensor,  # [B, L, C, H, W]
         position_ids: Optional[paddle.Tensor] = None,  # [B or 1, S]
-        image_grid_thw: Optional[List[Union[Tuple[int, int, int], List[Tuple[int, int, int]]]]] = None,
+        image_grid_thw: Optional[
+            list[tuple[int, int, int] | list[tuple[int, int, int]]]
+        ] = None,
         interpolate_pos_encoding: bool = False,
     ) -> paddle.Tensor:
         if pixel_values.dim() == 5:
-
             sqrt_num_positions = int(self.num_positions**0.5)
             patch_pos_embed = self.position_embedding.weight.reshape(
                 (1, sqrt_num_positions, sqrt_num_positions, self.embed_dim)
@@ -262,7 +288,9 @@ class PaddleOCRVisionEmbeddings(nn.Layer):
 
             batch_size, squence_len, channel, height, width = pixel_values.shape
             target_dtype = self.patch_embedding.weight.dtype
-            pixel_values = pixel_values.reshape(batch_size * squence_len, channel, height, width)
+            pixel_values = pixel_values.reshape(
+                batch_size * squence_len, channel, height, width
+            )
             patch_embeds = self.patch_embedding(
                 pixel_values.astype(dtype=target_dtype)
             )  # shape = [*, channel, grid, grid]
@@ -288,7 +316,9 @@ class PaddleOCRVisionEmbeddings(nn.Layer):
                     intra_batch_cache[hw] = position_embedding
                 end = start + t * h * w
                 position_embeddings[start:end] = (
-                    intra_batch_cache[hw] if t == 1 else intra_batch_cache[hw].tile([t, 1])
+                    intra_batch_cache[hw]
+                    if t == 1
+                    else intra_batch_cache[hw].tile([t, 1])
                 )
                 start = end
             embeddings = position_embeddings + patch_embeds
@@ -358,7 +388,6 @@ class PaddleOCREncoderLayer(nn.Layer):
         attn_mask_startend_row_indices=None,
         rope_emb=None,
     ):
-
         residual = hidden_states
 
         ln1_out = self.layer_norm1(hidden_states)
@@ -412,7 +441,12 @@ class PaddleOCREncoder(nn.Layer):
         embed_dim = config.hidden_size
         num_heads = config.num_attention_heads
         head_dim = embed_dim // num_heads
-        self.layers = nn.LayerList([PaddleOCREncoderLayer(config) for _ in range(config.num_hidden_layers)])
+        self.layers = nn.LayerList(
+            [
+                PaddleOCREncoderLayer(config)
+                for _ in range(config.num_hidden_layers)
+            ]
+        )
         # self.layers = nn.LayerList(
         #     [
         #         paddle.jit.to_static(PaddleOCREncoderLayer(config), backend=None)
@@ -423,7 +457,7 @@ class PaddleOCREncoder(nn.Layer):
 
     @staticmethod
     def flatten_list(image_grid_thw):
-        tmp_image_grid_thw = list()
+        tmp_image_grid_thw = []
         for image_grid in image_grid_thw:
             if isinstance(image_grid, list):
                 tmp_image_grid_thw.extend(image_grid)
@@ -433,7 +467,6 @@ class PaddleOCREncoder(nn.Layer):
 
     @staticmethod
     def get_position_ids_vectorized(image_grid_thw, dtype="int64"):
-
         t = image_grid_thw[:, 0]
         h = image_grid_thw[:, 1]
         w = image_grid_thw[:, 2]
@@ -466,31 +499,45 @@ class PaddleOCREncoder(nn.Layer):
           cu_seqlens_within_windows: int32 [num_windows_total*t]
         """
 
-        window_indices = list()
+        window_indices = []
         pad_values = -100
         start_window_index = 0
-        cu_seqlens_within_windows = list()
+        cu_seqlens_within_windows = []
 
         for t, h, w in map(int, image_grid):
             window_index = paddle.arange(t * h * w).reshape((t, h, w))
             pad_h = (-h) % window_size
             pad_w = (-w) % window_size
             assert pad_h >= 0 and pad_w >= 0, (pad_h, pad_w)
-            window_index = nn.functional.pad(window_index, (0, pad_w, 0, pad_h), value=pad_values)
+            window_index = nn.functional.pad(
+                window_index, (0, pad_w, 0, pad_h), value=pad_values
+            )
             h, w = h // window_size, w // window_size
-            window_index = window_index.reshape([t, h, window_size, w, window_size])
+            window_index = window_index.reshape(
+                [t, h, window_size, w, window_size]
+            )
             window_index = window_index.transpose([0, 1, 3, 2, 4])
-            window_index = window_index.reshape([t, h * w, window_size * window_size])
+            window_index = window_index.reshape(
+                [t, h * w, window_size * window_size]
+            )
 
-            window_seqlens = (window_index != pad_values).long().sum(-1).reshape(-1)
+            window_seqlens = (
+                (window_index != pad_values).long().sum(-1).reshape(-1)
+            )
             window_index = window_index.reshape(-1)
             window_index = window_index[window_index != pad_values]
             window_indices.append(window_index + start_window_index)
-            cu_seqlens_within_windows.append(window_seqlens.cumsum(0) + start_window_index)
+            cu_seqlens_within_windows.append(
+                window_seqlens.cumsum(0) + start_window_index
+            )
             start_window_index += t * h * w
         window_indices = paddle.concat(window_indices, axis=0)
-        cu_seqlens_within_windows = paddle.concat(cu_seqlens_within_windows, axis=0)
-        cu_seqlens_within_windows = nn.functional.pad(cu_seqlens_within_windows, (1, 0), value=0).astype("int32")
+        cu_seqlens_within_windows = paddle.concat(
+            cu_seqlens_within_windows, axis=0
+        )
+        cu_seqlens_within_windows = nn.functional.pad(
+            cu_seqlens_within_windows, (1, 0), value=0
+        ).astype("int32")
         return window_indices, cu_seqlens_within_windows
 
     @paddle.jit.marker.unified
@@ -537,32 +584,45 @@ class PaddleOCREncoder(nn.Layer):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         cu_seqlens: Optional[paddle.Tensor] = None,
-        image_grid_thw: Optional[List[Union[Tuple[int, int, int], List[Tuple[int, int, int]]]]] = None,
+        image_grid_thw: Optional[
+            list[tuple[int, int, int] | list[tuple[int, int, int]]]
+        ] = None,
         height_position_ids: Optional[paddle.Tensor] = None,
         width_position_ids: Optional[paddle.Tensor] = None,
         use_rope: Optional[bool] = False,
         window_size: Optional[int] = -1,
         vision_or_text: str = "vision",
     ):
-
         vision_or_text = "vision"
         assert vision_or_text in ["vision", "text"]
         use_window_attn = window_size > 0 and vision_or_text == "vision"
         use_rope = use_rope and (vision_or_text == "vision")
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
+        )
         output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
         )
 
         encoder_states = () if output_hidden_states else None
         all_attentions = () if output_attentions else None
         hidden_states = inputs_embeds
-        attention_mask = attention_mask.to(inputs_embeds.dtype) if attention_mask is not None else None
+        attention_mask = (
+            attention_mask.to(inputs_embeds.dtype)
+            if attention_mask is not None
+            else None
+        )
 
         window_indices = None
         if use_window_attn:
             flatten_image_grid_thw = self.flatten_list(image_grid_thw)
-            window_indices, cu_seqlens_within_windows = self.build_window_index(flatten_image_grid_thw, window_size)
+            window_indices, cu_seqlens_within_windows = self.build_window_index(
+                flatten_image_grid_thw, window_size
+            )
             assert cu_seqlens_within_windows
             reversed_window_indices = window_indices.argsort()
             attn_cu_seqlens = cu_seqlens_within_windows
@@ -573,15 +633,19 @@ class PaddleOCREncoder(nn.Layer):
         rope_emb = None
         if use_rope:
             if width_position_ids is None or height_position_ids is None:
-                width_position_ids, height_position_ids = self.get_position_ids_vectorized(
-                    image_grid_thw, dtype="int64"
+                width_position_ids, height_position_ids = (
+                    self.get_position_ids_vectorized(
+                        image_grid_thw, dtype="int64"
+                    )
                 )
 
             if use_window_attn:
                 height_position_ids = height_position_ids[window_indices]
                 width_position_ids = width_position_ids[window_indices]
 
-            pids = paddle.stack([height_position_ids, width_position_ids], axis=-1)
+            pids = paddle.stack(
+                [height_position_ids, width_position_ids], axis=-1
+            )
             max_grid_size = image_grid_thw[:, 1:].max()
             rope_emb_max_grid = self.rotary_pos_emb(
                 max_grid_size
@@ -596,13 +660,17 @@ class PaddleOCREncoder(nn.Layer):
             repeats = seq_ends - seq_starts
 
             start_end_stacked = paddle.stack([seq_ends, seq_starts], axis=-1)
-            startend_row_indices = paddle.repeat_interleave(start_end_stacked, repeats, axis=0)
+            startend_row_indices = paddle.repeat_interleave(
+                start_end_stacked, repeats, axis=0
+            )
             startend_row_indices = startend_row_indices.reshape([1, 1, -1, 2])
 
         for encoder_layer in self.layers:
             if output_hidden_states:
                 encoder_states = encoder_states + (
-                    (hidden_states[:, reversed_window_indices, :],) if use_window_attn else (hidden_states,)
+                    (hidden_states[:, reversed_window_indices, :],)
+                    if use_window_attn
+                    else (hidden_states,)
                 )
             has_gradient = not hidden_states.stop_gradient
             if (
@@ -679,14 +747,22 @@ class PaddleOCRVisionTransformer(nn.Layer):
         cu_seqlens=None,
         padding_mask=None,
         vision_return_embed_list: Optional[bool] = False,
-        image_grid_thw: Optional[List[Union[Tuple[int, int, int], List[Tuple[int, int, int]]]]] = None,
+        image_grid_thw: Optional[
+            list[tuple[int, int, int] | list[tuple[int, int, int]]]
+        ] = None,
         return_pooler_output: Optional[bool] = True,
         use_rope: Optional[bool] = False,
         window_size: Optional[bool] = -1,
     ) -> BaseModelOutputWithPooling:
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
+        )
         output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
         )
         hidden_states = self.embeddings(
             pixel_values,
@@ -716,36 +792,55 @@ class PaddleOCRVisionTransformer(nn.Layer):
             if sample_indices is not None:
                 assert self.use_head is True
                 dim = last_hidden_state.shape[-1]
-                sample_hidden_state_list = list()
+                sample_hidden_state_list = []
 
                 hidden_state = last_hidden_state.squeeze(0)
                 sample_index = sample_indices
-                unique_sample_index = paddle.unique(sample_index).sort().values.unbind(0)
+                unique_sample_index = (
+                    paddle.unique(sample_index).sort().values.unbind(0)
+                )
                 unique_sample_index = list(unique_sample_index)
-                if len(unique_sample_index) > 0 and unique_sample_index[0] == -1:
+                if (
+                    len(unique_sample_index) > 0
+                    and unique_sample_index[0] == -1
+                ):
                     unique_sample_index = unique_sample_index[1:]
                 for sample_idx in unique_sample_index:
-                    token_indices = (sample_index == sample_idx).nonzero().flatten()
+                    token_indices = (
+                        (sample_index == sample_idx).nonzero().flatten()
+                    )
                     sample_hidden_state = hidden_state[token_indices]
                     sample_hidden_state_list.append(sample_hidden_state)
 
                 if not vision_return_embed_list:
-                    max_length = max([_state.shape[0] for _state in sample_hidden_state_list])
-                    tmp_sample_hidden_state_list = list()
-                    padding_mask = list()
+                    max_length = max(
+                        [_state.shape[0] for _state in sample_hidden_state_list]
+                    )
+                    tmp_sample_hidden_state_list = []
+                    padding_mask = []
                     for idx, _state in enumerate(sample_hidden_state_list):
                         padding_length = max_length - _state.shape[0]
-                        mask = _state.new_zeros(size=(max_length,), dtype=paddle.int64)
+                        mask = _state.new_zeros(
+                            size=(max_length,), dtype=paddle.int64
+                        )
                         mask[-padding_length:] = 1
                         padding_mask.append(mask)
                         padding = _state.new_zeros(size=(padding_length, dim))
                         new_state = paddle.concat([_state, padding], axis=0)
                         tmp_sample_hidden_state_list.append(new_state)
-                    sample_hidden_state = paddle.stack(tmp_sample_hidden_state_list, axis=0)
-                    padding_mask = paddle.stack(padding_mask, axis=0).astype("float32").to(last_hidden_state.dtype)
-                    pooler_output = self.head(sample_hidden_state, key_padding_mask=padding_mask)
+                    sample_hidden_state = paddle.stack(
+                        tmp_sample_hidden_state_list, axis=0
+                    )
+                    padding_mask = (
+                        paddle.stack(padding_mask, axis=0)
+                        .astype("float32")
+                        .to(last_hidden_state.dtype)
+                    )
+                    pooler_output = self.head(
+                        sample_hidden_state, key_padding_mask=padding_mask
+                    )
                 else:
-                    pooler_output = list()
+                    pooler_output = []
                     for state in sample_hidden_state_list:
                         sample_pooler_output = self.head(state.unsqueeze(0))
                         pooler_output.append(sample_pooler_output)
@@ -759,7 +854,9 @@ class PaddleOCRVisionTransformer(nn.Layer):
                     attentions=encoder_outputs.attentions,
                 )
             else:
-                pooler_output = self.head(last_hidden_state) if self.use_head else None
+                pooler_output = (
+                    self.head(last_hidden_state) if self.use_head else None
+                )
 
             return BaseModelOutputWithPooling(
                 last_hidden_state=last_hidden_state,
@@ -787,7 +884,14 @@ class PaddleOCRVisionPreTrainedModel(PretrainedModel):
         "PaddleOCRVisionEmbeddings",
     ]
 
-    transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "out_proj", "fc1", "fc2"]
+    transpose_weight_keys = [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "out_proj",
+        "fc1",
+        "fc2",
+    ]
 
 
 @register_base_model
@@ -812,7 +916,9 @@ class PaddleOCRVisionModel(PaddleOCRVisionPreTrainedModel):
         interpolate_pos_encoding: bool = False,
         position_ids=None,
         vision_return_embed_list: Optional[bool] = False,
-        image_grid_thw: Optional[List[Union[Tuple[int, int, int], List[Tuple[int, int, int]]]]] = None,
+        image_grid_thw: Optional[
+            list[tuple[int, int, int] | list[tuple[int, int, int]]]
+        ] = None,
         cu_seqlens=None,
         return_pooler_output: Optional[bool] = True,
         use_rope: Optional[bool] = False,
@@ -835,13 +941,21 @@ class PaddleOCRVisionModel(PaddleOCRVisionPreTrainedModel):
 
 
 class Projector(nn.Layer):
-    def __init__(self, text_config: PaddleOCRVLConfig, vision_config: PaddleOCRVisionConfig):
+    def __init__(
+        self,
+        text_config: PaddleOCRVLConfig,
+        vision_config: PaddleOCRVisionConfig,
+    ):
         super().__init__()
         self.text_config = text_config
         self.vision_config = vision_config
         self.merge_kernel_size = (2, 2)
 
-        self.hidden_size = self.vision_config.hidden_size * self.merge_kernel_size[0] * self.merge_kernel_size[1]
+        self.hidden_size = (
+            self.vision_config.hidden_size
+            * self.merge_kernel_size[0]
+            * self.merge_kernel_size[1]
+        )
 
         self.pre_norm = GeneralNorm.create(
             config=vision_config,
@@ -866,7 +980,6 @@ class Projector(nn.Layer):
         )
 
     def forward(self, image_features, image_grid_thw):
-
         # ==========================================
         # DEBUG ONLY: Naive Loop-based Implementation
         # ==========================================
@@ -930,7 +1043,9 @@ class Projector(nn.Layer):
 
         global_block_ids = paddle.arange(total_blocks, dtype="int64")
 
-        sample_indices = paddle.bucketize(global_block_ids, block_boundaries, right=True)
+        sample_indices = paddle.bucketize(
+            global_block_ids, block_boundaries, right=True
+        )
 
         W_curr = W[sample_indices]
         W_blk_curr = W_blocks[sample_indices]
@@ -947,7 +1062,9 @@ class Projector(nn.Layer):
         t = remain // H_blk_curr
 
         num_pixels_per_sample = T * H * W
-        pixel_boundaries = F.pad(paddle.cumsum(num_pixels_per_sample, axis=0), pad=[1, 0], value=0)
+        pixel_boundaries = F.pad(
+            paddle.cumsum(num_pixels_per_sample, axis=0), pad=[1, 0], value=0
+        )
         pixel_start_offsets = pixel_boundaries[:-1][sample_indices]
 
         inner_grid = paddle.arange(m1 * m2, dtype="int64").unsqueeze(0)
@@ -961,7 +1078,12 @@ class Projector(nn.Layer):
         h_stride = (h_origin + m1_idx) * W_curr.unsqueeze(1)
         w_stride = w_origin + m2_idx
 
-        final_gather_indices = pixel_start_offsets.unsqueeze(1) + t_stride.unsqueeze(1) + h_stride + w_stride
+        final_gather_indices = (
+            pixel_start_offsets.unsqueeze(1)
+            + t_stride.unsqueeze(1)
+            + h_stride
+            + w_stride
+        )
 
         x_gathered = paddle.gather(x, final_gather_indices.flatten())
         x_merged = x_gathered.reshape([total_blocks, m1 * m2 * d])
@@ -980,7 +1102,9 @@ class PaddleOCRRotaryEmbedding(nn.Layer):
         self.original_max_seq_len = config.max_position_embeddings
 
         rope_parameters = self.config.rope_parameters
-        self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
+        self.rope_type = rope_parameters.get(
+            "rope_type", rope_parameters.get("type", "default")
+        )
         rope_init_fn = self.compute_default_rope_parameters
         if self.rope_type != "default":
             rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
@@ -1006,12 +1130,23 @@ class PaddleOCRRotaryEmbedding(nn.Layer):
             post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
         """
         base = config.rope_parameters["rope_theta"]
-        dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+        dim = (
+            getattr(config, "head_dim", None)
+            or config.hidden_size // config.num_attention_heads
+        )
 
         attention_factor = 1.0  # Unused in this type of RoPE
 
         # Compute the inverse frequencies
-        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        inv_freq = 1.0 / (
+            base
+            ** (
+                paddle.arange(0, dim, 2, dtype=paddle.int64).astype(
+                    dtype=paddle.float32
+                )
+                / dim
+            )
+        )
         return inv_freq, attention_factor
 
     @dynamic_rope_update
@@ -1020,11 +1155,17 @@ class PaddleOCRRotaryEmbedding(nn.Layer):
         # Core RoPE block. In contrast to other models, PaddleOCR-VL has different position ids for the grids
         # So we expand the inv_freq to shape (3, ...)
         with paddle.amp.auto_cast(enable=False):
-            inv_freq_expanded = self.inv_freq[None, None, :, None].float().expand([3, position_ids.shape[1], -1, 1])
+            inv_freq_expanded = (
+                self.inv_freq[None, None, :, None]
+                .float()
+                .expand([3, position_ids.shape[1], -1, 1])
+            )
 
             position_ids_expanded = position_ids[:, :, None, :].float()
 
-            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(2, 3)
+            freqs = (
+                inv_freq_expanded.float() @ position_ids_expanded.float()
+            ).transpose(2, 3)
 
             emb = paddle.concat((freqs, freqs), axis=-1)
 
@@ -1055,20 +1196,27 @@ class Ernie4_5Attention(nn.Layer):
         self.is_causal = True
 
         if config.tensor_model_parallel_size > 1:
-            assert (
-                self.num_heads % config.tensor_model_parallel_size == 0
-            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            assert self.num_heads % config.tensor_model_parallel_size == 0, (
+                f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            )
             self.num_heads = self.num_heads // config.tensor_model_parallel_size
 
             assert (
-                self.num_key_value_heads % config.tensor_model_parallel_size == 0
-            ), f"num_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
-            self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
+                self.num_key_value_heads % config.tensor_model_parallel_size
+                == 0
+            ), (
+                f"num_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            )
+            self.num_key_value_heads = (
+                self.num_key_value_heads // config.tensor_model_parallel_size
+            )
 
-        logger.warning_once(f"use GQA - num_heads: {self.num_heads}- num_key_value_heads: {self.num_key_value_heads}")
-        assert (
-            self.num_heads % self.num_key_value_heads == 0
-        ), f"num_heads: {self.num_heads}, num_key_value_heads: {self.num_key_value_heads}"
+        logger.warning_once(
+            f"use GQA - num_heads: {self.num_heads}- num_key_value_heads: {self.num_key_value_heads}"
+        )
+        assert self.num_heads % self.num_key_value_heads == 0, (
+            f"num_heads: {self.num_heads}, num_key_value_heads: {self.num_key_value_heads}"
+        )
         self.kv_hidden_size = self.head_dim * config.num_key_value_heads
         self.q_hidden_size = self.head_dim * config.num_attention_heads
 
@@ -1111,10 +1259,12 @@ class Ernie4_5Attention(nn.Layer):
         past_key_values: Optional[Cache] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
-        position_embeddings: Optional[Tuple[paddle.Tensor]] = None,
+        position_embeddings: Optional[tuple[paddle.Tensor]] = None,
         output_attentions: bool = False,
         use_cache: bool = False,
-    ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
+    ) -> tuple[
+        paddle.Tensor, Optional[paddle.Tensor], Optional[tuple[paddle.Tensor]]
+    ]:
         """Compute attention outputs.
 
         Args:
@@ -1134,38 +1284,68 @@ class Ernie4_5Attention(nn.Layer):
         """
         if self.config.sequence_parallel:
             max_sequence_length = self.config.max_sequence_length
-            bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
+            bsz = (
+                hidden_states.shape[0]
+                * self.config.tensor_model_parallel_size
+                // max_sequence_length
+            )
             q_len = max_sequence_length
         else:
             bsz, q_len, _ = hidden_states.shape
 
         query_states = (
             self.q_proj(hidden_states)
-            .reshape([bsz, q_len, self.q_hidden_size // self.head_dim, self.head_dim])
+            .reshape(
+                [bsz, q_len, self.q_hidden_size // self.head_dim, self.head_dim]
+            )
             .transpose(2, 1)
         )
         key_states = (
             self.k_proj(hidden_states)
-            .reshape([bsz, q_len, self.kv_hidden_size // self.head_dim, self.head_dim])
+            .reshape(
+                [
+                    bsz,
+                    q_len,
+                    self.kv_hidden_size // self.head_dim,
+                    self.head_dim,
+                ]
+            )
             .transpose(2, 1)
         )
         value_states = (
             self.v_proj(hidden_states)
-            .reshape([bsz, q_len, self.kv_hidden_size // self.head_dim, self.head_dim])
+            .reshape(
+                [
+                    bsz,
+                    q_len,
+                    self.kv_hidden_size // self.head_dim,
+                    self.head_dim,
+                ]
+            )
             .transpose(2, 1)
         )
-        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        attention_interface = ALL_ATTENTION_FUNCTIONS[
+            self.config._attn_implementation
+        ]
 
         if self.config.apply_rope_fusion:
-            query_states, key_states = apply_fused_rope(query_states, key_states, self.config.rope_theta)
+            query_states, key_states = apply_fused_rope(
+                query_states, key_states, self.config.rope_theta
+            )
         else:
             cos, sin = position_embeddings
             query_states, key_states = apply_multimodal_rotary_pos_emb(
-                query_states, key_states, cos, sin, self.rope_scaling["mrope_section"]
+                query_states,
+                key_states,
+                cos,
+                sin,
+                self.rope_scaling["mrope_section"],
             )
 
         if past_key_values is not None:
-            key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
+            key_states, value_states = past_key_values.update(
+                key_states, value_states, self.layer_idx
+            )
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -1174,7 +1354,9 @@ class Ernie4_5Attention(nn.Layer):
             value=value_states,
             attention_mask=attention_mask,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-            dropout=self.config.get("attention_dropout_prob", 0.0) if self.training else 0.0,
+            dropout=self.config.get("attention_dropout_prob", 0.0)
+            if self.training
+            else 0.0,
             scaling=self.scaling,
             is_causal=self.is_causal,
         )
@@ -1226,13 +1408,17 @@ class Ernie4_5DecoderLayer(nn.Layer):
             input_is_parallel=config.sequence_parallel,
         )
 
-        self.hidden_dropout = nn.Dropout(p=config.hidden_dropout_prob, mode="upscale_in_train")
+        self.hidden_dropout = nn.Dropout(
+            p=config.hidden_dropout_prob, mode="upscale_in_train"
+        )
 
         if config.sequence_parallel:
             if not hasattr(config, "disable_ffn_model_parallel"):
                 self.input_layernorm.enable_sequence_parallel()
                 if config.use_bias:
-                    mark_as_sequence_parallel_parameter(self.self_attn.o_proj.bias)
+                    mark_as_sequence_parallel_parameter(
+                        self.self_attn.o_proj.bias
+                    )
                     mark_as_sequence_parallel_parameter(self.mlp.down_proj.bias)
 
     def forward(
@@ -1245,7 +1431,7 @@ class Ernie4_5DecoderLayer(nn.Layer):
         output_attentions: Optional[bool] = False,
         past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
-    ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
+    ) -> tuple[paddle.Tensor, Optional[tuple[paddle.Tensor, paddle.Tensor]]]:
         """Forward pass through the decoder layer.
 
         Args:
@@ -1326,7 +1512,6 @@ class Ernie4_5PretrainedModel(PretrainedModel):
 
     @classmethod
     def _gen_aoa_config(cls, config: PaddleOCRVLConfig):
-
         aoa_config = {
             "aoa_statements": [],
         }
@@ -1394,10 +1579,12 @@ class Ernie4_5PretrainedModel(PretrainedModel):
             f"mlp_AR.pre_norm.bias -> {projector_prefix}pre_norm.bias",
         ]
         aoa_config["aoa_statements"] += [
-            f"mlp_AR.{x}.weight^T -> {projector_prefix}{x}.weight" for x in ("linear_1", "linear_2")
+            f"mlp_AR.{x}.weight^T -> {projector_prefix}{x}.weight"
+            for x in ("linear_1", "linear_2")
         ]
         aoa_config["aoa_statements"] += [
-            f"mlp_AR.{x}.bias -> {projector_prefix}{x}.bias" for x in ("linear_1", "linear_2")
+            f"mlp_AR.{x}.bias -> {projector_prefix}{x}.bias"
+            for x in ("linear_1", "linear_2")
         ]
 
         # lm_head
@@ -1409,7 +1596,6 @@ class Ernie4_5PretrainedModel(PretrainedModel):
 
     @classmethod
     def _gen_inv_aoa_config(cls, config: PaddleOCRVLConfig):
-
         aoa_config = {
             "aoa_statements": [],
         }
@@ -1477,10 +1663,12 @@ class Ernie4_5PretrainedModel(PretrainedModel):
             f"{projector_prefix}pre_norm.bias -> mlp_AR.pre_norm.bias",
         ]
         aoa_config["aoa_statements"] += [
-            f"{projector_prefix}{x}.weight^T -> mlp_AR.{x}.weight" for x in ("linear_1", "linear_2")
+            f"{projector_prefix}{x}.weight^T -> mlp_AR.{x}.weight"
+            for x in ("linear_1", "linear_2")
         ]
         aoa_config["aoa_statements"] += [
-            f"{projector_prefix}{x}.bias -> mlp_AR.{x}.bias" for x in ("linear_1", "linear_2")
+            f"{projector_prefix}{x}.bias -> mlp_AR.{x}.bias"
+            for x in ("linear_1", "linear_2")
         ]
 
         # lm_head
@@ -1507,9 +1695,16 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
         self.hidden_size = config.hidden_size
         self.config = config
         self.embed_tokens = GeneralEmbedding.create(
-            config=config, num_embeddings=config.vocab_size, embedding_dim=config.hidden_size
+            config=config,
+            num_embeddings=config.vocab_size,
+            embedding_dim=config.hidden_size,
         )
-        self.layers = nn.LayerList([Ernie4_5DecoderLayer(config, i) for i in range(config.num_hidden_layers)])
+        self.layers = nn.LayerList(
+            [
+                Ernie4_5DecoderLayer(config, i)
+                for i in range(config.num_hidden_layers)
+            ]
+        )
         self.norm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
@@ -1599,27 +1794,47 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
                 - hidden_states: All hidden states if output_hidden_states=True
                 - attentions: Attention weights if output_attentions=True
         """
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
         )
-        use_cache = use_cache if use_cache is not None else self.config.use_cache
+        output_hidden_states = (
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
+        )
+        use_cache = (
+            use_cache if use_cache is not None else self.config.use_cache
+        )
 
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict
+            if return_dict is not None
+            else self.config.use_return_dict
+        )
 
         # retrieve input_ids and inputs_embeds
         if input_ids is not None and inputs_embeds is not None:
-            raise ValueError("You cannot specify both decoder_input_ids and decoder_inputs_embeds at the same time")
+            raise ValueError(
+                "You cannot specify both decoder_input_ids and decoder_inputs_embeds at the same time"
+            )
         elif input_ids is not None:
             bsz, seq_length = input_ids.shape
         elif inputs_embeds is not None:
             bsz, seq_length, _ = inputs_embeds.shape
         else:
-            raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
+            raise ValueError(
+                "You have to specify either decoder_input_ids or decoder_inputs_embeds"
+            )
 
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache(config=self.config)
-        kv_seq_len = past_key_values.get_seq_length() if past_key_values is not None else 0
+        kv_seq_len = (
+            past_key_values.get_seq_length()
+            if past_key_values is not None
+            else 0
+        )
 
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
@@ -1641,13 +1856,21 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
         }
 
-        causal_attention_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
+        causal_attention_mask, attn_mask_startend_row_indices = (
+            create_causal_mask_and_row_indices(**mask_kwargs)
+        )
 
         if position_ids is None:
-            position_ids = paddle.arange(kv_seq_len, seq_length).unsqueeze(0).tile((bsz, 1))
+            position_ids = (
+                paddle.arange(kv_seq_len, seq_length)
+                .unsqueeze(0)
+                .tile((bsz, 1))
+            )
 
         if not self.config.apply_rope_fusion:
-            position_embeddings = self.rotary_emb(hidden_states, position_ids)  # cos and sin
+            position_embeddings = self.rotary_emb(
+                hidden_states, position_ids
+            )  # cos and sin
         else:
             position_embeddings = None
 
@@ -1728,9 +1951,9 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
 class PaddleOCRVLCausalLMOutputWithPast(ModelOutput):
     loss: Optional[paddle.Tensor] = None
     logits: paddle.Tensor = None
-    past_key_values: Optional[List[paddle.Tensor]] = None
-    hidden_states: Optional[Tuple[paddle.Tensor]] = None
-    attentions: Optional[Tuple[paddle.Tensor]] = None
+    past_key_values: Optional[list[paddle.Tensor]] = None
+    hidden_states: Optional[tuple[paddle.Tensor]] = None
+    attentions: Optional[tuple[paddle.Tensor]] = None
     rope_deltas: Optional[paddle.Tensor] = None
 
 
@@ -1743,12 +1966,17 @@ class PaddleOCRVLModel(Ernie4_5PretrainedModel):
         raise NotImplementedError("PaddleOCRVLModel is not implemented yet")
 
 
-class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMixin):
+class PaddleOCRVLForConditionalGeneration(
+    Ernie4_5PretrainedModel, GenerationMixin
+):
     config_class = PaddleOCRVLConfig
     base_model_prefix = "model"
     _no_split_modules = ["Ernie4_5DecoderLayer", "PaddleOCREncoderLayer"]
     _tied_weights_keys = ["lm_head.weight"]
-    _keys_to_ignore_on_load_unexpected = ["packing_position_embedding", "vision_model.head"]
+    _keys_to_ignore_on_load_unexpected = [
+        "packing_position_embedding",
+        "vision_model.head",
+    ]
 
     def __init__(self, config: PaddleOCRVLConfig):
         super().__init__(config)
@@ -1794,7 +2022,7 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
         video_grid_thw: Optional[paddle.Tensor] = None,
         second_per_grid_ts: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
-    ) -> Tuple[paddle.Tensor, paddle.Tensor]:
+    ) -> tuple[paddle.Tensor, paddle.Tensor]:
         """
         Calculate the 3D rope index based on image and video's temporal, height and width in LLM.
 
@@ -1852,10 +2080,13 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
         image_token_id = self.config.image_token_id
 
         mrope_position_deltas = []
-        if input_ids is not None and (image_grid_thw is not None or video_grid_thw is not None):
-
+        if input_ids is not None and (
+            image_grid_thw is not None or video_grid_thw is not None
+        ):
             batch_size, seq_len = input_ids.shape
-            position_ids = paddle.ones([3, batch_size, seq_len], dtype=input_ids.dtype)
+            position_ids = paddle.ones(
+                [3, batch_size, seq_len], dtype=input_ids.dtype
+            )
             mrope_position_deltas = []
 
             for i in range(batch_size):
@@ -1879,22 +2110,38 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
 
                 # Segment B
                 t_grid, h_grid, w_grid = paddle.meshgrid(
-                    paddle.arange(grid_t), paddle.arange(grid_h), paddle.arange(grid_w)
+                    paddle.arange(grid_t),
+                    paddle.arange(grid_h),
+                    paddle.arange(grid_w),
                 )
-                pos_image = paddle.stack([t_grid.flatten(), h_grid.flatten(), w_grid.flatten()]) + image_start_idx
+                pos_image = (
+                    paddle.stack(
+                        [t_grid.flatten(), h_grid.flatten(), w_grid.flatten()]
+                    )
+                    + image_start_idx
+                )
 
                 # Segment C
-                text_after_len = valid_seq_len - image_start_idx - num_image_tokens
+                text_after_len = (
+                    valid_seq_len - image_start_idx - num_image_tokens
+                )
                 text_after_start_idx = image_start_idx + max_grid_size
-                pos_text_after = paddle.arange(text_after_len).expand([3, -1]) + text_after_start_idx
+                pos_text_after = (
+                    paddle.arange(text_after_len).expand([3, -1])
+                    + text_after_start_idx
+                )
 
-                llm_positions = paddle.concat([pos_text_before, pos_image, pos_text_after], axis=1)
+                llm_positions = paddle.concat(
+                    [pos_text_before, pos_image, pos_text_after], axis=1
+                )
                 position_ids[:, i] = llm_positions
 
                 delta = max_grid_size - num_image_tokens
                 mrope_position_deltas.append(delta)
 
-            deltas_tensor = paddle.to_tensor(mrope_position_deltas, dtype=input_ids.dtype).unsqueeze(1)
+            deltas_tensor = paddle.to_tensor(
+                mrope_position_deltas, dtype=input_ids.dtype
+            ).unsqueeze(1)
 
             return position_ids, deltas_tensor
         else:
@@ -1902,11 +2149,17 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
                 position_ids = attention_mask.long().cumsum(-1) - 1
                 position_ids.masked_fill_(attention_mask == 0, 1)
                 position_ids = position_ids.unsqueeze(0).expand((3, -1, -1))
-                max_position_ids = position_ids.max(0, keepdim=False)[0].max(-1, keepdim=True)[0]
-                mrope_position_deltas = max_position_ids + 1 - attention_mask.shape[-1]
+                max_position_ids = position_ids.max(0, keepdim=False)[0].max(
+                    -1, keepdim=True
+                )[0]
+                mrope_position_deltas = (
+                    max_position_ids + 1 - attention_mask.shape[-1]
+                )
             else:
                 position_ids = (
-                    paddle.arange(input_ids.shape[1]).reshape((1, 1, -1)).expand((3, input_ids.shape[0], -1))
+                    paddle.arange(input_ids.shape[1])
+                    .reshape((1, 1, -1))
+                    .expand((3, input_ids.shape[0], -1))
                 )
                 mrope_position_deltas = paddle.zeros(
                     [input_ids.shape[0], 1],
@@ -1915,11 +2168,15 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
 
             return position_ids, mrope_position_deltas
 
-    def prepare_attention_mask_for_generation(self, input_ids, pad_token_id, eos_token_id):
+    def prepare_attention_mask_for_generation(
+        self, input_ids, pad_token_id, eos_token_id
+    ):
         """Avoid using attention_mask with flash_attn on generation."""
         if self.config._attn_implementation == "sdpa":
             return None
-        return super().prepare_attention_mask_for_generation(input_ids, pad_token_id, eos_token_id)
+        return super().prepare_attention_mask_for_generation(
+            input_ids, pad_token_id, eos_token_id
+        )
 
     def prepare_inputs_for_generation(
         self,
@@ -1988,29 +2245,44 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
         rope_deltas: Optional[paddle.Tensor] = None,
         second_per_grid_ts: Optional[paddle.Tensor] = None,
         **kwargs,
-    ) -> Union[Tuple, PaddleOCRVLCausalLMOutputWithPast]:
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+    ) -> tuple | PaddleOCRVLCausalLMOutputWithPast:
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
         )
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        output_hidden_states = (
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
+        )
+        return_dict = (
+            return_dict
+            if return_dict is not None
+            else self.config.use_return_dict
+        )
 
         curr_rope_deltas = self.rope_deltas_var.get()
 
         if inputs_embeds is None:
             inputs_embeds = self.model.embed_tokens(input_ids)
             if pixel_values is not None:
-
                 pixel_values = pixel_values.astype(inputs_embeds.dtype)
                 pixel_values = pixel_values.unsqueeze(0)
 
                 bs, _ = image_grid_thw.shape
                 sizes = paddle.prod(image_grid_thw, axis=1)
-                spatial_sizes = paddle.prod(image_grid_thw[:, 1:], axis=1, dtype="int64")
-                sample_indices = paddle.repeat_interleave(paddle.arange(bs), sizes)
+                spatial_sizes = paddle.prod(
+                    image_grid_thw[:, 1:], axis=1, dtype="int64"
+                )
+                sample_indices = paddle.repeat_interleave(
+                    paddle.arange(bs), sizes
+                )
 
                 cum_sizes = paddle.cumsum(sizes, axis=0)
-                cu_seqlens = F.pad(cum_sizes, (1, 0), value=0, data_format="NCL")
+                cu_seqlens = F.pad(
+                    cum_sizes, (1, 0), value=0, data_format="NCL"
+                )
 
                 global_range = paddle.arange(sizes.sum())
                 per_sample_offset = cu_seqlens[sample_indices]
@@ -2039,9 +2311,15 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
         if attention_mask is not None and attention_mask.dtype != paddle.bool:
             attention_mask = paddle.cast(attention_mask, paddle.bool)
 
-        if position_ids is None and (attention_mask is None or attention_mask.ndim == 2):
+        if position_ids is None and (
+            attention_mask is None or attention_mask.ndim == 2
+        ):
             # calculate RoPE index once per generation in the pre-fill stage only
-            if curr_rope_deltas is None or past_key_values is None or past_key_values.get_seq_length() == 0:
+            if (
+                curr_rope_deltas is None
+                or past_key_values is None
+                or past_key_values.get_seq_length() == 0
+            ):
                 position_ids, rope_deltas = self.get_rope_index(
                     input_ids,
                     image_grid_thw,
@@ -2055,15 +2333,21 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
                 batch_size, seq_length, _ = inputs_embeds.shape
                 delta = (
                     (past_key_values.get_seq_length() + curr_rope_deltas)
-                    if past_key_values is not None and past_key_values.get_seq_length() > 0
+                    if past_key_values is not None
+                    and past_key_values.get_seq_length() > 0
                     else 0
                 )
                 position_ids = paddle.arange(seq_length)
-                position_ids = position_ids.reshape((1, -1)).expand((batch_size, -1))
+                position_ids = position_ids.reshape((1, -1)).expand(
+                    (batch_size, -1)
+                )
                 if (
-                    past_key_values is not None and past_key_values.get_seq_length() > 0
+                    past_key_values is not None
+                    and past_key_values.get_seq_length() > 0
                 ):  # otherwise `deltas` is an int `0`
-                    delta = delta.repeat_interleave(batch_size // delta.shape[0], axis=0)
+                    delta = delta.repeat_interleave(
+                        batch_size // delta.shape[0], axis=0
+                    )
                 position_ids = position_ids.add(delta)
                 position_ids = position_ids.unsqueeze(0).expand((3, -1, -1))
 

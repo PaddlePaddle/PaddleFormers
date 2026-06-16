@@ -41,27 +41,45 @@ def left_padding(sequences, padding_value=0, max_length=None):
 
 
 def padding_batch_data(
-    samples: list[dict], pad_token_id: int, requires_label: bool, max_prompt_len: int
+    samples: list[dict],
+    pad_token_id: int,
+    requires_label: bool,
+    max_prompt_len: int,
 ) -> list[dict]:
     input_dict = {}
 
     input_ids = [sample["input_ids"] for sample in samples]
     # TODO(drownfish19): confirm if this is correct
     # attention_mask = [np.ones(input_id.shape, dtype=bool) for input_id in input_ids]
-    input_dict["input_ids"] = left_padding(input_ids, padding_value=pad_token_id, max_length=max_prompt_len)
+    input_dict["input_ids"] = left_padding(
+        input_ids, padding_value=pad_token_id, max_length=max_prompt_len
+    )
     # input_dict["attention_mask"] = left_padding(attention_mask, padding_value=0)
-    input_dict["raw_prompt_len"] = paddle.to_tensor([len(sample["input_ids"]) for sample in samples])
+    input_dict["raw_prompt_len"] = paddle.to_tensor(
+        [len(sample["input_ids"]) for sample in samples]
+    )
 
     if requires_label:
         label_ids = [sample["label_ids"] for sample in samples]
-        input_dict["label_ids"] = left_padding(label_ids, padding_value=pad_token_id)
-        input_dict["raw_label_ids_len"] = paddle.to_tensor([len(sample["label_ids"]) for sample in samples])
+        input_dict["label_ids"] = left_padding(
+            label_ids, padding_value=pad_token_id
+        )
+        input_dict["raw_label_ids_len"] = paddle.to_tensor(
+            [len(sample["label_ids"]) for sample in samples]
+        )
 
     return input_dict
 
 
-def collate_fn(data_list: list[dict], pad_token_id: int, requires_label: bool, max_prompt_len: int) -> dict:
-    input_dict = padding_batch_data(data_list, pad_token_id, requires_label, max_prompt_len)
+def collate_fn(
+    data_list: list[dict],
+    pad_token_id: int,
+    requires_label: bool,
+    max_prompt_len: int,
+) -> dict:
+    input_dict = padding_batch_data(
+        data_list, pad_token_id, requires_label, max_prompt_len
+    )
 
     tensors = {}
     non_tensors = {}
@@ -125,10 +143,14 @@ class RLHFDataset(Dataset):
         if os.path.exists(self.dataset_name_or_path):
             # load file from local disk
 
-            self.rawdata = load_dataset("json", data_files=self.dataset_name_or_path, split="train")
+            self.rawdata = load_dataset(
+                "json", data_files=self.dataset_name_or_path, split="train"
+            )
         else:
             # 先不管huggingface这个分支
-            self.rawdata = load_dataset(self.dataset_name_or_path, splits=self.splits)[0]
+            self.rawdata = load_dataset(
+                self.dataset_name_or_path, splits=self.splits
+            )[0]
 
     def tokenize(
         self,
@@ -163,9 +185,13 @@ class RLHFDataset(Dataset):
             raw_sample = self.rawdata[index]
             prompt = raw_sample[self.prompt_key]
             if self.apply_chat_template and self.tokenizer.chat_template:
-                prompt = self.tokenizer.apply_chat_template(prompt, add_generation_prompt=True, tokenize=False)
+                prompt = self.tokenizer.apply_chat_template(
+                    prompt, add_generation_prompt=True, tokenize=False
+                )
 
-            data["input_ids"] = self.tokenize(text=prompt, max_length=self.max_prompt_len, truncation=True)
+            data["input_ids"] = self.tokenize(
+                text=prompt, max_length=self.max_prompt_len, truncation=True
+            )
             if self.requires_label:
                 label = raw_sample[self.response_key]
                 data["label_ids"] = self.tokenize(label)

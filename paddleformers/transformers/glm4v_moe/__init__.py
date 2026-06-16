@@ -19,7 +19,11 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "configuration": ["Glm4vMoeConfig", "Glm4vMoeTextConfig", "Glm4vMoeVisionConfig"],
+    "configuration": [
+        "Glm4vMoeConfig",
+        "Glm4vMoeTextConfig",
+        "Glm4vMoeVisionConfig",
+    ],
     "modeling": [
         "Glm4vMoeForConditionalGeneration",
         "Glm4vMoeModel",

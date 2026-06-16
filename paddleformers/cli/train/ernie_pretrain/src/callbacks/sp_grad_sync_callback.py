@@ -42,5 +42,9 @@ class SPGradSyncCallback(TrainerCallback):
 
     def on_optimizer_begin(self, args, state, control, **kwargs):
         if self._sp_params:
-            mp_group = fleet.get_hybrid_communicate_group().get_model_parallel_group()
-            fused_allreduce_gradients_with_group(self._sp_params, group=mp_group, scale=1.0)
+            mp_group = (
+                fleet.get_hybrid_communicate_group().get_model_parallel_group()
+            )
+            fused_allreduce_gradients_with_group(
+                self._sp_params, group=mp_group, scale=1.0
+            )

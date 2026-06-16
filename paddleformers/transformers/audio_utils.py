@@ -16,16 +16,24 @@
 Audio processing functions to extract features from audio waveforms. This code is pure numpy to support all frameworks
 and remove unnecessary dependencies.
 """
+
 import warnings
-from typing import Optional, Sequence, Union
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Optional, Union
 
 import numpy as np
-import paddle
 
-AudioInput = Union[np.ndarray, "paddle.Tensor", Sequence[np.ndarray], Sequence["paddle.Tensor"]]
+if TYPE_CHECKING:
+    import paddle
+
+AudioInput = Union[
+    np.ndarray, "paddle.Tensor", Sequence[np.ndarray], Sequence["paddle.Tensor"]
+]
 
 
-def hertz_to_mel(freq: Union[float, np.ndarray], mel_scale: str = "htk") -> Union[float, np.ndarray]:
+def hertz_to_mel(
+    freq: float | np.ndarray, mel_scale: str = "htk"
+) -> float | np.ndarray:
     """
     Convert frequency from hertz to mels.
 
@@ -52,14 +60,18 @@ def hertz_to_mel(freq: Union[float, np.ndarray], mel_scale: str = "htk") -> Unio
 
     if isinstance(freq, np.ndarray):
         log_region = freq >= min_log_hertz
-        mels[log_region] = min_log_mel + np.log(freq[log_region] / min_log_hertz) * logstep
+        mels[log_region] = (
+            min_log_mel + np.log(freq[log_region] / min_log_hertz) * logstep
+        )
     elif freq >= min_log_hertz:
         mels = min_log_mel + np.log(freq / min_log_hertz) * logstep
 
     return mels
 
 
-def mel_to_hertz(mels: Union[float, np.ndarray], mel_scale: str = "htk") -> Union[float, np.ndarray]:
+def mel_to_hertz(
+    mels: float | np.ndarray, mel_scale: str = "htk"
+) -> float | np.ndarray:
     """
     Convert frequency from mels to hertz.
 
@@ -86,14 +98,18 @@ def mel_to_hertz(mels: Union[float, np.ndarray], mel_scale: str = "htk") -> Unio
 
     if isinstance(mels, np.ndarray):
         log_region = mels >= min_log_mel
-        freq[log_region] = min_log_hertz * np.exp(logstep * (mels[log_region] - min_log_mel))
+        freq[log_region] = min_log_hertz * np.exp(
+            logstep * (mels[log_region] - min_log_mel)
+        )
     elif mels >= min_log_mel:
         freq = min_log_hertz * np.exp(logstep * (mels - min_log_mel))
 
     return freq
 
 
-def _create_triangular_filter_bank(fft_freqs: np.ndarray, filter_freqs: np.ndarray) -> np.ndarray:
+def _create_triangular_filter_bank(
+    fft_freqs: np.ndarray, filter_freqs: np.ndarray
+) -> np.ndarray:
     """
     Creates a triangular filter bank.
 
@@ -180,7 +196,10 @@ def mel_filter_bank(
 
     if norm is not None and norm == "slaney":
         # Slaney-style mel is scaled to be approx constant energy per channel
-        enorm = 2.0 / (filter_freqs[2 : num_mel_filters + 2] - filter_freqs[:num_mel_filters])
+        enorm = 2.0 / (
+            filter_freqs[2 : num_mel_filters + 2]
+            - filter_freqs[:num_mel_filters]
+        )
         mel_filters *= np.expand_dims(enorm, 0)
 
     if (mel_filters.max(axis=0) == 0.0).any():
@@ -380,19 +399,27 @@ def spectrogram(
         fft_length = frame_length
 
     if frame_length > fft_length:
-        raise ValueError(f"frame_length ({frame_length}) may not be larger than fft_length ({fft_length})")
+        raise ValueError(
+            f"frame_length ({frame_length}) may not be larger than fft_length ({fft_length})"
+        )
 
     if window_length != frame_length:
-        raise ValueError(f"Length of the window ({window_length}) must equal frame_length ({frame_length})")
+        raise ValueError(
+            f"Length of the window ({window_length}) must equal frame_length ({frame_length})"
+        )
 
     if hop_length <= 0:
         raise ValueError("hop_length must be greater than zero")
 
     if waveform.ndim != 1:
-        raise ValueError(f"Input waveform must have only one dimension, shape is {waveform.shape}")
+        raise ValueError(
+            f"Input waveform must have only one dimension, shape is {waveform.shape}"
+        )
 
     if np.iscomplexobj(waveform):
-        raise ValueError("Complex-valued input waveforms are not currently supported")
+        raise ValueError(
+            "Complex-valued input waveforms are not currently supported"
+        )
 
     # center pad the waveform
     if center:
@@ -442,11 +469,17 @@ def spectrogram(
             spectrogram = np.log10(spectrogram)
         elif log_mel == "dB":
             if power == 1.0:
-                spectrogram = amplitude_to_db(spectrogram, reference, min_value, db_range)
+                spectrogram = amplitude_to_db(
+                    spectrogram, reference, min_value, db_range
+                )
             elif power == 2.0:
-                spectrogram = power_to_db(spectrogram, reference, min_value, db_range)
+                spectrogram = power_to_db(
+                    spectrogram, reference, min_value, db_range
+                )
             else:
-                raise ValueError(f"Cannot use log_mel option '{log_mel}' with power {power}")
+                raise ValueError(
+                    f"Cannot use log_mel option '{log_mel}' with power {power}"
+                )
         else:
             raise ValueError(f"Unknown log_mel option: {log_mel}")
 
@@ -501,7 +534,9 @@ def power_to_db(
     if db_range is not None:
         if db_range <= 0.0:
             raise ValueError("db_range must be greater than zero")
-        spectrogram = np.clip(spectrogram, a_min=spectrogram.max() - db_range, a_max=None)
+        spectrogram = np.clip(
+            spectrogram, a_min=spectrogram.max() - db_range, a_max=None
+        )
 
     return spectrogram
 
@@ -550,7 +585,9 @@ def amplitude_to_db(
     if db_range is not None:
         if db_range <= 0.0:
             raise ValueError("db_range must be greater than zero")
-        spectrogram = np.clip(spectrogram, a_min=spectrogram.max() - db_range, a_max=None)
+        spectrogram = np.clip(
+            spectrogram, a_min=spectrogram.max() - db_range, a_max=None
+        )
 
     return spectrogram
 
@@ -579,7 +616,12 @@ def get_mel_filter_banks(
     )
 
 
-def fram_wave(waveform: np.array, hop_length: int = 160, fft_window_size: int = 400, center: bool = True):
+def fram_wave(
+    waveform: np.array,
+    hop_length: int = 160,
+    fft_window_size: int = 400,
+    center: bool = True,
+):
     """
     In order to compute the short time fourier transform, the waveform needs to be split in overlapping windowed
     segments called `frames`.
@@ -612,7 +654,11 @@ def fram_wave(waveform: np.array, hop_length: int = 160, fft_window_size: int = 
         if center:
             half_window = (fft_window_size - 1) // 2 + 1
             start = i - half_window if i > half_window else 0
-            end = i + half_window if i < waveform.shape[0] - half_window else waveform.shape[0]
+            end = (
+                i + half_window
+                if i < waveform.shape[0] - half_window
+                else waveform.shape[0]
+            )
             frame = waveform[start:end]
             if start == 0:
                 padd_width = (-i + half_window, 0)
@@ -627,7 +673,10 @@ def fram_wave(waveform: np.array, hop_length: int = 160, fft_window_size: int = 
             frame_width = frame.shape[0]
             if frame_width < waveform.shape[0]:
                 frame = np.lib.pad(
-                    frame, pad_width=(0, fft_window_size - frame_width), mode="constant", constant_values=0
+                    frame,
+                    pad_width=(0, fft_window_size - frame_width),
+                    mode="constant",
+                    constant_values=0,
                 )
         frames.append(frame)
 
@@ -635,7 +684,11 @@ def fram_wave(waveform: np.array, hop_length: int = 160, fft_window_size: int = 
     return frames
 
 
-def stft(frames: np.array, windowing_function: np.array, fft_window_size: int = None):
+def stft(
+    frames: np.array,
+    windowing_function: np.array,
+    fft_window_size: int | None = None,
+):
     """
     Calculates the complex Short-Time Fourier Transform (STFT) of the given framed signal. Should give the same results
     as `torch.stft`.
@@ -644,7 +697,7 @@ def stft(frames: np.array, windowing_function: np.array, fft_window_size: int = 
         frames (`np.array` of dimension `(num_frames, fft_window_size)`):
             A framed audio signal obtained using `audio_utils.fram_wav`.
         windowing_function (`np.array` of dimension `(nb_frequency_bins, nb_mel_filters)`:
-            A array reprensenting the function that will be used to reduces the amplitude of the discontinuities at the
+            A array representing the function that will be used to reduces the amplitude of the discontinuities at the
             boundaries of each frame when computing the STFT. Each frame will be multiplied by the windowing_function.
             For more information on the discontinuities, called *Spectral leakage*, refer to [this
             tutorial]https://download.ni.com/evaluation/pxi/Understanding%20FFTs%20and%20Windowing.pdf

@@ -39,9 +39,9 @@ class ClipGradForMOEByGlobalNorm(ClipGradBase):
         self.group_name = group_name
         self.moe_group = moe_group
         if moe_group is not None and moe_group.nranks > 1:
-            assert (
-                is_expert_param_func is not None
-            ), "When moe group size > 1, a function for selecting expert params must be specified."
+            assert is_expert_param_func is not None, (
+                "When moe group size > 1, a function for selecting expert params must be specified."
+            )
         self.is_expert_param_func = is_expert_param_func
         self.stat = {}
         self.local_clip = local_clip
@@ -71,7 +71,12 @@ class ClipGradForMOEByGlobalNorm(ClipGradBase):
             else:
                 sum_square_list.append(sum_square.cast("float64"))
 
-        if len(sum_square_list) + len(sum_square_list_fp16) + len(sum_square_list_fp32) == 0:
+        if (
+            len(sum_square_list)
+            + len(sum_square_list_fp16)
+            + len(sum_square_list_fp32)
+            == 0
+        ):
             return None, None
         assert sum_dtype in [
             "float64",
@@ -111,10 +116,14 @@ class ClipGradForMOEByGlobalNorm(ClipGradBase):
         else:
             normal_params_grads = params_grads
 
-        global_norm_var_normal, sum_dtype = self.get_l2_norm_pow(normal_params_grads)
+        global_norm_var_normal, sum_dtype = self.get_l2_norm_pow(
+            normal_params_grads
+        )
         global_norm_var_moe = None
         if len(moe_params_grads) > 0:
-            global_norm_var_moe, _ = self.get_l2_norm_pow(moe_params_grads, sum_dtype)
+            global_norm_var_moe, _ = self.get_l2_norm_pow(
+                moe_params_grads, sum_dtype
+            )
             if global_norm_var_moe is not None:
                 dist.all_reduce(
                     global_norm_var_moe,
@@ -130,18 +139,28 @@ class ClipGradForMOEByGlobalNorm(ClipGradBase):
             global_norm_var = global_norm_var_normal
         else:
             if global_norm_var_normal.dtype != global_norm_var_moe.dtype:
-                global_norm_var_normal = global_norm_var_normal.astype(global_norm_var_moe.dtype)
+                global_norm_var_normal = global_norm_var_normal.astype(
+                    global_norm_var_moe.dtype
+                )
             if self.local_clip:
                 global_norm_var = global_norm_var_normal
             else:
                 global_norm_var = global_norm_var_normal + global_norm_var_moe
-            self.stat["local_grad_norm"] = math.sqrt(global_norm_var_normal.astype("float32").item())
-            self.stat["moe_grad_norm"] = math.sqrt(global_norm_var_moe.astype("float32").item())
-            self.stat["global_grad_norm"] = math.sqrt(global_norm_var.astype("float32").item())
+            self.stat["local_grad_norm"] = math.sqrt(
+                global_norm_var_normal.astype("float32").item()
+            )
+            self.stat["moe_grad_norm"] = math.sqrt(
+                global_norm_var_moe.astype("float32").item()
+            )
+            self.stat["global_grad_norm"] = math.sqrt(
+                global_norm_var.astype("float32").item()
+            )
 
         params_and_grads = []
         global_norm_var = paddle.sqrt(global_norm_var)
-        max_global_norm = paddle.full(shape=[1], dtype=global_norm_var.dtype, fill_value=self.clip_norm)
+        max_global_norm = paddle.full(
+            shape=[1], dtype=global_norm_var.dtype, fill_value=self.clip_norm
+        )
         clip_var = paddle.divide(
             x=max_global_norm,
             y=paddle.maximum(x=global_norm_var, y=max_global_norm),
@@ -152,7 +171,11 @@ class ClipGradForMOEByGlobalNorm(ClipGradBase):
             if getattr(p, "need_clip", True) is False:
                 params_and_grads.append((p, g))
                 continue
-            clip_input = clip_var.astype("float16") if g.dtype == core.VarDesc.VarType.FP16 else clip_var
+            clip_input = (
+                clip_var.astype("float16")
+                if g.dtype == core.VarDesc.VarType.FP16
+                else clip_var
+            )
             new_grad = paddle.multiply(x=g, y=clip_input.astype(g.dtype))
             params_and_grads.append((p, new_grad))
         return params_and_grads

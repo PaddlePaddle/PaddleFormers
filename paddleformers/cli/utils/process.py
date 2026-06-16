@@ -148,14 +148,18 @@ def set_ascend_environment():
     ]
 
     # Set all environment variables
-    os.environ["LD_LIBRARY_PATH"] = ":".join(filter(None, ld_library_path_parts))
+    os.environ["LD_LIBRARY_PATH"] = ":".join(
+        filter(None, ld_library_path_parts)
+    )
     os.environ["ASCEND_TOOLKIT_HOME"] = ascend_toolkit_home
     os.environ["PYTHONPATH"] = ":".join(filter(None, pythonpath_parts))
     os.environ["PATH"] = ":".join(filter(None, path_parts))
 
     # Additional Ascend-specific environment variables
     os.environ["ASCEND_AICPU_PATH"] = ascend_toolkit_home
-    os.environ["ASCEND_OPP_PATH"] = f"{ascend_toolkit_home}/opp"  # Operator package path
+    os.environ["ASCEND_OPP_PATH"] = (
+        f"{ascend_toolkit_home}/opp"  # Operator package path
+    )
     os.environ["TOOLCHAIN_HOME"] = f"{ascend_toolkit_home}/toolkit"
     os.environ["ASCEND_HOME_PATH"] = ascend_toolkit_home
 
@@ -173,9 +177,13 @@ def remove_paddle_shm_files():
 
 def set_cuda_environment():
     try:
-        nvidia_smi_output = subprocess.check_output(["nvidia-smi"], stderr=subprocess.PIPE, text=True)
+        nvidia_smi_output = subprocess.check_output(
+            ["nvidia-smi"], stderr=subprocess.PIPE, text=True
+        )
 
-        cuda_version_match = re.search(r"CUDA Version:\s+(\d+)", nvidia_smi_output)
+        cuda_version_match = re.search(
+            r"CUDA Version:\s+(\d+)", nvidia_smi_output
+        )
         if cuda_version_match:
             cuda_version = cuda_version_match.group(1)
             print(f"cuda version checked: {cuda_version}")
@@ -213,7 +221,9 @@ def add_new_special_tokens(tokenizer, path):
     if path is None:
         return
     if not isinstance(path, str):
-        raise TypeError(f"new_special_tokens_path must be a string, but got {type(path)}")
+        raise TypeError(
+            f"new_special_tokens_path must be a string, but got {type(path)}"
+        )
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Special tokens file not found: {path}")
     new_special_tokens = []
@@ -229,11 +239,17 @@ def add_new_special_tokens(tokenizer, path):
         if not new_special_tokens:
             logger.warning(f"No valid special tokens found in {path}")
             return
-        num_new_tokens = tokenizer.add_special_tokens({"additional_special_tokens": new_special_tokens})
+        num_new_tokens = tokenizer.add_special_tokens(
+            {"additional_special_tokens": new_special_tokens}
+        )
         if num_new_tokens > 0:
-            logger.info(f"Added {num_new_tokens} new special tokens from {path}: {new_special_tokens}")
+            logger.info(
+                f"Added {num_new_tokens} new special tokens from {path}: {new_special_tokens}"
+            )
         else:
-            logger.info(f"All special tokens from {path} already exist in tokenizer.")
+            logger.info(
+                f"All special tokens from {path} already exist in tokenizer."
+            )
     except UnicodeDecodeError as e:
         raise ValueError(f"Failed to read {path} with UTF-8 encoding: {e}")
     except Exception as e:

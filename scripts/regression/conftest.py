@@ -44,7 +44,9 @@ def get_model_type(model_key: str) -> str:
 
 
 def pytest_addoption(parser):
-    parser.addoption("--models", action="store", default="", help="eg: --models=llama,qwen3")
+    parser.addoption(
+        "--models", action="store", default="", help="eg: --models=llama,qwen3"
+    )
     parser.addoption(
         "--update-baseline",
         action="store",

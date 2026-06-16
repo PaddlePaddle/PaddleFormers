@@ -16,7 +16,7 @@ from __future__ import annotations
 import inspect
 from abc import ABC
 from collections import OrderedDict
-from typing import Callable, Dict, List, Tuple, Union
+from collections.abc import Callable
 
 import numpy as np
 import paddle
@@ -31,20 +31,23 @@ class LogitsProcessor(ABC):
 
     def __call__(self, input_ids: paddle.Tensor, logits: paddle.Tensor):
         raise NotImplementedError(
-            f"{self.__class__} is an abstract class. " "Only classes inheriting this class can be called."
+            f"{self.__class__} is an abstract class. "
+            "Only classes inheriting this class can be called."
         )
 
 
 class LogitsProcessorList:
     """use ordered dict to store processors"""
 
-    def __init__(self, processors: List[LogitsProcessor] = None) -> None:
+    def __init__(self, processors: list[LogitsProcessor] | None = None) -> None:
         self._processors = OrderedDict()
         processors = processors or []
         for processor in processors:
             self.append(processor)
 
-    def __call__(self, input_ids: paddle.Tensor, logits: paddle.Tensor, **kwargs):
+    def __call__(
+        self, input_ids: paddle.Tensor, logits: paddle.Tensor, **kwargs
+    ):
         for processor in self._processors.values():
             processor_args = inspect.signature(processor.__call__).parameters
             if len(processor_args) > 2:
@@ -69,12 +72,16 @@ class MinLengthLogitsProcessor(LogitsProcessor):
         eos_token_id (int): The id of the `end-of-sequence` token.
     """
 
-    def __init__(self, min_length: int, eos_token_id: Union[int, List[int]]):
+    def __init__(self, min_length: int, eos_token_id: int | list[int]):
         if min_length < 0 and not in_declarative_mode():
-            raise ValueError("`min_length` should be a positive integer, but get {}".format(min_length))
+            raise ValueError(
+                f"`min_length` should be a positive integer, but get {min_length}"
+            )
 
         if not isinstance(eos_token_id, int) or eos_token_id < 0:
-            raise ValueError("`eos_token_id` should be a positive integer, but get {}".format(eos_token_id))
+            raise ValueError(
+                f"`eos_token_id` should be a positive integer, but get {eos_token_id}"
+            )
 
         self.min_length = min_length
         self.eos_token_id = eos_token_id
@@ -98,15 +105,25 @@ class RepetitionPenaltyLogitsProcessor(LogitsProcessor):
 
     def __init__(self, penalty: float):
         if not (penalty > 0) and not in_declarative_mode():
-            raise ValueError(f"`penalty` has to be a strictly positive float, but is {penalty}")
+            raise ValueError(
+                f"`penalty` has to be a strictly positive float, but is {penalty}"
+            )
 
         self.penalty = penalty
 
     def __call__(self, input_ids: paddle.Tensor, logits: paddle.Tensor):
         score = paddle.index_sample(logits, input_ids)
-        score = paddle.where(score < 0, score * self.penalty, score / self.penalty)
-        input_ids = input_ids + paddle.arange(logits.shape[0], dtype="int64").unsqueeze(-1) * logits.shape[-1]
-        outputs = paddle.scatter(logits.flatten(), input_ids.flatten(), score.flatten()).reshape(logits.shape)
+        score = paddle.where(
+            score < 0, score * self.penalty, score / self.penalty
+        )
+        input_ids = (
+            input_ids
+            + paddle.arange(logits.shape[0], dtype="int64").unsqueeze(-1)
+            * logits.shape[-1]
+        )
+        outputs = paddle.scatter(
+            logits.flatten(), input_ids.flatten(), score.flatten()
+        ).reshape(logits.shape)
         return outputs
 
 
@@ -133,7 +150,9 @@ def _get_ngrams(ngram_size: int, prev_input_ids: paddle.Tensor, num_hypos: int):
         generated_ngram = generated_ngrams[idx]
         for ngram in zip(*[gen_tokens[i:] for i in range(ngram_size)]):
             prev_ngram_tuple = tuple(ngram[:-1])
-            generated_ngram[prev_ngram_tuple] = generated_ngram.get(prev_ngram_tuple, []) + [ngram[-1]]
+            generated_ngram[prev_ngram_tuple] = generated_ngram.get(
+                prev_ngram_tuple, []
+            ) + [ngram[-1]]
     return generated_ngrams
 
 
@@ -159,7 +178,9 @@ def _get_generated_ngrams(banned_ngrams, prev_input_ids, ngram_size, cur_len):
     return banned_ngrams.get(ngram_idx, [])
 
 
-def _calc_banned_ngram_tokens(ngram_size: int, prev_input_ids: paddle.Tensor, num_hypos: int, cur_len: int):
+def _calc_banned_ngram_tokens(
+    ngram_size: int, prev_input_ids: paddle.Tensor, num_hypos: int, cur_len: int
+):
     """Copied from fairseq for no_repeat_ngram in beam_search"""
     if cur_len + 1 < ngram_size:
         # return no banned tokens if we haven't generated no_repeat_ngram_size tokens yet
@@ -168,7 +189,12 @@ def _calc_banned_ngram_tokens(ngram_size: int, prev_input_ids: paddle.Tensor, nu
     generated_ngrams = _get_ngrams(ngram_size, prev_input_ids, num_hypos)
 
     banned_tokens = [
-        _get_generated_ngrams(generated_ngrams[hypo_idx], prev_input_ids[hypo_idx], ngram_size, cur_len)
+        _get_generated_ngrams(
+            generated_ngrams[hypo_idx],
+            prev_input_ids[hypo_idx],
+            ngram_size,
+            cur_len,
+        )
         for hypo_idx in range(num_hypos)
     ]
     return banned_tokens
@@ -185,13 +211,17 @@ class NoRepeatNGramLogitsProcessor(LogitsProcessor):
 
     def __init__(self, ngram_size: int):
         if not isinstance(ngram_size, int) or ngram_size <= 0:
-            raise ValueError(f"`ngram_size` has to be a strictly positive integer, but is {ngram_size}")
+            raise ValueError(
+                f"`ngram_size` has to be a strictly positive integer, but is {ngram_size}"
+            )
         self.ngram_size = ngram_size
 
     def __call__(self, input_ids: paddle.Tensor, scores: paddle.Tensor):
         num_batch_hypotheses = scores.shape[0]
         cur_len = input_ids.shape[-1]
-        banned_batch_tokens = _calc_banned_ngram_tokens(self.ngram_size, input_ids, num_batch_hypotheses, cur_len)
+        banned_batch_tokens = _calc_banned_ngram_tokens(
+            self.ngram_size, input_ids, num_batch_hypotheses, cur_len
+        )
 
         for i, banned_tokens in enumerate(banned_batch_tokens):
             if len(banned_tokens) == 0:
@@ -216,23 +246,37 @@ class HammingDiversityLogitsProcessor(LogitsProcessor):
             to ensure diversity among different groups of beams.
     """
 
-    def __init__(self, diversity_rate: float, num_beams: int, num_beam_groups: int):
+    def __init__(
+        self, diversity_rate: float, num_beams: int, num_beam_groups: int
+    ):
         if not isinstance(diversity_rate, float) or (not diversity_rate > 0.0):
-            raise ValueError("`diversity_rate` should be a float strictly larger than 0.")
+            raise ValueError(
+                "`diversity_rate` should be a float strictly larger than 0."
+            )
         self._diversity_rate = diversity_rate
         if not isinstance(num_beams, int) or num_beams < 2:
-            raise ValueError("`num_beams` should be an integer strictly larger than 1.")
+            raise ValueError(
+                "`num_beams` should be an integer strictly larger than 1."
+            )
         self._num_beams = num_beams
         if not isinstance(num_beam_groups, int) or num_beam_groups < 2:
-            raise ValueError("`num_beam_groups` should be an integer strictly larger than 1.")
+            raise ValueError(
+                "`num_beam_groups` should be an integer strictly larger than 1."
+            )
         self._num_sub_beams = num_beams // num_beam_groups
 
     def __call__(
-        self, input_ids: paddle.Tensor, scores: paddle.Tensor, current_tokens: paddle.Tensor, beam_group_idx: int
+        self,
+        input_ids: paddle.Tensor,
+        scores: paddle.Tensor,
+        current_tokens: paddle.Tensor,
+        beam_group_idx: int,
     ):
         batch_size = current_tokens.shape[0] // self._num_beams
         group_start_idx = beam_group_idx * self._num_sub_beams
-        group_end_idx = min(group_start_idx + self._num_sub_beams, self._num_beams)
+        group_end_idx = min(
+            group_start_idx + self._num_sub_beams, self._num_beams
+        )
         group_size = group_end_idx - group_start_idx
         vocab_size = scores.shape[-1]
 
@@ -241,10 +285,15 @@ class HammingDiversityLogitsProcessor(LogitsProcessor):
 
         for batch_idx in range(batch_size):
             previous_group_tokens = current_tokens[
-                batch_idx * self._num_beams : batch_idx * self._num_beams + group_start_idx
+                batch_idx * self._num_beams : batch_idx * self._num_beams
+                + group_start_idx
             ]
-            token_frequency = paddle.bincount(previous_group_tokens, minlength=vocab_size)
-            scores[batch_idx * group_size : (batch_idx + 1) * group_size] -= self._diversity_rate * token_frequency
+            token_frequency = paddle.bincount(
+                previous_group_tokens, minlength=vocab_size
+            )
+            scores[batch_idx * group_size : (batch_idx + 1) * group_size] -= (
+                self._diversity_rate * token_frequency
+            )
 
         return scores
 
@@ -278,7 +327,7 @@ class ForcedEOSTokenLogitsProcessor(LogitsProcessor):
         forced_eos_token_id (int): The id of the token to be generated as the last token.
     """
 
-    def __init__(self, max_length: int, forced_eos_token_id: Union[int, List[int]]):
+    def __init__(self, max_length: int, forced_eos_token_id: int | list[int]):
         self.max_length = max_length
         self.forced_eos_token_id = forced_eos_token_id
 
@@ -292,7 +341,9 @@ class ForcedEOSTokenLogitsProcessor(LogitsProcessor):
 
 def TopKProcess(probs: paddle.Tensor, top_k: int, min_tokens_to_keep: int):
     top_k = paddle.minimum(
-        paddle.maximum(paddle.to_tensor(top_k), paddle.to_tensor(min_tokens_to_keep)),
+        paddle.maximum(
+            paddle.to_tensor(top_k), paddle.to_tensor(min_tokens_to_keep)
+        ),
         paddle.to_tensor(probs.shape[-1]),
     )
     # Remove all tokens with a probability less than the last token of the top-k
@@ -304,7 +355,9 @@ def TopKProcess(probs: paddle.Tensor, top_k: int, min_tokens_to_keep: int):
     else:
         topk_probs, _ = paddle.topk(probs, k=top_k)
 
-    probs = paddle.where(probs >= topk_probs[:, -1:], probs, paddle.full_like(probs, 0.0))
+    probs = paddle.where(
+        probs >= topk_probs[:, -1:], probs, paddle.full_like(probs, 0.0)
+    )
     return probs
 
 
@@ -330,14 +383,22 @@ def TopPProcess(probs: paddle.Tensor, top_p: float, min_tokens_to_keep: int):
         # Set 'min_tokens_to_keep - 1' because the first token is kept
         sorted_indices_to_remove[:, : min_tokens_to_keep - 1] = 0
     # Keep the first token
-    sorted_indices_to_remove = paddle.cast(sorted_indices_to_remove, dtype="int64")
+    sorted_indices_to_remove = paddle.cast(
+        sorted_indices_to_remove, dtype="int64"
+    )
     sorted_indices_to_remove[:, 1:] = sorted_indices_to_remove[:, :-1].clone()
     sorted_indices_to_remove[:, 0] = 0
 
     # Scatter sorted tensors to original indexing
-    sorted_indices = sorted_indices + paddle.arange(probs.shape[0], dtype="int64").unsqueeze(-1) * probs.shape[-1]
+    sorted_indices = (
+        sorted_indices
+        + paddle.arange(probs.shape[0], dtype="int64").unsqueeze(-1)
+        * probs.shape[-1]
+    )
     condition = paddle.scatter(
-        sorted_indices_to_remove.flatten(), sorted_indices.flatten(), sorted_indices_to_remove.flatten()
+        sorted_indices_to_remove.flatten(),
+        sorted_indices.flatten(),
+        sorted_indices_to_remove.flatten(),
     )
     condition = paddle.cast(condition, "bool").reshape(probs.shape)
     probs = paddle.where(condition, paddle.full_like(probs, 0.0), probs)
@@ -363,7 +424,9 @@ class TemperatureLogitsWarper(LogitsWarper):
 
     def __init__(self, temperature: float):
         if not isinstance(temperature, float) or not (temperature > 0):
-            raise ValueError(f"`temperature` has to be a strictly positive float, but is {temperature}")
+            raise ValueError(
+                f"`temperature` has to be a strictly positive float, but is {temperature}"
+            )
 
         self.temperature = temperature
 
@@ -434,7 +497,7 @@ class SequenceBiasLogitsProcessor(LogitsProcessor):
     ```
     """
 
-    def __init__(self, sequence_bias: Dict[Tuple[int], float]):
+    def __init__(self, sequence_bias: dict[tuple[int], float]):
         self.sequence_bias = sequence_bias
         self._validate_arguments()
 
@@ -457,9 +520,13 @@ class SequenceBiasLogitsProcessor(LogitsProcessor):
 
         # 4 - include the bias from length > 1, after determining which biased sequences may be completed.
         for sequence_ids, sequence_bias in self.sequence_bias.items():
-            if len(sequence_ids) == 1:  # the sequence is of length 1, already applied
+            if (
+                len(sequence_ids) == 1
+            ):  # the sequence is of length 1, already applied
                 continue
-            if len(sequence_ids) > input_ids.shape[1]:  # the sequence is longer than the context, ignore
+            if (
+                len(sequence_ids) > input_ids.shape[1]
+            ):  # the sequence is longer than the context, ignore
                 continue
             prefix_length = len(sequence_ids) - 1
             last_token = sequence_ids[-1]
@@ -508,11 +575,21 @@ class SequenceBiasLogitsProcessor(LogitsProcessor):
     def _validate_arguments(self):
         sequence_bias = self.sequence_bias
         if not isinstance(sequence_bias, dict) or len(sequence_bias) == 0:
-            raise ValueError(f"`sequence_bias` has to be a non-empty dictionary, but is {sequence_bias}.")
-        if any(not isinstance(sequence_ids, tuple) for sequence_ids in sequence_bias.keys()):
-            raise ValueError(f"`sequence_bias` has to be a dict with tuples as keys, but is {sequence_bias}.")
+            raise ValueError(
+                f"`sequence_bias` has to be a non-empty dictionary, but is {sequence_bias}."
+            )
         if any(
-            any((not isinstance(token_id, (int, np.integer)) or token_id < 0) for token_id in sequence_ids)
+            not isinstance(sequence_ids, tuple)
+            for sequence_ids in sequence_bias.keys()
+        ):
+            raise ValueError(
+                f"`sequence_bias` has to be a dict with tuples as keys, but is {sequence_bias}."
+            )
+        if any(
+            any(
+                (not isinstance(token_id, (int, np.integer)) or token_id < 0)
+                for token_id in sequence_ids
+            )
             or len(sequence_ids) == 0
             for sequence_ids in sequence_bias.keys()
         ):
@@ -521,7 +598,9 @@ class SequenceBiasLogitsProcessor(LogitsProcessor):
                 f"{sequence_bias}."
             )
         if any(not isinstance(bias, float) for bias in sequence_bias.values()):
-            raise ValueError(f"`sequence_bias` has to be a dict with floats as values, but is {sequence_bias}.")
+            raise ValueError(
+                f"`sequence_bias` has to be a dict with floats as values, but is {sequence_bias}."
+            )
 
 
 class NoBadWordsLogitsProcessor(SequenceBiasLogitsProcessor):
@@ -588,7 +667,9 @@ class NoBadWordsLogitsProcessor(SequenceBiasLogitsProcessor):
     ```
     """
 
-    def __init__(self, bad_words_ids: List[List[int]], eos_token_id: Union[int, List[int]]):
+    def __init__(
+        self, bad_words_ids: list[list[int]], eos_token_id: int | list[int]
+    ):
         self.bad_word_ids = bad_words_ids
         self._validate_arguments()
 
@@ -598,21 +679,37 @@ class NoBadWordsLogitsProcessor(SequenceBiasLogitsProcessor):
         if isinstance(eos_token_id, int):
             eos_token_id = [eos_token_id]
         bad_words_ids = list(
-            filter(lambda bad_token_seq: all(bad_token_seq != [i] for i in eos_token_id), bad_words_ids)
+            filter(
+                lambda bad_token_seq: all(
+                    bad_token_seq != [i] for i in eos_token_id
+                ),
+                bad_words_ids,
+            )
         )
 
         # Forbidding a sequence is equivalent to setting its bias to -inf
-        sequence_bias = {tuple(sequence): float("-inf") for sequence in bad_words_ids}
+        sequence_bias = {
+            tuple(sequence): float("-inf") for sequence in bad_words_ids
+        }
         super().__init__(sequence_bias=sequence_bias)
 
     def _validate_arguments(self):
         bad_words_ids = self.bad_word_ids
         if not isinstance(bad_words_ids, list) or len(bad_words_ids) == 0:
-            raise ValueError(f"`bad_words_ids` has to be a non-empty list, but is {bad_words_ids}.")
-        if any(not isinstance(bad_word_ids, list) for bad_word_ids in bad_words_ids):
-            raise ValueError(f"`bad_words_ids` has to be a list of lists, but is {bad_words_ids}.")
+            raise ValueError(
+                f"`bad_words_ids` has to be a non-empty list, but is {bad_words_ids}."
+            )
         if any(
-            any((not isinstance(token_id, (int, np.integer)) or token_id < 0) for token_id in bad_word_ids)
+            not isinstance(bad_word_ids, list) for bad_word_ids in bad_words_ids
+        ):
+            raise ValueError(
+                f"`bad_words_ids` has to be a list of lists, but is {bad_words_ids}."
+            )
+        if any(
+            any(
+                (not isinstance(token_id, (int, np.integer)) or token_id < 0)
+                for token_id in bad_word_ids
+            )
             for bad_word_ids in bad_words_ids
         ):
             raise ValueError(
@@ -633,14 +730,25 @@ class PrefixConstrainedLogitsProcessor(LogitsProcessor):
             `batch_id`.
     """
 
-    def __init__(self, prefix_allowed_tokens_fn: Callable[[int, paddle.Tensor], List[int]], num_beams: int):
+    def __init__(
+        self,
+        prefix_allowed_tokens_fn: Callable[[int, paddle.Tensor], list[int]],
+        num_beams: int,
+    ):
         self._prefix_allowed_tokens_fn = prefix_allowed_tokens_fn
         self._num_beams = num_beams
 
-    def __call__(self, input_ids: paddle.Tensor, scores: paddle.Tensor) -> paddle.Tensor:
+    def __call__(
+        self, input_ids: paddle.Tensor, scores: paddle.Tensor
+    ) -> paddle.Tensor:
         mask = paddle.full_like(scores, paddle.finfo(scores.dtype).min)
-        for batch_id, beam_sent in enumerate(input_ids.reshape([-1, self._num_beams, input_ids.shape[-1]])):
+        for batch_id, beam_sent in enumerate(
+            input_ids.reshape([-1, self._num_beams, input_ids.shape[-1]])
+        ):
             for beam_id, sent in enumerate(beam_sent):
-                mask[batch_id * self._num_beams + beam_id, self._prefix_allowed_tokens_fn(batch_id, sent)] = 0
+                mask[
+                    batch_id * self._num_beams + beam_id,
+                    self._prefix_allowed_tokens_fn(batch_id, sent),
+                ] = 0
 
         return scores + mask

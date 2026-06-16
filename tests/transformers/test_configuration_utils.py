@@ -16,7 +16,7 @@ import os
 import shutil
 import tempfile
 import unittest
-from typing import Dict, Optional
+from typing import Optional
 
 from paddleformers.transformers import Qwen3Config
 from paddleformers.transformers.configuration_utils import (
@@ -42,7 +42,7 @@ class FakeSimplePretrainedModelConfig(PretrainedConfig):
 class FakePretrainedModelConfig(PretrainedConfig):
     """Fake Pretrained Model which is similar with actual situation"""
 
-    attribute_map: Dict[str, str] = {
+    attribute_map: dict[str, str] = {
         "num_classes": "num_labels",
     }
 
@@ -53,7 +53,12 @@ class FakePretrainedModelConfig(PretrainedConfig):
 
 
 class FakeLayer:
-    def __init__(self, config: Optional[FakeSimplePretrainedModelConfig] = None, *args, **kwargs):
+    def __init__(
+        self,
+        config: Optional[FakeSimplePretrainedModelConfig] = None,
+        *args,
+        **kwargs,
+    ):
         super(FakeLayer, self).__init__()
 
         self.a = config.a
@@ -104,11 +109,18 @@ class ConfigurationUtilsTest(unittest.TestCase):
             config.save_pretrained(tp)
             import json
 
-            loaded_config = json.load(open(os.path.join(tp, "config.json"), "r"))
-            assert "tensor_model_parallel_size" in loaded_config, "tensor_model_parallel_size need to save"
-            assert "paddleformers_version" in loaded_config, "always save paddleformers_version"
+            loaded_config = json.load(
+                open(os.path.join(tp, "config.json"), "r")
+            )
+            assert "tensor_model_parallel_size" in loaded_config, (
+                "tensor_model_parallel_size need to save"
+            )
+            assert "paddleformers_version" in loaded_config, (
+                "always save paddleformers_version"
+            )
             assert (
-                "quantization_config" in loaded_config and "quant_type" in loaded_config["quantization_config"]
+                "quantization_config" in loaded_config
+                and "quant_type" in loaded_config["quantization_config"]
             ), "missing quantization_config"
             assert "test_nonsave" not in loaded_config
             assert "test_nonsave_2" in loaded_config
@@ -132,12 +144,16 @@ class StandardConfigMappingTest(unittest.TestCase):
         class FakeQwen3Config(Qwen3Config):
             pass
 
-        config = FakeQwen3Config.from_pretrained("PaddleFormers/tiny-random-qwen3")
+        config = FakeQwen3Config.from_pretrained(
+            "PaddleFormers/tiny-random-qwen3"
+        )
         hidden_size = config.hidden_size
 
         FakeQwen3Config.attribute_map = {"fake_field": "hidden_size"}
 
-        loaded_config = FakeQwen3Config.from_pretrained("PaddleFormers/tiny-random-qwen3")
+        loaded_config = FakeQwen3Config.from_pretrained(
+            "PaddleFormers/tiny-random-qwen3"
+        )
         fake_field = loaded_config.fake_field
         self.assertEqual(fake_field, hidden_size)
 
@@ -146,14 +162,20 @@ class StandardConfigMappingTest(unittest.TestCase):
         model_id = "PaddleFormers/tiny-random-qwen3"
         with tempfile.TemporaryDirectory() as tempdir:
             Qwen3Config.from_pretrained(model_id, cache_dir=tempdir)
-            self.assertTrue(os.path.exists(os.path.join(tempdir, model_id, CONFIG_NAME)))
+            self.assertTrue(
+                os.path.exists(os.path.join(tempdir, model_id, CONFIG_NAME))
+            )
             # check against double appending model_name in cache_dir
-            self.assertFalse(os.path.exists(os.path.join(tempdir, model_id, model_id)))
+            self.assertFalse(
+                os.path.exists(os.path.join(tempdir, model_id, model_id))
+            )
 
     @slow
     def test_load_from_hf(self):
         """test load config from hf"""
-        config = Qwen3Config.from_pretrained("Qwen/Qwen3-0.6B", download_hub="huggingface")
+        config = Qwen3Config.from_pretrained(
+            "Qwen/Qwen3-0.6B", download_hub="huggingface"
+        )
         self.assertEqual(config.hidden_size, 1024)
 
         with tempfile.TemporaryDirectory() as tempdir:
@@ -170,11 +192,16 @@ class StandardConfigMappingTest(unittest.TestCase):
             pass
 
         with tempfile.TemporaryDirectory() as tempdir:
-            config = FakeQwen3Config.from_pretrained("PaddleFormers/tiny-random-qwen3")
+            config = FakeQwen3Config.from_pretrained(
+                "PaddleFormers/tiny-random-qwen3"
+            )
             config.save_pretrained(tempdir)
 
             # rename `config.json` -> `model_config.json`
-            shutil.move(os.path.join(tempdir, CONFIG_NAME), os.path.join(tempdir, LEGACY_CONFIG_NAME))
+            shutil.move(
+                os.path.join(tempdir, CONFIG_NAME),
+                os.path.join(tempdir, LEGACY_CONFIG_NAME),
+            )
 
             FakeQwen3Config.attribute_map = {"fake_field": "hidden_size"}
 
@@ -198,17 +225,50 @@ class TestTensorParallelConveter(unittest.TestCase):
             tensor_parallel_qkv_to_naive_merged_qkv,
         )
 
-        naive_merged_qkv = np.arange(3 * hidden_size * hidden_size).reshape([hidden_size, -1])
-        tensor_parallel_qkv = naive_merged_qkv_to_tensor_parallel_qkv(naive_merged_qkv, num_attention_heads)
-        new_naive_merged_qkv = tensor_parallel_qkv_to_naive_merged_qkv(tensor_parallel_qkv, num_attention_heads)
+        naive_merged_qkv = np.arange(3 * hidden_size * hidden_size).reshape(
+            [hidden_size, -1]
+        )
+        tensor_parallel_qkv = naive_merged_qkv_to_tensor_parallel_qkv(
+            naive_merged_qkv, num_attention_heads
+        )
+        new_naive_merged_qkv = tensor_parallel_qkv_to_naive_merged_qkv(
+            tensor_parallel_qkv, num_attention_heads
+        )
         np.testing.assert_equal(new_naive_merged_qkv, naive_merged_qkv)
         # print("tensor_parallel_qkv", tensor_parallel_qkv)
         np.testing.assert_equal(
             tensor_parallel_qkv[0],
-            [0, 1, 8, 9, 16, 17, 2, 3, 10, 11, 18, 19, 4, 5, 12, 13, 20, 21, 6, 7, 14, 15, 22, 23],
+            [
+                0,
+                1,
+                8,
+                9,
+                16,
+                17,
+                2,
+                3,
+                10,
+                11,
+                18,
+                19,
+                4,
+                5,
+                12,
+                13,
+                20,
+                21,
+                6,
+                7,
+                14,
+                15,
+                22,
+                23,
+            ],
         )
 
-        mp_qkv_splited = normal_fuse_split_tp(tensor_parallel_qkv, tensor_model_parallel_size)
+        mp_qkv_splited = normal_fuse_split_tp(
+            tensor_parallel_qkv, tensor_model_parallel_size
+        )
         new_tensor_parallel_qkv = normal_fuse_merge_tp(mp_qkv_splited)
         # print("mp_qkv_splited", mp_qkv_splited[0])
         np.testing.assert_equal(new_tensor_parallel_qkv, tensor_parallel_qkv)

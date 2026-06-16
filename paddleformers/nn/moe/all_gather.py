@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Callable, Dict, Optional
+from collections.abc import Callable
+from typing import Optional
 
 import paddle
 import paddle.distributed as dist
@@ -44,7 +45,9 @@ def allgather_async(input, group=None):
     output_shape = input.shape
     output_shape[0] = output_shape[0] * parallelism
     output = paddle.empty(shape=output_shape, dtype=input.dtype)
-    task = dist.stream.all_gather(output, input, group=group, use_calc_stream=False, sync_op=False)
+    task = dist.stream.all_gather(
+        output, input, group=group, use_calc_stream=False, sync_op=False
+    )
     return output, task
 
 
@@ -67,9 +70,9 @@ def reduce_scatter_async(input, group=None):
     if parallelism == 1:
         return input.clone(), None
     output_shape = input.shape
-    assert (
-        input.shape[0] % parallelism == 0
-    ), f"Input sequence length {input.shape[0]} can't be divided exactly by sequence parallelism {parallelism}"
+    assert input.shape[0] % parallelism == 0, (
+        f"Input sequence length {input.shape[0]} can't be divided exactly by sequence parallelism {parallelism}"
+    )
     output_shape[0] = output_shape[0] // parallelism
     output = paddle.empty(shape=output_shape, dtype=input.dtype)
     task = dist.stream.reduce_scatter(
@@ -144,7 +147,7 @@ class AlltoAllSmart(paddle.autograd.PyLayer):
         ctx,
         *inputs,
         router_loss_fn: Optional[Callable],
-        forward_func_dict: Optional[Dict[int, Callable]],
+        forward_func_dict: Optional[dict[int, Callable]],
         local_expert_id=None,
         send_rank_global=None,
         recv_rank_global=None,
@@ -241,7 +244,9 @@ class AlltoAllSmart(paddle.autograd.PyLayer):
             )
 
             if send_counts_num[i_local_expert] > 0:
-                input_local_expert = inputs[i_local_expert].slice((0,), 0, send_counts_num[i_local_expert])
+                input_local_expert = inputs[i_local_expert].slice(
+                    (0,), 0, send_counts_num[i_local_expert]
+                )
                 if forward_func_dict is not None:
                     input_local_expert.stop_gradient = False
                     bwf, (input_local_expert,) = manual_backward(
@@ -262,7 +267,9 @@ class AlltoAllSmart(paddle.autograd.PyLayer):
                 # tensor._slice ensures it always returns a view.
                 # See:
                 #   https://github.com/PaddlePaddle/Paddle/blob/release/3.1/paddle/phi/core/dense_tensor_impl.cc#L299
-                output_local_expert = output._slice(output_ptr, (output_ptr + recv_counts_num[i_local_expert]))
+                output_local_expert = output._slice(
+                    output_ptr, (output_ptr + recv_counts_num[i_local_expert])
+                )
             else:
                 output_local_expert = dummy_input
 
@@ -282,41 +289,61 @@ class AlltoAllSmart(paddle.autograd.PyLayer):
                         use_calc_stream=False,
                     )
                 )
-        ctx.router_loss_bwfn, (router_loss,) = manual_backward(router_loss_fn, is_first_fwd, *router_loss_args)
+        ctx.router_loss_bwfn, (router_loss,) = manual_backward(
+            router_loss_fn, is_first_fwd, *router_loss_args
+        )
         with paddle.no_grad():
-            recv_mask = (recv_rank_global == this_rank).astype(send_rank_global.dtype)
+            recv_mask = (recv_rank_global == this_rank).astype(
+                send_rank_global.dtype
+            )
             if ctx.use_padding:
                 recv_mask_alltoall_out = (
-                    recv_mask.reshape([-1, num_local_experts, capacity]).transpose([1, 0, 2]).reshape([-1])
+                    recv_mask.reshape([-1, num_local_experts, capacity])
+                    .transpose([1, 0, 2])
+                    .reshape([-1])
                 )
                 distributed_input_to_alltoall_out = paddle.maximum(
-                    (recv_mask_alltoall_out.cumsum() - 1).astype(recv_mask_alltoall_out.dtype),
+                    (recv_mask_alltoall_out.cumsum() - 1).astype(
+                        recv_mask_alltoall_out.dtype
+                    ),
                     paddle.zeros([1], dtype=recv_mask_alltoall_out.dtype),
                 )
                 distributed_input_to_alltoall_out = (
-                    distributed_input_to_alltoall_out.view([num_local_experts, -1, capacity])
+                    distributed_input_to_alltoall_out.view(
+                        [num_local_experts, -1, capacity]
+                    )
                     .transpose([1, 0, 2])
                     .reshape([-1])
                 )
             else:
-                recv_mask_alltoall_out = recv_mask.split(expert_num_global)  # h->d copy break overlap
+                recv_mask_alltoall_out = recv_mask.split(
+                    expert_num_global
+                )  # h->d copy break overlap
                 recv_mask_alltoall_out = [
-                    recv_mask_alltoall_out[(iexpert % world_size) * num_local_experts + (iexpert // world_size)]
+                    recv_mask_alltoall_out[
+                        (iexpert % world_size) * num_local_experts
+                        + (iexpert // world_size)
+                    ]
                     for iexpert in range(world_size * num_local_experts)
                 ]
                 alltoall_shape = [i.shape[0] for i in recv_mask_alltoall_out]
 
                 recv_mask_alltoall_out = paddle.cat(recv_mask_alltoall_out, 0)
                 distributed_input_to_alltoall_out = paddle.maximum(
-                    (recv_mask_alltoall_out.cumsum() - 1).astype(recv_mask_alltoall_out.dtype),
+                    (recv_mask_alltoall_out.cumsum() - 1).astype(
+                        recv_mask_alltoall_out.dtype
+                    ),
                     paddle.zeros([1], dtype=recv_mask_alltoall_out.dtype),
                 )
-                distributed_input_to_alltoall_out = distributed_input_to_alltoall_out.split(alltoall_shape)
+                distributed_input_to_alltoall_out = (
+                    distributed_input_to_alltoall_out.split(alltoall_shape)
+                )
 
                 distributed_input_to_alltoall_out = paddle.cat(
                     [
                         distributed_input_to_alltoall_out[
-                            (iexpert % num_local_experts) * world_size + (iexpert // num_local_experts)
+                            (iexpert % num_local_experts) * world_size
+                            + (iexpert // num_local_experts)
                         ]
                         for iexpert in range(world_size * num_local_experts)
                     ],
@@ -360,7 +387,10 @@ class AlltoAllSmart(paddle.autograd.PyLayer):
             tuple: Combined gradients (expert gradients + router loss gradients)
         """
 
-        grads = [paddle.zeros(s, dtype=out_grad.dtype) if s is not None else None for s in ctx.input_shape]
+        grads = [
+            paddle.zeros(s, dtype=out_grad.dtype) if s is not None else None
+            for s in ctx.input_shape
+        ]
         assert len(grads) == ctx.num_local_experts
         out_ptr = 0
         tasks = []
@@ -372,16 +402,22 @@ class AlltoAllSmart(paddle.autograd.PyLayer):
             send_count = ctx.send_counts[i_local_expert]
             recv_count = ctx.recv_counts[i_local_expert]
             if recv_counts_num[i_local_expert] > 0:
-                out_g = out_grad.slice((0,), out_ptr, out_ptr + recv_counts_num[i_local_expert])
+                out_g = out_grad.slice(
+                    (0,), out_ptr, out_ptr + recv_counts_num[i_local_expert]
+                )
             else:
-                out_g = ctx.dummy_input  # paddle.empty([0,]+out_grad.shape[1:], dtype=out_grad.dtype)
+                out_g = (
+                    ctx.dummy_input
+                )  # paddle.empty([0,]+out_grad.shape[1:], dtype=out_grad.dtype)
             if send_counts_num[i_local_expert] > 0:
                 # When FLAGS_use_stride_kernel=0, tensor.slice(...) returns a
                 # new tensor instead of a view, causing in-place assignment to fail.
                 # tensor._slice ensures it always returns a view.
                 # See:
                 #   https://github.com/PaddlePaddle/Paddle/blob/release/3.1/paddle/phi/core/dense_tensor_impl.cc#L299
-                g = grads[i_local_expert]._slice(0, send_counts_num[i_local_expert])
+                g = grads[i_local_expert]._slice(
+                    0, send_counts_num[i_local_expert]
+                )
             else:
                 g = ctx.dummy_input
             tmp_g.append(g)
@@ -422,7 +458,7 @@ class AlltoAllSmartXPU(paddle.autograd.PyLayer):
         ctx,
         *inputs,
         router_loss_fn: Optional[Callable],
-        forward_func_dict: Optional[Dict[int, Callable]],
+        forward_func_dict: Optional[dict[int, Callable]],
         local_expert_id=None,
         send_rank_global=None,
         recv_rank_global=None,
@@ -477,7 +513,9 @@ class AlltoAllSmartXPU(paddle.autograd.PyLayer):
 
         for i_local_expert in range(num_local_experts):
             if send_counts_num[i_local_expert] > 0:
-                input_local_expert = inputs[i_local_expert].slice((0,), 0, send_counts_num[i_local_expert])
+                input_local_expert = inputs[i_local_expert].slice(
+                    (0,), 0, send_counts_num[i_local_expert]
+                )
                 if forward_func_dict is not None:
                     input_local_expert.stop_gradient = False
                     bwf, (processed_input,) = manual_backward(
@@ -499,38 +537,61 @@ class AlltoAllSmartXPU(paddle.autograd.PyLayer):
                 if expert_func.training:
                     fake_chunk.stop_gradient = False
 
-                _, (expert_out,) = manual_backward(expert_func, is_first_fwd, fake_chunk)
+                _, (expert_out,) = manual_backward(
+                    expert_func, is_first_fwd, fake_chunk
+                )
 
                 no_tokens_expert_outputs.append(expert_out * 0.0)
 
-        all_processed_inputs = paddle.cat(processed_inputs, axis=0) if processed_inputs else dummy_input
+        all_processed_inputs = (
+            paddle.cat(processed_inputs, axis=0)
+            if processed_inputs
+            else dummy_input
+        )
 
         if no_tokens_expert_outputs:
             if all_processed_inputs.shape[0] > 0:
-                all_processed_inputs[0] = all_processed_inputs[0] + sum(no_tokens_expert_outputs)
+                all_processed_inputs[0] = all_processed_inputs[0] + sum(
+                    no_tokens_expert_outputs
+                )
             else:
                 router_loss_args = list(router_loss_args)
-                router_loss_args[0] = router_loss_args[0] + sum(no_tokens_expert_outputs).mean() * 0.0
+                router_loss_args[0] = (
+                    router_loss_args[0]
+                    + sum(no_tokens_expert_outputs).mean() * 0.0
+                )
 
         in_tensors_by_rank = [[] for _ in range(world_size)]
         processed_input_ptr = 0
         for i_local_expert in range(num_local_experts):
             num_tokens = send_counts_num[i_local_expert]
             if num_tokens > 0:
-                expert_input = all_processed_inputs.slice([0], processed_input_ptr, processed_input_ptr + num_tokens)
+                expert_input = all_processed_inputs.slice(
+                    [0], processed_input_ptr, processed_input_ptr + num_tokens
+                )
                 processed_input_ptr += num_tokens
-                splits = expert_input.split(send_counts[i_local_expert].tolist(), axis=0)
+                splits = expert_input.split(
+                    send_counts[i_local_expert].tolist(), axis=0
+                )
                 for j_rank in range(world_size):
                     in_tensors_by_rank[j_rank].append(splits[j_rank])
 
-        in_tensor_list = [paddle.cat(tensors, 0) if tensors else dummy_input for tensors in in_tensors_by_rank]
+        in_tensor_list = [
+            paddle.cat(tensors, 0) if tensors else dummy_input
+            for tensors in in_tensors_by_rank
+        ]
 
         all_to_all_input = paddle.cat(in_tensor_list, 0)
         send_counts_for_api = [t.shape[0] for t in in_tensor_list]
 
         recv_counts_tensor = paddle.to_tensor(recv_counts)
-        recv_counts_for_api = [int(recv_counts_tensor[:, j_rank].sum()) for j_rank in range(world_size)]
-        temp_output = paddle.empty([recv_size.item()] + input_shape[1:], dtype=input_dtype)
+        recv_counts_for_api = [
+            int(recv_counts_tensor[:, j_rank].sum())
+            for j_rank in range(world_size)
+        ]
+        temp_output = paddle.empty(
+            [recv_size.item()] + input_shape[1:], dtype=input_dtype
+        )
 
         if group.nranks <= 1:
             task = None
@@ -547,26 +608,37 @@ class AlltoAllSmartXPU(paddle.autograd.PyLayer):
                 use_calc_stream=False,
             )
 
-        ctx.router_loss_bwfn, (router_loss,) = manual_backward(router_loss_fn, is_first_fwd, *router_loss_args)
+        ctx.router_loss_bwfn, (router_loss,) = manual_backward(
+            router_loss_fn, is_first_fwd, *router_loss_args
+        )
         with paddle.no_grad():
-            recv_mask = (recv_rank_global == this_rank).astype(send_rank_global.dtype)
+            recv_mask = (recv_rank_global == this_rank).astype(
+                send_rank_global.dtype
+            )
             if ctx.use_padding:
                 recv_mask_alltoall_out = (
-                    recv_mask.reshape([-1, num_local_experts, capacity]).transpose([1, 0, 2]).reshape([-1])
+                    recv_mask.reshape([-1, num_local_experts, capacity])
+                    .transpose([1, 0, 2])
+                    .reshape([-1])
                 )
                 distributed_input_to_alltoall_out = paddle.maximum(
                     recv_mask_alltoall_out.cumsum() - 1,
                     paddle.zeros([1], dtype=recv_mask_alltoall_out.dtype),
                 )
                 distributed_input_to_alltoall_out = (
-                    distributed_input_to_alltoall_out.view([num_local_experts, -1, capacity])
+                    distributed_input_to_alltoall_out.view(
+                        [num_local_experts, -1, capacity]
+                    )
                     .transpose([1, 0, 2])
                     .reshape([-1])
                 )
             else:
                 recv_mask_alltoall_out = recv_mask.split(expert_num_global)
                 recv_mask_alltoall_out = [
-                    recv_mask_alltoall_out[(iexpert % world_size) * num_local_experts + (iexpert // world_size)]
+                    recv_mask_alltoall_out[
+                        (iexpert % world_size) * num_local_experts
+                        + (iexpert // world_size)
+                    ]
                     for iexpert in range(world_size * num_local_experts)
                 ]
                 alltoall_shape = [i.shape[0] for i in recv_mask_alltoall_out]
@@ -575,11 +647,14 @@ class AlltoAllSmartXPU(paddle.autograd.PyLayer):
                     recv_mask_alltoall_out.cumsum() - 1,
                     paddle.zeros([1], dtype=recv_mask_alltoall_out.dtype),
                 )
-                distributed_input_to_alltoall_out = distributed_input_to_alltoall_out.split(alltoall_shape)
+                distributed_input_to_alltoall_out = (
+                    distributed_input_to_alltoall_out.split(alltoall_shape)
+                )
                 distributed_input_to_alltoall_out = paddle.cat(
                     [
                         distributed_input_to_alltoall_out[
-                            (iexpert % num_local_experts) * world_size + (iexpert // num_local_experts)
+                            (iexpert % num_local_experts) * world_size
+                            + (iexpert // num_local_experts)
                         ]
                         for iexpert in range(world_size * num_local_experts)
                     ],
@@ -591,13 +666,19 @@ class AlltoAllSmartXPU(paddle.autograd.PyLayer):
         if task is not None:
             task.wait()
 
-        temp_output_splits_by_src_rank = temp_output.split(recv_counts_for_api, 0)
+        temp_output_splits_by_src_rank = temp_output.split(
+            recv_counts_for_api, 0
+        )
         chunks_by_expert = [[] for _ in range(num_local_experts)]
         for j_rank in range(world_size):
             data_from_j = temp_output_splits_by_src_rank[j_rank]
-            expert_chunks_from_j = data_from_j.split(recv_counts[:, j_rank].tolist(), 0)
+            expert_chunks_from_j = data_from_j.split(
+                recv_counts[:, j_rank].tolist(), 0
+            )
             for i_expert in range(num_local_experts):
-                chunks_by_expert[i_expert].append(expert_chunks_from_j[i_expert])
+                chunks_by_expert[i_expert].append(
+                    expert_chunks_from_j[i_expert]
+                )
 
         output_chunks = []
         for i_expert in range(num_local_experts):
@@ -626,21 +707,32 @@ class AlltoAllSmartXPU(paddle.autograd.PyLayer):
         for i_expert in range(num_local_experts):
             num_tokens = send_counts_num_bw[i_expert]
             if num_tokens > 0:
-                expert_grad = out_grad.slice([0], grad_ptr, grad_ptr + num_tokens)
+                expert_grad = out_grad.slice(
+                    [0], grad_ptr, grad_ptr + num_tokens
+                )
                 grad_ptr += num_tokens
                 splits = expert_grad.split(send_counts_bw[i_expert].tolist(), 0)
                 for j_rank in range(world_size):
                     in_tensors_by_rank_bw[j_rank].append(splits[j_rank])
-        in_tensor_list_bw = [paddle.cat(tensors, 0) if tensors else dummy_input for tensors in in_tensors_by_rank_bw]
+        in_tensor_list_bw = [
+            paddle.cat(tensors, 0) if tensors else dummy_input
+            for tensors in in_tensors_by_rank_bw
+        ]
 
         all_to_all_grad_input = paddle.cat(in_tensor_list_bw, 0)
         send_counts_bw_for_api = [t.shape[0] for t in in_tensor_list_bw]
 
         recv_counts_bw = ctx.send_counts
         recv_counts_tensor_bw = paddle.to_tensor(recv_counts_bw)
-        recv_counts_bw_for_api = [int(recv_counts_tensor_bw[:, j_rank].sum()) for j_rank in range(world_size)]
+        recv_counts_bw_for_api = [
+            int(recv_counts_tensor_bw[:, j_rank].sum())
+            for j_rank in range(world_size)
+        ]
         total_output_grad_size = int(ctx.send_counts_num.sum())
-        temp_grad_output = paddle.empty([total_output_grad_size] + list(out_grad.shape[1:]), dtype=out_grad.dtype)
+        temp_grad_output = paddle.empty(
+            [total_output_grad_size] + list(out_grad.shape[1:]),
+            dtype=out_grad.dtype,
+        )
 
         if ctx.group.nranks <= 1:
             task = None
@@ -662,19 +754,30 @@ class AlltoAllSmartXPU(paddle.autograd.PyLayer):
         if task is not None:
             task.wait()
 
-        temp_grad_output_splits = temp_grad_output.split(recv_counts_bw_for_api, 0)
+        temp_grad_output_splits = temp_grad_output.split(
+            recv_counts_bw_for_api, 0
+        )
         grad_chunks_by_expert = [[] for _ in range(num_local_experts)]
         for j_rank in range(world_size):
             data_from_j = temp_grad_output_splits[j_rank]
-            expert_chunks_from_j = data_from_j.split(recv_counts_bw[:, j_rank].tolist(), 0)
+            expert_chunks_from_j = data_from_j.split(
+                recv_counts_bw[:, j_rank].tolist(), 0
+            )
             for i_expert in range(num_local_experts):
-                grad_chunks_by_expert[i_expert].append(expert_chunks_from_j[i_expert])
+                grad_chunks_by_expert[i_expert].append(
+                    expert_chunks_from_j[i_expert]
+                )
 
-        grads = [paddle.zeros(s, dtype=out_grad.dtype) if s is not None else None for s in ctx.input_shape]
+        grads = [
+            paddle.zeros(s, dtype=out_grad.dtype) if s is not None else None
+            for s in ctx.input_shape
+        ]
         for i_expert in range(num_local_experts):
             num_tokens = ctx.send_counts_num[i_expert]
             if num_tokens > 0:
-                reconstructed_grad = paddle.cat(grad_chunks_by_expert[i_expert], 0)
+                reconstructed_grad = paddle.cat(
+                    grad_chunks_by_expert[i_expert], 0
+                )
                 if i_expert in ctx.bw_funcs:
                     (final_grad,) = ctx.bw_funcs[i_expert](reconstructed_grad)
                 else:

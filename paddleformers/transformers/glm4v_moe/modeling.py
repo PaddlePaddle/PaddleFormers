@@ -16,7 +16,7 @@
 import itertools
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Optional, Tuple, Union
+from typing import Any, Optional
 
 import paddle
 import paddle.distributed as dist
@@ -31,20 +31,25 @@ from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
-from ...nn.mlp import MLP as Glm4vMoeTextMLP
-from ...nn.mlp import MLP as Glm4vMoeVisionMLP
+from ...nn.mlp import MLP as Glm4vMoeTextMLP, MLP as Glm4vMoeVisionMLP
 from ...nn.moe_deepep.moe_factory import QuickAccessMoEFactory
 from ...nn.norm import Norm as GeneralNorm
 from ...utils.log import logger
 from ..activations import ACT2FN
 from ..cache_utils import Cache, DynamicCache
-from ..glm4_moe.modeling import Glm4MoeFlexMoE as Glm4vMoeFlexTextMoE
-from ..glm4_moe.modeling import Glm4MoeMoE as Glm4vMoeTextMoE
+from ..glm4_moe.modeling import (
+    Glm4MoeFlexMoE as Glm4vMoeFlexTextMoE,
+    Glm4MoeMoE as Glm4vMoeTextMoE,
+)
 from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import ModelOutput
 from ..model_utils import PretrainedModel
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
-from .configuration import Glm4vMoeConfig, Glm4vMoeTextConfig, Glm4vMoeVisionConfig
+from .configuration import (
+    Glm4vMoeConfig,
+    Glm4vMoeTextConfig,
+    Glm4vMoeVisionConfig,
+)
 
 
 @dataclass
@@ -82,7 +87,9 @@ class Glm4vMoeModelOutputWithPast(ModelOutput):
 class Glm4vMoeTextRotaryEmbedding(nn.Layer):
     inv_freq: paddle.Tensor  # fix linting for `register_buffer`
 
-    def __init__(self, config: Glm4vMoeTextConfig, device=None, layer_type=None):
+    def __init__(
+        self, config: Glm4vMoeTextConfig, device=None, layer_type=None
+    ):
         super().__init__()
         self.max_seq_len_cached = config.max_position_embeddings
         self.original_max_seq_len = config.max_position_embeddings
@@ -117,14 +124,27 @@ class Glm4vMoeTextRotaryEmbedding(nn.Layer):
             post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
         """
         base = config.rope_parameters["rope_theta"]
-        partial_rotary_factor = config.rope_parameters.get("partial_rotary_factor", 1.0)
-        head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+        partial_rotary_factor = config.rope_parameters.get(
+            "partial_rotary_factor", 1.0
+        )
+        head_dim = (
+            getattr(config, "head_dim", None)
+            or config.hidden_size // config.num_attention_heads
+        )
         dim = int(head_dim * partial_rotary_factor)
 
         attention_factor = 1.0  # Unused in this type of RoPE
 
         # Compute the inverse frequencies
-        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        inv_freq = 1.0 / (
+            base
+            ** (
+                paddle.arange(0, dim, 2, dtype=paddle.int64).astype(
+                    dtype=paddle.float32
+                )
+                / dim
+            )
+        )
         return inv_freq, attention_factor
 
     @dynamic_rope_update  # power user: used with advanced RoPE types (e.g. dynamic rope)
@@ -136,11 +156,19 @@ class Glm4vMoeTextRotaryEmbedding(nn.Layer):
         with paddle.amp.auto_cast(False):
             # In contrast to other models, GLM4V_MOE different position ids for the grids
             # So we expand the inv_freq to shape (3, ...)
-            inv_freq_expanded = self.inv_freq[None, None, :, None].float().expand(3, position_ids.shape[1], -1, 1)
-            position_ids_expanded = position_ids[:, :, None, :].float()  # shape (3, bs, 1, positions)
+            inv_freq_expanded = (
+                self.inv_freq[None, None, :, None]
+                .float()
+                .expand(3, position_ids.shape[1], -1, 1)
+            )
+            position_ids_expanded = position_ids[
+                :, :, None, :
+            ].float()  # shape (3, bs, 1, positions)
 
             # freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(2, 3)
-            freqs = paddle.matmul(inv_freq_expanded, position_ids_expanded).transpose([0, 1, 3, 2])
+            freqs = paddle.matmul(
+                inv_freq_expanded, position_ids_expanded
+            ).transpose([0, 1, 3, 2])
             emb = paddle.cat((freqs, freqs), dim=-1)
             cos = emb.cos() * self.attention_scaling
             sin = emb.sin() * self.attention_scaling
@@ -155,7 +183,9 @@ def rotate_half(x):
     return paddle.cat((-x2, x1), dim=-1)
 
 
-def apply_multimodal_rotary_pos_emb(q, k, cos, sin, mrope_section, unsqueeze_dim=1):
+def apply_multimodal_rotary_pos_emb(
+    q, k, cos, sin, mrope_section, unsqueeze_dim=1
+):
     """Applies Rotary Position Embedding with Multimodal Sections to the query and key tensors (https://qwenlm.github.io/blog/qwen2-vl/).
 
     Explanation:
@@ -186,10 +216,22 @@ def apply_multimodal_rotary_pos_emb(q, k, cos, sin, mrope_section, unsqueeze_dim
     """
     mrope_section = mrope_section * 2
     cos = paddle.cat(
-        [m[i % 3] for i, m in enumerate(paddle.compat.split(cos, mrope_section, dim=-1))], dim=-1
+        [
+            m[i % 3]
+            for i, m in enumerate(
+                paddle.compat.split(cos, mrope_section, dim=-1)
+            )
+        ],
+        dim=-1,
     ).unsqueeze(unsqueeze_dim)
     sin = paddle.cat(
-        [m[i % 3] for i, m in enumerate(paddle.compat.split(sin, mrope_section, dim=-1))], dim=-1
+        [
+            m[i % 3]
+            for i, m in enumerate(
+                paddle.compat.split(sin, mrope_section, dim=-1)
+            )
+        ],
+        dim=-1,
     ).unsqueeze(unsqueeze_dim)
 
     # Keep half or full tensor for later concatenation
@@ -211,14 +253,20 @@ def apply_multimodal_rotary_pos_emb(q, k, cos, sin, mrope_section, unsqueeze_dim
 class Glm4vMoeTextAttention(nn.Layer):
     """Multi-headed attention from 'Attention Is All You Need' paper"""
 
-    def __init__(self, config: Glm4vMoeTextConfig, layer_idx: Optional[int] = None):
+    def __init__(
+        self, config: Glm4vMoeTextConfig, layer_idx: Optional[int] = None
+    ):
         super().__init__()
         self.config = config
         self.layer_idx = layer_idx
         self.num_heads = config.num_attention_heads
-        self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
+        self.head_dim = getattr(
+            config, "head_dim", config.hidden_size // config.num_attention_heads
+        )
         self.num_key_value_heads = config.num_key_value_heads
-        self.num_key_value_groups = config.num_attention_heads // config.num_key_value_heads
+        self.num_key_value_groups = (
+            config.num_attention_heads // config.num_key_value_heads
+        )
         self.scaling = self.head_dim**-0.5
         self.attention_dropout = config.attention_dropout
         self.is_causal = True
@@ -226,15 +274,20 @@ class Glm4vMoeTextAttention(nn.Layer):
         self.sequence_parallel = config.sequence_parallel
 
         if config.tensor_model_parallel_size > 1:
-            assert (
-                self.num_heads % config.tensor_model_parallel_size == 0
-            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            assert self.num_heads % config.tensor_model_parallel_size == 0, (
+                f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            )
             self.num_heads = self.num_heads // config.tensor_model_parallel_size
 
             assert (
-                self.num_key_value_heads % config.tensor_model_parallel_size == 0
-            ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
-            self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
+                self.num_key_value_heads % config.tensor_model_parallel_size
+                == 0
+            ), (
+                f"num_key_value_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            )
+            self.num_key_value_heads = (
+                self.num_key_value_heads // config.tensor_model_parallel_size
+            )
 
         kv_hidden_size = self.config.num_key_value_heads * self.head_dim
         q_hidden_size = self.config.num_attention_heads * self.head_dim
@@ -265,11 +318,17 @@ class Glm4vMoeTextAttention(nn.Layer):
         cache_position: Optional[paddle.LongTensor] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
-    ) -> tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[tuple[paddle.Tensor]]]:
+    ) -> tuple[
+        paddle.Tensor, Optional[paddle.Tensor], Optional[tuple[paddle.Tensor]]
+    ]:
         mix_layer = self.qkv_proj(hidden_states)
         if self.config.sequence_parallel:
             max_sequence_length = self.config.max_sequence_length
-            bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
+            bsz = (
+                hidden_states.shape[0]
+                * self.config.tensor_model_parallel_size
+                // max_sequence_length
+            )
             q_len = max_sequence_length
             target_shape = [
                 bsz,
@@ -278,11 +337,20 @@ class Glm4vMoeTextAttention(nn.Layer):
                 (self.num_key_value_groups + 2) * self.head_dim,
             ]
         else:
-            target_shape = [0, 0, self.num_key_value_heads, (self.num_key_value_groups + 2) * self.head_dim]
+            target_shape = [
+                0,
+                0,
+                self.num_key_value_heads,
+                (self.num_key_value_groups + 2) * self.head_dim,
+            ]
         mix_layer = paddle.reshape_(mix_layer, target_shape)
         query_states, key_states, value_states = paddle.split(
             mix_layer,
-            num_or_sections=[self.num_key_value_groups * self.head_dim, self.head_dim, self.head_dim],
+            num_or_sections=[
+                self.num_key_value_groups * self.head_dim,
+                self.head_dim,
+                self.head_dim,
+            ],
             axis=-1,
         )
         query_states = query_states.reshape([0, 0, -1, self.head_dim])
@@ -293,16 +361,26 @@ class Glm4vMoeTextAttention(nn.Layer):
         value_states = value_states.transpose(1, 2)
 
         cos, sin = position_embeddings
-        query_states, key_states = apply_multimodal_rotary_pos_emb(  # diff with Llama
-            query_states, key_states, cos, sin, self.rope_parameters["mrope_section"]
+        query_states, key_states = (
+            apply_multimodal_rotary_pos_emb(  # diff with Llama
+                query_states,
+                key_states,
+                cos,
+                sin,
+                self.rope_parameters["mrope_section"],
+            )
         )
 
         if past_key_values is not None:
-            key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
+            key_states, value_states = past_key_values.update(
+                key_states, value_states, self.layer_idx
+            )
 
         attention_interface: Callable = ALL_ATTENTION_FUNCTIONS["eager"]
         if self.config._attn_implementation != "eager":
-            attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+            attention_interface = ALL_ATTENTION_FUNCTIONS[
+                self.config._attn_implementation
+            ]
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -328,13 +406,19 @@ class Glm4vMoeTextDecoderLayer(nn.Layer):
         self.config = config
         self.hidden_size = config.hidden_size
 
-        self.self_attn = Glm4vMoeTextAttention(config=config, layer_idx=layer_idx)
+        self.self_attn = Glm4vMoeTextAttention(
+            config=config, layer_idx=layer_idx
+        )
 
         try:
-            moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
+            moe_group = (
+                fleet.get_hybrid_communicate_group().get_expert_parallel_group()
+            )
         except:
             moe_group = None
-        expert_parallel_degree = dist.get_world_size(moe_group) if moe_group is not None else 1
+        expert_parallel_degree = (
+            dist.get_world_size(moe_group) if moe_group is not None else 1
+        )
         if layer_idx >= config.first_k_dense_replace:
             self.mlp = (
                 Glm4vMoeTextMoE(config)
@@ -378,7 +462,9 @@ class Glm4vMoeTextDecoderLayer(nn.Layer):
     def forward(
         self,
         hidden_states: paddle.Tensor,
-        position_embeddings: Optional[tuple[paddle.Tensor, paddle.Tensor]] = None,
+        position_embeddings: Optional[
+            tuple[paddle.Tensor, paddle.Tensor]
+        ] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.LongTensor] = None,
         past_key_values: Optional[Cache] = None,
@@ -437,10 +523,21 @@ class Glm4vMoePreTrainedModel(PretrainedModel):
     @classmethod
     def _gen_aoa_config(cls, config: Glm4vMoeConfig):
         mapping = cls._checkpoint_conversion_mapping
-        llm_target = next((v for v in mapping.values() if "language_model" in v), "language_model")
-        visual_target = next((v for v in mapping.values() if "visual" in v), "visual")
-        llm_prefix = f"{llm_target}." if not llm_target.endswith(".") else llm_target
-        visual_prefix = f"{visual_target}." if not visual_target.endswith(".") else visual_target
+        llm_target = next(
+            (v for v in mapping.values() if "language_model" in v),
+            "language_model",
+        )
+        visual_target = next(
+            (v for v in mapping.values() if "visual" in v), "visual"
+        )
+        llm_prefix = (
+            f"{llm_target}." if not llm_target.endswith(".") else llm_target
+        )
+        visual_prefix = (
+            f"{visual_target}."
+            if not visual_target.endswith(".")
+            else visual_target
+        )
 
         # language model
         aoa_config = {
@@ -530,10 +627,21 @@ class Glm4vMoePreTrainedModel(PretrainedModel):
     @classmethod
     def _gen_inv_aoa_config(cls, config: Glm4vMoeConfig):
         mapping = cls._checkpoint_conversion_mapping
-        llm_target = next((v for v in mapping.values() if "language_model" in v), "language_model")
-        visual_target = next((v for v in mapping.values() if "visual" in v), "visual")
-        llm_prefix = f"{llm_target}." if not llm_target.endswith(".") else llm_target
-        visual_prefix = f"{visual_target}." if not visual_target.endswith(".") else visual_target
+        llm_target = next(
+            (v for v in mapping.values() if "language_model" in v),
+            "language_model",
+        )
+        visual_target = next(
+            (v for v in mapping.values() if "visual" in v), "visual"
+        )
+        llm_prefix = (
+            f"{llm_target}." if not llm_target.endswith(".") else llm_target
+        )
+        visual_prefix = (
+            f"{visual_target}."
+            if not visual_target.endswith(".")
+            else visual_target
+        )
 
         # language model
         aoa_config = {
@@ -654,15 +762,30 @@ class Glm4vMoeVisionPatchEmbed(nn.Layer):
         self.in_channels = config.in_channels
         self.embed_dim = config.hidden_size
 
-        kernel_size = [self.temporal_patch_size, self.patch_size, self.patch_size]
-        self.proj = nn.Conv3d(self.in_channels, self.embed_dim, kernel_size=kernel_size, stride=kernel_size)
+        kernel_size = [
+            self.temporal_patch_size,
+            self.patch_size,
+            self.patch_size,
+        ]
+        self.proj = nn.Conv3d(
+            self.in_channels,
+            self.embed_dim,
+            kernel_size=kernel_size,
+            stride=kernel_size,
+        )
 
     def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
         target_dtype = self.proj.weight.dtype
         hidden_states = hidden_states.reshape(
-            -1, self.in_channels, self.temporal_patch_size, self.patch_size, self.patch_size
+            -1,
+            self.in_channels,
+            self.temporal_patch_size,
+            self.patch_size,
+            self.patch_size,
         )
-        hidden_states = self.proj(hidden_states.to(dtype=target_dtype)).reshape(-1, self.embed_dim)
+        hidden_states = self.proj(hidden_states.to(dtype=target_dtype)).reshape(
+            -1, self.embed_dim
+        )
         return hidden_states
 
 
@@ -671,31 +794,55 @@ class Glm4vMoeVisionRotaryEmbedding(nn.Layer):
 
     def __init__(self, dim: int, theta: float = 10000.0) -> None:
         super().__init__()
-        inv_freq = 1.0 / (theta ** (paddle.arange(0, dim, 2, dtype=paddle.float) / dim))
+        inv_freq = 1.0 / (
+            theta ** (paddle.arange(0, dim, 2, dtype=paddle.float) / dim)
+        )
         self.register_buffer("inv_freq", inv_freq, persistent=False)
 
     def forward(self, seqlen: int) -> paddle.Tensor:
-        seq = paddle.arange(seqlen, device=self.inv_freq.device, dtype=self.inv_freq.dtype)
+        seq = paddle.arange(
+            seqlen, device=self.inv_freq.device, dtype=self.inv_freq.dtype
+        )
         freqs = paddle.outer(seq, self.inv_freq)
         return freqs
 
 
 class Glm4vMoeVisionPatchMerger(nn.Layer):
-    def __init__(self, config, dim: int, context_dim: int, hidden_act: str, bias: bool = False) -> None:
+    def __init__(
+        self,
+        config,
+        dim: int,
+        context_dim: int,
+        hidden_act: str,
+        bias: bool = False,
+    ) -> None:
         super().__init__()
         # self.proj = nn.Linear(dim, dim, bias=bias)
-        self.proj = GeneralLinear.create(dim, dim, has_bias=bias, linear_type="default")
-        self.post_projection_norm = GeneralNorm.create(config, norm_type="layer_norm", hidden_size=dim)
-        self.gate_proj = GeneralLinear.create(dim, context_dim, has_bias=bias, linear_type="default")
-        self.up_proj = GeneralLinear.create(dim, context_dim, has_bias=bias, linear_type="default")
-        self.down_proj = GeneralLinear.create(context_dim, dim, has_bias=bias, linear_type="default")
+        self.proj = GeneralLinear.create(
+            dim, dim, has_bias=bias, linear_type="default"
+        )
+        self.post_projection_norm = GeneralNorm.create(
+            config, norm_type="layer_norm", hidden_size=dim
+        )
+        self.gate_proj = GeneralLinear.create(
+            dim, context_dim, has_bias=bias, linear_type="default"
+        )
+        self.up_proj = GeneralLinear.create(
+            dim, context_dim, has_bias=bias, linear_type="default"
+        )
+        self.down_proj = GeneralLinear.create(
+            context_dim, dim, has_bias=bias, linear_type="default"
+        )
         self.act1 = nn.GELU()
         self.act_fn = ACT2FN[hidden_act]
 
     def forward(self, hidden_state: paddle.Tensor) -> paddle.Tensor:
         hidden_state = self.proj(hidden_state)
         hidden_state = self.act1(self.post_projection_norm(hidden_state))
-        return self.down_proj(self.act_fn(self.gate_proj(hidden_state)) * self.up_proj(hidden_state))
+        return self.down_proj(
+            self.act_fn(self.gate_proj(hidden_state))
+            * self.up_proj(hidden_state)
+        )
 
 
 class Glm4vMoeVisionEmbeddings(nn.Layer):
@@ -713,9 +860,15 @@ class Glm4vMoeVisionEmbeddings(nn.Layer):
             num_embeddings=self.num_positions,
             embedding_dim=self.embed_dim,
         )
-        self.register_buffer("position_ids", paddle.arange(self.num_positions).expand((1, -1)), persistent=False)
+        self.register_buffer(
+            "position_ids",
+            paddle.arange(self.num_positions).expand((1, -1)),
+            persistent=False,
+        )
 
-    def forward(self, embeddings, lengths, image_shapes, h_coords, w_coords) -> paddle.Tensor:
+    def forward(
+        self, embeddings, lengths, image_shapes, h_coords, w_coords
+    ) -> paddle.Tensor:
         """
         Forward pass with integrated position encoding adaptation using 2D interpolation.
 
@@ -736,7 +889,9 @@ class Glm4vMoeVisionEmbeddings(nn.Layer):
 
         # Handle empty sequence case
         if total_seq == 0:
-            adapted_pos_embed = paddle.empty(0, hidden_size, dtype=pos_embed_weight.dtype)
+            adapted_pos_embed = paddle.empty(
+                0, hidden_size, dtype=pos_embed_weight.dtype
+            )
         else:
             # Convert inputs to tensors if needed
             if isinstance(lengths, list):
@@ -747,15 +902,27 @@ class Glm4vMoeVisionEmbeddings(nn.Layer):
             # Prepare 2D position embedding
             orig_size_sq = pos_embed_weight.shape[0]
             orig_size = int(orig_size_sq**0.5)
-            pos_embed_2d_base = pos_embed_weight.reshape(orig_size, orig_size, hidden_size)
-            pos_embed_2d = pos_embed_2d_base.permute(2, 0, 1).unsqueeze(0).to(dtype=paddle.float32)
+            pos_embed_2d_base = pos_embed_weight.reshape(
+                orig_size, orig_size, hidden_size
+            )
+            pos_embed_2d = (
+                pos_embed_2d_base.permute(2, 0, 1)
+                .unsqueeze(0)
+                .to(dtype=paddle.float32)
+            )
 
             # Calculate target dimensions for each patch
             target_h = paddle.cat(
-                [paddle.full([lengths[i]], image_shapes[i, 1].item()) for i in range(len(lengths))]
+                [
+                    paddle.full([lengths[i]], image_shapes[i, 1].item())
+                    for i in range(len(lengths))
+                ]
             ).to(dtype=paddle.float32)
             target_w = paddle.cat(
-                [paddle.full([lengths[i]], image_shapes[i, 2].item()) for i in range(len(lengths))]
+                [
+                    paddle.full([lengths[i]], image_shapes[i, 2].item())
+                    for i in range(len(lengths))
+                ]
             ).to(dtype=paddle.float32)
 
             # Normalize coordinates to [-1, 1] range for grid_sample
@@ -765,17 +932,27 @@ class Glm4vMoeVisionEmbeddings(nn.Layer):
             norm_h = ((h_coords + 0.5) / target_h) * 2 - 1
 
             # Create sampling grid
-            grid = paddle.stack((norm_w, norm_h), dim=-1).unsqueeze(0).unsqueeze(2)
+            grid = (
+                paddle.stack((norm_w, norm_h), dim=-1).unsqueeze(0).unsqueeze(2)
+            )
 
             # Perform bicubic interpolation
             # TODO: "bicubic" mode is not supported now, set "bilinear" temporarily
             interpolated_embed_fp32 = F.grid_sample(
-                pos_embed_2d, grid, mode="bilinear", align_corners=False, padding_mode="border"
+                pos_embed_2d,
+                grid,
+                mode="bilinear",
+                align_corners=False,
+                padding_mode="border",
             )
 
             # Reshape and convert back to original dtype
-            adapted_pos_embed_fp32 = interpolated_embed_fp32.squeeze(0).squeeze(-1).permute(1, 0)
-            adapted_pos_embed = adapted_pos_embed_fp32.to(pos_embed_weight.dtype)
+            adapted_pos_embed_fp32 = (
+                interpolated_embed_fp32.squeeze(0).squeeze(-1).permute(1, 0)
+            )
+            adapted_pos_embed = adapted_pos_embed_fp32.to(
+                pos_embed_weight.dtype
+            )
 
         # Add adapted position encoding to embeddings
         embeddings = embeddings + adapted_pos_embed
@@ -790,7 +967,10 @@ def apply_rotary_pos_emb_vision(
     orig_k_dtype = k.dtype
     with paddle.amp.auto_cast(False):
         q, k = q.astype(dtype="float32"), k.astype(dtype="float32")
-        cos, sin = cos.unsqueeze(-2).astype(dtype="float32"), sin.unsqueeze(-2).astype(dtype="float32")
+        cos, sin = (
+            cos.unsqueeze(-2).astype(dtype="float32"),
+            sin.unsqueeze(-2).astype(dtype="float32"),
+        )
         q_embed = (q * cos) + (rotate_half(q) * sin)
         k_embed = (k * cos) + (rotate_half(k) * sin)
         return q_embed.astype(orig_q_dtype), k_embed.astype(orig_k_dtype)
@@ -825,15 +1005,22 @@ class Glm4vMoeVisionAttention(nn.Layer):
         hidden_states: paddle.Tensor,
         cu_seqlens: paddle.Tensor,
         rotary_pos_emb: Optional[paddle.Tensor] = None,
-        position_embeddings: Optional[tuple[paddle.Tensor, paddle.Tensor]] = None,
+        position_embeddings: Optional[
+            tuple[paddle.Tensor, paddle.Tensor]
+        ] = None,
         **kwargs,
     ) -> paddle.Tensor:
         seq_length = hidden_states.shape[0]
         query_states, key_states, value_states = (
-            self.qkv(hidden_states).reshape(seq_length, 3, self.num_heads, -1).permute(1, 0, 2, 3).unbind(0)
+            self.qkv(hidden_states)
+            .reshape(seq_length, 3, self.num_heads, -1)
+            .permute(1, 0, 2, 3)
+            .unbind(0)
         )
         cos, sin = position_embeddings
-        query_states, key_states = apply_rotary_pos_emb_vision(query_states, key_states, cos, sin)
+        query_states, key_states = apply_rotary_pos_emb_vision(
+            query_states, key_states, cos, sin
+        )
 
         query_states = query_states.transpose(0, 1).unsqueeze(0)
         key_states = key_states.transpose(0, 1).unsqueeze(0)
@@ -841,12 +1028,17 @@ class Glm4vMoeVisionAttention(nn.Layer):
 
         # TODO: flash_attention_2 is not supported now
         if self.config._attn_implementation == "flash_attention_2":
-            logger.warning("'flash_attention_2' is currently unsupported. " "Switch to 'flashmask' automatically.")
+            logger.warning(
+                "'flash_attention_2' is currently unsupported. "
+                "Switch to 'flashmask' automatically."
+            )
             self.config._attn_implementation = "flashmask"
 
         attention_interface: Callable = ALL_ATTENTION_FUNCTIONS["eager"]
         if self.config._attn_implementation != "eager":
-            attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+            attention_interface = ALL_ATTENTION_FUNCTIONS[
+                self.config._attn_implementation
+            ]
 
         if self.config._attn_implementation == "flash_attention_2":
             # Flash Attention 2: Use cu_seqlens for variable length attention
@@ -883,7 +1075,9 @@ class Glm4vMoeVisionAttention(nn.Layer):
                     attention_mask=None,
                     attn_mask_startend_row_indices=None,
                     scaling=self.scaling,
-                    dropout=0.0 if not self.training else self.attention_dropout,
+                    dropout=0.0
+                    if not self.training
+                    else self.attention_dropout,
                     is_causal=False,
                     **kwargs,
                 )[0]
@@ -925,7 +1119,9 @@ class Glm4vMoeVisionBlock(nn.Layer):
         self,
         hidden_states: paddle.Tensor,
         cu_seqlens: paddle.Tensor,
-        position_embeddings: Optional[tuple[paddle.Tensor, paddle.Tensor]] = None,
+        position_embeddings: Optional[
+            tuple[paddle.Tensor, paddle.Tensor]
+        ] = None,
         rotary_pos_emb: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> paddle.Tensor:
@@ -956,7 +1152,9 @@ class Glm4vMoeVisionModel(Glm4vMoePreTrainedModel):
         head_dim = config.hidden_size // config.num_heads
         self.rotary_pos_emb = Glm4vMoeVisionRotaryEmbedding(head_dim // 2)
 
-        self.blocks = nn.LayerList([Glm4vMoeVisionBlock(config) for _ in range(config.depth)])
+        self.blocks = nn.LayerList(
+            [Glm4vMoeVisionBlock(config) for _ in range(config.depth)]
+        )
         self.merger = Glm4vMoeVisionPatchMerger(
             config,
             dim=config.out_hidden_size,
@@ -1013,7 +1211,11 @@ class Glm4vMoeVisionModel(Glm4vMoePreTrainedModel):
             )
             wpos_ids = wpos_ids.permute(0, 2, 1, 3)
             wpos_ids = wpos_ids.flatten()
-            pos_ids.append(paddle.stack([hpos_ids, wpos_ids], dim=-1).tile(repeat_times=[t, 1]))
+            pos_ids.append(
+                paddle.stack([hpos_ids, wpos_ids], dim=-1).tile(
+                    repeat_times=[t, 1]
+                )
+            )
         pos_ids = paddle.cat(pos_ids, dim=0)
         max_grid_size = grid_thw[:, 1:].max()
         rotary_pos_emb_full = self.rotary_pos_emb(max_grid_size)
@@ -1042,7 +1244,9 @@ class Glm4vMoeVisionModel(Glm4vMoePreTrainedModel):
         )
         return hidden_states
 
-    def forward(self, hidden_states: paddle.Tensor, grid_thw: paddle.Tensor) -> paddle.Tensor:
+    def forward(
+        self, hidden_states: paddle.Tensor, grid_thw: paddle.Tensor
+    ) -> paddle.Tensor:
         """
         Args:
             hidden_states (`paddle.Tensor` of shape `(seq_len, hidden_size)`):
@@ -1060,12 +1264,18 @@ class Glm4vMoeVisionModel(Glm4vMoePreTrainedModel):
         emb = paddle.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
         position_embeddings = (emb.cos(), emb.sin())
 
-        cu_seqlens = paddle.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
-            dim=0, dtype="int32"
-        )
+        cu_seqlens = paddle.repeat_interleave(
+            grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]
+        ).cumsum(dim=0, dtype="int32")
         cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
         seqlens = (cu_seqlens[1:] - cu_seqlens[:-1]).tolist()
-        hidden_states = self.embeddings(hidden_states, seqlens, grid_thw, image_type_ids[:, 0], image_type_ids[:, 1])
+        hidden_states = self.embeddings(
+            hidden_states,
+            seqlens,
+            grid_thw,
+            image_type_ids[:, 0],
+            image_type_ids[:, 1],
+        )
 
         for blk in self.blocks:
             has_gradient = not hidden_states.stop_gradient
@@ -1091,10 +1301,15 @@ class Glm4vMoeVisionModel(Glm4vMoePreTrainedModel):
         hidden_states = self.post_layernorm(hidden_states)
 
         hidden_states = hidden_states.reshape(
-            -1, self.spatial_merge_size, self.spatial_merge_size, hidden_states.shape[-1]
+            -1,
+            self.spatial_merge_size,
+            self.spatial_merge_size,
+            hidden_states.shape[-1],
         )
         hidden_states = hidden_states.permute(0, 3, 1, 2)
-        hidden_states = self.downsample(hidden_states).reshape(-1, self.config.out_hidden_size)
+        hidden_states = self.downsample(hidden_states).reshape(
+            -1, self.config.out_hidden_size
+        )
 
         hidden_states = self.merger(hidden_states)
         return hidden_states
@@ -1110,7 +1325,10 @@ class Glm4vMoeTextModel(Glm4vMoePreTrainedModel):
         self.vocab_size = config.vocab_size
 
         self.layers = nn.LayerList(
-            [Glm4vMoeTextDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
+            [
+                Glm4vMoeTextDecoderLayer(config, layer_idx)
+                for layer_idx in range(config.num_hidden_layers)
+            ]
         )
         self.embed_tokens = GeneralEmbedding.create(
             config=config,
@@ -1134,7 +1352,7 @@ class Glm4vMoeTextModel(Glm4vMoePreTrainedModel):
         self,
         layer_module: nn.Layer,
         hidden_states: Tensor,
-        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]],
+        position_embeddings: Optional[tuple[paddle.Tensor, paddle.Tensor]],
         attention_mask: Tensor,
         position_ids: Optional[paddle.Tensor],
         past_key_values: Optional[Cache],
@@ -1177,52 +1395,80 @@ class Glm4vMoeTextModel(Glm4vMoePreTrainedModel):
         **kwargs,
     ) -> MoeModelOutputWithPast:
         output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
         )
-        use_cache = use_cache if use_cache is not None else self.config.use_cache
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        use_cache = (
+            use_cache if use_cache is not None else self.config.use_cache
+        )
+        return_dict = (
+            return_dict
+            if return_dict is not None
+            else self.config.use_return_dict
+        )
 
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
 
         # retrieve input_ids and inputs_embeds
         if input_ids is not None and inputs_embeds is not None:
-            raise ValueError("You cannot specify both decoder_input_ids and decoder_inputs_embeds at the same time")
+            raise ValueError(
+                "You cannot specify both decoder_input_ids and decoder_inputs_embeds at the same time"
+            )
         elif input_ids is not None:
             batch_size, seq_length = input_ids.shape
         elif inputs_embeds is not None:
             batch_size, seq_length, _ = inputs_embeds.shape
         else:
-            raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
+            raise ValueError(
+                "You have to specify either decoder_input_ids or decoder_inputs_embeds"
+            )
 
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache(config=self.config)
-        cache_length = past_key_values.get_seq_length() if past_key_values is not None else 0
+        cache_length = (
+            past_key_values.get_seq_length()
+            if past_key_values is not None
+            else 0
+        )
 
         if self.config.sequence_parallel:
             # [bs, seq_len, num_head * head_dim] -> [bs * seq_len, num_head * head_dim]
             bs, seq_len, hidden_size = inputs_embeds.shape
-            inputs_embeds = paddle.reshape_(inputs_embeds, [bs * seq_len, hidden_size])
+            inputs_embeds = paddle.reshape_(
+                inputs_embeds, [bs * seq_len, hidden_size]
+            )
             # [seq_len * bs / n, num_head * head_dim] (n is mp parallelism)
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
         if cache_position is None:
-            past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
+            past_seen_tokens = (
+                past_key_values.get_seq_length()
+                if past_key_values is not None
+                else 0
+            )
             cache_position = paddle.arange(
-                past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1], device=inputs_embeds.device
+                past_seen_tokens,
+                past_seen_tokens + inputs_embeds.shape[1],
+                device=inputs_embeds.device,
             )
 
         # the hard coded `3` is for temporal, height and width.
         if position_ids is None:
-            position_ids = cache_position.reshape(1, 1, -1).expand(3, inputs_embeds.shape[0], -1)
+            position_ids = cache_position.reshape(1, 1, -1).expand(
+                3, inputs_embeds.shape[0], -1
+            )
         elif position_ids.ndim == 2:
-            position_ids = position_ids[None, ...].expand(3, position_ids.shape[0], -1)
+            position_ids = position_ids[None, ...].expand(
+                3, position_ids.shape[0], -1
+            )
 
         # NOTE: we need to pass text position ids for packing. Qwen2-VL uses 3D positions
         # where each dim indicates visual spatial positions for temporal/height/width grids.
         # There are two scenarios when FA2-like packed masking might be activated.
         # 1. User specifically passed packed `position_ids` and no attention mask.
-        #    In this case we expect the useer to create correct position ids for all 3 grids
+        #    In this case we expect the user to create correct position ids for all 3 grids
         #    and prepend text-only position ids to it. The final tensor will be [4, bs, seq-len]
         # 2. User runs forward with no attention mask and no position ids. In this case, position ids
         #    are prepared by the model (`get_rope_index`) as `[4, bs, seq-len]` tensor. Text-only positions are
@@ -1247,7 +1493,9 @@ class Glm4vMoeTextModel(Glm4vMoePreTrainedModel):
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
         }
         # Create the causal mask and row indices
-        causal_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
+        causal_mask, attn_mask_startend_row_indices = (
+            create_causal_mask_and_row_indices(**mask_kwargs)
+        )
 
         hidden_states = inputs_embeds
 
@@ -1301,7 +1549,9 @@ class Glm4vMoeTextModel(Glm4vMoePreTrainedModel):
             all_hidden_states += (hidden_states,)
 
         if not return_dict:
-            return tuple(v for v in [hidden_states, past_key_values] if v is not None)
+            return tuple(
+                v for v in [hidden_states, past_key_values] if v is not None
+            )
 
         return MoeModelOutputWithPast(
             last_hidden_state=hidden_states,
@@ -1395,7 +1645,9 @@ class Glm4vMoeModel(Glm4vMoePreTrainedModel):
         video_end_token_id = self.config.video_end_token_id
 
         mrope_position_deltas = []
-        if input_ids is not None and (image_grid_thw is not None or video_grid_thw is not None):
+        if input_ids is not None and (
+            image_grid_thw is not None or video_grid_thw is not None
+        ):
             total_input_ids = input_ids
             if attention_mask is None:
                 attention_mask = paddle.ones_like(total_input_ids)
@@ -1429,7 +1681,9 @@ class Glm4vMoeModel(Glm4vMoePreTrainedModel):
                         input_token_type.append("text")
 
                 input_type_group = []
-                for key, group in itertools.groupby(enumerate(input_token_type), lambda x: x[1]):
+                for key, group in itertools.groupby(
+                    enumerate(input_token_type), lambda x: x[1]
+                ):
                     group = list(group)
                     start_index = group[0][0]
                     end_index = group[-1][0] + 1
@@ -1438,7 +1692,11 @@ class Glm4vMoeModel(Glm4vMoePreTrainedModel):
                 llm_pos_ids_list = []
                 video_frame_num = 1
                 for modality_type, start_idx, end_idx in input_type_group:
-                    st_idx = llm_pos_ids_list[-1].max() + 1 if len(llm_pos_ids_list) > 0 else 0
+                    st_idx = (
+                        llm_pos_ids_list[-1].max() + 1
+                        if len(llm_pos_ids_list) > 0
+                        else 0
+                    )
 
                     if modality_type == "image":
                         t, h, w = (
@@ -1453,15 +1711,26 @@ class Glm4vMoeModel(Glm4vMoePreTrainedModel):
                         )
 
                         t_index = (
-                            paddle.arange(llm_grid_t).reshape(-1, 1).expand(-1, llm_grid_h * llm_grid_w).flatten()
+                            paddle.arange(llm_grid_t)
+                            .reshape(-1, 1)
+                            .expand(-1, llm_grid_h * llm_grid_w)
+                            .flatten()
                         )
                         h_index = (
-                            paddle.arange(llm_grid_h).reshape(1, -1, 1).expand(llm_grid_t, -1, llm_grid_w).flatten()
+                            paddle.arange(llm_grid_h)
+                            .reshape(1, -1, 1)
+                            .expand(llm_grid_t, -1, llm_grid_w)
+                            .flatten()
                         )
                         w_index = (
-                            paddle.arange(llm_grid_w).reshape(1, 1, -1).expand(llm_grid_t, llm_grid_h, -1).flatten()
+                            paddle.arange(llm_grid_w)
+                            .reshape(1, 1, -1)
+                            .expand(llm_grid_t, llm_grid_h, -1)
+                            .flatten()
                         )
-                        llm_pos_ids_list.append(paddle.stack([t_index, h_index, w_index]) + st_idx)
+                        llm_pos_ids_list.append(
+                            paddle.stack([t_index, h_index, w_index]) + st_idx
+                        )
 
                         image_index += 1
                         video_frame_num = 1
@@ -1481,11 +1750,27 @@ class Glm4vMoeModel(Glm4vMoePreTrainedModel):
 
                         for t_idx in range(llm_grid_t):
                             t_index = (
-                                paddle.to_tensor(t_idx).reshape(-1, 1).expand(-1, llm_grid_h * llm_grid_w).flatten()
+                                paddle.to_tensor(t_idx)
+                                .reshape(-1, 1)
+                                .expand(-1, llm_grid_h * llm_grid_w)
+                                .flatten()
                             )
-                            h_index = paddle.arange(llm_grid_h).reshape(1, -1, 1).expand(1, -1, llm_grid_w).flatten()
-                            w_index = paddle.arange(llm_grid_w).reshape(1, 1, -1).expand(1, llm_grid_h, -1).flatten()
-                            llm_pos_ids_list.append(paddle.stack([t_index, h_index, w_index]) + st_idx)
+                            h_index = (
+                                paddle.arange(llm_grid_h)
+                                .reshape(1, -1, 1)
+                                .expand(1, -1, llm_grid_w)
+                                .flatten()
+                            )
+                            w_index = (
+                                paddle.arange(llm_grid_w)
+                                .reshape(1, 1, -1)
+                                .expand(1, llm_grid_h, -1)
+                                .flatten()
+                            )
+                            llm_pos_ids_list.append(
+                                paddle.stack([t_index, h_index, w_index])
+                                + st_idx
+                            )
 
                         video_group_index += 1
 
@@ -1497,22 +1782,39 @@ class Glm4vMoeModel(Glm4vMoePreTrainedModel):
 
                     else:
                         text_len = end_idx - start_idx
-                        llm_pos_ids_list.append(paddle.arange(text_len).reshape(1, -1).expand(3, -1) + st_idx)
+                        llm_pos_ids_list.append(
+                            paddle.arange(text_len).reshape(1, -1).expand(3, -1)
+                            + st_idx
+                        )
 
                         video_frame_num = 1
 
-                llm_positions = paddle.cat(llm_pos_ids_list, dim=1).reshape(3, -1)
+                llm_positions = paddle.cat(llm_pos_ids_list, dim=1).reshape(
+                    3, -1
+                )
                 position_ids[..., i, attention_mask[i] == 1] = llm_positions
-                mrope_position_deltas.append(llm_positions.max() + 1 - len(total_input_ids[i]))
-            mrope_position_deltas = paddle.to_tensor(mrope_position_deltas).unsqueeze(1)
+                mrope_position_deltas.append(
+                    llm_positions.max() + 1 - len(total_input_ids[i])
+                )
+            mrope_position_deltas = paddle.to_tensor(
+                mrope_position_deltas
+            ).unsqueeze(1)
             return position_ids, mrope_position_deltas
         else:
             if attention_mask is not None:
                 position_ids = attention_mask.long().cumsum(-1) - 1
                 position_ids.masked_fill_(attention_mask == 0, 1)
-                position_ids = position_ids.unsqueeze(0).expand(3, -1, -1).to(attention_mask.device)
-                max_position_ids = position_ids.max(0, keepdim=False)[0].max(-1, keepdim=True)[0]
-                mrope_position_deltas = max_position_ids + 1 - attention_mask.shape[-1]
+                position_ids = (
+                    position_ids.unsqueeze(0)
+                    .expand(3, -1, -1)
+                    .to(attention_mask.device)
+                )
+                max_position_ids = position_ids.max(0, keepdim=False)[0].max(
+                    -1, keepdim=True
+                )[0]
+                mrope_position_deltas = (
+                    max_position_ids + 1 - attention_mask.shape[-1]
+                )
             else:
                 position_ids = (
                     paddle.arange(input_ids.shape[1], device=input_ids.device)
@@ -1528,7 +1830,9 @@ class Glm4vMoeModel(Glm4vMoePreTrainedModel):
             return position_ids, mrope_position_deltas
 
     def get_video_features(
-        self, pixel_values_videos: paddle.FloatTensor, video_grid_thw: Optional[paddle.LongTensor] = None
+        self,
+        pixel_values_videos: paddle.FloatTensor,
+        video_grid_thw: Optional[paddle.LongTensor] = None,
     ):
         """
         Encodes videos into continuous embeddings that can be forwarded to the language model.
@@ -1539,19 +1843,33 @@ class Glm4vMoeModel(Glm4vMoePreTrainedModel):
             video_grid_thw (`paddle.LongTensor` of shape `(num_videos, 3)`, *optional*):
                 The temporal, height and width of feature shape of each video in LLM.
         """
-        pixel_values_videos = pixel_values_videos.astype(self.visual.patch_embed.proj.weight.dtype)
+        pixel_values_videos = pixel_values_videos.astype(
+            self.visual.patch_embed.proj.weight.dtype
+        )
         # reshape video_grid_thw -> [b, 3] -> [1, h, w] * frames
         temp_frames_hw = []
         for t, h, w in video_grid_thw:
-            repeated_row = paddle.to_tensor([1, h.item(), w.item()]).unsqueeze(0).repeat([t, 1])
+            repeated_row = (
+                paddle.to_tensor([1, h.item(), w.item()])
+                .unsqueeze(0)
+                .repeat([t, 1])
+            )
             temp_frames_hw.append(repeated_row)
         flattened_video_grid_thw = paddle.cat(temp_frames_hw, dim=0)
-        video_embeds = self.visual(pixel_values_videos, grid_thw=flattened_video_grid_thw)
-        split_sizes = (video_grid_thw.prod(-1) // self.visual.spatial_merge_size**2).tolist()
+        video_embeds = self.visual(
+            pixel_values_videos, grid_thw=flattened_video_grid_thw
+        )
+        split_sizes = (
+            video_grid_thw.prod(-1) // self.visual.spatial_merge_size**2
+        ).tolist()
         video_embeds = paddle.split(video_embeds, split_sizes)
         return video_embeds
 
-    def get_image_features(self, pixel_values: paddle.FloatTensor, image_grid_thw: Optional[paddle.LongTensor] = None):
+    def get_image_features(
+        self,
+        pixel_values: paddle.FloatTensor,
+        image_grid_thw: Optional[paddle.LongTensor] = None,
+    ):
         """
         Encodes images into continuous embeddings that can be forwarded to the language model.
 
@@ -1561,9 +1879,13 @@ class Glm4vMoeModel(Glm4vMoePreTrainedModel):
             image_grid_thw (`paddle.LongTensor` of shape `(num_images, 3)`, *optional*):
                 The temporal, height and width of feature shape of each image in LLM.
         """
-        pixel_values = pixel_values.astype(self.visual.patch_embed.proj.weight.dtype)
+        pixel_values = pixel_values.astype(
+            self.visual.patch_embed.proj.weight.dtype
+        )
         image_embeds = self.visual(pixel_values, grid_thw=image_grid_thw)
-        split_sizes = (image_grid_thw.prod(-1) // self.visual.spatial_merge_size**2).tolist()
+        split_sizes = (
+            image_grid_thw.prod(-1) // self.visual.spatial_merge_size**2
+        ).tolist()
         image_embeds = paddle.split(image_embeds, split_sizes)
         return image_embeds
 
@@ -1593,15 +1915,31 @@ class Glm4vMoeModel(Glm4vMoePreTrainedModel):
             special_video_mask = input_ids == self.config.image_token_id
 
         n_image_tokens = special_image_mask.sum()
-        special_image_mask = special_image_mask.unsqueeze(-1).expand_as(inputs_embeds).to(inputs_embeds.device)
-        if image_features is not None and inputs_embeds[special_image_mask].numel() != image_features.numel():
+        special_image_mask = (
+            special_image_mask.unsqueeze(-1)
+            .expand_as(inputs_embeds)
+            .to(inputs_embeds.device)
+        )
+        if (
+            image_features is not None
+            and inputs_embeds[special_image_mask].numel()
+            != image_features.numel()
+        ):
             raise ValueError(
                 f"Image features and image tokens do not match: tokens: {n_image_tokens}, features {image_features.shape[0]}"
             )
 
         n_video_tokens = special_video_mask.sum()
-        special_video_mask = special_video_mask.unsqueeze(-1).expand_as(inputs_embeds).to(inputs_embeds.device)
-        if video_features is not None and inputs_embeds[special_video_mask].numel() != video_features.numel():
+        special_video_mask = (
+            special_video_mask.unsqueeze(-1)
+            .expand_as(inputs_embeds)
+            .to(inputs_embeds.device)
+        )
+        if (
+            video_features is not None
+            and inputs_embeds[special_video_mask].numel()
+            != video_features.numel()
+        ):
             raise ValueError(
                 f"Videos features and video tokens do not match: tokens: {n_video_tokens}, features {video_features.shape[0]}"
             )
@@ -1626,7 +1964,7 @@ class Glm4vMoeModel(Glm4vMoePreTrainedModel):
         return_dict: Optional[bool] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
-    ) -> Union[tuple, Glm4vMoeModelOutputWithPast]:
+    ) -> tuple | Glm4vMoeModelOutputWithPast:
         r"""
         image_grid_thw (`paddle.LongTensor` of shape `(num_images, 3)`, *optional*):
             The temporal, height and width of feature shape of each image in LLM.
@@ -1637,43 +1975,73 @@ class Glm4vMoeModel(Glm4vMoePreTrainedModel):
         """
 
         output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
         )
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict
+            if return_dict is not None
+            else self.config.use_return_dict
+        )
 
         if inputs_embeds is None:
             inputs_embeds = self.get_input_embeddings()(input_ids)
 
         if pixel_values is not None:
             image_embeds = self.get_image_features(pixel_values, image_grid_thw)
-            image_embeds = paddle.cat(image_embeds, dim=0).to(inputs_embeds.device, inputs_embeds.dtype)
-            image_mask, _ = self.get_placeholder_mask(input_ids, inputs_embeds, image_features=image_embeds)
-            inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds)
+            image_embeds = paddle.cat(image_embeds, dim=0).to(
+                inputs_embeds.device, inputs_embeds.dtype
+            )
+            image_mask, _ = self.get_placeholder_mask(
+                input_ids, inputs_embeds, image_features=image_embeds
+            )
+            inputs_embeds = inputs_embeds.masked_scatter(
+                image_mask, image_embeds
+            )
 
         if pixel_values_videos is not None:
-            video_embeds = self.get_video_features(pixel_values_videos, video_grid_thw)
-            video_embeds = paddle.cat(video_embeds, dim=0).to(inputs_embeds.device, inputs_embeds.dtype)
-            _, video_mask = self.get_placeholder_mask(input_ids, inputs_embeds, video_features=video_embeds)
-            inputs_embeds = inputs_embeds.masked_scatter(video_mask, video_embeds)
+            video_embeds = self.get_video_features(
+                pixel_values_videos, video_grid_thw
+            )
+            video_embeds = paddle.cat(video_embeds, dim=0).to(
+                inputs_embeds.device, inputs_embeds.dtype
+            )
+            _, video_mask = self.get_placeholder_mask(
+                input_ids, inputs_embeds, video_features=video_embeds
+            )
+            inputs_embeds = inputs_embeds.masked_scatter(
+                video_mask, video_embeds
+            )
 
         if position_ids is None:
             attention_mask_tensor = (
-                attention_mask if not isinstance(attention_mask, dict) else attention_mask["full_attention"]
+                attention_mask
+                if not isinstance(attention_mask, dict)
+                else attention_mask["full_attention"]
             )
-            if attention_mask_tensor is not None and attention_mask_tensor.ndim == 4:
-                attention_mask_tensor = paddle.diagonal(attention_mask_tensor[:, 0], dim1=1, dim2=2)
+            if (
+                attention_mask_tensor is not None
+                and attention_mask_tensor.ndim == 4
+            ):
+                attention_mask_tensor = paddle.diagonal(
+                    attention_mask_tensor[:, 0], dim1=1, dim2=2
+                )
                 # Only apply conversion for floating point tensors (inverted masks)
                 if attention_mask_tensor.dtype.is_floating_point:
-                    attention_mask_tensor = attention_mask_tensor / paddle.finfo(attention_mask_tensor.dtype).min
+                    attention_mask_tensor = (
+                        attention_mask_tensor
+                        / paddle.finfo(attention_mask_tensor.dtype).min
+                    )
                     attention_mask_tensor = (1.0 - attention_mask_tensor).int()
 
             # Calculate RoPE index once per generation in the pre-fill stage only.
             # When compiling, we can't check tensor values thus we check only input length
             # It is safe to assume that `length!=1` means we're in pre-fill because compiled
             # models currently cannot do asssisted decoding
-            prefill_stage = (input_ids is not None and input_ids.shape[1] != 1) or (
-                inputs_embeds is not None and inputs_embeds.shape[1] != 1
-            )
+            prefill_stage = (
+                input_ids is not None and input_ids.shape[1] != 1
+            ) or (inputs_embeds is not None and inputs_embeds.shape[1] != 1)
 
             if prefill_stage or self.rope_deltas is None:
                 position_ids, rope_deltas = self.get_rope_index(
@@ -1687,14 +2055,24 @@ class Glm4vMoeModel(Glm4vMoePreTrainedModel):
             else:
                 batch_size, seq_length, _ = inputs_embeds.shape
                 delta = (
-                    (cache_position[0] + self.rope_deltas).to(inputs_embeds.device)
+                    (cache_position[0] + self.rope_deltas).to(
+                        inputs_embeds.device
+                    )
                     if cache_position is not None
                     else 0
                 )
-                position_ids = paddle.arange(seq_length, device=inputs_embeds.device)
-                position_ids = position_ids.reshape(1, -1).expand(batch_size, -1)
-                if cache_position is not None:  # otherwise `deltas` is an int `0`
-                    delta = delta.repeat_interleave(batch_size // delta.shape[0], dim=0)
+                position_ids = paddle.arange(
+                    seq_length, device=inputs_embeds.device
+                )
+                position_ids = position_ids.reshape(1, -1).expand(
+                    batch_size, -1
+                )
+                if (
+                    cache_position is not None
+                ):  # otherwise `deltas` is an int `0`
+                    delta = delta.repeat_interleave(
+                        batch_size // delta.shape[0], dim=0
+                    )
                 position_ids = position_ids.add(delta)
                 position_ids = position_ids.unsqueeze(0).expand(3, -1, -1)
 
@@ -1726,7 +2104,9 @@ class Glm4vMoeForConditionalGeneration(Glm4vMoePreTrainedModel):
         "^visual": "model.visual",
         "^language_model": "model.language_model",
     }
-    _tied_weights_keys = {"lm_head.weight": "model.language_model.embed_tokens.weight"}
+    _tied_weights_keys = {
+        "lm_head.weight": "model.language_model.embed_tokens.weight"
+    }
     config_class = Glm4vMoeConfig
 
     def __init__(self, config):
@@ -1744,11 +2124,19 @@ class Glm4vMoeForConditionalGeneration(Glm4vMoePreTrainedModel):
         self.model.set_input_embeddings(value)
 
     def get_video_features(
-        self, pixel_values_videos: paddle.FloatTensor, video_grid_thw: Optional[paddle.LongTensor] = None
+        self,
+        pixel_values_videos: paddle.FloatTensor,
+        video_grid_thw: Optional[paddle.LongTensor] = None,
     ):
-        return self.model.get_video_features(pixel_values_videos, video_grid_thw)
+        return self.model.get_video_features(
+            pixel_values_videos, video_grid_thw
+        )
 
-    def get_image_features(self, pixel_values: paddle.FloatTensor, image_grid_thw: Optional[paddle.LongTensor] = None):
+    def get_image_features(
+        self,
+        pixel_values: paddle.FloatTensor,
+        image_grid_thw: Optional[paddle.LongTensor] = None,
+    ):
         return self.model.get_image_features(pixel_values, image_grid_thw)
 
     # Make modules available through conditional class for BC
@@ -1777,10 +2165,10 @@ class Glm4vMoeForConditionalGeneration(Glm4vMoePreTrainedModel):
         video_grid_thw: Optional[paddle.LongTensor] = None,
         rope_deltas: Optional[paddle.Tensor] = None,
         cache_position: Optional[paddle.LongTensor] = None,
-        logits_to_keep: Union[int, paddle.Tensor] = 0,
+        logits_to_keep: int | paddle.Tensor = 0,
         return_dict: Optional[bool] = True,
         **kwargs,
-    ) -> Union[tuple, Glm4vMoeCausalLMOutputWithPast]:
+    ) -> tuple | Glm4vMoeCausalLMOutputWithPast:
         r"""
         labels (`paddle.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
             Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
@@ -1822,7 +2210,9 @@ class Glm4vMoeForConditionalGeneration(Glm4vMoePreTrainedModel):
         "The image shows a street scene with a red stop sign in the foreground. In the background, there is a large red gate with Chinese characters ..."
         ```"""
         output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
         )
         outputs = self.model(
             input_ids=input_ids,
@@ -1850,7 +2240,11 @@ class Glm4vMoeForConditionalGeneration(Glm4vMoePreTrainedModel):
             hidden_states = outputs[0]
 
         # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
-        slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
+        slice_indices = (
+            slice(-logits_to_keep, None)
+            if isinstance(logits_to_keep, int)
+            else logits_to_keep
+        )
         logits = self.lm_head(hidden_states[..., slice_indices, :])
 
         loss = None
@@ -1936,15 +2330,27 @@ class Glm4vMoeForConditionalGeneration(Glm4vMoePreTrainedModel):
         if inputs_embeds is not None:
             is_image = (
                 inputs_embeds
-                == self.get_input_embeddings()(paddle.to_tensor(self.config.image_start_token_id, dtype=paddle.long))
+                == self.get_input_embeddings()(
+                    paddle.to_tensor(
+                        self.config.image_start_token_id, dtype=paddle.long
+                    )
+                )
             )[..., 0]
             is_video_start = (
                 inputs_embeds
-                == self.get_input_embeddings()(paddle.to_tensor(self.config.video_start_token_id, dtype=paddle.long))
+                == self.get_input_embeddings()(
+                    paddle.to_tensor(
+                        self.config.video_start_token_id, dtype=paddle.long
+                    )
+                )
             )[..., 0]
             is_video_end = (
                 inputs_embeds
-                == self.get_input_embeddings()(paddle.to_tensor(self.config.video_end_token_id, dtype=paddle.long))
+                == self.get_input_embeddings()(
+                    paddle.to_tensor(
+                        self.config.video_end_token_id, dtype=paddle.long
+                    )
+                )
             )[..., 0]
         else:
             is_image = input_ids == self.config.image_start_token_id
@@ -1953,7 +2359,9 @@ class Glm4vMoeForConditionalGeneration(Glm4vMoePreTrainedModel):
 
         # Cumulative sum to track if we're inside a video span
         # We'll assume well-formed video tags (i.e. matching starts and ends)
-        video_level = paddle.cumsum(is_video_start.int() - is_video_end.int(), dim=1)
+        video_level = paddle.cumsum(
+            is_video_start.int() - is_video_end.int(), dim=1
+        )
         inside_video = video_level > 0  # shape (batch_size, seq_length)
 
         # Mask out image tokens that are inside video spans
@@ -1980,7 +2388,13 @@ class Glm4vMoeForConditionalGeneration(Glm4vMoePreTrainedModel):
         if expand_size == 1:
             return input_ids, model_kwargs
 
-        visual_keys = ["pixel_values", "image_grid_thw", "pixel_values_videos", "video_grid_thw", "second_per_grid_ts"]
+        visual_keys = [
+            "pixel_values",
+            "image_grid_thw",
+            "pixel_values_videos",
+            "video_grid_thw",
+            "second_per_grid_ts",
+        ]
 
         def _expand_dict_for_generation_visual(dict_to_expand):
             image_grid_thw = model_kwargs.get("image_grid_thw", None)
@@ -1992,7 +2406,9 @@ class Glm4vMoeForConditionalGeneration(Glm4vMoePreTrainedModel):
             def _repeat_interleave_samples(x, lengths, repeat_times):
                 samples = paddle.split(x, lengths)
                 repeat_args = [repeat_times] + [1] * (x.dim() - 1)
-                result = paddle.cat([sample.repeat(*repeat_args) for sample in samples], dim=0)
+                result = paddle.cat(
+                    [sample.repeat(*repeat_args) for sample in samples], dim=0
+                )
                 return result
 
             for key in dict_to_expand:
@@ -2000,30 +2416,44 @@ class Glm4vMoeForConditionalGeneration(Glm4vMoePreTrainedModel):
                     # split images into samples
                     samples = paddle.split(image_grid_thw, list(image_nums))
                     # compute the sequence length of images for each sample
-                    lengths = [paddle.prod(sample, dim=1).sum() for sample in samples]
+                    lengths = [
+                        paddle.prod(sample, dim=1).sum() for sample in samples
+                    ]
                     dict_to_expand[key] = _repeat_interleave_samples(
-                        dict_to_expand[key], lengths=lengths, repeat_times=expand_size
+                        dict_to_expand[key],
+                        lengths=lengths,
+                        repeat_times=expand_size,
                     )
                 elif key == "image_grid_thw":
                     # get the num of images for each sample
                     lengths = list(image_nums)
                     dict_to_expand[key] = _repeat_interleave_samples(
-                        dict_to_expand[key], lengths=lengths, repeat_times=expand_size
+                        dict_to_expand[key],
+                        lengths=lengths,
+                        repeat_times=expand_size,
                     )
                 elif key == "pixel_values_videos":
                     samples = paddle.split(video_grid_thw, list(video_nums))
-                    lengths = [paddle.prod(sample, dim=1).sum() for sample in samples]
+                    lengths = [
+                        paddle.prod(sample, dim=1).sum() for sample in samples
+                    ]
                     dict_to_expand[key] = _repeat_interleave_samples(
-                        dict_to_expand[key], lengths=lengths, repeat_times=expand_size
+                        dict_to_expand[key],
+                        lengths=lengths,
+                        repeat_times=expand_size,
                     )
                 elif key == "video_grid_thw":
                     lengths = list(video_nums)
                     dict_to_expand[key] = _repeat_interleave_samples(
-                        dict_to_expand[key], lengths=lengths, repeat_times=expand_size
+                        dict_to_expand[key],
+                        lengths=lengths,
+                        repeat_times=expand_size,
                     )
                 elif key == "second_per_grid_ts":
                     dict_to_expand[key] = _repeat_interleave_samples(
-                        dict_to_expand[key], lengths=list(video_nums), repeat_times=expand_size
+                        dict_to_expand[key],
+                        lengths=list(video_nums),
+                        repeat_times=expand_size,
                     )
             return dict_to_expand
 
@@ -2035,7 +2465,9 @@ class Glm4vMoeForConditionalGeneration(Glm4vMoePreTrainedModel):
                     and isinstance(dict_to_expand[key], paddle.Tensor)
                     and key not in visual_keys
                 ):
-                    dict_to_expand[key] = dict_to_expand[key].repeat_interleave(expand_size, dim=0)
+                    dict_to_expand[key] = dict_to_expand[key].repeat_interleave(
+                        expand_size, dim=0
+                    )
             return dict_to_expand
 
         model_kwargs = _expand_dict_for_generation_visual(model_kwargs)
@@ -2047,8 +2479,12 @@ class Glm4vMoeForConditionalGeneration(Glm4vMoePreTrainedModel):
 
         if is_encoder_decoder:
             if model_kwargs.get("encoder_outputs") is None:
-                raise ValueError("If `is_encoder_decoder` is True, make sure that `encoder_outputs` is defined.")
-            model_kwargs["encoder_outputs"] = _expand_dict_for_generation(model_kwargs["encoder_outputs"])
+                raise ValueError(
+                    "If `is_encoder_decoder` is True, make sure that `encoder_outputs` is defined."
+                )
+            model_kwargs["encoder_outputs"] = _expand_dict_for_generation(
+                model_kwargs["encoder_outputs"]
+            )
 
         return input_ids, model_kwargs
 

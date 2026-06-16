@@ -16,6 +16,7 @@
 npu fusion operators.
 
 """
+
 import paddle
 import paddle.distributed as dist
 import paddle.nn.functional as F
@@ -57,7 +58,10 @@ def npu_cal_aux_loss_func(
     scale = None
     if dispatch_tokens_mask is not None:
         seqlen_float = dispatch_tokens_mask.astype(gate_prob.dtype).sum()
-        if tokens_mask is not None and gate_prob.shape[0] != dispatch_tokens_mask.shape[0]:
+        if (
+            tokens_mask is not None
+            and gate_prob.shape[0] != dispatch_tokens_mask.shape[0]
+        ):
             scale = seqlen_float / paddle.clip(tokens_mask.sum(), min=1e-6)
     elif tokens_mask is not None:
         seqlen_float = tokens_mask.sum()

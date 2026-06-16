@@ -31,7 +31,9 @@ class TestAlltoAllPyLayer(unittest.TestCase):
         cls = self._get_cls()
         self.assertIsNotNone(cls)
 
-    @patch("paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=1)
+    @patch(
+        "paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=1
+    )
     def test_forward_single_rank_returns_input(self, mock_ws):
         """Test that single rank returns input tensor unchanged."""
         cls = self._get_cls()
@@ -41,7 +43,9 @@ class TestAlltoAllPyLayer(unittest.TestCase):
         self.assertEqual(result.shape, [4, 8])
 
     @patch("paddleformers.nn.moe.all_to_all.stream.alltoall_single")
-    @patch("paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=4)
+    @patch(
+        "paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=4
+    )
     def test_forward_multi_rank_sync(self, mock_ws, mock_alltoall):
         """Test forward with multiple ranks and sync_op=True."""
         cls = self._get_cls()
@@ -54,7 +58,9 @@ class TestAlltoAllPyLayer(unittest.TestCase):
         self.assertEqual(result.shape, [4, 8])
 
     @patch("paddleformers.nn.moe.all_to_all.stream.alltoall_single")
-    @patch("paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=4)
+    @patch(
+        "paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=4
+    )
     def test_forward_multi_rank_async(self, mock_ws, mock_alltoall):
         """Test forward with multiple ranks and sync_op=False returns tuple."""
         cls = self._get_cls()
@@ -69,7 +75,9 @@ class TestAlltoAllPyLayer(unittest.TestCase):
         self.assertEqual(len(result), 2)
 
     @patch("paddleformers.nn.moe.all_to_all.stream.alltoall_single")
-    @patch("paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=4)
+    @patch(
+        "paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=4
+    )
     def test_forward_sync_op_true_default(self, mock_ws, mock_alltoall):
         """Test forward with default sync_op=True."""
         cls = self._get_cls()
@@ -84,7 +92,9 @@ class TestAlltoAllPyLayer(unittest.TestCase):
         self.assertTrue(call_kwargs["use_calc_stream"])
 
     @patch("paddleformers.nn.moe.all_to_all.stream.alltoall_single")
-    @patch("paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=4)
+    @patch(
+        "paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=4
+    )
     def test_forward_output_no_stop_gradient(self, mock_ws, mock_alltoall):
         """Test that forward output has stop_gradient=False."""
         cls = self._get_cls()
@@ -95,7 +105,9 @@ class TestAlltoAllPyLayer(unittest.TestCase):
         result = cls.apply(x, group=mock_group, sync_op=True)
         self.assertFalse(result.stop_gradient)
 
-    @patch("paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=1)
+    @patch(
+        "paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=1
+    )
     def test_backward_single_rank(self, mock_ws):
         """Test backward with single rank returns input gradient."""
         cls = self._get_cls()
@@ -128,8 +140,12 @@ class TestAlltoAllAsync(unittest.TestCase):
             cls.apply(x, group=mock_group, fn=None, is_first_fwd=True)
 
     @patch("paddleformers.nn.moe.all_to_all.manual_backward")
-    @patch("paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=1)
-    def test_forward_single_world_manual_backward_called(self, mock_ws, mock_mb):
+    @patch(
+        "paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=1
+    )
+    def test_forward_single_world_manual_backward_called(
+        self, mock_ws, mock_mb
+    ):
         """Test forward with world_size=1 calls manual_backward."""
         cls = self._get_cls()
         mock_fn = MagicMock()
@@ -144,7 +160,9 @@ class TestAlltoAllAsync(unittest.TestCase):
         self.assertEqual(len(result), 2)  # (x,) + fn_out
 
     @patch("paddleformers.nn.moe.all_to_all.manual_backward")
-    @patch("paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=1)
+    @patch(
+        "paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=1
+    )
     def test_forward_single_world_is_first_fwd_false(self, mock_ws, mock_mb):
         """Test forward with world_size=1 and is_first_fwd=False."""
         cls = self._get_cls()
@@ -160,7 +178,9 @@ class TestAlltoAllAsync(unittest.TestCase):
 
     @patch("paddleformers.nn.moe.all_to_all.stream.alltoall_single")
     @patch("paddleformers.nn.moe.all_to_all.manual_backward")
-    @patch("paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=4)
+    @patch(
+        "paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=4
+    )
     def test_forward_multi_world(self, mock_ws, mock_mb, mock_alltoall):
         """Test forward with world_size>1 calls alltoall and manual_backward."""
         cls = self._get_cls()
@@ -181,8 +201,12 @@ class TestAlltoAllAsync(unittest.TestCase):
 
     @patch("paddleformers.nn.moe.all_to_all.stream.alltoall_single")
     @patch("paddleformers.nn.moe.all_to_all.manual_backward")
-    @patch("paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=4)
-    def test_forward_multi_world_output_no_stop_gradient(self, mock_ws, mock_mb, mock_alltoall):
+    @patch(
+        "paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=4
+    )
+    def test_forward_multi_world_output_no_stop_gradient(
+        self, mock_ws, mock_mb, mock_alltoall
+    ):
         """Test that forward output has stop_gradient=False in multi-world mode."""
         cls = self._get_cls()
         mock_task = MagicMock()
@@ -201,7 +225,9 @@ class TestAlltoAllAsync(unittest.TestCase):
         self.assertFalse(result[0].stop_gradient)
 
     @patch("paddleformers.nn.moe.all_to_all.manual_backward")
-    @patch("paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=1)
+    @patch(
+        "paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=1
+    )
     def test_forward_with_fn_args(self, mock_ws, mock_mb):
         """Test forward with additional fn_args."""
         cls = self._get_cls()
@@ -213,7 +239,9 @@ class TestAlltoAllAsync(unittest.TestCase):
         x = paddle.randn([4, 8])
         fn_arg1 = paddle.randn([4, 8])
         fn_arg2 = paddle.randn([4, 8])
-        cls.apply(x, fn_arg1, fn_arg2, group=None, fn=mock_fn, is_first_fwd=True)
+        cls.apply(
+            x, fn_arg1, fn_arg2, group=None, fn=mock_fn, is_first_fwd=True
+        )
         mock_mb.assert_called_once_with(mock_fn, True, fn_arg1, fn_arg2)
 
 
@@ -226,7 +254,9 @@ class TestAlltoAllAsyncBackward(unittest.TestCase):
         return AlltoAllAsync
 
     @patch("paddleformers.nn.moe.all_to_all.manual_backward")
-    @patch("paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=1)
+    @patch(
+        "paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=1
+    )
     def test_backward_single_world(self, mock_ws, mock_mb):
         """Test backward with world_size=1."""
         cls = self._get_cls()
@@ -239,7 +269,9 @@ class TestAlltoAllAsyncBackward(unittest.TestCase):
         # Verify the result structure is correct
         self.assertIsInstance(result, tuple)
 
-    @patch("paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=1)
+    @patch(
+        "paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=1
+    )
     def test_backward_single_world_full(self, mock_ws):
         """Test backward with world_size=1 using full forward-backward cycle."""
         cls = self._get_cls()
@@ -260,7 +292,9 @@ class TestAlltoAllBackward(unittest.TestCase):
         return AlltoAll
 
     @patch("paddleformers.nn.moe.all_to_all.stream.alltoall_single")
-    @patch("paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=4)
+    @patch(
+        "paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=4
+    )
     def test_backward_calls_alltoall(self, mock_ws, mock_alltoall):
         """Test that backward calls AlltoAll.apply."""
         cls = self._get_cls()
@@ -281,7 +315,9 @@ class TestAlltoAllInputValidation(unittest.TestCase):
         return AlltoAll
 
     @patch("paddleformers.nn.moe.all_to_all.stream.alltoall_single")
-    @patch("paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=2)
+    @patch(
+        "paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=2
+    )
     def test_forward_preserves_dtype(self, mock_ws, mock_alltoall):
         """Test that forward preserves input dtype."""
         cls = self._get_cls()
@@ -293,7 +329,9 @@ class TestAlltoAllInputValidation(unittest.TestCase):
         self.assertEqual(result.dtype, x.dtype)
 
     @patch("paddleformers.nn.moe.all_to_all.stream.alltoall_single")
-    @patch("paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=2)
+    @patch(
+        "paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=2
+    )
     def test_forward_preserves_shape(self, mock_ws, mock_alltoall):
         """Test that forward preserves input shape."""
         cls = self._get_cls()
@@ -305,7 +343,9 @@ class TestAlltoAllInputValidation(unittest.TestCase):
         self.assertEqual(result.shape, x.shape)
 
     @patch("paddleformers.nn.moe.all_to_all.stream.alltoall_single")
-    @patch("paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=2)
+    @patch(
+        "paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=2
+    )
     def test_forward_bfloat16_dtype(self, mock_ws, mock_alltoall):
         """Test that forward handles bfloat16 dtype."""
         cls = self._get_cls()
@@ -326,7 +366,9 @@ class TestAlltoAllAsyncInputValidation(unittest.TestCase):
         return AlltoAllAsync
 
     @patch("paddleformers.nn.moe.all_to_all.manual_backward")
-    @patch("paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=1)
+    @patch(
+        "paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=1
+    )
     def test_forward_fn_returns_tuple(self, mock_ws, mock_mb):
         """Test forward when fn returns a tuple."""
         cls = self._get_cls()
@@ -342,7 +384,9 @@ class TestAlltoAllAsyncInputValidation(unittest.TestCase):
         self.assertEqual(len(result), 3)
 
     @patch("paddleformers.nn.moe.all_to_all.manual_backward")
-    @patch("paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=1)
+    @patch(
+        "paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=1
+    )
     def test_forward_fn_returns_list(self, mock_ws, mock_mb):
         """Test forward when fn returns a list (should be converted to tuple)."""
         cls = self._get_cls()
@@ -357,7 +401,9 @@ class TestAlltoAllAsyncInputValidation(unittest.TestCase):
 
     @patch("paddleformers.nn.moe.all_to_all.stream.alltoall_single")
     @patch("paddleformers.nn.moe.all_to_all.manual_backward")
-    @patch("paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=4)
+    @patch(
+        "paddleformers.nn.moe.all_to_all.dist.get_world_size", return_value=4
+    )
     def test_forward_async_sync_op_false(self, mock_ws, mock_mb, mock_alltoall):
         """Test that async forward uses sync_op=False."""
         cls = self._get_cls()

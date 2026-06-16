@@ -23,7 +23,9 @@ def get_dist_config(model, prefix=""):
     config = {
         "mp_config": {
             "parallelize_plan": {
-                f"{prefix}llama.embed_tokens": dist.ColWiseParallel(gather_output=True),
+                f"{prefix}llama.embed_tokens": dist.ColWiseParallel(
+                    gather_output=True
+                ),
                 f"{prefix}llama.layers.*.self_attn.qkv_proj": dist.ColWiseParallel(),
                 f"{prefix}llama.layers.*.self_attn.q_proj": dist.ColWiseParallel(),
                 f"{prefix}llama.layers.*.self_attn.k_proj": dist.ColWiseParallel(),

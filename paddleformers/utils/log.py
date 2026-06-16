@@ -1,4 +1,3 @@
-# coding:utf-8
 # Copyright (c) 2020  PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"
@@ -39,7 +38,7 @@ log_config = {
 }
 
 
-class Logger(object):
+class Logger:
     """
     Default logger in PaddleFormers
 
@@ -47,14 +46,16 @@ class Logger(object):
         name(str) : Logger name, default is 'PaddleFormers'
     """
 
-    def __init__(self, name: str = None):
+    def __init__(self, name: str | None = None):
         name = "PaddleFormers" if not name else name
         self.logger = logging.getLogger(name)
 
         for key, conf in log_config.items():
             logging.addLevelName(conf["level"], key)
             self.__dict__[key] = functools.partial(self.__call__, conf["level"])
-            self.__dict__[key.lower()] = functools.partial(self.__call__, conf["level"])
+            self.__dict__[key.lower()] = functools.partial(
+                self.__call__, conf["level"]
+            )
 
         self.format = colorlog.ColoredFormatter(
             "%(log_color)s[%(asctime)-15s] [%(levelname)8s]%(reset)s - %(message)s",
@@ -77,7 +78,9 @@ class Logger(object):
         self._is_enable = True
 
     def set_level(self, log_level: str):
-        assert log_level in log_config, f"Invalid log level. Choose among {log_config.keys()}"
+        assert log_level in log_config, (
+            f"Invalid log level. Choose among {log_config.keys()}"
+        )
         self.logger.setLevel(log_level)
 
     @property
@@ -114,7 +117,7 @@ class Logger(object):
             while not end:
                 flag = flags[index % len(flags)]
                 with self.use_terminator("\r"):
-                    self.info("{}: {}".format(msg, flag))
+                    self.info(f"{msg}: {flag}")
                 time.sleep(interval)
                 index += 1
 
@@ -135,7 +138,7 @@ class Logger(object):
         self.warning(*args, **kwargs)
 
 
-class MetricsDumper(object):
+class MetricsDumper:
     """
     Default JSONDumper in PaddleFormers
 
@@ -143,10 +146,12 @@ class MetricsDumper(object):
         name(str) : Logger name, default is 'PaddleFormers'
     """
 
-    def __init__(self, filename: str = None):
+    def __init__(self, filename: str | None = None):
         self.filename = "./training_metrics" if not filename else filename
         self.queue = multiprocessing.Queue()
-        self.process = multiprocessing.Process(target=self._write_json, args=(self.queue,))
+        self.process = multiprocessing.Process(
+            target=self._write_json, args=(self.queue,)
+        )
         self.process.start()
 
         # process pid and the start time
@@ -164,7 +169,12 @@ class MetricsDumper(object):
 
         :param data: The JSON object to append.
         """
-        data.update({"metrics_dumper_pid": self.pid, "metrics_dumper_timestamp": int(time.time() * 1000)})
+        data.update(
+            {
+                "metrics_dumper_pid": self.pid,
+                "metrics_dumper_timestamp": int(time.time() * 1000),
+            }
+        )
         self.queue.put(data)
 
     def _write_json(self, queue):
@@ -175,7 +185,9 @@ class MetricsDumper(object):
         """
         while True:
             try:
-                metrics = queue.get(timeout=10)  # Timeout to allow graceful shutdown
+                metrics = queue.get(
+                    timeout=10
+                )  # Timeout to allow graceful shutdown
                 if metrics is None:
                     break
                 with open(self.filename, "a") as writer:

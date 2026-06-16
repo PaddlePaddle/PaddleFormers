@@ -16,12 +16,10 @@
 # limitations under the License.
 from __future__ import annotations
 
-from typing import Dict, Tuple
-
 import paddle
 import paddle.distributed as dist
-import paddle.nn as nn
 import paddle.nn.functional as F
+from paddle import nn
 from paddle.distributed.fleet.utils.sequence_parallel_utils import AllGatherOp
 
 from ...utils.log import logger
@@ -63,7 +61,9 @@ class MoEGateMixin:
     def _one_hot_to_float(self, x, num_classes):
         if x.dtype not in (paddle.int32, paddle.int64):
             x = paddle.cast(x, paddle.int64)
-        return F.one_hot(x, num_classes=num_classes).cast(paddle.get_default_dtype())
+        return F.one_hot(x, num_classes=num_classes).cast(
+            paddle.get_default_dtype()
+        )
 
     @paddle.no_grad()
     def _one_hot_to_int64(self, x, num_classes):
@@ -87,12 +87,16 @@ class MoEGateMixin:
         Returns:
             int: A tensor value representing the calculated capacity for each expert.
         """
-        assert gates.ndim == 2, f"gates should be 2D, but got {gates.ndim}, {gates.shape}"
+        assert gates.ndim == 2, (
+            f"gates should be 2D, but got {gates.ndim}, {gates.shape}"
+        )
         # gates has shape of SE
         num_tokens = gates.shape[0]
         num_experts = gates.shape[1]
         capacity = int((num_tokens // num_experts) * capacity_factor)
-        assert capacity > 0, f"requires capacity > 0, capacity_factor: {capacity_factor}, input_shape: {gates.shape}"
+        assert capacity > 0, (
+            f"requires capacity > 0, capacity_factor: {capacity_factor}, input_shape: {gates.shape}"
+        )
 
         return capacity
 
@@ -125,17 +129,28 @@ class MoEGateMixin:
 
     def _cal_seq_aux_loss(self, probs, top_k, routing_map, max_seq_len):
         sub_max_seq_len = max_seq_len
-        if hasattr(self, "moe_subbatch_token_num_before_dispatch") and self.moe_subbatch_token_num_before_dispatch > 0:
-            sub_max_seq_len = self.moe_subbatch_token_num_before_dispatch * self.tensor_model_parallel_size
+        if (
+            hasattr(self, "moe_subbatch_token_num_before_dispatch")
+            and self.moe_subbatch_token_num_before_dispatch > 0
+        ):
+            sub_max_seq_len = (
+                self.moe_subbatch_token_num_before_dispatch
+                * self.tensor_model_parallel_size
+            )
 
         # all_probs and routing_map should be computed using the runtime local sequence length on each worker.
         if self.tensor_model_parallel_size > 1:
-            assert self.sequence_parallel and max_seq_len % self.tensor_model_parallel_size == 0
+            assert (
+                self.sequence_parallel
+                and max_seq_len % self.tensor_model_parallel_size == 0
+            )
             local_seq_len = sub_max_seq_len // self.tensor_model_parallel_size
             # [B*S, E]
             all_probs = AllGatherOp.apply(probs)
             # [B, S, E]
-            all_probs = all_probs.reshape([-1, sub_max_seq_len, self.num_experts])
+            all_probs = all_probs.reshape(
+                [-1, sub_max_seq_len, self.num_experts]
+            )
             batch_size = all_probs.shape[0]
             # [B, S, E]
             routing_map = routing_map.reshape([batch_size, local_seq_len, -1])
@@ -150,11 +165,17 @@ class MoEGateMixin:
         seq_axis = 1
         # Both cost_coeff and seq_aux_loss must be computed with the global sequence length visible to all workers.
         # [B, E]
-        cost_coeff = routing_map.sum(axis=seq_axis, dtype="float32") / paddle.to_tensor(
+        cost_coeff = routing_map.sum(
+            axis=seq_axis, dtype="float32"
+        ) / paddle.to_tensor(
             max_seq_len * top_k / self.num_experts, dtype="float32"
         )
         # [B, E] -> [B] -> []
-        seq_aux_loss = (cost_coeff * all_probs.sum(axis=seq_axis) / max_seq_len).sum(axis=1).mean()
+        seq_aux_loss = (
+            (cost_coeff * all_probs.sum(axis=seq_axis) / max_seq_len)
+            .sum(axis=1)
+            .mean()
+        )
         return seq_aux_loss
 
     def _cal_z_loss(self, logits) -> paddle.Tensor:
@@ -177,10 +198,16 @@ class MoEGateMixin:
             Paddle.Tensor: orthogonal loss
         """
         weight = F.normalize(self.weight, axis=0)
-        orthogonal_loss = paddle.mean(paddle.square(paddle.matmul(weight.T, weight) - paddle.eye(self.num_experts)))
+        orthogonal_loss = paddle.mean(
+            paddle.square(
+                paddle.matmul(weight.T, weight) - paddle.eye(self.num_experts)
+            )
+        )
         return orthogonal_loss
 
-    def _priority(self, topk_idx: paddle.Tensor, capacity: int) -> paddle.Tensor:
+    def _priority(
+        self, topk_idx: paddle.Tensor, capacity: int
+    ) -> paddle.Tensor:
         """_summary_
             The priority is the cumulative sum of the expert indices.
 
@@ -195,10 +222,16 @@ class MoEGateMixin:
         # Shape: [seq_len * k]
         chosen_expert = topk_idx.reshape([-1])
         # Shape: [seq_len * k, num_experts].
-        token_priority = F.one_hot(chosen_expert, self.num_experts).cast(paddle.int32)
-        token_priority = paddle.logical_and(token_priority > 0, token_priority.cumsum(axis=0) <= capacity)
+        token_priority = F.one_hot(chosen_expert, self.num_experts).cast(
+            paddle.int32
+        )
+        token_priority = paddle.logical_and(
+            token_priority > 0, token_priority.cumsum(axis=0) <= capacity
+        )
         # Shape: [seq_len, num_experts].
-        token_priority = token_priority.reshape([-1, k, self.num_experts]).sum(axis=1)
+        token_priority = token_priority.reshape([-1, k, self.num_experts]).sum(
+            axis=1
+        )
 
         return (token_priority > 0.0).astype("float32")
 
@@ -241,7 +274,10 @@ class MoEGateMixin:
 
         # We only care about the indices of the selected tokens
         _, topk_token_indices = paddle.topk(
-            scores, k=k_to_use, dim=0, sorted=True  # Sorted=True is usually faster, but we only use the indices.
+            scores,
+            k=k_to_use,
+            dim=0,
+            sorted=True,  # Sorted=True is usually faster, but we only use the indices.
         )
 
         # --- Step 2: Create the final assignment mask using scatter ---
@@ -252,7 +288,11 @@ class MoEGateMixin:
 
         # 2a. Create the column indices for the assignment.
         # We need a tensor of shape [k_to_use, num_experts] where each row is [0, 1, 2, ..., num_experts-1].
-        col_indices = paddle.arange(num_experts).unsqueeze(0).expand_as(topk_token_indices)
+        col_indices = (
+            paddle.arange(num_experts)
+            .unsqueeze(0)
+            .expand_as(topk_token_indices)
+        )
 
         # 2b. Flatten the row (token) and column (expert) indices for advanced indexing.
         token_indices_flat = topk_token_indices.flatten()
@@ -272,7 +312,9 @@ class MoEGateMixin:
 
         return token_priority_mask
 
-    def _topk_greedy(self, scores: paddle.Tensor, k: int) -> Tuple[paddle.Tensor, paddle.Tensor]:
+    def _topk_greedy(
+        self, scores: paddle.Tensor, k: int
+    ) -> tuple[paddle.Tensor, paddle.Tensor]:
         """_summary_
 
         Args:
@@ -290,7 +332,7 @@ class MoEGateMixin:
 
     def _topk_group_limited_greedy(
         self, scores: paddle.Tensor, k: int, n_group: int, topk_group: int
-    ) -> Tuple[paddle.Tensor, paddle.Tensor]:
+    ) -> tuple[paddle.Tensor, paddle.Tensor]:
         """_summary_
 
         Args:
@@ -307,22 +349,32 @@ class MoEGateMixin:
         Note: the group size is normal greater than the number of k
         """
         bsz_seq_len, n_experts = scores.shape
-        assert n_experts % n_group == 0, "n_experts must be divisible by n_groups"
+        assert n_experts % n_group == 0, (
+            "n_experts must be divisible by n_groups"
+        )
 
-        group_scores = scores.reshape([0, n_group, -1]).max(axis=-1)  # [n, n_group]
-        group_idx = paddle.topk(group_scores, k=topk_group, axis=-1, sorted=True)[1]  # [n, top_k_group]
+        group_scores = scores.reshape([0, n_group, -1]).max(
+            axis=-1
+        )  # [n, n_group]
+        group_idx = paddle.topk(
+            group_scores, k=topk_group, axis=-1, sorted=True
+        )[1]  # [n, top_k_group]
         group_mask = paddle.zeros_like(group_scores).put_along_axis(group_idx, paddle.to_tensor(1.0), axis=-1)  # fmt:skip
         score_mask = (
-            group_mask.unsqueeze(-1).expand([bsz_seq_len, n_group, n_experts // n_group]).reshape([bsz_seq_len, -1])
+            group_mask.unsqueeze(-1)
+            .expand([bsz_seq_len, n_group, n_experts // n_group])
+            .reshape([bsz_seq_len, -1])
         )  # [n, e]
         tmp_scores = scores * score_mask  # [n, e]
-        topk_weight, topk_idx = paddle.topk(tmp_scores, k=k, axis=-1, sorted=True)
+        topk_weight, topk_idx = paddle.topk(
+            tmp_scores, k=k, axis=-1, sorted=True
+        )
 
         return topk_weight, topk_idx
 
     def _topk_noaux_tc(
         self, scores: paddle.Tensor, k: int, n_group: int, topk_group: int
-    ) -> Tuple[paddle.Tensor, paddle.Tensor]:
+    ) -> tuple[paddle.Tensor, paddle.Tensor]:
         """_summary_
 
         Args:
@@ -339,20 +391,34 @@ class MoEGateMixin:
         Note: the group size is normal greater than the number of k
         """
         bsz_seq_len, n_experts = scores.shape
-        assert n_experts % n_group == 0, "n_experts must be divisible by n_groups"
+        assert n_experts % n_group == 0, (
+            "n_experts must be divisible by n_groups"
+        )
 
-        assert self.e_score_correction_bias is not None, "e_score_correction_bias is None"
-        scores_for_choice = scores.reshape([bsz_seq_len, -1]) + self.e_score_correction_bias.detach().unsqueeze(0)
+        assert self.e_score_correction_bias is not None, (
+            "e_score_correction_bias is None"
+        )
+        scores_for_choice = scores.reshape(
+            [bsz_seq_len, -1]
+        ) + self.e_score_correction_bias.detach().unsqueeze(0)
         group_scores = (
-            scores_for_choice.reshape([bsz_seq_len, self.n_group, -1]).topk(2, axis=-1)[0].sum(axis=-1)
+            scores_for_choice.reshape([bsz_seq_len, self.n_group, -1])
+            .topk(2, axis=-1)[0]
+            .sum(axis=-1)
         )  # fmt:skip [n, n_group]
-        group_idx = paddle.topk(group_scores, k=topk_group, axis=-1, sorted=True)[1]  # [n, top_k_group]
+        group_idx = paddle.topk(
+            group_scores, k=topk_group, axis=-1, sorted=True
+        )[1]  # [n, top_k_group]
         group_mask = paddle.zeros_like(group_scores).put_along_axis(group_idx, paddle.to_tensor(1.0, dtype="float32"), axis=-1)  # fmt:skip
         score_mask = (
-            group_mask.unsqueeze(-1).expand([bsz_seq_len, n_group, n_experts // n_group]).reshape([bsz_seq_len, -1])
+            group_mask.unsqueeze(-1)
+            .expand([bsz_seq_len, n_group, n_experts // n_group])
+            .reshape([bsz_seq_len, -1])
         )  # [n, e]
         tmp_scores = scores_for_choice * score_mask  # [n, e]
-        topk_weight, topk_idx = paddle.topk(tmp_scores, k=k, axis=-1, sorted=True)
+        topk_weight, topk_idx = paddle.topk(
+            tmp_scores, k=k, axis=-1, sorted=True
+        )
 
         # The bias term b is used only to adjust affinity scores for Top-K expert selection (routing); it does not affect gating.
         # The gate applied during dispatch and to weight the FFN output is computed from the original affinity score s_{i,t} (without the bias).
@@ -371,7 +437,7 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
         topk_method: str,
         num_experts_per_tok: int,
         norm_topk_prob: bool,
-        moe_config: Dict,
+        moe_config: dict,
         seq_length: int,
         n_group: int,
         topk_group: int,
@@ -397,7 +463,9 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
         self.n_group = n_group
         self.topk_group = topk_group
         self.routed_scaling_factor = routed_scaling_factor
-        self.moe_subbatch_token_num_before_dispatch = moe_subbatch_token_num_before_dispatch
+        self.moe_subbatch_token_num_before_dispatch = (
+            moe_subbatch_token_num_before_dispatch
+        )
         self.tensor_model_parallel_size = tensor_model_parallel_size
         self.sequence_parallel = sequence_parallel
         self.moe_expert_capacity_factor = moe_expert_capacity_factor
@@ -409,11 +477,15 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
         self.group = moe_config.get("group", None)
         self.global_aux_loss = moe_config.get("global_aux_loss", False)
         self.use_rts = moe_config.get("use_rts", True)
-        self.top2_2nd_expert_sampling = moe_config.get("top2_2nd_expert_sampling", True)
+        self.top2_2nd_expert_sampling = moe_config.get(
+            "top2_2nd_expert_sampling", True
+        )
         self.seq_aux = moe_config.get("seq_aux", True)
 
         if self.global_aux_loss:
-            assert self.group is not None, "group is required when global_aux_loss is True"
+            assert self.group is not None, (
+                "group is required when global_aux_loss is True"
+            )
             self.rank = dist.get_rank(self.group)
 
         # Accordding to the shape of gate weights in model checkpoint
@@ -431,7 +503,10 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
             )
 
         if self.topk_method == "noaux_tc":
-            self.register_buffer("e_score_correction_bias", paddle.zeros((self.num_experts,), dtype=paddle.float32))
+            self.register_buffer(
+                "e_score_correction_bias",
+                paddle.zeros((self.num_experts,), dtype=paddle.float32),
+            )
             self._cast_to_low_precision = False
             self.expert_usage = paddle.zeros(
                 shape=[self.num_experts],
@@ -442,18 +517,50 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
     def forward(
         self,
         gates: paddle.Tensor,
-    ) -> Tuple[int, paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor]:
-        capacity, top_gate, top_idx, gates_masked, mask, token_priority, l_aux, l_zloss = self.topkgating(gates)
+    ) -> tuple[
+        int,
+        paddle.Tensor,
+        paddle.Tensor,
+        paddle.Tensor,
+        paddle.Tensor,
+        paddle.Tensor,
+    ]:
+        (
+            capacity,
+            top_gate,
+            top_idx,
+            gates_masked,
+            mask,
+            token_priority,
+            l_aux,
+            l_zloss,
+        ) = self.topkgating(gates)
         exp_counts = paddle.sum(mask.cast(paddle.int64), axis=0)
         if self.topk_method == "noaux_tc":
             with paddle.no_grad():
                 self.expert_usage += exp_counts
-        return capacity, top_gate, top_idx, gates_masked, mask, token_priority, l_aux, l_zloss
+        return (
+            capacity,
+            top_gate,
+            top_idx,
+            gates_masked,
+            mask,
+            token_priority,
+            l_aux,
+            l_zloss,
+        )
 
     def topkgating(
         self,
         gates: paddle.Tensor,
-    ) -> Tuple[int, paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor, paddle.Tensor]:
+    ) -> tuple[
+        int,
+        paddle.Tensor,
+        paddle.Tensor,
+        paddle.Tensor,
+        paddle.Tensor,
+        paddle.Tensor,
+    ]:
         """Implements TopKGating on logits."""
 
         if len(gates.shape) == 3:
@@ -465,30 +572,46 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
         with paddle.amp.auto_cast(False):
             gates = gates.cast(self.weight.dtype)
             if not self.transpose_gate_weight:
-                logits = F.linear(gates.cast("float32"), self.weight.cast("float32"))
+                logits = F.linear(
+                    gates.cast("float32"), self.weight.cast("float32")
+                )
             else:
-                logits = F.linear(gates.cast("float32"), self.weight.cast("float32").t())
+                logits = F.linear(
+                    gates.cast("float32"), self.weight.cast("float32").t()
+                )
             gates = self.gate_score_func(logits=logits)
             gates = gates.cast(paddle.float32)
 
         gates_ori = gates
         if self.scoring_func == "sigmoid":
-            gates_ori = gates_ori / (gates_ori.sum(axis=-1, keepdim=True) + 1e-20)
+            gates_ori = gates_ori / (
+                gates_ori.sum(axis=-1, keepdim=True) + 1e-20
+            )
 
         l_zloss = self._cal_z_loss(gates)
 
         if self.topk_method == "greedy":
-            top_gate, top_idx = self._topk_greedy(gates, k=self.num_experts_per_tok)
+            top_gate, top_idx = self._topk_greedy(
+                gates, k=self.num_experts_per_tok
+            )
         elif self.topk_method == "group_limited_greedy":
             top_gate, top_idx = self._topk_group_limited_greedy(
-                gates, k=self.num_experts_per_tok, n_group=self.n_group, topk_group=self.topk_group
+                gates,
+                k=self.num_experts_per_tok,
+                n_group=self.n_group,
+                topk_group=self.topk_group,
             )
         elif self.topk_method == "noaux_tc":
             top_gate, top_idx = self._topk_noaux_tc(
-                gates, k=self.num_experts_per_tok, n_group=self.n_group, topk_group=self.topk_group
+                gates,
+                k=self.num_experts_per_tok,
+                n_group=self.n_group,
+                topk_group=self.topk_group,
             )
         else:
-            raise NotImplementedError(f"Invalid topk_method: {self.topk_method}")
+            raise NotImplementedError(
+                f"Invalid topk_method: {self.topk_method}"
+            )
 
         # norm gate to sum 1
         if self.num_experts_per_tok > 1 and self.norm_topk_prob:
@@ -496,10 +619,14 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
             top_gate = top_gate / denominator
         top_gate = top_gate * self.routed_scaling_factor
 
-        mask = paddle.zeros_like(gates).put_along_axis(top_idx, paddle.to_tensor(1.0, dtype=gates.dtype), axis=1)
+        mask = paddle.zeros_like(gates).put_along_axis(
+            top_idx, paddle.to_tensor(1.0, dtype=gates.dtype), axis=1
+        )
 
         if self.seq_aux:
-            l_aux = self._cal_seq_aux_loss(gates_ori, self.num_experts_per_tok, mask, self.seq_length)
+            l_aux = self._cal_seq_aux_loss(
+                gates_ori, self.num_experts_per_tok, mask, self.seq_length
+            )
         else:
             l_aux = self._cal_aux_loss(gates, mask)
 
@@ -514,18 +641,26 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
 
             # update mask and locations by capacity
             if self.moe_token_drop_policy == "probs":
-                topk_masked_gates = paddle.zeros_like(gates).put_along_axis(top_idx, top_gate, axis=1)
-                token_priority = self._probs_drop_policy(topk_masked_gates, capacity)
+                topk_masked_gates = paddle.zeros_like(gates).put_along_axis(
+                    top_idx, top_gate, axis=1
+                )
+                token_priority = self._probs_drop_policy(
+                    topk_masked_gates, capacity
+                )
 
             elif self.moe_token_drop_policy == "position":
                 token_priority = self._priority(top_idx, capacity)
             else:
-                raise ValueError(f"Invalid moe_token_drop_policy: {self.moe_token_drop_policy}")
+                raise ValueError(
+                    f"Invalid moe_token_drop_policy: {self.moe_token_drop_policy}"
+                )
         else:
             # Do not drop tokens - set capacity according to current expert assignments
             local_capacity = paddle.max(exp_counts)
             if self.group is not None:
-                dist.all_reduce(local_capacity, op=dist.ReduceOp.MAX, group=self.group)
+                dist.all_reduce(
+                    local_capacity, op=dist.ReduceOp.MAX, group=self.group
+                )
             capacity = int(local_capacity)
             token_priority = self._priority(top_idx, capacity)
 

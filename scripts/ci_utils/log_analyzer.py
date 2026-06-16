@@ -31,7 +31,9 @@ def parse_loss_values(log_content):
         dict: Dictionary containing step numbers as keys and loss values as values
     """
     # Support both formats: with and without commas after values
-    loss_pattern = re.compile(r"loss:\s*([\d\.e+-]+),?\s+learning_rate:.*?global_step:\s*(\d+)")
+    loss_pattern = re.compile(
+        r"loss:\s*([\d\.e+-]+),?\s+learning_rate:.*?global_step:\s*(\d+)"
+    )
     matches = loss_pattern.findall(log_content)
     return {int(step): float(loss) for loss, step in matches}
 
@@ -63,6 +65,11 @@ def compare_with_baseline(current_losses, baseline_path, tolerance=1e-6):
         if not passed:
             all_passed = False
 
-        results[step] = {"current": current_loss, "baseline": baseline_loss, "diff": diff, "passed": passed}
+        results[step] = {
+            "current": current_loss,
+            "baseline": baseline_loss,
+            "diff": diff,
+            "passed": passed,
+        }
 
     return all_passed, results

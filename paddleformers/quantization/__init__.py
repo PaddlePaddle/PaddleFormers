@@ -29,7 +29,12 @@ import_structure = {
         "cal_abs_max_channel",
         "qdq_weight",
     ],
-    "hadamard_utils": ["matmul_hadU", "create_hadamard_matrix", "hadamard_matmul", "apply_hadamard_matmul"],
+    "hadamard_utils": [
+        "matmul_hadU",
+        "create_hadamard_matrix",
+        "hadamard_matmul",
+        "apply_hadamard_matmul",
+    ],
     "qat_utils": [
         "QMIN_QMAX_MAPPING",
         "quantize",
@@ -46,7 +51,11 @@ import_structure = {
         "qlora_weight_quantize_dequantize",
         "qlora_weight_linear",
     ],
-    "quantization_config": ["quant_inference_mapping", "fp8_format_mapping", "QuantizationConfig"],
+    "quantization_config": [
+        "quant_inference_mapping",
+        "fp8_format_mapping",
+        "QuantizationConfig",
+    ],
     "quantization_linear": [
         "QuantMapping",
         "quant_weight_forward",
@@ -66,7 +75,10 @@ import_structure = {
         "convert_to_quantize_state_dict",
         "update_loaded_state_dict_keys",
     ],
-    "unified_checkpoint_quantization": ["dequant_unified_optimizer", "quant_unified_optimizer"],
+    "unified_checkpoint_quantization": [
+        "dequant_unified_optimizer",
+        "quant_unified_optimizer",
+    ],
 }
 
 if TYPE_CHECKING:

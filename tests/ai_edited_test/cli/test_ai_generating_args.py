@@ -6,7 +6,10 @@
 
 import unittest
 
-from paddleformers.cli.hparams.generating_args import GeneratingArguments, StreamOptions
+from paddleformers.cli.hparams.generating_args import (
+    GeneratingArguments,
+    StreamOptions,
+)
 
 
 class TestStreamOptions(unittest.TestCase):

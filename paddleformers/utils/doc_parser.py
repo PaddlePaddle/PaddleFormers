@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2022 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,10 +28,17 @@ from .image_utils import np2base64
 from .log import logger
 
 
-class DocParser(object):
+class DocParser:
     """DocParser"""
 
-    def __init__(self, ocr_lang="ch", layout_analysis=False, pdf_parser_config=None, use_gpu=None, device_id=None):
+    def __init__(
+        self,
+        ocr_lang="ch",
+        layout_analysis=False,
+        pdf_parser_config=None,
+        use_gpu=None,
+        device_id=None,
+    ):
         self.ocr_lang = ocr_lang
         self.use_angle_cls = False
         self.layout_analysis = layout_analysis
@@ -53,7 +59,9 @@ class DocParser(object):
             image = self.read_pdf(doc["doc"])
         offset_x, offset_y = 0, 0
         if expand_to_a4_size:
-            image, offset_x, offset_y = self.expand_image_to_a4_size(image, center=True)
+            image, offset_x, offset_y = self.expand_image_to_a4_size(
+                image, center=True
+            )
         img_h, img_w = image.shape[:2]
         doc["image"] = np2base64(image)
         doc["offset_x"] = offset_x
@@ -182,10 +190,12 @@ class DocParser(object):
             elif data.startswith("http://") or data.startswith("https://"):
                 resp = requests.get(data, stream=True)
                 if not resp.ok:
-                    raise RuntimeError("Failed to download the file from {}".format(data))
+                    raise RuntimeError(
+                        f"Failed to download the file from {data}"
+                    )
                 buff = resp.raw.read()
             else:
-                raise FileNotFoundError("Image file {} not found!".format(data))
+                raise FileNotFoundError(f"Image file {data} not found!")
         if buff is None:
             buff = base64.b64decode(data)
         if buff and file_like:
@@ -200,7 +210,11 @@ class DocParser(object):
         image_buff = self._get_buffer(image)
 
         # Use exif_transpose to correct orientation
-        _image = np.array(ImageOps.exif_transpose(Image.open(BytesIO(image_buff)).convert("RGB")))
+        _image = np.array(
+            ImageOps.exif_transpose(
+                Image.open(BytesIO(image_buff)).convert("RGB")
+            )
+        )
         return _image
 
     @classmethod
@@ -212,7 +226,8 @@ class DocParser(object):
             import fitz
         except ImportError:
             raise RuntimeError(
-                "Need PyMuPDF to process pdf input. " "Please install module by: python3 -m pip install pymupdf"
+                "Need PyMuPDF to process pdf input. "
+                "Please install module by: python3 -m pip install pymupdf"
             )
         if isinstance(pdf, fitz.Document):
             return pdf
@@ -226,7 +241,9 @@ class DocParser(object):
                 raise ValueError("The password of pdf is incorrect.")
 
         if pdf_doc.page_count > 1:
-            logger.warning("Currently only parse the first page for PDF input with more than one page.")
+            logger.warning(
+                "Currently only parse the first page for PDF input with more than one page."
+            )
 
         page = pdf_doc.load_page(0)
         # The original image is shrunk when convertd from PDF by fitz, so we scale the image size by 10 times
@@ -266,7 +283,9 @@ class DocParser(object):
         else:
             from paddleocr import PPStructure
 
-            self.layout_analysis_engine = PPStructure(table=True, ocr=True, show_log=False, lang=self.ocr_lang)
+            self.layout_analysis_engine = PPStructure(
+                table=True, ocr=True, show_log=False, lang=self.ocr_lang
+            )
 
     @classmethod
     def _normalize_box(self, box, old_size, new_size, offset_x=0, offset_y=0):
@@ -309,7 +328,14 @@ class DocParser(object):
 
     @classmethod
     def write_image_with_results(
-        self, image, layout=None, result=None, save_path=None, return_image=False, format=None, max_size=None
+        self,
+        image,
+        layout=None,
+        result=None,
+        save_path=None,
+        return_image=False,
+        format=None,
+        max_size=None,
     ):
         """
         write image with boxes and results
@@ -361,7 +387,11 @@ class DocParser(object):
                     centers.append(((x2 - x1) / 2 + x1, (y2 - y1) / 2 + y1))
                 if root:
                     while True:
-                        color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+                        color = (
+                            random.randint(0, 255),
+                            random.randint(0, 255),
+                            random.randint(0, 255),
+                        )
                         if sum(color) < 480:
                             break
                 for box in plot_boxes:
@@ -369,9 +399,16 @@ class DocParser(object):
                 if parent_centers:
                     for p_c in parent_centers:
                         for c in centers:
-                            draw_render.line((p_c[0], p_c[1], c[0], c[1]), fill=125, width=3)
+                            draw_render.line(
+                                (p_c[0], p_c[1], c[0], c[1]), fill=125, width=3
+                            )
                 if isinstance(segment, dict) and segment.get("relations"):
-                    _write_results(segment["relations"], color, root=False, parent_centers=centers)
+                    _write_results(
+                        segment["relations"],
+                        color,
+                        root=False,
+                        parent_centers=centers,
+                    )
 
         random.seed(0)
         _image = self.read_image(image)
@@ -393,7 +430,11 @@ class DocParser(object):
                     (box[0], box[3]),
                 ]
                 while True:
-                    color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+                    color = (
+                        random.randint(0, 255),
+                        random.randint(0, 255),
+                        random.randint(0, 255),
+                    )
                     if sum(color) < 480:
                         break
                 draw_render.polygon(box, fill=color)

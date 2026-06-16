@@ -21,7 +21,10 @@ from tests.testing_utils import get_tests_dir
 output_data = {
     "messages": [
         {"role": "user", "content": "针对产品发布提出五种营销策略。"},
-        {"role": "assistant", "content": "1. 社交媒体活动。\n2. 电子邮件营销。\n3. 在线和离线广告。\n4. 推荐和评论。\n5. 合作名人推销。"},
+        {
+            "role": "assistant",
+            "content": "1. 社交媒体活动。\n2. 电子邮件营销。\n3. 在线和离线广告。\n4. 推荐和评论。\n5. 合作名人推销。",
+        },
     ],
     "label": [1],
     "system": "",
@@ -50,7 +53,7 @@ class TestDatasetFileReader(unittest.TestCase):
         dataset_dir = get_tests_dir(os.path.join("fixtures", "dummy"))
         dataset_path = os.path.join(dataset_dir, "io", "train.jsonl")
         file_reader = FileReader(dataset_path, "erniekit", file_samplenum=2)
-        samples = [s for s in iter(file_reader)]
+        samples = list(iter(file_reader))
         self.assertEqual(len(samples), 2)
 
     def test_file_samplenum_oversample(self):
@@ -59,7 +62,7 @@ class TestDatasetFileReader(unittest.TestCase):
         dataset_path = os.path.join(dataset_dir, "io", "train.jsonl")
         # 3 rows in file, request 7 -> 3*2 + 1 = 7
         file_reader = FileReader(dataset_path, "erniekit", file_samplenum=7)
-        samples = [s for s in iter(file_reader)]
+        samples = list(iter(file_reader))
         self.assertEqual(len(samples), 7)
         # First sample repeats at index 3
         self.assertEqual(samples[0], samples[3])

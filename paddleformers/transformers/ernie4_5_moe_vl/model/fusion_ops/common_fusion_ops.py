@@ -77,7 +77,9 @@ def _fusion_flash_attention(
                     q,
                     k,
                     v,
-                    startend_row_indices=attn_mask_start_row_indices.unsqueeze(-1),
+                    startend_row_indices=attn_mask_start_row_indices.unsqueeze(
+                        -1
+                    ),
                     causal=True,
                 )
             else:
@@ -86,14 +88,23 @@ def _fusion_flash_attention(
                     q,
                     k,
                     v,
-                    startend_row_indices=attn_mask_start_row_indices.unsqueeze(-1),
+                    startend_row_indices=attn_mask_start_row_indices.unsqueeze(
+                        -1
+                    ),
                     causal=True,
                 )
         else:
-            attention_mask = _gen_from_sparse_attn_mask_indices(attn_mask_start_row_indices, q.dtype)
+            attention_mask = _gen_from_sparse_attn_mask_indices(
+                attn_mask_start_row_indices, q.dtype
+            )
             if rr_flash_attn is None:
                 out = F.scaled_dot_product_attention(
-                    q, k, v, attn_mask=attention_mask, is_causal=False, enable_gqa=True
+                    q,
+                    k,
+                    v,
+                    attn_mask=attention_mask,
+                    is_causal=False,
+                    enable_gqa=True,
                 )
             else:
                 out = rr_flash_attn(
@@ -145,11 +156,18 @@ def _gen_from_sparse_attn_mask_indices(attn_mask_start_row_indices, dtype):
         paddle.Tensor: The dense attention mask recovered from attn_mask_start_row_indices.
     """
     batch_size, _, max_seq_len = attn_mask_start_row_indices.shape
-    base = paddle.arange(max_seq_len, dtype="int32").unsqueeze(1).expand([batch_size, -1, max_seq_len]).unsqueeze(1)
+    base = (
+        paddle.arange(max_seq_len, dtype="int32")
+        .unsqueeze(1)
+        .expand([batch_size, -1, max_seq_len])
+        .unsqueeze(1)
+    )
     mask_indices = attn_mask_start_row_indices.unsqueeze(1)
 
     tril = paddle.tril(
-        paddle.ones([max_seq_len, max_seq_len], dtype="bool").expand([batch_size, 1, max_seq_len, max_seq_len])
+        paddle.ones([max_seq_len, max_seq_len], dtype="bool").expand(
+            [batch_size, 1, max_seq_len, max_seq_len]
+        )
     )
     attention_mask = paddle.logical_and(base < mask_indices, tril)
     attention_mask = paddle.scale(

@@ -126,23 +126,40 @@ class DeepseekV3ModelTester:
         }
 
     def prepare_config_and_inputs(self):
-        input_ids = ids_tensor([self.batch_size, self.seq_length], self.vocab_size, dtype=paddle.int64)
+        input_ids = ids_tensor(
+            [self.batch_size, self.seq_length],
+            self.vocab_size,
+            dtype=paddle.int64,
+        )
 
         input_mask = None
         if self.use_input_mask:
-            input_mask = random_attention_mask([self.batch_size, self.seq_length])
+            input_mask = random_attention_mask(
+                [self.batch_size, self.seq_length]
+            )
 
         sequence_labels = None
         token_labels = None
         choice_labels = None
         if self.use_labels:
-            sequence_labels = ids_tensor([self.batch_size], self.type_sequence_label_size)
-            token_labels = ids_tensor([self.batch_size, self.seq_length], self.num_labels)
+            sequence_labels = ids_tensor(
+                [self.batch_size], self.type_sequence_label_size
+            )
+            token_labels = ids_tensor(
+                [self.batch_size, self.seq_length], self.num_labels
+            )
             choice_labels = ids_tensor([self.batch_size], self.num_choices)
 
         config = self.get_config()
         config.seq_length = input_ids.shape[1]
-        return config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        return (
+            config,
+            input_ids,
+            input_mask,
+            sequence_labels,
+            token_labels,
+            choice_labels,
+        )
 
     def get_config(self) -> DeepseekV3Config:
         return DeepseekV3Config(
@@ -177,29 +194,53 @@ class DeepseekV3ModelTester:
         )
 
     def create_and_check_model(
-        self, config: DeepseekV3Config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        self,
+        config: DeepseekV3Config,
+        input_ids,
+        input_mask,
+        sequence_labels,
+        token_labels,
+        choice_labels,
     ):
         model = DeepseekV3Model(config)
         model.eval()
         result = model(input_ids)
-        self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.hidden_size])
+        self.parent.assertEqual(
+            result[0].shape,
+            [self.batch_size, self.seq_length, self.hidden_size],
+        )
 
-    def create_and_check_model_attention_mask(self, config: DeepseekV3Config, input_ids):
+    def create_and_check_model_attention_mask(
+        self, config: DeepseekV3Config, input_ids
+    ):
         model = DeepseekV3Model(config)
         model.eval()
         attn_mask_2d = random_attention_mask([self.batch_size, self.seq_length])
         result_2d = model(input_ids, attention_mask=attn_mask_2d)[0]
         batch, seq_length = input_ids.shape
-        causal_mask = paddle.tril(paddle.ones((batch, seq_length, seq_length), dtype=attn_mask_2d.dtype))
+        causal_mask = paddle.tril(
+            paddle.ones(
+                (batch, seq_length, seq_length), dtype=attn_mask_2d.dtype
+            )
+        )
         attn_mask_3d = causal_mask & attn_mask_2d.unsqueeze(-1)
         result_3d = model(input_ids, attention_mask=attn_mask_3d)[0]
         attn_mask_4d = attn_mask_3d.unsqueeze(1)
         result_4d = model(input_ids, attention_mask=attn_mask_4d)[0]
         result_no_attention_mask = model(input_ids, attention_mask=None)[0]
         # Assert non-padding tokens have the same logits with different attention_mask shape
-        self.parent.assertTrue((result_2d[attn_mask_2d] == result_3d[attn_mask_2d]).all())
-        self.parent.assertTrue((result_2d[attn_mask_2d] == result_4d[attn_mask_2d]).all())
-        self.parent.assertTrue((result_2d[attn_mask_2d] == result_no_attention_mask[attn_mask_2d]).all())
+        self.parent.assertTrue(
+            (result_2d[attn_mask_2d] == result_3d[attn_mask_2d]).all()
+        )
+        self.parent.assertTrue(
+            (result_2d[attn_mask_2d] == result_4d[attn_mask_2d]).all()
+        )
+        self.parent.assertTrue(
+            (
+                result_2d[attn_mask_2d]
+                == result_no_attention_mask[attn_mask_2d]
+            ).all()
+        )
 
     def create_and_check_model_as_decoder(
         self,
@@ -222,7 +263,10 @@ class DeepseekV3ModelTester:
             attention_mask=input_mask,
         )
         result = model(input_ids, attention_mask=input_mask)
-        self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.hidden_size])
+        self.parent.assertEqual(
+            result[0].shape,
+            [self.batch_size, self.seq_length, self.hidden_size],
+        )
 
     def create_and_check_for_causal_lm(
         self,
@@ -235,8 +279,16 @@ class DeepseekV3ModelTester:
     ):
         model = DeepseekV3ForCausalLM(config=config)
         model.eval()
-        result = model(input_ids, attention_mask=input_mask, labels=token_labels, return_dict=True)
-        self.parent.assertEqual(result.logits.shape, [self.batch_size, self.seq_length, self.vocab_size])
+        result = model(
+            input_ids,
+            attention_mask=input_mask,
+            labels=token_labels,
+            return_dict=True,
+        )
+        self.parent.assertEqual(
+            result.logits.shape,
+            [self.batch_size, self.seq_length, self.vocab_size],
+        )
 
     def prepare_config_and_inputs_for_common(self):
         config_and_inputs = self.prepare_config_and_inputs()
@@ -252,7 +304,9 @@ class DeepseekV3ModelTester:
         config.seq_length = input_ids.shape[1]
         return config, inputs_dict
 
-    def create_and_check_lm_head_model(self, config, input_ids, input_mask, *args):
+    def create_and_check_lm_head_model(
+        self, config, input_ids, input_mask, *args
+    ):
         model = DeepseekV3ForCausalLM(config)
         model.eval()
 
@@ -264,9 +318,15 @@ class DeepseekV3ModelTester:
         )
         if self.parent.use_labels:
             self.parent.assertIsInstance(result[0].item(), float)
-            self.parent.assertEqual(result[1].shape, [self.batch_size, self.seq_length, self.vocab_size])
+            self.parent.assertEqual(
+                result[1].shape,
+                [self.batch_size, self.seq_length, self.vocab_size],
+            )
         else:
-            self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
+            self.parent.assertEqual(
+                result[0].shape,
+                [self.batch_size, self.seq_length, self.vocab_size],
+            )
 
     def check_model_position_ids(self, config, input_ids, input_mask, *args):
         model = DeepseekV3ForCausalLM(config)
@@ -286,29 +346,41 @@ class DeepseekV3ModelTester:
             return_dict=self.parent.return_dict,
         )
         if self.parent.use_labels:
-            self.parent.assertTrue((result_position_id[1] == result_no_position_id[1]).all())
+            self.parent.assertTrue(
+                (result_position_id[1] == result_no_position_id[1]).all()
+            )
         else:
-            self.parent.assertTrue((result_position_id[0] == result_no_position_id[0]).all())
+            self.parent.assertTrue(
+                (result_position_id[0] == result_no_position_id[0]).all()
+            )
 
 
-class DeepseekV3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
+class DeepseekV3ModelTest(
+    ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
+):
     base_model_class = DeepseekV3Model
     return_dict = False
     use_labels = False
     use_test_model_name_list = False
 
     all_model_classes = (DeepseekV3Model, DeepseekV3ForCausalLM)
-    all_generative_model_classes = {DeepseekV3ForCausalLM: (DeepseekV3Model, "deepseek_v3")}
+    all_generative_model_classes = {
+        DeepseekV3ForCausalLM: (DeepseekV3Model, "deepseek_v3")
+    }
 
     @gpu_device_initializer(log_prefix="DeepseekV3ModelTest")
     def setUp(self):
         super().setUp()
 
         self.model_tester = DeepseekV3ModelTester(self)
-        self.config_tester = ConfigTester(self, config_class=DeepseekV3Config, vocab_size=256, hidden_size=24)
+        self.config_tester = ConfigTester(
+            self, config_class=DeepseekV3Config, vocab_size=256, hidden_size=24
+        )
 
     def _get_input_ids_and_config(self):
-        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+        config, inputs_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
 
         input_ids = inputs_dict[self.input_name]
         attention_mask = paddle.ones_like(input_ids, dtype=paddle.int64)
@@ -327,8 +399,12 @@ class DeepseekV3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
         pass
 
     def test_model_position_ids(self):
-        config, input_ids, input_mask, _, _, _ = self.model_tester.prepare_config_and_inputs()
-        self.model_tester.check_model_position_ids(config, input_ids, input_mask)
+        config, input_ids, input_mask, _, _, _ = (
+            self.model_tester.prepare_config_and_inputs()
+        )
+        self.model_tester.check_model_position_ids(
+            config, input_ids, input_mask
+        )
 
     def test_generate_without_input_ids(self):
         # this requires 4-D attention mask logic, which is not supported yet
@@ -390,9 +466,22 @@ class DeepseekV3IntegrationTest(unittest.TestCase):
 
         # Expected mean on dim = -1
         EXPECTED_MEAN = paddle.to_tensor(
-            [[-0.00238119, 0.00045322, -0.00630159, 0.00018909, -0.00675243, -0.00595381, -0.00273710, 0.00166127]]
+            [
+                [
+                    -0.00238119,
+                    0.00045322,
+                    -0.00630159,
+                    0.00018909,
+                    -0.00675243,
+                    -0.00595381,
+                    -0.00273710,
+                    0.00166127,
+                ]
+            ]
         )
-        self.assertTrue(paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-3, rtol=1e-3))
+        self.assertTrue(
+            paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-3, rtol=1e-3)
+        )
 
         # slicing logits[0, 0, 0:30]
         EXPECTED_SLICE = paddle.to_tensor(
@@ -429,7 +518,11 @@ class DeepseekV3IntegrationTest(unittest.TestCase):
                 -1.98977375,
             ]
         )
-        self.assertTrue(paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-2, rtol=1e-2))
+        self.assertTrue(
+            paddle.allclose(
+                out[0, 0, :30], EXPECTED_SLICE, atol=1e-2, rtol=1e-2
+            )
+        )
 
     def test_fd_fallback(self):
         input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
@@ -455,11 +548,21 @@ class DeepseekV3IntegrationTest(unittest.TestCase):
         input_ids = paddle.to_tensor([input_ids])
         with paddle.no_grad():
             out = model(input_ids, return_dict=True).logits
-            out_fd_fallback = model_fd_fallback(input_ids, return_dict=True).logits
-            out_fd_fallback_fused_ffn = model_fd_fallback_fused_ffn(input_ids, return_dict=True).logits
+            out_fd_fallback = model_fd_fallback(
+                input_ids, return_dict=True
+            ).logits
+            out_fd_fallback_fused_ffn = model_fd_fallback_fused_ffn(
+                input_ids, return_dict=True
+            ).logits
 
-        self.assertTrue(paddle.allclose(out_fd_fallback, out, atol=1e-3, rtol=1e-3))
-        self.assertTrue(paddle.allclose(out_fd_fallback_fused_ffn, out, atol=1e-3, rtol=1e-3))
+        self.assertTrue(
+            paddle.allclose(out_fd_fallback, out, atol=1e-3, rtol=1e-3)
+        )
+        self.assertTrue(
+            paddle.allclose(
+                out_fd_fallback_fused_ffn, out, atol=1e-3, rtol=1e-3
+            )
+        )
 
 
 class DeepseekV3CompatibilityTest(unittest.TestCase):
@@ -510,7 +613,9 @@ class DeepseekV3CompatibilityTest(unittest.TestCase):
         import torch
         from transformers import DeepseekV3ForCausalLM
 
-        torch_model = DeepseekV3ForCausalLM.from_pretrained(self.torch_model_path, dtype=torch.float32)
+        torch_model = DeepseekV3ForCausalLM.from_pretrained(
+            self.torch_model_path, dtype=torch.float32
+        )
         torch_model.eval()
         torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
@@ -518,14 +623,20 @@ class DeepseekV3CompatibilityTest(unittest.TestCase):
         from paddleformers.transformers import DeepseekV3ForCausalLM
 
         paddle_model = DeepseekV3ForCausalLM.from_pretrained(
-            self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            self.torch_model_path,
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
         )
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
         self.assertTrue(
             np.allclose(
-                paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                paddle_logit.detach()
+                .cpu()
+                .reshape([-1])[:9]
+                .astype("float32")
+                .numpy(),
                 torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
                 atol=1e-2,
                 rtol=1e-2,
@@ -535,7 +646,6 @@ class DeepseekV3CompatibilityTest(unittest.TestCase):
     @require_package("transformers", "torch")
     def test_DeepseekV3_converter_from_local_dir(self):
         with tempfile.TemporaryDirectory() as tempdir:
-
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
@@ -543,24 +653,38 @@ class DeepseekV3CompatibilityTest(unittest.TestCase):
             import torch
             from transformers import DeepseekV3ForCausalLM
 
-            torch_model = DeepseekV3ForCausalLM.from_pretrained(self.torch_model_path, dtype=torch.float32)
+            torch_model = DeepseekV3ForCausalLM.from_pretrained(
+                self.torch_model_path, dtype=torch.float32
+            )
             torch_model.eval()
             torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+            torch_logit = torch_model(
+                torch.tensor(input_ids), return_dict=False
+            )[0]
 
             # 3. forward the paddle model
             from paddleformers.transformers import DeepseekV3ForCausalLM
 
             paddle_model = DeepseekV3ForCausalLM.from_pretrained(
-                tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
+                tempdir,
+                dtype="float32",
+                load_checkpoint_format="flex_checkpoint",
             )
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
             self.assertTrue(
                 np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
+                    paddle_logit.detach()
+                    .cpu()
+                    .reshape([-1])[:9]
+                    .astype("float32")
+                    .numpy(),
+                    torch_logit.detach()
+                    .cpu()
+                    .reshape([-1])[:9]
+                    .float()
+                    .numpy(),
                     atol=1e-2,
                     rtol=1e-2,
                 )

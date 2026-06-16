@@ -25,4 +25,6 @@ def repeat_kv(hidden_states: paddle.Tensor, n_rep: int) -> paddle.Tensor:
         return hidden_states
 
     hidden_states = hidden_states.unsqueeze(-2).tile([1, 1, 1, n_rep, 1])
-    return hidden_states.reshape([batch, slen, num_key_value_heads * n_rep, head_dim])
+    return hidden_states.reshape(
+        [batch, slen, num_key_value_heads * n_rep, head_dim]
+    )

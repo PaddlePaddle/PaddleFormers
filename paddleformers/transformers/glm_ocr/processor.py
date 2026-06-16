@@ -12,14 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, Union
+from typing import Optional
 
 import numpy as np
 import paddle
 
 from ..image_processing_utils import BatchFeature
 from ..image_utils import ImageInput
-from ..processing_utils import MultiModalData, ProcessingKwargs, ProcessorMixin, Unpack
+from ..processing_utils import (
+    MultiModalData,
+    ProcessingKwargs,
+    ProcessorMixin,
+    Unpack,
+)
 from ..tokenizer_utils_base import PreTokenizedInput, TextInput
 
 
@@ -37,14 +42,22 @@ class Glm46VProcessor(ProcessorMixin):
     image_processor_class = "AutoImageProcessor"
     tokenizer_class = ("PreTrainedTokenizer", "PreTrainedTokenizerFast")
 
-    def __init__(self, image_processor=None, tokenizer=None, chat_template=None, **kwargs):
-        self.image_token = "<|image|>" if not hasattr(tokenizer, "image_token") else tokenizer.image_token
+    def __init__(
+        self, image_processor=None, tokenizer=None, chat_template=None, **kwargs
+    ):
+        self.image_token = (
+            "<|image|>"
+            if not hasattr(tokenizer, "image_token")
+            else tokenizer.image_token
+        )
         self.image_token_id = (
             tokenizer.image_token_id
             if getattr(tokenizer, "image_token_id", None)
             else tokenizer.convert_tokens_to_ids(self.image_token)
         )
-        super().__init__(image_processor, tokenizer, chat_template=chat_template)
+        super().__init__(
+            image_processor, tokenizer, chat_template=chat_template
+        )
 
     def apply_chat_template(
         self,
@@ -101,9 +114,13 @@ class Glm46VProcessor(ProcessorMixin):
                             if "image" in item and item["image"] is not None:
                                 images.append(item["image"])
                             elif "url" in item and item["url"] is not None:
-                                images.append(_load_image_from_url_or_path(item["url"]))
+                                images.append(
+                                    _load_image_from_url_or_path(item["url"])
+                                )
                             else:
-                                raise ValueError("Image item must contain either 'image' or 'url'.")
+                                raise ValueError(
+                                    "Image item must contain either 'image' or 'url'."
+                                )
                             parts.append(self.image_token)
                         elif t == "text":
                             parts.append(item.get("text", ""))
@@ -120,7 +137,11 @@ class Glm46VProcessor(ProcessorMixin):
             return flat_conv, images
 
         # Normalize to batch or single
-        is_batched = isinstance(conversation, list) and len(conversation) > 0 and isinstance(conversation[0], list)
+        is_batched = (
+            isinstance(conversation, list)
+            and len(conversation) > 0
+            and isinstance(conversation[0], list)
+        )
 
         if not is_batched:
             conv_list = [conversation]
@@ -164,7 +185,9 @@ class Glm46VProcessor(ProcessorMixin):
         # __call__ expects either a single text or list; we already have list
         features = self(
             images=all_images if len(all_images) > 0 else None,
-            text=rendered_texts if is_batched or len(rendered_texts) > 1 else rendered_texts[0],
+            text=rendered_texts
+            if is_batched or len(rendered_texts) > 1
+            else rendered_texts[0],
             padding=padding,
             return_tensors=return_tensors,
         )
@@ -181,7 +204,10 @@ class Glm46VProcessor(ProcessorMixin):
     def __call__(
         self,
         images: Optional[ImageInput] = None,
-        text: Union[TextInput, PreTokenizedInput, list[TextInput], list[PreTokenizedInput]] = None,
+        text: TextInput
+        | PreTokenizedInput
+        | list[TextInput]
+        | list[PreTokenizedInput] = None,
         **kwargs: Unpack[Glm46VProcessorKwargs],
     ) -> BatchFeature:
         output_kwargs = self._merge_kwargs(
@@ -192,7 +218,9 @@ class Glm46VProcessor(ProcessorMixin):
 
         image_inputs = {}
         if images is not None:
-            image_inputs = self.image_processor(images=images, **output_kwargs["images_kwargs"])
+            image_inputs = self.image_processor(
+                images=images, **output_kwargs["images_kwargs"]
+            )
             image_grid_thw = image_inputs["image_grid_thw"]
 
         if not isinstance(text, list):
@@ -204,15 +232,27 @@ class Glm46VProcessor(ProcessorMixin):
             index = 0
             for i in range(len(text)):
                 while self.image_token in text[i]:
-                    num_image_tokens = image_grid_thw[index].prod() // merge_length
-                    text[i] = text[i].replace(self.image_token, "<|placeholder|>" * num_image_tokens.item(), 1)
+                    num_image_tokens = (
+                        image_grid_thw[index].prod() // merge_length
+                    )
+                    text[i] = text[i].replace(
+                        self.image_token,
+                        "<|placeholder|>" * num_image_tokens.item(),
+                        1,
+                    )
                     index += 1
                 text[i] = text[i].replace("<|placeholder|>", self.image_token)
 
-        return_tensors = output_kwargs["text_kwargs"].pop("return_tensors", None)
-        return_mm_token_type_ids = output_kwargs["text_kwargs"].pop("return_mm_token_type_ids", False)
+        return_tensors = output_kwargs["text_kwargs"].pop(
+            "return_tensors", None
+        )
+        return_mm_token_type_ids = output_kwargs["text_kwargs"].pop(
+            "return_mm_token_type_ids", False
+        )
 
-        text_inputs = self.tokenizer(text, **output_kwargs["text_kwargs"], return_tensors=None)
+        text_inputs = self.tokenizer(
+            text, **output_kwargs["text_kwargs"], return_tensors=None
+        )
         self._check_special_mm_tokens(text, text_inputs, modalities=["image"])
 
         if return_mm_token_type_ids:
@@ -221,26 +261,47 @@ class Glm46VProcessor(ProcessorMixin):
             mm_token_type_ids[array_ids == self.image_token_id] = 1
             text_inputs["mm_token_type_ids"] = mm_token_type_ids.tolist()
 
-        return BatchFeature(data={**text_inputs, **image_inputs}, tensor_type=return_tensors)
+        return BatchFeature(
+            data={**text_inputs, **image_inputs}, tensor_type=return_tensors
+        )
 
     def _get_num_multimodal_tokens(self, image_sizes=None, **kwargs):
         vision_data = {}
         if image_sizes is not None:
-            images_kwargs = Glm46VProcessorKwargs._defaults.get("images_kwargs", {})
+            images_kwargs = Glm46VProcessorKwargs._defaults.get(
+                "images_kwargs", {}
+            )
             images_kwargs.update(kwargs)
-            merge_size = images_kwargs.get("merge_size", None) or self.image_processor.merge_size
+            merge_size = (
+                images_kwargs.get("merge_size", None)
+                or self.image_processor.merge_size
+            )
 
             num_image_patches = [
-                self.image_processor.get_number_of_image_patches(*image_size, images_kwargs)
+                self.image_processor.get_number_of_image_patches(
+                    *image_size, images_kwargs
+                )
                 for image_size in image_sizes
             ]
-            num_image_tokens = [(num_patches // merge_size**2) for num_patches in num_image_patches]
-            vision_data.update({"num_image_tokens": num_image_tokens, "num_image_patches": num_image_patches})
+            num_image_tokens = [
+                (num_patches // merge_size**2)
+                for num_patches in num_image_patches
+            ]
+            vision_data.update(
+                {
+                    "num_image_tokens": num_image_tokens,
+                    "num_image_patches": num_image_patches,
+                }
+            )
 
         return MultiModalData(**vision_data)
 
     def post_process_image_text_to_text(
-        self, generated_outputs, skip_special_tokens=True, clean_up_tokenization_spaces=False, **kwargs
+        self,
+        generated_outputs,
+        skip_special_tokens=True,
+        clean_up_tokenization_spaces=False,
+        **kwargs,
     ):
         if isinstance(generated_outputs, paddle.Tensor):
             generated_outputs = generated_outputs.numpy()

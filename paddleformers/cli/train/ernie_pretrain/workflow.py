@@ -28,7 +28,10 @@ from paddleformers.cli.train.ernie_pretrain.src.utils import logger
 from paddleformers.utils.tools import get_env_device, paddle_device
 
 try:
-    from paddle.distributed.utils.process_utils import SUCCESS_CODE, set_affinity
+    from paddle.distributed.utils.process_utils import (
+        SUCCESS_CODE,
+        set_affinity,
+    )
 except ImportError:
     set_affinity = None
     SUCCESS_CODE = 0
@@ -64,8 +67,12 @@ from paddleformers.cli.train.ernie_pretrain.src.trainers import (
     PreTrainingArguments,
     PretrainingTrainer,
 )
-from paddleformers.cli.train.ernie_pretrain.src.utils import setup_logger_output_file
-from paddleformers.cli.train.ernie_pretrain.src.utils.misc import global_training_logs
+from paddleformers.cli.train.ernie_pretrain.src.utils import (
+    setup_logger_output_file,
+)
+from paddleformers.cli.train.ernie_pretrain.src.utils.misc import (
+    global_training_logs,
+)
 from paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils import set_seed
 from paddleformers.data.causal_dataset import (
     build_train_valid_test_datasets,
@@ -84,7 +91,9 @@ except ImportError:
     def log_trainer_start():
         if "MAIN_PROCESS_STARTED" not in os.environ:
             start_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-            logger.info(f"The Training Main Process Started Successfully. time: {start_time}, pid: {os.getpid()}")
+            logger.info(
+                f"The Training Main Process Started Successfully. time: {start_time}, pid: {os.getpid()}"
+            )
             os.environ["MAIN_PROCESS_STARTED"] = "1"
 
 
@@ -93,17 +102,29 @@ log_trainer_start()
 
 def load_huggingface_checkpoint(model, args):
     fused_rms_norm_replace = [
-        ("self_attn.fused_rms_norm_linear.rms_norm_weight", "input_layernorm.weight"),
-        ("self_attn.fused_rms_norm_linear.linear_weight", "self_attn.qkv_proj.weight"),
+        (
+            "self_attn.fused_rms_norm_linear.rms_norm_weight",
+            "input_layernorm.weight",
+        ),
+        (
+            "self_attn.fused_rms_norm_linear.linear_weight",
+            "self_attn.qkv_proj.weight",
+        ),
     ]
     shared_layers_prefix = "shared_layers.embed_weight_share."
     unnamed_layers = ["ernie.norm.weight", "lm_head.weight"]
 
-    logger.info(f"Loading huggingface checkpoint from {args.model_name_or_path}")
-    with open(os.path.join(args.model_name_or_path, "model.safetensors.index.json")) as f:
+    logger.info(
+        f"Loading huggingface checkpoint from {args.model_name_or_path}"
+    )
+    with open(
+        os.path.join(args.model_name_or_path, "model.safetensors.index.json")
+    ) as f:
         weight_map = json.load(f)["weight_map"]
 
-    ep_degree = fleet.get_hybrid_communicate_group().get_expert_parallel_world_size()
+    ep_degree = (
+        fleet.get_hybrid_communicate_group().get_expert_parallel_world_size()
+    )
     ep_rank = fleet.get_hybrid_communicate_group().get_expert_parallel_rank()
     expert_offset = (model.config.moe_num_experts // ep_degree) * ep_rank
     use_torch_format = False
@@ -188,8 +209,14 @@ def load_huggingface_checkpoint(model, args):
 
 def get_expected_state_dict(model, **kwargs):
     fused_rms_norm_replace = [
-        ("self_attn.fused_rms_norm_linear.rms_norm_weight", "input_layernorm.weight"),
-        ("self_attn.fused_rms_norm_linear.linear_weight", "self_attn.qkv_proj.weight"),
+        (
+            "self_attn.fused_rms_norm_linear.rms_norm_weight",
+            "input_layernorm.weight",
+        ),
+        (
+            "self_attn.fused_rms_norm_linear.linear_weight",
+            "self_attn.qkv_proj.weight",
+        ),
     ]
     shared_layers_prefix = "embed_share."
 
@@ -246,7 +273,9 @@ def get_expected_state_dict(model, **kwargs):
         elif ".qkv_proj." in name:
             assert q_dim + kv_dim * 2 == param.shape[0]
             state_dict[name.replace(".qkv_proj.", ".q_proj.")] = param[:q_dim]
-            state_dict[name.replace(".qkv_proj.", ".k_proj.")] = param[q_dim:-kv_dim]
+            state_dict[name.replace(".qkv_proj.", ".k_proj.")] = param[
+                q_dim:-kv_dim
+            ]
             state_dict[name.replace(".qkv_proj.", ".v_proj.")] = param[-kv_dim:]
         else:
             state_dict[name] = param
@@ -269,7 +298,9 @@ def get_tp_split_ckpt(args, path):
     tp_rank = max(args.tensor_parallel_rank, 0)
 
     if tp_degree > 1:
-        ckpt_path = os.path.join(path, f"tp{tp_degree:02d}", f"model_state.tp{tp_rank:02d}.pdparams")
+        ckpt_path = os.path.join(
+            path, f"tp{tp_degree:02d}", f"model_state.tp{tp_rank:02d}.pdparams"
+        )
     else:
         ckpt_path = os.path.join(path, "model_state.pdparams")
     return ckpt_path
@@ -299,23 +330,30 @@ def create_pretrained_dataset(args):
     )
 
     train_val_test_num_samples = [
-        args.per_device_train_batch_size * args.dataset_world_size * args.max_steps * args.gradient_accumulation_steps,
+        args.per_device_train_batch_size
+        * args.dataset_world_size
+        * args.max_steps
+        * args.gradient_accumulation_steps,
         args.per_device_eval_batch_size
         * args.dataset_world_size
         * args.eval_iters
         * (args.max_steps // args.eval_steps + 1),
-        args.per_device_eval_batch_size * args.dataset_world_size * args.test_iters,
+        args.per_device_eval_batch_size
+        * args.dataset_world_size
+        * args.test_iters,
     ]
 
-    train_dataset, valid_dataset, test_dataset = build_train_valid_test_datasets(
-        data_prefix=args.input_dir.split(),
-        data_impl="mmap",
-        splits_string=args.split,
-        train_val_test_num_samples=train_val_test_num_samples,
-        seq_length=args.max_seq_len + args.num_nextn_predict_layers,
-        seed=args.seed,
-        skip_warmup=True,
-        data_cache_path=None,
+    train_dataset, valid_dataset, test_dataset = (
+        build_train_valid_test_datasets(
+            data_prefix=args.input_dir.split(),
+            data_impl="mmap",
+            splits_string=args.split,
+            train_val_test_num_samples=train_val_test_num_samples,
+            seq_length=args.max_seq_len + args.num_nextn_predict_layers,
+            seed=args.seed,
+            skip_warmup=True,
+            data_cache_path=None,
+        )
     )
 
     from paddleformers.data import Stack
@@ -338,7 +376,7 @@ def run_ernie_pretrain(model_args, data_args, generating_args, training_args):
     if set_affinity is not None:
         set_affinity_code = set_affinity()
         if set_affinity_code == SUCCESS_CODE:
-            logger.info("set affinity successed.")
+            logger.info("set affinity succeeded.")
         else:
             logger.info("set affinity failed.")
     os.makedirs(training_args.output_dir, exist_ok=True)
@@ -348,13 +386,17 @@ def run_ernie_pretrain(model_args, data_args, generating_args, training_args):
         training_args.pipeline_parallel_config = ""
 
     if getattr(training_args, "sequence_parallel", 0):
-        logger.warning("disabling `partial_send_recv` when using sequence parallel")
+        logger.warning(
+            "disabling `partial_send_recv` when using sequence parallel"
+        )
         training_args.partial_send_recv = False
 
     training_args.pp_delay_scale_loss = True
 
     if getattr(training_args, "dp_comm_overlap", False):
-        logger.warning("Pipeline dp_comm_overlap and FusedLinearWithGradAdd can not be used at the same time.")
+        logger.warning(
+            "Pipeline dp_comm_overlap and FusedLinearWithGradAdd can not be used at the same time."
+        )
 
     if getattr(training_args, "timer", False):
         from paddle.distributed.fleet.meta_parallel.pipeline_parallel import (
@@ -374,22 +416,26 @@ def run_ernie_pretrain(model_args, data_args, generating_args, training_args):
     trainer_args = {k: formatv(v) for k, v in asdict(training_args).items()}
     data_args = {k: formatv(v) for k, v in asdict(data_args).items()}
     if model_args["moe_group"] == "ep":
-        assert (
-            trainer_args.get("expert_model_parallel_size", -1) > 1
-        ), "When moe_group is 'ep', 'expert_model_parallel_size' must be set to greater than 1."
-        assert (
-            trainer_args.get("sharding_parallel_size", -1) > 1
-        ), "sharding_parallel_size should > 1 in when moe_group is 'ep'."
-        assert (
-            trainer_args["sharding"][0].value == "stage1"
-        ), "Hybrid expert parallel only supports sharding stage1 now."
-        assert trainer_args.get("split_param", False), "Hybrid expert parallel only supports Sharding stage1 V2 now."
-        assert (
-            trainer_args.get("data_parallel_size", 1) == 1
-        ), "Now, moe_group = 'ep' cannot be used with data_parallel_size > 1."
+        assert trainer_args.get("expert_model_parallel_size", -1) > 1, (
+            "When moe_group is 'ep', 'expert_model_parallel_size' must be set to greater than 1."
+        )
+        assert trainer_args.get("sharding_parallel_size", -1) > 1, (
+            "sharding_parallel_size should > 1 in when moe_group is 'ep'."
+        )
+        assert trainer_args["sharding"][0].value == "stage1", (
+            "Hybrid expert parallel only supports sharding stage1 now."
+        )
+        assert trainer_args.get("split_param", False), (
+            "Hybrid expert parallel only supports Sharding stage1 V2 now."
+        )
+        assert trainer_args.get("data_parallel_size", 1) == 1, (
+            "Now, moe_group = 'ep' cannot be used with data_parallel_size > 1."
+        )
 
     (args,) = parser.parse_dict(dict(**model_args, **trainer_args, **data_args))
-    args.audio_config = dict(model_args).get("model_config", {}).get("audio_config", {})
+    args.audio_config = (
+        dict(model_args).get("model_config", {}).get("audio_config", {})
+    )
     args.use_moe = (
         getattr(training_args, "use_moe", None)
         if hasattr(training_args, "use_moe")
@@ -415,48 +461,69 @@ def run_ernie_pretrain(model_args, data_args, generating_args, training_args):
     random.seed(args.seed)
     set_seed(args.seed)
 
-    if args.enable_optimizer_timer and hasattr(fleet.fleet, "_user_defined_strategy"):
+    if args.enable_optimizer_timer and hasattr(
+        fleet.fleet, "_user_defined_strategy"
+    ):
         strategy = fleet.fleet._user_defined_strategy
-        strategy.strategy.hybrid_configs.enable_optimizer_timer = args.enable_optimizer_timer
+        strategy.strategy.hybrid_configs.enable_optimizer_timer = (
+            args.enable_optimizer_timer
+        )
         assert strategy.hybrid_configs["enable_optimizer_timer"] is True
         logger.info("set enable_optimizer_timer to True")
 
     if get_env_device() == "gpu":
         prop = paddle_device.get_device_properties()
         if prop.total_memory < args.pre_alloc_memory * 1024 * 1024 * 1024:
-            logger.warning("Invalid value for `pre_alloc_memory`, so pre-allocating just failed.")
+            logger.warning(
+                "Invalid value for `pre_alloc_memory`, so pre-allocating just failed."
+            )
         elif args.pre_alloc_memory > 0:
             logger.warning(
-                f"pre-allocating a tensor whose memory capacity is {args.pre_alloc_memory} GB " "and then release it."
+                f"pre-allocating a tensor whose memory capacity is {args.pre_alloc_memory} GB "
+                "and then release it."
             )
             memory_size = int(args.pre_alloc_memory * 1024 * 1024 * 1024)
             tmp_tensor = paddle.empty([memory_size], dtype=paddle.uint8)
-            print("pre allocat a tensor with shape:", tmp_tensor.shape)
+            print("pre allocate a tensor with shape:", tmp_tensor.shape)
             del tmp_tensor
 
     last_checkpoint = None
-    if os.path.isdir(args.output_dir) and args.do_train and not args.overwrite_output_dir:
+    if (
+        os.path.isdir(args.output_dir)
+        and args.do_train
+        and not args.overwrite_output_dir
+    ):
         last_checkpoint = get_last_checkpoint(args.output_dir)
         if last_checkpoint is None and len(os.listdir(args.output_dir)) > 0:
             raise ValueError(
                 f"Output directory ({args.output_dir}) already exists and is not empty. "
                 "Use --overwrite_output_dir to overcome."
             )
-        elif last_checkpoint is not None and args.resume_from_checkpoint is None:
+        elif (
+            last_checkpoint is not None and args.resume_from_checkpoint is None
+        ):
             logger.info(
                 f"Checkpoint detected, resuming training at {last_checkpoint}. To avoid this behavior, change "
                 "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
             )
 
     def compute_metrics(p):
-        preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
+        preds = (
+            p.predictions[0]
+            if isinstance(p.predictions, tuple)
+            else p.predictions
+        )
 
         output = paddle.to_tensor(preds)
         labels = paddle.to_tensor(p.label_ids)
         output = [t.astype("float32").cuda() for t in output]
         labels = [t[t != tokenizer.ignored_index] for t in labels]
         labels = [t.cuda() for t in labels]
-        all_numel = (paddle.concat(labels, 0) != tokenizer.ignored_index).astype("int64").sum()
+        all_numel = (
+            (paddle.concat(labels, 0) != tokenizer.ignored_index)
+            .astype("int64")
+            .sum()
+        )
         ignored = (paddle.concat(labels, 0) == -100).astype("int64").sum()
         labels = all_numel - ignored
         output = sum(output)
@@ -512,13 +579,15 @@ def run_ernie_pretrain(model_args, data_args, generating_args, training_args):
                 match = re.search(pattern, layer_name)
                 assert match
                 index = int(match.group(3)) + 1
-                assert index <= num_hidden_layers, f"{index} {num_hidden_layers}"
+                assert index <= num_hidden_layers, (
+                    f"{index} {num_hidden_layers}"
+                )
                 return index
 
         def sname_to_tname(pp_model):
             vpp_degree = pp_model._layers._num_virtual_pipeline_stages
 
-            sname_to_tname = dict()
+            sname_to_tname = {}
             for key, param in pp_model.named_parameters():
                 if vpp_degree == 1:
                     res = re.search(r"^_layers\.(\d+)((\.\w+)+)", key)
@@ -571,26 +640,39 @@ def run_ernie_pretrain(model_args, data_args, generating_args, training_args):
     if args.moe_group.lower() in {"mp", "tp", "model", "dummy"}:
         logger.info(f"disable moe flag when using moe-group={args.moe_group}")
         args.use_moe = False
-    args.num_nextn_predict_layers = model_config.get("num_nextn_predict_layers", 0)
+    args.num_nextn_predict_layers = model_config.get(
+        "num_nextn_predict_layers", 0
+    )
 
     cfg = ErnieMoEConfig.from_pretrained(args.model_name_or_path)
     cfg.seqlen = args.max_seq_len
-    cfg.token_balance_seqlen = args.max_seq_len * args.per_device_train_batch_size
+    cfg.token_balance_seqlen = (
+        args.max_seq_len * args.per_device_train_batch_size
+    )
     cfg.fp16_opt_level = args.fp16_opt_level
     cfg.moe_group = args.moe_group
     cfg.dtype = dtype
     cfg.use_fp8 = args.use_fp8
     cfg.enable_mtp_magic_send = args.enable_mtp_magic_send
 
-    ortho_loss_lambda = cfg.moe_orthogonal_loss_lambda if hasattr(cfg, "moe_orthogonal_loss_lambda") else 0.0
+    ortho_loss_lambda = (
+        cfg.moe_orthogonal_loss_lambda
+        if hasattr(cfg, "moe_orthogonal_loss_lambda")
+        else 0.0
+    )
     if args.use_ortho_loss_callback:
         logger.info("using orthogonal loss callback")
         cfg.moe_orthogonal_loss_lambda = 0.0
 
     if args.tensor_model_parallel_size > 1:
         cfg.sequence_parallel = args.sequence_parallel
-        cfg.tensor_model_parallel_size = max(fleet.get_hybrid_communicate_group().get_model_parallel_world_size(), 1)
-        cfg.tensor_parallel_rank = max(fleet.get_hybrid_communicate_group().get_model_parallel_rank(), 0)
+        cfg.tensor_model_parallel_size = max(
+            fleet.get_hybrid_communicate_group().get_model_parallel_world_size(),
+            1,
+        )
+        cfg.tensor_parallel_rank = max(
+            fleet.get_hybrid_communicate_group().get_model_parallel_rank(), 0
+        )
     else:
         cfg.sequence_parallel = False
         cfg.tensor_model_parallel_size = 1
@@ -607,7 +689,9 @@ def run_ernie_pretrain(model_args, data_args, generating_args, training_args):
     cfg = update_model_config_from_args(cfg, model_config)
 
     if args.pipeline_model_parallel_size > 1:
-        cfg.virtual_pipeline_model_parallel_size = args.virtual_pipeline_model_parallel_size
+        cfg.virtual_pipeline_model_parallel_size = (
+            args.virtual_pipeline_model_parallel_size
+        )
         cfg.num_acc_steps = args.gradient_accumulation_steps
         cfg.moe_with_send_router_loss = args.moe_with_send_router_loss
         cfg.enable_delay_scale_loss = args.enable_delay_scale_loss
@@ -617,7 +701,11 @@ def run_ernie_pretrain(model_args, data_args, generating_args, training_args):
     else:
         model = ErnieMoEForCausalLM(cfg)
 
-    if not args.from_scratch and last_checkpoint is None and args.resume_from_checkpoint is None:
+    if (
+        not args.from_scratch
+        and last_checkpoint is None
+        and args.resume_from_checkpoint is None
+    ):
         load_huggingface_checkpoint(model, args)
 
     # We must use non-huggingface format to save intermediate checkpoints during training.
@@ -637,7 +725,9 @@ def run_ernie_pretrain(model_args, data_args, generating_args, training_args):
         "random_seed": args.seed,
         "num_replicas": args.dataset_world_size,
         "rank": args.dataset_rank,
-        "num_samples_each_epoch": trainer_args.get("num_samples_each_epoch", 6000000),
+        "num_samples_each_epoch": trainer_args.get(
+            "num_samples_each_epoch", 6000000
+        ),
         "random_shuffle": True,
         "greedy_intokens": True,
         "packing": True,
@@ -665,21 +755,34 @@ def run_ernie_pretrain(model_args, data_args, generating_args, training_args):
             collate_fn,
             tokenizer=tokenizer,
             training_args=TrainingArguments(
-                output_dir=args.output_dir, num_nextn_predict_layers=args.num_nextn_predict_layers
+                output_dir=args.output_dir,
+                num_nextn_predict_layers=args.num_nextn_predict_layers,
             ),
-            model_args=ModelConfig(stage="SFT", use_attn_mask_startend_row_indices=True),
+            model_args=ModelConfig(
+                stage="SFT", use_attn_mask_startend_row_indices=True
+            ),
             max_seq_len=args.max_seq_len + 1,
         )
     else:
-        train_dataset, eval_dataset, _, data_collator = create_pretrained_dataset(args)
+        train_dataset, eval_dataset, _, data_collator = (
+            create_pretrained_dataset(args)
+        )
 
     callbacks = []
     callbacks += [GlobalRNGCallback()]
-    callbacks += [OrthogonalCallback(ortho_loss_lambda)] if args.use_ortho_loss_callback else []
+    callbacks += (
+        [OrthogonalCallback(ortho_loss_lambda)]
+        if args.use_ortho_loss_callback
+        else []
+    )
 
     if getattr(cfg, "moe_use_aux_free", 0.0) > 0.0:
         logger.info("adding aux free callback")
-        callbacks += [MoECorrectionBiasAdjustCallback(args.moe_router_bias_update_rate, args.sequence_parallel)]
+        callbacks += [
+            MoECorrectionBiasAdjustCallback(
+                args.moe_router_bias_update_rate, args.sequence_parallel
+            )
+        ]
 
     trainer = PretrainingTrainer(
         model=model,

@@ -20,9 +20,9 @@ import unittest
 import numpy as np
 import paddle
 
-from paddleformers.transformers import Qwen2Config
-from paddleformers.transformers import Qwen2ForCausalLMDeprecated as Qwen2ForCausalLM
 from paddleformers.transformers import (
+    Qwen2Config,
+    Qwen2ForCausalLMDeprecated as Qwen2ForCausalLM,
     Qwen2ForSequenceClassification,
     Qwen2ForTokenClassification,
     Qwen2Model,
@@ -100,22 +100,39 @@ class Qwen2ModelTester:
         self.scope = scope
 
     def prepare_config_and_inputs(self):
-        input_ids = ids_tensor([self.batch_size, self.seq_length], self.vocab_size, dtype=paddle.int64)
+        input_ids = ids_tensor(
+            [self.batch_size, self.seq_length],
+            self.vocab_size,
+            dtype=paddle.int64,
+        )
 
         input_mask = None
         if self.use_input_mask:
-            input_mask = random_attention_mask([self.batch_size, self.seq_length])
+            input_mask = random_attention_mask(
+                [self.batch_size, self.seq_length]
+            )
 
         sequence_labels = None
         token_labels = None
         choice_labels = None
         if self.use_labels:
-            sequence_labels = ids_tensor([self.batch_size], self.type_sequence_label_size)
-            token_labels = ids_tensor([self.batch_size, self.seq_length], self.num_labels)
+            sequence_labels = ids_tensor(
+                [self.batch_size], self.type_sequence_label_size
+            )
+            token_labels = ids_tensor(
+                [self.batch_size, self.seq_length], self.num_labels
+            )
             choice_labels = ids_tensor([self.batch_size], self.num_choices)
 
         config = self.get_config()
-        return config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        return (
+            config,
+            input_ids,
+            input_mask,
+            sequence_labels,
+            token_labels,
+            choice_labels,
+        )
 
     def get_config(self) -> Qwen2Config:
         return Qwen2Config(
@@ -141,30 +158,54 @@ class Qwen2ModelTester:
         )
 
     def create_and_check_model(
-        self, config: Qwen2Config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        self,
+        config: Qwen2Config,
+        input_ids,
+        input_mask,
+        sequence_labels,
+        token_labels,
+        choice_labels,
     ):
         model = Qwen2Model(config=config)
         model.eval()
         result = model(input_ids, attention_mask=input_mask)
         result = model(input_ids)
-        self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.hidden_size])
+        self.parent.assertEqual(
+            result[0].shape,
+            [self.batch_size, self.seq_length, self.hidden_size],
+        )
 
-    def create_and_check_model_attention_mask(self, config: Qwen2Config, input_ids):
+    def create_and_check_model_attention_mask(
+        self, config: Qwen2Config, input_ids
+    ):
         model = Qwen2Model(config)
         model.eval()
         attn_mask_2d = random_attention_mask([self.batch_size, self.seq_length])
         result_2d = model(input_ids, attention_mask=attn_mask_2d)[0]
         batch, seq_length = input_ids.shape
-        causal_mask = paddle.tril(paddle.ones((batch, seq_length, seq_length), dtype=attn_mask_2d.dtype))
+        causal_mask = paddle.tril(
+            paddle.ones(
+                (batch, seq_length, seq_length), dtype=attn_mask_2d.dtype
+            )
+        )
         attn_mask_3d = causal_mask & attn_mask_2d.unsqueeze(-1)
         result_3d = model(input_ids, attention_mask=attn_mask_3d)[0]
         attn_mask_4d = attn_mask_3d.unsqueeze(1)
         result_4d = model(input_ids, attention_mask=attn_mask_4d)[0]
         result_no_attention_mask = model(input_ids, attention_mask=None)[0]
         # Assert non-padding tokens have the same logits with different attention_mask shape
-        self.parent.assertTrue((result_2d[attn_mask_2d] == result_3d[attn_mask_2d]).all())
-        self.parent.assertTrue((result_2d[attn_mask_2d] == result_4d[attn_mask_2d]).all())
-        self.parent.assertTrue((result_2d[attn_mask_2d] == result_no_attention_mask[attn_mask_2d]).all())
+        self.parent.assertTrue(
+            (result_2d[attn_mask_2d] == result_3d[attn_mask_2d]).all()
+        )
+        self.parent.assertTrue(
+            (result_2d[attn_mask_2d] == result_4d[attn_mask_2d]).all()
+        )
+        self.parent.assertTrue(
+            (
+                result_2d[attn_mask_2d]
+                == result_no_attention_mask[attn_mask_2d]
+            ).all()
+        )
 
     def create_and_check_model_as_decoder(
         self,
@@ -187,7 +228,10 @@ class Qwen2ModelTester:
             attention_mask=input_mask,
         )
         result = model(input_ids, attention_mask=input_mask)
-        self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.hidden_size])
+        self.parent.assertEqual(
+            result[0].shape,
+            [self.batch_size, self.seq_length, self.hidden_size],
+        )
 
     def create_and_check_for_causal_lm(
         self,
@@ -200,8 +244,16 @@ class Qwen2ModelTester:
     ):
         model = Qwen2ForCausalLM(config=config)
         model.eval()
-        result = model(input_ids, attention_mask=input_mask, labels=token_labels, return_dict=True)
-        self.parent.assertEqual(result.logits.shape, [self.batch_size, self.seq_length, self.vocab_size])
+        result = model(
+            input_ids,
+            attention_mask=input_mask,
+            labels=token_labels,
+            return_dict=True,
+        )
+        self.parent.assertEqual(
+            result.logits.shape,
+            [self.batch_size, self.seq_length, self.vocab_size],
+        )
 
     def prepare_config_and_inputs_for_common(self):
         config_and_inputs = self.prepare_config_and_inputs()
@@ -216,7 +268,9 @@ class Qwen2ModelTester:
         inputs_dict = {"input_ids": input_ids, "attention_mask": input_mask}
         return config, inputs_dict
 
-    def create_and_check_lm_head_model(self, config, input_ids, input_mask, *args):
+    def create_and_check_lm_head_model(
+        self, config, input_ids, input_mask, *args
+    ):
         model = Qwen2ForCausalLM(config)
         model.eval()
 
@@ -228,9 +282,15 @@ class Qwen2ModelTester:
         )
         if self.parent.use_labels:
             self.parent.assertIsInstance(result[0].item(), float)
-            self.parent.assertEqual(result[1].shape, [self.batch_size, self.seq_length, self.vocab_size])
+            self.parent.assertEqual(
+                result[1].shape,
+                [self.batch_size, self.seq_length, self.vocab_size],
+            )
         else:
-            self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
+            self.parent.assertEqual(
+                result[0].shape,
+                [self.batch_size, self.seq_length, self.vocab_size],
+            )
 
     def check_model_position_ids(self, config, input_ids, input_mask, *args):
         model = Qwen2ForCausalLM(config)
@@ -250,12 +310,18 @@ class Qwen2ModelTester:
             return_dict=self.parent.return_dict,
         )
         if self.parent.use_labels:
-            self.parent.assertTrue((result_position_id[1] == result_no_position_id[1]).all())
+            self.parent.assertTrue(
+                (result_position_id[1] == result_no_position_id[1]).all()
+            )
         else:
-            self.parent.assertTrue((result_position_id[0] == result_no_position_id[0]).all())
+            self.parent.assertTrue(
+                (result_position_id[0] == result_no_position_id[0]).all()
+            )
 
 
-class Qwen2ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
+class Qwen2ModelTest(
+    ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
+):
     base_model_class = Qwen2Model
     return_dict = False
     use_labels = False
@@ -275,15 +341,21 @@ class Qwen2ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
     def setUp(self):
         super().setUp()
         self.model_tester = Qwen2ModelTester(self)
-        self.config_tester = ConfigTester(self, config_class=Qwen2Config, hidden_size=37)
+        self.config_tester = ConfigTester(
+            self, config_class=Qwen2Config, hidden_size=37
+        )
 
     def test_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_model(*config_and_inputs)
 
     def test_model_attention_mask(self):
-        config, input_dict = self.model_tester.prepare_config_and_inputs_for_common()
-        self.model_tester.create_and_check_model_attention_mask(config, input_dict["input_ids"])
+        config, input_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
+        self.model_tester.create_and_check_model_attention_mask(
+            config, input_dict["input_ids"]
+        )
 
     def test_model_position_ids(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
@@ -308,62 +380,125 @@ class Qwen2ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
             self.model_tester.create_and_check_model(*config_and_inputs)
 
     def test_Qwen2_sequence_classification_model(self):
-        config, input_dict = self.model_tester.prepare_config_and_inputs_for_common()
+        config, input_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
         config.num_labels = 3
         input_ids = input_dict["input_ids"]
-        attention_mask = paddle.not_equal(input_ids, paddle.ones_like(input_ids))
-        sequence_labels = ids_tensor([self.model_tester.batch_size], self.model_tester.type_sequence_label_size)
+        attention_mask = paddle.not_equal(
+            input_ids, paddle.ones_like(input_ids)
+        )
+        sequence_labels = ids_tensor(
+            [self.model_tester.batch_size],
+            self.model_tester.type_sequence_label_size,
+        )
         model = Qwen2ForSequenceClassification(config)
         model.eval()
-        result = model(input_ids, attention_mask=attention_mask, labels=sequence_labels, return_dict=True)
-        self.assertEqual(result.logits.shape, [self.model_tester.batch_size, self.model_tester.num_labels])
+        result = model(
+            input_ids,
+            attention_mask=attention_mask,
+            labels=sequence_labels,
+            return_dict=True,
+        )
+        self.assertEqual(
+            result.logits.shape,
+            [self.model_tester.batch_size, self.model_tester.num_labels],
+        )
 
     def test_Qwen2_sequence_classification_model_for_single_label(self):
-        config, input_dict = self.model_tester.prepare_config_and_inputs_for_common()
+        config, input_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
         config.num_labels = 3
         config.problem_type = "single_label_classification"
         input_ids = input_dict["input_ids"]
-        attention_mask = paddle.not_equal(input_ids, paddle.ones_like(input_ids))
-        sequence_labels = ids_tensor([self.model_tester.batch_size], self.model_tester.type_sequence_label_size)
+        attention_mask = paddle.not_equal(
+            input_ids, paddle.ones_like(input_ids)
+        )
+        sequence_labels = ids_tensor(
+            [self.model_tester.batch_size],
+            self.model_tester.type_sequence_label_size,
+        )
         model = Qwen2ForSequenceClassification(config)
         model.eval()
-        result = model(input_ids, attention_mask=attention_mask, labels=sequence_labels, return_dict=True)
-        self.assertEqual(result.logits.shape, [self.model_tester.batch_size, self.model_tester.num_labels])
+        result = model(
+            input_ids,
+            attention_mask=attention_mask,
+            labels=sequence_labels,
+            return_dict=True,
+        )
+        self.assertEqual(
+            result.logits.shape,
+            [self.model_tester.batch_size, self.model_tester.num_labels],
+        )
 
     def test_Qwen2_sequence_classification_model_for_multi_label(self):
-        config, input_dict = self.model_tester.prepare_config_and_inputs_for_common()
+        config, input_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
         config.num_labels = 3
         config.problem_type = "multi_label_classification"
         input_ids = input_dict["input_ids"]
-        attention_mask = paddle.not_equal(input_ids, paddle.ones_like(input_ids))
+        attention_mask = paddle.not_equal(
+            input_ids, paddle.ones_like(input_ids)
+        )
         sequence_labels = ids_tensor(
-            [self.model_tester.batch_size, config.num_labels], self.model_tester.type_sequence_label_size
+            [self.model_tester.batch_size, config.num_labels],
+            self.model_tester.type_sequence_label_size,
         ).to(paddle.float32)
         model = Qwen2ForSequenceClassification(config)
 
         model.eval()
-        result = model(input_ids, attention_mask=attention_mask, labels=sequence_labels, return_dict=True)
-        self.assertEqual(result.logits.shape, [self.model_tester.batch_size, self.model_tester.num_labels])
-
-    def test_Qwen2_token_classification_model(self):
-        config, input_dict = self.model_tester.prepare_config_and_inputs_for_common()
-        config.num_labels = 3
-        input_ids = input_dict["input_ids"]
-        attention_mask = paddle.not_equal(input_ids, paddle.ones_like(input_ids))
-        token_labels = ids_tensor([self.model_tester.batch_size, self.model_tester.seq_length], config.num_labels)
-        model = Qwen2ForTokenClassification(config=config)
-        model.eval()
-        result = model(input_ids, attention_mask=attention_mask, labels=token_labels, return_dict=True)
+        result = model(
+            input_ids,
+            attention_mask=attention_mask,
+            labels=sequence_labels,
+            return_dict=True,
+        )
         self.assertEqual(
             result.logits.shape,
-            [self.model_tester.batch_size, self.model_tester.seq_length, self.model_tester.num_labels],
+            [self.model_tester.batch_size, self.model_tester.num_labels],
         )
 
-    @unittest.skip("Qwen2 buffers include complex numbers, which breaks this test")
+    def test_Qwen2_token_classification_model(self):
+        config, input_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
+        config.num_labels = 3
+        input_ids = input_dict["input_ids"]
+        attention_mask = paddle.not_equal(
+            input_ids, paddle.ones_like(input_ids)
+        )
+        token_labels = ids_tensor(
+            [self.model_tester.batch_size, self.model_tester.seq_length],
+            config.num_labels,
+        )
+        model = Qwen2ForTokenClassification(config=config)
+        model.eval()
+        result = model(
+            input_ids,
+            attention_mask=attention_mask,
+            labels=token_labels,
+            return_dict=True,
+        )
+        self.assertEqual(
+            result.logits.shape,
+            [
+                self.model_tester.batch_size,
+                self.model_tester.seq_length,
+                self.model_tester.num_labels,
+            ],
+        )
+
+    @unittest.skip(
+        "Qwen2 buffers include complex numbers, which breaks this test"
+    )
     def test_save_load_fast_init_from_base(self):
         pass
 
-    @unittest.skip("Qwen2 uses GQA on all models so the KV cache is a non standard format")
+    @unittest.skip(
+        "Qwen2 uses GQA on all models so the KV cache is a non standard format"
+    )
     def test_past_key_values_format(self):
         pass
 
@@ -386,9 +521,22 @@ class Qwen2IntegrationTest(unittest.TestCase):
 
         # Expected mean on dim = -1
         EXPECTED_MEAN = paddle.to_tensor(
-            [[-0.00146926, -0.00330149, -0.00032814, -0.00297249, -0.00429948, -0.00450381, -0.00381698, -0.00306093]]
+            [
+                [
+                    -0.00146926,
+                    -0.00330149,
+                    -0.00032814,
+                    -0.00297249,
+                    -0.00429948,
+                    -0.00450381,
+                    -0.00381698,
+                    -0.00306093,
+                ]
+            ]
         )
-        self.assertTrue(paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-3, rtol=1e-3))
+        self.assertTrue(
+            paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-3, rtol=1e-3)
+        )
 
         # slicing logits[0, 0, 0:30]
         EXPECTED_SLICE = paddle.to_tensor([-1.37902200, 1.07084286, 0.96358645, 0.36955035, -0.65047014,
@@ -397,7 +545,11 @@ class Qwen2IntegrationTest(unittest.TestCase):
                                            0.66128075, -2.33850956, 2.07900572, 1.31320083, 2.21260858,
                                            -2.61521029, 0.47407940, 0.40275139, -1.28010178, -0.72402960,
                                            -0.63826722, 0.39320219, 0.98796076, 1.30758739, 0.96986938])  # fmt: skip
-        self.assertTrue(paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
+        self.assertTrue(
+            paddle.allclose(
+                out[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3
+            )
+        )
 
 
 class Qwen2GenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
@@ -417,7 +569,11 @@ class Qwen2CompatibilityTest(unittest.TestCase):
         # when python application is done, `TemporaryDirectory` will be free
         cls.torch_model_path = tempfile.TemporaryDirectory().name
         config = Qwen2Config(
-            hidden_size=16, intermediate_size=1120, num_hidden_layers=2, num_attention_heads=4, num_key_value_heads=2
+            hidden_size=16,
+            intermediate_size=1120,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            num_key_value_heads=2,
         )
         model = Qwen2ForCausalLM(config)
         model.save_pretrained(cls.torch_model_path)
@@ -431,7 +587,9 @@ class Qwen2CompatibilityTest(unittest.TestCase):
         import torch
         from transformers import Qwen2ForCausalLM
 
-        torch_model = Qwen2ForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+        torch_model = Qwen2ForCausalLM.from_pretrained(
+            self.torch_model_path, torch_dtype=torch.float32
+        )
         torch_model.eval()
         torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
@@ -441,14 +599,20 @@ class Qwen2CompatibilityTest(unittest.TestCase):
         )
 
         paddle_model = Qwen2ForCausalLM.from_pretrained(
-            self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            self.torch_model_path,
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
         )
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
         self.assertTrue(
             np.allclose(
-                paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                paddle_logit.detach()
+                .cpu()
+                .reshape([-1])[:9]
+                .astype("float32")
+                .numpy(),
                 torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
                 atol=1e-2,
                 rtol=1e-2,
@@ -458,7 +622,6 @@ class Qwen2CompatibilityTest(unittest.TestCase):
     @require_package("transformers", "torch")
     def test_Qwen2_converter_from_local_dir(self):
         with tempfile.TemporaryDirectory() as tempdir:
-
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
@@ -466,27 +629,41 @@ class Qwen2CompatibilityTest(unittest.TestCase):
             import torch
             from transformers import Qwen2ForCausalLM
 
-            torch_model = Qwen2ForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model = Qwen2ForCausalLM.from_pretrained(
+                self.torch_model_path, torch_dtype=torch.float32
+            )
             torch_model.eval()
             torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+            torch_logit = torch_model(
+                torch.tensor(input_ids), return_dict=False
+            )[0]
 
             # 3. forward the paddle model with fc
-            from paddleformers.transformers import Qwen2Config
             from paddleformers.transformers import (
+                Qwen2Config,
                 Qwen2ForCausalLMDeprecated as Qwen2ForCausalLM,
             )
 
             paddle_model = Qwen2ForCausalLM.from_pretrained(
-                tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
+                tempdir,
+                dtype="float32",
+                load_checkpoint_format="flex_checkpoint",
             )
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
             self.assertTrue(
                 np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
+                    paddle_logit.detach()
+                    .cpu()
+                    .reshape([-1])[:9]
+                    .astype("float32")
+                    .numpy(),
+                    torch_logit.detach()
+                    .cpu()
+                    .reshape([-1])[:9]
+                    .float()
+                    .numpy(),
                     atol=1e-2,
                     rtol=1e-2,
                 )
@@ -501,12 +678,22 @@ class Qwen2CompatibilityTest(unittest.TestCase):
                 load_checkpoint_format="flex_checkpoint",
             )
             paddle_model_fused.eval()
-            paddle_fused_logit = paddle_model_fused(paddle.to_tensor(input_ids))[0]
+            paddle_fused_logit = paddle_model_fused(
+                paddle.to_tensor(input_ids)
+            )[0]
 
             self.assertTrue(
                 np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    paddle_fused_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    paddle_logit.detach()
+                    .cpu()
+                    .reshape([-1])[:9]
+                    .astype("float32")
+                    .numpy(),
+                    paddle_fused_logit.detach()
+                    .cpu()
+                    .reshape([-1])[:9]
+                    .astype("float32")
+                    .numpy(),
                     atol=1e-2,
                     rtol=1e-2,
                 )

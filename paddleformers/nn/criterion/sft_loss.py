@@ -11,10 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Tuple, Union
 
 import paddle
-import paddle.nn as nn
+from paddle import nn
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp
 
@@ -27,7 +26,12 @@ from .loss_utils import calc_lm_head_logits, subbatch
 
 
 def sft_preprocess_inputs(self, logits, labels):
-    hidden_states, lm_head_weight, lm_head_bias, transpose_y = None, None, None, None
+    hidden_states, lm_head_weight, lm_head_bias, transpose_y = (
+        None,
+        None,
+        None,
+        None,
+    )
 
     def unpack_logits(obj):
         if isinstance(obj, tuple):
@@ -37,8 +41,17 @@ def sft_preprocess_inputs(self, logits, labels):
                 return None, *obj  # unpack logits when using fused head loss
         return obj, None, None, None, None
 
-    logits, hidden_states, lm_head_weight, lm_head_bias, transpose_y = unpack_logits(logits)
-    return logits, labels, hidden_states, lm_head_weight, lm_head_bias, transpose_y
+    logits, hidden_states, lm_head_weight, lm_head_bias, transpose_y = (
+        unpack_logits(logits)
+    )
+    return (
+        logits,
+        labels,
+        hidden_states,
+        lm_head_weight,
+        lm_head_bias,
+        transpose_y,
+    )
 
 
 def sft_postprocess_loss(self, masked_lm_loss, labels, loss_mask, **kwargs):
@@ -46,7 +59,9 @@ def sft_postprocess_loss(self, masked_lm_loss, labels, loss_mask, **kwargs):
         loss_mask = labels != self.ignored_index
     loss_mask = loss_mask.reshape([-1]).cast(paddle.float32)
     # 逐位对齐, 全精度聚合
-    masked_lm_loss = paddle.sum(masked_lm_loss.cast(paddle.float32).reshape([-1]) * loss_mask)
+    masked_lm_loss = paddle.sum(
+        masked_lm_loss.cast(paddle.float32).reshape([-1]) * loss_mask
+    )
     loss = masked_lm_loss / loss_mask.sum()
     loss_sum = masked_lm_loss.sum().detach()
 
@@ -63,9 +78,22 @@ def loss_impl(self, logits, labels):
     return loss
 
 
-def sft_calculate_loss(self, logits, hidden_states, lm_head_weight, lm_head_bias, labels, loss_mask, transpose_y):
+def sft_calculate_loss(
+    self,
+    logits,
+    hidden_states,
+    lm_head_weight,
+    lm_head_bias,
+    labels,
+    loss_mask,
+    transpose_y,
+):
     seq_len = labels.shape[1] if labels.ndim == 2 else labels.shape[0]
-    if self.use_fused_head_and_loss_fn and self.use_subbatch and seq_len > self.loss_subbatch_sequence_length:
+    if (
+        self.use_fused_head_and_loss_fn
+        and self.use_subbatch
+        and seq_len > self.loss_subbatch_sequence_length
+    ):
         masked_lm_loss = fused_head_and_loss_fn(
             hidden_states,
             lm_head_weight,
@@ -121,34 +149,48 @@ def sft_calculate_loss(self, logits, hidden_states, lm_head_weight, lm_head_bias
         else:
             masked_lm_loss = loss_impl(self, logits, labels.unsqueeze(-1))
 
-    masked_lm_loss = sft_postprocess_loss(self, masked_lm_loss, labels, loss_mask)
+    masked_lm_loss = sft_postprocess_loss(
+        self, masked_lm_loss, labels, loss_mask
+    )
     return masked_lm_loss
 
 
 def sft_loss_forward(
     self: nn.Layer,
-    logits: Union[paddle.Tensor, Tuple[paddle.Tensor]],
-    labels: Union[paddle.Tensor, Tuple[paddle.Tensor]],
+    logits: paddle.Tensor | tuple[paddle.Tensor],
+    labels: paddle.Tensor | tuple[paddle.Tensor],
     loss_mask: paddle.Tensor = None,
-    **kwargs
+    **kwargs,
 ):
-    logits, labels, hidden_states, lm_head_weight, lm_head_bias, transpose_y = sft_preprocess_inputs(
-        self, logits, labels
+    logits, labels, hidden_states, lm_head_weight, lm_head_bias, transpose_y = (
+        sft_preprocess_inputs(self, logits, labels)
     )
     if self.use_filtered_label_loss:
         if self.tensor_parallel and self.sequence_parallel and logits is None:
-            masked_lm_labels, sparse_label_idx = sequence_parallel_sparse_mask_labels(labels, self.ignored_index)
+            masked_lm_labels, sparse_label_idx = (
+                sequence_parallel_sparse_mask_labels(labels, self.ignored_index)
+            )
             sparse_label_idx = sparse_label_idx.reshape([-1, 1])
             if hidden_states is not None:
-                hidden_states = paddle.gather(hidden_states, sparse_label_idx, axis=0)
+                hidden_states = paddle.gather(
+                    hidden_states, sparse_label_idx, axis=0
+                )
                 hidden_states = AllGatherVarlenOp.apply(hidden_states)
         else:
             masked_lm_labels = labels.flatten()
-            sparse_label_idx = paddle.nonzero(masked_lm_labels != self.ignored_index).flatten()
-            masked_lm_labels = paddle.take_along_axis(masked_lm_labels, sparse_label_idx, axis=0)
+            sparse_label_idx = paddle.nonzero(
+                masked_lm_labels != self.ignored_index
+            ).flatten()
+            masked_lm_labels = paddle.take_along_axis(
+                masked_lm_labels, sparse_label_idx, axis=0
+            )
             if hidden_states is not None:
-                hidden_states = hidden_states.reshape([-1, hidden_states.shape[-1]])
-                hidden_states = paddle.take_along_axis(hidden_states, sparse_label_idx.reshape([-1, 1]), axis=0)
+                hidden_states = hidden_states.reshape(
+                    [-1, hidden_states.shape[-1]]
+                )
+                hidden_states = paddle.take_along_axis(
+                    hidden_states, sparse_label_idx.reshape([-1, 1]), axis=0
+                )
             if logits is not None:
                 logits = paddle.gather(logits, sparse_label_idx, axis=1)
         labels = masked_lm_labels
@@ -187,12 +229,12 @@ def sft_loss_forward(
 
 def mtp_sft_loss_forward(
     self: nn.Layer,
-    logits: Union[paddle.Tensor, Tuple[paddle.Tensor]],
-    labels: Union[paddle.Tensor, Tuple[paddle.Tensor]],
+    logits: paddle.Tensor | tuple[paddle.Tensor],
+    labels: paddle.Tensor | tuple[paddle.Tensor],
     loss_mask: paddle.Tensor = None,
     router_loss: paddle.Tensor = None,
     mtp_logits: paddle.Tensor = None,
-    **kwargs
+    **kwargs,
 ):
     num_nextn_predict_layers = self.config.get("num_nextn_predict_layers", 0)
     mtp_loss_scaling_factor = self.config.get("mtp_loss_scaling_factor", 0.1)
@@ -210,8 +252,12 @@ def mtp_sft_loss_forward(
         mtp_loss_res_sum = []
         for depth in range(num_nextn_predict_layers):
             logtis_cur_depth = mtp_logits[depth]
-            labels_cur_depth = labels_ori[:, (depth + 1) : (depth + 1 + seq_length)]
-            res_cur_depth = sft_loss_forward(self, logtis_cur_depth, labels_cur_depth, loss_mask)
+            labels_cur_depth = labels_ori[
+                :, (depth + 1) : (depth + 1 + seq_length)
+            ]
+            res_cur_depth = sft_loss_forward(
+                self, logtis_cur_depth, labels_cur_depth, loss_mask
+            )
             if self.return_tuple:
                 res_cur_depth, res_cur_depth_sum = res_cur_depth
             else:
@@ -230,13 +276,15 @@ def mtp_sft_loss_forward(
     if num_nextn_predict_layers > 0:
         loss = add_loss(
             loss,
-            mtp_loss_scaling_factor * sum([x for x in mtp_loss_res]) / len(mtp_loss_res),
+            mtp_loss_scaling_factor
+            * sum(list(mtp_loss_res))
+            / len(mtp_loss_res),
         )
 
     if loss_sum is not None:
-        loss_sum = loss_sum + mtp_loss_scaling_factor * sum([x.detach() for x in mtp_loss_res_sum]) / len(
-            mtp_loss_res_sum
-        )
+        loss_sum = loss_sum + mtp_loss_scaling_factor * sum(
+            [x.detach() for x in mtp_loss_res_sum]
+        ) / len(mtp_loss_res_sum)
 
     if router_loss is not None and isinstance(router_loss, paddle.Tensor):
         loss = loss + router_loss - router_loss.detach()

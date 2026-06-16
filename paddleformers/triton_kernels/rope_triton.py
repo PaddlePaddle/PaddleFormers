@@ -29,7 +29,10 @@ try:
     import triton
     import triton.language as tl
 except:
-    logger.warning("Triton is not installed" "Please run 'python -m pip install triton>=3.1' to install Triton.")
+    logger.warning(
+        "Triton is not installed"
+        "Please run 'python -m pip install triton>=3.1' to install Triton."
+    )
 
 
 IS_TRITON_IN_PADDLE_AVAILABLE = False
@@ -128,11 +131,17 @@ def _rotary_kernel(
         + rk_half[None, None, :] * stride_out_headdim
     )
 
-    mask = (rh[:, None, None] < nheads) & (rm[None, :, None] < seqlen) & (rk_half[None, None, :] < ROTARY_DIM_HALF)
+    mask = (
+        (rh[:, None, None] < nheads)
+        & (rm[None, :, None] < seqlen)
+        & (rk_half[None, None, :] < ROTARY_DIM_HALF)
+    )
 
     # Load first half (x0) and second half (x1)
     x0 = tl.load(X, mask=mask, other=0.0).to(tl.float32)
-    x1 = tl.load(X + ROTARY_DIM_HALF * stride_x_headdim, mask=mask, other=0.0).to(tl.float32)
+    x1 = tl.load(
+        X + ROTARY_DIM_HALF * stride_x_headdim, mask=mask, other=0.0
+    ).to(tl.float32)
 
     # Apply rotation (same formula as Flash Attention)
     o0 = x0 * cos - x1 * sin
@@ -332,7 +341,7 @@ def _check_triton_available(*args, **kwargs):
     try:
         import triton
 
-        version = getattr(triton, "__version__")
+        version = triton.__version__
         major = int(version.split(".")[0])
         return major >= 3
     except ImportError:
@@ -340,5 +349,6 @@ def _check_triton_available(*args, **kwargs):
 
 
 apply_rotary_pos_emb_vision.is_available = (
-    lambda *args, **kwargs: _check_triton_available(*args, **kwargs) and IS_TRITON_IN_PADDLE_AVAILABLE
+    lambda *args, **kwargs: _check_triton_available(*args, **kwargs)
+    and IS_TRITON_IN_PADDLE_AVAILABLE
 )

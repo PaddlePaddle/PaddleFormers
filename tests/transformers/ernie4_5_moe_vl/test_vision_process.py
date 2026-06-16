@@ -38,25 +38,41 @@ class Ernie4_5_VLVisionProcessTest(unittest.TestCase):
 
     def test_video(self):
         video_url = "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4"
-        video_decoder, video_meta, video_path = read_video_paddlecodec(video_url, save_to_disk=False)
+        video_decoder, video_meta, video_path = read_video_paddlecodec(
+            video_url, save_to_disk=False
+        )
 
-        expect_video_meta = {"fps": 29.99418249715141, "duration": 8.768367, "num_of_frame": 263}
+        expect_video_meta = {
+            "fps": 29.99418249715141,
+            "duration": 8.768367,
+            "num_of_frame": 263,
+        }
         self.assertEqual(video_meta, expect_video_meta)
 
         with self.assertRaises(ValueError):
-            ret, time_stamps = read_frames_paddlecodec(video_path, video_decoder, video_meta)
+            ret, time_stamps = read_frames_paddlecodec(
+                video_path, video_decoder, video_meta
+            )
 
         with self.assertRaises(AssertionError):
             ret, time_stamps = read_frames_paddlecodec(
-                video_path, video_decoder, video_meta, target_frames=10, target_fps=1
+                video_path,
+                video_decoder,
+                video_meta,
+                target_frames=10,
+                target_fps=1,
             )
 
-        ret, time_stamps = read_frames_paddlecodec(video_path, video_decoder, video_meta, target_frames=10)
+        ret, time_stamps = read_frames_paddlecodec(
+            video_path, video_decoder, video_meta, target_frames=10
+        )
 
         self.assertEqual(len(ret), 10)
         self.assertEqual(len(time_stamps), 10)
 
-        ret, time_stamps = read_frames_paddlecodec(video_path, video_decoder, video_meta, target_fps=1)
+        ret, time_stamps = read_frames_paddlecodec(
+            video_path, video_decoder, video_meta, target_fps=1
+        )
 
         self.assertEqual(len(ret), 9)
         self.assertEqual(len(time_stamps), 9)

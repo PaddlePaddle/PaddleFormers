@@ -42,9 +42,13 @@ def einsum(rule, a, b):
     elif rule == "sec,sm->ecm":
         s, e, c = a.shape
         m = b.shape[1]
-        return paddle.matmul(a.reshape([a.shape[0], -1]).t(), b).reshape([e, -1, m])
+        return paddle.matmul(a.reshape([a.shape[0], -1]).t(), b).reshape(
+            [e, -1, m]
+        )
     elif rule == "sec,ecm->sm":
-        return paddle.matmul(a.reshape([a.shape[0], -1]), b.reshape([-1, b.shape[-1]]))
+        return paddle.matmul(
+            a.reshape([a.shape[0], -1]), b.reshape([-1, b.shape[-1]])
+        )
     elif rule == "ks,ksm->sm":
         k = b.shape[0]
         s = b.shape[1]

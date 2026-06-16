@@ -37,7 +37,9 @@ class TestAudioUtils(unittest.TestCase):
         mels = hertz_to_mel(freqs, "htk")
         self.assertEqual(mels.shape, (3,))
         self.assertAlmostEqual(mels[0], 0.0, places=5)
-        self.assertAlmostEqual(mels[1], 2595.0 * np.log10(1.0 + 1000.0 / 700.0), places=5)
+        self.assertAlmostEqual(
+            mels[1], 2595.0 * np.log10(1.0 + 1000.0 / 700.0), places=5
+        )
 
     def test_hertz_to_mel_slaney_scalar_low(self):
         from paddleformers.transformers.audio_utils import hertz_to_mel
@@ -139,7 +141,10 @@ class TestAudioUtils(unittest.TestCase):
             mel_to_hertz(1000.0, "invalid")
 
     def test_hertz_mel_roundtrip_htk(self):
-        from paddleformers.transformers.audio_utils import hertz_to_mel, mel_to_hertz
+        from paddleformers.transformers.audio_utils import (
+            hertz_to_mel,
+            mel_to_hertz,
+        )
 
         freqs = np.array([100.0, 500.0, 1000.0, 2000.0, 4000.0])
         mels = hertz_to_mel(freqs, "htk")
@@ -147,7 +152,10 @@ class TestAudioUtils(unittest.TestCase):
         np.testing.assert_allclose(freqs, recovered, rtol=1e-5)
 
     def test_hertz_mel_roundtrip_slaney(self):
-        from paddleformers.transformers.audio_utils import hertz_to_mel, mel_to_hertz
+        from paddleformers.transformers.audio_utils import (
+            hertz_to_mel,
+            mel_to_hertz,
+        )
 
         freqs = np.array([100.0, 500.0, 1000.0, 2000.0, 4000.0])
         mels = hertz_to_mel(freqs, "slaney")
@@ -251,7 +259,12 @@ class TestAudioUtils(unittest.TestCase):
                 sampling_rate=16000,
             )
             self.assertTrue(len(w) > 0)
-            self.assertTrue(any("mel filter has all zero values" in str(warning.message) for warning in w))
+            self.assertTrue(
+                any(
+                    "mel filter has all zero values" in str(warning.message)
+                    for warning in w
+                )
+            )
 
     def test_mel_filter_bank_slaney_norm_finite_values(self):
         from paddleformers.transformers.audio_utils import mel_filter_bank
@@ -336,13 +349,17 @@ class TestAudioUtils(unittest.TestCase):
     def test_window_function_with_frame_length_centered(self):
         from paddleformers.transformers.audio_utils import window_function
 
-        win = window_function(400, name="hann", periodic=True, frame_length=512, center=True)
+        win = window_function(
+            400, name="hann", periodic=True, frame_length=512, center=True
+        )
         self.assertEqual(win.shape, (512,))
 
     def test_window_function_with_frame_length_no_center(self):
         from paddleformers.transformers.audio_utils import window_function
 
-        win = window_function(400, name="hann", periodic=True, frame_length=512, center=False)
+        win = window_function(
+            400, name="hann", periodic=True, frame_length=512, center=False
+        )
         self.assertEqual(win.shape, (512,))
         self.assertTrue(np.all(win[400:] == 0.0))
 
@@ -499,28 +516,49 @@ class TestAudioUtils(unittest.TestCase):
             amplitude_to_db(np.array([[1.0]]), db_range=-10.0)
 
     def test_spectrogram_basic(self):
-        from paddleformers.transformers.audio_utils import spectrogram, window_function
+        from paddleformers.transformers.audio_utils import (
+            spectrogram,
+            window_function,
+        )
 
         waveform = np.random.randn(1600).astype(np.float32)
-        window = window_function(400, name="hann", periodic=True, frame_length=400, center=False)
-        spec = spectrogram(waveform, window, frame_length=400, hop_length=160, power=1.0)
+        window = window_function(
+            400, name="hann", periodic=True, frame_length=400, center=False
+        )
+        spec = spectrogram(
+            waveform, window, frame_length=400, hop_length=160, power=1.0
+        )
         self.assertEqual(spec.ndim, 2)
 
     def test_spectrogram_basic_centered(self):
-        from paddleformers.transformers.audio_utils import spectrogram, window_function
+        from paddleformers.transformers.audio_utils import (
+            spectrogram,
+            window_function,
+        )
 
         waveform = np.random.randn(1600).astype(np.float32)
-        window = window_function(400, name="hann", periodic=True, frame_length=400)
-        spec = spectrogram(waveform, window, frame_length=400, hop_length=160, power=1.0)
+        window = window_function(
+            400, name="hann", periodic=True, frame_length=400
+        )
+        spec = spectrogram(
+            waveform, window, frame_length=400, hop_length=160, power=1.0
+        )
         self.assertEqual(spec.ndim, 2)
         self.assertEqual(spec.shape[0], 201)
 
     def test_spectrogram_power_two(self):
-        from paddleformers.transformers.audio_utils import spectrogram, window_function
+        from paddleformers.transformers.audio_utils import (
+            spectrogram,
+            window_function,
+        )
 
         waveform = np.random.randn(1600).astype(np.float32)
-        window = window_function(400, name="hann", periodic=True, frame_length=400, center=False)
-        spec = spectrogram(waveform, window, frame_length=400, hop_length=160, power=2.0)
+        window = window_function(
+            400, name="hann", periodic=True, frame_length=400, center=False
+        )
+        spec = spectrogram(
+            waveform, window, frame_length=400, hop_length=160, power=2.0
+        )
         self.assertEqual(spec.ndim, 2)
         self.assertFalse(np.iscomplexobj(spec))
 
@@ -532,7 +570,9 @@ class TestAudioUtils(unittest.TestCase):
         )
 
         waveform = np.random.randn(1600).astype(np.float32)
-        window = window_function(400, name="hann", periodic=True, frame_length=400, center=False)
+        window = window_function(
+            400, name="hann", periodic=True, frame_length=400, center=False
+        )
         mel_filters = mel_filter_bank(
             num_frequency_bins=201,
             num_mel_filters=40,
@@ -540,7 +580,13 @@ class TestAudioUtils(unittest.TestCase):
             max_frequency=8000.0,
             sampling_rate=16000,
         )
-        spec = spectrogram(waveform, window, frame_length=400, hop_length=160, mel_filters=mel_filters)
+        spec = spectrogram(
+            waveform,
+            window,
+            frame_length=400,
+            hop_length=160,
+            mel_filters=mel_filters,
+        )
         self.assertEqual(spec.shape[0], 40)
 
     def test_spectrogram_with_log_mel(self):
@@ -551,7 +597,9 @@ class TestAudioUtils(unittest.TestCase):
         )
 
         waveform = np.random.randn(1600).astype(np.float32)
-        window = window_function(400, name="hann", periodic=True, frame_length=400, center=False)
+        window = window_function(
+            400, name="hann", periodic=True, frame_length=400, center=False
+        )
         mel_filters = mel_filter_bank(
             num_frequency_bins=201,
             num_mel_filters=40,
@@ -559,144 +607,308 @@ class TestAudioUtils(unittest.TestCase):
             max_frequency=8000.0,
             sampling_rate=16000,
         )
-        spec = spectrogram(waveform, window, frame_length=400, hop_length=160, mel_filters=mel_filters, log_mel="log")
+        spec = spectrogram(
+            waveform,
+            window,
+            frame_length=400,
+            hop_length=160,
+            mel_filters=mel_filters,
+            log_mel="log",
+        )
         self.assertEqual(spec.shape[0], 40)
 
     def test_spectrogram_log10(self):
-        from paddleformers.transformers.audio_utils import spectrogram, window_function
+        from paddleformers.transformers.audio_utils import (
+            spectrogram,
+            window_function,
+        )
 
         waveform = np.random.randn(1600).astype(np.float32)
-        window = window_function(400, name="hann", periodic=True, frame_length=400, center=False)
-        spec = spectrogram(waveform, window, frame_length=400, hop_length=160, power=1.0, log_mel="log10")
+        window = window_function(
+            400, name="hann", periodic=True, frame_length=400, center=False
+        )
+        spec = spectrogram(
+            waveform,
+            window,
+            frame_length=400,
+            hop_length=160,
+            power=1.0,
+            log_mel="log10",
+        )
         self.assertTrue(np.all(np.isfinite(spec)))
 
     def test_spectrogram_db_amplitude(self):
-        from paddleformers.transformers.audio_utils import spectrogram, window_function
+        from paddleformers.transformers.audio_utils import (
+            spectrogram,
+            window_function,
+        )
 
         waveform = np.random.randn(1600).astype(np.float32)
-        window = window_function(400, name="hann", periodic=True, frame_length=400, center=False)
-        spec = spectrogram(waveform, window, frame_length=400, hop_length=160, power=1.0, log_mel="dB")
+        window = window_function(
+            400, name="hann", periodic=True, frame_length=400, center=False
+        )
+        spec = spectrogram(
+            waveform,
+            window,
+            frame_length=400,
+            hop_length=160,
+            power=1.0,
+            log_mel="dB",
+        )
         self.assertTrue(np.all(np.isfinite(spec)))
 
     def test_spectrogram_db_power(self):
-        from paddleformers.transformers.audio_utils import spectrogram, window_function
+        from paddleformers.transformers.audio_utils import (
+            spectrogram,
+            window_function,
+        )
 
         waveform = np.random.randn(1600).astype(np.float32)
-        window = window_function(400, name="hann", periodic=True, frame_length=400, center=False)
-        spec = spectrogram(waveform, window, frame_length=400, hop_length=160, power=2.0, log_mel="dB")
+        window = window_function(
+            400, name="hann", periodic=True, frame_length=400, center=False
+        )
+        spec = spectrogram(
+            waveform,
+            window,
+            frame_length=400,
+            hop_length=160,
+            power=2.0,
+            log_mel="dB",
+        )
         self.assertTrue(np.all(np.isfinite(spec)))
 
     def test_spectrogram_invalid_power_for_db(self):
-        from paddleformers.transformers.audio_utils import spectrogram, window_function
+        from paddleformers.transformers.audio_utils import (
+            spectrogram,
+            window_function,
+        )
 
         waveform = np.random.randn(1600).astype(np.float32)
-        window = window_function(400, name="hann", periodic=True, frame_length=400, center=False)
+        window = window_function(
+            400, name="hann", periodic=True, frame_length=400, center=False
+        )
         with self.assertRaises(ValueError):
-            spectrogram(waveform, window, frame_length=400, hop_length=160, power=3.0, log_mel="dB")
+            spectrogram(
+                waveform,
+                window,
+                frame_length=400,
+                hop_length=160,
+                power=3.0,
+                log_mel="dB",
+            )
 
     def test_spectrogram_invalid_log_mel_option(self):
-        from paddleformers.transformers.audio_utils import spectrogram, window_function
+        from paddleformers.transformers.audio_utils import (
+            spectrogram,
+            window_function,
+        )
 
         waveform = np.random.randn(1600).astype(np.float32)
-        window = window_function(400, name="hann", periodic=True, frame_length=400, center=False)
+        window = window_function(
+            400, name="hann", periodic=True, frame_length=400, center=False
+        )
         with self.assertRaises(ValueError):
-            spectrogram(waveform, window, frame_length=400, hop_length=160, power=1.0, log_mel="invalid")
+            spectrogram(
+                waveform,
+                window,
+                frame_length=400,
+                hop_length=160,
+                power=1.0,
+                log_mel="invalid",
+            )
 
     def test_spectrogram_frame_length_greater_than_fft(self):
-        from paddleformers.transformers.audio_utils import spectrogram, window_function
+        from paddleformers.transformers.audio_utils import (
+            spectrogram,
+            window_function,
+        )
 
         waveform = np.random.randn(1600).astype(np.float32)
-        window = window_function(400, name="hann", periodic=True, frame_length=400, center=False)
+        window = window_function(
+            400, name="hann", periodic=True, frame_length=400, center=False
+        )
         with self.assertRaises(ValueError):
-            spectrogram(waveform, window, frame_length=400, hop_length=160, fft_length=200)
+            spectrogram(
+                waveform,
+                window,
+                frame_length=400,
+                hop_length=160,
+                fft_length=200,
+            )
 
     def test_spectrogram_window_length_mismatch(self):
-        from paddleformers.transformers.audio_utils import spectrogram, window_function
+        from paddleformers.transformers.audio_utils import (
+            spectrogram,
+            window_function,
+        )
 
         waveform = np.random.randn(1600).astype(np.float32)
-        window = window_function(200, name="hann", periodic=True, frame_length=200, center=False)
+        window = window_function(
+            200, name="hann", periodic=True, frame_length=200, center=False
+        )
         with self.assertRaises(ValueError):
             spectrogram(waveform, window, frame_length=400, hop_length=160)
 
     def test_spectrogram_invalid_hop_length(self):
-        from paddleformers.transformers.audio_utils import spectrogram, window_function
+        from paddleformers.transformers.audio_utils import (
+            spectrogram,
+            window_function,
+        )
 
         waveform = np.random.randn(1600).astype(np.float32)
-        window = window_function(400, name="hann", periodic=True, frame_length=400, center=False)
+        window = window_function(
+            400, name="hann", periodic=True, frame_length=400, center=False
+        )
         with self.assertRaises(ValueError):
             spectrogram(waveform, window, frame_length=400, hop_length=0)
 
     def test_spectrogram_negative_hop_length(self):
-        from paddleformers.transformers.audio_utils import spectrogram, window_function
+        from paddleformers.transformers.audio_utils import (
+            spectrogram,
+            window_function,
+        )
 
         waveform = np.random.randn(1600).astype(np.float32)
-        window = window_function(400, name="hann", periodic=True, frame_length=400, center=False)
+        window = window_function(
+            400, name="hann", periodic=True, frame_length=400, center=False
+        )
         with self.assertRaises(ValueError):
             spectrogram(waveform, window, frame_length=400, hop_length=-1)
 
     def test_spectrogram_multidim_input(self):
-        from paddleformers.transformers.audio_utils import spectrogram, window_function
+        from paddleformers.transformers.audio_utils import (
+            spectrogram,
+            window_function,
+        )
 
         waveform = np.random.randn(2, 1600).astype(np.float32)
-        window = window_function(400, name="hann", periodic=True, frame_length=400, center=False)
+        window = window_function(
+            400, name="hann", periodic=True, frame_length=400, center=False
+        )
         with self.assertRaises(ValueError):
             spectrogram(waveform, window, frame_length=400, hop_length=160)
 
     def test_spectrogram_complex_input(self):
-        from paddleformers.transformers.audio_utils import spectrogram, window_function
+        from paddleformers.transformers.audio_utils import (
+            spectrogram,
+            window_function,
+        )
 
         waveform = np.random.randn(1600).astype(np.complex64)
-        window = window_function(400, name="hann", periodic=True, frame_length=400, center=False)
+        window = window_function(
+            400, name="hann", periodic=True, frame_length=400, center=False
+        )
         with self.assertRaises(ValueError):
             spectrogram(waveform, window, frame_length=400, hop_length=160)
 
     def test_spectrogram_power_none(self):
-        from paddleformers.transformers.audio_utils import spectrogram, window_function
+        from paddleformers.transformers.audio_utils import (
+            spectrogram,
+            window_function,
+        )
 
         waveform = np.random.randn(1600).astype(np.float32)
-        window = window_function(400, name="hann", periodic=True, frame_length=400, center=False)
-        spec = spectrogram(waveform, window, frame_length=400, hop_length=160, power=None)
+        window = window_function(
+            400, name="hann", periodic=True, frame_length=400, center=False
+        )
+        spec = spectrogram(
+            waveform, window, frame_length=400, hop_length=160, power=None
+        )
         self.assertTrue(np.iscomplexobj(spec))
 
     def test_spectrogram_no_center(self):
-        from paddleformers.transformers.audio_utils import spectrogram, window_function
+        from paddleformers.transformers.audio_utils import (
+            spectrogram,
+            window_function,
+        )
 
         waveform = np.random.randn(1600).astype(np.float32)
-        window = window_function(400, name="hann", periodic=True, frame_length=400, center=False)
-        spec = spectrogram(waveform, window, frame_length=400, hop_length=160, center=False, power=1.0)
+        window = window_function(
+            400, name="hann", periodic=True, frame_length=400, center=False
+        )
+        spec = spectrogram(
+            waveform,
+            window,
+            frame_length=400,
+            hop_length=160,
+            center=False,
+            power=1.0,
+        )
         self.assertEqual(spec.ndim, 2)
 
     def test_spectrogram_with_preemphasis(self):
-        from paddleformers.transformers.audio_utils import spectrogram, window_function
+        from paddleformers.transformers.audio_utils import (
+            spectrogram,
+            window_function,
+        )
 
         waveform = np.random.randn(1600).astype(np.float32)
-        window = window_function(400, name="hann", periodic=True, frame_length=400, center=False)
-        spec = spectrogram(waveform, window, frame_length=400, hop_length=160, preemphasis=0.97, power=1.0)
+        window = window_function(
+            400, name="hann", periodic=True, frame_length=400, center=False
+        )
+        spec = spectrogram(
+            waveform,
+            window,
+            frame_length=400,
+            hop_length=160,
+            preemphasis=0.97,
+            power=1.0,
+        )
         self.assertEqual(spec.ndim, 2)
 
     def test_spectrogram_onesided_false(self):
-        from paddleformers.transformers.audio_utils import spectrogram, window_function
+        from paddleformers.transformers.audio_utils import (
+            spectrogram,
+            window_function,
+        )
 
         waveform = np.random.randn(1600).astype(np.float32)
-        window = window_function(400, name="hann", periodic=True, frame_length=400, center=False)
-        spec = spectrogram(waveform, window, frame_length=400, hop_length=160, onesided=False, power=1.0)
+        window = window_function(
+            400, name="hann", periodic=True, frame_length=400, center=False
+        )
+        spec = spectrogram(
+            waveform,
+            window,
+            frame_length=400,
+            hop_length=160,
+            onesided=False,
+            power=1.0,
+        )
         self.assertEqual(spec.shape[0], 400)
 
     def test_spectrogram_custom_fft_length(self):
-        from paddleformers.transformers.audio_utils import spectrogram, window_function
+        from paddleformers.transformers.audio_utils import (
+            spectrogram,
+            window_function,
+        )
 
         waveform = np.random.randn(1600).astype(np.float32)
-        window = window_function(400, name="hann", periodic=True, frame_length=400, center=False)
-        spec = spectrogram(waveform, window, frame_length=400, hop_length=160, fft_length=512)
+        window = window_function(
+            400, name="hann", periodic=True, frame_length=400, center=False
+        )
+        spec = spectrogram(
+            waveform, window, frame_length=400, hop_length=160, fft_length=512
+        )
         self.assertEqual(spec.shape[0], 257)
 
     def test_spectrogram_custom_dtype(self):
-        from paddleformers.transformers.audio_utils import spectrogram, window_function
+        from paddleformers.transformers.audio_utils import (
+            spectrogram,
+            window_function,
+        )
 
         waveform = np.random.randn(1600).astype(np.float32)
-        window = window_function(400, name="hann", periodic=True, frame_length=400, center=False)
+        window = window_function(
+            400, name="hann", periodic=True, frame_length=400, center=False
+        )
         spec = spectrogram(
-            waveform, window, frame_length=400, hop_length=160, power=1.0, log_mel="log", dtype=np.float64
+            waveform,
+            window,
+            frame_length=400,
+            hop_length=160,
+            power=1.0,
+            log_mel="log",
+            dtype=np.float64,
         )
         self.assertEqual(spec.dtype, np.float64)
 
@@ -713,7 +925,9 @@ class TestAudioUtils(unittest.TestCase):
                 sample_rate=16000,
             )
             self.assertTrue(len(w) > 0)
-            self.assertTrue(any("deprecated" in str(x.message).lower() for x in w))
+            self.assertTrue(
+                any("deprecated" in str(x.message).lower() for x in w)
+            )
             self.assertEqual(result.shape, (257, 80))
 
     def test_fram_wave_deprecated(self):
@@ -722,9 +936,13 @@ class TestAudioUtils(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             waveform = np.random.randn(1600).astype(np.float32)
-            frames = fram_wave(waveform, hop_length=160, fft_window_size=400, center=True)
+            frames = fram_wave(
+                waveform, hop_length=160, fft_window_size=400, center=True
+            )
             self.assertTrue(len(w) > 0)
-            self.assertTrue(any("deprecated" in str(x.message).lower() for x in w))
+            self.assertTrue(
+                any("deprecated" in str(x.message).lower() for x in w)
+            )
             self.assertEqual(frames.ndim, 2)
             self.assertEqual(frames.shape[1], 400)
 
@@ -734,7 +952,9 @@ class TestAudioUtils(unittest.TestCase):
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             waveform = np.random.randn(1600).astype(np.float32)
-            frames = fram_wave(waveform, hop_length=160, fft_window_size=400, center=False)
+            frames = fram_wave(
+                waveform, hop_length=160, fft_window_size=400, center=False
+            )
             self.assertEqual(frames.ndim, 2)
             self.assertEqual(frames.shape[1], 400)
 
@@ -744,7 +964,9 @@ class TestAudioUtils(unittest.TestCase):
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             waveform = np.random.randn(1600).astype(np.float32)
-            frames = fram_wave(waveform, hop_length=160, fft_window_size=400, center=False)
+            frames = fram_wave(
+                waveform, hop_length=160, fft_window_size=400, center=False
+            )
             self.assertEqual(frames.ndim, 2)
             self.assertEqual(frames.shape[1], 400)
 
@@ -756,7 +978,9 @@ class TestAudioUtils(unittest.TestCase):
             frames = np.random.randn(10, 400).astype(np.float32)
             spec = stft(frames, np.hanning(400 + 1)[:-1])
             self.assertTrue(len(w) > 0)
-            self.assertTrue(any("deprecated" in str(x.message).lower() for x in w))
+            self.assertTrue(
+                any("deprecated" in str(x.message).lower() for x in w)
+            )
             self.assertEqual(spec.ndim, 2)
 
     def test_stft_with_fft_window_size(self):

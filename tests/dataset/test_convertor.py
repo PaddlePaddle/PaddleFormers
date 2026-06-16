@@ -33,7 +33,10 @@ def make_dpo_txt_data():
         "tgt": [
             "output for first query",
         ],
-        "response": [["<think>\n我要好好想一想\n</think>\n\n认真回答"], ["<think>\n这个问题我不会\n</think>\n\n错误示范"]],
+        "response": [
+            ["<think>\n我要好好想一想\n</think>\n\n认真回答"],
+            ["<think>\n这个问题我不会\n</think>\n\n错误示范"],
+        ],
         "sort": [1, 0],
         "label": [0, 1],
     }
@@ -45,10 +48,16 @@ def make_dpo_txt_data():
             {"role": "user", "content": "第二轮输入"},
         ],
         "chosen_response": [
-            {"role": "assistant", "content": "<think>\n我要好好想一想\n</think>\n\n认真回答"},
+            {
+                "role": "assistant",
+                "content": "<think>\n我要好好想一想\n</think>\n\n认真回答",
+            },
         ],
         "rejected_response": [
-            {"role": "assistant", "content": "<think>\n这个问题我不会\n</think>\n\n错误示范"},
+            {
+                "role": "assistant",
+                "content": "<think>\n这个问题我不会\n</think>\n\n错误示范",
+            },
         ],
     }
     return input_data, output_data
@@ -72,7 +81,10 @@ def make_txt_data():
             {"role": "user", "content": "第一轮输入"},
             {"role": "assistant", "content": "output for first query"},
             {"role": "user", "content": "第二轮输入"},
-            {"role": "assistant", "content": "<think>\n我要好好想一想\n</think>\n\n认真回答"},
+            {
+                "role": "assistant",
+                "content": "<think>\n我要好好想一想\n</think>\n\n认真回答",
+            },
         ],
     }
     return input_data, output_data
@@ -85,13 +97,23 @@ def make_mm_data():
             {"text": "第一轮输入", "tag": "mask", "tool_response": False},
             {
                 "text": "<think>\n我要好好想一想\n</think>\n\n",
-                "tool_calls": [{"name": "image_zoom_in_tool", "arguments": '{"bbox_2d": [0, 493, 518, 786]}'}],
+                "tool_calls": [
+                    {
+                        "name": "image_zoom_in_tool",
+                        "arguments": '{"bbox_2d": [0, 493, 518, 786]}',
+                    }
+                ],
                 "tag": "no_mask",
             },
             {"text": "工具回复", "tag": "mask", "tool_response": True},
             {
                 "text": "<think>\n我要好好想一想\n</think>\n\n",
-                "tool_calls": [{"name": "image_zoom_in_tool", "arguments": '{"bbox_2d": [0, 493, 518, 786]}'}],
+                "tool_calls": [
+                    {
+                        "name": "image_zoom_in_tool",
+                        "arguments": '{"bbox_2d": [0, 493, 518, 786]}',
+                    }
+                ],
                 "tag": "no_mask",
             },
         ],

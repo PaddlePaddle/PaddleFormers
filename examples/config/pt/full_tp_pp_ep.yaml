@@ -9,11 +9,9 @@ max_seq_len: 8192
 num_samples_each_epoch: 6000000
 packing: true
 mix_strategy: concat
-
 ### model
 model_name_or_path: Qwen/Qwen3-0.6B-Base
 _attn_implementation: flashmask
-
 ### finetuning
 # base
 stage: PT
@@ -36,11 +34,9 @@ logging_dir: ./vdl_log
 output_dir: ./checkpoints/qwen3-pt-full-tp-pp-ep
 disable_tqdm: true
 eval_accumulation_steps: 16
-
 # train
 warmup_steps: 20
 learning_rate: 1.0e-5
-
 # performance
 tensor_model_parallel_size: 2
 pipeline_model_parallel_size: 2
@@ -53,20 +49,15 @@ bf16: true
 fp16_opt_level: O2
 use_expert_parallel: true
 expert_model_parallel_size: 4
-
 # sharding_parallel_config
 split_param: true
-
 amp_master_grad: true
-
 # pipeline_parallel_config
 clear_every_step_cache: true
 partial_send_recv: false
 batch_p2p_comm: false
-
 # tensor_parallel_config
 tp_sync_param: true
 sync_grad: true
-
 save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint

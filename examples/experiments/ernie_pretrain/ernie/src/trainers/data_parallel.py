@@ -15,8 +15,7 @@
 import paddle
 from paddle import framework
 from paddle.distributed import fleet
-from paddle.framework import base as imperative_base
-from paddle.framework import core, in_dynamic_mode
+from paddle.framework import base as imperative_base, core, in_dynamic_mode
 
 
 class DataParallel(paddle.DataParallel):
@@ -29,7 +28,10 @@ class DataParallel(paddle.DataParallel):
                     continue
                 params_set.add(param)
                 if not isinstance(param, self.var_dtype):
-                    raise TypeError("The data type of '%s' must be '%s'" % (param.name, self.var_dtype))
+                    raise TypeError(
+                        "The data type of '%s' must be '%s'"
+                        % (param.name, self.var_dtype)
+                    )
                 if param.trainable:
                     layers_param.append((sublayer, param))
 
@@ -41,7 +43,8 @@ class DataParallel(paddle.DataParallel):
         )
 
         assert len(trainable_parameters) > 0, (
-            "This model does not have any parameters to train, and " "does not need to use DataParallel"
+            "This model does not have any parameters to train, and "
+            "does not need to use DataParallel"
         )
 
         def check_layer_sparse(sublayer):
@@ -50,7 +53,9 @@ class DataParallel(paddle.DataParallel):
             return False
 
         is_sparse_gradient = [
-            check_layer_sparse(sublayer) for sublayer, param in layers_param if not getattr(param, "no_sync", False)
+            check_layer_sparse(sublayer)
+            for sublayer, param in layers_param
+            if not getattr(param, "no_sync", False)
         ]
 
         if in_dynamic_mode():
@@ -78,7 +83,9 @@ def sync_dp_moe_params_across_sharding(model: paddle.nn.Layer) -> None:
     model_vars = []
     for _, param in model._obtain_parameters_buffers().items():
         if not isinstance(param, core.eager.Tensor):
-            raise TypeError(f"The data type of '{param.name}' must be core.eager.Tensor")
+            raise TypeError(
+                f"The data type of '{param.name}' must be core.eager.Tensor"
+            )
 
         if param.type == core.VarDesc.VarType.VOCAB:
             continue
@@ -91,4 +98,6 @@ def sync_dp_moe_params_across_sharding(model: paddle.nn.Layer) -> None:
 
     for var in model_vars:
         var = var.contiguous()
-        paddle.distributed.broadcast(var, src=src_rank, group=sharding_parallel_group, sync_op=True)
+        paddle.distributed.broadcast(
+            var, src=src_rank, group=sharding_parallel_group, sync_op=True
+        )

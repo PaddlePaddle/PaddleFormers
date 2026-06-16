@@ -11,13 +11,11 @@ mix_strategy: concat
 template_backend: custom
 template: qwen3
 split_multi_turn: False
-
 ### model
 model_name_or_path: Qwen/Qwen3-0.6B-Base
 _attn_implementation: flashmask
 use_fused_head_and_loss_fn: False
 loss_subbatch_sequence_length: 8192
-
 ### finetuning
 # base
 stage: SFT
@@ -39,11 +37,9 @@ logging_dir: ./vdl_log
 output_dir: ./checkpoints/qwen3-sft-full-fc
 disable_tqdm: true
 eval_accumulation_steps: 16
-
 # train
 warmup_steps: 20
 learning_rate: 1.0e-5
-
 # performance
 tensor_model_parallel_size: 1
 pipeline_model_parallel_size: 1

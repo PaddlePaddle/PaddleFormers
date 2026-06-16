@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Tuple
 
 import paddle
 
@@ -21,7 +20,10 @@ try:
     import triton
     import triton.language as tl
 except:
-    raise RuntimeError("Triton is not installed" "Please run 'python -m pip install triton>=3.1' to install Triton.")
+    raise RuntimeError(
+        "Triton is not installed"
+        "Please run 'python -m pip install triton>=3.1' to install Triton."
+    )
 
 # from triton import Config
 
@@ -48,7 +50,9 @@ def act_quant_kernel(x_ptr, y_ptr, s_ptr, BLOCK_SIZE: tl.constexpr):
     tl.store(s_ptr + pid, s)
 
 
-def act_quant(x: paddle.Tensor, block_size: int = 128) -> Tuple[paddle.Tensor, paddle.Tensor]:
+def act_quant(
+    x: paddle.Tensor, block_size: int = 128
+) -> tuple[paddle.Tensor, paddle.Tensor]:
     """
     Quantizes the input tensor `x` using block-wise quantization.
     Args:
@@ -60,11 +64,13 @@ def act_quant(x: paddle.Tensor, block_size: int = 128) -> Tuple[paddle.Tensor, p
             - A tensor of scaling factors with dtype `paddle.float32`.
     """
     assert x.is_contiguous(), "Input tensor must be contiguous"
-    assert (
-        x.shape[-1] % block_size == 0
-    ), f"Last dimension size must be divisible by block_size (block_size={block_size})"
+    assert x.shape[-1] % block_size == 0, (
+        f"Last dimension size must be divisible by block_size (block_size={block_size})"
+    )
     y = paddle.empty_like(x, dtype=paddle.float8_e4m3fn)
-    s = paddle.empty((*x.shape[:-1], x.shape[-1] // block_size), dtype=paddle.float32)
+    s = paddle.empty(
+        (*x.shape[:-1], x.shape[-1] // block_size), dtype=paddle.float32
+    )
     grid = lambda meta: (triton.cdiv(x.numel().item(), meta["BLOCK_SIZE"]),)
     act_quant_kernel[grid](x, y, s, BLOCK_SIZE=block_size)
     return y, s
@@ -97,7 +103,9 @@ def weight_dequant_kernel(x_ptr, s_ptr, y_ptr, M, N, BLOCK_SIZE: tl.constexpr):
     tl.store(y_ptr + offs, y, mask=mask)
 
 
-def weight_dequant(x: paddle.Tensor, s: paddle.Tensor, block_size: int = 128) -> paddle.Tensor:
+def weight_dequant(
+    x: paddle.Tensor, s: paddle.Tensor, block_size: int = 128
+) -> paddle.Tensor:
     """
     Dequantizes the given weight tensor using the provided scale tensor.
     Args:
@@ -109,11 +117,16 @@ def weight_dequant(x: paddle.Tensor, s: paddle.Tensor, block_size: int = 128) ->
     Raises:
         AssertionError: If `x` or `s` are not contiguous or if their dimensions are not 2.
     """
-    assert x.is_contiguous() and s.is_contiguous(), "Input tensors must be contiguous"
+    assert x.is_contiguous() and s.is_contiguous(), (
+        "Input tensors must be contiguous"
+    )
     assert x.dim() == 2 and s.dim() == 2, "Input tensors must have 2 dimensions"
     M, N = x.shape
     y = paddle.empty_like(x, dtype=paddle.get_default_dtype())
-    grid = lambda meta: (triton.cdiv(M, meta["BLOCK_SIZE"]), triton.cdiv(N, meta["BLOCK_SIZE"]))
+    grid = lambda meta: (
+        triton.cdiv(M, meta["BLOCK_SIZE"]),
+        triton.cdiv(N, meta["BLOCK_SIZE"]),
+    )
     weight_dequant_kernel[grid](x, s, y, M, N, BLOCK_SIZE=block_size)
     return y
 
@@ -170,8 +183,12 @@ def fp8_gemm_kernel(
 
     accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
     for i in range(k):
-        a = tl.load(a_ptrs, mask=offs_k[None, :] < K - i * BLOCK_SIZE_K, other=0.0)
-        b = tl.load(b_ptrs, mask=offs_k[:, None] < K - i * BLOCK_SIZE_K, other=0.0)
+        a = tl.load(
+            a_ptrs, mask=offs_k[None, :] < K - i * BLOCK_SIZE_K, other=0.0
+        )
+        b = tl.load(
+            b_ptrs, mask=offs_k[:, None] < K - i * BLOCK_SIZE_K, other=0.0
+        )
         a_s = tl.load(a_s_ptrs)
         b_s = tl.load(b_s_ptrs)
         accumulator += tl.dot(a, b) * a_s[:, None] * b_s[None, :]
@@ -187,15 +204,21 @@ def fp8_gemm_kernel(
     tl.store(c_ptrs, c, mask=mask)
 
 
-def fp8_gemm(a: paddle.Tensor, a_s: paddle.Tensor, b: paddle.Tensor, b_s: paddle.Tensor):
+def fp8_gemm(
+    a: paddle.Tensor, a_s: paddle.Tensor, b: paddle.Tensor, b_s: paddle.Tensor
+):
     """
     Modified for B matrix with shape [K, N]
     """
     # FIXME @ZHUI, transposed
     b = b.T.contiguous()
     b_s = b_s.T.contiguous()
-    assert a.is_contiguous() and b.is_contiguous(), "Input tensors must be contiguous"
-    assert a_s.is_contiguous() and b_s.is_contiguous(), "Scaling factor tensors must be contiguous"
+    assert a.is_contiguous() and b.is_contiguous(), (
+        "Input tensors must be contiguous"
+    )
+    assert a_s.is_contiguous() and b_s.is_contiguous(), (
+        "Scaling factor tensors must be contiguous"
+    )
 
     K = a.shape[-1]
     M = a.numel().item() // K
@@ -203,7 +226,10 @@ def fp8_gemm(a: paddle.Tensor, a_s: paddle.Tensor, b: paddle.Tensor, b_s: paddle
     N = b.shape[0]  # Get N from the second dimension of B
 
     c = paddle.empty((*a.shape[:-1], N), dtype=paddle.get_default_dtype())
-    grid = lambda META: (triton.cdiv(M, META["BLOCK_SIZE_M"]), triton.cdiv(N, META["BLOCK_SIZE_N"]))
+    grid = lambda META: (
+        triton.cdiv(M, META["BLOCK_SIZE_M"]),
+        triton.cdiv(N, META["BLOCK_SIZE_N"]),
+    )
     fp8_gemm_kernel[grid](
         a,
         b,

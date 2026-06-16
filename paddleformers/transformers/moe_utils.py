@@ -64,7 +64,9 @@ def permute(
     routing_map = routing_map.cast(paddle.bool).T.contiguous()
 
     # Create a dense expert-to-token mapping from the sparse token-to-expert mapping
-    token_indices = paddle.arange(num_tokens).unsqueeze(0).expand([num_experts, -1])
+    token_indices = (
+        paddle.arange(num_tokens).unsqueeze(0).expand([num_experts, -1])
+    )
     sorted_indices = token_indices.masked_select(routing_map)
 
     # use the mapping to permute the tokens
@@ -102,8 +104,12 @@ def unpermute(
     _, hidden = restore_shape
 
     if probs is not None:
-        assert routing_map is not None, "Mask must be provided to permute the probs."
-        permuted_probs = probs.T.contiguous().masked_select(routing_map.T.contiguous())
+        assert routing_map is not None, (
+            "Mask must be provided to permute the probs."
+        )
+        permuted_probs = probs.T.contiguous().masked_select(
+            routing_map.T.contiguous()
+        )
         permuted_tokens = permuted_tokens * permuted_probs.unsqueeze(-1)
 
     # Create an output tensor filled with zeros
@@ -117,7 +123,9 @@ def unpermute(
     # NOTE: Calling multiple times of scatter_ will not accumulate,
     # Instead, it reset to zero and then accumulated again.
     # so can't do subbatch here.
-    output_tokens.scatter_(index=sorted_indices, updates=permuted_tokens, overwrite=False)
+    output_tokens.scatter_(
+        index=sorted_indices, updates=permuted_tokens, overwrite=False
+    )
     return output_tokens
 
 

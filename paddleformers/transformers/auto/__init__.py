@@ -50,7 +50,11 @@ import_structure = {
         "AutoModelForConditionalGenerationPipe",
     ],
     "factory": [],
-    "image_processing": ["get_image_processor_config", "AutoImageProcessor", "IMAGE_PROCESSOR_MAPPING"],
+    "image_processing": [
+        "get_image_processor_config",
+        "AutoImageProcessor",
+        "IMAGE_PROCESSOR_MAPPING",
+    ],
     "processing": ["AutoProcessor", "PROCESSOR_MAPPING"],
     "video_processing": ["AutoVideoProcessor", "VIDEO_PROCESSOR_MAPPING"],
 }

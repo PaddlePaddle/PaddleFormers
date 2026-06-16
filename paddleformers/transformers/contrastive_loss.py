@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Optional
+from typing import Optional
 
 import paddle
-import paddle.nn as nn
+from paddle import nn
 
 
 class SimpleContrastiveLoss(nn.Layer):
@@ -39,7 +39,11 @@ class SimpleContrastiveLoss(nn.Layer):
 
 
 class MatryoshkaContrastiveLoss(nn.Layer):
-    def __init__(self, embedding_temperature: float = 0.02, embedding_matryoshka_dims: Optional[List[int]] = None):
+    def __init__(
+        self,
+        embedding_temperature: float = 0.02,
+        embedding_matryoshka_dims: Optional[list[int]] = None,
+    ):
         super().__init__()
         self.embedding_temperature = embedding_temperature
         if embedding_matryoshka_dims is None:
@@ -53,10 +57,14 @@ class MatryoshkaContrastiveLoss(nn.Layer):
             loss = 0.0
             for dim in self.embedding_matryoshka_dims:
                 reduced_q_reps = q_reps[:, :dim].astype("float32")
-                reduced_q_reps = nn.functional.normalize(reduced_q_reps, axis=-1)
+                reduced_q_reps = nn.functional.normalize(
+                    reduced_q_reps, axis=-1
+                )
 
                 reduced_p_reps = p_reps[:, :dim].astype("float32")
-                reduced_p_reps = nn.functional.normalize(reduced_p_reps, axis=-1)
+                reduced_p_reps = nn.functional.normalize(
+                    reduced_p_reps, axis=-1
+                )
 
                 dim_loss = self.loss_fn(reduced_q_reps, reduced_p_reps)
                 loss += dim_loss
@@ -93,15 +101,25 @@ class SimpleInfclLoss(nn.Layer):
             raise ImportError(
                 "Paddlenlp_kernels are not available, which means the inf_cl loss cannot be used. If you wish to use the inf_cl loss, please follow the instructions in the README.md on the `ops`."
             )
-        group_size = p_reps.shape[0] // q_reps.shape[0]  # Number of keys per query
-        labels = paddle.arange(q_reps.shape[0], dtype="int64")  # Generate labels for queries
+        group_size = (
+            p_reps.shape[0] // q_reps.shape[0]
+        )  # Number of keys per query
+        labels = paddle.arange(
+            q_reps.shape[0], dtype="int64"
+        )  # Generate labels for queries
         labels = labels * group_size  # Adjust labels based on group size
-        loss = cal_inf_loss(q_reps, p_reps, labels=labels, scale=None, head_dim=self.head_dim)
+        loss = cal_inf_loss(
+            q_reps, p_reps, labels=labels, scale=None, head_dim=self.head_dim
+        )
         return loss
 
 
 class MatryoshkaInfclLoss(nn.Layer):
-    def __init__(self, embedding_matryoshka_dims: Optional[List[int]] = None, inf_cl_head_dim=64):
+    def __init__(
+        self,
+        embedding_matryoshka_dims: Optional[list[int]] = None,
+        inf_cl_head_dim=64,
+    ):
         """
         Initializes the Matryoshka Inf_cl Loss class.
 
@@ -131,12 +149,16 @@ class MatryoshkaInfclLoss(nn.Layer):
         if len(self.embedding_matryoshka_dims) > 0:
             loss = 0.0
             for dim in self.embedding_matryoshka_dims:
-                reduced_q_reps = q_reps[:, :dim]  # Reduce query representations to the current Matryoshka dimension
+                reduced_q_reps = q_reps[
+                    :, :dim
+                ]  # Reduce query representations to the current Matryoshka dimension
                 reduced_q_reps = nn.functional.normalize(
                     reduced_q_reps, axis=-1
                 )  # Normalize the reduced query representations along the last axis
 
-                reduced_p_reps = p_reps[:, :dim]  # Reduce key representations to the current Matryoshka dimension
+                reduced_p_reps = p_reps[
+                    :, :dim
+                ]  # Reduce key representations to the current Matryoshka dimension
                 reduced_p_reps = nn.functional.normalize(
                     reduced_p_reps, axis=-1
                 )  # Normalize the reduced key representations along the last axis

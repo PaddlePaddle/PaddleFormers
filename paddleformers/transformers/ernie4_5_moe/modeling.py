@@ -16,7 +16,7 @@
 
 import math
 from copy import deepcopy
-from typing import Optional, Tuple
+from typing import Optional
 
 import paddle
 import paddle.distributed as dist
@@ -48,7 +48,10 @@ from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
 from ..ernie4_5.modeling import Ernie4_5Attention
 from ..masking_utils import create_causal_mask_and_row_indices
-from ..model_outputs import MoECausalLMOutputWithPast, MoECausalLMOutputWithPastAndMTP
+from ..model_outputs import (
+    MoECausalLMOutputWithPast,
+    MoECausalLMOutputWithPastAndMTP,
+)
 from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from ..tensor_parallel_utils import model_parallel_dropout
@@ -66,11 +69,17 @@ def mtp_hidden_states_set_zero(hidden_states, inbatch_pack_offset):
         batch_size, seqlen, d_model = hidden_states.shape
         valid_indices = paddle.where(inbatch_pack_offset[0] > 0)[0]
         mask = paddle.ones_like(hidden_states[0])
-        assert batch_size == 1, "only support batch_size=1 in inbatch sft training"
+        assert batch_size == 1, (
+            "only support batch_size=1 in inbatch sft training"
+        )
 
         if len(valid_indices) > 0:
-            zeros = paddle.zeros([len(valid_indices), d_model], dtype=hidden_states.dtype)
-            mask = paddle.scatter(mask, valid_indices.reshape([-1, 1]), zeros, overwrite=True)
+            zeros = paddle.zeros(
+                [len(valid_indices), d_model], dtype=hidden_states.dtype
+            )
+            mask = paddle.scatter(
+                mask, valid_indices.reshape([-1, 1]), zeros, overwrite=True
+            )
         mask.stop_gradient = True
         hidden_states = hidden_states * mask.unsqueeze(0)
 
@@ -80,7 +89,9 @@ def mtp_hidden_states_set_zero(hidden_states, inbatch_pack_offset):
         mask = paddle.ones_like(hidden_states)
 
         if len(valid_indices) > 0:
-            zeros = paddle.zeros([len(valid_indices), d_model], dtype=hidden_states.dtype)
+            zeros = paddle.zeros(
+                [len(valid_indices), d_model], dtype=hidden_states.dtype
+            )
             mask = paddle.scatter(mask, valid_indices, zeros, overwrite=True)
 
         mask.stop_gradient = True
@@ -97,7 +108,9 @@ class Ernie4_5_MoeRotaryEmbedding(nn.Layer):
         self.head_dim = config.head_dim
         self.base = config.rope_theta
         rope_parameters = config.rope_parameters
-        self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
+        self.rope_type = rope_parameters.get(
+            "rope_type", rope_parameters.get("type", "default")
+        )
         rope_init_fn = self.compute_default_rope_parameters
         if self.rope_type != "default":
             rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
@@ -123,12 +136,23 @@ class Ernie4_5_MoeRotaryEmbedding(nn.Layer):
             post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
         """
         base = config.rope_parameters["rope_theta"]
-        dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+        dim = (
+            getattr(config, "head_dim", None)
+            or config.hidden_size // config.num_attention_heads
+        )
 
         attention_factor = 1.0  # Unused in this type of RoPE
 
         # Compute the inverse frequencies
-        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        inv_freq = 1.0 / (
+            base
+            ** (
+                paddle.arange(0, dim, 2, dtype=paddle.int64).astype(
+                    dtype=paddle.float32
+                )
+                / dim
+            )
+        )
         return inv_freq, attention_factor
 
     @dynamic_rope_update
@@ -144,11 +168,17 @@ class Ernie4_5_MoeRotaryEmbedding(nn.Layer):
             Tensor: Rotary position embeddings of shape [1, 1, seq_length, head_dim]
         """
         with paddle.amp.auto_cast(enable=False):
-            inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
+            inv_freq_expanded = (
+                self.inv_freq[None, :, None]
+                .float()
+                .expand([position_ids.shape[0], -1, 1])
+            )
 
             position_ids_expanded = position_ids[:, None, :].float()
 
-            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+            freqs = (
+                inv_freq_expanded.float() @ position_ids_expanded.float()
+            ).transpose(1, 2)
 
             emb = paddle.concat((freqs, freqs), axis=-1)
 
@@ -161,7 +191,9 @@ class Ernie4_5_MoeRotaryEmbedding(nn.Layer):
 class Ernie4_5_MoeMLP(Ernie4_5MLP):
     """Mixture of Experts (MoE) variant of ERNIE's MLP layer."""
 
-    def __init__(self, config, hidden_size, moe_intermediate_size, layer_idx=0, **kwargs):
+    def __init__(
+        self, config, hidden_size, moe_intermediate_size, layer_idx=0, **kwargs
+    ):
         """Initialize the MoE MLP layer.
 
         Args:
@@ -174,12 +206,18 @@ class Ernie4_5_MoeMLP(Ernie4_5MLP):
             config.tensor_model_parallel_size = 1
 
         super().__init__(
-            config, hidden_size=hidden_size, intermediate_size=moe_intermediate_size, layer_idx=layer_idx, **kwargs
+            config,
+            hidden_size=hidden_size,
+            intermediate_size=moe_intermediate_size,
+            layer_idx=layer_idx,
+            **kwargs,
         )
         self.moe_dropout_prob = config.moe_dropout_prob
         self.fuse_swiglu = config.fuse_swiglu
         if self.fuse_swiglu:
-            assert fused_swiglu is not None, "fused_swiglu operator is not found."
+            assert fused_swiglu is not None, (
+                "fused_swiglu operator is not found."
+            )
 
     def forward(self, x):
         """Forward pass through MoE MLP layer.
@@ -253,7 +291,9 @@ class FakeMoERouterLoss(PyLayer):
         else:
             router_loss_grad_value = 1.0 / ctx.num_acc_steps
 
-        return out_grad, paddle.full(ctx.loss_shape, router_loss_grad_value, dtype=ctx.loss_dtype)
+        return out_grad, paddle.full(
+            ctx.loss_shape, router_loss_grad_value, dtype=ctx.loss_dtype
+        )
 
 
 class Ernie4_5_MoeSparseMoeBlock(MOEAllGatherLayerV2):
@@ -263,19 +303,21 @@ class Ernie4_5_MoeSparseMoeBlock(MOEAllGatherLayerV2):
         moe_num_experts = config.moe_num_experts
         config.moe_world_size = dist.get_world_size(config.moe_group)
         self.use_multimodel_experts = False
-        assert (
-            moe_num_experts >= config.moe_world_size
-        ), f"expert moe_num_experts={moe_num_experts} >= moe_world_size={config.moe_world_size}"
-        assert (
-            moe_num_experts % config.moe_world_size == 0
-        ), f"expert moe_num_experts={moe_num_experts} % moe_world_size={config.moe_world_size} == 0"
+        assert moe_num_experts >= config.moe_world_size, (
+            f"expert moe_num_experts={moe_num_experts} >= moe_world_size={config.moe_world_size}"
+        )
+        assert moe_num_experts % config.moe_world_size == 0, (
+            f"expert moe_num_experts={moe_num_experts} % moe_world_size={config.moe_world_size} == 0"
+        )
 
         moe_num_experts_per_device = moe_num_experts // config.moe_world_size
         logger.debug(
             f"using moe-world-size: {config.moe_world_size} expert-per-device:{moe_num_experts_per_device}, moe_group={config.moe_group}"
         )
 
-        moe_statics = MoEStatics(config, layer_idx) if config.moe_use_aux_free else None
+        moe_statics = (
+            MoEStatics(config, layer_idx) if config.moe_use_aux_free else None
+        )
         experts = nn.LayerList([])
         moe_rank = paddle.distributed.get_rank(config.moe_group)
 
@@ -310,8 +352,12 @@ class Ernie4_5_MoeSparseMoeBlock(MOEAllGatherLayerV2):
                 config.moe_intermediate_size * config.moe_num_shared_experts,
                 fuse_up_gate=True,
             )
-        use_expert_out_alltoall = use_expert_out_alltoall = "alltoall" in config.moe_multimodal_dispatch_use_allgather
-        use_padding = "unpad" not in config.moe_multimodal_dispatch_use_allgather
+        use_expert_out_alltoall = use_expert_out_alltoall = (
+            "alltoall" in config.moe_multimodal_dispatch_use_allgather
+        )
+        use_padding = (
+            "unpad" not in config.moe_multimodal_dispatch_use_allgather
+        )
         super().__init__(
             gate=gate,
             experts=experts,
@@ -370,8 +416,9 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
                 fuse_up_gate=True,
             )
 
-        if config.sequence_parallel and isinstance(
-            self.mlp, Ernie4_5_MoeSparseMoeBlock
+        if (
+            config.sequence_parallel
+            and isinstance(self.mlp, Ernie4_5_MoeSparseMoeBlock)
         ):  # Under `mp-moe`, gate is effective in attn and is in the synchronization zone.
             for p in self.mlp.gate.parameters():
                 mark_as_sequence_parallel_parameter(p)
@@ -393,7 +440,9 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
             input_is_parallel=config.sequence_parallel,
         )
 
-        self.hidden_dropout = nn.Dropout(p=config.hidden_dropout_prob, mode="upscale_in_train")
+        self.hidden_dropout = nn.Dropout(
+            p=config.hidden_dropout_prob, mode="upscale_in_train"
+        )
 
         if config.sequence_parallel:
             # There is no Column/RowLinear in bias and expert in mp-moe. No hook is needed.
@@ -403,9 +452,13 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
                     self.input_layernorm.enable_sequence_parallel()
                     if isinstance(self.mlp, Ernie4_5_MoeSparseMoeBlock):
                         for m in self.mlp.experts:
-                            mark_as_sequence_parallel_parameter(m.down_proj.bias)
+                            mark_as_sequence_parallel_parameter(
+                                m.down_proj.bias
+                            )
                     else:
-                        mark_as_sequence_parallel_parameter(self.mlp.down_proj.bias)
+                        mark_as_sequence_parallel_parameter(
+                            self.mlp.down_proj.bias
+                        )
 
     def forward(
         self,
@@ -413,12 +466,12 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
         attention_mask: Optional[paddle.Tensor] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
-        position_embeddings: Optional[Tuple[paddle.Tensor]] = None,
+        position_embeddings: Optional[tuple[paddle.Tensor]] = None,
         output_attentions: Optional[bool] = False,
         past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
         output_gate_logits=False,  # PP model should not output gate logits,
-    ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
+    ) -> tuple[paddle.Tensor, Optional[tuple[paddle.Tensor, paddle.Tensor]]]:
         """Forward pass through the decoder layer.
 
         Args:
@@ -515,7 +568,7 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
         "up_proj",
         "down_proj",
         "gate",
-        "mtp_linear_proj\.\d+",
+        r"mtp_linear_proj\.\d+",
     ]
 
     @classmethod
@@ -563,7 +616,9 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
         ]
 
         if config.tie_word_embeddings:
-            aoa_config["aoa_statements"] += ["model.embed_tokens.weight -> lm_head.weight"]
+            aoa_config["aoa_statements"] += [
+                "model.embed_tokens.weight -> lm_head.weight"
+            ]
 
         return aoa_config
 
@@ -622,7 +677,9 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
                     f"model.layers.{layer_id}.mlp.{y}_proj.weight^T -> model.layers.{layer_id}.mlp.{y}_proj.weight",
                 ]
         # experts
-        for layer_id in range(config.moe_layer_start_index, config.num_hidden_layers):
+        for layer_id in range(
+            config.moe_layer_start_index, config.num_hidden_layers
+        ):
             for y in ("gate", "up"):
                 aoa_statements += [
                     f"model.layers.{layer_id}.mlp.shared_experts.{y}_proj.weight^T -> model.layers.{layer_id}.mlp.shared_experts.{y}_proj.weight"
@@ -655,8 +712,13 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
         Args:
             config (Ernie4_5_MoeConfig): Model configuration.
         """
-        if config.moe_group in {"mp", "model", "tp"} and config.tensor_model_parallel_size > 1:
-            logger.info(f"disable FFN tensor model parallel, moe-group={config.moe_group}")
+        if (
+            config.moe_group in {"mp", "model", "tp"}
+            and config.tensor_model_parallel_size > 1
+        ):
+            logger.info(
+                f"disable FFN tensor model parallel, moe-group={config.moe_group}"
+            )
             config.disable_ffn_model_parallel = True
         config.moe_group_origin = config.moe_group
         if isinstance(config.moe_group, str):
@@ -673,10 +735,17 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
         self.config = config
 
         self.embed_tokens = GeneralEmbedding.create(
-            config=config, num_embeddings=config.vocab_size, embedding_dim=config.hidden_size
+            config=config,
+            num_embeddings=config.vocab_size,
+            embedding_dim=config.hidden_size,
         )
 
-        self.layers = nn.LayerList([Ernie4_5_MoeDecoderLayer(config, i) for i in range(config.num_hidden_layers)])
+        self.layers = nn.LayerList(
+            [
+                Ernie4_5_MoeDecoderLayer(config, i)
+                for i in range(config.num_hidden_layers)
+            ]
+        )
         self.norm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
@@ -828,36 +897,62 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                 - router_loss: MoE router loss if use_moe=True
                 - gate_logits: MoE gate logits if use_moe=True
         """
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
         )
-        use_cache = use_cache if use_cache is not None else self.config.use_cache
+        output_hidden_states = (
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
+        )
+        use_cache = (
+            use_cache if use_cache is not None else self.config.use_cache
+        )
 
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict
+            if return_dict is not None
+            else self.config.use_return_dict
+        )
 
         # retrieve input_ids and inputs_embeds
         if input_ids is not None and inputs_embeds is not None:
-            raise ValueError("You cannot specify both decoder_input_ids and decoder_inputs_embeds at the same time")
+            raise ValueError(
+                "You cannot specify both decoder_input_ids and decoder_inputs_embeds at the same time"
+            )
         elif input_ids is not None:
             bsz, seq_length = input_ids.shape
         elif inputs_embeds is not None:
             bsz, seq_length, _ = inputs_embeds.shape
         else:
-            raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
+            raise ValueError(
+                "You have to specify either decoder_input_ids or decoder_inputs_embeds"
+            )
         full_seq_length = seq_length
 
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache(config=self.config)
-        kv_seq_len = past_key_values.get_seq_length() if past_key_values is not None else 0
+        kv_seq_len = (
+            past_key_values.get_seq_length()
+            if past_key_values is not None
+            else 0
+        )
 
         if position_ids is None:
-            position_ids = paddle.arange(kv_seq_len, seq_length).unsqueeze(0).tile((bsz, 1))
+            position_ids = (
+                paddle.arange(kv_seq_len, seq_length)
+                .unsqueeze(0)
+                .tile((bsz, 1))
+            )
 
         seq_length -= self.config.num_nextn_predict_layers
 
         if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
+            inputs_embeds = self.embed_tokens(input_ids).astype(
+                self.embed_tokens.weight.dtype
+            )
 
         mask_kwargs = {
             "config": self.config,
@@ -870,16 +965,26 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
         }
 
-        attention_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
+        attention_mask, attn_mask_startend_row_indices = (
+            create_causal_mask_and_row_indices(**mask_kwargs)
+        )
 
         if self.training and self.config.num_nextn_predict_layers > 0:
-            inputs_embeds_extra = inputs_embeds[:, -self.config.num_nextn_predict_layers :, :]
-            inputs_embeds = inputs_embeds[:, : -self.config.num_nextn_predict_layers, :]
+            inputs_embeds_extra = inputs_embeds[
+                :, -self.config.num_nextn_predict_layers :, :
+            ]
+            inputs_embeds = inputs_embeds[
+                :, : -self.config.num_nextn_predict_layers, :
+            ]
             inputs_embeds_ori = inputs_embeds
 
             if position_ids is not None:
-                position_ids_extra = position_ids[:, -self.config.num_nextn_predict_layers :]
-                position_ids = position_ids[:, : -self.config.num_nextn_predict_layers]
+                position_ids_extra = position_ids[
+                    :, -self.config.num_nextn_predict_layers :
+                ]
+                position_ids = position_ids[
+                    :, : -self.config.num_nextn_predict_layers
+                ]
                 position_ids_ori = position_ids
 
             if attention_mask is not None:
@@ -892,20 +997,28 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                 ]
 
             if attn_mask_startend_row_indices is not None:
-                attn_mask_startend_row_indices_extra = attn_mask_startend_row_indices[
-                    :, :, -self.config.num_nextn_predict_layers :
-                ]
+                attn_mask_startend_row_indices_extra = (
+                    attn_mask_startend_row_indices[
+                        :, :, -self.config.num_nextn_predict_layers :
+                    ]
+                )
                 attn_mask_startend_row_indices = attn_mask_startend_row_indices[
                     :, :, : -self.config.num_nextn_predict_layers
                 ]
-                attn_mask_startend_row_indices_ori = attn_mask_startend_row_indices
+                attn_mask_startend_row_indices_ori = (
+                    attn_mask_startend_row_indices
+                )
 
             nbatch_pack_offset = kwargs.get("nbatch_pack_offset", None)
             if nbatch_pack_offset is None:
                 raise ValueError("nbatch_pack_offset is required in mtp train")
 
-            nbatch_pack_offset_extra = nbatch_pack_offset[:, -self.config.num_nextn_predict_layers :]
-            nbatch_pack_offset = nbatch_pack_offset[:, -self.config.num_nextn_predict_layers :]
+            nbatch_pack_offset_extra = nbatch_pack_offset[
+                :, -self.config.num_nextn_predict_layers :
+            ]
+            nbatch_pack_offset = nbatch_pack_offset[
+                :, -self.config.num_nextn_predict_layers :
+            ]
             nbatch_pack_offset_ori = nbatch_pack_offset
 
         if self.config.sequence_parallel:
@@ -917,7 +1030,9 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
         if self.config.apply_rope_fusion:
             position_embeddings = None
         else:
-            position_embeddings = self.rotary_emb(hidden_states, position_ids)  # cos and sin
+            position_embeddings = self.rotary_emb(
+                hidden_states, position_ids
+            )  # cos and sin
 
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
@@ -974,7 +1089,10 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                 and self.config.recompute_num_layers == 1
                 and has_gradient
             ):
-                layer_outputs, gate_logits = layer_outputs[:-1], layer_outputs[-1]
+                layer_outputs, gate_logits = (
+                    layer_outputs[:-1],
+                    layer_outputs[-1],
+                )
                 all_gate_logits = all_gate_logits + (gate_logits,)
 
         # Multi Token Prediction
@@ -984,7 +1102,9 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
             for depth in range(self.config.num_nextn_predict_layers):
                 if self.config.sequence_parallel:
                     hidden_states = GatherOp.apply(hidden_states)
-                    hidden_states = hidden_states.reshape([-1, seq_length, hidden_states.shape[-1]])
+                    hidden_states = hidden_states.reshape(
+                        [-1, seq_length, hidden_states.shape[-1]]
+                    )
 
                 inputs_embeds_cur_depth = paddle.cat(
                     [
@@ -1006,8 +1126,12 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                 if attn_mask_startend_row_indices is not None:
                     attn_mask_startend_row_indices = paddle.cat(
                         [
-                            attn_mask_startend_row_indices_ori[:, :, (depth + 1) :],
-                            attn_mask_startend_row_indices_extra[:, :, : (depth + 1)],
+                            attn_mask_startend_row_indices_ori[
+                                :, :, (depth + 1) :
+                            ],
+                            attn_mask_startend_row_indices_extra[
+                                :, :, : (depth + 1)
+                            ],
                         ],
                         axis=-1,
                     )
@@ -1027,19 +1151,30 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                     ],
                     axis=1,
                 )
-                hidden_states = mtp_hidden_states_set_zero(hidden_states, nbatch_pack_offset_cur_depth)
+                hidden_states = mtp_hidden_states_set_zero(
+                    hidden_states, nbatch_pack_offset_cur_depth
+                )
 
                 # Norm&Concat
-                inputs_embeds_cur_depth_norm = self.mtp_emb_norm[depth](inputs_embeds_cur_depth)
+                inputs_embeds_cur_depth_norm = self.mtp_emb_norm[depth](
+                    inputs_embeds_cur_depth
+                )
                 hidden_states_norm = self.mtp_hidden_norm[depth](hidden_states)
 
                 inputs_embeds_cur_depth = self.mtp_linear_proj[depth](
-                    paddle.cat([inputs_embeds_cur_depth_norm, hidden_states_norm], axis=-1)
+                    paddle.cat(
+                        [inputs_embeds_cur_depth_norm, hidden_states_norm],
+                        axis=-1,
+                    )
                 )
 
                 if self.config.sequence_parallel:
-                    inputs_embeds_cur_depth = inputs_embeds_cur_depth.reshape([-1, inputs_embeds_cur_depth.shape[-1]])
-                    inputs_embeds_cur_depth = ScatterOp.apply(inputs_embeds_cur_depth)
+                    inputs_embeds_cur_depth = inputs_embeds_cur_depth.reshape(
+                        [-1, inputs_embeds_cur_depth.shape[-1]]
+                    )
+                    inputs_embeds_cur_depth = ScatterOp.apply(
+                        inputs_embeds_cur_depth
+                    )
 
                 decoder_layer = self.mtp_block[depth]
                 past_key_values = None
@@ -1057,7 +1192,10 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                 else:
                     hidden_states = layer_outputs
 
-                if not (self.config.recompute_granularity is not None and has_gradient):
+                if not (
+                    self.config.recompute_granularity is not None
+                    and has_gradient
+                ):
                     layer_outputs, gate_logits = (
                         layer_outputs[:-1],
                         layer_outputs[-1],
@@ -1065,7 +1203,9 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                     all_gate_logits = all_gate_logits + (gate_logits,)
 
                 mtp_outputs.append(hidden_states)
-            mtp_outputs = [self.norm(hidden_states) for hidden_states in mtp_outputs]
+            mtp_outputs = [
+                self.norm(hidden_states) for hidden_states in mtp_outputs
+            ]
             hidden_states, mtp_outputs = mtp_outputs[0], mtp_outputs[1:]
         else:
             hidden_states = self.norm(hidden_states)
@@ -1118,7 +1258,9 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_MoePretrainedModel):
         # initialize-trick for big model,
         # see https://github.com/bigscience-workshop/bigscience/blob/master/train/tr11-176B-ml/README.md#std-init
         new_initializer_range = math.sqrt(0.3333 / config.hidden_size)
-        logger.info(f"change initializer-range from {config.initializer_range} to {new_initializer_range}")
+        logger.info(
+            f"change initializer-range from {config.initializer_range} to {new_initializer_range}"
+        )
         config.initializer_range = new_initializer_range
         self.config = config
         self.model = Ernie4_5_MoeModel(config)
@@ -1126,11 +1268,15 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_MoePretrainedModel):
         self.criterion = CriterionLayer(config)
         self.tie_weights()  # maybe weight share
 
-    def prepare_attention_mask_for_generation(self, input_ids, pad_token_id, eos_token_id):
+    def prepare_attention_mask_for_generation(
+        self, input_ids, pad_token_id, eos_token_id
+    ):
         """Avoid using attention_mask with flash_attn on generation."""
         if self.config._attn_implementation == "sdpa":
             return None
-        return super().prepare_attention_mask_for_generation(input_ids, pad_token_id, eos_token_id)
+        return super().prepare_attention_mask_for_generation(
+            input_ids, pad_token_id, eos_token_id
+        )
 
     def forward(
         self,
@@ -1168,14 +1314,29 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_MoePretrainedModel):
         Returns:
             Union[tuple, MoECausalLMOutputWithPast]: Model outputs.
         """
-        if kwargs.get("attn_mask_start_row_indices", None) is not None and attn_mask_startend_row_indices is None:
-            attn_mask_startend_row_indices = kwargs["attn_mask_start_row_indices"]
+        if (
+            kwargs.get("attn_mask_start_row_indices", None) is not None
+            and attn_mask_startend_row_indices is None
+        ):
+            attn_mask_startend_row_indices = kwargs[
+                "attn_mask_start_row_indices"
+            ]
 
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
         )
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        output_hidden_states = (
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
+        )
+        return_dict = (
+            return_dict
+            if return_dict is not None
+            else self.config.use_return_dict
+        )
 
         outputs = self.model(
             input_ids,
@@ -1195,11 +1356,13 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_MoePretrainedModel):
         mtp_outputs = outputs.mtp_outputs
 
         # if labels is None，means we need full output, instead of tensor_parallel_output
-        # tensor_parallel_output is togather with ParallelCrossEntropy
+        # tensor_parallel_output is together with ParallelCrossEntropy
         logits = self.lm_head(hidden_states)
         mtp_logits = []
         if len(mtp_outputs) > 0:
-            mtp_logits = [self.lm_head(_hidden_states) for _hidden_states in mtp_outputs]
+            mtp_logits = [
+                self.lm_head(_hidden_states) for _hidden_states in mtp_outputs
+            ]
 
         if return_dict:  # aka Generate Decoding
             if labels is not None:
@@ -1219,13 +1382,21 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_MoePretrainedModel):
         # Pretrain & Eval must have labels
         assert labels is not None
 
-        return self.criterion(logits, labels, loss_mask, router_loss=router_loss, mtp_logits=mtp_logits)
+        return self.criterion(
+            logits,
+            labels,
+            loss_mask,
+            router_loss=router_loss,
+            mtp_logits=mtp_logits,
+        )
 
 
 class Ernie4_5_MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     config_class = Ernie4_5_MoeConfig
     _decoder_layer_cls = Ernie4_5_MoeDecoderLayer
-    _get_tensor_parallel_mappings = Ernie4_5_MoeModel._get_tensor_parallel_mappings
+    _get_tensor_parallel_mappings = (
+        Ernie4_5_MoeModel._get_tensor_parallel_mappings
+    )
     _init_weights = Ernie4_5_MoeModel._init_weights
     _keep_in_fp32_modules = Ernie4_5_MoeModel._keep_in_fp32_modules
     _tied_weights_keys = ["lm_head.weight"]
@@ -1234,4 +1405,8 @@ class Ernie4_5_MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     _gen_inv_aoa_config = Ernie4_5_MoeForCausalLM._gen_inv_aoa_config
 
 
-__all__ = ["Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM", "Ernie4_5_MoeForCausalLMPipe"]
+__all__ = [
+    "Ernie4_5_MoeModel",
+    "Ernie4_5_MoeForCausalLM",
+    "Ernie4_5_MoeForCausalLMPipe",
+]

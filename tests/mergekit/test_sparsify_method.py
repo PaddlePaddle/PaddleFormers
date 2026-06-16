@@ -25,7 +25,13 @@ class TestSparsifyMethod(unittest.TestCase):
     def setUpClass(cls):
         cls.tensor = np.array(
             [
-                [-0.834894061088562, 0.7672924399375916, -0.981352686882019, 0.8236614465713501, 0.19363074004650116],
+                [
+                    -0.834894061088562,
+                    0.7672924399375916,
+                    -0.981352686882019,
+                    0.8236614465713501,
+                    0.19363074004650116,
+                ],
                 [
                     0.7413361668586731,
                     -0.44731196761131287,
@@ -40,7 +46,13 @@ class TestSparsifyMethod(unittest.TestCase):
                     0.14241063594818115,
                     -0.8475964069366455,
                 ],
-                [0.598555326461792, 0.9459332823753357, -0.35118913650512695, 0.5437421798706055, 0.6906668543815613],
+                [
+                    0.598555326461792,
+                    0.9459332823753357,
+                    -0.35118913650512695,
+                    0.5437421798706055,
+                    0.6906668543815613,
+                ],
             ],
             dtype="float32",
         )
@@ -54,30 +66,60 @@ class TestSparsifyMethod(unittest.TestCase):
 
     def test_dare(self):
         np.random.seed(42)
-        merge_config = MergeConfig(sparsify_type="dare", rescale=True, reserve_p=0.7)
+        merge_config = MergeConfig(
+            sparsify_type="dare", rescale=True, reserve_p=0.7
+        )
         sparsify_method = SparsifyMethod(merge_config=merge_config)
         sparsify_tensor = sparsify_method.sparsify(self.tensor.copy())
         self.assertEqual(sparsify_tensor.shape, (4, 5))
 
     def test_magprune(self):
         np.random.seed(42)
-        merge_config = MergeConfig(sparsify_type="magprune", rescale=True, reserve_p=0.7)
+        merge_config = MergeConfig(
+            sparsify_type="magprune", rescale=True, reserve_p=0.7
+        )
         sparsify_method = SparsifyMethod(merge_config=merge_config)
         sparsify_tensor = sparsify_method.sparsify(self.tensor.copy())
         self.assertEqual(sparsify_tensor.shape, (4, 5))
 
     def test_trim(self):
         np.random.seed(42)
-        merge_config = MergeConfig(sparsify_type="trim", rescale=True, reserve_p=0.7)
+        merge_config = MergeConfig(
+            sparsify_type="trim", rescale=True, reserve_p=0.7
+        )
         sparsify_method = SparsifyMethod(merge_config=merge_config)
         sparsify_tensor = sparsify_method.sparsify(self.tensor.copy())
         self.assertEqual(sparsify_tensor.shape, (4, 5))
         expected_result = np.array(
             [
-                [-0.9439255595207214, 0.867495596408844, -1.1095106601715088, 0.9312260150909424, 0.0],
-                [0.8381496071815491, 0.0, 1.0790561437606812, 0.0, 0.6300279498100281],
-                [1.0320085287094116, 0.0, 0.956987738609314, 0.0, -0.958286702632904],
-                [0.6767225861549377, 1.0694657564163208, 0.0, 0.6147512197494507, 0.7808632254600525],
+                [
+                    -0.9439255595207214,
+                    0.867495596408844,
+                    -1.1095106601715088,
+                    0.9312260150909424,
+                    0.0,
+                ],
+                [
+                    0.8381496071815491,
+                    0.0,
+                    1.0790561437606812,
+                    0.0,
+                    0.6300279498100281,
+                ],
+                [
+                    1.0320085287094116,
+                    0.0,
+                    0.956987738609314,
+                    0.0,
+                    -0.958286702632904,
+                ],
+                [
+                    0.6767225861549377,
+                    1.0694657564163208,
+                    0.0,
+                    0.6147512197494507,
+                    0.7808632254600525,
+                ],
             ],
             dtype="float32",
         )
@@ -102,7 +144,9 @@ class TestSparsifyMethod(unittest.TestCase):
     def test_dare_paddle(self):
         paddle.seed(42)  # Fix random seed for reproducibility
         paddle_tensor = self.to_paddle_tensor(self.tensor)
-        merge_config = MergeConfig(sparsify_type="dare", rescale=True, reserve_p=0.7, tensor_type="pd")
+        merge_config = MergeConfig(
+            sparsify_type="dare", rescale=True, reserve_p=0.7, tensor_type="pd"
+        )
         sparsify_method = SparsifyMethod(merge_config=merge_config)
         sparsify_tensor = sparsify_method.sparsify(paddle_tensor)
         self.assertEqual(sparsify_tensor.shape, paddle_tensor.shape)
@@ -110,7 +154,12 @@ class TestSparsifyMethod(unittest.TestCase):
     def test_magprune_paddle(self):
         paddle.seed(42)  # Fix random seed for reproducibility
         paddle_tensor = self.to_paddle_tensor(self.tensor)
-        merge_config = MergeConfig(sparsify_type="magprune", rescale=True, reserve_p=0.7, tensor_type="pd")
+        merge_config = MergeConfig(
+            sparsify_type="magprune",
+            rescale=True,
+            reserve_p=0.7,
+            tensor_type="pd",
+        )
         sparsify_method = SparsifyMethod(merge_config=merge_config)
         sparsify_tensor = sparsify_method.sparsify(paddle_tensor)
         self.assertEqual(sparsify_tensor.shape, paddle_tensor.shape)
@@ -118,17 +167,43 @@ class TestSparsifyMethod(unittest.TestCase):
     def test_trim_paddle(self):
         paddle.seed(42)  # Fix random seed for reproducibility
         paddle_tensor = self.to_paddle_tensor(self.tensor)
-        merge_config = MergeConfig(sparsify_type="trim", rescale=True, reserve_p=0.7, tensor_type="pd")
+        merge_config = MergeConfig(
+            sparsify_type="trim", rescale=True, reserve_p=0.7, tensor_type="pd"
+        )
         sparsify_method = SparsifyMethod(merge_config=merge_config)
         sparsify_tensor = sparsify_method.sparsify(paddle_tensor)
         self.assertEqual(sparsify_tensor.shape, paddle_tensor.shape)
 
         expected_result = paddle.to_tensor(
             [
-                [-0.9439255595207214, 0.867495596408844, -1.1095106601715088, 0.9312260150909424, 0.0],
-                [0.8381496071815491, 0.0, 1.0790561437606812, 0.0, 0.6300279498100281],
-                [1.0320085287094116, 0.0, 0.956987738609314, 0.0, -0.958286702632904],
-                [0.6767225861549377, 1.0694657564163208, 0.0, 0.6147512197494507, 0.7808632254600525],
+                [
+                    -0.9439255595207214,
+                    0.867495596408844,
+                    -1.1095106601715088,
+                    0.9312260150909424,
+                    0.0,
+                ],
+                [
+                    0.8381496071815491,
+                    0.0,
+                    1.0790561437606812,
+                    0.0,
+                    0.6300279498100281,
+                ],
+                [
+                    1.0320085287094116,
+                    0.0,
+                    0.956987738609314,
+                    0.0,
+                    -0.958286702632904,
+                ],
+                [
+                    0.6767225861549377,
+                    1.0694657564163208,
+                    0.0,
+                    0.6147512197494507,
+                    0.7808632254600525,
+                ],
             ],
             dtype="float32",
         )

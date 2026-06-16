@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Tuple
 
 import numpy as np
 import paddle
@@ -41,7 +40,7 @@ class MoECommunicationInterface(ABC):
         num_experts: int,
         topk: int,
         token_dispatcher,
-    ) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
+    ) -> tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         """
         Args:
             hidden_states: Input hidden states, shape: [batch_size*seq_len, hidden_size] or [batch_size, seq_len, hidden_size]
@@ -88,7 +87,7 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
         num_experts: int,
         topk: int,
         token_dispatcher,
-    ) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
+    ) -> tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         """
         Forward propagation for EP (Expert Parallelism) communication
 
@@ -133,19 +132,28 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
         tokens_per_expert = tokens_per_expert.detach()
         sorted_tokens_shape = sorted_tokens.shape
 
-        tokens_per_ep_rank = tokens_per_expert.reshape([expert_model_parallel_size, -1]).sum(axis=1)
+        tokens_per_ep_rank = tokens_per_expert.reshape(
+            [expert_model_parallel_size, -1]
+        ).sum(axis=1)
         # First All-to-All: Exchange expert token counts across ranks
-        tokens_per_expert_group = _AllToAll.apply([tokens_per_expert.shape[0]], tokens_per_expert, group=moe_group)
+        tokens_per_expert_group = _AllToAll.apply(
+            [tokens_per_expert.shape[0]], tokens_per_expert, group=moe_group
+        )
 
         if tokens_per_expert_group.sum().item() == 0:
             self.is_empty_tokens = True
         else:
             self.is_empty_tokens = False
 
-        tokens_per_expert_group_sum = tokens_per_expert_group.reshape([expert_model_parallel_size, -1])
+        tokens_per_expert_group_sum = tokens_per_expert_group.reshape(
+            [expert_model_parallel_size, -1]
+        )
         output_splits = tokens_per_expert_group_sum.sum(axis=1).cpu().tolist()
         input_split_sizes = tokens_per_ep_rank.cpu().tolist()
-        output_shape = [tokens_per_expert_group.sum(axis=0).cpu().item(), sorted_tokens.shape[1]]
+        output_shape = [
+            tokens_per_expert_group.sum(axis=0).cpu().item(),
+            sorted_tokens.shape[1],
+        ]
 
         # Second All-to-All: Exchange expert tokens across ranks. `gathered_tokens` are the tokens that will be processed by current rank
         gathered_tokens = _AllToAll.apply(
@@ -159,7 +167,9 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
         tokens_per_expert_post_gather = tokens_per_expert_group.reshape(
             [expert_model_parallel_size, num_experts_per_device]
         ).sum(axis=0)
-        gatherd_idxs = np.zeros(shape=(gathered_tokens.shape[0],), dtype=np.int32)
+        gatherd_idxs = np.zeros(
+            shape=(gathered_tokens.shape[0],), dtype=np.int32
+        )
         s = 0
         for i, k in enumerate(tokens_per_expert_group.cpu().numpy()):
             gatherd_idxs[s : s + k] = i % num_experts_per_device
@@ -203,11 +213,14 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
         expert_major_weights = gates_masked[
             sorted_token_indices, sorted_expert_indices
         ]  # shape [batch_size * seq_len * num_experts_per_token]
-        weighted_gathered_tokens = gathered_tokens * expert_major_weights.unsqueeze(-1).to(
-            gathered_tokens.dtype
+        weighted_gathered_tokens = (
+            gathered_tokens
+            * expert_major_weights.unsqueeze(-1).to(gathered_tokens.dtype)
         )  # shape [batch_size * seq_len * num_experts_per_token, d_model]
 
-        final_output_empty = paddle.zeros(reshaped_input.shape, dtype=gathered_tokens.dtype)
+        final_output_empty = paddle.zeros(
+            reshaped_input.shape, dtype=gathered_tokens.dtype
+        )
         token_indices_for_scatter = sorted_token_indices.unsqueeze(-1).expand(
             -1, d_model
         )  # shape [batch_size * seq_len * num_experts_per_token, d_model]
@@ -217,7 +230,10 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
         ].squeeze()  # shape [batch_size * seq_len * num_experts_per_token, 1]
 
         final_output = paddle.index_add(
-            final_output_empty, index=token_indices_for_scatter_single, axis=0, value=weighted_gathered_tokens
+            final_output_empty,
+            index=token_indices_for_scatter_single,
+            axis=0,
+            value=weighted_gathered_tokens,
         )
 
         return final_output
@@ -228,12 +244,23 @@ class DeepEPMoECommunication(nn.Layer, MoECommunicationInterface):
     DeepEP EP
     """
 
-    def expert_forward(self, dispatched_input, tokens_per_expert, experts, moe_rank, num_experts_per_device):
+    def expert_forward(
+        self,
+        dispatched_input,
+        tokens_per_expert,
+        experts,
+        moe_rank,
+        num_experts_per_device,
+    ):
         outputs = []
         tokens_per_expert = (
-            tokens_per_expert.tolist() if not isinstance(tokens_per_expert, list) else tokens_per_expert
+            tokens_per_expert.tolist()
+            if not isinstance(tokens_per_expert, list)
+            else tokens_per_expert
         )
-        chunks = paddle.split(dispatched_input, num_or_sections=tokens_per_expert, axis=0)
+        chunks = paddle.split(
+            dispatched_input, num_or_sections=tokens_per_expert, axis=0
+        )
         for i, chunk in enumerate(chunks):
             chunk = chunk.contiguous()
             current_expert_idx = i + moe_rank * num_experts_per_device
@@ -261,16 +288,22 @@ class DeepEPMoECommunication(nn.Layer, MoECommunicationInterface):
         num_experts: int,
         topk: int,
         token_dispatcher,
-    ) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
+    ) -> tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         if expert_model_parallel_size <= 1:
             return hidden_states
-        (dispatched_input, tokens_per_expert) = token_dispatcher.token_permutation(
-            hidden_states,
-            gates_masked,
-            mask,
+        (dispatched_input, tokens_per_expert) = (
+            token_dispatcher.token_permutation(
+                hidden_states,
+                gates_masked,
+                mask,
+            )
         )
         expert_output = self.expert_forward(
-            dispatched_input, tokens_per_expert, experts, moe_rank, num_experts_per_device
+            dispatched_input,
+            tokens_per_expert,
+            experts,
+            moe_rank,
+            num_experts_per_device,
         )
         output, _ = token_dispatcher.token_unpermutation(expert_output, None)
         return output

@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,7 +16,7 @@
 import copy
 import io
 from collections import defaultdict
-from typing import Any, Dict, List, Union
+from typing import Any
 
 import numpy as np
 from PIL import Image
@@ -85,7 +84,9 @@ class Ernie4_5_VLProcessor(ProcessorMixin):
         video_fps: int = 2,
         **kwargs,
     ):
-        super().__init__(image_processor, tokenizer, chat_template=chat_template)
+        super().__init__(
+            image_processor, tokenizer, chat_template=chat_template
+        )
         self.tokenizer.ignored_index = -100
 
         # Convolution sizes for patch aggregation
@@ -112,46 +113,61 @@ class Ernie4_5_VLProcessor(ProcessorMixin):
         self.image_end = self.IMG_END
         self.video_start = self.VID_START
         self.video_end = self.VID_END
-        self.image_patch_id = self.tokenizer.convert_tokens_to_ids("<|IMAGE_PLACEHOLDER|>")
+        self.image_patch_id = self.tokenizer.convert_tokens_to_ids(
+            "<|IMAGE_PLACEHOLDER|>"
+        )
 
         self.token_type_mapping = self._build_token_type_mapping()
         self.is_training = True
-        self.role_prefixes = {"system": "", "user": "User: ", "bot": "Assistant: "}
+        self.role_prefixes = {
+            "system": "",
+            "user": "User: ",
+            "bot": "Assistant: ",
+        }
 
-    def _build_token_type_mapping(self) -> Dict[Any, int]:
+    def _build_token_type_mapping(self) -> dict[Any, int]:
         mapping = defaultdict(lambda: IDS_TYPE_FLAG["text"])
-        for token in (self.IMG_START, self.IMG_END, self.VID_START, self.VID_END):
+        for token in (
+            self.IMG_START,
+            self.IMG_END,
+            self.VID_START,
+            self.VID_END,
+        ):
             mapping[token] = IDS_TYPE_FLAG["image"]
         mapping[self.image_patch_id] = IDS_TYPE_FLAG["image"]
         return mapping
 
     def _download_image(
         self,
-        item: Dict,
+        item: dict,
     ):
         """Download image from url and resize it to the specified size."""
         url_info = item.get("image_url", {})
         url = url_info.get("url")
         w = url_info.get("image_width", None)
         h = url_info.get("image_height", None)
-        data = get_downloadable(url, download_dir=RAW_IMAGE_DIR, save_to_disk=False)
+        data = get_downloadable(
+            url, download_dir=RAW_IMAGE_DIR, save_to_disk=False
+        )
 
         img = Image.open(io.BytesIO(data) if isinstance(data, bytes) else data)
         if w and h:
             img = img.resize((w, h))
         return img
 
-    def _download_video(self, item: Dict):
+    def _download_video(self, item: dict):
         """Download video from url and resize it to the specified size."""
         url_info = item.get("video_url", {})
         url = url_info.get("url")
 
         frames = self._load_and_process_video(url, item)
 
-        pixel_stack = np.stack([np.array(f.convert("RGB")) for f in frames], axis=0)
+        pixel_stack = np.stack(
+            [np.array(f.convert("RGB")) for f in frames], axis=0
+        )
         return pixel_stack
 
-    def process_vision_info(self, messages: List[Dict[str, Any]]):
+    def process_vision_info(self, messages: list[dict[str, Any]]):
         """Preprocess messages into lists of text, images, and videos."""
         images = []
         videos = []
@@ -173,11 +189,11 @@ class Ernie4_5_VLProcessor(ProcessorMixin):
 
     def __call__(
         self,
-        text: List[str] = None,
-        images: List[Image.Image] = None,
-        videos: List[List[Image.Image]] = None,
+        text: list[str] | None = None,
+        images: list[Image.Image] | None = None,
+        videos: list[list[Image.Image]] | None = None,
         **kwargs,
-    ) -> Dict[str, Union[np.ndarray, List[np.ndarray], None]]:
+    ) -> dict[str, np.ndarray | list[np.ndarray] | None]:
         """
         Convert chat messages into model inputs.
         Returns a dict with input_ids, token_type_ids, position_ids, images, grid_thw, image_type_ids, labels.
@@ -203,11 +219,15 @@ class Ernie4_5_VLProcessor(ProcessorMixin):
         texts = text[0]
 
         new_video_seg = True
-        for text_with_image in texts.split(self.VID_START + "<|video@placeholder|>" + self.VID_END):
+        for text_with_image in texts.split(
+            self.VID_START + "<|video@placeholder|>" + self.VID_END
+        ):
             new_text_seg = True
             if not new_video_seg:
                 self._add_video(videos[outputs["video_cnt"]], outputs)
-            for text in text_with_image.split(self.IMG_START + "<|image@placeholder|>" + self.IMG_END):
+            for text in text_with_image.split(
+                self.IMG_START + "<|image@placeholder|>" + self.IMG_END
+            ):
                 if not new_text_seg:
                     self._add_image(images[outputs["pic_cnt"]], outputs)
                 self._add_text(text, outputs)
@@ -229,18 +249,24 @@ class Ernie4_5_VLProcessor(ProcessorMixin):
 
         return BatchFeature(data=outputs, tensor_type=return_tensors)
 
-    def _add_special_token(self, token: Union[str, int], outputs: Dict) -> None:
+    def _add_special_token(self, token: str | int, outputs: dict) -> None:
         """add special token to outputs"""
-        token_id = token if isinstance(token, int) else self.tokenizer.convert_tokens_to_ids(token)
+        token_id = (
+            token
+            if isinstance(token, int)
+            else self.tokenizer.convert_tokens_to_ids(token)
+        )
         outputs["input_ids"].append(token_id)
         outputs["token_type_ids"].append(self.token_type_mapping[token])
         pos = outputs["cur_position"]
         outputs["position_ids"].append([pos] * 3)
         outputs["cur_position"] += 1
 
-    def _add_text(self, text: str, outputs: Dict) -> None:
+    def _add_text(self, text: str, outputs: dict) -> None:
         """add text to outputs"""
-        tokens = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(text))
+        tokens = self.tokenizer.convert_tokens_to_ids(
+            self.tokenizer.tokenize(text)
+        )
         outputs["input_ids"].extend(tokens)
         outputs["token_type_ids"].extend([IDS_TYPE_FLAG["text"]] * len(tokens))
 
@@ -249,7 +275,7 @@ class Ernie4_5_VLProcessor(ProcessorMixin):
             outputs["position_ids"].append([start + i] * 3)
         outputs["cur_position"] += len(tokens)
 
-    def _add_image(self, img: Image.Image, outputs: Dict) -> None:
+    def _add_image(self, img: Image.Image, outputs: dict) -> None:
         """add image to outputs"""
         outputs["pic_cnt"] += 1
         self._add_special_token(self.IMG_START, outputs)
@@ -265,7 +291,9 @@ class Ernie4_5_VLProcessor(ProcessorMixin):
         outputs["input_ids"].extend([self.image_patch_id] * num_tokens)
         outputs["token_type_ids"].extend([IDS_TYPE_FLAG["image"]] * num_tokens)
 
-        pos_ids = self._compute_3d_positions(1, patches_h, patches_w, outputs["cur_position"])
+        pos_ids = self._compute_3d_positions(
+            1, patches_h, patches_w, outputs["cur_position"]
+        )
         outputs["position_ids"].extend(pos_ids)
         outputs["cur_position"] = np.max(pos_ids) + 1
 
@@ -287,9 +315,12 @@ class Ernie4_5_VLProcessor(ProcessorMixin):
     def render_frame_timestamp(self, frame, timestamp, font_rate=0.1):
         return render_frame_timestamp(frame, timestamp, font_rate)
 
-    def _add_video(self, pixel_stack, outputs: Dict) -> None:
+    def _add_video(self, pixel_stack, outputs: dict) -> None:
         if not isinstance(pixel_stack, np.ndarray):
-            pixel_stack = np.stack([np.array(frame.convert("RGB")) for frame in pixel_stack], axis=0)
+            pixel_stack = np.stack(
+                [np.array(frame.convert("RGB")) for frame in pixel_stack],
+                axis=0,
+            )
 
         outputs["video_cnt"] += 1
         self._add_special_token(self.VID_START, outputs)
@@ -301,14 +332,18 @@ class Ernie4_5_VLProcessor(ProcessorMixin):
             max_pixels=self.video_max_pixels,
         )[1]
         num_frames = pixel_stack.shape[0]
-        num_tokens = (num_frames * patches_h * patches_w) // (self.spatial_conv_size**2 * self.temporal_conv_size)
+        num_tokens = (num_frames * patches_h * patches_w) // (
+            self.spatial_conv_size**2 * self.temporal_conv_size
+        )
 
         ret = self.image_processor.preprocess(
             images=None,
             videos=pixel_stack,
             do_normalize=False,
             do_rescale=False,
-            predetermined_grid_thw=np.array([[patches_h, patches_w]] * num_frames),
+            predetermined_grid_thw=np.array(
+                [[patches_h, patches_w]] * num_frames
+            ),
             do_convert_rgb=True,
             input_data_format=ChannelDimension.LAST,
         )
@@ -319,22 +354,31 @@ class Ernie4_5_VLProcessor(ProcessorMixin):
         outputs["input_ids"].extend([self.image_patch_id] * num_tokens)
         outputs["token_type_ids"].extend([IDS_TYPE_FLAG["video"]] * num_tokens)
 
-        pos_ids = self._compute_3d_positions(num_frames, patches_h, patches_w, outputs["cur_position"])
+        pos_ids = self._compute_3d_positions(
+            num_frames, patches_h, patches_w, outputs["cur_position"]
+        )
         outputs["position_ids"].extend(pos_ids)
         outputs["cur_position"] = np.max(pos_ids) + 1
 
         self._add_special_token(self.VID_END, outputs)
 
-    def _load_and_process_video(self, url: str, item: Dict) -> List[Image.Image]:
+    def _load_and_process_video(
+        self, url: str, item: dict
+    ) -> list[Image.Image]:
         reader, meta, path = read_video_paddlecodec(url, save_to_disk=False)
 
-        video_frame_args = dict()
+        video_frame_args = {}
         video_frame_args["fps"] = item.get("fps", -1)
         video_frame_args["min_frames"] = item.get("min_frames", self.min_frames)
         video_frame_args["max_frames"] = item.get("max_frames", self.max_frames)
         video_frame_args["target_frames"] = item.get("target_frames", -1)
-        video_frame_args["frames_sample"] = item.get("frames_sample", self.frames_sample)
-        if video_frame_args["fps"] <= 0 and video_frame_args["target_frames"] <= 0:
+        video_frame_args["frames_sample"] = item.get(
+            "frames_sample", self.frames_sample
+        )
+        if (
+            video_frame_args["fps"] <= 0
+            and video_frame_args["target_frames"] <= 0
+        ):
             video_frame_args["fps"] = self.fps
             video_frame_args["target_frames"] = self.target_frames
 
@@ -349,7 +393,7 @@ class Ernie4_5_VLProcessor(ProcessorMixin):
             frames_sample=video_frame_args["frames_sample"],
         )
 
-        frames: List[Image.Image] = []
+        frames: list[Image.Image] = []
         for img_array, ts in zip(frames_data, timestamps):
             frames.append(self.render_frame_timestamp(img_array, ts))
         # Ensure even number of frames for temporal conv
@@ -364,38 +408,61 @@ class Ernie4_5_VLProcessor(ProcessorMixin):
         # Priority: video_target_frames > (video_min_frames, video_max_frames) > video_fps
         if video_frame_args["target_frames"] > 0:
             if video_frame_args["fps"] > 0:
-                raise ValueError("fps must not be positive if target_frames is given")
+                raise ValueError(
+                    "fps must not be positive if target_frames is given"
+                )
             if (
                 video_frame_args["min_frames"] > 0
-                and video_frame_args["target_frames"] < video_frame_args["min_frames"]
+                and video_frame_args["target_frames"]
+                < video_frame_args["min_frames"]
             ):
                 raise ValueError("target_frames must be larger than min_frames")
             if (
                 video_frame_args["max_frames"] > 0
-                and video_frame_args["target_frames"] > video_frame_args["max_frames"]
+                and video_frame_args["target_frames"]
+                > video_frame_args["max_frames"]
             ):
-                raise ValueError("target_frames must be smaller than max_frames")
+                raise ValueError(
+                    "target_frames must be smaller than max_frames"
+                )
         else:
             if video_frame_args["fps"] <= 0:
-                raise ValueError("Must provide either positive target_fps or positive target_frames.")
-            frames_to_extract = int(video_meta["duration"] * video_frame_args["fps"])
+                raise ValueError(
+                    "Must provide either positive target_fps or positive target_frames."
+                )
+            frames_to_extract = int(
+                video_meta["duration"] * video_frame_args["fps"]
+            )
             video_frame_args["target_frames"] = frames_to_extract
             video_frame_args["fps"] = -1
 
             if (
                 video_frame_args["min_frames"] > 0
                 and video_frame_args["max_frames"] > 0
-                and video_frame_args["min_frames"] > video_frame_args["max_frames"]
+                and video_frame_args["min_frames"]
+                > video_frame_args["max_frames"]
             ):
                 raise ValueError("min_frames must be smaller than max_frames")
-            if video_frame_args["min_frames"] > 0 and frames_to_extract < video_frame_args["min_frames"]:
-                video_frame_args["target_frames"] = video_frame_args["min_frames"]
-            if video_frame_args["max_frames"] > 0 and frames_to_extract > video_frame_args["max_frames"]:
-                video_frame_args["target_frames"] = video_frame_args["max_frames"]
+            if (
+                video_frame_args["min_frames"] > 0
+                and frames_to_extract < video_frame_args["min_frames"]
+            ):
+                video_frame_args["target_frames"] = video_frame_args[
+                    "min_frames"
+                ]
+            if (
+                video_frame_args["max_frames"] > 0
+                and frames_to_extract > video_frame_args["max_frames"]
+            ):
+                video_frame_args["target_frames"] = video_frame_args[
+                    "max_frames"
+                ]
 
         return video_frame_args
 
-    def _compute_3d_positions(self, t: int, h: int, w: int, start_idx: int) -> List[List[int]]:
+    def _compute_3d_positions(
+        self, t: int, h: int, w: int, start_idx: int
+    ) -> list[list[int]]:
         # Downsample time if needed
         t_eff = t // self.temporal_conv_size if t != 1 else 1
         gh, gw = h // self.spatial_conv_size, w // self.spatial_conv_size
@@ -404,9 +471,12 @@ class Ernie4_5_VLProcessor(ProcessorMixin):
         w_idx = np.tile(np.arange(gw), t_eff * gh)
 
         coords = list(zip(time_idx, h_idx, w_idx))
-        return [[start_idx + ti, start_idx + hi, start_idx + wi] for ti, hi, wi in coords]
+        return [
+            [start_idx + ti, start_idx + hi, start_idx + wi]
+            for ti, hi, wi in coords
+        ]
 
-    def _pack_outputs(self, outs: Dict) -> Dict[str, Any]:
+    def _pack_outputs(self, outs: dict) -> dict[str, Any]:
         # Stack or nullify image-related fields
         if not outs["images"]:
             outs["images"] = []
@@ -419,7 +489,9 @@ class Ernie4_5_VLProcessor(ProcessorMixin):
 
         # Convert lists to arrays
         outs["input_ids"] = np.array(outs["input_ids"], dtype=np.int64)
-        outs["token_type_ids"] = np.array(outs["token_type_ids"], dtype=np.int64)
+        outs["token_type_ids"] = np.array(
+            outs["token_type_ids"], dtype=np.int64
+        )
         outs["position_ids"] = np.array(outs["position_ids"], dtype=np.int64)
         return outs
 
@@ -427,7 +499,12 @@ class Ernie4_5_VLProcessor(ProcessorMixin):
     def model_input_names(self):
         """get model input names"""
         tokenizer_input_names = self.tokenizer.model_input_names
-        image_processor_input_names = ["images", "grid_thw", "image_type_ids", "token_type_ids"]
+        image_processor_input_names = [
+            "images",
+            "grid_thw",
+            "image_type_ids",
+            "token_type_ids",
+        ]
         return list(tokenizer_input_names) + list(image_processor_input_names)
 
 

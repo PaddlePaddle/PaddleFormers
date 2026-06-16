@@ -33,7 +33,9 @@ class Ernie4_5_VL_TokenizationTest(unittest.TestCase):
     @set_proxy(DownloadSource.AISTUDIO)
     def test_slow_tokenizer_from_pretrained(self):
         tokenizer = Ernie4_5_VLTokenizer.from_pretrained(
-            self.from_pretrained_id, download_hub=HUB_FLAG, trust_remote_code=True
+            self.from_pretrained_id,
+            download_hub=HUB_FLAG,
+            trust_remote_code=True,
         )
         self.assertTrue(tokenizer is not None)
 
@@ -41,26 +43,36 @@ class Ernie4_5_VL_TokenizationTest(unittest.TestCase):
     def test_slow_tokenizer_save_pretrained(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tokenizer = Ernie4_5_VLTokenizer.from_pretrained(
-                self.from_pretrained_id, download_hub=HUB_FLAG, trust_remote_code=True
+                self.from_pretrained_id,
+                download_hub=HUB_FLAG,
+                trust_remote_code=True,
             )
             tokenizer.model_max_length = 512
             tokenizer.save_pretrained(tmpdir)
-            self.assertTrue(os.path.exists(os.path.join(tmpdir, "tokenizer_config.json")))
+            self.assertTrue(
+                os.path.exists(os.path.join(tmpdir, "tokenizer_config.json"))
+            )
 
     @set_proxy(DownloadSource.AISTUDIO)
     def test_tokenize(self):
         tokenizer = Ernie4_5_VLTokenizer.from_pretrained(
-            self.from_pretrained_id, download_hub=HUB_FLAG, trust_remote_code=True
+            self.from_pretrained_id,
+            download_hub=HUB_FLAG,
+            trust_remote_code=True,
         )
         text = "hello world, this is a tokenizer test"
         output_dict = tokenizer(text)
-        decode_text = tokenizer.decode(output_dict["input_ids"], skip_special_tokens=True)
+        decode_text = tokenizer.decode(
+            output_dict["input_ids"], skip_special_tokens=True
+        )
         self.assertEqual(text, decode_text)
 
     @set_proxy(DownloadSource.AISTUDIO)
     def test_special_token(self):
         tokenizer = Ernie4_5_VLTokenizer.from_pretrained(
-            self.from_pretrained_id, download_hub=HUB_FLAG, trust_remote_code=True
+            self.from_pretrained_id,
+            download_hub=HUB_FLAG,
+            trust_remote_code=True,
         )
 
         self.assertEqual(tokenizer.space_token, "<mask:1>")

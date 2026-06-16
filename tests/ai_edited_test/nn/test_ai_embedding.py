@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import MagicMock
 
 import paddle
-import paddle.nn as nn
+from paddle import nn
 
 
 class TestEmbedding(unittest.TestCase):
@@ -20,10 +20,15 @@ class TestEmbedding(unittest.TestCase):
         config = MagicMock()
         config.vocab_size = overrides.get("vocab_size", 100)
         config.hidden_size = overrides.get("hidden_size", 64)
-        config.tensor_model_parallel_size = overrides.get("tensor_model_parallel_size", 1)
+        config.tensor_model_parallel_size = overrides.get(
+            "tensor_model_parallel_size", 1
+        )
         config.sequence_parallel = False
         # Make get behave like a real dict-based config
-        config_data = {"vocab_size": config.vocab_size, "hidden_size": config.hidden_size}
+        config_data = {
+            "vocab_size": config.vocab_size,
+            "hidden_size": config.hidden_size,
+        }
         config_data.update(overrides)
         config.get = lambda key, default=None: config_data.get(key, default)
         return config

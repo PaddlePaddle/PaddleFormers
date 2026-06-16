@@ -39,15 +39,30 @@ from datetime import datetime
 
 def print_datetime(string):
     time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print("[" + string + "] datetime: {} ".format(time_str))
+    print("[" + string + f"] datetime: {time_str} ")
 
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_name_or_path", type=str, required=True, help="What model to use.")
+    parser.add_argument(
+        "--model_name_or_path",
+        type=str,
+        required=True,
+        help="What model to use.",
+    )
     group = parser.add_argument_group(title="data input/output")
-    group.add_argument("--input_path", type=str, required=True, help="Path to input JSON files.")
-    group.add_argument("--output_prefix", type=str, required=True, help="Output prefix to store output file.")
+    group.add_argument(
+        "--input_path",
+        type=str,
+        required=True,
+        help="Path to input JSON files.",
+    )
+    group.add_argument(
+        "--output_prefix",
+        type=str,
+        required=True,
+        help="Output prefix to store output file.",
+    )
     group.add_argument(
         "--data_format",
         type=str,
@@ -61,13 +76,21 @@ def get_args():
         default="text",
         help="For JSON format. Space separate listed of keys to extract from json",
     )
-    group.add_argument("--split_sentences", action="store_true", help="Split documents into sentences.")
+    group.add_argument(
+        "--split_sentences",
+        action="store_true",
+        help="Split documents into sentences.",
+    )
 
-    group.add_argument("--data_impl", type=str, default="mmap", choices=["lazy", "mmap"])
+    group.add_argument(
+        "--data_impl", type=str, default="mmap", choices=["lazy", "mmap"]
+    )
 
     group = parser.add_argument_group(title="chinese words")
     group.add_argument(
-        "--chinese", action="store_true", help="Is corpus need words segmentation step for chinese words."
+        "--chinese",
+        action="store_true",
+        help="Is corpus need words segmentation step for chinese words.",
     )
     group.add_argument(
         "--cn_whole_word_segment",
@@ -81,16 +104,47 @@ def get_args():
         choices=["lac", "seg", "jieba"],
         help="Words segment function for chinese words.",
     )
-    group.add_argument("--cn_splited", action="store_true", help="Is chinese corpus is split in to words.")
-    group.add_argument("--cn_split_dimer", type=str, default=" ", help="Split dimer between chinese words.")
+    group.add_argument(
+        "--cn_splited",
+        action="store_true",
+        help="Is chinese corpus is split in to words.",
+    )
+    group.add_argument(
+        "--cn_split_dimer",
+        type=str,
+        default=" ",
+        help="Split dimer between chinese words.",
+    )
 
     group = parser.add_argument_group(title="common config")
-    group.add_argument("--append_eos", action="store_true", help="Append an <eos> token to the end of a document.")
-    group.add_argument("--log_interval", type=int, default=100, help="Interval between progress updates")
-    group.add_argument("--workers", type=int, default=1, help="Number of worker processes to launch")
-    group.add_argument("--max_doc_num", type=int, default=sys.maxsize, help="Stop when reach max_doc_num.")
     group.add_argument(
-        "--max_repeated_len", type=int, default=100, help="The maximum length of the repeated characters to keep"
+        "--append_eos",
+        action="store_true",
+        help="Append an <eos> token to the end of a document.",
+    )
+    group.add_argument(
+        "--log_interval",
+        type=int,
+        default=100,
+        help="Interval between progress updates",
+    )
+    group.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Number of worker processes to launch",
+    )
+    group.add_argument(
+        "--max_doc_num",
+        type=int,
+        default=sys.maxsize,
+        help="Stop when reach max_doc_num.",
+    )
+    group.add_argument(
+        "--max_repeated_len",
+        type=int,
+        default=100,
+        help="The maximum length of the repeated characters to keep",
     )
 
     args = parser.parse_args()
@@ -171,7 +225,7 @@ def get_whole_word_mask_tokens(tokens, words, max_word_length=6):
     i = 0
     while i < len(tokens):
         # non-chinese character, then do word piece
-        if len(re.findall("[\u4E00-\u9FA5]", tokens[i])) == 0:
+        if len(re.findall("[\u4e00-\u9fa5]", tokens[i])) == 0:
             new_tokens.append(tokens[i])
             i += 1
             continue
@@ -196,7 +250,7 @@ def get_whole_word_mask_tokens(tokens, words, max_word_length=6):
     return new_tokens
 
 
-class IdentitySplitter(object):
+class IdentitySplitter:
     def tokenize(self, *text):
         return text
 
@@ -206,12 +260,14 @@ class NewlineSplitter:
         return text.split("\n")
 
 
-class Converter(object):
+class Converter:
     def __init__(self, args):
         self.args = args
 
     def initializer(self):
-        Converter.tokenizer = AutoTokenizer.from_pretrained(self.args.model_name_or_path)
+        Converter.tokenizer = AutoTokenizer.from_pretrained(
+            self.args.model_name_or_path
+        )
         if self.args.cn_whole_word_segment:
             # Extend chinese char vocab for ErnieTokinzer
             Converter.tokenizer.extend_chinese_char()
@@ -232,7 +288,9 @@ class Converter(object):
         # Split sentence whole words mask for chinese
         if self.args.cn_whole_word_segment:
             if self.args.cn_splited:
-                Converter.segment_func = lambda text: text.split(self.args.cn_split_dimer)
+                Converter.segment_func = lambda text: text.split(
+                    self.args.cn_split_dimer
+                )
             else:
                 CHINESE_SEG_FUNC = {
                     "lac": lexical_analysis_fn(),
@@ -293,7 +351,7 @@ class Converter(object):
         if len(doc_ids) > 0 and self.args.append_eos:
             if Converter.tokenizer.eos_token_id is None:
                 logger.warning(
-                    "{}: eos_token_id is not set, ".format(self.args.tokenizer_name)
+                    f"{self.args.tokenizer_name}: eos_token_id is not set, "
                     + "please set other tokenizer "
                     + "or config eos_token_id or unset append_eos."
                 )
@@ -327,7 +385,9 @@ def main():
 
     output_ids_files = args.output_prefix + ".bin"
     output_idx_files = args.output_prefix + ".idx"
-    builder = indexed_dataset.make_builder(output_ids_files, args.data_impl, save_dtype)
+    builder = indexed_dataset.make_builder(
+        output_ids_files, args.data_impl, save_dtype
+    )
 
     file_paths.sort()
 
@@ -367,7 +427,11 @@ def main():
                 current = time.time()
                 elapsed = current - startup_start
                 mbs = total_bytes_processed / elapsed / 1024 / 1024
-                print(f"Processed {step} documents", f"({step/elapsed:.2f} docs/s, {mbs:.4f} MB/s).", file=sys.stderr)
+                print(
+                    f"Processed {step} documents",
+                    f"({step / elapsed:.2f} docs/s, {mbs:.4f} MB/s).",
+                    file=sys.stderr,
+                )
             if step >= args.max_doc_num:
                 break
 

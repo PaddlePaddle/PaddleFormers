@@ -81,7 +81,6 @@ class RandomSingleSidePadding:
         self.fill = fill
 
     def __call__(self, img):
-
         pad_amount = random.randint(self.min_pad, self.max_pad)
         if pad_amount == 0:
             return img

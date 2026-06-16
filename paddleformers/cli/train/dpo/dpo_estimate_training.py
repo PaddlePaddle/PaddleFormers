@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-""" Estimate DPO """
+"""Estimate DPO"""
 
 import json
 import os
@@ -20,12 +20,11 @@ import os
 import numpy as np
 import paddle
 
-from paddleformers.utils.log import logger
-
 # isort: off
 # fmt: off
 # isort: on
 from paddleformers.datasets.loader import create_dataset
+from paddleformers.utils.log import logger
 
 
 def calculate_acc_steps(num_samples, train_batch, dataset_world_size, per_device_train_batch_size):

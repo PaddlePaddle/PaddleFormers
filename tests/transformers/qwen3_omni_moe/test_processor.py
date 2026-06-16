@@ -44,13 +44,19 @@ class Qwen3_Omni_ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         return AutoProcessor.from_pretrained(self.tmpdir, **kwargs).tokenizer
 
     def get_image_processor(self, **kwargs):
-        return AutoProcessor.from_pretrained(self.tmpdir, **kwargs).image_processor
+        return AutoProcessor.from_pretrained(
+            self.tmpdir, **kwargs
+        ).image_processor
 
     def get_video_processor(self, **kwargs):
-        return AutoProcessor.from_pretrained(self.tmpdir, **kwargs).video_processor
+        return AutoProcessor.from_pretrained(
+            self.tmpdir, **kwargs
+        ).video_processor
 
     def get_feature_extractor(self, **kwargs):
-        return AutoProcessor.from_pretrained(self.tmpdir, **kwargs).feature_extractor
+        return AutoProcessor.from_pretrained(
+            self.tmpdir, **kwargs
+        ).feature_extractor
 
     def get_processor(self, **kwargs):
         return AutoProcessor.from_pretrained(self.tmpdir, **kwargs)
@@ -74,10 +80,22 @@ class Qwen3_Omni_ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         processor = Qwen3OmniMoeProcessor.from_pretrained(self.tmpdir)
 
         self.assertEqual(processor.tokenizer.get_vocab(), tokenizer.get_vocab())
-        self.assertEqual(processor.image_processor.to_json_string(), image_processor.to_json_string())
-        self.assertEqual(processor.image_processor.__class__.__name__, "Qwen2VLImageProcessorFast")
-        self.assertEqual(processor.feature_extractor.__class__.__name__, "WhisperFeatureExtractor")
-        self.assertEqual(processor.video_processor.__class__.__name__, "Qwen2VLVideoProcessor")
+        self.assertEqual(
+            processor.image_processor.to_json_string(),
+            image_processor.to_json_string(),
+        )
+        self.assertEqual(
+            processor.image_processor.__class__.__name__,
+            "Qwen2VLImageProcessorFast",
+        )
+        self.assertEqual(
+            processor.feature_extractor.__class__.__name__,
+            "WhisperFeatureExtractor",
+        )
+        self.assertEqual(
+            processor.video_processor.__class__.__name__,
+            "Qwen2VLVideoProcessor",
+        )
 
     def test_image_processor(self):
         image_processor = self.get_image_processor()
@@ -94,10 +112,16 @@ class Qwen3_Omni_ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         image_input = self.prepare_image_inputs()
 
         input_image_proc = image_processor(image_input, return_tensors="pd")
-        input_processor = processor(images=image_input, text="dummy", return_tensors="pd")
+        input_processor = processor(
+            images=image_input, text="dummy", return_tensors="pd"
+        )
 
         for key in input_image_proc:
-            self.assertAlmostEqual(input_image_proc[key].sum(), input_processor[key].sum(), delta=1e-2)
+            self.assertAlmostEqual(
+                input_image_proc[key].sum(),
+                input_processor[key].sum(),
+                delta=1e-2,
+            )
 
     def test_processor(self):
         image_processor = self.get_image_processor()
@@ -113,9 +137,14 @@ class Qwen3_Omni_ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
 
         input_str = "lower newer"
         image_input = self.prepare_image_inputs()
-        inputs = processor(text=input_str, images=image_input, return_tensors="pd")
+        inputs = processor(
+            text=input_str, images=image_input, return_tensors="pd"
+        )
 
-        self.assertListEqual(list(inputs.keys()), ["input_ids", "attention_mask", "pixel_values", "image_grid_thw"])
+        self.assertListEqual(
+            list(inputs.keys()),
+            ["input_ids", "attention_mask", "pixel_values", "image_grid_thw"],
+        )
 
         # test if it raises when no input is passed
         with self.assertRaises(ValueError):

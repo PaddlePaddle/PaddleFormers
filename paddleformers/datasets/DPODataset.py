@@ -15,7 +15,7 @@
 import os
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Optional
 
 import numpy as np
 from paddle.io import Dataset, IterableDataset
@@ -26,7 +26,9 @@ from paddleformers.datasets.data_utils import (
     print_debug_info,
 )
 from paddleformers.datasets.reader.mix_datasets import create_dataset_instance
-from paddleformers.datasets.reader.multi_source_datasets import MultiSourceDataset
+from paddleformers.datasets.reader.multi_source_datasets import (
+    MultiSourceDataset,
+)
 from paddleformers.utils.env import NONE_CHAT_TEMPLATE
 from paddleformers.utils.log import logger
 
@@ -37,36 +39,43 @@ LOGGER_COUNT = 0
 class Sequence:
     """Sequence."""
 
-    token_ids: Optional[List[int]]
-    position_ids: Optional[List[int]]
-    attention_mask: Optional[List[List[int]]]
-    attn_mask_startend_row_indices: Optional[List[int]]
-    response_labels: List[int]
-    response_index: List[int]
+    token_ids: Optional[list[int]]
+    position_ids: Optional[list[int]]
+    attention_mask: Optional[list[list[int]]]
+    attn_mask_startend_row_indices: Optional[list[int]]
+    response_labels: list[int]
+    response_index: list[int]
     score_delta: float
-    has_mm: List[bool]
-    images: List[str] = field(default_factory=list)
-    videos: List[str] = field(default_factory=list)
-    audios: List[str] = field(default_factory=list)
-    mm_inputs: Dict = field(default_factory=dict)
+    has_mm: list[bool]
+    images: list[str] = field(default_factory=list)
+    videos: list[str] = field(default_factory=list)
+    audios: list[str] = field(default_factory=list)
+    mm_inputs: dict = field(default_factory=dict)
 
 
 class BaseDPODataSet:
     def __init__(self, **dataset_config):
-
         # parameter init
         self.tokenizer = dataset_config.get("tokenizer", None)
         self.processor = dataset_config.get("processor", None)
         self.max_seq_len = dataset_config.get("max_seq_len", 8192)
         self.template = dataset_config.get("template_instance", None)
         self.template_backend = dataset_config.get("template_backend", "jinja")
-        self.efficient_eos = True if not self.template else getattr(self.template, "efficient_eos", True)
+        self.efficient_eos = (
+            True
+            if not self.template
+            else getattr(self.template, "efficient_eos", True)
+        )
         self.split_multi_turn = dataset_config.get("split_multi_turn", False)
         self.packing = dataset_config.get("packing", False)
         self.greedy_intokens = dataset_config.get("greedy_intokens", True)
         self.buffer_size = dataset_config.get("buffer_size", 500)
-        self.use_filtered_label_loss = dataset_config.get("use_filtered_label_loss", False)
-        self.use_attn_mask_startend_row_indices = dataset_config.get("use_attn_mask_startend_row_indices", True)
+        self.use_filtered_label_loss = dataset_config.get(
+            "use_filtered_label_loss", False
+        )
+        self.use_attn_mask_startend_row_indices = dataset_config.get(
+            "use_attn_mask_startend_row_indices", True
+        )
         self.is_valid = dataset_config.get("is_valid", False)
 
         # data loader + multisource dataset mix
@@ -91,7 +100,6 @@ class BaseDPODataSet:
         return len(self.mix_datasets)
 
     def _generate_sequences(self):
-
         # prepare epoch data
         batch_sequence, cur_len = [], 0
         dataset_iterator = get_worker_sliced_iterator(self.mix_datasets)
@@ -102,7 +110,9 @@ class BaseDPODataSet:
                 try:
                     sequence = self._postprocess_sequence(example)
                 except Exception as e:
-                    print(f"Warning: Error processing example, skipping. Error: {str(e)}")
+                    print(
+                        f"Warning: Error processing example, skipping. Error: {e!s}"
+                    )
                     continue
                 if sequence is None:
                     continue
@@ -120,7 +130,9 @@ class BaseDPODataSet:
                     try:
                         sequence = self._postprocess_sequence(example)
                     except Exception as e:
-                        print(f"Warning: Error processing example, skipping. Error: {str(e)}")
+                        print(
+                            f"Warning: Error processing example, skipping. Error: {e!s}"
+                        )
                         continue
                     if sequence is None:
                         continue
@@ -129,7 +141,10 @@ class BaseDPODataSet:
                         cur_len += len(sequence.token_ids)
                     else:
                         yield batch_sequence
-                        batch_sequence, cur_len = [sequence], len(sequence.token_ids)
+                        batch_sequence, cur_len = (
+                            [sequence],
+                            len(sequence.token_ids),
+                        )
 
                 if len(batch_sequence) > 0:
                     yield batch_sequence
@@ -141,14 +156,18 @@ class BaseDPODataSet:
                     try:
                         sequence = self._postprocess_sequence(example)
                     except Exception as e:
-                        print(f"Warning: Error processing example, skipping. Error: {str(e)}")
+                        print(
+                            f"Warning: Error processing example, skipping. Error: {e!s}"
+                        )
                         continue
                     if sequence is None:
                         continue
                     sequence_buffer.append(sequence)
 
                     if len(sequence_buffer) == buffer_size:
-                        sequence_pack = self._generate_greedy_packs(sequence_buffer)
+                        sequence_pack = self._generate_greedy_packs(
+                            sequence_buffer
+                        )
                         for pack in sequence_pack:
                             yield pack
                         sequence_buffer = []
@@ -175,9 +194,14 @@ class BaseDPODataSet:
             if len(left_len_list) > 0:
                 max_left_len_index = left_len_list.argmax()
 
-            if len(left_len_list) == 0 or left_len_list[max_left_len_index] < sequence_len:
+            if (
+                len(left_len_list) == 0
+                or left_len_list[max_left_len_index] < sequence_len
+            ):
                 sequence_pack.append([sequence])
-                left_len_list = np.append(left_len_list, np.array([self.max_seq_len - sequence_len]))
+                left_len_list = np.append(
+                    left_len_list, np.array([self.max_seq_len - sequence_len])
+                )
             else:
                 sequence_pack[max_left_len_index].append(sequence)
                 left_len_list[max_left_len_index] -= sequence_len
@@ -201,7 +225,10 @@ class BaseDPODataSet:
                 - score_delta: Score difference (fixed to 1.0)
                 - has_mm: List indicating multimedia presence in "messages"+"chosen_response" and "messages"+"rejected_response"
         """
-        chosen_m, rejected_m = deepcopy(example["messages"]), deepcopy(example["messages"])
+        chosen_m, rejected_m = (
+            deepcopy(example["messages"]),
+            deepcopy(example["messages"]),
+        )
         if self.template_backend == "jinja":
             # The Jinja backend will concatenate the "system" separately and place it at the beginning.
             session_start_index = (
@@ -220,11 +247,18 @@ class BaseDPODataSet:
             for message in messages:
                 if isinstance(message, dict) and "content" in message:
                     content = message["content"]
-                    if "<image>" in content or "<audio>" in content or "<video>" in content:
+                    if (
+                        "<image>" in content
+                        or "<audio>" in content
+                        or "<video>" in content
+                    ):
                         return True
             return False
 
-        has_mm = [check_multimedia_tags(chosen_m), check_multimedia_tags(rejected_m)]
+        has_mm = [
+            check_multimedia_tags(chosen_m),
+            check_multimedia_tags(rejected_m),
+        ]
 
         example["chosen"] = {"messages": chosen_m}
         example["rejected"] = {"messages": rejected_m}
@@ -249,11 +283,19 @@ class BaseDPODataSet:
             if not self.tokenizer.chat_template:
                 self.tokenizer.chat_template = NONE_CHAT_TEMPLATE
             if self.split_multi_turn:
-                chosen_encoded_messages = postprocess_fc_sequence(self.tokenizer, example["chosen"])
-                rejected_encoded_messages = postprocess_fc_sequence(self.tokenizer, example["rejected"])
+                chosen_encoded_messages = postprocess_fc_sequence(
+                    self.tokenizer, example["chosen"]
+                )
+                rejected_encoded_messages = postprocess_fc_sequence(
+                    self.tokenizer, example["rejected"]
+                )
             else:
-                chosen_encoded_messages = self.tokenizer.encode_chat_inputs(example["chosen"])
-                rejected_encoded_messages = self.tokenizer.encode_chat_inputs(example["rejected"])
+                chosen_encoded_messages = self.tokenizer.encode_chat_inputs(
+                    example["chosen"]
+                )
+                rejected_encoded_messages = self.tokenizer.encode_chat_inputs(
+                    example["rejected"]
+                )
         else:
             mm_inputs = self.template.mm_plugin.get_mm_inputs(
                 images,
@@ -266,25 +308,45 @@ class BaseDPODataSet:
                 batch_ids=None,
             )
             chosen_messages = self.template.mm_plugin.process_messages(
-                example["chosen"]["messages"], images, videos, audios, mm_inputs, self.processor
+                example["chosen"]["messages"],
+                images,
+                videos,
+                audios,
+                mm_inputs,
+                self.processor,
             )
             rejected_messages = self.template.mm_plugin.process_messages(
-                example["rejected"]["messages"], images, videos, audios, mm_inputs, self.processor
+                example["rejected"]["messages"],
+                images,
+                videos,
+                audios,
+                mm_inputs,
+                self.processor,
             )
-            chosen_encoded_messages = self.template.encode_multiturn(self.tokenizer, chosen_messages, system, tools)
+            chosen_encoded_messages = self.template.encode_multiturn(
+                self.tokenizer, chosen_messages, system, tools
+            )
             rejected_encoded_messages = self.template.encode_multiturn(
                 self.tokenizer, rejected_messages, system, tools
             )
 
         # 2.Add EOS at the end of the response section
         if self.template_backend == "custom":
-            suffix_ids = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(self.template.suffix[-1]))
+            suffix_ids = self.tokenizer.convert_tokens_to_ids(
+                self.tokenizer.tokenize(self.template.suffix[-1])
+            )
         else:
             suffix_ids = [self.tokenizer.eos_token_id]
         if self.efficient_eos:
-            if len(chosen_encoded_messages) > 0 and len(chosen_encoded_messages[-1]) > 1:
+            if (
+                len(chosen_encoded_messages) > 0
+                and len(chosen_encoded_messages[-1]) > 1
+            ):
                 chosen_encoded_messages[-1][1].extend(suffix_ids)
-            if len(rejected_encoded_messages) > 0 and len(rejected_encoded_messages[-1]) > 1:
+            if (
+                len(rejected_encoded_messages) > 0
+                and len(rejected_encoded_messages[-1]) > 1
+            ):
                 rejected_encoded_messages[-1][1].extend(suffix_ids)
 
         # 3.chosen/rejected response
@@ -322,7 +384,10 @@ class BaseDPODataSet:
             if turn_index == split_index:
                 cur_turn_token = chosen_encoded_messages[turn_index][0]
             else:
-                cur_turn_token = chosen_encoded_messages[turn_index][0] + chosen_encoded_messages[turn_index][1]
+                cur_turn_token = (
+                    chosen_encoded_messages[turn_index][0]
+                    + chosen_encoded_messages[turn_index][1]
+                )
 
             if cur_len + len(cur_turn_token) > self.max_seq_len:
                 break
@@ -410,12 +475,18 @@ class BaseDPODataSet:
             list(range(prompt_len))  # prompt
             + list(range(prompt_len, prompt_len + chosen_len - 1))  # chosen - 1
             + [prompt_len - 1]  # the last token of prompt
-            + list(range(prompt_len, prompt_len + rejected_len - 1))  # rejected - 1
+            + list(
+                range(prompt_len, prompt_len + rejected_len - 1)
+            )  # rejected - 1
         )
 
         # 1.3 response_labels
         # [p1, p2, p3, p4, c1, c2, c3, p4, r1, r2, r3]  ->  [-100, -100, -100, c1, c2, c3, EOS, r1, r2, r3, EOS]
-        response_labels = [-100] * (prompt_len - 1) + response_token_ids_list[0] + response_token_ids_list[1]
+        response_labels = (
+            [-100] * (prompt_len - 1)
+            + response_token_ids_list[0]
+            + response_token_ids_list[1]
+        )
 
         # 1.4 response index
         # [-100, -100, -100, c1, c2, c3, EOS, r1, r2, r3, EOS]  -> [0, 4, 8] / [3, 7, 11]
@@ -458,7 +529,9 @@ class BaseDPODataSet:
             attn_mask_startend_row_indices = None
 
         # print
-        enable_dataset_debug = os.getenv("FLAGS_enable_dataset_debug", "false").lower() in ("true", "1", "t")
+        enable_dataset_debug = os.getenv(
+            "FLAGS_enable_dataset_debug", "false"
+        ).lower() in ("true", "1", "t")
         if enable_dataset_debug:
             logger.info("\n" + "=" * 50)
             logger.info("[dataset debug] Debug mode enabled")
@@ -467,9 +540,13 @@ class BaseDPODataSet:
                 print_debug_info(self.tokenizer, input_ids, "input")
                 print("========================================\n")
 
-                filtered_labels = [x for x in response_labels if x != -100]  # remove -100
+                filtered_labels = [
+                    x for x in response_labels if x != -100
+                ]  # remove -100
                 print("========================================")
-                print_debug_info(self.tokenizer, filtered_labels, "response_labels")
+                print_debug_info(
+                    self.tokenizer, filtered_labels, "response_labels"
+                )
                 print("========================================\n")
             else:
                 logger.info("[dataset debug] Tokenizer not available")

@@ -31,7 +31,10 @@ from paddleformers.transformers import (
 from tests.testing_utils import gpu_device_initializer
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
-from tests.transformers.test_modeling_common import ModelTesterMixin, floats_tensor
+from tests.transformers.test_modeling_common import (
+    ModelTesterMixin,
+    floats_tensor,
+)
 
 
 class PaddleOCRVLModelTester:
@@ -128,7 +131,9 @@ class PaddleOCRVLModelTester:
         patch_size = config.vision_config.patch_size
         num_channels = config.vision_config.num_channels
         # only images are supported for now
-        pixel_values_len = self.num_image_tokens * (config.vision_config.spatial_merge_size**2)
+        pixel_values_len = self.num_image_tokens * (
+            config.vision_config.spatial_merge_size**2
+        )
         pixel_values = floats_tensor(
             [
                 self.batch_size * pixel_values_len,
@@ -146,11 +151,15 @@ class PaddleOCRVLModelTester:
 
         # input_ids = ids_tensor([self.batch_size, self.seq_length], self.vocab_size).astype(paddle.int64)
         input_ids = paddle.to_tensor(
-            [100273, 2969, 93963, 93919, 101305] + ([100295] * self.num_image_tokens) + [101306, 23, 351, 93951, 8],
+            [100273, 2969, 93963, 93919, 101305]
+            + ([100295] * self.num_image_tokens)
+            + [101306, 23, 351, 93951, 8],
             dtype="int64",
         ).expand([self.batch_size, -1])
         labels = paddle.to_tensor(
-            [-100, -100, -100, -100, -100] + ([-100] * self.num_image_tokens) + [-100, 23, 351, 93951, 8],
+            [-100, -100, -100, -100, -100]
+            + ([-100] * self.num_image_tokens)
+            + [-100, 23, 351, 93951, 8],
             dtype="int64",
         ).expand([self.batch_size, -1])
         attention_mask = paddle.ones(input_ids.shape, dtype=paddle.int64)
@@ -164,7 +173,9 @@ class PaddleOCRVLModelTester:
 
         inputs_dict = {
             "pixel_values": pixel_values,
-            "image_grid_thw": paddle.to_tensor([[1, 2, 4], [1, 4, 2]] * self.batch_size),
+            "image_grid_thw": paddle.to_tensor(
+                [[1, 2, 4], [1, 4, 2]] * self.batch_size
+            ),
             "input_ids": input_ids,
             "labels": labels,
             "position_ids": position_ids,
@@ -173,14 +184,19 @@ class PaddleOCRVLModelTester:
         return config, inputs_dict
 
 
-class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
+class PaddleOCRVLModelTest(
+    ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
+):
     """
     Model tester for `PaddleOCRVLForConditionalGeneration`.
     """
 
     all_model_classes = (PaddleOCRVLForConditionalGeneration,)
     all_generative_model_classes = {
-        PaddleOCRVLForConditionalGeneration: {PaddleOCRVLForConditionalGeneration, "paddleocr_vl"}
+        PaddleOCRVLForConditionalGeneration: {
+            PaddleOCRVLForConditionalGeneration,
+            "paddleocr_vl",
+        }
     }
     max_new_tokens = 3
 
@@ -214,7 +230,9 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
                 if token_index is None and hasattr(self, "model_tester"):
                     token_index = getattr(self.model_tester, key, None)
                 if token_index is not None and token_index < config.vocab_size:
-                    logits_processor_kwargs["bad_words_ids"].append([token_index])
+                    logits_processor_kwargs["bad_words_ids"].append(
+                        [token_index]
+                    )
 
         return logits_processor_kwargs
 
@@ -230,7 +248,9 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
         return_dict_in_generate=False,
         use_cache=True,
     ):
-        logits_processor_kwargs = self._get_logits_processor_kwargs(do_sample=False, config=model.config)
+        logits_processor_kwargs = self._get_logits_processor_kwargs(
+            do_sample=False, config=model.config
+        )
         output_generate = model.generate(
             do_sample=False,
             max_new_tokens=self.max_new_tokens,
@@ -260,7 +280,9 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
         return_dict_in_generate=False,
         use_cache=True,
     ):
-        logits_processor_kwargs = self._get_logits_processor_kwargs(do_sample=False, config=model.config)
+        logits_processor_kwargs = self._get_logits_processor_kwargs(
+            do_sample=False, config=model.config
+        )
         output_generate = model.generate(
             do_sample=False,
             num_beams=1,
@@ -292,7 +314,9 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
         use_cache=True,
     ):
         paddle.seed(0)
-        logits_processor_kwargs = self._get_logits_processor_kwargs(do_sample=True, config=model.config)
+        logits_processor_kwargs = self._get_logits_processor_kwargs(
+            do_sample=True, config=model.config
+        )
         output_generate = model.generate(
             do_sample=True,
             num_beams=1,
@@ -314,7 +338,9 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
 
     def prepare_config_and_inputs_for_generate(self, batch_size=2):
         # Prepare inputs and config specifically for VLM models, handling text generation settings
-        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+        config, inputs_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
 
         return config, inputs_dict
 
@@ -324,7 +350,9 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
         when number of images don't match number of image tokens in the text.
         Also we need to test multi-image cases when one prompt has multiple image tokens.
         """
-        config, input_dict = self.model_tester.prepare_config_and_inputs_for_common()
+        config, input_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
         for model_class in self.all_model_classes:
             model = model_class(config)
             model.eval()
@@ -333,9 +361,13 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
 
             # remove one image but leave the image token in text
             remove_image_grid_thw = curr_input_dict["image_grid_thw"][-1:, ...]
-            curr_input_dict["image_grid_thw"] = curr_input_dict["image_grid_thw"][:-1, ...]
+            curr_input_dict["image_grid_thw"] = curr_input_dict[
+                "image_grid_thw"
+            ][:-1, ...]
             remove_img_length = remove_image_grid_thw.prod(axis=1)
-            curr_input_dict["pixel_values"] = curr_input_dict["pixel_values"][:-remove_img_length, ...]
+            curr_input_dict["pixel_values"] = curr_input_dict["pixel_values"][
+                :-remove_img_length, ...
+            ]
 
             with self.assertRaises(ValueError):
                 _ = model(**curr_input_dict)
@@ -357,7 +389,9 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
 
             # two images and two image tokens don't raise an error
             pixel_values = paddle.cat([pixel_values, pixel_values], axis=0)
-            image_grid_thw = paddle.cat([image_grid_thw, image_grid_thw], axis=0)
+            image_grid_thw = paddle.cat(
+                [image_grid_thw, image_grid_thw], axis=0
+            )
             _ = model(
                 input_ids=input_ids,
                 pixel_values=pixel_values,
@@ -370,14 +404,23 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
 
             model = model_class(config).eval()
             beam_kwargs, _ = self._get_beam_scorer_and_kwargs(1, 1)
-            output_generate = self._beam_search_generate(model=model, inputs_dict=inputs_dict, beam_kwargs=beam_kwargs)
+            output_generate = self._beam_search_generate(
+                model=model, inputs_dict=inputs_dict, beam_kwargs=beam_kwargs
+            )
 
             if model.config.is_encoder_decoder:
-                self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + 1)
+                self.assertTrue(
+                    output_generate[0].shape[1] == self.max_new_tokens + 1
+                )
             else:
-                self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + inputs_dict["input_ids"].shape[1])
+                self.assertTrue(
+                    output_generate[0].shape[1]
+                    == self.max_new_tokens + inputs_dict["input_ids"].shape[1]
+                )
 
-    @unittest.skip("Group beam search is not compatible with current VLM implementation")
+    @unittest.skip(
+        "Group beam search is not compatible with current VLM implementation"
+    )
     def test_group_beam_search_generate(self):
         pass
 
@@ -392,24 +435,38 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
             config, inputs_dict = self.prepare_config_and_inputs_for_generate()
 
             model = model_class(config).eval()
-            output_generate = self._greedy_generate(model=model, inputs_dict=inputs_dict)
+            output_generate = self._greedy_generate(
+                model=model, inputs_dict=inputs_dict
+            )
 
             if model.config.is_encoder_decoder:
-                self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + 1)
+                self.assertTrue(
+                    output_generate[0].shape[1] == self.max_new_tokens + 1
+                )
             else:
-                self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + inputs_dict["input_ids"].shape[1])
+                self.assertTrue(
+                    output_generate[0].shape[1]
+                    == self.max_new_tokens + inputs_dict["input_ids"].shape[1]
+                )
 
     def test_sample_generate(self):
         for model_class in self.all_generative_model_classes:
             config, inputs_dict = self.prepare_config_and_inputs_for_generate()
 
             model = model_class(config).eval()
-            output_generate = self._sample_generate(model=model, inputs_dict=inputs_dict, num_return_sequences=1)
+            output_generate = self._sample_generate(
+                model=model, inputs_dict=inputs_dict, num_return_sequences=1
+            )
 
             if model.config.is_encoder_decoder:
-                self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + 1)
+                self.assertTrue(
+                    output_generate[0].shape[1] == self.max_new_tokens + 1
+                )
             else:
-                self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + inputs_dict["input_ids"].shape[1])
+                self.assertTrue(
+                    output_generate[0].shape[1]
+                    == self.max_new_tokens + inputs_dict["input_ids"].shape[1]
+                )
 
     def test_save_load_flex_checkpoint(self):
         for model_class in self.all_model_classes:
@@ -438,11 +495,17 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
                 )
 
                 model = model_class(config)
-                model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
+                model.save_pretrained(
+                    tmpdirname, save_checkpoint_format="flex_checkpoint"
+                )
 
-                model1 = model_class.from_pretrained(tmpdirname, convert_from_hf=True, load_checkpoint_format="")
+                model1 = model_class.from_pretrained(
+                    tmpdirname, convert_from_hf=True, load_checkpoint_format=""
+                )
 
-                model2 = model_class.from_pretrained(tmpdirname, load_checkpoint_format="flex_checkpoint")
+                model2 = model_class.from_pretrained(
+                    tmpdirname, load_checkpoint_format="flex_checkpoint"
+                )
 
                 model_state_1 = model1.state_dict()
                 model_state_2 = model2.state_dict()
@@ -462,11 +525,13 @@ class PaddleOCRVLIntegrationTest(unittest.TestCase):
             load_checkpoint_format="flex_checkpoint",
         )
 
-        self.processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-paddleocr-vl-bf16")
-        image_path = (
-            "https://paddle-model-ecology.bj.bcebos.com/PPOCRVL/dataset/exam_paper_0829/part_0000/img_000040676.png"
+        self.processor = AutoProcessor.from_pretrained(
+            "PaddleFormers/tiny-random-paddleocr-vl-bf16"
         )
-        image = Image.open(BytesIO(requests.get(image_path).content)).convert("RGB")
+        image_path = "https://paddle-model-ecology.bj.bcebos.com/PPOCRVL/dataset/exam_paper_0829/part_0000/img_000040676.png"
+        image = Image.open(BytesIO(requests.get(image_path).content)).convert(
+            "RGB"
+        )
         self.messages = [
             {
                 "role": "user",
@@ -482,7 +547,11 @@ class PaddleOCRVLIntegrationTest(unittest.TestCase):
 
     def test_model_tiny_logits(self):
         inputs = self.processor.apply_chat_template(
-            self.messages, tokenize=True, add_generation_prompt=True, return_dict=True, return_tensors="pd"
+            self.messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_dict=True,
+            return_tensors="pd",
         )
 
         EXPECTED_INPUT_IDS = paddle.to_tensor(
@@ -506,7 +575,9 @@ class PaddleOCRVLIntegrationTest(unittest.TestCase):
                 100295,
             ]
         )
-        self.assertTrue(paddle.allclose(EXPECTED_INPUT_IDS, inputs.input_ids[0][:17]))
+        self.assertTrue(
+            paddle.allclose(EXPECTED_INPUT_IDS, inputs.input_ids[0][:17])
+        )
 
         EXPECTED_PIXEL_SLICE = paddle.to_tensor(
             [
@@ -541,13 +612,17 @@ class PaddleOCRVLIntegrationTest(unittest.TestCase):
         self.assertTrue(
             paddle.allclose(
                 EXPECTED_PIXEL_SLICE,
-                inputs.pixel_values[420, :, :, :].transpose(1, 2, 0).flatten()[::24],
+                inputs.pixel_values[420, :, :, :]
+                .transpose(1, 2, 0)
+                .flatten()[::24],
                 atol=5e-4,
                 rtol=1e-5,
             )
         )
 
-        output = self.model(**inputs, return_dict=True)["logits"].astype(paddle.float32)
+        output = self.model(**inputs, return_dict=True)["logits"].astype(
+            paddle.float32
+        )
         EXPECTED_SLICE = paddle.to_tensor(
             [
                 -1.33352613,
@@ -582,4 +657,8 @@ class PaddleOCRVLIntegrationTest(unittest.TestCase):
                 -1.49998081,
             ]
         )
-        self.assertTrue(paddle.allclose(EXPECTED_SLICE, output[0, 0, :30], atol=5e-4, rtol=1e-5))
+        self.assertTrue(
+            paddle.allclose(
+                EXPECTED_SLICE, output[0, 0, :30], atol=5e-4, rtol=1e-5
+            )
+        )

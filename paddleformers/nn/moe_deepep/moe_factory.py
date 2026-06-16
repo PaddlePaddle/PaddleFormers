@@ -29,7 +29,9 @@ class QuickAccessMoEFactory:
     ) -> ModularMoELayer:
         model_type = getattr(pretrained_config, "model_type", None)
         if model_type is None:
-            raise ValueError("Cannot determine model type from pretrained_config")
+            raise ValueError(
+                "Cannot determine model type from pretrained_config"
+            )
 
         moe_config = {
             "gate_activation": gate_activation,
@@ -43,14 +45,23 @@ class QuickAccessMoEFactory:
             hidden_size=pretrained_config.hidden_size,
             moe_intermediate_size=pretrained_config.moe_intermediate_size,
             num_experts=pretrained_config.get(
-                "num_experts", pretrained_config.get("n_routed_experts", pretrained_config.get("moe_num_experts", -1))
+                "num_experts",
+                pretrained_config.get(
+                    "n_routed_experts",
+                    pretrained_config.get("moe_num_experts", -1),
+                ),
             ),
             num_shared_experts=pretrained_config.get(
-                "n_shared_experts", pretrained_config.get("moe_num_shared_experts", 0)
+                "n_shared_experts",
+                pretrained_config.get("moe_num_shared_experts", 0),
             ),
-            num_experts_per_tok=pretrained_config.get("num_experts_per_tok", pretrained_config.get("moe_k", -1)),
+            num_experts_per_tok=pretrained_config.get(
+                "num_experts_per_tok", pretrained_config.get("moe_k", -1)
+            ),
             norm_topk_prob=pretrained_config.get("norm_topk_prob", True),
-            expert_activation=pretrained_config.get("hidden_act", pretrained_config.get("expert_activation", "silu")),
+            expert_activation=pretrained_config.get(
+                "hidden_act", pretrained_config.get("expert_activation", "silu")
+            ),
             moe_config=moe_config,
             model_type=model_type,
             expert_class=expert_class,

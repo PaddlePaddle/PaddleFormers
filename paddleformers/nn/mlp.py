@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import paddle
-import paddle.nn as nn
+from paddle import nn
 from paddle.nn.functional import swiglu as fused_swiglu
 
 from ..generation.configuration_utils import PretrainedConfig
@@ -34,11 +34,17 @@ class MLP(nn.Layer):
         up_proj_name="up_proj",
         gate_up_proj_name="up_gate_proj",
         down_proj_name="down_proj",
-        **kwargs
+        **kwargs,
     ):
         super().__init__()
-        self.hidden_size = config.hidden_size if hidden_size is None else hidden_size
-        self.intermediate_size = config.intermediate_size if intermediate_size is None else intermediate_size
+        self.hidden_size = (
+            config.hidden_size if hidden_size is None else hidden_size
+        )
+        self.intermediate_size = (
+            config.intermediate_size
+            if intermediate_size is None
+            else intermediate_size
+        )
         self.tensor_parallel = config.tensor_model_parallel_size > 1
         self.has_bias = has_bias if has_bias else config.get("mlp_bias", False)
         self.fuse_swiglu = config.get("fuse_swiglu", False)

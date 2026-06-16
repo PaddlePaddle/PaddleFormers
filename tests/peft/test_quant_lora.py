@@ -21,7 +21,9 @@ import paddle
 from paddle.quantization import QAT, QuantConfig
 from paddle.quantization.config import SingleLayerConfig
 from paddle.quantization.quanters import FakeQuanterWithAbsMaxObserver
-from paddle.quantization.quanters.abs_max import FakeQuanterWithAbsMaxObserverLayer
+from paddle.quantization.quanters.abs_max import (
+    FakeQuanterWithAbsMaxObserverLayer,
+)
 
 from paddleformers.peft.lora import LoRAConfig, LoRALinear, LoRAModel
 from paddleformers.peft.lora.lora_quant_layers import QuantedLoRALinear
@@ -32,7 +34,10 @@ class TestQuantedLoraLayer(unittest.TestCase):
     def test_forward(self):
         quant_lora_layer = QuantedLoRALinear(
             layer=LoRALinear(in_features=16, out_features=8, r=4, lora_alpha=8),
-            q_config=SingleLayerConfig(weight=FakeQuanterWithAbsMaxObserver(moving_rate=0.9), activation=None),
+            q_config=SingleLayerConfig(
+                weight=FakeQuanterWithAbsMaxObserver(moving_rate=0.9),
+                activation=None,
+            ),
         )
         x = paddle.randn([2, 4, 16], "float32")
         quant_output = quant_lora_layer(x)
@@ -50,7 +55,8 @@ class TestQuantedLoraLayer(unittest.TestCase):
             lora_alpha=8,
         )
         quant_lora_layer = QuantedLoRALinear(
-            layer=lora_layer, q_config=SingleLayerConfig(weight=None, activation=None)
+            layer=lora_layer,
+            q_config=SingleLayerConfig(weight=None, activation=None),
         )
         x = paddle.randn([2, 4, 16], "float32")
         output = lora_layer(x)
@@ -60,30 +66,50 @@ class TestQuantedLoraLayer(unittest.TestCase):
     def test_dropout_raise_exception(self):
         with self.assertRaises(ValueError):
             QuantedLoRALinear(
-                layer=LoRALinear(in_features=16, out_features=8, r=4, lora_alpha=8, lora_dropout=0.1),
+                layer=LoRALinear(
+                    in_features=16,
+                    out_features=8,
+                    r=4,
+                    lora_alpha=8,
+                    lora_dropout=0.1,
+                ),
                 q_config=SingleLayerConfig(weight=None, activation=None),
             )
 
     def test_save_load(self):
         with TemporaryDirectory() as tempdir:
-            q_config = SingleLayerConfig(weight=FakeQuanterWithAbsMaxObserver(moving_rate=0.9), activation=None)
+            q_config = SingleLayerConfig(
+                weight=FakeQuanterWithAbsMaxObserver(moving_rate=0.9),
+                activation=None,
+            )
             quant_lora_layer = QuantedLoRALinear(
-                layer=LoRALinear(in_features=16, out_features=8, r=4, lora_alpha=8), q_config=q_config
+                layer=LoRALinear(
+                    in_features=16, out_features=8, r=4, lora_alpha=8
+                ),
+                q_config=q_config,
             )
             weights_path = os.path.join(tempdir, "model.pdparams")
             paddle.save(quant_lora_layer.state_dict(), weights_path)
             new_quant_lora_layer = QuantedLoRALinear(
-                layer=LoRALinear(in_features=16, out_features=8, r=4, lora_alpha=8), q_config=q_config
+                layer=LoRALinear(
+                    in_features=16, out_features=8, r=4, lora_alpha=8
+                ),
+                q_config=q_config,
             )
             state_dict = paddle.load(weights_path)
             new_quant_lora_layer.set_dict(state_dict)
             x = paddle.randn([2, 4, 16], "float32")
-            self.assertTrue(paddle.allclose(new_quant_lora_layer(x), quant_lora_layer(x)))
+            self.assertTrue(
+                paddle.allclose(new_quant_lora_layer(x), quant_lora_layer(x))
+            )
 
     def test_merge_weights(self):
-        lora_layer = LoRALinear(in_features=16, out_features=8, r=4, lora_alpha=8)
+        lora_layer = LoRALinear(
+            in_features=16, out_features=8, r=4, lora_alpha=8
+        )
         quant_lora_layer = QuantedLoRALinear(
-            layer=lora_layer, q_config=SingleLayerConfig(weight=None, activation=None)
+            layer=lora_layer,
+            q_config=SingleLayerConfig(weight=None, activation=None),
         )
         x = paddle.randn([2, 4, 16], "float32")
 
@@ -103,7 +129,9 @@ class TestQuantedLoRAModel(unittest.TestCase):
             lora_alpha=8,
         )
         cls.model = AutoModelForCausalLM.from_pretrained(
-            "PaddleFormers/tiny-random-llama3", convert_from_hf=True, dtype=paddle.float32
+            "PaddleFormers/tiny-random-llama3",
+            convert_from_hf=True,
+            dtype=paddle.float32,
         )
         cls.lora_model = LoRAModel(cls.model, lora_config)
         cls.lora_model.mark_only_lora_as_trainable()
@@ -125,11 +153,15 @@ class TestQuantedLoRAModel(unittest.TestCase):
     def test_count_model_layers(self):
         q_config = QuantConfig(activation=None, weight=None)
         q_config.add_qat_layer_mapping(LoRALinear, QuantedLoRALinear)
-        q_config.add_type_config(LoRALinear, weight=FakeQuanterWithAbsMaxObserver(moving_rate=0.9))
+        q_config.add_type_config(
+            LoRALinear, weight=FakeQuanterWithAbsMaxObserver(moving_rate=0.9)
+        )
         qat = QAT(q_config)
         self.lora_model.train()
         quant_lora_model = qat.quantize(self.lora_model, inplace=False)
-        quantizer_cnt = self._count_layers(quant_lora_model, FakeQuanterWithAbsMaxObserverLayer)
+        quantizer_cnt = self._count_layers(
+            quant_lora_model, FakeQuanterWithAbsMaxObserverLayer
+        )
         # 2 LoRA layers (q_proj, v_proj) per transformer layer
         self.assertEqual(quantizer_cnt, self.model.config.num_hidden_layers * 2)
 
@@ -148,12 +180,18 @@ class TestQuantedLoRAModel(unittest.TestCase):
         input_ids = paddle.to_tensor(np.random.randint(100, 200, [1, 5]))
         original_model_outputs = self.lora_model(input_ids)[0]
         quant_model_outputs = quant_lora_model(input_ids)[0]
-        self.assertTrue(paddle.allclose(original_model_outputs, quant_model_outputs, atol=1e-5))
+        self.assertTrue(
+            paddle.allclose(
+                original_model_outputs, quant_model_outputs, atol=1e-5
+            )
+        )
 
     def test_forward_weight_quant(self):
         q_config = QuantConfig(activation=None, weight=None)
         q_config.add_qat_layer_mapping(LoRALinear, QuantedLoRALinear)
-        q_config.add_type_config(LoRALinear, weight=FakeQuanterWithAbsMaxObserver(moving_rate=0.9))
+        q_config.add_type_config(
+            LoRALinear, weight=FakeQuanterWithAbsMaxObserver(moving_rate=0.9)
+        )
         qat = QAT(q_config)
         self.lora_model.train()
         quant_lora_model = qat.quantize(self.lora_model, inplace=False)
@@ -161,12 +199,16 @@ class TestQuantedLoRAModel(unittest.TestCase):
         input_ids = paddle.to_tensor(np.random.randint(100, 200, [1, 5]))
         original_model_outputs = self.lora_model(input_ids)[0]
         quant_model_outputs = quant_lora_model(input_ids)[0]
-        self.assertEqual(original_model_outputs.shape, quant_model_outputs.shape)
+        self.assertEqual(
+            original_model_outputs.shape, quant_model_outputs.shape
+        )
 
     def test_quant_lora_model_stop_gradient(self):
         q_config = QuantConfig(activation=None, weight=None)
         q_config.add_qat_layer_mapping(LoRALinear, QuantedLoRALinear)
-        q_config.add_type_config(LoRALinear, weight=FakeQuanterWithAbsMaxObserver(moving_rate=0.9))
+        q_config.add_type_config(
+            LoRALinear, weight=FakeQuanterWithAbsMaxObserver(moving_rate=0.9)
+        )
         qat = QAT(q_config)
         self.lora_model.train()
         quant_lora_model = qat.quantize(self.lora_model, inplace=False)

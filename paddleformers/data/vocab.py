@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import collections
-import io
 import json
 import os
 import warnings
@@ -21,7 +20,7 @@ import warnings
 import numpy as np
 
 
-class Vocab(object):
+class Vocab:
     """
     The class used to convert between tokens and ids. It also includes some
     store/load functions.
@@ -64,7 +63,7 @@ class Vocab(object):
         pad_token=None,
         bos_token=None,
         eos_token=None,
-        **kwargs
+        **kwargs,
     ):
         # Handle special tokens
         combs = (
@@ -83,35 +82,50 @@ class Vocab(object):
             # Test if kwarg specifies a special token
             if not special_token_name.endswith("_token"):
                 raise ValueError(
-                    "{} is invalid. Only keyword arguments "
+                    f"{special_token_name} is invalid. Only keyword arguments "
                     "that end in '_token' are supported "
-                    "to declare special tokens.".format(special_token_name)
+                    "to declare special tokens."
                 )
 
             special_token = kwargs[special_token_name]
-            if special_token is not None and special_token not in special_tokens:
+            if (
+                special_token is not None
+                and special_token not in special_tokens
+            ):
                 special_tokens.append(special_token)
 
         if counter is None:
             # use token_to_idx as dict to import pretrained vocabulary
-            assert token_to_idx, "token_to_idx should not be None when counter is None"
+            assert token_to_idx, (
+                "token_to_idx should not be None when counter is None"
+            )
             for special_token in special_tokens:
-                assert special_token in token_to_idx, "{} is not in token_to_idx".format(special_token)
+                assert special_token in token_to_idx, (
+                    f"{special_token} is not in token_to_idx"
+                )
             self._token_to_idx = token_to_idx
-            self._idx_to_token = {idx: token for token, idx in token_to_idx.items()}
+            self._idx_to_token = {
+                idx: token for token, idx in token_to_idx.items()
+            }
             if unk_token:
                 unk_index = self._token_to_idx[unk_token]
                 self._token_to_idx = collections.defaultdict(lambda: unk_index)
                 self._token_to_idx.update(token_to_idx)
         else:
-            self._idx_to_token = {idx: special_token for idx, special_token in enumerate(special_tokens)}
+            self._idx_to_token = dict(enumerate(special_tokens))
             self._token_to_idx = collections.defaultdict()
-            self._token_to_idx.update((token, idx) for idx, token in self._idx_to_token.items())
-            self._index_counter_keys(counter, special_tokens, max_size, min_freq)
+            self._token_to_idx.update(
+                (token, idx) for idx, token in self._idx_to_token.items()
+            )
+            self._index_counter_keys(
+                counter, special_tokens, max_size, min_freq
+            )
             if token_to_idx:
                 self._sort_index_according_to_user_specification(token_to_idx)
             if unk_token:
-                self._token_to_idx.default_factory = lambda: self._token_to_idx[unk_token]
+                self._token_to_idx.default_factory = lambda: self._token_to_idx[
+                    unk_token
+                ]
 
         # _expose_tokens_as_attributes
         self._identifiers_to_tokens = kwargs
@@ -124,8 +138,8 @@ class Vocab(object):
                 )
             if hasattr(self, identifier):
                 raise ValueError(
-                    "vocab.{} already exists. "
-                    "Please choose a different identifier for token {}".format(identifier, token)
+                    f"vocab.{identifier} already exists. "
+                    f"Please choose a different identifier for token {token}"
                 )
             setattr(self, identifier, token)
 
@@ -141,22 +155,29 @@ class Vocab(object):
             if freq < min_freq or len(self._idx_to_token) == max_size:
                 break
             if token not in special_tokens:
-                self._idx_to_token[max(list(self._idx_to_token.keys()) + [-1]) + 1] = token
+                self._idx_to_token[
+                    max(list(self._idx_to_token.keys()) + [-1]) + 1
+                ] = token
                 self._token_to_idx[token] = max(self._idx_to_token.keys())
 
     def _sort_index_according_to_user_specification(self, token_to_idx):
         # Sanity checks
         if not set(token_to_idx.keys()).issubset(self.token_to_idx.keys()):
             raise ValueError(
-                "User-specified token_to_idx mapping can only contain " "tokens that will be part of the vocabulary."
+                "User-specified token_to_idx mapping can only contain "
+                "tokens that will be part of the vocabulary."
             )
         if len(set(token_to_idx.values())) != len(token_to_idx):
-            raise ValueError("User-specified indices must not contain duplicates.")
-        if min(token_to_idx.values()) < 0 or max(token_to_idx.values()) >= len(self.token_to_idx):
+            raise ValueError(
+                "User-specified indices must not contain duplicates."
+            )
+        if min(token_to_idx.values()) < 0 or max(token_to_idx.values()) >= len(
+            self.token_to_idx
+        ):
             raise ValueError(
                 "User-specified indices must not be < 0 or >= the number of tokens "
-                "that will be in the vocabulary. The current vocab contains {}"
-                "tokens.".format(len(self.token_to_idx))
+                f"that will be in the vocabulary. The current vocab contains {len(self.token_to_idx)}"
+                "tokens."
             )
 
         # Update index ordering
@@ -207,7 +228,7 @@ class Vocab(object):
 
         if isinstance(indices, (np.ndarray)) and len(indices.shape) > 1:
             raise ValueError(
-                "Token indices is invalid. Expected 1D array, but received {}D array. ".format(len(indices.shape))
+                f"Token indices is invalid. Expected 1D array, but received {len(indices.shape)}D array. "
             )
 
         tokens = []
@@ -221,7 +242,9 @@ class Vocab(object):
             try:
                 tokens.append(self._idx_to_token[idx])
             except KeyError:
-                raise ValueError("Token index {} in the provided `indices` is invalid.".format(idx))
+                raise ValueError(
+                    f"Token index {idx} in the provided `indices` is invalid."
+                )
 
         return tokens[0] if to_reduce else tokens
 
@@ -258,10 +281,16 @@ class Vocab(object):
 
     def __getitem__(self, tokens):
         if not isinstance(tokens, (list, tuple)):
-            return self._token_to_idx[tokens] if tokens in self._token_to_idx else self._token_to_idx[self.unk_token]
+            return (
+                self._token_to_idx[tokens]
+                if tokens in self._token_to_idx
+                else self._token_to_idx[self.unk_token]
+            )
         else:
             return [
-                self._token_to_idx[token] if token in self._token_to_idx else self._token_to_idx[self.unk_token]
+                self._token_to_idx[token]
+                if token in self._token_to_idx
+                else self._token_to_idx[self.unk_token]
                 for token in tokens
             ]
 
@@ -325,7 +354,7 @@ class Vocab(object):
         vocab_dict["identifiers_to_tokens"] = self._identifiers_to_tokens
         json_str = json.dumps(vocab_dict)
         if path:
-            with io.open(path, "w", encoding="utf-8") as f:
+            with open(path, "w", encoding="utf-8") as f:
                 f.write(json_str)
         return json_str
 
@@ -362,20 +391,33 @@ class Vocab(object):
                 # 1256608 1256608 1256608
         """
         if os.path.isfile(json_str):
-            with io.open(json_str, "r", encoding="utf-8") as f:
+            with open(json_str, "r", encoding="utf-8") as f:
                 vocab_dict = json.load(f)
         else:
             vocab_dict = json.loads(json_str)
         token_to_idx = vocab_dict.get("token_to_idx")
         unk_token = vocab_dict.get("unk_token")
-        identifiers_to_tokens = vocab_dict.get("identifiers_to_tokens", dict())
+        identifiers_to_tokens = vocab_dict.get("identifiers_to_tokens", {})
         if "unk_token" in identifiers_to_tokens:
             del identifiers_to_tokens["unk_token"]
-        vocab = cls(counter=None, token_to_idx=token_to_idx, unk_token=unk_token, **identifiers_to_tokens)
+        vocab = cls(
+            counter=None,
+            token_to_idx=token_to_idx,
+            unk_token=unk_token,
+            **identifiers_to_tokens,
+        )
         return vocab
 
     @classmethod
-    def from_dict(cls, token_to_idx, unk_token=None, pad_token=None, bos_token=None, eos_token=None, **kwargs):
+    def from_dict(
+        cls,
+        token_to_idx,
+        unk_token=None,
+        pad_token=None,
+        bos_token=None,
+        eos_token=None,
+        **kwargs,
+    ):
         """
         Builds the :class:`Vocab` from a dict.
 
@@ -437,7 +479,7 @@ class Vocab(object):
         pad_token=None,
         bos_token=None,
         eos_token=None,
-        **kwargs
+        **kwargs,
     ):
         """
         Builds the :class:`Vocab` according to given iterator and other
@@ -506,7 +548,14 @@ class Vocab(object):
         return vocab
 
     @staticmethod
-    def load_vocabulary(filepath, unk_token=None, pad_token=None, bos_token=None, eos_token=None, **kwargs):
+    def load_vocabulary(
+        filepath,
+        unk_token=None,
+        pad_token=None,
+        bos_token=None,
+        eos_token=None,
+        **kwargs,
+    ):
         """
         Builds the :class:`Vocab` from a file reserving all tokens by calling
         :meth:`Vocab.from_dict` method. The file contains a token per line, and
@@ -546,12 +595,17 @@ class Vocab(object):
                 # 1256608
         """
         token_to_idx = {}
-        with io.open(filepath, "r", encoding="utf-8") as f:
+        with open(filepath, "r", encoding="utf-8") as f:
             for index, line in enumerate(f):
                 token = line.rstrip("\n")
                 token_to_idx[token] = int(index)
         vocab = Vocab.from_dict(
-            token_to_idx, unk_token=unk_token, pad_token=pad_token, bos_token=bos_token, eos_token=eos_token, **kwargs
+            token_to_idx,
+            unk_token=unk_token,
+            pad_token=pad_token,
+            bos_token=bos_token,
+            eos_token=eos_token,
+            **kwargs,
         )
         return vocab
 
@@ -563,17 +617,35 @@ class Vocab(object):
             filepath (str): the path of file to save vocabulary.
         """
         with open(filepath, "w") as f:
-            for idx in range(len(self._idx_to_token)):
-                f.write(self._idx_to_token[idx] + "\n")
+            f.writelines(
+                self._idx_to_token[idx] + "\n"
+                for idx in range(len(self._idx_to_token))
+            )
 
     def get_unk_token_id(self):
-        return self._token_to_idx[self.unk_token] if self.unk_token is not None else self.unk_token
+        return (
+            self._token_to_idx[self.unk_token]
+            if self.unk_token is not None
+            else self.unk_token
+        )
 
     def get_bos_token_id(self):
-        return self._token_to_idx[self.bos_token] if self.bos_token is not None else self.bos_token
+        return (
+            self._token_to_idx[self.bos_token]
+            if self.bos_token is not None
+            else self.bos_token
+        )
 
     def get_eos_token_id(self):
-        return self._token_to_idx[self.eos_token] if self.eos_token is not None else self.eos_token
+        return (
+            self._token_to_idx[self.eos_token]
+            if self.eos_token is not None
+            else self.eos_token
+        )
 
     def get_pad_token_id(self):
-        return self._token_to_idx[self.pad_token] if self.pad_token is not None else self.pad_token
+        return (
+            self._token_to_idx[self.pad_token]
+            if self.pad_token is not None
+            else self.pad_token
+        )

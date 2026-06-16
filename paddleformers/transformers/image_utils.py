@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2022 PaddlePaddle Authors. All Rights Reserved.
 # Copyright 2021 The HuggingFace Inc. team.
 #
@@ -16,8 +15,9 @@
 
 import os
 from collections import UserDict
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Tuple, Union
+from typing import Optional, Union
 
 import numpy as np
 import paddle
@@ -36,14 +36,21 @@ OPENAI_CLIP_MEAN = [0.48145466, 0.4578275, 0.40821073]
 OPENAI_CLIP_STD = [0.26862954, 0.26130258, 0.27577711]
 
 
-if version.parse(version.parse(PIL.__version__).base_version) >= version.parse("9.1.0"):
+if version.parse(version.parse(PIL.__version__).base_version) >= version.parse(
+    "9.1.0"
+):
     PILImageResampling = PIL.Image.Resampling
 else:
     PILImageResampling = PIL.Image
 
 
 ImageInput = Union[
-    "PIL.Image.Image", np.ndarray, "paddle.Tensor", List["PIL.Image.Image"], List[np.ndarray], List["paddle.Tensor"]
+    "PIL.Image.Image",
+    np.ndarray,
+    "paddle.Tensor",
+    list["PIL.Image.Image"],
+    list[np.ndarray],
+    list["paddle.Tensor"],
 ]
 
 
@@ -127,7 +134,7 @@ def is_batched(img):
     return False
 
 
-def make_list_of_images(images, expected_ndims: int = 3) -> List[ImageInput]:
+def make_list_of_images(images, expected_ndims: int = 3) -> list[ImageInput]:
     """
     Ensure that the input is a list of images. If the input is a single image, it is converted to a list of length 1.
     If the input is a batch of images, it is converted to a list of images.
@@ -160,12 +167,13 @@ def make_list_of_images(images, expected_ndims: int = 3) -> List[ImageInput]:
             )
         return images
     raise ValueError(
-        "Invalid image type. Expected either PIL.Image.Image, numpy.ndarray, paddle.Tensor " f"but got {type(images)}."
+        "Invalid image type. Expected either PIL.Image.Image, numpy.ndarray, paddle.Tensor "
+        f"but got {type(images)}."
     )
 
 
 def make_flat_list_of_images(
-    images: Union[list[ImageInput], ImageInput],
+    images: list[ImageInput] | ImageInput,
     expected_ndims: int = 3,
 ) -> ImageInput:
     """
@@ -183,7 +191,10 @@ def make_flat_list_of_images(
     if (
         isinstance(images, (list, tuple))
         and all(isinstance(images_i, (list, tuple)) for images_i in images)
-        and all(is_valid_list_of_images(images_i) or not images_i for images_i in images)
+        and all(
+            is_valid_list_of_images(images_i) or not images_i
+            for images_i in images
+        )
     ):
         return [img for img_list in images for img in img_list]
 
@@ -203,7 +214,7 @@ def make_flat_list_of_images(
 
 
 def make_nested_list_of_images(
-    images: Union[list[ImageInput], ImageInput],
+    images: list[ImageInput] | ImageInput,
     expected_ndims: int = 3,
 ) -> list[ImageInput]:
     """
@@ -220,7 +231,10 @@ def make_nested_list_of_images(
     if (
         isinstance(images, (list, tuple))
         and all(isinstance(images_i, (list, tuple)) for images_i in images)
-        and all(is_valid_list_of_images(images_i) or not images_i for images_i in images)
+        and all(
+            is_valid_list_of_images(images_i) or not images_i
+            for images_i in images
+        )
     ):
         return images
 
@@ -238,7 +252,9 @@ def make_nested_list_of_images(
         if images.ndim == expected_ndims + 1:
             return [list(images)]
 
-    raise ValueError("Invalid input type. Must be a single image, a list of images, or a list of batches of images.")
+    raise ValueError(
+        "Invalid input type. Must be a single image, a list of images, or a list of batches of images."
+    )
 
 
 def to_numpy_array(img) -> np.ndarray:
@@ -251,7 +267,7 @@ def to_numpy_array(img) -> np.ndarray:
 
 
 def infer_channel_dimension_format(
-    image: np.ndarray, num_channels: Optional[Union[int, tuple[int, ...]]] = None
+    image: np.ndarray, num_channels: Optional[int | tuple[int, ...]] = None
 ) -> ChannelDimension:
     """
     Infers the channel dimension format of `image`.
@@ -264,16 +280,23 @@ def infer_channel_dimension_format(
         The channel dimension of the image.
     """
     num_channels = num_channels if num_channels is not None else (1, 3)
-    num_channels = (num_channels,) if isinstance(num_channels, int) else num_channels
+    num_channels = (
+        (num_channels,) if isinstance(num_channels, int) else num_channels
+    )
 
     if image.ndim == 3:
         first_dim, last_dim = 0, 2
     elif image.ndim == 4:
         first_dim, last_dim = 1, 3
     else:
-        raise ValueError(f"Unsupported number of image dimensions: {image.ndim}")
+        raise ValueError(
+            f"Unsupported number of image dimensions: {image.ndim}"
+        )
 
-    if image.shape[first_dim] in num_channels and image.shape[last_dim] in num_channels:
+    if (
+        image.shape[first_dim] in num_channels
+        and image.shape[last_dim] in num_channels
+    ):
         logger.warning(
             f"The channel dimension is ambiguous. Got image shape {image.shape}. Assuming channels are the first dimension."
         )
@@ -304,7 +327,9 @@ def get_channel_dimension_axis(image: np.ndarray) -> int:
     raise ValueError(f"Unsupported data format: {channel_dim}")
 
 
-def get_image_size(image: np.ndarray, channel_dim: ChannelDimension = None) -> Tuple[int, int]:
+def get_image_size(
+    image: np.ndarray, channel_dim: ChannelDimension = None
+) -> tuple[int, int]:
     """
     Returns the (height, width) dimensions of the image.
 
@@ -359,7 +384,9 @@ def get_image_size_for_max_height_width(
     return new_height, new_width
 
 
-def is_valid_annotation_coco_detection(annotation: Dict[str, Union[List, Tuple]]) -> bool:
+def is_valid_annotation_coco_detection(
+    annotation: dict[str, list | tuple],
+) -> bool:
     if (
         isinstance(annotation, dict)
         and "image_id" in annotation
@@ -375,7 +402,9 @@ def is_valid_annotation_coco_detection(annotation: Dict[str, Union[List, Tuple]]
     return False
 
 
-def is_valid_annotation_coco_panoptic(annotation: Dict[str, Union[List, Tuple]]) -> bool:
+def is_valid_annotation_coco_panoptic(
+    annotation: dict[str, list | tuple],
+) -> bool:
     if (
         isinstance(annotation, dict)
         and "image_id" in annotation
@@ -392,11 +421,15 @@ def is_valid_annotation_coco_panoptic(annotation: Dict[str, Union[List, Tuple]])
     return False
 
 
-def valid_coco_detection_annotations(annotations: Iterable[Dict[str, Union[List, Tuple]]]) -> bool:
+def valid_coco_detection_annotations(
+    annotations: Iterable[dict[str, list | tuple]],
+) -> bool:
     return all(is_valid_annotation_coco_detection(ann) for ann in annotations)
 
 
-def valid_coco_panoptic_annotations(annotations: Iterable[Dict[str, Union[List, Tuple]]]) -> bool:
+def valid_coco_panoptic_annotations(
+    annotations: Iterable[dict[str, list | tuple]],
+) -> bool:
     return all(is_valid_annotation_coco_panoptic(ann) for ann in annotations)
 
 
@@ -437,10 +470,10 @@ def validate_preprocess_arguments(
     do_rescale: Optional[bool] = None,
     rescale_factor: Optional[float] = None,
     do_normalize: Optional[bool] = None,
-    image_mean: Optional[Union[float, list[float]]] = None,
-    image_std: Optional[Union[float, list[float]]] = None,
+    image_mean: Optional[float | list[float]] = None,
+    image_std: Optional[float | list[float]] = None,
     do_pad: Optional[bool] = None,
-    pad_size: Optional[Union[dict[str, int], int]] = None,
+    pad_size: Optional[dict[str, int] | int] = None,
     do_center_crop: Optional[bool] = None,
     crop_size: Optional[dict[str, int]] = None,
     do_resize: Optional[bool] = None,
@@ -457,7 +490,9 @@ def validate_preprocess_arguments(
 
     """
     if do_rescale and rescale_factor is None:
-        raise ValueError("`rescale_factor` must be specified if `do_rescale` is `True`.")
+        raise ValueError(
+            "`rescale_factor` must be specified if `do_rescale` is `True`."
+        )
 
     if do_pad and pad_size is None:
         # Processors pad images using different args depending on the model, so the below check is pointless
@@ -471,18 +506,26 @@ def validate_preprocess_arguments(
         )
 
     if do_normalize and (image_mean is None or image_std is None):
-        raise ValueError("`image_mean` and `image_std` must both be specified if `do_normalize` is `True`.")
+        raise ValueError(
+            "`image_mean` and `image_std` must both be specified if `do_normalize` is `True`."
+        )
 
     if do_center_crop and crop_size is None:
-        raise ValueError("`crop_size` must be specified if `do_center_crop` is `True`.")
+        raise ValueError(
+            "`crop_size` must be specified if `do_center_crop` is `True`."
+        )
 
     if interpolation is not None and resample is not None:
         raise ValueError(
             "Only one of `interpolation` and `resample` should be specified, depending on image processor type."
         )
 
-    if do_resize and not (size is not None and (resample is not None or interpolation is not None)):
-        raise ValueError("`size` and `resample/interpolation` must be specified if `do_resize` is `True`.")
+    if do_resize and not (
+        size is not None and (resample is not None or interpolation is not None)
+    ):
+        raise ValueError(
+            "`size` and `resample/interpolation` must be specified if `do_resize` is `True`."
+        )
 
 
 class ImageFeatureExtractionMixin:
@@ -491,7 +534,9 @@ class ImageFeatureExtractionMixin:
     """
 
     def _ensure_format_supported(self, image):
-        if not isinstance(image, (PIL.Image.Image, np.ndarray)) and not is_paddle_tensor(image):
+        if not isinstance(
+            image, (PIL.Image.Image, np.ndarray)
+        ) and not is_paddle_tensor(image):
             raise ValueError(
                 f"Got type {type(image)} which is not supported, only `PIL.Image.Image`, `np.array` and "
                 "`paddle.Tensor` are."
@@ -541,7 +586,7 @@ class ImageFeatureExtractionMixin:
 
         return image.convert("RGB")
 
-    def rescale(self, image: np.ndarray, scale: Union[float, int]) -> np.ndarray:
+    def rescale(self, image: np.ndarray, scale: float) -> np.ndarray:
         """
         Rescale a numpy image by scale amount
         """
@@ -570,7 +615,11 @@ class ImageFeatureExtractionMixin:
         if is_paddle_tensor(image):
             image = image.cpu().numpy()
 
-        rescale = isinstance(image.flat[0], np.integer) if rescale is None else rescale
+        rescale = (
+            isinstance(image.flat[0], np.integer)
+            if rescale is None
+            else rescale
+        )
 
         if rescale:
             image = self.rescale(image.astype(np.float32), 1 / 255.0)
@@ -634,7 +683,6 @@ class ImageFeatureExtractionMixin:
             if not isinstance(std, np.ndarray):
                 std = np.array(std).astype(image.dtype)
         elif is_paddle_tensor(image):
-
             if not isinstance(mean, paddle.Tensor):
                 mean = paddle.to_tensor(mean).astype(image.dtype)
             if not isinstance(std, paddle.Tensor):
@@ -645,7 +693,9 @@ class ImageFeatureExtractionMixin:
         else:
             return (image - mean) / std
 
-    def resize(self, image, size, resample=None, default_to_square=True, max_size=None):
+    def resize(
+        self, image, size, resample=None, default_to_square=True, max_size=None
+    ):
         """
         Resizes `image`. Enforces conversion of input to PIL.Image.
 
@@ -675,7 +725,9 @@ class ImageFeatureExtractionMixin:
         Returns:
             image: A resized `PIL.Image.Image`.
         """
-        resample = resample if resample is not None else PILImageResampling.BILINEAR
+        resample = (
+            resample if resample is not None else PILImageResampling.BILINEAR
+        )
 
         self._ensure_format_supported(image)
 
@@ -687,17 +739,26 @@ class ImageFeatureExtractionMixin:
 
         if isinstance(size, int) or len(size) == 1:
             if default_to_square:
-                size = (size, size) if isinstance(size, int) else (size[0], size[0])
+                size = (
+                    (size, size)
+                    if isinstance(size, int)
+                    else (size[0], size[0])
+                )
             else:
                 width, height = image.size
                 # specified size only for the smallest edge
-                short, long = (width, height) if width <= height else (height, width)
+                short, long = (
+                    (width, height) if width <= height else (height, width)
+                )
                 requested_new_short = size if isinstance(size, int) else size[0]
 
                 if short == requested_new_short:
                     return image
 
-                new_short, new_long = requested_new_short, int(requested_new_short * long / short)
+                new_short, new_long = (
+                    requested_new_short,
+                    int(requested_new_short * long / short),
+                )
 
                 if max_size is not None:
                     if max_size <= requested_new_short:
@@ -706,9 +767,16 @@ class ImageFeatureExtractionMixin:
                             f"size for the smaller edge size = {size}"
                         )
                     if new_long > max_size:
-                        new_short, new_long = int(max_size * new_short / new_long), max_size
+                        new_short, new_long = (
+                            int(max_size * new_short / new_long),
+                            max_size,
+                        )
 
-                size = (new_short, new_long) if width <= height else (new_long, new_short)
+                size = (
+                    (new_short, new_long)
+                    if width <= height
+                    else (new_long, new_short)
+                )
 
         return image.resize(size, resample=resample)
 
@@ -736,14 +804,20 @@ class ImageFeatureExtractionMixin:
         if is_paddle_tensor(image) or is_numpy_array(image):
             if image.ndim == 2:
                 image = self.expand_dims(image)
-            image_shape = image.shape[1:] if image.shape[0] in [1, 3] else image.shape[:2]
+            image_shape = (
+                image.shape[1:] if image.shape[0] in [1, 3] else image.shape[:2]
+            )
         else:
             image_shape = (image.size[1], image.size[0])
 
         top = (image_shape[0] - size[0]) // 2
-        bottom = top + size[0]  # In case size is odd, (image_shape[0] + size[0]) // 2 won't give the proper result.
+        bottom = (
+            top + size[0]
+        )  # In case size is odd, (image_shape[0] + size[0]) // 2 won't give the proper result.
         left = (image_shape[1] - size[1]) // 2
-        right = left + size[1]  # In case size is odd, (image_shape[1] + size[1]) // 2 won't give the proper result.
+        right = (
+            left + size[1]
+        )  # In case size is odd, (image_shape[1] + size[1]) // 2 won't give the proper result.
 
         # For PIL Images we have a method to crop directly.
         if is_pil_image(image):
@@ -760,11 +834,19 @@ class ImageFeatureExtractionMixin:
                 image = image.transpose([2, 0, 1])
 
         # Check if cropped area is within image boundaries
-        if top >= 0 and bottom <= image_shape[0] and left >= 0 and right <= image_shape[1]:
+        if (
+            top >= 0
+            and bottom <= image_shape[0]
+            and left >= 0
+            and right <= image_shape[1]
+        ):
             return image[..., top:bottom, left:right]
 
         # Otherwise, we may need to pad if the image is too small. Oh joy...
-        new_shape = image.shape[:-2] + (max(size[0], image_shape[0]), max(size[1], image_shape[1]))
+        new_shape = image.shape[:-2] + (
+            max(size[0], image_shape[0]),
+            max(size[1], image_shape[1]),
+        )
         if is_numpy_array(image):
             new_image = np.zeros_like(image, shape=new_shape)
         elif is_paddle_tensor(image):
@@ -782,7 +864,9 @@ class ImageFeatureExtractionMixin:
         right += left_pad
 
         new_image = new_image[
-            ..., max(0, top) : min(new_image.shape[-2], bottom), max(0, left) : min(new_image.shape[-1], right)
+            ...,
+            max(0, top) : min(new_image.shape[-2], bottom),
+            max(0, left) : min(new_image.shape[-1], right),
         ]
 
         return new_image
@@ -804,7 +888,16 @@ class ImageFeatureExtractionMixin:
 
         return image[::-1, :, :]
 
-    def rotate(self, image, angle, resample=None, expand=0, center=None, translate=None, fillcolor=None):
+    def rotate(
+        self,
+        image,
+        angle,
+        resample=None,
+        expand=0,
+        center=None,
+        translate=None,
+        fillcolor=None,
+    ):
         """
         Returns a rotated copy of `image`. This method returns a copy of `image`, rotated the given number of degrees
         counter clockwise around its centre.
@@ -825,11 +918,18 @@ class ImageFeatureExtractionMixin:
             image = self.to_pil_image(image)
 
         return image.rotate(
-            angle, resample=resample, expand=expand, center=center, translate=translate, fillcolor=fillcolor
+            angle,
+            resample=resample,
+            expand=expand,
+            center=center,
+            translate=translate,
+            fillcolor=fillcolor,
         )
 
 
-def validate_kwargs(valid_processor_keys: list[str], captured_kwargs: list[str]):
+def validate_kwargs(
+    valid_processor_keys: list[str], captured_kwargs: list[str]
+):
     unused_keys = set(captured_kwargs).difference(set(valid_processor_keys))
     if unused_keys:
         unused_key_str = ", ".join(unused_keys)

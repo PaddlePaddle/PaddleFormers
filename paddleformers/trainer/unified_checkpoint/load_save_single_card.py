@@ -60,17 +60,25 @@ __all__ = [
 
 
 def save_file_sync(state_dict, path, save_to_hf=False):
-    state_dict, metadata = prepare_safe_save_state_dict(state_dict, save_to_hf=save_to_hf)
+    state_dict, metadata = prepare_safe_save_state_dict(
+        state_dict, save_to_hf=save_to_hf
+    )
     safe_save_file(state_dict, path, metadata=metadata)
 
 
 def save_single_card_checkpoint(model_to_save, output_dir, save_to_hf=False):
     """Save checkpoint for non-distributed environment."""
 
-    state_dict = get_expected_state_dict(model_to_save, concat_additional_adapter=True)
+    state_dict = get_expected_state_dict(
+        model_to_save, concat_additional_adapter=True
+    )
     if save_to_hf:
-        transpose_weight_keys = getattr(model_to_save, "transpose_weight_keys", None)
-        state_dict = ConversionMixin.convert_transpose_selected_weights(state_dict, transpose_weight_keys)
+        transpose_weight_keys = getattr(
+            model_to_save, "transpose_weight_keys", None
+        )
+        state_dict = ConversionMixin.convert_transpose_selected_weights(
+            state_dict, transpose_weight_keys
+        )
 
     if isinstance(model_to_save, LoRAModel):
         weight_filename = "peft_model-00001-of-00001.safetensors"
@@ -96,8 +104,14 @@ def save_single_card_checkpoint(model_to_save, output_dir, save_to_hf=False):
         json.dump(sharded_index_json, f, indent=4)
 
     # save checkpoint, do no support asynchronous save for single card currently.
-    logger.warning("Asynchronous saving is not supported for single card environment currently.")
-    save_file_sync(state_dict, path=os.path.join(output_dir, weight_filename), save_to_hf=save_to_hf)
+    logger.warning(
+        "Asynchronous saving is not supported for single card environment currently."
+    )
+    save_file_sync(
+        state_dict,
+        path=os.path.join(output_dir, weight_filename),
+        save_to_hf=save_to_hf,
+    )
 
     save_model_config(model_to_save, output_dir, save_to_hf)
 
@@ -127,7 +141,9 @@ def save_single_card_optimizer(model, optimizer, output_dir):
         optim_state_dict[new_name] = optim_state_dict.pop(key)
     if master_weights is not None:
         for key in list(master_weights.keys()):
-            master_weights[static2struct_name_mappings[key]] = master_weights.pop(key)
+            master_weights[static2struct_name_mappings[key]] = (
+                master_weights.pop(key)
+            )
         master_weights.update(fp32_weight)
 
     # save index json
@@ -135,11 +151,17 @@ def save_single_card_optimizer(model, optimizer, output_dir):
     total_optim_size, total_master_weight_size = 0, 0
     for key, weight in optim_state_dict.items():
         index_optimizer_file[key] = "optimizer-00001-of-00001.safetensors"
-        total_optim_size += weight.numel().item() * dtype_byte_size(weight.dtype)
+        total_optim_size += weight.numel().item() * dtype_byte_size(
+            weight.dtype
+        )
     if master_weights is not None:
         for key, weight in master_weights.items():
-            index_master_weight_file[key] = "master_weights-00001-of-00001.safetensors"
-            total_master_weight_size += weight.numel().item() * dtype_byte_size(weight.dtype)
+            index_master_weight_file[key] = (
+                "master_weights-00001-of-00001.safetensors"
+            )
+            total_master_weight_size += weight.numel().item() * dtype_byte_size(
+                weight.dtype
+            )
     path = os.path.join(output_dir, SAFE_OPTIMIZER_INDEX_NAME)
     master_path = os.path.join(output_dir, SAFE_MASTER_WEIGHTS_INDEX_NAME)
     with open(path, "w") as f:
@@ -156,18 +178,31 @@ def save_single_card_optimizer(model, optimizer, output_dir):
     if master_weights is not None:
         with open(master_path, "w") as f:
             json.dump(
-                {"metadata": {"total_size": total_master_weight_size}, "weight_map": index_master_weight_file},
+                {
+                    "metadata": {"total_size": total_master_weight_size},
+                    "weight_map": index_master_weight_file,
+                },
                 f,
                 indent=4,
             )
 
     # save optimizer state dict
-    save_file_sync(optim_state_dict, path=os.path.join(output_dir, "optimizer-00001-of-00001.safetensors"))
+    save_file_sync(
+        optim_state_dict,
+        path=os.path.join(output_dir, "optimizer-00001-of-00001.safetensors"),
+    )
     if master_weights is not None:
-        save_file_sync(master_weights, path=os.path.join(output_dir, "master_weights-00001-of-00001.safetensors"))
+        save_file_sync(
+            master_weights,
+            path=os.path.join(
+                output_dir, "master_weights-00001-of-00001.safetensors"
+            ),
+        )
 
 
-def load_single_card_checkpoint(model, resume_from_checkpoint: str, convert_from_hf=False):
+def load_single_card_checkpoint(
+    model, resume_from_checkpoint: str, convert_from_hf=False
+):
     if isinstance(model, LoRAModel):
         index_filename = SAFE_PEFT_WEIGHTS_INDEX_NAME
     else:
@@ -179,7 +214,7 @@ def load_single_card_checkpoint(model, resume_from_checkpoint: str, convert_from
 
     loaded_keys = sharded_metadata["all_checkpoint_keys"]
     model_state_dict = get_expected_state_dict(model)
-    expected_keys = set(list(model_state_dict.keys()))
+    expected_keys = set(model_state_dict.keys())
     missing_keys = expected_keys - set(loaded_keys)
 
     if len(missing_keys) > 0:
@@ -198,7 +233,9 @@ def load_single_card_checkpoint(model, resume_from_checkpoint: str, convert_from
     gc.collect()
 
     if error_msgs:
-        raise RuntimeError(f"Error(s) in loading state dict for {model.__class__.__name__}:\n\t{error_msgs}")
+        raise RuntimeError(
+            f"Error(s) in loading state dict for {model.__class__.__name__}:\n\t{error_msgs}"
+        )
 
 
 def load_single_card_optimizer(model, optimizer, resume_from_checkpoint: str):
@@ -206,25 +243,37 @@ def load_single_card_optimizer(model, optimizer, resume_from_checkpoint: str):
 
     resolved_archive_file, sharded_metadata = get_optimizer_shard_files(
         optimizer_path=resume_from_checkpoint,
-        index_filename=os.path.join(resume_from_checkpoint, SAFE_OPTIMIZER_INDEX_NAME),
+        index_filename=os.path.join(
+            resume_from_checkpoint, SAFE_OPTIMIZER_INDEX_NAME
+        ),
     )
     has_master_weights = True if sharded_metadata["master_weights"] else False
 
     model_state_dict = get_expected_state_dict(model)
-    struct2static_name_mappings = {k: v.name for k, v in model_state_dict.items()}
+    struct2static_name_mappings = {
+        k: v.name for k, v in model_state_dict.items()
+    }
     expected_keys = sharded_metadata["all_optimizer_keys"]
 
     if has_master_weights:
         returned_optim_state_dict["master_weights"] = {}
-        resolved_archive_file_mw, sharded_metadata_mw = get_optimizer_shard_files(
-            optimizer_path=resume_from_checkpoint,
-            index_filename=os.path.join(resume_from_checkpoint, SAFE_MASTER_WEIGHTS_INDEX_NAME),
+        resolved_archive_file_mw, sharded_metadata_mw = (
+            get_optimizer_shard_files(
+                optimizer_path=resume_from_checkpoint,
+                index_filename=os.path.join(
+                    resume_from_checkpoint, SAFE_MASTER_WEIGHTS_INDEX_NAME
+                ),
+            )
         )
         expected_keys_mw = sharded_metadata_mw["all_optimizer_keys"]
 
-    state_dict_optim = load_state_dict(resolved_archive_file[0], None, expected_keys)
+    state_dict_optim = load_state_dict(
+        resolved_archive_file[0], None, expected_keys
+    )
     if has_master_weights:
-        state_dict_optim_mw = load_state_dict(resolved_archive_file_mw[0], None, expected_keys_mw)
+        state_dict_optim_mw = load_state_dict(
+            resolved_archive_file_mw[0], None, expected_keys_mw
+        )
 
     for key in list(state_dict_optim.keys()):
         key_name = key.split("/")
@@ -241,6 +290,10 @@ def load_single_card_optimizer(model, optimizer, resume_from_checkpoint: str):
     if has_master_weights:
         for key in list(state_dict_optim_mw.keys()):
             static_name = struct2static_name_mappings[key]
-            returned_optim_state_dict["master_weights"][static_name] = state_dict_optim_mw.pop(key)
-            returned_optim_state_dict["master_weights"][static_name].name = "_".join([static_name, FP32_MASTER])
+            returned_optim_state_dict["master_weights"][static_name] = (
+                state_dict_optim_mw.pop(key)
+            )
+            returned_optim_state_dict["master_weights"][
+                static_name
+            ].name = "_".join([static_name, FP32_MASTER])
     return returned_optim_state_dict

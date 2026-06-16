@@ -19,7 +19,9 @@ import paddle
 
 from .log import logger
 
-TensorHolder = collections.namedtuple("TensorHolder", ["shape", "dtype", "name"])
+TensorHolder = collections.namedtuple(
+    "TensorHolder", ["shape", "dtype", "name"]
+)
 
 
 def nested_reduce_tensor(tensor):
@@ -56,9 +58,13 @@ def nested_empty_tensor(tensor):
 def nested_broadcast_tensor(tensor, src=0, group=None):
     if isinstance(tensor, dict):
         for key in list(tensor.keys()):
-            tensor[key] = nested_broadcast_tensor(tensor[key], src=src, group=group)
+            tensor[key] = nested_broadcast_tensor(
+                tensor[key], src=src, group=group
+            )
     if isinstance(tensor, list):
-        return type(tensor)(nested_broadcast_tensor(t, src=src, group=group) for t in tensor)
+        return type(tensor)(
+            nested_broadcast_tensor(t, src=src, group=group) for t in tensor
+        )
 
     if isinstance(tensor, paddle.Tensor):
         paddle.distributed.broadcast(tensor, src=src, group=group, sync_op=True)
@@ -162,7 +168,11 @@ def nested_copy_place(inputs, place=None, blocking=False):
             outputs[key] = nested_copy_place(inputs[key], place, blocking)
         return outputs
     if isinstance(inputs, paddle.Tensor):
-        inputs = inputs if inputs.place == place else inputs._copy_to(place, blocking)
+        inputs = (
+            inputs
+            if inputs.place == place
+            else inputs._copy_to(place, blocking)
+        )
     return inputs
 
 

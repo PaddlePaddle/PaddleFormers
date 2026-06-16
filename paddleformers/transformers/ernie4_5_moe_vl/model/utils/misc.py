@@ -65,7 +65,9 @@ class SmoothedValue:
             value = value.astype("float32").detach()
             if value.shape == [1]:
                 value = value.squeeze()
-            self.count += (value != ZERO).astype("int64") if self._skip_zero else 1
+            self.count += (
+                (value != ZERO).astype("int64") if self._skip_zero else 1
+            )
         else:
             self.count += 1
         self.total += value
@@ -152,7 +154,10 @@ class TrainingLogs:
         """
         is_enabled
         """
-        return self.trainer is None or (self.trainer.state.global_step + 1) % self.logging_interval == 0
+        return (
+            self.trainer is None
+            or (self.trainer.state.global_step + 1) % self.logging_interval == 0
+        )
 
     def __setitem__(self, k, v):
         skip_zero = False
@@ -182,7 +187,9 @@ class TrainingLogs:
             return self.meters[attr]
         if attr in self.__dict__:
             return self.__dict__[attr]
-        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{attr}'")
+        raise AttributeError(
+            f"'{type(self).__name__}' object has no attribute '{attr}'"
+        )
 
     def dict(self, use_async=False):
         """
@@ -190,7 +197,11 @@ class TrainingLogs:
         Returns:
             _type_: _description_
         """
-        avg_metric = {k: v.global_avg for k, v in self.meters.items() if k not in self.global_meters_keys}
+        avg_metric = {
+            k: v.global_avg
+            for k, v in self.meters.items()
+            if k not in self.global_meters_keys
+        }
 
         if self.global_meters_keys:
             tensor_lst = []
@@ -201,22 +212,34 @@ class TrainingLogs:
             dist.gather(paddle.stack(tensor_lst), gathered_v, 0)
             if gathered_v:
                 for i, k in enumerate(self.global_meters_keys):
-                    avg_metric[k] = np.mean([t[i] for t in gathered_v if t[i] != -100]).item()
+                    avg_metric[k] = np.mean(
+                        [t[i] for t in gathered_v if t[i] != -100]
+                    ).item()
 
         if not use_async:
-            ret = {k: v.item() if isinstance(v, paddle.Tensor) else v for k, v in avg_metric.items()}
-            global_info = {k: v for k, v in ret.items() if k in self.global_meters_keys}
+            ret = {
+                k: v.item() if isinstance(v, paddle.Tensor) else v
+                for k, v in avg_metric.items()
+            }
+            global_info = {
+                k: v for k, v in ret.items() if k in self.global_meters_keys
+            }
             ret = {
                 k: v
                 for k, v in ret.items()
-                if (k not in self.global_meters_keys) and ((not self._skip_zero) or v != 0.0)
+                if (k not in self.global_meters_keys)
+                and ((not self._skip_zero) or v != 0.0)
             }
             return ret, global_info
-        assert get_async_loader is not None, "async logging requires fleety > 10.8"
+        assert get_async_loader is not None, (
+            "async logging requires fleety > 10.8"
+        )
         if not avg_metric:
             return lambda: ({}, {})
         keys, values = zip(*avg_metric.items())
-        tensor_list = [(i, t) for i, t in enumerate(values) if isinstance(t, paddle.Tensor)]
+        tensor_list = [
+            (i, t) for i, t in enumerate(values) if isinstance(t, paddle.Tensor)
+        ]
         if tensor_list:
             async_loader = get_async_loader()
             tensor_id, tensor_list = zip(*tensor_list)
@@ -233,11 +256,14 @@ class TrainingLogs:
                 for i, val in zip(tensor_id, tensor_list_cpu.tolist()):
                     values[i] = val
             ret = dict(zip(keys, values))
-            global_info = {k: v for k, v in ret.items() if k in self.global_meters_keys}
+            global_info = {
+                k: v for k, v in ret.items() if k in self.global_meters_keys
+            }
             ret = {
                 k: v
                 for k, v in ret.items()
-                if (k not in self.global_meters_keys) and ((not self._skip_zero) or v != 0.0)
+                if (k not in self.global_meters_keys)
+                and ((not self._skip_zero) or v != 0.0)
             }
             return ret, global_info
 
@@ -255,7 +281,9 @@ class TrainingLogs:
 
     def restore_snapshot(self):
         """restore_snapshot"""
-        assert self.snapshot is not None, "you should use take_snapshot before restore_snapshot"
+        assert self.snapshot is not None, (
+            "you should use take_snapshot before restore_snapshot"
+        )
         self.meters = copy.deepcopy(self.snapshot)
         self.snapshot = None
 

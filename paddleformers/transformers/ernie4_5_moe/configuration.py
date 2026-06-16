@@ -12,12 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-""" Ernie4_5_Moe model configuration """
+"""Ernie4_5_Moe model configuration"""
+
 import json
-from typing import Optional, Union
+from typing import Optional
 
 from ..configuration_utils import PretrainedConfig
-from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
+from ..modeling_rope_utils import (
+    rope_config_validation,
+    standardize_rope_params,
+)
 
 __all__ = ["Ernie4_5_MoeConfig"]
 
@@ -57,7 +61,7 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         hidden_dropout_prob=0.0,
         num_key_value_heads=None,
         micro_batch_size=-1,
-        moe_num_experts: Optional[Union[int, list]] = 16,
+        moe_num_experts: Optional[int | list] = 16,
         moe_capacity=[64, 64, 64],
         moe_norm_min=1e-12,
         router_aux_loss_coef=1e-2,
@@ -68,7 +72,7 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         global_aux_loss=False,
         moe_dropout_prob=0.0,
         moe_group="mp",
-        moe_intermediate_size: Union[int, list] = 0,
+        moe_intermediate_size: int | list = 0,
         moe_num_shared_experts: int = 2,
         moe_layer_start_index=1,
         moe_layer_end_index=-1,
@@ -172,7 +176,11 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         self.max_position_embeddings = max_position_embeddings
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
-        self.head_dim = head_dim if head_dim is not None else hidden_size // num_attention_heads
+        self.head_dim = (
+            head_dim
+            if head_dim is not None
+            else hidden_size // num_attention_heads
+        )
         self.hidden_act = hidden_act
         self.initializer_range = initializer_range
         self.rms_norm_eps = rms_norm_eps
@@ -204,7 +212,11 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         self.moe_intermediate_size = moe_intermediate_size
         self.moe_num_shared_experts = moe_num_shared_experts
         self.moe_layer_start_index = moe_layer_start_index
-        self.moe_layer_end_index = self.num_hidden_layers - 1 if moe_layer_end_index == -1 else moe_layer_end_index
+        self.moe_layer_end_index = (
+            self.num_hidden_layers - 1
+            if moe_layer_end_index == -1
+            else moe_layer_end_index
+        )
         self.moe_layer_interval = moe_layer_interval
         self.moe_reverse_token_drop = moe_reverse_token_drop
         self.moe_k = moe_k
@@ -214,13 +226,19 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         self.enable_delay_scale_loss = enable_delay_scale_loss
         self.num_acc_steps = num_acc_steps
         self.moe_layer_start_index = moe_layer_start_index
-        self.moe_layer_end_index = self.num_hidden_layers - 1 if moe_layer_end_index == -1 else moe_layer_end_index
+        self.moe_layer_end_index = (
+            self.num_hidden_layers - 1
+            if moe_layer_end_index == -1
+            else moe_layer_end_index
+        )
         self.scoring_func = scoring_func
         self.moe_norm_gate_logits = moe_norm_gate_logits
         self.moe_use_aux_free = moe_use_aux_free
         self.fuse_gate_detach_matmul = fuse_gate_detach_matmul
         self.moe_use_hard_gate = moe_use_hard_gate
-        self.moe_multimodal_dispatch_use_allgather = moe_multimodal_dispatch_use_allgather
+        self.moe_multimodal_dispatch_use_allgather = (
+            moe_multimodal_dispatch_use_allgather
+        )
         self.num_nextn_predict_layers = num_nextn_predict_layers
         self.mtp_loss_scaling_factor = mtp_loss_scaling_factor
         self.enable_mtp_magic_send = enable_mtp_magic_send

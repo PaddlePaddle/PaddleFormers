@@ -33,17 +33,29 @@ class LoggingCallback(TrainerCallback):
             data_type = kwargs["inputs"].get("data_type", None)
 
             if data_id is not None:
-                logs = dict(logs, data_id="-".join(map(str, (data_id.numpy().tolist()))))
+                logs = dict(
+                    logs, data_id="-".join(map(str, (data_id.numpy().tolist())))
+                )
             if src_id is not None:
-                logs = dict(logs, src_id="-".join(map(str, (src_id.numpy().tolist()))))
+                logs = dict(
+                    logs, src_id="-".join(map(str, (src_id.numpy().tolist())))
+                )
             if data_type is not None:
-                logs.update(data_type="-".join(map(str, (data_type.numpy().tolist()))))
+                logs.update(
+                    data_type="-".join(map(str, (data_type.numpy().tolist())))
+                )
 
         if type(logs) is dict:
             logger.info(
                 ", ".join(
                     (
-                        (f"{k}: {v}" if k == "loss" or "cur_dp" in k else f"{k}: {v:e}" if v < 1e-3 else f"{k}: {v:f}")
+                        (
+                            f"{k}: {v}"
+                            if k == "loss" or "cur_dp" in k
+                            else f"{k}: {v:e}"
+                            if v < 1e-3
+                            else f"{k}: {v:f}"
+                        )
                         if isinstance(v, float)
                         else f"{k}: {v}"
                     )

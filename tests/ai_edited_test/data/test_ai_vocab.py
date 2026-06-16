@@ -20,7 +20,9 @@ class TestVocabInitFromCounter(unittest.TestCase):
     def test_basic_init_from_counter(self):
         counter = collections.Counter(["hello", "world", "hello", "foo"])
         vocab = Vocab(counter)
-        self.assertEqual(len(vocab), 3)  # hello (freq 2), foo (freq 1), world (freq 1) - alphabetically
+        self.assertEqual(
+            len(vocab), 3
+        )  # hello (freq 2), foo (freq 1), world (freq 1) - alphabetically
         self.assertIn("hello", vocab)
 
     def test_init_with_special_tokens(self):
@@ -116,7 +118,9 @@ class TestVocabInitFromTokenToIdx(unittest.TestCase):
         token_to_idx = {"<unk>": 0, "hello": 1, "world": 2}
         vocab = Vocab(token_to_idx=token_to_idx, unk_token="<unk>")
         self.assertEqual(len(vocab), 3)
-        self.assertEqual(vocab.to_indices("unknown_word"), vocab.to_indices("<unk>"))
+        self.assertEqual(
+            vocab.to_indices("unknown_word"), vocab.to_indices("<unk>")
+        )
 
     def test_init_from_token_to_idx_missing_special_token_raises(self):
         token_to_idx = {"hello": 0, "world": 1}
@@ -289,7 +293,9 @@ class TestVocabToJson(unittest.TestCase):
         self.assertEqual(data["unk_token"], "<unk>")
 
     def test_to_json_save_to_file(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False
+        ) as f:
             json_file = f.name
 
         try:
@@ -309,7 +315,9 @@ class TestVocabToJson(unittest.TestCase):
         self.assertEqual(restored.pad_token, "<pad>")
 
     def test_from_json_file(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False
+        ) as f:
             f.write(self.vocab.to_json())
             json_file = f.name
 
@@ -335,7 +343,13 @@ class TestVocabFromDict(unittest.TestCase):
         self.assertEqual(vocab.to_indices("unknown"), 0)
 
     def test_from_dict_with_all_special_tokens(self):
-        token_to_idx = {"<unk>": 0, "<pad>": 1, "<bos>": 2, "<eos>": 3, "hello": 4}
+        token_to_idx = {
+            "<unk>": 0,
+            "<pad>": 1,
+            "<bos>": 2,
+            "<eos>": 3,
+            "hello": 4,
+        }
         vocab = Vocab.from_dict(
             token_to_idx,
             unk_token="<unk>",
@@ -376,7 +390,9 @@ class TestVocabBuildVocab(unittest.TestCase):
     def test_build_vocab_with_unk_token(self):
         tokens_list = [["hello", "world"]]
         vocab = Vocab.build_vocab(tokens_list, unk_token="<unk>")
-        self.assertEqual(vocab.to_indices("nonexistent"), vocab.to_indices("<unk>"))
+        self.assertEqual(
+            vocab.to_indices("nonexistent"), vocab.to_indices("<unk>")
+        )
 
     def test_build_vocab_with_token_to_idx(self):
         tokens_list = [["a", "b", "c", "d"]]
@@ -392,12 +408,16 @@ class TestVocabLoadSaveVocabulary(unittest.TestCase):
         counter = collections.Counter(["hello", "world", "foo"])
         vocab = Vocab(counter, unk_token="<unk>", pad_token="<pad>")
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False
+        ) as f:
             filepath = f.name
 
         try:
             vocab.save_vocabulary(filepath)
-            loaded = Vocab.load_vocabulary(filepath, unk_token="<unk>", pad_token="<pad>")
+            loaded = Vocab.load_vocabulary(
+                filepath, unk_token="<unk>", pad_token="<pad>"
+            )
             self.assertEqual(len(loaded), len(vocab))
             self.assertEqual(loaded.unk_token, "<unk>")
             self.assertEqual(loaded.pad_token, "<pad>")
@@ -405,7 +425,9 @@ class TestVocabLoadSaveVocabulary(unittest.TestCase):
             os.unlink(filepath)
 
     def test_load_vocabulary_basic(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False
+        ) as f:
             f.write("hello\nworld\nfoo\n")
             filepath = f.name
 
@@ -469,7 +491,9 @@ class TestVocabDuplicateSpecialTokens(unittest.TestCase):
     def test_duplicate_special_tokens_not_added_twice(self):
         # If unk_token and pad_token are the same, only one entry
         token_to_idx = {"<special>": 0, "hello": 1}
-        vocab = Vocab.from_dict(token_to_idx, unk_token="<special>", pad_token="<special>")
+        vocab = Vocab.from_dict(
+            token_to_idx, unk_token="<special>", pad_token="<special>"
+        )
         self.assertEqual(len(vocab), 2)
 
 

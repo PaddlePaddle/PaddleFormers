@@ -47,7 +47,9 @@ def dispatching(x, dispatch_mask, scatter_index, num_experts, capacity):
     if isinstance(scatter_index, paddle.Tensor):
         scatter_index = scatter_index.unbind(1)
     for i_scatter_index, i_dispatch_mask in zip(scatter_index, dispatch_mask):
-        init_output = paddle.zeros([num_experts * capacity, x.shape[-1]], dtype="float32")
+        init_output = paddle.zeros(
+            [num_experts * capacity, x.shape[-1]], dtype="float32"
+        )
         updates = x * i_dispatch_mask.cast(x.dtype)
         if output is None:
             output = paddle.scatter(
@@ -83,13 +85,21 @@ def combining(x, combine_weights, scatter_index):
 
     dim = x.shape[-1]
     if isinstance(scatter_index, (list, tuple)):
-        scatter_index = paddle.cat([i.unsqueeze([-1]) for i in scatter_index], -1)
+        scatter_index = paddle.cat(
+            [i.unsqueeze([-1]) for i in scatter_index], -1
+        )
     scatter_index = scatter_index.reshape([-1])
-    num_k = len(combine_weights) if isinstance(combine_weights, (list, tuple)) else combine_weights.shape[-1]
+    num_k = (
+        len(combine_weights)
+        if isinstance(combine_weights, (list, tuple))
+        else combine_weights.shape[-1]
+    )
     x = paddle.gather(x, scatter_index).reshape([-1, num_k, dim])  # [seq,2,dim]
     if isinstance(combine_weights, (list, tuple)):
         combine_weights = paddle.cat(combine_weights, -1).unsqueeze([1])
-    return paddle.matmul(combine_weights, x).squeeze(1)  # [seq,1,2] @ [seq,2,dim] -> [seq,1,dim]
+    return paddle.matmul(combine_weights, x).squeeze(
+        1
+    )  # [seq,1,2] @ [seq,2,dim] -> [seq,1,dim]
 
 
 class LocalGatePart1(LocalLayer):
@@ -98,20 +108,35 @@ class LocalGatePart1(LocalLayer):
         out_dist_attrs = [
             (mesh, [dist.Shard(0)]),  # reshaped_input [b*s, h]
             (mesh, [dist.Shard(0)]),  # scores [b*s, e]
-            (mesh, [dist.Partial(dist.ReduceType.kRedMax)]),  # expert_counts [e]
+            (
+                mesh,
+                [dist.Partial(dist.ReduceType.kRedMax)],
+            ),  # expert_counts [e]
             (mesh, [dist.Partial(dist.ReduceType.kRedAvg)]),  # l_aux, scalar
             (mesh, [dist.Partial(dist.ReduceType.kRedAvg)]),  # l_zloss, scalar
         ]
         grad_dist_attrs = [
             None,
-            (mesh, [dist.Partial(dist.ReduceType.kRedAvg)]),  # gate_weights.grad
-            (mesh, [dist.Partial(dist.ReduceType.kRedAvg)]),  # e_score_correction_bias.grad
+            (
+                mesh,
+                [dist.Partial(dist.ReduceType.kRedAvg)],
+            ),  # gate_weights.grad
+            (
+                mesh,
+                [dist.Partial(dist.ReduceType.kRedAvg)],
+            ),  # e_score_correction_bias.grad
         ]
         super().__init__(out_dist_attrs, grad_dist_attrs)
         self.config = config
         self.gate = gate
 
-    def forward(self, hidden_state, gate_weight, e_score_correction_bias, used_token=None):
+    def forward(
+        self,
+        hidden_state,
+        gate_weight,
+        e_score_correction_bias,
+        used_token=None,
+    ):
         # Implement Algorithm 2 from GShard paper.
         batch_size, seq_len, d_model = hidden_state.shape
         reshaped_input = hidden_state.reshape([-1, d_model])
@@ -122,7 +147,9 @@ class LocalGatePart1(LocalLayer):
             scores = self.gate.gate_score_func(logits=logits)
             scores = scores.cast(paddle.get_default_dtype())
 
-        exp_counts, l_aux, l_zloss = self.gate.topkgating_part1(scores, e_score_correction_bias)
+        exp_counts, l_aux, l_zloss = self.gate.topkgating_part1(
+            scores, e_score_correction_bias
+        )
 
         reshaped_scores = scores.reshape([-1, scores.shape[-1]])
         return reshaped_input, reshaped_scores, exp_counts, l_aux, l_zloss
@@ -144,7 +171,11 @@ class LocalGateAndDispatch(LocalLayer):
 
     def forward(self, reshaped_input, scores):
         combine_weights, dispatch_mask = self.gate.topkgating_part2(scores)
-        dispatched_input = einsum("sec,sm->ecm", paddle.cast(dispatch_mask, reshaped_input.dtype), reshaped_input)
+        dispatched_input = einsum(
+            "sec,sm->ecm",
+            paddle.cast(dispatch_mask, reshaped_input.dtype),
+            reshaped_input,
+        )
         return dispatched_input, combine_weights
 
 
@@ -155,12 +186,18 @@ class LocalCombine(LocalLayer):
         grad_dist_attrs = [None, None]
         super().__init__(out_dist_attrs, grad_dist_attrs)
 
-    def forward(self, combine_weights, expert_output, dtype="float32", out_shape=None):
-        combined_output = einsum("sec,ecm->sm", combine_weights.cast(dtype), expert_output)
+    def forward(
+        self, combine_weights, expert_output, dtype="float32", out_shape=None
+    ):
+        combined_output = einsum(
+            "sec,ecm->sm", combine_weights.cast(dtype), expert_output
+        )
         if out_shape is not None:
             if dist.get_rank() in self.mesh.process_ids:
                 out_shape = dist.auto_parallel.moe_utils._cal_local_shape(
-                    out_shape, self.out_dist_attrs[0][0], self.out_dist_attrs[0][1]
+                    out_shape,
+                    self.out_dist_attrs[0][0],
+                    self.out_dist_attrs[0][1],
                 )
             combined_output = combined_output.reshape(out_shape)
         return combined_output
@@ -177,7 +214,7 @@ class MoELayer(nn.Layer):
         capacity: int = 1.0,
         moe_group: str = "data",
         all_to_all_dropout=0.0,
-        ipp: int = None,
+        ipp: int | None = None,
     ):
         super().__init__()
 
@@ -194,8 +231,8 @@ class MoELayer(nn.Layer):
         for i in range(self.moe_num_experts):
             self.experts.append(expert_class(**expert_kwargs))
 
-        self.expert_model_parallel_size, self.moe_num_experts_per_device = self._parse_moe_expert_parallel(
-            self.moe_num_experts, config
+        self.expert_model_parallel_size, self.moe_num_experts_per_device = (
+            self._parse_moe_expert_parallel(self.moe_num_experts, config)
         )
         self._redistribute_experts(self.experts, config.moe_group)
 
@@ -213,25 +250,36 @@ class MoELayer(nn.Layer):
         if moe_group != "None":
             index = 0 if moe_group == "dp" else 1
             self.moe_mesh_dim = index
-            ep_sub_meshes = dist.auto_parallel.api.split_mesh(get_mesh(self.ipp), index)
+            ep_sub_meshes = dist.auto_parallel.api.split_mesh(
+                get_mesh(self.ipp), index
+            )
             for i, expert in enumerate(experts):
                 ep_group_id = i // self.moe_num_experts_per_device
-                experts[i].redistribute_expert(ep_sub_meshes[ep_group_id], [dist.Replicate(), dist.Replicate()])
+                experts[i].redistribute_expert(
+                    ep_sub_meshes[ep_group_id],
+                    [dist.Replicate(), dist.Replicate()],
+                )
 
     def _parse_moe_expert_parallel(self, moe_num_experts, config):
-        assert config.moe_group in ["dp", "mp", "None"], f"moe_group={config.moe_group} not in ['dp', 'mp', 'None']"
+        assert config.moe_group in ["dp", "mp", "None"], (
+            f"moe_group={config.moe_group} not in ['dp', 'mp', 'None']"
+        )
         if config.moe_group == "None":
             expert_model_parallel_size = 1
         else:
-            expert_model_parallel_size = dist.fleet.auto.get_mesh().get_dim_size(config.moe_group)
-        assert (
-            moe_num_experts >= expert_model_parallel_size
-        ), f"expert moe_num_experts={moe_num_experts} >= moe_world_size={expert_model_parallel_size}"
+            expert_model_parallel_size = (
+                dist.fleet.auto.get_mesh().get_dim_size(config.moe_group)
+            )
+        assert moe_num_experts >= expert_model_parallel_size, (
+            f"expert moe_num_experts={moe_num_experts} >= moe_world_size={expert_model_parallel_size}"
+        )
 
-        assert (
-            moe_num_experts % expert_model_parallel_size == 0
-        ), f"expert moe_num_experts={moe_num_experts} % moe_world_size={expert_model_parallel_size} == 0"
-        moe_num_experts_per_device = moe_num_experts // expert_model_parallel_size
+        assert moe_num_experts % expert_model_parallel_size == 0, (
+            f"expert moe_num_experts={moe_num_experts} % moe_world_size={expert_model_parallel_size} == 0"
+        )
+        moe_num_experts_per_device = (
+            moe_num_experts // expert_model_parallel_size
+        )
 
         return expert_model_parallel_size, moe_num_experts_per_device
 
@@ -248,7 +296,10 @@ class MoELayer(nn.Layer):
 
     def expert_forward(self, dispatched_input):
         sub_mesh_tensors = dist.auto_parallel.api.moe_sub_mesh_tensors(
-            dispatched_input, get_mesh(self.ipp), self.moe_mesh_dim, dispatched_input.placements
+            dispatched_input,
+            get_mesh(self.ipp),
+            self.moe_mesh_dim,
+            dispatched_input.placements,
         )
         chunks = paddle.utils.flatten([t.unbind(1) for t in sub_mesh_tensors])
 
@@ -263,7 +314,10 @@ class MoELayer(nn.Layer):
                 expert_outputs = []
 
         expert_output = dist.auto_parallel.api.moe_global_mesh_tensor(
-            ep_group_outputs, get_mesh(self.ipp), dispatched_input.placements, self.moe_mesh_dim
+            ep_group_outputs,
+            get_mesh(self.ipp),
+            dispatched_input.placements,
+            self.moe_mesh_dim,
         )
         return expert_output
 
@@ -284,33 +338,57 @@ class MoELayer(nn.Layer):
         # Implement Algorithm 2 from GShard paper.
         batch_size, seq_len, d_model = hidden_state.shape
 
-        reshaped_input, gate_scores, exp_counts, l_aux, l_zloss = self.local_gate_part1(
-            hidden_state, self.gate.weight, self.gate.e_score_correction_bias, used_token=used_token
+        reshaped_input, gate_scores, exp_counts, l_aux, l_zloss = (
+            self.local_gate_part1(
+                hidden_state,
+                self.gate.weight,
+                self.gate.e_score_correction_bias,
+                used_token=used_token,
+            )
         )
         if self.gate.drop_tokens is False:
             capacity = paddle.max(exp_counts)
             capacity = dist.reshard(capacity, get_mesh(), [dist.Replicate()])
             self.gate.capacity = int(capacity)
-        dispatched_input, combine_weights = self.local_gate_and_dispatch(reshaped_input, gate_scores)
+        dispatched_input, combine_weights = self.local_gate_and_dispatch(
+            reshaped_input, gate_scores
+        )
         ori_dispatched_placements = copy.deepcopy(dispatched_input.placements)
 
         ep_placements = copy.deepcopy(dispatched_input.placements)
         ep_placements[self.moe_mesh_dim] = dist.Shard(0)
-        dispatched_input = dist.reshard(dispatched_input, get_mesh(self.ipp), ep_placements)
+        dispatched_input = dist.reshard(
+            dispatched_input, get_mesh(self.ipp), ep_placements
+        )
 
         # Re-shape after all-to-all: ecm -> gecm
         dispatched_input = dispatched_input.reshape(
-            [self.expert_model_parallel_size, self.moe_num_experts_per_device, -1, d_model]
+            [
+                self.expert_model_parallel_size,
+                self.moe_num_experts_per_device,
+                -1,
+                d_model,
+            ]
         )
         expert_output = self.expert_forward(dispatched_input)
         # Re-shape before drop_tokens: gecm -> ecm
         expert_output = expert_output.reshape(
-            [self.expert_model_parallel_size * self.moe_num_experts_per_device, -1, d_model]
+            [
+                self.expert_model_parallel_size
+                * self.moe_num_experts_per_device,
+                -1,
+                d_model,
+            ]
         )
-        expert_output = dist.reshard(expert_output, get_mesh(self.ipp), ori_dispatched_placements)
+        expert_output = dist.reshard(
+            expert_output, get_mesh(self.ipp), ori_dispatched_placements
+        )
 
         combined_output = self.local_combine(
-            combine_weights, expert_output, dtype=hidden_state[0].dtype, out_shape=hidden_state.shape
+            combine_weights,
+            expert_output,
+            dtype=hidden_state[0].dtype,
+            out_shape=hidden_state.shape,
         )
 
         return combined_output, l_aux, l_zloss

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-""" Ernie model configuration"""
+"""Ernie model configuration"""
 
 from paddleformers.transformers.configuration_utils import PretrainedConfig
 

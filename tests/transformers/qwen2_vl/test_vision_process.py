@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Tests for Qwen2/2.5-VL vision processing functions."""
+
 from __future__ import annotations
 
 import math
@@ -39,7 +39,10 @@ class TestQwenVisionProcessing(unittest.TestCase):
         self.test_image_url = "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_images/example1.jpg"
 
         # Create test video frames
-        self.test_frames = [Image.new("RGB", (64, 64), color=(i * 10, i * 20, i * 30)) for i in range(10)]
+        self.test_frames = [
+            Image.new("RGB", (64, 64), color=(i * 10, i * 20, i * 30))
+            for i in range(10)
+        ]
 
         # Create test video url
         self.test_video_url = "http://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4"
@@ -48,7 +51,10 @@ class TestQwenVisionProcessing(unittest.TestCase):
 
     def tearDown(self):
         """Clean up after tests."""
-        if "MODEL_SEQ_LEN" in os.environ and os.environ["MODEL_SEQ_LEN"] == "128000":
+        if (
+            "MODEL_SEQ_LEN" in os.environ
+            and os.environ["MODEL_SEQ_LEN"] == "128000"
+        ):
             del os.environ["MODEL_SEQ_LEN"]
 
     def test_round_by_factor(self):
@@ -95,7 +101,9 @@ class TestQwenVisionProcessing(unittest.TestCase):
         min_pixels = 10000
         max_pixels = 50000
 
-        h_bar, w_bar = vision_process.smart_resize(height, width, factor, min_pixels, max_pixels)
+        h_bar, w_bar = vision_process.smart_resize(
+            height, width, factor, min_pixels, max_pixels
+        )
 
         # Check divisibility
         self.assertEqual(h_bar % factor, 0)
@@ -188,7 +196,11 @@ class TestQwenVisionProcessing(unittest.TestCase):
 
     def test_fetch_image_with_resized_dimensions(self):
         """Test fetch_image with pre-specified resized dimensions."""
-        ele = {"image": self.test_image, "resized_height": 50, "resized_width": 50}
+        ele = {
+            "image": self.test_image,
+            "resized_height": 50,
+            "resized_width": 50,
+        }
         result = vision_process.fetch_image(ele)
 
         self.assertIsInstance(result, Image.Image)
@@ -200,7 +212,11 @@ class TestQwenVisionProcessing(unittest.TestCase):
         total_frames = 100
         video_fps = 30
 
-        start_frame, end_frame, frame_count = vision_process.calculate_video_frame_range(ele, total_frames, video_fps)
+        start_frame, end_frame, frame_count = (
+            vision_process.calculate_video_frame_range(
+                ele, total_frames, video_fps
+            )
+        )
 
         self.assertEqual(start_frame, 0)
         self.assertEqual(end_frame, 99)
@@ -212,7 +228,11 @@ class TestQwenVisionProcessing(unittest.TestCase):
         total_frames = 100
         video_fps = 30
 
-        start_frame, end_frame, frame_count = vision_process.calculate_video_frame_range(ele, total_frames, video_fps)
+        start_frame, end_frame, frame_count = (
+            vision_process.calculate_video_frame_range(
+                ele, total_frames, video_fps
+            )
+        )
 
         expected_start = math.ceil(1.0 * 30)  # 30
         expected_end = math.floor(3.0 * 30)  # 90
@@ -223,7 +243,13 @@ class TestQwenVisionProcessing(unittest.TestCase):
     def test_extract_vision_info_single_conversation(self):
         """Test extract_vision_info with single conversation."""
         conversations = [
-            {"content": [{"type": "text", "value": "Hello"}, {"image": "path/to/image"}, {"video": "path/to/video"}]}
+            {
+                "content": [
+                    {"type": "text", "value": "Hello"},
+                    {"image": "path/to/image"},
+                    {"video": "path/to/video"},
+                ]
+            }
         ]
 
         vision_infos = vision_process.extract_vision_info(conversations)
@@ -235,7 +261,10 @@ class TestQwenVisionProcessing(unittest.TestCase):
     def test_extract_vision_info_multiple_conversations(self):
         """Test extract_vision_info with multiple conversations."""
         conversations = [
-            [{"content": [{"image": "path/to/image"}]}, {"content": [{"video": "path/to/video"}]}],
+            [
+                {"content": [{"image": "path/to/image"}]},
+                {"content": [{"video": "path/to/video"}]},
+            ],
             [{"content": [{"image_url": "path/to/image_url"}]}],
         ]
 
@@ -256,13 +285,19 @@ class TestQwenVisionProcessing(unittest.TestCase):
         sys.modules["torchcodec"] = None
 
         if not getattr(torchcodec, "__is_paddle_compatible_library__", None):
-            raise RuntimeError("Could not import 'torchcodec'. Please ensure it is installed.")
+            raise RuntimeError(
+                "Could not import 'torchcodec'. Please ensure it is installed."
+            )
 
         self.assertIsInstance(result, paddle.Tensor)
 
     def test_fetch_video_with_frame_list(self):
         """Test fetch_video function with frame list."""
-        ele = {"video": self.test_frames, "resized_height": 64, "resized_width": 64}
+        ele = {
+            "video": self.test_frames,
+            "resized_height": 64,
+            "resized_width": 64,
+        }
         result = vision_process.fetch_video(ele)
 
         self.assertIsInstance(result, paddle.Tensor)
@@ -281,7 +316,9 @@ class TestQwenVisionProcessing(unittest.TestCase):
             ]
         ]
 
-        result = vision_process.process_vision_info(conversations, return_video_kwargs=True)
+        result = vision_process.process_vision_info(
+            conversations, return_video_kwargs=True
+        )
 
         if len(result) == 3:
             image_inputs, video_inputs, video_kwargs = result
@@ -325,7 +362,16 @@ class TestQwenVisionProcessing(unittest.TestCase):
 
     def test_process_vision_info_mixed_content(self):
         """Test process_vision_info with mixed image and video content."""
-        conversations = [[{"content": [{"image": self.test_image}, {"video": self.test_frames}]}]]
+        conversations = [
+            [
+                {
+                    "content": [
+                        {"image": self.test_image},
+                        {"video": self.test_frames},
+                    ]
+                }
+            ]
+        ]
 
         result = vision_process.process_vision_info(conversations)
 

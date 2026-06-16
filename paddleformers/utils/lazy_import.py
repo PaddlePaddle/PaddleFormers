@@ -18,7 +18,7 @@ import importlib.util
 import os
 from itertools import chain
 from types import ModuleType
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 
 class _LazyModule(ModuleType):
@@ -35,18 +35,27 @@ class _LazyModule(ModuleType):
         module_file: str,
         import_structure: dict[str, set[str]],
         module_spec: Optional[importlib.machinery.ModuleSpec] = None,
-        extra_objects: Optional[Dict[str, object]] = None,
-        explicit_import_shortcut: Optional[Dict[str, List[str]]] = None,
+        extra_objects: Optional[dict[str, object]] = None,
+        explicit_import_shortcut: Optional[dict[str, list[str]]] = None,
     ):
         super().__init__(name)
 
         self._object_missing_backend = {}
-        self._explicit_import_shortcut = explicit_import_shortcut if explicit_import_shortcut else {}
+        self._explicit_import_shortcut = (
+            explicit_import_shortcut if explicit_import_shortcut else {}
+        )
 
         self._modules = set(import_structure.keys())
-        self._class_to_module = {value: key for key, values in import_structure.items() for value in values}
+        self._class_to_module = {
+            value: key
+            for key, values in import_structure.items()
+            for value in values
+        }
         # Needed for autocompletion in an IDE
-        self.__all__ = [*self._modules, *chain.from_iterable(import_structure.values())]
+        self.__all__ = [
+            *self._modules,
+            *chain.from_iterable(import_structure.values()),
+        ]
         self.__file__ = module_file
         self.__spec__ = module_spec
         self.__path__ = [os.path.dirname(module_file)]
@@ -54,7 +63,7 @@ class _LazyModule(ModuleType):
         self._name = name
         self._import_structure = import_structure
 
-    def __dir__(self) -> List[str]:
+    def __dir__(self) -> list[str]:
         """Custom dir() implementation for better IDE support."""
         result = list(super().__dir__())
         result.extend(attr for attr in self.__all__ if attr not in result)
@@ -90,7 +99,9 @@ class _LazyModule(ModuleType):
                     value = self._get_module(key)
 
             if value is None:
-                raise AttributeError(f"module {self.__name__} has no attribute {name}")
+                raise AttributeError(
+                    f"module {self.__name__} has no attribute {name}"
+                )
 
         # Cache the resolved value
         setattr(self, name, value)
@@ -105,4 +116,7 @@ class _LazyModule(ModuleType):
 
     def __reduce__(self):
         """Support for pickle protocol."""
-        return (self.__class__, (self._name, self.__file__, self._import_structure))
+        return (
+            self.__class__,
+            (self._name, self.__file__, self._import_structure),
+        )

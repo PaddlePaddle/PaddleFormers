@@ -24,16 +24,19 @@ import sys
 import unittest
 from collections.abc import Mapping
 from contextlib import contextmanager
-from typing import Optional, Union
+from typing import Optional
 
 import numpy as np
 import paddle
-import paddle.distributed.fleet as fleet
 import yaml
+from paddle.distributed import fleet
 
 from paddleformers.trainer.argparser import strtobool
 from paddleformers.utils.download import DownloadSource
-from paddleformers.utils.import_utils import is_package_available, is_paddle_available
+from paddleformers.utils.import_utils import (
+    is_package_available,
+    is_paddle_available,
+)
 from paddleformers.utils.log import logger
 
 __all__ = ["get_vocab_list", "stable_softmax", "cross_entropy"]
@@ -46,7 +49,7 @@ class PaddleFormersModelTest(unittest.TestCase):
 
 def get_vocab_list(vocab_path):
     with open(vocab_path, "r", encoding="utf-8") as f:
-        vocab_list = [vocab.rstrip("\n").split("\t")[0] for vocab in f.readlines()]
+        vocab_list = [vocab.rstrip("\n").split("\t")[0] for vocab in f]
         return vocab_list
 
 
@@ -79,7 +82,9 @@ def cross_entropy(softmax, label, soft_label, axis, ignore_index=-1):
     return result.reshape(label.shape)
 
 
-def softmax_with_cross_entropy(logits, label, soft_label=False, axis=-1, ignore_index=-1):
+def softmax_with_cross_entropy(
+    logits, label, soft_label=False, axis=-1, ignore_index=-1
+):
     softmax = np.apply_along_axis(stable_softmax, -1, logits)
     return cross_entropy(softmax, label, soft_label, axis, ignore_index)
 
@@ -200,8 +205,7 @@ def create_test_data(file=__file__):
             "一万七千多户",
             "一万万",
         ]
-        for vocab in vocab_list:
-            f.write("{}\n".format(vocab))
+        f.writelines(f"{vocab}\n" for vocab in vocab_list)
     return test_data_file
 
 
@@ -212,7 +216,9 @@ def get_bool_from_env(key, default_value=False):
     try:
         value = strtobool(value)
     except ValueError:
-        raise ValueError(f"If set, {key} must be yes, no, true, false, 0 or 1 (case insensitive).")
+        raise ValueError(
+            f"If set, {key} must be yes, no, true, false, 0 or 1 (case insensitive)."
+        )
     return value
 
 
@@ -229,7 +235,10 @@ def slow(test):
     else:
         import paddle
 
-        if paddle.device.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0:
+        if (
+            paddle.device.is_compiled_with_cuda()
+            and paddle.device.cuda.device_count() > 0
+        ):
             paddle.device.cuda.empty_cache()
         return test
 
@@ -269,7 +278,10 @@ def nested_simplify(obj, decimals=3):
     elif isinstance(obj, np.ndarray):
         return nested_simplify(obj.tolist())
     elif isinstance(obj, Mapping):
-        return {nested_simplify(k, decimals): nested_simplify(v, decimals) for k, v in obj.items()}
+        return {
+            nested_simplify(k, decimals): nested_simplify(v, decimals)
+            for k, v in obj.items()
+        }
     elif isinstance(obj, (str, int, np.int64)):
         return obj
     elif obj is None:
@@ -294,7 +306,9 @@ def require_package(*package_names):
     def decorator(func):
         for package_name in package_names:
             if not is_package_available(package_name):
-                return unittest.skip(f"package<{package_name}> not found, so to skip this test")(func)
+                return unittest.skip(
+                    f"package<{package_name}> not found, so to skip this test"
+                )(func)
         return func
 
     return decorator
@@ -310,7 +324,9 @@ def skip_platform(*platform):
     def decorator(func):
         for plat in platform:
             if sys.platform.startswith(plat):
-                return unittest.skip(f"platform<{plat}> matched, so to skip this test")(func)
+                return unittest.skip(
+                    f"platform<{plat}> matched, so to skip this test"
+                )(func)
         return func
 
     return decorator
@@ -325,7 +341,9 @@ def is_slow_test() -> bool:
     return os.getenv("RUN_SLOW_TEST") is not None
 
 
-def load_test_config(config_file: str, key: str, sub_key: str = None) -> dict | None:
+def load_test_config(
+    config_file: str, key: str, sub_key: str | None = None
+) -> dict | None:
     """parse config file to argv
 
     Args:
@@ -423,7 +441,9 @@ def run_command(command: list[str], return_stdout=False):
     if an error occurred while running `command`
     """
     try:
-        output = subprocess.check_output(command, stderr=subprocess.STDOUT, shell=True)
+        output = subprocess.check_output(
+            command, stderr=subprocess.STDOUT, shell=True
+        )
         if return_stdout:
             if hasattr(output, "decode"):
                 output = output.decode("utf-8")
@@ -442,9 +462,9 @@ def skip_for_none_ce_case(test_case):
 
     ce_env = strtobool(os.getenv("CE_TEST_ENV", "0"))
     if not ce_env:
-        return unittest.skip("test skip for NONE CE case. If you want run this ci, please export CE_TEST_ENV=1 ")(
-            test_case
-        )
+        return unittest.skip(
+            "test skip for NONE CE case. If you want run this ci, please export CE_TEST_ENV=1 "
+        )(test_case)
 
     return test_case
 
@@ -461,7 +481,9 @@ def require_paddle_multi_gpu(test_case):
 
     import paddle
 
-    return unittest.skipUnless(paddle.device.cuda.device_count() > 1, "test requires multiple GPUs")(test_case)
+    return unittest.skipUnless(
+        paddle.device.cuda.device_count() > 1, "test requires multiple GPUs"
+    )(test_case)
 
 
 def require_paddle_non_multi_gpu(test_case):
@@ -473,7 +495,9 @@ def require_paddle_non_multi_gpu(test_case):
 
     import paddle
 
-    return unittest.skipUnless(paddle.device.cuda.device_count() < 2, "test requires 0 or 1 GPU")(test_case)
+    return unittest.skipUnless(
+        paddle.device.cuda.device_count() < 2, "test requires 0 or 1 GPU"
+    )(test_case)
 
 
 def require_gpu(min_gpus: int = 1):
@@ -578,7 +602,7 @@ def set_proxy(download_hub: DownloadSource = None):
 def gpu_device_initializer(
     skip_if_no_gpu: bool = True,
     log_prefix: Optional[str] = None,
-    gpu_id: Optional[Union[int, str]] = None,
+    gpu_id: Optional[int | str] = None,
 ):
     """
     Initialize device when GPU is needed by certain test case.
@@ -595,7 +619,9 @@ def gpu_device_initializer(
                     device_id = pid % gpu_count
                 elif isinstance(gpu_id, int):
                     if gpu_id >= gpu_count:
-                        self.skipTest(f"GPU {gpu_id} not available (total: {gpu_count})")
+                        self.skipTest(
+                            f"GPU {gpu_id} not available (total: {gpu_count})"
+                        )
                         return
                     device_id = gpu_id
                 else:

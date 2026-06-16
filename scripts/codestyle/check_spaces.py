@@ -21,7 +21,11 @@ def add_spaces_between_chinese_and_english(text):
     pattern = r"([\u4e00-\u9fa5])([a-zA-Z])|([a-zA-Z])([\u4e00-\u9fa5])"
 
     def replace_func(match):
-        return match.group(1) + " " + match.group(2) if match.group(1) else match.group(3) + " " + match.group(4)
+        return (
+            match.group(1) + " " + match.group(2)
+            if match.group(1)
+            else match.group(3) + " " + match.group(4)
+        )
 
     return re.sub(pattern, replace_func, text)
 

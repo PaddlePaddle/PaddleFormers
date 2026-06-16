@@ -8,11 +8,9 @@ eval_dataset_prob: "1.0"
 max_seq_len: 8192
 packing: true
 mix_strategy: concat
-
 ### model
 model_name_or_path: Qwen/Qwen3-0.6B-Base
 _attn_implementation: flashmask
-
 ### finetuning
 # base
 stage: PT
@@ -34,11 +32,9 @@ logging_dir: ./vdl_log
 output_dir: ./checkpoints/qwen3-pt-full-tp-pp
 disable_tqdm: true
 eval_accumulation_steps: 16
-
 # train
 warmup_steps: 20
 learning_rate: 1.0e-5
-
 # performance
 tensor_model_parallel_size: 2
 pipeline_model_parallel_size: 2

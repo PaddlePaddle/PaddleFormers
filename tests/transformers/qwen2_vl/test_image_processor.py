@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -41,12 +40,15 @@ class Qwen2VLImageProcessorTest(unittest.TestCase):
 
             from transformers import AutoImageProcessor as AutoImageProcessor_hf
 
-            image_processor_hf = AutoImageProcessor_hf.from_pretrained(tempdir, use_fast=False)
+            image_processor_hf = AutoImageProcessor_hf.from_pretrained(
+                tempdir, use_fast=False
+            )
             inputs_pd = image_processor_pd(self.image, return_tensors="pd")
             inputs_hf = image_processor_hf(self.image, return_tensors="pt")
 
             self.assertTrue(
-                paddle.to_tensor(inputs_hf["pixel_values"].numpy())._md5sum() == inputs_pd["pixel_values"]._md5sum()
+                paddle.to_tensor(inputs_hf["pixel_values"].numpy())._md5sum()
+                == inputs_pd["pixel_values"]._md5sum()
             )
 
     @gpu_device_initializer(log_prefix="Qwen2VLImageProcessorTest")
@@ -59,14 +61,18 @@ class Qwen2VLImageProcessorTest(unittest.TestCase):
 
             from transformers import AutoImageProcessor as AutoImageProcessor_hf
 
-            image_processor_hf = AutoImageProcessor_hf.from_pretrained(tempdir, device="cpu", use_fast=True)
+            image_processor_hf = AutoImageProcessor_hf.from_pretrained(
+                tempdir, device="cpu", use_fast=True
+            )
             inputs_pd = image_processor_pd(self.image, return_tensors="pd")
             inputs_hf = image_processor_hf(self.image, return_tensors="pt")
 
             # NOTE: Fallback to CPU leads to precision differences during resize.
             if inputs_hf["pixel_values"].device.type == "cuda":
                 self.assertTrue(
-                    paddle.to_tensor(inputs_hf["pixel_values"].cpu().numpy())._md5sum()
+                    paddle.to_tensor(
+                        inputs_hf["pixel_values"].cpu().numpy()
+                    )._md5sum()
                     == inputs_pd["pixel_values"]._md5sum()
                 )
             else:

@@ -18,10 +18,22 @@ from dataclasses import dataclass
 
 from paddle.nn.quant.quantized_linear import _get_arch_info
 
-quant_inference_mapping = {"avg": "abs_max", "abs_max_channel_wise": "abs_max_channel_wise", "abs_max": "abs_max"}
+quant_inference_mapping = {
+    "avg": "abs_max",
+    "abs_max_channel_wise": "abs_max_channel_wise",
+    "abs_max": "abs_max",
+}
 fp8_format_mapping = {
-    "hybrid": {"weight": "float8_e4m3fn", "activation": "float8_e4m3fn", "grad_output": "float8_e5m2"},
-    "e4m3": {"weight": "float8_e4m3fn", "activation": "float8_e4m3fn", "grad_output": "float8_e4m3fn"},
+    "hybrid": {
+        "weight": "float8_e4m3fn",
+        "activation": "float8_e4m3fn",
+        "grad_output": "float8_e5m2",
+    },
+    "e4m3": {
+        "weight": "float8_e4m3fn",
+        "activation": "float8_e4m3fn",
+        "grad_output": "float8_e4m3fn",
+    },
 }
 
 
@@ -116,10 +128,15 @@ class QuantizationConfig:
                 )
         if (
             _get_arch_info is not None
-            and (isinstance(weight_quantize_algo, dict) and "fp8linear" in weight_quantize_algo)
+            and (
+                isinstance(weight_quantize_algo, dict)
+                and "fp8linear" in weight_quantize_algo
+            )
             or weight_quantize_algo == "fp8linear"
         ) and _get_arch_info() not in [89, 90]:
-            raise RuntimeError("fp8Linear is only supported on NVIDIA Hopper GPUs.")
+            raise RuntimeError(
+                "fp8Linear is only supported on NVIDIA Hopper GPUs."
+            )
         if quant_type is not None and quant_type not in [
             "weight_only_int8",
             "weight_only_int4",
@@ -143,7 +160,9 @@ class QuantizationConfig:
         self.qlora_weight_blocksize = qlora_weight_blocksize
         self.weight_quant_method = weight_quant_method
         self.act_quant_method = quant_inference_mapping[act_quant_method]
-        self.qlora_weight_double_quant_block_size = qlora_weight_double_quant_block_size
+        self.qlora_weight_double_quant_block_size = (
+            qlora_weight_double_quant_block_size
+        )
         self.activation_scheme = activation_scheme
         self.fmt = fmt
         self.quant_method = quant_method
@@ -187,7 +206,12 @@ class QuantizationConfig:
             return False
 
     def is_support_merge_tensor_parallel(self):
-        if self.weight_quantize_algo in ["weight_only_int8", "weight_only_int4", "llm.int8", "a8w8"]:
+        if self.weight_quantize_algo in [
+            "weight_only_int8",
+            "weight_only_int4",
+            "llm.int8",
+            "a8w8",
+        ]:
             return False
         else:
             return True

@@ -16,13 +16,12 @@ from __future__ import annotations
 import io
 import os
 import pickle
-from functools import lru_cache
-from typing import Union
+from _io import BufferedReader
+from functools import cache
 from zipfile import ZipFile
 
 import numpy as np
 import paddle
-from _io import BufferedReader
 from safetensors import deserialize
 
 from .env import PYTORCH_WEIGHTS_NAME, SAFE_WEIGHTS_NAME
@@ -53,7 +52,9 @@ class SerializationError(Exception):
     pass
 
 
-def seek_by_string(file_handler: BufferedReader, string: str, file_size: int) -> int:
+def seek_by_string(
+    file_handler: BufferedReader, string: str, file_size: int
+) -> int:
     """seek the index of file-handler with target words
     Args:
         file_handler (BufferedReader): file handler
@@ -77,7 +78,9 @@ def seek_by_string(file_handler: BufferedReader, string: str, file_size: int) ->
             word_index = 0
 
     if file_handler.tell() >= file_size - 1:
-        raise SerializationError(f"can't find the find the target string<{string}> in the file")
+        raise SerializationError(
+            f"can't find the find the target string<{string}> in the file"
+        )
     return file_handler.tell()
 
 
@@ -86,17 +89,19 @@ def read_prefix_key(path):
     with open(path, "rb") as file_handler:
         end_index = seek_by_string(file_handler, "data.pkl", file_size)
         file_handler.seek(MZ_ZIP_LOCAL_DIR_HEADER_SIZE)
-        prefix_key = file_handler.read(end_index - MZ_ZIP_LOCAL_DIR_HEADER_SIZE - len("/data.pkl"))
+        prefix_key = file_handler.read(
+            end_index - MZ_ZIP_LOCAL_DIR_HEADER_SIZE - len("/data.pkl")
+        )
     return prefix_key.decode("latin")
 
 
-def _maybe_decode_ascii(bytes_str: Union[bytes, str]) -> str:
+def _maybe_decode_ascii(bytes_str: bytes | str) -> str:
     if isinstance(bytes_str, bytes):
         return bytes_str.decode("ascii")
     return bytes_str
 
 
-@lru_cache(maxsize=None)
+@cache
 def _storage_type_to_dtype_to_map():
     """convert storage type to numpy dtype"""
     return {
@@ -110,7 +115,7 @@ def _storage_type_to_dtype_to_map():
         "ByteStorage": np.uint8,
         "BoolStorage": np.bool_,
         "ComplexDoubleStorage": np.cdouble,
-        "ComplexFloatStorage": np.cfloat,
+        "ComplexFloatStorage": np.complex128,
         "BFloat16Storage": np.uint16,  # support bf16
     }
 
@@ -174,23 +179,42 @@ class SafeUnpickler(pickle.Unpickler):
         :param name: The class name.
         :return: The class if allowed, otherwise raises UnpicklingError.
         """
-        if module == "builtins" and name in {"int", "float", "str", "tuple", "list", "dict", "set"}:
+        if module == "builtins" and name in {
+            "int",
+            "float",
+            "str",
+            "tuple",
+            "list",
+            "dict",
+            "set",
+        }:
             return super().find_class(module, name)
-        raise pickle.UnpicklingError(f"Unsafe object loading is prohibited: {module}.{name}")
+        raise pickle.UnpicklingError(
+            f"Unsafe object loading is prohibited: {module}.{name}"
+        )
 
 
-def _rebuild_tensor_stage(storage, storage_offset, size, stride, requires_grad, backward_hooks):
+def _rebuild_tensor_stage(
+    storage, storage_offset, size, stride, requires_grad, backward_hooks
+):
     # if a tensor has shape [M, N] and stride is [1, N], it's column-wise / fortran-style
     # if a tensor has shape [M, N] and stride is [M, 1], it's row-wise / C-style
     # defaults to C-style
-    if stride is not None and len(stride) > 1 and stride[0] == 1 and stride[1] > 1:
+    if (
+        stride is not None
+        and len(stride) > 1
+        and stride[0] == 1
+        and stride[1] > 1
+    ):
         order = "F"
     else:
         order = "C"
 
     # fix bug when load https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
     numel = int(np.prod(size))
-    return storage[storage_offset : storage_offset + numel].reshape(size, order=order)
+    return storage[storage_offset : storage_offset + numel].reshape(
+        size, order=order
+    )
 
 
 def _rebuild_parameter(data, requires_grad, backward_hooks):
@@ -210,7 +234,9 @@ def load_torch(path: str, **pickle_load_args):
 
     state_dict = {}
 
-    if path.endswith(PYTORCH_WEIGHTS_NAME) or os.path.split(path)[-1].startswith("pytorch_model-"):
+    if path.endswith(PYTORCH_WEIGHTS_NAME) or os.path.split(path)[
+        -1
+    ].startswith("pytorch_model-"):
         import torch
 
         state_dict = torch.load(path, map_location="cpu", weights_only=False)
@@ -222,7 +248,9 @@ def load_torch(path: str, **pickle_load_args):
                 t = paddle.utils.dlpack.from_dlpack(capsule)
                 state_dict[key] = t
         return state_dict
-    elif path.endswith(SAFE_WEIGHTS_NAME) or os.path.split(path)[-1].startswith("model-"):
+    elif path.endswith(SAFE_WEIGHTS_NAME) or os.path.split(path)[-1].startswith(
+        "model-"
+    ):
         # torch safetensors -> numpy -> paddle.Tensor
         with open(path, "rb") as f:
             data = f.read()
@@ -234,10 +262,19 @@ def load_torch(path: str, **pickle_load_args):
             with device_guard("cpu"):
                 if v["dtype"] == "BF16":
                     arr = paddle.Tensor(
-                        np.frombuffer(v["data"], dtype=dtype).reshape(v["shape"]), dtype="bfloat16", zero_copy=True
+                        np.frombuffer(v["data"], dtype=dtype).reshape(
+                            v["shape"]
+                        ),
+                        dtype="bfloat16",
+                        zero_copy=True,
                     )
                 else:
-                    arr = paddle.Tensor(np.frombuffer(v["data"], dtype=dtype).reshape(v["shape"]), zero_copy=True)
+                    arr = paddle.Tensor(
+                        np.frombuffer(v["data"], dtype=dtype).reshape(
+                            v["shape"]
+                        ),
+                        zero_copy=True,
+                    )
 
             state_dict[k] = arr
 
@@ -255,7 +292,9 @@ def load_torch_inner(path: str, **pickle_load_args):
     Returns:
     """
 
-    if path.endswith(PYTORCH_WEIGHTS_NAME) or os.path.split(path)[-1].startswith("pytorch_model-"):
+    if path.endswith(PYTORCH_WEIGHTS_NAME) or os.path.split(path)[
+        -1
+    ].startswith("pytorch_model-"):
         pickle_load_args.update({"encoding": "utf-8"})
 
         prefix_key = read_prefix_key(path)
@@ -265,7 +304,9 @@ def load_torch_inner(path: str, **pickle_load_args):
 
         def load_tensor(dtype, numel, key, location):
             name = f"{prefix_key}/data/{key}"
-            typed_storage = np.frombuffer(torch_zip.open(name).read()[:numel], dtype=dtype)
+            typed_storage = np.frombuffer(
+                torch_zip.open(name).read()[:numel], dtype=dtype
+            )
             return typed_storage
 
         def persistent_load(saved_id):
@@ -273,9 +314,9 @@ def load_torch_inner(path: str, **pickle_load_args):
             typename = _maybe_decode_ascii(saved_id[0])
             data = saved_id[1:]
 
-            assert (
-                typename == "storage"
-            ), f"Unknown typename for persistent_load, expected 'storage' but got '{typename}'"
+            assert typename == "storage", (
+                f"Unknown typename for persistent_load, expected 'storage' but got '{typename}'"
+            )
             storage_type, key, location, numel = data
             dtype = storage_type.dtype
 
@@ -283,17 +324,23 @@ def load_torch_inner(path: str, **pickle_load_args):
                 typed_storage = loaded_storages[key]
             else:
                 nbytes = numel * _element_size(dtype)
-                typed_storage = load_tensor(dtype, nbytes, key, _maybe_decode_ascii(location))
+                typed_storage = load_tensor(
+                    dtype, nbytes, key, _maybe_decode_ascii(location)
+                )
                 loaded_storages[key] = typed_storage
 
             return typed_storage
 
         data_iostream = torch_zip.open(f"{prefix_key}/data.pkl").read()
-        unpickler_stage = UnpicklerWrapperStage(io.BytesIO(data_iostream), **pickle_load_args)
+        unpickler_stage = UnpicklerWrapperStage(
+            io.BytesIO(data_iostream), **pickle_load_args
+        )
         unpickler_stage.persistent_load = persistent_load
         state_dict = unpickler_stage.load()
         torch_zip.close()
-    elif path.endswith(SAFE_WEIGHTS_NAME) or os.path.split(path)[-1].startswith("model-"):
+    elif path.endswith(SAFE_WEIGHTS_NAME) or os.path.split(path)[-1].startswith(
+        "model-"
+    ):
         # torch safetensors -> numpy -> paddle.Tensor
         with open(path, "rb") as f:
             data = f.read()
@@ -303,9 +350,14 @@ def load_torch_inner(path: str, **pickle_load_args):
         for k, v in flat:
             dtype = _TYPES[v["dtype"]]
             if v["dtype"] == "BF16":
-                arr = paddle.to_tensor(np.frombuffer(v["data"], dtype=dtype).reshape(v["shape"]), dtype="bfloat16")
+                arr = paddle.to_tensor(
+                    np.frombuffer(v["data"], dtype=dtype).reshape(v["shape"]),
+                    dtype="bfloat16",
+                )
             else:
-                arr = paddle.to_tensor(np.frombuffer(v["data"], dtype=dtype).reshape(v["shape"]))
+                arr = paddle.to_tensor(
+                    np.frombuffer(v["data"], dtype=dtype).reshape(v["shape"])
+                )
             state_dict[k] = arr
 
     return state_dict

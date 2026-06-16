@@ -36,15 +36,24 @@ class TestGetFAVersion(unittest.TestCase):
     def test_deterministic_mode(self):
         """Test that when cudnn_deterministic is set, returns 2."""
         _get_fa_version = self._get_func()
-        with patch("paddle.get_flags", return_value={"FLAGS_cudnn_deterministic": True}):
+        with patch(
+            "paddle.get_flags", return_value={"FLAGS_cudnn_deterministic": True}
+        ):
             result = _get_fa_version()
             self.assertEqual(result, 2)
 
     def test_non_deterministic_mode(self):
         """Test that when cudnn_deterministic is not set, reads FLAGS_flash_attn_version."""
         _get_fa_version = self._get_func()
-        with patch("paddle.get_flags", return_value={"FLAGS_cudnn_deterministic": False}), patch(
-            "paddle.base.framework.get_flags", return_value={"FLAGS_flash_attn_version": 3}
+        with (
+            patch(
+                "paddle.get_flags",
+                return_value={"FLAGS_cudnn_deterministic": False},
+            ),
+            patch(
+                "paddle.base.framework.get_flags",
+                return_value={"FLAGS_flash_attn_version": 3},
+            ),
         ):
             result = _get_fa_version()
             self.assertEqual(result, 3)
@@ -81,7 +90,10 @@ class TestFlashAttentionForwardDispatch(unittest.TestCase):
     def test_unsupported_fa_version_raises(self):
         """Test that unsupported fa_version raises ValueError."""
         func = self._get_func()
-        with patch("paddleformers.nn.attention.sink_impl._get_fa_version", return_value=1):
+        with patch(
+            "paddleformers.nn.attention.sink_impl._get_fa_version",
+            return_value=1,
+        ):
             q = paddle.randn([1, 4, 2, 8])
             k = paddle.randn([1, 4, 2, 8])
             v = paddle.randn([1, 4, 2, 8])
@@ -102,7 +114,10 @@ class TestFlashAttentionBackwardDispatch(unittest.TestCase):
     def test_unsupported_fa_version_raises(self):
         """Test that unsupported fa_version raises ValueError in backward."""
         func = self._get_func()
-        with patch("paddleformers.nn.attention.sink_impl._get_fa_version", return_value=99):
+        with patch(
+            "paddleformers.nn.attention.sink_impl._get_fa_version",
+            return_value=99,
+        ):
             grad = paddle.randn([1, 4, 2, 8])
             q = paddle.randn([1, 4, 2, 8])
             k = paddle.randn([1, 4, 2, 8])
@@ -123,8 +138,12 @@ class TestFlashmaskAttentionForwardDispatch(unittest.TestCase):
 
         return _flashmask_attention_forward_dispatch
 
-    @patch("paddleformers.nn.attention.sink_impl.paddle.nn.functional.flashmask_attention")
-    @patch("paddleformers.nn.attention.sink_impl._get_fa_version", return_value=2)
+    @patch(
+        "paddleformers.nn.attention.sink_impl.paddle.nn.functional.flashmask_attention"
+    )
+    @patch(
+        "paddleformers.nn.attention.sink_impl._get_fa_version", return_value=2
+    )
     def test_fa_version_2_calls_flashmask(self, mock_version, mock_flashmask):
         """Test that FA version 2 calls flashmask_attention without softmax_scale."""
         func = self._get_func()
@@ -141,9 +160,15 @@ class TestFlashmaskAttentionForwardDispatch(unittest.TestCase):
         mock_flashmask.assert_called_once()
         self.assertEqual(out.shape[0], 1)
 
-    @patch("paddleformers.nn.attention.sink_impl.paddle.nn.functional.flashmask_attention")
-    @patch("paddleformers.nn.attention.sink_impl._get_fa_version", return_value=3)
-    def test_fa_version_3_calls_flashmask_with_scale(self, mock_version, mock_flashmask):
+    @patch(
+        "paddleformers.nn.attention.sink_impl.paddle.nn.functional.flashmask_attention"
+    )
+    @patch(
+        "paddleformers.nn.attention.sink_impl._get_fa_version", return_value=3
+    )
+    def test_fa_version_3_calls_flashmask_with_scale(
+        self, mock_version, mock_flashmask
+    ):
         """Test that FA version 3 calls flashmask_attention with softmax_scale."""
         func = self._get_func()
         mock_flashmask.return_value = (
@@ -161,9 +186,15 @@ class TestFlashmaskAttentionForwardDispatch(unittest.TestCase):
         call_kwargs = mock_flashmask.call_args[1]
         self.assertIn("softmax_scale", call_kwargs)
 
-    @patch("paddleformers.nn.attention.sink_impl.paddle.nn.functional.flashmask_attention")
-    @patch("paddleformers.nn.attention.sink_impl._get_fa_version", return_value=2)
-    def test_fa_version_2_custom_scale_warning(self, mock_version, mock_flashmask):
+    @patch(
+        "paddleformers.nn.attention.sink_impl.paddle.nn.functional.flashmask_attention"
+    )
+    @patch(
+        "paddleformers.nn.attention.sink_impl._get_fa_version", return_value=2
+    )
+    def test_fa_version_2_custom_scale_warning(
+        self, mock_version, mock_flashmask
+    ):
         """Test that FA version 2 prints warning for custom softmax_scale."""
         func = self._get_func()
         mock_flashmask.return_value = (
@@ -194,7 +225,10 @@ class TestFlashmaskAttentionBackwardDispatch(unittest.TestCase):
     def test_unsupported_fa_version_raises(self):
         """Test that unsupported fa_version raises ValueError in flashmask backward."""
         func = self._get_func()
-        with patch("paddleformers.nn.attention.sink_impl._get_fa_version", return_value=99):
+        with patch(
+            "paddleformers.nn.attention.sink_impl._get_fa_version",
+            return_value=99,
+        ):
             grad = paddle.randn([1, 4, 2, 8])
             q = paddle.randn([1, 4, 2, 8])
             k = paddle.randn([1, 4, 2, 8])
@@ -359,7 +393,9 @@ class TestFlashMaskSinkPyLayerForward(unittest.TestCase):
 
         return FlashMaskSinkPyLayer
 
-    @patch("paddleformers.nn.attention.sink_impl._flashmask_attention_forward_dispatch")
+    @patch(
+        "paddleformers.nn.attention.sink_impl._flashmask_attention_forward_dispatch"
+    )
     def test_forward_with_startend_row_indices(self, mock_flashmask):
         """Test forward pass when startend_row_indices is provided."""
         mock_flashmask.return_value = (
@@ -377,7 +413,9 @@ class TestFlashMaskSinkPyLayerForward(unittest.TestCase):
         mock_flashmask.assert_called_once()
         self.assertEqual(result.shape, [2, 4, 2, 8])
 
-    @patch("paddleformers.nn.attention.sink_impl._flashmask_attention_forward_dispatch")
+    @patch(
+        "paddleformers.nn.attention.sink_impl._flashmask_attention_forward_dispatch"
+    )
     def test_forward_with_causal_true(self, mock_flashmask):
         """Test forward pass with causal=True."""
         mock_flashmask.return_value = (
@@ -394,7 +432,9 @@ class TestFlashMaskSinkPyLayerForward(unittest.TestCase):
         cls.apply(q, k, v, sink, sei, causal=True)
         mock_flashmask.assert_called_once()
 
-    @patch("paddleformers.nn.attention.sink_impl._flashmask_attention_forward_dispatch")
+    @patch(
+        "paddleformers.nn.attention.sink_impl._flashmask_attention_forward_dispatch"
+    )
     def test_forward_with_dropout(self, mock_flashmask):
         """Test forward pass with dropout."""
         mock_flashmask.return_value = (
@@ -411,7 +451,9 @@ class TestFlashMaskSinkPyLayerForward(unittest.TestCase):
         cls.apply(q, k, v, sink, sei, dropout=0.1)
         mock_flashmask.assert_called_once()
 
-    @patch("paddleformers.nn.attention.sink_impl._flashmask_attention_forward_dispatch")
+    @patch(
+        "paddleformers.nn.attention.sink_impl._flashmask_attention_forward_dispatch"
+    )
     def test_forward_with_custom_softmax_scale(self, mock_flashmask):
         """Test forward pass with custom softmax_scale."""
         mock_flashmask.return_value = (
@@ -432,7 +474,9 @@ class TestFlashMaskSinkPyLayerForward(unittest.TestCase):
 class TestFlashMaskSinkPyLayerForwardLSETruncation(unittest.TestCase):
     """Tests for LSE shape truncation logic in forward pass."""
 
-    @patch("paddleformers.nn.attention.sink_impl._flashmask_attention_forward_dispatch")
+    @patch(
+        "paddleformers.nn.attention.sink_impl._flashmask_attention_forward_dispatch"
+    )
     def test_lse_shape_truncation(self, mock_flashmask):
         """Test that LSE is truncated when its last dim is larger than seq_len."""
         from paddleformers.nn.attention.sink_impl import FlashMaskSinkPyLayer
@@ -455,7 +499,9 @@ class TestFlashMaskSinkPyLayerForwardLSETruncation(unittest.TestCase):
 class TestSinkMultiplierComputation(unittest.TestCase):
     """Tests for the sink multiplier computation in forward pass."""
 
-    @patch("paddleformers.nn.attention.sink_impl._flashmask_attention_forward_dispatch")
+    @patch(
+        "paddleformers.nn.attention.sink_impl._flashmask_attention_forward_dispatch"
+    )
     def test_multiplier_shape(self, mock_flashmask):
         """Test that the multiplier tensor has the correct shape."""
         from paddleformers.nn.attention.sink_impl import FlashMaskSinkPyLayer
@@ -474,7 +520,9 @@ class TestSinkMultiplierComputation(unittest.TestCase):
         # Result should have the same shape as input
         self.assertEqual(result.shape, q.shape)
 
-    @patch("paddleformers.nn.attention.sink_impl._flashmask_attention_forward_dispatch")
+    @patch(
+        "paddleformers.nn.attention.sink_impl._flashmask_attention_forward_dispatch"
+    )
     def test_multiplier_values_between_zero_and_one(self, mock_flashmask):
         """Test that multiplier is between 0 and 1 (sigmoid-like behavior)."""
         from paddleformers.nn.attention.sink_impl import FlashMaskSinkPyLayer
@@ -499,8 +547,12 @@ class TestSinkMultiplierComputation(unittest.TestCase):
 class TestFlashMaskSinkPyLayerBackward(unittest.TestCase):
     """Tests for FlashMaskSinkPyLayer backward pass."""
 
-    @patch("paddleformers.nn.attention.sink_impl._flashmask_attention_backward_dispatch")
-    @patch("paddleformers.nn.attention.sink_impl._flashmask_attention_forward_dispatch")
+    @patch(
+        "paddleformers.nn.attention.sink_impl._flashmask_attention_backward_dispatch"
+    )
+    @patch(
+        "paddleformers.nn.attention.sink_impl._flashmask_attention_forward_dispatch"
+    )
     def test_backward_with_startend_row_indices(self, mock_fwd, mock_bwd):
         """Test backward pass with startend_row_indices."""
         from paddleformers.nn.attention.sink_impl import FlashMaskSinkPyLayer

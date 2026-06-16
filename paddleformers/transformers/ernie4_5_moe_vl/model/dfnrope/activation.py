@@ -36,7 +36,15 @@ class NewGELUActivation(nn.Layer):
             Tensor: A Tensor with the same data type and shape as ``input``
         """
         return (
-            0.5 * input * (1.0 + paddle.tanh(math.sqrt(2.0 / math.pi) * (input + 0.044715 * paddle.pow(input, 3.0))))
+            0.5
+            * input
+            * (
+                1.0
+                + paddle.tanh(
+                    math.sqrt(2.0 / math.pi)
+                    * (input + 0.044715 * paddle.pow(input, 3.0))
+                )
+            )
         )
 
 
@@ -93,7 +101,16 @@ class FastGELUActivation(nn.Layer):
         Returns:
             Tensor: A Tensor with the same data type and shape as ``input``
         """
-        return 0.5 * input * (1.0 + paddle.tanh(input * 0.7978845608 * (1.0 + 0.044715 * input * input)))
+        return (
+            0.5
+            * input
+            * (
+                1.0
+                + paddle.tanh(
+                    input * 0.7978845608 * (1.0 + 0.044715 * input * input)
+                )
+            )
+        )
 
 
 class QuickGELUActivation(nn.Layer):
@@ -127,7 +144,9 @@ class ClippedGELUActivation(nn.Layer):
 
     def __init__(self, min: float, max: float):
         if min > max:
-            raise ValueError(f"min should be < max (got min: {min}, max: {max})")
+            raise ValueError(
+                f"min should be < max (got min: {min}, max: {max})"
+            )
 
         super().__init__()
         self.min = min
@@ -231,7 +250,9 @@ def get_activation(activation_string):
     if activation_string in ACT2FN:
         return ACT2FN[activation_string]
     else:
-        raise KeyError(f"function {activation_string} not found in ACT2FN mapping {list(ACT2FN.keys())}")
+        raise KeyError(
+            f"function {activation_string} not found in ACT2FN mapping {list(ACT2FN.keys())}"
+        )
 
 
 # For backwards compatibility with: from activations import gelu_python

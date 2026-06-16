@@ -23,7 +23,9 @@ class MergeMethod:
 
     def merge(self, tensor_list):
         if self.sparsify_method is not None:
-            tensor_list = [self.sparsify_method.sparsify(tensor) for tensor in tensor_list]
+            tensor_list = [
+                self.sparsify_method.sparsify(tensor) for tensor in tensor_list
+            ]
         if self.merge_config.merge_type == "linear":
             return self.linear(tensor_list)
         elif self.merge_config.merge_type == "slerp":
@@ -31,7 +33,9 @@ class MergeMethod:
         elif self.merge_config.merge_type == "ties":
             return self.ties(tensor_list)
         else:
-            raise NotImplementedError(f"{self.merge_config.merge_type} is not supported yet.")
+            raise NotImplementedError(
+                f"{self.merge_config.merge_type} is not supported yet."
+            )
 
     def linear(self, tensor_list):
         """
@@ -45,7 +49,10 @@ class MergeMethod:
 
         # merge
         if self.merge_config.tensor_type == "np":
-            tensor_output = sum(weight * tensor for weight, tensor in zip(weight_list, tensor_list))
+            tensor_output = sum(
+                weight * tensor
+                for weight, tensor in zip(weight_list, tensor_list)
+            )
             return tensor_output
         elif self.merge_config.tensor_type == "pd":
             tensor_output = paddle.zeros_like(tensor_list[0])
@@ -53,7 +60,9 @@ class MergeMethod:
                 tensor_output += tensor * weight_list[i]
             return tensor_output
         else:
-            raise ValueError(f"Unknown tensor type {self.merge_config.tensor_type}")
+            raise ValueError(
+                f"Unknown tensor type {self.merge_config.tensor_type}"
+            )
 
     def slerp(self, tensor_list):
         """
@@ -75,9 +84,11 @@ class MergeMethod:
 
             # Dot product with the normalized vectors (can't use np.dot in W)
             dot = np.sum(t0 * t1)
-            # If absolute value of dot product is almost 1, vectors are ~colinear, so use lerp
+            # If absolute value of dot product is almost 1, vectors are ~collinear, so use lerp
             if np.abs(dot) > self.merge_config.slerp_dot_threshold:
-                return (1 - self.merge_config.slerp_alpha) * t0_copy + self.merge_config.slerp_alpha * t1_copy
+                return (
+                    1 - self.merge_config.slerp_alpha
+                ) * t0_copy + self.merge_config.slerp_alpha * t1_copy
 
             # Calculate initial angle between t0 and t1
             theta_0 = np.arccos(dot)
@@ -104,9 +115,11 @@ class MergeMethod:
 
             # Dot product with the normalized tensors
             dot = paddle.sum(t0 * t1)
-            # If absolute value of dot product is almost 1, vectors are ~colinear, so use lerp
+            # If absolute value of dot product is almost 1, vectors are ~collinear, so use lerp
             if paddle.abs(dot) > self.merge_config.slerp_dot_threshold:
-                return (1 - self.merge_config.slerp_alpha) * t0_copy + self.merge_config.slerp_alpha * t1_copy
+                return (
+                    1 - self.merge_config.slerp_alpha
+                ) * t0_copy + self.merge_config.slerp_alpha * t1_copy
 
             # Calculate initial angle between t0 and t1
             theta_0 = paddle.acos(dot)
@@ -122,31 +135,51 @@ class MergeMethod:
 
             return s0 * t0_copy + s1 * t1_copy
         else:
-            raise ValueError(f"Unknown tensor type {self.merge_config.tensor_type}")
+            raise ValueError(
+                f"Unknown tensor type {self.merge_config.tensor_type}"
+            )
 
     def ties(self, tensor_list):
         if self.merge_config.tensor_type == "np":
             # Get weight tensor
             mask_dtype = tensor_list[0].dtype
             weight_list = self.merge_config.weight_list
-            tensor_list = [weight * tensor for (weight, tensor) in zip(weight_list, tensor_list)]
+            tensor_list = [
+                weight * tensor
+                for (weight, tensor) in zip(weight_list, tensor_list)
+            ]
             # Elect majority sign
-            sign_tensor_list = [np.sign(tensor).astype(mask_dtype) for tensor in tensor_list]
+            sign_tensor_list = [
+                np.sign(tensor).astype(mask_dtype) for tensor in tensor_list
+            ]
             if self.merge_config.ties_elect_type == "sum":
-                majority_sign = (np.sum(tensor_list, axis=0) >= 0).astype(mask_dtype) * 2 - 1
+                majority_sign = (np.sum(tensor_list, axis=0) >= 0).astype(
+                    mask_dtype
+                ) * 2 - 1
             elif self.merge_config.ties_elect_type == "count":
-                majority_sign = (np.sum(sign_tensor_list, axis=0) >= 0).astype(mask_dtype) * 2 - 1
+                majority_sign = (np.sum(sign_tensor_list, axis=0) >= 0).astype(
+                    mask_dtype
+                ) * 2 - 1
             else:
-                raise NotImplementedError(f"ties_elect_type: {self.merge_config.ties_elect_type} is unknown.")
+                raise NotImplementedError(
+                    f"ties_elect_type: {self.merge_config.ties_elect_type} is unknown."
+                )
 
             # Merge
-            mask_list = [sign_tensor == majority_sign for sign_tensor in sign_tensor_list]
-            tensor_list = [mask * tensor for mask, tensor in zip(mask_list, tensor_list)]
+            mask_list = [
+                sign_tensor == majority_sign for sign_tensor in sign_tensor_list
+            ]
+            tensor_list = [
+                mask * tensor for mask, tensor in zip(mask_list, tensor_list)
+            ]
             merge_tensor = np.sum(tensor_list, axis=0)
 
             # Normalize
             if self.merge_config.normalize:
-                weight_mask = [mask * weight for mask, weight in zip(mask_list, weight_list)]
+                weight_mask = [
+                    mask * weight
+                    for mask, weight in zip(mask_list, weight_list)
+                ]
                 divisor = np.sum(weight_mask, axis=0)
                 divisor[np.abs(divisor) < 1e-8] = 1
                 merge_tensor /= divisor
@@ -163,7 +196,9 @@ class MergeMethod:
                 elif self.merge_config.ties_elect_type == "count":
                     majority_sign += tensor.sign()
                 else:
-                    raise NotImplementedError(f"ties_elect_type: {self.merge_config.ties_elect_type} is unknown.")
+                    raise NotImplementedError(
+                        f"ties_elect_type: {self.merge_config.ties_elect_type} is unknown."
+                    )
             majority_sign = (majority_sign >= 0).astype(mask_dtype) * 2 - 1
 
             # Merge
@@ -172,22 +207,32 @@ class MergeMethod:
                 divisor = paddle.zeros_like(tensor_list[0])
             for i, tensor in enumerate(tensor_list):
                 if self.merge_config.normalize:
-                    mask = (tensor.sign() == majority_sign).astype(mask_dtype) * self.merge_config.weight_list[i]
+                    mask = (tensor.sign() == majority_sign).astype(
+                        mask_dtype
+                    ) * self.merge_config.weight_list[i]
                     divisor += mask
                     merge_tensor += mask * tensor
                 else:
                     merge_tensor += (
-                        (tensor.sign() == majority_sign).astype(mask_dtype) * tensor * self.merge_config.weight_list[i]
+                        (tensor.sign() == majority_sign).astype(mask_dtype)
+                        * tensor
+                        * self.merge_config.weight_list[i]
                     )
 
             # Normalize
             if self.merge_config.normalize:
-                divisor = paddle.where(paddle.abs(divisor) < 1e-8, paddle.ones_like(divisor), divisor)
+                divisor = paddle.where(
+                    paddle.abs(divisor) < 1e-8,
+                    paddle.ones_like(divisor),
+                    divisor,
+                )
                 merge_tensor /= divisor
 
             return merge_tensor
         else:
-            raise ValueError(f"Unknown tensor type {self.merge_config.tensor_type}")
+            raise ValueError(
+                f"Unknown tensor type {self.merge_config.tensor_type}"
+            )
 
     def normalize(self, t):
         """
@@ -204,4 +249,6 @@ class MergeMethod:
                 t = t / norm_t
             return t
         else:
-            raise ValueError(f"Unknown tensor type {self.merge_config.tensor_type}")
+            raise ValueError(
+                f"Unknown tensor type {self.merge_config.tensor_type}"
+            )

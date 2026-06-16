@@ -13,18 +13,18 @@
 # limitations under the License.
 
 import re
-from typing import Any, Union
+from typing import Any
 
 import numpy as np
 import paddle
-import paddle.distributed as distributed
+from paddle import distributed
 
 from . import device_guard
 
 world_size = distributed.get_world_size()
 
 
-def convert_file_size_to_int(size: Union[int, str]):
+def convert_file_size_to_int(size: int | str):
     """
     Converts a size expressed as a string with digits an unit (like `"5MB"`) to an integer (in bytes).
     Args:
@@ -52,7 +52,9 @@ def convert_file_size_to_int(size: Union[int, str]):
     if size.upper().endswith("KB"):
         int_size = int(size[:-2]) * (10**3)
         return int_size // 8 if size.endswith("b") else int_size
-    raise ValueError("`size` is not in a valid format. Use an integer followed by the unit, e.g., '5GB'.")
+    raise ValueError(
+        "`size` is not in a valid format. Use an integer followed by the unit, e.g., '5GB'."
+    )
 
 
 def reduce_tensor(tensor, buffer_size="32MiB"):
@@ -93,25 +95,39 @@ def dtype_byte_size(dtype):
 
 
 @paddle.no_grad()
-def distributed_gather(tensor: Any, dst: int = 0, group=None, offload=False) -> Any:
+def distributed_gather(
+    tensor: Any, dst: int = 0, group=None, offload=False
+) -> Any:
     try:
         if isinstance(tensor, (tuple, list)):
-            return type(tensor)(distributed_gather(t, dst, group, offload) for t in tensor)
+            return type(tensor)(
+                distributed_gather(t, dst, group, offload) for t in tensor
+            )
         if isinstance(tensor, dict):
-            return {k: distributed_gather(v, dst, group, offload) for k, v in tensor.items()}
+            return {
+                k: distributed_gather(v, dst, group, offload)
+                for k, v in tensor.items()
+            }
 
         output_tensors = None
 
         is_dst = dst == distributed.get_rank(group=group)
         if is_dst:
             if offload:
-                output_tensors = [[] for _ in range(distributed.get_world_size(group=group))]
+                output_tensors = [
+                    [] for _ in range(distributed.get_world_size(group=group))
+                ]
                 # with device_guard("cpu"):
                 #     output_tensors = [paddle.empty_like(tensor) for _ in range(distributed.get_world_size())]
             else:
-                output_tensors = [paddle.empty_like(tensor) for _ in range(distributed.get_world_size(group=group))]
+                output_tensors = [
+                    paddle.empty_like(tensor)
+                    for _ in range(distributed.get_world_size(group=group))
+                ]
                 # for scalar tensor ?
-                output_tensors = [t if len(t.shape) > 0 else t[None] for t in output_tensors]
+                output_tensors = [
+                    t if len(t.shape) > 0 else t[None] for t in output_tensors
+                ]
 
         if offload:
             origin_shape = tensor.shape
@@ -121,7 +137,8 @@ def distributed_gather(tensor: Any, dst: int = 0, group=None, offload=False) -> 
                 slice_output_tensors = None
                 if distributed.get_rank(group=group) == dst:
                     slice_output_tensors = [
-                        paddle.empty_like(slice_tensor) for _ in range(distributed.get_world_size(group=group))
+                        paddle.empty_like(slice_tensor)
+                        for _ in range(distributed.get_world_size(group=group))
                     ]
                 paddle.distributed.communication.stream.gather(
                     slice_tensor,
@@ -134,7 +151,9 @@ def distributed_gather(tensor: Any, dst: int = 0, group=None, offload=False) -> 
 
                 if is_dst:
                     for i in range(len(output_tensors)):
-                        output_tensors[i].append(slice_output_tensors[i].cpu().numpy())
+                        output_tensors[i].append(
+                            slice_output_tensors[i].cpu().numpy()
+                        )
 
             tensor.reshape_(origin_shape)
             if is_dst:
@@ -179,20 +198,33 @@ def distributed_allgather(tensor: Any, group=None, offload=False):
     """
     try:
         if isinstance(tensor, (tuple, list)):
-            return type(tensor)(distributed_allgather(t, group, offload) for t in tensor)
+            return type(tensor)(
+                distributed_allgather(t, group, offload) for t in tensor
+            )
         if isinstance(tensor, dict):
-            return {k: distributed_allgather(v, group, offload) for k, v in tensor.items()}
+            return {
+                k: distributed_allgather(v, group, offload)
+                for k, v in tensor.items()
+            }
 
         output_tensors = []
 
         if offload:
             with device_guard("cpu"):
-                output_tensors = [paddle.empty_like(tensor) for _ in range(distributed.get_world_size(group))]
+                output_tensors = [
+                    paddle.empty_like(tensor)
+                    for _ in range(distributed.get_world_size(group))
+                ]
         else:
-            output_tensors = [paddle.empty_like(tensor) for _ in range(distributed.get_world_size(group))]
+            output_tensors = [
+                paddle.empty_like(tensor)
+                for _ in range(distributed.get_world_size(group))
+            ]
 
         # for scalar tensor ?
-        output_tensors = [t if len(t.shape) > 0 else t[None] for t in output_tensors]
+        output_tensors = [
+            t if len(t.shape) > 0 else t[None] for t in output_tensors
+        ]
 
         if offload:
             origin_shape = tensor.shape
@@ -203,9 +235,12 @@ def distributed_allgather(tensor: Any, group=None, offload=False):
             for slice_tensor, index in reduce_tensor(tensor):
                 # paddle.empty_like(slice_tensor)
                 slice_output_tensors = [
-                    paddle.empty_like(slice_tensor) for _ in range(distributed.get_world_size(group))
+                    paddle.empty_like(slice_tensor)
+                    for _ in range(distributed.get_world_size(group))
                 ]
-                distributed.all_gather(slice_output_tensors, slice_tensor, group=group)
+                distributed.all_gather(
+                    slice_output_tensors, slice_tensor, group=group
+                )
                 for x, y in zip(slice_output_tensors, output_tensors):
                     with device_guard("cpu"):
                         # x.cpu()

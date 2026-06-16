@@ -51,7 +51,9 @@ def safe_load_json_file(json_file: str):
             text = reader.read()
         config_dict = json.loads(text)
     except json.JSONDecodeError:
-        raise OSError(f"It looks like the config file at '{json_file}' is not a valid JSON file.")
+        raise OSError(
+            f"It looks like the config file at '{json_file}' is not a valid JSON file."
+        )
     return config_dict
 
 
@@ -60,7 +62,9 @@ def feature_extractor_class_from_name(class_name: str):
         if class_name in extractors:
             module_name = model_type_to_module_name(module_name)
             try:
-                module = importlib.import_module(f".{module_name}", "paddleformers.transformers")
+                module = importlib.import_module(
+                    f".{module_name}", "paddleformers.transformers"
+                )
                 return getattr(module, class_name)
             except AttributeError:
                 continue
@@ -168,7 +172,9 @@ def get_feature_extractor_config(
 
     # An empty list if none of the possible files is found in the repo
     if not resolved_feature_extractor_file and not resolved_processor_file:
-        logger.info("Could not locate the feature extractor configuration file.")
+        logger.info(
+            "Could not locate the feature extractor configuration file."
+        )
         return {}
 
     # Load feature_extractor dict. Priority goes as (nested config if found -> feature extractor config)
@@ -180,8 +186,13 @@ def get_feature_extractor_config(
         if "feature_extractor" in processor_dict:
             feature_extractor_dict = processor_dict["feature_extractor"]
 
-    if resolved_feature_extractor_file is not None and feature_extractor_dict is None:
-        feature_extractor_dict = safe_load_json_file(resolved_feature_extractor_file)
+    if (
+        resolved_feature_extractor_file is not None
+        and feature_extractor_dict is None
+    ):
+        feature_extractor_dict = safe_load_json_file(
+            resolved_feature_extractor_file
+        )
     return feature_extractor_dict
 
 
@@ -205,52 +216,85 @@ class AutoFeatureExtractor:
         trust_remote_code = kwargs.pop("trust_remote_code", None)
         kwargs["_from_auto"] = True
 
-        config_dict, _ = FeatureExtractionMixin.get_feature_extractor_dict(pretrained_model_name_or_path, **kwargs)
-        feature_extractor_class = config_dict.get("feature_extractor_type", None)
+        config_dict, _ = FeatureExtractionMixin.get_feature_extractor_dict(
+            pretrained_model_name_or_path, **kwargs
+        )
+        feature_extractor_class = config_dict.get(
+            "feature_extractor_type", None
+        )
         feature_extractor_auto_map = None
         if "AutoFeatureExtractor" in config_dict.get("auto_map", {}):
-            feature_extractor_auto_map = config_dict["auto_map"]["AutoFeatureExtractor"]
+            feature_extractor_auto_map = config_dict["auto_map"][
+                "AutoFeatureExtractor"
+            ]
 
         # If we don't find the feature extractor class in the feature extractor config, let's try the model config.
-        if feature_extractor_class is None and feature_extractor_auto_map is None:
+        if (
+            feature_extractor_class is None
+            and feature_extractor_auto_map is None
+        ):
             if not isinstance(config, PretrainedConfig):
                 config = AutoConfig.from_pretrained(
-                    pretrained_model_name_or_path, trust_remote_code=trust_remote_code, **kwargs
+                    pretrained_model_name_or_path,
+                    trust_remote_code=trust_remote_code,
+                    **kwargs,
                 )
             # It could be in `config.feature_extractor_type``
-            feature_extractor_class = getattr(config, "feature_extractor_type", None)
-            if hasattr(config, "auto_map") and "AutoFeatureExtractor" in config.auto_map:
-                feature_extractor_auto_map = config.auto_map["AutoFeatureExtractor"]
+            feature_extractor_class = getattr(
+                config, "feature_extractor_type", None
+            )
+            if (
+                hasattr(config, "auto_map")
+                and "AutoFeatureExtractor" in config.auto_map
+            ):
+                feature_extractor_auto_map = config.auto_map[
+                    "AutoFeatureExtractor"
+                ]
 
         if feature_extractor_class is not None:
-            feature_extractor_class = feature_extractor_class_from_name(feature_extractor_class)
+            feature_extractor_class = feature_extractor_class_from_name(
+                feature_extractor_class
+            )
         has_remote_code = feature_extractor_auto_map is not None
-        has_local_code = feature_extractor_class is not None or type(config) in FEATURE_EXTRACTOR_MAPPING
+        has_local_code = (
+            feature_extractor_class is not None
+            or type(config) in FEATURE_EXTRACTOR_MAPPING
+        )
         if has_remote_code:
             if "--" in feature_extractor_auto_map:
                 upstream_repo = feature_extractor_auto_map.split("--")[0]
             else:
                 upstream_repo = None
             trust_remote_code = resolve_trust_remote_code(
-                trust_remote_code, pretrained_model_name_or_path, has_local_code, has_remote_code, upstream_repo
+                trust_remote_code,
+                pretrained_model_name_or_path,
+                has_local_code,
+                has_remote_code,
+                upstream_repo,
             )
 
         if has_remote_code and trust_remote_code:
-
             feature_extractor_class = get_class_from_dynamic_module(
-                feature_extractor_auto_map, pretrained_model_name_or_path, **kwargs
+                feature_extractor_auto_map,
+                pretrained_model_name_or_path,
+                **kwargs,
             )
 
             _ = kwargs.pop("code_revision", None)
             feature_extractor_class.register_for_auto_class()
-            return feature_extractor_class.from_pretrained(pretrained_model_name_or_path, **kwargs)
+            return feature_extractor_class.from_pretrained(
+                pretrained_model_name_or_path, **kwargs
+            )
         elif feature_extractor_class is not None:
-
-            return feature_extractor_class.from_pretrained(pretrained_model_name_or_path, **kwargs)
+            return feature_extractor_class.from_pretrained(
+                pretrained_model_name_or_path, **kwargs
+            )
         # Last try: we use the FEATURE_EXTRACTOR_MAPPING.
         elif type(config) in FEATURE_EXTRACTOR_MAPPING:
             feature_extractor_class = FEATURE_EXTRACTOR_MAPPING[type(config)]
-            return feature_extractor_class.from_pretrained(pretrained_model_name_or_path, **kwargs)
+            return feature_extractor_class.from_pretrained(
+                pretrained_model_name_or_path, **kwargs
+            )
 
         raise ValueError(
             f"Unrecognized feature extractor in {pretrained_model_name_or_path}. Should have a "
@@ -268,4 +312,6 @@ class AutoFeatureExtractor:
                 The configuration corresponding to the model to register.
             feature_extractor_class ([`FeatureExtractorMixin`]): The feature extractor to register.
         """
-        FEATURE_EXTRACTOR_MAPPING.register(config_class, feature_extractor_class, exist_ok=exist_ok)
+        FEATURE_EXTRACTOR_MAPPING.register(
+            config_class, feature_extractor_class, exist_ok=exist_ok
+        )

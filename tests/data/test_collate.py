@@ -34,7 +34,9 @@ class TestStack(CpuCommonTest):
 class TestPad(CpuCommonTest):
     def setUp(self):
         self.input = [[1, 2, 3, 4], [4, 5, 6], [8, 9]]
-        self.expected_result = np.array([[1, 2, 3, 4], [4, 5, 6, 0], [8, 9, 0, 0]])
+        self.expected_result = np.array(
+            [[1, 2, 3, 4], [4, 5, 6, 0], [8, 9, 0, 0]]
+        )
 
     def test_pad(self):
         result = Pad()(self.input)
@@ -44,7 +46,9 @@ class TestPad(CpuCommonTest):
 class TestPadLeft(CpuCommonTest):
     def setUp(self):
         self.input = [[1, 2, 3, 4], [4, 5, 6], [8, 9]]
-        self.expected_result = np.array([[1, 2, 3, 4], [0, 4, 5, 6], [0, 0, 8, 9]])
+        self.expected_result = np.array(
+            [[1, 2, 3, 4], [0, 4, 5, 6], [0, 0, 8, 9]]
+        )
 
     def test_pad(self):
         result = Pad(pad_right=False)(self.input)
@@ -54,7 +58,9 @@ class TestPadLeft(CpuCommonTest):
 class TestPadRetLength(CpuCommonTest):
     def setUp(self):
         self.input = [[1, 2, 3, 4], [4, 5, 6], [8, 9]]
-        self.expected_result = np.array([[1, 2, 3, 4], [4, 5, 6, 0], [8, 9, 0, 0]])
+        self.expected_result = np.array(
+            [[1, 2, 3, 4], [4, 5, 6, 0], [8, 9, 0, 0]]
+        )
 
     def test_pad(self):
         result, length = Pad(ret_length=True)(self.input)
@@ -64,7 +70,11 @@ class TestPadRetLength(CpuCommonTest):
 
 class TestTuple(CpuCommonTest):
     def setUp(self):
-        self.input = [[[1, 2, 3, 4], [1, 2, 3, 4]], [[4, 5, 6, 8], [4, 5, 6]], [[8, 9, 1, 2], [8, 9]]]
+        self.input = [
+            [[1, 2, 3, 4], [1, 2, 3, 4]],
+            [[4, 5, 6, 8], [4, 5, 6]],
+            [[8, 9, 1, 2], [8, 9]],
+        ]
         self.expected_result = (
             np.array([[1, 2, 3, 4], [4, 5, 6, 8], [8, 9, 1, 2]]),
             np.array([[1, 2, 3, 4], [4, 5, 6, 0], [8, 9, 0, 0]]),
@@ -97,7 +107,10 @@ class TestDict(CpuCommonTest):
             {"text": [4, 5, 6], "label": [0]},
             {"text": [7, 8], "label": [1]},
         ]
-        self.expected_result = (np.array([[1, 2, 3, 4], [4, 5, 6, 0], [7, 8, 0, 0]]), np.array([[1], [0], [1]]))
+        self.expected_result = (
+            np.array([[1, 2, 3, 4], [4, 5, 6, 0], [7, 8, 0, 0]]),
+            np.array([[1], [0], [1]]),
+        )
 
     def test_dict(self):
         batchify_fn = Dict({"text": Pad(axis=0, pad_val=0), "label": Stack()})

@@ -10,11 +10,9 @@ packing: true
 mix_strategy: concat
 template_backend: custom
 template: ernie_nothink
-
 ### model
 model_name_or_path: baidu/ERNIE-4.5-21B-A3B-PT
 _attn_implementation: eager
-
 ### finetuning
 # base
 device: metax_gpu
@@ -37,11 +35,9 @@ logging_dir: ./vdl_log
 output_dir: ./checkpoints/ERNIE-4.5-21B-A3B-PT-sft-full-tp-pp
 disable_tqdm: true
 eval_accumulation_steps: 16
-
 # train
 warmup_steps: 20
 learning_rate: 1.0e-5
-
 # performance
 tensor_model_parallel_size: 2
 pipeline_model_parallel_size: 2

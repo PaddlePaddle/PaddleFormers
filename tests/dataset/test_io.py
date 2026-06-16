@@ -15,7 +15,12 @@
 import os
 import unittest
 
-from paddleformers.datasets.reader.io import load_csv, load_json, load_parquet, load_txt
+from paddleformers.datasets.reader.io import (
+    load_csv,
+    load_json,
+    load_parquet,
+    load_txt,
+)
 from tests.testing_utils import get_tests_dir
 
 
@@ -69,7 +74,9 @@ class TestDatasetIO(unittest.TestCase):
     def test_jsonl_parse_error(self):
         import tempfile
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".jsonl", delete=False
+        ) as f:
             f.write('{"key": "valid"}\n')
             f.write("this is not valid json\n")
             tmp_path = f.name

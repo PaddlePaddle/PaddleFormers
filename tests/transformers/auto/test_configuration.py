@@ -31,7 +31,9 @@ from ...utils.test_module.custom_configuration import CustomConfig
 
 class AutoConfigTest(unittest.TestCase):
     def test_built_in_model_class_config(self):
-        config = AutoConfig.from_pretrained("PaddleFormers/tiny-random-qwen3", download_hub="aistudio")
+        config = AutoConfig.from_pretrained(
+            "PaddleFormers/tiny-random-qwen3", download_hub="aistudio"
+        )
         number = random.randint(0, 10000)
         self.assertEqual(config.hidden_size, 128)
         config.hidden_size = number
@@ -45,7 +47,9 @@ class AutoConfigTest(unittest.TestCase):
 
     def test_community_model_class(self):
         # OPT model do not support PretrainedConfig, but can load it as the AutoConfig object
-        config = AutoConfig.from_pretrained("Paddleformers/tiny-random-llama", download_hub="aistudio")
+        config = AutoConfig.from_pretrained(
+            "Paddleformers/tiny-random-llama", download_hub="aistudio"
+        )
 
         self.assertEqual(config.hidden_size, 16)
 
@@ -61,15 +65,22 @@ class AutoConfigTest(unittest.TestCase):
 
     @slow
     def test_from_hf_hub(self):
-        config = AutoConfig.from_pretrained("dfargveazd/tiny-random-llama-paddle-safe", download_hub="huggingface")
+        config = AutoConfig.from_pretrained(
+            "dfargveazd/tiny-random-llama-paddle-safe",
+            download_hub="huggingface",
+        )
         self.assertEqual(config.hidden_size, 16)
 
     def test_from_aistudio(self):
-        config = AutoConfig.from_pretrained("Paddleformers/tiny-random-llama", download_hub="aistudio")
+        config = AutoConfig.from_pretrained(
+            "Paddleformers/tiny-random-llama", download_hub="aistudio"
+        )
         self.assertEqual(config.hidden_size, 16)
 
     def test_from_modelscope(self):
-        config = AutoConfig.from_pretrained("sqlhuman/tiny-random-llama", download_hub="modelscope")
+        config = AutoConfig.from_pretrained(
+            "sqlhuman/tiny-random-llama", download_hub="modelscope"
+        )
         self.assertEqual(config.hidden_size, 768)
 
     # def test_subfolder(self):
@@ -80,7 +91,11 @@ class AutoConfigTest(unittest.TestCase):
         number = random.randint(0, 10000)
         legacy_config = {"init_class": "Qwen3Model", "hidden_size": number}
         with tempfile.TemporaryDirectory() as tempdir:
-            with open(os.path.join(tempdir, AutoConfig.legacy_config_file), "w", encoding="utf-8") as f:
+            with open(
+                os.path.join(tempdir, AutoConfig.legacy_config_file),
+                "w",
+                encoding="utf-8",
+            ) as f:
                 json.dump(legacy_config, f, ensure_ascii=False)
 
             # but it can load it as the PretrainedConfig class
@@ -112,10 +127,16 @@ class AutoConfigTest(unittest.TestCase):
     def test_from_pretrained_cache_dir(self):
         model_id = "PaddleFormers/tiny-random-qwen3"
         with tempfile.TemporaryDirectory() as tempdir:
-            AutoConfig.from_pretrained(model_id, download_hub="aistudio", cache_dir=tempdir)
-            self.assertTrue(os.path.exists(os.path.join(tempdir, model_id, CONFIG_NAME)))
+            AutoConfig.from_pretrained(
+                model_id, download_hub="aistudio", cache_dir=tempdir
+            )
+            self.assertTrue(
+                os.path.exists(os.path.join(tempdir, model_id, CONFIG_NAME))
+            )
             # check against double appending model_name in cache_dir
-            self.assertFalse(os.path.exists(os.path.join(tempdir, model_id, model_id)))
+            self.assertFalse(
+                os.path.exists(os.path.join(tempdir, model_id, model_id))
+            )
 
     def test_load_from_custom_arch(self):
         config_dict = {
@@ -155,7 +176,12 @@ class AutoConfigTest(unittest.TestCase):
             "virtual_pipeline_model_parallel_size": 1,
             "vocab_size": 32001,
         }
-        config_str = json.dumps(config_dict, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+        config_str = (
+            json.dumps(
+                config_dict, indent=2, sort_keys=True, ensure_ascii=False
+            )
+            + "\n"
+        )
         with tempfile.TemporaryDirectory() as tempdir:
             cache_dir = os.path.join(tempdir, "cache_dir")
             model_dir = os.path.join(tempdir, "custom_model")

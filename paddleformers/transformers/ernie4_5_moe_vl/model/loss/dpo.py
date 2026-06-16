@@ -46,20 +46,34 @@ class ErnieDPOCriterion(DPOCriterion):
         hidden_states, weight, bias, transpose_y = logits
 
         if self.config.use_filtered_label_loss:
-            if self.config.tensor_model_parallel_size > 1 and self.config.sequence_parallel:
-                labels, sparse_tgt_idx = sequence_parallel_sparse_mask_labels(labels, -100)
+            if (
+                self.config.tensor_model_parallel_size > 1
+                and self.config.sequence_parallel
+            ):
+                labels, sparse_tgt_idx = sequence_parallel_sparse_mask_labels(
+                    labels, -100
+                )
 
-                hidden_states = paddle.gather(hidden_states, sparse_tgt_idx, axis=0)
+                hidden_states = paddle.gather(
+                    hidden_states, sparse_tgt_idx, axis=0
+                )
                 hidden_states = AllGatherVarlenOp.apply(hidden_states)
             else:
                 labels = labels.flatten()
                 sparse_tgt_idx = paddle.nonzero(labels != -100).flatten()
                 labels = paddle.gather(labels, sparse_tgt_idx, axis=0)
 
-                hidden_states = hidden_states.reshape([-1, hidden_states.shape[-1]])
-                hidden_states = paddle.gather(hidden_states, sparse_tgt_idx, axis=0)
+                hidden_states = hidden_states.reshape(
+                    [-1, hidden_states.shape[-1]]
+                )
+                hidden_states = paddle.gather(
+                    hidden_states, sparse_tgt_idx, axis=0
+                )
         elif self.config.use_fused_head_and_loss_fn:
-            if self.config.tensor_model_parallel_size > 1 and self.config.sequence_parallel:
+            if (
+                self.config.tensor_model_parallel_size > 1
+                and self.config.sequence_parallel
+            ):
                 hidden_states = GatherOp.apply(hidden_states)
                 hidden_states = hidden_states.reshape(
                     [
@@ -105,7 +119,11 @@ class ErnieDPOCriterion(DPOCriterion):
                     (
                         paddle.gather(
                             per_token_logps.reshape([-1]),
-                            paddle.arange(response_index[1], response_index[2], dtype=paddle.int32),
+                            paddle.arange(
+                                response_index[1],
+                                response_index[2],
+                                dtype=paddle.int32,
+                            ),
                             axis=0,
                         ).sum()
                         if response_index[3] != 0
@@ -120,7 +138,11 @@ class ErnieDPOCriterion(DPOCriterion):
                     (
                         paddle.gather(
                             per_token_logps.reshape([-1]),
-                            paddle.arange(response_index[2], response_index[3], dtype=paddle.int32),
+                            paddle.arange(
+                                response_index[2],
+                                response_index[3],
+                                dtype=paddle.int32,
+                            ),
                             axis=0,
                         ).sum()
                         if response_index[3] != 0
@@ -135,8 +157,14 @@ class ErnieDPOCriterion(DPOCriterion):
                 [
                     (
                         paddle.gather(
-                            paddle.gather(per_token_logps, response_index[0], axis=0),
-                            paddle.arange(response_index[1], response_index[2], dtype=paddle.int32),
+                            paddle.gather(
+                                per_token_logps, response_index[0], axis=0
+                            ),
+                            paddle.arange(
+                                response_index[1],
+                                response_index[2],
+                                dtype=paddle.int32,
+                            ),
                             axis=0,
                         ).sum()
                         if response_index[3] != 0
@@ -150,8 +178,14 @@ class ErnieDPOCriterion(DPOCriterion):
                 [
                     (
                         paddle.gather(
-                            paddle.gather(per_token_logps, response_index[0], axis=0),
-                            paddle.arange(response_index[2], response_index[3], dtype=paddle.int32),
+                            paddle.gather(
+                                per_token_logps, response_index[0], axis=0
+                            ),
+                            paddle.arange(
+                                response_index[2],
+                                response_index[3],
+                                dtype=paddle.int32,
+                            ),
                             axis=0,
                         ).sum()
                         if response_index[3] != 0
@@ -164,16 +198,30 @@ class ErnieDPOCriterion(DPOCriterion):
         chosen_response_lengths = response_indexs[:, 2] - response_indexs[:, 1]
         sft_loss = -chosen_logps.sum() / chosen_response_lengths.sum()
         if average_log_prob:
-            chosen_response_length = response_indexs[:, 2] - response_indexs[:, 1]
-            rejected_response_length = response_indexs[:, 3] - response_indexs[:, 2]
+            chosen_response_length = (
+                response_indexs[:, 2] - response_indexs[:, 1]
+            )
+            rejected_response_length = (
+                response_indexs[:, 3] - response_indexs[:, 2]
+            )
             chosen_logps /= chosen_response_length.astype("float32")
             rejected_logps /= rejected_response_length.astype("float32")
         elif self.dpo_config.normalize_logps:
-            avg_response_length = (response_indexs[:, 3] - response_indexs[:, 1]) / 2
-            chosen_response_length = response_indexs[:, 2] - response_indexs[:, 1]
-            rejected_response_length = response_indexs[:, 3] - response_indexs[:, 2]
-            chosen_logps *= avg_response_length / chosen_response_length.astype("float32")
-            rejected_logps *= avg_response_length / rejected_response_length.astype("float32")
+            avg_response_length = (
+                response_indexs[:, 3] - response_indexs[:, 1]
+            ) / 2
+            chosen_response_length = (
+                response_indexs[:, 2] - response_indexs[:, 1]
+            )
+            rejected_response_length = (
+                response_indexs[:, 3] - response_indexs[:, 2]
+            )
+            chosen_logps *= avg_response_length / chosen_response_length.astype(
+                "float32"
+            )
+            rejected_logps *= (
+                avg_response_length / rejected_response_length.astype("float32")
+            )
         return (
             chosen_logps,
             rejected_logps,
@@ -195,10 +243,17 @@ class ErnieDPOCriterion(DPOCriterion):
 
         if self.dpo_config.loss_type == "sigmoid":
             if self.dpo_config.offset_alpha > 0:
-                logits = logits - self.dpo_config.offset_alpha / self.dpo_config.beta * paddle.log(score_deltas + 1e-6)
+                logits = (
+                    logits
+                    - self.dpo_config.offset_alpha
+                    / self.dpo_config.beta
+                    * paddle.log(score_deltas + 1e-6)
+                )
             loss = (
-                -F.log_sigmoid(self.dpo_config.beta * logits) * (1 - self.dpo_config.label_smoothing)
-                - F.log_sigmoid(-self.dpo_config.beta * logits) * self.dpo_config.label_smoothing
+                -F.log_sigmoid(self.dpo_config.beta * logits)
+                * (1 - self.dpo_config.label_smoothing)
+                - F.log_sigmoid(-self.dpo_config.beta * logits)
+                * self.dpo_config.label_smoothing
             )
         elif self.dpo_config.loss_type == "hinge":
             loss = F.relu(1 - self.dpo_config.beta * logits)
@@ -206,8 +261,10 @@ class ErnieDPOCriterion(DPOCriterion):
             gamma_logratios = self.dpo_config.simpo_gamma / self.dpo_config.beta
             logits -= gamma_logratios
             loss = (
-                -F.log_sigmoid(self.dpo_config.beta * logits) * (1 - self.dpo_config.label_smoothing)
-                - F.log_sigmoid(-self.dpo_config.beta * logits) * self.dpo_config.label_smoothing
+                -F.log_sigmoid(self.dpo_config.beta * logits)
+                * (1 - self.dpo_config.label_smoothing)
+                - F.log_sigmoid(-self.dpo_config.beta * logits)
+                * self.dpo_config.label_smoothing
             )
         elif self.dpo_config.loss_type == "ipo":
             # eqn (17) of the paper where beta is the regularization parameter
@@ -216,20 +273,38 @@ class ErnieDPOCriterion(DPOCriterion):
         elif self.dpo_config.loss_type == "dpop":
             loss = -F.log_sigmoid(self.dpo_config.beta * logits)
             positive_reg = reference_chosen_logps - policy_chosen_logps
-            loss += self.dpo_config.dpop_lambda * paddle.clip(positive_reg, min=0)
+            loss += self.dpo_config.dpop_lambda * paddle.clip(
+                positive_reg, min=0
+            )
         elif self.dpo_config.loss_type == "kto_pair":
             # eqn (7) of the HALOs paper
-            chosen_KL = (policy_chosen_logps - reference_chosen_logps).mean().clip(min=0)
-            rejected_KL = (policy_rejected_logps - reference_rejected_logps).mean().clip(min=0)
+            chosen_KL = (
+                (policy_chosen_logps - reference_chosen_logps)
+                .mean()
+                .clip(min=0)
+            )
+            rejected_KL = (
+                (policy_rejected_logps - reference_rejected_logps)
+                .mean()
+                .clip(min=0)
+            )
 
             chosen_logratios = policy_chosen_logps - reference_chosen_logps
-            rejected_logratios = policy_rejected_logps - reference_rejected_logps
+            rejected_logratios = (
+                policy_rejected_logps - reference_rejected_logps
+            )
             # As described in the KTO report, the KL term for chosen (rejected) is
             # estimated using the rejected (chosen) half.
             loss = paddle.concat(
                 (
-                    1 - F.sigmoid(self.dpo_config.beta * (chosen_logratios - rejected_KL)),
-                    1 - F.sigmoid(self.dpo_config.beta * (chosen_KL - rejected_logratios)),
+                    1
+                    - F.sigmoid(
+                        self.dpo_config.beta * (chosen_logratios - rejected_KL)
+                    ),
+                    1
+                    - F.sigmoid(
+                        self.dpo_config.beta * (chosen_KL - rejected_logratios)
+                    ),
                 ),
                 0,
             )
@@ -241,10 +316,16 @@ class ErnieDPOCriterion(DPOCriterion):
             a = policy_chosen_logps - reference_chosen_logps
             b = policy_rejected_logps - reference_rejected_logps
 
-            loss = (a - 0.5 / self.dpo_config.beta) ** 2 + (b + 0.5 / self.dpo_config.beta) ** 2
+            loss = (a - 0.5 / self.dpo_config.beta) ** 2 + (
+                b + 0.5 / self.dpo_config.beta
+            ) ** 2
         elif self.dpo_config.loss_type == "nca_pair":
-            chosen_rewards = (policy_chosen_logps - reference_chosen_logps) * self.dpo_config.beta
-            rejected_rewards = (policy_rejected_logps - reference_rejected_logps) * self.dpo_config.beta
+            chosen_rewards = (
+                policy_chosen_logps - reference_chosen_logps
+            ) * self.dpo_config.beta
+            rejected_rewards = (
+                policy_rejected_logps - reference_rejected_logps
+            ) * self.dpo_config.beta
             loss = (
                 -F.log_sigmoid(chosen_rewards)
                 - 0.5 * F.log_sigmoid(-chosen_rewards)
@@ -254,7 +335,8 @@ class ErnieDPOCriterion(DPOCriterion):
             # Derived from Eqs. (4) and (7) from https://arxiv.org/abs/2403.07691 by using
             # log identities and exp(log(P(y|x)) = P(y|x)
             log_odds = (policy_chosen_logps - policy_rejected_logps) - (
-                paddle.log1p(-paddle.exp(policy_chosen_logps)) - paddle.log1p(-paddle.exp(policy_rejected_logps))
+                paddle.log1p(-paddle.exp(policy_chosen_logps))
+                - paddle.log1p(-paddle.exp(policy_rejected_logps))
             )
             loss = -F.log_sigmoid(log_odds)
         else:
@@ -293,12 +375,16 @@ class ErnieDPOCriterion(DPOCriterion):
         else:
             average_log_prob = False
         if reference_chosen_logps is None or reference_rejected_logps is None:
-            reference_chosen_logps, reference_rejected_logps, sft_loss = self.dpo_logps(
-                logits, response_labels, response_indexs, average_log_prob
+            reference_chosen_logps, reference_rejected_logps, sft_loss = (
+                self.dpo_logps(
+                    logits, response_labels, response_indexs, average_log_prob
+                )
             )
             if self.use_infohub:
                 infohub.reference_chosen_logps.append(reference_chosen_logps)
-                infohub.reference_rejected_logps.append(reference_rejected_logps)
+                infohub.reference_rejected_logps.append(
+                    reference_rejected_logps
+                )
                 # pipeline mode requires return loss when self._compute_loss is True
                 return paddle.zeros([1])
             else:
@@ -307,7 +393,11 @@ class ErnieDPOCriterion(DPOCriterion):
             logits, response_labels, response_indexs, average_log_prob
         )
         dpo_loss = self.dpo_loss(
-            policy_chosen_logps, policy_rejected_logps, reference_chosen_logps, reference_rejected_logps, score_deltas
+            policy_chosen_logps,
+            policy_rejected_logps,
+            reference_chosen_logps,
+            reference_rejected_logps,
+            score_deltas,
         )
         loss = dpo_loss + sft_loss
         if self.use_infohub:
@@ -317,4 +407,10 @@ class ErnieDPOCriterion(DPOCriterion):
             infohub.dpo_loss.append(dpo_loss.detach())
             return loss
         else:
-            return policy_chosen_logps, policy_rejected_logps, sft_loss, dpo_loss, loss
+            return (
+                policy_chosen_logps,
+                policy_rejected_logps,
+                sft_loss,
+                dpo_loss,
+                loss,
+            )

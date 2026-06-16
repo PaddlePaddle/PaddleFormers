@@ -45,7 +45,10 @@ class MaskingUtilsTest(unittest.TestCase):
         self.seq_length = 5
         self.hidden_dim = 16
         self.dtype = "float32"
-        self.inputs_embeds = paddle.randn((self.batch_size, self.seq_length, self.hidden_dim), dtype=self.dtype)
+        self.inputs_embeds = paddle.randn(
+            (self.batch_size, self.seq_length, self.hidden_dim),
+            dtype=self.dtype,
+        )
         self.config = PretrainedConfig()
         self.config._attn_implementation = "eager"
 
@@ -77,7 +80,10 @@ class MaskingUtilsTest(unittest.TestCase):
         )
 
         self.assertIsNone(row_indices)
-        self.assertEqual(full_mask.shape, [self.batch_size, 1, self.seq_length, self.seq_length])
+        self.assertEqual(
+            full_mask.shape,
+            [self.batch_size, 1, self.seq_length, self.seq_length],
+        )
 
         # Self-attention (Diagonal) -> Visible
         self.assertTrue(self._is_visible(full_mask[0, 0, 0, 0]))
@@ -91,7 +97,9 @@ class MaskingUtilsTest(unittest.TestCase):
         Test 2: Standard right-side padding mask.
         Mask: [1, 1, 1, 0, 0] (Last 2 tokens are padding).
         """
-        padding_mask = paddle.zeros((self.batch_size, self.seq_length), dtype="int64")
+        padding_mask = paddle.zeros(
+            (self.batch_size, self.seq_length), dtype="int64"
+        )
         padding_mask[:, :3] = 1
 
         full_mask, _ = create_causal_mask_and_row_indices(
@@ -114,7 +122,9 @@ class MaskingUtilsTest(unittest.TestCase):
         Test 3: Left-side padding mask (common in batch generation).
         Mask: [0, 0, 1, 1, 1] (First 2 tokens are padding).
         """
-        padding_mask = paddle.zeros((self.batch_size, self.seq_length), dtype="int64")
+        padding_mask = paddle.zeros(
+            (self.batch_size, self.seq_length), dtype="int64"
+        )
         padding_mask[:, 2:] = 1
 
         full_mask, _ = create_causal_mask_and_row_indices(
@@ -221,7 +231,10 @@ class MaskingUtilsTest(unittest.TestCase):
 
         def force_visible_fn(b, h, q, k):
             # Make (0, 4) visible (normally masked by causal mask)
-            mask = paddle.zeros((self.batch_size, 1, self.seq_length, self.seq_length), dtype="bool")
+            mask = paddle.zeros(
+                (self.batch_size, 1, self.seq_length, self.seq_length),
+                dtype="bool",
+            )
             mask[:, :, 0, 4] = True
             return mask
 
@@ -247,7 +260,10 @@ class MaskingUtilsTest(unittest.TestCase):
         (mapped to 0.0 or min_val based on boolean truthiness).
         """
         # Input: 1.0 (True) -> Keep, 0.0 (False) -> Mask
-        custom_4d = paddle.ones((self.batch_size, 1, self.seq_length, self.seq_length), dtype=self.dtype)
+        custom_4d = paddle.ones(
+            (self.batch_size, 1, self.seq_length, self.seq_length),
+            dtype=self.dtype,
+        )
         custom_4d[:, :, 0, 4] = 0.0
 
         full_mask, _ = create_causal_mask_and_row_indices(
@@ -269,7 +285,9 @@ class MaskingUtilsTest(unittest.TestCase):
         Expectation: If start/end indices are provided, `causal_mask` should be None,
         and indices should be returned/processed.
         """
-        indices = paddle.zeros((self.batch_size, 1, self.seq_length, 2), dtype="int64")
+        indices = paddle.zeros(
+            (self.batch_size, 1, self.seq_length, 2), dtype="int64"
+        )
 
         # Case A: create_causal_mask_and_row_indices
         mask, out_indices = create_causal_mask_and_row_indices(
@@ -287,14 +305,16 @@ class MaskingUtilsTest(unittest.TestCase):
 
         # Case B: create_sliding_window...
         self.config.sliding_window = 2
-        mask_sw, out_indices_sw = create_sliding_window_causal_mask_and_row_indices(
-            config=self.config,
-            inputs_embeds=self.inputs_embeds,
-            batch_size=self.batch_size,
-            seq_length=self.seq_length,
-            cache_length=0,
-            attn_mask_startend_row_indices=indices,
-            prepare_decoder_attention_mask=self.prepare_fn,
+        mask_sw, out_indices_sw = (
+            create_sliding_window_causal_mask_and_row_indices(
+                config=self.config,
+                inputs_embeds=self.inputs_embeds,
+                batch_size=self.batch_size,
+                seq_length=self.seq_length,
+                cache_length=0,
+                attn_mask_startend_row_indices=indices,
+                prepare_decoder_attention_mask=self.prepare_fn,
+            )
         )
         self.assertIsNone(mask_sw)
         # Indices should be modified by sliding window logic
@@ -305,7 +325,9 @@ class MaskingUtilsTest(unittest.TestCase):
         Test 10: Independence of masks across the batch dimension.
         Expectation: Padding in one batch sample should not affect others.
         """
-        padding_mask = paddle.ones((self.batch_size, self.seq_length), dtype="int64")
+        padding_mask = paddle.ones(
+            (self.batch_size, self.seq_length), dtype="int64"
+        )
         # Mask the last token of the second sample only
         padding_mask[1, -1] = 0
 
@@ -373,7 +395,9 @@ class MaskingUtilsTest(unittest.TestCase):
         """
         self.config._attn_implementation = "sdpa"
         # Case 1: All Ones Mask (No Padding)
-        all_ones_mask = paddle.ones((self.batch_size, self.seq_length), dtype="int64")
+        all_ones_mask = paddle.ones(
+            (self.batch_size, self.seq_length), dtype="int64"
+        )
 
         full_mask, indices = create_causal_mask_and_row_indices(
             config=self.config,
@@ -385,7 +409,9 @@ class MaskingUtilsTest(unittest.TestCase):
             prepare_decoder_attention_mask=self.prepare_fn,
         )
 
-        self.assertIsNone(full_mask, "Should return None for all-ones mask (optimization)")
+        self.assertIsNone(
+            full_mask, "Should return None for all-ones mask (optimization)"
+        )
         self.assertIsNone(indices)
 
     def test_full_mask_optimization_bypassed_conditions(self):
@@ -394,11 +420,16 @@ class MaskingUtilsTest(unittest.TestCase):
         1. or_mask_function is provided (even if mask is full).
         2. attention_mask contains zeros (padding).
         """
-        all_ones_mask = paddle.ones((self.batch_size, self.seq_length), dtype="int64")
+        all_ones_mask = paddle.ones(
+            (self.batch_size, self.seq_length), dtype="int64"
+        )
 
         # Case 2: All Ones Mask + or_mask_function
         def dummy_or_fn(b, h, q, k):
-            return paddle.zeros((self.batch_size, 1, self.seq_length, self.seq_length), dtype="bool")
+            return paddle.zeros(
+                (self.batch_size, 1, self.seq_length, self.seq_length),
+                dtype="bool",
+            )
 
         full_mask, _ = create_causal_mask_and_row_indices(
             config=self.config,
@@ -410,7 +441,10 @@ class MaskingUtilsTest(unittest.TestCase):
             prepare_decoder_attention_mask=self.prepare_fn,
             or_mask_function=dummy_or_fn,
         )
-        self.assertIsNotNone(full_mask, "Should NOT optimize to None if or_mask_function is present")
+        self.assertIsNotNone(
+            full_mask,
+            "Should NOT optimize to None if or_mask_function is present",
+        )
 
         # Case 3: Mixed Mask (Has Padding)
         mixed_mask = all_ones_mask.clone()
@@ -425,7 +459,10 @@ class MaskingUtilsTest(unittest.TestCase):
             attention_mask=mixed_mask,
             prepare_decoder_attention_mask=self.prepare_fn,
         )
-        self.assertIsNotNone(full_mask_padded, "Should NOT optimize to None if mask contains padding (0s)")
+        self.assertIsNotNone(
+            full_mask_padded,
+            "Should NOT optimize to None if mask contains padding (0s)",
+        )
 
 
 if __name__ == "__main__":

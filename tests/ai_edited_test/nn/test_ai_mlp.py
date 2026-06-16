@@ -19,7 +19,9 @@ class TestMLP(unittest.TestCase):
         config = MagicMock()
         config.hidden_size = overrides.get("hidden_size", 64)
         config.intermediate_size = overrides.get("intermediate_size", 128)
-        config.tensor_model_parallel_size = overrides.get("tensor_model_parallel_size", 1)
+        config.tensor_model_parallel_size = overrides.get(
+            "tensor_model_parallel_size", 1
+        )
         config.sequence_parallel = False
         # Use a real dict for get() to avoid MagicMock comparison issues
         config_data = {

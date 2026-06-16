@@ -34,7 +34,7 @@ def _add_subfolder(weights_name: str, subfolder: Optional[str] = None) -> str:
 
 def aistudio_download(
     repo_id: str,
-    filename: str = None,
+    filename: str | None = None,
     cache_dir: Optional[str] = None,
     subfolder: Optional[str] = "",
     revision: Optional[str] = None,
@@ -56,15 +56,19 @@ def aistudio_download(
             **download_kwargs,
         )
     except ValueError:
-        raise EnvironmentError(
+        raise OSError(
             f"Cannot find {filename} in the cached files and it looks like {repo_id} is not the path to a directory containing the {filename} or"
             " \nCheckout your internet connection or see how to run the library in offline mode."
         )
     except EntryNotFoundError:
-        raise EnvironmentError(
+        raise OSError(
             f"Cannot find the requested file {filename} in {repo_id}, please make sure the {filename} under the repo {repo_id}"
         )
     except HTTPError as err:
-        raise EnvironmentError(f"There was a specific connection error when trying to load {repo_id}:\n{err}")
+        raise OSError(
+            f"There was a specific connection error when trying to load {repo_id}:\n{err}"
+        )
     except Exception:
-        raise EnvironmentError(f"Please make sure the {filename} under the repo {repo_id}")
+        raise OSError(
+            f"Please make sure the {filename} under the repo {repo_id}"
+        )

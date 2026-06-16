@@ -13,8 +13,8 @@
 # limitations under the License.
 """Shared Memory Utils"""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import List, Mapping, Tuple
 
 import numpy as np
 import paddle
@@ -24,7 +24,7 @@ from ...transformers.utils import device_guard
 
 @dataclass
 class TensorMeta:
-    shape: Tuple[int] = None  # type: ignore
+    shape: tuple[int] = None  # type: ignore
     dtype: paddle.dtype = None  # type: ignore
     element_size: int = 0
     numel: int = 0
@@ -53,17 +53,22 @@ def _write_shared_memory(value: paddle.Tensor, meta: TensorMeta, buffer):
     if value.numel() == 0:
         return
     shm_numpy = np.frombuffer(
-        buffer, dtype=dtype_mapping[value.dtype], count=int(value.numel()), offset=int(meta.offset)
+        buffer,
+        dtype=dtype_mapping[value.dtype],
+        count=int(value.numel()),
+        offset=int(meta.offset),
     )
     with device_guard("cpu"):
-        shm_tensor = paddle.Tensor(shm_numpy, zero_copy=True).reshape(value.shape)
+        shm_tensor = paddle.Tensor(shm_numpy, zero_copy=True).reshape(
+            value.shape
+        )
     shm_tensor.copy_(value, False)
 
 
 def _traverse_copy_to_shm(value, meta, buffer):
     if isinstance(value, Mapping):
         for k, v in value.items():
-            if isinstance(v, (Mapping, List)):
+            if isinstance(v, (Mapping, list)):
                 m = meta[k]
                 _traverse_copy_to_shm(v, m, buffer)
             elif paddle.is_tensor(v):
@@ -71,9 +76,9 @@ def _traverse_copy_to_shm(value, meta, buffer):
                 _write_shared_memory(v.contiguous(), m, buffer)
             else:
                 meta[k] = v
-    elif isinstance(value, List):
+    elif isinstance(value, list):
         for i, v in enumerate(value):
-            if isinstance(v, (Mapping, List)):
+            if isinstance(v, (Mapping, list)):
                 m = meta[i]
                 _traverse_copy_to_shm(v, m, buffer)
             elif paddle.is_tensor(v):
@@ -119,7 +124,7 @@ def _traverse_state_dict(value, visitor):
         for k, v in value.items():
             temp_dict[k] = _traverse_state_dict(v, visitor)
         return temp_dict
-    elif isinstance(value, List):
+    elif isinstance(value, list):
         temp_list = []
         for _, v in enumerate(value):
             temp_list.append(_traverse_state_dict(v, visitor))

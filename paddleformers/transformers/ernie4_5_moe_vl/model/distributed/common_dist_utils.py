@@ -149,10 +149,16 @@ def scatter_axis(input, group=None, axis=0):
     rank = group.rank
     seq_len = input.shape[axis]
     assert seq_len % parallelism == 0, (
-        f"Input sequence length {seq_len} can't be divided exactly" f" by sequence parallelism {parallelism}"
+        f"Input sequence length {seq_len} can't be divided exactly"
+        f" by sequence parallelism {parallelism}"
     )
     interval = seq_len // parallelism
-    input = paddle.slice(input, axes=[axis], starts=[interval * rank], ends=[interval * (rank + 1)])
+    input = paddle.slice(
+        input,
+        axes=[axis],
+        starts=[interval * rank],
+        ends=[interval * (rank + 1)],
+    )
     # slice uses stride, so we maintain the memory of whole input, use assign to free the whole input
     # which can avoid OOM.
     input = paddle.assign(input)
@@ -183,7 +189,9 @@ def mp_slice(x, indices=None, group=None, axis=0):
     rank = group.rank
     assert len(indices) == parallelism, (len(indices), parallelism)
     indices = F.pad(paddle.to_tensor(indices).cumsum(0), [1, 0])
-    input = paddle.slice(x, axes=[axis], starts=[indices[rank]], ends=[indices[rank + 1]])
+    input = paddle.slice(
+        x, axes=[axis], starts=[indices[rank]], ends=[indices[rank + 1]]
+    )
     input = paddle.assign(input)
     return input
 
@@ -212,7 +220,9 @@ def all_gather_varlen(input, indices, group=None, axis=0, sync_op=True):
     out = paddle.empty([sum(indices)] + input.shape[1:], dtype=input.dtype)
     task = dist.stream.alltoall_single(
         out,
-        paddle.concat([input] * parallelism, 0) if len(input) else input,  # TODO: check this
+        paddle.concat([input] * parallelism, 0)
+        if len(input)
+        else input,  # TODO: check this
         output_sizes,  # input-size
         input_sizes,
         group=group,
@@ -363,7 +373,9 @@ class RRColumnSequenceParallelLinear(ColumnSequenceParallelLinear):
         else:
             input_parallel = x
 
-        if self._rr_column_ln is not None and self.training:  # in eval mode, do not use refined recompute
+        if (
+            self._rr_column_ln is not None and self.training
+        ):  # in eval mode, do not use refined recompute
             output = self._rr_column_ln(
                 self.linear,
                 x=input_parallel,
@@ -371,7 +383,9 @@ class RRColumnSequenceParallelLinear(ColumnSequenceParallelLinear):
                 bias=self.bias,
             )
         else:
-            output = self.linear(input_parallel, self.weight, self.bias, name=self._name)
+            output = self.linear(
+                input_parallel, self.weight, self.bias, name=self._name
+            )
         return output
 
 
@@ -443,7 +457,9 @@ class RRRowSequenceParallelLinear(RowSequenceParallelLinear):
                 output = self.linear(input, weight=weight, bias=bias, name=name)
                 return ReduceScatterOp.apply(output)
 
-            if self._rr_row_ln is not None and self.training:  # in eval mode, do not use refined recompute
+            if (
+                self._rr_row_ln is not None and self.training
+            ):  # in eval mode, do not use refined recompute
                 output_ = self._rr_row_ln(
                     linear_reduce_scatter,
                     input_parallel,
@@ -452,7 +468,9 @@ class RRRowSequenceParallelLinear(RowSequenceParallelLinear):
                     name=self._name,
                 )
             else:
-                output_ = linear_reduce_scatter(input_parallel, self.weight, bias=bias, name=self._name)
+                output_ = linear_reduce_scatter(
+                    input_parallel, self.weight, bias=bias, name=self._name
+                )
 
             # if self.bias is not none, sequence parallel will use
             # register_hook to all_reduce self.bias
@@ -461,7 +479,9 @@ class RRRowSequenceParallelLinear(RowSequenceParallelLinear):
             else:
                 output = output_
         else:
-            output = self.linear(input_parallel, self.weight, self.bias, name=self._name)
+            output = self.linear(
+                input_parallel, self.weight, self.bias, name=self._name
+            )
         return output
 
 
@@ -492,7 +512,9 @@ class AllGatherVarlenOp(PyLayer):
 
         shape0 = paddle.to_tensor([input.shape[0]])
         shape0_all = paddle.empty(shape=[group.nranks], dtype=shape0.dtype)
-        dist.stream.all_gather(shape0_all, shape0, group=group, use_calc_stream=True)
+        dist.stream.all_gather(
+            shape0_all, shape0, group=group, use_calc_stream=True
+        )
         shape0_all = shape0_all.numpy()
         max_shape0 = shape0_all.max()
 
@@ -643,7 +665,10 @@ def all_gather_group(input, group=None, axis=0):
         output = paddle.empty(shape=output_shape, dtype=input.dtype)
         dist.stream.all_gather(output, input, group=group, use_calc_stream=True)
         return output
-    outputs = [paddle.empty(output_shape, dtype=input.dtype) for _ in range(parallelism)]
+    outputs = [
+        paddle.empty(output_shape, dtype=input.dtype)
+        for _ in range(parallelism)
+    ]
     dist.stream.all_gather(outputs, input, group=group, use_calc_stream=True)
     output = paddle.concat(outputs, axis=axis)
     return output
@@ -671,10 +696,12 @@ def reduce_scatter_group(input, group=None):
     if parallelism == 1:
         return input.clone()
     output_shape = input.shape
-    assert (
-        input.shape[0] % parallelism == 0
-    ), f"Input sequence length {input.shape[0]} can't be divided exactly by sequence parallelism {parallelism}"
+    assert input.shape[0] % parallelism == 0, (
+        f"Input sequence length {input.shape[0]} can't be divided exactly by sequence parallelism {parallelism}"
+    )
     output_shape[0] = output_shape[0] // parallelism
     output = paddle.empty(shape=output_shape, dtype=input.dtype)
-    dist.stream.reduce_scatter(output, input, op=dist.ReduceOp.SUM, group=group, use_calc_stream=True)
+    dist.stream.reduce_scatter(
+        output, input, op=dist.ReduceOp.SUM, group=group, use_calc_stream=True
+    )
     return output

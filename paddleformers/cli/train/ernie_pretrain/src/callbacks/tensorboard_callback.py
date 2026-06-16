@@ -27,7 +27,10 @@ except Exception:
 
 
 def is_tensorboard_available():
-    return importlib.util.find_spec("tensorboard") is not None or importlib.util.find_spec("tensorboardX") is not None
+    return (
+        importlib.util.find_spec("tensorboard") is not None
+        or importlib.util.find_spec("tensorboardX") is not None
+    )
 
 
 def rewrite_logs(d):
@@ -83,7 +86,9 @@ class TensorBoardCallback(TrainerCallback):
         self.model_numel = sum(
             get_numel_item(p)
             for n, p in model.named_parameters()
-            if not p.stop_gradient and "embeddings" not in n and "embed_tokens" not in n
+            if not p.stop_gradient
+            and "embeddings" not in n
+            and "embed_tokens" not in n
         )
         self.log_flops_per_step = log_flops_per_step
         self.log_tokens_per_step = log_tokens_per_step
@@ -107,14 +112,20 @@ class TensorBoardCallback(TrainerCallback):
             if "model" in kwargs:
                 model = kwargs["model"]
 
-                if (isinstance(model, PretrainedModel) and model.constructed_from_pretrained_config()) or isinstance(
-                    model, LoRAModel
-                ):
+                if (
+                    isinstance(model, PretrainedModel)
+                    and model.constructed_from_pretrained_config()
+                ) or isinstance(model, LoRAModel):
                     model.config.architectures = [model.__class__.__name__]
                     self.tb_writer.add_text("model_config", str(model.config))
 
-                elif hasattr(model, "init_config") and model.init_config is not None:
-                    model_config_json = json.dumps(model.get_model_config(), ensure_ascii=False, indent=2)
+                elif (
+                    hasattr(model, "init_config")
+                    and model.init_config is not None
+                ):
+                    model_config_json = json.dumps(
+                        model.get_model_config(), ensure_ascii=False, indent=2
+                    )
                     self.tb_writer.add_text("model_config", model_config_json)
 
     def on_log(self, args, state, control, logs=None, **kwargs):
@@ -158,10 +169,18 @@ class TensorBoardCallback(TrainerCallback):
                     self.tb_writer.add_scalar(k, v, state.global_step)
 
                     if tokens_per_step is not None and k in ["train/loss"]:
-                        self.tb_writer.add_scalar(k + "_xaxis_tokens", v, state.global_step * tokens_per_step)
+                        self.tb_writer.add_scalar(
+                            k + "_xaxis_tokens",
+                            v,
+                            state.global_step * tokens_per_step,
+                        )
 
                     if flops_per_step is not None and k in ["train/loss"]:
-                        self.tb_writer.add_scalar(k + "_xaxis_flops", v, state.global_step * flops_per_step)
+                        self.tb_writer.add_scalar(
+                            k + "_xaxis_flops",
+                            v,
+                            state.global_step * flops_per_step,
+                        )
 
                 else:
                     logger.warning(
@@ -171,12 +190,19 @@ class TensorBoardCallback(TrainerCallback):
                         "is incorrect so we dropped this attribute."
                     )
             if timers is not None:
-                timers.write(timers.timers.keys(), self.tb_writer, state.global_step, reset=False)
+                timers.write(
+                    timers.timers.keys(),
+                    self.tb_writer,
+                    state.global_step,
+                    reset=False,
+                )
 
             if paddle_pipeline_timers:
                 for name, timer in paddle_pipeline_timers.timers.items():
                     elapsed_time = timer.elapsed(reset=False)
-                    self.tb_writer.add_scalar(f"timers/{name}", elapsed_time, state.global_step)
+                    self.tb_writer.add_scalar(
+                        f"timers/{name}", elapsed_time, state.global_step
+                    )
 
             self.tb_writer.flush()
 

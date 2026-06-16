@@ -23,11 +23,12 @@ import threading
 import time
 import uuid
 import warnings
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import BinaryIO, Callable, Dict, Generator, Literal, Optional, Union
+from typing import BinaryIO, Literal, Optional
 from urllib.parse import urlparse
 
 import requests
@@ -73,7 +74,9 @@ OFFLINE = _is_true(os.environ.get("AISTUDIO_BOS_OFFLINE"))
 _CACHED_NO_EXIST = object()
 
 
-def _cache_commit_hash_for_specific_revision(storage_folder: str, revision: str, commit_hash: str) -> None:
+def _cache_commit_hash_for_specific_revision(
+    storage_folder: str, revision: str, commit_hash: str
+) -> None:
     """Cache reference between a revision (tag, branch or truncated commit hash) and the corresponding commit hash.
 
     Does nothing if `revision` is already a proper `commit_hash` or reference is already cached.
@@ -88,7 +91,7 @@ def _cache_commit_hash_for_specific_revision(storage_folder: str, revision: str,
         ref_path.write_text(commit_hash)
 
 
-def _check_disk_space(expected_size: int, target_dir: Union[str, Path]) -> None:
+def _check_disk_space(expected_size: int, target_dir: str | Path) -> None:
     """Check disk usage and log a warning if there is not enough disk space to download the file.
 
     Args:
@@ -99,7 +102,9 @@ def _check_disk_space(expected_size: int, target_dir: Union[str, Path]) -> None:
     """
 
     target_dir = Path(target_dir)  # format as `Path`
-    for path in [target_dir] + list(target_dir.parents):  # first check target_dir, then each parents one by one
+    for path in [target_dir] + list(
+        target_dir.parents
+    ):  # first check target_dir, then each parents one by one
         try:
             target_dir_free = shutil.disk_usage(path).free
             if target_dir_free < expected_size:
@@ -119,7 +124,7 @@ def http_get(
     *,
     proxies=None,
     resume_size: float = 0,
-    headers: Optional[Dict[str, str]] = None,
+    headers: Optional[dict[str, str]] = None,
     expected_size: Optional[int] = None,
     _nb_retries: int = 5,
 ):
@@ -136,14 +141,23 @@ def http_get(
         headers["Range"] = "bytes=%d-" % (resume_size,)
 
     r = _request_wrapper(
-        method="GET", url=url, stream=True, proxies=proxies, headers=headers, timeout=DEFAULT_DOWNLOAD_TIMEOUT
+        method="GET",
+        url=url,
+        stream=True,
+        proxies=proxies,
+        headers=headers,
+        timeout=DEFAULT_DOWNLOAD_TIMEOUT,
     )
     raise_for_status(r)
     content_length = r.headers.get("Content-Length")
 
     # NOTE: 'total' is the total number of bytes to download, not the number of bytes in the file.
     #       If the file is compressed, the number of bytes in the saved file will be higher than 'total'.
-    total = resume_size + int(content_length) if content_length is not None else None
+    total = (
+        resume_size + int(content_length)
+        if content_length is not None
+        else None
+    )
 
     displayed_name = url
     content_disposition = r.headers.get("Content-Disposition")
@@ -187,9 +201,17 @@ def http_get(
             # a transient error (network outage?). We log a warning message and try to resume the download a few times
             # before giving up. The retry mechanism is basic but should be enough in most cases.
             if _nb_retries <= 0:
-                logger.warning("Error while downloading from %s: %s\nMax retries exceeded.", url, str(e))
+                logger.warning(
+                    "Error while downloading from %s: %s\nMax retries exceeded.",
+                    url,
+                    str(e),
+                )
                 raise
-            logger.warning("Error while downloading from %s: %s\nTrying to resume download...", url, str(e))
+            logger.warning(
+                "Error while downloading from %s: %s\nTrying to resume download...",
+                url,
+                str(e),
+            )
             time.sleep(1)
             reset_sessions()  # In case of SSLError it's best to reset the shared requests.Session objects
             return http_get(
@@ -203,7 +225,7 @@ def http_get(
             )
 
         if expected_size is not None and expected_size != temp_file.tell():
-            raise EnvironmentError(
+            raise OSError(
                 consistency_error_message.format(
                     actual_size=temp_file.tell(),
                 )
@@ -270,11 +292,15 @@ def _default_backend_factory() -> requests.Session:
 
 
 _GLOBAL_BACKEND_FACTORY: BACKEND_FACTORY_T = _default_backend_factory
-HTTP_METHOD_T = Literal["GET", "OPTIONS", "HEAD", "POST", "PUT", "PATCH", "DELETE"]
+HTTP_METHOD_T = Literal[
+    "GET", "OPTIONS", "HEAD", "POST", "PUT", "PATCH", "DELETE"
+]
 
 
 @lru_cache
-def _get_session_from_cache(process_id: int, thread_id: int) -> requests.Session:
+def _get_session_from_cache(
+    process_id: int, thread_id: int
+) -> requests.Session:
     """
     Create a new session per thread using global factory. Using LRU cache (maxsize 128) to avoid memory leaks when
     using thousands of threads. Cache is cleared when `configure_http_backend` is called.
@@ -320,11 +346,17 @@ def get_session() -> requests.Session:
     session = get_session()
     ```
     """
-    return _get_session_from_cache(process_id=os.getpid(), thread_id=threading.get_ident())
+    return _get_session_from_cache(
+        process_id=os.getpid(), thread_id=threading.get_ident()
+    )
 
 
 def _request_wrapper(
-    method: HTTP_METHOD_T, url: str, *, follow_relative_redirects: bool = False, **params
+    method: HTTP_METHOD_T,
+    url: str,
+    *,
+    follow_relative_redirects: bool = False,
+    **params,
 ) -> requests.Response:
     """Wrapper around requests methods to follow relative redirects if `follow_relative_redirects=True` even when
     `allow_redirection=False`.
@@ -361,8 +393,15 @@ def _request_wrapper(
                 #
                 # Highly inspired by `resolve_redirects` from requests library.
                 # See https://github.com/psf/requests/blob/main/requests/sessions.py#L159
-                next_url = urlparse(url)._replace(path=parsed_target.path).geturl()
-                return _request_wrapper(method=method, url=next_url, follow_relative_redirects=True, **params)
+                next_url = (
+                    urlparse(url)._replace(path=parsed_target.path).geturl()
+                )
+                return _request_wrapper(
+                    method=method,
+                    url=next_url,
+                    follow_relative_redirects=True,
+                    **params,
+                )
         return response
     # Perform request and return if status_code is not in the retry list.
     response = get_session().request(method=method, url=url, **params)
@@ -370,11 +409,16 @@ def _request_wrapper(
     return response
 
 
-def _get_pointer_path(storage_folder: str, revision: str, relative_filename: str) -> str:
+def _get_pointer_path(
+    storage_folder: str, revision: str, relative_filename: str
+) -> str:
     # Using `os.path.abspath` instead of `Path.resolve()` to avoid resolving symlinks
     snapshot_path = os.path.join(storage_folder, "snapshots")
     pointer_path = os.path.join(snapshot_path, revision, relative_filename)
-    if Path(os.path.abspath(snapshot_path)) not in Path(os.path.abspath(pointer_path)).parents:
+    if (
+        Path(os.path.abspath(snapshot_path))
+        not in Path(os.path.abspath(pointer_path)).parents
+    ):
         raise ValueError(
             "Invalid pointer path: cannot create pointer path in snapshot folder if"
             f" `storage_folder='{storage_folder}'`, `revision='{revision}'` and"
@@ -449,7 +493,9 @@ def _create_symlink(src: str, dst: str, new_blob: bool = False) -> None:
             os.symlink(src_rel_or_abs, abs_dst)
             return
         except FileExistsError:
-            if os.path.islink(abs_dst) and os.path.realpath(abs_dst) == os.path.realpath(abs_src):
+            if os.path.islink(abs_dst) and os.path.realpath(
+                abs_dst
+            ) == os.path.realpath(abs_src):
                 # `abs_dst` already exists and is a symlink to the `abs_src` blob. It is most likely that the file has
                 # been cached twice concurrently (exactly between `os.remove` and `os.symlink`). Do nothing.
                 return
@@ -464,14 +510,18 @@ def _create_symlink(src: str, dst: str, new_blob: bool = False) -> None:
 
     # Symlinks are not supported => let's move or copy the file.
     if new_blob:
-        logger.info(f"Symlink not supported. Moving file from {abs_src} to {abs_dst}")
+        logger.info(
+            f"Symlink not supported. Moving file from {abs_src} to {abs_dst}"
+        )
         shutil.move(abs_src, abs_dst)
     else:
-        logger.info(f"Symlink not supported. Copying file from {abs_src} to {abs_dst}")
+        logger.info(
+            f"Symlink not supported. Copying file from {abs_src} to {abs_dst}"
+        )
         shutil.copyfile(abs_src, abs_dst)
 
 
-_are_symlinks_supported_in_dir: Dict[str, bool] = {}
+_are_symlinks_supported_in_dir: dict[str, bool] = {}
 
 
 def _set_write_permission_and_retry(func, path, excinfo):
@@ -483,7 +533,7 @@ def _set_write_permission_and_retry(func, path, excinfo):
 def SoftTemporaryDirectory(
     suffix: Optional[str] = None,
     prefix: Optional[str] = None,
-    dir: Optional[Union[Path, str]] = None,
+    dir: Optional[Path | str] = None,
     **kwargs,
 ) -> Generator[str, None, None]:
     """
@@ -496,7 +546,9 @@ def SoftTemporaryDirectory(
 
     See https://www.scivision.dev/python-tempfile-permission-error-windows/.
     """
-    tmpdir = tempfile.TemporaryDirectory(prefix=prefix, suffix=suffix, dir=dir, **kwargs)
+    tmpdir = tempfile.TemporaryDirectory(
+        prefix=prefix, suffix=suffix, dir=dir, **kwargs
+    )
     yield tmpdir.name
 
     try:
@@ -518,7 +570,10 @@ def SoftTemporaryDirectory(
 
 
 def _to_local_dir(
-    path: str, local_dir: str, relative_filename: str, use_symlinks: Union[bool, Literal["auto"]]
+    path: str,
+    local_dir: str,
+    relative_filename: str,
+    use_symlinks: bool | Literal["auto"],
 ) -> str:
     """Place a file in a local dir (different than cache_dir).
 
@@ -526,7 +581,10 @@ def _to_local_dir(
     """
     # Using `os.path.abspath` instead of `Path.resolve()` to avoid resolving symlinks
     local_dir_filepath = os.path.join(local_dir, relative_filename)
-    if Path(os.path.abspath(local_dir)) not in Path(os.path.abspath(local_dir_filepath)).parents:
+    if (
+        Path(os.path.abspath(local_dir))
+        not in Path(os.path.abspath(local_dir_filepath)).parents
+    ):
         raise ValueError(
             f"Cannot copy file '{relative_filename}' to local dir '{local_dir}': file would not be in the local"
             " directory."
@@ -537,7 +595,10 @@ def _to_local_dir(
 
     # If "auto" (default) copy-paste small files to ease manual editing but symlink big files to save disk
     if use_symlinks == "auto":
-        use_symlinks = os.stat(real_blob_path).st_size > DEFALUT_LOCAL_DIR_AUTO_SYMLINK_THRESHOLD
+        use_symlinks = (
+            os.stat(real_blob_path).st_size
+            > DEFALUT_LOCAL_DIR_AUTO_SYMLINK_THRESHOLD
+        )
 
     if use_symlinks:
         _create_symlink(real_blob_path, local_dir_filepath, new_blob=False)
@@ -592,22 +653,30 @@ class AistudioBosFileMetadata:
     size: Optional[int]
 
 
-def raise_for_status(response: Response, endpoint_name: Optional[str] = None) -> None:
+def raise_for_status(
+    response: Response, endpoint_name: Optional[str] = None
+) -> None:
     try:
         response.raise_for_status()
     except HTTPError as e:
         if response.status_code == 404:
-            message = f"{response.status_code} Client Error." + "\n\n" + f"Entry Not Found for url: {response.url}."
+            message = (
+                f"{response.status_code} Client Error."
+                + "\n\n"
+                + f"Entry Not Found for url: {response.url}."
+            )
             raise EntryNotFoundError(message, None) from e
         elif response.status_code == 400:
             message = (
-                f"\n\nBad request for {endpoint_name} endpoint:" if endpoint_name is not None else "\n\nBad request:"
+                f"\n\nBad request for {endpoint_name} endpoint:"
+                if endpoint_name is not None
+                else "\n\nBad request:"
             )
             raise BadRequestError(message, response=None) from e
         raise HfHubHTTPError(str(e), response=None) from e
 
 
-def are_symlinks_supported(cache_dir: Union[str, Path, None] = None) -> bool:
+def are_symlinks_supported(cache_dir: str | Path | None = None) -> bool:
     """Return whether the symlinks are supported on the machine.
 
     Since symlinks support can change depending on the mounted disk, we need to check
@@ -633,7 +702,9 @@ def are_symlinks_supported(cache_dir: Union[str, Path, None] = None) -> bool:
             dst_path = Path(tmpdir) / "dummy_file_dst"
 
             # Relative source path as in `_create_symlink``
-            relative_src = os.path.relpath(src_path, start=os.path.dirname(dst_path))
+            relative_src = os.path.relpath(
+                src_path, start=os.path.dirname(dst_path)
+            )
             try:
                 os.symlink(relative_src, dst_path)
             except OSError:

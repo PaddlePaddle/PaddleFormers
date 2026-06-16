@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 # Copyright 2025 The HuggingFace Inc. team. All rights reserved.
 #
@@ -102,7 +101,12 @@ class Qwen3VLVideoProcessingTester:
     def expected_output_video_shape(self, videos, num_frames=None):
         num_frames = num_frames if num_frames is not None else self.num_frames
         grid_t = num_frames // self.temporal_patch_size
-        hidden_dim = self.num_channels * self.temporal_patch_size * self.patch_size * self.patch_size
+        hidden_dim = (
+            self.num_channels
+            * self.temporal_patch_size
+            * self.patch_size
+            * self.patch_size
+        )
         seq_len = 0
         for video in videos:
             if isinstance(video[0], Image.Image):
@@ -117,11 +121,16 @@ class Qwen3VLVideoProcessingTester:
                 min_pixels=self.min_pixels,
                 max_pixels=self.max_pixels,
             )
-            grid_h, grid_w = resized_height // self.patch_size, resized_width // self.patch_size
+            grid_h, grid_w = (
+                resized_height // self.patch_size,
+                resized_width // self.patch_size,
+            )
             seq_len += grid_t * grid_h * grid_w
         return [seq_len, hidden_dim]
 
-    def prepare_video_inputs(self, equal_resolution=False, return_tensors="pil"):
+    def prepare_video_inputs(
+        self, equal_resolution=False, return_tensors="pil"
+    ):
         videos = prepare_video_inputs(
             batch_size=self.batch_size,
             num_frames=self.num_frames,
@@ -150,7 +159,9 @@ class Qwen3VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
         """
         Verifies that the processor instance has correct attributes set from config.
         """
-        video_processing = self.fast_video_processing_class(**self.video_processor_dict)
+        video_processing = self.fast_video_processing_class(
+            **self.video_processor_dict
+        )
         self.assertTrue(hasattr(video_processing, "do_resize"))
         self.assertTrue(hasattr(video_processing, "size"))
         self.assertTrue(hasattr(video_processing, "do_normalize"))
@@ -163,12 +174,22 @@ class Qwen3VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
         Tests initialization from dict with overrides.
         """
         for video_processing_class in self.video_processor_list:
-            video_processor = video_processing_class(**self.video_processor_dict)
-            self.assertEqual(video_processor.min_pixels, self.video_processor_tester.min_pixels)
-            self.assertEqual(video_processor.max_pixels, self.video_processor_tester.max_pixels)
+            video_processor = video_processing_class(
+                **self.video_processor_dict
+            )
+            self.assertEqual(
+                video_processor.min_pixels,
+                self.video_processor_tester.min_pixels,
+            )
+            self.assertEqual(
+                video_processor.max_pixels,
+                self.video_processor_tester.max_pixels,
+            )
 
             video_processor = video_processing_class.from_dict(
-                self.video_processor_dict, min_pixels=256 * 256, max_pixels=640 * 640
+                self.video_processor_dict,
+                min_pixels=256 * 256,
+                max_pixels=640 * 640,
             )
             self.assertEqual(video_processor.min_pixels, 256 * 256)
             self.assertEqual(video_processor.max_pixels, 640 * 640)
@@ -178,7 +199,9 @@ class Qwen3VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
         Tests processing Paddle tensor inputs.
         """
         for video_processing_class in self.video_processor_list:
-            video_processing = video_processing_class(**self.video_processor_dict)
+            video_processing = video_processing_class(
+                **self.video_processor_dict
+            )
             video_inputs = self.video_processor_tester.prepare_video_inputs(
                 equal_resolution=False, return_tensors="pd"
             )
@@ -186,12 +209,26 @@ class Qwen3VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
             for video in video_inputs:
                 self.assertIsInstance(video, paddle.Tensor)
 
-            encoded_videos = video_processing(video_inputs[0], return_tensors="pd")[self.input_name]
-            expected_output_video_shape = self.video_processor_tester.expected_output_video_shape([video_inputs[0]])
-            self.assertEqual(list(encoded_videos.shape), expected_output_video_shape)
+            encoded_videos = video_processing(
+                video_inputs[0], return_tensors="pd"
+            )[self.input_name]
+            expected_output_video_shape = (
+                self.video_processor_tester.expected_output_video_shape(
+                    [video_inputs[0]]
+                )
+            )
+            self.assertEqual(
+                list(encoded_videos.shape), expected_output_video_shape
+            )
 
-            expected_output_video_shape = self.video_processor_tester.expected_output_video_shape(video_inputs)
-            encoded_videos = video_processing(video_inputs, return_tensors="pd")[self.input_name]
+            expected_output_video_shape = (
+                self.video_processor_tester.expected_output_video_shape(
+                    video_inputs
+                )
+            )
+            encoded_videos = video_processing(
+                video_inputs, return_tensors="pd"
+            )[self.input_name]
             self.assertEqual(
                 list(encoded_videos.shape),
                 expected_output_video_shape,
@@ -202,42 +239,72 @@ class Qwen3VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
         Tests processing Numpy array inputs.
         """
         for video_processing_class in self.video_processor_list:
-            video_processing = video_processing_class(**self.video_processor_dict)
+            video_processing = video_processing_class(
+                **self.video_processor_dict
+            )
             video_inputs = self.video_processor_tester.prepare_video_inputs(
                 equal_resolution=False, return_tensors="np"
             )
             for video in video_inputs:
                 self.assertIsInstance(video, np.ndarray)
 
-            encoded_videos = video_processing(video_inputs[0], return_tensors="pd")[self.input_name]
-            expected_output_video_shape = self.video_processor_tester.expected_output_video_shape([video_inputs[0]])
-            self.assertEqual(list(encoded_videos.shape), expected_output_video_shape)
+            encoded_videos = video_processing(
+                video_inputs[0], return_tensors="pd"
+            )[self.input_name]
+            expected_output_video_shape = (
+                self.video_processor_tester.expected_output_video_shape(
+                    [video_inputs[0]]
+                )
+            )
+            self.assertEqual(
+                list(encoded_videos.shape), expected_output_video_shape
+            )
 
-            encoded_videos = video_processing(video_inputs, return_tensors="pd")[self.input_name]
-            expected_output_video_shape = self.video_processor_tester.expected_output_video_shape(video_inputs)
-            self.assertEqual(list(encoded_videos.shape), expected_output_video_shape)
+            encoded_videos = video_processing(
+                video_inputs, return_tensors="pd"
+            )[self.input_name]
+            expected_output_video_shape = (
+                self.video_processor_tester.expected_output_video_shape(
+                    video_inputs
+                )
+            )
+            self.assertEqual(
+                list(encoded_videos.shape), expected_output_video_shape
+            )
 
     def test_nested_input(self):
         """
         Tests processing nested lists of inputs.
         """
         for video_processing_class in self.video_processor_list:
-            video_processing = video_processing_class(**self.video_processor_dict)
+            video_processing = video_processing_class(
+                **self.video_processor_dict
+            )
             video_inputs = self.video_processor_tester.prepare_video_inputs(
                 equal_resolution=False, return_tensors="np"
             )
 
             video_inputs_nested = [list(video) for video in video_inputs]
-            encoded_videos = video_processing(video_inputs_nested[0], return_tensors="pd")[self.input_name]
-            expected_output_video_shape = self.video_processor_tester.expected_output_video_shape([video_inputs[0]])
-            self.assertEqual(list(encoded_videos.shape), expected_output_video_shape)
+            encoded_videos = video_processing(
+                video_inputs_nested[0], return_tensors="pd"
+            )[self.input_name]
+            expected_output_video_shape = (
+                self.video_processor_tester.expected_output_video_shape(
+                    [video_inputs[0]]
+                )
+            )
+            self.assertEqual(
+                list(encoded_videos.shape), expected_output_video_shape
+            )
 
     def test_call_sample_frames(self):
         """
         Tests frame sampling functionality.
         """
         for video_processing_class in self.video_processor_list:
-            video_processing = video_processing_class(**self.video_processor_dict)
+            video_processing = video_processing_class(
+                **self.video_processor_dict
+            )
 
             self.video_processor_tester.num_frames = 8
             video_inputs = self.video_processor_tester.prepare_video_inputs(
@@ -247,27 +314,48 @@ class Qwen3VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
 
             # Case 1: do_sample_frames = False
             video_processing.do_sample_frames = False
-            encoded_videos = video_processing(video_inputs[0], return_tensors="pd", fps=3)[self.input_name]
-            expected_output_video_shape = self.video_processor_tester.expected_output_video_shape([video_inputs[0]])
-            self.assertListEqual(list(encoded_videos.shape), expected_output_video_shape)
+            encoded_videos = video_processing(
+                video_inputs[0], return_tensors="pd", fps=3
+            )[self.input_name]
+            expected_output_video_shape = (
+                self.video_processor_tester.expected_output_video_shape(
+                    [video_inputs[0]]
+                )
+            )
+            self.assertListEqual(
+                list(encoded_videos.shape), expected_output_video_shape
+            )
 
             # Case 2: do_sample_frames = True
             video_processing.do_sample_frames = True
-            encoded_videos = video_processing(video_inputs[0], return_tensors="pd", fps=4)[self.input_name]
-            expected_output_video_shape = self.video_processor_tester.expected_output_video_shape(
-                [video_inputs[0]], num_frames=4
+            encoded_videos = video_processing(
+                video_inputs[0], return_tensors="pd", fps=4
+            )[self.input_name]
+            expected_output_video_shape = (
+                self.video_processor_tester.expected_output_video_shape(
+                    [video_inputs[0]], num_frames=4
+                )
             )
-            self.assertListEqual(list(encoded_videos.shape), expected_output_video_shape)
+            self.assertListEqual(
+                list(encoded_videos.shape), expected_output_video_shape
+            )
 
             # Case 3: FPS based sampling
             metadata = [[{"duration": 2.0, "total_num_frames": 8, "fps": 4}]]
-            encoded_videos = video_processing(video_inputs[0], return_tensors="pd", fps=3, video_metadata=metadata)[
-                self.input_name
-            ]
-            expected_output_video_shape = self.video_processor_tester.expected_output_video_shape(
-                [video_inputs[0]], num_frames=6
+            encoded_videos = video_processing(
+                video_inputs[0],
+                return_tensors="pd",
+                fps=3,
+                video_metadata=metadata,
+            )[self.input_name]
+            expected_output_video_shape = (
+                self.video_processor_tester.expected_output_video_shape(
+                    [video_inputs[0]], num_frames=6
+                )
             )
-            self.assertListEqual(list(encoded_videos.shape), expected_output_video_shape)
+            self.assertListEqual(
+                list(encoded_videos.shape), expected_output_video_shape
+            )
 
     @unittest.skip(
         "Qwen3VL VideoProcessor supports 3-channel RGB only. 4-channel inputs are not supported by the underlying smart_resize logic."

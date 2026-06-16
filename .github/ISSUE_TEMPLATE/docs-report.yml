@@ -1,10 +1,9 @@
 name: 🐛 Docs Report
 description: PaddleFormers文档反馈
 title: "[Docs]: "
-labels: 
+labels:
   - documentation
-
-body: 
+body:
   - type: textarea
     id: environment
     attributes:
@@ -13,12 +12,12 @@ body:
         请使用以下命令给出您本地Paddle相关包信息
           ```sh
           pip list | grep paddle
-          
+
           ```
       value: |
-          - paddlepaddle:
-          - paddlepaddle-gpu: 
-          - paddleformers: 
+        - paddlepaddle:
+        - paddlepaddle-gpu:
+        - paddleformers:
       render: Markdown
     validations:
       required: true

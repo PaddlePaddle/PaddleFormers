@@ -13,7 +13,10 @@
 # limitations under the License.
 
 from ..configuration_utils import PretrainedConfig
-from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
+from ..modeling_rope_utils import (
+    rope_config_validation,
+    standardize_rope_params,
+)
 
 
 class LlamaConfig(PretrainedConfig):
@@ -59,7 +62,11 @@ class LlamaConfig(PretrainedConfig):
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
         self.mlp_bias = mlp_bias
-        self.head_dim = head_dim if head_dim is not None else self.hidden_size // self.num_attention_heads
+        self.head_dim = (
+            head_dim
+            if head_dim is not None
+            else self.hidden_size // self.num_attention_heads
+        )
 
         self.rope_theta = kwargs.get("rope_theta", 10000.0)
         self.rope_scaling = kwargs.pop("rope_scaling", None)

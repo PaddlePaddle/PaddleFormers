@@ -30,9 +30,13 @@ class TestTokenizer(unittest.TestCase):
     def test_tokenizer_save_pretrained(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tokenizer = AutoTokenizer.from_pretrained("ModelHub/Qwen2-7B")
-            special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}
+            special_tokens_dict = {
+                "additional_special_tokens": ["[ENT_START]", "[ENT_END]"]
+            }
             tokenizer.add_special_tokens(special_tokens_dict)
             tokenizer.add_tokens(["new_word", "another_word"])
             tokenizer.model_max_length = 512
             tokenizer.save_pretrained(tmpdir)
-            self.assertTrue(os.path.exists(os.path.join(tmpdir, "tokenizer_config.json")))
+            self.assertTrue(
+                os.path.exists(os.path.join(tmpdir, "tokenizer_config.json"))
+            )

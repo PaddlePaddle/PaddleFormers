@@ -82,7 +82,9 @@ class CommonTest(unittest.TestCase):
 
         return wrapper
 
-    def _check_output_impl(self, result, expected_result, rtol, atol, equal=True):
+    def _check_output_impl(
+        self, result, expected_result, rtol, atol, equal=True
+    ):
         assertForNormalType = self.assertNotEqual
         assertForFloat = self.assertFalse
         if equal:
@@ -97,19 +99,32 @@ class CommonTest(unittest.TestCase):
             assertForNormalType(
                 result,
                 expected_result,
-                msg=error_msg.format(paddle.get_device(), expected_result, result, self.__class__.__name__),
+                msg=error_msg.format(
+                    paddle.get_device(),
+                    expected_result,
+                    result,
+                    self.__class__.__name__,
+                ),
             )
         elif result_t in [float, np.ndarray, np.float32, np.float64]:
             assertForFloat(
                 np.allclose(result, expected_result, rtol=rtol, atol=atol),
-                msg=error_msg.format(paddle.get_device(), expected_result, result, self.__class__.__name__),
+                msg=error_msg.format(
+                    paddle.get_device(),
+                    expected_result,
+                    result,
+                    self.__class__.__name__,
+                ),
             )
             if result_t == np.ndarray:
                 assertForNormalType(
                     result.shape,
                     expected_result.shape,
                     msg=error_msg.format(
-                        paddle.get_device(), expected_result.shape, result.shape, self.__class__.__name__
+                        paddle.get_device(),
+                        expected_result.shape,
+                        result.shape,
+                        self.__class__.__name__,
                     ),
                 )
         else:
@@ -118,7 +133,9 @@ class CommonTest(unittest.TestCase):
                 "np.int64, np.str, float, np.ndarray, np.float32, np.float64"
             )
 
-    def check_output_equal(self, result, expected_result, rtol=1.0e-5, atol=1.0e-8):
+    def check_output_equal(
+        self, result, expected_result, rtol=1.0e-5, atol=1.0e-8
+    ):
         """
             Check whether result and expected result are equal, including shape.
         Args:
@@ -133,7 +150,9 @@ class CommonTest(unittest.TestCase):
         """
         self._check_output_impl(result, expected_result, rtol, atol)
 
-    def check_output_not_equal(self, result, expected_result, rtol=1.0e-5, atol=1.0e-8):
+    def check_output_not_equal(
+        self, result, expected_result, rtol=1.0e-5, atol=1.0e-8
+    ):
         """
             Check whether result and expected result are not equal, including shape.
         Args:
@@ -146,7 +165,9 @@ class CommonTest(unittest.TestCase):
             atol: float
                 absolute tolerance, default 1.e-8
         """
-        self._check_output_impl(result, expected_result, rtol, atol, equal=False)
+        self._check_output_impl(
+            result, expected_result, rtol, atol, equal=False
+        )
 
 
 class CpuCommonTest(CommonTest):

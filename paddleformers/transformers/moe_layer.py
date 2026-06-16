@@ -16,16 +16,18 @@
 # limitations under the License.
 from __future__ import annotations
 
-from typing import Any, List, Tuple
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import paddle
 import paddle.distributed as dist
 from paddle import Tensor, nn
-from paddle.distributed.communication.group import Group
 
 from .moe_gate import PretrainedMoEGate
 from .token_dispatcher import MoEFlexTokenDispatcher
+
+if TYPE_CHECKING:
+    from paddle.distributed.communication.group import Group
 
 
 def dispatching(x, dispatch_mask, scatter_index, num_experts, capacity):
@@ -47,7 +49,9 @@ def dispatching(x, dispatch_mask, scatter_index, num_experts, capacity):
     if isinstance(scatter_index, paddle.Tensor):
         scatter_index = scatter_index.unbind(1)
     for i_scatter_index, i_dispatch_mask in zip(scatter_index, dispatch_mask):
-        init_output = paddle.zeros([num_experts * capacity, x.shape[-1]], dtype="float32")
+        init_output = paddle.zeros(
+            [num_experts * capacity, x.shape[-1]], dtype="float32"
+        )
         updates = x * i_dispatch_mask.cast(x.dtype)
         if output is None:
             output = paddle.scatter(
@@ -83,23 +87,31 @@ def combining(x, combine_weights, scatter_index):
 
     dim = x.shape[-1]
     if isinstance(scatter_index, (list, tuple)):
-        scatter_index = paddle.cat([i.unsqueeze([-1]) for i in scatter_index], -1)
+        scatter_index = paddle.cat(
+            [i.unsqueeze([-1]) for i in scatter_index], -1
+        )
     scatter_index = scatter_index.reshape([-1])
-    num_k = len(combine_weights) if isinstance(combine_weights, (list, tuple)) else combine_weights.shape[-1]
+    num_k = (
+        len(combine_weights)
+        if isinstance(combine_weights, (list, tuple))
+        else combine_weights.shape[-1]
+    )
     x = paddle.gather(x, scatter_index).reshape([-1, num_k, dim])  # [seq,2,dim]
     if isinstance(combine_weights, (list, tuple)):
         combine_weights = paddle.cat(combine_weights, -1).unsqueeze([1])
-    return paddle.matmul(combine_weights, x).squeeze(1)  # [seq,1,2] @ [seq,2,dim] -> [seq,1,dim]
+    return paddle.matmul(combine_weights, x).squeeze(
+        1
+    )  # [seq,1,2] @ [seq,2,dim] -> [seq,1,dim]
 
 
 class _AllToAll(paddle.autograd.PyLayer):
     @staticmethod
     def forward(
         ctx: Any,
-        output_shape: List,
+        output_shape: list,
         input: Tensor,
-        out_split_sizes: List = None,
-        in_split_sizes: List = None,
+        out_split_sizes: list | None = None,
+        in_split_sizes: list | None = None,
         group: Group = None,
     ) -> Tensor:  # type: ignore
         """
@@ -124,7 +136,9 @@ class _AllToAll(paddle.autograd.PyLayer):
         if dist.get_world_size(group) <= 1:
             return input
 
-        output = paddle.empty(output_shape, dtype=input.dtype, requires_grad=True)
+        output = paddle.empty(
+            output_shape, dtype=input.dtype, requires_grad=True
+        )
         task = dist.alltoall_single(
             output,
             input,
@@ -138,7 +152,7 @@ class _AllToAll(paddle.autograd.PyLayer):
         return output
 
     @staticmethod
-    def backward(ctx: Any, *grad_output: Tensor) -> Tuple[Tensor]:
+    def backward(ctx: Any, *grad_output: Tensor) -> tuple[Tensor]:
         """
         Aggregates gradient information from all input tensors into a single tensor.
         Args:
@@ -148,7 +162,13 @@ class _AllToAll(paddle.autograd.PyLayer):
             Tuple[Tensor]: A tuple containing a tensor that holds the gradients of all input tensors.
         """
         # return grad_output
-        return _AllToAll.apply(ctx.input_shape, *grad_output, ctx.in_split_sizes, ctx.out_split_sizes, ctx.group)
+        return _AllToAll.apply(
+            ctx.input_shape,
+            *grad_output,
+            ctx.in_split_sizes,
+            ctx.out_split_sizes,
+            ctx.group,
+        )
 
 
 class MoELayer(nn.Layer):
@@ -181,17 +201,25 @@ class MoELayer(nn.Layer):
             elif moe_group == "expert":
                 self.moe_group = dist.fleet.get_hybrid_communicate_group().get_expert_parallel_group()
             else:
-                assert NotImplementedError("moe_group can only be data or expert, but given {}".format(self.moe_group))
+                assert NotImplementedError(
+                    f"moe_group can only be data or expert, but given {self.moe_group}"
+                )
             self.moe_rank = dist.get_rank(self.moe_group)
-            self.moe_rank = 0 if self.moe_rank < 0 else self.moe_rank
-            self.expert_model_parallel_size = dist.get_world_size(self.moe_group)
+            self.moe_rank = max(self.moe_rank, 0)
+            self.expert_model_parallel_size = dist.get_world_size(
+                self.moe_group
+            )
             self.expert_model_parallel_size = (
-                1 if self.expert_model_parallel_size < 0 else self.expert_model_parallel_size
+                1
+                if self.expert_model_parallel_size < 0
+                else self.expert_model_parallel_size
             )
             self.moe_num_experts_per_device = self._parse_moe_expert_parallel(
                 self.moe_num_experts, self.expert_model_parallel_size
             )
-            self.is_dummy_moe = False if self.expert_model_parallel_size > 1 else True
+            self.is_dummy_moe = (
+                False if self.expert_model_parallel_size > 1 else True
+            )
         else:
             # when moe_group is dummy, we don't need to use all_to_all
             self.moe_group = None
@@ -213,14 +241,18 @@ class MoELayer(nn.Layer):
         self.gate.group = self.moe_group
         self._post_init()
 
-    def _parse_moe_expert_parallel(self, moe_num_experts, expert_model_parallel_size):
-        assert (
-            moe_num_experts >= expert_model_parallel_size
-        ), f"expert moe_num_experts={moe_num_experts} >= moe_world_size={expert_model_parallel_size}"
-        assert (
-            moe_num_experts % expert_model_parallel_size == 0
-        ), f"expert moe_num_experts={moe_num_experts} % moe_world_size={expert_model_parallel_size} == 0"
-        moe_num_experts_per_device = moe_num_experts // expert_model_parallel_size
+    def _parse_moe_expert_parallel(
+        self, moe_num_experts, expert_model_parallel_size
+    ):
+        assert moe_num_experts >= expert_model_parallel_size, (
+            f"expert moe_num_experts={moe_num_experts} >= moe_world_size={expert_model_parallel_size}"
+        )
+        assert moe_num_experts % expert_model_parallel_size == 0, (
+            f"expert moe_num_experts={moe_num_experts} % moe_world_size={expert_model_parallel_size} == 0"
+        )
+        moe_num_experts_per_device = (
+            moe_num_experts // expert_model_parallel_size
+        )
         return moe_num_experts_per_device
 
     def _post_init(self):
@@ -258,29 +290,47 @@ class MoELayer(nn.Layer):
         # topk_ids    : sk
         # token_priority    : se
         # self.exp_counts  :
-        capacity, topk_weight, topk_ids, token_priority, l_aux, l_zloss = self.gate(hidden_state)
+        capacity, topk_weight, topk_ids, token_priority, l_aux, l_zloss = (
+            self.gate(hidden_state)
+        )
 
         """MoE expert dispatch from: https://huggingface.co/deepseek-ai/DeepSeek-V3/blob/main/modeling_deepseek.py"""
-        cnts = paddle.zeros([topk_ids.shape[0], len(self.experts)], dtype=topk_ids.dtype)
+        cnts = paddle.zeros(
+            [topk_ids.shape[0], len(self.experts)], dtype=topk_ids.dtype
+        )
         cnts = cnts.put_along_axis(topk_ids, 1, axis=1)
 
         tokens_per_expert = cnts.sum(axis=0)
-        idxs = topk_ids.reshape([topk_ids.shape[0] * topk_ids.shape[1]]).argsort()
+        idxs = topk_ids.reshape(
+            [topk_ids.shape[0] * topk_ids.shape[1]]
+        ).argsort()
         sorted_tokens = reshaped_input[idxs // topk_ids.shape[1]]
         tokens_per_expert = tokens_per_expert.detach()
         sorted_tokens_shape = sorted_tokens.shape
 
         if self.expert_model_parallel_size > 1:
-            tokens_per_ep_rank = tokens_per_expert.reshape([self.expert_model_parallel_size, -1]).sum(axis=1)
+            tokens_per_ep_rank = tokens_per_expert.reshape(
+                [self.expert_model_parallel_size, -1]
+            ).sum(axis=1)
             tokens_per_expert_group = _AllToAll.apply(
-                [tokens_per_expert.shape[0]], tokens_per_expert, group=self.moe_group
+                [tokens_per_expert.shape[0]],
+                tokens_per_expert,
+                group=self.moe_group,
             )
             output_splits = (
-                tokens_per_expert_group.reshape([self.expert_model_parallel_size, -1]).sum(axis=1).cpu().tolist()
+                tokens_per_expert_group.reshape(
+                    [self.expert_model_parallel_size, -1]
+                )
+                .sum(axis=1)
+                .cpu()
+                .tolist()
             )
             input_split_sizes = tokens_per_ep_rank.cpu().tolist()
             gathered_tokens = _AllToAll.apply(
-                [tokens_per_expert_group.sum(axis=0).cpu().item(), sorted_tokens.shape[1]],
+                [
+                    tokens_per_expert_group.sum(axis=0).cpu().item(),
+                    sorted_tokens.shape[1],
+                ],
                 sorted_tokens,
                 out_split_sizes=output_splits,
                 in_split_sizes=input_split_sizes,
@@ -288,9 +338,14 @@ class MoELayer(nn.Layer):
             )
 
             tokens_per_expert_post_gather = tokens_per_expert_group.reshape(
-                [self.expert_model_parallel_size, self.moe_num_experts_per_device]
+                [
+                    self.expert_model_parallel_size,
+                    self.moe_num_experts_per_device,
+                ]
             ).sum(axis=0)
-            gatherd_idxs = np.zeros(shape=(gathered_tokens.shape[0],), dtype=np.int32)
+            gatherd_idxs = np.zeros(
+                shape=(gathered_tokens.shape[0],), dtype=np.int32
+            )
             s = 0
             for i, k in enumerate(tokens_per_expert_group.cpu().numpy()):
                 gatherd_idxs[s : s + k] = i % self.moe_num_experts_per_device
@@ -305,12 +360,18 @@ class MoELayer(nn.Layer):
             end_idx = start_idx + num_tokens
             if num_tokens == 0:
                 continue
-            expert = self.experts[i + self.moe_rank * self.moe_num_experts_per_device]
+            expert = self.experts[
+                i + self.moe_rank * self.moe_num_experts_per_device
+            ]
             tokens_for_this_expert = sorted_tokens[start_idx:end_idx]
             expert_out = expert(tokens_for_this_expert)
             outputs.append(expert_out)
             start_idx = end_idx
-        outs = paddle.cat(outputs, axis=0) if len(outputs) > 0 else paddle.to_tensor(0, dtype=sorted_tokens.dtype)
+        outs = (
+            paddle.cat(outputs, axis=0)
+            if len(outputs) > 0
+            else paddle.to_tensor(0, dtype=sorted_tokens.dtype)
+        )
         if self.expert_model_parallel_size > 1:
             new_x = paddle.empty_like(outs)
             new_x[gatherd_idxs] = outs
@@ -339,8 +400,15 @@ class MoELayer(nn.Layer):
 
 
 class MoEFlexTokenLayer(nn.Layer):
-    def __init__(self, config, moe_num_experts, expert_class, expert_kwargs, gate, moe_group):
-
+    def __init__(
+        self,
+        config,
+        moe_num_experts,
+        expert_class,
+        expert_kwargs,
+        gate,
+        moe_group,
+    ):
         super().__init__()
         self.config = config
         self.moe_group = moe_group
@@ -349,12 +417,19 @@ class MoEFlexTokenLayer(nn.Layer):
         self.moe_num_experts = moe_num_experts
         self.num_local_experts = moe_num_experts // self.ep_size
         self.moe_rank = dist.get_rank(self.moe_group)
-        self.moe_rank = 0 if self.moe_rank < 0 else self.moe_rank
+        self.moe_rank = max(self.moe_rank, 0)
         self.token_dispatcher = MoEFlexTokenDispatcher(
-            self.num_local_experts, self.moe_router_topk, self.moe_num_experts, moe_group
+            self.num_local_experts,
+            self.moe_router_topk,
+            self.moe_num_experts,
+            moe_group,
         )
-        self.expert_model_parallel_size = 1 if self.ep_size < 0 else self.ep_size
-        self.is_dummy_moe = False if self.expert_model_parallel_size > 1 else True
+        self.expert_model_parallel_size = (
+            1 if self.ep_size < 0 else self.ep_size
+        )
+        self.is_dummy_moe = (
+            False if self.expert_model_parallel_size > 1 else True
+        )
         self.moe_num_experts_per_device = self._parse_moe_expert_parallel(
             self.moe_num_experts, self.expert_model_parallel_size
         )
@@ -381,13 +456,19 @@ class MoEFlexTokenLayer(nn.Layer):
     def expert_forward(self, dispatched_input, tokens_per_expert):
         outputs = []
         tokens_per_expert = (
-            tokens_per_expert.tolist() if not isinstance(tokens_per_expert, list) else tokens_per_expert
+            tokens_per_expert.tolist()
+            if not isinstance(tokens_per_expert, list)
+            else tokens_per_expert
         )
         # print(f"all tokens: {sum(tokens_per_expert)}, detail: {tokens_per_expert}")
-        chunks = paddle.split(dispatched_input, num_or_sections=tokens_per_expert, axis=0)
+        chunks = paddle.split(
+            dispatched_input, num_or_sections=tokens_per_expert, axis=0
+        )
         for i, chunk in enumerate(chunks):
             chunk = chunk.contiguous()
-            expert = self.experts[i + self.moe_rank * self.moe_num_experts_per_device]
+            expert = self.experts[
+                i + self.moe_rank * self.moe_num_experts_per_device
+            ]
             outputs += [expert(chunk)]
         if not outputs:
             return dispatched_input
@@ -396,19 +477,27 @@ class MoEFlexTokenLayer(nn.Layer):
 
     def forward(self, hidden_states: paddle.Tensor):
         probs, routing_map, l_aux, l_zloss = self.gate(hidden_states)
-        (dispatched_input, tokens_per_expert) = self.token_dispatcher.token_permutation(
-            hidden_states, probs, routing_map
+        (dispatched_input, tokens_per_expert) = (
+            self.token_dispatcher.token_permutation(
+                hidden_states, probs, routing_map
+            )
         )
         expert_output = self.expert_forward(dispatched_input, tokens_per_expert)
-        output, _ = self.token_dispatcher.token_unpermutation(expert_output, None)
+        output, _ = self.token_dispatcher.token_unpermutation(
+            expert_output, None
+        )
         return output, l_aux, l_zloss
 
-    def _parse_moe_expert_parallel(self, moe_num_experts, expert_model_parallel_size):
-        assert (
-            moe_num_experts >= expert_model_parallel_size
-        ), f"expert moe_num_experts={moe_num_experts} >= moe_world_size={expert_model_parallel_size}"
-        assert (
-            moe_num_experts % expert_model_parallel_size == 0
-        ), f"expert moe_num_experts={moe_num_experts} % moe_world_size={expert_model_parallel_size} == 0"
-        moe_num_experts_per_device = moe_num_experts // expert_model_parallel_size
+    def _parse_moe_expert_parallel(
+        self, moe_num_experts, expert_model_parallel_size
+    ):
+        assert moe_num_experts >= expert_model_parallel_size, (
+            f"expert moe_num_experts={moe_num_experts} >= moe_world_size={expert_model_parallel_size}"
+        )
+        assert moe_num_experts % expert_model_parallel_size == 0, (
+            f"expert moe_num_experts={moe_num_experts} % moe_world_size={expert_model_parallel_size} == 0"
+        )
+        moe_num_experts_per_device = (
+            moe_num_experts // expert_model_parallel_size
+        )
         return moe_num_experts_per_device

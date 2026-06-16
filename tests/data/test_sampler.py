@@ -29,12 +29,16 @@ class TestSampler(CpuCommonTest):
     @classmethod
     def setUpClass(cls):
         fixture_path = get_tests_dir(os.path.join("fixtures", "dummy"))
-        cls.train_ds = load_dataset("json", data_files=os.path.join(fixture_path, "tnews", "train.json"))[0]
+        cls.train_ds = load_dataset(
+            "json", data_files=os.path.join(fixture_path, "tnews", "train.json")
+        )[0]
 
     def test_length(self):
         train_batch_sampler = SamplerHelper(self.train_ds)
         self.check_output_equal(len(train_batch_sampler), 10)
-        self.check_output_equal(len(train_batch_sampler), train_batch_sampler.length)
+        self.check_output_equal(
+            len(train_batch_sampler), train_batch_sampler.length
+        )
 
         train_batch_sampler.length = 5
         self.check_output_equal(len(train_batch_sampler), 5)
@@ -54,7 +58,9 @@ class TestSampler(CpuCommonTest):
     def test_list(self):
         train_batch_sampler = SamplerHelper(self.train_ds)
         list_sampler = train_batch_sampler.list()
-        self.check_output_equal(type(iter(list_sampler)).__name__, "list_iterator")
+        self.check_output_equal(
+            type(iter(list_sampler)).__name__, "list_iterator"
+        )
         for i, sample in enumerate(list_sampler):
             self.check_output_equal(i, sample)
 
@@ -78,7 +84,9 @@ class TestSampler(CpuCommonTest):
         train_ds_len = len(self.train_ds)
         ds_iter = iter(range(train_ds_len - 1, -1, -1))
         train_batch_sampler = SamplerHelper(self.train_ds, ds_iter)
-        sort_sampler = train_batch_sampler.sort(cmp=lambda x, y, dataset: cmp(x, y), buffer_size=5)
+        sort_sampler = train_batch_sampler.sort(
+            cmp=lambda x, y, dataset: cmp(x, y), buffer_size=5
+        )
         for i, sample in enumerate(sort_sampler):
             if i < 5:
                 self.check_output_equal(i + 5, sample)
@@ -89,7 +97,9 @@ class TestSampler(CpuCommonTest):
         train_ds_len = len(self.train_ds)
         ds_iter = iter(range(train_ds_len - 1, -1, -1))
         train_batch_sampler = SamplerHelper(self.train_ds, ds_iter)
-        sort_sampler = train_batch_sampler.sort(cmp=lambda x, y, dataset: cmp(x, y))
+        sort_sampler = train_batch_sampler.sort(
+            cmp=lambda x, y, dataset: cmp(x, y)
+        )
         for i, sample in enumerate(sort_sampler):
             self.check_output_equal(i, sample)
 
@@ -108,8 +118,12 @@ class TestSampler(CpuCommonTest):
 
         batch_sampler = train_batch_sampler.batch(
             batch_size,
-            key=lambda size_so_far, minibatch_len: max(size_so_far, minibatch_len),
-            batch_size_fn=lambda new, count, sofar, data_source: len(data_source),
+            key=lambda size_so_far, minibatch_len: max(
+                size_so_far, minibatch_len
+            ),
+            batch_size_fn=lambda new, count, sofar, data_source: len(
+                data_source
+            ),
         )
         for i, sample in enumerate(batch_sampler):
             for j, minibatch in enumerate(sample):
@@ -136,7 +150,9 @@ class TestSampler(CpuCommonTest):
         ds_iter = iter(range(train_ds_len - 1, -1, -1))
         train_batch_sampler = SamplerHelper(self.train_ds, ds_iter)
         apply_sampler = train_batch_sampler.apply(
-            lambda sampler: SamplerHelper.sort(sampler, cmp=lambda x, y, dataset: cmp(x, y))
+            lambda sampler: SamplerHelper.sort(
+                sampler, cmp=lambda x, y, dataset: cmp(x, y)
+            )
         )
         for i, sample in enumerate(apply_sampler):
             self.check_output_equal(i, sample)

@@ -68,7 +68,11 @@ moe_arguments = {
 
 def check_acc(log_dir="log"):
     file_path = os.path.join(log_dir, "workerlog.n0.c0")
-    cmd = "grep -a 'global_step: 10' " + file_path + " | awk -F ','  '{print $2}' | awk  '{print $6}'"
+    cmd = (
+        "grep -a 'global_step: 10' "
+        + file_path
+        + " | awk -F ','  '{print $2}' | awk  '{print $6}'"
+    )
     import subprocess
 
     res = subprocess.check_output(cmd, shell=True, text=True)

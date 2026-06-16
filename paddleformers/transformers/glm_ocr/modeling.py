@@ -13,8 +13,9 @@
 # limitations under the License.
 
 import itertools
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, Tuple, Union
+from typing import Any, Optional
 
 import numpy as np
 import paddle
@@ -41,13 +42,22 @@ class GlmOcrVisionMlp(nn.Layer):
         super().__init__()
         self.hidden_size = config.hidden_size
         self.intermediate_size = config.intermediate_size
-        self.gate_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias_attr=bias)
-        self.up_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias_attr=bias)
-        self.down_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias_attr=bias)
+        self.gate_proj = nn.Linear(
+            self.hidden_size, self.intermediate_size, bias_attr=bias
+        )
+        self.up_proj = nn.Linear(
+            self.hidden_size, self.intermediate_size, bias_attr=bias
+        )
+        self.down_proj = nn.Linear(
+            self.intermediate_size, self.hidden_size, bias_attr=bias
+        )
         self.act_fn = ACT2FN[config.hidden_act]
 
     def forward(self, hidden_state):
-        return self.down_proj(self.act_fn(self.gate_proj(hidden_state)) * self.up_proj(hidden_state))
+        return self.down_proj(
+            self.act_fn(self.gate_proj(hidden_state))
+            * self.up_proj(hidden_state)
+        )
 
 
 def repeat_kv(hidden_states: paddle.Tensor, n_rep: int) -> paddle.Tensor:
@@ -58,8 +68,12 @@ def repeat_kv(hidden_states: paddle.Tensor, n_rep: int) -> paddle.Tensor:
     batch, num_key_value_heads, slen, head_dim = hidden_states.shape
     if n_rep == 1:
         return hidden_states
-    hidden_states = hidden_states[:, :, None, :, :].expand(batch, num_key_value_heads, n_rep, slen, head_dim)
-    return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
+    hidden_states = hidden_states[:, :, None, :, :].expand(
+        batch, num_key_value_heads, n_rep, slen, head_dim
+    )
+    return hidden_states.reshape(
+        batch, num_key_value_heads * n_rep, slen, head_dim
+    )
 
 
 def rotate_half_llm(x):
@@ -80,8 +94,12 @@ def apply_rotary_pos_emb(q, k, cos, sin, unsqueeze_dim=1):
     q_rot, q_pass = q[..., :rotary_dim], q[..., rotary_dim:]
     k_rot, k_pass = k[..., :rotary_dim], k[..., rotary_dim:]
 
-    q_embed = (q_rot * cos.astype(q.dtype)) + (rotate_half_llm(q_rot) * sin.astype(q.dtype))
-    k_embed = (k_rot * cos.astype(k.dtype)) + (rotate_half_llm(k_rot) * sin.astype(k.dtype))
+    q_embed = (q_rot * cos.astype(q.dtype)) + (
+        rotate_half_llm(q_rot) * sin.astype(q.dtype)
+    )
+    k_embed = (k_rot * cos.astype(k.dtype)) + (
+        rotate_half_llm(k_rot) * sin.astype(k.dtype)
+    )
 
     q_embed = paddle.concat([q_embed, q_pass], axis=-1)
     k_embed = paddle.concat([k_embed, k_pass], axis=-1)
@@ -101,17 +119,31 @@ class GlmOcrTextAttention(nn.Layer):
 
         self.hidden_size = config.hidden_size
         self.num_heads = config.num_attention_heads
-        self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
+        self.head_dim = getattr(
+            config, "head_dim", config.hidden_size // config.num_attention_heads
+        )
         self.num_key_value_heads = config.num_key_value_heads
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads
         self.is_causal = True
         self.attention_dropout = config.attention_dropout
         self.rope_parameters = config.rope_parameters
         self.scaling = self.head_dim**-0.5
-        self.q_proj = nn.Linear(self.hidden_size, self.num_heads * self.head_dim, bias_attr=False)
-        self.k_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias_attr=False)
-        self.v_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias_attr=False)
-        self.o_proj = nn.Linear(self.num_heads * self.head_dim, self.hidden_size, bias_attr=False)
+        self.q_proj = nn.Linear(
+            self.hidden_size, self.num_heads * self.head_dim, bias_attr=False
+        )
+        self.k_proj = nn.Linear(
+            self.hidden_size,
+            self.num_key_value_heads * self.head_dim,
+            bias_attr=False,
+        )
+        self.v_proj = nn.Linear(
+            self.hidden_size,
+            self.num_key_value_heads * self.head_dim,
+            bias_attr=False,
+        )
+        self.o_proj = nn.Linear(
+            self.num_heads * self.head_dim, self.hidden_size, bias_attr=False
+        )
 
     def forward(
         self,
@@ -121,25 +153,43 @@ class GlmOcrTextAttention(nn.Layer):
         past_key_values: Cache | None = None,
         cache_position: paddle.LongTensor | None = None,
         attn_mask_startend_row_indices: paddle.LongTensor | None = None,
-    ) -> tuple[paddle.Tensor, paddle.Tensor | None, tuple[paddle.Tensor] | None]:
+    ) -> tuple[
+        paddle.Tensor, paddle.Tensor | None, tuple[paddle.Tensor] | None
+    ]:
         bsz, q_len, _ = hidden_states.shape
 
         query_states = self.q_proj(hidden_states)
         key_states = self.k_proj(hidden_states)
         value_states = self.v_proj(hidden_states)
 
-        query_states = query_states.reshape([bsz, q_len, -1, self.head_dim]).transpose([0, 2, 1, 3])
-        key_states = key_states.reshape([bsz, q_len, -1, self.head_dim]).transpose([0, 2, 1, 3])
-        value_states = value_states.reshape([bsz, q_len, -1, self.head_dim]).transpose([0, 2, 1, 3])
+        query_states = query_states.reshape(
+            [bsz, q_len, -1, self.head_dim]
+        ).transpose([0, 2, 1, 3])
+        key_states = key_states.reshape(
+            [bsz, q_len, -1, self.head_dim]
+        ).transpose([0, 2, 1, 3])
+        value_states = value_states.reshape(
+            [bsz, q_len, -1, self.head_dim]
+        ).transpose([0, 2, 1, 3])
 
         cos, sin = position_embeddings
-        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+        query_states, key_states = apply_rotary_pos_emb(
+            query_states, key_states, cos, sin
+        )
 
         if past_key_values is not None:
-            cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}  # Specific to RoPE models
-            key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx, cache_kwargs)
+            cache_kwargs = {
+                "sin": sin,
+                "cos": cos,
+                "cache_position": cache_position,
+            }  # Specific to RoPE models
+            key_states, value_states = past_key_values.update(
+                key_states, value_states, self.layer_idx, cache_kwargs
+            )
 
-        attention_interface: Callable = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        attention_interface: Callable = ALL_ATTENTION_FUNCTIONS[
+            self.config._attn_implementation
+        ]
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -164,7 +214,9 @@ class GlmOcrVisionRotaryEmbedding(nn.Layer):
         super().__init__()
         self.dim = dim
         self.theta = theta
-        inv_freq = 1.0 / (theta ** (paddle.arange(0, dim, 2, dtype="float32") / dim))
+        inv_freq = 1.0 / (
+            theta ** (paddle.arange(0, dim, 2, dtype="float32") / dim)
+        )
         self.inv_freq = inv_freq
 
     def forward(self, seqlen: int) -> paddle.Tensor:
@@ -178,8 +230,12 @@ class GlmOcrTextMLP(nn.Layer):
         super().__init__()
 
         self.config = config
-        self.gate_up_proj = nn.Linear(config.hidden_size, 2 * config.intermediate_size, bias_attr=False)
-        self.down_proj = nn.Linear(config.intermediate_size, config.hidden_size, bias_attr=False)
+        self.gate_up_proj = nn.Linear(
+            config.hidden_size, 2 * config.intermediate_size, bias_attr=False
+        )
+        self.down_proj = nn.Linear(
+            config.intermediate_size, config.hidden_size, bias_attr=False
+        )
         self.activation_fn = ACT2FN[config.hidden_act]
 
     def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
@@ -200,31 +256,45 @@ class GlmOcrTextDecoderLayer(nn.Layer):
         self.self_attn = GlmOcrTextAttention(config, layer_idx)
         self.mlp = GlmOcrTextMLP(config)
         self.input_layernorm = GeneralNorm.create(
-            config, norm_type="rms_norm", hidden_size=config.hidden_size, norm_eps=1e-6
+            config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            norm_eps=1e-6,
         )
         self.post_attention_layernorm = GeneralNorm.create(
-            config, norm_type="rms_norm", hidden_size=config.hidden_size, norm_eps=1e-6
+            config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            norm_eps=1e-6,
         )
         self.post_self_attn_layernorm = GeneralNorm.create(
-            config, norm_type="rms_norm", hidden_size=config.hidden_size, norm_eps=1e-6
+            config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            norm_eps=1e-6,
         )
         self.post_mlp_layernorm = GeneralNorm.create(
-            config, norm_type="rms_norm", hidden_size=config.hidden_size, norm_eps=1e-6
+            config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            norm_eps=1e-6,
         )
 
     def forward(
         self,
         hidden_states: paddle.Tensor,
-        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
+        position_embeddings: Optional[
+            tuple[paddle.Tensor, paddle.Tensor]
+        ] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
+        past_key_values: Optional[tuple[paddle.Tensor, paddle.Tensor]] = None,
         use_cache: Optional[bool] = False,
         cache_position: Optional[paddle.Tensor] = None,
         output_attentions: bool = False,
         attn_mask_startend_row_indices=None,
         **kwargs,
-    ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
+    ) -> tuple[paddle.Tensor, Optional[tuple[paddle.Tensor, paddle.Tensor]]]:
         residual = hidden_states
 
         hidden_states = self.input_layernorm(hidden_states)
@@ -256,7 +326,9 @@ class GlmOcrPreTrainedModel(PretrainedModel):
 
     input_modalities = ("image", "video", "text")
     _no_split_modules = ["GlmOcrTextDecoderLayer", "GlmOcrVisionBlock"]
-    _keys_to_ignore_on_load_unexpected = [r"model\.language_model\.layers\.16.*"]
+    _keys_to_ignore_on_load_unexpected = [
+        r"model\.language_model\.layers\.16.*"
+    ]
 
     transpose_weight_keys = [
         r"attn\.qkv",
@@ -279,7 +351,10 @@ class GlmOcrPreTrainedModel(PretrainedModel):
     def _init_weights(self, layer):
         super()._init_weights(layer)
         if isinstance(layer, GlmOcrVisionRotaryEmbedding):
-            inv_freq = 1.0 / (layer.theta ** (paddle.arange(0, layer.dim, 2, dtype="float32") / layer.dim))
+            inv_freq = 1.0 / (
+                layer.theta
+                ** (paddle.arange(0, layer.dim, 2, dtype="float32") / layer.dim)
+            )
             layer.inv_freq = inv_freq
 
     @classmethod
@@ -477,8 +552,8 @@ class GlmOcrPreTrainedModel(PretrainedModel):
 class GlmOcrModelOutputWithPast(ModelOutput):
     last_hidden_state: Optional[paddle.Tensor] = None
     past_key_values: Cache = None
-    hidden_states: Optional[Tuple[paddle.Tensor]] = None
-    attentions: Optional[Tuple[paddle.Tensor]] = None
+    hidden_states: Optional[tuple[paddle.Tensor]] = None
+    attentions: Optional[tuple[paddle.Tensor]] = None
     rope_deltas: Optional[paddle.Tensor] = None
 
 
@@ -512,18 +587,32 @@ class GlmOcrVisionAttention(nn.Layer):
         self.head_dim = self.dim // self.num_heads
         self.num_key_value_groups = 1  # needed for eager attention
 
-        self.qkv = nn.Linear(config.hidden_size, config.hidden_size * 3, bias_attr=config.attention_bias)
-        self.proj = nn.Linear(config.hidden_size, config.hidden_size, bias_attr=config.attention_bias)
+        self.qkv = nn.Linear(
+            config.hidden_size,
+            config.hidden_size * 3,
+            bias_attr=config.attention_bias,
+        )
+        self.proj = nn.Linear(
+            config.hidden_size,
+            config.hidden_size,
+            bias_attr=config.attention_bias,
+        )
 
         self.scaling = self.head_dim**-0.5
         self.config = config
         self.attention_dropout = config.attention_dropout
         self.is_causal = False
         self.q_norm = GeneralNorm.create(
-            config, norm_type="rms_norm", hidden_size=self.head_dim, norm_eps=config.rms_norm_eps
+            config,
+            norm_type="rms_norm",
+            hidden_size=self.head_dim,
+            norm_eps=config.rms_norm_eps,
         )
         self.k_norm = GeneralNorm.create(
-            config, norm_type="rms_norm", hidden_size=self.head_dim, norm_eps=config.rms_norm_eps
+            config,
+            norm_type="rms_norm",
+            hidden_size=self.head_dim,
+            norm_eps=config.rms_norm_eps,
         )
 
     def forward(
@@ -531,12 +620,15 @@ class GlmOcrVisionAttention(nn.Layer):
         hidden_states: paddle.Tensor,
         cu_seqlens: paddle.Tensor,
         rotary_pos_emb: Optional[paddle.Tensor] = None,
-        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
+        position_embeddings: Optional[
+            tuple[paddle.Tensor, paddle.Tensor]
+        ] = None,
         **kwargs,
     ) -> paddle.Tensor:
-
         seq_length = hidden_states.shape[0]
-        qkv = self.qkv(hidden_states).reshape([seq_length, 3, self.num_heads, -1])
+        qkv = self.qkv(hidden_states).reshape(
+            [seq_length, 3, self.num_heads, -1]
+        )
         qkv = qkv.transpose([1, 0, 2, 3])
         query_states, key_states, value_states = qkv[0], qkv[1], qkv[2]
 
@@ -544,20 +636,30 @@ class GlmOcrVisionAttention(nn.Layer):
         key_states = self.k_norm(key_states)
 
         cos, sin = position_embeddings
-        query_states, key_states = apply_rotary_pos_emb_vision(query_states, key_states, cos, sin)
+        query_states, key_states = apply_rotary_pos_emb_vision(
+            query_states, key_states, cos, sin
+        )
 
         # [seq, heads, dim] -> [1, heads, seq, dim]
         query_states = query_states.transpose([1, 0, 2]).unsqueeze(0)
         key_states = key_states.transpose([1, 0, 2]).unsqueeze(0)
         value_states = value_states.transpose([1, 0, 2]).unsqueeze(0)
 
-        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        attention_interface = ALL_ATTENTION_FUNCTIONS[
+            self.config._attn_implementation
+        ]
 
         if self.config._attn_implementation == "eager":
             lengths = cu_seqlens[1:] - cu_seqlens[:-1]
-            query_splits = paddle.split(query_states, lengths.numpy().tolist(), axis=2)
-            key_splits = paddle.split(key_states, lengths.numpy().tolist(), axis=2)
-            value_splits = paddle.split(value_states, lengths.numpy().tolist(), axis=2)
+            query_splits = paddle.split(
+                query_states, lengths.numpy().tolist(), axis=2
+            )
+            key_splits = paddle.split(
+                key_states, lengths.numpy().tolist(), axis=2
+            )
+            value_splits = paddle.split(
+                value_states, lengths.numpy().tolist(), axis=2
+            )
 
             attn_outputs = []
             for q, k, v in zip(query_splits, key_splits, value_splits):
@@ -568,7 +670,9 @@ class GlmOcrVisionAttention(nn.Layer):
                     v,
                     attention_mask=None,
                     scaling=self.scaling,
-                    dropout=0.0 if not self.training else self.attention_dropout,
+                    dropout=0.0
+                    if not self.training
+                    else self.attention_dropout,
                     is_causal=False,
                 )
                 attn_outputs.append(attn_out)
@@ -581,9 +685,15 @@ class GlmOcrVisionAttention(nn.Layer):
             cu_seqlens_rm_last = cu_seqlens[:-1]
             repeats = (cu_seqlens_rm_first - cu_seqlens_rm_last).astype("int32")
 
-            end_indices = paddle.repeat_interleave(cu_seqlens_rm_first, repeats).reshape([1, 1, -1, 1])
-            start_indices = paddle.repeat_interleave(cu_seqlens_rm_last, repeats).reshape([1, 1, -1, 1])
-            attn_mask_startend_row_indices = paddle.concat([end_indices, start_indices], axis=-1)
+            end_indices = paddle.repeat_interleave(
+                cu_seqlens_rm_first, repeats
+            ).reshape([1, 1, -1, 1])
+            start_indices = paddle.repeat_interleave(
+                cu_seqlens_rm_last, repeats
+            ).reshape([1, 1, -1, 1])
+            attn_mask_startend_row_indices = paddle.concat(
+                [end_indices, start_indices], axis=-1
+            )
 
             attn_output, _ = attention_interface(
                 self,
@@ -606,10 +716,16 @@ class GlmOcrVisionBlock(nn.Layer):
     def __init__(self, config) -> None:
         super().__init__()
         self.norm1 = GeneralNorm.create(
-            config, norm_type="rms_norm", hidden_size=config.hidden_size, norm_eps=config.rms_norm_eps
+            config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            norm_eps=config.rms_norm_eps,
         )
         self.norm2 = GeneralNorm.create(
-            config, norm_type="rms_norm", hidden_size=config.hidden_size, norm_eps=config.rms_norm_eps
+            config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            norm_eps=config.rms_norm_eps,
         )
         self.attn = GlmOcrVisionAttention(config)
         self.mlp = GlmOcrVisionMlp(config, bias=config.attention_bias)
@@ -619,7 +735,9 @@ class GlmOcrVisionBlock(nn.Layer):
         hidden_states: paddle.Tensor,
         cu_seqlens: paddle.Tensor,
         rotary_pos_emb: Optional[paddle.Tensor] = None,
-        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
+        position_embeddings: Optional[
+            tuple[paddle.Tensor, paddle.Tensor]
+        ] = None,
         **kwargs,
     ) -> paddle.Tensor:
         hidden_states = hidden_states + self.attn(
@@ -634,7 +752,9 @@ class GlmOcrVisionBlock(nn.Layer):
 
 
 class GlmOcrVisionPatchMerger(nn.Layer):
-    def __init__(self, dim: int, context_dim: int, hidden_act: str, bias: bool = False) -> None:
+    def __init__(
+        self, dim: int, context_dim: int, hidden_act: str, bias: bool = False
+    ) -> None:
         super().__init__()
         self.proj = nn.Linear(dim, dim, bias_attr=bias)
         self.post_projection_norm = nn.LayerNorm(dim, epsilon=1e-5)
@@ -647,7 +767,10 @@ class GlmOcrVisionPatchMerger(nn.Layer):
     def forward(self, hidden_state: paddle.Tensor) -> paddle.Tensor:
         hidden_state = self.proj(hidden_state)
         hidden_state = self.act1(self.post_projection_norm(hidden_state))
-        return self.down_proj(self.act_fn(self.gate_proj(hidden_state)) * self.up_proj(hidden_state))
+        return self.down_proj(
+            self.act_fn(self.gate_proj(hidden_state))
+            * self.up_proj(hidden_state)
+        )
 
 
 class GlmOcrVisionPatchEmbed(nn.Layer):
@@ -661,7 +784,11 @@ class GlmOcrVisionPatchEmbed(nn.Layer):
         self.proj = nn.Conv3D(
             in_channels=self.in_channels,
             out_channels=self.embed_dim,
-            kernel_size=(self.temporal_patch_size, self.patch_size, self.patch_size),
+            kernel_size=(
+                self.temporal_patch_size,
+                self.patch_size,
+                self.patch_size,
+            ),
             stride=(self.temporal_patch_size, self.patch_size, self.patch_size),
             bias_attr=True,
         )
@@ -669,7 +796,13 @@ class GlmOcrVisionPatchEmbed(nn.Layer):
     def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
         target_dtype = self.proj.weight.dtype
         hidden_states = hidden_states.reshape(
-            [-1, self.in_channels, self.temporal_patch_size, self.patch_size, self.patch_size]
+            [
+                -1,
+                self.in_channels,
+                self.temporal_patch_size,
+                self.patch_size,
+                self.patch_size,
+            ]
         ).astype(target_dtype)
         x = self.proj(hidden_states)
         x = x.reshape([-1, self.embed_dim])
@@ -693,7 +826,9 @@ class GlmOcrVisionModel(GlmOcrPreTrainedModel):
 
         head_dim = config.hidden_size // config.num_heads
         self.rotary_pos_emb = GlmOcrVisionRotaryEmbedding(head_dim // 2)
-        self.blocks = nn.LayerList([GlmOcrVisionBlock(config) for _ in range(config.depth)])
+        self.blocks = nn.LayerList(
+            [GlmOcrVisionBlock(config) for _ in range(config.depth)]
+        )
 
         self.merger = GlmOcrVisionPatchMerger(
             dim=config.out_hidden_size,
@@ -708,7 +843,10 @@ class GlmOcrVisionModel(GlmOcrPreTrainedModel):
             stride=config.spatial_merge_size,
         )
         self.post_layernorm = GeneralNorm.create(
-            config, norm_type="rms_norm", hidden_size=config.hidden_size, norm_eps=config.rms_norm_eps
+            config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            norm_eps=config.rms_norm_eps,
         )
         self.gradient_checkpointing = False
 
@@ -717,7 +855,9 @@ class GlmOcrVisionModel(GlmOcrPreTrainedModel):
 
         for t, h, w in grid_thw:
             t, h, w = int(t), int(h), int(w)
-            hpos_ids = paddle.arange(h, dtype="int64").unsqueeze(1).expand([-1, w])
+            hpos_ids = (
+                paddle.arange(h, dtype="int64").unsqueeze(1).expand([-1, w])
+            )
             hpos_ids = hpos_ids.reshape(
                 [
                     h // self.spatial_merge_size,
@@ -729,7 +869,9 @@ class GlmOcrVisionModel(GlmOcrPreTrainedModel):
             hpos_ids = hpos_ids.transpose([0, 2, 1, 3])
             hpos_ids = hpos_ids.flatten()
 
-            wpos_ids = paddle.arange(w, dtype="int64").unsqueeze(0).expand([h, -1])
+            wpos_ids = (
+                paddle.arange(w, dtype="int64").unsqueeze(0).expand([h, -1])
+            )
             wpos_ids = wpos_ids.reshape(
                 [
                     h // self.spatial_merge_size,
@@ -740,7 +882,9 @@ class GlmOcrVisionModel(GlmOcrPreTrainedModel):
             )
             wpos_ids = wpos_ids.transpose([0, 2, 1, 3])
             wpos_ids = wpos_ids.flatten()
-            pos_ids.append(paddle.stack([hpos_ids, wpos_ids], axis=-1).tile([t, 1]))
+            pos_ids.append(
+                paddle.stack([hpos_ids, wpos_ids], axis=-1).tile([t, 1])
+            )
 
         pos_ids = paddle.concat(pos_ids, axis=0)
 
@@ -755,16 +899,26 @@ class GlmOcrVisionModel(GlmOcrPreTrainedModel):
 
         return rotary_pos_emb, pos_ids
 
-    def forward(self, hidden_states: paddle.Tensor, grid_thw: paddle.Tensor, **kwargs) -> BaseModelOutputWithPooling:
+    def forward(
+        self, hidden_states: paddle.Tensor, grid_thw: paddle.Tensor, **kwargs
+    ) -> BaseModelOutputWithPooling:
         hidden_states = self.patch_embed(hidden_states)
         seq_len = int(hidden_states.shape[0])
-        rotary_pos_emb, image_type_ids = self.rot_pos_emb(grid_thw.astype("int64"))
+        rotary_pos_emb, image_type_ids = self.rot_pos_emb(
+            grid_thw.astype("int64")
+        )
         emb = paddle.concat([rotary_pos_emb, rotary_pos_emb], axis=-1)
         position_embeddings = (paddle.cos(emb), paddle.sin(emb))
 
-        lengths = (grid_thw[:, 1] * grid_thw[:, 2]).astype("int64")  # per-frame patch count = h*w
+        lengths = (grid_thw[:, 1] * grid_thw[:, 2]).astype(
+            "int64"
+        )  # per-frame patch count = h*w
         reps = grid_thw[:, 0].astype("int64")  # repeat by t
-        cu = paddle.repeat_interleave(lengths, reps, axis=0).cumsum(axis=0).astype("int32")
+        cu = (
+            paddle.repeat_interleave(lengths, reps, axis=0)
+            .cumsum(axis=0)
+            .astype("int32")
+        )
         cu_seqlens = paddle.nn.functional.pad(cu, pad=[1, 0], value=0)
 
         if int(cu_seqlens[-1].item()) != seq_len:
@@ -775,12 +929,20 @@ class GlmOcrVisionModel(GlmOcrPreTrainedModel):
 
         for blk in self.blocks:
             hidden_states = blk(
-                hidden_states, cu_seqlens=cu_seqlens, position_embeddings=position_embeddings, **kwargs
+                hidden_states,
+                cu_seqlens=cu_seqlens,
+                position_embeddings=position_embeddings,
+                **kwargs,
             )
         hidden_states = self.post_layernorm(hidden_states)
 
         hidden_states = hidden_states.reshape(
-            [-1, self.spatial_merge_size, self.spatial_merge_size, hidden_states.shape[-1]]
+            [
+                -1,
+                self.spatial_merge_size,
+                self.spatial_merge_size,
+                hidden_states.shape[-1],
+            ]
         )
         hidden_states = hidden_states.transpose([0, 3, 1, 2])
         hidden_states = self.downsample(hidden_states)
@@ -802,16 +964,24 @@ class GlmOcrTextRotaryEmbedding(nn.Layer):
         self.original_max_seq_len = config.max_position_embeddings
 
         self.rope_type = self.config.rope_parameters["rope_type"]
-        inv_freq, self.attention_scaling = self.compute_default_rope_parameters(self.config)
+        inv_freq, self.attention_scaling = self.compute_default_rope_parameters(
+            self.config
+        )
         self.inv_freq = paddle.to_tensor(inv_freq, stop_gradient=True)
         self.original_inv_freq = self.inv_freq.clone()
-        self.mrope_section = self.config.rope_parameters.get("mrope_section", [8, 12, 12])
+        self.mrope_section = self.config.rope_parameters.get(
+            "mrope_section", [8, 12, 12]
+        )
 
     @staticmethod
     def compute_default_rope_parameters(config):
         base = config.rope_parameters["rope_theta"]
-        partial_rotary_factor = config.rope_parameters.get("partial_rotary_factor", 1.0)
-        head_dim = getattr(config, "head_dim", None) or (config.hidden_size // config.num_attention_heads)
+        partial_rotary_factor = config.rope_parameters.get(
+            "partial_rotary_factor", 1.0
+        )
+        head_dim = getattr(config, "head_dim", None) or (
+            config.hidden_size // config.num_attention_heads
+        )
         dim = int(head_dim * partial_rotary_factor)
 
         idx = paddle.arange(0, dim, 2, dtype="float32")
@@ -835,12 +1005,16 @@ class GlmOcrTextRotaryEmbedding(nn.Layer):
         return paddle.concat(picked, axis=-1)
 
     @paddle.no_grad()
-    def forward(self, hidden_states: paddle.Tensor, position_ids: paddle.Tensor):
+    def forward(
+        self, hidden_states: paddle.Tensor, position_ids: paddle.Tensor
+    ):
         inv_freq = self.inv_freq.astype("float32")
         pos = position_ids.astype("float32")
 
         bs = position_ids.shape[1]
-        inv_freq_expanded = inv_freq.reshape([1, 1, -1, 1]).expand([3, bs, -1, 1])
+        inv_freq_expanded = inv_freq.reshape([1, 1, -1, 1]).expand(
+            [3, bs, -1, 1]
+        )
         position_ids_expanded = pos.unsqueeze(2)
 
         freqs = paddle.matmul(inv_freq_expanded, position_ids_expanded)
@@ -873,11 +1047,17 @@ class GlmOcrTextModel(GlmOcrPreTrainedModel):
         )
 
         self.layers = nn.LayerList(
-            [GlmOcrTextDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
+            [
+                GlmOcrTextDecoderLayer(config, layer_idx)
+                for layer_idx in range(config.num_hidden_layers)
+            ]
         )
 
         self.norm = GeneralNorm.create(
-            config, norm_type="rms_norm", hidden_size=config.hidden_size, norm_eps=config.rms_norm_eps
+            config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            norm_eps=config.rms_norm_eps,
         )
         self.rotary_emb = GlmOcrTextRotaryEmbedding(config=config)
 
@@ -897,7 +1077,9 @@ class GlmOcrTextModel(GlmOcrPreTrainedModel):
         **kwargs,
     ) -> Any:
         if (input_ids is None) == (inputs_embeds is None):
-            raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
+            raise ValueError(
+                "You must specify exactly one of input_ids or inputs_embeds"
+            )
 
         use_cache = use_cache if use_cache is not None else True
         if use_cache and past_key_values is None:
@@ -909,7 +1091,11 @@ class GlmOcrTextModel(GlmOcrPreTrainedModel):
             inputs_embeds = self.embed_tokens(input_ids)
         seq_len = inputs_embeds.shape[1]
         bsz = inputs_embeds.shape[0]
-        past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
+        past_seen_tokens = (
+            past_key_values.get_seq_length()
+            if past_key_values is not None
+            else 0
+        )
 
         if cache_position is None:
             cache_position = paddle.arange(
@@ -919,9 +1105,13 @@ class GlmOcrTextModel(GlmOcrPreTrainedModel):
             )
 
         if position_ids is None:
-            position_ids = cache_position.reshape([1, 1, -1]).expand([3, inputs_embeds.shape[0], -1])
+            position_ids = cache_position.reshape([1, 1, -1]).expand(
+                [3, inputs_embeds.shape[0], -1]
+            )
         elif len(position_ids.shape) == 2:
-            position_ids = position_ids.unsqueeze(0).expand([3, position_ids.shape[0], -1])
+            position_ids = position_ids.unsqueeze(0).expand(
+                [3, position_ids.shape[0], -1]
+            )
 
         if len(position_ids.shape) == 3 and position_ids.shape[0] == 4:
             position_ids = position_ids[1:]
@@ -935,7 +1125,9 @@ class GlmOcrTextModel(GlmOcrPreTrainedModel):
             "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
         }
-        causal_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
+        causal_mask, attn_mask_startend_row_indices = (
+            create_causal_mask_and_row_indices(**mask_kwargs)
+        )
 
         hidden_states = inputs_embeds
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
@@ -967,7 +1159,9 @@ class GlmOcrTextModel(GlmOcrPreTrainedModel):
         )
 
 
-def masked_scatter(inputs: paddle.Tensor, mask: paddle.Tensor, updates: paddle.Tensor) -> paddle.Tensor:
+def masked_scatter(
+    inputs: paddle.Tensor, mask: paddle.Tensor, updates: paddle.Tensor
+) -> paddle.Tensor:
     x = inputs.reshape([-1])
     m = mask.astype("bool").reshape([-1])
 
@@ -976,7 +1170,9 @@ def masked_scatter(inputs: paddle.Tensor, mask: paddle.Tensor, updates: paddle.T
     upd = updates.reshape([-1]).astype(inputs.dtype)
 
     if len(idx_np) != len(upd):
-        raise ValueError(f"[masked_scatter] size mismatch: idx={len(idx_np)} vs updates={len(upd)}")
+        raise ValueError(
+            f"[masked_scatter] size mismatch: idx={len(idx_np)} vs updates={len(upd)}"
+        )
 
     idx = paddle.to_tensor(idx_np, dtype="int64", place=inputs.place)
 
@@ -1003,7 +1199,13 @@ class GlmOcrModel(GlmOcrPreTrainedModel):
     def set_input_embeddings(self, value):
         self.language_model.set_input_embeddings(value)
 
-    def get_rope_index(self, input_ids, image_grid_thw=None, video_grid_thw=None, attention_mask=None):
+    def get_rope_index(
+        self,
+        input_ids,
+        image_grid_thw=None,
+        video_grid_thw=None,
+        attention_mask=None,
+    ):
         spatial_merge_size = int(self.config.vision_config.spatial_merge_size)
         image_token_id = int(self.config.image_token_id)
         video_start_token_id = int(self.config.video_start_token_id)
@@ -1011,11 +1213,15 @@ class GlmOcrModel(GlmOcrPreTrainedModel):
 
         mrope_position_deltas = []
 
-        if input_ids is not None and (image_grid_thw is not None or video_grid_thw is not None):
+        if input_ids is not None and (
+            image_grid_thw is not None or video_grid_thw is not None
+        ):
             if attention_mask is None:
                 attention_mask = paddle.ones_like(input_ids)
 
-            position_ids = paddle.ones([3, input_ids.shape[0], input_ids.shape[1]], dtype="int64")
+            position_ids = paddle.ones(
+                [3, input_ids.shape[0], input_ids.shape[1]], dtype="int64"
+            )
 
             image_index, video_index, video_group_index = 0, 0, 0
 
@@ -1040,15 +1246,23 @@ class GlmOcrModel(GlmOcrPreTrainedModel):
                         input_token_type.append("text")
 
                 input_type_group = []
-                for key, group in itertools.groupby(enumerate(input_token_type), lambda x: x[1]):
+                for key, group in itertools.groupby(
+                    enumerate(input_token_type), lambda x: x[1]
+                ):
                     group = list(group)
-                    input_type_group.append((key, group[0][0], group[-1][0] + 1))
+                    input_type_group.append(
+                        (key, group[0][0], group[-1][0] + 1)
+                    )
 
                 llm_pos_ids_list = []
                 video_frame_num = 1
 
                 for modality_type, start_idx, end_idx in input_type_group:
-                    st_idx = int(paddle.max(llm_pos_ids_list[-1]).item()) + 1 if llm_pos_ids_list else 0
+                    st_idx = (
+                        int(paddle.max(llm_pos_ids_list[-1]).item()) + 1
+                        if llm_pos_ids_list
+                        else 0
+                    )
 
                     if modality_type == "image":
                         t = int(image_grid_thw[image_index, 0].item())
@@ -1059,7 +1273,10 @@ class GlmOcrModel(GlmOcrPreTrainedModel):
                         llm_grid_w = w // spatial_merge_size
 
                         t_index = (
-                            paddle.arange(llm_grid_t).reshape([-1, 1]).expand([-1, llm_grid_h * llm_grid_w]).flatten()
+                            paddle.arange(llm_grid_t)
+                            .reshape([-1, 1])
+                            .expand([-1, llm_grid_h * llm_grid_w])
+                            .flatten()
                         )
                         h_index = (
                             paddle.arange(llm_grid_h)
@@ -1073,7 +1290,9 @@ class GlmOcrModel(GlmOcrPreTrainedModel):
                             .expand([llm_grid_t, llm_grid_h, -1])
                             .flatten()
                         )
-                        llm_pos_ids_list.append(paddle.stack([t_index, h_index, w_index]) + st_idx)
+                        llm_pos_ids_list.append(
+                            paddle.stack([t_index, h_index, w_index]) + st_idx
+                        )
 
                         image_index += 1
                         video_frame_num = 1
@@ -1086,54 +1305,94 @@ class GlmOcrModel(GlmOcrPreTrainedModel):
                         llm_grid_w = w // spatial_merge_size
 
                         for t_idx in range(t):
-                            t_index = paddle.full([llm_grid_h * llm_grid_w], t_idx, dtype="int64")
+                            t_index = paddle.full(
+                                [llm_grid_h * llm_grid_w], t_idx, dtype="int64"
+                            )
                             h_index = (
-                                paddle.arange(llm_grid_h).reshape([1, -1, 1]).expand([1, -1, llm_grid_w]).flatten()
+                                paddle.arange(llm_grid_h)
+                                .reshape([1, -1, 1])
+                                .expand([1, -1, llm_grid_w])
+                                .flatten()
                             )
                             w_index = (
-                                paddle.arange(llm_grid_w).reshape([1, 1, -1]).expand([1, llm_grid_h, -1]).flatten()
+                                paddle.arange(llm_grid_w)
+                                .reshape([1, 1, -1])
+                                .expand([1, llm_grid_h, -1])
+                                .flatten()
                             )
-                            llm_pos_ids_list.append(paddle.stack([t_index, h_index, w_index]) + st_idx)
+                            llm_pos_ids_list.append(
+                                paddle.stack([t_index, h_index, w_index])
+                                + st_idx
+                            )
 
                         video_group_index += 1
-                        if video_group_index >= int(video_grid_thw[video_index, 0].item()):
+                        if video_group_index >= int(
+                            video_grid_thw[video_index, 0].item()
+                        ):
                             video_index += 1
                             video_group_index = 0
                         video_frame_num += 1
 
                     else:  # text
                         text_len = end_idx - start_idx
-                        text_pos = paddle.arange(text_len).reshape([1, -1]).expand([3, -1]) + st_idx
+                        text_pos = (
+                            paddle.arange(text_len)
+                            .reshape([1, -1])
+                            .expand([3, -1])
+                            + st_idx
+                        )
                         llm_pos_ids_list.append(text_pos)
                         video_frame_num = 1
 
-                llm_positions = paddle.concat(llm_pos_ids_list, axis=1).reshape([3, -1])
+                llm_positions = paddle.concat(llm_pos_ids_list, axis=1).reshape(
+                    [3, -1]
+                )
 
                 mask_np = mask_i.numpy()
                 idx_np = np.where(mask_np)[0]
                 idx_tensor = paddle.to_tensor(idx_np, dtype="int64")
                 for r in range(3):
-                    position_ids[r, i] = paddle.scatter(position_ids[r, i], idx_tensor, llm_positions[r])
+                    position_ids[r, i] = paddle.scatter(
+                        position_ids[r, i], idx_tensor, llm_positions[r]
+                    )
 
-                mrope_position_deltas.append(int(paddle.max(llm_positions).item()) + 1 - input_ids.shape[1])
+                mrope_position_deltas.append(
+                    int(paddle.max(llm_positions).item())
+                    + 1
+                    - input_ids.shape[1]
+                )
 
-            mrope_position_deltas = paddle.to_tensor(mrope_position_deltas, dtype="int64").unsqueeze(1)
+            mrope_position_deltas = paddle.to_tensor(
+                mrope_position_deltas, dtype="int64"
+            ).unsqueeze(1)
             return position_ids, mrope_position_deltas
 
         else:
             if attention_mask is not None:
-                position_ids = paddle.cumsum(attention_mask.astype("int64"), axis=-1) - 1
-                position_ids = paddle.where(attention_mask == 1, position_ids, paddle.ones_like(position_ids))
+                position_ids = (
+                    paddle.cumsum(attention_mask.astype("int64"), axis=-1) - 1
+                )
+                position_ids = paddle.where(
+                    attention_mask == 1,
+                    position_ids,
+                    paddle.ones_like(position_ids),
+                )
                 position_ids = position_ids.unsqueeze(0).expand([3, -1, -1])
-                max_position_ids = position_ids.max(axis=0).max(axis=-1, keepdim=True)
-                mrope_position_deltas = (max_position_ids + 1 - input_ids.shape[1]).astype("int64")
+                max_position_ids = position_ids.max(axis=0).max(
+                    axis=-1, keepdim=True
+                )
+                mrope_position_deltas = (
+                    max_position_ids + 1 - input_ids.shape[1]
+                ).astype("int64")
             else:
                 position_ids = (
                     paddle.arange(input_ids.shape[1], dtype="int64")
                     .reshape([1, 1, -1])
                     .expand([3, input_ids.shape[0], -1])
                 )
-                mrope_position_deltas = paddle.zeros([input_ids.shape[0], 1], dtype="int64")
+                mrope_position_deltas = paddle.zeros(
+                    [input_ids.shape[0], 1], dtype="int64"
+                )
             return position_ids, mrope_position_deltas
 
     def get_video_features(
@@ -1146,12 +1405,17 @@ class GlmOcrModel(GlmOcrPreTrainedModel):
 
         temp_frames_hw = []
         for t, h, w in video_grid_thw.numpy().tolist():
-            repeated_row = paddle.to_tensor([[1, int(h), int(w)]], dtype="int64").tile([int(t), 1])
+            repeated_row = paddle.to_tensor(
+                [[1, int(h), int(w)]], dtype="int64"
+            ).tile([int(t), 1])
             temp_frames_hw.append(repeated_row)
         flattened_video_grid_thw = paddle.concat(temp_frames_hw, axis=0)
 
         vision_outputs = self.visual(
-            pixel_values_videos, grid_thw=flattened_video_grid_thw, return_dict=True, **kwargs
+            pixel_values_videos,
+            grid_thw=flattened_video_grid_thw,
+            return_dict=True,
+            **kwargs,
         )
 
         patch_size = self.config.vision_config.patch_size
@@ -1161,10 +1425,16 @@ class GlmOcrModel(GlmOcrPreTrainedModel):
         for t, h, w in video_grid_thw.numpy().tolist():
             num_patches_h = h // patch_size
             num_patches_w = w // patch_size
-            num_tokens = int(t * (num_patches_h // spatial_merge_size) * (num_patches_w // spatial_merge_size))
+            num_tokens = int(
+                t
+                * (num_patches_h // spatial_merge_size)
+                * (num_patches_w // spatial_merge_size)
+            )
             split_sizes.append(num_tokens)
 
-        video_embeds = paddle.split(vision_outputs.pooler_output, num_or_sections=split_sizes, axis=0)
+        video_embeds = paddle.split(
+            vision_outputs.pooler_output, num_or_sections=split_sizes, axis=0
+        )
         vision_outputs.pooler_output = video_embeds
         return vision_outputs
 
@@ -1177,16 +1447,25 @@ class GlmOcrModel(GlmOcrPreTrainedModel):
         visual_dtype = self.visual.parameters()[0].dtype
         pixel_values = pixel_values.astype(visual_dtype)
         kwargs.pop("return_dict", None)
-        vision_outputs = self.visual(pixel_values, grid_thw=image_grid_thw, return_dict=True, **kwargs)
+        vision_outputs = self.visual(
+            pixel_values, grid_thw=image_grid_thw, return_dict=True, **kwargs
+        )
         spatial_merge_size = self.config.vision_config.spatial_merge_size
         split_sizes = (
-            (image_grid_thw[:, 0] * image_grid_thw[:, 1] * image_grid_thw[:, 2] // (spatial_merge_size**2))
+            (
+                image_grid_thw[:, 0]
+                * image_grid_thw[:, 1]
+                * image_grid_thw[:, 2]
+                // (spatial_merge_size**2)
+            )
             .numpy()
             .astype("int64")
             .tolist()
         )
 
-        image_embeds = paddle.split(vision_outputs.pooler_output, num_or_sections=split_sizes, axis=0)
+        image_embeds = paddle.split(
+            vision_outputs.pooler_output, num_or_sections=split_sizes, axis=0
+        )
         vision_outputs.pooler_output = image_embeds
 
         return vision_outputs
@@ -1198,16 +1477,23 @@ class GlmOcrModel(GlmOcrPreTrainedModel):
         image_features: Optional[paddle.Tensor] = None,
         video_features: Optional[paddle.Tensor] = None,
     ):
-
         if input_ids is None:
-            img_tok = paddle.to_tensor([self.config.image_token_id], dtype="int64")
-            vid_tok = paddle.to_tensor([self.config.video_token_id], dtype="int64")
+            img_tok = paddle.to_tensor(
+                [self.config.image_token_id], dtype="int64"
+            )
+            vid_tok = paddle.to_tensor(
+                [self.config.video_token_id], dtype="int64"
+            )
 
             img_emb = self.get_input_embeddings()(img_tok)  # [1, D]
             vid_emb = self.get_input_embeddings()(vid_tok)  # [1, D]
 
-            special_image_mask_2d = (inputs_embeds == img_emb).all(axis=-1)  # [B,S]
-            special_video_mask_2d = (inputs_embeds == vid_emb).all(axis=-1)  # [B,S]
+            special_image_mask_2d = (inputs_embeds == img_emb).all(
+                axis=-1
+            )  # [B,S]
+            special_video_mask_2d = (inputs_embeds == vid_emb).all(
+                axis=-1
+            )  # [B,S]
         else:
             special_image_mask_2d = input_ids == self.config.image_token_id
             special_video_mask_2d = input_ids == self.config.image_token_id
@@ -1215,7 +1501,11 @@ class GlmOcrModel(GlmOcrPreTrainedModel):
         n_image_tokens = int(special_image_mask_2d.astype("int64").sum().item())
 
         # [B,S] -> [B,S,D]
-        special_image_mask = special_image_mask_2d.unsqueeze(-1).expand_as(inputs_embeds).astype("bool")
+        special_image_mask = (
+            special_image_mask_2d.unsqueeze(-1)
+            .expand_as(inputs_embeds)
+            .astype("bool")
+        )
 
         if image_features is not None:
             sel = paddle.masked_select(inputs_embeds, special_image_mask)
@@ -1230,7 +1520,11 @@ class GlmOcrModel(GlmOcrPreTrainedModel):
                 )
 
         n_video_tokens = int(special_video_mask_2d.astype("int64").sum().item())
-        special_video_mask = special_video_mask_2d.unsqueeze(-1).expand_as(inputs_embeds).astype("bool")
+        special_video_mask = (
+            special_video_mask_2d.unsqueeze(-1)
+            .expand_as(inputs_embeds)
+            .astype("bool")
+        )
         if video_features is not None:
             sel = paddle.masked_select(inputs_embeds, special_video_mask)
             if sel.numel().item() != video_features.numel().item():
@@ -1257,26 +1551,47 @@ class GlmOcrModel(GlmOcrPreTrainedModel):
         **kwargs,
     ):
         if (input_ids is None) == (inputs_embeds is None):
-            raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
+            raise ValueError(
+                "You must specify exactly one of input_ids or inputs_embeds"
+            )
 
         if inputs_embeds is None:
-            inputs_embeds = self.get_input_embeddings()(input_ids.astype("int64"))
+            inputs_embeds = self.get_input_embeddings()(
+                input_ids.astype("int64")
+            )
 
         if pixel_values is not None:
-            image_embeds_list = self.get_image_features(pixel_values, image_grid_thw, return_dict=True).pooler_output
-            image_embeds = paddle.concat(image_embeds_list, axis=0).astype(inputs_embeds.dtype)
-            image_mask, _ = self.get_placeholder_mask(input_ids, inputs_embeds, image_features=image_embeds)
-            inputs_embeds = masked_scatter(inputs_embeds, image_mask, image_embeds)
+            image_embeds_list = self.get_image_features(
+                pixel_values, image_grid_thw, return_dict=True
+            ).pooler_output
+            image_embeds = paddle.concat(image_embeds_list, axis=0).astype(
+                inputs_embeds.dtype
+            )
+            image_mask, _ = self.get_placeholder_mask(
+                input_ids, inputs_embeds, image_features=image_embeds
+            )
+            inputs_embeds = masked_scatter(
+                inputs_embeds, image_mask, image_embeds
+            )
 
         if pixel_values_videos is not None:
             video_embeds_list = self.get_video_features(
                 pixel_values_videos, video_grid_thw, return_dict=True
             ).pooler_output
-            video_embeds = paddle.concat(video_embeds_list, axis=0).astype(inputs_embeds.dtype)
-            _, video_mask = self.get_placeholder_mask(input_ids, inputs_embeds, video_features=video_embeds)
-            inputs_embeds = masked_scatter(inputs_embeds, video_mask, video_embeds)
+            video_embeds = paddle.concat(video_embeds_list, axis=0).astype(
+                inputs_embeds.dtype
+            )
+            _, video_mask = self.get_placeholder_mask(
+                input_ids, inputs_embeds, video_features=video_embeds
+            )
+            inputs_embeds = masked_scatter(
+                inputs_embeds, video_mask, video_embeds
+            )
         if position_ids is None:
-            prefill_stage = (cache_position is not None and int(cache_position[0].item()) == 0) or (
+            prefill_stage = (
+                cache_position is not None
+                and int(cache_position[0].item()) == 0
+            ) or (
                 past_key_values is None or past_key_values.get_seq_length() == 0
             )
 
@@ -1290,10 +1605,14 @@ class GlmOcrModel(GlmOcrPreTrainedModel):
                 self.rope_deltas = rope_deltas_calc
             else:
                 batch_size, seq_length, _ = inputs_embeds.shape
-                delta = cache_position[0].astype("int64") + self.rope_deltas.astype("int64")
+                delta = cache_position[0].astype(
+                    "int64"
+                ) + self.rope_deltas.astype("int64")
                 delta = delta.tile([batch_size // delta.shape[0], 1])
                 position_ids = paddle.arange(seq_length, dtype="int64")
-                position_ids = position_ids.reshape([1, -1]).expand([batch_size, -1])
+                position_ids = position_ids.reshape([1, -1]).expand(
+                    [batch_size, -1]
+                )
                 position_ids = position_ids + delta
                 position_ids = position_ids.unsqueeze(0).expand([3, -1, -1])
 
@@ -1340,13 +1659,19 @@ class GlmOcrCausalLMOutputWithPast(ModelOutput):
 
 class GlmOcrForConditionalGeneration(GlmOcrPreTrainedModel, GenerationMixin):
     _checkpoint_conversion_mapping = {}
-    _tied_weights_keys = {"lm_head.weight": "model.language_model.embed_tokens.weight"}
+    _tied_weights_keys = {
+        "lm_head.weight": "model.language_model.embed_tokens.weight"
+    }
     accepts_loss_kwargs = False
 
     def __init__(self, config):
         super().__init__(config)
         self.model = GlmOcrModel(config)
-        self.lm_head = nn.Linear(config.text_config.hidden_size, config.text_config.vocab_size, bias_attr=False)
+        self.lm_head = nn.Linear(
+            config.text_config.hidden_size,
+            config.text_config.vocab_size,
+            bias_attr=False,
+        )
         self.criterion = CriterionLayer(config)
         attn_impl = getattr(config, "_attn_implementation", "eager")
         config.vision_config._attn_implementation = attn_impl
@@ -1358,7 +1683,9 @@ class GlmOcrForConditionalGeneration(GlmOcrPreTrainedModel, GenerationMixin):
     def set_input_embeddings(self, value):
         self.model.set_input_embeddings(value)
 
-    def get_video_features(self, pixel_values_videos, video_grid_thw=None, **kwargs):
+    def get_video_features(
+        self, pixel_values_videos, video_grid_thw=None, **kwargs
+    ):
         return self.model.get_video_features(
             pixel_values_videos=pixel_values_videos,
             video_grid_thw=video_grid_thw,
@@ -1388,7 +1715,7 @@ class GlmOcrForConditionalGeneration(GlmOcrPreTrainedModel, GenerationMixin):
         logits_to_keep=0,
         return_dict: Optional[bool] = True,
         **kwargs,
-    ) -> Union[tuple, GlmOcrCausalLMOutputWithPast]:
+    ) -> tuple | GlmOcrCausalLMOutputWithPast:
         outputs = self.model(
             input_ids=input_ids,
             pixel_values=pixel_values,
@@ -1405,7 +1732,11 @@ class GlmOcrForConditionalGeneration(GlmOcrPreTrainedModel, GenerationMixin):
         )
         hidden_states = outputs[0]
         if isinstance(logits_to_keep, int):
-            slice_indices = slice(-logits_to_keep, None) if logits_to_keep > 0 else slice(None, None)
+            slice_indices = (
+                slice(-logits_to_keep, None)
+                if logits_to_keep > 0
+                else slice(None, None)
+            )
         else:
             slice_indices = logits_to_keep
 
@@ -1476,12 +1807,16 @@ class GlmOcrForConditionalGeneration(GlmOcrPreTrainedModel, GenerationMixin):
 
         return model_inputs
 
-    def update_model_kwargs_for_generation(self, outputs, model_kwargs, is_encoder_decoder=False, **kwargs):
+    def update_model_kwargs_for_generation(
+        self, outputs, model_kwargs, is_encoder_decoder=False, **kwargs
+    ):
         # ---- 1) update past_key_values ----
         if isinstance(outputs, tuple):
             if len(outputs) >= 2 and not isinstance(outputs[1], paddle.Tensor):
                 model_kwargs["past_key_values"] = outputs[1]
-            elif len(outputs) >= 3 and not isinstance(outputs[2], paddle.Tensor):
+            elif len(outputs) >= 3 and not isinstance(
+                outputs[2], paddle.Tensor
+            ):
                 model_kwargs["past_key_values"] = outputs[2]
         elif hasattr(outputs, "past_key_values"):
             model_kwargs["past_key_values"] = outputs.past_key_values
@@ -1502,12 +1837,17 @@ class GlmOcrForConditionalGeneration(GlmOcrPreTrainedModel, GenerationMixin):
         self,
         input_ids: Optional[paddle.Tensor],
         inputs_embeds: Optional[paddle.Tensor] = None,
-    ) -> Tuple[paddle.Tensor, paddle.Tensor]:
-
+    ) -> tuple[paddle.Tensor, paddle.Tensor]:
         if inputs_embeds is not None:
-            image_id = paddle.to_tensor([self.config.image_start_token_id], dtype="int64")
-            vstart_id = paddle.to_tensor([self.config.video_start_token_id], dtype="int64")
-            vend_id = paddle.to_tensor([self.config.video_end_token_id], dtype="int64")
+            image_id = paddle.to_tensor(
+                [self.config.image_start_token_id], dtype="int64"
+            )
+            vstart_id = paddle.to_tensor(
+                [self.config.video_start_token_id], dtype="int64"
+            )
+            vend_id = paddle.to_tensor(
+                [self.config.video_end_token_id], dtype="int64"
+            )
 
             image_emb = self.get_input_embeddings()(image_id)
             vstart_emb = self.get_input_embeddings()(vstart_id)
@@ -1521,7 +1861,10 @@ class GlmOcrForConditionalGeneration(GlmOcrPreTrainedModel, GenerationMixin):
             is_video_start = input_ids == self.config.video_start_token_id
             is_video_end = input_ids == self.config.video_end_token_id
 
-        video_level = paddle.cumsum(is_video_start.astype("int32") - is_video_end.astype("int32"), axis=1)
+        video_level = paddle.cumsum(
+            is_video_start.astype("int32") - is_video_end.astype("int32"),
+            axis=1,
+        )
         inside_video = video_level > 0
         standalone_images = is_image & (~inside_video)
 
@@ -1536,14 +1879,21 @@ class GlmOcrForConditionalGeneration(GlmOcrPreTrainedModel, GenerationMixin):
         is_encoder_decoder: bool = False,
         input_ids: Optional[paddle.Tensor] = None,
         **model_kwargs,
-    ) -> Tuple[Optional[paddle.Tensor], Dict[str, Any]]:
-
+    ) -> tuple[Optional[paddle.Tensor], dict[str, Any]]:
         if expand_size == 1:
             return input_ids, model_kwargs
 
-        visual_keys = ["pixel_values", "image_grid_thw", "pixel_values_videos", "video_grid_thw", "second_per_grid_ts"]
+        visual_keys = [
+            "pixel_values",
+            "image_grid_thw",
+            "pixel_values_videos",
+            "video_grid_thw",
+            "second_per_grid_ts",
+        ]
 
-        def _repeat_interleave_samples(x: paddle.Tensor, lengths, repeat_times: int):
+        def _repeat_interleave_samples(
+            x: paddle.Tensor, lengths, repeat_times: int
+        ):
             samples = paddle.split(x, lengths, axis=0)
             out = []
             for s in samples:
@@ -1551,7 +1901,7 @@ class GlmOcrForConditionalGeneration(GlmOcrPreTrainedModel, GenerationMixin):
                 out.append(paddle.tile(s, reps))
             return paddle.concat(out, axis=0)
 
-        def _expand_dict_for_generation_visual(d: Dict[str, Any]):
+        def _expand_dict_for_generation_visual(d: dict[str, Any]):
             image_grid_thw = model_kwargs.get("image_grid_thw", None)
             video_grid_thw = model_kwargs.get("video_grid_thw", None)
 
@@ -1564,23 +1914,49 @@ class GlmOcrForConditionalGeneration(GlmOcrPreTrainedModel, GenerationMixin):
 
             for key in list(d.keys()):
                 if key == "pixel_values":
-                    samples = paddle.split(image_grid_thw, image_nums_list, axis=0)
-                    lengths = [int(paddle.prod(s, axis=1).sum().item()) for s in samples]
-                    d[key] = _repeat_interleave_samples(d[key], lengths=lengths, repeat_times=expand_size)
+                    samples = paddle.split(
+                        image_grid_thw, image_nums_list, axis=0
+                    )
+                    lengths = [
+                        int(paddle.prod(s, axis=1).sum().item())
+                        for s in samples
+                    ]
+                    d[key] = _repeat_interleave_samples(
+                        d[key], lengths=lengths, repeat_times=expand_size
+                    )
                 elif key == "image_grid_thw":
-                    d[key] = _repeat_interleave_samples(d[key], lengths=image_nums_list, repeat_times=expand_size)
+                    d[key] = _repeat_interleave_samples(
+                        d[key],
+                        lengths=image_nums_list,
+                        repeat_times=expand_size,
+                    )
                 elif key == "pixel_values_videos":
-                    samples = paddle.split(video_grid_thw, video_nums_list, axis=0)
-                    lengths = [int(paddle.prod(s, axis=1).sum().item()) for s in samples]
-                    d[key] = _repeat_interleave_samples(d[key], lengths=lengths, repeat_times=expand_size)
+                    samples = paddle.split(
+                        video_grid_thw, video_nums_list, axis=0
+                    )
+                    lengths = [
+                        int(paddle.prod(s, axis=1).sum().item())
+                        for s in samples
+                    ]
+                    d[key] = _repeat_interleave_samples(
+                        d[key], lengths=lengths, repeat_times=expand_size
+                    )
                 elif key == "video_grid_thw":
-                    d[key] = _repeat_interleave_samples(d[key], lengths=video_nums_list, repeat_times=expand_size)
+                    d[key] = _repeat_interleave_samples(
+                        d[key],
+                        lengths=video_nums_list,
+                        repeat_times=expand_size,
+                    )
                 elif key == "second_per_grid_ts":
-                    d[key] = _repeat_interleave_samples(d[key], lengths=video_nums_list, repeat_times=expand_size)
+                    d[key] = _repeat_interleave_samples(
+                        d[key],
+                        lengths=video_nums_list,
+                        repeat_times=expand_size,
+                    )
 
             return d
 
-        def _expand_dict_for_generation(d: Dict[str, Any]):
+        def _expand_dict_for_generation(d: dict[str, Any]):
             for key, val in list(d.items()):
                 if (
                     key != "cache_position"
@@ -1588,20 +1964,28 @@ class GlmOcrForConditionalGeneration(GlmOcrPreTrainedModel, GenerationMixin):
                     and isinstance(val, paddle.Tensor)
                     and key not in visual_keys
                 ):
-                    d[key] = paddle.repeat_interleave(val, repeats=expand_size, axis=0)
+                    d[key] = paddle.repeat_interleave(
+                        val, repeats=expand_size, axis=0
+                    )
             return d
 
         model_kwargs = _expand_dict_for_generation_visual(model_kwargs)
 
         if input_ids is not None:
-            input_ids = paddle.repeat_interleave(input_ids, repeats=expand_size, axis=0)
+            input_ids = paddle.repeat_interleave(
+                input_ids, repeats=expand_size, axis=0
+            )
 
         model_kwargs = _expand_dict_for_generation(model_kwargs)
 
         if is_encoder_decoder:
             if model_kwargs.get("encoder_outputs") is None:
-                raise ValueError("If `is_encoder_decoder` is True, make sure that `encoder_outputs` is defined.")
-            model_kwargs["encoder_outputs"] = _expand_dict_for_generation(model_kwargs["encoder_outputs"])
+                raise ValueError(
+                    "If `is_encoder_decoder` is True, make sure that `encoder_outputs` is defined."
+                )
+            model_kwargs["encoder_outputs"] = _expand_dict_for_generation(
+                model_kwargs["encoder_outputs"]
+            )
 
         return input_ids, model_kwargs
 

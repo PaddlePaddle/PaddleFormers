@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, Optional
+from typing import Optional
 
 import paddle
 
@@ -22,7 +22,9 @@ from .moe_loss import LossConfig, LossRegistry
 def get_global_loss_registry():
     if not hasattr(get_global_loss_registry, "_instance"):
         get_global_loss_registry._instance = LossRegistry()
-        get_global_loss_registry._instance.register_loss("custom_diversity_loss1", custom_diversity_loss)
+        get_global_loss_registry._instance.register_loss(
+            "custom_diversity_loss1", custom_diversity_loss
+        )
         get_global_loss_registry._instance.register_combiner(
             "custom_weighted_sum_combiner1", custom_weighted_sum_combiner
         )
@@ -33,7 +35,7 @@ def custom_diversity_loss(
     routing_weights: paddle.Tensor,
     selected_experts: paddle.Tensor,
     gate_logits: Optional[paddle.Tensor] = None,
-    **kwargs
+    **kwargs,
 ) -> paddle.Tensor:
     num_experts = kwargs.get("num_experts", 8)
     expert_counts = paddle.zeros([num_experts])
@@ -47,14 +49,16 @@ def custom_diversity_loss(
     expert_probs = expert_counts / (expert_counts.sum() + 1e-8)
 
     diversity_loss = paddle.nn.functional.kl_div(
-        paddle.log(expert_probs + 1e-8), paddle.log(uniform_dist + 1e-8), reduction="sum"
+        paddle.log(expert_probs + 1e-8),
+        paddle.log(uniform_dist + 1e-8),
+        reduction="sum",
     )
 
     return diversity_loss
 
 
 def custom_weighted_sum_combiner(
-    self, losses: Dict[str, paddle.Tensor], configs: Dict[str, LossConfig]
+    self, losses: dict[str, paddle.Tensor], configs: dict[str, LossConfig]
 ) -> paddle.Tensor:
     combined_loss = paddle.to_tensor(0.0)
     for name, loss_value in losses.items():

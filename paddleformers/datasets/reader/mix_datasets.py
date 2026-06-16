@@ -39,14 +39,22 @@ class BaseMixDataset(IterableDataset):
 
             **dataset_config: Configuration dictionary
         """
-        self.datasets_list = [task["dataset"] for task in multi_source_dataset._task_group]
-        self.datasets_prob = [task["prob"] for task in multi_source_dataset._task_group]
+        self.datasets_list = [
+            task["dataset"] for task in multi_source_dataset._task_group
+        ]
+        self.datasets_prob = [
+            task["prob"] for task in multi_source_dataset._task_group
+        ]
 
         # Normalize probabilities to ensure they sum to 1.0
         prob_sum = sum(self.datasets_prob)
         if not np.isclose(prob_sum, 1.0):
             self.datasets_prob = [p / prob_sum for p in self.datasets_prob]
-        self.mode = "upsampling" if dataset_config["mix_strategy"] == "interleave_under" else "oversampling"
+        self.mode = (
+            "upsampling"
+            if dataset_config["mix_strategy"] == "interleave_under"
+            else "oversampling"
+        )
         self.seed = dataset_config["random_seed"]
         self.rng = random.Random(self.seed)
         self.np_rng = np.random.default_rng(self.seed)
@@ -83,7 +91,11 @@ class RandomDataset(BaseMixDataset):
         super().__init__(*args, **kwargs)
 
         self.tasks = [
-            {"iterator": iter(InfiniteDataset(dataset, self.rng, self.random_shuffle))}
+            {
+                "iterator": iter(
+                    InfiniteDataset(dataset, self.rng, self.random_shuffle)
+                )
+            }
             for dataset in self.datasets_list
         ]
 
@@ -93,7 +105,10 @@ class RandomDataset(BaseMixDataset):
         This will be called when iterating over the dataset.
         """
         examples_all = []
-        target_nums: list[int] = [int(prob * self.num_samples_each_epoch) for prob in self.datasets_prob]
+        target_nums: list[int] = [
+            int(prob * self.num_samples_each_epoch)
+            for prob in self.datasets_prob
+        ]
 
         for i, task in enumerate(self.tasks):
             examples = [next(task["iterator"]) for _ in range(target_nums[i])]
@@ -105,10 +120,9 @@ class RandomDataset(BaseMixDataset):
             self.epoch_np_rng.shuffle(examples_all)
 
         if self.reverse:
-            examples_all = examples_all[::-1]
+            examples_all.reverse()
 
-        for example in examples_all:
-            yield example
+        yield from examples_all
 
         self.epoch_index += 1
         self.epoch_np_rng = np.random.RandomState(self.epoch_index + self.seed)
@@ -171,11 +185,15 @@ class InterLeaveDataset(BaseMixDataset):
         super().__init__(*args, **kwargs)
 
         if self.mode not in ["upsampling", "oversampling"]:
-            raise ValueError(f"Unknown mode '{self.mode}'. Mode must be 'upsampling' or 'oversampling'.")
+            raise ValueError(
+                f"Unknown mode '{self.mode}'. Mode must be 'upsampling' or 'oversampling'."
+            )
         self.datasets_prob = np.array(self.datasets_prob)
 
         self.datasets_data = [list(iter(ds)) for ds in self.datasets_list]
-        self.lengths = np.array([len(ds_list) for ds_list in self.datasets_data])
+        self.lengths = np.array(
+            [len(ds_list) for ds_list in self.datasets_data]
+        )
 
         # construct interleave dataset
         self.data = []
@@ -200,7 +218,10 @@ class InterLeaveDataset(BaseMixDataset):
             """Get an infinite iterator that randomly samples the index of the source to pick examples from."""
             while True:
                 yield from (
-                    int(i) for i in self.np_rng.choice(len(self.datasets_data), size=1000, p=self.datasets_prob)
+                    int(i)
+                    for i in self.np_rng.choice(
+                        len(self.datasets_data), size=1000, p=self.datasets_prob
+                    )
                 )
 
         current_index = [0] * len(self.datasets_data)
@@ -223,15 +244,23 @@ class InterLeaveDataset(BaseMixDataset):
 
         print(f"Dataset construction complete: {len(self.data)} total samples")
 
-        for i, (taken, original_size) in enumerate(zip(samples_taken, self.lengths)):
+        for i, (taken, original_size) in enumerate(
+            zip(samples_taken, self.lengths)
+        ):
             actual_prob = taken / len(self.data) if len(self.data) > 0 else 0
             resampling_ratio = taken / original_size if original_size > 0 else 0
-            print(f"Dataset {i}: {taken} samples taken from {original_size} available")
-            print(f"  Target prob: {self.datasets_prob[i]:.3f}, Actual prob: {actual_prob:.3f}")
+            print(
+                f"Dataset {i}: {taken} samples taken from {original_size} available"
+            )
+            print(
+                f"  Target prob: {self.datasets_prob[i]:.3f}, Actual prob: {actual_prob:.3f}"
+            )
             print(f"  Resampling ratio: {resampling_ratio:.2f}x")
 
             if resampling_ratio >= 1.0:
-                print(f"All {original_size} original samples were used at least once")
+                print(
+                    f"All {original_size} original samples were used at least once"
+                )
             else:
                 unused = original_size - taken
                 print(f"{unused} samples were not used from this dataset")

@@ -20,11 +20,11 @@ import unittest
 import numpy as np
 import paddle
 
-from paddleformers.transformers import Qwen3MoeConfig
 from paddleformers.transformers import (
+    Qwen3MoeConfig,
     Qwen3MoeForCausalLMDeprecated as Qwen3MoeForCausalLM,
+    Qwen3MoeModel,
 )
-from paddleformers.transformers import Qwen3MoeModel
 from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
@@ -86,7 +86,9 @@ class Qwen3MoeModelTester:
         self.pad_token_id = pad_token_id
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
-        self.apply_residual_connection_post_layernorm = apply_residual_connection_post_layernorm
+        self.apply_residual_connection_post_layernorm = (
+            apply_residual_connection_post_layernorm
+        )
         self.hidden_dropout = hidden_dropout
         self.attention_dropout = attention_dropout
         self.attention_softmax_in_fp32 = attention_softmax_in_fp32
@@ -108,22 +110,39 @@ class Qwen3MoeModelTester:
         self.return_dict = return_dict
 
     def prepare_config_and_inputs(self):
-        input_ids = ids_tensor([self.batch_size, self.seq_length], self.vocab_size, dtype=paddle.int64)
+        input_ids = ids_tensor(
+            [self.batch_size, self.seq_length],
+            self.vocab_size,
+            dtype=paddle.int64,
+        )
 
         input_mask = None
         if self.use_input_mask:
-            input_mask = random_attention_mask([self.batch_size, self.seq_length])
+            input_mask = random_attention_mask(
+                [self.batch_size, self.seq_length]
+            )
 
         sequence_labels = None
         token_labels = None
         choice_labels = None
         if self.use_labels:
-            sequence_labels = ids_tensor([self.batch_size], self.type_sequence_label_size)
-            token_labels = ids_tensor([self.batch_size, self.seq_length], self.num_labels)
+            sequence_labels = ids_tensor(
+                [self.batch_size], self.type_sequence_label_size
+            )
+            token_labels = ids_tensor(
+                [self.batch_size, self.seq_length], self.num_labels
+            )
             choice_labels = ids_tensor([self.batch_size], self.num_choices)
 
         config = self.get_config()
-        return config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        return (
+            config,
+            input_ids,
+            input_mask,
+            sequence_labels,
+            token_labels,
+            choice_labels,
+        )
 
     def get_config(self) -> Qwen3MoeConfig:
         return Qwen3MoeConfig(
@@ -150,29 +169,53 @@ class Qwen3MoeModelTester:
         )
 
     def create_and_check_model(
-        self, config: Qwen3MoeConfig, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        self,
+        config: Qwen3MoeConfig,
+        input_ids,
+        input_mask,
+        sequence_labels,
+        token_labels,
+        choice_labels,
     ):
         model = Qwen3MoeModel(config)
         model.eval()
         result = model(input_ids)
-        self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.hidden_size])
+        self.parent.assertEqual(
+            result[0].shape,
+            [self.batch_size, self.seq_length, self.hidden_size],
+        )
 
-    def create_and_check_model_attention_mask(self, config: Qwen3MoeConfig, input_ids):
+    def create_and_check_model_attention_mask(
+        self, config: Qwen3MoeConfig, input_ids
+    ):
         model = Qwen3MoeModel(config)
         model.eval()
         attn_mask_2d = random_attention_mask([self.batch_size, self.seq_length])
         result_2d = model(input_ids, attention_mask=attn_mask_2d)[0]
         batch, seq_length = input_ids.shape
-        causal_mask = paddle.tril(paddle.ones((batch, seq_length, seq_length), dtype=attn_mask_2d.dtype))
+        causal_mask = paddle.tril(
+            paddle.ones(
+                (batch, seq_length, seq_length), dtype=attn_mask_2d.dtype
+            )
+        )
         attn_mask_3d = causal_mask & attn_mask_2d.unsqueeze(-1)
         result_3d = model(input_ids, attention_mask=attn_mask_3d)[0]
         attn_mask_4d = attn_mask_3d.unsqueeze(1)
         result_4d = model(input_ids, attention_mask=attn_mask_4d)[0]
         result_no_attention_mask = model(input_ids, attention_mask=None)[0]
         # Assert non-padding tokens have the same logits with different attention_mask shape
-        self.parent.assertTrue((result_2d[attn_mask_2d] == result_3d[attn_mask_2d]).all())
-        self.parent.assertTrue((result_2d[attn_mask_2d] == result_4d[attn_mask_2d]).all())
-        self.parent.assertTrue((result_2d[attn_mask_2d] == result_no_attention_mask[attn_mask_2d]).all())
+        self.parent.assertTrue(
+            (result_2d[attn_mask_2d] == result_3d[attn_mask_2d]).all()
+        )
+        self.parent.assertTrue(
+            (result_2d[attn_mask_2d] == result_4d[attn_mask_2d]).all()
+        )
+        self.parent.assertTrue(
+            (
+                result_2d[attn_mask_2d]
+                == result_no_attention_mask[attn_mask_2d]
+            ).all()
+        )
 
     def create_and_check_model_as_decoder(
         self,
@@ -195,7 +238,10 @@ class Qwen3MoeModelTester:
             attention_mask=input_mask,
         )
         result = model(input_ids, attention_mask=input_mask)
-        self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.hidden_size])
+        self.parent.assertEqual(
+            result[0].shape,
+            [self.batch_size, self.seq_length, self.hidden_size],
+        )
 
     def create_and_check_for_causal_lm(
         self,
@@ -208,8 +254,16 @@ class Qwen3MoeModelTester:
     ):
         model = Qwen3MoeForCausalLM(config=config)
         model.eval()
-        result = model(input_ids, attention_mask=input_mask, labels=token_labels, return_dict=True)
-        self.parent.assertEqual(result.logits.shape, [self.batch_size, self.seq_length, self.vocab_size])
+        result = model(
+            input_ids,
+            attention_mask=input_mask,
+            labels=token_labels,
+            return_dict=True,
+        )
+        self.parent.assertEqual(
+            result.logits.shape,
+            [self.batch_size, self.seq_length, self.vocab_size],
+        )
 
     def prepare_config_and_inputs_for_common(self):
         config_and_inputs = self.prepare_config_and_inputs()
@@ -224,7 +278,9 @@ class Qwen3MoeModelTester:
         inputs_dict = {"input_ids": input_ids, "attention_mask": input_mask}
         return config, inputs_dict
 
-    def create_and_check_lm_head_model(self, config, input_ids, input_mask, *args):
+    def create_and_check_lm_head_model(
+        self, config, input_ids, input_mask, *args
+    ):
         model = Qwen3MoeForCausalLM(config)
         model.eval()
 
@@ -236,9 +292,15 @@ class Qwen3MoeModelTester:
         )
         if self.parent.use_labels:
             self.parent.assertIsInstance(result[0].item(), float)
-            self.parent.assertEqual(result[1].shape, [self.batch_size, self.seq_length, self.vocab_size])
+            self.parent.assertEqual(
+                result[1].shape,
+                [self.batch_size, self.seq_length, self.vocab_size],
+            )
         else:
-            self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
+            self.parent.assertEqual(
+                result[0].shape,
+                [self.batch_size, self.seq_length, self.vocab_size],
+            )
 
     def check_model_position_ids(self, config, input_ids, input_mask, *args):
         model = Qwen3MoeForCausalLM(config)
@@ -258,29 +320,41 @@ class Qwen3MoeModelTester:
             return_dict=self.parent.return_dict,
         )
         if self.parent.use_labels:
-            self.parent.assertTrue((result_position_id[1] == result_no_position_id[1]).all())
+            self.parent.assertTrue(
+                (result_position_id[1] == result_no_position_id[1]).all()
+            )
         else:
-            self.parent.assertTrue((result_position_id[0] == result_no_position_id[0]).all())
+            self.parent.assertTrue(
+                (result_position_id[0] == result_no_position_id[0]).all()
+            )
 
 
-class Qwen3MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
+class Qwen3MoeModelTest(
+    ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
+):
     base_model_class = Qwen3MoeModel
     return_dict = False
     use_labels = False
     use_test_model_name_list = False
 
     all_model_classes = (Qwen3MoeModel, Qwen3MoeForCausalLM)
-    all_generative_model_classes = {Qwen3MoeForCausalLM: (Qwen3MoeModel, "qwen3_moe")}
+    all_generative_model_classes = {
+        Qwen3MoeForCausalLM: (Qwen3MoeModel, "qwen3_moe")
+    }
 
     @gpu_device_initializer(log_prefix="Qwen3MoeModelTest")
     def setUp(self):
         super().setUp()
 
         self.model_tester = Qwen3MoeModelTester(self)
-        self.config_tester = ConfigTester(self, config_class=Qwen3MoeConfig, vocab_size=256, hidden_size=24)
+        self.config_tester = ConfigTester(
+            self, config_class=Qwen3MoeConfig, vocab_size=256, hidden_size=24
+        )
 
     def _get_input_ids_and_config(self):
-        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+        config, inputs_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
 
         input_ids = inputs_dict[self.input_name]
         attention_mask = paddle.ones_like(input_ids, dtype=paddle.int64)
@@ -298,8 +372,12 @@ class Qwen3MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
         self.model_tester.create_and_check_model(*config_and_inputs)
 
     def test_model_attention_mask(self):
-        config, input_dict = self.model_tester.prepare_config_and_inputs_for_common()
-        self.model_tester.create_and_check_model_attention_mask(config, input_dict["input_ids"])
+        config, input_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
+        self.model_tester.create_and_check_model_attention_mask(
+            config, input_dict["input_ids"]
+        )
 
     def test_model_position_ids(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
@@ -330,7 +408,9 @@ class Qwen3MoeIntegrationTest(unittest.TestCase):
     def test_model_tiny_logits(self):
         input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
         model = Qwen3MoeForCausalLM.from_pretrained(
-            "PaddleFormers/tiny-random-qwen3moev2", dtype="float32", load_checkpoint_format="flex_checkpoint"
+            "PaddleFormers/tiny-random-qwen3moev2",
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
         )
         input_ids = paddle.to_tensor([input_ids])
         with paddle.no_grad():
@@ -338,9 +418,22 @@ class Qwen3MoeIntegrationTest(unittest.TestCase):
 
         # Expected mean on dim = -1
         EXPECTED_MEAN = paddle.to_tensor(
-            [[0.00170604, 0.00471663, 0.00417853, 0.00308787, 0.00467000, 0.00604948, 0.00412507, 0.00160586]]
+            [
+                [
+                    0.00170604,
+                    0.00471663,
+                    0.00417853,
+                    0.00308787,
+                    0.00467000,
+                    0.00604948,
+                    0.00412507,
+                    0.00160586,
+                ]
+            ]
         )
-        self.assertTrue(paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-3, rtol=1e-3))
+        self.assertTrue(
+            paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-3, rtol=1e-3)
+        )
 
         # slicing logits[0, 0, 0:30]
         EXPECTED_SLICE = paddle.to_tensor([1.19751632, 1.76759684, 1.42320514, -3.55444431, 0.54329103,
@@ -349,7 +442,11 @@ class Qwen3MoeIntegrationTest(unittest.TestCase):
                                            -1.38586426, -1.02522457, -0.34655067, 0.00249448, 0.01345686,
                                            -1.25499344, -2.20100021, 1.13552403, -1.18407190, -1.93378878,
                                            -0.31357813, -2.56630087, 0.80468446, 0.56240237, -0.04839380])  # fmt: skip
-        self.assertTrue(paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-2, rtol=1e-2))
+        self.assertTrue(
+            paddle.allclose(
+                out[0, 0, :30], EXPECTED_SLICE, atol=1e-2, rtol=1e-2
+            )
+        )
 
     def test_fd_fallback(self):
         input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
@@ -375,11 +472,21 @@ class Qwen3MoeIntegrationTest(unittest.TestCase):
         input_ids = paddle.to_tensor([input_ids])
         with paddle.no_grad():
             out = model(input_ids, return_dict=True).logits
-            out_fd_fallback = model_fd_fallback(input_ids, return_dict=True).logits
-            out_fd_fallback_fused_ffn = model_fd_fallback_fused_ffn(input_ids, return_dict=True).logits
+            out_fd_fallback = model_fd_fallback(
+                input_ids, return_dict=True
+            ).logits
+            out_fd_fallback_fused_ffn = model_fd_fallback_fused_ffn(
+                input_ids, return_dict=True
+            ).logits
 
-        self.assertTrue(paddle.allclose(out_fd_fallback, out, atol=1e-3, rtol=1e-3))
-        self.assertTrue(paddle.allclose(out_fd_fallback_fused_ffn, out, atol=1e-3, rtol=1e-3))
+        self.assertTrue(
+            paddle.allclose(out_fd_fallback, out, atol=1e-3, rtol=1e-3)
+        )
+        self.assertTrue(
+            paddle.allclose(
+                out_fd_fallback_fused_ffn, out, atol=1e-3, rtol=1e-3
+            )
+        )
 
 
 class Qwen3MoeGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
@@ -420,7 +527,9 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
         import torch
         from transformers import Qwen3MoeForCausalLM
 
-        torch_model = Qwen3MoeForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+        torch_model = Qwen3MoeForCausalLM.from_pretrained(
+            self.torch_model_path, torch_dtype=torch.float32
+        )
         torch_model.eval()
         torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
@@ -430,14 +539,20 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
         )
 
         paddle_model = Qwen3MoeForCausalLM.from_pretrained(
-            self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            self.torch_model_path,
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
         )
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
         self.assertTrue(
             np.allclose(
-                paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                paddle_logit.detach()
+                .cpu()
+                .reshape([-1])[:9]
+                .astype("float32")
+                .numpy(),
                 torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
                 atol=1e-2,
                 rtol=1e-2,
@@ -447,7 +562,6 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
     @require_package("transformers", "torch")
     def test_Qwen3Moe_converter_from_local_dir(self):
         with tempfile.TemporaryDirectory() as tempdir:
-
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
@@ -455,27 +569,41 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
             import torch
             from transformers import Qwen3MoeForCausalLM
 
-            torch_model = Qwen3MoeForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model = Qwen3MoeForCausalLM.from_pretrained(
+                self.torch_model_path, torch_dtype=torch.float32
+            )
             torch_model.eval()
             torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+            torch_logit = torch_model(
+                torch.tensor(input_ids), return_dict=False
+            )[0]
 
             # 3. forward the paddle model with fc
-            from paddleformers.transformers import Qwen3MoeConfig
             from paddleformers.transformers import (
+                Qwen3MoeConfig,
                 Qwen3MoeForCausalLMDeprecated as Qwen3MoeForCausalLM,
             )
 
             paddle_model = Qwen3MoeForCausalLM.from_pretrained(
-                tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
+                tempdir,
+                dtype="float32",
+                load_checkpoint_format="flex_checkpoint",
             )
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
             self.assertTrue(
                 np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
+                    paddle_logit.detach()
+                    .cpu()
+                    .reshape([-1])[:9]
+                    .astype("float32")
+                    .numpy(),
+                    torch_logit.detach()
+                    .cpu()
+                    .reshape([-1])[:9]
+                    .float()
+                    .numpy(),
                     atol=1e-2,
                     rtol=1e-2,
                 )
@@ -490,12 +618,22 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
                 load_checkpoint_format="flex_checkpoint",
             )
             paddle_model_fused.eval()
-            paddle_fused_logit = paddle_model_fused(paddle.to_tensor(input_ids))[0]
+            paddle_fused_logit = paddle_model_fused(
+                paddle.to_tensor(input_ids)
+            )[0]
 
             self.assertTrue(
                 np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    paddle_fused_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    paddle_logit.detach()
+                    .cpu()
+                    .reshape([-1])[:9]
+                    .astype("float32")
+                    .numpy(),
+                    paddle_fused_logit.detach()
+                    .cpu()
+                    .reshape([-1])[:9]
+                    .astype("float32")
+                    .numpy(),
                     atol=1e-2,
                     rtol=1e-2,
                 )

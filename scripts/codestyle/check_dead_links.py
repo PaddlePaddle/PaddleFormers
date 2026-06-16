@@ -30,7 +30,9 @@ def get_repo_root(file_path):
 
 def find_dead_links(directory):
     # 正则表达式，用于匹配Markdown和reStructuredText中的链接
-    markdown_link_pattern = r"\[([^\[\]]+)\]\(([^)]+)\)"  # 修改正则表达式以捕获链接文本
+    markdown_link_pattern = (
+        r"\[([^\[\]]+)\]\(([^)]+)\)"  # 修改正则表达式以捕获链接文本
+    )
     rst_link_pattern = r"``([^`]+) <([^>]+)>`_"  # reStructuredText链接
     dead_links = []
 
@@ -45,7 +47,9 @@ def find_dead_links(directory):
                         content = f.read()
 
                         # 查找Markdown链接
-                        markdown_matches = re.findall(markdown_link_pattern, content)
+                        markdown_matches = re.findall(
+                            markdown_link_pattern, content
+                        )
                         for link_text, match in markdown_matches:
                             if match.startswith(("http:", "https:")):
                                 # 忽略外部链接
@@ -53,17 +57,36 @@ def find_dead_links(directory):
                             elif "#" in match:
                                 # 这是一个锚点链接，忽略文件系统检查
                                 continue
-                            abs_path = os.path.abspath(os.path.join(os.path.dirname(file_path), match))
+                            abs_path = os.path.abspath(
+                                os.path.join(os.path.dirname(file_path), match)
+                            )
                             if not os.path.exists(abs_path):
-                                dead_links.append((file_path, link_text, "Markdown Link: " + abs_path))
+                                dead_links.append(
+                                    (
+                                        file_path,
+                                        link_text,
+                                        "Markdown Link: " + abs_path,
+                                    )
+                                )
 
                         # 查找reStructuredText链接
                         rst_matches = re.findall(rst_link_pattern, content)
                         for text, url in rst_matches:
                             if not url.startswith(("http:", "https:")):
-                                abs_path = os.path.abspath(os.path.join(os.path.dirname(file_path), url))
+                                abs_path = os.path.abspath(
+                                    os.path.join(
+                                        os.path.dirname(file_path), url
+                                    )
+                                )
                                 if not os.path.exists(abs_path):
-                                    dead_links.append((file_path, text, "reStructuredText Link: " + abs_path))
+                                    dead_links.append(
+                                        (
+                                            file_path,
+                                            text,
+                                            "reStructuredText Link: "
+                                            + abs_path,
+                                        )
+                                    )
 
                 except Exception as e:
                     print(f"Error reading {file_path}: {e}")
@@ -88,7 +111,9 @@ def create_symlinks(root_dir, src_dir, tgt_dir, file_extension=".md"):
     existing_tgt_files = set()
     for root, dirs, files in os.walk(tgt_dir):
         for file in files:
-            existing_tgt_files.add(os.path.relpath(os.path.join(root, file), tgt_dir))
+            existing_tgt_files.add(
+                os.path.relpath(os.path.join(root, file), tgt_dir)
+            )
 
     # Ensure the target directory exists
     os.makedirs(tgt_dir, exist_ok=True)
@@ -105,13 +130,17 @@ def create_symlinks(root_dir, src_dir, tgt_dir, file_extension=".md"):
         for file in files:
             if file.endswith(file_extension):
                 src_file_path = os.path.join(root, file)
-                relative_src_file_path = os.path.relpath(src_file_path, tgt_path)
+                relative_src_file_path = os.path.relpath(
+                    src_file_path, tgt_path
+                )
                 tgt_file_path = os.path.join(tgt_path, file)
 
                 os.makedirs(tgt_path, exist_ok=True)
 
                 # If the target file already exists and is a symlink, delete it first
-                if os.path.exists(tgt_file_path) and os.path.islink(tgt_file_path):
+                if os.path.exists(tgt_file_path) and os.path.islink(
+                    tgt_file_path
+                ):
                     existing_link_target = os.readlink(tgt_file_path)
                     if existing_link_target != relative_src_file_path:
                         os.unlink(tgt_file_path)
@@ -123,22 +152,30 @@ def create_symlinks(root_dir, src_dir, tgt_dir, file_extension=".md"):
                     os.symlink(relative_src_file_path, tgt_file_path)
                     count += 1
                 else:
-                    print(f"File already exists: {tgt_file_path}. Please remove it from {tgt_dir} and try again.")
+                    print(
+                        f"File already exists: {tgt_file_path}. Please remove it from {tgt_dir} and try again."
+                    )
                     sys.exit(1)
 
                 # Remove this processed file from the existing tgt files
-                existing_tgt_files.discard(os.path.relpath(tgt_file_path, tgt_dir))
+                existing_tgt_files.discard(
+                    os.path.relpath(tgt_file_path, tgt_dir)
+                )
 
     # Check for remaining files in tgt (i.e., files that exist in tgt but not found in src)
     for file in existing_tgt_files:
-        print(f"Warning: File exists in {tgt_dir} but not found in {src_dir}: {file}")
+        print(
+            f"Warning: File exists in {tgt_dir} but not found in {src_dir}: {file}"
+        )
 
     return count
 
 
 def process_file(file_path):
     # Default synchronization of the 'llm' and 'docs/zh/llm' folders
-    count = create_symlinks(file_path, "llm", "docs/zh/llm", file_extension=".md")
+    count = create_symlinks(
+        file_path, "llm", "docs/zh/llm", file_extension=".md"
+    )
     if count > 0:
         print("New files were added to docs/zh/llm. Please check them.")
         sys.exit(1)
@@ -147,7 +184,14 @@ def process_file(file_path):
     if len(dead_links) > 0:
         print("Dead links found in", file_path)
         for link in dead_links:
-            print("file path:", link[0], "- link text:", link[1], "- deal link:", link[2])
+            print(
+                "file path:",
+                link[0],
+                "- link text:",
+                link[1],
+                "- deal link:",
+                link[2],
+            )
         print("Please check the above dead links and fix them.")
         sys.exit(1)
 

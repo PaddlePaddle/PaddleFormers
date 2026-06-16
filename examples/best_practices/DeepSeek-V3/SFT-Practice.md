@@ -61,7 +61,7 @@ mpirun bash run_dsv3_4k.sh
 ##### 实验配置
 |机器数|seq_len|sharding|tp|sp|pp|ep|tokens/s/card|数据来源|
 |-|-|-|-|-|-|-|-|-|
-|16机|4K|16|1|fasle|8|16|203|自测|
+|16机|4K|16|1|false|8|16|203|自测|
 |16机|32K|2|8|true|8|16|182|自测|
 |16机|128K|2|8|true|8|16|124|自测|
 

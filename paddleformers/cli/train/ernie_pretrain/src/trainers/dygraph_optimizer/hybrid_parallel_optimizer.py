@@ -27,7 +27,9 @@ from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.hybrid_parallel_
 from paddle.distributed.fleet.utils import timer_helper as timer
 from paddle.distributed.fleet.utils.hybrid_parallel_util import unwrap_optimizer
 from paddle.distributed.fleet.utils.log_util import logger
-from paddle.distributed.fleet.utils.mix_precision_utils import MixPrecisionOptimizer
+from paddle.distributed.fleet.utils.mix_precision_utils import (
+    MixPrecisionOptimizer,
+)
 from paddle.framework import core
 from paddle.nn import ClipGradByGlobalNorm, clip
 
@@ -40,12 +42,19 @@ class HybridParallelClipGrad:
         self._hcg = hcg
         self.not_sharding_stage1 = True
         self.moe_sharding_group = None
-        if hasattr(hcg, "get_moe_sharding_parallel_world_size") and hcg.get_moe_sharding_parallel_world_size() > 0:
+        if (
+            hasattr(hcg, "get_moe_sharding_parallel_world_size")
+            and hcg.get_moe_sharding_parallel_world_size() > 0
+        ):
             # hybrid expert parallel
             self.moe_group = hcg.get_expert_parallel_group()
             self.moe_sharding_group = hcg.get_moe_sharding_parallel_group()
         else:
-            self.moe_group = hcg.get_data_parallel_group() if hcg.get_data_parallel_world_size() else None
+            self.moe_group = (
+                hcg.get_data_parallel_group()
+                if hcg.get_data_parallel_world_size()
+                else None
+            )
         self.stat = {}
         self._timers = timers
         self.processed_steps = 0
@@ -170,7 +179,8 @@ class HybridParallelClipGrad:
             sum_square = clip._squared_l2_norm(merge_grad)
 
             not_shared_enable = (not hasattr(p, "is_firstly_shared")) or (
-                hasattr(p, "is_firstly_shared") and getattr(p, "is_firstly_shared", True)
+                hasattr(p, "is_firstly_shared")
+                and getattr(p, "is_firstly_shared", True)
             )
 
             if not_shared_enable:
@@ -198,9 +208,9 @@ class HybridParallelClipGrad:
                     elif g.dtype == paddle.float32:
                         sum_square_dist_fp32.append(sum_square)
                 else:
-                    assert not getattr(
-                        p, "no_sync", False
-                    ), f"moe param should be distributed, got: {p.name}, shape={p.shape}"
+                    assert not getattr(p, "no_sync", False), (
+                        f"moe param should be distributed, got: {p.name}, shape={p.shape}"
+                    )
                     if g.dtype == paddle.float16:
                         sum_square_not_dist_fp16.append(sum_square)
                     if g.dtype == paddle.bfloat16:
@@ -208,7 +218,9 @@ class HybridParallelClipGrad:
                     elif g.dtype == paddle.float32:
                         sum_square_not_dist_fp32.append(sum_square)
             else:
-                assert not getattr(p, "no_sync", False), "moe don't know share param"
+                assert not getattr(p, "no_sync", False), (
+                    "moe don't know share param"
+                )
 
         def add_n_list(tensor_list):
             if not tensor_list:
@@ -254,14 +266,28 @@ class HybridParallelClipGrad:
             sum_square_not_dist_fp32,
         )
 
-        global_norm_var_dist_moe = global_norm_dist_moe_fp16 + global_norm_dist_moe_bf16 + global_norm_dist_moe_fp32
-
-        global_norm_var_not_dist_moe = (
-            global_norm_not_dist_moe_fp16 + global_norm_not_dist_moe_bf16 + global_norm_not_dist_moe_fp32
+        global_norm_var_dist_moe = (
+            global_norm_dist_moe_fp16
+            + global_norm_dist_moe_bf16
+            + global_norm_dist_moe_fp32
         )
 
-        global_norm_var_dist = global_norm_dist_fp16 + global_norm_dist_bf16 + global_norm_dist_fp32
-        global_norm_var_not_dist = global_norm_not_dist_fp16 + global_norm_not_dist_bf16 + global_norm_not_dist_fp32
+        global_norm_var_not_dist_moe = (
+            global_norm_not_dist_moe_fp16
+            + global_norm_not_dist_moe_bf16
+            + global_norm_not_dist_moe_fp32
+        )
+
+        global_norm_var_dist = (
+            global_norm_dist_fp16
+            + global_norm_dist_bf16
+            + global_norm_dist_fp32
+        )
+        global_norm_var_not_dist = (
+            global_norm_not_dist_fp16
+            + global_norm_not_dist_bf16
+            + global_norm_not_dist_fp32
+        )
         result = self._comm_and_clip(
             params_grads,
             global_norm_var_dist,
@@ -282,7 +308,6 @@ class HybridParallelClipGrad:
         global_norm_var_dist_moe,
         global_norm_var_not_dist_moe,
     ):
-
         self._global_norm(
             global_norm_var_dist,
             global_norm_var_not_dist,
@@ -291,9 +316,14 @@ class HybridParallelClipGrad:
         )
 
         global_norm_var_fp32 = paddle.sqrt(
-            global_norm_var_dist + global_norm_var_not_dist + global_norm_var_dist_moe + global_norm_var_not_dist_moe
+            global_norm_var_dist
+            + global_norm_var_not_dist
+            + global_norm_var_dist_moe
+            + global_norm_var_not_dist_moe
         )
-        self.stat["global_grad_norm"] = global_norm_var_fp32.astype("float32").item()
+        self.stat["global_grad_norm"] = global_norm_var_fp32.astype(
+            "float32"
+        ).item()
 
         max_global_norm = paddle.full(
             shape=[],
@@ -308,8 +338,11 @@ class HybridParallelClipGrad:
         clip_var_fp16 = paddle.cast(clip_var, paddle.float16)
 
         if (
-            not isinstance(paddle.framework._current_expected_place(), paddle.CustomPlace)
-            or paddle.framework._current_expected_place().get_device_type() == "npu"
+            not isinstance(
+                paddle.framework._current_expected_place(), paddle.CustomPlace
+            )
+            or paddle.framework._current_expected_place().get_device_type()
+            == "npu"
         ):
             clip_var_bf16 = paddle.cast(clip_var, paddle.bfloat16)
         for p, g in params_grads:
@@ -337,14 +370,23 @@ class HybridParallelClipGrad:
 class HybridParallelOptimizer(HPBase):
     def __init__(self, optimizer, hcg, strategy):
         if hcg.get_moe_sharding_parallel_world_size() > 0:
-            split_param = strategy.hybrid_configs["sharding_configs"].split_param
+            split_param = strategy.hybrid_configs[
+                "sharding_configs"
+            ].split_param
             assert (
-                hcg.get_sharding_parallel_world_size() > 1 and split_param is True
+                hcg.get_sharding_parallel_world_size() > 1
+                and split_param is True
             ), "Hybrid expert parallel only supports ShardingV2 now"
 
         if hcg.get_sharding_parallel_world_size() > 1:
-            split_param = strategy.hybrid_configs["sharding_configs"].split_param
-            ShardingOptimizer = DygraphShardingOptimizerV2 if split_param else DygraphShardingOptimizer
+            split_param = strategy.hybrid_configs[
+                "sharding_configs"
+            ].split_param
+            ShardingOptimizer = (
+                DygraphShardingOptimizerV2
+                if split_param
+                else DygraphShardingOptimizer
+            )
             optimizer = ShardingOptimizer(optimizer, hcg)
 
         self._enable_timer = strategy.hybrid_configs["enable_optimizer_timer"]
@@ -360,7 +402,9 @@ class HybridParallelOptimizer(HPBase):
         self._strategy = strategy
         self._hcg = hcg
 
-        self._use_dp_mode = self._hcg.get_parallel_mode() == ParallelMode.DATA_PARALLEL
+        self._use_dp_mode = (
+            self._hcg.get_parallel_mode() == ParallelMode.DATA_PARALLEL
+        )
 
         self._need_dp = self._hcg.get_data_parallel_world_size() > 1
 
@@ -370,7 +414,10 @@ class HybridParallelOptimizer(HPBase):
 
         self._sep_enable = self._hcg.get_sep_parallel_world_size() > 1
 
-        if isinstance(self._inner_opt._grad_clip, ClipGradByGlobalNorm) and not self._use_dp_mode:
+        if (
+            isinstance(self._inner_opt._grad_clip, ClipGradByGlobalNorm)
+            and not self._use_dp_mode
+        ):
             logger.warning(
                 "While using ClipGradByGlobalNorm in TensorParallel, PipelineParallel "
                 "or Sharding, the grad clip of original optimizer will be changed."
@@ -388,13 +435,28 @@ class HybridParallelOptimizer(HPBase):
             if (
                 inner_opt._parameter_list
                 and not isinstance(inner_opt._parameter_list[0], dict)
-                and len([p for p in inner_opt._parameter_list if hasattr(p, "main_grad")]) > 0
+                and len(
+                    [
+                        p
+                        for p in inner_opt._parameter_list
+                        if hasattr(p, "main_grad")
+                    ]
+                )
+                > 0
             ):
-                inner_opt._grad_clip = HybridParallelClipGrad(inner_opt._grad_clip, hcg, self._timers)
+                inner_opt._grad_clip = HybridParallelClipGrad(
+                    inner_opt._grad_clip, hcg, self._timers
+                )
             else:
-                inner_opt._grad_clip = HybridParallelClipGrad(inner_opt._grad_clip, hcg, self._timers)
-                if inner_opt._parameter_list and isinstance(inner_opt._parameter_list[0], dict):
+                inner_opt._grad_clip = HybridParallelClipGrad(
+                    inner_opt._grad_clip, hcg, self._timers
+                )
+                if inner_opt._parameter_list and isinstance(
+                    inner_opt._parameter_list[0], dict
+                ):
                     for item in inner_opt._param_groups:
                         if "grad_clip" in item.keys():
-                            item["grad_clip"] = HybridParallelClipGrad(inner_opt._grad_clip, hcg, self._timers)
+                            item["grad_clip"] = HybridParallelClipGrad(
+                                inner_opt._grad_clip, hcg, self._timers
+                            )
         self.processed_steps = 0

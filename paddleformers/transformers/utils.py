@@ -26,7 +26,7 @@ import warnings
 from contextlib import ExitStack
 from io import StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING, ContextManager, List, Optional, Type, Union
+from typing import TYPE_CHECKING, ContextManager, Optional
 
 from filelock import FileLock
 
@@ -41,9 +41,10 @@ from ..utils.downloader import (
 )
 
 if TYPE_CHECKING:
+    import numpy as np
+
     from paddleformers.transformers import PretrainedModel
 
-import numpy as np
 import paddle
 import tqdm
 from huggingface_hub import hf_hub_download, try_to_load_from_cache
@@ -62,7 +63,9 @@ from .download_utils import DownloadSource
 HUGGINGFACE_CO_RESOLVE_ENDPOINT = "https://huggingface.co"
 
 
-def convert_ndarray_dtype(np_array: np.ndarray, target_dtype: str) -> np.ndarray:
+def convert_ndarray_dtype(
+    np_array: np.ndarray, target_dtype: str
+) -> np.ndarray:
     """convert ndarray
 
     Args:
@@ -90,11 +93,13 @@ def convert_ndarray_dtype(np_array: np.ndarray, target_dtype: str) -> np.ndarray
     return np_array.astype(target_dtype)
 
 
-def convert_to_dict_message(conversation: List[List[str]]):
+def convert_to_dict_message(conversation: list[list[str]]):
     """Convert the list of chat messages to a role dictionary chat messages."""
     conversations = []
     for index, item in enumerate(conversation):
-        assert 1 <= len(item) <= 2, "Each Rounds in conversation should have 1 or 2 elements."
+        assert 1 <= len(item) <= 2, (
+            "Each Rounds in conversation should have 1 or 2 elements."
+        )
         if isinstance(item[0], str):
             conversations.append({"role": "user", "content": item[0]})
             if len(item) == 2 and isinstance(item[1], str):
@@ -109,7 +114,9 @@ def convert_to_dict_message(conversation: List[List[str]]):
     return conversations
 
 
-def get_scale_by_dtype(dtype: str = None, return_positive: bool = True) -> float:
+def get_scale_by_dtype(
+    dtype: str | None = None, return_positive: bool = True
+) -> float:
     """get scale value by dtype
 
     Args:
@@ -139,13 +146,21 @@ def fn_args_to_dict(func, *args, **kwargs):
     dict mapping between argument names and keys.
     """
     if hasattr(inspect, "getfullargspec"):
-        (spec_args, spec_varargs, spec_varkw, spec_defaults, _, _, _) = inspect.getfullargspec(func)
+        (spec_args, spec_varargs, spec_varkw, spec_defaults, _, _, _) = (
+            inspect.getfullargspec(func)
+        )
     else:
-        (spec_args, spec_varargs, spec_varkw, spec_defaults) = inspect.getargspec(func)
+        (spec_args, spec_varargs, spec_varkw, spec_defaults) = (
+            inspect.getargspec(func)
+        )
     # add positional argument values
     init_dict = dict(zip(spec_args, args))
     # add default argument values
-    kwargs_dict = dict(zip(spec_args[-len(spec_defaults) :], spec_defaults)) if spec_defaults else {}
+    kwargs_dict = (
+        dict(zip(spec_args[-len(spec_defaults) :], spec_defaults))
+        if spec_defaults
+        else {}
+    )
     for k in list(kwargs_dict.keys()):
         if k in init_dict:
             kwargs_dict.pop(k)
@@ -164,15 +179,17 @@ def adapt_stale_fwd_patch(self, name, value):
         # NOTE(guosheng): In dygraph to static, `layer.forward` would be patched
         # by an instance of `StaticFunction`. And use string compare to avoid to
         # import fluid.
-        if type(value).__name__.endswith("StaticFunction") or self.forward.__class__.__name__.endswith(
+        if type(value).__name__.endswith(
             "StaticFunction"
-        ):
+        ) or self.forward.__class__.__name__.endswith("StaticFunction"):
             return value
-        if type(value).__name__.endswith("WeakMethod") or self.forward.__class__.__name__.endswith("WeakMethod"):
+        if type(value).__name__.endswith(
+            "WeakMethod"
+        ) or self.forward.__class__.__name__.endswith("WeakMethod"):
             return value
 
         # NOTE(changwenbin & zhoukangkang):
-        # When use model = paddle.incubate.jit.inference(model), it reportes errors, we fix it here.
+        # When use model = paddle.incubate.jit.inference(model), it reports errors, we fix it here.
         # is_inference_mode API is only available in PaddlePaddle develop，so we add a try except.
         from paddle.incubate.jit import is_inference_mode
 
@@ -189,13 +206,26 @@ def adapt_stale_fwd_patch(self, name, value):
                 _,
                 _,
             ) = inspect.getfullargspec(value)
-            (spec_args, spec_varargs, spec_varkw, spec_defaults, _, _, _) = inspect.getfullargspec(self.forward)
+            (spec_args, spec_varargs, spec_varkw, spec_defaults, _, _, _) = (
+                inspect.getfullargspec(self.forward)
+            )
         else:
-            (patch_spec_args, patch_spec_varargs, patch_spec_varkw, patch_spec_defaults) = inspect.getargspec(value)
-            (spec_args, spec_varargs, spec_varkw, spec_defaults) = inspect.getargspec(self.forward)
+            (
+                patch_spec_args,
+                patch_spec_varargs,
+                patch_spec_varkw,
+                patch_spec_defaults,
+            ) = inspect.getargspec(value)
+            (spec_args, spec_varargs, spec_varkw, spec_defaults) = (
+                inspect.getargspec(self.forward)
+            )
         new_args = [
             arg
-            for arg in ("output_hidden_states", "output_attentions", "return_dict")
+            for arg in (
+                "output_hidden_states",
+                "output_attentions",
+                "return_dict",
+            )
             if arg not in patch_spec_args and arg in spec_args
         ]
 
@@ -254,9 +284,15 @@ class InitTrackerMeta(type(Layer)):
         # If attrs has `__init__`, wrap it using accessible `_pre_init, _post_init`.
         # Otherwise, no need to wrap again since the super cls has been wrapped.
         # TODO: remove reduplicated tracker if using super cls `__init__`
-        pre_init_func = getattr(cls, "_pre_init", None) if "__init__" in attrs else None
-        post_init_func = getattr(cls, "_post_init", None) if "__init__" in attrs else None
-        cls.__init__ = InitTrackerMeta.init_and_track_conf(init_func, pre_init_func, post_init_func)
+        pre_init_func = (
+            getattr(cls, "_pre_init", None) if "__init__" in attrs else None
+        )
+        post_init_func = (
+            getattr(cls, "_post_init", None) if "__init__" in attrs else None
+        )
+        cls.__init__ = InitTrackerMeta.init_and_track_conf(
+            init_func, pre_init_func, post_init_func
+        )
         super(InitTrackerMeta, cls).__init__(name, bases, attrs)
 
     @staticmethod
@@ -319,7 +355,9 @@ def param_in_func(func, param_field: str) -> bool:
     return param_field in result[0]
 
 
-def resolve_cache_dir(download_hub: DownloadSource = None, cache_dir: Optional[str] = None) -> str:
+def resolve_cache_dir(
+    download_hub: DownloadSource = None, cache_dir: Optional[str] = None
+) -> str:
     """resolve cache dir for PretrainedModel and PretrainedConfig
 
     Args:
@@ -337,7 +375,7 @@ def resolve_cache_dir(download_hub: DownloadSource = None, cache_dir: Optional[s
     return MODEL_HOME
 
 
-def find_transformer_model_type(model_class: Type) -> str:
+def find_transformer_model_type(model_class: type) -> str:
     """get the model type from module name,
         eg:
             BertModel -> bert,
@@ -367,7 +405,9 @@ def find_transformer_model_type(model_class: Type) -> str:
     return tokens[2]
 
 
-def find_transformer_model_class_by_name(model_name: str) -> Optional[Type[PretrainedModel]]:
+def find_transformer_model_class_by_name(
+    model_name: str,
+) -> Optional[type[PretrainedModel]]:
     """find transformer model_class by name
 
     Args:
@@ -395,7 +435,7 @@ def find_transformer_model_class_by_name(model_name: str) -> Optional[Type[Pretr
     return None
 
 
-def convert_file_size_to_int(size: Union[int, str]):
+def convert_file_size_to_int(size: int | str):
     """
     Converts a size expressed as a string with digits an unit (like `"5MB"`) to an integer (in bytes).
     Args:
@@ -423,7 +463,9 @@ def convert_file_size_to_int(size: Union[int, str]):
     if size.upper().endswith("KB"):
         int_size = int(size[:-2]) * (10**3)
         return int_size // 8 if size.endswith("b") else int_size
-    raise ValueError("`size` is not in a valid format. Use an integer followed by the unit, e.g., '5GB'.")
+    raise ValueError(
+        "`size` is not in a valid format. Use an integer followed by the unit, e.g., '5GB'."
+    )
 
 
 def paddleformers_hub_download(
@@ -431,13 +473,15 @@ def paddleformers_hub_download(
     filename: str,
     *,
     subfolder: Optional[str] = None,
-    cache_dir: Union[str, Path, None] = None,
-    pretrained_model_name_or_path: str = None,
+    cache_dir: str | Path | None = None,
+    pretrained_model_name_or_path: str | None = None,
 ) -> str:
     if subfolder is None:
         subfolder = ""
     if pretrained_model_name_or_path is not None and is_url(repo_id):
-        cache_dir = os.path.join(cache_dir, pretrained_model_name_or_path, subfolder)
+        cache_dir = os.path.join(
+            cache_dir, pretrained_model_name_or_path, subfolder
+        )
     else:
         cache_dir = os.path.join(cache_dir, repo_id, subfolder)
 
@@ -453,18 +497,26 @@ def paddleformers_hub_download(
         # check whether the target file exist in the community bos server
         if url_file_exists(repo_id):
             logger.info(f"Downloading {repo_id}")
-            weight_file_path = get_path_from_url_with_filelock(repo_id, cache_dir)
+            weight_file_path = get_path_from_url_with_filelock(
+                repo_id, cache_dir
+            )
             # # check the downloaded weight file and registered weight file name
             download_check(repo_id, "paddleformers_hub_download")
 
             # make sure that model states names: model_states.pdparams
-            new_weight_file_path = os.path.join(os.path.split(weight_file_path)[0], filename)
+            new_weight_file_path = os.path.join(
+                os.path.split(weight_file_path)[0], filename
+            )
 
             if weight_file_path != new_weight_file_path:
                 # create lock file, which is empty, under the `LOCK_FILE_HOME` directory.
-                lock_file_name = hashlib.md5((repo_id + cache_dir).encode("utf-8")).hexdigest()
+                lock_file_name = hashlib.md5(
+                    (repo_id + cache_dir).encode("utf-8")
+                ).hexdigest()
                 # create `.lock` private directory in the cache dir
-                lock_file_path = os.path.join(cache_dir, ".lock", lock_file_name)
+                lock_file_path = os.path.join(
+                    cache_dir, ".lock", lock_file_name
+                )
 
                 with FileLock(lock_file_path):
                     if not os.path.exists(new_weight_file_path):
@@ -486,7 +538,9 @@ def paddleformers_hub_download(
     # check whether the target file exist in the community bos server
     if url_file_exists(community_model_file_path):
         logger.info(f"Downloading {community_model_file_path}")
-        weight_file_path = get_path_from_url_with_filelock(community_model_file_path, cache_dir)
+        weight_file_path = get_path_from_url_with_filelock(
+            community_model_file_path, cache_dir
+        )
         # # check the downloaded weight file and registered weight file name
         download_check(community_model_file_path, "paddleformers_hub_download")
         return weight_file_path
@@ -499,9 +553,9 @@ _CACHED_NO_EXIST = object()
 
 
 def cached_file(
-    path_or_repo_id: Union[str, os.PathLike],
+    path_or_repo_id: str | os.PathLike,
     filename: str,
-    cache_dir: Optional[Union[str, os.PathLike]] = None,
+    cache_dir: Optional[str | os.PathLike] = None,
     subfolder: str = "",
     download_hub: DownloadSource = None,
     _raise_exceptions_for_missing_entries: bool = True,
@@ -539,10 +593,12 @@ def cached_file(
     path_or_repo_id = str(path_or_repo_id)
     full_filename = os.path.join(subfolder, filename)
     if os.path.isdir(path_or_repo_id):
-        resolved_file = os.path.join(os.path.join(path_or_repo_id, subfolder), filename)
+        resolved_file = os.path.join(
+            os.path.join(path_or_repo_id, subfolder), filename
+        )
         if not os.path.isfile(resolved_file):
             if _raise_exceptions_for_missing_entries:
-                raise EnvironmentError(
+                raise OSError(
                     f"{path_or_repo_id} does not appear to have a file named {full_filename}. Checkout "
                     f"'https://huggingface.co/{path_or_repo_id}/' for available files."
                 )
@@ -556,7 +612,10 @@ def cached_file(
     if download_hub == DownloadSource.AISTUDIO:
         try:
             resolved_file = aistudio_download(
-                repo_id=path_or_repo_id, filename=filename, subfolder=subfolder, cache_dir=cache_dir
+                repo_id=path_or_repo_id,
+                filename=filename,
+                subfolder=subfolder,
+                cache_dir=cache_dir,
             )
         except:
             resolved_file = None
@@ -575,13 +634,15 @@ def cached_file(
             )
         except HTTPError as err:
             # First we try to see if we have a cached version (not up to date):
-            resolved_file = try_to_load_from_cache(path_or_repo_id, full_filename, cache_dir=cache_dir)
+            resolved_file = try_to_load_from_cache(
+                path_or_repo_id, full_filename, cache_dir=cache_dir
+            )
             if resolved_file is not None and resolved_file != _CACHED_NO_EXIST:
                 return resolved_file
             if not _raise_exceptions_for_connection_errors:
                 return None
 
-            raise EnvironmentError(
+            raise OSError(
                 f"There was a specific connection error when trying to load {path_or_repo_id}:\n{err}"
             )
 
@@ -589,23 +650,24 @@ def cached_file(
 
 
 def cached_file_for_hf_hub(
-    path_or_repo_id: Union[str, os.PathLike],
+    path_or_repo_id: str | os.PathLike,
     filename: str,
-    cache_dir: Optional[Union[str, os.PathLike]] = None,
+    cache_dir: Optional[str | os.PathLike] = None,
     subfolder: str = "",
     _raise_exceptions_for_missing_entries: bool = True,
 ):
-
     if subfolder is None:
         subfolder = ""
 
     path_or_repo_id = str(path_or_repo_id)
     full_filename = os.path.join(subfolder, filename)
     if os.path.isdir(path_or_repo_id):
-        resolved_file = os.path.join(os.path.join(path_or_repo_id, subfolder), filename)
+        resolved_file = os.path.join(
+            os.path.join(path_or_repo_id, subfolder), filename
+        )
         if not os.path.isfile(resolved_file):
             if _raise_exceptions_for_missing_entries:
-                raise EnvironmentError(
+                raise OSError(
                     f"{path_or_repo_id} does not appear to have a file named {full_filename}. Checkout "
                     f"'https://huggingface.co/{path_or_repo_id}' for available files."
                 )
@@ -639,7 +701,7 @@ def cached_file_for_hf_hub(
             "`huggingface-cli login` and pass `use_auth_token=True`.
             """
         if _raise_exceptions_for_missing_entries:
-            raise EnvironmentError(msg)
+            raise OSError(msg)
         else:
             logger.info(msg)
             return None
@@ -664,7 +726,9 @@ def get_checkpoint_shard_files(
     import json
 
     if not os.path.isfile(index_filename):
-        raise ValueError(f"Can't find a checkpoint index ({index_filename}) in {pretrained_model_name_or_path}.")
+        raise ValueError(
+            f"Can't find a checkpoint index ({index_filename}) in {pretrained_model_name_or_path}."
+        )
 
     with open(index_filename, "r") as f:
         index = json.loads(f.read())
@@ -682,7 +746,10 @@ def get_checkpoint_shard_files(
 
     # First, let's deal with local folder.
     if os.path.isdir(pretrained_model_name_or_path):
-        shard_filenames = [os.path.join(pretrained_model_name_or_path, subfolder, f) for f in shard_filenames]
+        shard_filenames = [
+            os.path.join(pretrained_model_name_or_path, subfolder, f)
+            for f in shard_filenames
+        ]
         return shard_filenames, sharded_metadata
 
     # At this stage pretrained_model_name_or_path is a model identifier on the Hub
@@ -696,7 +763,11 @@ def get_checkpoint_shard_files(
     )
 
     show_progress_bar = last_shard is None
-    for shard_filename in tqdm.tqdm(shard_filenames, desc="Downloading shards", disable=not show_progress_bar):
+    for shard_filename in tqdm.tqdm(
+        shard_filenames,
+        desc="Downloading shards",
+        disable=not show_progress_bar,
+    ):
         try:
             cached_filename = resolve_file_path(
                 pretrained_model_name_or_path,
@@ -705,18 +776,18 @@ def get_checkpoint_shard_files(
                 cache_dir=cache_dir,
                 download_hub=download_hub,
             )
-            assert (
-                cached_filename is not None
-            ), f"please make sure {shard_filename} under {pretrained_model_name_or_path}"
+            assert cached_filename is not None, (
+                f"please make sure {shard_filename} under {pretrained_model_name_or_path}"
+            )
         # We have already dealt with RepositoryNotFoundError and RevisionNotFoundError when getting the index, so
         # we don't have to catch them here.
         except EntryNotFoundError:
-            raise EnvironmentError(
+            raise OSError(
                 f"{pretrained_model_name_or_path} does not appear to have a file named {shard_filename} which is "
                 "required according to the checkpoint index."
             )
         except HTTPError:
-            raise EnvironmentError(
+            raise OSError(
                 f"We couldn't connect to '{HUGGINGFACE_CO_RESOLVE_ENDPOINT}' to load {shard_filename}. You should try"
                 " again after checking your internet connection."
             )
@@ -736,7 +807,7 @@ def device_guard(device="cpu", dev_id=0):
     if device == "cpu":
         paddle.set_device(device)
     elif device in ["gpu", "xpu", "npu"]:
-        paddle.set_device("{}:{}".format(device, dev_id))
+        paddle.set_device(f"{device}:{dev_id}")
     try:
         yield
     finally:
@@ -768,7 +839,9 @@ def paddleformers_load(path, map_location="cpu"):
 
                 state_dict = paddle.load(path, return_numpy=True)
                 # Hack for zero copy for saving loading time. for paddle.load there need copy to create paddle.Tensor
-                return _parse_every_object(state_dict, _transformed_from_lodtensor, _ndarray_to_tensor)
+                return _parse_every_object(
+                    state_dict, _transformed_from_lodtensor, _ndarray_to_tensor
+                )
 
             else:
                 return paddle.load(path)
@@ -784,7 +857,7 @@ class ContextManagers:
     in the `fastcore` library.
     """
 
-    def __init__(self, context_managers: List[ContextManager]):
+    def __init__(self, context_managers: list[ContextManager]):
         self.context_managers = context_managers
         self.stack = ExitStack()
 
@@ -848,7 +921,12 @@ def dtype_byte_size(dtype):
     """
     if str(dtype) in {"paddle.bool", "bool"}:
         return 1 / 8
-    if str(dtype) in {"paddle.float8_e4m3fn", "paddle.float8_e5m2", "float8_e4m3fn", "float8_e5m2"}:
+    if str(dtype) in {
+        "paddle.float8_e4m3fn",
+        "paddle.float8_e5m2",
+        "float8_e4m3fn",
+        "float8_e5m2",
+    }:
         return 1
     bit_search = re.search(r"[^\d](\d+)$", str(dtype))
     if bit_search is None:
@@ -858,7 +936,7 @@ def dtype_byte_size(dtype):
 
 
 def apply_print_resets(buf):
-    return re.sub(r"^.*\r", "", buf, 0, re.M)
+    return re.sub(r"^.*\r", "", buf, 0, re.MULTILINE)
 
 
 class CaptureStd:
@@ -915,14 +993,18 @@ class CaptureStd:
 
         if out:
             self.out_buf = StringIO()
-            self.out = "error: CaptureStd context is unfinished yet, called too early"
+            self.out = (
+                "error: CaptureStd context is unfinished yet, called too early"
+            )
         else:
             self.out_buf = None
             self.out = "not capturing stdout"
 
         if err:
             self.err_buf = StringIO()
-            self.err = "error: CaptureStd context is unfinished yet, called too early"
+            self.err = (
+                "error: CaptureStd context is unfinished yet, called too early"
+            )
         else:
             self.err_buf = None
             self.err = "not capturing stderr"
@@ -962,7 +1044,7 @@ class CaptureStd:
         return msg
 
 
-def caculate_llm_per_token_flops(
+def calculate_llm_per_token_flops(
     hidden_size,
     intermediate_size,
     layer_num,
@@ -971,7 +1053,6 @@ def caculate_llm_per_token_flops(
     recompute=False,
     recompute_granularity=None,
 ):
-
     # TFLOPs formula (from Equation 3 in Section 5.1 of https://arxiv.org/pdf/2104.04473.pdf).
     flops_per_transformer = 0
     flops_recompute_transformer = 0
@@ -985,7 +1066,10 @@ def caculate_llm_per_token_flops(
     flops_core_attn = seq_length**2 * hidden_size * 2
 
     # swiglu, matmul + dot
-    flops_ffn = seq_length * hidden_size * intermediate_size * 3 + seq_length * intermediate_size
+    flops_ffn = (
+        seq_length * hidden_size * intermediate_size * 3
+        + seq_length * intermediate_size
+    )
 
     flops_per_transformer = flops_qkvo_matmul + flops_core_attn + flops_ffn
     if recompute:
@@ -1001,4 +1085,12 @@ def caculate_llm_per_token_flops(
 
     # 2 for mul + add in matmul
     # 1 for forward, 2 for backwards since we caluate gradients for input_x and input_y
-    return 2 * (layer_num * (flops_per_transformer * 3 + flops_recompute_transformer) + 3 * flops_loggits) / seq_length
+    return (
+        2
+        * (
+            layer_num
+            * (flops_per_transformer * 3 + flops_recompute_transformer)
+            + 3 * flops_loggits
+        )
+        / seq_length
+    )

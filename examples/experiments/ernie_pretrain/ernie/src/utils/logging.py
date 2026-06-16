@@ -19,7 +19,9 @@ from pathlib import Path
 from paddleformers.utils.log import logger as paddlenlp_logger
 
 hdl = logging.StreamHandler(sys.stderr)
-formatter = logging.Formatter(fmt="[%(levelname)s] %(asctime)s [%(filename)12s:%(lineno)5d]:    %(message)s")
+formatter = logging.Formatter(
+    fmt="[%(levelname)s] %(asctime)s [%(filename)12s:%(lineno)5d]:    %(message)s"
+)
 hdl.setFormatter(formatter)
 logger = logging.getLogger()
 logger.handlers = [hdl]
@@ -41,7 +43,9 @@ paddlenlp_logger.logger.propagate = True
 def setup_logger_output_file(outputpath, local_rank):
     logdir = Path(outputpath) / "log"
     logdir.mkdir(exist_ok=True)
-    file_hdl = logging.FileHandler(logdir / f"workerlog.{local_rank}", mode="a", encoding="utf-8")
+    file_hdl = logging.FileHandler(
+        logdir / f"workerlog.{local_rank}", mode="a", encoding="utf-8"
+    )
     formatter = logging.Formatter(
         fmt=f"[%(levelname)s] %(asctime)s [%(filename)12s:%(lineno)5d][rank-{local_rank}]:    %(message)s"
     )

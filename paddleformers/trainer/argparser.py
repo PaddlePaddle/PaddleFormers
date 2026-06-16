@@ -20,18 +20,20 @@ import dataclasses
 import json
 import os
 import sys
-from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, ArgumentTypeError
+from argparse import (
+    ArgumentDefaultsHelpFormatter,
+    ArgumentParser,
+    ArgumentTypeError,
+)
+from collections.abc import Iterable
 from copy import copy
 from enum import Enum
 from inspect import isclass
 from pathlib import Path
 from typing import (
     Any,
-    Dict,
-    Iterable,
     NewType,
     Optional,
-    Tuple,
     Union,
     get_args,
     get_type_hints,
@@ -75,7 +77,9 @@ class PdArgumentParser(ArgumentParser):
 
     dataclass_types: Iterable[DataClassType]
 
-    def __init__(self, dataclass_types: Union[DataClassType, Iterable[DataClassType]], **kwargs):
+    def __init__(
+        self, dataclass_types: DataClassType | Iterable[DataClassType], **kwargs
+    ):
         """
         Args:
             dataclass_types:
@@ -94,7 +98,9 @@ class PdArgumentParser(ArgumentParser):
             self._add_dataclass_arguments(dtype)
 
     @staticmethod
-    def _parse_dataclass_field(parser: ArgumentParser, field: dataclasses.Field):
+    def _parse_dataclass_field(
+        parser: ArgumentParser, field: dataclasses.Field
+    ):
         field_name = f"--{field.name}"
         kwargs = field.metadata.copy()
         # field.metadata is not used at all by Data Classes,
@@ -107,12 +113,19 @@ class PdArgumentParser(ArgumentParser):
 
         origin_type = getattr(field.type, "__origin__", field.type)
         if origin_type is Union:
-            if len(field.type.__args__) != 2 or type(None) not in field.type.__args__:
-                raise ValueError("Only `Union[X, NoneType]` (i.e., `Optional[X]`) is allowed for `Union`")
+            if (
+                len(field.type.__args__) != 2
+                or type(None) not in field.type.__args__
+            ):
+                raise ValueError(
+                    "Only `Union[X, NoneType]` (i.e., `Optional[X]`) is allowed for `Union`"
+                )
             if bool not in field.type.__args__:
                 # filter `NoneType` in Union (except for `Union[bool, NoneType]`)
                 field.type = (
-                    field.type.__args__[0] if isinstance(None, field.type.__args__[1]) else field.type.__args__[1]
+                    field.type.__args__[0]
+                    if isinstance(None, field.type.__args__[1])
+                    else field.type.__args__[1]
                 )
                 origin_type = getattr(field.type, "__origin__", field.type)
 
@@ -134,9 +147,16 @@ class PdArgumentParser(ArgumentParser):
 
             # Hack because type=bool in argparse does not behave as we want.
             kwargs["type"] = strtobool
-            if field.type is bool or (field.default is not None and field.default is not dataclasses.MISSING):
+            if field.type is bool or (
+                field.default is not None
+                and field.default is not dataclasses.MISSING
+            ):
                 # Default value is False if we have no default when of type bool.
-                default = False if field.default is dataclasses.MISSING else field.default
+                default = (
+                    False
+                    if field.default is dataclasses.MISSING
+                    else field.default
+                )
                 # This is the value that will get picked if we don't include --field_name in any way
                 kwargs["default"] = default
                 # This tells argparse we accept 0 or 1 value after --field_name
@@ -170,9 +190,16 @@ class PdArgumentParser(ArgumentParser):
         # Order is important for arguments with the same destination!
         # We use a copy of earlier kwargs because the original kwargs have changed a lot before reaching down
         # here and we do not need those changes/additional keys.
-        if field.default is True and (field.type is bool or field.type == Optional[bool]):
+        if field.default is True and (
+            field.type is bool or field.type == Optional[bool]
+        ):
             bool_kwargs["default"] = False
-            parser.add_argument(f"--no_{field.name}", action="store_false", dest=field.name, **bool_kwargs)
+            parser.add_argument(
+                f"--no_{field.name}",
+                action="store_false",
+                dest=field.name,
+                **bool_kwargs,
+            )
 
     def _add_dataclass_arguments(self, dtype: DataClassType):
         if hasattr(dtype, "_argument_group_name"):
@@ -181,7 +208,7 @@ class PdArgumentParser(ArgumentParser):
             parser = self
 
         try:
-            type_hints: Dict[str, type] = get_type_hints(dtype)
+            type_hints: dict[str, type] = get_type_hints(dtype)
         except NameError:
             raise RuntimeError(
                 f"Type resolution failed for f{dtype}. Try declaring the class in global scope or "
@@ -195,8 +222,12 @@ class PdArgumentParser(ArgumentParser):
             self._parse_dataclass_field(parser, field)
 
     def parse_args_into_dataclasses(
-        self, args=None, return_remaining_strings=False, look_for_args_file=True, args_filename=None
-    ) -> Tuple[DataClass, ...]:
+        self,
+        args=None,
+        return_remaining_strings=False,
+        look_for_args_file=True,
+        args_filename=None,
+    ) -> tuple[DataClass, ...]:
         """
         Parse command-line args into instances of the specified dataclass types.
 
@@ -230,13 +261,17 @@ class PdArgumentParser(ArgumentParser):
 
             if args_file.exists():
                 fargs = args_file.read_text().split()
-                args = fargs + args if args is not None else fargs + sys.argv[1:]
+                args = (
+                    fargs + args if args is not None else fargs + sys.argv[1:]
+                )
                 # in case of duplicate arguments the first one has precedence
                 # so we append rather than prepend.
 
         return self.common_parse(args, return_remaining_strings)
 
-    def common_parse(self, args, return_remaining_strings) -> Tuple[DataClass, ...]:
+    def common_parse(
+        self, args, return_remaining_strings
+    ) -> tuple[DataClass, ...]:
         namespace, remaining_args = self.parse_known_args(args=args)
         outputs = []
         for dtype in self.dataclass_types:
@@ -253,7 +288,9 @@ class PdArgumentParser(ArgumentParser):
             return (*outputs, remaining_args)
         else:
             if remaining_args:
-                raise ValueError(f"Some specified arguments are not used by the PdArgumentParser: {remaining_args}")
+                raise ValueError(
+                    f"Some specified arguments are not used by the PdArgumentParser: {remaining_args}"
+                )
 
             return (*outputs,)
 
@@ -272,7 +309,9 @@ class PdArgumentParser(ArgumentParser):
                     json_args.extend([f"--{key}", str(value)])
             return json_args
         else:
-            raise FileNotFoundError(f"The argument file {json_file} does not exist.")
+            raise FileNotFoundError(
+                f"The argument file {json_file} does not exist."
+            )
 
     def read_yaml(self, yaml_file: str) -> list:
         import yaml
@@ -291,9 +330,13 @@ class PdArgumentParser(ArgumentParser):
                     yaml_args.extend([f"--{key}", str(value)])
             return yaml_args
         else:
-            raise FileNotFoundError(f"The argument file {yaml_file} does not exist.")
+            raise FileNotFoundError(
+                f"The argument file {yaml_file} does not exist."
+            )
 
-    def parse_json_file(self, json_file: str, return_remaining_strings=False) -> Tuple[DataClass, ...]:
+    def parse_json_file(
+        self, json_file: str, return_remaining_strings=False
+    ) -> tuple[DataClass, ...]:
         """
         Alternative helper method that does not use `argparse` at all, instead loading a json file and populating the
         dataclass types.
@@ -301,7 +344,9 @@ class PdArgumentParser(ArgumentParser):
         json_args = self.read_json(json_file)
         return self.common_parse(json_args, return_remaining_strings)
 
-    def parse_json_file_and_cmd_lines(self, return_remaining_strings=False) -> Tuple[DataClass, ...]:
+    def parse_json_file_and_cmd_lines(
+        self, return_remaining_strings=False
+    ) -> tuple[DataClass, ...]:
         """
         Extend the functionality of `parse_json_file` to handle command line arguments in addition to loading a JSON
         file.
@@ -315,13 +360,17 @@ class PdArgumentParser(ArgumentParser):
                 - the dataclass instances in the same order as they were passed to the initializer.abspath
         """
         if not sys.argv[1].endswith(".json"):
-            raise ValueError(f"The first argument should be a JSON file, but it is {sys.argv[1]}")
+            raise ValueError(
+                f"The first argument should be a JSON file, but it is {sys.argv[1]}"
+            )
         json_args = self.read_json(sys.argv[1])
         # In case of conflict, command line arguments take precedence
         args = json_args + sys.argv[2:]
         return self.common_parse(args, return_remaining_strings)
 
-    def parse_yaml_file_and_cmd_lines(self, return_remaining_strings=False) -> Tuple[DataClass, ...]:
+    def parse_yaml_file_and_cmd_lines(
+        self, return_remaining_strings=False
+    ) -> tuple[DataClass, ...]:
         """
         Extend the functionality of `parse_yaml_file` to handle command line arguments in addition to loading a YAML
         file.
@@ -335,14 +384,15 @@ class PdArgumentParser(ArgumentParser):
                 - the dataclass instances in the same order as they were passed to the initializer.abspath
         """
         if not sys.argv[1].endswith(".yaml"):
-            raise ValueError(f"The first argument should be a YAML file, but it is {sys.argv[1]}")
+            raise ValueError(
+                f"The first argument should be a YAML file, but it is {sys.argv[1]}"
+            )
         yaml_args = self.read_yaml(sys.argv[1])
         # In case of conflict, command line arguments take precedence
         args = yaml_args + sys.argv[2:]
         return self.common_parse(args, return_remaining_strings)
 
     def read_python(self, python_file: str) -> list:
-
         python_file = Path(python_file)
 
         def get_variables_exec(file_path):
@@ -361,7 +411,11 @@ class PdArgumentParser(ArgumentParser):
                 code = compile(f.read(), file_path, "exec")
                 globals_dict = {}
                 exec(code, globals_dict)
-                ret_dict = {k: globals_dict[k] for k in globals_dict if not k.startswith("__")}
+                ret_dict = {
+                    k: globals_dict[k]
+                    for k in globals_dict
+                    if not k.startswith("__")
+                }
                 return flatten(ret_dict)
 
         if python_file.exists():
@@ -377,9 +431,13 @@ class PdArgumentParser(ArgumentParser):
                     python_args.extend([f"--{key}", str(value)])
             return python_args
         else:
-            raise FileNotFoundError(f"The argument file {python_file} does not exist.")
+            raise FileNotFoundError(
+                f"The argument file {python_file} does not exist."
+            )
 
-    def parse_python_file_and_cmd_lines(self, return_remaining_strings=False) -> Tuple[DataClass, ...]:
+    def parse_python_file_and_cmd_lines(
+        self, return_remaining_strings=False
+    ) -> tuple[DataClass, ...]:
         """
         Extend the functionality of `parse_python_file` to handle command line arguments in addition to loading a python
         file.
@@ -393,13 +451,17 @@ class PdArgumentParser(ArgumentParser):
                 - the dataclass instances in the same order as they were passed to the initializer.abspath
         """
         if not sys.argv[1].endswith(".py"):
-            raise ValueError(f"The first argument should be a PYTHON file, but it is {sys.argv[1]}")
+            raise ValueError(
+                f"The first argument should be a PYTHON file, but it is {sys.argv[1]}"
+            )
         python_args = self.read_python(sys.argv[1])
         # In case of conflict, command line arguments take precedence
         args = python_args + sys.argv[2:]
         return self.common_parse(args, return_remaining_strings)
 
-    def parse_dict(self, args: dict, return_unknown_ars=False) -> Tuple[DataClass, ...]:
+    def parse_dict(
+        self, args: dict, return_unknown_ars=False
+    ) -> tuple[DataClass, ...]:
         """
         Alternative helper method that does not use `argparse` at all, instead uses a dict and populating the dataclass
         types.
@@ -420,15 +482,21 @@ class PdArgumentParser(ArgumentParser):
             """
             pdc_init_step = os.getenv("PDC_INIT_STEP")
             # user defined resume_from_checkpoint
-            user_defined_resume_from_checkpoint = args.get("resume_from_checkpoint", None)
+            user_defined_resume_from_checkpoint = args.get(
+                "resume_from_checkpoint", None
+            )
             if pdc_init_step is None:
-                logger.info(f"user has defined resume_from_checkpoint: {user_defined_resume_from_checkpoint}")
+                logger.info(
+                    f"user has defined resume_from_checkpoint: {user_defined_resume_from_checkpoint}"
+                )
                 return user_defined_resume_from_checkpoint
             else:
                 if pdc_init_step == "0":
                     # from_scratch train process launched by pdc longjob
                     if user_defined_resume_from_checkpoint is None:
-                        logger.info("resume training process from scratch (step 0)")
+                        logger.info(
+                            "resume training process from scratch (step 0)"
+                        )
                         return None
                     else:
                         # Launching the sft_base training process using an initial checkpoint with the starting step set to 0.
@@ -439,8 +507,13 @@ class PdArgumentParser(ArgumentParser):
                         return user_defined_resume_from_checkpoint
                 else:
                     # pdc_init_step > 0
-                    logger.info(f"resume training process by pdc longjob with resume step: {pdc_init_step}")
-                    resume_checkpoint = os.path.join(args.get("output_dir", None), f"checkpoint-{pdc_init_step}")
+                    logger.info(
+                        f"resume training process by pdc longjob with resume step: {pdc_init_step}"
+                    )
+                    resume_checkpoint = os.path.join(
+                        args.get("output_dir", None),
+                        f"checkpoint-{pdc_init_step}",
+                    )
                     if user_defined_resume_from_checkpoint is not None:
                         logger.warning(
                             f"pdc_init_step:{pdc_init_step} and resume_ckpt:{user_defined_resume_from_checkpoint} exist together, use resume_checkpoint:{resume_checkpoint}"

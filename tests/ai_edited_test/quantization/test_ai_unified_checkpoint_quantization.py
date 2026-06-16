@@ -26,11 +26,22 @@ class TestUnifiedCheckpointQuantization(unittest.TestCase):
         )
 
         with patch("paddle.distributed.get_world_size", return_value=1):
-            with patch("paddleformers.quantization.unified_checkpoint_quantization.qdq_weight") as mock_qdq:
-                mock_qdq.return_value = (paddle.randn([4, 8], dtype="float32"), paddle.randn([8], dtype="float32"))
+            with patch(
+                "paddleformers.quantization.unified_checkpoint_quantization.qdq_weight"
+            ) as mock_qdq:
+                mock_qdq.return_value = (
+                    paddle.randn([4, 8], dtype="float32"),
+                    paddle.randn([8], dtype="float32"),
+                )
 
-                state_dict = {"layer/moment1": paddle.randint(-10, 10, [4, 8]).astype("int8")}
-                scale_dict = {"layer/moment1.scale": paddle.randn([8], dtype="float32")}
+                state_dict = {
+                    "layer/moment1": paddle.randint(-10, 10, [4, 8]).astype(
+                        "int8"
+                    )
+                }
+                scale_dict = {
+                    "layer/moment1.scale": paddle.randn([8], dtype="float32")
+                }
                 result = dequant_unified_optimizer(state_dict, "O1", scale_dict)
                 self.assertIn("layer/moment1", result)
 
@@ -42,18 +53,30 @@ class TestUnifiedCheckpointQuantization(unittest.TestCase):
         )
 
         with patch("paddle.distributed.get_world_size", return_value=1):
-            with patch("paddleformers.quantization.unified_checkpoint_quantization.asymmetry_qdq_weight") as mock_aqdq:
+            with patch(
+                "paddleformers.quantization.unified_checkpoint_quantization.asymmetry_qdq_weight"
+            ) as mock_aqdq:
                 mock_aqdq.return_value = (
                     paddle.randn([4, 8], dtype="float32"),
                     paddle.randn([8], dtype="float32"),
                 )
 
-                state_dict = {"layer/moment2": paddle.randint(-10, 10, [4, 8]).astype("int8")}
-                scale_dict = {
-                    "layer/moment2.min_scale": paddle.randn([8], dtype="float32"),
-                    "layer/moment2.max_scale": paddle.randn([8], dtype="float32"),
+                state_dict = {
+                    "layer/moment2": paddle.randint(-10, 10, [4, 8]).astype(
+                        "int8"
+                    )
                 }
-                result = dequant_unified_optimizer(state_dict, "O1", scale_dict, use_pd=True)
+                scale_dict = {
+                    "layer/moment2.min_scale": paddle.randn(
+                        [8], dtype="float32"
+                    ),
+                    "layer/moment2.max_scale": paddle.randn(
+                        [8], dtype="float32"
+                    ),
+                }
+                result = dequant_unified_optimizer(
+                    state_dict, "O1", scale_dict, use_pd=True
+                )
                 self.assertIn("layer/moment2", result)
 
     def test_quant_unified_optimizer_o0(self):
@@ -72,12 +95,18 @@ class TestUnifiedCheckpointQuantization(unittest.TestCase):
             quant_unified_optimizer,
         )
 
-        with patch("paddleformers.quantization.unified_checkpoint_quantization.cal_ratio") as mock_ratio:
-            with patch("paddleformers.quantization.unified_checkpoint_quantization.qdq_weight") as mock_qdq:
+        with patch(
+            "paddleformers.quantization.unified_checkpoint_quantization.cal_ratio"
+        ) as mock_ratio:
+            with patch(
+                "paddleformers.quantization.unified_checkpoint_quantization.qdq_weight"
+            ) as mock_qdq:
                 with patch(
                     "paddleformers.quantization.unified_checkpoint_quantization.asymmetry_qdq_weight"
                 ) as mock_aqdq:
-                    mock_ratio.return_value = paddle.randn([4, 8], dtype="float32")
+                    mock_ratio.return_value = paddle.randn(
+                        [4, 8], dtype="float32"
+                    )
                     mock_qdq.return_value = (
                         paddle.randint(-10, 10, [4, 8]).astype("int8"),
                         paddle.randn([8], dtype="float32"),
@@ -92,7 +121,9 @@ class TestUnifiedCheckpointQuantization(unittest.TestCase):
                         "layer/moment1": paddle.randn([4, 8], dtype="float32"),
                         "layer/moment2": paddle.randn([4, 8], dtype="float32"),
                     }
-                    result = quant_unified_optimizer(state_dict, "optimizer_weight", "O1")
+                    result = quant_unified_optimizer(
+                        state_dict, "optimizer_weight", "O1"
+                    )
                     self.assertIsInstance(result, dict)
 
     def test_quant_unified_optimizer_o1_model_weight(self):

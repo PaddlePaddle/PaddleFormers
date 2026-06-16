@@ -15,7 +15,7 @@
 import unittest
 
 import paddle
-import paddle.nn as nn
+from paddle import nn
 
 from paddleformers.nn.activation import ACT2CLS, ACT2FN
 

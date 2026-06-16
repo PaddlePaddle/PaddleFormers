@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Package"""
+
 import sys
 from typing import TYPE_CHECKING
 
@@ -20,7 +21,12 @@ from ...utils.lazy_import import _LazyModule
 import_structure = {
     "tokenizer": ["Ernie4_5Tokenizer"],
     "configuration": ["Ernie4_5Config"],
-    "modeling": ["Ernie4_5DecoderLayer", "Ernie4_5Model", "Ernie4_5ForCausalLM", "Ernie4_5ForCausalLMPipe"],
+    "modeling": [
+        "Ernie4_5DecoderLayer",
+        "Ernie4_5Model",
+        "Ernie4_5ForCausalLM",
+        "Ernie4_5ForCausalLMPipe",
+    ],
 }
 
 if TYPE_CHECKING:

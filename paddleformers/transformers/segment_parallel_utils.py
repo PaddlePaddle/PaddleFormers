@@ -37,18 +37,24 @@ def split_inputs_sequence_dim(inputs, sep_rank=None, sep_degree=None):
         _hcg = fleet.get_hybrid_communicate_group()
         sep_degree = _hcg.get_sep_parallel_world_size()
         sep_rank = _hcg.get_sep_parallel_rank()
-    assert isinstance(sep_degree, int) and isinstance(
-        sep_rank, int
-    ), f"sep_degree:{type(sep_degree)} and sep_rank:{type(sep_rank)} must be int"
+    assert isinstance(sep_degree, int) and isinstance(sep_rank, int), (
+        f"sep_degree:{type(sep_degree)} and sep_rank:{type(sep_rank)} must be int"
+    )
     if sep_degree <= 1:
         return inputs
 
     def do_split_sequence_dim(data, sep_rank, sep_degree):
         if data is None:
             return None
-        assert isinstance(data, paddle.Tensor), f"data should be paddle.Tensor, but is type:{type(data)}"
-        assert len(data.shape) == 2, f"data dims should be 2, but shaped: {data.shape}"
-        sliced_data = paddle.split(data, num_or_sections=sep_degree, axis=-1)[sep_rank]
+        assert isinstance(data, paddle.Tensor), (
+            f"data should be paddle.Tensor, but is type:{type(data)}"
+        )
+        assert len(data.shape) == 2, (
+            f"data dims should be 2, but shaped: {data.shape}"
+        )
+        sliced_data = paddle.split(data, num_or_sections=sep_degree, axis=-1)[
+            sep_rank
+        ]
         return sliced_data
 
     if isinstance(inputs, paddle.Tensor):
@@ -61,7 +67,9 @@ def split_inputs_sequence_dim(inputs, sep_rank=None, sep_degree=None):
         res = []
         for tensor in inputs:
             res.append(do_split_sequence_dim(tensor, sep_rank, sep_degree))
-        raise ValueError(f"the inputs should be a list or a dict, but is type: {type(inputs)}")
+        raise ValueError(
+            f"the inputs should be a list or a dict, but is type: {type(inputs)}"
+        )
     return res
 
 
@@ -73,11 +81,15 @@ def _reshard_qkv(x, group, split_axis=2, concat_axis=0):
     nranks = dist.get_world_size(group=group)
     shape = x.shape
 
-    assert len(shape) == 3, "Only support 3D tensor, but got {}".format(len(shape))
-    assert shape[split_axis] % nranks == 0, "Only support evenly split, but got {} % {} != 0".format(shape[2], nranks)
+    assert len(shape) == 3, f"Only support 3D tensor, but got {len(shape)}"
+    assert shape[split_axis] % nranks == 0, (
+        f"Only support evenly split, but got {shape[2]} % {nranks} != 0"
+    )
 
     comm_tensor_list = paddle.split(x, nranks, axis=split_axis)
-    output_list = [paddle.empty_like(comm_tensor_list[0]) for _ in comm_tensor_list]
+    output_list = [
+        paddle.empty_like(comm_tensor_list[0]) for _ in comm_tensor_list
+    ]
     dist.alltoall(output_list, comm_tensor_list, group=group)
     reshard_tensor = paddle.cat(output_list, axis=concat_axis)
 
@@ -90,12 +102,19 @@ class ReshardQKV(PyLayer):
         ctx.group = _get_global_group() if group is None else group
         ctx.split_axis = split_axis
         ctx.concat_axis = concat_axis
-        res = _reshard_qkv(x, group, split_axis=ctx.split_axis, concat_axis=ctx.concat_axis)
+        res = _reshard_qkv(
+            x, group, split_axis=ctx.split_axis, concat_axis=ctx.concat_axis
+        )
         return res
 
     @staticmethod
     def backward(ctx, dy):
-        res = _reshard_qkv(dy, ctx.group, split_axis=ctx.concat_axis, concat_axis=ctx.split_axis)
+        res = _reshard_qkv(
+            dy,
+            ctx.group,
+            split_axis=ctx.concat_axis,
+            concat_axis=ctx.split_axis,
+        )
         return res
 
 
@@ -103,7 +122,11 @@ class ReshardLayer(paddle.nn.Layer):
     def __init__(self, sep_group=None) -> None:
         if sep_group is None:
             _hcg = fleet.get_hybrid_communicate_group()
-            sep_group = _hcg.get_sep_parallel_group() if sep_group is None else sep_group
+            sep_group = (
+                _hcg.get_sep_parallel_group()
+                if sep_group is None
+                else sep_group
+            )
         self.sep_group = sep_group
         self.sep_degree = dist.get_world_size(group=self.sep_group)
         super(ReshardLayer, self).__init__()
@@ -117,7 +140,9 @@ class ReshardLayer(paddle.nn.Layer):
         # if x dims==3, its shape can be [s/sep, b, h] or [b, s/sep, h], the output shape can be [s, b, h/sep] or [b, s, h/sep]
         # if x dims==4, its shape can be [s, b, num_head/sep, head_dim] or [b, s, num_head/sep, head_dim], the output shape can be [s/sep, b, num_head, head_dim] or [b, s/sep, num_head, head_dim]
         shape = x.shape
-        assert len(shape) == 3 or len(shape) == 4, "Only support 3D or 4D tensor"
+        assert len(shape) == 3 or len(shape) == 4, (
+            "Only support 3D or 4D tensor"
+        )
         if len(shape) == 4:
             assert shape[split_axis] % self.sep_degree == 0
             shape[split_axis] = shape[split_axis] // self.sep_degree
@@ -126,12 +151,18 @@ class ReshardLayer(paddle.nn.Layer):
         input_data = x
         if len(shape) == 3:
             reshard_tensor = ReshardQKV.apply(
-                input_data, self.sep_group, split_axis=split_axis, concat_axis=concat_axis
+                input_data,
+                self.sep_group,
+                split_axis=split_axis,
+                concat_axis=concat_axis,
             )
         else:
             input_data = input_data.reshape([0, 0, -1])
             reshard_tensor = ReshardQKV.apply(
-                input_data, self.sep_group, split_axis=split_axis, concat_axis=concat_axis
+                input_data,
+                self.sep_group,
+                split_axis=split_axis,
+                concat_axis=concat_axis,
             )
             reshard_tensor.reshape_(shape)
         return reshard_tensor
@@ -161,5 +192,7 @@ def auto_split_inputs_sequence_dim(inputs):
         for tensor in inputs:
             res.append(do_split_sequence_dim(tensor))
     else:
-        raise ValueError(f"the inputs should be a tensor, list or dict, but is type: {type(inputs)}")
+        raise ValueError(
+            f"the inputs should be a tensor, list or dict, but is type: {type(inputs)}"
+        )
     return res

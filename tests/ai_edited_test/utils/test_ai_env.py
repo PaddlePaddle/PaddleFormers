@@ -13,7 +13,9 @@ class TestEnvUtils(unittest.TestCase):
         from paddleformers.utils.env import _get_user_home
 
         result = _get_user_home()
-        self.assertTrue(result.endswith("/") or result == os.path.expanduser("~"))
+        self.assertTrue(
+            result.endswith("/") or result == os.path.expanduser("~")
+        )
 
     def test_get_pf_home_env(self):
         from paddleformers.utils.env import _get_pf_home
@@ -41,7 +43,10 @@ class TestEnvUtils(unittest.TestCase):
             del env_copy["PF_HOME"]
 
         with patch.dict(os.environ, env_copy, clear=True):
-            with patch("paddleformers.utils.env._get_user_home", return_value="/tmp/user"):
+            with patch(
+                "paddleformers.utils.env._get_user_home",
+                return_value="/tmp/user",
+            ):
                 result = _get_pf_home()
         self.assertEqual(result, "/tmp/user/.paddleformers")
 

@@ -16,7 +16,10 @@ class TestNestedUtils(unittest.TestCase):
     def test_nested_reduce_tensor_dict(self):
         import paddle
 
-        from paddleformers.utils.nested import TensorHolder, nested_reduce_tensor
+        from paddleformers.utils.nested import (
+            TensorHolder,
+            nested_reduce_tensor,
+        )
 
         t = paddle.randn([4, 8], dtype="float32")
         d = {"a": t}
@@ -27,7 +30,10 @@ class TestNestedUtils(unittest.TestCase):
     def test_nested_reduce_tensor_list(self):
         import paddle
 
-        from paddleformers.utils.nested import TensorHolder, nested_reduce_tensor
+        from paddleformers.utils.nested import (
+            TensorHolder,
+            nested_reduce_tensor,
+        )
 
         t = paddle.randn([4, 8], dtype="float32")
         result = nested_reduce_tensor([t, 42])

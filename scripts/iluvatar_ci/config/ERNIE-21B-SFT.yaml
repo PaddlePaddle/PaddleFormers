@@ -10,13 +10,11 @@ packing: true
 mix_strategy: concat
 template_backend: custom
 template: ernie_nothink
-
 ### model
 model_name_or_path: baidu/ERNIE-4.5-21B-A3B-PT
 _attn_implementation: eager
 num_hidden_layers: 4
 router_aux_loss_coef: 0.01
-
 ### finetuning
 # base
 stage: SFT
@@ -38,11 +36,9 @@ logging_dir: ./vdl_log
 output_dir: ./checkpoints/ernie-21B-sft-full-tp-pp
 disable_tqdm: true
 eval_accumulation_steps: 1
-
 # train
 warmup_steps: 20
 learning_rate: 1.0e-5
-
 # performance
 tensor_model_parallel_size: 2
 pipeline_model_parallel_size: 2
@@ -55,5 +51,4 @@ recompute_num_layers: 1
 bf16: true
 fp16_opt_level: O2
 unified_checkpoint: false
-
 device: iluvatar_gpu

@@ -20,4 +20,6 @@ class ExportArguments:
     """Export Argument"""
 
     # export parameter
-    copy_tokenizer: bool = field(default=True, metadata={"help": "Copy tokenizer file"})
+    copy_tokenizer: bool = field(
+        default=True, metadata={"help": "Copy tokenizer file"}
+    )

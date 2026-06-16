@@ -41,7 +41,10 @@ from paddleformers.transformers import (
     CosineAnnealingWithWarmupDecay,
     LinearAnnealingWithWarmupDecay,
 )
-from paddleformers.transformers.configuration_utils import LlmMetaConfig, llmmetaclass
+from paddleformers.transformers.configuration_utils import (
+    LlmMetaConfig,
+    llmmetaclass,
+)
 from paddleformers.transformers.deepseek_v3 import DeepseekV3ForCausalLM
 from paddleformers.utils.batch_sampler import DistributedBatchSampler
 from paddleformers.utils.log import logger
@@ -81,7 +84,9 @@ class PreTrainingArguments(TrainingArguments):
     # NOTE(gongenlei): new add autotuner_benchmark
     autotuner_benchmark: bool = field(
         default=False,
-        metadata={"help": "Weather to run benchmark by autotuner. True for from_scratch and pad_max_length."},
+        metadata={
+            "help": "Weather to run benchmark by autotuner. True for from_scratch and pad_max_length."
+        },
     )
     unified_checkpoint: bool = field(
         default=True,
@@ -116,9 +121,14 @@ class DataArguments:
     """
 
     input_dir: str = field(
-        default=None, metadata={"help": "The name of the dataset to use (via the datasets library)."}
+        default=None,
+        metadata={
+            "help": "The name of the dataset to use (via the datasets library)."
+        },
     )
-    split: str = field(default="949,50,1", metadata={"help": "Train/valid/test data split."})
+    split: str = field(
+        default="949,50,1", metadata={"help": "Train/valid/test data split."}
+    )
 
     max_seq_length: int = field(
         default=1024,
@@ -129,15 +139,22 @@ class DataArguments:
     )
     share_folder: bool = field(
         default=False,
-        metadata={"help": "Use share folder for data dir and output dir on multi machine."},
+        metadata={
+            "help": "Use share folder for data dir and output dir on multi machine."
+        },
     )
 
-    data_impl: str = field(default="mmap", metadata={"help": "The format of the preprocessed data."})
+    data_impl: str = field(
+        default="mmap",
+        metadata={"help": "The format of the preprocessed data."},
+    )
     skip_warmup: bool = field(
         default=True,
         metadata={"help": "Whether to skip the warmup process of mmap files."},
     )
-    data_cache: str = field(default=None, metadata={"help": "The path of the cached dataset."})
+    data_cache: str = field(
+        default=None, metadata={"help": "The path of the cached dataset."}
+    )
 
 
 @dataclass
@@ -153,7 +170,10 @@ class ModelArguments:
         },
     )
     tokenizer_name_or_path: Optional[str] = field(
-        default=None, metadata={"help": "Pretrained tokenizer name or path if not the same as model_name"}
+        default=None,
+        metadata={
+            "help": "Pretrained tokenizer name or path if not the same as model_name"
+        },
     )
 
     use_fast_layer_norm: bool = field(
@@ -161,8 +181,12 @@ class ModelArguments:
         metadata={"help": "GPT3 model, use fast layernorm"},
     )
 
-    hidden_dropout_prob: float = field(default=0.1, metadata={"help": "The hidden dropout prob."})
-    attention_probs_dropout_prob: float = field(default=0.1, metadata={"help": "The attention hidden dropout prob."})
+    hidden_dropout_prob: float = field(
+        default=0.1, metadata={"help": "The hidden dropout prob."}
+    )
+    attention_probs_dropout_prob: float = field(
+        default=0.1, metadata={"help": "The attention hidden dropout prob."}
+    )
 
     continue_training: bool = field(
         default=False,
@@ -179,8 +203,12 @@ def create_pretrained_dataset(
     tokenizer,
     need_data=True,
 ):
-
-    check_data_split(data_args.split, training_args.do_train, training_args.do_eval, training_args.do_predict)
+    check_data_split(
+        data_args.split,
+        training_args.do_train,
+        training_args.do_eval,
+        training_args.do_predict,
+    )
 
     train_val_test_num_samples = [
         training_args.per_device_train_batch_size
@@ -191,29 +219,33 @@ def create_pretrained_dataset(
         * training_args.dataset_world_size
         * training_args.eval_iters
         * (training_args.max_steps // training_args.eval_steps + 1),
-        training_args.per_device_eval_batch_size * training_args.dataset_world_size * training_args.test_iters,
+        training_args.per_device_eval_batch_size
+        * training_args.dataset_world_size
+        * training_args.test_iters,
     ]
 
     print_rank_0(" > datasets target sizes (minimum size):")
     if training_args.do_train:
-        print_rank_0("    train:      {}".format(train_val_test_num_samples[0]))
+        print_rank_0(f"    train:      {train_val_test_num_samples[0]}")
     if training_args.do_eval:
-        print_rank_0("    validation: {}".format(train_val_test_num_samples[1]))
+        print_rank_0(f"    validation: {train_val_test_num_samples[1]}")
     if training_args.do_predict:
-        print_rank_0("    test:       {}".format(train_val_test_num_samples[2]))
+        print_rank_0(f"    test:       {train_val_test_num_samples[2]}")
 
     # Build the datasets.
-    train_dataset, valid_dataset, test_dataset = build_train_valid_test_datasets(
-        data_prefix=data_file,
-        data_impl=data_args.data_impl,
-        splits_string=data_args.split,
-        train_val_test_num_samples=train_val_test_num_samples,
-        seq_length=data_args.max_seq_len,
-        seed=training_args.seed,
-        skip_warmup=data_args.skip_warmup,
-        share_folder=data_args.share_folder,
-        data_cache_path=data_args.data_cache,
-        need_data=need_data,
+    train_dataset, valid_dataset, test_dataset = (
+        build_train_valid_test_datasets(
+            data_prefix=data_file,
+            data_impl=data_args.data_impl,
+            splits_string=data_args.split,
+            train_val_test_num_samples=train_val_test_num_samples,
+            seq_length=data_args.max_seq_len,
+            seed=training_args.seed,
+            skip_warmup=data_args.skip_warmup,
+            share_folder=data_args.share_folder,
+            data_cache_path=data_args.data_cache,
+            need_data=need_data,
+        )
     )
 
     def print_dataset(data, mode="train"):
@@ -254,7 +286,10 @@ def get_train_data_file(args):
         files = [
             os.path.join(args.input_dir, f)
             for f in os.listdir(args.input_dir)
-            if (os.path.isfile(os.path.join(args.input_dir, f)) and ("_idx.npz" in str(f) or ".idx" in str(f)))
+            if (
+                os.path.isfile(os.path.join(args.input_dir, f))
+                and ("_idx.npz" in str(f) or ".idx" in str(f))
+            )
         ]
         files = [x.replace("_idx.npz", "") for x in files]
         files = [x.replace(".idx", "") for x in files]
@@ -276,11 +311,18 @@ class PretrainingTrainer(Trainer):
         super().__init__(*args, **kwargs)
         self.is_pretraining = True
 
-    def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix: str = "eval"):
+    def evaluate(
+        self,
+        eval_dataset=None,
+        ignore_keys=None,
+        metric_key_prefix: str = "eval",
+    ):
         # keep eval_dataloader
         eval_dataloader = getattr(self, "eval_dataloader", None)
         if eval_dataloader is None:
-            eval_dataset = self.eval_dataset if eval_dataset is None else eval_dataset
+            eval_dataset = (
+                self.eval_dataset if eval_dataset is None else eval_dataset
+            )
             eval_dataloader = self.get_eval_dataloader(eval_dataset)
             # must call data loader, otherwise, it will init many times, cause OOM error.
             self.eval_dataloader = eval_dataloader()
@@ -313,7 +355,9 @@ class PretrainingTrainer(Trainer):
 
         self.log(output.metrics)
 
-        self.control = self.callback_handler.on_evaluate(self.args, self.state, self.control, output.metrics)
+        self.control = self.callback_handler.on_evaluate(
+            self.args, self.state, self.control, output.metrics
+        )
         return output.metrics
 
     def _get_eval_sampler(self, eval_dataset) -> Optional[paddle.io.Sampler]:
@@ -376,14 +420,21 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
 
     # Detecting last checkpoint.
     last_checkpoint = None
-    if os.path.isdir(training_args.output_dir) and training_args.do_train and not training_args.overwrite_output_dir:
+    if (
+        os.path.isdir(training_args.output_dir)
+        and training_args.do_train
+        and not training_args.overwrite_output_dir
+    ):
         last_checkpoint = get_last_checkpoint(training_args.output_dir)
         # if last_checkpoint is None and len(
         #         os.listdir(training_args.output_dir)) > 1:
         #     raise ValueError(
         #         f"Output directory ({training_args.output_dir}) already exists and is not empty. "
         #         "Use --overwrite_output_dir to overcome.")
-        if last_checkpoint is not None and training_args.resume_from_checkpoint is None:
+        if (
+            last_checkpoint is not None
+            and training_args.resume_from_checkpoint is None
+        ):
             logger.info(
                 f"Checkpoint detected, resuming training at {last_checkpoint}. To avoid this behavior, change "
                 "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
@@ -402,11 +453,17 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
     config.max_sequence_length = data_args.max_seq_len
     # There are some technique extend RotaryEmbedding context. so don't change max_position_embeddings
     if not model_args.continue_training:
-        config.max_position_embeddings = max(config.max_position_embeddings, data_args.max_seq_len)
+        config.max_position_embeddings = max(
+            config.max_position_embeddings, data_args.max_seq_len
+        )
 
     if not model_args.continue_training:
-        config.vocab_size = max(config.vocab_size, ((tokenizer.vocab_size - 1) // 128 + 1) * 128)
-        logger.info(f"Reset vocab size to {config.vocab_size} for batter amp peformance.")
+        config.vocab_size = max(
+            config.vocab_size, ((tokenizer.vocab_size - 1) // 128 + 1) * 128
+        )
+        logger.info(
+            f"Reset vocab size to {config.vocab_size} for batter amp peformance."
+        )
 
     # Config for model using dropout, such as GPT.
     if hasattr(config, "use_dualpipev"):
@@ -418,31 +475,41 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
     if hasattr(config, "hidden_dropout_prob"):
         config.hidden_dropout_prob = model_args.hidden_dropout_prob
     if hasattr(config, "attention_probs_dropout_prob"):
-        config.attention_probs_dropout_prob = model_args.attention_probs_dropout_prob
+        config.attention_probs_dropout_prob = (
+            model_args.attention_probs_dropout_prob
+        )
 
     if config.sequence_parallel:
-        assert (
-            config.tensor_model_parallel_size > 1
-        ), "tensor_model_parallel_size must be larger than 1 for sequence parallel."
-    assert (
-        config.num_attention_heads % config.sep_parallel_size == 0
-    ), f"num_attention_heads:{config.num_attention_heads} must be divisible by sep_parallel_size {config.sep_parallel_size}"
-    assert (
-        config.seq_length % config.context_parallel_size == 0
-    ), f"seq_length:{config.seq_length} must be divisible by context_parallel_size {config.context_parallel_size}"
+        assert config.tensor_model_parallel_size > 1, (
+            "tensor_model_parallel_size must be larger than 1 for sequence parallel."
+        )
+    assert config.num_attention_heads % config.sep_parallel_size == 0, (
+        f"num_attention_heads:{config.num_attention_heads} must be divisible by sep_parallel_size {config.sep_parallel_size}"
+    )
+    assert config.seq_length % config.context_parallel_size == 0, (
+        f"seq_length:{config.seq_length} must be divisible by context_parallel_size {config.context_parallel_size}"
+    )
 
     # for stage1 overlap optimization
-    if training_args.stage1_allgather_overlap or training_args.stage1_broadcast_overlap:
+    if (
+        training_args.stage1_allgather_overlap
+        or training_args.stage1_broadcast_overlap
+    ):
         from paddle.io.reader import use_pinned_memory
 
         use_pinned_memory(False)
 
-    if get_env_device() == "xpu" and training_args.gradient_accumulation_steps > 1:
+    if (
+        get_env_device() == "xpu"
+        and training_args.gradient_accumulation_steps > 1
+    ):
         try:
-            from paddle_xpu.layers.nn.linear import LinearConfig  # noqa: F401
+            from paddle_xpu.layers.nn.linear import LinearConfig
 
             LinearConfig.enable_accumulate_steps_opt()
-            LinearConfig.set_accumulate_steps(training_args.gradient_accumulation_steps)
+            LinearConfig.set_accumulate_steps(
+                training_args.gradient_accumulation_steps
+            )
         except ImportError:
             # It's OK, not use accumulate_steps optimization
             pass
@@ -462,7 +529,9 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
         model_class = DeepseekV2ForCausalLMPipe
         if "LLama" in str(config.architectures):
             try:
-                from utils.register_reshard import register_pp_reshard_information
+                from utils.register_reshard import (
+                    register_pp_reshard_information,
+                )
 
                 register_pp_reshard_information(config.num_hidden_layers)
             except:
@@ -470,7 +539,10 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
 
     architectures_to_check = {"Qwen2Moe", "DeepseekV2", "DeepseekV3"}
     if (
-        any(architecture in str(config.architectures) for architecture in architectures_to_check)
+        any(
+            architecture in str(config.architectures)
+            for architecture in architectures_to_check
+        )
         and training_args.data_parallel_size > 1
     ):
         training_args.use_expert_parallel = True
@@ -532,12 +604,14 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
         )
 
     data_file = get_train_data_file(data_args)
-    train_dataset, eval_dataset, test_dataset, data_collator = create_pretrained_dataset(
-        data_args,
-        training_args,
-        data_file,
-        tokenizer,
-        need_data=training_args.should_load_dataset,
+    train_dataset, eval_dataset, test_dataset, data_collator = (
+        create_pretrained_dataset(
+            data_args,
+            training_args,
+            data_file,
+            tokenizer,
+            need_data=training_args.should_load_dataset,
+        )
     )
 
     total_effective_tokens = (
@@ -554,14 +628,22 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
         callbacks += [MoeExpertsGradScaleCallback(training_args)]
 
     if getattr(config, "topk_method", None) == "noaux_tc":
-        moe_router_bias_update_rate = getattr(config, "moe_router_bias_update_rate", 0.001)
-        callbacks += [MoECorrectionBiasAdjustCallback(moe_router_bias_update_rate)]
+        moe_router_bias_update_rate = getattr(
+            config, "moe_router_bias_update_rate", 0.001
+        )
+        callbacks += [
+            MoECorrectionBiasAdjustCallback(moe_router_bias_update_rate)
+        ]
 
     def resume_from_custom_func(model):
         if training_args.resume_from_huggingface_ckpt:
-            load_huggingface_ckpt(model, training_args.resume_from_huggingface_ckpt)
+            load_huggingface_ckpt(
+                model, training_args.resume_from_huggingface_ckpt
+            )
         else:
-            logger.info("No resume from checkpoint since training args 'resume_from_huggingface_ckpt' is None.")
+            logger.info(
+                "No resume from checkpoint since training args 'resume_from_huggingface_ckpt' is None."
+            )
 
     trainer = PretrainingTrainer(
         model=model,
@@ -599,6 +681,8 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
         trainer.log_metrics("test", test_ret.metrics)
 
     if training_args.do_train and training_args.should_load_dataset:
-        effective_tokens_per_second = total_effective_tokens / train_result.metrics["train_runtime"]
+        effective_tokens_per_second = (
+            total_effective_tokens / train_result.metrics["train_runtime"]
+        )
         print(f"Effective Tokens per second: {effective_tokens_per_second:.2f}")
         print(f"ips: {effective_tokens_per_second:.2f} tokens/s")

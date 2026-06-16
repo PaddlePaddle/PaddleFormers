@@ -23,56 +23,84 @@ from tests.testing_utils import slow
 class TestHFMultiSourceTokenizer(unittest.TestCase):
     def encode(self, tokenizer):
         input_text = "hello world, 你好"
-        output_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(input_text))
+        output_ids = tokenizer.convert_tokens_to_ids(
+            tokenizer.tokenize(input_text)
+        )
         true_ids = [14990, 1879, 11, 220, 108386]
         self.assertEqual(output_ids, true_ids)
 
     def test_ai_studio(self):
-        tokenizer = AutoTokenizer.from_pretrained("ModelHub/Qwen2.5-7B-Instruct", download_hub="aistudio")
+        tokenizer = AutoTokenizer.from_pretrained(
+            "ModelHub/Qwen2.5-7B-Instruct", download_hub="aistudio"
+        )
         self.encode(tokenizer)
-        tokenizer = Qwen2Tokenizer.from_pretrained("ModelHub/Qwen2.5-7B-Instruct", download_hub="aistudio")
+        tokenizer = Qwen2Tokenizer.from_pretrained(
+            "ModelHub/Qwen2.5-7B-Instruct", download_hub="aistudio"
+        )
         self.encode(tokenizer)
 
     @slow
     def test_model_scope(self):
-        tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", download_hub="modelscope")
+        tokenizer = AutoTokenizer.from_pretrained(
+            "Qwen/Qwen2.5-7B-Instruct", download_hub="modelscope"
+        )
         self.encode(tokenizer)
-        tokenizer = Qwen2Tokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", download_hub="modelscope")
+        tokenizer = Qwen2Tokenizer.from_pretrained(
+            "Qwen/Qwen2.5-7B-Instruct", download_hub="modelscope"
+        )
         self.encode(tokenizer)
 
     @slow
     def test_hf_hub(self):
-        tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", download_hub="huggingface")
+        tokenizer = AutoTokenizer.from_pretrained(
+            "Qwen/Qwen2.5-7B-Instruct", download_hub="huggingface"
+        )
         self.encode(tokenizer)
-        tokenizer = Qwen2Tokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", download_hub="huggingface")
+        tokenizer = Qwen2Tokenizer.from_pretrained(
+            "Qwen/Qwen2.5-7B-Instruct", download_hub="huggingface"
+        )
         self.encode(tokenizer)
 
     @slow
     def test_default(self):
-        tokenizer = AutoTokenizer.from_pretrained("PaddleFormers/tiny-random-qwen3")
+        tokenizer = AutoTokenizer.from_pretrained(
+            "PaddleFormers/tiny-random-qwen3"
+        )
         self.encode(tokenizer)
-        tokenizer = Qwen2Tokenizer.from_pretrained("PaddleFormers/tiny-random-qwen2")
+        tokenizer = Qwen2Tokenizer.from_pretrained(
+            "PaddleFormers/tiny-random-qwen2"
+        )
         self.encode(tokenizer)
 
     @slow
     def test_ernie_4_5_tokenizer(self):
-        tokenizer = AutoTokenizer.from_pretrained("baidu/ERNIE-4.5-21B-A3B-PT", download_hub="huggingface")
+        tokenizer = AutoTokenizer.from_pretrained(
+            "baidu/ERNIE-4.5-21B-A3B-PT", download_hub="huggingface"
+        )
         input_text = "hello world, 你好"
-        output_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(input_text))
+        output_ids = tokenizer.convert_tokens_to_ids(
+            tokenizer.tokenize(input_text)
+        )
         true_ids = [18830, 3135, 93938, 93919, 5300]
         self.assertEqual(output_ids, true_ids)
 
     def test_auto_tokenizer(self):
-        tokenizer = AutoTokenizer.from_pretrained("Paddleformers/tiny-random-llama")
+        tokenizer = AutoTokenizer.from_pretrained(
+            "Paddleformers/tiny-random-llama"
+        )
         input_text = "hello world, 你好"
-        output_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(input_text))
+        output_ids = tokenizer.convert_tokens_to_ids(
+            tokenizer.tokenize(input_text)
+        )
         true_ids = [12199, 3186, 29892, 29871, 30919, 31076]
         self.assertEqual(output_ids, true_ids)
 
 
 class TestHFTokenizer(unittest.TestCase):
     def setUp(self):
-        self.tokenizer = AutoTokenizer.from_pretrained("PaddleFormers/tiny-random-qwen2v2")
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            "PaddleFormers/tiny-random-qwen2v2"
+        )
 
     def test_encode(self):
         input_text = "hello world, this is paddle format checker"
@@ -83,26 +111,44 @@ class TestHFTokenizer(unittest.TestCase):
 
     def test_encode_plus(self):
         input_text = "hello world, this is paddle format checker"
-        output_dict = self.tokenizer._encode_plus(input_text, return_tensors="pd")
+        output_dict = self.tokenizer._encode_plus(
+            input_text, return_tensors="pd"
+        )
         true_dict = {
             "input_ids": [[14990, 1879, 11, 419, 374, 39303, 3561, 40915]],
             "attention_mask": [[1, 1, 1, 1, 1, 1, 1, 1]],
         }
-        self.assertEqual(output_dict["input_ids"].tolist(), true_dict["input_ids"])
-        self.assertEqual(output_dict["attention_mask"].tolist(), true_dict["attention_mask"])
+        self.assertEqual(
+            output_dict["input_ids"].tolist(), true_dict["input_ids"]
+        )
+        self.assertEqual(
+            output_dict["attention_mask"].tolist(), true_dict["attention_mask"]
+        )
 
     def test_batch_encode_plus(self):
-        input_text = ["hello world, this is paddle format checker", "covert to decode to check"]
-        output_dict = self.tokenizer._encode_plus(input_text, return_tensors="pd", padding_strategy="max_length")
+        input_text = [
+            "hello world, this is paddle format checker",
+            "covert to decode to check",
+        ]
+        output_dict = self.tokenizer._encode_plus(
+            input_text, return_tensors="pd", padding_strategy="max_length"
+        )
         true_dict = {
             "input_ids": [
                 [14990, 1879, 11, 419, 374, 39303, 3561, 40915],
                 [1015, 1621, 311, 16895, 311, 1779, 151643, 151643],
             ],
-            "attention_mask": [[1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 0, 0]],
+            "attention_mask": [
+                [1, 1, 1, 1, 1, 1, 1, 1],
+                [1, 1, 1, 1, 1, 1, 0, 0],
+            ],
         }
-        self.assertEqual(output_dict["input_ids"].tolist(), true_dict["input_ids"])
-        self.assertEqual(output_dict["attention_mask"].tolist(), true_dict["attention_mask"])
+        self.assertEqual(
+            output_dict["input_ids"].tolist(), true_dict["input_ids"]
+        )
+        self.assertEqual(
+            output_dict["attention_mask"].tolist(), true_dict["attention_mask"]
+        )
 
     def test_single_apply_chat_template(self):
         input_text = "hello world, this is paddle format checker"
@@ -121,7 +167,9 @@ class TestHFTokenizer(unittest.TestCase):
             input_text_dict_list, tokenize=False, add_generation_prompt=True
         )
         output = self.tokenizer.apply_chat_template(
-            input_text_dict_list, return_tensors="pd", add_generation_prompt=True
+            input_text_dict_list,
+            return_tensors="pd",
+            add_generation_prompt=True,
         )
         decode_str = self.tokenizer.decode(output["input_ids"][0])
         self.assertEqual(true_chat_str, decode_str)
@@ -129,8 +177,15 @@ class TestHFTokenizer(unittest.TestCase):
 
 class TestPaddleTokenizerMethod(unittest.TestCase):
     def test_tokenizer_decode_token(self) -> None:
-        tokenizer = AutoTokenizer.from_pretrained("PaddleFormers/tiny-random-qwen2v2", download_hub="aistudio")
-        test_cases = ["1. 百度 2. 腾讯", "hello world! I like eating banana", "🤓😖", "🤓😖testtest"]
+        tokenizer = AutoTokenizer.from_pretrained(
+            "PaddleFormers/tiny-random-qwen2v2", download_hub="aistudio"
+        )
+        test_cases = [
+            "1. 百度 2. 腾讯",
+            "hello world! I like eating banana",
+            "🤓😖",
+            "🤓😖testtest",
+        ]
         for test_case in test_cases:
             input_ids = tokenizer(test_case)["input_ids"]
             decoded_text = tokenizer.decode(input_ids)
@@ -138,6 +193,8 @@ class TestPaddleTokenizerMethod(unittest.TestCase):
             offset = 0
             token_offset = 0
             for i in range(len(input_ids)):
-                token_text, offset, token_offset = tokenizer.decode_token(input_ids[: i + 1], offset, token_offset)
+                token_text, offset, token_offset = tokenizer.decode_token(
+                    input_ids[: i + 1], offset, token_offset
+                )
                 stream_decoded_text += token_text
             self.assertEqual(decoded_text, stream_decoded_text)

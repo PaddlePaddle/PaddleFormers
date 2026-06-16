@@ -14,10 +14,8 @@ body:
     label: 问题描述
   validations:
     required: true
-    
+
 - type: markdown
   attributes:
     value: >
       感谢你的贡献 🎉！
-
-

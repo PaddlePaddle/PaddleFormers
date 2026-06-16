@@ -34,7 +34,9 @@ def all_gather_varlen(input, indices, group=None, axis=0, sync_op=True):
     out = paddle.empty([sum(indices)] + input.shape[1:], dtype=input.dtype)
     task = dist.stream.alltoall_single(
         out,
-        paddle.concat([input] * parallelism, 0) if len(input) else input,  # 很好奇为什么 `paddle.tile` 不能指定axis
+        paddle.concat([input] * parallelism, 0)
+        if len(input)
+        else input,  # 很好奇为什么 `paddle.tile` 不能指定axis
         output_sizes,  # input-size
         input_sizes,
         group=group,

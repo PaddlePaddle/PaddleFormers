@@ -16,7 +16,7 @@
 import importlib
 import json
 import os
-from typing import Optional, Union
+from typing import Optional
 
 import transformers as hf
 from transformers import AutoConfig, ImageProcessingMixin, PretrainedConfig
@@ -29,11 +29,9 @@ from transformers.models.auto.configuration_auto import (
     model_type_to_module_name,
     replace_list_option_in_docstrings,
 )
-from transformers.models.auto.image_processing_auto import IMAGE_PROCESSOR_MAPPING_NAMES
 from transformers.models.auto.image_processing_auto import (
+    IMAGE_PROCESSOR_MAPPING_NAMES,
     get_image_processor_class_from_name as get_image_processor_class_from_name_hf,
-)
-from transformers.models.auto.image_processing_auto import (
     get_image_processor_config as get_image_processor_config_hf,
 )
 from transformers.utils import (
@@ -64,7 +62,9 @@ IMAGE_PROCESSOR_MAPPING_NAMES.update(
 
 FORCE_FAST_IMAGE_PROCESSOR = ["Qwen2VLImageProcessor"]
 
-IMAGE_PROCESSOR_MAPPING = _LazyAutoMapping(CONFIG_MAPPING_NAMES, IMAGE_PROCESSOR_MAPPING_NAMES)
+IMAGE_PROCESSOR_MAPPING = _LazyAutoMapping(
+    CONFIG_MAPPING_NAMES, IMAGE_PROCESSOR_MAPPING_NAMES
+)
 
 
 def get_image_processor_class_from_name(class_name: str):
@@ -76,7 +76,9 @@ def get_image_processor_class_from_name(class_name: str):
             module_name = model_type_to_module_name(module_name)
 
             try:
-                module = importlib.import_module(f".{module_name}", "paddleformers.transformers")
+                module = importlib.import_module(
+                    f".{module_name}", "paddleformers.transformers"
+                )
                 return getattr(module, class_name)
             except (ModuleNotFoundError, AttributeError):
                 continue
@@ -95,11 +97,11 @@ def get_image_processor_class_from_name(class_name: str):
 
 
 def get_image_processor_config(
-    pretrained_model_name_or_path: Union[str, os.PathLike],
-    cache_dir: Optional[Union[str, os.PathLike]] = None,
+    pretrained_model_name_or_path: str | os.PathLike,
+    cache_dir: Optional[str | os.PathLike] = None,
     force_download: bool = False,
     proxies: Optional[dict[str, str]] = None,
-    token: Optional[Union[bool, str]] = None,
+    token: Optional[bool | str] = None,
     revision: Optional[str] = None,
     local_files_only: bool = False,
     **kwargs,
@@ -191,11 +193,21 @@ def get_image_processor_config(
     except Exception as e:
         if any(
             keyword in str(e).lower()
-            for keyword in ["not exist", "not found", "entrynotfound", "notexist", "does not appear"]
+            for keyword in [
+                "not exist",
+                "not found",
+                "entrynotfound",
+                "notexist",
+                "does not appear",
+            ]
         ):
             hf_link = f"https://huggingface.co/{pretrained_model_name_or_path}"
-            modelscope_link = f"https://modelscope.cn/models/{pretrained_model_name_or_path}"
-            encoded_model_name = pretrained_model_name_or_path.replace("/", "%2F")
+            modelscope_link = (
+                f"https://modelscope.cn/models/{pretrained_model_name_or_path}"
+            )
+            encoded_model_name = pretrained_model_name_or_path.replace(
+                "/", "%2F"
+            )
             aistudio_link = f"https://aistudio.baidu.com/modelsoverview?sortBy=weight&q={encoded_model_name}"
 
             raise ValueError(
@@ -232,7 +244,11 @@ def _bind_paddle_mixin_if_available(image_processor_class):
     if issubclass(image_processor_class, PaddleImageProcessingMixin):
         return image_processor_class
 
-    return type(image_processor_class.__name__, (PaddleImageProcessingMixin, image_processor_class), {})
+    return type(
+        image_processor_class.__name__,
+        (PaddleImageProcessingMixin, image_processor_class),
+        {},
+    )
 
 
 class AutoImageProcessor(hf.AutoImageProcessor):
@@ -275,8 +291,12 @@ class AutoImageProcessor(hf.AutoImageProcessor):
         # Load the image processor config
         try:
             # Main path for all transformers models and local TimmWrapper checkpoints
-            config_dict, _ = PaddleImageProcessingMixin.get_image_processor_dict(
-                pretrained_model_name_or_path, image_processor_filename=image_processor_filename, **kwargs
+            config_dict, _ = (
+                PaddleImageProcessingMixin.get_image_processor_dict(
+                    pretrained_model_name_or_path,
+                    image_processor_filename=image_processor_filename,
+                    **kwargs,
+                )
             )
         except Exception as initial_exception:
             # Fallback path for Hub TimmWrapper checkpoints. Timm models' image processing is saved in `config.json`
@@ -285,12 +305,20 @@ class AutoImageProcessor(hf.AutoImageProcessor):
             # load `config.json` and if it fails with some error, we raise the initial exception.
             try:
                 if download_hub == DownloadSource.HUGGINGFACE:
-                    config_dict, _ = ImageProcessingMixin.get_image_processor_dict(
-                        pretrained_model_name_or_path, image_processor_filename=CONFIG_NAME, **kwargs
+                    config_dict, _ = (
+                        ImageProcessingMixin.get_image_processor_dict(
+                            pretrained_model_name_or_path,
+                            image_processor_filename=CONFIG_NAME,
+                            **kwargs,
+                        )
                     )
                 else:
-                    config_dict, _ = PaddleImageProcessingMixin.get_image_processor_dict(
-                        pretrained_model_name_or_path, image_processor_filename=CONFIG_NAME, **kwargs
+                    config_dict, _ = (
+                        PaddleImageProcessingMixin.get_image_processor_dict(
+                            pretrained_model_name_or_path,
+                            image_processor_filename=CONFIG_NAME,
+                            **kwargs,
+                        )
                     )
             except Exception:
                 raise initial_exception
@@ -303,17 +331,27 @@ class AutoImageProcessor(hf.AutoImageProcessor):
         image_processor_type = config_dict.get("image_processor_type", None)
         image_processor_auto_map = None
         if "AutoImageProcessor" in config_dict.get("auto_map", {}):
-            image_processor_auto_map = config_dict["auto_map"]["AutoImageProcessor"]
+            image_processor_auto_map = config_dict["auto_map"][
+                "AutoImageProcessor"
+            ]
 
         # If we still don't have the image processor class, check if we're loading from a previous feature extractor config
         # and if so, infer the image processor class from there.
         if image_processor_type is None and image_processor_auto_map is None:
-            feature_extractor_class = config_dict.pop("feature_extractor_type", None)
+            feature_extractor_class = config_dict.pop(
+                "feature_extractor_type", None
+            )
             if feature_extractor_class is not None:
-                image_processor_type = feature_extractor_class.replace("FeatureExtractor", "ImageProcessor")
+                image_processor_type = feature_extractor_class.replace(
+                    "FeatureExtractor", "ImageProcessor"
+                )
             if "AutoFeatureExtractor" in config_dict.get("auto_map", {}):
-                feature_extractor_auto_map = config_dict["auto_map"]["AutoFeatureExtractor"]
-                image_processor_auto_map = feature_extractor_auto_map.replace("FeatureExtractor", "ImageProcessor")
+                feature_extractor_auto_map = config_dict["auto_map"][
+                    "AutoFeatureExtractor"
+                ]
+                image_processor_auto_map = feature_extractor_auto_map.replace(
+                    "FeatureExtractor", "ImageProcessor"
+                )
 
         # If we don't find the image processor class in the image processor config, let's try the model config.
         if image_processor_type is None and image_processor_auto_map is None:
@@ -325,7 +363,10 @@ class AutoImageProcessor(hf.AutoImageProcessor):
                 )
             # It could be in `config.image_processor_type``
             image_processor_type = getattr(config, "image_processor_type", None)
-            if hasattr(config, "auto_map") and "AutoImageProcessor" in config.auto_map:
+            if (
+                hasattr(config, "auto_map")
+                and "AutoImageProcessor" in config.auto_map
+            ):
                 image_processor_auto_map = config.auto_map["AutoImageProcessor"]
 
         image_processor_class = None
@@ -333,7 +374,10 @@ class AutoImageProcessor(hf.AutoImageProcessor):
             # if use_fast is not set and the processor was saved with a fast processor, we use it, otherwise we use the slow processor.
             if use_fast is None:
                 use_fast = image_processor_type.endswith("Fast")
-                if not use_fast and image_processor_type in FORCE_FAST_IMAGE_PROCESSOR:
+                if (
+                    not use_fast
+                    and image_processor_type in FORCE_FAST_IMAGE_PROCESSOR
+                ):
                     use_fast = True
                     logger.warning_once(
                         f"The image processor of type `{image_processor_type}` is now loaded as a fast processor by default, even if the model checkpoint was saved with a slow processor. "
@@ -349,7 +393,11 @@ class AutoImageProcessor(hf.AutoImageProcessor):
             if use_fast:
                 for image_processors in IMAGE_PROCESSOR_MAPPING_NAMES.values():
                     if image_processor_type in image_processors:
-                        image_processor_class = get_image_processor_class_from_name(image_processor_type)
+                        image_processor_class = (
+                            get_image_processor_class_from_name(
+                                image_processor_type
+                            )
+                        )
                         break
                 else:
                     image_processor_type = image_processor_type[:-4]
@@ -358,20 +406,37 @@ class AutoImageProcessor(hf.AutoImageProcessor):
                         f"`use_fast` is set to `True` but the requested image processor `{image_processor_type}` does not have a fast version. "
                         "Falling back to the slow version (`use_fast=False`)."
                     )
-                    image_processor_class = get_image_processor_class_from_name(image_processor_type)
+                    image_processor_class = get_image_processor_class_from_name(
+                        image_processor_type
+                    )
 
                     # Not found in PaddleFormers, try local Transformers registry
                     if image_processor_class is None:
-                        image_processor_class = get_image_processor_class_from_name_hf(image_processor_type)
+                        image_processor_class = (
+                            get_image_processor_class_from_name_hf(
+                                image_processor_type
+                            )
+                        )
             else:
-                image_processor_type_slow = image_processor_type.removesuffix("Fast")
-                image_processor_class = get_image_processor_class_from_name(image_processor_type_slow)
+                image_processor_type_slow = image_processor_type.removesuffix(
+                    "Fast"
+                )
+                image_processor_class = get_image_processor_class_from_name(
+                    image_processor_type_slow
+                )
 
                 # Not found in PaddleFormers, try local Transformers registry
                 if image_processor_class is None:
-                    image_processor_class = get_image_processor_class_from_name_hf(image_processor_type_slow)
+                    image_processor_class = (
+                        get_image_processor_class_from_name_hf(
+                            image_processor_type_slow
+                        )
+                    )
 
-                if image_processor_class is None and image_processor_type.endswith("Fast"):
+                if (
+                    image_processor_class is None
+                    and image_processor_type.endswith("Fast")
+                ):
                     raise ValueError(
                         f"The slow version of `{image_processor_type}` (i.e., "
                         f"`{image_processor_type_slow}`) could not be found. "
@@ -379,9 +444,14 @@ class AutoImageProcessor(hf.AutoImageProcessor):
                     )
 
         has_remote_code = image_processor_auto_map is not None
-        has_local_code = image_processor_class is not None or type(config) in IMAGE_PROCESSOR_MAPPING
+        has_local_code = (
+            image_processor_class is not None
+            or type(config) in IMAGE_PROCESSOR_MAPPING
+        )
         if has_remote_code:
-            if image_processor_auto_map is not None and not isinstance(image_processor_auto_map, tuple):
+            if image_processor_auto_map is not None and not isinstance(
+                image_processor_auto_map, tuple
+            ):
                 # In some configs, only the slow image processor class is stored
                 image_processor_auto_map = (image_processor_auto_map, None)
             if use_fast and image_processor_auto_map[1] is not None:
@@ -393,11 +463,17 @@ class AutoImageProcessor(hf.AutoImageProcessor):
             else:
                 upstream_repo = None
 
-            image_processor_class = get_image_processor_class_from_name(class_ref.rsplit(".", 1)[-1])
+            image_processor_class = get_image_processor_class_from_name(
+                class_ref.rsplit(".", 1)[-1]
+            )
 
             if image_processor_class is None:
                 trust_remote_code = resolve_trust_remote_code(
-                    trust_remote_code, pretrained_model_name_or_path, has_local_code, has_remote_code, upstream_repo
+                    trust_remote_code,
+                    pretrained_model_name_or_path,
+                    has_local_code,
+                    has_remote_code,
+                    upstream_repo,
                 )
 
         if has_remote_code and trust_remote_code:
@@ -407,21 +483,29 @@ class AutoImageProcessor(hf.AutoImageProcessor):
                     "Using slow image processor class. To use the fast image processor class set `use_fast=True`."
                 )
 
-            image_processor_class = get_class_from_dynamic_module(class_ref, pretrained_model_name_or_path, **kwargs)
+            image_processor_class = get_class_from_dynamic_module(
+                class_ref, pretrained_model_name_or_path, **kwargs
+            )
             _ = kwargs.pop("code_revision", None)
             image_processor_class.register_for_auto_class()
             # Bind PaddleImageProcessingMixin
-            image_processor_class = _bind_paddle_mixin_if_available(image_processor_class)
+            image_processor_class = _bind_paddle_mixin_if_available(
+                image_processor_class
+            )
             return image_processor_class.from_dict(config_dict, **kwargs)
         elif image_processor_class is not None:
             # Bind PaddleImageProcessingMixin
-            image_processor_class = _bind_paddle_mixin_if_available(image_processor_class)
+            image_processor_class = _bind_paddle_mixin_if_available(
+                image_processor_class
+            )
             return image_processor_class.from_dict(config_dict, **kwargs)
         # Last try: we use the IMAGE_PROCESSOR_MAPPING.
         elif type(config) in IMAGE_PROCESSOR_MAPPING:
             image_processor_tuple = IMAGE_PROCESSOR_MAPPING[type(config)]
 
-            image_processor_class_py, image_processor_class_fast = image_processor_tuple
+            image_processor_class_py, image_processor_class_fast = (
+                image_processor_tuple
+            )
 
             if not use_fast and image_processor_class_fast is not None:
                 logger.warning(
@@ -429,16 +513,25 @@ class AutoImageProcessor(hf.AutoImageProcessor):
                     "Using slow image processor class. To use the fast image processor class set `use_fast=True`."
                 )
 
-            if image_processor_class_fast and (use_fast or image_processor_class_py is None):
-
+            if image_processor_class_fast and (
+                use_fast or image_processor_class_py is None
+            ):
                 # Bind PaddleImageProcessingMixin
-                image_processor_class_fast = _bind_paddle_mixin_if_available(image_processor_class_fast)
-                return image_processor_class_fast.from_pretrained(pretrained_model_name_or_path, *inputs, **kwargs)
+                image_processor_class_fast = _bind_paddle_mixin_if_available(
+                    image_processor_class_fast
+                )
+                return image_processor_class_fast.from_pretrained(
+                    pretrained_model_name_or_path, *inputs, **kwargs
+                )
             else:
                 if image_processor_class_py is not None:
                     # Bind PaddleImageProcessingMixin
-                    image_processor_class_py = _bind_paddle_mixin_if_available(image_processor_class_py)
-                    return image_processor_class_py.from_pretrained(pretrained_model_name_or_path, *inputs, **kwargs)
+                    image_processor_class_py = _bind_paddle_mixin_if_available(
+                        image_processor_class_py
+                    )
+                    return image_processor_class_py.from_pretrained(
+                        pretrained_model_name_or_path, *inputs, **kwargs
+                    )
                 else:
                     raise ValueError(
                         "This image processor cannot be instantiated. Please make sure you have `Pillow` installed."

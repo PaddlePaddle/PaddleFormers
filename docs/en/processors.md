@@ -1,6 +1,6 @@
 ### ⚙️ Processors
 
-`Processor` is a multimodal preprocessing tool responsible for preparing inputs that combine more than one modality (like text, images). It provides a unified interface for different transformations, such as tokenizing text and resizing/normalizing images, and supports returning outpus in Paddle Tensor.
+`Processor` is a multimodal preprocessing tool responsible for preparing inputs that combine more than one modality (like text, images). It provides a unified interface for different transformations, such as tokenizing text and resizing/normalizing images, and supports returning outputs in Paddle Tensor.
 
 For example, [Qwen2.5-VL](https://github.com/PaddlePaddle/PaddleFormers/blob/develop/paddleformers/transformers/qwen2_5_vl/processor.py) is a vision-language model that uses the [Qwen2-VL](https://github.com/PaddlePaddle/PaddleFormers/blob/develop/paddleformers/transformers/qwen2_vl/image_processor.py) image processor and the [Qwen2](https://github.com/PaddlePaddle/PaddleFormers/blob/develop/paddleformers/transformers/qwen2/tokenizer.py) tokenizer. A `ProcessorMixin` class wraps both of these, providing a single class for the model.
 

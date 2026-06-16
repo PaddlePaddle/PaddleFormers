@@ -27,12 +27,16 @@ class TestTokenizer(unittest.TestCase):
     def test_slow_tokenizer_save_pretrained(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tokenizer = LlamaTokenizer.from_pretrained("PaddleNLP/Llama-2-7b")
-            special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}
+            special_tokens_dict = {
+                "additional_special_tokens": ["[ENT_START]", "[ENT_END]"]
+            }
             tokenizer.add_special_tokens(special_tokens_dict)
             tokenizer.add_tokens(["new_word", "another_word"])
             tokenizer.model_max_length = 512
             tokenizer.save_pretrained(tmpdir)
-            self.assertTrue(os.path.exists(os.path.join(tmpdir, "tokenizer_config.json")))
+            self.assertTrue(
+                os.path.exists(os.path.join(tmpdir, "tokenizer_config.json"))
+            )
 
     def test_fast_tokenizer_from_pretrained(self):
         tokenizer = LlamaTokenizerFast.from_pretrained("PaddleNLP/Llama-2-7b")
@@ -40,17 +44,25 @@ class TestTokenizer(unittest.TestCase):
 
     def test_fast_tokenizer_save_pretrained(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            tokenizer = LlamaTokenizerFast.from_pretrained("PaddleNLP/Llama-2-7b")
-            special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}
+            tokenizer = LlamaTokenizerFast.from_pretrained(
+                "PaddleNLP/Llama-2-7b"
+            )
+            special_tokens_dict = {
+                "additional_special_tokens": ["[ENT_START]", "[ENT_END]"]
+            }
             tokenizer.add_special_tokens(special_tokens_dict)
             tokenizer.add_tokens(["new_word", "another_word"])
             tokenizer.model_max_length = 512
             tokenizer.save_pretrained(tmpdir)
-            self.assertTrue(os.path.exists(os.path.join(tmpdir, "tokenizer_config.json")))
+            self.assertTrue(
+                os.path.exists(os.path.join(tmpdir, "tokenizer_config.json"))
+            )
 
     def test_tokenize(self):
         tokenizer = LlamaTokenizerFast.from_pretrained("PaddleNLP/Llama-2-7b")
         text = "hello world, this is a tokenizer test"
         output_dict = tokenizer(text)
-        decode_text = tokenizer.decode(output_dict["input_ids"], skip_special_tokens=True)
+        decode_text = tokenizer.decode(
+            output_dict["input_ids"], skip_special_tokens=True
+        )
         self.assertEqual(text, decode_text)

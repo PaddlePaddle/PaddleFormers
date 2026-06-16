@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -81,7 +80,9 @@ class VideoMetadata(Mapping):
     def timestamps(self) -> list[float]:
         "Timestamps of the sampled frames in seconds."
         if self.fps is None or self.frames_indices is None:
-            raise ValueError("Cannot infer video `timestamps` when `fps` or `frames_indices` is None.")
+            raise ValueError(
+                "Cannot infer video `timestamps` when `fps` or `frames_indices` is None."
+            )
         return [frame_idx / self.fps for frame_idx in self.frames_indices]
 
     def update(self, dictionary):
@@ -91,19 +92,25 @@ class VideoMetadata(Mapping):
 
 
 VideoMetadataType = Union[
-    VideoMetadata, dict, list[Union[dict, VideoMetadata]], list[list[Union[dict, VideoMetadata]]]
+    VideoMetadata,
+    dict,
+    list[dict | VideoMetadata],
+    list[list[dict | VideoMetadata]],
 ]
 
 
 def is_valid_video_frame(frame):
     return isinstance(frame, PIL.Image.Image) or (
-        (is_paddle_tensor(frame) or isinstance(frame, np.ndarray)) and frame.ndim == 3
+        (is_paddle_tensor(frame) or isinstance(frame, np.ndarray))
+        and frame.ndim == 3
     )
 
 
 def is_valid_video(video):
     if not isinstance(video, (list, tuple)):
-        return (isinstance(video, np.ndarray) or is_paddle_tensor(video)) and video.ndim == 4
+        return (
+            isinstance(video, np.ndarray) or is_paddle_tensor(video)
+        ) and video.ndim == 4
     return video and all(is_valid_video_frame(frame) for frame in video)
 
 
@@ -111,7 +118,10 @@ def valid_videos(videos):
     # If we have a list of videos, it could be either one video as list of frames or a batch
     if isinstance(videos, (list, tuple)):
         for video_or_frame in videos:
-            if not (is_valid_video(video_or_frame) or is_valid_video_frame(video_or_frame)):
+            if not (
+                is_valid_video(video_or_frame)
+                or is_valid_video_frame(video_or_frame)
+            ):
                 return False
     # If not a list, then we have a single 4D video or 5D batched tensor
     elif not is_valid_video(videos) or videos.ndim == 5:
@@ -122,12 +132,16 @@ def valid_videos(videos):
 def is_batched_video(videos):
     if isinstance(videos, (list, tuple)):
         return is_valid_video(videos[0])
-    elif (isinstance(videos, np.ndarray) or is_paddle_tensor(videos)) and videos.ndim == 5:
+    elif (
+        isinstance(videos, np.ndarray) or is_paddle_tensor(videos)
+    ) and videos.ndim == 5:
         return True
     return False
 
 
-def convert_pil_frames_to_video(videos: list[VideoInput]) -> list[Union[np.ndarray, "paddle.Tensor"]]:
+def convert_pil_frames_to_video(
+    videos: list[VideoInput],
+) -> list[Union[np.ndarray, "paddle.Tensor"]]:
     """
     Given a batch of videos, converts each video to a 4D array. If video is already in array type,
     it is simply returned. We assume that all inputs in the list are in the same format, based on the type of the first element.
@@ -137,7 +151,9 @@ def convert_pil_frames_to_video(videos: list[VideoInput]) -> list[Union[np.ndarr
             Video inputs to turn into a list of videos.
     """
 
-    if not (isinstance(videos[0], (list, tuple)) and is_valid_image(videos[0][0])):
+    if not (
+        isinstance(videos[0], (list, tuple)) and is_valid_image(videos[0][0])
+    ):
         return videos
 
     video_converted = []
@@ -163,7 +179,9 @@ def make_batched_videos(videos):
     # Early exit for deeply nested list of image frame paths. We shouldn't flatten them
     try:
         if isinstance(videos[0][0], list) and isinstance(videos[0][0][0], str):
-            return [image_paths for sublist in videos for image_paths in sublist]
+            return [
+                image_paths for sublist in videos for image_paths in sublist
+            ]
     except (IndexError, TypeError):
         pass
 
@@ -192,7 +210,9 @@ def make_batched_videos(videos):
     return flat_videos_list
 
 
-def make_batched_metadata(videos: VideoInput, video_metadata: VideoMetadataType) -> list[VideoMetadata]:
+def make_batched_metadata(
+    videos: VideoInput, video_metadata: VideoMetadataType
+) -> list[VideoMetadata]:
     if video_metadata is None:
         # Create default metadata and fill attributes we can infer from given video
         video_metadata = [
@@ -201,8 +221,12 @@ def make_batched_metadata(videos: VideoInput, video_metadata: VideoMetadataType)
                 "fps": None,
                 "duration": None,
                 "frames_indices": list(range(len(video))),
-                "height": get_video_size(video)[0] if is_valid_video(video) else None,
-                "width": get_video_size(video)[1] if is_valid_video(video) else None,
+                "height": get_video_size(video)[0]
+                if is_valid_video(video)
+                else None,
+                "width": get_video_size(video)[1]
+                if is_valid_video(video)
+                else None,
             }
             for video in videos
         ]
@@ -211,18 +235,24 @@ def make_batched_metadata(videos: VideoInput, video_metadata: VideoMetadataType)
         # Flatten if nested list
         if isinstance(video_metadata[0], list):
             video_metadata = [
-                VideoMetadata(**metadata) for metadata_list in video_metadata for metadata in metadata_list
+                VideoMetadata(**metadata)
+                for metadata_list in video_metadata
+                for metadata in metadata_list
             ]
         # Simply wrap in VideoMetadata if simple dict
         elif isinstance(video_metadata[0], dict):
-            video_metadata = [VideoMetadata(**metadata) for metadata in video_metadata]
+            video_metadata = [
+                VideoMetadata(**metadata) for metadata in video_metadata
+            ]
     else:
         # Create a batched list from single object
         video_metadata = [VideoMetadata(**video_metadata)]
     return video_metadata
 
 
-def get_video_size(video: np.ndarray, channel_dim: Optional[ChannelDimension] = None) -> tuple[int, int]:
+def get_video_size(
+    video: np.ndarray, channel_dim: Optional[ChannelDimension] = None
+) -> tuple[int, int]:
     """
     Returns the (height, width) dimensions of the video.
 
@@ -236,7 +266,9 @@ def get_video_size(video: np.ndarray, channel_dim: Optional[ChannelDimension] = 
         A tuple of the video's height and width.
     """
     if channel_dim is None:
-        channel_dim = infer_channel_dimension_format(video, num_channels=(1, 3, 4))
+        channel_dim = infer_channel_dimension_format(
+            video, num_channels=(1, 3, 4)
+        )
 
     if channel_dim == ChannelDimension.FIRST:
         return video.shape[-2], video.shape[-1]
@@ -246,7 +278,9 @@ def get_video_size(video: np.ndarray, channel_dim: Optional[ChannelDimension] = 
         raise ValueError(f"Unsupported data format: {channel_dim}")
 
 
-def default_sample_indices_fn(metadata: VideoMetadata, num_frames=None, fps=None, **kwargs):
+def default_sample_indices_fn(
+    metadata: VideoMetadata, num_frames=None, fps=None, **kwargs
+):
     """
     A default sampling function that replicates the logic used in get_uniform_frame_indices,
     while optionally handling `fps` if `num_frames` is not provided.
@@ -275,7 +309,9 @@ def default_sample_indices_fn(metadata: VideoMetadata, num_frames=None, fps=None
             )
 
     if num_frames is not None:
-        indices = np.arange(0, total_num_frames, total_num_frames / num_frames, dtype=int)
+        indices = np.arange(
+            0, total_num_frames, total_num_frames / num_frames, dtype=int
+        )
     else:
         indices = np.arange(0, total_num_frames, dtype=int)
     return indices
@@ -357,7 +393,9 @@ def read_video_paddlecodec(
 
     indices = sample_indices_fn(metadata=metadata, **kwargs)
     video = decoder.get_frames_at(indices=indices).data.contiguous().to("cuda")
-    logger.info(f"paddlecodec:  {video_path=}, {total_num_frames=}, {video_fps=}, time={time.time() - st:.3f}s")
+    logger.info(
+        f"paddlecodec:  {video_path=}, {total_num_frames=}, {video_fps=}, time={time.time() - st:.3f}s"
+    )
     paddle.disable_compat()
     metadata.frames_indices = indices
     return video, metadata
@@ -371,7 +409,7 @@ VIDEO_DECODERS = {
 def load_video(
     video: VideoInput,
     num_frames: Optional[int] = None,
-    fps: Optional[Union[int, float]] = None,
+    fps: Optional[int | float] = None,
     video_backend: str = "paddlecodec",
     sample_indices_fn: Optional[Callable] = None,
     **kwargs,
@@ -416,7 +454,9 @@ def load_video(
     if sample_indices_fn is None:
 
         def sample_indices_fn_func(metadata, **fn_kwargs):
-            return default_sample_indices_fn(metadata, num_frames=num_frames, fps=fps, **fn_kwargs)
+            return default_sample_indices_fn(
+                metadata, num_frames=num_frames, fps=fps, **fn_kwargs
+            )
 
         sample_indices_fn = sample_indices_fn_func
 
@@ -430,10 +470,14 @@ def load_video(
     elif os.path.isfile(video):
         file_obj = video
     else:
-        raise TypeError("Incorrect format used for video. Should be an url linking to an video or a local path.")
+        raise TypeError(
+            "Incorrect format used for video. Should be an url linking to an video or a local path."
+        )
 
     if video_backend not in VIDEO_DECODERS:
-        raise ValueError(f"video_backend='{video_backend}' is not supported. Only 'paddlecodec' is available.")
+        raise ValueError(
+            f"video_backend='{video_backend}' is not supported. Only 'paddlecodec' is available."
+        )
 
     video_decoder = VIDEO_DECODERS[video_backend]
     video, metadata = video_decoder(file_obj, sample_indices_fn, **kwargs)
@@ -442,7 +486,7 @@ def load_video(
 
 def convert_to_rgb(
     video: np.ndarray,
-    input_data_format: Optional[Union[str, ChannelDimension]] = None,
+    input_data_format: Optional[str | ChannelDimension] = None,
 ) -> np.ndarray:
     """
     Convert video to RGB by blending the transparency layer if it's in RGBA format, otherwise simply returns it.
@@ -454,12 +498,16 @@ def convert_to_rgb(
             The channel dimension format of the input video. If unset, will use the inferred format from the input.
     """
     if not isinstance(video, np.ndarray):
-        raise TypeError(f"Video has to be a numpy array to convert to RGB format, but found {type(video)}")
+        raise TypeError(
+            f"Video has to be a numpy array to convert to RGB format, but found {type(video)}"
+        )
 
     # np.array usually comes with ChannelDimension.LAST so let's convert it
     if input_data_format is None:
         input_data_format = infer_channel_dimension_format(video)
-    video = to_channel_dimension_format(video, ChannelDimension.FIRST, input_channel_dim=input_data_format)
+    video = to_channel_dimension_format(
+        video, ChannelDimension.FIRST, input_channel_dim=input_data_format
+    )
 
     # 3 channels for RGB already
     if video.shape[-3] == 3:
@@ -475,17 +523,19 @@ def convert_to_rgb(
     # There is a transparency layer, blend it with a white background.
     # Calculate the alpha proportion for blending.
     alpha = video[..., 3, :, :] / 255.0
-    video = (1 - alpha[..., None, :, :]) * 255 + alpha[..., None, :, :] * video[..., 3, :, :]
+    video = (1 - alpha[..., None, :, :]) * 255 + alpha[..., None, :, :] * video[
+        ..., 3, :, :
+    ]
     return video
 
 
 def pad(
     video: np.ndarray,
-    padding: Union[int, tuple[int, int], Iterable[tuple[int, int]]],
+    padding: int | tuple[int, int] | Iterable[tuple[int, int]],
     mode: PaddingMode = PaddingMode.CONSTANT,
-    constant_values: Union[float, Iterable[float]] = 0.0,
-    data_format: Optional[Union[str, ChannelDimension]] = None,
-    input_data_format: Optional[Union[str, ChannelDimension]] = None,
+    constant_values: float | Iterable[float] = 0.0,
+    data_format: Optional[str | ChannelDimension] = None,
+    input_data_format: Optional[str | ChannelDimension] = None,
 ) -> np.ndarray:
     """
     Pads the `video` with the specified (height, width) `padding` and `mode`.
@@ -533,16 +583,26 @@ def pad(
             values = ((values, values), (values, values))
         elif isinstance(values, tuple) and len(values) == 1:
             values = ((values[0], values[0]), (values[0], values[0]))
-        elif isinstance(values, tuple) and len(values) == 2 and isinstance(values[0], int):
+        elif (
+            isinstance(values, tuple)
+            and len(values) == 2
+            and isinstance(values[0], int)
+        ):
             values = (values, values)
-        elif isinstance(values, tuple) and len(values) == 2 and isinstance(values[0], tuple):
+        elif (
+            isinstance(values, tuple)
+            and len(values) == 2
+            and isinstance(values[0], tuple)
+        ):
             pass
         else:
             raise ValueError(f"Unsupported format: {values}")
 
         # add 0 for channel dimension
         values = (
-            ((0, 0), (0, 0), *values) if input_data_format == ChannelDimension.FIRST else ((0, 0), *values, (0, 0))
+            ((0, 0), (0, 0), *values)
+            if input_data_format == ChannelDimension.FIRST
+            else ((0, 0), *values, (0, 0))
         )
 
         # Add additional padding if there's a batch dimension
@@ -564,13 +624,20 @@ def pad(
         pad_kwargs["constant_values"] = _expand_for_data_format(constant_values)
 
     video = np.pad(video, padding, mode=padding_map[mode], **pad_kwargs)
-    video = to_channel_dimension_format(video, data_format, input_data_format) if data_format is not None else video
+    video = (
+        to_channel_dimension_format(video, data_format, input_data_format)
+        if data_format is not None
+        else video
+    )
     return video
 
 
 def group_videos_by_shape(
     videos: list["paddle.Tensor"],
-) -> tuple[dict[tuple[int, int], "paddle.Tensor"], dict[int, tuple[tuple[int, int], int]]]:
+) -> tuple[
+    dict[tuple[int, int], "paddle.Tensor"],
+    dict[int, tuple[tuple[int, int], int]],
+]:
     """
     Groups videos by shape.
     Returns a dictionary with the shape as key and a list of videos with that shape as value,
@@ -587,7 +654,10 @@ def group_videos_by_shape(
         grouped_videos[shape].append(video)
         grouped_videos_index[i] = (shape, len(grouped_videos[shape]) - 1)
     # stack videos with the same size and number of frames
-    grouped_videos = {shape: paddle.stack(videos, dim=0) for shape, videos in grouped_videos.items()}
+    grouped_videos = {
+        shape: paddle.stack(videos, dim=0)
+        for shape, videos in grouped_videos.items()
+    }
     return grouped_videos, grouped_videos_index
 
 

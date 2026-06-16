@@ -17,7 +17,7 @@
 moe_layer_all_gather
 """
 
-from typing import List, Optional
+from typing import Optional
 
 import paddle
 from paddle import nn
@@ -30,9 +30,9 @@ from .moe_alltoall_layer import MOEAlltoAllLayer
 
 def create_moe_block(
     gate: nn.Layer,
-    experts: List[nn.Layer],
+    experts: list[nn.Layer],
     layer_idx,
-    shared_experts: Optional[List[nn.Layer]] = None,
+    shared_experts: Optional[list[nn.Layer]] = None,
     group: Group = None,
     recompute=False,
     k=2,
@@ -41,7 +41,7 @@ def create_moe_block(
     group_experts=False,
     use_expert_out_alltoall=True,  #
     use_padding=True,
-    dense_token_type=3,  # considerd as dense tokens (no moe)
+    dense_token_type=3,  # considered as dense tokens (no moe)
     moe_statics=None,
     moe_num_experts=None,
     moe_mode="allgather",
@@ -60,7 +60,7 @@ def create_moe_block(
             group_experts,
             use_expert_out_alltoall,  #
             use_padding,
-            dense_token_type,  # considerd as dense tokens (no moe)
+            dense_token_type,  # considered as dense tokens (no moe)
             moe_statics,
             moe_num_experts,
         )
@@ -103,19 +103,27 @@ class MoEStatics(nn.Layer):
         self._cast_to_low_precison = False
         use_multimodel_experts = config.get("multimodel_experts", False)
 
-        num_experts = config.moe_num_experts[0] if use_multimodel_experts else config.moe_num_experts
+        num_experts = (
+            config.moe_num_experts[0]
+            if use_multimodel_experts
+            else config.moe_num_experts
+        )
         if use_multimodel_experts:
-            assert (
-                len(set(config.moe_num_experts)) == 1
-            ), f"assume expert group has same size, got: {config.moe_num_experts}"
+            assert len(set(config.moe_num_experts)) == 1, (
+                f"assume expert group has same size, got: {config.moe_num_experts}"
+            )
 
         with paddle.utils.unique_name.guard(f"mm_layer_{layer_idx}_"):
-            num_experts_groups = len(config.moe_num_experts) if use_multimodel_experts else 1
+            num_experts_groups = (
+                len(config.moe_num_experts) if use_multimodel_experts else 1
+            )
             p = self.create_parameter(
                 shape=[num_experts_groups, num_experts],
                 dtype="float32",
                 is_bias=True,
-                attr=paddle.ParamAttr(name=paddle.utils.unique_name.generate("corr_bias")),
+                attr=paddle.ParamAttr(
+                    name=paddle.utils.unique_name.generate("corr_bias")
+                ),
             )
             p.stop_gradient = True
             self.e_score_correction_bias = p

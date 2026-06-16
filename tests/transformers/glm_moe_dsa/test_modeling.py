@@ -78,7 +78,9 @@ class GlmMoeDsaModelTester:
         self.use_cache = use_cache
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
-        self.apply_residual_connection_post_layernorm = apply_residual_connection_post_layernorm
+        self.apply_residual_connection_post_layernorm = (
+            apply_residual_connection_post_layernorm
+        )
         self.hidden_dropout = hidden_dropout
         self.attention_dropout = attention_dropout
         self.attention_softmax_in_fp32 = attention_softmax_in_fp32
@@ -100,22 +102,39 @@ class GlmMoeDsaModelTester:
         self.return_dict = return_dict
 
     def prepare_config_and_inputs(self):
-        input_ids = ids_tensor([self.batch_size, self.seq_length], self.vocab_size, dtype=paddle.int64)
+        input_ids = ids_tensor(
+            [self.batch_size, self.seq_length],
+            self.vocab_size,
+            dtype=paddle.int64,
+        )
 
         input_mask = None
         if self.use_input_mask:
-            input_mask = random_attention_mask([self.batch_size, self.seq_length])
+            input_mask = random_attention_mask(
+                [self.batch_size, self.seq_length]
+            )
 
         sequence_labels = None
         token_labels = None
         choice_labels = None
         if self.use_labels:
-            sequence_labels = ids_tensor([self.batch_size], self.type_sequence_label_size)
-            token_labels = ids_tensor([self.batch_size, self.seq_length], self.num_labels)
+            sequence_labels = ids_tensor(
+                [self.batch_size], self.type_sequence_label_size
+            )
+            token_labels = ids_tensor(
+                [self.batch_size, self.seq_length], self.num_labels
+            )
             choice_labels = ids_tensor([self.batch_size], self.num_choices)
 
         config = self.get_config()
-        return config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        return (
+            config,
+            input_ids,
+            input_mask,
+            sequence_labels,
+            token_labels,
+            choice_labels,
+        )
 
     def get_config(self) -> GlmMoeDsaConfig:
         return GlmMoeDsaConfig(
@@ -148,7 +167,9 @@ class GlmMoeDsaModelTester:
         inputs_dict = {"input_ids": input_ids, "attention_mask": input_mask}
         return config, inputs_dict
 
-    def create_and_check_lm_head_model(self, config, input_ids, input_mask, *args):
+    def create_and_check_lm_head_model(
+        self, config, input_ids, input_mask, *args
+    ):
         model = GlmMoeDsaForCausalLM(config)
         model.eval()
 
@@ -160,7 +181,9 @@ class GlmMoeDsaModelTester:
         self.parent.assertIsNotNone(result)
 
 
-class GlmMoeDsaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
+class GlmMoeDsaModelTest(
+    ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
+):
     return_dict = False
     use_labels = False
 
@@ -172,10 +195,14 @@ class GlmMoeDsaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
         super().setUp()
 
         self.model_tester = GlmMoeDsaModelTester(self)
-        self.config_tester = ConfigTester(self, config_class=GlmMoeDsaConfig, vocab_size=256, hidden_size=24)
+        self.config_tester = ConfigTester(
+            self, config_class=GlmMoeDsaConfig, vocab_size=256, hidden_size=24
+        )
 
     def _get_input_ids_and_config(self):
-        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+        config, inputs_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
 
         input_ids = inputs_dict[self.input_name]
         attention_mask = paddle.ones_like(input_ids, dtype=paddle.int64)
@@ -234,7 +261,9 @@ class GlmMoeDsaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
         pass
 
 
-class GlmMoeDsaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
+class GlmMoeDsaModelIntegrationTest(
+    ModelTesterPretrainedMixin, unittest.TestCase
+):
     @gpu_device_initializer(log_prefix="GlmMoeDsaModelIntegrationTest")
     def setUp(self):
         pass

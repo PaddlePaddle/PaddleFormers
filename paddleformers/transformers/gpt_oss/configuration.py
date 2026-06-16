@@ -14,7 +14,10 @@
 
 # from ..configuration_utils import PretrainedConfig, layer_type_validation
 from ..configuration_utils import PretrainedConfig
-from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
+from ..modeling_rope_utils import (
+    rope_config_validation,
+    standardize_rope_params,
+)
 
 
 class GptOssConfig(PretrainedConfig):
@@ -42,7 +45,13 @@ class GptOssConfig(PretrainedConfig):
         initializer_range: float = 0.02,
         max_position_embeddings=131072,
         rms_norm_eps: float = 1e-5,
-        rope_scaling={"rope_type": "yarn", "factor": 32.0, "beta_fast": 32.0, "beta_slow": 1.0, "truncate": False},
+        rope_scaling={
+            "rope_type": "yarn",
+            "factor": 32.0,
+            "beta_fast": 32.0,
+            "beta_slow": 1.0,
+            "truncate": False,
+        },
         attention_dropout: float = 0.0,
         num_experts_per_tok=4,
         output_router_logits=False,
@@ -70,11 +79,16 @@ class GptOssConfig(PretrainedConfig):
         self.rope_theta = rope_theta
         self.rope_scaling = rope_scaling
         self.attention_dropout = attention_dropout
-        self.head_dim = head_dim if head_dim is not None else self.hidden_size // self.num_attention_heads
+        self.head_dim = (
+            head_dim
+            if head_dim is not None
+            else self.hidden_size // self.num_attention_heads
+        )
         self.layer_types = layer_types
         if self.layer_types is None:
             self.layer_types = [
-                "sliding_attention" if bool((i + 1) % 2) else "full_attention" for i in range(self.num_hidden_layers)
+                "sliding_attention" if bool((i + 1) % 2) else "full_attention"
+                for i in range(self.num_hidden_layers)
             ]
         # layer_type_validation(self.layer_types)
         self.max_position_embeddings = max_position_embeddings

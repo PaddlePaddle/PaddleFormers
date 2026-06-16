@@ -27,24 +27,42 @@ def convert_dpo_txt_data(data):
             f"But got src_length:{len(data['src'])} tgt_length:{len(data['tgt'])}"
         )
     if len(data["response"]) != 2:
-        raise ValueError(f"Response length must be 2. " f"But got response_length:{len(data['response'])}.")
+        raise ValueError(
+            f"Response length must be 2. "
+            f"But got response_length:{len(data['response'])}."
+        )
     if len(data["sort"]) != 2:
-        raise ValueError(f"Sort length must be 2. " f"But got sort_length:{len(data['sort'])}.")
+        raise ValueError(
+            f"Sort length must be 2. But got sort_length:{len(data['sort'])}."
+        )
     if data["sort"][0] == data["sort"][1]:
-        raise ValueError(f"Sort field must be different." f" But got 'sort':{data['sort']}")
-    if isinstance(data["response"][0], str) and isinstance(data["response"][1], str):
+        raise ValueError(
+            f"Sort field must be different. But got 'sort':{data['sort']}"
+        )
+    if isinstance(data["response"][0], str) and isinstance(
+        data["response"][1], str
+    ):
         data["response"] = [[data["response"][0]], [data["response"][1]]]
     for response in data["response"]:
         if not isinstance(response, list):
-            raise ValueError(f"Session level response should be List[List[str]], but got List of {type(response)}")
+            raise ValueError(
+                f"Session level response should be List[List[str]], but got List of {type(response)}"
+            )
         if len(response) % 2 != 1:
-            raise ValueError("The number of responses should be odd, but an even number of responses were obtained.")
+            raise ValueError(
+                "The number of responses should be odd, but an even number of responses were obtained."
+            )
         for r in response:
             if len(r.strip()) < 1:
-                raise ValueError(f"Response field must be longer than 1." f" But got 'response':{data['response']}.")
+                raise ValueError(
+                    f"Response field must be longer than 1."
+                    f" But got 'response':{data['response']}."
+                )
 
     if len(data["response"][0]) < 1 or len(data["response"][1]) < 1:
-        raise ValueError(f"Ignore empty response." f" But got 'response':{data['response']}.")
+        raise ValueError(
+            f"Ignore empty response. But got 'response':{data['response']}."
+        )
     if data["sort"][0] > data["sort"][1]:
         chosen = data["response"][0]
         rejected = data["response"][1]
@@ -73,14 +91,20 @@ def convert_dpo_txt_data(data):
     for idx in range(len(data["src"])):
         data["messages"].append({"role": "user", "content": data["src"][idx]})
         if idx != len(data["src"]) - 1:
-            data["messages"].append({"role": "assistant", "content": data["tgt"][idx]})
+            data["messages"].append(
+                {"role": "assistant", "content": data["tgt"][idx]}
+            )
 
     chosen_response, rejected_response = [], []
     for idx in range(len(chosen)):
         if idx % 2 == 0:
             # assistant
-            chosen_response.append({"role": "assistant", "content": chosen[idx]})
-            rejected_response.append({"role": "assistant", "content": rejected[idx]})
+            chosen_response.append(
+                {"role": "assistant", "content": chosen[idx]}
+            )
+            rejected_response.append(
+                {"role": "assistant", "content": rejected[idx]}
+            )
         else:
             # user
             chosen_response.append({"role": "user", "content": chosen[idx]})
@@ -103,7 +127,9 @@ def convert_txt_data(item):
 
     for item_str in item["src"] + item["tgt"]:
         if len(item_str.strip()) == 0:
-            raise ValueError("Ignore example with empty string in str / tgt field.")
+            raise ValueError(
+                "Ignore example with empty string in str / tgt field."
+            )
 
     if "label" not in item:
         item["label"] = [1] * len(item["src"])
@@ -142,8 +168,13 @@ def convert_txt_data(item):
 
 
 def convert_mm_data(item):
-    if len(item.get("image_info", [])) > 0 and len(item.get("video_info", [])) > 0:
-        assert "order" in item, "when image and video both exist, data must contain order"
+    if (
+        len(item.get("image_info", [])) > 0
+        and len(item.get("video_info", [])) > 0
+    ):
+        assert "order" in item, (
+            "when image and video both exist, data must contain order"
+        )
         order = item["order"]
         order_type = order["type"]
         order_index = order["index"]
@@ -191,7 +222,9 @@ def convert_mm_data(item):
             new_tag = "mask"
         if tag != new_tag:
             if tag == "mask":
-                tool_response = data_info["text_info"][data_idx - 1].get("tool_response", False)
+                tool_response = data_info["text_info"][data_idx - 1].get(
+                    "tool_response", False
+                )
                 if tool_response:
                     role = "observation"
                 else:
@@ -199,7 +232,13 @@ def convert_mm_data(item):
                 messages.append({"role": role, "content": content})
             elif tag == "no_mask":
                 if len(tool_calls_str) > 0:
-                    messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls_str})
+                    messages.append(
+                        {
+                            "role": "assistant",
+                            "content": content,
+                            "tool_calls": tool_calls_str,
+                        }
+                    )
                 else:
                     messages.append({"role": "assistant", "content": content})
             tag = new_tag
@@ -218,7 +257,9 @@ def convert_mm_data(item):
             content += "<video>"
             videos.append(data_info["video_info"][data_idx]["image_url"])
     if tag == "mask":
-        tool_response = data_info["text_info"][data_idx].get("tool_response", False)
+        tool_response = data_info["text_info"][data_idx].get(
+            "tool_response", False
+        )
         if tool_response:
             role = "observation"
         else:
@@ -226,7 +267,13 @@ def convert_mm_data(item):
         messages.append({"role": role, "content": content})
     elif tag == "no_mask":
         if len(tool_calls_str) > 0:
-            messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls_str})
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": content,
+                    "tool_calls": tool_calls_str,
+                }
+            )
         else:
             messages.append({"role": "assistant", "content": content})
     res = {"messages": messages}

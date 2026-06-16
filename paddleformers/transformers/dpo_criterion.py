@@ -15,8 +15,8 @@
 import copy
 
 import paddle
-import paddle.nn as nn
 import paddle.nn.functional as F
+from paddle import nn
 from paddle.distributed.fleet.meta_parallel import ParallelCrossEntropy
 from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp
 
@@ -32,23 +32,36 @@ from .tensor_parallel_utils import fused_head_and_loss_fn, parallel_matmul
 class DPOCriterion(nn.Layer):
     """DPO Criterion"""
 
-    def __init__(self, config, dpo_config=None, use_infohub=False, ignore_eos_token=False):
+    def __init__(
+        self, config, dpo_config=None, use_infohub=False, ignore_eos_token=False
+    ):
         super(DPOCriterion, self).__init__()
         self.config = config
         if dpo_config is None:
             if getattr(self.config, "dpo_config", None) is None:
-                raise ValueError("DPO Criterion requires model_config.dpo_config.")
+                raise ValueError(
+                    "DPO Criterion requires model_config.dpo_config."
+                )
             self.dpo_config = copy.deepcopy(config.dpo_config)
         else:
             self.dpo_config = dpo_config
-        if self.config.tensor_parallel_output and self.config.tensor_model_parallel_size > 1:
+        if (
+            self.config.tensor_parallel_output
+            and self.config.tensor_model_parallel_size > 1
+        ):
             self.logprobs = ParallelCrossEntropy()
         else:
             self.logprobs = nn.CrossEntropyLoss(reduction="none")
         self.use_infohub = use_infohub
         self.ignore_eos_token = ignore_eos_token
 
-    def dpo_loss(self, policy_chosen_logps, policy_rejected_logps, reference_chosen_logps, reference_rejected_logps):
+    def dpo_loss(
+        self,
+        policy_chosen_logps,
+        policy_rejected_logps,
+        reference_chosen_logps,
+        reference_rejected_logps,
+    ):
         """DPO Loss"""
         pi_logratios = policy_chosen_logps - policy_rejected_logps
         ref_logratios = reference_chosen_logps - reference_rejected_logps
@@ -56,8 +69,10 @@ class DPOCriterion(nn.Layer):
 
         if self.dpo_config.loss_type == "sigmoid":
             loss = (
-                -F.log_sigmoid(self.dpo_config.beta * logits) * (1 - self.dpo_config.label_smoothing)
-                - F.log_sigmoid(-self.dpo_config.beta * logits) * self.dpo_config.label_smoothing
+                -F.log_sigmoid(self.dpo_config.beta * logits)
+                * (1 - self.dpo_config.label_smoothing)
+                - F.log_sigmoid(-self.dpo_config.beta * logits)
+                * self.dpo_config.label_smoothing
             )
         elif self.dpo_config.loss_type == "hinge":
             loss = F.relu(1 - self.dpo_config.beta * logits)
@@ -65,8 +80,10 @@ class DPOCriterion(nn.Layer):
             gamma_logratios = self.dpo_config.simpo_gamma / self.dpo_config.beta
             logits -= gamma_logratios
             loss = (
-                -F.log_sigmoid(self.dpo_config.beta * logits) * (1 - self.dpo_config.label_smoothing)
-                - F.log_sigmoid(-self.dpo_config.beta * logits) * self.dpo_config.label_smoothing
+                -F.log_sigmoid(self.dpo_config.beta * logits)
+                * (1 - self.dpo_config.label_smoothing)
+                - F.log_sigmoid(-self.dpo_config.beta * logits)
+                * self.dpo_config.label_smoothing
             )
         elif self.dpo_config.loss_type == "ipo":
             # eqn (17) of the paper where beta is the regularization parameter
@@ -75,21 +92,42 @@ class DPOCriterion(nn.Layer):
         elif self.dpo_config.loss_type == "dpop":
             positive_reg = reference_chosen_logps - policy_chosen_logps
             loss = -F.log_sigmoid(
-                self.dpo_config.beta * (logits - self.dpo_config.dpop_lambda * paddle.clip(positive_reg, min=0))
+                self.dpo_config.beta
+                * (
+                    logits
+                    - self.dpo_config.dpop_lambda
+                    * paddle.clip(positive_reg, min=0)
+                )
             )
         elif self.dpo_config.loss_type == "kto_pair":
             # eqn (7) of the HALOs paper
-            chosen_KL = (policy_chosen_logps - reference_chosen_logps).mean().clip(min=0)
-            rejected_KL = (policy_rejected_logps - reference_rejected_logps).mean().clip(min=0)
+            chosen_KL = (
+                (policy_chosen_logps - reference_chosen_logps)
+                .mean()
+                .clip(min=0)
+            )
+            rejected_KL = (
+                (policy_rejected_logps - reference_rejected_logps)
+                .mean()
+                .clip(min=0)
+            )
 
             chosen_logratios = policy_chosen_logps - reference_chosen_logps
-            rejected_logratios = policy_rejected_logps - reference_rejected_logps
+            rejected_logratios = (
+                policy_rejected_logps - reference_rejected_logps
+            )
             # As described in the KTO report, the KL term for chosen (rejected) is
             # estimated using the rejected (chosen) half.
             loss = paddle.cat(
                 (
-                    1 - F.sigmoid(self.dpo_config.beta * (chosen_logratios - rejected_KL)),
-                    1 - F.sigmoid(self.dpo_config.beta * (chosen_KL - rejected_logratios)),
+                    1
+                    - F.sigmoid(
+                        self.dpo_config.beta * (chosen_logratios - rejected_KL)
+                    ),
+                    1
+                    - F.sigmoid(
+                        self.dpo_config.beta * (chosen_KL - rejected_logratios)
+                    ),
                 ),
                 0,
             )
@@ -101,10 +139,16 @@ class DPOCriterion(nn.Layer):
             a = policy_chosen_logps - reference_chosen_logps
             b = policy_rejected_logps - reference_rejected_logps
 
-            loss = (a - 0.5 / self.dpo_config.beta) ** 2 + (b + 0.5 / self.dpo_config.beta) ** 2
+            loss = (a - 0.5 / self.dpo_config.beta) ** 2 + (
+                b + 0.5 / self.dpo_config.beta
+            ) ** 2
         elif self.dpo_config.loss_type == "nca_pair":
-            chosen_rewards = (policy_chosen_logps - reference_chosen_logps) * self.dpo_config.beta
-            rejected_rewards = (policy_rejected_logps - reference_rejected_logps) * self.dpo_config.beta
+            chosen_rewards = (
+                policy_chosen_logps - reference_chosen_logps
+            ) * self.dpo_config.beta
+            rejected_rewards = (
+                policy_rejected_logps - reference_rejected_logps
+            ) * self.dpo_config.beta
             loss = (
                 -F.log_sigmoid(chosen_rewards)
                 - 0.5 * F.log_sigmoid(-chosen_rewards)
@@ -114,7 +158,8 @@ class DPOCriterion(nn.Layer):
             # Derived from Eqs. (4) and (7) from https://arxiv.org/abs/2403.07691 by using
             # log identities and exp(log(P(y|x)) = P(y|x)
             log_odds = (policy_chosen_logps - policy_rejected_logps) - (
-                paddle.log1p(-paddle.exp(policy_chosen_logps)) - paddle.log1p(-paddle.exp(policy_rejected_logps))
+                paddle.log1p(-paddle.exp(policy_chosen_logps))
+                - paddle.log1p(-paddle.exp(policy_rejected_logps))
             )
             loss = -F.log_sigmoid(log_odds)
         else:
@@ -134,8 +179,12 @@ class DPOCriterion(nn.Layer):
         average_log_prob=False,
     ):
         """DPO logprobs"""
-        use_fused_head_and_loss_fn = getattr(self.config, "use_fused_head_and_loss_fn", False)
-        use_filtered_label_loss = getattr(self.config, "use_filtered_label_loss", False)
+        use_fused_head_and_loss_fn = getattr(
+            self.config, "use_fused_head_and_loss_fn", False
+        )
+        use_filtered_label_loss = getattr(
+            self.config, "use_filtered_label_loss", False
+        )
         chunk_size = getattr(self.config, "chunk_size", 1024)
         labels = chosen_labels + rejected_labels
         if use_fused_head_and_loss_fn:
@@ -144,20 +193,34 @@ class DPOCriterion(nn.Layer):
             hidden_states, weight, bias = logits
 
         if use_filtered_label_loss:
-            if self.config.tensor_model_parallel_size > 1 and self.config.sequence_parallel:
-                labels, sparse_tgt_idx = sequence_parallel_sparse_mask_labels(labels, 0)
+            if (
+                self.config.tensor_model_parallel_size > 1
+                and self.config.sequence_parallel
+            ):
+                labels, sparse_tgt_idx = sequence_parallel_sparse_mask_labels(
+                    labels, 0
+                )
 
-                hidden_states = paddle.gather(hidden_states, sparse_tgt_idx, axis=0)
+                hidden_states = paddle.gather(
+                    hidden_states, sparse_tgt_idx, axis=0
+                )
                 hidden_states = AllGatherVarlenOp.apply(hidden_states)
             else:
                 labels = labels.flatten()
                 sparse_tgt_idx = paddle.nonzero(labels != 0).flatten()
                 labels = paddle.take_along_axis(labels, sparse_tgt_idx, axis=0)
 
-                hidden_states = hidden_states.reshape([-1, hidden_states.shape[-1]])
-                hidden_states = paddle.gather(hidden_states, sparse_tgt_idx, axis=0)
+                hidden_states = hidden_states.reshape(
+                    [-1, hidden_states.shape[-1]]
+                )
+                hidden_states = paddle.gather(
+                    hidden_states, sparse_tgt_idx, axis=0
+                )
         elif use_fused_head_and_loss_fn:
-            if self.config.tensor_model_parallel_size > 1 and self.config.sequence_parallel:
+            if (
+                self.config.tensor_model_parallel_size > 1
+                and self.config.sequence_parallel
+            ):
                 hidden_states = GatherOp.apply(hidden_states)
                 hidden_states = hidden_states.reshape(
                     [
@@ -199,9 +262,13 @@ class DPOCriterion(nn.Layer):
                 logits = logits.logits
             logits = logits.astype("float32")
             if logits.shape[:-1] != labels.shape:
-                raise ValueError("Logits (batch and sequence length dim) and labels must have the same shape.")
+                raise ValueError(
+                    "Logits (batch and sequence length dim) and labels must have the same shape."
+                )
             # bs, seq
-            per_token_logps = -self.logprobs(logits, labels.unsqueeze(2)).squeeze(2)
+            per_token_logps = -self.logprobs(
+                logits, labels.unsqueeze(2)
+            ).squeeze(2)
 
         if len(response_indexs.shape) == 3:
             response_indexs = response_indexs[0]
@@ -213,7 +280,11 @@ class DPOCriterion(nn.Layer):
                     (
                         paddle.gather(
                             per_token_logps.reshape([-1]),
-                            paddle.arange(response_index[1], response_index[2], dtype=paddle.int32),
+                            paddle.arange(
+                                response_index[1],
+                                response_index[2],
+                                dtype=paddle.int32,
+                            ),
                             axis=0,
                         ).sum()
                     )
@@ -226,7 +297,11 @@ class DPOCriterion(nn.Layer):
                     (
                         paddle.gather(
                             per_token_logps.reshape([-1]),
-                            paddle.arange(response_index[2] + offset, response_index[3], dtype=paddle.int32),
+                            paddle.arange(
+                                response_index[2] + offset,
+                                response_index[3],
+                                dtype=paddle.int32,
+                            ),
                             axis=0,
                         ).sum()
                     )
@@ -239,8 +314,14 @@ class DPOCriterion(nn.Layer):
                 [
                     (
                         paddle.gather(
-                            paddle.gather(per_token_logps, response_index[0], axis=0),
-                            paddle.arange(response_index[1], response_index[2], dtype=paddle.int32),
+                            paddle.gather(
+                                per_token_logps, response_index[0], axis=0
+                            ),
+                            paddle.arange(
+                                response_index[1],
+                                response_index[2],
+                                dtype=paddle.int32,
+                            ),
                             axis=0,
                         ).sum()
                     )
@@ -252,8 +333,14 @@ class DPOCriterion(nn.Layer):
                 [
                     (
                         paddle.gather(
-                            paddle.gather(per_token_logps, response_index[0], axis=0),
-                            paddle.arange(response_index[2] + offset, response_index[3], dtype=paddle.int32),
+                            paddle.gather(
+                                per_token_logps, response_index[0], axis=0
+                            ),
+                            paddle.arange(
+                                response_index[2] + offset,
+                                response_index[3],
+                                dtype=paddle.int32,
+                            ),
                             axis=0,
                         ).sum()
                     )
@@ -264,17 +351,35 @@ class DPOCriterion(nn.Layer):
 
         sft_loss = -chosen_logps.sum() / (chosen_labels != 0).sum()
         if average_log_prob:
-            chosen_response_length = response_indexs[:, 2] - response_indexs[:, 1] - offset
-            rejected_response_length = response_indexs[:, 3] - response_indexs[:, 2]
+            chosen_response_length = (
+                response_indexs[:, 2] - response_indexs[:, 1] - offset
+            )
+            rejected_response_length = (
+                response_indexs[:, 3] - response_indexs[:, 2]
+            )
             chosen_logps /= chosen_response_length.astype("float32")
             rejected_logps /= rejected_response_length.astype("float32")
         elif self.dpo_config.normalize_logps:
-            avg_response_length = (response_indexs[:, 3] - response_indexs[:, 1]) / 2
-            chosen_response_length = response_indexs[:, 2] - response_indexs[:, 1]
-            rejected_response_length = response_indexs[:, 3] - response_indexs[:, 2]
-            chosen_logps *= avg_response_length / chosen_response_length.astype("float32")
-            rejected_logps *= avg_response_length / rejected_response_length.astype("float32")
-        return chosen_logps, rejected_logps, sft_loss * self.dpo_config.sft_loss_ratio
+            avg_response_length = (
+                response_indexs[:, 3] - response_indexs[:, 1]
+            ) / 2
+            chosen_response_length = (
+                response_indexs[:, 2] - response_indexs[:, 1]
+            )
+            rejected_response_length = (
+                response_indexs[:, 3] - response_indexs[:, 2]
+            )
+            chosen_logps *= avg_response_length / chosen_response_length.astype(
+                "float32"
+            )
+            rejected_logps *= (
+                avg_response_length / rejected_response_length.astype("float32")
+            )
+        return (
+            chosen_logps,
+            rejected_logps,
+            sft_loss * self.dpo_config.sft_loss_ratio,
+        )
 
     def forward(
         self,
@@ -282,27 +387,48 @@ class DPOCriterion(nn.Layer):
         labels,
     ):
         """Forward"""
-        chosen_labels, rejected_labels, response_indexs, reference_chosen_logps, reference_rejected_logps = labels
+        (
+            chosen_labels,
+            rejected_labels,
+            response_indexs,
+            reference_chosen_logps,
+            reference_rejected_logps,
+        ) = labels
         if self.dpo_config.loss_type in ["ipo", "or", "simpo"]:
             average_log_prob = True
         else:
             average_log_prob = False
         if reference_chosen_logps is None or reference_rejected_logps is None:
-            reference_chosen_logps, reference_rejected_logps, sft_loss = self.dpo_logps(
-                logits, chosen_labels, rejected_labels, response_indexs, average_log_prob
+            reference_chosen_logps, reference_rejected_logps, sft_loss = (
+                self.dpo_logps(
+                    logits,
+                    chosen_labels,
+                    rejected_labels,
+                    response_indexs,
+                    average_log_prob,
+                )
             )
             if self.use_infohub:
                 infohub.reference_chosen_logps.append(reference_chosen_logps)
-                infohub.reference_rejected_logps.append(reference_rejected_logps)
+                infohub.reference_rejected_logps.append(
+                    reference_rejected_logps
+                )
                 # pipeline mode requires return loss when self._compute_loss is True
                 return paddle.zeros([1])
             else:
                 return reference_chosen_logps, reference_rejected_logps
         policy_chosen_logps, policy_rejected_logps, sft_loss = self.dpo_logps(
-            logits, chosen_labels, rejected_labels, response_indexs, average_log_prob
+            logits,
+            chosen_labels,
+            rejected_labels,
+            response_indexs,
+            average_log_prob,
         )
         dpo_loss = self.dpo_loss(
-            policy_chosen_logps, policy_rejected_logps, reference_chosen_logps, reference_rejected_logps
+            policy_chosen_logps,
+            policy_rejected_logps,
+            reference_chosen_logps,
+            reference_rejected_logps,
         )
         loss = dpo_loss + sft_loss
         if self.use_infohub:
@@ -312,12 +438,22 @@ class DPOCriterion(nn.Layer):
             infohub.dpo_loss.append(dpo_loss.detach())
             return loss
         else:
-            return policy_chosen_logps, policy_rejected_logps, sft_loss, dpo_loss, loss
+            return (
+                policy_chosen_logps,
+                policy_rejected_logps,
+                sft_loss,
+                dpo_loss,
+                loss,
+            )
 
 
 class AutoDPOCriterion(DPOCriterion):
-    def __init__(self, config, dpo_config=None, use_infohub=False, ignore_eos_token=False):
-        super(AutoDPOCriterion, self).__init__(config, dpo_config, use_infohub, ignore_eos_token)
+    def __init__(
+        self, config, dpo_config=None, use_infohub=False, ignore_eos_token=False
+    ):
+        super(AutoDPOCriterion, self).__init__(
+            config, dpo_config, use_infohub, ignore_eos_token
+        )
         self.logprobs = nn.CrossEntropyLoss(reduction="none")
 
     def forward(
@@ -332,7 +468,13 @@ class AutoDPOCriterion(DPOCriterion):
         if not paddle.is_grad_enabled():
             reference_chosen_logps = None
             reference_rejected_logps = None
-        labels = (chosen_labels, rejected_labels, response_indexs, reference_chosen_logps, reference_rejected_logps)
+        labels = (
+            chosen_labels,
+            rejected_labels,
+            response_indexs,
+            reference_chosen_logps,
+            reference_rejected_logps,
+        )
         result = super().forward(logits, labels)
         if len(result) == 5:
             return result[-1]
@@ -354,7 +496,9 @@ class AutoDPOCriterion(DPOCriterion):
             logits = logits.logits
         logits = logits.astype("float32")
         if logits.shape[:-1] != labels.shape:
-            raise ValueError("Logits (batch and sequence length dim) and labels must have the same shape.")
+            raise ValueError(
+                "Logits (batch and sequence length dim) and labels must have the same shape."
+            )
         # bs, seq
         per_token_logps = -self.logprobs(logits, labels.unsqueeze(2)).squeeze(2)
         if len(response_indexs.shape) == 3:
@@ -370,15 +514,31 @@ class AutoDPOCriterion(DPOCriterion):
         seq_len = per_token_logps.shape[1]
         _range = paddle.arange(seq_len).unsqueeze(0)
         ranges = _range.expand([batch_idx.shape[0], seq_len])
-        chosen_mask = (ranges >= paddle.unsqueeze(start_idx, 1)) & (ranges < paddle.unsqueeze(end_idx, 1))
-        rejected_mask = (ranges >= paddle.unsqueeze(end_idx + offset, 1)) & (ranges < paddle.unsqueeze(end2_idx, 1))
-        chosen_logps = paddle.sum(per_token_logps[batch_idx] * chosen_mask.astype("float32"), axis=1)
-        rejected_logps = paddle.sum(per_token_logps[batch_idx] * rejected_mask.astype("float32"), axis=1)
+        chosen_mask = (ranges >= paddle.unsqueeze(start_idx, 1)) & (
+            ranges < paddle.unsqueeze(end_idx, 1)
+        )
+        rejected_mask = (ranges >= paddle.unsqueeze(end_idx + offset, 1)) & (
+            ranges < paddle.unsqueeze(end2_idx, 1)
+        )
+        chosen_logps = paddle.sum(
+            per_token_logps[batch_idx] * chosen_mask.astype("float32"), axis=1
+        )
+        rejected_logps = paddle.sum(
+            per_token_logps[batch_idx] * rejected_mask.astype("float32"), axis=1
+        )
 
         sft_loss = -chosen_logps.sum() / (chosen_labels != 0).sum()
         if average_log_prob:
-            chosen_response_length = response_indexs[:, 2] - response_indexs[:, 1] - offset
-            rejected_response_length = response_indexs[:, 3] - response_indexs[:, 2]
+            chosen_response_length = (
+                response_indexs[:, 2] - response_indexs[:, 1] - offset
+            )
+            rejected_response_length = (
+                response_indexs[:, 3] - response_indexs[:, 2]
+            )
             chosen_logps /= chosen_response_length.astype("float32")
             rejected_logps /= rejected_response_length.astype("float32")
-        return chosen_logps, rejected_logps, sft_loss * self.dpo_config.sft_loss_ratio
+        return (
+            chosen_logps,
+            rejected_logps,
+            sft_loss * self.dpo_config.sft_loss_ratio,
+        )

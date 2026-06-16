@@ -59,7 +59,9 @@ def make_dataset(path, impl, skip_warmup=False, warmup_only_rank0=False):
         return CompatibleIndexedDataset(path)
     elif not IndexedDataset.exists(path):
         print(f"Dataset does not exist: {path}")
-        print("Path should be a basename that both .idx and .bin can be appended to get full filenames.")
+        print(
+            "Path should be a basename that both .idx and .bin can be appended to get full filenames."
+        )
         return None
     elif impl == "lazy" and IndexedDataset.exists(path):
         return IndexedDataset(path)
@@ -69,15 +71,26 @@ def make_dataset(path, impl, skip_warmup=False, warmup_only_rank0=False):
     return None
 
 
-def make_sft_dataset(path, dataclass, skip_warmup=False, impl="mmap", warmup_only_rank0=False):
+def make_sft_dataset(
+    path, dataclass, skip_warmup=False, impl="mmap", warmup_only_rank0=False
+):
     if impl != "mmap":
-        raise ValueError("SFT Indexed Dataset only support mmap memory-mapped method temporarily")
+        raise ValueError(
+            "SFT Indexed Dataset only support mmap memory-mapped method temporarily"
+        )
 
     print_rank_0(" > building dataset index ...")
     start_time = time.time()
-    sft_indexed_dataset = SFTMMapIndexedDataset(path, dataclass, skip_warmup, warmup_only_rank0)
-    print_rank_0(" > finished creating SFT indexed dataset in {:4f} " "seconds".format(time.time() - start_time))
-    print_rank_0("    number of samples: {}".format(len(sft_indexed_dataset.doc_idx) - 1))
+    sft_indexed_dataset = SFTMMapIndexedDataset(
+        path, dataclass, skip_warmup, warmup_only_rank0
+    )
+    print_rank_0(
+        f" > finished creating SFT indexed dataset in {time.time() - start_time:4f} "
+        "seconds"
+    )
+    print_rank_0(
+        f"    number of samples: {len(sft_indexed_dataset.doc_idx) - 1}"
+    )
 
     return sft_indexed_dataset
 
@@ -177,7 +190,8 @@ class IndexedDataset(paddle.io.Dataset):
         with open(index_file_path(path), "rb") as f:
             magic = f.read(8)
             assert magic == self._HDR_MAGIC, (
-                "Index file doesn't match expected format. " "Make sure that --dataset-impl is configured properly."
+                "Index file doesn't match expected format. "
+                "Make sure that --dataset-impl is configured properly."
             )
             version = f.read(8)
             assert struct.unpack("<Q", version) == (1,)
@@ -208,7 +222,9 @@ class IndexedDataset(paddle.io.Dataset):
         if isinstance(idx, int):
             i = idx
             self.check_index(i)
-            tensor_size = self.sizes[self.dim_offsets[i] : self.dim_offsets[i + 1]]
+            tensor_size = self.sizes[
+                self.dim_offsets[i] : self.dim_offsets[i + 1]
+            ]
             a = np.empty(tensor_size, dtype=self.dtype)
             self.data_file.seek(self.data_offsets[i] * self.element_size)
             self.data_file.readinto(a)
@@ -216,7 +232,9 @@ class IndexedDataset(paddle.io.Dataset):
         elif isinstance(idx, slice):
             start, stop, step = idx.indices(len(self))
             if step != 1:
-                raise ValueError("Slices into indexed_dataset must be contiguous")
+                raise ValueError(
+                    "Slices into indexed_dataset must be contiguous"
+                )
             sizes = self.sizes[self.dim_offsets[start] : self.dim_offsets[stop]]
             size = sum(sizes)
             a = np.empty(size, dtype=self.dtype)
@@ -255,7 +273,9 @@ class IndexedDataset(paddle.io.Dataset):
 
     @staticmethod
     def exists(path):
-        return os.path.exists(index_file_path(path)) and os.path.exists(data_file_path(path))
+        return os.path.exists(index_file_path(path)) and os.path.exists(
+            data_file_path(path)
+        )
 
     @property
     def supports_prefetch(self):
@@ -272,7 +292,7 @@ class IndexedDataset(paddle.io.Dataset):
         self._doc_idx = doc_idx_
 
 
-class IndexedDatasetBuilder(object):
+class IndexedDatasetBuilder:
     element_sizes = {
         np.uint8: 1,
         np.int8: 1,
@@ -296,7 +316,9 @@ class IndexedDatasetBuilder(object):
     def add_item(self, tensor):
         tensor = np.array(tensor, dtype=self.dtype)
         bytes = self.out_file.write(tensor)
-        self.data_offsets.append(self.data_offsets[-1] + bytes / self.element_size)
+        self.data_offsets.append(
+            self.data_offsets[-1] + bytes / self.element_size
+        )
         for s in tensor.shape:
             self.sizes.append(s)
         self.dim_offsets.append(self.dim_offsets[-1] + len(tensor.shape))
@@ -336,7 +358,9 @@ class IndexedDatasetBuilder(object):
         index.write(b"TNTIDX\x00\x00")
         index.write(struct.pack("<Q", 1))
         index.write(struct.pack("<QQ", code(self.dtype), self.element_size))
-        index.write(struct.pack("<QQ", len(self.data_offsets) - 1, len(self.sizes)))
+        index.write(
+            struct.pack("<QQ", len(self.data_offsets) - 1, len(self.sizes))
+        )
         index.write(struct.pack("<Q", len(self.doc_idx)))
         write_longs(index, self.dim_offsets)
         write_longs(index, self.data_offsets)
@@ -347,8 +371,14 @@ class IndexedDatasetBuilder(object):
         print("Total sentences num: %d" % len(self.sizes))
         print("Total documents num: %d" % (len(self.doc_idx) - 1))
         print("Total tokens num: %d" % sum(self.sizes))
-        print("Average tokens per sentence: %.2f" % (sum(self.sizes) / len(self.sizes)))
-        print("Average tokens per document: %.2f" % (sum(self.sizes) / (len(self.doc_idx) - 1)))
+        print(
+            "Average tokens per sentence: %.2f"
+            % (sum(self.sizes) / len(self.sizes))
+        )
+        print(
+            "Average tokens per document: %.2f"
+            % (sum(self.sizes) / (len(self.doc_idx) - 1))
+        )
 
 
 def _warmup_mmap_file(path):
@@ -358,12 +388,12 @@ def _warmup_mmap_file(path):
 
 
 class MMapIndexedDataset(paddle.io.Dataset):
-    class Index(object):
+    class Index:
         _HDR_MAGIC = b"MMIDIDX\x00\x00"
 
         @classmethod
         def writer(cls, path, dtype):
-            class _Writer(object):
+            class _Writer:
                 def __enter__(self):
                     self._file = open(path, "wb")
 
@@ -438,10 +468,15 @@ class MMapIndexedDataset(paddle.io.Dataset):
             self._buffer_mmap = np.memmap(path, mode="r", order="C")
             self._buffer = memoryview(self._buffer_mmap)
             print_rank_0("    reading sizes...")
-            self._sizes = np.frombuffer(self._buffer, dtype=np.int32, count=self._len, offset=offset)
+            self._sizes = np.frombuffer(
+                self._buffer, dtype=np.int32, count=self._len, offset=offset
+            )
             print_rank_0("    reading pointers...")
             self._pointers = np.frombuffer(
-                self._buffer, dtype=np.int64, count=self._len, offset=offset + self._sizes.nbytes
+                self._buffer,
+                dtype=np.int64,
+                count=self._len,
+                offset=offset + self._sizes.nbytes,
             )
             print_rank_0("    reading document index...")
             self._doc_idx = np.frombuffer(
@@ -496,7 +531,11 @@ class MMapIndexedDataset(paddle.io.Dataset):
         if not self.exists(path):
             raise ValueError("Missing file, %s" % (path))
 
-        self._index = self.Index(index_file_path(self._path), skip_warmup, warmup_only_rank0=warmup_only_rank0)
+        self._index = self.Index(
+            index_file_path(self._path),
+            skip_warmup,
+            warmup_only_rank0=warmup_only_rank0,
+        )
 
         if not skip_warmup:
             if warmup_only_rank0:
@@ -508,9 +547,13 @@ class MMapIndexedDataset(paddle.io.Dataset):
                 print_rank_0("    warming up data mmap file...")
                 _warmup_mmap_file(data_file_path(self._path))
         print_rank_0("    creating numpy buffer of mmap...")
-        self._bin_buffer_mmap = np.memmap(data_file_path(self._path), mode="r", order="C")
+        self._bin_buffer_mmap = np.memmap(
+            data_file_path(self._path), mode="r", order="C"
+        )
         if os.path.exists(loss_mask_file_path(self._path)):
-            self._loss_mask_buffer_mmap = np.memmap(loss_mask_file_path(self._path), mode="r", order="C")
+            self._loss_mask_buffer_mmap = np.memmap(
+                loss_mask_file_path(self._path), mode="r", order="C"
+            )
             self._loss_mask_buffer = memoryview(self._loss_mask_buffer_mmap)
         print_rank_0("    creating memory view of numpy buffer...")
         self._bin_buffer = memoryview(self._bin_buffer_mmap)
@@ -530,21 +573,33 @@ class MMapIndexedDataset(paddle.io.Dataset):
     def __getitem__(self, idx):
         if isinstance(idx, (int, np.integer)):
             ptr, size = self._index[idx]
-            np_array = np.frombuffer(self._bin_buffer, dtype=self._index.dtype, count=size, offset=ptr)
+            np_array = np.frombuffer(
+                self._bin_buffer,
+                dtype=self._index.dtype,
+                count=size,
+                offset=ptr,
+            )
             return np_array
         elif isinstance(idx, slice):
             start, stop, step = idx.indices(len(self))
             if step != 1:
-                raise ValueError("Slices into indexed_dataset must be contiguous")
+                raise ValueError(
+                    "Slices into indexed_dataset must be contiguous"
+                )
             ptr = self._index._pointers[start]
             sizes = self._index._sizes[idx]
             offsets = list(accumulate(sizes))
             total_size = sum(sizes)
-            np_array = np.frombuffer(self._bin_buffer, dtype=self._index.dtype, count=total_size, offset=ptr)
+            np_array = np.frombuffer(
+                self._bin_buffer,
+                dtype=self._index.dtype,
+                count=total_size,
+                offset=ptr,
+            )
             sents = np.split(np_array, offsets[:-1])
             return sents
         else:
-            raise TypeError("Unexpected type received for idx: {}".format(type(idx)))
+            raise TypeError(f"Unexpected type received for idx: {type(idx)}")
 
     def get(self, idx, offset=0, length=None):
         """Retrieves a single item from the dataset with the option to only
@@ -557,10 +612,17 @@ class MMapIndexedDataset(paddle.io.Dataset):
             length = size - offset
         ptr += offset * np.dtype(self._index.dtype).itemsize
         mask_ptr = ptr // np.dtype(self._index.dtype).itemsize
-        np_array = np.frombuffer(self._bin_buffer, dtype=self._index.dtype, count=length, offset=ptr)
+        np_array = np.frombuffer(
+            self._bin_buffer, dtype=self._index.dtype, count=length, offset=ptr
+        )
         mask_array = None
         if self._loss_mask_buffer is not None:
-            mask_array = np.frombuffer(self._loss_mask_buffer, dtype=np.uint8, count=length, offset=mask_ptr)
+            mask_array = np.frombuffer(
+                self._loss_mask_buffer,
+                dtype=np.uint8,
+                count=length,
+                offset=mask_ptr,
+            )
         return np_array, mask_array
 
     @property
@@ -583,16 +645,18 @@ class MMapIndexedDataset(paddle.io.Dataset):
 
     @staticmethod
     def exists(path):
-        return os.path.exists(index_file_path(path)) and os.path.exists(data_file_path(path))
+        return os.path.exists(index_file_path(path)) and os.path.exists(
+            data_file_path(path)
+        )
 
 
 class SFTMMapIndexedDataset(paddle.io.Dataset):
-    class Index(object):
+    class Index:
         _HDR_MAGIC = b"MMIDIDX\x00\x00"
 
         @classmethod
         def writer(cls, path, dtype):
-            class _Writer(object):
+            class _Writer:
                 def __enter__(self):
                     self._file = open(path, "wb")
                     self._file.write(cls._HDR_MAGIC)
@@ -612,7 +676,6 @@ class SFTMMapIndexedDataset(paddle.io.Dataset):
                     return pointers
 
                 def write(self, sizes, doc_idx):
-
                     pointers = self._get_pointers(sizes)
                     self._file.write(struct.pack("<Q", len(sizes)))
                     self._file.write(struct.pack("<Q", len(doc_idx)))
@@ -664,10 +727,15 @@ class SFTMMapIndexedDataset(paddle.io.Dataset):
             self._buffer_mmap = np.memmap(path, mode="r", order="C")
             self._buffer = memoryview(self._buffer_mmap)
             print_rank_0("    reading sizes...")
-            self._sizes = np.frombuffer(self._buffer, dtype=np.int32, count=self._len, offset=offset)
+            self._sizes = np.frombuffer(
+                self._buffer, dtype=np.int32, count=self._len, offset=offset
+            )
             print_rank_0("    reading pointers...")
             self._pointers = np.frombuffer(
-                self._buffer, dtype=np.int64, count=self._len, offset=offset + self._sizes.nbytes
+                self._buffer,
+                dtype=np.int64,
+                count=self._len,
+                offset=offset + self._sizes.nbytes,
             )
             print_rank_0("    reading document index...")
             self._doc_idx = np.frombuffer(
@@ -700,7 +768,9 @@ class SFTMMapIndexedDataset(paddle.io.Dataset):
         def __len__(self):
             return self._doc_count - 1
 
-    def __init__(self, path, dataclass, skip_warmup=False, warmup_only_rank0=False):
+    def __init__(
+        self, path, dataclass, skip_warmup=False, warmup_only_rank0=False
+    ):
         super().__init__()
         self._dataclass = dataclass
         self._path = None
@@ -720,25 +790,37 @@ class SFTMMapIndexedDataset(paddle.io.Dataset):
         if not self.exists(path, self._dataclass):
             raise ValueError("Missing file, %s" % (path))
 
-        self._index = self.Index(sft_index_file_path(self._path), skip_warmup, warmup_only_rank0=warmup_only_rank0)
+        self._index = self.Index(
+            sft_index_file_path(self._path),
+            skip_warmup,
+            warmup_only_rank0=warmup_only_rank0,
+        )
         if not skip_warmup:
             if warmup_only_rank0:
                 if paddle.distributed.get_rank() % 8 == 0:
                     print_rank_0("    warming up data mmap file...")
-                    for data_file in sft_data_file_path(self._path, self._dataclass):
+                    for data_file in sft_data_file_path(
+                        self._path, self._dataclass
+                    ):
                         _warmup_mmap_file(data_file)
                 paddle.distributed.barrier()
             else:
                 print_rank_0("    warming up data mmap file...")
-                for data_file in sft_data_file_path(self._path, self._dataclass):
+                for data_file in sft_data_file_path(
+                    self._path, self._dataclass
+                ):
                     _warmup_mmap_file(data_file)
         print_rank_0("    creating numpy buffer of mmap...")
 
         self._bin_buffer_mmap_dict = {}
         self._bin_buffer_dict = {}
         for data_file in sft_data_file_path(self._path, self._dataclass):
-            self._bin_buffer_mmap_dict[data_file] = np.memmap(data_file, mode="r", order="C")
-            self._bin_buffer_dict[data_file] = memoryview(self._bin_buffer_mmap_dict[data_file])
+            self._bin_buffer_mmap_dict[data_file] = np.memmap(
+                data_file, mode="r", order="C"
+            )
+            self._bin_buffer_dict[data_file] = memoryview(
+                self._bin_buffer_mmap_dict[data_file]
+            )
         print_rank_0("    creating memory view of numpy buffer...")
 
     def __del__(self):
@@ -766,12 +848,24 @@ class SFTMMapIndexedDataset(paddle.io.Dataset):
             for length in length_list:
                 field_data = {field.name: [] for field in dataclass_fields}
                 for field in dataclass_fields:
-                    bin_buffer = self._bin_buffer_dict[os.path.join(self._path, f"{field.name}.bin")]
+                    bin_buffer = self._bin_buffer_dict[
+                        os.path.join(self._path, f"{field.name}.bin")
+                    ]
                     if field.type != int:
-                        data = np.frombuffer(bin_buffer, dtype=self._index.dtype, count=length, offset=sequence_offset)
+                        data = np.frombuffer(
+                            bin_buffer,
+                            dtype=self._index.dtype,
+                            count=length,
+                            offset=sequence_offset,
+                        )
                         field_data[field.name] = data.tolist()
                     else:
-                        data = np.frombuffer(bin_buffer, dtype=self._index.dtype, count=1, offset=scalar_offset)
+                        data = np.frombuffer(
+                            bin_buffer,
+                            dtype=self._index.dtype,
+                            count=1,
+                            offset=scalar_offset,
+                        )
                         field_data[field.name] = int(data[0])
 
                 dataclass_list.append(self._dataclass(**field_data))
@@ -785,7 +879,9 @@ class SFTMMapIndexedDataset(paddle.io.Dataset):
         elif isinstance(idx, slice):
             start, stop, step = idx.indices(len(self))
             if step != 1:
-                raise ValueError("Slices into indexed_dataset must be contiguous")
+                raise ValueError(
+                    "Slices into indexed_dataset must be contiguous"
+                )
             return [get_index(idx) for idx in range(start, stop)]
 
     @property
@@ -818,16 +914,20 @@ class SFTMMapIndexedDataset(paddle.io.Dataset):
 
 def make_builder(out_file, impl, save_dtype, loss_mask_file=None):
     if impl == "mmap":
-        return MMapIndexedDatasetBuilder(out_file, dtype=save_dtype, loss_mask_file=loss_mask_file)
+        return MMapIndexedDatasetBuilder(
+            out_file, dtype=save_dtype, loss_mask_file=loss_mask_file
+        )
     else:
         return IndexedDatasetBuilder(out_file, dtype=save_dtype)
 
 
-class SFTMMapIndexedDatasetBuilder(object):
+class SFTMMapIndexedDatasetBuilder:
     def __init__(self, output_file_dict, dtype, index_file=None):
         self._data_file_dict = {}
         for key, filename in output_file_dict.items():
-            self._data_file_dict[key] = open(filename, "ab", buffering=4 * 1024 * 1024)
+            self._data_file_dict[key] = open(
+                filename, "ab", buffering=4 * 1024 * 1024
+            )
         self.output_file_dict = output_file_dict
         self._dtype = dtype
         self._write_buf = {key: [] for key in output_file_dict}
@@ -867,11 +967,13 @@ class SFTMMapIndexedDatasetBuilder(object):
     def finalize(self, index_file):
         for key, filename in self._data_file_dict.items():
             filename.close()
-        with SFTMMapIndexedDataset.Index.writer(index_file, self._dtype) as index:
+        with SFTMMapIndexedDataset.Index.writer(
+            index_file, self._dtype
+        ) as index:
             index.write(self._sizes, self._doc_idx)
 
 
-class MMapIndexedDatasetBuilder(object):
+class MMapIndexedDatasetBuilder:
     def __init__(self, out_file, dtype, loss_mask_file=None):
         self._data_file = open(out_file, "ab")
         self._loss_mask_file = None
@@ -921,22 +1023,36 @@ class MMapIndexedDatasetBuilder(object):
         print("Total sentences num: %d" % len(self._sizes))
         print("Total documents num: %d" % (len(self._doc_idx) - 1))
         print("Total tokens num: %d" % sum(self._sizes))
-        print("Average tokens per sentence: %.2f" % (sum(self._sizes) / len(self._sizes)))
-        print("Average tokens per document: %.2f" % (sum(self._sizes) / (len(self._doc_idx) - 1)))
+        print(
+            "Average tokens per sentence: %.2f"
+            % (sum(self._sizes) / len(self._sizes))
+        )
+        print(
+            "Average tokens per document: %.2f"
+            % (sum(self._sizes) / (len(self._doc_idx) - 1))
+        )
 
 
-def get_indexed_dataset_(data_prefix, data_impl, skip_warmup, warmup_only_rank0=False):
-
+def get_indexed_dataset_(
+    data_prefix, data_impl, skip_warmup, warmup_only_rank0=False
+):
     print_rank_0(" > building dataset index ...")
 
     start_time = time.time()
-    indexed_dataset = make_dataset(data_prefix, data_impl, skip_warmup, warmup_only_rank0)
+    indexed_dataset = make_dataset(
+        data_prefix, data_impl, skip_warmup, warmup_only_rank0
+    )
     assert indexed_dataset.sizes.shape[0] == indexed_dataset.doc_idx[-1]
-    print_rank_0(" > finished creating indexed dataset in {:4f} " "seconds".format(time.time() - start_time))
+    print_rank_0(
+        f" > finished creating indexed dataset in {time.time() - start_time:4f} "
+        "seconds"
+    )
 
     print_rank_0(" > indexed dataset stats:")
-    print_rank_0("    number of documents: {}".format(indexed_dataset.doc_idx.shape[0] - 1))
-    print_rank_0("    number of sentences: {}".format(indexed_dataset.sizes.shape[0]))
+    print_rank_0(
+        f"    number of documents: {indexed_dataset.doc_idx.shape[0] - 1}"
+    )
+    print_rank_0(f"    number of sentences: {indexed_dataset.sizes.shape[0]}")
 
     return indexed_dataset
 
@@ -948,7 +1064,9 @@ class CompatibleIndexedDataset(paddle.io.Dataset):
         self._path = path
 
         # All document ids, extend as 1-D array.
-        self._token_ids = np.load(path + "_ids.npy", mmap_mode="r", allow_pickle=True)
+        self._token_ids = np.load(
+            path + "_ids.npy", mmap_mode="r", allow_pickle=True
+        )
         process_data = np.load(path + "_idx.npz")
         self._sizes = process_data["lens"]
         self._pointers = np.empty(len(self._sizes) + 1, dtype=np.int64)
@@ -973,7 +1091,9 @@ class CompatibleIndexedDataset(paddle.io.Dataset):
         elif isinstance(idx, slice):
             start, stop, step = idx.indices(len(self))
             if step != 1:
-                raise ValueError("Slices into indexed_dataset must be contiguous")
+                raise ValueError(
+                    "Slices into indexed_dataset must be contiguous"
+                )
             ptr = self._pointers[start]
             sizes = self._sizes[idx]
             offsets = list(accumulate(sizes))
@@ -1013,4 +1133,6 @@ class CompatibleIndexedDataset(paddle.io.Dataset):
 
     @staticmethod
     def exists(path):
-        return os.path.isfile(path + "_ids.npy") and os.path.isfile(path + "_idx.npz")
+        return os.path.isfile(path + "_ids.npy") and os.path.isfile(
+            path + "_idx.npz"
+        )

@@ -20,9 +20,9 @@ import unittest
 import numpy as np
 import paddle
 
-from paddleformers.transformers import Qwen3Config
-from paddleformers.transformers import Qwen3ForCausalLMDeprecated as Qwen3ForCausalLM
 from paddleformers.transformers import (
+    Qwen3Config,
+    Qwen3ForCausalLMDeprecated as Qwen3ForCausalLM,
     Qwen3ForSequenceClassification,
     Qwen3ForTokenClassification,
     Qwen3Model,
@@ -100,22 +100,39 @@ class Qwen3ModelTester:
         self.scope = scope
 
     def prepare_config_and_inputs(self):
-        input_ids = ids_tensor([self.batch_size, self.seq_length], self.vocab_size, dtype=paddle.int64)
+        input_ids = ids_tensor(
+            [self.batch_size, self.seq_length],
+            self.vocab_size,
+            dtype=paddle.int64,
+        )
 
         input_mask = None
         if self.use_input_mask:
-            input_mask = random_attention_mask([self.batch_size, self.seq_length])
+            input_mask = random_attention_mask(
+                [self.batch_size, self.seq_length]
+            )
 
         sequence_labels = None
         token_labels = None
         choice_labels = None
         if self.use_labels:
-            sequence_labels = ids_tensor([self.batch_size], self.type_sequence_label_size)
-            token_labels = ids_tensor([self.batch_size, self.seq_length], self.num_labels)
+            sequence_labels = ids_tensor(
+                [self.batch_size], self.type_sequence_label_size
+            )
+            token_labels = ids_tensor(
+                [self.batch_size, self.seq_length], self.num_labels
+            )
             choice_labels = ids_tensor([self.batch_size], self.num_choices)
 
         config = self.get_config()
-        return config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        return (
+            config,
+            input_ids,
+            input_mask,
+            sequence_labels,
+            token_labels,
+            choice_labels,
+        )
 
     def get_config(self) -> Qwen3Config:
         return Qwen3Config(
@@ -141,13 +158,22 @@ class Qwen3ModelTester:
         )
 
     def create_and_check_model(
-        self, config: Qwen3Config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        self,
+        config: Qwen3Config,
+        input_ids,
+        input_mask,
+        sequence_labels,
+        token_labels,
+        choice_labels,
     ):
         model = Qwen3Model(config=config)
         model.eval()
         result = model(input_ids, attention_mask=input_mask)
         result = model(input_ids)
-        self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.hidden_size])
+        self.parent.assertEqual(
+            result[0].shape,
+            [self.batch_size, self.seq_length, self.hidden_size],
+        )
 
     def create_and_check_model_attention_mask(
         self,
@@ -159,16 +185,29 @@ class Qwen3ModelTester:
         attn_mask_2d = random_attention_mask([self.batch_size, self.seq_length])
         result_2d = model(input_ids, attention_mask=attn_mask_2d)[0]
         batch, seq_length = input_ids.shape
-        causal_mask = paddle.tril(paddle.ones((batch, seq_length, seq_length), dtype=attn_mask_2d.dtype))
+        causal_mask = paddle.tril(
+            paddle.ones(
+                (batch, seq_length, seq_length), dtype=attn_mask_2d.dtype
+            )
+        )
         attn_mask_3d = causal_mask & attn_mask_2d.unsqueeze(-1)
         result_3d = model(input_ids, attention_mask=attn_mask_3d)[0]
         attn_mask_4d = attn_mask_3d.unsqueeze(1)
         result_4d = model(input_ids, attention_mask=attn_mask_4d)[0]
         result_no_attention_mask = model(input_ids, attention_mask=None)[0]
         # Assert non-padding tokens have the same logits with different attention_mask shape
-        self.parent.assertTrue((result_2d[attn_mask_2d] == result_3d[attn_mask_2d]).all())
-        self.parent.assertTrue((result_2d[attn_mask_2d] == result_4d[attn_mask_2d]).all())
-        self.parent.assertTrue((result_2d[attn_mask_2d] == result_no_attention_mask[attn_mask_2d]).all())
+        self.parent.assertTrue(
+            (result_2d[attn_mask_2d] == result_3d[attn_mask_2d]).all()
+        )
+        self.parent.assertTrue(
+            (result_2d[attn_mask_2d] == result_4d[attn_mask_2d]).all()
+        )
+        self.parent.assertTrue(
+            (
+                result_2d[attn_mask_2d]
+                == result_no_attention_mask[attn_mask_2d]
+            ).all()
+        )
 
     def create_and_check_model_as_decoder(
         self,
@@ -191,7 +230,10 @@ class Qwen3ModelTester:
             attention_mask=input_mask,
         )
         result = model(input_ids, attention_mask=input_mask)
-        self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.hidden_size])
+        self.parent.assertEqual(
+            result[0].shape,
+            [self.batch_size, self.seq_length, self.hidden_size],
+        )
 
     def create_and_check_for_causal_lm(
         self,
@@ -204,8 +246,16 @@ class Qwen3ModelTester:
     ):
         model = Qwen3ForCausalLM(config=config)
         model.eval()
-        result = model(input_ids, attention_mask=input_mask, labels=token_labels, return_dict=True)
-        self.parent.assertEqual(result.logits.shape, [self.batch_size, self.seq_length, self.vocab_size])
+        result = model(
+            input_ids,
+            attention_mask=input_mask,
+            labels=token_labels,
+            return_dict=True,
+        )
+        self.parent.assertEqual(
+            result.logits.shape,
+            [self.batch_size, self.seq_length, self.vocab_size],
+        )
 
     def prepare_config_and_inputs_for_common(self):
         config_and_inputs = self.prepare_config_and_inputs()
@@ -220,7 +270,9 @@ class Qwen3ModelTester:
         inputs_dict = {"input_ids": input_ids, "attention_mask": input_mask}
         return config, inputs_dict
 
-    def create_and_check_lm_head_model(self, config, input_ids, input_mask, *args):
+    def create_and_check_lm_head_model(
+        self, config, input_ids, input_mask, *args
+    ):
         model = Qwen3ForCausalLM(config)
         model.eval()
 
@@ -232,9 +284,15 @@ class Qwen3ModelTester:
         )
         if self.parent.use_labels:
             self.parent.assertIsInstance(result[0].item(), float)
-            self.parent.assertEqual(result[1].shape, [self.batch_size, self.seq_length, self.vocab_size])
+            self.parent.assertEqual(
+                result[1].shape,
+                [self.batch_size, self.seq_length, self.vocab_size],
+            )
         else:
-            self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
+            self.parent.assertEqual(
+                result[0].shape,
+                [self.batch_size, self.seq_length, self.vocab_size],
+            )
 
     def check_model_position_ids(self, config, input_ids, input_mask, *args):
         model = Qwen3ForCausalLM(config)
@@ -254,12 +312,18 @@ class Qwen3ModelTester:
             return_dict=self.parent.return_dict,
         )
         if self.parent.use_labels:
-            self.parent.assertTrue((result_position_id[1] == result_no_position_id[1]).all())
+            self.parent.assertTrue(
+                (result_position_id[1] == result_no_position_id[1]).all()
+            )
         else:
-            self.parent.assertTrue((result_position_id[0] == result_no_position_id[0]).all())
+            self.parent.assertTrue(
+                (result_position_id[0] == result_no_position_id[0]).all()
+            )
 
 
-class Qwen3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
+class Qwen3ModelTest(
+    ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
+):
     base_model_class = Qwen3Model
     return_dict = False
     use_labels = False
@@ -279,15 +343,21 @@ class Qwen3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
     def setUp(self):
         super().setUp()
         self.model_tester = Qwen3ModelTester(self)
-        self.config_tester = ConfigTester(self, config_class=Qwen3Config, hidden_size=37)
+        self.config_tester = ConfigTester(
+            self, config_class=Qwen3Config, hidden_size=37
+        )
 
     def test_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_model(*config_and_inputs)
 
     def test_model_attention_mask(self):
-        config, input_dict = self.model_tester.prepare_config_and_inputs_for_common()
-        self.model_tester.create_and_check_model_attention_mask(config, input_dict["input_ids"])
+        config, input_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
+        self.model_tester.create_and_check_model_attention_mask(
+            config, input_dict["input_ids"]
+        )
 
     def test_model_position_ids(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
@@ -312,62 +382,125 @@ class Qwen3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
             self.model_tester.create_and_check_model(*config_and_inputs)
 
     def test_Qwen3_sequence_classification_model(self):
-        config, input_dict = self.model_tester.prepare_config_and_inputs_for_common()
+        config, input_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
         config.num_labels = 3
         input_ids = input_dict["input_ids"]
-        attention_mask = paddle.not_equal(input_ids, paddle.ones_like(input_ids))
-        sequence_labels = ids_tensor([self.model_tester.batch_size], self.model_tester.type_sequence_label_size)
+        attention_mask = paddle.not_equal(
+            input_ids, paddle.ones_like(input_ids)
+        )
+        sequence_labels = ids_tensor(
+            [self.model_tester.batch_size],
+            self.model_tester.type_sequence_label_size,
+        )
         model = Qwen3ForSequenceClassification(config)
         model.eval()
-        result = model(input_ids, attention_mask=attention_mask, labels=sequence_labels, return_dict=True)
-        self.assertEqual(result.logits.shape, [self.model_tester.batch_size, self.model_tester.num_labels])
+        result = model(
+            input_ids,
+            attention_mask=attention_mask,
+            labels=sequence_labels,
+            return_dict=True,
+        )
+        self.assertEqual(
+            result.logits.shape,
+            [self.model_tester.batch_size, self.model_tester.num_labels],
+        )
 
     def test_Qwen3_sequence_classification_model_for_single_label(self):
-        config, input_dict = self.model_tester.prepare_config_and_inputs_for_common()
+        config, input_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
         config.num_labels = 3
         config.problem_type = "single_label_classification"
         input_ids = input_dict["input_ids"]
-        attention_mask = paddle.not_equal(input_ids, paddle.ones_like(input_ids))
-        sequence_labels = ids_tensor([self.model_tester.batch_size], self.model_tester.type_sequence_label_size)
+        attention_mask = paddle.not_equal(
+            input_ids, paddle.ones_like(input_ids)
+        )
+        sequence_labels = ids_tensor(
+            [self.model_tester.batch_size],
+            self.model_tester.type_sequence_label_size,
+        )
         model = Qwen3ForSequenceClassification(config)
         model.eval()
-        result = model(input_ids, attention_mask=attention_mask, labels=sequence_labels, return_dict=True)
-        self.assertEqual(result.logits.shape, [self.model_tester.batch_size, self.model_tester.num_labels])
+        result = model(
+            input_ids,
+            attention_mask=attention_mask,
+            labels=sequence_labels,
+            return_dict=True,
+        )
+        self.assertEqual(
+            result.logits.shape,
+            [self.model_tester.batch_size, self.model_tester.num_labels],
+        )
 
     def test_Qwen3_sequence_classification_model_for_multi_label(self):
-        config, input_dict = self.model_tester.prepare_config_and_inputs_for_common()
+        config, input_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
         config.num_labels = 3
         config.problem_type = "multi_label_classification"
         input_ids = input_dict["input_ids"]
-        attention_mask = paddle.not_equal(input_ids, paddle.ones_like(input_ids))
+        attention_mask = paddle.not_equal(
+            input_ids, paddle.ones_like(input_ids)
+        )
         sequence_labels = ids_tensor(
-            [self.model_tester.batch_size, config.num_labels], self.model_tester.type_sequence_label_size
+            [self.model_tester.batch_size, config.num_labels],
+            self.model_tester.type_sequence_label_size,
         ).to(paddle.float32)
         model = Qwen3ForSequenceClassification(config)
 
         model.eval()
-        result = model(input_ids, attention_mask=attention_mask, labels=sequence_labels, return_dict=True)
-        self.assertEqual(result.logits.shape, [self.model_tester.batch_size, self.model_tester.num_labels])
-
-    def test_Qwen3_token_classification_model(self):
-        config, input_dict = self.model_tester.prepare_config_and_inputs_for_common()
-        config.num_labels = 3
-        input_ids = input_dict["input_ids"]
-        attention_mask = paddle.not_equal(input_ids, paddle.ones_like(input_ids))
-        token_labels = ids_tensor([self.model_tester.batch_size, self.model_tester.seq_length], config.num_labels)
-        model = Qwen3ForTokenClassification(config=config)
-        model.eval()
-        result = model(input_ids, attention_mask=attention_mask, labels=token_labels, return_dict=True)
+        result = model(
+            input_ids,
+            attention_mask=attention_mask,
+            labels=sequence_labels,
+            return_dict=True,
+        )
         self.assertEqual(
             result.logits.shape,
-            [self.model_tester.batch_size, self.model_tester.seq_length, self.model_tester.num_labels],
+            [self.model_tester.batch_size, self.model_tester.num_labels],
         )
 
-    @unittest.skip("Qwen3 buffers include complex numbers, which breaks this test")
+    def test_Qwen3_token_classification_model(self):
+        config, input_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
+        config.num_labels = 3
+        input_ids = input_dict["input_ids"]
+        attention_mask = paddle.not_equal(
+            input_ids, paddle.ones_like(input_ids)
+        )
+        token_labels = ids_tensor(
+            [self.model_tester.batch_size, self.model_tester.seq_length],
+            config.num_labels,
+        )
+        model = Qwen3ForTokenClassification(config=config)
+        model.eval()
+        result = model(
+            input_ids,
+            attention_mask=attention_mask,
+            labels=token_labels,
+            return_dict=True,
+        )
+        self.assertEqual(
+            result.logits.shape,
+            [
+                self.model_tester.batch_size,
+                self.model_tester.seq_length,
+                self.model_tester.num_labels,
+            ],
+        )
+
+    @unittest.skip(
+        "Qwen3 buffers include complex numbers, which breaks this test"
+    )
     def test_save_load_fast_init_from_base(self):
         pass
 
-    @unittest.skip("Qwen3 uses GQA on all models so the KV cache is a non standard format")
+    @unittest.skip(
+        "Qwen3 uses GQA on all models so the KV cache is a non standard format"
+    )
     def test_past_key_values_format(self):
         pass
 
@@ -390,9 +523,22 @@ class Qwen3IntegrationTest(unittest.TestCase):
 
         # Expected mean on dim = -1
         EXPECTED_MEAN = paddle.to_tensor(
-            [[-0.00021981, -0.00002501, -0.00032016, -0.00070917, -0.00058562, -0.00084241, -0.00059498, -0.00059928]]
+            [
+                [
+                    -0.00021981,
+                    -0.00002501,
+                    -0.00032016,
+                    -0.00070917,
+                    -0.00058562,
+                    -0.00084241,
+                    -0.00059498,
+                    -0.00059928,
+                ]
+            ]
         )
-        self.assertTrue(paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-3, rtol=1e-3))
+        self.assertTrue(
+            paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-3, rtol=1e-3)
+        )
 
         # slicing logits[0, 0, 0:30]
         EXPECTED_SLICE = paddle.to_tensor([0.05751949, -0.05890203, 0.06239707, 0.02118594, -0.12964766,
@@ -401,7 +547,11 @@ class Qwen3IntegrationTest(unittest.TestCase):
                                            -0.08278503, -0.14124556, -0.25141445, -0.07046634, -0.31507006,
                                            0.22540271, 0.29454109, 0.20641674, 0.27301168, 0.19073905,
                                            -0.18411471, -0.00371862, -0.03729195, 0.04005751, 0.05292411])  # fmt: skip
-        self.assertTrue(paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
+        self.assertTrue(
+            paddle.allclose(
+                out[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3
+            )
+        )
 
 
 class Qwen3GenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
@@ -421,7 +571,11 @@ class Qwen3CompatibilityTest(unittest.TestCase):
         # when python application is done, `TemporaryDirectory` will be free
         cls.torch_model_path = tempfile.TemporaryDirectory().name
         config = Qwen3Config(
-            hidden_size=16, intermediate_size=1120, num_hidden_layers=2, num_attention_heads=4, num_key_value_heads=2
+            hidden_size=16,
+            intermediate_size=1120,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            num_key_value_heads=2,
         )
         model = Qwen3ForCausalLM(config)
         model.save_pretrained(cls.torch_model_path)
@@ -435,7 +589,9 @@ class Qwen3CompatibilityTest(unittest.TestCase):
         import torch
         from transformers import Qwen3ForCausalLM
 
-        torch_model = Qwen3ForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+        torch_model = Qwen3ForCausalLM.from_pretrained(
+            self.torch_model_path, torch_dtype=torch.float32
+        )
         torch_model.eval()
         torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
@@ -445,14 +601,20 @@ class Qwen3CompatibilityTest(unittest.TestCase):
         )
 
         paddle_model = Qwen3ForCausalLM.from_pretrained(
-            self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            self.torch_model_path,
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
         )
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
         self.assertTrue(
             np.allclose(
-                paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                paddle_logit.detach()
+                .cpu()
+                .reshape([-1])[:9]
+                .astype("float32")
+                .numpy(),
                 torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
                 atol=1e-2,
                 rtol=1e-2,
@@ -462,7 +624,6 @@ class Qwen3CompatibilityTest(unittest.TestCase):
     @require_package("transformers", "torch")
     def test_Qwen3_converter_from_local_dir(self):
         with tempfile.TemporaryDirectory() as tempdir:
-
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
@@ -470,27 +631,41 @@ class Qwen3CompatibilityTest(unittest.TestCase):
             import torch
             from transformers import Qwen3ForCausalLM
 
-            torch_model = Qwen3ForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model = Qwen3ForCausalLM.from_pretrained(
+                self.torch_model_path, torch_dtype=torch.float32
+            )
             torch_model.eval()
             torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+            torch_logit = torch_model(
+                torch.tensor(input_ids), return_dict=False
+            )[0]
 
             # 3. forward the paddle model with fc
-            from paddleformers.transformers import Qwen3Config
             from paddleformers.transformers import (
+                Qwen3Config,
                 Qwen3ForCausalLMDeprecated as Qwen3ForCausalLM,
             )
 
             paddle_model = Qwen3ForCausalLM.from_pretrained(
-                tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
+                tempdir,
+                dtype="float32",
+                load_checkpoint_format="flex_checkpoint",
             )
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
             self.assertTrue(
                 np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
+                    paddle_logit.detach()
+                    .cpu()
+                    .reshape([-1])[:9]
+                    .astype("float32")
+                    .numpy(),
+                    torch_logit.detach()
+                    .cpu()
+                    .reshape([-1])[:9]
+                    .float()
+                    .numpy(),
                     atol=1e-2,
                     rtol=1e-2,
                 )
@@ -505,12 +680,22 @@ class Qwen3CompatibilityTest(unittest.TestCase):
                 load_checkpoint_format="flex_checkpoint",
             )
             paddle_model_fused.eval()
-            paddle_fused_logit = paddle_model_fused(paddle.to_tensor(input_ids))[0]
+            paddle_fused_logit = paddle_model_fused(
+                paddle.to_tensor(input_ids)
+            )[0]
 
             self.assertTrue(
                 np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    paddle_fused_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    paddle_logit.detach()
+                    .cpu()
+                    .reshape([-1])[:9]
+                    .astype("float32")
+                    .numpy(),
+                    paddle_fused_logit.detach()
+                    .cpu()
+                    .reshape([-1])[:9]
+                    .astype("float32")
+                    .numpy(),
                     atol=1e-2,
                     rtol=1e-2,
                 )

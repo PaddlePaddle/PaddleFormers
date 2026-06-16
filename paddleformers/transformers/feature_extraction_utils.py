@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2022 PaddlePaddle Authors. All Rights Reserved.
 # Copyright 2021 The HuggingFace Inc. team.
 #
@@ -18,7 +17,7 @@ import copy
 import json
 import os
 from collections import UserDict
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Optional
 
 import numpy as np
 import paddle
@@ -44,7 +43,11 @@ class BatchFeature(UserDict):
             initialization.
     """
 
-    def __init__(self, data: Optional[Dict[str, Any]] = None, tensor_type: Union[None, str, TensorType] = None):
+    def __init__(
+        self,
+        data: Optional[dict[str, Any]] = None,
+        tensor_type: None | str | TensorType = None,
+    ):
         super().__init__(data)
         self.convert_to_tensors(tensor_type=tensor_type)
 
@@ -56,7 +59,9 @@ class BatchFeature(UserDict):
         if isinstance(item, str):
             return self.data[item]
         else:
-            raise KeyError("Indexing with integers is not available when using Python based feature extractors")
+            raise KeyError(
+                "Indexing with integers is not available when using Python based feature extractors"
+            )
 
     def __getattr__(self, item: str):
         try:
@@ -80,7 +85,9 @@ class BatchFeature(UserDict):
     def items(self):
         return self.data.items()
 
-    def convert_to_tensors(self, tensor_type: Optional[Union[str, TensorType]] = None):
+    def convert_to_tensors(
+        self, tensor_type: Optional[str | TensorType] = None
+    ):
         """
         Convert the inner content to tensors.
         Args:
@@ -109,7 +116,7 @@ class BatchFeature(UserDict):
             """
             Check if a value is array-like or tensor-like.
             """
-            if isinstance(value, np.ndarray) or isinstance(value, paddle.Tensor):
+            if isinstance(value, (np.ndarray, paddle.Tensor)):
                 return True
             if isinstance(value, (int, float, bool, np.number)):
                 return True
@@ -129,7 +136,7 @@ class BatchFeature(UserDict):
                     tensor = as_tensor(value)
 
                     self[key] = tensor
-            except:  # noqa E722
+            except:
                 if key == "overflowing_tokens":
                     raise ValueError(
                         "Unable to create tensor returning overflowing tokens of different lengths. "
@@ -178,11 +185,13 @@ class BatchFeature(UserDict):
             if is_paddle_dtype(arg):
                 # The first argument is a dtype
                 pass
-            elif isinstance(arg, str) or isinstance(arg, int):
+            elif isinstance(arg, (str, int)):
                 device = arg
             else:
                 # it's something else
-                raise ValueError(f"Attempting to cast a BatchFeature to type {str(arg)}. This is not supported.")
+                raise ValueError(
+                    f"Attempting to cast a BatchFeature to type {arg!s}. This is not supported."
+                )
 
         # We cast only floating point tensors to avoid issues with tokenizers casting `LongTensor` to `FloatTensor`
         def maybe_to(v):
@@ -227,7 +236,9 @@ class FeatureExtractionMixin(PushToHubMixin):
         self._processor_class = processor_class
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path: Union[str, os.PathLike], **kwargs):
+    def from_pretrained(
+        cls, pretrained_model_name_or_path: str | os.PathLike, **kwargs
+    ):
         r"""
         Instantiate a type of [`~feature_extraction_utils.FeatureExtractionMixin`] from a feature extractor, *e.g.* a
         derived class of [`SequenceFeatureExtractor`].
@@ -273,11 +284,13 @@ class FeatureExtractionMixin(PushToHubMixin):
             assert unused_kwargs == {"foo": False}
             ```
         """
-        feature_extractor_dict, kwargs = cls.get_feature_extractor_dict(pretrained_model_name_or_path, **kwargs)
+        feature_extractor_dict, kwargs = cls.get_feature_extractor_dict(
+            pretrained_model_name_or_path, **kwargs
+        )
 
         return cls.from_dict(feature_extractor_dict, **kwargs)
 
-    def save_pretrained(self, save_directory: Union[str, os.PathLike], **kwargs):
+    def save_pretrained(self, save_directory: str | os.PathLike, **kwargs):
         """
         Save a feature_extractor object to the directory `save_directory`, so that it can be re-loaded using the
         [`~feature_extraction_utils.FeatureExtractionMixin.from_pretrained`] class method.
@@ -289,22 +302,28 @@ class FeatureExtractionMixin(PushToHubMixin):
                 Additional key word arguments.
         """
         if os.path.isfile(save_directory):
-            raise AssertionError(f"Provided path ({save_directory}) should be a directory, not a file")
+            raise AssertionError(
+                f"Provided path ({save_directory}) should be a directory, not a file"
+            )
 
         os.makedirs(save_directory, exist_ok=True)
 
         # If we save using the predefined names, we can load using `from_pretrained`
-        output_feature_extractor_file = os.path.join(save_directory, FEATURE_EXTRACTOR_NAME)
+        output_feature_extractor_file = os.path.join(
+            save_directory, FEATURE_EXTRACTOR_NAME
+        )
 
         self.to_json_file(output_feature_extractor_file)
-        logger.info(f"Feature extractor saved in {output_feature_extractor_file}")
+        logger.info(
+            f"Feature extractor saved in {output_feature_extractor_file}"
+        )
 
         return [output_feature_extractor_file]
 
     @classmethod
     def get_feature_extractor_dict(
-        cls, pretrained_model_name_or_path: Union[str, os.PathLike], **kwargs
-    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        cls, pretrained_model_name_or_path: str | os.PathLike, **kwargs
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         """
         From a `pretrained_model_name_or_path`, resolve to a dictionary of parameters, to be used for instantiating a
         feature extractor of type [`~feature_extraction_utils.FeatureExtractionMixin`] using `from_dict`.
@@ -330,31 +349,41 @@ class FeatureExtractionMixin(PushToHubMixin):
             cache_dir=cache_dir,
             download_hub=download_hub,
         )
-        assert (
-            resolved_feature_extractor_file is not None
-        ), f"please make sure {FEATURE_EXTRACTOR_NAME} under {pretrained_model_name_or_path}"
+        assert resolved_feature_extractor_file is not None, (
+            f"please make sure {FEATURE_EXTRACTOR_NAME} under {pretrained_model_name_or_path}"
+        )
         try:
             feature_extractor_dict = None
 
             # Load feature_extractor dict
-            with open(resolved_feature_extractor_file, "r", encoding="utf-8") as reader:
+            with open(
+                resolved_feature_extractor_file, "r", encoding="utf-8"
+            ) as reader:
                 text = reader.read()
             processor_dict = json.loads(text)
-            if "feature_extractor" in processor_dict or "audio_processor" in processor_dict:
-                feature_extractor_dict = processor_dict.get("feature_extractor", processor_dict.get("audio_processor"))
+            if (
+                "feature_extractor" in processor_dict
+                or "audio_processor" in processor_dict
+            ):
+                feature_extractor_dict = processor_dict.get(
+                    "feature_extractor", processor_dict.get("audio_processor")
+                )
 
-            if resolved_feature_extractor_file is not None and feature_extractor_dict is None:
+            if (
+                resolved_feature_extractor_file is not None
+                and feature_extractor_dict is None
+            ):
                 feature_extractor_dict = processor_dict
 
         except json.JSONDecodeError:
-            raise EnvironmentError(
+            raise OSError(
                 f"It looks like the config file at '{resolved_feature_extractor_file}' is not a valid JSON file."
             )
 
         return feature_extractor_dict, kwargs
 
     @classmethod
-    def from_dict(cls, feature_extractor_dict: Dict[str, Any], **kwargs):
+    def from_dict(cls, feature_extractor_dict: dict[str, Any], **kwargs):
         """
         Instantiates a type of [`~feature_extraction_utils.FeatureExtractionMixin`] from a Python dictionary of
         parameters.
@@ -389,7 +418,7 @@ class FeatureExtractionMixin(PushToHubMixin):
         else:
             return feature_extractor
 
-    def to_dict(self, *args, **kwargs) -> Dict[str, Any]:
+    def to_dict(self, *args, **kwargs) -> dict[str, Any]:
         """
         Serializes this instance to a Python dictionary.
 
@@ -402,7 +431,7 @@ class FeatureExtractionMixin(PushToHubMixin):
         return output
 
     @classmethod
-    def from_json_file(cls, json_file: Union[str, os.PathLike]):
+    def from_json_file(cls, json_file: str | os.PathLike):
         """
         Instantiates a feature extractor of type [`~feature_extraction_utils.FeatureExtractionMixin`] from the path to
         a JSON file of parameters.
@@ -441,7 +470,7 @@ class FeatureExtractionMixin(PushToHubMixin):
 
         return json.dumps(dictionary, indent=2, sort_keys=True) + "\n"
 
-    def to_json_file(self, json_file_path: Union[str, os.PathLike]):
+    def to_json_file(self, json_file_path: str | os.PathLike):
         """
         Save this instance to a JSON file.
 

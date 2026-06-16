@@ -56,7 +56,9 @@ class TestServerArguments(unittest.TestCase):
 
     def test_custom_ports(self):
         """Test custom port values."""
-        args = ServerArguments(port=9090, metrics_port=9001, engine_worker_queue_port=9002)
+        args = ServerArguments(
+            port=9090, metrics_port=9001, engine_worker_queue_port=9002
+        )
         self.assertEqual(args.port, 9090)
         self.assertEqual(args.metrics_port, 9001)
         self.assertEqual(args.engine_worker_queue_port, 9002)

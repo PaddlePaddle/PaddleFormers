@@ -50,7 +50,10 @@ from .utils import (
     update_master_weight_status,
 )
 
-__all__ = ["load_unified_checkpoint_dynamically", "load_unified_optimizer_dynamically"]
+__all__ = [
+    "load_unified_checkpoint_dynamically",
+    "load_unified_optimizer_dynamically",
+]
 
 
 def create_send_table(file_keyname_mappings, file_machine_mappings):
@@ -72,7 +75,9 @@ def create_send_table(file_keyname_mappings, file_machine_mappings):
     return send_table
 
 
-def create_dispatch_table(args, model, file_keyname_mappings, file_machine_mappings):
+def create_dispatch_table(
+    args, model, file_keyname_mappings, file_machine_mappings
+):
     """Create dispatch table for dynamically loading state dict.
 
     Args:
@@ -88,7 +93,7 @@ def create_dispatch_table(args, model, file_keyname_mappings, file_machine_mappi
     recv_table = {}
     if args.dataset_rank == 0:
         state_dict = get_expected_state_dict(model)
-        for (k, v) in state_dict.items():
+        for k, v in state_dict.items():
             if hasattr(v, "is_distributed") and v.is_distributed:
                 recv_table[k] = [(dist.get_rank(), tp_rank)]
             else:
@@ -133,7 +138,7 @@ def create_optimizer_dispatch_table(
     recv_table = {}
     if args.data_parallel_rank == 0:
         state_dict = get_expected_state_dict(model)
-        for (k, v) in state_dict.items():
+        for k, v in state_dict.items():
             if sharding_group.nranks > 1:
                 static_name = struct2static_name_mappings[k]
                 param_rank = param2rank.get(static_name, None)
@@ -183,8 +188,12 @@ def get_file_mappings(index, resume_from_checkpoint):
     global_rank = dist.get_rank()
     file_machine_mappings = {}
     for filename in file_keyname_mappings.keys():
-        if local_rank == 0 and os.path.exists(os.path.join(resume_from_checkpoint, filename)):
-            file_machine_mappings[filename] = [global_rank // local_device_count]
+        if local_rank == 0 and os.path.exists(
+            os.path.join(resume_from_checkpoint, filename)
+        ):
+            file_machine_mappings[filename] = [
+                global_rank // local_device_count
+            ]
     file_machine_list = []
     dist.all_gather_object(file_machine_list, file_machine_mappings)
     file_machine_mappings = {}
@@ -206,14 +215,15 @@ def distributed_send_recv(
     file_keyname_mappings,
     file_machine_mappings,
 ):
-
     local_device_count = int(os.getenv("PADDLE_LOCAL_SIZE"))
     global_rank = dist.get_rank()
     for filename in file_keyname_mappings.keys():
         machine = file_machine_mappings[filename][0]
         is_src = global_rank // local_device_count == machine
         if is_src:
-            f = safe_open(os.path.join(resume_from_checkpoint, filename), framework="np")
+            f = safe_open(
+                os.path.join(resume_from_checkpoint, filename), framework="np"
+            )
 
         for key in file_keyname_mappings[filename]:
             recv_info = recv_table[key]
@@ -227,7 +237,9 @@ def distributed_send_recv(
                     for j in range(len(weight)):
                         with device_guard():
                             weight[j] = paddle.Tensor(weight[j], zero_copy=True)
-                        weight[j] = weight[j]._copy_to(paddle.framework._current_expected_place(), False)
+                        weight[j] = weight[j]._copy_to(
+                            paddle.framework._current_expected_place(), False
+                        )
 
                     for recv_rank, split_index in recv_info:
                         if recv_rank == global_rank:
@@ -239,7 +251,9 @@ def distributed_send_recv(
                     weight = py_safe_slice_[:]
                     with device_guard():
                         weight = paddle.Tensor(weight, zero_copy=True)
-                    weight = weight._copy_to(paddle.framework._current_expected_place(), False)
+                    weight = weight._copy_to(
+                        paddle.framework._current_expected_place(), False
+                    )
                     for recv_rank, _ in recv_info:
                         if recv_rank == global_rank:
                             state_dict[key] = weight
@@ -255,8 +269,12 @@ def distributed_send_recv(
     return state_dict
 
 
-def load_unified_checkpoint_dynamically(args, model, resume_from_checkpoint, safe_serialization=False):
-    index_filename = select_model_weight_index(model, resume_from_checkpoint, safe_serialization, local=False)
+def load_unified_checkpoint_dynamically(
+    args, model, resume_from_checkpoint, safe_serialization=False
+):
+    index_filename = select_model_weight_index(
+        model, resume_from_checkpoint, safe_serialization, local=False
+    )
     index_filename = os.path.join(resume_from_checkpoint, index_filename)
 
     with open(index_filename, "r") as f:
@@ -264,7 +282,9 @@ def load_unified_checkpoint_dynamically(args, model, resume_from_checkpoint, saf
 
     # `file_keyname_mappings` indicates which keys each file contains. For example, {"model-00001-of-00002.safetensors": ["llama.embed_tokens.weight", "llama.layers.0.self_attn.q_proj.weight", ...]}
     # `file_machine_mappings` indicates the machine where the files appear. For example, {"model-00001-of-00002.safetensors": [machine_0, machine_1], "model-00002-of-00002.safetensors": [machine_0]}
-    file_keyname_mappings, file_machine_mappings = get_file_mappings(index, resume_from_checkpoint)
+    file_keyname_mappings, file_machine_mappings = get_file_mappings(
+        index, resume_from_checkpoint
+    )
 
     logger.debug("Creating dispatch table for unified checkpoint load ...")
     # Get send_table and recv_table. The send table indicates which workers are responsible for sending tensors, and the recv table indicates which workers should receive the tensors.
@@ -289,10 +309,15 @@ def load_unified_checkpoint_dynamically(args, model, resume_from_checkpoint, saf
         # Get corresponding tensor parallel actions.
         if isinstance(model, LoRAModel):
             tp_actions = model._get_tensor_parallel_convert_actions(
-                set(all_tp_keys), is_split=True, ignore_error=True, config=config_revise
+                set(all_tp_keys),
+                is_split=True,
+                ignore_error=True,
+                config=config_revise,
             )
         else:
-            tp_actions = model.get_tensor_parallel_convert_actions(config_revise, all_tp_keys, ignore_error=True)
+            tp_actions = model.get_tensor_parallel_convert_actions(
+                config_revise, all_tp_keys, ignore_error=True
+            )
 
     logger.debug("Distributed send recv for state dict load ...")
     # Distribute the checkpoint tensor dynamically, using the `send_table` and `recv_table` we create before.
@@ -308,28 +333,42 @@ def load_unified_checkpoint_dynamically(args, model, resume_from_checkpoint, saf
     dist.barrier()
     logger.debug("Setting state dict into model ...")
     model_to_load_state_dict = model.state_dict()
-    error_msgs = _load_state_dict_into_model(model, state_dict, "", model_to_load_state_dict)
+    error_msgs = _load_state_dict_into_model(
+        model, state_dict, "", model_to_load_state_dict
+    )
     if len(error_msgs) > 0:
         error_msg = "\n\t".join(error_msgs)
-        raise RuntimeError(f"Error(s) in loading dynamic state_dict for {model.__class__.__name__}:\n\t{error_msg}")
+        raise RuntimeError(
+            f"Error(s) in loading dynamic state_dict for {model.__class__.__name__}:\n\t{error_msg}"
+        )
 
 
-def load_unified_optimizer_dynamically(args, model, optimizer, resume_from_checkpoint, safe_serialization=False):
+def load_unified_optimizer_dynamically(
+    args, model, optimizer, resume_from_checkpoint, safe_serialization=False
+):
     optim_state_dict = nested_copy(optimizer.state_dict())
     if "master_weights" in optim_state_dict.keys():
         optim_state_dict.pop("master_weights")
 
     if safe_serialization:
-        index_filename, index_filename_mw = SAFE_OPTIMIZER_INDEX_NAME, SAFE_MASTER_WEIGHTS_INDEX_NAME
+        index_filename, index_filename_mw = (
+            SAFE_OPTIMIZER_INDEX_NAME,
+            SAFE_MASTER_WEIGHTS_INDEX_NAME,
+        )
     else:
-        index_filename, index_filename_mw = PADDLE_OPTIMIZER_INDEX_NAME, PADDLE_MASTER_WEIGHTS_INDEX_NAME
+        index_filename, index_filename_mw = (
+            PADDLE_OPTIMIZER_INDEX_NAME,
+            PADDLE_MASTER_WEIGHTS_INDEX_NAME,
+        )
 
     with open(os.path.join(resume_from_checkpoint, index_filename), "r") as f:
         index = json.loads(f.read())
 
     # `file_keyname_mappings` indicates which keys each file contains. For example, {"optimizer-00001-of-00002.safetensors": ["llama.embed_tokens.weight/moment1_0", "llama.layers.1.mlp.gate_proj.weight/moment1_0", ...]}
     # `file_machine_mappings` indicates the machine where the files appear. For example, {"optimizer-00001-of-00002.safetensors": [machine_0, machine_1], "optimizer-00002-of-00002.safetensors": [machine_0]}
-    file_keyname_mappings, file_machine_mappings = get_file_mappings(index, resume_from_checkpoint)
+    file_keyname_mappings, file_machine_mappings = get_file_mappings(
+        index, resume_from_checkpoint
+    )
 
     has_master_weights = index["master_weights"]
     # update has_master_weights and index_filename_master_weights
@@ -340,9 +379,13 @@ def load_unified_optimizer_dynamically(args, model, optimizer, resume_from_check
     )
 
     if has_master_weights:
-        with open(os.path.join(resume_from_checkpoint, index_filename_mw), "r") as f:
+        with open(
+            os.path.join(resume_from_checkpoint, index_filename_mw), "r"
+        ) as f:
             index_mw = json.loads(f.read())
-        file_keyname_mappings_mw, file_machine_mappings_mw = get_file_mappings(index_mw, resume_from_checkpoint)
+        file_keyname_mappings_mw, file_machine_mappings_mw = get_file_mappings(
+            index_mw, resume_from_checkpoint
+        )
 
     # Get optimizer param type name, like moment1_0, moment2_0, beta1_pow_acc_0.
     typename_set = set()
@@ -351,8 +394,12 @@ def load_unified_optimizer_dynamically(args, model, optimizer, resume_from_check
         typename_set.add(typename)
 
     model_state_dict = get_expected_state_dict(model)
-    struct2static_name_mappings = {k: v.name for k, v in model_state_dict.items()}
-    static2struct_name_mappings = {v.name: k for k, v in model_state_dict.items()}
+    struct2static_name_mappings = {
+        k: v.name for k, v in model_state_dict.items()
+    }
+    static2struct_name_mappings = {
+        v.name: k for k, v in model_state_dict.items()
+    }
     # Get send_table and recv_table. The send table indicates which workers are responsible for sending tensors, and the recv table indicates which workers should receive the tensors.
     send_table, recv_table = create_optimizer_dispatch_table(
         args,
@@ -397,11 +444,15 @@ def load_unified_optimizer_dynamically(args, model, optimizer, resume_from_check
             # If parameter groups are set, there must be `params` key. This is guaranteed by the optimizer's initialization code.
             for parameter in param_group["params"]:
                 if check_optimizer_param(parameter):
-                    optimizer_keys_with_shape.append((parameter.name, parameter.shape))
+                    optimizer_keys_with_shape.append(
+                        (parameter.name, parameter.shape)
+                    )
     else:
         for parameter in optimizer._parameter_list:
             if check_optimizer_param(parameter):
-                optimizer_keys_with_shape.append((parameter.name, parameter.shape))
+                optimizer_keys_with_shape.append(
+                    (parameter.name, parameter.shape)
+                )
 
     # see how to change
     for static_name, shape in optimizer_keys_with_shape:
@@ -431,12 +482,19 @@ def load_unified_optimizer_dynamically(args, model, optimizer, resume_from_check
     else:
         if isinstance(model, LoRAModel):
             tp_actions = model._get_tensor_parallel_convert_actions(
-                set(all_tp_keys), is_split=True, ignore_error=True, config=config_revise
+                set(all_tp_keys),
+                is_split=True,
+                ignore_error=True,
+                config=config_revise,
             )
         else:
-            tp_actions = model.get_tensor_parallel_convert_actions(config_revise, all_tp_keys, ignore_error=True)
+            tp_actions = model.get_tensor_parallel_convert_actions(
+                config_revise, all_tp_keys, ignore_error=True
+            )
     optimizer_keys = list(index["weight_map"].keys())
-    optimizer_tp_actions = mapping_optimizer_tp_actions(tp_actions, optimizer_keys)
+    optimizer_tp_actions = mapping_optimizer_tp_actions(
+        tp_actions, optimizer_keys
+    )
     if has_master_weights:
         optimizer_tp_actions.update(tp_actions)
 
@@ -483,8 +541,12 @@ def load_unified_optimizer_dynamically(args, model, optimizer, resume_from_check
         optim_state_dict["master_weights"] = {}
         for key in list(optim_state_dict_mw.keys()):
             static_name = struct2static_name_mappings[key]
-            optim_state_dict["master_weights"][static_name] = optim_state_dict_mw.pop(key)
-            optim_state_dict["master_weights"][static_name].name = "_".join([static_name, FP32_MASTER])
+            optim_state_dict["master_weights"][static_name] = (
+                optim_state_dict_mw.pop(key)
+            )
+            optim_state_dict["master_weights"][static_name].name = "_".join(
+                [static_name, FP32_MASTER]
+            )
 
     if args.data_parallel_rank == 0:
         return optim_state_dict

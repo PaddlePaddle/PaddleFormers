@@ -34,10 +34,23 @@ def parse_arguments():
     """
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--paddlenlp_model_path", required=True, type=str, help="Input PaddleNLP model directory path."
+        "--paddlenlp_model_path",
+        required=True,
+        type=str,
+        help="Input PaddleNLP model directory path.",
     )
-    parser.add_argument("--hf_model_path", required=True, type=str, help="Output HF model directory path.")
-    parser.add_argument("--max_shard_size", default="4GB", type=str, help="The maximum size of each sub-checkpoint.")
+    parser.add_argument(
+        "--hf_model_path",
+        required=True,
+        type=str,
+        help="Output HF model directory path.",
+    )
+    parser.add_argument(
+        "--max_shard_size",
+        default="4GB",
+        type=str,
+        help="The maximum size of each sub-checkpoint.",
+    )
     return parser.parse_args()
 
 

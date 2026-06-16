@@ -32,7 +32,9 @@ class QuantedLoRALinear(ConvertibleQuantedLayer):
     def __init__(self, layer: nn.Layer, q_config):
         super().__init__()
         if isinstance(layer.lora_dropout, nn.Dropout):
-            raise ValueError("lora_dropout is not supported for QuantedLoRALinear")
+            raise ValueError(
+                "lora_dropout is not supported for QuantedLoRALinear"
+            )
 
         self.weight = layer.weight
         self.lora_A = layer.lora_A
@@ -55,14 +57,21 @@ class QuantedLoRALinear(ConvertibleQuantedLayer):
         self.disable_lora = False
 
     def forward(self, input):
-
         if self.merged or self.disable_lora:
             weight = self.weight
         else:
             weight = self.weight + self.lora_A @ self.lora_B * self.scaling
 
-        quant_input = self.activation_quanter(input) if self.activation_quanter is not None else input
-        quant_weight = self.weight_quanter(weight) if self.weight_quanter is not None else weight
+        quant_input = (
+            self.activation_quanter(input)
+            if self.activation_quanter is not None
+            else input
+        )
+        quant_weight = (
+            self.weight_quanter(weight)
+            if self.weight_quanter is not None
+            else weight
+        )
 
         return self._linear_forward(quant_input, quant_weight)
 
@@ -105,7 +114,9 @@ class ColumnParallelQuantedLoRALinear(ConvertibleQuantedLayer):
     def __init__(self, layer: nn.Layer, q_config):
         super().__init__()
         if isinstance(layer.lora_dropout, nn.Dropout):
-            raise ValueError("lora_dropout is not supported for QuantedLoRALinear")
+            raise ValueError(
+                "lora_dropout is not supported for QuantedLoRALinear"
+            )
 
         self.weight = layer.weight
         self.lora_A = layer.lora_A
@@ -131,29 +142,46 @@ class ColumnParallelQuantedLoRALinear(ConvertibleQuantedLayer):
         self.disable_lora = False
 
     def forward(self, input):
-
         if self.merged or self.disable_lora:
             weight = self.weight
         else:
             weight = (
                 self.weight
-                + mp_ops._c_identity(self.lora_A, group=self.model_parallel_group) @ self.lora_B * self.scaling
+                + mp_ops._c_identity(
+                    self.lora_A, group=self.model_parallel_group
+                )
+                @ self.lora_B
+                * self.scaling
             )
-        quant_input = self.activation_quanter(input) if self.activation_quanter is not None else input
-        quant_weight = self.weight_quanter(weight) if self.weight_quanter is not None else weight
+        quant_input = (
+            self.activation_quanter(input)
+            if self.activation_quanter is not None
+            else input
+        )
+        quant_weight = (
+            self.weight_quanter(weight)
+            if self.weight_quanter is not None
+            else weight
+        )
 
         return self._linear_forward(quant_input, quant_weight)
 
     def _linear_forward(self, input, weight):
         if self.is_mp:
-            input_mp = mp_ops._c_identity(input, group=self.model_parallel_group)
+            input_mp = mp_ops._c_identity(
+                input, group=self.model_parallel_group
+            )
         else:
             input_mp = input
 
-        result_mp = F.linear(x=input_mp, weight=weight, bias=self.bias, name=self.name)
+        result_mp = F.linear(
+            x=input_mp, weight=weight, bias=self.bias, name=self.name
+        )
 
         if self.gather_output and self.is_mp:
-            result = mp_ops._c_concat(result_mp, group=self.model_parallel_group)
+            result = mp_ops._c_concat(
+                result_mp, group=self.model_parallel_group
+            )
         else:
             result = result_mp
         return result
@@ -192,7 +220,9 @@ class RowParallelQuantedLoRALinear(ConvertibleQuantedLayer):
     def __init__(self, layer: nn.Layer, q_config):
         super().__init__()
         if isinstance(layer.lora_dropout, nn.Dropout):
-            raise ValueError("lora_dropout is not supported for QuantedLoRALinear")
+            raise ValueError(
+                "lora_dropout is not supported for QuantedLoRALinear"
+            )
 
         self.weight = layer.weight
         self.lora_A = layer.lora_A
@@ -218,17 +248,28 @@ class RowParallelQuantedLoRALinear(ConvertibleQuantedLayer):
         self.disable_lora = False
 
     def forward(self, input):
-
         if self.merged or self.disable_lora:
             weight = self.weight
         else:
             weight = (
                 self.weight
-                + self.lora_A @ mp_ops._c_identity(self.lora_B, group=self.model_parallel_group) * self.scaling
+                + self.lora_A
+                @ mp_ops._c_identity(
+                    self.lora_B, group=self.model_parallel_group
+                )
+                * self.scaling
             )
 
-        quant_input = self.activation_quanter(input) if self.activation_quanter is not None else input
-        quant_weight = self.weight_quanter(weight) if self.weight_quanter is not None else weight
+        quant_input = (
+            self.activation_quanter(input)
+            if self.activation_quanter is not None
+            else input
+        )
+        quant_weight = (
+            self.weight_quanter(weight)
+            if self.weight_quanter is not None
+            else weight
+        )
 
         return self._linear_forward(quant_input, quant_weight)
 

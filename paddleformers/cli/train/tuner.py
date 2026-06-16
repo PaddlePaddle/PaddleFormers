@@ -25,7 +25,9 @@ from .sft import run_sft
 def check_path(path):
     """_summary_"""
     if path is None:
-        raise ValueError("Dataset Path is None. Please set dataset path firstly.")
+        raise ValueError(
+            "Dataset Path is None. Please set dataset path firstly."
+        )
     else:
         pass
 
@@ -40,11 +42,16 @@ def _training_function(config: dict[str, Any]) -> None:
         ValueError: _description_
     """
     args = config.get("args")
-    model_args, data_args, preprocess_args, generating_args, finetuning_args = get_train_args(args)
+    model_args, data_args, preprocess_args, generating_args, finetuning_args = (
+        get_train_args(args)
+    )
 
     if "VL" in model_args.stage or model_args.stage == "dsv3_pretrain":
         pass
-    elif data_args.dataset_type != "pretrain" and data_args.dataset_type != "offline":
+    elif (
+        data_args.dataset_type != "pretrain"
+        and data_args.dataset_type != "offline"
+    ):
         check_path(data_args.train_dataset_path)
         check_path(data_args.eval_dataset_path)
 
@@ -57,13 +64,19 @@ def _training_function(config: dict[str, Any]) -> None:
     elif model_args.stage == "dsv3_pretrain":
         from .deepseek_v3_pretrain import run_dsv3_pretrain
 
-        run_dsv3_pretrain(model_args, data_args, generating_args, finetuning_args)
+        run_dsv3_pretrain(
+            model_args, data_args, generating_args, finetuning_args
+        )
     elif model_args.stage == "ernie_pretrain":
         from .ernie_pretrain import run_ernie_pretrain
 
-        run_ernie_pretrain(model_args, data_args, generating_args, finetuning_args)
+        run_ernie_pretrain(
+            model_args, data_args, generating_args, finetuning_args
+        )
     elif model_args.stage == "auto-parallel":
-        run_auto_parallel(model_args, data_args, generating_args, finetuning_args)
+        run_auto_parallel(
+            model_args, data_args, generating_args, finetuning_args
+        )
     else:
         raise ValueError(f"Unknown task: {model_args.stage}.")
 

@@ -39,8 +39,12 @@ from .utils import (
 __all__ = ["check_unified_checkpoint", "check_unified_optimizer"]
 
 
-def check_unified_checkpoint(args, model, resume_from_checkpoint, safe_serialization=False):
-    index_filename = select_model_weight_index(model, resume_from_checkpoint, safe_serialization, local=False)
+def check_unified_checkpoint(
+    args, model, resume_from_checkpoint, safe_serialization=False
+):
+    index_filename = select_model_weight_index(
+        model, resume_from_checkpoint, safe_serialization, local=False
+    )
     index_filename = os.path.join(resume_from_checkpoint, index_filename)
     # Find index json file and distribute this file in global group.
     if distributed_isfile(index_filename):
@@ -64,9 +68,13 @@ def check_unified_checkpoint(args, model, resume_from_checkpoint, safe_serializa
     # Gather all the existed files in global group.
     dist.all_gather_object(existed_filelist, existed_files)
     flatten_existed_filelist = flatten_list(existed_filelist)
-    diff_filelist = list(set(all_weight_filenames).difference(set(flatten_existed_filelist)))
+    diff_filelist = list(
+        set(all_weight_filenames).difference(set(flatten_existed_filelist))
+    )
     if len(diff_filelist) != 0:
-        raise Exception(f"Sorry, the weight file list on the machines is not complete!, missing {diff_filelist}")
+        raise Exception(
+            f"Sorry, the weight file list on the machines is not complete!, missing {diff_filelist}"
+        )
 
     # To decide whether to load the checkpoint locally, or need to dynamically send tensors across machines.
     local_resume = True
@@ -82,7 +90,11 @@ def check_unified_checkpoint(args, model, resume_from_checkpoint, safe_serializa
         for key in state_dict.keys():
             filename = index["weight_map"][key]
             # When using expert parallel, there's no need to check tensors with `no_sync=False` when dp_rank > 0.
-            if args.use_expert_parallel and dp_rank > 0 and not getattr(state_dict[key], "no_sync", False):
+            if (
+                args.use_expert_parallel
+                and dp_rank > 0
+                and not getattr(state_dict[key], "no_sync", False)
+            ):
                 continue
             need_files.add(filename)
         diff_filelist = list(need_files.difference(set(existed_files)))
@@ -103,13 +115,23 @@ def check_unified_checkpoint(args, model, resume_from_checkpoint, safe_serializa
     return local_resume
 
 
-def check_unified_optimizer(args, model, optimizer, resume_from_checkpoint, safe_serialization=False):
+def check_unified_optimizer(
+    args, model, optimizer, resume_from_checkpoint, safe_serialization=False
+):
     if not safe_serialization:
-        index_filename, index_filename_master_weights = PADDLE_OPTIMIZER_INDEX_NAME, PADDLE_MASTER_WEIGHTS_INDEX_NAME
+        index_filename, index_filename_master_weights = (
+            PADDLE_OPTIMIZER_INDEX_NAME,
+            PADDLE_MASTER_WEIGHTS_INDEX_NAME,
+        )
     else:
-        index_filename, index_filename_master_weights = SAFE_OPTIMIZER_INDEX_NAME, SAFE_MASTER_WEIGHTS_INDEX_NAME
+        index_filename, index_filename_master_weights = (
+            SAFE_OPTIMIZER_INDEX_NAME,
+            SAFE_MASTER_WEIGHTS_INDEX_NAME,
+        )
     index_filename = os.path.join(resume_from_checkpoint, index_filename)
-    index_filename_master_weights = os.path.join(resume_from_checkpoint, index_filename_master_weights)
+    index_filename_master_weights = os.path.join(
+        resume_from_checkpoint, index_filename_master_weights
+    )
 
     # Find index json file and distribute the file in global group.
     if distributed_isfile(index_filename):
@@ -127,11 +149,15 @@ def check_unified_optimizer(args, model, optimizer, resume_from_checkpoint, safe
     # update has_master_weights and index_filename_master_weights
     # 1. if the master weight exists, only has_master_weights is set True and loaded when needed
     # 2. if master weight does not exist, convert model weight to master weight when needed
-    has_master_weights, index_filename_master_weights = update_master_weight_status(
-        args, optimizer, has_master_weights, safe_serialization
+    has_master_weights, index_filename_master_weights = (
+        update_master_weight_status(
+            args, optimizer, has_master_weights, safe_serialization
+        )
     )
     if has_master_weights:
-        index_filename_master_weights = os.path.join(resume_from_checkpoint, index_filename_master_weights)
+        index_filename_master_weights = os.path.join(
+            resume_from_checkpoint, index_filename_master_weights
+        )
         if distributed_isfile(index_filename_master_weights):
             distributed_file(index_filename_master_weights)
         else:
@@ -150,11 +176,15 @@ def check_unified_optimizer(args, model, optimizer, resume_from_checkpoint, safe
     sharding_rank = sharding_group.rank
     dp_rank = dp_group.rank if dp_group.nranks > 1 else 0
     model_state_dict = get_expected_state_dict(model)
-    struct2static_name_mappings = {k: v.name for k, v in model_state_dict.items()}
+    struct2static_name_mappings = {
+        k: v.name for k, v in model_state_dict.items()
+    }
 
     if is_sharding_split_param_mode(args):
         # We do not check optimizer files completion for split_param, since it is very complicated. Directly support local resume.
-        logger.warning("We only support local resume for split_param mode, do not support dynamically loading.")
+        logger.warning(
+            "We only support local resume for split_param mode, do not support dynamically loading."
+        )
         return True
 
     if sharding_group.nranks > 1:
@@ -170,14 +200,22 @@ def check_unified_optimizer(args, model, optimizer, resume_from_checkpoint, safe
 
         dist.all_gather_object(existed_filelist, existed_files)
         flatten_existed_filelist = flatten_list(existed_filelist)
-        diff_filelist = list(set(all_filenames).difference(set(flatten_existed_filelist)))
+        diff_filelist = list(
+            set(all_filenames).difference(set(flatten_existed_filelist))
+        )
         if len(diff_filelist) != 0:
             raise Exception(
                 f"Sorry, the optimizer file list on `data_parallel_rank==0` machines is not complete!, missing {diff_filelist}"
             )
         return existed_files
 
-    def check_dynamic_load(args, weight_map, existed_files, is_master_weights=False, typename_set=None):
+    def check_dynamic_load(
+        args,
+        weight_map,
+        existed_files,
+        is_master_weights=False,
+        typename_set=None,
+    ):
         # To decide whether to load the checkpoint locally, or need to dynamically distribute the checkpoint.
         local_resume = True
         if args.data_parallel_rank == 0 or args.use_expert_parallel:
@@ -187,7 +225,10 @@ def check_unified_optimizer(args, model, optimizer, resume_from_checkpoint, safe
             for key in state_dict.keys():
                 if state_dict[key].stop_gradient:
                     continue
-                if model._keys_to_ignore_on_load_missing is not None and key in model._keys_to_ignore_on_load_missing:
+                if (
+                    model._keys_to_ignore_on_load_missing is not None
+                    and key in model._keys_to_ignore_on_load_missing
+                ):
                     continue
                 if sharding_group.nranks > 1:
                     static_name = struct2static_name_mappings.get(key, None)
@@ -196,10 +237,17 @@ def check_unified_optimizer(args, model, optimizer, resume_from_checkpoint, safe
                         continue
 
                 # When using expert parallel, there's no need to check tensors with `no_sync=False` when dp_rank > 0.
-                if args.use_expert_parallel and dp_rank > 0 and not getattr(state_dict[key], "no_sync", False):
+                if (
+                    args.use_expert_parallel
+                    and dp_rank > 0
+                    and not getattr(state_dict[key], "no_sync", False)
+                ):
                     continue
 
-                if is_master_weights and state_dict[key].dtype == paddle.float32:
+                if (
+                    is_master_weights
+                    and state_dict[key].dtype == paddle.float32
+                ):
                     continue
 
                 if not is_master_weights:
@@ -218,7 +266,9 @@ def check_unified_optimizer(args, model, optimizer, resume_from_checkpoint, safe
             if pp_group.nranks > 1:
                 dist.all_reduce(num_diff, op=dist.ReduceOp.MAX, group=pp_group)
             if sharding_group.nranks > 1:
-                dist.all_reduce(num_diff, op=dist.ReduceOp.MAX, group=sharding_group)
+                dist.all_reduce(
+                    num_diff, op=dist.ReduceOp.MAX, group=sharding_group
+                )
             if args.use_expert_parallel and dp_group.nranks > 1:
                 dist.all_reduce(num_diff, op=dist.ReduceOp.MAX, group=dp_group)
 
@@ -240,9 +290,18 @@ def check_unified_optimizer(args, model, optimizer, resume_from_checkpoint, safe
         _, typename = key.split("/")
         typename_set.add(typename)
     local_resume = check_dynamic_load(
-        args, index["weight_map"], existed_files, is_master_weights=False, typename_set=typename_set
+        args,
+        index["weight_map"],
+        existed_files,
+        is_master_weights=False,
+        typename_set=typename_set,
     )
     local_resume_rw = True
     if has_master_weights:
-        local_resume_rw = check_dynamic_load(args, index_mw["weight_map"], existed_files_mw, is_master_weights=True)
+        local_resume_rw = check_dynamic_load(
+            args,
+            index_mw["weight_map"],
+            existed_files_mw,
+            is_master_weights=True,
+        )
     return local_resume & local_resume_rw

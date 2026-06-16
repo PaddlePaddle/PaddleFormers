@@ -16,6 +16,7 @@
 """
 Encode structured tool declaration to typescript style string.
 """
+
 import dataclasses
 import json
 from collections.abc import Sequence
@@ -56,7 +57,12 @@ class _SchemaRegistry:
 
 
 def _format_description(description: str, indent: str = "") -> str:
-    return "\n".join([f"{indent}// {line}" if line else "" for line in description.split("\n")])
+    return "\n".join(
+        [
+            f"{indent}// {line}" if line else ""
+            for line in description.split("\n")
+        ]
+    )
 
 
 class _BaseType:
@@ -70,7 +76,9 @@ class _BaseType:
         allowed_constraint_keys: Sequence[str] = (),
     ):
         self.description = extra_props.get("description", "")
-        self.constraints = {k: v for k, v in extra_props.items() if k in allowed_constraint_keys}
+        self.constraints = {
+            k: v for k, v in extra_props.items() if k in allowed_constraint_keys
+        }
 
     def to_typescript_style(self, indent: str = "") -> str:
         raise NotImplementedError
@@ -80,7 +88,12 @@ class _BaseType:
         if self.description:
             lines.append(_format_description(self.description, indent))
         if self.constraints:
-            constraints_str = ", ".join(f"{k}: {v}" for k, v in sorted(self.constraints.items(), key=lambda kv: kv[0]))
+            constraints_str = ", ".join(
+                f"{k}: {v}"
+                for k, v in sorted(
+                    self.constraints.items(), key=lambda kv: kv[0]
+                )
+            )
             lines.append(f"{indent}// {constraints_str}")
 
         return "".join(x + "\n" for x in lines)
@@ -98,7 +111,9 @@ class _ParameterTypeScalar(_BaseType):
         elif self.type in ("number", "integer"):
             allowed_constraint_keys = ["maximum", "minimum"]
 
-        super().__init__(extra_props or {}, allowed_constraint_keys=allowed_constraint_keys)
+        super().__init__(
+            extra_props or {}, allowed_constraint_keys=allowed_constraint_keys
+        )
 
     def to_typescript_style(self, indent: str = "") -> str:
         # Map integer to number in TypeScript
@@ -111,7 +126,11 @@ class _ParameterTypeObject(_BaseType):
     properties: list["_Parameter"]
     additional_properties: Any | None = None
 
-    def __init__(self, json_schema_object: dict[str, Any], registry: _SchemaRegistry | None = None):
+    def __init__(
+        self,
+        json_schema_object: dict[str, Any],
+        registry: _SchemaRegistry | None = None,
+    ):
         super().__init__(json_schema_object)
 
         self.properties = []
@@ -123,15 +142,21 @@ class _ParameterTypeObject(_BaseType):
         if "$defs" in json_schema_object and registry:
             registry.register_definitions(json_schema_object["$defs"])
 
-        self.additional_properties = json_schema_object.get("additionalProperties")
+        self.additional_properties = json_schema_object.get(
+            "additionalProperties"
+        )
         if isinstance(self.additional_properties, dict):
-            self.additional_properties = _parse_parameter_type(self.additional_properties, registry)
+            self.additional_properties = _parse_parameter_type(
+                self.additional_properties, registry
+            )
 
         if "properties" not in json_schema_object:
             return
 
         required_parameters = json_schema_object.get("required", [])
-        optional_parameters = set(json_schema_object["properties"].keys()) - set(required_parameters)
+        optional_parameters = set(
+            json_schema_object["properties"].keys()
+        ) - set(required_parameters)
 
         self.properties = [
             _Parameter(
@@ -163,10 +188,16 @@ class _ParameterTypeObject(_BaseType):
             elif self.additional_properties is False:
                 ap_type_str = "never"
             elif isinstance(self.additional_properties, _ParameterType):
-                ap_type_str = self.additional_properties.to_typescript_style(indent=indent + _TS_INDENT)
+                ap_type_str = self.additional_properties.to_typescript_style(
+                    indent=indent + _TS_INDENT
+                )
             else:
-                raise ValueError(f"Unknown additionalProperties: {self.additional_properties}")
-            param_strs.append(f"{indent + _TS_INDENT}[k: string]: {ap_type_str}")
+                raise ValueError(
+                    f"Unknown additionalProperties: {self.additional_properties}"
+                )
+            param_strs.append(
+                f"{indent + _TS_INDENT}[k: string]: {ap_type_str}"
+            )
 
         if not param_strs:
             return "{}"
@@ -182,10 +213,18 @@ class _ParameterTypeObject(_BaseType):
 class _ParameterTypeArray(_BaseType):
     item: "_ParameterType"
 
-    def __init__(self, json_schema_object: dict[str, Any], registry: _SchemaRegistry | None = None):
-        super().__init__(json_schema_object, allowed_constraint_keys=("minItems", "maxItems"))
+    def __init__(
+        self,
+        json_schema_object: dict[str, Any],
+        registry: _SchemaRegistry | None = None,
+    ):
+        super().__init__(
+            json_schema_object, allowed_constraint_keys=("minItems", "maxItems")
+        )
         if json_schema_object.get("items"):
-            self.item = _parse_parameter_type(json_schema_object["items"], registry)
+            self.item = _parse_parameter_type(
+                json_schema_object["items"], registry
+            )
         else:
             self.item = _ParameterTypeScalar(type="any")
 
@@ -240,7 +279,9 @@ class _ParameterTypeEnum(_BaseType):
                     raise ValueError(f"Enum value {val} is not a boolean")
 
     def to_typescript_style(self, indent: str = "") -> str:
-        return " | ".join([f'"{e}"' if isinstance(e, str) else str(e) for e in self.enum])
+        return " | ".join(
+            [f'"{e}"' if isinstance(e, str) else str(e) for e in self.enum]
+        )
 
 
 class _ParameterTypeAnyOf(_BaseType):
@@ -252,10 +293,15 @@ class _ParameterTypeAnyOf(_BaseType):
         registry: _SchemaRegistry | None = None,
     ):
         super().__init__(json_schema_object)
-        self.types = [_parse_parameter_type(t, registry) for t in json_schema_object["anyOf"]]
+        self.types = [
+            _parse_parameter_type(t, registry)
+            for t in json_schema_object["anyOf"]
+        ]
 
     def to_typescript_style(self, indent: str = "") -> str:
-        return " | ".join([t.to_typescript_style(indent=indent) for t in self.types])
+        return " | ".join(
+            [t.to_typescript_style(indent=indent) for t in self.types]
+        )
 
 
 class _ParameterTypeUnion(_BaseType):
@@ -283,7 +329,9 @@ class _ParameterTypeRef(_BaseType):
     ref_name: str
     is_self_ref: bool = False
 
-    def __init__(self, json_schema_object: dict[str, Any], registry: _SchemaRegistry):
+    def __init__(
+        self, json_schema_object: dict[str, Any], registry: _SchemaRegistry
+    ):
         super().__init__(json_schema_object)
 
         ref = json_schema_object["$ref"]
@@ -352,13 +400,16 @@ class _Parameter:
 
 
 def _parse_parameter_type(
-    json_schema_object: dict[str, Any] | bool, registry: _SchemaRegistry | None = None
+    json_schema_object: dict[str, Any] | bool,
+    registry: _SchemaRegistry | None = None,
 ) -> _ParameterType:
     if isinstance(json_schema_object, bool):
         if json_schema_object:
             return _ParameterTypeScalar(type="any")
         else:
-            logger.warning(f"Warning: Boolean value {json_schema_object} is not supported, use null instead.")
+            logger.warning(
+                f"Warning: Boolean value {json_schema_object} is not supported, use null instead."
+            )
             return _ParameterTypeScalar(type="null")
 
     if "$ref" in json_schema_object and registry:
@@ -396,7 +447,12 @@ def _openai_function_to_typescript_style(
     root_interface_name = None
     if registry.has_self_ref:
         root_interface_name = "parameters"
-        params_str = _TS_FIELD_DELIMITER.join([p.to_typescript_style(indent=_TS_INDENT) for p in parsed.properties])
+        params_str = _TS_FIELD_DELIMITER.join(
+            [
+                p.to_typescript_style(indent=_TS_INDENT)
+                for p in parsed.properties
+            ]
+        )
         params_str = f"\n{params_str}\n" if params_str else ""
         interface_def = f"interface {root_interface_name} {{{params_str}}}"
         interfaces.append(interface_def)

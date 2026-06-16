@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 # Copyright 2024 The Qwen team, Alibaba Group and the HuggingFace Inc. team. All rights reserved.
 #
@@ -19,6 +18,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """image processor class for Qwen2-VL."""
+
 import transformers as hf
 
 from ..image_processing_utils import warp_base_image_processor

@@ -63,7 +63,9 @@ class _AllToAll(paddle.autograd.PyLayer):
             return input
         if input_split_sizes is None and output_split_sizes is None:
             output = paddle.empty_like(input)
-            task = dist.stream.alltoall_single(output, input, None, None, group, True, True)
+            task = dist.stream.alltoall_single(
+                output, input, None, None, group, True, True
+            )
             task.wait()
         else:
             out_sizes = [sum(output_split_sizes)]
@@ -90,7 +92,12 @@ class _AllToAll(paddle.autograd.PyLayer):
         if ctx.input_split_sizes is None and ctx.output_split_sizes is None:
             return _AllToAll.apply(*grad_output, ctx.group)
         else:
-            return _AllToAll.apply(*grad_output, ctx.group, ctx.input_split_sizes, ctx.output_split_sizes)
+            return _AllToAll.apply(
+                *grad_output,
+                ctx.group,
+                ctx.input_split_sizes,
+                ctx.output_split_sizes,
+            )
 
 
 # Copied from transformers.models.llama.modeling_llama.rotate_half
@@ -101,7 +108,9 @@ def rotate_half(x):
     return paddle.concat([-x2, x1], axis=-1)  # shape is the same as x
 
 
-def apply_rotary_pos_emb_vision(tensor: paddle.Tensor, freqs: paddle.Tensor) -> paddle.Tensor:
+def apply_rotary_pos_emb_vision(
+    tensor: paddle.Tensor, freqs: paddle.Tensor
+) -> paddle.Tensor:
     """Applies Rotary Position Embedding to the input tensors.
 
     Args:
@@ -116,8 +125,18 @@ def apply_rotary_pos_emb_vision(tensor: paddle.Tensor, freqs: paddle.Tensor) -> 
         tensor = tensor.astype(dtype="float32")
         cos = freqs.cos()
         sin = freqs.sin()
-        cos = cos.unsqueeze(1).tile(repeat_times=[1, 1, 2]).unsqueeze(0).astype(dtype="float32")
-        sin = sin.unsqueeze(1).tile(repeat_times=[1, 1, 2]).unsqueeze(0).astype(dtype="float32")
+        cos = (
+            cos.unsqueeze(1)
+            .tile(repeat_times=[1, 1, 2])
+            .unsqueeze(0)
+            .astype(dtype="float32")
+        )
+        sin = (
+            sin.unsqueeze(1)
+            .tile(repeat_times=[1, 1, 2])
+            .unsqueeze(0)
+            .astype(dtype="float32")
+        )
         output = tensor * cos + rotate_half(tensor) * sin
     output = paddle.cast(output, orig_dtype)
     return output
@@ -178,7 +197,11 @@ class VisionFlashAttention2(nn.Layer):
             paddle.Tensor: output tensor
         """
         seq_length = hidden_states.shape[0]
-        qkv = self.qkv(hidden_states).reshape([seq_length, 3, self.num_heads, -1]).transpose(perm=[1, 0, 2, 3])
+        qkv = (
+            self.qkv(hidden_states)
+            .reshape([seq_length, 3, self.num_heads, -1])
+            .transpose(perm=[1, 0, 2, 3])
+        )
         q, k, v = qkv.unbind(axis=0)
 
         if attn_sep:
@@ -188,8 +211,12 @@ class VisionFlashAttention2(nn.Layer):
             q, k, v = qkv_reshard_head(qkv, mp_group)
             seq_length = q.shape[0]
 
-        q = apply_rotary_pos_emb_vision(q.unsqueeze(axis=0), rotary_pos_emb).squeeze(axis=0)
-        k = apply_rotary_pos_emb_vision(k.unsqueeze(axis=0), rotary_pos_emb).squeeze(axis=0)
+        q = apply_rotary_pos_emb_vision(
+            q.unsqueeze(axis=0), rotary_pos_emb
+        ).squeeze(axis=0)
+        k = apply_rotary_pos_emb_vision(
+            k.unsqueeze(axis=0), rotary_pos_emb
+        ).squeeze(axis=0)
 
         attn_output = flashmask_attention(
             q.astype("bfloat16").unsqueeze(0),
@@ -228,7 +255,9 @@ class PatchEmbed(nn.Layer):
         self.patch_size = patch_size
         self.in_channels = in_channels
         self.embed_dim = embed_dim
-        self.proj = nn.Linear(in_channels * patch_size * patch_size, embed_dim, bias_attr=False)
+        self.proj = nn.Linear(
+            in_channels * patch_size * patch_size, embed_dim, bias_attr=False
+        )
 
     def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
         """
@@ -240,7 +269,9 @@ class PatchEmbed(nn.Layer):
         """
         target_dtype = self.proj.weight.dtype
 
-        hidden_states = self.proj(paddle.cast(hidden_states, dtype=target_dtype))
+        hidden_states = self.proj(
+            paddle.cast(hidden_states, dtype=target_dtype)
+        )
 
         return hidden_states
 
@@ -275,7 +306,9 @@ class VisionRotaryEmbedding(nn.Layer):
             theta (float, optional): the frequency factor. Defaults to 10000.0.
         """
         super().__init__()
-        self.inv_freq = 1.0 / theta ** (paddle.arange(start=0, end=dim, step=2, dtype="float32") / dim)
+        self.inv_freq = 1.0 / theta ** (
+            paddle.arange(start=0, end=dim, step=2, dtype="float32") / dim
+        )
 
     def forward(self, seqlen: int) -> paddle.Tensor:
         """
@@ -300,11 +333,20 @@ class DFNRopeVisionBlock(nn.Layer):
             attn_implementation (str, optional): attention implementation. Defaults to "sdpa".
         """
         super().__init__()
-        self.norm1 = nn.LayerNorm(config.vision_config.hidden_size, epsilon=1e-6)
-        self.norm2 = nn.LayerNorm(config.vision_config.hidden_size, epsilon=1e-6)
-        mlp_hidden_dim = int(config.vision_config.embed_dim * config.vision_config.mlp_ratio)
+        self.norm1 = nn.LayerNorm(
+            config.vision_config.hidden_size, epsilon=1e-6
+        )
+        self.norm2 = nn.LayerNorm(
+            config.vision_config.hidden_size, epsilon=1e-6
+        )
+        mlp_hidden_dim = int(
+            config.vision_config.embed_dim * config.vision_config.mlp_ratio
+        )
 
-        self.attn = VisionFlashAttention2(config.vision_config.hidden_size, num_heads=config.vision_config.num_heads)
+        self.attn = VisionFlashAttention2(
+            config.vision_config.hidden_size,
+            num_heads=config.vision_config.num_heads,
+        )
         self.mlp = VisionMlp(
             dim=config.vision_config.hidden_size,
             hidden_dim=mlp_hidden_dim,
@@ -312,7 +354,13 @@ class DFNRopeVisionBlock(nn.Layer):
         )
         self.config = config
 
-    def forward(self, hidden_states, startend_row_indices, rotary_pos_emb, attn_sep=False) -> paddle.Tensor:
+    def forward(
+        self,
+        hidden_states,
+        startend_row_indices,
+        rotary_pos_emb,
+        attn_sep=False,
+    ) -> paddle.Tensor:
         """
         Args:
             hidden_states(paddle.Tensor): hidden states
@@ -351,16 +399,26 @@ class DFNRopeVisionTransformerPretrainedModel(PretrainedModel):
             embed_dim=config.vision_config.hidden_size,
         )
 
-        self.attn_sep = getattr(config.vision_config, "attn_sep", False) and config.tensor_model_parallel_size > 1
+        self.attn_sep = (
+            getattr(config.vision_config, "attn_sep", False)
+            and config.tensor_model_parallel_size > 1
+        )
 
-        head_dim = config.vision_config.hidden_size // config.vision_config.num_heads
+        head_dim = (
+            config.vision_config.hidden_size // config.vision_config.num_heads
+        )
         self.rotary_pos_emb = VisionRotaryEmbedding(head_dim // 2)
 
-        self.blocks = nn.LayerList([DFNRopeVisionBlock(config) for _ in range(config.vision_config.depth)])
+        self.blocks = nn.LayerList(
+            [
+                DFNRopeVisionBlock(config)
+                for _ in range(config.vision_config.depth)
+            ]
+        )
 
-        assert (
-            config.vision_config.hidden_size == config.pixel_hidden_size
-        ), "in DFNRope, vit's config.hidden must be equal to config.pixel_hidden_size"
+        assert config.vision_config.hidden_size == config.pixel_hidden_size, (
+            "in DFNRope, vit's config.hidden must be equal to config.pixel_hidden_size"
+        )
         self.ln = nn.LayerNorm(config.vision_config.hidden_size, epsilon=1e-6)
 
     def get_dtype(self) -> paddle.dtype:
@@ -410,13 +468,17 @@ class DFNRopeVisionTransformerPretrainedModel(PretrainedModel):
 
         pos_ids = np.concatenate(pos_ids, axis=0)
         if num_pad > 0:
-            pos_ids = np.concatenate([pos_ids, np.zeros((num_pad, 2), dtype=pos_ids.dtype)])
+            pos_ids = np.concatenate(
+                [pos_ids, np.zeros((num_pad, 2), dtype=pos_ids.dtype)]
+            )
         max_grid_size = np.amax(grid_hw_array[:, 1:])
         rotary_pos_emb_full = self.rotary_pos_emb(max_grid_size)
         rotary_pos_emb = rotary_pos_emb_full[pos_ids].flatten(start_axis=1)
         return rotary_pos_emb
 
-    def forward(self, hidden_states: paddle.Tensor, grid_thw: paddle.Tensor, num_pad=0) -> paddle.Tensor:
+    def forward(
+        self, hidden_states: paddle.Tensor, grid_thw: paddle.Tensor, num_pad=0
+    ) -> paddle.Tensor:
         """
         Args:
             hidden_states (paddle.Tensor): input tensor
@@ -430,9 +492,9 @@ class DFNRopeVisionTransformerPretrainedModel(PretrainedModel):
 
         rotary_pos_emb = self.rot_pos_emb(grid_thw, num_pad=num_pad)
 
-        cu_seqlens = paddle.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
-            axis=0, dtype="int32"
-        )
+        cu_seqlens = paddle.repeat_interleave(
+            grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]
+        ).cumsum(axis=0, dtype="int32")
 
         if num_pad > 0:
             cu_seqlens = F.pad(cu_seqlens, (1, 1), value=0)
@@ -445,18 +507,36 @@ class DFNRopeVisionTransformerPretrainedModel(PretrainedModel):
         cu_seqlens_rm_last = cu_seqlens[:-1]
         repeats = cu_seqlens_rm_first - cu_seqlens_rm_last
 
-        startend_row_indices_lts = paddle.repeat_interleave(cu_seqlens_rm_first, repeats).reshape([1, 1, -1, 1])
-        startend_row_indices_ute = paddle.repeat_interleave(cu_seqlens_rm_last, repeats).reshape([1, 1, -1, 1])
-        startend_row_indices = paddle.concat([startend_row_indices_lts, startend_row_indices_ute], axis=-1)
+        startend_row_indices_lts = paddle.repeat_interleave(
+            cu_seqlens_rm_first, repeats
+        ).reshape([1, 1, -1, 1])
+        startend_row_indices_ute = paddle.repeat_interleave(
+            cu_seqlens_rm_last, repeats
+        ).reshape([1, 1, -1, 1])
+        startend_row_indices = paddle.concat(
+            [startend_row_indices_lts, startend_row_indices_ute], axis=-1
+        )
 
         attn_sep = getattr(self.config.vision_config, "attn_sep", False)
         vit_num_recompute_layers = getattr(
-            self.config.vision_config, "vit_num_recompute_layers", self.config.vision_config.depth
+            self.config.vision_config,
+            "vit_num_recompute_layers",
+            self.config.vision_config.depth,
         )
 
         for idx, blk in enumerate(self.blocks):
-            if self.config.recompute_granularity is not None and self.training and idx < vit_num_recompute_layers:
-                hidden_states = recompute(blk, hidden_states, startend_row_indices, rotary_pos_emb, attn_sep)
+            if (
+                self.config.recompute_granularity is not None
+                and self.training
+                and idx < vit_num_recompute_layers
+            ):
+                hidden_states = recompute(
+                    blk,
+                    hidden_states,
+                    startend_row_indices,
+                    rotary_pos_emb,
+                    attn_sep,
+                )
             else:
                 hidden_states = blk(
                     hidden_states,
@@ -486,23 +566,33 @@ class DFNRopeVisionTransformerPretrainedModel(PretrainedModel):
             if self.attn_sep:
                 seqlen = images.shape[0]
                 num_pad = math.ceil(seqlen / parallelism) * parallelism - seqlen
-                images = paddle.nn.functional.pad(images, [0, num_pad, 0, 0], value=0)
-                images_indices = [images.shape[0] // parallelism for _ in range(parallelism)]
+                images = paddle.nn.functional.pad(
+                    images, [0, num_pad, 0, 0], value=0
+                )
+                images_indices = [
+                    images.shape[0] // parallelism for _ in range(parallelism)
+                ]
                 images = SliceVarlenOp.apply(images, images_indices)
             else:
                 images = SliceVarlenOp.apply(images, images_indices)
                 images = images.detach()
 
             if len(images):
-                image_features = self._extract_feature(images, grid_thw, num_pad=num_pad)
+                image_features = self._extract_feature(
+                    images, grid_thw, num_pad=num_pad
+                )
             else:
                 image_features = paddle.empty(
                     [0, self.config.vision_config.hidden_size],
                     dtype=self.patch_embed.proj.weight.dtype,
                 )
-                image_features.stop_gradient = self.patch_embed.proj.weight.stop_gradient
+                image_features.stop_gradient = (
+                    self.patch_embed.proj.weight.stop_gradient
+                )
 
-            image_features = AllGatherVarlenOpV2.apply(image_features, images_indices)
+            image_features = AllGatherVarlenOpV2.apply(
+                image_features, images_indices
+            )
             if self.attn_sep:
                 image_features = image_features[:seqlen, :]
 
@@ -510,7 +600,11 @@ class DFNRopeVisionTransformerPretrainedModel(PretrainedModel):
 
     def _extract_feature(self, images, grid_thw, num_pad=0):
         """extract feature"""
-        ctx = paddle.no_grad if getattr(self.config, "freeze_vision", False) else contextlib.nullcontext
+        ctx = (
+            paddle.no_grad
+            if getattr(self.config, "freeze_vision", False)
+            else contextlib.nullcontext
+        )
         with ctx():
             image_features = self.forward(images, grid_thw, num_pad)
         return image_features

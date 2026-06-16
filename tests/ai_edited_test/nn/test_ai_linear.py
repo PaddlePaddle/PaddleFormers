@@ -9,7 +9,7 @@
 import unittest
 from unittest.mock import MagicMock
 
-import paddle.nn as nn
+from paddle import nn
 
 
 class TestLinear(unittest.TestCase):
@@ -17,7 +17,9 @@ class TestLinear(unittest.TestCase):
 
     def _make_config(self, **overrides):
         config = MagicMock()
-        config.tensor_model_parallel_size = overrides.get("tensor_model_parallel_size", 1)
+        config.tensor_model_parallel_size = overrides.get(
+            "tensor_model_parallel_size", 1
+        )
         config.sequence_parallel = overrides.get("sequence_parallel", False)
         return config
 
@@ -64,28 +66,42 @@ class TestLinear(unittest.TestCase):
         from paddleformers.nn.linear import Linear
 
         config = self._make_config(tensor_model_parallel_size=2)
-        self.assertEqual(Linear.get_linear_type(config, tp_plan="colwise"), "colwise")
+        self.assertEqual(
+            Linear.get_linear_type(config, tp_plan="colwise"), "colwise"
+        )
 
     def test_get_linear_type_rowwise(self):
         """get_linear_type with rowwise tp_plan."""
         from paddleformers.nn.linear import Linear
 
         config = self._make_config(tensor_model_parallel_size=2)
-        self.assertEqual(Linear.get_linear_type(config, tp_plan="rowwise"), "rowwise")
+        self.assertEqual(
+            Linear.get_linear_type(config, tp_plan="rowwise"), "rowwise"
+        )
 
     def test_get_linear_type_sequence_parallel(self):
         """get_linear_type should prepend 'sequence_' when sequence_parallel is True."""
         from paddleformers.nn.linear import Linear
 
-        config = self._make_config(tensor_model_parallel_size=2, sequence_parallel=True)
-        self.assertEqual(Linear.get_linear_type(config, tp_plan="colwise"), "sequence_colwise")
+        config = self._make_config(
+            tensor_model_parallel_size=2, sequence_parallel=True
+        )
+        self.assertEqual(
+            Linear.get_linear_type(config, tp_plan="colwise"),
+            "sequence_colwise",
+        )
 
     def test_get_linear_type_sequence_parallel_rowwise(self):
         """get_linear_type with rowwise tp_plan and sequence_parallel."""
         from paddleformers.nn.linear import Linear
 
-        config = self._make_config(tensor_model_parallel_size=2, sequence_parallel=True)
-        self.assertEqual(Linear.get_linear_type(config, tp_plan="rowwise"), "sequence_rowwise")
+        config = self._make_config(
+            tensor_model_parallel_size=2, sequence_parallel=True
+        )
+        self.assertEqual(
+            Linear.get_linear_type(config, tp_plan="rowwise"),
+            "sequence_rowwise",
+        )
 
     def test_get_linear_kwargs_default(self):
         """get_linear_kwargs for 'default' should return bias_attr."""
@@ -105,28 +121,38 @@ class TestLinear(unittest.TestCase):
         """get_linear_kwargs for 'colwise' should include gather_output."""
         from paddleformers.nn.linear import Linear
 
-        kwargs = Linear.get_linear_kwargs("colwise", has_bias=True, gather_output=True)
+        kwargs = Linear.get_linear_kwargs(
+            "colwise", has_bias=True, gather_output=True
+        )
         self.assertEqual(kwargs, {"has_bias": True, "gather_output": True})
 
     def test_get_linear_kwargs_rowwise(self):
         """get_linear_kwargs for 'rowwise' should include input_is_parallel."""
         from paddleformers.nn.linear import Linear
 
-        kwargs = Linear.get_linear_kwargs("rowwise", has_bias=False, input_is_parallel=False)
-        self.assertEqual(kwargs, {"has_bias": False, "input_is_parallel": False})
+        kwargs = Linear.get_linear_kwargs(
+            "rowwise", has_bias=False, input_is_parallel=False
+        )
+        self.assertEqual(
+            kwargs, {"has_bias": False, "input_is_parallel": False}
+        )
 
     def test_get_linear_kwargs_sequence_colwise(self):
         """get_linear_kwargs for 'sequence_colwise'."""
         from paddleformers.nn.linear import Linear
 
-        kwargs = Linear.get_linear_kwargs("sequence_colwise", has_bias=True, gather_output=False)
+        kwargs = Linear.get_linear_kwargs(
+            "sequence_colwise", has_bias=True, gather_output=False
+        )
         self.assertEqual(kwargs, {"has_bias": True, "gather_output": False})
 
     def test_get_linear_kwargs_sequence_rowwise(self):
         """get_linear_kwargs for 'sequence_rowwise'."""
         from paddleformers.nn.linear import Linear
 
-        kwargs = Linear.get_linear_kwargs("sequence_rowwise", has_bias=True, input_is_parallel=True)
+        kwargs = Linear.get_linear_kwargs(
+            "sequence_rowwise", has_bias=True, input_is_parallel=True
+        )
         self.assertEqual(kwargs, {"has_bias": True, "input_is_parallel": True})
 
     def test_linear_create_colwise_with_parallel(self):
@@ -148,7 +174,9 @@ class TestLinear(unittest.TestCase):
         """With sequence_parallel and tp_size>1, should use sequence_colwise type."""
         from paddleformers.nn.linear import Linear
 
-        config = self._make_config(tensor_model_parallel_size=2, sequence_parallel=True)
+        config = self._make_config(
+            tensor_model_parallel_size=2, sequence_parallel=True
+        )
         mock_instance = MagicMock()
         mock_cls = MagicMock(return_value=mock_instance)
         original_mapping = Linear._global_mapping.copy()

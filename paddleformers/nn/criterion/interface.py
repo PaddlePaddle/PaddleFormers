@@ -14,7 +14,7 @@
 
 import copy
 
-import paddle.nn as nn
+from paddle import nn
 from paddle.distributed.fleet.meta_parallel import ParallelCrossEntropy
 
 from ...utils.log import logger
@@ -25,7 +25,6 @@ from .sft_loss import mtp_sft_loss_forward, sft_loss_forward
 
 
 class LossInterface(GeneralInterface):
-
     _global_mapping = {
         "sft": sft_loss_forward,
         "dpo": dpo_loss_forward,
@@ -41,16 +40,33 @@ class CriterionLayer(nn.Layer):
     def __init__(self, config, return_tuple=True, use_infohub=False, **kwargs):
         super().__init__()
         self.config = config
-        self.dpo_config = copy.deepcopy(config.dpo_config) if hasattr(config, "dpo_config") else None
-        self.kto_config = copy.deepcopy(config.kto_config) if hasattr(config, "kto_config") else None
+        self.dpo_config = (
+            copy.deepcopy(config.dpo_config)
+            if hasattr(config, "dpo_config")
+            else None
+        )
+        self.kto_config = (
+            copy.deepcopy(config.kto_config)
+            if hasattr(config, "kto_config")
+            else None
+        )
         self.ignored_index = getattr(config, "ignored_index", -100)
-        self.use_filtered_label_loss = config.get("use_filtered_label_loss", False)
-        self.loss_subbatch_sequence_length = config.get("loss_subbatch_sequence_length", -1)
+        self.use_filtered_label_loss = config.get(
+            "use_filtered_label_loss", False
+        )
+        self.loss_subbatch_sequence_length = config.get(
+            "loss_subbatch_sequence_length", -1
+        )
         self.use_subbatch = self.loss_subbatch_sequence_length > 0
         self.sequence_parallel = config.get("sequence_parallel", False)
         self.tensor_parallel = config.tensor_model_parallel_size > 1
-        self.use_fused_head_and_loss_fn = config.get("use_fused_head_and_loss_fn", False)
-        self.enable_parallel_cross_entropy = config.tensor_model_parallel_size > 1 and config.tensor_parallel_output
+        self.use_fused_head_and_loss_fn = config.get(
+            "use_fused_head_and_loss_fn", False
+        )
+        self.enable_parallel_cross_entropy = (
+            config.tensor_model_parallel_size > 1
+            and config.tensor_parallel_output
+        )
         logger.info(
             f"loss_subbatch_sequence_length: {self.loss_subbatch_sequence_length} , use_fused_head_and_loss_fn: {self.use_fused_head_and_loss_fn}, use_filtered_label_loss: {self.use_filtered_label_loss}"
         )
@@ -60,7 +76,7 @@ class CriterionLayer(nn.Layer):
         self.use_infohub = use_infohub
 
         if self.enable_parallel_cross_entropy:
-            logger.info("using parallel cross entroy, take care")
+            logger.info("using parallel cross entropy, take care")
             self.loss_func = ParallelCrossEntropy()
         else:
             self.loss_func = nn.CrossEntropyLoss(

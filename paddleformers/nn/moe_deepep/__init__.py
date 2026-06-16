@@ -20,7 +20,11 @@ from ...utils.lazy_import import _LazyModule
 
 import_structure = {
     "modular_moe_layer": ["ModularMoELayer"],
-    "moe_communication": ["MoECommunicationInterface", "AllToAllMoECommunication", "DeepEPMoECommunication"],
+    "moe_communication": [
+        "MoECommunicationInterface",
+        "AllToAllMoECommunication",
+        "DeepEPMoECommunication",
+    ],
     "moe_expert": ["MoEExpertInterface", "StandardMoEExpert", "Qwen2MLP"],
     "moe_gate": ["PretrainedMoEGate"],
     "moe_factory": ["QuickAccessMoEFactory"],

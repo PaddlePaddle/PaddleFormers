@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import paddle.distributed.fleet.meta_parallel as mpu
-import paddle.nn as nn
+from paddle import nn
 
 from ..transformers.configuration_utils import PretrainedConfig
 from .general import GeneralInterface
@@ -39,18 +39,30 @@ class Embedding(GeneralInterface):
         **kwargs,
     ):
         if num_embeddings is None and config.get("vocab_size", None) is None:
-            raise ValueError("One of `num_embeddings` argument or `config.vocab_size` must be set. ")
+            raise ValueError(
+                "One of `num_embeddings` argument or `config.vocab_size` must be set. "
+            )
         if embedding_dim is None and config.get("hidden_size", None) is None:
-            raise ValueError("One of `embedding_dim` argument or `config.hidden_size` must be set. ")
+            raise ValueError(
+                "One of `embedding_dim` argument or `config.hidden_size` must be set. "
+            )
 
         num_embeddings = num_embeddings if num_embeddings else config.vocab_size
         embedding_dim = embedding_dim if embedding_dim else config.hidden_size
-        embedding_type = embedding_type if embedding_type else self.get_embedding_type(config)
+        embedding_type = (
+            embedding_type
+            if embedding_type
+            else self.get_embedding_type(config)
+        )
 
         embdding_cls = self._global_mapping[embedding_type]
         kwargs = self.process_kwargs(embedding_type, **kwargs)
         return embdding_cls(
-            num_embeddings=num_embeddings, embedding_dim=embedding_dim, weight_attr=weight_attr, name=name, **kwargs
+            num_embeddings=num_embeddings,
+            embedding_dim=embedding_dim,
+            weight_attr=weight_attr,
+            name=name,
+            **kwargs,
         )
 
     @classmethod

@@ -41,7 +41,9 @@ def load_json(file_path):
                     raise ValueError(f"JSONL parse error at line {i}: {e}")
     finally:
         elapsed = time.perf_counter() - t_start
-        print(f"[load json] done. total: {count} lines, elapsed: {elapsed:.2f}s")
+        print(
+            f"[load json] done. total: {count} lines, elapsed: {elapsed:.2f}s"
+        )
 
 
 def load_txt(file_path):
@@ -50,7 +52,7 @@ def load_txt(file_path):
             return f.read()
     except FileNotFoundError:
         raise FileNotFoundError(f"file {file_path} not exists")
-    except IOError as e:
+    except OSError as e:
         raise ValueError(f"file {file_path} load failed: {e}")
 
 
@@ -60,7 +62,7 @@ def load_csv(file_path):
             return list(csv.reader(f))
     except FileNotFoundError:
         raise FileNotFoundError(f"file {file_path} not exists")
-    except (IOError, csv.Error) as e:
+    except (OSError, csv.Error) as e:
         raise ValueError(f"file {file_path} load failed: {e}")
 
 

@@ -11,10 +11,8 @@ use_template: false
 random_shuffle: false
 mix_strategy: concat
 _attn_implementation: flashmask
-
 num_hidden_layers: 6
 hidden_size: 1024
-
 stage: SFT
 fine_tuning: full
 seed: 42
@@ -33,11 +31,9 @@ gradient_accumulation_steps: 64
 output_dir: output/checkpoints/glm45
 disable_tqdm: true
 eval_accumulation_steps: 2
-
 warmup_ratio: 0.1
 learning_rate: 0.00003
 min_lr: 0.000001
-
 tensor_model_parallel_size: 1
 tp_sync_param: true
 pipeline_model_parallel_size: 3
@@ -51,7 +47,6 @@ sharding: stage1
 split_param: True
 sd_sharding_comm_overlap: True
 fuse_optimizer_states: True
-
 moe_expert_fusion: false
 moe_shared_expert_overlap: true
 apply_rope_fusion: true
@@ -63,12 +58,10 @@ recompute_granularity: "full"
 recompute_method: "uniform"
 recompute_num_layers: 1
 recompute_use_reentrant: true
-
 sync_grad: true
 bf16: true
 fp16_opt_level: O2
 amp_master_grad: true
-
 partial_send_recv: false
 batch_p2p_comm: false
 save_checkpoint_format: flex_checkpoint
@@ -79,8 +72,6 @@ tensorwise_offload_optimizer: false
 convert_from_hf: true
 save_to_hf: true
 replicate_saved_into_local: true
-
-
 amp_custom_white_list:
   - "lookup_table"
   - "lookup_table_v2"
@@ -100,7 +91,6 @@ use_fused_head_and_loss_fn: false
 use_filtered_label_loss: true
 loss_subbatch_sequence_length: 1024
 pre_alloc_memory: 60
-
 save_tokenizer: false
 save_rng_states: false
 # use_step_aware_cache: false

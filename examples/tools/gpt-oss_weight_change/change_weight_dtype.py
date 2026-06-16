@@ -20,7 +20,10 @@ import paddle
 from safetensors.paddle import load_file
 
 from paddleformers.utils.log import logger
-from paddleformers.utils.upcast_downcast_triton import downcast_dict, upcast_dict
+from paddleformers.utils.upcast_downcast_triton import (
+    downcast_dict,
+    upcast_dict,
+)
 
 PADDLE_DTYPE_MAP = {
     "paddle.float64": 8,
@@ -59,7 +62,9 @@ def endswith(key, prefix_list):
     return False
 
 
-def save_single_safetenors(save_path, state_dict, rank, total_files_size, prefix="model"):
+def save_single_safetenors(
+    save_path, state_dict, rank, total_files_size, prefix="model"
+):
     save_file_name = os.path.join(
         save_path,
         f"{prefix}-{rank + 1:05d}-of-{total_files_size:05d}.safetensors",
@@ -72,7 +77,9 @@ def save_single_safetenors(save_path, state_dict, rank, total_files_size, prefix
 
 def fp4_to_bf16(load_path, save_path):
     safetensor_prefix = "model"
-    save_index_file = os.path.join(save_path, safetensor_prefix + ".safetensors.index.json")
+    save_index_file = os.path.join(
+        save_path, safetensor_prefix + ".safetensors.index.json"
+    )
     index = {"metadata": {"total_size": 0}, "weight_map": {}}
     file_list = find_safetensors_files(load_path)
     file_num = len(file_list)
@@ -80,13 +87,19 @@ def fp4_to_bf16(load_path, save_path):
         local_dict = load_file(file_name)
 
         upcast_dict(local_dict)
-        save_single_safetenors(save_path, local_dict, idx, file_num, safetensor_prefix)
-        shard_file = f"{safetensor_prefix}-{idx + 1:05d}-of-{file_num:05d}.safetensors"
+        save_single_safetenors(
+            save_path, local_dict, idx, file_num, safetensor_prefix
+        )
+        shard_file = (
+            f"{safetensor_prefix}-{idx + 1:05d}-of-{file_num:05d}.safetensors"
+        )
         for key in list(local_dict.keys()):
             index["weight_map"][key] = shard_file
             shape_ = local_dict[key].shape
             dtype_ = local_dict[key].dtype
-            index["metadata"]["total_size"] += int(np.prod(shape_) * PADDLE_DTYPE_MAP[str(dtype_)])
+            index["metadata"]["total_size"] += int(
+                np.prod(shape_) * PADDLE_DTYPE_MAP[str(dtype_)]
+            )
 
     with open(save_index_file, "w", encoding="utf-8") as f:
         f.write(json.dumps(index, indent=2) + "\n")
@@ -95,20 +108,28 @@ def fp4_to_bf16(load_path, save_path):
 
 def bf16_to_fp4(load_path, save_path):
     safetensor_prefix = "model"
-    save_index_file = os.path.join(save_path, safetensor_prefix + ".safetensors.index.json")
+    save_index_file = os.path.join(
+        save_path, safetensor_prefix + ".safetensors.index.json"
+    )
     index = {"metadata": {"total_size": 0}, "weight_map": {}}
     file_list = find_safetensors_files(load_path)
     file_num = len(file_list)
     for idx, file_name in enumerate(file_list):
         local_dict = load_file(file_name)
         downcast_dict(local_dict)
-        save_single_safetenors(save_path, local_dict, idx, file_num, safetensor_prefix)
-        shard_file = f"{safetensor_prefix}-{idx + 1:05d}-of-{file_num:05d}.safetensors"
+        save_single_safetenors(
+            save_path, local_dict, idx, file_num, safetensor_prefix
+        )
+        shard_file = (
+            f"{safetensor_prefix}-{idx + 1:05d}-of-{file_num:05d}.safetensors"
+        )
         for key in list(local_dict.keys()):
             index["weight_map"][key] = shard_file
             shape_ = local_dict[key].shape
             dtype_ = local_dict[key].dtype
-            index["metadata"]["total_size"] += int(np.prod(shape_) * PADDLE_DTYPE_MAP[str(dtype_)])
+            index["metadata"]["total_size"] += int(
+                np.prod(shape_) * PADDLE_DTYPE_MAP[str(dtype_)]
+            )
 
     with open(save_index_file, "w", encoding="utf-8") as f:
         f.write(json.dumps(index, indent=2) + "\n")

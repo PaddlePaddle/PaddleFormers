@@ -17,7 +17,7 @@ import json
 import re
 import sys
 from collections import defaultdict
-from typing import List, Optional
+from typing import Optional
 
 import paddle
 
@@ -34,8 +34,12 @@ _EXPERT_W2_RE = re.compile(r"^mlp\.experts\.(\d+)\.w2(?:\.weight)?$")
 _SHARE_EXPERT_W1_RE = re.compile(r"^mlp\.shared_experts\.w1(?:\.weight)?$")
 _SHARE_EXPERT_W2_RE = re.compile(r"^mlp\.shared_experts\.w2(?:\.weight)?$")
 
-_EXPERT_W1_RE_v2 = re.compile(r"^mlp\.experts\.(\d+)\.gate_up_fused_proj(?:\.weight)?$")
-_SHARE_EXPERT_W1_RE_v2 = re.compile(r"^mlp\.shared_experts\.gate_up_fused_proj(?:\.weight)?$")
+_EXPERT_W1_RE_v2 = re.compile(
+    r"^mlp\.experts\.(\d+)\.gate_up_fused_proj(?:\.weight)?$"
+)
+_SHARE_EXPERT_W1_RE_v2 = re.compile(
+    r"^mlp\.shared_experts\.gate_up_fused_proj(?:\.weight)?$"
+)
 _LAYER_RE_v2 = re.compile(r"_layers.deepseek_v2.layers\.(\d+)\.(.*)$")
 
 custom_name_map = {
@@ -50,7 +54,7 @@ custom_name_map = {
 }
 
 
-def paddle_name_to_hf_names_ds_v2(paddle_name: str) -> List[str]:
+def paddle_name_to_hf_names_ds_v2(paddle_name: str) -> list[str]:
     """
     Convert Paddle model parameter names to Hugging Face format name lists
 
@@ -98,20 +102,42 @@ def paddle_name_to_hf_names_ds_v2(paddle_name: str) -> List[str]:
     if m := _EXPERT_W1_RE_v2.match(rest):
         expert_id = m.group(1)
         return [
-            "model.layers." + layer_id + ".mlp.experts." + expert_id + ".gate_proj.weight",
-            "model.layers." + layer_id + ".mlp.experts." + expert_id + ".up_proj.weight",
+            "model.layers."
+            + layer_id
+            + ".mlp.experts."
+            + expert_id
+            + ".gate_proj.weight",
+            "model.layers."
+            + layer_id
+            + ".mlp.experts."
+            + expert_id
+            + ".up_proj.weight",
         ]
 
     if m := _EXPERT_W1_RE.match(rest):
         expert_id = m.group(1)
         return [
-            "model.layers." + layer_id + ".mlp.experts." + expert_id + ".gate_proj.weight",
-            "model.layers." + layer_id + ".mlp.experts." + expert_id + ".up_proj.weight",
+            "model.layers."
+            + layer_id
+            + ".mlp.experts."
+            + expert_id
+            + ".gate_proj.weight",
+            "model.layers."
+            + layer_id
+            + ".mlp.experts."
+            + expert_id
+            + ".up_proj.weight",
         ]
 
     if m := _EXPERT_W2_RE.match(rest):
         expert_id = m.group(1)
-        return ["model.layers." + layer_id + ".mlp.experts." + expert_id + ".down_proj.weight"]
+        return [
+            "model.layers."
+            + layer_id
+            + ".mlp.experts."
+            + expert_id
+            + ".down_proj.weight"
+        ]
 
     if m := _SHARE_EXPERT_W1_RE.match(rest):
         return [
@@ -120,13 +146,18 @@ def paddle_name_to_hf_names_ds_v2(paddle_name: str) -> List[str]:
         ]
 
     if m := _SHARE_EXPERT_W2_RE.match(rest):
-        return ["model.layers." + layer_id + ".mlp.shared_experts.down_proj.weight"]
+        return [
+            "model.layers." + layer_id + ".mlp.shared_experts.down_proj.weight"
+        ]
 
     return [out_name]
 
 
-def paddle_name_to_hf_names(paddle_name: str) -> List[str]:
-    if paddle_name == "_layers.local_shared_layers.DeepseekV2_shared_weight.embed_tokens.weight":
+def paddle_name_to_hf_names(paddle_name: str) -> list[str]:
+    if (
+        paddle_name
+        == "_layers.local_shared_layers.DeepseekV2_shared_weight.embed_tokens.weight"
+    ):
         return ["model.embed_tokens.weight"]
 
     if paddle_name == "_layers.deepseek_v2.embed_tokens.weight":
@@ -158,13 +189,19 @@ def paddle_name_to_hf_names(paddle_name: str) -> List[str]:
         return mlp_names
 
     if rest == "mlp.gate_up_fused_proj.weight" or rest == "mlp.w1":
-        return [hf_prefix + ".mlp.gate_proj.weight", hf_prefix + ".mlp.up_proj.weight"]
+        return [
+            hf_prefix + ".mlp.gate_proj.weight",
+            hf_prefix + ".mlp.up_proj.weight",
+        ]
 
     if rest == "mlp.w2":
         return [hf_prefix + ".mlp.down_proj.weight"]
 
     if rest == "mlp.shared_experts.gate_up_fused_proj.weight":
-        return [hf_prefix + ".mlp.shared_experts.gate_proj.weight", hf_prefix + ".mlp.shared_experts.up_proj.weight"]
+        return [
+            hf_prefix + ".mlp.shared_experts.gate_proj.weight",
+            hf_prefix + ".mlp.shared_experts.up_proj.weight",
+        ]
 
     if m := _EXPERT_W1_RE_v2.match(rest):
         expert_id = m.group(1)
@@ -185,7 +222,10 @@ def paddle_name_to_hf_names(paddle_name: str) -> List[str]:
         return [hf_prefix + ".mlp.experts." + expert_id + ".down_proj.weight"]
 
     if m := _SHARE_EXPERT_W1_RE.match(rest):
-        return [hf_prefix + ".mlp.shared_experts.gate_proj.weight", hf_prefix + ".mlp.shared_experts.up_proj.weight"]
+        return [
+            hf_prefix + ".mlp.shared_experts.gate_proj.weight",
+            hf_prefix + ".mlp.shared_experts.up_proj.weight",
+        ]
 
     if m := _SHARE_EXPERT_W2_RE.match(rest):
         return [hf_prefix + ".mlp.shared_experts.down_proj.weight"]
@@ -194,7 +234,12 @@ def paddle_name_to_hf_names(paddle_name: str) -> List[str]:
 
 
 def _get_hf_prefix(segment_id: int, id_in_segment: int) -> str:
-    special_cases = {(0, 0): "model", (60, 2): "model.layers.61", (60, 3): "model", (60, 4): "lm_head"}
+    special_cases = {
+        (0, 0): "model",
+        (60, 2): "model.layers.61",
+        (60, 3): "model",
+        (60, 4): "lm_head",
+    }
 
     if (segment_id, id_in_segment) in special_cases:
         return special_cases[(segment_id, id_in_segment)]
@@ -203,7 +248,7 @@ def _get_hf_prefix(segment_id: int, id_in_segment: int) -> str:
     return f"model.layers.{layer_idx}"
 
 
-def _handle_expert_weights(hf_prefix: str, rest: str) -> Optional[List[str]]:
+def _handle_expert_weights(hf_prefix: str, rest: str) -> Optional[list[str]]:
     if m := _EXPERT_W1_RE.match(rest):
         expert_id = int(m.group(1))
         return [
@@ -218,7 +263,9 @@ def _handle_expert_weights(hf_prefix: str, rest: str) -> Optional[List[str]]:
     return None
 
 
-def _handle_shared_expert_weights(hf_prefix: str, rest: str) -> Optional[List[str]]:
+def _handle_shared_expert_weights(
+    hf_prefix: str, rest: str
+) -> Optional[list[str]]:
     if _SHARE_EXPERT_W1_RE.match(rest):
         return [
             f"{hf_prefix}.mlp.shared_experts.gate_proj.weight",
@@ -231,9 +278,12 @@ def _handle_shared_expert_weights(hf_prefix: str, rest: str) -> Optional[List[st
     return None
 
 
-def _handle_mlp_weights(hf_prefix: str, rest: str) -> Optional[List[str]]:
+def _handle_mlp_weights(hf_prefix: str, rest: str) -> Optional[list[str]]:
     if rest == "mlp.w1":
-        return [f"{hf_prefix}.mlp.gate_proj.weight", f"{hf_prefix}.mlp.up_proj.weight"]
+        return [
+            f"{hf_prefix}.mlp.gate_proj.weight",
+            f"{hf_prefix}.mlp.up_proj.weight",
+        ]
 
     if rest == "mlp.w2":
         return [f"{hf_prefix}.mlp.down_proj.weight"]
@@ -264,7 +314,11 @@ def prepare_tensor(tensor, dst_shape, *, force_transpose=False):
         if len(tensor.shape) != 1:
             logger.warning("attention same shape not transpose !!!")
         return tensor
-    if len(tensor.shape) == 2 and paddle.transpose(tensor, perm=[1, 0]).contiguous().shape == dst_shape:
+    if (
+        len(tensor.shape) == 2
+        and paddle.transpose(tensor, perm=[1, 0]).contiguous().shape
+        == dst_shape
+    ):
         return paddle.transpose(tensor, perm=[1, 0]).contiguous()
 
     logger.warning("Prepare_tensor: shape not match.")
@@ -296,7 +350,9 @@ def load_huggingface_ckpt(model, huggingface_ckpt_path):
             file_to_pd_param_name[filename].append(pd_name)
             pd_param_name_to_file[pd_name].append(filename)
         else:
-            logger.warning(f"Warning: {pd_name} -> {hf_name[0]} not found in weight map")
+            logger.warning(
+                f"Warning: {pd_name} -> {hf_name[0]} not found in weight map"
+            )
             import sys
 
             sys.exit()
@@ -309,14 +365,18 @@ def load_huggingface_ckpt(model, huggingface_ckpt_path):
                 if filename != pd_param_name_to_file[pd_name][0]:
                     pd_param_name_to_file[pd_name].append(filename)
             else:
-                logger.warning(f"Warning: {pd_name} -> {hf_name[1]} not found in weight map")
+                logger.warning(
+                    f"Warning: {pd_name} -> {hf_name[1]} not found in weight map"
+                )
 
     # 4. Group file and load
     check_list = []
     logger.info("Start load huggingface ckpt")
     for i, filename in enumerate(required_files):
         try:
-            with safe_open(ckpt_pre + filename, framework="paddle", device="cpu") as f:
+            with safe_open(
+                ckpt_pre + filename, framework="paddle", device="cpu"
+            ) as f:
                 # Load all parameters in file
                 pd_params = file_to_pd_param_name[filename]
                 for pd_param in pd_params:
@@ -332,7 +392,9 @@ def load_huggingface_ckpt(model, huggingface_ckpt_path):
                         model.state_dict()[pd_param].set_value(
                             paddle.cast(
                                 prepare_tensor(
-                                    tensor, model.state_dict()[pd_param].shape, force_transpose=force_transpose
+                                    tensor,
+                                    model.state_dict()[pd_param].shape,
+                                    force_transpose=force_transpose,
                                 ),
                                 model.state_dict()[pd_param].dtype,
                             )
@@ -343,29 +405,46 @@ def load_huggingface_ckpt(model, huggingface_ckpt_path):
                             tensor0 = f.get_tensor(hf_name[0])
                             tensor1 = f.get_tensor(hf_name[1])
                             target_shape = model.state_dict()[pd_param].shape
-                            prepared_tensor = prepare_tensor([tensor0, tensor1], target_shape)
-                            model.state_dict()[pd_param].set_value(prepared_tensor)
+                            prepared_tensor = prepare_tensor(
+                                [tensor0, tensor1], target_shape
+                            )
+                            model.state_dict()[pd_param].set_value(
+                                prepared_tensor
+                            )
                         else:
                             if weight_map[hf_name[0]] == filename:
                                 tensor0 = f.get_tensor(hf_name[0])
                                 with safe_open(
-                                    ckpt_pre + weight_map[hf_name[1]], framework="paddle", device="cpu"
+                                    ckpt_pre + weight_map[hf_name[1]],
+                                    framework="paddle",
+                                    device="cpu",
                                 ) as f_other:
                                     tensor1 = f_other.get_tensor(hf_name[1])
-                                    target_shape = model.state_dict()[pd_param].shape
-                                    prepared_tensor = prepare_tensor([tensor0, tensor1], target_shape)
-                                    model.state_dict()[pd_param].set_value(prepared_tensor)
+                                    target_shape = model.state_dict()[
+                                        pd_param
+                                    ].shape
+                                    prepared_tensor = prepare_tensor(
+                                        [tensor0, tensor1], target_shape
+                                    )
+                                    model.state_dict()[pd_param].set_value(
+                                        prepared_tensor
+                                    )
                             else:
                                 with safe_open(
-                                    ckpt_pre + weight_map[hf_name[0]], framework="paddle", device="cpu"
+                                    ckpt_pre + weight_map[hf_name[0]],
+                                    framework="paddle",
+                                    device="cpu",
                                 ) as f_other:
                                     tensor0 = f_other.get_tensor(hf_name[0])
                                     tensor1 = f.get_tensor(hf_name[1])
                                     model.state_dict()[pd_param].set_value(
-                                        prepare_tensor([tensor0, tensor1], model.state_dict()[pd_param].shape)
+                                        prepare_tensor(
+                                            [tensor0, tensor1],
+                                            model.state_dict()[pd_param].shape,
+                                        )
                                     )
                     check_list.append(pd_param)
 
         except Exception as e:
-            logger.warning(f"Error loading {filename}: {str(e)}")
+            logger.warning(f"Error loading {filename}: {e!s}")
             raise

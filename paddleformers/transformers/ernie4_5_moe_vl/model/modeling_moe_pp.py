@@ -16,6 +16,8 @@
 docstring
 """
 
+import functools
+import operator
 
 import paddle
 from paddle import nn
@@ -54,7 +56,9 @@ def parse_args(args, mtp_enable=False):
             nbatch_pack_offset = None
 
         if len(args) == 4:
-            hidden_states, attention_mask, position_ids, nbatch_pack_offset = args
+            hidden_states, attention_mask, position_ids, nbatch_pack_offset = (
+                args
+            )
         elif len(args) == 3:
             if mtp_enable:
                 hidden_states, attention_mask, nbatch_pack_offset = args
@@ -120,7 +124,8 @@ def get_pp_vp_split_layers(config, skip_recompute_num=-1):
     vp_size = max(config.virtual_pipeline_model_parallel_size, 1)
 
     assert pp_size > 1, (
-        "Only support pipeline parallel, " f"pp_size must be greater than 1, but got pp_size: {pp_size}"
+        "Only support pipeline parallel, "
+        f"pp_size must be greater than 1, but got pp_size: {pp_size}"
     )
     layer_num = config.num_hidden_layers + config.num_empty_layers_add_in_tail
 
@@ -146,7 +151,10 @@ def get_pp_vp_split_layers(config, skip_recompute_num=-1):
     )
 
     chunk_size = layer_num // (pp_size * vp_size)
-    chunk_list = [list(range(i * chunk_size, (i + 1) * chunk_size)) for i in range(pp_size * vp_size)]
+    chunk_list = [
+        list(range(i * chunk_size, (i + 1) * chunk_size))
+        for i in range(pp_size * vp_size)
+    ]
 
     stage_chunk_list = [[] for _ in range(pp_size)]
     for i in range(pp_size * vp_size):
@@ -156,7 +164,7 @@ def get_pp_vp_split_layers(config, skip_recompute_num=-1):
         no_recompute_layer_num.extend(stage_chunk_list[i][-skip_recompute_num:])
 
     # trick to convert to 1D list
-    return set(sum(no_recompute_layer_num, []))
+    return set(functools.reduce(operator.iadd, no_recompute_layer_num, []))
 
 
 def create_skip_config_for_refined_recompute(layer_idx, config):
@@ -176,17 +184,27 @@ def create_skip_config_for_refined_recompute(layer_idx, config):
               the original configuration file is returned.
 
     """
-    if config.recompute_granularity is not None or not isinstance(config.recompute_modules, dict):
+    if config.recompute_granularity is not None or not isinstance(
+        config.recompute_modules, dict
+    ):
         config.skip_recompute_ops[layer_idx] = {}
         return config
-    skip_config = dict()
+    skip_config = {}
 
-    if len(config.recompute_modules) > 0 and config.recompute_granularity != "full":
+    if (
+        len(config.recompute_modules) > 0
+        and config.recompute_granularity != "full"
+    ):
         raise ValueError(
-            "Selective recompute only support full recompute now, " "please set recompute_granularity to `full`."
+            "Selective recompute only support full recompute now, "
+            "please set recompute_granularity to `full`."
         )
 
-    layer_num = config.num_layers if hasattr(config, "num_layers") else config.num_hidden_layers
+    layer_num = (
+        config.num_layers
+        if hasattr(config, "num_layers")
+        else config.num_hidden_layers
+    )
     if hasattr(config, "add_tail_layer") and config.add_tail_layer:
         layer_num += 1
 
@@ -228,7 +246,9 @@ class Ernie4_5_EmbeddingPipe(nn.Layer):
                 config.hidden_size,
             )
         else:
-            self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
+            self.embed_tokens = nn.Embedding(
+                config.vocab_size, config.hidden_size
+            )
 
     @property
     def embedding_weight(self):
@@ -258,11 +278,13 @@ class Ernie4_5_EmbeddingPipe(nn.Layer):
             - Automatically generates position_ids if not provided
             - Supports sequence parallel redistribution of embeddings
         """
-        input_ids, attention_mask, position_ids, nbatch_pack_offset = parse_args(
-            args, self.config.num_nextn_predict_layers > 0
+        input_ids, attention_mask, position_ids, nbatch_pack_offset = (
+            parse_args(args, self.config.num_nextn_predict_layers > 0)
         )
         input_ids.stop_gradient = True
-        emb = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
+        emb = self.embed_tokens(input_ids).astype(
+            self.embed_tokens.weight.dtype
+        )
         if self.config.num_nextn_predict_layers > 0:
             if self.config.enable_mtp_magic_send:
                 emb = emb[:, : -self.config.num_nextn_predict_layers, :]
@@ -270,12 +292,18 @@ class Ernie4_5_EmbeddingPipe(nn.Layer):
                     emb = emb.reshape([-1, emb.shape[-1]])
                     emb = ScatterOp.apply(emb)
             else:
-                inputs_embeds_extra = emb[:, -self.config.num_nextn_predict_layers :, :]  # [B, S, D]
-                inputs_embeds = emb[:, : -self.config.num_nextn_predict_layers, :]
+                inputs_embeds_extra = emb[
+                    :, -self.config.num_nextn_predict_layers :, :
+                ]  # [B, S, D]
+                inputs_embeds = emb[
+                    :, : -self.config.num_nextn_predict_layers, :
+                ]
                 inputs_embeds_ori = inputs_embeds
 
                 if self.sequence_parallel:
-                    inputs_embeds = inputs_embeds.reshape([-1, inputs_embeds.shape[-1]])
+                    inputs_embeds = inputs_embeds.reshape(
+                        [-1, inputs_embeds.shape[-1]]
+                    )
                     inputs_embeds = ScatterOp.apply(inputs_embeds)
                 mtp_emb_res = [inputs_embeds]
                 for depth in range(self.config.num_nextn_predict_layers):
@@ -287,7 +315,9 @@ class Ernie4_5_EmbeddingPipe(nn.Layer):
                         axis=1,
                     )
                     if self.sequence_parallel:
-                        inputs_embeds_mtp = inputs_embeds_mtp.reshape([-1, inputs_embeds_mtp.shape[-1]])
+                        inputs_embeds_mtp = inputs_embeds_mtp.reshape(
+                            [-1, inputs_embeds_mtp.shape[-1]]
+                        )
                         inputs_embeds_mtp = ScatterOp.apply(inputs_embeds_mtp)
 
                     mtp_emb_res.append(inputs_embeds_mtp)

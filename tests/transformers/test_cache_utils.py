@@ -102,7 +102,9 @@ class CacheUtilsTest(unittest.TestCase):
 
     def test_dynamic_cache_update_logic(self):
         """Test DynamicCache multi-layer update logic."""
-        prefill = paddle.to_tensor([1.0, 2.0], dtype="float32").reshape([1, 1, -1, 1])
+        prefill = paddle.to_tensor([1.0, 2.0], dtype="float32").reshape(
+            [1, 1, -1, 1]
+        )
         update3 = paddle.to_tensor(3.0, dtype="float32").reshape([1, 1, 1, 1])
         update4 = paddle.to_tensor(4.0, dtype="float32").reshape([1, 1, 1, 1])
 
@@ -110,15 +112,25 @@ class CacheUtilsTest(unittest.TestCase):
         cache = DynamicCache()
         cache.update(prefill, prefill, 0)
         cache.update(update3, update3, 0)
-        self.assertEqual(cache.layers[0].keys[0, 0, :, 0].tolist(), [1.0, 2.0, 3.0])
+        self.assertEqual(
+            cache.layers[0].keys[0, 0, :, 0].tolist(), [1.0, 2.0, 3.0]
+        )
 
         cache.update(update4, update4, 0)
-        self.assertEqual(cache.layers[0].keys[0, 0, :, 0].tolist(), [1.0, 2.0, 3.0, 4.0])
+        self.assertEqual(
+            cache.layers[0].keys[0, 0, :, 0].tolist(), [1.0, 2.0, 3.0, 4.0]
+        )
 
         # Scenario 2: Multi-layer
-        prefill1 = paddle.to_tensor([10.0, 20.0], dtype="float32").reshape([1, 1, -1, 1])
-        update3_1 = paddle.to_tensor(30.0, dtype="float32").reshape([1, 1, 1, 1])
-        update4_1 = paddle.to_tensor(40.0, dtype="float32").reshape([1, 1, 1, 1])
+        prefill1 = paddle.to_tensor([10.0, 20.0], dtype="float32").reshape(
+            [1, 1, -1, 1]
+        )
+        update3_1 = paddle.to_tensor(30.0, dtype="float32").reshape(
+            [1, 1, 1, 1]
+        )
+        update4_1 = paddle.to_tensor(40.0, dtype="float32").reshape(
+            [1, 1, 1, 1]
+        )
 
         cache = DynamicCache()
         cache.update(prefill, prefill, 0)
@@ -129,8 +141,12 @@ class CacheUtilsTest(unittest.TestCase):
         cache.update(update4, update4, 0)
         cache.update(update4_1, update4_1, 1)
 
-        self.assertEqual(cache.layers[0].keys[0, 0, :, 0].tolist(), [1.0, 2.0, 3.0, 4.0])
-        self.assertEqual(cache.layers[1].keys[0, 0, :, 0].tolist(), [10.0, 20.0, 30.0, 40.0])
+        self.assertEqual(
+            cache.layers[0].keys[0, 0, :, 0].tolist(), [1.0, 2.0, 3.0, 4.0]
+        )
+        self.assertEqual(
+            cache.layers[1].keys[0, 0, :, 0].tolist(), [10.0, 20.0, 30.0, 40.0]
+        )
 
     def test_dynamic_cache_batch_select_indices(self):
         """Test batch_select_indices can correctly slice from the batch dim."""
@@ -161,11 +177,15 @@ class CacheUtilsTest(unittest.TestCase):
         # Goal: store window - 1 = 3 tokens
 
         # 1. Prefill 3 tokens (less than window)
-        prefill = paddle.to_tensor([1.0, 2.0, 3.0], dtype="float32").reshape([1, 1, -1, 1])
+        prefill = paddle.to_tensor([1.0, 2.0, 3.0], dtype="float32").reshape(
+            [1, 1, -1, 1]
+        )
         keys, values = cache.update(prefill, prefill, 0)
 
         self.assertEqual(keys[0, 0, :, 0].tolist(), [1.0, 2.0, 3.0])
-        self.assertEqual(cache.layers[0].keys[0, 0, :, 0].tolist(), [1.0, 2.0, 3.0])
+        self.assertEqual(
+            cache.layers[0].keys[0, 0, :, 0].tolist(), [1.0, 2.0, 3.0]
+        )
         self.assertEqual(cache.layers[0].cumulative_length, 3)
 
         # 2. Add 1 token (total 4)
@@ -173,7 +193,9 @@ class CacheUtilsTest(unittest.TestCase):
         keys, values = cache.update(update4, update4, 0)
 
         self.assertEqual(keys[0, 0, :, 0].tolist(), [1.0, 2.0, 3.0, 4.0])
-        self.assertEqual(cache.layers[0].keys[0, 0, :, 0].tolist(), [2.0, 3.0, 4.0])
+        self.assertEqual(
+            cache.layers[0].keys[0, 0, :, 0].tolist(), [2.0, 3.0, 4.0]
+        )
         self.assertEqual(cache.layers[0].cumulative_length, 4)
 
         # 3. Add 1 more token (total 5)
@@ -181,16 +203,24 @@ class CacheUtilsTest(unittest.TestCase):
         keys, values = cache.update(update5, update5, 0)
 
         self.assertEqual(keys[0, 0, :, 0].tolist(), [2.0, 3.0, 4.0, 5.0])
-        self.assertEqual(cache.layers[0].keys[0, 0, :, 0].tolist(), [3.0, 4.0, 5.0])
+        self.assertEqual(
+            cache.layers[0].keys[0, 0, :, 0].tolist(), [3.0, 4.0, 5.0]
+        )
         self.assertEqual(cache.layers[0].cumulative_length, 5)
 
         # 4. Test long prompt (prefill > window)
         cache_long = DynamicCache(config=config)
-        long_prefill = paddle.to_tensor([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], dtype="float32").reshape([1, 1, -1, 1])
+        long_prefill = paddle.to_tensor(
+            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0], dtype="float32"
+        ).reshape([1, 1, -1, 1])
         keys, values = cache_long.update(long_prefill, long_prefill, 0)
 
-        self.assertEqual(keys[0, 0, :, 0].tolist(), [1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
-        self.assertEqual(cache_long.layers[0].keys[0, 0, :, 0].tolist(), [4.0, 5.0, 6.0])
+        self.assertEqual(
+            keys[0, 0, :, 0].tolist(), [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        )
+        self.assertEqual(
+            cache_long.layers[0].keys[0, 0, :, 0].tolist(), [4.0, 5.0, 6.0]
+        )
         self.assertEqual(cache_long.layers[0].cumulative_length, 6)
 
     def test_cache_reorder(self):
@@ -202,8 +232,12 @@ class CacheUtilsTest(unittest.TestCase):
         cache.reorder_cache(beam_idx)
 
         self.assertEqual(cache.layers[0].keys.shape[0], 2)
-        self.assertEqual(cache.layers[0].keys[0, 0, :, 0].tolist(), [10.0, 20.0, 30.0])
-        self.assertEqual(cache.layers[0].keys[1, 0, :, 0].tolist(), [1.0, 2.0, 3.0])
+        self.assertEqual(
+            cache.layers[0].keys[0, 0, :, 0].tolist(), [10.0, 20.0, 30.0]
+        )
+        self.assertEqual(
+            cache.layers[0].keys[1, 0, :, 0].tolist(), [1.0, 2.0, 3.0]
+        )
 
     def test_cache_crop(self):
         """Test crop"""
@@ -219,7 +253,9 @@ class CacheUtilsTest(unittest.TestCase):
         self.assertEqual(cache.get_seq_length(0), 2)
         self.assertEqual(cache.get_seq_length(1), 2)
         self.assertEqual(cache.layers[0].keys[0, 0, :, 0].tolist(), [1.0, 2.0])
-        self.assertEqual(cache.layers[1].keys[1, 0, :, 0].tolist(), [10.0, 20.0])
+        self.assertEqual(
+            cache.layers[1].keys[1, 0, :, 0].tolist(), [10.0, 20.0]
+        )
 
         cache.crop(-1)
         self.assertEqual(cache.get_seq_length(0), 1)
@@ -275,7 +311,7 @@ class CacheUtilsTest(unittest.TestCase):
         self.assertEqual(len(cache), 2)
         self.assertEqual(cache.is_sliding, [False, True])
         self.assertTrue(cache.is_initialized)
-        self.assertFalse(cache.is_compileable)
+        self.assertFalse(cache.is_compilable)
 
         self.assertTrue(paddle.sum(cache.layers[0].keys) != 0)
 
@@ -294,12 +330,24 @@ class CacheUtilsTest(unittest.TestCase):
         self.assertEqual(cache.get_seq_length(0), 3)
         self.assertEqual(cache.layers[0].keys.shape[0], 6)
 
-        self.assertEqual(cache.layers[0].keys[0, 0, :, 0].tolist(), [1.0, 2.0, 3.0])
-        self.assertEqual(cache.layers[0].keys[1, 0, :, 0].tolist(), [1.0, 2.0, 3.0])
-        self.assertEqual(cache.layers[0].keys[2, 0, :, 0].tolist(), [1.0, 2.0, 3.0])
-        self.assertEqual(cache.layers[0].keys[3, 0, :, 0].tolist(), [10.0, 20.0, 30.0])
-        self.assertEqual(cache.layers[0].keys[4, 0, :, 0].tolist(), [10.0, 20.0, 30.0])
-        self.assertEqual(cache.layers[0].keys[5, 0, :, 0].tolist(), [10.0, 20.0, 30.0])
+        self.assertEqual(
+            cache.layers[0].keys[0, 0, :, 0].tolist(), [1.0, 2.0, 3.0]
+        )
+        self.assertEqual(
+            cache.layers[0].keys[1, 0, :, 0].tolist(), [1.0, 2.0, 3.0]
+        )
+        self.assertEqual(
+            cache.layers[0].keys[2, 0, :, 0].tolist(), [1.0, 2.0, 3.0]
+        )
+        self.assertEqual(
+            cache.layers[0].keys[3, 0, :, 0].tolist(), [10.0, 20.0, 30.0]
+        )
+        self.assertEqual(
+            cache.layers[0].keys[4, 0, :, 0].tolist(), [10.0, 20.0, 30.0]
+        )
+        self.assertEqual(
+            cache.layers[0].keys[5, 0, :, 0].tolist(), [10.0, 20.0, 30.0]
+        )
 
     def test_get_max_cache_shape(self):
         """Test get_max_cache_shape"""
@@ -318,7 +366,9 @@ class CacheUtilsTest(unittest.TestCase):
         cache.update(self.update_batch2, self.update_batch2, 1)
 
         self.assertEqual(cache.layers[1].cumulative_length, 4)
-        self.assertTrue(cache.layers[1].cumulative_length >= cache.layers[1].sliding_window)
+        self.assertTrue(
+            cache.layers[1].cumulative_length >= cache.layers[1].sliding_window
+        )
 
         with self.assertRaises(ValueError):
             cache.layers[1].crop(2)
@@ -330,7 +380,10 @@ class CacheUtilsTest(unittest.TestCase):
 
         sliding_window_tensor = paddle.to_tensor([128], dtype="int64")
 
-        ddp_data = [(key_states, value_states, None), (key_states, value_states, sliding_window_tensor)]
+        ddp_data = [
+            (key_states, value_states, None),
+            (key_states, value_states, sliding_window_tensor),
+        ]
 
         cache = DynamicCache(ddp_cache_data=ddp_data)
 
@@ -367,7 +420,13 @@ class CacheUtilsTest(unittest.TestCase):
         cache = DynamicCache(config=self.config_hybrid)
         self.assertFalse(cache.is_initialized)
 
-        cache.early_initialization(batch_size=2, num_heads=1, head_dim=1, dtype="float32", device=paddle.get_device())
+        cache.early_initialization(
+            batch_size=2,
+            num_heads=1,
+            head_dim=1,
+            dtype="float32",
+            device=paddle.get_device(),
+        )
 
         self.assertTrue(cache.is_initialized)
         self.assertEqual(cache.get_seq_length(0), 0)
@@ -400,7 +459,10 @@ class ModelIntegrationTest(unittest.TestCase):
         )
 
         model = Qwen3ForCausalLM.from_pretrained(
-            self.model_id, convert_from_hf=True, return_dict=True, load_checkpoint_format=""
+            self.model_id,
+            convert_from_hf=True,
+            return_dict=True,
+            load_checkpoint_format="",
         )
         model.to(self.device)
         model.eval()
@@ -417,27 +479,36 @@ class ModelIntegrationTest(unittest.TestCase):
         # 2. Verify cache existence
         self.assertIsNotNone(outputs.past_key_values)
         self.assertIsInstance(outputs.past_key_values, DynamicCache)
-        self.assertEqual(len(outputs.past_key_values), model.config.num_hidden_layers)
+        self.assertEqual(
+            len(outputs.past_key_values), model.config.num_hidden_layers
+        )
 
         # 3. Verify cache device (Should match model device, NOT CPU/Offloaded)
         first_layer_keys = outputs.past_key_values.layers[0].keys
         # Check if they are on the same device as the model parameters
         model_place = model.parameters()[0].place
         self.assertEqual(
-            first_layer_keys.place.gpu_device_id(), model_place.gpu_device_id() if model_place.is_gpu_place() else 0
+            first_layer_keys.place.gpu_device_id(),
+            model_place.gpu_device_id() if model_place.is_gpu_place() else 0,
         )
 
         # 4. Generate next token to verify cache update
         next_token = paddle.to_tensor([[123]]).to(self.device)
         with paddle.no_grad():
-            outputs_next = model(input_ids=next_token, past_key_values=outputs.past_key_values, use_cache=True)
+            outputs_next = model(
+                input_ids=next_token,
+                past_key_values=outputs.past_key_values,
+                use_cache=True,
+            )
 
         new_seq_len = outputs_next.past_key_values.get_seq_length(0)
         # Expected: original input length + 1
         self.assertEqual(new_seq_len, inputs["input_ids"].shape[1] + 1)
 
 
-@unittest.skipIf(not paddle.device.is_compiled_with_cuda(), "Offloading requires CUDA")
+@unittest.skipIf(
+    not paddle.device.is_compiled_with_cuda(), "Offloading requires CUDA"
+)
 class CacheOffloadingTest(unittest.TestCase):
     """
     Test the offloading functionality of DynamicCache.
@@ -479,7 +550,10 @@ class CacheOffloadingTest(unittest.TestCase):
         )
 
         model = Qwen3ForCausalLM.from_pretrained(
-            model_id, convert_from_hf=True, return_dict=True, load_checkpoint_format=""
+            model_id,
+            convert_from_hf=True,
+            return_dict=True,
+            load_checkpoint_format="",
         )
         model.to(self.device)
         model.eval()
@@ -496,16 +570,27 @@ class CacheOffloadingTest(unittest.TestCase):
 
         # 2. Run a forward pass (prefill)
         with paddle.no_grad():
-            outputs = model(**inputs, past_key_values=past_key_values, use_cache=True, return_dict=True)
+            outputs = model(
+                **inputs,
+                past_key_values=past_key_values,
+                use_cache=True,
+                return_dict=True,
+            )
 
         # 3. Check if cache is populated and offloaded
         self.assertIsNotNone(outputs.past_key_values)
-        self.assertEqual(len(outputs.past_key_values), model.config.num_hidden_layers)
+        self.assertEqual(
+            len(outputs.past_key_values), model.config.num_hidden_layers
+        )
 
         # 4. Run a decoding step (generate one new token)
         next_token = paddle.to_tensor([[123]]).to(self.device)  # Dummy token
         with paddle.no_grad():
-            outputs_next = model(input_ids=next_token, past_key_values=outputs.past_key_values, use_cache=True)
+            outputs_next = model(
+                input_ids=next_token,
+                past_key_values=outputs.past_key_values,
+                use_cache=True,
+            )
 
         # Check cache grew
         new_seq_len = outputs_next.past_key_values.get_seq_length(0)

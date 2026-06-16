@@ -20,7 +20,12 @@ from ...utils.lazy_import import _LazyModule
 
 import_structure = {
     "abstract": ["MOELayerBase"],
-    "all_gather": ["allgather_async", "reduce_scatter_async", "AlltoAllSmart", "AllGatherAsync"],
+    "all_gather": [
+        "allgather_async",
+        "reduce_scatter_async",
+        "AlltoAllSmart",
+        "AllGatherAsync",
+    ],
     "all_to_all": ["AlltoAll", "AlltoAllAsync"],
     "moe_allgather_layer": ["ReshardCombineWeight", "MOEAllGatherLayerV2"],
     "moe_alltoall_layer": ["GateCombine", "combining"],

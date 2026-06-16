@@ -1,13 +1,13 @@
 #!/bin/bash
 
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-# 
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -33,7 +33,7 @@ export NVSHMEM_IB_TRAFFIC_CLASS=162
 ##export NVSHMEM_DISABLE_P2P=1
 export NVSHMEM_BOOTSTRAP=UID
 
-unset NVSHMEM_HCA_LIST 
+unset NVSHMEM_HCA_LIST
 unset NVSHMEM_ENABLE_NIC_PE_MAPPING
 
 export PYTHONPATH=../../../:$PYTHONPATH
@@ -60,5 +60,5 @@ python3.10 -m paddle.distributed.launch \
     $@
 
 # Training command by paddleformers-cli
-# NOTE: Please use "pre_alloc_memory" in pretrain_argument.yaml instead of setting "export FLAGS_large_pool_pre_alloc_in_mb". 
+# NOTE: Please use "pre_alloc_memory" in pretrain_argument.yaml instead of setting "export FLAGS_large_pool_pre_alloc_in_mb".
 # paddleformers-cli train $@

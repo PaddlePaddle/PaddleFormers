@@ -23,21 +23,27 @@ class TestSimpleContrastiveLoss(unittest.TestCase):
 
     def test_default_temperature(self):
         """Test SimpleContrastiveLoss with default temperature."""
-        from paddleformers.transformers.contrastive_loss import SimpleContrastiveLoss
+        from paddleformers.transformers.contrastive_loss import (
+            SimpleContrastiveLoss,
+        )
 
         loss_fn = SimpleContrastiveLoss()
         self.assertEqual(loss_fn.embedding_temperature, 0.02)
 
     def test_custom_temperature(self):
         """Test SimpleContrastiveLoss with a custom temperature."""
-        from paddleformers.transformers.contrastive_loss import SimpleContrastiveLoss
+        from paddleformers.transformers.contrastive_loss import (
+            SimpleContrastiveLoss,
+        )
 
         loss_fn = SimpleContrastiveLoss(embedding_temperature=0.1)
         self.assertEqual(loss_fn.embedding_temperature, 0.1)
 
     def test_forward_basic(self):
         """Test forward pass with equal-sized q_reps and p_reps (group_size=1)."""
-        from paddleformers.transformers.contrastive_loss import SimpleContrastiveLoss
+        from paddleformers.transformers.contrastive_loss import (
+            SimpleContrastiveLoss,
+        )
 
         loss_fn = SimpleContrastiveLoss()
         # batch_size=4, embed_dim=8
@@ -50,7 +56,9 @@ class TestSimpleContrastiveLoss(unittest.TestCase):
 
     def test_forward_with_group_size(self):
         """Test forward pass with group_size > 1 (p_reps larger than q_reps)."""
-        from paddleformers.transformers.contrastive_loss import SimpleContrastiveLoss
+        from paddleformers.transformers.contrastive_loss import (
+            SimpleContrastiveLoss,
+        )
 
         loss_fn = SimpleContrastiveLoss()
         # batch_size=2, group_size=3, embed_dim=8
@@ -62,7 +70,9 @@ class TestSimpleContrastiveLoss(unittest.TestCase):
 
     def test_forward_with_group_size_four(self):
         """Test forward pass with group_size=4."""
-        from paddleformers.transformers.contrastive_loss import SimpleContrastiveLoss
+        from paddleformers.transformers.contrastive_loss import (
+            SimpleContrastiveLoss,
+        )
 
         loss_fn = SimpleContrastiveLoss(embedding_temperature=0.05)
         # batch_size=3, group_size=4, embed_dim=16
@@ -74,7 +84,9 @@ class TestSimpleContrastiveLoss(unittest.TestCase):
 
     def test_forward_deterministic(self):
         """Test forward is deterministic with the same inputs."""
-        from paddleformers.transformers.contrastive_loss import SimpleContrastiveLoss
+        from paddleformers.transformers.contrastive_loss import (
+            SimpleContrastiveLoss,
+        )
 
         loss_fn = SimpleContrastiveLoss()
         paddle.seed(42)
@@ -86,7 +98,9 @@ class TestSimpleContrastiveLoss(unittest.TestCase):
 
     def test_forward_positive_loss(self):
         """Test that contrastive loss is non-negative."""
-        from paddleformers.transformers.contrastive_loss import SimpleContrastiveLoss
+        from paddleformers.transformers.contrastive_loss import (
+            SimpleContrastiveLoss,
+        )
 
         loss_fn = SimpleContrastiveLoss()
         q_reps = paddle.randn([4, 8], dtype="float32")
@@ -124,7 +138,9 @@ class TestMatryoshkaContrastiveLoss(unittest.TestCase):
             MatryoshkaContrastiveLoss,
         )
 
-        loss_fn = MatryoshkaContrastiveLoss(embedding_temperature=0.02, embedding_matryoshka_dims=None)
+        loss_fn = MatryoshkaContrastiveLoss(
+            embedding_temperature=0.02, embedding_matryoshka_dims=None
+        )
         q_reps = paddle.randn([4, 16], dtype="float32")
         p_reps = paddle.randn([4, 16], dtype="float32")
         loss = loss_fn(q_reps, p_reps)
@@ -138,7 +154,9 @@ class TestMatryoshkaContrastiveLoss(unittest.TestCase):
         )
 
         dims = [64, 128, 256]
-        loss_fn = MatryoshkaContrastiveLoss(embedding_matryoshka_dims=dims, embedding_temperature=0.02)
+        loss_fn = MatryoshkaContrastiveLoss(
+            embedding_matryoshka_dims=dims, embedding_temperature=0.02
+        )
         # embed_dim must be at least as large as max dim
         q_reps = paddle.randn([4, 512], dtype="float32")
         p_reps = paddle.randn([4, 512], dtype="float32")
@@ -219,29 +237,39 @@ class TestMatryoshkaInfclLoss(unittest.TestCase):
 
     def test_default_init(self):
         """Test default initialization."""
-        from paddleformers.transformers.contrastive_loss import MatryoshkaInfclLoss
+        from paddleformers.transformers.contrastive_loss import (
+            MatryoshkaInfclLoss,
+        )
 
         loss_fn = MatryoshkaInfclLoss()
         self.assertEqual(loss_fn.embedding_matryoshka_dims, [])
 
     def test_custom_dims(self):
         """Test initialization with custom dims."""
-        from paddleformers.transformers.contrastive_loss import MatryoshkaInfclLoss
+        from paddleformers.transformers.contrastive_loss import (
+            MatryoshkaInfclLoss,
+        )
 
         dims = [128, 256]
-        loss_fn = MatryoshkaInfclLoss(embedding_matryoshka_dims=dims, inf_cl_head_dim=32)
+        loss_fn = MatryoshkaInfclLoss(
+            embedding_matryoshka_dims=dims, inf_cl_head_dim=32
+        )
         self.assertEqual(loss_fn.embedding_matryoshka_dims, dims)
 
     def test_custom_head_dim(self):
         """Test initialization with custom head_dim."""
-        from paddleformers.transformers.contrastive_loss import MatryoshkaInfclLoss
+        from paddleformers.transformers.contrastive_loss import (
+            MatryoshkaInfclLoss,
+        )
 
         loss_fn = MatryoshkaInfclLoss(inf_cl_head_dim=128)
         self.assertEqual(loss_fn.loss_fn.head_dim, 128)
 
     def test_none_dims_becomes_empty_list(self):
         """Test that None dims becomes an empty list."""
-        from paddleformers.transformers.contrastive_loss import MatryoshkaInfclLoss
+        from paddleformers.transformers.contrastive_loss import (
+            MatryoshkaInfclLoss,
+        )
 
         loss_fn = MatryoshkaInfclLoss(embedding_matryoshka_dims=None)
         self.assertEqual(loss_fn.embedding_matryoshka_dims, [])

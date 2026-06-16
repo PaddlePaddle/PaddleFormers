@@ -17,7 +17,8 @@ class TestAsyncHandler(unittest.TestCase):
         args.unified_checkpoint_config = {}
 
         with patch(
-            "paddleformers.trainer.unified_checkpoint.async_handler.paddle.distributed.get_rank", return_value=0
+            "paddleformers.trainer.unified_checkpoint.async_handler.paddle.distributed.get_rank",
+            return_value=0,
         ):
             with patch(
                 "paddleformers.trainer.unified_checkpoint.async_handler.paddle.distributed.get_world_size",
@@ -38,14 +39,19 @@ class TestAsyncHandler(unittest.TestCase):
         args.unified_checkpoint_config = {"async_save": True}
 
         with patch(
-            "paddleformers.trainer.unified_checkpoint.async_handler.paddle.distributed.get_rank", return_value=0
+            "paddleformers.trainer.unified_checkpoint.async_handler.paddle.distributed.get_rank",
+            return_value=0,
         ):
             with patch(
                 "paddleformers.trainer.unified_checkpoint.async_handler.paddle.distributed.get_world_size",
                 return_value=1,
             ):
-                with patch("paddleformers.trainer.unified_checkpoint.async_handler.multiprocessing.Lock"):
-                    with patch("paddleformers.trainer.unified_checkpoint.async_handler.multiprocessing.Array"):
+                with patch(
+                    "paddleformers.trainer.unified_checkpoint.async_handler.multiprocessing.Lock"
+                ):
+                    with patch(
+                        "paddleformers.trainer.unified_checkpoint.async_handler.multiprocessing.Array"
+                    ):
                         handler = AsyncCheckpointHandler(args)
 
         self.assertIsNotNone(handler._lock)
@@ -62,7 +68,8 @@ class TestAsyncHandler(unittest.TestCase):
         args.unified_checkpoint_config = {}
 
         with patch(
-            "paddleformers.trainer.unified_checkpoint.async_handler.paddle.distributed.get_rank", return_value=3
+            "paddleformers.trainer.unified_checkpoint.async_handler.paddle.distributed.get_rank",
+            return_value=3,
         ):
             with patch(
                 "paddleformers.trainer.unified_checkpoint.async_handler.paddle.distributed.get_world_size",
@@ -81,7 +88,8 @@ class TestAsyncHandler(unittest.TestCase):
         args.unified_checkpoint_config = {}
 
         with patch(
-            "paddleformers.trainer.unified_checkpoint.async_handler.paddle.distributed.get_rank", return_value=0
+            "paddleformers.trainer.unified_checkpoint.async_handler.paddle.distributed.get_rank",
+            return_value=0,
         ):
             with patch(
                 "paddleformers.trainer.unified_checkpoint.async_handler.paddle.distributed.get_world_size",
@@ -96,9 +104,14 @@ class TestAsyncHandler(unittest.TestCase):
             "paddleformers.trainer.unified_checkpoint.async_handler.prepare_safe_save_state_dict",
             return_value=(state_dict, mock_metadata),
         ):
-            with patch("paddleformers.trainer.unified_checkpoint.async_handler.safe_save_file"):
+            with patch(
+                "paddleformers.trainer.unified_checkpoint.async_handler.safe_save_file"
+            ):
                 handler._file_save_async_or_sync(
-                    state_dict, "/tmp/path.safetensors", is_sync=True, state_dict_type="model_weight"
+                    state_dict,
+                    "/tmp/path.safetensors",
+                    is_sync=True,
+                    state_dict_type="model_weight",
                 )
 
     def test_AsyncCheckpointHandler_sync_save_with_quant(self):
@@ -110,7 +123,8 @@ class TestAsyncHandler(unittest.TestCase):
         args.unified_checkpoint_config = {}
 
         with patch(
-            "paddleformers.trainer.unified_checkpoint.async_handler.paddle.distributed.get_rank", return_value=0
+            "paddleformers.trainer.unified_checkpoint.async_handler.paddle.distributed.get_rank",
+            return_value=0,
         ):
             with patch(
                 "paddleformers.trainer.unified_checkpoint.async_handler.paddle.distributed.get_world_size",
@@ -129,7 +143,9 @@ class TestAsyncHandler(unittest.TestCase):
                 "paddleformers.trainer.unified_checkpoint.async_handler.quant_unified_optimizer",
                 return_value=state_dict,
             ) as mock_quant:
-                with patch("paddleformers.trainer.unified_checkpoint.async_handler.safe_save_file"):
+                with patch(
+                    "paddleformers.trainer.unified_checkpoint.async_handler.safe_save_file"
+                ):
                     handler._file_save_async_or_sync(
                         state_dict,
                         "/tmp/path.safetensors",
@@ -148,7 +164,8 @@ class TestAsyncHandler(unittest.TestCase):
         args.unified_checkpoint_config = {}
 
         with patch(
-            "paddleformers.trainer.unified_checkpoint.async_handler.paddle.distributed.get_rank", return_value=0
+            "paddleformers.trainer.unified_checkpoint.async_handler.paddle.distributed.get_rank",
+            return_value=0,
         ):
             with patch(
                 "paddleformers.trainer.unified_checkpoint.async_handler.paddle.distributed.get_world_size",
@@ -169,15 +186,22 @@ class TestAsyncHandler(unittest.TestCase):
         args.unified_checkpoint_config = {"async_save": True}
 
         with patch(
-            "paddleformers.trainer.unified_checkpoint.async_handler.paddle.distributed.get_rank", return_value=0
+            "paddleformers.trainer.unified_checkpoint.async_handler.paddle.distributed.get_rank",
+            return_value=0,
         ):
             with patch(
                 "paddleformers.trainer.unified_checkpoint.async_handler.paddle.distributed.get_world_size",
                 return_value=1,
             ):
-                with patch("paddleformers.trainer.unified_checkpoint.async_handler.multiprocessing.Lock"):
-                    with patch("paddleformers.trainer.unified_checkpoint.async_handler.multiprocessing.Array"):
-                        with patch("paddleformers.trainer.unified_checkpoint.async_handler.paddle.save"):
+                with patch(
+                    "paddleformers.trainer.unified_checkpoint.async_handler.multiprocessing.Lock"
+                ):
+                    with patch(
+                        "paddleformers.trainer.unified_checkpoint.async_handler.multiprocessing.Array"
+                    ):
+                        with patch(
+                            "paddleformers.trainer.unified_checkpoint.async_handler.paddle.save"
+                        ):
                             handler = AsyncCheckpointHandler(args)
 
                             handler._file_save_async_or_sync(
