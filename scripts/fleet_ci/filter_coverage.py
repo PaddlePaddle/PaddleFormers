@@ -54,7 +54,7 @@ def parse_diff_file(diff_file):
             print(f"  Found changed file: {current_file}")
             if "paddleformers/fleet" not in current_file:
                 current_file = None
-                print("    Skipping non-paddlefleet file")
+                print("    Skipping non-paddleformers.fleet file")
                 continue
             elif line.endswith(
                 (

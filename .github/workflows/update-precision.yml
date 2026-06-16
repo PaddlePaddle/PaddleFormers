@@ -1,10 +1,8 @@
 name: update precision
-
 on:
   push:
     branches:
       - develop
-
 jobs:
   determine-whether-update:
     name: Determine whether to update
@@ -28,13 +26,12 @@ jobs:
           pr_number=$(echo "$response" | jq -r '.[] | select(.url | contains("PaddlePaddle/PaddleFormers")) | .number')
           echo "PR number: $pr_number"
           set +e
-          wget --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/precision/PaddleFormers/${pr_number}/precision_list.txt
+          wget --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFormers/precision/PaddleFormers/${pr_number}/precision_list.txt
           if [ $? -eq 0 ]; then
             echo "need_change=true" >> "$GITHUB_OUTPUT"
           else
             echo "need_change=false" >> "$GITHUB_OUTPUT"
           fi
-
   update-precision:
     name: Update precision
     needs: determine-whether-update
@@ -47,12 +44,10 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.ref }}
           fetch-depth: 100
-
       - name: Setup python3.10
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-
       - name: Update precision
         env:
           AK: ${{ secrets.AK }}
@@ -66,5 +61,3 @@ jobs:
           mkdir bos
           tar xf bos_new.tar.gz -C bos
           bash -x tests/integration_test/update_precision.sh
-          
-        
