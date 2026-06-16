@@ -49,7 +49,10 @@ class TestRunDPOValidation(unittest.TestCase):
         training_args.loss_type = "or"
         training_args.reference_free = False
 
-        if training_args.loss_type in ["or", "simpo"] and not training_args.reference_free:
+        if (
+            training_args.loss_type in ["or", "simpo"]
+            and not training_args.reference_free
+        ):
             training_args.reference_free = True
 
         self.assertTrue(training_args.reference_free)
@@ -59,7 +62,10 @@ class TestRunDPOValidation(unittest.TestCase):
         training_args.loss_type = "simpo"
         training_args.reference_free = False
 
-        if training_args.loss_type in ["or", "simpo"] and not training_args.reference_free:
+        if (
+            training_args.loss_type in ["or", "simpo"]
+            and not training_args.reference_free
+        ):
             training_args.reference_free = True
 
         self.assertTrue(training_args.reference_free)

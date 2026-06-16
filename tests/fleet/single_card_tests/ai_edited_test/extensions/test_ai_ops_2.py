@@ -15,7 +15,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -28,7 +32,9 @@ except (ImportError, ModuleNotFoundError, Exception):
     _MODULE_AVAILABLE = False
 
 
-@unittest.skipUnless(_MODULE_AVAILABLE, "paddleformers.fleet._extensions not available")
+@unittest.skipUnless(
+    _MODULE_AVAILABLE, "paddleformers.fleet._extensions not available"
+)
 class TestExtensionsOpsFunctionCalls(unittest.TestCase):
     """Tests for _extensions.ops function call patterns."""
 
@@ -118,7 +124,9 @@ class TestExtensionsOpsFunctionCalls(unittest.TestCase):
         self.assertTrue(len(params) >= 4)
 
 
-@unittest.skipUnless(_MODULE_AVAILABLE, "paddleformers.fleet._extensions not available")
+@unittest.skipUnless(
+    _MODULE_AVAILABLE, "paddleformers.fleet._extensions not available"
+)
 class TestExtensionsOpsUnifiedDecorator(unittest.TestCase):
     """Tests that ops functions are decorated with @unified."""
 
@@ -136,7 +144,9 @@ class TestExtensionsOpsUnifiedDecorator(unittest.TestCase):
         self.assertTrue(callable(filter_scores))
 
 
-@unittest.skipUnless(_MODULE_AVAILABLE, "paddleformers.fleet._extensions not available")
+@unittest.skipUnless(
+    _MODULE_AVAILABLE, "paddleformers.fleet._extensions not available"
+)
 class TestExtensionsInitModule(unittest.TestCase):
     """Tests for paddleformers.fleet._extensions.__init__ module."""
 

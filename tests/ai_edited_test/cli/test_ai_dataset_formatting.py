@@ -73,12 +73,20 @@ class TestConversationsFormattingFunction(unittest.TestCase):
         mock_tokenizer = MagicMock()
         mock_tokenizer.apply_chat_template.return_value = "formatted_text"
 
-        format_fn = conversations_formatting_function(mock_tokenizer, "messages")
+        format_fn = conversations_formatting_function(
+            mock_tokenizer, "messages"
+        )
 
         examples = {
             "messages": [
-                [{"role": "user", "content": "hello"}, {"role": "assistant", "content": "hi"}],
-                [{"role": "user", "content": "bye"}, {"role": "assistant", "content": "goodbye"}],
+                [
+                    {"role": "user", "content": "hello"},
+                    {"role": "assistant", "content": "hi"},
+                ],
+                [
+                    {"role": "user", "content": "bye"},
+                    {"role": "assistant", "content": "goodbye"},
+                ],
             ]
         }
         result = format_fn(examples)
@@ -88,9 +96,16 @@ class TestConversationsFormattingFunction(unittest.TestCase):
         mock_tokenizer = MagicMock()
         mock_tokenizer.apply_chat_template.return_value = "formatted_text"
 
-        format_fn = conversations_formatting_function(mock_tokenizer, "messages")
+        format_fn = conversations_formatting_function(
+            mock_tokenizer, "messages"
+        )
 
-        examples = {"messages": [{"role": "user", "content": "hello"}, {"role": "assistant", "content": "hi"}]}
+        examples = {
+            "messages": [
+                {"role": "user", "content": "hello"},
+                {"role": "assistant", "content": "hi"},
+            ]
+        }
         result = format_fn(examples)
         self.assertEqual(result, "formatted_text")
 
@@ -144,7 +159,9 @@ class TestPaddleFormersFormattingFunction(unittest.TestCase):
         mock_tokenizer = MagicMock()
         mock_tokenizer.apply_chat_template.return_value = "formatted_text"
 
-        format_fn = paddleformers_instructions_formatting_function(mock_tokenizer)
+        format_fn = paddleformers_instructions_formatting_function(
+            mock_tokenizer
+        )
 
         examples = {
             "src": ["source1", "source2"],
@@ -157,7 +174,9 @@ class TestPaddleFormersFormattingFunction(unittest.TestCase):
         mock_tokenizer = MagicMock()
         mock_tokenizer.apply_chat_template.return_value = "formatted_text"
 
-        format_fn = paddleformers_instructions_formatting_function(mock_tokenizer)
+        format_fn = paddleformers_instructions_formatting_function(
+            mock_tokenizer
+        )
 
         examples = {
             "src": "source_text",
@@ -172,7 +191,9 @@ class TestGetFormattingFuncFromDataset(unittest.TestCase):
 
     def test_non_dataset_returns_none(self):
         mock_tokenizer = MagicMock()
-        result = get_formatting_func_from_dataset("not_a_dataset", mock_tokenizer)
+        result = get_formatting_func_from_dataset(
+            "not_a_dataset", mock_tokenizer
+        )
         self.assertIsNone(result)
 
     def test_unsupported_dataset_returns_none(self):

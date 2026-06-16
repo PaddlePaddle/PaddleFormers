@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -47,9 +51,13 @@ except (ImportError, ModuleNotFoundError):
 if not _triton_available:
     _mock_tl = types.ModuleType("triton.language")
     _mock_triton = types.ModuleType("triton")
-    _mock_triton.jit = lambda fn=None, **kw: (fn if fn is not None else lambda f: f)
+    _mock_triton.jit = lambda fn=None, **kw: (
+        fn if fn is not None else lambda f: f
+    )
     _mock_triton.cdiv = lambda a, b: (a + b - 1) // b
-    _mock_triton.next_power_of_2 = lambda n: (1 << (n - 1).bit_length() if n > 0 else 1)
+    _mock_triton.next_power_of_2 = lambda n: (
+        1 << (n - 1).bit_length() if n > 0 else 1
+    )
     sys.modules.setdefault("triton", _mock_triton)
     sys.modules.setdefault("triton.language", _mock_tl)
 
@@ -114,7 +122,9 @@ class TestGemmFuseSoftmaxCausal(unittest.TestCase):
             gemm_fuse_softmax_causal,
         )
 
-        self.assertEqual(gemm_fuse_softmax_causal.__name__, "gemm_fuse_softmax_causal")
+        self.assertEqual(
+            gemm_fuse_softmax_causal.__name__, "gemm_fuse_softmax_causal"
+        )
 
 
 @unittest.skipUnless(_MODULE_AVAILABLE, "paddlefleet_ops module not available")

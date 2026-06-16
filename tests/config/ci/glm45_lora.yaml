@@ -8,13 +8,11 @@ eval_dataset_prob: "1.0"
 max_seq_len: 8192
 packing: false
 mix_strategy: concat
-
 ### model
 model_name_or_path: ../zai-org/GLM-4.5-Air
 _attn_implementation: flashmask
 lora: true
 lora_rank: 8
-
 ### finetuning
 # base
 stage: SFT
@@ -36,11 +34,9 @@ logging_dir: ./glm_full_single_lora_log
 output_dir: ./checkpoints/glm_single_lora_ckps
 disable_tqdm: true
 eval_accumulation_steps: 16
-
 # train
 warmup_steps: 20
 learning_rate: 1.0e-4
-
 # performance
 moe_token_dispatcher_type: "deepep"
 gated_linear_unit: true
@@ -61,9 +57,7 @@ save_to_hf: true
 unified_checkpoint: true
 load_checkpoint_format: flex_checkpoint
 save_checkpoint_format: flex_checkpoint
-
 moe_router_force_load_balancing: true
 num_empty_layers_add_in_tail: 1
-
 router_aux_loss_coef: 0.001
 moe_deep_gemm: false

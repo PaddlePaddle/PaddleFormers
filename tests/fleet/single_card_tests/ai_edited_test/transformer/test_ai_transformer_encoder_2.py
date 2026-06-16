@@ -17,7 +17,11 @@ import unittest
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 from paddle import nn
@@ -137,10 +141,14 @@ class TestTransformerEncoderDescriptorUtilities(unittest.TestCase):
         self.assertIs(model._pipeline_name_mapping, mapping)
 
     def test_get_shardlayer_prefix_success_assertion_and_stage_error(self):
-        shared = SharedLayerDesc("embed", DummyEmbedding, shared_weight_attr="embedding_weight")
+        shared = SharedLayerDesc(
+            "embed", DummyEmbedding, shared_weight_attr="embedding_weight"
+        )
         model = LightweightEncoder()
         model.layers = [shared]
-        model._sequential_layers = [{"layer": shared, "name_prefix": "model.embed"}]
+        model._sequential_layers = [
+            {"layer": shared, "name_prefix": "model.embed"}
+        ]
 
         self.assertEqual(
             model.get_shardlayer_prefix(["shared_layers", "embed", "weight"]),

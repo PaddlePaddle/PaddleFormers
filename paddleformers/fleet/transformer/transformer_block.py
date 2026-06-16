@@ -33,7 +33,9 @@ from paddleformers.fleet.utils import WrappedTensor
 
 if TYPE_CHECKING:
     from paddleformers.fleet.packed_seq_params import PackedSeqParams
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
 LayerNormImpl = WrappedPaddleNorm
 
@@ -114,14 +116,18 @@ class TransformerBlock(FleetLayer):
         pg_collection: ProcessGroupCollection | None = None,
         vp_stage: int | None = None,
     ):
-        assert vp_stage is None, "pipeline parallel is not supported in TransformerBlock."
+        assert vp_stage is None, (
+            "pipeline parallel is not supported in TransformerBlock."
+        )
         super().__init__(config=config)
 
         if pg_collection is None:
             pg_collection = ProcessGroupCollection.use_mpu_process_groups()
         self.pg_collection = pg_collection
 
-        self.sublayers_spec = _get_block_sublayers_spec(config, spec, vp_stage, pp_rank=None)
+        self.sublayers_spec = _get_block_sublayers_spec(
+            config, spec, vp_stage, pp_rank=None
+        )
         self.post_layer_norm = post_layer_norm
         self.pre_process = pre_process
         self.post_process = post_process
@@ -151,12 +157,19 @@ class TransformerBlock(FleetLayer):
 
         # offset is implicit in TransformerLayer
         self.layers = paddle.nn.LayerList(
-            [_build_layer(layer_spec, i + 1) for i, layer_spec in enumerate(self.sublayers_spec.layer_specs)]
+            [
+                _build_layer(layer_spec, i + 1)
+                for i, layer_spec in enumerate(self.sublayers_spec.layer_specs)
+            ]
         )
 
         # In pipeline parallelism, we want to add this LN only to the last stage of the pipeline
         # self.post_process and self.post_layer_norm guide this behavior
-        if self.sublayers_spec.layer_norm and self.post_process and self.post_layer_norm:
+        if (
+            self.sublayers_spec.layer_norm
+            and self.post_process
+            and self.post_layer_norm
+        ):
             self.norm = build_spec_layer(
                 self.sublayers_spec.layer_norm,
                 config=self.config,

@@ -17,7 +17,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import random
@@ -27,7 +31,10 @@ import numpy as np
 import paddle
 from paddle.distributed import fleet
 from paddle.distributed.fleet import distributed_model
-from paddle.distributed.fleet.meta_parallel import NoPipelineParallel, build_spec_layer
+from paddle.distributed.fleet.meta_parallel import (
+    NoPipelineParallel,
+    build_spec_layer,
+)
 
 from tests.multi_card_tests.pipeline_parallel.test_distribute_model import (
     get_simple_spec,
@@ -106,7 +113,9 @@ class TestDistVppTraining(unittest.TestCase):
         vpp_scheduler = paddle.optimizer.lr.PiecewiseDecay(
             boundaries=[2, 3, 4], values=[0.01, 0.02, 0.03, 0.04], verbose=True
         )
-        vpp_optimizer = paddle.optimizer.SGD(learning_rate=vpp_scheduler, parameters=vpp_model.parameters())
+        vpp_optimizer = paddle.optimizer.SGD(
+            learning_rate=vpp_scheduler, parameters=vpp_model.parameters()
+        )
         vpp_model = distributed_model(vpp_model)
         vpp_optimizer = fleet.distributed_optimizer(vpp_optimizer)
 
@@ -150,12 +159,18 @@ class TestDistVppTraining(unittest.TestCase):
             img.stop_gradient = True
             label.stop_gradient = True
 
-            nopp_loss = nopp_model.train_batch([img, label], nopp_optimizer, nopp_scheduler)
+            nopp_loss = nopp_model.train_batch(
+                [img, label], nopp_optimizer, nopp_scheduler
+            )
 
-            vpp_loss = vpp_model.train_batch([img, label], vpp_optimizer, vpp_scheduler)
+            vpp_loss = vpp_model.train_batch(
+                [img, label], vpp_optimizer, vpp_scheduler
+            )
 
             print("loss:", nopp_loss.numpy(), vpp_loss.numpy())
-            np.testing.assert_allclose(nopp_loss.numpy(), vpp_loss.numpy(), rtol=1e-6, atol=1e-8)
+            np.testing.assert_allclose(
+                nopp_loss.numpy(), vpp_loss.numpy(), rtol=1e-6, atol=1e-8
+            )
 
 
 if __name__ == "__main__":

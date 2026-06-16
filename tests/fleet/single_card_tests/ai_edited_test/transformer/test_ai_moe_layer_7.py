@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -185,7 +189,9 @@ class TestMoELayerExpertForward(unittest.TestCase):
 
         dispatched = paddle.randn([8, 64])
         tokens_per_expert = [2, 2, 2, 2]
-        result = layer.expert_forward(dispatched, paddle.to_tensor(tokens_per_expert))
+        result = layer.expert_forward(
+            dispatched, paddle.to_tensor(tokens_per_expert)
+        )
         self.assertEqual(result.shape[0], 8)
 
     def test_expert_forward_no_tokens(self):
@@ -199,7 +205,9 @@ class TestMoELayerExpertForward(unittest.TestCase):
 
         dispatched = paddle.randn([0, 64])
         tokens_per_expert = [0, 0, 0, 0]
-        result = layer.expert_forward(dispatched, paddle.to_tensor(tokens_per_expert))
+        result = layer.expert_forward(
+            dispatched, paddle.to_tensor(tokens_per_expert)
+        )
         # When no tokens, should return dispatched_input
         self.assertEqual(result.shape[0], 0)
 
@@ -232,7 +240,9 @@ class TestMoELayerSetLayerNumber(unittest.TestCase):
         layer.gate = MagicMock()
         layer.set_layer_number(5)
         self.assertEqual(layer.layer_number, 5)
-        layer.gate.set_layer_number.assert_called_once_with(5, is_mtp_layer=False)
+        layer.gate.set_layer_number.assert_called_once_with(
+            5, is_mtp_layer=False
+        )
 
     def test_set_layer_number_no_set_method(self):
         layer = MoELayer.__new__(MoELayer)
@@ -292,10 +302,14 @@ class TestMoELayerFp8QuantWeight(unittest.TestCase):
 class TestMoELayerForwardLogging(unittest.TestCase):
     """Test forward loss logging hooks."""
 
-    @patch("paddleformers.fleet.transformer.moe.moe_layer.framework._dygraph_tracer")
+    @patch(
+        "paddleformers.fleet.transformer.moe.moe_layer.framework._dygraph_tracer"
+    )
     @patch("paddleformers.fleet.transformer.moe.moe_layer.log_moe_losses")
     @patch("paddleformers.fleet.transformer.moe.moe_layer._log_moe_md5")
-    def test_forward_logs_aux_and_zloss_when_has_grad(self, mock_log_md5, mock_log_moe_losses, mock_tracer):
+    def test_forward_logs_aux_and_zloss_when_has_grad(
+        self, mock_log_md5, mock_log_moe_losses, mock_tracer
+    ):
         del mock_log_md5
         hidden_states = paddle.randn([4, 64], dtype="float32")
         aux_loss = paddle.to_tensor(1.5, dtype="float32")
@@ -331,7 +345,9 @@ class TestMoELayerForwardLogging(unittest.TestCase):
 
         output, bias = layer.forward(hidden_states)
 
-        mock_log_moe_losses.assert_called_once_with(7, aux_loss=aux_loss, z_loss=z_loss)
+        mock_log_moe_losses.assert_called_once_with(
+            7, aux_loss=aux_loss, z_loss=z_loss
+        )
         self.assertEqual(list(output.shape), [4, 64])
         self.assertIsNone(bias)
 

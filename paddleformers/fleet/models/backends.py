@@ -23,7 +23,9 @@ from paddleformers.fleet.tensor_parallel.layers import (
     Linear,
     RowParallelLinear,
 )
-from paddleformers.fleet.transformer.dot_product_attention import DotProductAttention
+from paddleformers.fleet.transformer.dot_product_attention import (
+    DotProductAttention,
+)
 from paddleformers.fleet.transformer.mlp import MLPSublayersSpec
 
 
@@ -131,7 +133,9 @@ class LocalSpecProvider(BackendSpecProvider):
         if moe_use_grouped_gemm:
             return GroupedMLP, None
         else:
-            return SequentialMLP, MLPSublayersSpec(up_gate_proj=ColumnParallelLinear, down_proj=RowParallelLinear)
+            return SequentialMLP, MLPSublayersSpec(
+                up_gate_proj=ColumnParallelLinear, down_proj=RowParallelLinear
+            )
 
     def hidden_act(self) -> type:
         """Which layer to use for activation function"""

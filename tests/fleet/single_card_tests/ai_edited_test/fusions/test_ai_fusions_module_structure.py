@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -104,7 +108,9 @@ class TestFusedSoftmaxModule(unittest.TestCase):
 
     def test_has_fused_scale_mask_softmax(self):
         """Test module has FusedScaleMaskSoftmax class."""
-        from paddleformers.fleet.fusions.fused_softmax import FusedScaleMaskSoftmax
+        from paddleformers.fleet.fusions.fused_softmax import (
+            FusedScaleMaskSoftmax,
+        )
 
         self.assertTrue(callable(FusedScaleMaskSoftmax))
 

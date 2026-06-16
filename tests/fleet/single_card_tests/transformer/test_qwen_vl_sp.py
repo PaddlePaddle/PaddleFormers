@@ -23,7 +23,10 @@ from paddleformers.fleet.models.common.embeddings.rope_utils import (
     _apply_rotary_pos_emb_bshd,
 )
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
-from paddleformers.fleet.utils import init_method_normal, scaled_init_method_normal
+from paddleformers.fleet.utils import (
+    init_method_normal,
+    scaled_init_method_normal,
+)
 
 # ---- Helpers & stubs ----
 
@@ -49,7 +52,9 @@ _SCATTER = patch(
 
 
 def _emb_config(**kw):
-    c = TransformerConfig(num_hidden_layers=1, hidden_size=64, num_attention_heads=2)
+    c = TransformerConfig(
+        num_hidden_layers=1, hidden_size=64, num_attention_heads=2
+    )
     defaults = {
         "sequence_parallel": False,
         "multimodal_embedding": False,
@@ -68,7 +73,9 @@ def _emb_config(**kw):
 def _make_emb(config, rope=None):
     from paddle.distributed.fleet.meta_parallel import LayerSpec
 
-    from paddleformers.fleet.models.common.embeddings import LanguageModelEmbedding
+    from paddleformers.fleet.models.common.embeddings import (
+        LanguageModelEmbedding,
+    )
     from paddleformers.fleet.models.gpt.gpt_embedding import (
         GPTEmbedding,
         GPTEmbeddingSpec,
@@ -118,7 +125,11 @@ class RMSNorm(paddle.nn.Layer):
         self.eps = eps
 
     def forward(self, x):
-        return x * paddle.rsqrt(x.pow(2).mean(axis=-1, keepdim=True) + self.eps) * self.weight
+        return (
+            x
+            * paddle.rsqrt(x.pow(2).mean(axis=-1, keepdim=True) + self.eps)
+            * self.weight
+        )
 
 
 def _make_attn(sp=False):
@@ -131,7 +142,9 @@ def _make_attn(sp=False):
     )
     from paddleformers.fleet.transformer.enums import AttnMaskType
 
-    c = TransformerConfig(num_hidden_layers=1, hidden_size=128, num_attention_heads=4)
+    c = TransformerConfig(
+        num_hidden_layers=1, hidden_size=128, num_attention_heads=4
+    )
     for k, v in {
         "num_key_value_heads": 4,
         "head_dim": 32,
@@ -203,12 +216,16 @@ class TestMRoPEFreqsReshape(unittest.TestCase):
             H,
             D,
         ]
-        assert _apply_rotary_pos_emb_bshd(t, paddle.randn([1, S, 1, D])).shape == [B, S, H, D]
+        assert _apply_rotary_pos_emb_bshd(
+            t, paddle.randn([1, S, 1, D])
+        ).shape == [B, S, H, D]
 
     def test_partial_rot_dim(self):
         """Reshape works when rot_dim < head_dim."""
         B, S, H = 2, 4, 2
-        assert _apply_rotary_pos_emb_bshd(paddle.randn([B, S, H, 16]), paddle.randn([S, B, 8])).shape == [B, S, H, 16]
+        assert _apply_rotary_pos_emb_bshd(
+            paddle.randn([B, S, H, 16]), paddle.randn([S, B, 8])
+        ).shape == [B, S, H, 16]
 
 
 # ---- 2. gpt_embedding: multimodal SP config (diff lines 68-81) ----
@@ -218,7 +235,9 @@ class TestGPTEmbeddingMultimodalSPConfig(unittest.TestCase):
     def test_sp_disables_internal_scatter_for_multimodal(self):
         from paddle.distributed.fleet.meta_parallel import LayerSpec
 
-        from paddleformers.fleet.models.common.embeddings import LanguageModelEmbedding
+        from paddleformers.fleet.models.common.embeddings import (
+            LanguageModelEmbedding,
+        )
         from paddleformers.fleet.models.gpt.gpt_embedding import (
             GPTEmbedding,
             GPTEmbeddingSpec,
@@ -257,7 +276,9 @@ class TestGPTEmbeddingForward(unittest.TestCase):
         """RoPE + SP: output rotary_pos_emb transposed to [S,1,1,D]."""
         gpt_emb = _make_emb(_emb_config(sequence_parallel=True), rope="rope")
         S = 8
-        rope = gpt_emb.forward({"input_ids": paddle.randint(0, 500, [1, S])})["rotary_pos_emb"]
+        rope = gpt_emb.forward({"input_ids": paddle.randint(0, 500, [1, S])})[
+            "rotary_pos_emb"
+        ]
         assert rope.ndim == 4 and rope.shape[0] == S and rope.shape[1] == 1
 
     @_RNG
@@ -280,7 +301,9 @@ class TestGPTEmbeddingForward(unittest.TestCase):
 
 class TestGPTEmbeddingForwardMultimodal(unittest.TestCase):
     def _emb(self, sp=False):
-        return _make_emb(_emb_config(multimodal_embedding=True, sequence_parallel=sp))
+        return _make_emb(
+            _emb_config(multimodal_embedding=True, sequence_parallel=sp)
+        )
 
     def test_image_and_video_embed_replace(self):
         gpt_emb = self._emb()
@@ -288,12 +311,19 @@ class TestGPTEmbeddingForwardMultimodal(unittest.TestCase):
         ids = paddle.randint(0, 500, [B, S])
         ids[0, 3:6] = 1000  # image
         ids[0, 8:11] = 1001  # video
-        out = gpt_emb.forward({"input_ids": ids, "image_embeds": paddle.randn([3, H])})
-        assert out["hidden_states"].shape == [B, S, H] and "visual_pos_masks" in out
+        out = gpt_emb.forward(
+            {"input_ids": ids, "image_embeds": paddle.randn([3, H])}
+        )
+        assert (
+            out["hidden_states"].shape == [B, S, H]
+            and "visual_pos_masks" in out
+        )
 
         ids2 = paddle.randint(0, 500, [B, S])
         ids2[0, 5:8] = 1001
-        out2 = gpt_emb.forward({"input_ids": ids2, "video_embeds": paddle.randn([3, H])})
+        out2 = gpt_emb.forward(
+            {"input_ids": ids2, "video_embeds": paddle.randn([3, H])}
+        )
         assert "visual_pos_masks" in out2
 
     def test_image_and_video_with_deepstack(self):
@@ -326,7 +356,9 @@ class TestGPTEmbeddingForwardMultimodal(unittest.TestCase):
         B, S, H = 1, 8, 64
         ids = paddle.randint(0, 500, [B, S])
         ids[0, 2:5] = 1000
-        out = gpt_emb.forward({"input_ids": ids, "image_embeds": paddle.randn([3, H])})
+        out = gpt_emb.forward(
+            {"input_ids": ids, "image_embeds": paddle.randn([3, H])}
+        )
         mock_scatter.assert_called_once()
         assert "hidden_states" in out
 
@@ -373,7 +405,11 @@ class TestAttentionMaskSlicing(unittest.TestCase):
     def test_no_sp_passthrough(self):
         attn = _make_attn(sp=False)
         B, S, H = 2, 8, 128
-        mask = paddle.arange(S, dtype="int32").reshape([1, 1, S, 1]).expand([B, 1, S, 1])
+        mask = (
+            paddle.arange(S, dtype="int32")
+            .reshape([1, 1, S, 1])
+            .expand([B, 1, S, 1])
+        )
         out, _ = attn(
             paddle.randn([B, S, H]),
             attention_mask=None,
@@ -386,7 +422,11 @@ class TestAttentionMaskSlicing(unittest.TestCase):
         attn = _make_attn(sp=True)
         B, S, H = 2, 8, 128
         full_S = S * 2
-        mask = paddle.arange(full_S, dtype="int32").reshape([1, 1, full_S, 1]).expand([B, 1, full_S, 1])
+        mask = (
+            paddle.arange(full_S, dtype="int32")
+            .reshape([1, 1, full_S, 1])
+            .expand([B, 1, full_S, 1])
+        )
         out, _ = attn(
             paddle.randn([B, S, H]),
             attention_mask=None,

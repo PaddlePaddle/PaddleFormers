@@ -19,13 +19,17 @@ import numpy as np
 import paddle
 import paddle.distributed as dist
 import paddle.nn.functional as F
-import paddlefleet_ops
 from paddle.distributed import fleet
 from paddle.distributed.fleet.utils import mix_precision_utils
 
-from paddleformers.fleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
+import paddlefleet_ops
+from paddleformers.fleet.models.gpt.gpt_layer_specs import (
+    get_gpt_layer_local_spec,
+)
 from paddleformers.fleet.process_groups_config import ProcessGroupCollection
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.training.global_vars import unset_global_variables
 from paddleformers.fleet.training.initialize import initialize_fleet
 from paddleformers.fleet.transformer.moe.moe_layer import MoELayer
@@ -74,13 +78,19 @@ class SonicMoETopk(paddle.autograd.PyLayer):
             # Group-limited greedy: select top groups first, then topk
             # within those groups.
             group_scores = scores.reshape([T, n_group, -1]).max(axis=-1)
-            group_idx = paddle.topk(group_scores, k=topk_group, axis=-1, sorted=True)[1]
+            group_idx = paddle.topk(
+                group_scores, k=topk_group, axis=-1, sorted=True
+            )[1]
             group_mask = paddle.zeros_like(group_scores).put_along_axis(
                 group_idx,
                 paddle.to_tensor(1.0, dtype="float32"),
                 axis=-1,
             )
-            score_mask = group_mask.unsqueeze(-1).expand([T, n_group, E // n_group]).reshape([T, -1])
+            score_mask = (
+                group_mask.unsqueeze(-1)
+                .expand([T, n_group, E // n_group])
+                .reshape([T, -1])
+            )
             # Apply mask: zero out non-selected groups.
             # Use a very negative value for softmax_fusion (logits)
             # so softmax gives ~0, or just zero for non-fusion.
@@ -112,7 +122,9 @@ class SonicMoETopk(paddle.autograd.PyLayer):
 
     @staticmethod
     def backward(ctx, dtopk_score, _):
-        from paddlefleet_ops.sonicmoe.functional.backward import _softmax_topk_bwd
+        from paddlefleet_ops.sonicmoe.functional.backward import (
+            _softmax_topk_bwd,
+        )
 
         # print("==== sonicmoe topk bwd ====")
         # assert 0
@@ -121,7 +133,9 @@ class SonicMoETopk(paddle.autograd.PyLayer):
         K = ctx.K
         if ctx.softmax_fusion:
             dlogits = paddle.zeros([T, ctx.E], dtype=ctx.input_dtype)
-            _softmax_topk_bwd(dlogits, None, dtopk_score, topk_scores, topk_indices, K)
+            _softmax_topk_bwd(
+                dlogits, None, dtopk_score, topk_scores, topk_indices, K
+            )
             return dlogits
         else:
             # No softmax fusion: gradient is simply scattered back
@@ -262,12 +276,16 @@ class TestSonicMoEExpertParallelPrecision(unittest.TestCase):
         return tensor[ep_rank * chunk_size : (ep_rank + 1) * chunk_size]
 
     @classmethod
-    def _copy_single_card_weights_to_ep(cls, src_layer, dst_layer, ep_rank, ep_size):
+    def _copy_single_card_weights_to_ep(
+        cls, src_layer, dst_layer, ep_rank, ep_size
+    ):
         src_params = dict(src_layer.named_parameters())
         for name, dst_param in dst_layer.named_parameters():
             src_param = src_params[name]
             if "grouped_gemm_experts.weight" in name:
-                src_param = cls._expert_slice_for_rank(src_param, ep_rank, ep_size)
+                src_param = cls._expert_slice_for_rank(
+                    src_param, ep_rank, ep_size
+                )
             dst_param.set_value(src_param.clone())
 
     @classmethod
@@ -432,9 +450,15 @@ class TestSonicMoEExpertParallelPrecision(unittest.TestCase):
                 )
             )
 
-        output_base, grads_base = self._run_accumulated_forward_backward(moe_layer_base, input_data_list)
-        output_bf16, grads_bf16 = self._run_accumulated_forward_backward(moe_layer_sonic_bf16, input_data_list)
-        output_fp8, grads_fp8 = self._run_accumulated_forward_backward(moe_layer_sonic_fp8, input_data_list)
+        output_base, grads_base = self._run_accumulated_forward_backward(
+            moe_layer_base, input_data_list
+        )
+        output_bf16, grads_bf16 = self._run_accumulated_forward_backward(
+            moe_layer_sonic_bf16, input_data_list
+        )
+        output_fp8, grads_fp8 = self._run_accumulated_forward_backward(
+            moe_layer_sonic_fp8, input_data_list
+        )
         clear_all_fp8_weight_caches()
 
         self._assert_tensor_diff_less(
@@ -500,10 +524,12 @@ class TestSonicMoEExpertParallelPrecision(unittest.TestCase):
             dtype=paddle.bfloat16,
         )
 
-        output_single, loss_single, input_grad_single, grads_single = self._run_forward_backward(
-            moe_layer_single, input_data
+        output_single, loss_single, input_grad_single, grads_single = (
+            self._run_forward_backward(moe_layer_single, input_data)
         )
-        output_ep, loss_ep, input_grad_ep, grads_ep = self._run_forward_backward(moe_layer_ep, input_data)
+        output_ep, loss_ep, input_grad_ep, grads_ep = (
+            self._run_forward_backward(moe_layer_ep, input_data)
+        )
         grads_ep = self._gather_ep_expert_grads(
             grads_ep,
             self.pg_collection.ep,

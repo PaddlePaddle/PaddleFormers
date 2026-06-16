@@ -1,3 +1,17 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # Copyright 2020-present the HuggingFace Inc. team.
 # Copyright 2020 The HuggingFace Team. All rights reserved.
 #
@@ -25,7 +39,7 @@ import types
 import warnings
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import paddle
 import paddle.distributed as dist
@@ -48,7 +62,9 @@ from .trainer_utils import (
 
 # Conditionally import paddleformers.fleet modules
 if is_paddleformers_available():
-    from paddleformers.fleet.parallel_state import get_tensor_model_parallel_group
+    from paddleformers.fleet.parallel_state import (
+        get_tensor_model_parallel_group,
+    )
     from paddleformers.fleet.training import initialize_fleet
 else:
 
@@ -450,7 +466,9 @@ class TrainingArguments:
     """
 
     output_dir: str = field(
-        metadata={"help": "The output directory where the model predictions and checkpoints will be written."},
+        metadata={
+            "help": "The output directory where the model predictions and checkpoints will be written."
+        },
     )
     overwrite_output_dir: bool = field(
         default=False,
@@ -462,57 +480,113 @@ class TrainingArguments:
         },
     )
 
-    do_train: bool = field(default=False, metadata={"help": "Whether to run training."})
-    do_eval: bool = field(default=False, metadata={"help": "Whether to run eval on the dev set."})
-    do_predict: bool = field(default=False, metadata={"help": "Whether to run predictions on the test set."})
-    do_export: bool = field(default=False, metadata={"help": "Whether to export infernece model."})
+    do_train: bool = field(
+        default=False, metadata={"help": "Whether to run training."}
+    )
+    do_eval: bool = field(
+        default=False, metadata={"help": "Whether to run eval on the dev set."}
+    )
+    do_predict: bool = field(
+        default=False,
+        metadata={"help": "Whether to run predictions on the test set."},
+    )
+    do_export: bool = field(
+        default=False, metadata={"help": "Whether to export infernece model."}
+    )
     evaluation_strategy: IntervalStrategy = field(
         default=IntervalStrategy.NO,
         metadata={"help": "The evaluation strategy to use."},
     )
     prediction_loss_only: bool = field(
         default=False,
-        metadata={"help": "When performing evaluation and predictions, only returns the loss."},
+        metadata={
+            "help": "When performing evaluation and predictions, only returns the loss."
+        },
     )
 
-    per_device_train_batch_size: int = field(default=8, metadata={"help": "Batch size per GPU core/CPU for training."})
+    per_device_train_batch_size: int = field(
+        default=8,
+        metadata={"help": "Batch size per GPU core/CPU for training."},
+    )
     per_device_eval_batch_size: int = field(
-        default=8, metadata={"help": "Batch size per GPU core/CPU for evaluation."}
+        default=8,
+        metadata={"help": "Batch size per GPU core/CPU for evaluation."},
     )
 
     gradient_accumulation_steps: int = field(
         default=1,
-        metadata={"help": "Number of updates steps to accumulate before performing a backward/update pass."},
+        metadata={
+            "help": "Number of updates steps to accumulate before performing a backward/update pass."
+        },
     )
-    eval_accumulation_steps: Optional[int] = field(
+    eval_accumulation_steps: int | None = field(
         default=None,
-        metadata={"help": "Number of predictions steps to accumulate before moving the tensors to the CPU."},
+        metadata={
+            "help": "Number of predictions steps to accumulate before moving the tensors to the CPU."
+        },
     )
 
-    learning_rate: float = field(default=5e-5, metadata={"help": "The initial learning rate for AdamW."})
-    weight_decay: float = field(default=0.0, metadata={"help": "Weight decay for AdamW if we apply some."})
-    adam_beta1: float = field(default=0.9, metadata={"help": "Beta1 for AdamW optimizer"})
-    adam_beta2: float = field(default=0.999, metadata={"help": "Beta2 for AdamW optimizer"})
-    adam_epsilon: float = field(default=1e-8, metadata={"help": "Epsilon for AdamW optimizer."})
-    max_grad_norm: float = field(default=1.0, metadata={"help": "Max gradient norm."})
+    learning_rate: float = field(
+        default=5e-5, metadata={"help": "The initial learning rate for AdamW."}
+    )
+    weight_decay: float = field(
+        default=0.0,
+        metadata={"help": "Weight decay for AdamW if we apply some."},
+    )
+    adam_beta1: float = field(
+        default=0.9, metadata={"help": "Beta1 for AdamW optimizer"}
+    )
+    adam_beta2: float = field(
+        default=0.999, metadata={"help": "Beta2 for AdamW optimizer"}
+    )
+    adam_epsilon: float = field(
+        default=1e-8, metadata={"help": "Epsilon for AdamW optimizer."}
+    )
+    max_grad_norm: float = field(
+        default=1.0, metadata={"help": "Max gradient norm."}
+    )
 
-    num_train_epochs: float = field(default=1.0, metadata={"help": "Total number of training epochs to perform."})
+    num_train_epochs: float = field(
+        default=1.0,
+        metadata={"help": "Total number of training epochs to perform."},
+    )
     max_steps: int = field(
         default=-1,
-        metadata={"help": "If > 0: set total number of training steps to perform. Override num_train_epochs."},
+        metadata={
+            "help": "If > 0: set total number of training steps to perform. Override num_train_epochs."
+        },
     )
     lr_scheduler_type: str = field(
         default="linear",
-        metadata={"help": "The scheduler type to use. support linear, cosine, constant, constant_with_warmup"},
+        metadata={
+            "help": "The scheduler type to use. support linear, cosine, constant, constant_with_warmup"
+        },
     )
     warmup_ratio: float = field(
-        default=0.0, metadata={"help": "Linear warmup over warmup_ratio fraction of total steps."}
+        default=0.0,
+        metadata={
+            "help": "Linear warmup over warmup_ratio fraction of total steps."
+        },
     )
-    warmup_steps: int = field(default=0, metadata={"help": "Linear warmup over warmup_steps."})
-    num_cycles: float = field(default=0.5, metadata={"help": "The number of waves in the cosine scheduler."})
-    lr_end: float = field(default=1e-7, metadata={"help": "The end LR in the polynomial scheduler."})
-    power: float = field(default=1.0, metadata={"help": "The power factor in the polynomial scheduler."})
-    min_lr: float = field(default=0.0, metadata={"help": "The minimum learning rate in cosine scheduler."})
+    warmup_steps: int = field(
+        default=0, metadata={"help": "Linear warmup over warmup_steps."}
+    )
+    num_cycles: float = field(
+        default=0.5,
+        metadata={"help": "The number of waves in the cosine scheduler."},
+    )
+    lr_end: float = field(
+        default=1e-7,
+        metadata={"help": "The end LR in the polynomial scheduler."},
+    )
+    power: float = field(
+        default=1.0,
+        metadata={"help": "The power factor in the polynomial scheduler."},
+    )
+    min_lr: float = field(
+        default=0.0,
+        metadata={"help": "The minimum learning rate in cosine scheduler."},
+    )
     moe_router_bias_update_rate: float = field(
         default=0.0,
         metadata={
@@ -542,21 +616,31 @@ class TrainingArguments:
             "help": "When doing a multinode distributed training, whether to log once per node or just once on the main node."
         },
     )
-    logging_dir: Optional[str] = field(default=None, metadata={"help": "VisualDL log dir."})
-    output_signal_dir: Optional[str] = field(default=None, metadata={"help": "Asynchronous saving signal dir."})
+    logging_dir: str | None = field(
+        default=None, metadata={"help": "VisualDL log dir."}
+    )
+    output_signal_dir: str | None = field(
+        default=None, metadata={"help": "Asynchronous saving signal dir."}
+    )
     logging_strategy: IntervalStrategy = field(
         default=IntervalStrategy.STEPS,
         metadata={"help": "The logging strategy to use."},
     )
-    logging_first_step: bool = field(default=False, metadata={"help": "Log the first global_step"})
-    logging_steps: int = field(default=500, metadata={"help": "Log every X updates steps."})
+    logging_first_step: bool = field(
+        default=False, metadata={"help": "Log the first global_step"}
+    )
+    logging_steps: int = field(
+        default=500, metadata={"help": "Log every X updates steps."}
+    )
 
     save_strategy: IntervalStrategy = field(
         default=IntervalStrategy.STEPS,
         metadata={"help": "The checkpoint save strategy to use."},
     )
-    save_steps: int = field(default=500, metadata={"help": "Save checkpoint every X updates steps."})
-    save_total_limit: Optional[int] = field(
+    save_steps: int = field(
+        default=500, metadata={"help": "Save checkpoint every X updates steps."}
+    )
+    save_total_limit: int | None = field(
         default=None,
         metadata={
             "help": (
@@ -571,8 +655,16 @@ class TrainingArguments:
             "help": "When doing multi-node distributed training, whether to save models and checkpoints on each node, or only on the main one"
         },
     )
-    no_cuda: bool = field(default=False, metadata={"help": "Do not use CUDA even when it is available"})
-    seed: int = field(default=42, metadata={"help": "Random seed that will be set at the beginning of training."})
+    no_cuda: bool = field(
+        default=False,
+        metadata={"help": "Do not use CUDA even when it is available"},
+    )
+    seed: int = field(
+        default=42,
+        metadata={
+            "help": "Random seed that will be set at the beginning of training."
+        },
+    )
 
     bf16: bool = field(
         default=False,
@@ -585,7 +677,9 @@ class TrainingArguments:
     )
     fp16: bool = field(
         default=False,
-        metadata={"help": "Whether to use fp16 (mixed) precision instead of 32-bit"},
+        metadata={
+            "help": "Whether to use fp16 (mixed) precision instead of 32-bit"
+        },
     )
     fp16_opt_level: str = field(
         default="O1",
@@ -616,10 +710,12 @@ class TrainingArguments:
     )
     fp16_full_eval: bool = field(
         default=False,
-        metadata={"help": "Whether to use full float16 evaluation instead of 32-bit"},
+        metadata={
+            "help": "Whether to use full float16 evaluation instead of 32-bit"
+        },
     )
 
-    amp_custom_black_list: Optional[List[str]] = field(
+    amp_custom_black_list: list[str] | None = field(
         default_factory=lambda: [
             "reduce_sum",
             "softmax_with_cross_entropy",
@@ -632,7 +728,7 @@ class TrainingArguments:
             "help": "The set of ops that support fp16/bf16 calculation and are considered numerically-dangerous and whose effects may also be observed in downstream ops."
         },
     )
-    amp_custom_white_list: Optional[List[str]] = field(
+    amp_custom_white_list: list[str] | None = field(
         default_factory=lambda: [
             "lookup_table",
             "lookup_table_v2",
@@ -693,7 +789,9 @@ class TrainingArguments:
 
     dsa_indexer_loss_coeff: float = field(
         default=0.01,
-        metadata={"help": "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term."},
+        metadata={
+            "help": "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term."
+        },
     )
 
     sharding_comm_group_call_opt: bool = field(
@@ -735,7 +833,9 @@ class TrainingArguments:
 
     load_sharded_model_remap_parameter_name: bool = field(
         default=False,
-        metadata={"help": "Whether to remap parameter name when load_sharded_model = true."},
+        metadata={
+            "help": "Whether to remap parameter name when load_sharded_model = true."
+        },
     )
 
     sharded_model_from_ema: bool = field(
@@ -795,7 +895,9 @@ class TrainingArguments:
     )
     cp_balance_mode: str = field(
         default="dualchunk_allgather",
-        metadata={"help": "CP scatter/gather layout mode: 'dualchunk_allgather' or 'contiguous_allgather'."},
+        metadata={
+            "help": "CP scatter/gather layout mode: 'dualchunk_allgather' or 'contiguous_allgather'."
+        },
     )
     expert_model_parallel_size: int = field(
         default=-1,
@@ -803,7 +905,11 @@ class TrainingArguments:
     )
     expert_tensor_model_parallel_size: int = field(
         default=-1,
-        metadata={"help": ("The paddle expert tensor parallel strategy. Currently is not supported. DO NOT SET.")},
+        metadata={
+            "help": (
+                "The paddle expert tensor parallel strategy. Currently is not supported. DO NOT SET."
+            )
+        },
     )
     # Deprecated
     data_parallel_config: str = field(
@@ -823,7 +929,8 @@ class TrainingArguments:
         metadata={"help": "Whether to enable sequence parallel."},
     )
     fuse_sequence_parallel_allreduce: bool = field(
-        default=False, metadata={"help": "Whether to use fuse sequence parallel allreduce."}
+        default=False,
+        metadata={"help": "Whether to use fuse sequence parallel allreduce."},
     )
     # Deprecated
     sequence_parallel_config: str = field(
@@ -911,17 +1018,25 @@ class TrainingArguments:
         },
     )
 
-    recompute_granularity: Optional[str] = field(
-        default=None, metadata={"help": "Determines which type of activation recompute to use"}
+    recompute_granularity: str | None = field(
+        default=None,
+        metadata={
+            "help": "Determines which type of activation recompute to use"
+        },
     )
 
-    recompute_method: Optional[str] = field(
-        default=None, metadata={"help": "Determines which transformer layers will be recomputed"}
+    recompute_method: str | None = field(
+        default=None,
+        metadata={
+            "help": "Determines which transformer layers will be recomputed"
+        },
     )
 
-    recompute_modules: Optional[Any] = field(default=None, metadata={"help": "The submodules to recompute"})
+    recompute_modules: Any | None = field(
+        default=None, metadata={"help": "The submodules to recompute"}
+    )
 
-    recompute_num_layers: Optional[int] = field(
+    recompute_num_layers: int | None = field(
         default=None,
         metadata={
             "help": (
@@ -932,19 +1047,29 @@ class TrainingArguments:
         },
     )
 
-    recompute_mtp_granularity: Optional[str] = field(
-        default=None, metadata={"help": "Determines which type of activation recompute to use in MTP layer"}
+    recompute_mtp_granularity: str | None = field(
+        default=None,
+        metadata={
+            "help": "Determines which type of activation recompute to use in MTP layer"
+        },
     )
 
-    recompute_mtp_method: Optional[str] = field(
-        default=None, metadata={"help": "Determines which layers will be recomputed in MTP layer"}
+    recompute_mtp_method: str | None = field(
+        default=None,
+        metadata={
+            "help": "Determines which layers will be recomputed in MTP layer"
+        },
     )
 
-    recompute_mtp_modules: Optional[Any] = field(
-        default=None, metadata={"help": "The submodules to recompute in MTP layer"}
+    recompute_mtp_modules: Any | None = field(
+        default=None,
+        metadata={"help": "The submodules to recompute in MTP layer"},
     )
 
-    scale_loss: float = field(default=2**15, metadata={"help": "The value of initial scale_loss for fp16."})
+    scale_loss: float = field(
+        default=2**15,
+        metadata={"help": "The value of initial scale_loss for fp16."},
+    )
 
     minimum_eval_times: int = field(
         default=None,
@@ -953,15 +1078,28 @@ class TrainingArguments:
         },
     )
 
-    local_rank: int = field(default=-1, metadata={"help": "For distributed training: local_rank"})
-
-    dataloader_shuffle: bool = field(default=True, metadata={"help": "Whether to shuffle the train dataloder."})
-    dataloader_drop_last: bool = field(
-        default=False, metadata={"help": "Drop the last incomplete batch if it is not divisible by the batch size."}
+    local_rank: int = field(
+        default=-1, metadata={"help": "For distributed training: local_rank"}
     )
-    eval_steps: int = field(default=None, metadata={"help": "Run an evaluation every X steps."})
+
+    dataloader_shuffle: bool = field(
+        default=True,
+        metadata={"help": "Whether to shuffle the train dataloder."},
+    )
+    dataloader_drop_last: bool = field(
+        default=False,
+        metadata={
+            "help": "Drop the last incomplete batch if it is not divisible by the batch size."
+        },
+    )
+    eval_steps: int = field(
+        default=None, metadata={"help": "Run an evaluation every X steps."}
+    )
     max_evaluate_steps: int = field(
-        default=-1, metadata={"help": "If set to a positive number, the total number of evaluation steps to perform."}
+        default=-1,
+        metadata={
+            "help": "If set to a positive number, the total number of evaluation steps to perform."
+        },
     )
     dataloader_num_workers: int = field(
         default=0,
@@ -972,40 +1110,60 @@ class TrainingArguments:
     prefetch_factor: int = field(
         default=2,
         metadata={
-            "help": "Number of batch data the DataLoader would prefetch if use_buffer_reader=True. " "Default 2."
+            "help": "Number of batch data the DataLoader would prefetch if use_buffer_reader=True. "
+            "Default 2."
         },
     )
 
     past_index: int = field(
         default=-1,
-        metadata={"help": "If >=0, uses the corresponding part of the output as the past state for next step."},
+        metadata={
+            "help": "If >=0, uses the corresponding part of the output as the past state for next step."
+        },
     )
 
-    run_name: Optional[str] = field(default=None, metadata={"help": "An optional descriptor for the run."})
-
-    device: Optional[str] = field(default="gpu", metadata={"help": "select cpu, gpu, xpu, npu devices."})
-
-    disable_tqdm: Optional[bool] = field(
-        default=True, metadata={"help": "Whether or not to disable the tqdm progress bars."}
+    run_name: str | None = field(
+        default=None, metadata={"help": "An optional descriptor for the run."}
     )
 
-    remove_unused_columns: Optional[bool] = field(
-        default=True, metadata={"help": "Remove columns not required by the model when using an nlp.Dataset."}
+    device: str | None = field(
+        default="gpu", metadata={"help": "select cpu, gpu, xpu, npu devices."}
     )
 
-    label_names: Optional[List[str]] = field(
-        default=None, metadata={"help": "The list of keys in your dictionary of inputs that correspond to the labels."}
+    disable_tqdm: bool | None = field(
+        default=True,
+        metadata={"help": "Whether or not to disable the tqdm progress bars."},
     )
 
-    load_best_model_at_end: Optional[bool] = field(
+    remove_unused_columns: bool | None = field(
+        default=True,
+        metadata={
+            "help": "Remove columns not required by the model when using an nlp.Dataset."
+        },
+    )
+
+    label_names: list[str] | None = field(
+        default=None,
+        metadata={
+            "help": "The list of keys in your dictionary of inputs that correspond to the labels."
+        },
+    )
+
+    load_best_model_at_end: bool | None = field(
         default=False,
-        metadata={"help": "Whether or not to load the best model found during training at the end of training."},
+        metadata={
+            "help": "Whether or not to load the best model found during training at the end of training."
+        },
     )
-    metric_for_best_model: Optional[str] = field(
-        default=None, metadata={"help": "The metric to use to compare two different models."}
+    metric_for_best_model: str | None = field(
+        default=None,
+        metadata={"help": "The metric to use to compare two different models."},
     )
-    greater_is_better: Optional[bool] = field(
-        default=None, metadata={"help": "Whether the `metric_for_best_model` should be maximized or not."}
+    greater_is_better: bool | None = field(
+        default=None,
+        metadata={
+            "help": "Whether the `metric_for_best_model` should be maximized or not."
+        },
     )
     ignore_data_skip: bool = field(
         default=False,
@@ -1017,7 +1175,7 @@ class TrainingArguments:
         default="adamw",
         metadata={"help": "The optimizer to use."},
     )
-    muon_exclude_patterns: Optional[List[str]] = field(
+    muon_exclude_patterns: list[str] | None = field(
         default_factory=lambda: ["embed", "bias", "lm_head", "mlp.gate"],
         metadata={
             "help": "List of substrings to exclude from Muon orthogonal updates. "
@@ -1029,10 +1187,13 @@ class TrainingArguments:
         default=False,
         metadata={"help": "AdamW use 16bit moment as model parameter."},
     )
-    report_to: Optional[List[str]] = field(
-        default=None, metadata={"help": "The list of integrations to report the results and logs to."}
+    report_to: list[str] | None = field(
+        default=None,
+        metadata={
+            "help": "The list of integrations to report the results and logs to."
+        },
     )
-    ddp_find_unused_parameters: Optional[bool] = field(
+    ddp_find_unused_parameters: bool | None = field(
         default=None,
         metadata={
             "help": (
@@ -1041,38 +1202,53 @@ class TrainingArguments:
             )
         },
     )
-    wandb_api_key: Optional[str] = field(
+    wandb_api_key: str | None = field(
         default=None,
-        metadata={"help": "Weights & Biases (WandB) API key(s) for authentication with the WandB service."},
+        metadata={
+            "help": "Weights & Biases (WandB) API key(s) for authentication with the WandB service."
+        },
     )
-    wandb_http_proxy: Optional[str] = field(
+    wandb_http_proxy: str | None = field(
         default=None,
-        metadata={"help": "Weights & Biases (WandB) http proxy for connecting with the WandB service."},
+        metadata={
+            "help": "Weights & Biases (WandB) http proxy for connecting with the WandB service."
+        },
     )
-    resume_from_checkpoint: Optional[str] = field(
+    resume_from_checkpoint: str | None = field(
         default=None,
-        metadata={"help": "The path to a folder with a valid checkpoint for your model."},
+        metadata={
+            "help": "The path to a folder with a valid checkpoint for your model."
+        },
     )
-    resume_from_huggingface_ckpt: Optional[str] = field(
+    resume_from_huggingface_ckpt: str | None = field(
         default=None,
-        metadata={"help": "The path to a folder with a valid huggingface checkpoint for your model."},
+        metadata={
+            "help": "The path to a folder with a valid huggingface checkpoint for your model."
+        },
     )
-    auto_parallel_resume_form_hybrid_parallel: Optional[bool] = field(
+    auto_parallel_resume_form_hybrid_parallel: bool | None = field(
         default=False,
-        metadata={"help": "Whether hybrid parallel checkpoints be loaded in auto parallel mode."},
+        metadata={
+            "help": "Whether hybrid parallel checkpoints be loaded in auto parallel mode."
+        },
     )
     skip_memory_metrics: bool = field(
-        default=True, metadata={"help": "Whether or not to skip adding of memory profiler reports to metrics."}
+        default=True,
+        metadata={
+            "help": "Whether or not to skip adding of memory profiler reports to metrics."
+        },
     )
-    flatten_param_grads: Optional[bool] = field(
+    flatten_param_grads: bool | None = field(
         default=False,
-        metadata={"help": "Whether use flatten_param_grads method in optimizer, only used on NPU devices."},
+        metadata={
+            "help": "Whether use flatten_param_grads method in optimizer, only used on NPU devices."
+        },
     )
-    lazy_data_processing: Optional[bool] = field(
+    lazy_data_processing: bool | None = field(
         default=True,
         metadata={"help": "Whether use lazy data processing."},
     )
-    use_async_save: Optional[bool] = field(
+    use_async_save: bool | None = field(
         default=False,
         metadata={"help": "Whether to use async_save instead of paddle.save."},
     )
@@ -1082,26 +1258,35 @@ class TrainingArguments:
             "help": "Select ordered_save_group_size to save checkpoint in ordered. if ordered_save_group_size=0, not used ordered save"
         },
     )
-    metrics_output_path: Optional[str] = field(
+    metrics_output_path: str | None = field(
         default=None,
-        metadata={"help": "Where to save training metrics (None for skipping save)."},
+        metadata={
+            "help": "Where to save training metrics (None for skipping save)."
+        },
     )
-    skip_profile_timer: Optional[bool] = field(
+    skip_profile_timer: bool | None = field(
         default=True,
-        metadata={"help": "enable framework timer, will output timeline information in logging and visualdl."},
+        metadata={
+            "help": "enable framework timer, will output timeline information in logging and visualdl."
+        },
     )
-    distributed_dataloader: Optional[bool] = field(
-        default=False, metadata={"help": "Whether to use distributed dataloader."}
+    distributed_dataloader: bool | None = field(
+        default=False,
+        metadata={"help": "Whether to use distributed dataloader."},
     )
-    unified_checkpoint: Optional[bool] = field(
+    unified_checkpoint: bool | None = field(
         default=False,
         metadata={"help": "Whether to unify hybrid parallel checkpoint."},
     )
-    to_static: Optional[bool] = field(
+    to_static: bool | None = field(
         default=False,
-        metadata={"help": ("Whether to train model under static mode by jit.to_static or distributed.to_static.")},
+        metadata={
+            "help": (
+                "Whether to train model under static mode by jit.to_static or distributed.to_static."
+            )
+        },
     )
-    unified_checkpoint_config: Optional[str] = field(
+    unified_checkpoint_config: str | None = field(
         default="",
         metadata={
             "help": (
@@ -1122,34 +1307,45 @@ class TrainingArguments:
             "help": "checkpoint quantization stage. O0: deactivate, O1: Int8 compression, O2: Int4 compression. (default: O0)"
         },
     )
-    ignore_load_lr_and_optim: Optional[bool] = field(
+    ignore_load_lr_and_optim: bool | None = field(
         default=False,
         metadata={"help": "whether to ignore load optimizer and scheduler."},
     )
-    ignore_save_lr_and_optim: Optional[bool] = field(
+    ignore_save_lr_and_optim: bool | None = field(
         default=False,
         metadata={"help": "whether to ignore save optimizer and scheduler."},
     )
-    force_reshard_pp: Optional[bool] = field(
+    force_reshard_pp: bool | None = field(
         default=False,
-        metadata={"help": "reshard pp even if pp degree in the model and pp degree in script match"},
+        metadata={
+            "help": "reshard pp even if pp degree in the model and pp degree in script match"
+        },
     )
-    enable_auto_parallel: Optional[bool] = field(
+    enable_auto_parallel: bool | None = field(
         default=False,
-        metadata={"help": "whether to run distributed training in auto parallel mode"},
+        metadata={
+            "help": "whether to run distributed training in auto parallel mode"
+        },
     )
-    use_expert_parallel: Optional[bool] = field(
+    use_expert_parallel: bool | None = field(
         default=False,
-        metadata={"help": "Enable MoE (Mixture of Experts) expert parallel training"},
+        metadata={
+            "help": "Enable MoE (Mixture of Experts) expert parallel training"
+        },
     )
-    release_grads: Optional[bool] = field(
-        default=False, metadata={"help": "Whether to release gradients during training. Default is `False`."}
+    release_grads: bool | None = field(
+        default=False,
+        metadata={
+            "help": "Whether to release gradients during training. Default is `False`."
+        },
     )
-    skip_data_intervals: Optional[List[List[int]]] = field(
+    skip_data_intervals: list[list[int]] | None = field(
         default=None,
-        metadata={"help": "The intervals to skip, pass start global step and end global step at each interval"},
+        metadata={
+            "help": "The intervals to skip, pass start global step and end global step at each interval"
+        },
     )
-    tensorwise_offload_optimizer: Optional[bool] = field(
+    tensorwise_offload_optimizer: bool | None = field(
         default=False,
         metadata={
             "help": (
@@ -1163,54 +1359,61 @@ class TrainingArguments:
         default=1,
         metadata={"help": ("Number of shards to split the optimizer into.")},
     )
-    save_sharding_stage1_model_include_freeze_params: Optional[bool] = field(
-        default=False, metadata={"help": "Save Sharding Stage1 Model Exclude Freeze Params"}
+    save_sharding_stage1_model_include_freeze_params: bool | None = field(
+        default=False,
+        metadata={"help": "Save Sharding Stage1 Model Exclude Freeze Params"},
     )
-    enable_zero_cost_checkpoint: Optional[bool] = field(
+    enable_zero_cost_checkpoint: bool | None = field(
         default=False,
         metadata={"help": "Enable Flash Save Mode"},
     )
-    zcc_workers_num: Optional[int] = field(
+    zcc_workers_num: int | None = field(
         default=3,
         metadata={
             "help": "The workers num for zero cost checkpoint save mode. Increase to gain performance but cost more memory and cpu usage."
         },
     )
-    zcc_pipeline_hooks_capacity_usage: Optional[float] = field(
+    zcc_pipeline_hooks_capacity_usage: float | None = field(
         default=0.6,
         metadata={
             "help": "Set pipeline hook capacity usage ratio. Lower value brings faster save speed but may effect calculation speed."
         },
     )
-    zcc_save_ema_coef: Optional[float] = field(
+    zcc_save_ema_coef: float | None = field(
         default=None,
         metadata={
             "help": "The coefficient of EMA parameters in zero cost checkpoint save mode. if set to 0, skip EMA process"
         },
     )
-    zcc_ema_interval: Optional[int] = field(
+    zcc_ema_interval: int | None = field(
         default=1,
         metadata={"help": "Interval between updating EMA parameters."},
     )
-    zcc_ema_loss_threshold: Optional[float] = field(
+    zcc_ema_loss_threshold: float | None = field(
         default=None,
-        metadata={"help": "If set not None, only do EMA when the training loss is smaller than the threshold value"},
+        metadata={
+            "help": "If set not None, only do EMA when the training loss is smaller than the threshold value"
+        },
     )
-    save_tokenizer: Optional[bool] = field(
+    save_tokenizer: bool | None = field(
         default=True,
         metadata={"help": "Save tokenizer to output_dir."},
     )
-    save_rng_states: Optional[bool] = field(
+    save_rng_states: bool | None = field(
         default=True,
         metadata={"help": "Save rng states to output_dir."},
     )
-    pdc_download_ckpt: Optional[bool] = field(
+    pdc_download_ckpt: bool | None = field(
         default=False,
-        metadata={"help": "Download checkpoint in paddlecloud longjob environment"},
+        metadata={
+            "help": "Download checkpoint in paddlecloud longjob environment"
+        },
     )
-    pdc_download_timeout: Optional[int] = field(
+    pdc_download_timeout: int | None = field(
         default=300,
-        metadata={"help": "Timeout seconds for downloading checkpoint from remote cluster."},
+        metadata={
+            "help": "Timeout seconds for downloading checkpoint from remote cluster."
+        },
     )
     count_trained_tokens: bool = field(
         default=False,
@@ -1220,23 +1423,27 @@ class TrainingArguments:
         default=0,
         metadata={"help": "The id of the padding token."},
     )
-    flash_device_save_steps: Optional[int] = field(
+    flash_device_save_steps: int | None = field(
         default=0,
-        metadata={"help": "Save checkpoints on flash device every this many steps. Default is 0 which disables it"},
+        metadata={
+            "help": "Save checkpoints on flash device every this many steps. Default is 0 which disables it"
+        },
     )
-    split_norm_comm: Optional[bool] = field(
+    split_norm_comm: bool | None = field(
         default=False,
-        metadata={"help": "是否开启单路sharding时global norm通信拆分全局通信组为pp通信和mp通信分别做"},
+        metadata={
+            "help": "是否开启单路sharding时global norm通信拆分全局通信组为pp通信和mp通信分别做"
+        },
     )
-    convert_from_hf: Optional[bool] = field(
+    convert_from_hf: bool | None = field(
         default=True,
         metadata={"help": "Load model from HuggingFace safetensors."},
     )
-    save_to_hf: Optional[bool] = field(
+    save_to_hf: bool | None = field(
         default=True,
         metadata={"help": "Save model to HuggingFace safetensors."},
     )
-    nccl_comm_group_config: Optional[str] = field(
+    nccl_comm_group_config: str | None = field(
         default=None,
         metadata={
             "help": (
@@ -1246,24 +1453,42 @@ class TrainingArguments:
         },
     )
 
-    reorder_pipeline_priority: Optional[bool] = field(
+    reorder_pipeline_priority: bool | None = field(
         default=False,
-        metadata={"help": "Controls the parallel execution order. False (pp first), True (sharding first)."},
+        metadata={
+            "help": "Controls the parallel execution order. False (pp first), True (sharding first)."
+        },
     )
     pre_alloc_memory: int = field(
         default=0,
         metadata={"help": "pre allocate memory size GB"},
     )
-    num_nextn_predict_layers: int = field(default=0, metadata={"help": "Number of nextn predict layers."})
-    train_mtp_only: bool = field(default=False, metadata={"help": "Whether to train MTP only."})
-    mtp_distillation_loss: bool = field(default=False, metadata={"help": "Whether to use distillation MTP loss."})
-    mtp_num_layers: int = field(
-        default=0, metadata={"help": "Whether to use Autoregressive MTP Training, activate if > 1."}
+    num_nextn_predict_layers: int = field(
+        default=0, metadata={"help": "Number of nextn predict layers."}
     )
-    profile: bool = field(default=False, metadata={"help": "Enable nsys profiling."})
-    profile_step_start: int = field(default=10, metadata={"help": "Step to start nsys profiling."})
-    profile_step_end: int = field(default=12, metadata={"help": "Step to end nsys profiling."})
-    save_checkpoint_format: Optional[str] = field(
+    train_mtp_only: bool = field(
+        default=False, metadata={"help": "Whether to train MTP only."}
+    )
+    mtp_distillation_loss: bool = field(
+        default=False,
+        metadata={"help": "Whether to use distillation MTP loss."},
+    )
+    mtp_num_layers: int = field(
+        default=0,
+        metadata={
+            "help": "Whether to use Autoregressive MTP Training, activate if > 1."
+        },
+    )
+    profile: bool = field(
+        default=False, metadata={"help": "Enable nsys profiling."}
+    )
+    profile_step_start: int = field(
+        default=10, metadata={"help": "Step to start nsys profiling."}
+    )
+    profile_step_end: int = field(
+        default=12, metadata={"help": "Step to end nsys profiling."}
+    )
+    save_checkpoint_format: str | None = field(
         default="flex_checkpoint",
         metadata={
             "help": (
@@ -1275,7 +1500,7 @@ class TrainingArguments:
         },
     )
 
-    load_checkpoint_format: Optional[str] = field(
+    load_checkpoint_format: str | None = field(
         default="flex_checkpoint",
         metadata={
             "help": (
@@ -1287,22 +1512,25 @@ class TrainingArguments:
         },
     )
 
-    aoa_config: Optional[dict[str, list[str]]] = field(
+    aoa_config: dict[str, list[str]] | None = field(
         default=None,
         metadata={
             "help": "The AoA configuration of FlexCheckpoint, used to describe the mapping between model weights and the checkpoint content. Default is None."
         },
     )
 
-    load_via_cpu: Optional[bool] = field(
+    load_via_cpu: bool | None = field(
         default=True,
         metadata={
             "help": "If True, loads checkpoint data to CPU first, then transfers required parts to GPU on demand to reduce GPU memory usage. Defaults to False."
         },
     )
 
-    save_hf_steps: int = field(default=-1, metadata={"help": "Save huggingface checkpoint every X updates steps."})
-    save_hf_total_limit: Optional[int] = field(
+    save_hf_steps: int = field(
+        default=-1,
+        metadata={"help": "Save huggingface checkpoint every X updates steps."},
+    )
+    save_hf_total_limit: int | None = field(
         default=None,
         metadata={
             "help": (
@@ -1312,9 +1540,11 @@ class TrainingArguments:
         },
     )
 
-    save_last_step: Optional[bool] = field(
+    save_last_step: bool | None = field(
         default=False,
-        metadata={"help": "If True, saves the last step of the training process."},
+        metadata={
+            "help": "If True, saves the last step of the training process."
+        },
     )
 
     save_hf_memory_growth_threshold: int = field(
@@ -1327,7 +1557,7 @@ class TrainingArguments:
         },
     )
 
-    hybrid_parallel_expert_grad_scale: Optional[float] = field(
+    hybrid_parallel_expert_grad_scale: float | None = field(
         default=None,
         metadata={"help": ("Scaling factor for expert gradients.")},
     )
@@ -1345,24 +1575,31 @@ class TrainingArguments:
             "help": "Whether or not to use cache for the model For training, this is usually not needed apart from some PEFT methods that uses `past_key_values`."
         },
     )
-    load_from_hf: Optional[bool] = field(
+    load_from_hf: bool | None = field(
         default=False,
-        metadata={"help": "Whether to load a checkpoint in the HuggingFace format."},
+        metadata={
+            "help": "Whether to load a checkpoint in the HuggingFace format."
+        },
     )
     deterministic_mode: bool = field(
         default=False,
         metadata={"help": "Whether to use deterministic mode."},
     )
-    cp_comm_type: Optional[str] = field(
+    cp_comm_type: str | None = field(
         default=None,
         metadata={"help": "Communication type."},
     )
-    replicate_saved_into_local: Optional[bool] = field(
+    replicate_saved_into_local: bool | None = field(
         default=False,
-        metadata={"help": "Whether to save replicas cross files in distributed save load system."},
+        metadata={
+            "help": "Whether to save replicas cross files in distributed save load system."
+        },
     )
     dp_comm_overlap: bool = field(
-        default=False, metadata={"help": "Whether to overlap data parallelism (DP) communication with computation."}
+        default=False,
+        metadata={
+            "help": "Whether to overlap data parallelism (DP) communication with computation."
+        },
     )
     pp_sharding_comm_overlap: bool = field(
         default=False,
@@ -1371,17 +1608,28 @@ class TrainingArguments:
         },
     )
     tp_async_allreduce: bool = field(
-        default=False, metadata={"help": "Whether to use asynchronous allreduce for tensor parallelism (TP)."}
+        default=False,
+        metadata={
+            "help": "Whether to use asynchronous allreduce for tensor parallelism (TP)."
+        },
     )
     sp_async_reduce_scatter: bool = field(
-        default=False, metadata={"help": "Whether to use asynchronous reduce-scatter for sharding parallelism (SP)."}
+        default=False,
+        metadata={
+            "help": "Whether to use asynchronous reduce-scatter for sharding parallelism (SP)."
+        },
     )
     overlap_p2p_comm: bool = field(
         default=False,
-        metadata={"help": "Whether to overlap point-to-point (P2P) communication with computation. Defaults to True."},
+        metadata={
+            "help": "Whether to overlap point-to-point (P2P) communication with computation. Defaults to True."
+        },
     )
     batch_p2p_comm: bool = field(
-        default=True, metadata={"help": "Whether to batch point-to-point (P2P) communication requests."}
+        default=True,
+        metadata={
+            "help": "Whether to batch point-to-point (P2P) communication requests."
+        },
     )
     variable_seq_lengths: bool = field(
         default=False,
@@ -1475,10 +1723,15 @@ class TrainingArguments:
     )
     p2p_cache_shape: bool = field(
         default=True,
-        metadata={"help": "Set this when maximum sequence length is varying (disables p2p cache shape)."},
+        metadata={
+            "help": "Set this when maximum sequence length is varying (disables p2p cache shape)."
+        },
     )
     partial_send_recv: bool = field(
-        default=True, metadata={"help": "Optimize send speed for tensor parallel (disables partial send/recv)."}
+        default=True,
+        metadata={
+            "help": "Optimize send speed for tensor parallel (disables partial send/recv)."
+        },
     )
     pp_release_grads: bool = field(
         default=False,
@@ -1487,14 +1740,20 @@ class TrainingArguments:
         },
     )
     clear_every_step_cache: bool = field(
-        default=False, metadata={"help": "Clear every step cache for pipeline parallel."}
+        default=False,
+        metadata={"help": "Clear every step cache for pipeline parallel."},
     )
     non_batch_p2p_comm: bool = field(
-        default=False, metadata={"help": "Disable batched send/recv in pipeline parallel mode."}
+        default=False,
+        metadata={
+            "help": "Disable batched send/recv in pipeline parallel mode."
+        },
     )
     auto_parallel_sync_shared_params: bool = field(
         default=False,
-        metadata={"help": "Optimize parameter sharing between two stages in a pipeline parallel scenario."},
+        metadata={
+            "help": "Optimize parameter sharing between two stages in a pipeline parallel scenario."
+        },
     )
     best_unbalanced_scheduler: bool = field(
         default=False,
@@ -1586,7 +1845,10 @@ class TrainingArguments:
             "help": "Replace reduce_avg with original reduce_sum+scale in stage1, which can be used for accuracy verification (disables stage1 reduce_avg)."
         },
     )
-    fuse_optimizer_states: bool = field(default=False, metadata={"help": "Fuse optimizer states to a single storage."})
+    fuse_optimizer_states: bool = field(
+        default=False,
+        metadata={"help": "Fuse optimizer states to a single storage."},
+    )
     sd_release_grads: bool = field(
         default=False,
         metadata={
@@ -1634,7 +1896,12 @@ class TrainingArguments:
     )
     muon_momentum: float = field(
         default=0.95,
-        metadata={"help": ("Momentum coefficient for Muon optimizer. " "Default: 0.95. Only used when optim=muon.")},
+        metadata={
+            "help": (
+                "Momentum coefficient for Muon optimizer. "
+                "Default: 0.95. Only used when optim=muon."
+            )
+        },
     )
     muon_version: int = field(
         default=3,
@@ -1652,7 +1919,8 @@ class TrainingArguments:
         default=5,
         metadata={
             "help": (
-                "Number of Newton-Schulz iteration steps for Muon optimizer. " "Default: 5. Only used when optim=muon."
+                "Number of Newton-Schulz iteration steps for Muon optimizer. "
+                "Default: 5. Only used when optim=muon."
             )
         },
     )
@@ -1667,7 +1935,7 @@ class TrainingArguments:
             )
         },
     )
-    muon_ns_coeffs: Optional[List[List[float]]] = field(
+    muon_ns_coeffs: list[list[float]] | None = field(
         default=None,
         metadata={
             "help": (
@@ -1690,9 +1958,11 @@ class TrainingArguments:
             "help": "Whether to overlap sharding parallelism (SP) communication with computation. Reduces latency for sharded models. Defaults to True."
         },
     )
-    fa_version: Optional[int] = field(
+    fa_version: int | None = field(
         default=None,
-        metadata={"help": "FlashAttention or FlashMask version (2, 3, or 4). If None, version is auto-selected."},
+        metadata={
+            "help": "FlashAttention or FlashMask version (2, 3, or 4). If None, version is auto-selected."
+        },
     )
 
     using_sonic_moe: bool = field(
@@ -1704,14 +1974,19 @@ class TrainingArguments:
 
     dsa_indexer_loss_coeff: float = field(
         default=0.01,
-        metadata={"help": "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term."},
+        metadata={
+            "help": "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term."
+        },
     )
 
     online_merge_ema: bool = field(
-        default=True, metadata={"help": "Whether to perform online merge of the EMA parameters during training. "}
+        default=True,
+        metadata={
+            "help": "Whether to perform online merge of the EMA parameters during training. "
+        },
     )
 
-    flex_ckpt_comm_method: Optional[str] = field(
+    flex_ckpt_comm_method: str | None = field(
         default=None,
         metadata={
             "help": "Communication method for FlexCheckpoint reshard. Options: 'auto', 'broadcast', 'parallel_broadcast'. Default: 'auto'."
@@ -1745,16 +2020,19 @@ class TrainingArguments:
                     2,
                     3,
                     4,
-                ), f"Invalid fa_version: {self.fa_version}. Supported versions are: 2, 3, and 4."
+                ), (
+                    f"Invalid fa_version: {self.fa_version}. Supported versions are: 2, 3, and 4."
+                )
             else:
-                assert (
-                    self.fa_version == 2
-                ), f"Invalid fa_version: {self.fa_version}. Supported versions are: 2 on non-CUDA devices."
+                assert self.fa_version == 2, (
+                    f"Invalid fa_version: {self.fa_version}. Supported versions are: 2 on non-CUDA devices."
+                )
         else:
             if paddle.base.core.is_compiled_with_cuda():
                 is_sm100 = paddle_device.get_device_capability()[0] == 10
                 is_sm90 = (
-                    paddle_device.get_device_capability()[0] == 9 and paddle_device.get_device_capability()[1] == 0
+                    paddle_device.get_device_capability()[0] == 9
+                    and paddle_device.get_device_capability()[1] == 0
                 )
                 if is_sm100:
                     self.fa_version = 4
@@ -1771,12 +2049,20 @@ class TrainingArguments:
             try:
                 paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
             except Exception:
-                logger.warning("Flag FLAGS_flash_attn_version cannot set its value through this function.")
+                logger.warning(
+                    "Flag FLAGS_flash_attn_version cannot set its value through this function."
+                )
 
-        logger.info(f"fa_version = {self.fa_version} set FLAGS_flash_attn_version to {self.fa_version}")
+        logger.info(
+            f"fa_version = {self.fa_version} set FLAGS_flash_attn_version to {self.fa_version}"
+        )
 
         env_local_rank = int(os.environ.get("PADDLE_RANK_IN_NODE", -1))
-        if env_local_rank != -1 and env_local_rank != self.local_rank and paddle.distributed.get_world_size() > 1:
+        if (
+            env_local_rank != -1
+            and env_local_rank != self.local_rank
+            and paddle.distributed.get_world_size() > 1
+        ):
             self.local_rank = env_local_rank
 
         # NOTE(gongenlei): new add, disable sharding when we have only single gpu
@@ -1825,7 +2111,10 @@ class TrainingArguments:
         self.save_strategy = IntervalStrategy(self.save_strategy)
 
         self.lr_scheduler_type = SchedulerType(self.lr_scheduler_type)
-        if self.do_eval is False and self.evaluation_strategy != IntervalStrategy.NO:
+        if (
+            self.do_eval is False
+            and self.evaluation_strategy != IntervalStrategy.NO
+        ):
             self.do_eval = True
 
         if self.do_eval and self.evaluation_strategy == IntervalStrategy.NO:
@@ -1838,9 +2127,13 @@ class TrainingArguments:
             )
 
         # eval_steps has to be defined and non-zero, fallbacks to logging_steps if the latter is non-zero
-        if self.evaluation_strategy == IntervalStrategy.STEPS and (self.eval_steps is None or self.eval_steps == 0):
+        if self.evaluation_strategy == IntervalStrategy.STEPS and (
+            self.eval_steps is None or self.eval_steps == 0
+        ):
             if self.logging_steps > 0:
-                logger.info(f"using `logging_steps` to initialize `eval_steps` to {self.logging_steps}")
+                logger.info(
+                    f"using `logging_steps` to initialize `eval_steps` to {self.logging_steps}"
+                )
                 self.eval_steps = self.logging_steps
             else:
                 raise ValueError(
@@ -1848,8 +2141,13 @@ class TrainingArguments:
                 )
 
         # logging_steps must be non-zero for logging_strategy that is other than 'no'
-        if self.logging_strategy == IntervalStrategy.STEPS and self.logging_steps == 0:
-            raise ValueError(f"logging strategy {self.logging_strategy} requires non-zero --logging_steps")
+        if (
+            self.logging_strategy == IntervalStrategy.STEPS
+            and self.logging_steps == 0
+        ):
+            raise ValueError(
+                f"logging strategy {self.logging_strategy} requires non-zero --logging_steps"
+            )
 
         # Sanity checks for load_best_model_at_end: we require save and eval strategies to be compatible.
         if self.load_best_model_at_end:
@@ -1858,7 +2156,10 @@ class TrainingArguments:
                     "--load_best_model_at_end requires the save and eval strategy to match, but found\n- Evaluation "
                     f"strategy: {self.evaluation_strategy}\n- Save strategy: {self.save_strategy}"
                 )
-            if self.evaluation_strategy == IntervalStrategy.STEPS and self.save_steps % self.eval_steps != 0:
+            if (
+                self.evaluation_strategy == IntervalStrategy.STEPS
+                and self.save_steps % self.eval_steps != 0
+            ):
                 raise ValueError(
                     "--load_best_model_at_end requires the saving steps to be a round multiple of the evaluation "
                     f"steps, but found {self.save_steps}, which is not a round multiple of {self.eval_steps}."
@@ -1866,20 +2167,35 @@ class TrainingArguments:
 
         if self.load_best_model_at_end and self.metric_for_best_model is None:
             self.metric_for_best_model = "loss"
-        if self.greater_is_better is None and self.metric_for_best_model is not None:
-            self.greater_is_better = self.metric_for_best_model not in ["loss", "eval_loss"]
+        if (
+            self.greater_is_better is None
+            and self.metric_for_best_model is not None
+        ):
+            self.greater_is_better = self.metric_for_best_model not in [
+                "loss",
+                "eval_loss",
+            ]
         if self.run_name is None:
             self.run_name = self.output_dir
 
         if self.fp16 and self.bf16:
-            raise ValueError("At most one of fp16 and bf16 can be True, but not both")
+            raise ValueError(
+                "At most one of fp16 and bf16 can be True, but not both"
+            )
 
         if self.fp16_full_eval and self.bf16_full_eval:
-            raise ValueError("At most one of fp16 and bf16 can be True for full eval, but not both")
+            raise ValueError(
+                "At most one of fp16 and bf16 can be True for full eval, but not both"
+            )
 
         self.optim = OptimizerNames(self.optim)
-        if self.optim == OptimizerNames.ADAMW_MINI and self.tensor_model_parallel_size > 1:
-            raise ValueError("AdamW Mini currently doesn't support tensor parallelism.")
+        if (
+            self.optim == OptimizerNames.ADAMW_MINI
+            and self.tensor_model_parallel_size > 1
+        ):
+            raise ValueError(
+                "AdamW Mini currently doesn't support tensor parallelism."
+            )
 
         self._post_init_parallel_degree()
 
@@ -1898,7 +2214,10 @@ class TrainingArguments:
         ):
             raise ValueError("recompute_mtp_modules must be list, dict or None")
 
-        if getattr(self, "moe_subbatch_token_num_before_dispatch", 0) > 0 and self.recompute_granularity == "full":
+        if (
+            getattr(self, "moe_subbatch_token_num_before_dispatch", 0) > 0
+            and self.recompute_granularity == "full"
+        ):
             raise ValueError(
                 "When moe_subbatch_token_num_before_dispatch > 0, please set recompute_granularity='selective and add corresponding module name to recompute_modules"
             )
@@ -1917,9 +2236,12 @@ class TrainingArguments:
             )
 
         if self.distributed_dataloader and not (
-            self.tensor_model_parallel_size > 1 or self.pipeline_model_parallel_size > 1
+            self.tensor_model_parallel_size > 1
+            or self.pipeline_model_parallel_size > 1
         ):
-            warnings.warn("We set `distributed_dataloader` to False if tp_degree <= 1 and pp_degree <= 1")
+            warnings.warn(
+                "We set `distributed_dataloader` to False if tp_degree <= 1 and pp_degree <= 1"
+            )
             self.distributed_dataloader = False
 
         if self.amp_master_grad:
@@ -1933,7 +2255,9 @@ class TrainingArguments:
                 )
 
         if self.optim == OptimizerNames.MUON:
-            assert self.use_hybrid_parallel, "Muon optimizer only supports use_hybrid_parallel=True"
+            assert self.use_hybrid_parallel, (
+                "Muon optimizer only supports use_hybrid_parallel=True"
+            )
 
         # use_hybrid_parallel
         if self.use_hybrid_parallel:
@@ -1941,7 +2265,10 @@ class TrainingArguments:
                 warnings.warn("`offload` is not supported NOW!")
 
             if self.pipeline_model_parallel_size > 1:
-                if ShardingOption.FULL_SHARD in self.sharding or ShardingOption.SHARD_GRAD_OP in self.sharding:
+                if (
+                    ShardingOption.FULL_SHARD in self.sharding
+                    or ShardingOption.SHARD_GRAD_OP in self.sharding
+                ):
                     raise ValueError(
                         "pipeline parallel is not compatible for sharding stage2 or stage3, please using sharding stage1"
                     )
@@ -1949,9 +2276,16 @@ class TrainingArguments:
             # TODO use paddle.distributed.is_initialized() after paddle 2.4rc
             if not paddle.distributed.parallel.parallel_helper._is_parallel_ctx_initialized():
                 strategy = fleet.DistributedStrategy()
-                assert self.data_parallel_config == "", "data_parallle_config is not supported in hybrid parallel"
-                if self.pipeline_model_parallel_size > 1 or is_paddleformers_available():
-                    pipeline_parallel_config = split_parallel_config(self.pipeline_parallel_config)
+                assert self.data_parallel_config == "", (
+                    "data_parallle_config is not supported in hybrid parallel"
+                )
+                if (
+                    self.pipeline_model_parallel_size > 1
+                    or is_paddleformers_available()
+                ):
+                    pipeline_parallel_config = split_parallel_config(
+                        self.pipeline_parallel_config
+                    )
                     for x in pipeline_parallel_config:
                         if len(x) > 0:
                             if x not in [
@@ -1995,16 +2329,30 @@ class TrainingArguments:
                         "p2p_cache_shape": self.p2p_cache_shape,
                         # "delay_scale_loss": True, Fix ME
                     }
-                    logger.info(f"PP configs:{strategy.pipeline_configs}, use master_grad: {self.amp_master_grad}")
+                    logger.info(
+                        f"PP configs:{strategy.pipeline_configs}, use master_grad: {self.amp_master_grad}"
+                    )
 
-                    using_comm_overlap = self.pp_sharding_comm_overlap or self.dp_comm_overlap
-                    enable_dp_comm_overlap = using_comm_overlap and self.data_parallel_size > 1
-                    self.enable_sharding_comm_overlap = using_comm_overlap and self.sharding_parallel_size > 1
+                    using_comm_overlap = (
+                        self.pp_sharding_comm_overlap or self.dp_comm_overlap
+                    )
+                    enable_dp_comm_overlap = (
+                        using_comm_overlap and self.data_parallel_size > 1
+                    )
+                    self.enable_sharding_comm_overlap = (
+                        using_comm_overlap and self.sharding_parallel_size > 1
+                    )
                     assert not (
-                        enable_dp_comm_overlap and self.enable_sharding_comm_overlap
-                    ), "dp_comm_overlap and sharding_comm_overlap cannot be enabled at the same time"
+                        enable_dp_comm_overlap
+                        and self.enable_sharding_comm_overlap
+                    ), (
+                        "dp_comm_overlap and sharding_comm_overlap cannot be enabled at the same time"
+                    )
 
-                    if self.enable_sharding_comm_overlap and not self.amp_master_grad:
+                    if (
+                        self.enable_sharding_comm_overlap
+                        and not self.amp_master_grad
+                    ):
                         raise ValueError(
                             "If `sharding_comm_overlap` in training_args, `amp_master_grad` must be True."
                         )
@@ -2014,7 +2362,8 @@ class TrainingArguments:
                         "dp_comm_overlap": enable_dp_comm_overlap,
                         "sharding_comm_overlap": self.enable_sharding_comm_overlap,
                         "enable_timer": self.timer,
-                        "release_gradients": self.pp_release_grads or self.release_grads,
+                        "release_gradients": self.pp_release_grads
+                        or self.release_grads,
                         "overlap_p2p_comm": self.overlap_p2p_comm,
                         "clear_every_step_cache": self.clear_every_step_cache,
                         "use_batch_p2p_comm": self.batch_p2p_comm,
@@ -2037,10 +2386,15 @@ class TrainingArguments:
                         strategy.hybrid_configs["pp_configs"].sync_moment = True
 
                     if dygraph_pp_configs["dp_comm_overlap"]:
-                        raise ValueError("overlap has accuracy issue")  # TODO: fix `overalap` + `delay_scale` issue
+                        raise ValueError(
+                            "overlap has accuracy issue"
+                        )  # TODO: fix `overalap` + `delay_scale` issue
 
                     if self.do_eval:
-                        if self.per_device_train_batch_size != self.per_device_eval_batch_size:
+                        if (
+                            self.per_device_train_batch_size
+                            != self.per_device_eval_batch_size
+                        ):
                             _raise_config_conflict(
                                 name="per_device_eval_batch_size",
                                 current=self.per_device_eval_batch_size,
@@ -2050,9 +2404,13 @@ class TrainingArguments:
                             )
 
                 if self.tensor_model_parallel_size > 1:
-                    strategy.tensor_parallel_configs = {"tensor_init_seed": self.seed}
+                    strategy.tensor_parallel_configs = {
+                        "tensor_init_seed": self.seed
+                    }
 
-                    mp_config = split_parallel_config(self.tensor_parallel_config)
+                    mp_config = split_parallel_config(
+                        self.tensor_parallel_config
+                    )
 
                     for x in mp_config:
                         if len(x) > 0:
@@ -2076,11 +2434,17 @@ class TrainingArguments:
                             )
                     try:
                         if self.mp_async_allreduce:
-                            strategy.hybrid_configs["mp_configs"].mp_async_allreduce = True
+                            strategy.hybrid_configs[
+                                "mp_configs"
+                            ].mp_async_allreduce = True
                             if self.mp_skip_c_identity:
-                                strategy.hybrid_configs["mp_configs"].mp_skip_c_identity = True
+                                strategy.hybrid_configs[
+                                    "mp_configs"
+                                ].mp_skip_c_identity = True
                             if self.mp_fused_linear_param_grad_add:
-                                strategy.hybrid_configs["mp_configs"].mp_fused_linear_param_grad_add = True
+                                strategy.hybrid_configs[
+                                    "mp_configs"
+                                ].mp_fused_linear_param_grad_add = True
                         else:
                             if self.mp_skip_c_identity:
                                 warnings.warn(
@@ -2091,7 +2455,9 @@ class TrainingArguments:
                                     "mp_fused_linear_param_grad_add only works with mp_async_allreduce. It will not work."
                                 )
                         if self.sp_async_reduce_scatter:
-                            strategy.hybrid_configs["mp_configs"].sp_async_reduce_scatter = True
+                            strategy.hybrid_configs[
+                                "mp_configs"
+                            ].sp_async_reduce_scatter = True
 
                         sync_param = self.tp_sync_param
                         sync_grad = self.sync_grad
@@ -2107,15 +2473,21 @@ class TrainingArguments:
 
                         if sync_param:
                             logger.info("setting sync_param")
-                            strategy.hybrid_configs["mp_configs"].sync_param = True
+                            strategy.hybrid_configs[
+                                "mp_configs"
+                            ].sync_param = True
 
                         if sync_grad:
                             logger.info("setting sync_grad")
-                            strategy.hybrid_configs["mp_configs"].sync_grad = True
+                            strategy.hybrid_configs[
+                                "mp_configs"
+                            ].sync_grad = True
 
                         if sync_moment:
                             logger.info("setting sync_moment")
-                            strategy.hybrid_configs["mp_configs"].sync_moment = True
+                            strategy.hybrid_configs[
+                                "mp_configs"
+                            ].sync_moment = True
 
                     except:
                         warnings.warn(
@@ -2126,21 +2498,33 @@ class TrainingArguments:
                 def is_segment_parallel_supported():
                     import inspect
 
-                    members = [name for (name, date) in inspect.getmembers(fleet.HybridCommunicateGroup)]
+                    members = [
+                        name
+                        for (name, date) in inspect.getmembers(
+                            fleet.HybridCommunicateGroup
+                        )
+                    ]
                     support_sep = "get_sep_parallel_world_size" in members
                     if not support_sep:
-                        logger.warning("segment parallel is not supported!!!, Ignore it.")
+                        logger.warning(
+                            "segment parallel is not supported!!!, Ignore it."
+                        )
                     return support_sep
 
                 def is_context_parallel_supported():
                     import inspect
 
                     members = [
-                        name for (name, date) in inspect.getmembers(fleet.base.topology.EPHybridCommunicateGroup)
+                        name
+                        for (name, date) in inspect.getmembers(
+                            fleet.base.topology.EPHybridCommunicateGroup
+                        )
                     ]
                     support_cp = "get_context_parallel_world_size" in members
                     if not support_cp:
-                        logger.warning("context parallel is not supported!!! Ignore it.")
+                        logger.warning(
+                            "context parallel is not supported!!! Ignore it."
+                        )
                     return support_cp
 
                 if self.hybrid_parallel_topo_order == "pp_first":
@@ -2155,7 +2539,10 @@ class TrainingArguments:
                         order = ["dp", "sharding", "pp", "mp"]
                 if self.use_expert_parallel:
                     if not self.reorder_pipeline_priority:
-                        if self.moe_sharding_parallel_size >= 1 and self.expert_model_parallel_size > 1:
+                        if (
+                            self.moe_sharding_parallel_size >= 1
+                            and self.expert_model_parallel_size > 1
+                        ):
                             order.insert(-1, "ep")
                             sd_idx = order.index("sharding")
                             # if pp_first, the order = ["dp", "pp", "moe_sharding", "sharding", "sep", "ep", "mp"]
@@ -2165,11 +2552,31 @@ class TrainingArguments:
                                 sd_idx = order.index("sharding")
                                 order.insert(sd_idx, "cp")
                     else:
-                        if self.moe_sharding_parallel_size >= 1 and self.expert_model_parallel_size > 1:
+                        if (
+                            self.moe_sharding_parallel_size >= 1
+                            and self.expert_model_parallel_size > 1
+                        ):
                             if is_context_parallel_supported():
-                                order = ["sharding", "moe_sharding", "pp", "sep", "cp", "dp", "ep", "mp"]
+                                order = [
+                                    "sharding",
+                                    "moe_sharding",
+                                    "pp",
+                                    "sep",
+                                    "cp",
+                                    "dp",
+                                    "ep",
+                                    "mp",
+                                ]
                             else:
-                                order = ["sharding", "moe_sharding", "pp", "sep", "dp", "ep", "mp"]
+                                order = [
+                                    "sharding",
+                                    "moe_sharding",
+                                    "pp",
+                                    "sep",
+                                    "dp",
+                                    "ep",
+                                    "mp",
+                                ]
                         else:
                             order = ["sharding", "pp", "sep", "dp", "mp"]
 
@@ -2203,10 +2610,17 @@ class TrainingArguments:
 
                 if self.expert_model_parallel_size > 1:
                     assert (
-                        self.use_expert_parallel is True and self.moe_sharding_parallel_size >= 0
-                    ), f"invalid expert_model_parallel_size {self.expert_model_parallel_size} and use_expert_paralle:{self.use_expert_parallel}."
-                    hybrid_configs["ep_degree"] = self.expert_model_parallel_size
-                    hybrid_configs["moe_sharding_degree"] = self.moe_sharding_parallel_size
+                        self.use_expert_parallel is True
+                        and self.moe_sharding_parallel_size >= 0
+                    ), (
+                        f"invalid expert_model_parallel_size {self.expert_model_parallel_size} and use_expert_paralle:{self.use_expert_parallel}."
+                    )
+                    hybrid_configs["ep_degree"] = (
+                        self.expert_model_parallel_size
+                    )
+                    hybrid_configs["moe_sharding_degree"] = (
+                        self.moe_sharding_parallel_size
+                    )
 
                 try:
                     if self.split_norm_comm:
@@ -2225,7 +2639,9 @@ class TrainingArguments:
                 strategy.hybrid_configs = hybrid_configs
 
                 if self.sharding_parallel_size > 1:
-                    sharding_parallel_config = split_parallel_config(self.sharding_parallel_config)
+                    sharding_parallel_config = split_parallel_config(
+                        self.sharding_parallel_config
+                    )
 
                     for x in sharding_parallel_config:
                         if len(x) > 0:
@@ -2249,11 +2665,13 @@ class TrainingArguments:
                                 f"Please promote this secondary switch {x} to a primary switch."
                             )
                     if not self.stage1_reduce_avg:
-                        assert self.sharding == [
-                            ShardingOption.SHARD_OP
-                        ], "Only sharding stage1 supports to disable reduce_avg strategy."
+                        assert self.sharding == [ShardingOption.SHARD_OP], (
+                            "Only sharding stage1 supports to disable reduce_avg strategy."
+                        )
                         try:
-                            strategy.hybrid_configs["sharding_configs"].use_reduce_avg = False
+                            strategy.hybrid_configs[
+                                "sharding_configs"
+                            ].use_reduce_avg = False
                         except:
                             warnings.warn(
                                 "The reduce_avg strategy is not supported by current version of Paddle so you don't need to disable it. The nccl comm in sharding still use reduce_sum and scale of gradients."
@@ -2261,42 +2679,67 @@ class TrainingArguments:
 
                     try:
                         if self.sharding_comm_buffer_size_MB > 0:
-                            strategy.hybrid_configs["sharding_configs"].comm_buffer_size_MB = int(
+                            strategy.hybrid_configs[
+                                "sharding_configs"
+                            ].comm_buffer_size_MB = int(
                                 self.sharding_comm_buffer_size_MB
                             )
 
-                        if hasattr(strategy.hybrid_configs["sharding_configs"], "offload_opt_buffer_size"):
-                            strategy.hybrid_configs["sharding_configs"].offload_opt_buffer_size = int(
+                        if hasattr(
+                            strategy.hybrid_configs["sharding_configs"],
+                            "offload_opt_buffer_size",
+                        ):
+                            strategy.hybrid_configs[
+                                "sharding_configs"
+                            ].offload_opt_buffer_size = int(
                                 self.sharding_offload_opt_buffersize_GB
                             )
 
                         if self.sharding_comm_group_call_opt:
-                            assert (
-                                self.optim == OptimizerNames.MUON
-                            ), "sharding_comm_group_call_opt only supports Muon optimizer."
-                            strategy.hybrid_configs["sharding_configs"].comm_group_call_opt = True
+                            assert self.optim == OptimizerNames.MUON, (
+                                "sharding_comm_group_call_opt only supports Muon optimizer."
+                            )
+                            strategy.hybrid_configs[
+                                "sharding_configs"
+                            ].comm_group_call_opt = True
 
                         if self.split_param:
-                            strategy.hybrid_configs["sharding_configs"].split_param = True
-                            assert self.amp_master_grad, "Currently sharding stage1 v2 only support amp_master_grad"
+                            strategy.hybrid_configs[
+                                "sharding_configs"
+                            ].split_param = True
+                            assert self.amp_master_grad, (
+                                "Currently sharding stage1 v2 only support amp_master_grad"
+                            )
 
                         # Muon optimizer requires split_param for MuonSharding
                         if self.optim == OptimizerNames.MUON:
-                            assert self.split_param, "Muon optimizer requires split_param=True for MuonSharding"
+                            assert self.split_param, (
+                                "Muon optimizer requires split_param=True for MuonSharding"
+                            )
 
                         if self.sd_release_grads:
-                            strategy.hybrid_configs["sharding_configs"].release_gradients = True
+                            strategy.hybrid_configs[
+                                "sharding_configs"
+                            ].release_gradients = True
 
                         if self.fuse_optimizer_states:
-                            strategy.hybrid_configs["sharding_configs"].enable_fuse_optimizer_states = True
+                            strategy.hybrid_configs[
+                                "sharding_configs"
+                            ].enable_fuse_optimizer_states = True
 
                         if self.pipeline_model_parallel_size == 1:
-                            strategy.hybrid_configs["sharding_configs"].tensor_fusion = self.stage1_tensor_fusion
+                            strategy.hybrid_configs[
+                                "sharding_configs"
+                            ].tensor_fusion = self.stage1_tensor_fusion
                             if self.stage1_overlap:
-                                strategy.hybrid_configs["sharding_configs"].comm_overlap = True
                                 strategy.hybrid_configs[
                                     "sharding_configs"
-                                ].accumulate_steps = self.gradient_accumulation_steps
+                                ].comm_overlap = True
+                                strategy.hybrid_configs[
+                                    "sharding_configs"
+                                ].accumulate_steps = (
+                                    self.gradient_accumulation_steps
+                                )
 
                         else:
                             warnings.warn(
@@ -2310,41 +2753,51 @@ class TrainingArguments:
                             "by current version of Paddle. Please try latest develop Paddle."
                         )
                     if self.stage2_overlap:
-                        assert (
-                            ShardingOption.SHARD_GRAD_OP in self.sharding
-                        ), f"stage2_overlap expects sharding=stage2, but got {self.sharding}."
+                        assert ShardingOption.SHARD_GRAD_OP in self.sharding, (
+                            f"stage2_overlap expects sharding=stage2, but got {self.sharding}."
+                        )
                         assert self.logging_steps > 1, (
                             "The logging_steps should be greater than 1 for stage2 overlap, "
                             f"but got logging_steps={self.logging_steps}."
                         )
                     if self.stage1_broadcast_overlap:
-                        assert (
-                            ShardingOption.SHARD_OP in self.sharding
-                        ), f"stage1_broadcast_overlap expects sharding=stage1, but got {self.sharding}."
+                        assert ShardingOption.SHARD_OP in self.sharding, (
+                            f"stage1_broadcast_overlap expects sharding=stage1, but got {self.sharding}."
+                        )
 
-                        assert (
-                            not self.split_param
-                        ), "split_param should not be set when stage1_broadcast_overlap is True."
+                        assert not self.split_param, (
+                            "split_param should not be set when stage1_broadcast_overlap is True."
+                        )
 
                     if self.stage1_allgather_overlap:
-                        assert (
-                            ShardingOption.SHARD_OP in self.sharding
-                        ), f"stage1_allgather_overlap expects sharding=stage1, but got {self.sharding}."
+                        assert ShardingOption.SHARD_OP in self.sharding, (
+                            f"stage1_allgather_overlap expects sharding=stage1, but got {self.sharding}."
+                        )
 
-                        assert self.split_param, "split_param should be set when stage1_allgather_overlap is True."
+                        assert self.split_param, (
+                            "split_param should be set when stage1_allgather_overlap is True."
+                        )
 
                     if self.split_param:
                         if ShardingOption.SHARD_OP not in self.sharding:
-                            logger.warning("Only sharding stage1 support split_param.")
-                        assert self.amp_master_grad, "If `split_param` is True, `amp_master_grad` must be True."
+                            logger.warning(
+                                "Only sharding stage1 support split_param."
+                            )
+                        assert self.amp_master_grad, (
+                            "If `split_param` is True, `amp_master_grad` must be True."
+                        )
 
                 if self.nccl_comm_group_config is not None:
-                    strategy = init_nccl_config(self.nccl_comm_group_config, strategy)
+                    strategy = init_nccl_config(
+                        self.nccl_comm_group_config, strategy
+                    )
 
                 # Enable MuonShardingOptimizer automatically when optim=muon
                 if self.optim == OptimizerNames.MUON:
                     strategy.use_muon_sharding = True
-                    logger.info("MuonShardingOptimizer enabled for Muon optimizer")
+                    logger.info(
+                        "MuonShardingOptimizer enabled for Muon optimizer"
+                    )
 
                 fleet.init(is_collective=True, strategy=strategy)
 
@@ -2362,33 +2815,49 @@ class TrainingArguments:
                         self.add_moe_comm_group()
 
         elif self.enable_auto_parallel:
+            assert paddle.distributed.get_world_size() > 1, (
+                "Auto parallel mode needs world size > 1."
+            )
+            assert not self.to_static, (
+                "Auto parallel only support dyanmic parallel now. Static parallel will be supported later."
+            )
 
-            assert paddle.distributed.get_world_size() > 1, "Auto parallel mode needs world size > 1."
-            assert (
-                not self.to_static
-            ), "Auto parallel only support dyanmic parallel now. Static parallel will be supported later."
-
-            self.tensor_model_parallel_size = max(self.tensor_model_parallel_size, 1)
+            self.tensor_model_parallel_size = max(
+                self.tensor_model_parallel_size, 1
+            )
             self.sep_parallel_size = max(self.sep_parallel_size, 1)
             self.context_parallel_size = max(self.context_parallel_size, 1)
-            self.pipeline_model_parallel_size = max(self.pipeline_model_parallel_size, 1)
+            self.pipeline_model_parallel_size = max(
+                self.pipeline_model_parallel_size, 1
+            )
 
+            assert self.pipeline_model_parallel_size == 1, (
+                "Current not support pipeline parallel in auto parallel mode."
+            )
             assert (
-                self.pipeline_model_parallel_size == 1
-            ), "Current not support pipeline parallel in auto parallel mode."
-            assert (
-                world_size % (self.tensor_model_parallel_size * self.pipeline_model_parallel_size) == 0
-            ), f"Total world_size:{world_size} should be divided by tensor_model_parallel_size: {self.tensor_model_parallel_size} and pipeline_model_parallel_size: {self.pipeline_model_parallel_size}."
+                world_size
+                % (
+                    self.tensor_model_parallel_size
+                    * self.pipeline_model_parallel_size
+                )
+                == 0
+            ), (
+                f"Total world_size:{world_size} should be divided by tensor_model_parallel_size: {self.tensor_model_parallel_size} and pipeline_model_parallel_size: {self.pipeline_model_parallel_size}."
+            )
 
             if self.sharding_parallel_size == -1:
                 if len(self.sharding) > 0:
                     self.sharding_parallel_size = world_size // (
-                        self.tensor_model_parallel_size * self.sep_parallel_size * self.pipeline_model_parallel_size
+                        self.tensor_model_parallel_size
+                        * self.sep_parallel_size
+                        * self.pipeline_model_parallel_size
                     )
 
             self.sharding_parallel_size = max(self.sharding_parallel_size, 1)
             if self.sharding_parallel_size == 1 and len(self.sharding) > 0:
-                logger.warning("sharding_parallel_size=1 means no sharding, please set sharding to empty!")
+                logger.warning(
+                    "sharding_parallel_size=1 means no sharding, please set sharding to empty!"
+                )
                 self.sharding = []
 
             self.data_parallel_size = world_size // (
@@ -2406,7 +2875,10 @@ class TrainingArguments:
                 data_parallel_config = set(self.data_parallel_config.split(" "))
                 for x in data_parallel_config:
                     if len(x) > 0:
-                        if x not in ["enable_allreduce_avg_in_gradinent_scale", "gradient_sync_after_accumulate"]:
+                        if x not in [
+                            "enable_allreduce_avg_in_gradinent_scale",
+                            "gradient_sync_after_accumulate",
+                        ]:
                             raise ValueError(
                                 f"Found unknown data parallel config {x}, accept config is enable_allreduce_avg_in_gradinent_scale."
                             )
@@ -2417,8 +2889,12 @@ class TrainingArguments:
                 if self.dp_allreduce_avg_in_gradinent_scale:
                     strategy.gradient_scale_using_allreduce_avg = True
                 if self.gradient_sync_after_accumulate:
-                    strategy.dp_optimization.gradient_sync_after_accumulate = True
-            sequence_parallel_config = set(self.sequence_parallel_config.split(" "))
+                    strategy.dp_optimization.gradient_sync_after_accumulate = (
+                        True
+                    )
+            sequence_parallel_config = set(
+                self.sequence_parallel_config.split(" ")
+            )
             for x in sequence_parallel_config:
                 if len(x) > 0:
                     if x not in ["enable_allreduce_avg_in_gradinent_scale"]:
@@ -2433,8 +2909,13 @@ class TrainingArguments:
                 strategy.gradient_scale_using_allreduce_avg = True
 
             # navie-pp: pipeline_model_parallel_size > 1 and gradient_accumulation_steps == 1
-            if self.pipeline_model_parallel_size > 1 and self.gradient_accumulation_steps > 1:
-                pipeline_parallel_config = split_parallel_config(self.pipeline_parallel_config)
+            if (
+                self.pipeline_model_parallel_size > 1
+                and self.gradient_accumulation_steps > 1
+            ):
+                pipeline_parallel_config = split_parallel_config(
+                    self.pipeline_parallel_config
+                )
                 for x in pipeline_parallel_config:
                     if len(x) > 0:
                         if x not in [
@@ -2466,10 +2947,15 @@ class TrainingArguments:
                 pipeline.schedule_mode = self.pipeline_schedule_mode
                 pipeline.pp_degree = self.pipeline_model_parallel_size
 
-                logger.info(f"PP configs:{strategy.pipeline}, use master_grad: {self.amp_master_grad}")
+                logger.info(
+                    f"PP configs:{strategy.pipeline}, use master_grad: {self.amp_master_grad}"
+                )
 
                 if self.do_eval:
-                    if self.per_device_train_batch_size != self.per_device_eval_batch_size:
+                    if (
+                        self.per_device_train_batch_size
+                        != self.per_device_eval_batch_size
+                    ):
                         _raise_config_conflict(
                             name="per_device_eval_batch_size",
                             current=self.per_device_eval_batch_size,
@@ -2490,14 +2976,17 @@ class TrainingArguments:
 
                 for x in mp_config:
                     if len(x) > 0:
-                        if x not in [
-                            "enable_mp_async_allreduce",  # allreduce_matmul_grad_overlapping in auto_parallel
-                            "enable_delay_scale_loss",
-                            "replace_with_c_embedding",
-                            # "enable_mp_fused_linear_param_grad_add",
-                            "replace_with_parallel_cross_entropy",
-                            "enable_sp_async_reduce_scatter",
-                        ]:
+                        if (
+                            x
+                            not in [
+                                "enable_mp_async_allreduce",  # allreduce_matmul_grad_overlapping in auto_parallel
+                                "enable_delay_scale_loss",
+                                "replace_with_c_embedding",
+                                # "enable_mp_fused_linear_param_grad_add",
+                                "replace_with_parallel_cross_entropy",
+                                "enable_sp_async_reduce_scatter",
+                            ]
+                        ):
                             raise ValueError(
                                 f"Found unknown tensor parallel config {x}, "
                                 f"accept config is enable_mp_async_allreduce, replace_with_c_embedding, and enable_mp_fused_linear_param_grad_add"
@@ -2528,9 +3017,13 @@ class TrainingArguments:
                 elif ShardingOption.FULL_SHARD in self.sharding:
                     sharding.stage = 3
                 if self.sharding_comm_buffer_size_MB > 0:
-                    sharding.comm_buffer_size_MB = int(self.sharding_comm_buffer_size_MB)
+                    sharding.comm_buffer_size_MB = int(
+                        self.sharding_comm_buffer_size_MB
+                    )
 
-                sharding_parallel_config = split_parallel_config(self.sharding_parallel_config)
+                sharding_parallel_config = split_parallel_config(
+                    self.sharding_parallel_config
+                )
                 for x in sharding_parallel_config:
                     if len(x) > 0:
                         if x not in [
@@ -2538,7 +3031,10 @@ class TrainingArguments:
                             "enable_overlap",
                             "enable_release_grads",
                         ]:
-                            if x in ["enable_stage1_overlap", "enable_stage2_overlap"]:
+                            if x in [
+                                "enable_stage1_overlap",
+                                "enable_stage2_overlap",
+                            ]:
                                 raise ValueError(
                                     "enable_stage1_overlap and enable_stage2_overlap are not supported in "
                                     "auto_parallel mode. Please use training_args.overlap instead."
@@ -2575,16 +3071,32 @@ class TrainingArguments:
                 amp.level = self.fp16_opt_level.lower()
                 amp.use_master_grad = self.amp_master_grad
                 amp.init_loss_scaling = self.scale_loss
-                amp.custom_black_list = self.amp_custom_black_list if self.amp_custom_black_list is not None else []
-                amp.custom_white_list = self.amp_custom_white_list if self.amp_custom_white_list is not None else []
+                amp.custom_black_list = (
+                    self.amp_custom_black_list
+                    if self.amp_custom_black_list is not None
+                    else []
+                )
+                amp.custom_white_list = (
+                    self.amp_custom_white_list
+                    if self.amp_custom_white_list is not None
+                    else []
+                )
 
             self.strategy = strategy
             if self.hybrid_parallel_topo_order == "pp_first":
                 order = ["pp", "dp", "mp"]
-                degree = [self.pipeline_model_parallel_size, self.dataset_world_size, self.tensor_model_parallel_size]
+                degree = [
+                    self.pipeline_model_parallel_size,
+                    self.dataset_world_size,
+                    self.tensor_model_parallel_size,
+                ]
             elif self.hybrid_parallel_topo_order == "sharding_first":
                 order = ["dp", "pp", "mp"]
-                degree = [self.dataset_world_size, self.pipeline_model_parallel_size, self.tensor_model_parallel_size]
+                degree = [
+                    self.dataset_world_size,
+                    self.pipeline_model_parallel_size,
+                    self.tensor_model_parallel_size,
+                ]
             mesh_dims = list(zip(order, degree))
             fleet.auto.create_mesh(mesh_dims)
 
@@ -2613,7 +3125,10 @@ class TrainingArguments:
                     if self.save_checkpoint_format in [
                         "unified_checkpoint",
                         "flex_checkpoint",
-                    ] or self.load_checkpoint_format in ["unified_checkpoint", "flex_checkpoint"]:
+                    ] or self.load_checkpoint_format in [
+                        "unified_checkpoint",
+                        "flex_checkpoint",
+                    ]:
                         # DP use hybrid group
                         strategy = fleet.DistributedStrategy()
                         fleet.init(is_collective=True, strategy=strategy)
@@ -2652,15 +3167,27 @@ class TrainingArguments:
             self.save_checkpoint_format = None
             self.load_checkpoint_format = None
 
-        if self.save_checkpoint_format == "unified_checkpoint" or self.load_checkpoint_format == "unified_checkpoint":
-            unified_checkpoint_config = set(self.unified_checkpoint_config.split(" "))
-            if sys.platform.startswith("win") and "async_save" in self.unified_checkpoint_config:
-                raise ValueError("Currently do not support asynchronous saving for Windows system!")
+        if (
+            self.save_checkpoint_format == "unified_checkpoint"
+            or self.load_checkpoint_format == "unified_checkpoint"
+        ):
+            unified_checkpoint_config = set(
+                self.unified_checkpoint_config.split(" ")
+            )
+            if (
+                sys.platform.startswith("win")
+                and "async_save" in self.unified_checkpoint_config
+            ):
+                raise ValueError(
+                    "Currently do not support asynchronous saving for Windows system!"
+                )
             if (
                 "skip_save_model_weight" in self.unified_checkpoint_config
                 and "ignore_merge_optimizer" in self.unified_checkpoint_config
             ):
-                raise ValueError("`skip_save_model_weight` and `ignore_merge_optimizer` cannot both be True.")
+                raise ValueError(
+                    "`skip_save_model_weight` and `ignore_merge_optimizer` cannot both be True."
+                )
             for x in unified_checkpoint_config:
                 if len(x) > 0:
                     if x not in [
@@ -2682,7 +3209,9 @@ class TrainingArguments:
                     # "async_save",
                 ]
             else:
-                self.unified_checkpoint_config = self.unified_checkpoint_config.split(" ")
+                self.unified_checkpoint_config = (
+                    self.unified_checkpoint_config.split(" ")
+                )
 
         if self.report_to is None:
             logger.info(
@@ -2709,7 +3238,9 @@ class TrainingArguments:
             )
 
         if self.flatten_param_grads and self.device != "npu":
-            raise ValueError("flatten_param_grads can only be used on npu devices in temporary.")
+            raise ValueError(
+                "flatten_param_grads can only be used on npu devices in temporary."
+            )
 
         if self.world_size != paddle.distributed.get_world_size():
             raise ValueError(
@@ -2719,41 +3250,52 @@ class TrainingArguments:
         # process fault tolerance settings
         pdc_zcc_init_step = os.getenv("PDC_FC_INIT_STEP")
         if pdc_zcc_init_step is not None and int(pdc_zcc_init_step) > 0:
-            self.resume_from_checkpoint = os.path.join(FLASH_DEVICE, f"{PREFIX_CHECKPOINT_DIR}-{pdc_zcc_init_step}")
+            self.resume_from_checkpoint = os.path.join(
+                FLASH_DEVICE, f"{PREFIX_CHECKPOINT_DIR}-{pdc_zcc_init_step}"
+            )
             logger.warning(
                 f"PDC_FC_INIT_STEP {pdc_zcc_init_step} has been specified, automatically resume from FLASH_DEVICE: {self.resume_from_checkpoint}"
             )
         if self.flash_device_save_steps > 0:
-            assert (
-                self.enable_zero_cost_checkpoint
-            ), "flash_device_save_steps should only be set in zero cost checkpoint save mode with flash device mounted."
+            assert self.enable_zero_cost_checkpoint, (
+                "flash_device_save_steps should only be set in zero cost checkpoint save mode with flash device mounted."
+            )
 
         if self.enable_zero_cost_checkpoint:
-            assert (
-                self.fuse_optimizer_states
-            ), "zero cost checkpoint must be used when fuse_optimizer_states is enabled in sharding parallel config"
+            assert self.fuse_optimizer_states, (
+                "zero cost checkpoint must be used when fuse_optimizer_states is enabled in sharding parallel config"
+            )
 
-        assert (
-            self.flash_device_save_steps % self.zcc_ema_interval == 0
-        ), f"flash_device_save_steps[{self.flash_device_save_steps}] must be divisible by zcc_ema_interval[{self.zcc_ema_interval}]"
-        assert (
-            self.save_steps % self.zcc_ema_interval == 0
-        ), f"save_steps[{self.save_steps}] must be divisible by zcc_ema_interval[{self.zcc_ema_interval}]"
-        if self.enable_zero_cost_checkpoint and self.zcc_save_ema_coef is not None:
-            assert (
-                self.zcc_workers_num == 1
-            ), "EMA function in zero cost checkpoint mode does not support zcc_workers_num > 1 for now."
+        assert self.flash_device_save_steps % self.zcc_ema_interval == 0, (
+            f"flash_device_save_steps[{self.flash_device_save_steps}] must be divisible by zcc_ema_interval[{self.zcc_ema_interval}]"
+        )
+        assert self.save_steps % self.zcc_ema_interval == 0, (
+            f"save_steps[{self.save_steps}] must be divisible by zcc_ema_interval[{self.zcc_ema_interval}]"
+        )
+        if (
+            self.enable_zero_cost_checkpoint
+            and self.zcc_save_ema_coef is not None
+        ):
+            assert self.zcc_workers_num == 1, (
+                "EMA function in zero cost checkpoint mode does not support zcc_workers_num > 1 for now."
+            )
 
         if self.hybrid_parallel_expert_grad_scale is None:
             tensor_model_parallel_size = max(self.tensor_model_parallel_size, 1)
             expert_model_parallel_size = max(self.expert_model_parallel_size, 1)
             context_parallel_size = max(self.context_parallel_size, 1)
             self.hybrid_parallel_expert_grad_scale = (
-                tensor_model_parallel_size * context_parallel_size / expert_model_parallel_size
+                tensor_model_parallel_size
+                * context_parallel_size
+                / expert_model_parallel_size
             )
-            logger.info(f"Auto set hybrid_parallel_expert_grad_scale = {self.hybrid_parallel_expert_grad_scale}")
+            logger.info(
+                f"Auto set hybrid_parallel_expert_grad_scale = {self.hybrid_parallel_expert_grad_scale}"
+            )
         else:
-            logger.info(f"Set hybrid_parallel_expert_grad_scale = {self.hybrid_parallel_expert_grad_scale}")
+            logger.info(
+                f"Set hybrid_parallel_expert_grad_scale = {self.hybrid_parallel_expert_grad_scale}"
+            )
 
     def _post_init_parallel_degree(self):
         self.use_hybrid_parallel = False
@@ -2771,8 +3313,12 @@ class TrainingArguments:
             raise ValueError("`--sharding` received too many arguments.")
 
         if self.sharding_degree > 0:
-            warnings.warn("`sharding_degree` is deprecated, please use `sharding_parallel_size`")
-            self.sharding_parallel_size = max(self.sharding_degree, self.sharding_parallel_size)
+            warnings.warn(
+                "`sharding_degree` is deprecated, please use `sharding_parallel_size`"
+            )
+            self.sharding_parallel_size = max(
+                self.sharding_degree, self.sharding_parallel_size
+            )
         self.data_parallel_size = 1
 
         try:
@@ -2781,7 +3327,9 @@ class TrainingArguments:
             pass
 
         if len(self.sharding) == 0 and self.sharding_parallel_size > 0:
-            warnings.warn("`--sharding_parallel_size` is useful only when `--sharding` is specified.")
+            warnings.warn(
+                "`--sharding_parallel_size` is useful only when `--sharding` is specified."
+            )
 
         world_size = paddle.distributed.get_world_size()
 
@@ -2789,43 +3337,63 @@ class TrainingArguments:
             tensor_model_parallel_size = max(self.tensor_model_parallel_size, 1)
             sep_parallel_size = max(self.sep_parallel_size, 1)
             context_parallel_size = max(self.context_parallel_size, 1)
-            pipeline_model_parallel_size = max(self.pipeline_model_parallel_size, 1)
+            pipeline_model_parallel_size = max(
+                self.pipeline_model_parallel_size, 1
+            )
             expert_model_parallel_size = max(self.expert_model_parallel_size, 1)
-            expert_tensor_model_parallel_size = max(self.expert_tensor_model_parallel_size, 1)
+            expert_tensor_model_parallel_size = max(
+                self.expert_tensor_model_parallel_size, 1
+            )
 
             # TODO(@gexiao): support expert_tensor_model_parallel_size > 1 in the future
-            assert (
-                expert_tensor_model_parallel_size == 1
-            ), f"Currently only support expert_tensor_model_parallel_size=1, but got expert_tensor_model_parallel_size of {expert_tensor_model_parallel_size}"
+            assert expert_tensor_model_parallel_size == 1, (
+                f"Currently only support expert_tensor_model_parallel_size=1, but got expert_tensor_model_parallel_size of {expert_tensor_model_parallel_size}"
+            )
 
             assert (
-                world_size % (self.tensor_model_parallel_size * self.pipeline_model_parallel_size) == 0
-            ), f"Total world_size:{world_size} should be divided by tensor_model_parallel_size: {self.tensor_model_parallel_size} and pipeline_model_parallel_size: {self.pipeline_model_parallel_size}."
+                world_size
+                % (
+                    self.tensor_model_parallel_size
+                    * self.pipeline_model_parallel_size
+                )
+                == 0
+            ), (
+                f"Total world_size:{world_size} should be divided by tensor_model_parallel_size: {self.tensor_model_parallel_size} and pipeline_model_parallel_size: {self.pipeline_model_parallel_size}."
+            )
 
-            assert not (
-                sep_parallel_size > 1 and context_parallel_size > 1
-            ), f"sep parallel and context parallel cannot be used together, sep_parallel_size:{sep_parallel_size}, context_parallel_size:{context_parallel_size}."
+            assert not (sep_parallel_size > 1 and context_parallel_size > 1), (
+                f"sep parallel and context parallel cannot be used together, sep_parallel_size:{sep_parallel_size}, context_parallel_size:{context_parallel_size}."
+            )
 
             if self.sharding_parallel_size == -1:
                 if len(self.sharding) > 0:
                     self.sharding_parallel_size = world_size // (
-                        tensor_model_parallel_size * sep_parallel_size * pipeline_model_parallel_size
+                        tensor_model_parallel_size
+                        * sep_parallel_size
+                        * pipeline_model_parallel_size
                     )
 
             sharding_parallel_size = max(self.sharding_parallel_size, 1)
             if sharding_parallel_size == 1 and len(self.sharding) > 0:
-                logger.warning("sharding_parallel_size=1 means no sharding, please set sharding to empty!")
+                logger.warning(
+                    "sharding_parallel_size=1 means no sharding, please set sharding to empty!"
+                )
                 self.sharding = []
 
             self.data_parallel_size = world_size // (
-                sharding_parallel_size * tensor_model_parallel_size * sep_parallel_size * pipeline_model_parallel_size
+                sharding_parallel_size
+                * tensor_model_parallel_size
+                * sep_parallel_size
+                * pipeline_model_parallel_size
             )
 
             if expert_model_parallel_size > 1:
-                moe_sharding_parallel_size = world_size // (pipeline_model_parallel_size * expert_model_parallel_size)
-                assert (
-                    self.expert_tensor_model_parallel_size <= 1
-                ), "expert_tensor_model_parallel_size > 1 is not supported when expert_model_parallel_size > 1"
+                moe_sharding_parallel_size = world_size // (
+                    pipeline_model_parallel_size * expert_model_parallel_size
+                )
+                assert self.expert_tensor_model_parallel_size <= 1, (
+                    "expert_tensor_model_parallel_size > 1 is not supported when expert_model_parallel_size > 1"
+                )
             else:
                 moe_sharding_parallel_size = 1
             moe_sharding_parallel_size = max(moe_sharding_parallel_size, 1)
@@ -2837,11 +3405,15 @@ class TrainingArguments:
             if sharding_parallel_size > 1 and moe_sharding_parallel_size > 1:
                 assert (
                     sharding_parallel_size % moe_sharding_parallel_size == 0
-                ), f"sharding_parallel_size should be divided by moe_sharding_parallel_size, current sharding_parallel_size: {sharding_parallel_size}, moe_sharding_parallel_size: {moe_sharding_parallel_size}."
+                ), (
+                    f"sharding_parallel_size should be divided by moe_sharding_parallel_size, current sharding_parallel_size: {sharding_parallel_size}, moe_sharding_parallel_size: {moe_sharding_parallel_size}."
+                )
 
             assert not (
                 self.data_parallel_size > 1 and expert_model_parallel_size > 1
-            ), f"Currently only support use expert_data_parallel strategy together with sharding_parallel strategy, but not with data_parallel strategy. Currently data_parallel_size is {self.data_parallel_size}."
+            ), (
+                f"Currently only support use expert_data_parallel strategy together with sharding_parallel strategy, but not with data_parallel strategy. Currently data_parallel_size is {self.data_parallel_size}."
+            )
 
             if (
                 sharding_parallel_size > 1
@@ -2859,7 +3431,9 @@ class TrainingArguments:
                 self.sep_parallel_size = sep_parallel_size
                 self.context_parallel_size = context_parallel_size
                 self.expert_model_parallel_size = expert_model_parallel_size
-                self.expert_tensor_model_parallel_size = expert_tensor_model_parallel_size
+                self.expert_tensor_model_parallel_size = (
+                    expert_tensor_model_parallel_size
+                )
                 self.moe_sharding_parallel_size = moe_sharding_parallel_size
 
             if not self.use_hybrid_parallel:
@@ -2873,10 +3447,14 @@ class TrainingArguments:
                 self.expert_tensor_model_parallel_size = -1
 
         # NOTE(Waynezee): when moe_expert_fusion is true and sharding_parallel_size = 1,  checkpoint will fail to save
-        if hasattr(self, "moe_expert_fusion") and self.moe_expert_fusion and self.world_size > 1:
-            assert (
-                self.sharding_parallel_size > 1
-            ), "Checkpoint will fail to save when moe_expert_fusion is true and sharding_parallel_size = 1, please set moe_expert_fusion to false"
+        if (
+            hasattr(self, "moe_expert_fusion")
+            and self.moe_expert_fusion
+            and self.world_size > 1
+        ):
+            assert self.sharding_parallel_size > 1, (
+                "Checkpoint will fail to save when moe_expert_fusion is true and sharding_parallel_size = 1, please set moe_expert_fusion to false"
+            )
 
         if self.hybrid_parallel_topo_order is None:
             self.hybrid_parallel_topo_order = "sharding_first"
@@ -2887,10 +3465,14 @@ class TrainingArguments:
 
     def _post_init_save_checkpoint_format(self):
         if self.save_checkpoint_format:
-            valid_modes = ["unified_checkpoint", "sharding_io", "flex_checkpoint"]
-            assert (
-                self.save_checkpoint_format in valid_modes
-            ), f"Invalid save_checkpoint_format: {self.save_checkpoint_format}, Only these formats are allowed: {valid_modes}."
+            valid_modes = [
+                "unified_checkpoint",
+                "sharding_io",
+                "flex_checkpoint",
+            ]
+            assert self.save_checkpoint_format in valid_modes, (
+                f"Invalid save_checkpoint_format: {self.save_checkpoint_format}, Only these formats are allowed: {valid_modes}."
+            )
         else:
             if self.unified_checkpoint:
                 self.save_checkpoint_format = "unified_checkpoint"
@@ -2899,10 +3481,14 @@ class TrainingArguments:
 
     def _post_init_load_checkpoint_format(self):
         if self.load_checkpoint_format:
-            valid_modes = ["unified_checkpoint", "sharding_io", "flex_checkpoint"]
-            assert (
-                self.load_checkpoint_format in valid_modes
-            ), f"Invalid load_checkpoint_format: {self.load_checkpoint_format}, Only these formats are allowed: {valid_modes}."
+            valid_modes = [
+                "unified_checkpoint",
+                "sharding_io",
+                "flex_checkpoint",
+            ]
+            assert self.load_checkpoint_format in valid_modes, (
+                f"Invalid load_checkpoint_format: {self.load_checkpoint_format}, Only these formats are allowed: {valid_modes}."
+            )
         else:
             if self.unified_checkpoint:
                 self.load_checkpoint_format = "unified_checkpoint"
@@ -2911,16 +3497,20 @@ class TrainingArguments:
 
     def add_moe_comm_group(self):
         # NOTE(zhangweilong):move init_moe_group logic to paddle fleet.init
-        moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
+        moe_group = (
+            fleet.get_hybrid_communicate_group().get_expert_parallel_group()
+        )
         moe_grad_group = fleet.get_hybrid_communicate_group().get_moe_sharding_parallel_group()
         hcg = fleet.get_hybrid_communicate_group()
-        setattr(hcg, "expert_parallel_group", moe_group)
-        setattr(hcg, "expert_grad_comm_group", moe_grad_group)
-        return
+        hcg.expert_parallel_group = moe_group
+        hcg.expert_grad_comm_group = moe_grad_group
 
     def __str__(self):
         self_as_dict = asdict(self)
-        self_as_dict = {k: f"<{k.upper()}>" if k.endswith("_token") else v for k, v in self_as_dict.items()}
+        self_as_dict = {
+            k: f"<{k.upper()}>" if k.endswith("_token") else v
+            for k, v in self_as_dict.items()
+        }
 
         attrs_as_str = [f"{k}={v},\n" for k, v in sorted(self_as_dict.items())]
         return f"{self.__class__.__name__}(\n{''.join(attrs_as_str)})"
@@ -2984,7 +3574,9 @@ class TrainingArguments:
         if hasattr(fleet.fleet, "_hcg"):
             hcg = fleet.fleet.get_hybrid_communicate_group()
         if hasattr(hcg, "get_context_parallel_world_size"):
-            return hcg.get_sharding_parallel_world_size(with_context_parallel=True)
+            return hcg.get_sharding_parallel_world_size(
+                with_context_parallel=True
+            )
         else:
             if self.context_parallel_size < 0:
                 self.context_parallel_size = 1
@@ -2999,8 +3591,13 @@ class TrainingArguments:
         """cp_sharding_rank"""
         if self.use_hybrid_parallel:
             hcg = fleet.get_hybrid_communicate_group()
-            if hasattr(hcg, "get_context_parallel_world_size") and self.context_parallel_size > 1:
-                sharding_rank = hcg.get_sharding_parallel_rank(with_context_parallel=True)
+            if (
+                hasattr(hcg, "get_context_parallel_world_size")
+                and self.context_parallel_size > 1
+            ):
+                sharding_rank = hcg.get_sharding_parallel_rank(
+                    with_context_parallel=True
+                )
             else:
                 sharding_rank = hcg.get_sharding_parallel_rank()
             return max(sharding_rank, 0)
@@ -3011,12 +3608,19 @@ class TrainingArguments:
     def dataset_rank(self):
         if self.use_hybrid_parallel:
             sharding_parallel_size = (
-                self.cp_sharding_degree if self.context_parallel_size > 1 else self.sharding_parallel_size
+                self.cp_sharding_degree
+                if self.context_parallel_size > 1
+                else self.sharding_parallel_size
             )
             sharding_parallel_rank = (
-                self.cp_sharding_rank if self.context_parallel_size > 1 else self.sharding_parallel_rank
+                self.cp_sharding_rank
+                if self.context_parallel_size > 1
+                else self.sharding_parallel_rank
             )
-            return max(sharding_parallel_size, 1) * self.data_parallel_rank + sharding_parallel_rank
+            return (
+                max(sharding_parallel_size, 1) * self.data_parallel_rank
+                + sharding_parallel_rank
+            )
         elif self.enable_auto_parallel:
             return self.data_parallel_rank
         else:
@@ -3026,16 +3630,22 @@ class TrainingArguments:
     def dataset_world_size(self):
         if self.use_hybrid_parallel:
             if self.context_parallel_size > 1:
-                assert self.use_hybrid_parallel, "context parallel only support with use_hybrid_parallel"
-                assert (
-                    self.data_parallel_size == 1
-                ), f"context parallel can not coexist with data parallel, but got self.data_parallel_size == {self.data_parallel_size}"
+                assert self.use_hybrid_parallel, (
+                    "context parallel only support with use_hybrid_parallel"
+                )
+                assert self.data_parallel_size == 1, (
+                    f"context parallel can not coexist with data parallel, but got self.data_parallel_size == {self.data_parallel_size}"
+                )
                 sharding_parallel_size = self.cp_sharding_degree
             else:
                 sharding_parallel_size = self.sharding_parallel_size
-            return max(sharding_parallel_size, 1) * max(self.data_parallel_size, 1)
+            return max(sharding_parallel_size, 1) * max(
+                self.data_parallel_size, 1
+            )
         elif self.enable_auto_parallel:
-            return max(self.sharding_parallel_size, 1) * max(self.data_parallel_size, 1)
+            return max(self.sharding_parallel_size, 1) * max(
+                self.data_parallel_size, 1
+            )
         else:
             return paddle.distributed.get_world_size()
 
@@ -3114,17 +3724,44 @@ class TrainingArguments:
         if self.use_hybrid_parallel:
             name = []
             if self.tensor_model_parallel_size > 1:
-                name.append(self._format_name("tp", self.tensor_parallel_rank, self.tensor_model_parallel_size))
+                name.append(
+                    self._format_name(
+                        "tp",
+                        self.tensor_parallel_rank,
+                        self.tensor_model_parallel_size,
+                    )
+                )
             if self.pipeline_model_parallel_size > 1:
-                name.append(self._format_name("pp", self.pipeline_parallel_rank, self.pipeline_model_parallel_size))
+                name.append(
+                    self._format_name(
+                        "pp",
+                        self.pipeline_parallel_rank,
+                        self.pipeline_model_parallel_size,
+                    )
+                )
             if self.sharding_parallel_size > 1:
-                name.append(self._format_name("shard", self.sharding_parallel_rank, self.sharding_parallel_size))
-            if self.use_expert_parallel and self.expert_model_parallel_size <= 1:
-                name.append(self._format_name("moe", self.data_parallel_rank, self.data_parallel_size))
+                name.append(
+                    self._format_name(
+                        "shard",
+                        self.sharding_parallel_rank,
+                        self.sharding_parallel_size,
+                    )
+                )
+            if (
+                self.use_expert_parallel
+                and self.expert_model_parallel_size <= 1
+            ):
+                name.append(
+                    self._format_name(
+                        "moe", self.data_parallel_rank, self.data_parallel_size
+                    )
+                )
             return "_".join(name)
         else:
             if self.use_expert_parallel:
-                return self._format_name("moe", self.data_parallel_rank, self.data_parallel_size)
+                return self._format_name(
+                    "moe", self.data_parallel_rank, self.data_parallel_size
+                )
             return None
 
     @property
@@ -3132,44 +3769,92 @@ class TrainingArguments:
         if self.use_hybrid_parallel:
             name = []
             if self.tensor_model_parallel_size > 1:
-                name.append(self._format_name("tp", self.tensor_parallel_rank, self.tensor_model_parallel_size))
+                name.append(
+                    self._format_name(
+                        "tp",
+                        self.tensor_parallel_rank,
+                        self.tensor_model_parallel_size,
+                    )
+                )
             if self.pipeline_model_parallel_size > 1:
-                name.append(self._format_name("pp", self.pipeline_parallel_rank, self.pipeline_model_parallel_size))
-            if self.use_expert_parallel and self.expert_model_parallel_size <= 1:
-                name.append(self._format_name("moe", self.data_parallel_rank, self.data_parallel_size))
+                name.append(
+                    self._format_name(
+                        "pp",
+                        self.pipeline_parallel_rank,
+                        self.pipeline_model_parallel_size,
+                    )
+                )
+            if (
+                self.use_expert_parallel
+                and self.expert_model_parallel_size <= 1
+            ):
+                name.append(
+                    self._format_name(
+                        "moe", self.data_parallel_rank, self.data_parallel_size
+                    )
+                )
             if self.use_expert_parallel and self.expert_model_parallel_size > 1:
                 name.append(
-                    self._format_name("moe_sharding", self.expert_parallel_rank, self.expert_model_parallel_size)
+                    self._format_name(
+                        "moe_sharding",
+                        self.expert_parallel_rank,
+                        self.expert_model_parallel_size,
+                    )
                 )
             return "_".join(name)
 
         else:
             if self.use_expert_parallel:
-                return self._format_name("moe", self.data_parallel_rank, self.data_parallel_size)
+                return self._format_name(
+                    "moe", self.data_parallel_rank, self.data_parallel_size
+                )
             return None
 
-    def sharded_name_suffix(self, shard_id=None, pp_id=None, moe_id=None, sharding_parallel_size=None):
+    def sharded_name_suffix(
+        self,
+        shard_id=None,
+        pp_id=None,
+        moe_id=None,
+        sharding_parallel_size=None,
+    ):
         if sharding_parallel_size is None:
             sharding_parallel_size = self.sharding_parallel_size
         if self.use_hybrid_parallel:
             name = []
             if self.tensor_model_parallel_size > 1:
-                name.append(self._format_name("tp", self.tensor_parallel_rank, self.tensor_model_parallel_size))
+                name.append(
+                    self._format_name(
+                        "tp",
+                        self.tensor_parallel_rank,
+                        self.tensor_model_parallel_size,
+                    )
+                )
             if self.pipeline_model_parallel_size > 1:
                 if pp_id is None:
                     pp_id = self.pipeline_parallel_rank
                 assert isinstance(pp_id, int)
-                name.append(self._format_name("pp", pp_id, self.pipeline_model_parallel_size))
+                name.append(
+                    self._format_name(
+                        "pp", pp_id, self.pipeline_model_parallel_size
+                    )
+                )
             if sharding_parallel_size > 1:
                 if shard_id is None:
                     shard_id = self.sharding_parallel_rank
                 assert isinstance(shard_id, int)
-                name.append(self._format_name("shard", shard_id, sharding_parallel_size))
-            if self.use_expert_parallel and self.expert_model_parallel_size <= 1:
+                name.append(
+                    self._format_name("shard", shard_id, sharding_parallel_size)
+                )
+            if (
+                self.use_expert_parallel
+                and self.expert_model_parallel_size <= 1
+            ):
                 if moe_id is None:
                     moe_id = self.data_parallel_rank
                 assert isinstance(moe_id, int)
-                name.append(self._format_name("moe", moe_id, self.data_parallel_size))
+                name.append(
+                    self._format_name("moe", moe_id, self.data_parallel_size)
+                )
             return "_".join(name)
         else:
             if self.use_expert_parallel:
@@ -3203,7 +3888,10 @@ class TrainingArguments:
             tp_rank = max(self.tensor_parallel_rank, 0)
 
             rank = (
-                dp_rank * (sd_size * pp_size * tp_size) + sd_rank * (pp_size * tp_size) + pp_rank * tp_size + tp_rank
+                dp_rank * (sd_size * pp_size * tp_size)
+                + sd_rank * (pp_size * tp_size)
+                + pp_rank * tp_size
+                + tp_rank
             )
 
             return rank
@@ -3271,8 +3959,14 @@ class TrainingArguments:
             elif self.use_hybrid_parallel:
                 # save on dataset rank 0
                 return (
-                    self.sharding_parallel_rank == 0 and (self.data_parallel_rank == 0 or self.use_expert_parallel)
-                ) or (self.expert_model_parallel_size > 1 and self.moe_sharding_parallel_rank == 0)
+                    self.sharding_parallel_rank == 0
+                    and (
+                        self.data_parallel_rank == 0 or self.use_expert_parallel
+                    )
+                ) or (
+                    self.expert_model_parallel_size > 1
+                    and self.moe_sharding_parallel_rank == 0
+                )
             else:
                 return self.process_index == 0 or self.use_expert_parallel
 
@@ -3290,7 +3984,10 @@ class TrainingArguments:
         return (
             ShardingOption.SHARD_OP in self.sharding
             and self.sharding_parallel_size > 1
-            and (self.save_checkpoint_format == "sharding_io" or self.save_checkpoint_format == "flex_checkpoint")
+            and (
+                self.save_checkpoint_format == "sharding_io"
+                or self.save_checkpoint_format == "flex_checkpoint"
+            )
         )
 
     @property
@@ -3304,7 +4001,10 @@ class TrainingArguments:
         if not self.distributed_dataloader:
             return True
         else:
-            if self.tensor_parallel_rank == 0 and self.pipeline_parallel_rank == 0:
+            if (
+                self.tensor_parallel_rank == 0
+                and self.pipeline_parallel_rank == 0
+            ):
                 return True
             else:
                 return False
@@ -3355,13 +4055,17 @@ class TrainingArguments:
             try:
                 if not is_main_process:
                     # tell all replicas to wait
-                    logger.debug(f"{self.process_index}: waiting for the {main_process_desc} to perform {desc}")
+                    logger.debug(
+                        f"{self.process_index}: waiting for the {main_process_desc} to perform {desc}"
+                    )
                     paddle.distributed.barrier()
                 yield
             finally:
                 if is_main_process:
                     # the wait is over
-                    logger.debug(f"{self.process_index}: {main_process_desc} completed {desc}, releasing all replicas")
+                    logger.debug(
+                        f"{self.process_index}: {main_process_desc} completed {desc}, releasing all replicas"
+                    )
                     paddle.distributed.barrier()
         else:
             yield
@@ -3371,7 +4075,9 @@ class TrainingArguments:
         Get number of steps used for a linear warmup.
         """
         warmup_steps = (
-            self.warmup_steps if self.warmup_steps > 0 else math.ceil(num_training_steps * self.warmup_ratio)
+            self.warmup_steps
+            if self.warmup_steps > 0
+            else math.ceil(num_training_steps * self.warmup_ratio)
         )
         return warmup_steps
 
@@ -3396,17 +4102,25 @@ class TrainingArguments:
         """
         return json.dumps(str(self.to_dict()), indent=2)
 
-    def to_sanitized_dict(self) -> Dict[str, Any]:
+    def to_sanitized_dict(self) -> dict[str, Any]:
         """
         Sanitized serialization
         """
         d = self.to_dict()
-        d = {**d, **{"train_batch_size": self.train_batch_size, "eval_batch_size": self.eval_batch_size}}
+        d = {
+            **d,
+            **{
+                "train_batch_size": self.train_batch_size,
+                "eval_batch_size": self.eval_batch_size,
+            },
+        }
 
         valid_types = [bool, int, float, str]
         valid_types.append(paddle.Tensor)
 
-        return {k: v if type(v) in valid_types else str(v) for k, v in d.items()}
+        return {
+            k: v if type(v) in valid_types else str(v) for k, v in d.items()
+        }
 
     def print_config(self, args=None, key=""):
         """
@@ -3419,15 +4133,21 @@ class TrainingArguments:
 
         import paddleformers
 
-        logger.debug("{:^40}".format("{} Configuration Arguments".format(key)))
-        logger.debug("{:30}: {}".format("paddle commit id", paddle.version.commit))
-        logger.debug("{:30}: {}".format("paddleformers commit id", paddleformers.version.commit))
+        logger.debug("{:^40}".format(f"{key} Configuration Arguments"))
+        logger.debug(
+            "{:30}: {}".format("paddle commit id", paddle.version.commit)
+        )
+        logger.debug(
+            "{:30}: {}".format(
+                "paddleformers commit id", paddleformers.version.commit
+            )
+        )
 
         for a in dir(args):
             if a[:2] != "__":  # don't print double underscore methods
                 v = getattr(args, a)
                 if not isinstance(v, types.MethodType):
-                    logger.debug("{:30}: {}".format(a, v))
+                    logger.debug(f"{a:30}: {v}")
 
         logger.debug("")
 

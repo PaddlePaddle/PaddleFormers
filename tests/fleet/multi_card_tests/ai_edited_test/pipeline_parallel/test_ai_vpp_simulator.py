@@ -27,7 +27,11 @@ sys.modules["matplotlib.pyplot"] = MagicMock()
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
@@ -139,7 +143,9 @@ class TestVPPSimulatorWarmupSteps(unittest.TestCase):
             num_acc_steps=4,
         )
         for stage_id in range(simulator.pp_degree):
-            warmup_steps, steady_steps = simulator._get_warmup_and_steady_steps(stage_id)
+            warmup_steps, steady_steps = simulator._get_warmup_and_steady_steps(
+                stage_id
+            )
             self.assertGreaterEqual(warmup_steps, 0)
             self.assertGreaterEqual(steady_steps, 0)
 

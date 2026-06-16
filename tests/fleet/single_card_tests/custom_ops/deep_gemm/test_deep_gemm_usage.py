@@ -17,6 +17,7 @@
 import unittest
 
 import paddle
+
 from paddlefleet_ops import deep_gemm
 
 
@@ -32,10 +33,14 @@ class TestDeepGemmUsage(unittest.TestCase):
 
         # 创建简单的批次大小（平均分配）
         batch_sizes = [total_seq_len // num_batches] * num_batches
-        batch_sizes[-1] = total_seq_len - sum(batch_sizes[:-1])  # 调整最后一个批次
+        batch_sizes[-1] = total_seq_len - sum(
+            batch_sizes[:-1]
+        )  # 调整最后一个批次
 
         # 创建测试数据
-        lhs = paddle.randn([total_seq_len, input_hidden_size], dtype="bfloat16", device="cuda")
+        lhs = paddle.randn(
+            [total_seq_len, input_hidden_size], dtype="bfloat16", device="cuda"
+        )
         rhs = paddle.randn(
             [num_batches, input_hidden_size, output_hidden_size],
             dtype="bfloat16",
@@ -46,7 +51,9 @@ class TestDeepGemmUsage(unittest.TestCase):
         rhs_deepseek = rhs.transpose([0, 2, 1])
 
         # 创建输出tensor
-        out_tensor = paddle.zeros([total_seq_len, output_hidden_size], dtype="bfloat16", device="cuda")
+        out_tensor = paddle.zeros(
+            [total_seq_len, output_hidden_size], dtype="bfloat16", device="cuda"
+        )
 
         # 生成indices
         indices = []
@@ -55,7 +62,9 @@ class TestDeepGemmUsage(unittest.TestCase):
         indices = paddle.to_tensor(indices, dtype="int32", place="cuda")
 
         print("Running DeepGEMM...")
-        deep_gemm.m_grouped_bf16_gemm_nt_contiguous(lhs, rhs_deepseek, out_tensor, indices)
+        deep_gemm.m_grouped_bf16_gemm_nt_contiguous(
+            lhs, rhs_deepseek, out_tensor, indices
+        )
         paddle.device.cuda.synchronize()
 
         print("DeepGEMM executed successfully!")

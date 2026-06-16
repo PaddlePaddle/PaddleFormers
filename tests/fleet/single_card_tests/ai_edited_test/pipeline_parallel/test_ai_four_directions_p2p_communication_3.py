@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -89,7 +93,9 @@ class TestFourDirectionsSendRecvMetaSetMessage(unittest.TestCase):
 class TestFourDirectionsSendRecvMetaRecvMeta(unittest.TestCase):
     """Tests for SendRecvMeta.recv_meta in four_directions."""
 
-    @patch("paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication._hcg")
+    @patch(
+        "paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication._hcg"
+    )
     @patch("paddle.distributed.recv")
     def test_recv_meta_single_tensor(self, mock_recv, mock_hcg):
         from paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication import (
@@ -108,7 +114,7 @@ class TestFourDirectionsSendRecvMetaRecvMeta(unittest.TestCase):
         mock_recv.side_effect = recv_side_effect
 
         meta = SendRecvMeta()
-        with self.assertRaises(Exception):  # noqa: B017
+        with self.assertRaises(Exception):
             # This will fail due to mock limitations, but tests the call path
             meta.recv_meta(mock_group)
         mock_hcg._get_p2p_prev_rank.assert_called()
@@ -117,7 +123,9 @@ class TestFourDirectionsSendRecvMetaRecvMeta(unittest.TestCase):
 class TestFourDirectionsSendRecvMetaRecvMetaReverse(unittest.TestCase):
     """Tests for SendRecvMeta.recv_meta with reverse=True."""
 
-    @patch("paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication._hcg")
+    @patch(
+        "paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication._hcg"
+    )
     def test_recv_meta_uses_next_rank_for_reverse(self, mock_hcg):
         from paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication import (
             SendRecvMeta,
@@ -135,9 +143,11 @@ class TestFourDirectionsSendRecvMetaRecvMetaReverse(unittest.TestCase):
             calls.append(reverse)
             raise Exception("stop_test")
 
-        meta.recv_meta = lambda g, reverse=False: capturing_recv_meta(meta, g, reverse)
+        meta.recv_meta = lambda g, reverse=False: capturing_recv_meta(
+            meta, g, reverse
+        )
 
-        with self.assertRaises(Exception):  # noqa: B017
+        with self.assertRaises(Exception):
             meta.recv_meta(mock_group, reverse=True)
         self.assertTrue(calls[0])
 
@@ -145,7 +155,9 @@ class TestFourDirectionsSendRecvMetaRecvMetaReverse(unittest.TestCase):
 class TestFourDirectionsSendRecvMetaSendMeta(unittest.TestCase):
     """Tests for SendRecvMeta.send_meta in four_directions."""
 
-    @patch("paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication._hcg")
+    @patch(
+        "paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication._hcg"
+    )
     @patch("paddle.distributed.send")
     def test_send_meta_single_tensor(self, mock_send, mock_hcg):
         import paddle
@@ -161,7 +173,9 @@ class TestFourDirectionsSendRecvMetaSendMeta(unittest.TestCase):
         meta.send_meta(tensor, mock_group)
         self.assertTrue(mock_send.called)
 
-    @patch("paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication._hcg")
+    @patch(
+        "paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication._hcg"
+    )
     @patch("paddle.distributed.send")
     def test_send_meta_tuple_tensor(self, mock_send, mock_hcg):
         import paddle
@@ -181,7 +195,9 @@ class TestFourDirectionsSendRecvMetaSendMeta(unittest.TestCase):
 class TestFourDirectionsSendRecvMetaSendMetaReverse(unittest.TestCase):
     """Tests for SendRecvMeta.send_meta with reverse=True."""
 
-    @patch("paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication._hcg")
+    @patch(
+        "paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication._hcg"
+    )
     def test_send_meta_reverse_uses_prev_rank(self, mock_hcg):
         import paddle
         from paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication import (
@@ -200,9 +216,11 @@ class TestFourDirectionsSendRecvMetaSendMetaReverse(unittest.TestCase):
             calls.append(reverse)
             raise Exception("stop_test")
 
-        meta.send_meta = lambda t, g, reverse=False: capturing_send_meta(meta, t, g, reverse)
+        meta.send_meta = lambda t, g, reverse=False: capturing_send_meta(
+            meta, t, g, reverse
+        )
 
-        with self.assertRaises(Exception):  # noqa: B017
+        with self.assertRaises(Exception):
             meta.send_meta(tensor, mock_group, reverse=True)
         self.assertTrue(calls[0])
 
@@ -234,7 +252,9 @@ class TestFourDirectionsInitializeP2PGroups(unittest.TestCase):
 
         self.assertIs(_hcg, mock_hcg)
 
-    @patch("paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication.timer")
+    @patch(
+        "paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication.timer"
+    )
     def test_initialize_groups_with_timer(self, mock_timer):
         from paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication import (
             initialize_p2p_groups,

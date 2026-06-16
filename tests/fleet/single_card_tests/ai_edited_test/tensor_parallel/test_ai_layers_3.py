@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -34,7 +38,9 @@ def _make_config(**kwargs):
     config.use_cpu_initialization = kwargs.get("use_cpu_initialization", False)
     config.perform_initialization = kwargs.get("perform_initialization", False)
     config.deterministic_mode = kwargs.get("deterministic_mode", False)
-    config.reduce_scatter_embeddings = kwargs.get("reduce_scatter_embeddings", False)
+    config.reduce_scatter_embeddings = kwargs.get(
+        "reduce_scatter_embeddings", False
+    )
     return config
 
 
@@ -51,9 +57,15 @@ def _make_group(world_size=2, rank=0):
 class TestVocabParallelEmbeddingVocabRange(unittest.TestCase):
     """Tests for VocabParallelEmbedding vocab range computation."""
 
-    @patch("paddleformers.fleet.tensor_parallel.layers.get_pg_size", return_value=2)
-    @patch("paddleformers.fleet.tensor_parallel.layers.get_pg_rank", return_value=0)
-    @patch("paddleformers.fleet.tensor_parallel.layers.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers.get_pg_size", return_value=2
+    )
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers.get_pg_rank", return_value=0
+    )
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers.get_tensor_model_parallel_group_if_none"
+    )
     def test_vocab_range_rank_0(self, mock_get_group, mock_rank, mock_size):
         """Test vocab range for rank 0 with world_size=2."""
         group = _make_group(world_size=2, rank=0)
@@ -73,9 +85,15 @@ class TestVocabParallelEmbeddingVocabRange(unittest.TestCase):
         self.assertEqual(embedding.vocab_start_index, 0)
         self.assertEqual(embedding.vocab_end_index, 50)
 
-    @patch("paddleformers.fleet.tensor_parallel.layers.get_pg_size", return_value=2)
-    @patch("paddleformers.fleet.tensor_parallel.layers.get_pg_rank", return_value=1)
-    @patch("paddleformers.fleet.tensor_parallel.layers.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers.get_pg_size", return_value=2
+    )
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers.get_pg_rank", return_value=1
+    )
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers.get_tensor_model_parallel_group_if_none"
+    )
     def test_vocab_range_rank_1(self, mock_get_group, mock_rank, mock_size):
         """Test vocab range for rank 1 with world_size=2."""
         group = _make_group(world_size=2, rank=1)
@@ -90,12 +108,16 @@ class TestVocabParallelEmbeddingVocabRange(unittest.TestCase):
 class TestVocabParallelEmbeddingShardedStateDict(unittest.TestCase):
     """Tests for VocabParallelEmbedding.sharded_state_dict method."""
 
-    @patch("paddleformers.fleet.tensor_parallel.layers.build_sharded_state_dict")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers.build_sharded_state_dict"
+    )
     def test_sharded_state_dict_multi_gpu(self, mock_build_sharded):
         """Test sharded_state_dict with world_size > 1."""
         embedding = VocabParallelEmbedding.__new__(VocabParallelEmbedding)
         embedding.world_size = 2
-        embedding.state_dict = MagicMock(return_value={"weight": paddle.randn([50, 32])})
+        embedding.state_dict = MagicMock(
+            return_value={"weight": paddle.randn([50, 32])}
+        )
         mock_build_sharded.return_value = {"mocked": "state"}
 
         result = embedding.sharded_state_dict("prefix")
@@ -103,12 +125,16 @@ class TestVocabParallelEmbeddingShardedStateDict(unittest.TestCase):
         call_args = mock_build_sharded.call_args
         self.assertEqual(call_args[0][1], {"weight": 0})
 
-    @patch("paddleformers.fleet.tensor_parallel.layers.build_sharded_state_dict")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers.build_sharded_state_dict"
+    )
     def test_sharded_state_dict_single_gpu(self, mock_build_sharded):
         """Test sharded_state_dict with world_size == 1."""
         embedding = VocabParallelEmbedding.__new__(VocabParallelEmbedding)
         embedding.world_size = 1
-        embedding.state_dict = MagicMock(return_value={"weight": paddle.randn([100, 32])})
+        embedding.state_dict = MagicMock(
+            return_value={"weight": paddle.randn([100, 32])}
+        )
         mock_build_sharded.return_value = {"mocked": "state"}
 
         result = embedding.sharded_state_dict("prefix")
@@ -116,12 +142,16 @@ class TestVocabParallelEmbeddingShardedStateDict(unittest.TestCase):
         # shard_rules should be None for world_size == 1
         self.assertIsNone(call_args[0][1])
 
-    @patch("paddleformers.fleet.tensor_parallel.layers.build_sharded_state_dict")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers.build_sharded_state_dict"
+    )
     def test_sharded_state_dict_default_prefix(self, mock_build_sharded):
         """Test sharded_state_dict with default prefix."""
         embedding = VocabParallelEmbedding.__new__(VocabParallelEmbedding)
         embedding.world_size = 1
-        embedding.state_dict = MagicMock(return_value={"weight": paddle.randn([100, 32])})
+        embedding.state_dict = MagicMock(
+            return_value={"weight": paddle.randn([100, 32])}
+        )
         mock_build_sharded.return_value = {"mocked": "state"}
 
         result = embedding.sharded_state_dict()
@@ -132,8 +162,12 @@ class TestVocabParallelEmbeddingShardedStateDict(unittest.TestCase):
 class TestVocabParallelEmbeddingReduceScatter(unittest.TestCase):
     """Tests for VocabParallelEmbedding with reduce_scatter_embeddings."""
 
-    @patch("paddleformers.fleet.tensor_parallel.layers.get_pg_size", return_value=1)
-    @patch("paddleformers.fleet.tensor_parallel.layers.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers.get_pg_size", return_value=1
+    )
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers.get_tensor_model_parallel_group_if_none"
+    )
     def test_reduce_scatter_flag(self, mock_get_group, mock_size):
         """Test reduce_scatter_embeddings flag is stored."""
         group = _make_group(world_size=1, rank=0)
@@ -147,8 +181,12 @@ class TestVocabParallelEmbeddingReduceScatter(unittest.TestCase):
 class TestVocabParallelEmbeddingWeightIsDistributed(unittest.TestCase):
     """Tests for VocabParallelEmbedding weight distributed flag."""
 
-    @patch("paddleformers.fleet.tensor_parallel.layers.get_pg_size", return_value=1)
-    @patch("paddleformers.fleet.tensor_parallel.layers.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers.get_pg_size", return_value=1
+    )
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers.get_tensor_model_parallel_group_if_none"
+    )
     def test_single_gpu_not_distributed(self, mock_get_group, mock_size):
         """Test weight.is_distributed is False for single GPU."""
         group = _make_group(world_size=1, rank=0)
@@ -156,8 +194,12 @@ class TestVocabParallelEmbeddingWeightIsDistributed(unittest.TestCase):
         # With world_size=1, weight.is_distributed should be False
         self.assertTrue(True)  # Placeholder for behavior check
 
-    @patch("paddleformers.fleet.tensor_parallel.layers.get_pg_size", return_value=2)
-    @patch("paddleformers.fleet.tensor_parallel.layers.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers.get_pg_size", return_value=2
+    )
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers.get_tensor_model_parallel_group_if_none"
+    )
     def test_multi_gpu_distributed(self, mock_get_group, mock_size):
         """Test weight.is_distributed is True for multi GPU."""
         group = _make_group(world_size=2, rank=0)
@@ -210,15 +252,27 @@ class TestVocabParallelEmbeddingForwardMasking(unittest.TestCase):
 class TestVocabParallelEmbeddingInitCPU(unittest.TestCase):
     """Tests for VocabParallelEmbedding CPU initialization path."""
 
-    @patch("paddleformers.fleet.tensor_parallel.layers._initialize_affine_weight_cpu")
-    @patch("paddleformers.fleet.tensor_parallel.layers.get_pg_size", return_value=2)
-    @patch("paddleformers.fleet.tensor_parallel.layers.get_pg_rank", return_value=0)
-    @patch("paddleformers.fleet.tensor_parallel.layers.get_tensor_model_parallel_group_if_none")
-    def test_cpu_init_performs_initialization(self, mock_get_group, mock_rank, mock_size, mock_cpu_init):
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers._initialize_affine_weight_cpu"
+    )
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers.get_pg_size", return_value=2
+    )
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers.get_pg_rank", return_value=0
+    )
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers.get_tensor_model_parallel_group_if_none"
+    )
+    def test_cpu_init_performs_initialization(
+        self, mock_get_group, mock_rank, mock_size, mock_cpu_init
+    ):
         """Test CPU initialization calls _initialize_affine_weight_cpu."""
         group = _make_group(world_size=2, rank=0)
         mock_get_group.return_value = group
-        config = _make_config(use_cpu_initialization=True, perform_initialization=True)
+        config = _make_config(
+            use_cpu_initialization=True, perform_initialization=True
+        )
         init_method = MagicMock()
         embedding = VocabParallelEmbedding.__new__(VocabParallelEmbedding)
         # Verify init_method would be called

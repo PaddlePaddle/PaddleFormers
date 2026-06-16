@@ -19,7 +19,9 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from paddle.distributed.communication.group import Group
 
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
 import paddle
 from paddle import Tensor
@@ -49,7 +51,9 @@ class LanguageModelEmbedding(FleetLayer):
         config: TransformerConfig,
         vocab_size: int,
         max_sequence_length: int,
-        position_embedding_type: Literal["learned_absolute", "rope", "none"] = "learned_absolute",
+        position_embedding_type: Literal[
+            "learned_absolute", "rope", "none"
+        ] = "learned_absolute",
         num_tokentypes: int = 0,
         scatter_to_sequence_parallel: bool = True,
         tp_group: Group | None = None,
@@ -59,13 +63,16 @@ class LanguageModelEmbedding(FleetLayer):
         self.config: TransformerConfig = config
         self.vocab_size: int = vocab_size
         self.max_sequence_length: int = max_sequence_length
-        self.add_position_embedding: bool = position_embedding_type == "learned_absolute"
+        self.add_position_embedding: bool = (
+            position_embedding_type == "learned_absolute"
+        )
         self.sequence_parallel = self.config.sequence_parallel
         self.num_tokentypes = num_tokentypes
         self.scatter_to_sequence_parallel = scatter_to_sequence_parallel
         if self.sequence_parallel:
             assert self.scatter_to_sequence_parallel is True, (
-                "If sequence parallel is turned on, scatter_to_sequence_parallel " "must be set to True."
+                "If sequence parallel is turned on, scatter_to_sequence_parallel "
+                "must be set to True."
             )
         self.tp_group = get_tensor_model_parallel_group_if_none(tp_group)
         self.reduce_scatter_embeddings = (
@@ -87,22 +94,32 @@ class LanguageModelEmbedding(FleetLayer):
 
         # Position embedding (serial).
         if self.add_position_embedding:
-            self.position_embeddings = paddle.nn.Embedding(self.max_sequence_length, self.config.hidden_size)
+            self.position_embeddings = paddle.nn.Embedding(
+                self.max_sequence_length, self.config.hidden_size
+            )
 
             # Initialize the position embeddings.
             if self.config.perform_initialization:
-                self.config.embedding_init_method(self.position_embeddings.weight)
+                self.config.embedding_init_method(
+                    self.position_embeddings.weight
+                )
 
         if self.num_tokentypes > 0:
-            self.tokentype_embeddings = paddle.nn.Embedding(self.num_tokentypes, self.config.hidden_size)
+            self.tokentype_embeddings = paddle.nn.Embedding(
+                self.num_tokentypes, self.config.hidden_size
+            )
             # Initialize the token-type embeddings.
             if self.config.perform_initialization:
-                self.config.embedding_init_method(self.tokentype_embeddings.weight)
+                self.config.embedding_init_method(
+                    self.tokentype_embeddings.weight
+                )
         else:
             self.tokentype_embeddings = None
 
         # Embeddings dropout
-        self.embedding_dropout = paddle.nn.Dropout(self.config.hidden_dropout_prob)
+        self.embedding_dropout = paddle.nn.Dropout(
+            self.config.hidden_dropout_prob
+        )
 
     @property
     def embedding_weight(self):
@@ -142,7 +159,11 @@ class LanguageModelEmbedding(FleetLayer):
         else:
             embeddings = embed_tokens
 
-        if not self.reduce_scatter_embeddings and self.sequence_parallel and self.scatter_to_sequence_parallel:
+        if (
+            not self.reduce_scatter_embeddings
+            and self.sequence_parallel
+            and self.scatter_to_sequence_parallel
+        ):
             # Data format change to avoid explicit transposes : [b s h] --> [s b h].
             embeddings = embeddings.transpose([1, 0, 2]).contiguous()
 
@@ -152,7 +173,9 @@ class LanguageModelEmbedding(FleetLayer):
             # tokentype_embedding = self.tokentype_embeddings(tokentype_ids).permute(1, 0, 2)
             tokentype_embedding = self.tokentype_embeddings(tokentype_ids)
             if self.sequence_parallel and self.scatter_to_sequence_parallel:
-                tokentype_embedding = tokentype_embedding.permute(1, 0, 2).contiguous()
+                tokentype_embedding = tokentype_embedding.permute(
+                    1, 0, 2
+                ).contiguous()
             embeddings = embeddings + tokentype_embedding
         else:
             assert self.tokentype_embeddings is None
@@ -163,12 +186,22 @@ class LanguageModelEmbedding(FleetLayer):
 
         # Dropout.
         if self.sequence_parallel:
-            if not self.reduce_scatter_embeddings and self.scatter_to_sequence_parallel:
-                embeddings = tensor_parallel.scatter_to_sequence_parallel_region(embeddings, group=self.tp_group)
+            if (
+                not self.reduce_scatter_embeddings
+                and self.scatter_to_sequence_parallel
+            ):
+                embeddings = (
+                    tensor_parallel.scatter_to_sequence_parallel_region(
+                        embeddings, group=self.tp_group
+                    )
+                )
             # `scatter_to_sequence_parallel_region` returns a view, which prevents
             # the original tensor from being garbage collected. Clone to facilitate GC.
             # Has a small runtime cost (~0.5%).
-            if self.config.clone_scatter_output_in_embedding and self.scatter_to_sequence_parallel:
+            if (
+                self.config.clone_scatter_output_in_embedding
+                and self.scatter_to_sequence_parallel
+            ):
                 embeddings = embeddings.clone()
             with tensor_parallel.get_cuda_rng_tracker().fork():
                 embeddings = self.embedding_dropout(embeddings)

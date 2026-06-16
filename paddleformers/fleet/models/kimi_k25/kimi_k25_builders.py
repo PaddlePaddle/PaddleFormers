@@ -21,15 +21,21 @@ from .layer_specs import (
 
 
 def kimi_k25_vision_builder(config, **kwargs):
-    transformer_layer_specs = get_kimi_k25_vision_encoder_layers_spec(config=config)
+    transformer_layer_specs = get_kimi_k25_vision_encoder_layers_spec(
+        config=config
+    )
 
     head_empty_layers_spec = []
     for _ in range(config.num_empty_layers_add_in_head):
-        head_empty_layers_spec.append(LayerSpec(layer=EmptyLayer, extra_kwargs={"config": config}))
+        head_empty_layers_spec.append(
+            LayerSpec(layer=EmptyLayer, extra_kwargs={"config": config})
+        )
 
     tail_empty_layers_spec = []
     for _ in range(config.num_empty_layers_add_in_tail):
-        tail_empty_layers_spec.append(LayerSpec(layer=EmptyLayer, extra_kwargs={"config": config}))
+        tail_empty_layers_spec.append(
+            LayerSpec(layer=EmptyLayer, extra_kwargs={"config": config})
+        )
 
     res_spec = get_kimi_k25_vision_spec(
         config=config,

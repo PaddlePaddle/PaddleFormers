@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -65,8 +69,12 @@ class TestTransformerLayerSublayersSpecCustom(unittest.TestCase):
 
     def test_with_sharded_state_dict_keys_map(self):
         """Test TransformerLayerSublayersSpec with custom sharded_state_dict_keys_map."""
-        spec = TransformerLayerSublayersSpec(sharded_state_dict_keys_map={"old_key": "new_key"})
-        self.assertEqual(spec.sharded_state_dict_keys_map, {"old_key": "new_key"})
+        spec = TransformerLayerSublayersSpec(
+            sharded_state_dict_keys_map={"old_key": "new_key"}
+        )
+        self.assertEqual(
+            spec.sharded_state_dict_keys_map, {"old_key": "new_key"}
+        )
 
 
 class TestTransformerLayerSkipMtpProbes(unittest.TestCase):

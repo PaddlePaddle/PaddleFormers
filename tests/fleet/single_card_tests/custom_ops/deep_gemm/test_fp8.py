@@ -19,8 +19,13 @@ import copy
 import random
 
 import torch
+
 from paddlefleet_ops import deep_gemm
-from paddlefleet_ops.deep_gemm.testing import calc_diff, get_arch_major, ignore_env
+from paddlefleet_ops.deep_gemm.testing import (
+    calc_diff,
+    get_arch_major,
+    ignore_env,
+)
 
 from .generators import (
     KernelType,
@@ -124,10 +129,16 @@ def test_m_grouped_gemm_contiguous() -> None:
                 assert major_a.is_k_major()
                 b = b if major_b.is_k_major() else (b[0].mT, b[1].mT)
                 assert a[0].is_contiguous() and b[0].is_contiguous()
-            getattr(deep_gemm, func_name)(a, b, d, m_indices, disable_ue8m0_cast=disable_ue8m0_cast)
-            d = torch.where((m_indices == -1).unsqueeze(1), torch.zeros_like(d), d)
+            getattr(deep_gemm, func_name)(
+                a, b, d, m_indices, disable_ue8m0_cast=disable_ue8m0_cast
+            )
+            d = torch.where(
+                (m_indices == -1).unsqueeze(1), torch.zeros_like(d), d
+            )
             diff = calc_diff(d, ref_d)
-            assert diff < 0.001, f"{m=}, {n=}, {k=}, {major_opt}, {kernel_opt}, {diff:.5f}, alias={test_alias}"
+            assert diff < 0.001, (
+                f"{m=}, {n=}, {k=}, {major_opt}, {kernel_opt}, {diff:.5f}, alias={test_alias}"
+            )
     print()
 
 
@@ -168,10 +179,12 @@ def test_m_grouped_gemm_masked() -> None:
             for j in range(num_groups):
                 if masked_m[j].item() == 0:
                     continue
-                diff = calc_diff(d[j, : masked_m[j].item()], ref_d[j, : masked_m[j].item()])
-                assert (
-                    diff < 0.001
-                ), f"{max_m=}, {n=}, {k=}, {j=}, masked_m={masked_m[j]}, {kernel_opt}, {num_groups=}, {diff:.5f}"
+                diff = calc_diff(
+                    d[j, : masked_m[j].item()], ref_d[j, : masked_m[j].item()]
+                )
+                assert diff < 0.001, (
+                    f"{max_m=}, {n=}, {k=}, {j=}, masked_m={masked_m[j]}, {kernel_opt}, {num_groups=}, {diff:.5f}"
+                )
     print()
 
 

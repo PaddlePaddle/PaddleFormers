@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -55,10 +59,14 @@ class TestMakeViewlessTensor(unittest.TestCase):
             ),
         ):
             # When _is_view returns False, input is returned as-is
-            original_is_view = type(x)._is_view if hasattr(type(x), "_is_view") else None
+            original_is_view = (
+                type(x)._is_view if hasattr(type(x), "_is_view") else None
+            )
             type(x)._is_view = lambda self: False
             try:
-                result = make_viewless_tensor(x, requires_grad=False, keep_graph=False)
+                result = make_viewless_tensor(
+                    x, requires_grad=False, keep_graph=False
+                )
                 self.assertIs(result, x)
                 mock_kernel.assert_not_called()
             finally:
@@ -75,14 +83,18 @@ class TestMakeViewlessTensor(unittest.TestCase):
         from paddleformers.fleet.utils import make_viewless_tensor
 
         x = paddle.randn([4, 8])
-        original_is_view = type(x)._is_view if hasattr(type(x), "_is_view") else None
+        original_is_view = (
+            type(x)._is_view if hasattr(type(x), "_is_view") else None
+        )
         type(x)._is_view = lambda self: True
         try:
             with mock.patch(
                 "paddleformers.fleet.utils.MakeViewlessTensor.apply",
                 return_value=x,
             ) as mock_apply:
-                result = make_viewless_tensor(x, requires_grad=True, keep_graph=True)
+                result = make_viewless_tensor(
+                    x, requires_grad=True, keep_graph=True
+                )
                 mock_apply.assert_called_once_with(x, True)
         finally:
             if original_is_view is None:
@@ -98,14 +110,18 @@ class TestMakeViewlessTensor(unittest.TestCase):
         from paddleformers.fleet.utils import make_viewless_tensor
 
         x = paddle.randn([4, 8])
-        original_is_view = type(x)._is_view if hasattr(type(x), "_is_view") else None
+        original_is_view = (
+            type(x)._is_view if hasattr(type(x), "_is_view") else None
+        )
         type(x)._is_view = lambda self: True
         try:
             with mock.patch(
                 "paddleformers.fleet.utils._kernel_make_viewless_tensor",
                 return_value=x,
             ) as mock_kernel:
-                result = make_viewless_tensor(x, requires_grad=False, keep_graph=False)
+                result = make_viewless_tensor(
+                    x, requires_grad=False, keep_graph=False
+                )
                 mock_kernel.assert_called_once_with(x, False)
         finally:
             if original_is_view is None:
@@ -154,7 +170,9 @@ class TestGetPgRank(unittest.TestCase):
         """Test get_pg_rank returns 0 when group is None."""
         from paddleformers.fleet.utils import get_pg_rank
 
-        with mock.patch("paddle.distributed.is_initialized", return_value=False):
+        with mock.patch(
+            "paddle.distributed.is_initialized", return_value=False
+        ):
             self.assertEqual(get_pg_rank(group=None), 0)
 
     def test_initialized_group_returns_rank(self):
@@ -175,7 +193,9 @@ class TestGetPgSize(unittest.TestCase):
         """Test get_pg_size returns 1 when group is None."""
         from paddleformers.fleet.utils import get_pg_size
 
-        with mock.patch("paddle.distributed.is_initialized", return_value=False):
+        with mock.patch(
+            "paddle.distributed.is_initialized", return_value=False
+        ):
             self.assertEqual(get_pg_size(group=None), 1)
 
     def test_single_rank_group(self):
@@ -331,7 +351,7 @@ class TestPaddleVersionUtils(unittest.TestCase):
         """Test is_paddle_min_version raises when packaging not available."""
         from paddleformers.fleet.utils import is_paddle_min_version
 
-        with mock.patch("paddleformers.fleet.utils.HAVE_PACKAGING", False):  # noqa: SIM117
+        with mock.patch("paddleformers.fleet.utils.HAVE_PACKAGING", False):
             with self.assertRaises(ImportError):
                 is_paddle_min_version("3.0.0")
 
@@ -341,22 +361,30 @@ class TestPrepareInputTensors(unittest.TestCase):
 
     def test_2d_input_unchanged(self):
         """Test 2D input shape unchanged."""
-        from paddleformers.fleet.utils import prepare_input_tensors_for_wgrad_compute
+        from paddleformers.fleet.utils import (
+            prepare_input_tensors_for_wgrad_compute,
+        )
 
         grad = paddle.randn([8, 16])
         inp = paddle.randn([8, 16])
 
-        result_grad, result_inp = prepare_input_tensors_for_wgrad_compute(grad, inp)
+        result_grad, result_inp = prepare_input_tensors_for_wgrad_compute(
+            grad, inp
+        )
         self.assertEqual(result_grad.shape, [8, 16])
 
     def test_3d_input_reshaped(self):
         """Test 3D input reshaped to 2D."""
-        from paddleformers.fleet.utils import prepare_input_tensors_for_wgrad_compute
+        from paddleformers.fleet.utils import (
+            prepare_input_tensors_for_wgrad_compute,
+        )
 
         grad = paddle.randn([2, 4, 16])
         inp = paddle.randn([2, 4, 16])
 
-        result_grad, result_inp = prepare_input_tensors_for_wgrad_compute(grad, inp)
+        result_grad, result_inp = prepare_input_tensors_for_wgrad_compute(
+            grad, inp
+        )
         self.assertEqual(len(result_grad.shape), 2)
         self.assertEqual(result_grad.shape, [8, 16])
 
@@ -391,7 +419,9 @@ class TestLogSingleRank(unittest.TestCase):
         from paddleformers.fleet.utils import log_single_rank
 
         mock_logger = mock.MagicMock()
-        with mock.patch("paddle.distributed.is_initialized", return_value=False):
+        with mock.patch(
+            "paddle.distributed.is_initialized", return_value=False
+        ):
             log_single_rank(mock_logger, logging.INFO, "test message")
             mock_logger.log.assert_called_once()
 
@@ -400,9 +430,11 @@ class TestLogSingleRank(unittest.TestCase):
         from paddleformers.fleet.utils import log_single_rank
 
         mock_logger = mock.MagicMock()
-        with mock.patch("paddle.distributed.is_initialized", return_value=True):  # noqa: SIM117
+        with mock.patch("paddle.distributed.is_initialized", return_value=True):
             with mock.patch("paddle.distributed.get_rank", return_value=0):
-                log_single_rank(mock_logger, logging.INFO, "test message", rank=0)
+                log_single_rank(
+                    mock_logger, logging.INFO, "test message", rank=0
+                )
                 mock_logger.log.assert_called_once()
 
     def test_log_skipped_on_wrong_rank(self):
@@ -410,9 +442,11 @@ class TestLogSingleRank(unittest.TestCase):
         from paddleformers.fleet.utils import log_single_rank
 
         mock_logger = mock.MagicMock()
-        with mock.patch("paddle.distributed.is_initialized", return_value=True):  # noqa: SIM117
+        with mock.patch("paddle.distributed.is_initialized", return_value=True):
             with mock.patch("paddle.distributed.get_rank", return_value=1):
-                log_single_rank(mock_logger, logging.INFO, "test message", rank=0)
+                log_single_rank(
+                    mock_logger, logging.INFO, "test message", rank=0
+                )
                 mock_logger.log.assert_not_called()
 
 

@@ -19,6 +19,7 @@
 """
 Utilities for the Trainer class.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -35,7 +36,7 @@ from collections import OrderedDict, namedtuple
 from contextlib import contextmanager
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, NamedTuple, Optional, Tuple, Union
+from typing import NamedTuple
 
 import numpy as np
 import paddle
@@ -79,7 +80,7 @@ from ..transformers.model_utils import (
     replace_name_and_gen_index,
     save_full_param,
 )
-from ..utils.env import (  # noqa for compatibility
+from ..utils.env import (  # noqa: F401 - for compatibility
     PADDLE_OPTIMIZER_NAME,
     PREFIX_CHECKPOINT_DIR,
     PREFIX_EMA_HF_CHECKPOINT_DIR,
@@ -116,7 +117,9 @@ def mock_offload_optimizer():
     mock offload optimizer
     """
     try:
-        from paddleformers.trainer.utils.offload_optimizer import hack_offload_optimizer
+        from paddleformers.trainer.utils.offload_optimizer import (
+            hack_offload_optimizer,
+        )
 
         hack_offload_optimizer()
         logger.warning("hack_offload_optimizer called.")
@@ -127,7 +130,9 @@ def mock_offload_optimizer():
 def log_trainer_start():
     if "MAIN_PROCESS_STARTED" not in os.environ:
         start_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-        logger.info(f"The Training Main Process Started Successfully. time: {start_time}, pid: {os.getpid()}")
+        logger.info(
+            f"The Training Main Process Started Successfully. time: {start_time}, pid: {os.getpid()}"
+        )
         os.environ["MAIN_PROCESS_STARTED"] = "1"
 
 
@@ -146,7 +151,9 @@ class Topology:
         sep_degree=1,
         order=["dp", "pp", "sharding", "mp", "sep"],
     ):
-        assert set(order) == {"dp", "pp", "sharding", "mp", "sep"}, f"Illegal order : {order}"
+        assert set(order) == {"dp", "pp", "sharding", "mp", "sep"}, (
+            f"Illegal order : {order}"
+        )
         self.order = order
 
         degree_map = {
@@ -158,10 +165,14 @@ class Topology:
         }
         shape = [degree_map[key] for key in self.order]
 
-        arr = np.arange(0, dp_degree * pp_degree * sharding_degree * mp_degree * sep_degree).reshape(shape)
+        arr = np.arange(
+            0, dp_degree * pp_degree * sharding_degree * mp_degree * sep_degree
+        ).reshape(shape)
         ranks = [rank[0] for rank in np.where(arr == device_rank)]
 
-        self.world = GroupInfo(size=world_size, rank=device_rank, world=list(range(0, world_size)))
+        self.world = GroupInfo(
+            size=world_size, rank=device_rank, world=list(range(0, world_size))
+        )
         worlds = []
         for i in range(len(ranks)):
             indexes = tuple(ranks[:i] + [slice(None)] + ranks[(i + 1) :])
@@ -169,30 +180,49 @@ class Topology:
 
         for i, key in enumerate(self.order):
             if key == "dp":
-                self.dp_info = GroupInfo(size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist())
+                self.dp_info = GroupInfo(
+                    size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist()
+                )
             elif key == "pp":
-                self.pp_info = GroupInfo(size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist())
+                self.pp_info = GroupInfo(
+                    size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist()
+                )
             elif key == "sharding":
-                self.sharding_info = GroupInfo(size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist())
+                self.sharding_info = GroupInfo(
+                    size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist()
+                )
             elif key == "mp":
-                self.mp_info = GroupInfo(size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist())
+                self.mp_info = GroupInfo(
+                    size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist()
+                )
             elif key == "sep":
-                self.sep_info = GroupInfo(size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist())
+                self.sep_info = GroupInfo(
+                    size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist()
+                )
 
         self.is_last = self.pp_info.rank == self.pp_info.size - 1
 
-        data_arr = np.arange(0, dp_degree * sharding_degree).reshape([dp_degree, sharding_degree])
+        data_arr = np.arange(0, dp_degree * sharding_degree).reshape(
+            [dp_degree, sharding_degree]
+        )
         for i, key in enumerate(self.order):
             if key != "dp" and key != "sharding":
-                data_arr = np.expand_dims(data_arr, axis=i).repeat(degree_map[key], axis=i)
+                data_arr = np.expand_dims(data_arr, axis=i).repeat(
+                    degree_map[key], axis=i
+                )
 
         self.data_info = GroupInfo(
             size=int(self.dp_info.size * self.sharding_info.size),
-            rank=int(self.dp_info.rank * self.sharding_info.size + self.sharding_info.rank),
+            rank=int(
+                self.dp_info.rank * self.sharding_info.size
+                + self.sharding_info.rank
+            ),
             world=data_arr.reshape(-1).tolist(),
         )
 
-        assert self.data_info.world[device_rank] == self.data_info.rank, "Data rank calculate error!"
+        assert self.data_info.world[device_rank] == self.data_info.rank, (
+            "Data rank calculate error!"
+        )
         self.data_inner_times = self.world.size // self.data_info.size
 
     def __repr__(self):
@@ -255,7 +285,9 @@ def _get_distributed_seeds(seed: int = 1234, topo: Topology = None):
         if hasattr(fleet, "get_context_parallel_rank"):
             cp_rank = hcg.get_context_parallel_rank()
             cp_size = hcg.get_context_parallel_world_size()
-            sharding_rank = hcg.get_sharding_parallel_rank(with_context_parallel=cp_size > 1)
+            sharding_rank = hcg.get_sharding_parallel_rank(
+                with_context_parallel=cp_size > 1
+            )
         else:
             cp_rank, cp_size = 0, 1
             sharding_rank = hcg.get_sharding_parallel_rank()
@@ -287,7 +319,9 @@ def _get_distributed_seeds(seed: int = 1234, topo: Topology = None):
             + sharding_rank * (mp_size * sep_size * pp_size * dp_size)
         )
     else:
-        assert sep_size == 1, f"When cp_size != 1, sep_size must be 1, but get sep_size = {sep_size}"
+        assert sep_size == 1, (
+            f"When cp_size != 1, sep_size must be 1, but get sep_size = {sep_size}"
+        )
         global_seed = (
             seed_offset
             + pp_rank * (mp_size * cp_size)
@@ -314,7 +348,10 @@ def set_seed(seed: int = 1234, topo=None):
     global_seed, local_seed, random_seed = _get_distributed_seeds(seed, topo)
 
     tracker = get_rng_state_tracker()
-    if "global_seed" not in tracker.states_ and global_seed not in tracker.seeds_:
+    if (
+        "global_seed" not in tracker.states_
+        and global_seed not in tracker.seeds_
+    ):
         tracker.add("global_seed", global_seed)
 
     if "local_seed" not in tracker.states_ and local_seed not in tracker.seeds_:
@@ -325,8 +362,8 @@ def set_seed(seed: int = 1234, topo=None):
     np.random.seed(random_seed)
 
     logger.info(
-        "The global seed is set to {}, local seed is set to {} and "
-        "random seed is set to {}.".format(global_seed, local_seed, random_seed)
+        f"The global seed is set to {global_seed}, local seed is set to {local_seed} and "
+        f"random seed is set to {random_seed}."
     )
 
 
@@ -345,10 +382,16 @@ def set_random_seed(
             import paddleformers.fleet
 
             # Ensure that different pipeline MP stages get different seeds.
-            seed = seed_ + (100 * paddleformers.fleet.parallel_state.get_pipeline_model_parallel_rank())
+            seed = seed_ + (
+                100
+                * paddleformers.fleet.parallel_state.get_pipeline_model_parallel_rank()
+            )
             # Ensure different data parallel ranks get different seeds
             if data_parallel_random_init:
-                seed = seed + (10 * paddleformers.fleet.parallel_state.get_data_parallel_rank())
+                seed = seed + (
+                    10
+                    * paddleformers.fleet.parallel_state.get_data_parallel_rank()
+                )
             random.seed(seed)
             np.random.seed(seed)
             try:
@@ -358,7 +401,10 @@ def set_random_seed(
 
             if paddle.cuda.device_count() > 0:
                 paddleformers.fleet.tensor_parallel.model_parallel_cuda_manual_seed(
-                    seed, te_rng_tracker, inference_rng_tracker, use_cudagraphable_rng
+                    seed,
+                    te_rng_tracker,
+                    inference_rng_tracker,
+                    use_cudagraphable_rng,
                 )
         else:
             # Fallback for when paddleformers.fleet is not available
@@ -369,7 +415,7 @@ def set_random_seed(
             except:
                 paddle.seed(seed_)
     else:
-        raise ValueError("Seed ({}) should be a positive integer.".format(seed_))
+        raise ValueError(f"Seed ({seed_}) should be a positive integer.")
 
 
 def _switch_mode(mode="dynamic"):
@@ -411,31 +457,35 @@ class EvalPrediction(NamedTuple):
         label_ids (`np.ndarray`): Targets to be matched.
     """
 
-    predictions: Union[np.ndarray, Tuple[np.ndarray]]
-    label_ids: Union[np.ndarray, Tuple[np.ndarray]]
+    predictions: np.ndarray | tuple[np.ndarray]
+    label_ids: np.ndarray | tuple[np.ndarray]
 
 
 class EvalLoopOutput(NamedTuple):
-    predictions: Union[np.ndarray, Tuple[np.ndarray]]
-    label_ids: Optional[Union[np.ndarray, Tuple[np.ndarray]]]
-    metrics: Optional[Dict[str, float]]
-    num_samples: Optional[int]
+    predictions: np.ndarray | tuple[np.ndarray]
+    label_ids: np.ndarray | tuple[np.ndarray] | None
+    metrics: dict[str, float] | None
+    num_samples: int | None
 
 
 class PredictionOutput(NamedTuple):
-    predictions: Union[np.ndarray, Tuple[np.ndarray]]
-    label_ids: Optional[Union[np.ndarray, Tuple[np.ndarray]]]
-    metrics: Optional[Dict[str, float]]
+    predictions: np.ndarray | tuple[np.ndarray]
+    label_ids: np.ndarray | tuple[np.ndarray] | None
+    metrics: dict[str, float] | None
 
 
 class TrainOutput(NamedTuple):
     global_step: int
     training_loss: float
-    metrics: Dict[str, float]
+    metrics: dict[str, float]
 
 
 def _check_checkpoint_files(
-    folder_path, world_size, ignore_save_lr_and_optim, skip_save_model_weight, remove_master_weight
+    folder_path,
+    world_size,
+    ignore_save_lr_and_optim,
+    skip_save_model_weight,
+    remove_master_weight,
 ):
     files = os.listdir(folder_path)
     model_weight_files = [f for f in files if f.startswith(".model_weight")]
@@ -443,7 +493,9 @@ def _check_checkpoint_files(
     if not ignore_save_lr_and_optim:
         b = True
         if not skip_save_model_weight or not remove_master_weight:
-            master_weight_file = [f for f in files if f.startswith(".master_weight")]
+            master_weight_file = [
+                f for f in files if f.startswith(".master_weight")
+            ]
             b = len(master_weight_file) == world_size
         optimizer_file = [f for f in files if f.startswith(".optimizer_weight")]
         c = len(optimizer_file) == world_size
@@ -457,7 +509,8 @@ def get_last_checkpoint(folder, signal_folder=None, uc_async_save=False):
     checkpoints = [
         path
         for path in content
-        if _re_checkpoint.search(path) is not None and os.path.isdir(os.path.join(folder, path))
+        if _re_checkpoint.search(path) is not None
+        and os.path.isdir(os.path.join(folder, path))
     ]
     if len(checkpoints) == 0:
         return
@@ -466,19 +519,33 @@ def get_last_checkpoint(folder, signal_folder=None, uc_async_save=False):
         assert signal_folder is not None
 
     if strtobool(os.getenv("FLAG_LLM_PDC", "False")):
-        for i in sorted(checkpoints, key=lambda x: int(_re_checkpoint.search(x).groups()[0]), reverse=True):
+        for i in sorted(
+            checkpoints,
+            key=lambda x: int(_re_checkpoint.search(x).groups()[0]),
+            reverse=True,
+        ):
             current_path = os.path.join(folder, i)
             # make sure the checkpoint is valid
             if not uc_async_save:
-                if os.path.exists(os.path.join(current_path, ".checkpoint_done")):
+                if os.path.exists(
+                    os.path.join(current_path, ".checkpoint_done")
+                ):
                     return current_path
             else:
-                saving_info = paddle.load(distributed_file(os.path.join(current_path, ".saving_info")))
+                saving_info = paddle.load(
+                    distributed_file(os.path.join(current_path, ".saving_info"))
+                )
                 current_signal_path = os.path.join(signal_folder, i)
                 pre_world_size = saving_info.get("world_size", 1)
-                ignore_save_lr_and_optim = saving_info.get("ignore_save_lr_and_optim", False)
-                skip_save_model_weight = saving_info.get("skip_save_model_weight", False)
-                remove_master_weight = saving_info.get("remove_master_weight", False)
+                ignore_save_lr_and_optim = saving_info.get(
+                    "ignore_save_lr_and_optim", False
+                )
+                skip_save_model_weight = saving_info.get(
+                    "skip_save_model_weight", False
+                )
+                remove_master_weight = saving_info.get(
+                    "remove_master_weight", False
+                )
                 if _check_checkpoint_files(
                     current_signal_path,
                     pre_world_size,
@@ -489,7 +556,13 @@ def get_last_checkpoint(folder, signal_folder=None, uc_async_save=False):
                     return current_path
         return
     else:
-        return os.path.join(folder, max(checkpoints, key=lambda x: int(_re_checkpoint.search(x).groups()[0])))
+        return os.path.join(
+            folder,
+            max(
+                checkpoints,
+                key=lambda x: int(_re_checkpoint.search(x).groups()[0]),
+            ),
+        )
 
 
 class IntervalStrategy(ExplicitEnum):
@@ -552,7 +625,14 @@ def total_processes_number(local_rank):
     return 1
 
 
-def speed_metrics(split, start_time, num_samples=None, num_steps=None, seq_length=None, model_flops_per_token=None):
+def speed_metrics(
+    split,
+    start_time,
+    num_samples=None,
+    num_steps=None,
+    seq_length=None,
+    model_flops_per_token=None,
+):
     """
     Measure and return speed performance metrics.
 
@@ -571,8 +651,14 @@ def speed_metrics(split, start_time, num_samples=None, num_steps=None, seq_lengt
         samples_per_second = num_samples / runtime
         result[f"{split}_samples_per_second"] = round(samples_per_second, 4)
         if seq_length is not None:
-            tokens_per_second_per_device = samples_per_second * seq_length / paddle.distributed.get_world_size()
-            result[f"{split}_tokens_per_second_per_device"] = round(tokens_per_second_per_device, 4)
+            tokens_per_second_per_device = (
+                samples_per_second
+                * seq_length
+                / paddle.distributed.get_world_size()
+            )
+            result[f"{split}_tokens_per_second_per_device"] = round(
+                tokens_per_second_per_device, 4
+            )
         if model_flops_per_token is not None:
             result[f"{split}_hardware_tflops_per_device"] = round(
                 tokens_per_second_per_device * model_flops_per_token / 2**40, 2
@@ -606,7 +692,9 @@ def get_constant_schedule(learning_rate: float, last_epoch: int = -1):
     return LambdaDecay(learning_rate, lambda _: 1, last_epoch=last_epoch)
 
 
-def get_constant_schedule_with_warmup(learning_rate: float, num_warmup_steps: int, last_epoch: int = -1):
+def get_constant_schedule_with_warmup(
+    learning_rate: float, num_warmup_steps: int, last_epoch: int = -1
+):
     """
     Create a schedule with a constant learning rate preceded by a warmup period during which the learning rate
     increases linearly between 0 and the initial lr set in the optimizer.
@@ -629,7 +717,9 @@ def get_constant_schedule_with_warmup(learning_rate: float, num_warmup_steps: in
     return LambdaDecay(learning_rate, lr_lambda, last_epoch=last_epoch)
 
 
-def get_linear_schedule_with_warmup(learning_rate: float, num_warmup_steps, num_training_steps, last_epoch=-1):
+def get_linear_schedule_with_warmup(
+    learning_rate: float, num_warmup_steps, num_training_steps, last_epoch=-1
+):
     """
     Create a schedule with a learning rate that decreases linearly from the initial lr set in the optimizer to 0, after
     a warmup period during which it increases linearly from 0 to the initial lr set in the optimizer.
@@ -650,7 +740,9 @@ def get_linear_schedule_with_warmup(learning_rate: float, num_warmup_steps, num_
         if current_step < num_warmup_steps:
             return float(current_step) / float(max(1, num_warmup_steps))
         return max(
-            0.0, float(num_training_steps - current_step) / float(max(1, num_training_steps - num_warmup_steps))
+            0.0,
+            float(num_training_steps - current_step)
+            / float(max(1, num_training_steps - num_warmup_steps)),
         )
 
     return LambdaDecay(learning_rate, lr_lambda, last_epoch)
@@ -687,8 +779,14 @@ def get_cosine_schedule_with_warmup(
     def lr_lambda(current_step):
         if current_step < num_warmup_steps:
             return float(current_step) / float(max(1, num_warmup_steps))
-        progress = float(current_step - num_warmup_steps) / float(max(1, num_training_steps - num_warmup_steps))
-        ratio = max(0.0, 0.5 * (1.0 + math.cos(math.pi * float(num_cycles) * 2.0 * progress)))
+        progress = float(current_step - num_warmup_steps) / float(
+            max(1, num_training_steps - num_warmup_steps)
+        )
+        ratio = max(
+            0.0,
+            0.5
+            * (1.0 + math.cos(math.pi * float(num_cycles) * 2.0 * progress)),
+        )
         return ratio * (1 - min_lr / learning_rate) + min_lr / learning_rate
 
     return LambdaDecay(learning_rate, lr_lambda, last_epoch)
@@ -728,7 +826,9 @@ def get_polynomial_decay_schedule_with_warmup(
 
     lr_init = learning_rate
     if not (lr_init > lr_end):
-        raise ValueError(f"lr_end ({lr_end}) must be be smaller than initial lr ({lr_init})")
+        raise ValueError(
+            f"lr_end ({lr_end}) must be be smaller than initial lr ({lr_init})"
+        )
 
     def lr_lambda(current_step: int):
         if current_step < num_warmup_steps:
@@ -755,14 +855,14 @@ TYPE_TO_SCHEDULER_FUNCTION = {
 
 
 def get_scheduler(
-    name: Union[str, SchedulerType],
+    name: str | SchedulerType,
     learning_rate: float,
-    num_warmup_steps: Optional[int] = None,
-    num_training_steps: Optional[int] = None,
-    num_cycles: Optional[float] = 0.5,
-    lr_end: Optional[float] = 1e-7,
-    power: Optional[float] = 1.0,
-    min_lr: Optional[float] = 0.0,
+    num_warmup_steps: int | None = None,
+    num_training_steps: int | None = None,
+    num_cycles: float | None = 0.5,
+    lr_end: float | None = 1e-7,
+    power: float | None = 1.0,
+    min_lr: float | None = 0.0,
 ):
     """
     Unified API to get any scheduler from its name.
@@ -797,14 +897,18 @@ def get_scheduler(
 
     # All other schedulers require `num_warmup_steps`
     if num_warmup_steps is None:
-        raise ValueError(f"{name} requires `num_warmup_steps`, please provide that argument.")
+        raise ValueError(
+            f"{name} requires `num_warmup_steps`, please provide that argument."
+        )
 
     if name == SchedulerType.CONSTANT_WITH_WARMUP:
         return schedule_func(learning_rate, num_warmup_steps=num_warmup_steps)
 
     # All other schedulers require `num_training_steps`
     if num_training_steps is None:
-        raise ValueError(f"{name} requires `num_training_steps`, please provide that argument.")
+        raise ValueError(
+            f"{name} requires `num_training_steps`, please provide that argument."
+        )
 
     if name == SchedulerType.COSINE:
         return schedule_func(
@@ -824,7 +928,11 @@ def get_scheduler(
             power=power,
         )
 
-    return schedule_func(learning_rate, num_warmup_steps=num_warmup_steps, num_training_steps=num_training_steps)
+    return schedule_func(
+        learning_rate,
+        num_warmup_steps=num_warmup_steps,
+        num_training_steps=num_training_steps,
+    )
 
 
 def _secs2timedelta(secs):
@@ -836,7 +944,7 @@ def _secs2timedelta(secs):
     return f"{datetime.timedelta(seconds=int(secs))}.{msec:02d}"
 
 
-def metrics_format(self, metrics: Dict[str, float]) -> Dict[str, float]:
+def metrics_format(self, metrics: dict[str, float]) -> dict[str, float]:
     """
     Reformat Trainer metrics values to a human-readable format
     Args:
@@ -875,7 +983,9 @@ def log_metrics(self, split, metrics):
     k_width = max(len(str(x)) for x in metrics_formatted.keys())
     v_width = max(len(str(x)) for x in metrics_formatted.values())
     for key in sorted(metrics_formatted.keys()):
-        logger.info(f"  {key: <{k_width}} = {metrics_formatted[key]:>{v_width}}")
+        logger.info(
+            f"  {key: <{k_width}} = {metrics_formatted[key]:>{v_width}}"
+        )
 
 
 def save_metrics(self, split, metrics, combined=True):
@@ -968,7 +1078,6 @@ class TrainerMemoryTracker:
     }
 
     def __init__(self, skip_memory_metrics=False):
-
         self.skip_memory_metrics = skip_memory_metrics
 
         if not is_psutil_available():
@@ -978,7 +1087,7 @@ class TrainerMemoryTracker:
         if self.skip_memory_metrics:
             return
 
-        import psutil  # noqa
+        import psutil
 
         if is_paddle_cuda_available():
             import paddle
@@ -1012,7 +1121,9 @@ class TrainerMemoryTracker:
         self.cpu_mem_used_peak = -1
 
         while True:
-            self.cpu_mem_used_peak = max(self.cpu_mem_used(), self.cpu_mem_used_peak)
+            self.cpu_mem_used_peak = max(
+                self.cpu_mem_used(), self.cpu_mem_used_peak
+            )
 
             # can't sleep or will not catch the peak right (this comment is here on purpose)
             # time.sleep(0.001) # 1msec
@@ -1075,21 +1186,23 @@ class TrainerMemoryTracker:
         if self.paddle is not None:
             self.gpu_mem_used_now = paddle_device.memory_allocated()
             self.gpu_mem_used_peak = paddle_device.max_memory_allocated()
-            self.gpu[self.cur_stage] = dict(
-                begin=self.gpu_mem_used_at_start,
-                end=self.gpu_mem_used_now,
-                alloc=(self.gpu_mem_used_now - self.gpu_mem_used_at_start),
-                peaked=max(0, self.gpu_mem_used_peak - self.gpu_mem_used_now),
-            )
+            self.gpu[self.cur_stage] = {
+                "begin": self.gpu_mem_used_at_start,
+                "end": self.gpu_mem_used_now,
+                "alloc": (self.gpu_mem_used_now - self.gpu_mem_used_at_start),
+                "peaked": max(
+                    0, self.gpu_mem_used_peak - self.gpu_mem_used_now
+                ),
+            }
 
         # cpu
         self.cpu_mem_used_now = self.cpu_mem_used()
-        self.cpu[self.cur_stage] = dict(
-            begin=self.cpu_mem_used_at_start,
-            end=self.cpu_mem_used_now,
-            alloc=(self.cpu_mem_used_now - self.cpu_mem_used_at_start),
-            peaked=max(0, self.cpu_mem_used_peak - self.cpu_mem_used_now),
-        )
+        self.cpu[self.cur_stage] = {
+            "begin": self.cpu_mem_used_at_start,
+            "end": self.cpu_mem_used_now,
+            "alloc": (self.cpu_mem_used_now - self.cpu_mem_used_at_start),
+            "peaked": max(0, self.cpu_mem_used_peak - self.cpu_mem_used_now),
+        }
 
         # reset - cycle finished
         self.cur_stage = None
@@ -1105,7 +1218,9 @@ class TrainerMemoryTracker:
 
         if hasattr(self, "gpu_mem_used_peak"):
             metrics["gpu_mem_max_memory_allocated"] = self.gpu_mem_used_peak
-            metrics["gpu_mem_max_memory_reserved"] = paddle_device.max_memory_reserved()
+            metrics["gpu_mem_max_memory_reserved"] = (
+                paddle_device.max_memory_reserved()
+            )
 
         # since we don't have a way to return init metrics, we push them into the first of train/val/predict
         stages = [stage]
@@ -1117,7 +1232,11 @@ class TrainerMemoryTracker:
             for t in ["alloc", "peaked"]:
                 if stage in self.cpu and t in self.cpu[stage]:
                     metrics[f"{stage}_mem_cpu_{t}_delta"] = self.cpu[stage][t]
-                if self.paddle is not None and stage in self.gpu and t in self.gpu[stage]:
+                if (
+                    self.paddle is not None
+                    and stage in self.gpu
+                    and t in self.gpu[stage]
+                ):
                     metrics[f"{stage}_mem_gpu_{t}_delta"] = self.gpu[stage][t]
             # if we need additional debug info, enable the following
             # for t in ["begin", "end"]:
@@ -1213,7 +1332,10 @@ class IterableDatasetShard(IterableDataset):
         # ):
         #     self.dataset.generator.manual_seed(self.seed + self.epoch)
         real_batch_size = self.batch_size * self.num_processes
-        process_slice = range(self.process_index * self.batch_size, (self.process_index + 1) * self.batch_size)
+        process_slice = range(
+            self.process_index * self.batch_size,
+            (self.process_index + 1) * self.batch_size,
+        )
 
         first_batch = None
         current_batch = []
@@ -1240,9 +1362,16 @@ class IterableDatasetShard(IterableDataset):
     def __len__(self):
         # Will raise an error if the underlying dataset is not sized.
         if self.drop_last:
-            return (len(self.dataset) // (self.batch_size * self.num_processes)) * self.batch_size
+            return (
+                len(self.dataset) // (self.batch_size * self.num_processes)
+            ) * self.batch_size
         else:
-            return math.ceil(len(self.dataset) / (self.batch_size * self.num_processes)) * self.batch_size
+            return (
+                math.ceil(
+                    len(self.dataset) / (self.batch_size * self.num_processes)
+                )
+                * self.batch_size
+            )
 
 
 class LastBatchPaddingSampler(paddle.io.DistributedBatchSampler):
@@ -1333,8 +1462,8 @@ class RemoveColumnsCollator:
         data_collator,
         signature_columns,
         logger=None,
-        model_name: Optional[str] = None,
-        description: Optional[str] = None,
+        model_name: str | None = None,
+        description: str | None = None,
     ):
         self.data_collator = data_collator
         self.signature_columns = signature_columns
@@ -1347,9 +1476,15 @@ class RemoveColumnsCollator:
         if not isinstance(feature, dict):
             return feature
         if not self.message_logged and self.logger and self.model_name:
-            ignored_columns = list(set(feature.keys()) - set(self.signature_columns))
+            ignored_columns = list(
+                set(feature.keys()) - set(self.signature_columns)
+            )
             if len(ignored_columns) > 0:
-                dset_description = "" if self.description is None else f"in the {self.description} set"
+                dset_description = (
+                    ""
+                    if self.description is None
+                    else f"in the {self.description} set"
+                )
                 self.logger.info(
                     f"The following columns {dset_description} don't have a corresponding argument in "
                     f"`{self.model_name}.forward` and have been ignored: {', '.join(ignored_columns)}."
@@ -1359,7 +1494,7 @@ class RemoveColumnsCollator:
                 self.message_logged = True
         return {k: v for k, v in feature.items() if k in self.signature_columns}
 
-    def __call__(self, features: List[dict]):
+    def __call__(self, features: list[dict]):
         features = [self._remove_columns(feature) for feature in features]
         return self.data_collator(features)
 
@@ -1377,7 +1512,10 @@ def set_hyrbid_parallel_seed(basic_seed, dataset_rank, tp_rank, pp_rank=0):
 
     tracker = get_rng_state_tracker()
 
-    if "global_seed" not in tracker.states_ and global_seed not in tracker.seeds_:
+    if (
+        "global_seed" not in tracker.states_
+        and global_seed not in tracker.seeds_
+    ):
         tracker.add("global_seed", global_seed)
     if "local_seed" not in tracker.states_ and local_seed not in tracker.seeds_:
         tracker.add("local_seed", local_seed)
@@ -1419,25 +1557,33 @@ def download_recovery_ckpt_from_pdc(recovery_checkpoint_path, timeout):
     """
 
     try:
-        base_dir, download_dir = os.path.split(os.path.normpath(recovery_checkpoint_path))
+        base_dir, download_dir = os.path.split(
+            os.path.normpath(recovery_checkpoint_path)
+        )
         if not os.path.exists(base_dir) and base_dir != "":
             os.makedirs(base_dir, exist_ok=True)
         download_step = int(_re_checkpoint.search(download_dir).groups()[0])
     except Exception as e:
-        raise RuntimeError(f"{PDC_DOWNLOAD_ERROR}; Failed to parse checkpoint path, details: {e}")
+        raise RuntimeError(
+            f"{PDC_DOWNLOAD_ERROR}; Failed to parse checkpoint path, details: {e}"
+        )
     start_time = time.time()
     # TODO(@gexiao): temporary workaround for environment variable conflicts.
     original_trainer_id = os.getenv("PADDLE_TRAINER_ID")
     original_trainers_num = os.getenv("PADDLE_TRAINERS_NUM")
     cards_per_node = int(os.getenv("PADDLE_LOCAL_SIZE", "8"))
     os.environ["PADDLE_TRAINER_ID"] = str(dist.get_rank() // cards_per_node)
-    os.environ["PADDLE_TRAINERS_NUM"] = str(dist.get_world_size() // cards_per_node)
+    os.environ["PADDLE_TRAINERS_NUM"] = str(
+        dist.get_world_size() // cards_per_node
+    )
     result = pdc_tool.pdc_download_checkpoint(download_step, timeout)
     os.environ["PADDLE_TRAINER_ID"] = original_trainer_id
     os.environ["PADDLE_TRAINERS_NUM"] = original_trainers_num
     end_time = time.time()
     if result == PDCErrorCode.Success:
-        logger.info(f"Successfully downloaded checkpoint from PDC, total time cost: {end_time - start_time} seconds.")
+        logger.info(
+            f"Successfully downloaded checkpoint from PDC, total time cost: {end_time - start_time} seconds."
+        )
     elif result == PDCErrorCode.LocalPathExist:
         logger.warning(
             f"Skipping download checkpoint since file exists at local, total time cost: {end_time - start_time} seconds."
@@ -1452,7 +1598,8 @@ def _insert_sync(self, sync_var, src, mp_group, sync_mode):
     # Get device type where the sync_var is located
     original_device = (
         "pin_memory"
-        if str(sync_var.place) == "Place(gpu_pinned)" or str(sync_var.place) == "Place(xpu_pinned)"
+        if str(sync_var.place) == "Place(gpu_pinned)"
+        or str(sync_var.place) == "Place(xpu_pinned)"
         else "Other"
     )
 
@@ -1464,7 +1611,9 @@ def _insert_sync(self, sync_var, src, mp_group, sync_mode):
             sync_var = sync_var.to(get_env_device())
 
     if sync_mode == "broadcast":
-        paddle.distributed.broadcast(sync_var, src=src, group=mp_group, sync_op=True)
+        paddle.distributed.broadcast(
+            sync_var, src=src, group=mp_group, sync_op=True
+        )
     else:
         paddle.distributed.all_reduce(sync_var, group=mp_group, sync_op=True)
         sync_var.multiply_(
@@ -1478,7 +1627,9 @@ def _insert_sync(self, sync_var, src, mp_group, sync_mode):
     # Move it back to pin memory
     if original_device == "pin_memory":
         if get_env_device() == "gpu":
-            sync_var = paddle.to_tensor(sync_var, place=paddle.CUDAPinnedPlace())
+            sync_var = paddle.to_tensor(
+                sync_var, place=paddle.CUDAPinnedPlace()
+            )
         elif get_env_device() == "xpu":
             sync_var = paddle.to_tensor(sync_var, place=paddle.XPUPinnedPlace())
 
@@ -1494,7 +1645,13 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
     Args:
         optimizer: The optimizer instance to be initialized.
     """
-    optimizer_state_names = [".moment1_0", ".moment2_0", ".beta1_pow_acc_0", ".beta2_pow_acc_0", ".w_0"]
+    optimizer_state_names = [
+        ".moment1_0",
+        ".moment2_0",
+        ".beta1_pow_acc_0",
+        ".beta2_pow_acc_0",
+        ".w_0",
+    ]
     inner_opt = getattr(optimizer, "_inner_opt", None)
     static_to_struct_mapping = {}
     model_sharded_state_dict = dict(sorted(model_sharded_state_dict.items()))
@@ -1508,80 +1665,134 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
         for param in local_params:
             param_name = param.name
             struct_name = static_to_struct_mapping[param_name]
-            if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
+            if not any(
+                struct_name + state_name in state_dict_metadata
+                for state_name in optimizer_state_names
+            ):
                 continue
             param_list.append(param)
-        optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), param_list)
+        optimizer._create_accumulators(
+            paddle.base.framework.default_main_program().global_block(),
+            param_list,
+        )
         return
 
-    elif DygraphShardingOptimizerV2 is not None and isinstance(inner_opt, DygraphShardingOptimizerV2):
+    elif DygraphShardingOptimizerV2 is not None and isinstance(
+        inner_opt, DygraphShardingOptimizerV2
+    ):
         parameter_list = []
         for buffer in optimizer._comm_buffer_list:
-            for param_name, grad_view in buffer._sharding_param_grad_view.items():
+            for (
+                param_name,
+                grad_view,
+            ) in buffer._sharding_param_grad_view.items():
                 struct_name = static_to_struct_mapping[param_name]
-                if os.getenv("HACK_CONVERT_CKPT", "0").lower() not in ["true", "1"]:
+                if os.getenv("HACK_CONVERT_CKPT", "0").lower() not in [
+                    "true",
+                    "1",
+                ]:
                     if not any(
-                        struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names
+                        struct_name + state_name in state_dict_metadata
+                        for state_name in optimizer_state_names
                     ):
                         continue
                 param_buffer = grad_view._param_buffer
                 param_begin = grad_view._param_begin
                 param_end = grad_view._param_end
-                if param_begin >= 0 and param_end > 0 and param_end > param_begin:
-                    slice_param = paddle.slice(param_buffer, axes=[0], starts=[param_begin], ends=[param_end])
+                if (
+                    param_begin >= 0
+                    and param_end > 0
+                    and param_end > param_begin
+                ):
+                    slice_param = paddle.slice(
+                        param_buffer,
+                        axes=[0],
+                        starts=[param_begin],
+                        ends=[param_end],
+                    )
                     assert slice_param.numel().item() > 0
                     slice_param.name = param_name
                     parameter_list.append(slice_param)
 
-        optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), parameter_list)
+        optimizer._create_accumulators(
+            paddle.base.framework.default_main_program().global_block(),
+            parameter_list,
+        )
         return
 
-    elif MuonShardingOptimizer is not None and isinstance(inner_opt, MuonShardingOptimizer):
+    elif MuonShardingOptimizer is not None and isinstance(
+        inner_opt, MuonShardingOptimizer
+    ):
         parameter_list = []
 
         # --- 1D params: build shard-sized slice params from FusedCommBuffer ---
         for buffer in optimizer._comm_buffer_list:
-            for param_name, grad_view in buffer._sharding_param_grad_view.items():
+            for (
+                param_name,
+                grad_view,
+            ) in buffer._sharding_param_grad_view.items():
                 if param_name not in static_to_struct_mapping:
                     continue
                 struct_name = static_to_struct_mapping[param_name]
-                if os.getenv("HACK_CONVERT_CKPT", "0").lower() not in ["true", "1"]:
+                if os.getenv("HACK_CONVERT_CKPT", "0").lower() not in [
+                    "true",
+                    "1",
+                ]:
                     if not any(
-                        struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names
+                        struct_name + state_name in state_dict_metadata
+                        for state_name in optimizer_state_names
                     ):
                         continue
                 param_buffer = grad_view._param_buffer
                 param_begin = grad_view._param_begin
                 param_end = grad_view._param_end
-                if param_begin >= 0 and param_end > 0 and param_end > param_begin:
-                    slice_param = paddle.slice(param_buffer, axes=[0], starts=[param_begin], ends=[param_end])
+                if (
+                    param_begin >= 0
+                    and param_end > 0
+                    and param_end > param_begin
+                ):
+                    slice_param = paddle.slice(
+                        param_buffer,
+                        axes=[0],
+                        starts=[param_begin],
+                        ends=[param_end],
+                    )
                     assert slice_param.numel().item() > 0
                     slice_param.name = param_name
                     parameter_list.append(slice_param)
 
         # -- 2D params: build full-sized 2D params from _params_2d_by_color ---
         for color_key, _ in optimizer._params_2d_by_color.items():
-            assert (
-                color_key in optimizer._rank2params_2d_by_color
-            ), f"color_key '{color_key}' not in optimizer._rank2params_2d_by_color."
-            rank2params_2d_by_color = optimizer._rank2params_2d_by_color[color_key]
+            assert color_key in optimizer._rank2params_2d_by_color, (
+                f"color_key '{color_key}' not in optimizer._rank2params_2d_by_color."
+            )
+            rank2params_2d_by_color = optimizer._rank2params_2d_by_color[
+                color_key
+            ]
 
             group_info = optimizer._color_to_group_info[color_key]
-            sharding_rank = group_info["rank"] if group_info["rank"] >= 0 else 0
+            sharding_rank = max(group_info["rank"], 0)
             local_2d = rank2params_2d_by_color[sharding_rank]
             for param in local_2d:
                 param_name = param.name
                 if param_name not in static_to_struct_mapping:
                     continue
                 struct_name = static_to_struct_mapping[param_name]
-                if os.getenv("HACK_CONVERT_CKPT", "0").lower() not in ["true", "1"]:
+                if os.getenv("HACK_CONVERT_CKPT", "0").lower() not in [
+                    "true",
+                    "1",
+                ]:
                     if not any(
-                        struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names
+                        struct_name + state_name in state_dict_metadata
+                        for state_name in optimizer_state_names
                     ):
                         continue
                 parameter_list.append(param)
 
-        optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), parameter_list)
+        optimizer._create_accumulators(
+            paddle.base.framework.default_main_program().global_block(),
+            parameter_list,
+        )
         return
 
     elif isinstance(optimizer, GroupShardedOptimizerStage2):
@@ -1594,20 +1805,31 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
         for param in local_params:
             param_name = param.name
             struct_name = static_to_struct_mapping[param_name]
-            if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
+            if not any(
+                struct_name + state_name in state_dict_metadata
+                for state_name in optimizer_state_names
+            ):
                 continue
             param_list.append(param)
-        optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), param_list)
+        optimizer._create_accumulators(
+            paddle.base.framework.default_main_program().global_block(),
+            param_list,
+        )
         return
 
     param_list = []
     for param in optimizer._parameter_list:
         param_name = param.name.replace("slice@", "")
         struct_name = static_to_struct_mapping[param_name]
-        if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
+        if not any(
+            struct_name + state_name in state_dict_metadata
+            for state_name in optimizer_state_names
+        ):
             continue
         param_list.append(param)
-    optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), param_list)
+    optimizer._create_accumulators(
+        paddle.base.framework.default_main_program().global_block(), param_list
+    )
 
 
 def parse_nccl_config_file(config_dir):
@@ -1628,7 +1850,9 @@ def parse_nccl_config_file(config_dir):
             # if user does not set group name, use the default name set by Paddle
             if comm_config.get("name", None) is not None:
                 final_config["commName"] = comm_config["name"]
-            final_config["buffsize_align"] = comm_config.get("buffsize_align", 1024)
+            final_config["buffsize_align"] = comm_config.get(
+                "buffsize_align", 1024
+            )
             final_config["algoStr"] = comm_config.get("algo", "")
             final_config["protoStr"] = comm_config.get("proto", "")
             final_config["nchannels"] = comm_config.get("n_channels", -1)
@@ -1638,24 +1862,36 @@ def parse_nccl_config_file(config_dir):
             final_config["ll_buffsize"] = comm_config.get("ll_buffsize", -1)
             # keep the buffsize > the min value
             if final_config["ll_buffsize"] != -1:
-                final_config["ll_buffsize"] = max(final_config["ll_buffsize"], min_val["ll_buffsize"])
+                final_config["ll_buffsize"] = max(
+                    final_config["ll_buffsize"], min_val["ll_buffsize"]
+                )
 
             # ll128 part
-            final_config["ll128_buffsize"] = comm_config.get("ll128_buffsize", -1)
+            final_config["ll128_buffsize"] = comm_config.get(
+                "ll128_buffsize", -1
+            )
             if final_config["ll128_buffsize"] != -1:
-                final_config["ll128_buffsize"] = max(final_config["ll128_buffsize"], min_val["ll128_buffsize"])
+                final_config["ll128_buffsize"] = max(
+                    final_config["ll128_buffsize"], min_val["ll128_buffsize"]
+                )
 
             # simple part
-            final_config["simple_buffsize"] = comm_config.get("simple_buffsize", -1)
+            final_config["simple_buffsize"] = comm_config.get(
+                "simple_buffsize", -1
+            )
             if final_config["simple_buffsize"] != -1:
-                final_config["simple_buffsize"] = max(final_config["simple_buffsize"], min_val["simple_buffsize"])
+                final_config["simple_buffsize"] = max(
+                    final_config["simple_buffsize"], min_val["simple_buffsize"]
+                )
 
             # set the buffer size of unused protocols to the minimum value
             if final_config["protoStr"] != "":
                 protos = split_parallel_config(final_config["protoStr"].lower())
                 for proto in ["ll", "ll128", "simple"]:
                     if proto not in protos:
-                        final_config[(proto + "_buffsize")] = min_val[(proto + "_buffsize")]
+                        final_config[(proto + "_buffsize")] = min_val[
+                            (proto + "_buffsize")
+                        ]
 
             return final_config
 
@@ -1664,14 +1900,19 @@ def parse_nccl_config_file(config_dir):
 
         return data
     else:
-        raise FileNotFoundError(f"The argument file {json_file} does not exist.")
+        raise FileNotFoundError(
+            f"The argument file {json_file} does not exist."
+        )
 
 
 def init_nccl_config(nccl_comm_group_config, strategy):
     nccl_config = parse_nccl_config_file(nccl_comm_group_config)
 
     def set_comm_config(configs, attr, dict_obj):
-        if strategy.hybrid_configs.get(configs, None) is None or dict_obj is None:
+        if (
+            strategy.hybrid_configs.get(configs, None) is None
+            or dict_obj is None
+        ):
             return
         if not hasattr(strategy.hybrid_configs[configs], attr):
             return
@@ -1680,22 +1921,54 @@ def init_nccl_config(nccl_comm_group_config, strategy):
             if hasattr(attr_obj, key):
                 setattr(attr_obj, key, value)
 
-    set_comm_config("pp_configs", "coll_nccl_config", nccl_config.get("pp", None))
-    set_comm_config("pp_configs", "p2p_nccl_config", nccl_config.get("pp_p2p", None))
-    set_comm_config("pp_configs", "shared_nccl_config", nccl_config.get("pp_shared", None))
+    set_comm_config(
+        "pp_configs", "coll_nccl_config", nccl_config.get("pp", None)
+    )
+    set_comm_config(
+        "pp_configs", "p2p_nccl_config", nccl_config.get("pp_p2p", None)
+    )
+    set_comm_config(
+        "pp_configs", "shared_nccl_config", nccl_config.get("pp_shared", None)
+    )
     set_comm_config("mp_configs", "nccl_config", nccl_config.get("tp", None))
-    set_comm_config("sharding_configs", "nccl_config", nccl_config.get("sharding", None))
-    set_comm_config("sharding_configs", "check_nccl_config", nccl_config.get("sharding_check", None))
+    set_comm_config(
+        "sharding_configs", "nccl_config", nccl_config.get("sharding", None)
+    )
+    set_comm_config(
+        "sharding_configs",
+        "check_nccl_config",
+        nccl_config.get("sharding_check", None),
+    )
     set_comm_config("dp_configs", "nccl_config", nccl_config.get("dp", None))
-    set_comm_config("dp_configs", "check_nccl_config", nccl_config.get("dp_check", None))
+    set_comm_config(
+        "dp_configs", "check_nccl_config", nccl_config.get("dp_check", None)
+    )
     set_comm_config("sep_configs", "nccl_config", nccl_config.get("sep", None))
-    set_comm_config("dp_sep_configs", "nccl_config", nccl_config.get("dp_sep", None))
-    set_comm_config("pp_tp_configs", "nccl_config", nccl_config.get("pp_tp", None))
+    set_comm_config(
+        "dp_sep_configs", "nccl_config", nccl_config.get("dp_sep", None)
+    )
+    set_comm_config(
+        "pp_tp_configs", "nccl_config", nccl_config.get("pp_tp", None)
+    )
     set_comm_config("ep_configs", "nccl_config", nccl_config.get("ep", None))
-    set_comm_config("ep_configs", "grad_nccl_config", nccl_config.get("ep_grad", None))
-    set_comm_config("moe_sharding_configs", "nccl_config", nccl_config.get("moe_sharding", None))
-    set_comm_config("moe_sharding_configs", "check_nccl_config", nccl_config.get("moe_sharding_check", None))
-    set_comm_config("default_comm_group_configs", "nccl_config", nccl_config.get("default", None))
+    set_comm_config(
+        "ep_configs", "grad_nccl_config", nccl_config.get("ep_grad", None)
+    )
+    set_comm_config(
+        "moe_sharding_configs",
+        "nccl_config",
+        nccl_config.get("moe_sharding", None),
+    )
+    set_comm_config(
+        "moe_sharding_configs",
+        "check_nccl_config",
+        nccl_config.get("moe_sharding_check", None),
+    )
+    set_comm_config(
+        "default_comm_group_configs",
+        "nccl_config",
+        nccl_config.get("default", None),
+    )
     return strategy
 
 
@@ -1724,10 +1997,14 @@ class HFFormatFullParamSaver:
     def get_full_param_iter(self):
         assert (self.v_group and self.h_group) or not (
             self.v_group or self.h_group
-        ), f"both h_group and v_group are provided or none of them, but got {self.v_group} and {self.h_group}"
+        ), (
+            f"both h_group and v_group are provided or none of them, but got {self.v_group} and {self.h_group}"
+        )
         if self.v_group and self.h_group:
             assert self.shard_idx is not None, "expected shard_idx is not None"
-            assert self.num_splits is not None, "expected num_splits is not None"
+            assert self.num_splits is not None, (
+                "expected num_splits is not None"
+            )
 
             param_iter = self.model.full(
                 aoa_config=self.aoa_config,
@@ -1747,7 +2024,9 @@ class HFFormatFullParamSaver:
 
         if self.h_group and self.v_group:
             self.num_saver_ranks = self.h_group.nranks * self.v_group.nranks
-            self.rank = self.h_group.rank + self.v_group.rank * self.h_group.nranks
+            self.rank = (
+                self.h_group.rank + self.v_group.rank * self.h_group.nranks
+            )
 
         if self.saved_in_one_node:
             local_world_size = int(os.environ.get("PADDLE_LOCAL_SIZE", 8))
@@ -1802,7 +2081,9 @@ def _get_muon_2d_param_names(muon_opt):
     return names
 
 
-def _restore_master_weights_single(master_weights, model, optimizer, group, structure_name_map, restore_func):
+def _restore_master_weights_single(
+    master_weights, model, optimizer, group, structure_name_map, restore_func
+):
     nms = reshard_util.NodeModelState(group=group)
     nms_tmp = reshard_util.NodeModelState(group=group)
     nms_tmp.add_master_weights(master_weights)
@@ -1811,7 +2092,9 @@ def _restore_master_weights_single(master_weights, model, optimizer, group, stru
     del nms_tmp
     nms = restore_func(nms, model, optimizer)
     nms.unpack_keys()
-    return reshard_util.all_gather_state_dict(nms.master_weights, lambda x: True, group)
+    return reshard_util.all_gather_state_dict(
+        nms.master_weights, lambda x: True, group
+    )
 
 
 def recover_params_from_master_weight(ema_state_dict, model, optimizer, group):
@@ -1819,7 +2102,7 @@ def recover_params_from_master_weight(ema_state_dict, model, optimizer, group):
     tmp = OrderedDict()
     (master_weights, tmp) = (tmp, master_weights)
     # cast to bf16 and move to cpu
-    for (k, v) in tmp.items():
+    for k, v in tmp.items():
         name = v.name
         master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
         master_weights[k].name = name
@@ -1829,7 +2112,9 @@ def recover_params_from_master_weight(ema_state_dict, model, optimizer, group):
     muon_opt = _unwrap_muon_sharding_optimizer(optimizer)
     if muon_opt is not None:
         param_2d_names = _get_muon_2d_param_names(muon_opt)
-        logger.debug(f"Muon EMA recovery: {len(param_2d_names)} 2D params detected")
+        logger.debug(
+            f"Muon EMA recovery: {len(param_2d_names)} 2D params detected"
+        )
 
         mw_2d = OrderedDict()
         mw_1d = OrderedDict()
@@ -1841,12 +2126,22 @@ def recover_params_from_master_weight(ema_state_dict, model, optimizer, group):
 
         all_master_weights = OrderedDict()
         restored_2d = _restore_master_weights_single(
-            mw_2d, model, optimizer, group, structure_name_map, reshard_util.sharding_v1.restore
+            mw_2d,
+            model,
+            optimizer,
+            group,
+            structure_name_map,
+            reshard_util.sharding_v1.restore,
         )
         all_master_weights.update(restored_2d)
 
         restored_1d = _restore_master_weights_single(
-            mw_1d, model, optimizer, group, structure_name_map, reshard_util.sharding_v2.restore
+            mw_1d,
+            model,
+            optimizer,
+            group,
+            structure_name_map,
+            reshard_util.sharding_v2.restore,
         )
         all_master_weights.update(restored_1d)
 
@@ -1860,7 +2155,12 @@ def recover_params_from_master_weight(ema_state_dict, model, optimizer, group):
             else reshard_util.sharding_v2.restore
         )
         master_weights = _restore_master_weights_single(
-            master_weights, model, optimizer, group, structure_name_map, restore_func
+            master_weights,
+            model,
+            optimizer,
+            group,
+            structure_name_map,
+            restore_func,
         )
 
     model_state_dict = model.state_dict()
@@ -1870,11 +2170,15 @@ def recover_params_from_master_weight(ema_state_dict, model, optimizer, group):
             logger.debug(
                 f"key {key}, convert master weights {param.name} shape {master_weights[param.name].shape} to param {param.name} shape{param.shape}"
             )
-            assert (
-                param.shape == master_weights[param.name].shape
-            ), f"got {param.shape} vs {master_weights[param.name].shape}"
-            master_weight = paddle.reshape(master_weights[param.name], param.shape)
-            ema_param_state_dict[key] = paddle.cast(to_device(master_weight), paddle.bfloat16)
+            assert param.shape == master_weights[param.name].shape, (
+                f"got {param.shape} vs {master_weights[param.name].shape}"
+            )
+            master_weight = paddle.reshape(
+                master_weights[param.name], param.shape
+            )
+            ema_param_state_dict[key] = paddle.cast(
+                to_device(master_weight), paddle.bfloat16
+            )
 
     for k, v in master_weights.items():
         v._clear()
@@ -1902,7 +2206,9 @@ class EMAStateAssembler:
         self.save_steps = save_steps
         self.memory_growth_threshold = memory_growth_threshold
         if save_hf_steps > 0 and save_hf_steps % save_steps != 0:
-            raise ValueError("[EMAStateAssembler] save_hf_steps must be a multiple of save_steps.")
+            raise ValueError(
+                "[EMAStateAssembler] save_hf_steps must be a multiple of save_steps."
+            )
 
         self.rank = dist.get_rank()
         self.world_size = dist.get_world_size()
@@ -1911,16 +2217,22 @@ class EMAStateAssembler:
         self.model = model
         self.optimizer = optimizer
         self.model_sharded_state_dict = self.model.sharded_state_dict()
-        self.is_gpt_model = GPTModel is not None and isinstance(self.model, GPTModel)
+        self.is_gpt_model = GPTModel is not None and isinstance(
+            self.model, GPTModel
+        )
         n_routed_experts = self.model.config.n_routed_experts
 
         hcg = paddle.distributed.fleet.get_hybrid_communicate_group()
         try:
             pp_group = hcg.get_pipe_parallel_group()
             if pp_group is None or pp_group.nranks < 1:
-                raise NotImplementedError("[EMAStateAssembler] Only support when pp_group is not None.")
+                raise NotImplementedError(
+                    "[EMAStateAssembler] Only support when pp_group is not None."
+                )
         except Exception:
-            raise RuntimeError("[EMAStateAssembler] Only support when pp_group is not None.")
+            raise RuntimeError(
+                "[EMAStateAssembler] Only support when pp_group is not None."
+            )
 
         if n_routed_experts == 0:
             tp_group = hcg.get_model_parallel_group()
@@ -1937,21 +2249,27 @@ class EMAStateAssembler:
             moe_sharding_group = hcg.get_moe_sharding_parallel_group()
             moe_sharding_rank = hcg.get_moe_sharding_parallel_rank()
             self.sharding_group = moe_sharding_group
-            assert (
-                n_routed_experts % moe_group.nranks == 0
-            ), "[EMAStateAssembler] n_routed_experts must be divisible by moe_group size."
+            assert n_routed_experts % moe_group.nranks == 0, (
+                "[EMAStateAssembler] n_routed_experts must be divisible by moe_group size."
+            )
             self.h_group = moe_group
             self.v_group = pp_group
             self.num_splits = moe_sharding_group.nranks
             self.shard_idx = moe_sharding_rank
-            self.expert_id_offset = (n_routed_experts // moe_group.nranks) * moe_group.rank
+            self.expert_id_offset = (
+                n_routed_experts // moe_group.nranks
+            ) * moe_group.rank
 
         self._set_latest_processed_checkpoint_step(start_step)
-        self.expected_next_save_ckpt_step = self.latest_processed_checkpoint_step + save_steps
+        self.expected_next_save_ckpt_step = (
+            self.latest_processed_checkpoint_step + save_steps
+        )
 
     def run(self):
         if self.save_hf_steps < 0:
-            logger.info("[EMAStateAssembler] save_hf_steps is negative. Skipping.")
+            logger.info(
+                "[EMAStateAssembler] save_hf_steps is negative. Skipping."
+            )
             return
 
         next_step, next_ckpt_dir = self._find_checkpoint(mode="next")
@@ -2022,17 +2340,22 @@ class EMAStateAssembler:
             self._handle_naive_checkpoint(next_step, next_ckpt_dir)
 
     def _update_expected_next_save_ckpt_step(self):
-        self.expected_next_save_ckpt_step = self.latest_processed_checkpoint_step + self.save_steps
+        self.expected_next_save_ckpt_step = (
+            self.latest_processed_checkpoint_step + self.save_steps
+        )
         logger.info(
             f"[EMAStateAssembler] [Rank {self.rank}] Update the expected next save ckpt step to {self.expected_next_save_ckpt_step}!"
         )
 
     def _set_latest_processed_checkpoint_step(self, start_step):
-
         self.latest_processed_checkpoint_step = start_step
-        logger.info(f"[EMAStateAssembler] Start working from checkpoint step {self.latest_processed_checkpoint_step}!")
+        logger.info(
+            f"[EMAStateAssembler] Start working from checkpoint step {self.latest_processed_checkpoint_step}!"
+        )
 
-    def _find_checkpoint(self, mode: str = "next") -> Tuple[Optional[int], Optional[Path]]:
+    def _find_checkpoint(
+        self, mode: str = "next"
+    ) -> tuple[int | None, Path | None]:
         pattern = re.compile(_re_checkpoint)
         target_step = None
         target_ckpt_path = None
@@ -2054,7 +2377,9 @@ class EMAStateAssembler:
                                 target_ckpt_path = item
                     else:
                         raise ValueError("mode must be 'max' or 'next'")
-        if (target_step is not None) and (target_step > self.expected_next_save_ckpt_step):
+        if (target_step is not None) and (
+            target_step > self.expected_next_save_ckpt_step
+        ):
             return None, None
         return target_step, target_ckpt_path
 
@@ -2067,7 +2392,9 @@ class EMAStateAssembler:
 
         local_rank_is_saved = temp_signal_file.exists()
 
-        flag_tensor = paddle.to_tensor([1 if local_rank_is_saved else 0], dtype="int32")
+        flag_tensor = paddle.to_tensor(
+            [1 if local_rank_is_saved else 0], dtype="int32"
+        )
         dist.all_reduce(flag_tensor, op=dist.ReduceOp.SUM)
 
         all_ranks_saved = flag_tensor.item() == self.world_size
@@ -2083,7 +2410,9 @@ class EMAStateAssembler:
             try:
                 temp_signal_file.unlink()
             except OSError as e:
-                logger.warning(f"[EMAStateAssembler] Failed to remove temp signal file {temp_signal_file}: {e}")
+                logger.warning(
+                    f"[EMAStateAssembler] Failed to remove temp signal file {temp_signal_file}: {e}"
+                )
         self.latest_processed_checkpoint_step = step
         self._update_expected_next_save_ckpt_step()
 
@@ -2099,18 +2428,24 @@ class EMAStateAssembler:
                     f"[EMAStateAssembler] [Rank {self.rank}] EMA state file not found at {ema_state_path}, skipping and updating signal. "
                 )
                 return
-            ema_sharded_state_dict = self._build_ema_sharded_state_dict(self._load_ema_state_dict(ema_state_path))
+            ema_sharded_state_dict = self._build_ema_sharded_state_dict(
+                self._load_ema_state_dict(ema_state_path)
+            )
             self._mark_as_handled(checkpoint_dir, step)
             self._save_full_ema_states(step, ema_sharded_state_dict)
             del ema_sharded_state_dict
-            logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Finished merging EMA states and updated signal.")
+            logger.info(
+                f"[EMAStateAssembler] [Rank {self.rank}] Finished merging EMA states and updated signal."
+            )
         else:
             logger.info(
                 f"[EMAStateAssembler] [Rank {self.rank}] Waiting for other ranks to finish saving checkpoint at step {step}."
             )
 
     def _handle_naive_checkpoint(self, step: int, checkpoint_dir: Path):
-        logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Processing a no need merge EMA checkpoint.")
+        logger.info(
+            f"[EMAStateAssembler] [Rank {self.rank}] Processing a no need merge EMA checkpoint."
+        )
         temp_signal_file = checkpoint_dir / f"save_signal_TMP_{self.rank}"
 
         if not temp_signal_file.exists():
@@ -2120,33 +2455,47 @@ class EMAStateAssembler:
             return
 
         self._mark_as_handled(checkpoint_dir, step)
-        logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Marked naive checkpoint as handled and updated signal.")
+        logger.info(
+            f"[EMAStateAssembler] [Rank {self.rank}] Marked naive checkpoint as handled and updated signal."
+        )
 
     def _get_ema_state_path(self, checkpoint_dir: Path) -> Path:
         if self.save_checkpoint_format == "flex_checkpoint":
             return checkpoint_dir / "ema_state" / f"{self.rank}_0.distcp"
         else:
-            optimizer_name = _add_variant(PADDLE_OPTIMIZER_NAME, self.optimizer_name_suffix)
+            optimizer_name = _add_variant(
+                PADDLE_OPTIMIZER_NAME, self.optimizer_name_suffix
+            )
             ema_file_name = optimizer_name.replace("optimizer", "ema")
             return checkpoint_dir / ema_file_name
 
     def _load_ema_state_dict(self, ema_state_path: Path):
         if not ema_state_path.exists():
-            raise FileNotFoundError(f"[EMAStateAssembler] EMA state file not found at {ema_state_path}.")
+            raise FileNotFoundError(
+                f"[EMAStateAssembler] EMA state file not found at {ema_state_path}."
+            )
 
-        logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Loading EMA state from {ema_state_path}.")
+        logger.info(
+            f"[EMAStateAssembler] [Rank {self.rank}] Loading EMA state from {ema_state_path}."
+        )
         ema_state_dict = paddle.load(str(ema_state_path))
         if "master_weights" not in ema_state_dict:
             # FC format: flat dict with .w_0 suffix keys → rename back + re-pad to old format
             model_state_dict = self.model.state_dict()
-            struct_name_to_static_name = {k: v.name for k, v in model_state_dict.items()}
-            opt_master_weights = self.optimizer.state_dict().get("master_weights", {})
+            struct_name_to_static_name = {
+                k: v.name for k, v in model_state_dict.items()
+            }
+            opt_master_weights = self.optimizer.state_dict().get(
+                "master_weights", {}
+            )
             master_weights = {}
             model_params = {}
             for k, v in ema_state_dict.items():
                 if k.endswith(".w_0"):
                     struct_name = k[:-4]
-                    tensor_name = struct_name_to_static_name[self._rename(struct_name, False)]
+                    tensor_name = struct_name_to_static_name[
+                        self._rename(struct_name, False)
+                    ]
                     if tensor_name in opt_master_weights:
                         opt_tensor = opt_master_weights[tensor_name]
                         if opt_tensor.ndim == 1:
@@ -2154,7 +2503,9 @@ class EMAStateAssembler:
                             flat = v.flatten()
                             expected_numel = opt_tensor._numel()
                             if flat._numel() < expected_numel:
-                                padded = paddle.zeros([expected_numel], dtype=v.dtype)
+                                padded = paddle.zeros(
+                                    [expected_numel], dtype=v.dtype
+                                )
                                 padded[: flat._numel()] = flat
                                 padded.name = tensor_name
                                 master_weights[tensor_name] = padded
@@ -2192,11 +2543,13 @@ class EMAStateAssembler:
             return re.sub(r"(?<=experts\.)\d+", replace, s)
 
         if ".experts." in key:
-            assert (
-                self.expert_id_offset != -1
-            ), f"Your n_routed_experts is {self.model.config.n_routed_experts}, but you have param name:{key}, please check!"
+            assert self.expert_id_offset != -1, (
+                f"Your n_routed_experts is {self.model.config.n_routed_experts}, but you have param name:{key}, please check!"
+            )
             if not self.is_gpt_model:
-                key = _update_expert_number(key, self.expert_id_offset, add_mode)
+                key = _update_expert_number(
+                    key, self.expert_id_offset, add_mode
+                )
         elif "_layer_" in key:
             key = _remove_layer_suffix(key)
         return key
@@ -2208,7 +2561,9 @@ class EMAStateAssembler:
         for gid in group_getter.get_group_ids():
             sub_ema_state_dict = ema_state_dict_grouped.get(gid, {})
             group = group_getter.get_group_by_id(gid)
-            recovered = recover_params_from_master_weight(sub_ema_state_dict, self.model, self.optimizer, group)
+            recovered = recover_params_from_master_weight(
+                sub_ema_state_dict, self.model, self.optimizer, group
+            )
             ema_params_recovered.update(recovered)
 
         ema_sharded_state_dict = {}
@@ -2223,9 +2578,13 @@ class EMAStateAssembler:
                     "experts.up_gate_proj.weight",
                     "experts.down_proj.weight",
                 ]
-                if any(pattern in k for pattern in group_gemm_param_name_pattern):
+                if any(
+                    pattern in k for pattern in group_gemm_param_name_pattern
+                ):
                     ema_tensor = paddle.reshape(ema_tensor, expected_shape)
-                ema_sharded_state_dict[k] = create_sharded_weight_with_new_local(k, ema_tensor, v)
+                ema_sharded_state_dict[k] = (
+                    create_sharded_weight_with_new_local(k, ema_tensor, v)
+                )
 
         ema_state_dict.pop("master_weights")
         del ema_params_recovered
@@ -2233,11 +2592,23 @@ class EMAStateAssembler:
             extra_params = {}
             extra_params_meta_info = {}
             for k, v in ema_state_dict.items():
-                extra_params_meta_info[k] = {"shape": tuple(v.shape), "dtype": v.dtype, "src": self.rank}
+                extra_params_meta_info[k] = {
+                    "shape": tuple(v.shape),
+                    "dtype": v.dtype,
+                    "src": self.rank,
+                }
 
             extra_params_meta_infos = []
-            dist.all_gather_object(extra_params_meta_infos, extra_params_meta_info, group=self.sharding_group)
-            extra_params_meta_info = {k: info for infos in extra_params_meta_infos for k, info in infos.items()}
+            dist.all_gather_object(
+                extra_params_meta_infos,
+                extra_params_meta_info,
+                group=self.sharding_group,
+            )
+            extra_params_meta_info = {
+                k: info
+                for infos in extra_params_meta_infos
+                for k, info in infos.items()
+            }
 
             for k, v in extra_params_meta_info.items():
                 if v["src"] == self.rank:
@@ -2250,12 +2621,16 @@ class EMAStateAssembler:
             extra_params = ema_state_dict
 
         for k, v in extra_params.items():
-            assert k in self.model_sharded_state_dict, f"[EMAStateAssembler] {k} not in model_sharded_state_dict"
+            assert k in self.model_sharded_state_dict, (
+                f"[EMAStateAssembler] {k} not in model_sharded_state_dict"
+            )
             ref_tensor = self.model_sharded_state_dict[k]
             expected_shape = ref_tensor.local_shape
             if "grouped_gemm_experts" in k:
                 v = paddle.reshape(v, expected_shape)
-            ema_sharded_state_dict[k] = create_sharded_weight_with_new_local(k, v, ref_tensor)
+            ema_sharded_state_dict[k] = create_sharded_weight_with_new_local(
+                k, v, ref_tensor
+            )
 
         sharded_state_dict = self.model.sharded_state_dict()
         for k, v in sharded_state_dict.items():
@@ -2269,7 +2644,9 @@ class EMAStateAssembler:
         config = self.model.config
         aoa_config = self.model._gen_inv_aoa_config(config)
 
-        logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Saving full EMA states to {save_path}.")
+        logger.info(
+            f"[EMAStateAssembler] [Rank {self.rank}] Saving full EMA states to {save_path}."
+        )
         saver = EMAStateHFFormatFullParamSaver(
             ema_sharded_state_dict=ema_sharded_state_dict,
             aoa_config=aoa_config,
@@ -2299,7 +2676,9 @@ def select_flex_ckpt_comm_method():
 
     # NOTE(xingmingyyj) For compatibility with old versions, the implementation is rather tricky.
     # This can be removed once Paddle provides stable support.
-    support_parallel_broadcast = func_supports_parallel_broadcast(dist.load_state_dict)
+    support_parallel_broadcast = func_supports_parallel_broadcast(
+        dist.load_state_dict
+    )
 
     world_size = dist.get_world_size()
     if not support_parallel_broadcast:
@@ -2375,6 +2754,8 @@ def select_flex_ckpt_comm_method():
         comm_method = _BROADCAST
 
     if comm_method == _PARALLEL_BROADCAST:
-        logger.info("Selected 'parallel_broadcast' communication method for FlexCheckpoint reshard.")
+        logger.info(
+            "Selected 'parallel_broadcast' communication method for FlexCheckpoint reshard."
+        )
 
     return comm_method

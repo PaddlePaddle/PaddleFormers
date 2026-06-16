@@ -29,7 +29,9 @@ class TestBaseEmbedding(unittest.TestCase):
         fleet.init(is_collective=True)
 
     def setUp(self):
-        config = TransformerConfig(num_hidden_layers=2, hidden_size=12, num_attention_heads=4)
+        config = TransformerConfig(
+            num_hidden_layers=2, hidden_size=12, num_attention_heads=4
+        )
         config.perform_initialization = True
         config.embedding_init_method = init_method_normal(1.0)
         config.hidden_dropout_prob = False
@@ -77,7 +79,9 @@ class TestGPTEmbeddingFillFeatureBranch(unittest.TestCase):
         emb.position_embedding_type = "none"
         emb.rotary_pos_emb = None
         emb.mrope_section = None
-        emb.embedding = MagicMock(return_value=paddle.ones([B, S, H], dtype="float32"))
+        emb.embedding = MagicMock(
+            return_value=paddle.ones([B, S, H], dtype="float32")
+        )
         cfg = MagicMock()
         cfg.expert_model_parallel_size = 2  # > 1 triggers the branch
         cfg.tensor_model_parallel_size = 1  # < 2 satisfies second condition

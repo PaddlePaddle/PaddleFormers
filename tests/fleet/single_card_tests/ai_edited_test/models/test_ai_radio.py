@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -123,7 +127,9 @@ class TestRADIOViTModelInit(unittest.TestCase):
     @patch("paddleformers.fleet.models.vision.radio.build_spec_layer")
     @patch("paddleformers.fleet.models.vision.radio.ColumnParallelLinear")
     @patch("paddleformers.fleet.models.vision.radio.TransformerBlock")
-    def test_init_with_ln_post(self, mock_block, mock_col, mock_build, mock_log):
+    def test_init_with_ln_post(
+        self, mock_block, mock_col, mock_build, mock_log
+    ):
         """Test RADIOViTModel with ln_post_impl."""
         mock_config = _make_mock_config()
         mock_build.return_value = MagicMock()
@@ -191,7 +197,9 @@ class TestRADIOViTModelInit(unittest.TestCase):
     )
     @patch("paddleformers.fleet.models.vision.radio.ColumnParallelLinear")
     @patch("paddleformers.fleet.models.vision.radio.TransformerBlock")
-    def test_seq_length_without_class_token(self, mock_block, mock_col, mock_log):
+    def test_seq_length_without_class_token(
+        self, mock_block, mock_col, mock_log
+    ):
         """Test seq_length computation without class token."""
         mock_config = _make_mock_config()
         model = RADIOViTModel(
@@ -212,7 +220,9 @@ class TestRADIOViTModelInit(unittest.TestCase):
         return_value=False,
     )
     @patch("paddleformers.fleet.models.vision.radio.TransformerBlock")
-    def test_img_dim_not_divisible_by_patch_dim_raises(self, mock_block, mock_log):
+    def test_img_dim_not_divisible_by_patch_dim_raises(
+        self, mock_block, mock_log
+    ):
         """Test that img_h not divisible by patch_dim raises assertion."""
         mock_config = _make_mock_config()
         with self.assertRaises(AssertionError):
@@ -249,7 +259,9 @@ class TestRADIOViTModelGetPosEnc(unittest.TestCase):
     )
     @patch("paddleformers.fleet.models.vision.radio.ColumnParallelLinear")
     @patch("paddleformers.fleet.models.vision.radio.TransformerBlock")
-    def test_get_pos_enc_without_patch_idxs(self, mock_block, mock_col, mock_log):
+    def test_get_pos_enc_without_patch_idxs(
+        self, mock_block, mock_col, mock_log
+    ):
         """Test get_pos_enc without patch_idxs returns full pos encoding."""
         mock_config = _make_mock_config()
         model = RADIOViTModel(
@@ -270,7 +282,9 @@ class TestRADIOViTModelGetPosEnc(unittest.TestCase):
     )
     @patch("paddleformers.fleet.models.vision.radio.ColumnParallelLinear")
     @patch("paddleformers.fleet.models.vision.radio.TransformerBlock")
-    def test_get_pos_enc_with_input_size_matching(self, mock_block, mock_col, mock_log):
+    def test_get_pos_enc_with_input_size_matching(
+        self, mock_block, mock_col, mock_log
+    ):
         """Test get_pos_enc with custom input_size matching max dims."""
         mock_config = _make_mock_config()
         model = RADIOViTModel(
@@ -341,7 +355,9 @@ class TestRADIOViTModelApplyPosEnc(unittest.TestCase):
     )
     @patch("paddleformers.fleet.models.vision.radio.ColumnParallelLinear")
     @patch("paddleformers.fleet.models.vision.radio.TransformerBlock")
-    def test_apply_pos_enc_train_mode_with_dropout(self, mock_block, mock_col, mock_log):
+    def test_apply_pos_enc_train_mode_with_dropout(
+        self, mock_block, mock_col, mock_log
+    ):
         """Test apply_pos_enc in training mode with pos_dropout > 0.
         Note: The dropout path in apply_pos_enc uses paddle.where(keeps, pos_enc, 0)
         which has a type promotion issue (float32 vs int). This test verifies the
@@ -373,7 +389,9 @@ class TestRADIOViTModelApplyPosEnc(unittest.TestCase):
     )
     @patch("paddleformers.fleet.models.vision.radio.ColumnParallelLinear")
     @patch("paddleformers.fleet.models.vision.radio.TransformerBlock")
-    def test_apply_pos_enc_train_mode_no_dropout(self, mock_block, mock_col, mock_log):
+    def test_apply_pos_enc_train_mode_no_dropout(
+        self, mock_block, mock_col, mock_log
+    ):
         """Test apply_pos_enc in training mode with pos_dropout = 0."""
         mock_config = _make_mock_config()
         model = RADIOViTModel(
@@ -402,7 +420,9 @@ class TestRADIOViTModelForward(unittest.TestCase):
         from paddleformers.fleet.models.gpt.gpt_layer_specs import (
             get_gpt_layer_local_spec,
         )
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         config = TransformerConfig(
             num_hidden_layers=1,

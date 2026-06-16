@@ -15,13 +15,17 @@ import os
 import sys
 import unittest
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+REPO_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 sys.path.insert(0, os.path.join(REPO_ROOT, "src"))
 
 import paddle
 
 from paddleformers.fleet.transformer.moe import fp8_utils
-from paddleformers.fleet.transformer.moe.fp8_utils import ExpertsGroupGemmContiguousNode
+from paddleformers.fleet.transformer.moe.fp8_utils import (
+    ExpertsGroupGemmContiguousNode,
+)
 
 
 class Capability:
@@ -78,7 +82,9 @@ class IncubateFunctional:
             return out
         a = kwargs["a"]
         b = kwargs["b"]
-        return paddle.full([a.shape[0], b.shape[0]], 3.0, dtype=kwargs["out_dtype"])
+        return paddle.full(
+            [a.shape[0], b.shape[0]], 3.0, dtype=kwargs["out_dtype"]
+        )
 
 
 class Weight:
@@ -127,7 +133,9 @@ class TestFP8UtilityExtraNoMock(unittest.TestCase):
     def setUp(self):
         self.old_capability = paddle.device.cuda.get_device_capability
         self.old_stack = getattr(fp8_utils, "fuse_stack_fp8_quant", None)
-        self.old_stack_t = getattr(fp8_utils, "fuse_stack_transpose_fp8_quant", None)
+        self.old_stack_t = getattr(
+            fp8_utils, "fuse_stack_transpose_fp8_quant", None
+        )
         self.old_deep_gemm = getattr(fp8_utils, "deep_gemm", None)
         self.old_functional = paddle.incubate.nn.functional
 
@@ -154,11 +162,17 @@ class TestFP8UtilityExtraNoMock(unittest.TestCase):
         calls = []
         paddle.device.cuda.get_device_capability = Capability(10)
         fp8_utils.fuse_stack_fp8_quant = QuantRecorder(calls, "stack")
-        fp8_utils.fuse_stack_transpose_fp8_quant = QuantRecorder(calls, "transpose")
+        fp8_utils.fuse_stack_transpose_fp8_quant = QuantRecorder(
+            calls, "transpose"
+        )
         weights = [paddle.ones([2, 2], dtype="float32")]
 
-        weight, scale = fp8_utils.fused_stack_quant_without_cache(weights, transpose=True, use_ue8m0=True)
-        weight2, scale2 = fp8_utils.fused_stack_quant_without_cache(weights, transpose=False, use_ue8m0=False)
+        weight, scale = fp8_utils.fused_stack_quant_without_cache(
+            weights, transpose=True, use_ue8m0=True
+        )
+        weight2, scale2 = fp8_utils.fused_stack_quant_without_cache(
+            weights, transpose=False, use_ue8m0=False
+        )
 
         self.assertEqual(weight.shape, [2, 4])
         self.assertEqual(scale.shape, [3, 2])
@@ -185,20 +199,28 @@ class TestFP8UtilityExtraNoMock(unittest.TestCase):
         scales = paddle.ones([3, 2, 2], dtype="float32")
         out = paddle.zeros([3, 2], dtype="float32")
 
-        result = fp8_utils.split_group_gemm(x, x_scale, weights, scales, [1, 0, 2], out, use_ue8m0=True)
+        result = fp8_utils.split_group_gemm(
+            x, x_scale, weights, scales, [1, 0, 2], out, use_ue8m0=True
+        )
 
         self.assertIs(result, out)
         self.assertEqual(len(recorder.calls), 2)
-        self.assertEqual(out.numpy().tolist(), [[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]])
+        self.assertEqual(
+            out.numpy().tolist(), [[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]]
+        )
 
     def test_kitchen_gemm_empty_and_non_empty_paths(self):
         calls = []
-        paddle.incubate.nn.functional = IncubateFunctional(self.old_functional, calls)
+        paddle.incubate.nn.functional = IncubateFunctional(
+            self.old_functional, calls
+        )
         empty = paddle.empty([0, 2], dtype="float32")
         weight = paddle.ones([3, 2], dtype="float32")
         out = paddle.ones([0, 3], dtype="float32")
 
-        result = fp8_utils.kitchen_gemm(empty, empty, weight, weight, True, False, out=out)
+        result = fp8_utils.kitchen_gemm(
+            empty, empty, weight, weight, True, False, out=out
+        )
         non_empty = fp8_utils.kitchen_gemm(
             paddle.ones([2, 2], dtype="float32"),
             paddle.ones([2, 1], dtype="float32"),
@@ -210,7 +232,9 @@ class TestFP8UtilityExtraNoMock(unittest.TestCase):
         )
 
         self.assertEqual(result.shape, [0, 3])
-        self.assertEqual(non_empty.numpy().tolist(), [[3.0, 3.0, 3.0], [3.0, 3.0, 3.0]])
+        self.assertEqual(
+            non_empty.numpy().tolist(), [[3.0, 3.0, 3.0], [3.0, 3.0, 3.0]]
+        )
         self.assertEqual(calls[0]["accumulate"], False)
 
 
@@ -221,7 +245,9 @@ class TestExpertsGroupGemmNodeExtraNoMock(unittest.TestCase):
         node.set_cached_tensors(tensors)
         self.assertEqual(node.cached_tensors(), tensors)
         node.clear_cached_tensors()
-        self.assertEqual(node.cached_tensors(), [None, None, None, None, None, None])
+        self.assertEqual(
+            node.cached_tensors(), [None, None, None, None, None, None]
+        )
 
         node.tokens_per_expert = [0, 0]
         empty = paddle.empty([0, 2], dtype="float32")
@@ -244,7 +270,9 @@ class TestExpertsGroupGemmNodeExtraNoMock(unittest.TestCase):
         self.assertIsNone(node.tokens_per_expert)
 
     def test_backward_empty_initializes_split_and_grouped_weight_grads(self):
-        split_node = ExpertsGroupGemmContiguousNode(CustomMap(), use_fp8_mlp=False)
+        split_node = ExpertsGroupGemmContiguousNode(
+            CustomMap(), use_fp8_mlp=False
+        )
         split_node.tokens_per_expert = [0, 0]
         dx, probs_grad = split_node.backward(
             paddle.empty([0, 2], dtype="float32"),
@@ -255,7 +283,9 @@ class TestExpertsGroupGemmNodeExtraNoMock(unittest.TestCase):
         self.assertIsNotNone(split_node.experts[0].down_proj.weight.grad)
         self.assertIsNotNone(split_node.experts[2].up_gate_proj.weight.grad)
 
-        grouped_node = ExpertsGroupGemmContiguousNode(CustomMap(), use_fp8_mlp=False, moe_expert_fusion=True)
+        grouped_node = ExpertsGroupGemmContiguousNode(
+            CustomMap(), use_fp8_mlp=False, moe_expert_fusion=True
+        )
         grouped_node.tokens_per_expert = [0, 0]
         task = AsyncTask()
 

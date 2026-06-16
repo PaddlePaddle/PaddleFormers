@@ -22,7 +22,9 @@ import paddle
 from paddle.distributed import fleet
 
 import paddleformers.fleet.parallel_state as ps
-from paddleformers.fleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
+from paddleformers.fleet.models.gpt.gpt_layer_specs import (
+    get_gpt_layer_local_spec,
+)
 from paddleformers.fleet.models.multimodal.llava_model import LLaVAModel
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 
@@ -84,7 +86,9 @@ class TestLLaVAModel(unittest.TestCase):
 
         language_layer_spec = get_gpt_layer_local_spec()
         vision_layer_spec = deepcopy(language_layer_spec)
-        vision_projection_spec = deepcopy(language_layer_spec.sublayers_spec.mlp.sublayers_spec)
+        vision_projection_spec = deepcopy(
+            language_layer_spec.sublayers_spec.mlp.sublayers_spec
+        )
 
         language_config.language_model_type = "dummy"
         vision_config.vision_model_type = "clip"
@@ -125,7 +129,9 @@ class TestLLaVAModel(unittest.TestCase):
         hidden_size = 72
 
         # 3 images with 1 tile and 2 image with 2 tiles = 7 tiles.
-        image_embeddings = paddle.arange(577 * 7 * hidden_size, dtype=paddle.float).reshape(577, 7, hidden_size)
+        image_embeddings = paddle.arange(
+            577 * 7 * hidden_size, dtype=paddle.float
+        ).reshape(577, 7, hidden_size)
 
         image_token_index = self.model.image_token_index
         input_ids = paddle.arange(1024).expand(5, 1024).contiguous()
@@ -137,10 +143,16 @@ class TestLLaVAModel(unittest.TestCase):
         input_ids[4, 150] = image_token_index
 
         # Using negative sign to distinguish from image embeddings.
-        language_embeddings = -paddle.arange(5 * 1024 * hidden_size, dtype=paddle.float).reshape(5, 1024, hidden_size)
+        language_embeddings = -paddle.arange(
+            5 * 1024 * hidden_size, dtype=paddle.float
+        ).reshape(5, 1024, hidden_size)
 
         # Labels are input_ids shifted to left by one.
-        labels = paddle.arange(1, 1025, dtype=paddle.int).expand(5, 1024).contiguous()
+        labels = (
+            paddle.arange(1, 1025, dtype=paddle.int)
+            .expand(5, 1024)
+            .contiguous()
+        )
         # labels[0] - image token got dropped by shift to left by one.
         labels[1, 99] = image_token_index
         labels[2, -2] = image_token_index
@@ -175,7 +187,9 @@ class TestLLaVAModel(unittest.TestCase):
         # The fifth sample has 2 images with 3 tiles and 1024 text tokens.
         max_seq_len = 3 * img_seq_len - 2 + 1024
 
-        assert embeddings.shape == [max_seq_len, 5, hidden_size], f"{embeddings.shape} "
+        assert embeddings.shape == [max_seq_len, 5, hidden_size], (
+            f"{embeddings.shape} "
+        )
         assert labels.shape == [5, max_seq_len]
         assert loss_mask.shape == labels.shape
 
@@ -311,7 +325,11 @@ class TestLLaVAModel(unittest.TestCase):
         input_ids[4, 50] = image_token_index
         input_ids[4, 150] = image_token_index
 
-        position_ids = paddle.arange(0, 1024, dtype=paddle.int).expand(5, 1024).contiguous()
+        position_ids = (
+            paddle.arange(0, 1024, dtype=paddle.int)
+            .expand(5, 1024)
+            .contiguous()
+        )
 
         loss_mask = paddle.ones((5, 1024))
 
@@ -387,7 +405,9 @@ class TestLLaVAModelVisionEncoders(unittest.TestCase):
 
         language_layer_spec = get_gpt_layer_local_spec()
         vision_layer_spec = deepcopy(language_layer_spec)
-        vision_projection_spec = deepcopy(language_layer_spec.sublayers_spec.mlp.sublayers_spec)
+        vision_projection_spec = deepcopy(
+            language_layer_spec.sublayers_spec.mlp.sublayers_spec
+        )
 
         language_config.language_model_type = "dummy"
         vision_config.vision_model_type = vision_model_type
@@ -414,9 +434,9 @@ class TestLLaVAModelVisionEncoders(unittest.TestCase):
         self.assertIsInstance(model, LLaVAModel)
 
         num_weights = sum([p.numel() for p in model.parameters()])
-        assert (
-            num_weights == self.num_weights_by_encoder[vision_model_type]
-        ), f"num_weights {num_weights} {self.num_weights_by_encoder[vision_model_type]}"
+        assert num_weights == self.num_weights_by_encoder[vision_model_type], (
+            f"num_weights {num_weights} {self.num_weights_by_encoder[vision_model_type]}"
+        )
 
     def test_constructor_radio_g(self):
         """测试 Radio-G 视觉编码器的构造函数"""
@@ -424,9 +444,9 @@ class TestLLaVAModelVisionEncoders(unittest.TestCase):
         self.assertIsInstance(model, LLaVAModel)
 
         num_weights = sum([p.numel() for p in model.parameters()])
-        assert (
-            num_weights == self.num_weights_by_encoder[vision_model_type]
-        ), f"num_weights {num_weights} {self.num_weights_by_encoder[vision_model_type]}"
+        assert num_weights == self.num_weights_by_encoder[vision_model_type], (
+            f"num_weights {num_weights} {self.num_weights_by_encoder[vision_model_type]}"
+        )
 
     def test_set_input_tensor_siglip(self):
         """测试 SigLIP 视觉编码器的 set_input_tensor 方法"""

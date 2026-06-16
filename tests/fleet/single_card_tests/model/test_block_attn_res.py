@@ -74,8 +74,12 @@ class TestBlockAttnRes(unittest.TestCase):
             normalization="RMSNorm",
             hidden_dropout_prob=0.0,
             attention_dropout=0.0,
-            init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-            output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+            init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
+            output_layer_init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
             tie_word_embeddings=True,
             use_qk_norm=True,
             block_attention_residuals=True,
@@ -87,15 +91,19 @@ class TestBlockAttnRes(unittest.TestCase):
         micro_batch_size = 1
 
         data = list(range(sequence_length))
-        input_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat((micro_batch_size, 1))
-        position_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat((micro_batch_size, 1))
+        input_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat(
+            (micro_batch_size, 1)
+        )
+        position_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat(
+            (micro_batch_size, 1)
+        )
         attention_mask = paddle.ones(
             (micro_batch_size, 1, sequence_length, sequence_length),
             dtype=bool,
         )
-        labels = paddle.to_tensor(list(range(1, sequence_length + 1)), dtype=paddle.int64).repeat(
-            (micro_batch_size, 1)
-        )
+        labels = paddle.to_tensor(
+            list(range(1, sequence_length + 1)), dtype=paddle.int64
+        ).repeat((micro_batch_size, 1))
 
         gpt_pipe_model = NoPipelineParallel(gpt_model, self.strategy)
         data = (
@@ -110,22 +118,30 @@ class TestBlockAttnRes(unittest.TestCase):
         loss = gpt_pipe_model.forward_backward_pipeline(data)
 
         # Verify loss is finite
-        assert paddle.isfinite(loss).item(), f"loss is not finite: {loss.item()}"
+        assert paddle.isfinite(loss).item(), (
+            f"loss is not finite: {loss.item()}"
+        )
         print("block_attn_res loss", loss.item())
 
         # Verify gradients exist and are finite
         for name, param in gpt_model.named_parameters():
             assert param.grad is not None, f"param {name} has no gradient"
             grad_norm = param.grad.detach().norm().item()
-            assert np.isfinite(grad_norm), f"param {name} has non-finite gradient: {grad_norm}"
+            assert np.isfinite(grad_norm), (
+                f"param {name} has non-finite gradient: {grad_norm}"
+            )
 
         # Verify block_attn_res parameters have gradients
         has_block_attn_res_param = False
         for name, param in gpt_model.named_parameters():
             if "block_attn_res" in name:
                 has_block_attn_res_param = True
-                assert param.grad is not None, f"block_attn_res param {name} has no gradient"
-        assert has_block_attn_res_param, "No block_attn_res parameters found in model"
+                assert param.grad is not None, (
+                    f"block_attn_res param {name} has no gradient"
+                )
+        assert has_block_attn_res_param, (
+            "No block_attn_res parameters found in model"
+        )
 
 
 if __name__ == "__main__":

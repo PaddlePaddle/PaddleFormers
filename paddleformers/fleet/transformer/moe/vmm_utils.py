@@ -15,8 +15,9 @@
 """VMM (Virtual Memory Management) utility functions for auto subbatch."""
 
 import paddle
-import paddlefleet_ops
 from paddle.device.cuda.memory_analyzer import GB, MemoryAnalysisTool
+
+import paddlefleet_ops
 
 
 def vmm_free_and_growable_block_info() -> list[tuple[int, int]]:
@@ -27,9 +28,13 @@ def vmm_free_and_growable_block_info() -> list[tuple[int, int]]:
     堆大小的上限由 FLAGS_max_reserved_threshold_in_gb 配置。
     """
     all_heaps = MemoryAnalysisTool.vmm_all_block_info()
-    assert all_heaps, "vmm_all_block_info() returned empty, is FLAGS_use_virtual_memory_auto_growth=True?"
+    assert all_heaps, (
+        "vmm_all_block_info() returned empty, is FLAGS_use_virtual_memory_auto_growth=True?"
+    )
     all_blocks = all_heaps[-1]  # sorted by addr
-    (max_reserved,) = paddle.framework.get_flags("FLAGS_max_reserved_threshold_in_gb").values()
+    (max_reserved,) = paddle.framework.get_flags(
+        "FLAGS_max_reserved_threshold_in_gb"
+    ).values()
     max_reserved = max_reserved * GB
 
     free_blocks = [(size, addr) for size, addr, free in all_blocks if free]
@@ -178,12 +183,16 @@ def find_max_sequence_subbatch_size(feature_size: int, length: int = 1) -> int:
     return left
 
 
-def tokens_zip_unique_add_with_subbatch(zipped, unzipped, index_unzipped, zipped_rows, subbatch_rows=None):
+def tokens_zip_unique_add_with_subbatch(
+    zipped, unzipped, index_unzipped, zipped_rows, subbatch_rows=None
+):
     """
     tokens_zip_unique_add_with_subbatch
     """
     if subbatch_rows is None or subbatch_rows <= 0 or zipped_rows <= 0:
-        return paddlefleet_ops.tokens_zip_unique_add(zipped, unzipped, index_unzipped, zipped_rows)
+        return paddlefleet_ops.tokens_zip_unique_add(
+            zipped, unzipped, index_unzipped, zipped_rows
+        )
     else:
         if isinstance(zipped, paddle.Tensor):
             num_split = (zipped_rows + subbatch_rows - 1) // subbatch_rows
@@ -196,7 +205,9 @@ def tokens_zip_unique_add_with_subbatch(zipped, unzipped, index_unzipped, zipped
             if zipped.shape[0] == 0:
                 dtype = zipped.dtype
                 hidden_size = zipped.shape[1]
-                zipped = [paddle.zeros([r, hidden_size], dtype=dtype) for r in rows]
+                zipped = [
+                    paddle.zeros([r, hidden_size], dtype=dtype) for r in rows
+                ]
             else:
                 zipped = paddle.split(zipped, rows, axis=0)
         return paddlefleet_ops.tokens_zip_unique_add_subbatch(

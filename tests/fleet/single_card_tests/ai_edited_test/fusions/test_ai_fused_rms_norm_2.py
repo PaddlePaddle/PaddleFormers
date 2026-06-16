@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -28,7 +32,9 @@ import paddle
 def _make_config(**kwargs):
     """Create a mock TransformerConfig."""
     config = MagicMock()
-    config.layernorm_zero_centered_gamma = kwargs.get("layernorm_zero_centered_gamma", False)
+    config.layernorm_zero_centered_gamma = kwargs.get(
+        "layernorm_zero_centered_gamma", False
+    )
     config.normalization = kwargs.get("normalization", "RMSNorm")
     config.sequence_parallel = kwargs.get("sequence_parallel", False)
     return config
@@ -80,8 +86,12 @@ class TestFusedRmsNormResetParameters(unittest.TestCase):
         from paddleformers.fleet.fusions.fused_rms_norm import FusedRmsNorm
 
         layer = FusedRmsNorm(config, hidden_size=1024)
-        self.assertTrue(paddle.allclose(layer.weight, paddle.ones_like(layer.weight)))
-        self.assertTrue(paddle.allclose(layer.bias, paddle.zeros_like(layer.bias)))
+        self.assertTrue(
+            paddle.allclose(layer.weight, paddle.ones_like(layer.weight))
+        )
+        self.assertTrue(
+            paddle.allclose(layer.bias, paddle.zeros_like(layer.bias))
+        )
 
     def test_reset_with_zero_centered(self):
         """Test reset with zero_centered_gamma=True."""
@@ -89,8 +99,12 @@ class TestFusedRmsNormResetParameters(unittest.TestCase):
         from paddleformers.fleet.fusions.fused_rms_norm import FusedRmsNorm
 
         layer = FusedRmsNorm(config, hidden_size=1024)
-        self.assertTrue(paddle.allclose(layer.weight, paddle.zeros_like(layer.weight)))
-        self.assertTrue(paddle.allclose(layer.bias, paddle.zeros_like(layer.bias)))
+        self.assertTrue(
+            paddle.allclose(layer.weight, paddle.zeros_like(layer.weight))
+        )
+        self.assertTrue(
+            paddle.allclose(layer.bias, paddle.zeros_like(layer.bias))
+        )
 
 
 class TestFusedRmsNormForward(unittest.TestCase):

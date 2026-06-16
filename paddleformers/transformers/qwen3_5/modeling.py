@@ -70,9 +70,16 @@ def _register_fused_in_proj_macro():
         for idx, token in enumerate(tokens):
             if token.type == TokenType.RARROW and rarrow_pos is None:
                 rarrow_pos = idx
-            elif token.type == TokenType.IDENTIFIER and token.value == FUSED_IN_PROJ_TAG:
+            elif (
+                token.type == TokenType.IDENTIFIER
+                and token.value == FUSED_IN_PROJ_TAG
+            ):
                 tag_pos = idx
-            elif token.type == TokenType.IDENTIFIER and token.value == "tp_probe_key" and idx + 2 < len(tokens):
+            elif (
+                token.type == TokenType.IDENTIFIER
+                and token.value == "tp_probe_key"
+                and idx + 2 < len(tokens)
+            ):
                 tp_probe_key = tokens[idx + 2].value
         assert rarrow_pos is not None, "No -> found in expression."
         assert tag_pos is not None, f"No {FUSED_IN_PROJ_TAG} tag found."
@@ -83,7 +90,9 @@ def _register_fused_in_proj_macro():
             src_vars.append(tokens[i].value)
         dst_var = tokens[rarrow_pos + 1].value
         n_sources = len(src_vars)
-        assert n_sources >= 2, f"fused_in_proj requires >= 2 sources, got {n_sources}"
+        assert n_sources >= 2, (
+            f"fused_in_proj requires >= 2 sources, got {n_sources}"
+        )
 
         # --- get TP degree from the probed key (the final Fleet parameter key) ---
         probe = tp_probe_key or dst_var
@@ -100,7 +109,9 @@ def _register_fused_in_proj_macro():
         # chunk_names[src_idx] = [src_shard0, src_shard1, ..., src_shardT-1]
         all_chunks = []
         for src_idx, src_var in enumerate(src_vars):
-            chunks = [f"{dst_var}.__fip_s{src_idx}_r{r}" for r in range(tp_degree)]
+            chunks = [
+                f"{dst_var}.__fip_s{src_idx}_r{r}" for r in range(tp_degree)
+            ]
             all_chunks.append(chunks)
             results.append(f"{src_var} -> {','.join(chunks)}, axis={axis}")
 
@@ -131,11 +142,15 @@ class Qwen3_5VisionModel(Qwen3VLVisionModel):
     def __init__(self, config, *inputs, **kwargs) -> None:
         super().__init__(config, *inputs, **kwargs)
         if not hasattr(self, "pos_embed"):
-            self.pos_embed = nn.Embedding(config.num_position_embeddings, config.hidden_size)
+            self.pos_embed = nn.Embedding(
+                config.num_position_embeddings, config.hidden_size
+            )
         del self.deepstack_visual_indexes
         del self.deepstack_merger_list
 
-    def forward(self, hidden_states: paddle.Tensor, grid_thw: paddle.Tensor, **kwargs) -> paddle.Tensor:
+    def forward(
+        self, hidden_states: paddle.Tensor, grid_thw: paddle.Tensor, **kwargs
+    ) -> paddle.Tensor:
         """
         Args:
             hidden_states (`paddle.Tensor` of shape `(seq_len, hidden_size)`):
@@ -159,7 +174,9 @@ class Qwen3_5VisionModel(Qwen3VLVisionModel):
         emb = paddle.concat([rotary_pos_emb, rotary_pos_emb], axis=-1)
         position_embeddings = (paddle.cos(emb), paddle.sin(emb))
 
-        cu_seqlens = paddle.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
+        cu_seqlens = paddle.repeat_interleave(
+            grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]
+        ).cumsum(
             axis=0,
             # Select dtype based on the following factors:
             #  - FA2 requires that cu_seqlens_q must have dtype int32
@@ -178,9 +195,9 @@ class Qwen3_5VisionModel(Qwen3VLVisionModel):
             ],
             axis=1,
         )
-        attn_mask_startend_row_indices = paddle.repeat_interleave(indices_per_segment, lengths, axis=0)[
-            None, None, ...
-        ]
+        attn_mask_startend_row_indices = paddle.repeat_interleave(
+            indices_per_segment, lengths, axis=0
+        )[None, None, ...]
 
         for blk in self.blocks:
             hidden_states = blk(
@@ -204,16 +221,27 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
         "^visual": "model.visual",
         r"^model(?!\.(language_model|visual))": "model.language_model",
     }
-    _tied_weights_keys = {"lm_head.weight": "model.language_model.embed_tokens.weight"}
+    _tied_weights_keys = {
+        "lm_head.weight": "model.language_model.embed_tokens.weight"
+    }
     is_fleet = True
 
     @classmethod
     def _gen_aoa_config(cls, config):
         mapping = cls._checkpoint_conversion_mapping
-        llm_target = next((v for v in mapping.values() if "language_model" in v), "language_model")
+        llm_target = next(
+            (v for v in mapping.values() if "language_model" in v),
+            "language_model",
+        )
         visual_target = "model.vision_model"
-        llm_prefix = f"{llm_target}." if not llm_target.endswith(".") else llm_target
-        visual_prefix = f"{visual_target}." if not visual_target.endswith(".") else visual_target
+        llm_prefix = (
+            f"{llm_target}." if not llm_target.endswith(".") else llm_target
+        )
+        visual_prefix = (
+            f"{visual_target}."
+            if not visual_target.endswith(".")
+            else visual_target
+        )
 
         text_config = config.text_config
         vision_config = config.vision_config
@@ -221,8 +249,12 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
         layer_types = getattr(text_config, "layer_types", None)
         if layer_types is None:
             layer_types = ["full_attention"] * text_config.num_hidden_layers
-        full_attn_layers = [i for i, lt in enumerate(layer_types) if lt == "full_attention"]
-        linear_attn_layers = [i for i, lt in enumerate(layer_types) if lt == "linear_attention"]
+        full_attn_layers = [
+            i for i, lt in enumerate(layer_types) if lt == "full_attention"
+        ]
+        linear_attn_layers = [
+            i for i, lt in enumerate(layer_types) if lt == "linear_attention"
+        ]
 
         # language model — embedding & final norm
         aoa_config = {
@@ -255,12 +287,22 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
                 # Even chunks = Q heads, Odd chunks = Gate heads
                 n_chunks = 2 * num_heads  # 32
                 qg_names = [f"{hf_pre}.q_proj._qg{c}" for c in range(n_chunks)]
-                aoa_config["aoa_statements"].append(f"{hf_pre}.q_proj.weight -> {','.join(qg_names)}, axis=0")
+                aoa_config["aoa_statements"].append(
+                    f"{hf_pre}.q_proj.weight -> {','.join(qg_names)}, axis=0"
+                )
                 # Step 2: Split k_proj and v_proj into num_kv_heads chunks
-                k_names = [f"{hf_pre}.k_proj._kh{c}" for c in range(num_kv_heads)]
-                v_names = [f"{hf_pre}.v_proj._vh{c}" for c in range(num_kv_heads)]
-                aoa_config["aoa_statements"].append(f"{hf_pre}.k_proj.weight -> {','.join(k_names)}, axis=0")
-                aoa_config["aoa_statements"].append(f"{hf_pre}.v_proj.weight -> {','.join(v_names)}, axis=0")
+                k_names = [
+                    f"{hf_pre}.k_proj._kh{c}" for c in range(num_kv_heads)
+                ]
+                v_names = [
+                    f"{hf_pre}.v_proj._vh{c}" for c in range(num_kv_heads)
+                ]
+                aoa_config["aoa_statements"].append(
+                    f"{hf_pre}.k_proj.weight -> {','.join(k_names)}, axis=0"
+                )
+                aoa_config["aoa_statements"].append(
+                    f"{hf_pre}.v_proj.weight -> {','.join(v_names)}, axis=0"
+                )
                 # Step 3: Assemble per-group in fleet order and concat
                 # Per group g: Q_heads (even chunks), Gate_heads (odd chunks), K, V
                 ordered = []
@@ -275,7 +317,9 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
                     ordered.append(k_names[g])
                     ordered.append(v_names[g])
                 fused_tmp = f"{hf_pre}.qkv_fused_tmp"
-                aoa_config["aoa_statements"].append(f"{','.join(ordered)} -> {fused_tmp}, axis=0")
+                aoa_config["aoa_statements"].append(
+                    f"{','.join(ordered)} -> {fused_tmp}, axis=0"
+                )
                 # Step 4: Transpose the fused weight
                 aoa_config["aoa_statements"].append(
                     f"{fused_tmp}^T -> {llm_prefix}layers.{i}.self_attn.qkv_proj.weight"
@@ -309,20 +353,32 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
         #
         # in_proj: split HF in_proj_qkv into q,k,v first → 6 sources → fused_in_proj → ^T
         # conv1d:  split HF conv1d into q,k,v sections   → 3 sources → fused_in_proj
-        lin_num_key_heads = getattr(text_config, "linear_num_key_heads", num_heads)
-        lin_num_value_heads = getattr(text_config, "linear_num_value_heads", num_heads)
+        lin_num_key_heads = getattr(
+            text_config, "linear_num_key_heads", num_heads
+        )
+        lin_num_value_heads = getattr(
+            text_config, "linear_num_value_heads", num_heads
+        )
 
         for i in linear_attn_layers:
             hf_pre = f"model.language_model.layers.{i}.linear_attn"
             fused_tmp = f"{hf_pre}.in_proj_fused_tmp"
-            fleet_in_proj_key = f"{llm_prefix}layers.{i}.self_attn.in_proj.weight"
+            fleet_in_proj_key = (
+                f"{llm_prefix}layers.{i}.self_attn.in_proj.weight"
+            )
             # Step 1: Split in_proj_qkv [qk_dim+qk_dim+v_dim, hidden] into q, k, v along axis=0
             # Use per-head split for equal chunks: key_head_dim == value_head_dim for Qwen3.5
             n_qkv_heads = 2 * lin_num_key_heads + lin_num_value_heads
-            head_names = [f"{hf_pre}.in_proj_qkv._h{h}" for h in range(n_qkv_heads)]
-            aoa_config["aoa_statements"].append(f"{hf_pre}.in_proj_qkv.weight -> {','.join(head_names)}, axis=0")
+            head_names = [
+                f"{hf_pre}.in_proj_qkv._h{h}" for h in range(n_qkv_heads)
+            ]
+            aoa_config["aoa_statements"].append(
+                f"{hf_pre}.in_proj_qkv.weight -> {','.join(head_names)}, axis=0"
+            )
             q_part = ",".join(head_names[:lin_num_key_heads])
-            k_part = ",".join(head_names[lin_num_key_heads : 2 * lin_num_key_heads])
+            k_part = ",".join(
+                head_names[lin_num_key_heads : 2 * lin_num_key_heads]
+            )
             v_part = ",".join(head_names[2 * lin_num_key_heads :])
             q_var = f"{hf_pre}.in_proj_qkv._q"
             k_var = f"{hf_pre}.in_proj_qkv._k"
@@ -337,7 +393,9 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
                 f"{q_var}, {k_var}, {v_var}, {hf_pre}.in_proj_z.weight, {hf_pre}.in_proj_b.weight, {hf_pre}.in_proj_a.weight -> {fused_tmp}, fused_in_proj, axis=0, tp_probe_key={fleet_in_proj_key}"
             )
             # Step 3: Transpose to Fleet layout [hidden, in_proj_dim]
-            aoa_config["aoa_statements"].append(f"{fused_tmp}^T -> {fleet_in_proj_key}")
+            aoa_config["aoa_statements"].append(
+                f"{fused_tmp}^T -> {fleet_in_proj_key}"
+            )
         for i in linear_attn_layers:
             hf_pre = f"model.language_model.layers.{i}.linear_attn"
             # Split in_proj_qkv's conv channels into q, k, v parts
@@ -348,10 +406,14 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
             n_qkv_heads = 2 * lin_num_key_heads + lin_num_value_heads
             # Equal split by heads (key_head_dim == value_head_dim for Qwen3.5)
             conv_names = [f"{hf_pre}.conv1d._cv{c}" for c in range(n_qkv_heads)]
-            aoa_config["aoa_statements"].append(f"{hf_pre}.conv1d.weight -> {','.join(conv_names)}, axis=0")
+            aoa_config["aoa_statements"].append(
+                f"{hf_pre}.conv1d.weight -> {','.join(conv_names)}, axis=0"
+            )
             # Reassemble into 3 sections: q, k, v
             q_parts = ",".join(conv_names[:lin_num_key_heads])
-            k_parts = ",".join(conv_names[lin_num_key_heads : 2 * lin_num_key_heads])
+            k_parts = ",".join(
+                conv_names[lin_num_key_heads : 2 * lin_num_key_heads]
+            )
             v_parts = ",".join(conv_names[2 * lin_num_key_heads :])
             aoa_config["aoa_statements"] += [
                 f"{q_parts} -> {q_conv}, axis=0",
@@ -386,7 +448,9 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
         # Qwen3_5TextConfig has num_experts=60 as class default even for dense models,
         # so we use model_type to distinguish: "moe" in model_type means MoE variant
         is_moe = "moe" in getattr(config, "model_type", "")
-        num_experts = getattr(text_config, "num_experts", 0) or getattr(text_config, "n_routed_experts", 0)
+        num_experts = getattr(text_config, "num_experts", 0) or getattr(
+            text_config, "n_routed_experts", 0
+        )
         if is_moe and num_experts > 0:
             # MoE — router gate
             aoa_config["aoa_statements"] += [
@@ -413,8 +477,13 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
                         f"model.language_model.layers.{i}.mlp.experts.down_proj -> {split_experts_down}",
                     ]
             # MoE — shared experts
-            shared_expert_intermediate_size = getattr(text_config, "shared_expert_intermediate_size", 0)
-            if shared_expert_intermediate_size and shared_expert_intermediate_size > 0:
+            shared_expert_intermediate_size = getattr(
+                text_config, "shared_expert_intermediate_size", 0
+            )
+            if (
+                shared_expert_intermediate_size
+                and shared_expert_intermediate_size > 0
+            ):
                 aoa_config["aoa_statements"] += [
                     f"model.language_model.layers.{i}.mlp.shared_expert.gate_proj.weight^T, model.language_model.layers.{i}.mlp.shared_expert.up_proj.weight^T -> {llm_prefix}layers.{i}.mlp.shared_experts.up_gate_proj.weight, fused_ffn"
                     for i in range(text_config.num_hidden_layers)
@@ -465,12 +534,24 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
                 if gated_attention:
                     hf_pre = f"{hf_mtp_pre}.self_attn"
                     n_chunks = 2 * num_heads
-                    qg_names = [f"{hf_pre}.q_proj._qg{c}" for c in range(n_chunks)]
-                    aoa_config["aoa_statements"].append(f"{hf_pre}.q_proj.weight -> {','.join(qg_names)}, axis=0")
-                    k_names = [f"{hf_pre}.k_proj._kh{c}" for c in range(num_kv_heads)]
-                    v_names = [f"{hf_pre}.v_proj._vh{c}" for c in range(num_kv_heads)]
-                    aoa_config["aoa_statements"].append(f"{hf_pre}.k_proj.weight -> {','.join(k_names)}, axis=0")
-                    aoa_config["aoa_statements"].append(f"{hf_pre}.v_proj.weight -> {','.join(v_names)}, axis=0")
+                    qg_names = [
+                        f"{hf_pre}.q_proj._qg{c}" for c in range(n_chunks)
+                    ]
+                    aoa_config["aoa_statements"].append(
+                        f"{hf_pre}.q_proj.weight -> {','.join(qg_names)}, axis=0"
+                    )
+                    k_names = [
+                        f"{hf_pre}.k_proj._kh{c}" for c in range(num_kv_heads)
+                    ]
+                    v_names = [
+                        f"{hf_pre}.v_proj._vh{c}" for c in range(num_kv_heads)
+                    ]
+                    aoa_config["aoa_statements"].append(
+                        f"{hf_pre}.k_proj.weight -> {','.join(k_names)}, axis=0"
+                    )
+                    aoa_config["aoa_statements"].append(
+                        f"{hf_pre}.v_proj.weight -> {','.join(v_names)}, axis=0"
+                    )
                     ordered = []
                     for g in range(num_kv_heads):
                         base = g * heads_per_group * 2
@@ -481,7 +562,9 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
                         ordered.append(k_names[g])
                         ordered.append(v_names[g])
                     fused_tmp = f"{hf_pre}.qkv_fused_tmp"
-                    aoa_config["aoa_statements"].append(f"{','.join(ordered)} -> {fused_tmp}, axis=0")
+                    aoa_config["aoa_statements"].append(
+                        f"{','.join(ordered)} -> {fused_tmp}, axis=0"
+                    )
                     aoa_config["aoa_statements"].append(
                         f"{fused_tmp}^T -> {fleet_mtp_pre}.transformer_layer.self_attn.qkv_proj.weight"
                     )
@@ -512,7 +595,10 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
                     ]
 
                 # MTP transformer layer — shared expert
-                if shared_expert_intermediate_size and shared_expert_intermediate_size > 0:
+                if (
+                    shared_expert_intermediate_size
+                    and shared_expert_intermediate_size > 0
+                ):
                     aoa_config["aoa_statements"] += [
                         f"{hf_mtp_pre}.mlp.shared_expert.gate_proj.weight^T, {hf_mtp_pre}.mlp.shared_expert.up_proj.weight^T -> {fleet_mtp_pre}.transformer_layer.mlp.shared_experts.up_gate_proj.weight, fused_ffn",
                         f"{hf_mtp_pre}.mlp.shared_expert.down_proj.weight^T -> {fleet_mtp_pre}.transformer_layer.mlp.shared_experts.down_proj.weight",
@@ -541,11 +627,17 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
             ]
             + [
                 f"model.visual.blocks.$LAYER_ID.mlp.{x}.weight^T -> {visual_prefix}layers.$LAYER_ID.mlp.{y}.weight"
-                for x, y in (("linear_fc1", "up_gate_proj"), ("linear_fc2", "down_proj"))
+                for x, y in (
+                    ("linear_fc1", "up_gate_proj"),
+                    ("linear_fc2", "down_proj"),
+                )
             ]
             + [
                 f"model.visual.blocks.$LAYER_ID.mlp.{x}.bias -> {visual_prefix}layers.$LAYER_ID.mlp.{y}.bias"
-                for x, y in (("linear_fc1", "up_gate_proj"), ("linear_fc2", "down_proj"))
+                for x, y in (
+                    ("linear_fc1", "up_gate_proj"),
+                    ("linear_fc2", "down_proj"),
+                )
             ]
         )
         aoa_config["aoa_statements"] += [
@@ -578,10 +670,19 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
     @classmethod
     def _gen_inv_aoa_config(cls, config):
         mapping = cls._checkpoint_conversion_mapping
-        llm_target = next((v for v in mapping.values() if "language_model" in v), "language_model")
+        llm_target = next(
+            (v for v in mapping.values() if "language_model" in v),
+            "language_model",
+        )
         visual_target = "model.vision_model"
-        llm_prefix = f"{llm_target}." if not llm_target.endswith(".") else llm_target
-        visual_prefix = f"{visual_target}." if not visual_target.endswith(".") else visual_target
+        llm_prefix = (
+            f"{llm_target}." if not llm_target.endswith(".") else llm_target
+        )
+        visual_prefix = (
+            f"{visual_target}."
+            if not visual_target.endswith(".")
+            else visual_target
+        )
 
         text_config = config.text_config
         vision_config = config.vision_config
@@ -589,8 +690,12 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
         layer_types = getattr(text_config, "layer_types", None)
         if layer_types is None:
             layer_types = ["full_attention"] * text_config.num_hidden_layers
-        full_attn_layers = [i for i, lt in enumerate(layer_types) if lt == "full_attention"]
-        linear_attn_layers = [i for i, lt in enumerate(layer_types) if lt == "linear_attention"]
+        full_attn_layers = [
+            i for i, lt in enumerate(layer_types) if lt == "full_attention"
+        ]
+        linear_attn_layers = [
+            i for i, lt in enumerate(layer_types) if lt == "linear_attention"
+        ]
 
         # language model — embedding & final norm
         aoa_config = {
@@ -622,7 +727,9 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
                 fused_tmp = f"{hf_pre}.qkv_fused_tmp"
 
                 # Step 1: Transpose fleet weight [in, out] -> [out, in]
-                aoa_config["aoa_statements"].append(f"{fleet_key}^T -> {fused_tmp}")
+                aoa_config["aoa_statements"].append(
+                    f"{fleet_key}^T -> {fused_tmp}"
+                )
 
                 # Step 2: Split into per-group chunks along axis=0
                 # Each group has: Q(hpg chunks) + Gate(hpg chunks) + K(1 chunk) + V(1 chunk)
@@ -639,7 +746,9 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
                     chunk_names.append(f"{hf_pre}._k_g{g}")
                     chunk_names.append(f"{hf_pre}._v_g{g}")
 
-                aoa_config["aoa_statements"].append(f"{fused_tmp} -> {','.join(chunk_names)}, axis=0")
+                aoa_config["aoa_statements"].append(
+                    f"{fused_tmp} -> {','.join(chunk_names)}, axis=0"
+                )
 
                 # Step 3: Reassemble into HF format
                 # q_proj = interleaved [Q_h0, G_h0, Q_h1, G_h1, ...] for all groups
@@ -648,15 +757,21 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
                     for h in range(heads_per_group):
                         q_ordered.append(f"{hf_pre}._q_g{g}_h{h}")
                         q_ordered.append(f"{hf_pre}._gate_g{g}_h{h}")
-                aoa_config["aoa_statements"].append(f"{','.join(q_ordered)} -> {hf_pre}.q_proj.weight, axis=0")
+                aoa_config["aoa_statements"].append(
+                    f"{','.join(q_ordered)} -> {hf_pre}.q_proj.weight, axis=0"
+                )
 
                 # k_proj = all K heads concatenated
                 k_ordered = [f"{hf_pre}._k_g{g}" for g in range(num_kv_heads)]
-                aoa_config["aoa_statements"].append(f"{','.join(k_ordered)} -> {hf_pre}.k_proj.weight, axis=0")
+                aoa_config["aoa_statements"].append(
+                    f"{','.join(k_ordered)} -> {hf_pre}.k_proj.weight, axis=0"
+                )
 
                 # v_proj = all V heads concatenated
                 v_ordered = [f"{hf_pre}._v_g{g}" for g in range(num_kv_heads)]
-                aoa_config["aoa_statements"].append(f"{','.join(v_ordered)} -> {hf_pre}.v_proj.weight, axis=0")
+                aoa_config["aoa_statements"].append(
+                    f"{','.join(v_ordered)} -> {hf_pre}.v_proj.weight, axis=0"
+                )
         else:
             aoa_config["aoa_statements"] += [
                 f"{llm_prefix}layers.{i}.self_attn.qkv_proj.weight -> model.language_model.layers.{i}.self_attn.q_proj.weight, model.language_model.layers.{i}.self_attn.k_proj.weight, model.language_model.layers.{i}.self_attn.v_proj.weight, fused_qkv, num_heads={text_config.num_attention_heads}, num_key_value_groups={text_config.num_key_value_heads}"
@@ -691,8 +806,12 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
         from math import gcd
 
         tp_degree = max(config.tensor_model_parallel_size, 1)
-        lin_num_key_heads = getattr(text_config, "linear_num_key_heads", num_heads)
-        lin_num_value_heads = getattr(text_config, "linear_num_value_heads", num_heads)
+        lin_num_key_heads = getattr(
+            text_config, "linear_num_key_heads", num_heads
+        )
+        lin_num_value_heads = getattr(
+            text_config, "linear_num_value_heads", num_heads
+        )
         head_dim = text_config.hidden_size // num_heads
 
         # Source sizes for in_proj: [q, k, v, z, b, a]
@@ -707,7 +826,14 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
         # Source sizes for conv1d: [q_conv, k_conv, v_conv]
         conv_src_sizes = [q_dim, k_dim, v_dim]
 
-        def gen_inv_fused_in_proj_stmts(layer_idx, src_key, dst_keys, src_sizes, prefix, transpose_first=True):
+        def gen_inv_fused_in_proj_stmts(
+            layer_idx,
+            src_key,
+            dst_keys,
+            src_sizes,
+            prefix,
+            transpose_first=True,
+        ):
             """Generate AOA statements to reverse fused_in_proj interleaving.
 
             Uses chunk-based equal split to handle unequal source sizes:
@@ -731,14 +857,20 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
             stmts.append(f"{fused_var} -> {','.join(chunk_names)}, axis=0")
 
             chunks_per_rank = n_chunks // tp_degree
-            for dst_idx, (dst_key, src_size) in enumerate(zip(dst_keys, src_sizes)):
+            for dst_idx, (dst_key, src_size) in enumerate(
+                zip(dst_keys, src_sizes)
+            ):
                 n_chunks_for_src = (src_size // tp_degree) // unit_size
                 rank_chunks = []
                 for r in range(tp_degree):
                     rank_offset = r * chunks_per_rank
-                    src_offset_in_rank = sum(per_rank_sizes[:dst_idx]) // unit_size
+                    src_offset_in_rank = (
+                        sum(per_rank_sizes[:dst_idx]) // unit_size
+                    )
                     start = rank_offset + src_offset_in_rank
-                    rank_chunks.extend(chunk_names[start : start + n_chunks_for_src])
+                    rank_chunks.extend(
+                        chunk_names[start : start + n_chunks_for_src]
+                    )
                 stmts.append(f"{','.join(rank_chunks)} -> {dst_key}, axis=0")
 
             return stmts
@@ -760,10 +892,17 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
             ]
 
             stmts = gen_inv_fused_in_proj_stmts(
-                i, fleet_in_proj, dst_keys, in_proj_src_sizes, prefix=f"{hf_pre}.in_proj", transpose_first=True
+                i,
+                fleet_in_proj,
+                dst_keys,
+                in_proj_src_sizes,
+                prefix=f"{hf_pre}.in_proj",
+                transpose_first=True,
             )
             aoa_config["aoa_statements"] += stmts
-            aoa_config["aoa_statements"].append(f"{q_var},{k_var},{v_var} -> {hf_pre}.in_proj_qkv.weight, axis=0")
+            aoa_config["aoa_statements"].append(
+                f"{q_var},{k_var},{v_var} -> {hf_pre}.in_proj_qkv.weight, axis=0"
+            )
 
         for i in linear_attn_layers:
             hf_pre = f"model.language_model.layers.{i}.linear_attn"
@@ -775,10 +914,17 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
             dst_keys = [q_conv, k_conv, v_conv]
 
             stmts = gen_inv_fused_in_proj_stmts(
-                i, fleet_conv, dst_keys, conv_src_sizes, prefix=f"{hf_pre}.conv1d", transpose_first=False
+                i,
+                fleet_conv,
+                dst_keys,
+                conv_src_sizes,
+                prefix=f"{hf_pre}.conv1d",
+                transpose_first=False,
             )
             aoa_config["aoa_statements"] += stmts
-            aoa_config["aoa_statements"].append(f"{q_conv},{k_conv},{v_conv} -> {hf_pre}.conv1d.weight, axis=0")
+            aoa_config["aoa_statements"].append(
+                f"{q_conv},{k_conv},{v_conv} -> {hf_pre}.conv1d.weight, axis=0"
+            )
 
         aoa_config["aoa_statements"] += [
             f"{llm_prefix}layers.{i}.self_attn.dt_bias -> model.language_model.layers.{i}.linear_attn.dt_bias"
@@ -815,8 +961,13 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
         ]
 
         # ── MoE — shared experts (all layers) ──
-        shared_expert_intermediate_size = getattr(text_config, "shared_expert_intermediate_size", 0)
-        if shared_expert_intermediate_size and shared_expert_intermediate_size > 0:
+        shared_expert_intermediate_size = getattr(
+            text_config, "shared_expert_intermediate_size", 0
+        )
+        if (
+            shared_expert_intermediate_size
+            and shared_expert_intermediate_size > 0
+        ):
             # Fleet has fused up_gate_proj; split back to separate gate_proj and up_proj
             aoa_config["aoa_statements"] += [
                 f"{llm_prefix}layers.{i}.mlp.shared_experts.up_gate_proj.weight -> model.language_model.layers.{i}.mlp.shared_expert.gate_proj.weight, model.language_model.layers.{i}.mlp.shared_expert.up_proj.weight, fused_ffn"
@@ -838,7 +989,9 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
 
         # ── MTP (Multi-Token Prediction) layers ──
         mtp_num_layers = getattr(text_config, "mtp_num_hidden_layers", 0)
-        num_experts = getattr(text_config, "num_experts", 0) or getattr(text_config, "n_routed_experts", 0)
+        num_experts = getattr(text_config, "num_experts", 0) or getattr(
+            text_config, "n_routed_experts", 0
+        )
         if mtp_num_layers > 0:
             num_hidden = text_config.num_hidden_layers
             for m in range(mtp_num_layers):
@@ -866,7 +1019,9 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
                     fleet_key = f"{fleet_mtp_pre}.transformer_layer.self_attn.qkv_proj.weight"
                     fused_tmp = f"{hf_pre}.qkv_fused_tmp"
 
-                    aoa_config["aoa_statements"].append(f"{fleet_key}^T -> {fused_tmp}")
+                    aoa_config["aoa_statements"].append(
+                        f"{fleet_key}^T -> {fused_tmp}"
+                    )
 
                     chunk_names = []
                     for g in range(num_kv_heads):
@@ -876,19 +1031,31 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
                             chunk_names.append(f"{hf_pre}._gate_g{g}_h{h}")
                         chunk_names.append(f"{hf_pre}._k_g{g}")
                         chunk_names.append(f"{hf_pre}._v_g{g}")
-                    aoa_config["aoa_statements"].append(f"{fused_tmp} -> {','.join(chunk_names)}, axis=0")
+                    aoa_config["aoa_statements"].append(
+                        f"{fused_tmp} -> {','.join(chunk_names)}, axis=0"
+                    )
 
                     q_ordered = []
                     for g in range(num_kv_heads):
                         for h in range(heads_per_group):
                             q_ordered.append(f"{hf_pre}._q_g{g}_h{h}")
                             q_ordered.append(f"{hf_pre}._gate_g{g}_h{h}")
-                    aoa_config["aoa_statements"].append(f"{','.join(q_ordered)} -> {hf_pre}.q_proj.weight, axis=0")
+                    aoa_config["aoa_statements"].append(
+                        f"{','.join(q_ordered)} -> {hf_pre}.q_proj.weight, axis=0"
+                    )
 
-                    k_ordered = [f"{hf_pre}._k_g{g}" for g in range(num_kv_heads)]
-                    aoa_config["aoa_statements"].append(f"{','.join(k_ordered)} -> {hf_pre}.k_proj.weight, axis=0")
-                    v_ordered = [f"{hf_pre}._v_g{g}" for g in range(num_kv_heads)]
-                    aoa_config["aoa_statements"].append(f"{','.join(v_ordered)} -> {hf_pre}.v_proj.weight, axis=0")
+                    k_ordered = [
+                        f"{hf_pre}._k_g{g}" for g in range(num_kv_heads)
+                    ]
+                    aoa_config["aoa_statements"].append(
+                        f"{','.join(k_ordered)} -> {hf_pre}.k_proj.weight, axis=0"
+                    )
+                    v_ordered = [
+                        f"{hf_pre}._v_g{g}" for g in range(num_kv_heads)
+                    ]
+                    aoa_config["aoa_statements"].append(
+                        f"{','.join(v_ordered)} -> {hf_pre}.v_proj.weight, axis=0"
+                    )
                 else:
                     aoa_config["aoa_statements"].append(
                         f"{fleet_mtp_pre}.transformer_layer.self_attn.qkv_proj.weight -> {hf_mtp_pre}.self_attn.q_proj.weight, {hf_mtp_pre}.self_attn.k_proj.weight, {hf_mtp_pre}.self_attn.v_proj.weight, fused_qkv, num_heads={num_heads}, num_key_value_groups={num_kv_heads}"
@@ -921,7 +1088,10 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
                     ]
 
                 # MTP transformer layer — shared expert
-                if shared_expert_intermediate_size and shared_expert_intermediate_size > 0:
+                if (
+                    shared_expert_intermediate_size
+                    and shared_expert_intermediate_size > 0
+                ):
                     aoa_config["aoa_statements"] += [
                         f"{fleet_mtp_pre}.transformer_layer.mlp.shared_experts.up_gate_proj.weight -> {hf_mtp_pre}.mlp.shared_expert.gate_proj.weight, {hf_mtp_pre}.mlp.shared_expert.up_proj.weight, fused_ffn",
                         f"{hf_mtp_pre}.mlp.shared_expert.gate_proj.weight^T -> {hf_mtp_pre}.mlp.shared_expert.gate_proj.weight",
@@ -950,11 +1120,17 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
             ]
             + [
                 f"{visual_prefix}layers.$LAYER_ID.mlp.{y}.weight^T -> model.visual.blocks.$LAYER_ID.mlp.{x}.weight"
-                for x, y in (("linear_fc1", "up_gate_proj"), ("linear_fc2", "down_proj"))
+                for x, y in (
+                    ("linear_fc1", "up_gate_proj"),
+                    ("linear_fc2", "down_proj"),
+                )
             ]
             + [
                 f"{visual_prefix}layers.$LAYER_ID.mlp.{y}.bias -> model.visual.blocks.$LAYER_ID.mlp.{x}.bias"
-                for x, y in (("linear_fc1", "up_gate_proj"), ("linear_fc2", "down_proj"))
+                for x, y in (
+                    ("linear_fc1", "up_gate_proj"),
+                    ("linear_fc2", "down_proj"),
+                )
             ]
         )
         aoa_config["aoa_statements"] += [
@@ -985,11 +1161,19 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
         return aoa_config
 
     def __new__(cls, config, have_criterion=True):
-        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
+        config.tensor_model_parallel_size = max(
+            config.tensor_model_parallel_size, 1
+        )
         config.context_parallel_size = max(config.context_parallel_size, 1)
-        config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
-        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
-        config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+        config.pipeline_model_parallel_size = max(
+            config.pipeline_model_parallel_size, 1
+        )
+        config.virtual_pipeline_model_parallel_size = max(
+            config.virtual_pipeline_model_parallel_size, 1
+        )
+        config.expert_model_parallel_size = max(
+            config.expert_model_parallel_size, 1
+        )
 
         criterion = None
         if have_criterion:
@@ -999,8 +1183,12 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
 
         qwen3_5_model._gen_aoa_config = cls._gen_aoa_config
         qwen3_5_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
-        qwen3_5_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
-        qwen3_5_model.get_hardware_flops = types.MethodType(cls.get_hardware_flops, qwen3_5_model)
+        qwen3_5_model._get_tensor_parallel_mappings = (
+            cls._get_tensor_parallel_mappings
+        )
+        qwen3_5_model.get_hardware_flops = types.MethodType(
+            cls.get_hardware_flops, qwen3_5_model
+        )
         qwen3_5_model.config_to_save = config
 
         return qwen3_5_model

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -251,7 +255,9 @@ class TestP2pHelperSendBackwardRecvBackwardDynamic(unittest.TestCase):
             patch.object(helper, "_send_meta"),
             patch.object(helper, "_recv_meta"),
         ):
-            result = helper.send_backward_recv_backward(mock_tensor, recv_next=True)
+            result = helper.send_backward_recv_backward(
+                mock_tensor, recv_next=True
+            )
             # dynamic_cnt is incremented by 1 when need_increase_cnt is True
             self.assertEqual(helper._dynamic_cnt, 1)
 

@@ -15,7 +15,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -28,7 +32,9 @@ except (ImportError, ModuleNotFoundError, Exception):
     _MODULE_AVAILABLE = False
 
 
-@unittest.skipUnless(_MODULE_AVAILABLE, "paddleformers.fleet._extensions not available")
+@unittest.skipUnless(
+    _MODULE_AVAILABLE, "paddleformers.fleet._extensions not available"
+)
 class TestExtensionsOpsModule(unittest.TestCase):
     """Tests for paddleformers.fleet._extensions.ops module functions."""
 
@@ -129,7 +135,9 @@ class TestExtensionsOpsModule(unittest.TestCase):
         self.assertTrue(hasattr(ops, "fuse_weighted_swiglu_fp8_quant"))
 
 
-@unittest.skipUnless(_MODULE_AVAILABLE, "paddleformers.fleet._extensions not available")
+@unittest.skipUnless(
+    _MODULE_AVAILABLE, "paddleformers.fleet._extensions not available"
+)
 class TestExtensionsOpsFunctionSignatures(unittest.TestCase):
     """Tests for ops function signatures and basic properties."""
 
@@ -164,7 +172,9 @@ class TestExtensionsOpsFunctionSignatures(unittest.TestCase):
         self.assertTrue(callable(count_cumsum))
 
 
-@unittest.skipUnless(_MODULE_AVAILABLE, "paddleformers.fleet._extensions not available")
+@unittest.skipUnless(
+    _MODULE_AVAILABLE, "paddleformers.fleet._extensions not available"
+)
 class TestExtensionsOpsBootstrap(unittest.TestCase):
     """Tests for the bootstrap mechanism of _extensions.ops."""
 
@@ -172,9 +182,13 @@ class TestExtensionsOpsBootstrap(unittest.TestCase):
         """The ops_pd_.so shared library should exist."""
         import paddleformers.fleet._extensions
 
-        cur_dir = os.path.dirname(os.path.abspath(paddleformers.fleet._extensions.__file__))
+        cur_dir = os.path.dirname(
+            os.path.abspath(paddleformers.fleet._extensions.__file__)
+        )
         so_path = os.path.join(cur_dir, "ops_pd_.so")
-        self.assertTrue(os.path.exists(so_path), f"SO file not found at {so_path}")
+        self.assertTrue(
+            os.path.exists(so_path), f"SO file not found at {so_path}"
+        )
 
 
 if __name__ == "__main__":

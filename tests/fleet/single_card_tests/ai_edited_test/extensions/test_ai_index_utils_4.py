@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -108,7 +112,9 @@ class TestFindBlocksTopp(unittest.TestCase):
     def test_top_p_kernel_exists(self):
         """Test top_p_kernel is defined in module."""
         try:
-            from paddlefleet_ops._extensions.flashmask.index_utils import top_p_kernel
+            from paddlefleet_ops._extensions.flashmask.index_utils import (
+                top_p_kernel,
+            )
 
             self.assertIsNotNone(top_p_kernel)
         except ImportError:

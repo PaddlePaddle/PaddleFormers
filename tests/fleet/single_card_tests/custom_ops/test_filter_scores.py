@@ -16,6 +16,7 @@ import unittest
 
 import numpy as np
 import paddle
+
 from paddlefleet_ops import filter_scores, filter_scores_grad
 
 
@@ -47,7 +48,9 @@ class TestFilterScoresOp(unittest.TestCase):
 
     def _run_forward_test(self, shape, dtype):
         probs_np = np.random.rand(*shape).astype(dtype)
-        indices_np = np.random.randint(low=0, high=100, size=shape).astype(np.int64)
+        indices_np = np.random.randint(low=0, high=100, size=shape).astype(
+            np.int64
+        )
         invalid_mask = np.random.choice([True, False], size=shape, p=[0.5, 0.5])
         indices_np[invalid_mask] = -1
         expected_topk_scores = self._get_numpy_reference(probs_np, indices_np)
@@ -76,7 +79,9 @@ class TestFilterScoresOp(unittest.TestCase):
         shape = (16, 64)
         dtype = "float32"
 
-        probs, indices, topk_scores = self._run_forward_test(shape=shape, dtype=dtype)
+        probs, indices, topk_scores = self._run_forward_test(
+            shape=shape, dtype=dtype
+        )
 
         grads = paddle.grad(
             outputs=[topk_scores.sum()],
@@ -107,7 +112,9 @@ class TestFilterScoresOp(unittest.TestCase):
         probs = paddle.randn([10, 10])
         indices = paddle.full([10, 10], 1, dtype="int64")
         topk_scores = self.filter_scores_op(probs, indices)
-        self.assertEqual(topk_scores.numel(), probs.numel(), "Failed for all-valid case")
+        self.assertEqual(
+            topk_scores.numel(), probs.numel(), "Failed for all-valid case"
+        )
         np.testing.assert_allclose(topk_scores.numpy(), probs.numpy().flatten())
         print("Edge case passed: all valid indices")
 

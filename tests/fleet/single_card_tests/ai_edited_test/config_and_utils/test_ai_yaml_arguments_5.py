@@ -16,21 +16,30 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import tempfile
 import unittest
 
 try:
-    from paddleformers.fleet.training.yaml_arguments import load_yaml  # noqa: F401
+    from paddleformers.fleet.training.yaml_arguments import (
+        load_yaml,  # noqa: F401
+    )
 
     _MODULE_AVAILABLE = True
 except (ImportError, ModuleNotFoundError, Exception):
     _MODULE_AVAILABLE = False
 
 
-@unittest.skipUnless(_MODULE_AVAILABLE, "paddleformers.fleet.training.yaml_arguments not available")
+@unittest.skipUnless(
+    _MODULE_AVAILABLE,
+    "paddleformers.fleet.training.yaml_arguments not available",
+)
 class TestYamlArgumentsEdgeCases(unittest.TestCase):
     """Edge case tests for yaml_arguments module."""
 
@@ -38,7 +47,9 @@ class TestYamlArgumentsEdgeCases(unittest.TestCase):
         """Test loading an empty YAML file."""
         from paddleformers.fleet.training.yaml_arguments import load_yaml
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write("")
             f.flush()
             config = load_yaml(f.name)
@@ -49,7 +60,9 @@ class TestYamlArgumentsEdgeCases(unittest.TestCase):
         """Test loading a YAML file with a single value."""
         from paddleformers.fleet.training.yaml_arguments import load_yaml
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write("key: value\n")
             f.flush()
             config = load_yaml(f.name)
@@ -60,7 +73,9 @@ class TestYamlArgumentsEdgeCases(unittest.TestCase):
         """Test loading a YAML file with deeply nested structure."""
         from paddleformers.fleet.training.yaml_arguments import load_yaml
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write("a:\n  b:\n    c:\n      d: 42\n")
             f.flush()
             config = load_yaml(f.name)
@@ -71,7 +86,9 @@ class TestYamlArgumentsEdgeCases(unittest.TestCase):
         """Test loading a YAML file with multiple top-level keys."""
         from paddleformers.fleet.training.yaml_arguments import load_yaml
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write("key1: val1\nkey2: 42\nkey3: true\n")
             f.flush()
             config = load_yaml(f.name)
@@ -82,7 +99,9 @@ class TestYamlArgumentsEdgeCases(unittest.TestCase):
         """Test loading a YAML file with list values."""
         from paddleformers.fleet.training.yaml_arguments import load_yaml
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write("items:\n  - a\n  - b\n  - c\n")
             f.flush()
             config = load_yaml(f.name)
@@ -93,7 +112,9 @@ class TestYamlArgumentsEdgeCases(unittest.TestCase):
         """Test loading a YAML file with numeric values."""
         from paddleformers.fleet.training.yaml_arguments import load_yaml
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write("int_val: 42\nfloat_val: 3.14\n")
             f.flush()
             config = load_yaml(f.name)

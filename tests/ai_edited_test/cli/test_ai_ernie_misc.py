@@ -52,7 +52,9 @@ class TestSmoothedValue(unittest.TestCase):
         sv = SmoothedValue(skip_zero=True)
         # With a scalar 0.0, it goes through the else branch and count += 1
         sv.update(0.0)
-        self.assertEqual(sv.count, 1)  # scalar zero is not skipped, only tensor zero
+        self.assertEqual(
+            sv.count, 1
+        )  # scalar zero is not skipped, only tensor zero
 
     def test_update_with_zero_tensor_skip(self):
         """Test update with zero tensor and skip_zero=True."""

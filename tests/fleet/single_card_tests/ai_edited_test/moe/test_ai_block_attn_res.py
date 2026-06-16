@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -26,7 +30,9 @@ from unittest.mock import MagicMock
 
 def _make_block_config(**overrides):
     """Helper to create config for BlockAttnRes testing."""
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
     defaults = {
         "hidden_size": 64,

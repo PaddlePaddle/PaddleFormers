@@ -97,12 +97,26 @@ class GPTModelEstimator:
             # Routed Experts
             scale_factor = 3 if self.gated_linear_unit else 2
             if only_activated:
-                params += scale_factor * self.hidden_size * self.moe_intermediate_size * self.moe_topk
+                params += (
+                    scale_factor
+                    * self.hidden_size
+                    * self.moe_intermediate_size
+                    * self.moe_topk
+                )
             else:
-                params += scale_factor * self.hidden_size * self.moe_intermediate_size * self.moe_num_experts
+                params += (
+                    scale_factor
+                    * self.hidden_size
+                    * self.moe_intermediate_size
+                    * self.moe_num_experts
+                )
             # Shared Experts
             if self.moe_shared_expert_intermediate_size is not None:
-                params += scale_factor * self.hidden_size * self.moe_shared_expert_intermediate_size
+                params += (
+                    scale_factor
+                    * self.hidden_size
+                    * self.moe_shared_expert_intermediate_size
+                )
             return params
 
         def attention_params() -> int:
@@ -113,29 +127,57 @@ class GPTModelEstimator:
                 # Q projection
                 if self.q_lora_rank is None:
                     params_q_proj = (
-                        self.hidden_size * self.num_attention_heads * (self.qk_head_dim + self.qk_pos_emb_head_dim)
+                        self.hidden_size
+                        * self.num_attention_heads
+                        * (self.qk_head_dim + self.qk_pos_emb_head_dim)
                     )
                 else:
                     params_q_down_proj = self.hidden_size * self.q_lora_rank
-                    params_q_up_proj = self.q_lora_rank * self.num_attention_heads * self.qk_head_dim
-                    params_q_rope = self.q_lora_rank * self.num_attention_heads * self.qk_pos_emb_head_dim
-                    params_q_proj = params_q_down_proj + params_q_up_proj + params_q_rope
+                    params_q_up_proj = (
+                        self.q_lora_rank
+                        * self.num_attention_heads
+                        * self.qk_head_dim
+                    )
+                    params_q_rope = (
+                        self.q_lora_rank
+                        * self.num_attention_heads
+                        * self.qk_pos_emb_head_dim
+                    )
+                    params_q_proj = (
+                        params_q_down_proj + params_q_up_proj + params_q_rope
+                    )
                 params += params_q_proj
                 # KV projection
                 params_kv_down_proj = self.hidden_size * self.kv_lora_rank
-                params_kv_up_proj = self.kv_lora_rank * self.num_attention_heads * (self.qk_head_dim + self.v_head_dim)
+                params_kv_up_proj = (
+                    self.kv_lora_rank
+                    * self.num_attention_heads
+                    * (self.qk_head_dim + self.v_head_dim)
+                )
                 params_k_rope = self.hidden_size * self.qk_pos_emb_head_dim
-                params += params_kv_down_proj + params_kv_up_proj + params_k_rope
+                params += (
+                    params_kv_down_proj + params_kv_up_proj + params_k_rope
+                )
                 # Output projection
-                params += self.num_attention_heads * self.v_head_dim * self.hidden_size
+                params += (
+                    self.num_attention_heads
+                    * self.v_head_dim
+                    * self.hidden_size
+                )
             else:
                 ### MHA / GQA
                 # Q projections
-                params += self.hidden_size * self.num_attention_heads * self.head_dim
+                params += (
+                    self.hidden_size * self.num_attention_heads * self.head_dim
+                )
                 # K, V projections
-                params += 2 * self.num_kv_heads * self.hidden_size * self.head_dim
+                params += (
+                    2 * self.num_kv_heads * self.hidden_size * self.head_dim
+                )
                 # Output projection
-                params += self.num_attention_heads * self.head_dim * self.hidden_size
+                params += (
+                    self.num_attention_heads * self.head_dim * self.hidden_size
+                )
 
             return params
 
@@ -161,8 +203,12 @@ class GPTModelEstimator:
         if self.num_nextn_predict_layers is not None:
             last_layer_is_moe = self.moe_layer_freq[-1]
             num_moe_layers += last_layer_is_moe * self.num_nextn_predict_layers
-            num_dense_layers += (1 - last_layer_is_moe) * self.num_nextn_predict_layers
-            num_hidden_layers = self.num_hidden_layers + self.num_nextn_predict_layers
+            num_dense_layers += (
+                1 - last_layer_is_moe
+            ) * self.num_nextn_predict_layers
+            num_hidden_layers = (
+                self.num_hidden_layers + self.num_nextn_predict_layers
+            )
         else:
             num_hidden_layers = self.num_hidden_layers
 
@@ -175,7 +221,9 @@ class GPTModelEstimator:
         def mlp_flops() -> float:
             """Calculate FLOPs for dense MLP and MoE layer."""
             moe_shared_expert_intermediate_size = (
-                self.moe_shared_expert_intermediate_size if self.moe_shared_expert_intermediate_size is not None else 0
+                self.moe_shared_expert_intermediate_size
+                if self.moe_shared_expert_intermediate_size is not None
+                else 0
             )
             return (
                 3  # forward + backward wgrad + backward dgrad
@@ -188,7 +236,11 @@ class GPTModelEstimator:
                         # dense layers
                         (num_dense_layers * self.intermediate_size)
                         # moe routed experts
-                        + (num_moe_layers * self.moe_intermediate_size * self.moe_topk)
+                        + (
+                            num_moe_layers
+                            * self.moe_intermediate_size
+                            * self.moe_topk
+                        )
                         # moe shared experts
                         + (num_moe_layers * moe_shared_expert_intermediate_size)
                     )
@@ -204,24 +256,35 @@ class GPTModelEstimator:
                 # Q projection
                 if self.q_lora_rank is None:
                     q_term = (
-                        self.hidden_size * self.num_attention_heads * (self.qk_head_dim + self.qk_pos_emb_head_dim)
+                        self.hidden_size
+                        * self.num_attention_heads
+                        * (self.qk_head_dim + self.qk_pos_emb_head_dim)
                     )
                 else:
                     q_term = (
                         # q_down_proj
                         self.hidden_size * self.q_lora_rank
                         # q_up_proj + q_rope
-                        + self.q_lora_rank * self.num_attention_heads * (self.qk_head_dim + self.qk_pos_emb_head_dim)
+                        + self.q_lora_rank
+                        * self.num_attention_heads
+                        * (self.qk_head_dim + self.qk_pos_emb_head_dim)
                     )
                 # KV projection
                 kv_term = (
                     # kv_down_proj + k_rope
-                    self.hidden_size * (self.kv_lora_rank + self.qk_pos_emb_head_dim)
+                    self.hidden_size
+                    * (self.kv_lora_rank + self.qk_pos_emb_head_dim)
                     # kv_up_proj
-                    + self.kv_lora_rank * self.num_attention_heads * (self.qk_head_dim + self.v_head_dim)
+                    + self.kv_lora_rank
+                    * self.num_attention_heads
+                    * (self.qk_head_dim + self.v_head_dim)
                 )
                 # Output projection
-                out_term = self.num_attention_heads * self.v_head_dim * self.hidden_size
+                out_term = (
+                    self.num_attention_heads
+                    * self.v_head_dim
+                    * self.hidden_size
+                )
                 # Core Attention computation
                 attn_term = (
                     self.seq_length
@@ -242,9 +305,16 @@ class GPTModelEstimator:
                 proj_term = (
                     self.hidden_size
                     * self.head_dim
-                    * (2 * self.num_attention_heads + 2 * self.num_kv_heads)  # q_proj + out_proj  # k_proj + v_proj
+                    * (
+                        2 * self.num_attention_heads + 2 * self.num_kv_heads
+                    )  # q_proj + out_proj  # k_proj + v_proj
                 )
-                attn_term = self.seq_length * self.num_attention_heads * self.head_dim * 2  # QK^T + Attn@V
+                attn_term = (
+                    self.seq_length
+                    * self.num_attention_heads
+                    * self.head_dim
+                    * 2
+                )  # QK^T + Attn@V
                 attn_term //= 2 if self.causal_mask else 1
 
                 total_term = proj_term + attn_term
@@ -259,7 +329,11 @@ class GPTModelEstimator:
                 * 2
                 * self.hidden_size
                 * self.vocab_size
-                * (1 + self.num_nextn_predict_layers if self.num_nextn_predict_layers is not None else 0)
+                * (
+                    1 + self.num_nextn_predict_layers
+                    if self.num_nextn_predict_layers is not None
+                    else 0
+                )
             )
 
         # 4. MTP (Multi-Token Prediction) Layers
@@ -279,7 +353,12 @@ class GPTModelEstimator:
                 * self.hidden_size
             )
 
-        return mlp_flops() + attention_flops() + output_logits_flops() + mtp_flops()
+        return (
+            mlp_flops()
+            + attention_flops()
+            + output_logits_flops()
+            + mtp_flops()
+        )
 
     def estimate_flops_per_step(self, batch_size: int) -> float:
         """Estimate FLOPs per training step (batch_size tokens)."""
@@ -315,7 +394,8 @@ class GPTModelEstimator:
             if any(n in device_name for n in spec.names):
                 return getattr(spec, dtype_key, None)
         logger.warning(
-            f"{device_name} is not supported yet. " "Please register it in GPU_SPECIFICATIONS_REGISTRATION."
+            f"{device_name} is not supported yet. "
+            "Please register it in GPU_SPECIFICATIONS_REGISTRATION."
         )
         return None
 

@@ -29,7 +29,9 @@ from paddleformers.fleet.tensor_parallel import VocabParallelEmbedding
 from paddleformers.fleet.transformer.layer import FleetLayer
 
 if TYPE_CHECKING:
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
 # Global deque holding one input_ids tensor per micro-batch.
 # Populated by DistDataLoader.__next__() after broadcast,
@@ -72,20 +74,29 @@ class MTPEmbeddingLayer(FleetLayer):
     def forward(self, dict_args: dict):
         """Pop input_ids from deque, embed them, store in dict_args["mtp_input_embeds"]."""
         if not self.config.enable_mtp_magic_send:
-            raise RuntimeError("MTPEmbeddingLayer should only be used when enable_mtp_magic_send=True")
+            raise RuntimeError(
+                "MTPEmbeddingLayer should only be used when enable_mtp_magic_send=True"
+            )
 
         global input_ids_for_mtp
         if len(input_ids_for_mtp) == 0:
-            raise RuntimeError("input_ids_for_mtp deque is empty, broadcast may have failed")
+            raise RuntimeError(
+                "input_ids_for_mtp deque is empty, broadcast may have failed"
+            )
 
         input_ids = input_ids_for_mtp.popleft()
-        input_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
+        input_embeds = self.embed_tokens(input_ids).astype(
+            self.embed_tokens.weight.dtype
+        )
 
         # Zero out padding-token embeddings to match GPTEmbedding behavior.
         # GPTEmbedding applies fill_feature(decoder_input, input_ids==0, 0) when
         # expert_model_parallel_size > 1 and tensor_model_parallel_size < 2.
         # Without this, the shifted embeddings used by MTP differ from non-magic-send.
-        if self.config.expert_model_parallel_size > 1 and self.config.tensor_model_parallel_size < 2:
+        if (
+            self.config.expert_model_parallel_size > 1
+            and self.config.tensor_model_parallel_size < 2
+        ):
             pad_token_id = getattr(self.config, "pad_token_id", 0)
             if pad_token_id is None:
                 pad_token_id = 0

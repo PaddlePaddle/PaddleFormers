@@ -23,12 +23,18 @@ from paddle.distributed import fleet
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import paddleformers.fleet
 from paddleformers.fleet.process_groups_config import ProcessGroupCollection
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.training.initialize import initialize_fleet
 
 TP_SIZE = None
@@ -67,7 +73,9 @@ def setUpModule():
     """Initialize fleet once for all tests in this module (TP=4, sharding=2)."""
     global TP_SIZE
     TP_SIZE = dist.get_world_size()
-    _init_fleet_custom(mp=TP_SIZE, pp=1, sharding=TP_SIZE // 4 if TP_SIZE >= 4 else 1)
+    _init_fleet_custom(
+        mp=TP_SIZE, pp=1, sharding=TP_SIZE // 4 if TP_SIZE >= 4 else 1
+    )
 
 
 class TestParallelState(unittest.TestCase):
@@ -89,7 +97,9 @@ class TestParallelState(unittest.TestCase):
 
     def test_tp_rank_in_range(self):
         """Test TP rank is within valid range."""
-        rank = paddleformers.fleet.parallel_state.get_tensor_model_parallel_rank()
+        rank = (
+            paddleformers.fleet.parallel_state.get_tensor_model_parallel_rank()
+        )
         self.assertGreaterEqual(rank, 0)
         self.assertLess(rank, TP_SIZE)
 

@@ -75,8 +75,12 @@ class SimpleRMSNorm(nn.Layer):
 
     def forward(self, x):
         x_float = x.astype(paddle.float32)
-        rms = paddle.rsqrt(x_float.pow(2).mean(axis=-1, keepdim=True) + self.eps)
-        return (x_float * rms * self.weight.astype(paddle.float32)).astype(x.dtype)
+        rms = paddle.rsqrt(
+            x_float.pow(2).mean(axis=-1, keepdim=True) + self.eps
+        )
+        return (x_float * rms * self.weight.astype(paddle.float32)).astype(
+            x.dtype
+        )
 
 
 # ---- Fake ProcessGroupCollection for single-GPU testing ----
@@ -221,7 +225,9 @@ class TestL2Norm(unittest.TestCase):
         x = paddle.randn([4, 8, 32])
         y = _l2norm(x)
         mean_sq = y.astype(paddle.float32).pow(2).sum(-1)
-        assert paddle.allclose(mean_sq, paddle.ones_like(mean_sq), atol=1e-4, rtol=1e-4).item()
+        assert paddle.allclose(
+            mean_sq, paddle.ones_like(mean_sq), atol=1e-4, rtol=1e-4
+        ).item()
 
 
 class TestGatedDeltaNet(unittest.TestCase):
@@ -298,12 +304,16 @@ class TestGatedDeltaNet(unittest.TestCase):
     def test_sharded_state_dict(self):
         """Check sharded_state_dict() completeness."""
         sharded_sd = self.gdn.sharded_state_dict()
-        self.assertEqual(len(sharded_sd), 6)  # 13 from GatedDeltaNetSublayersSpec
+        self.assertEqual(
+            len(sharded_sd), 6
+        )  # 13 from GatedDeltaNetSublayersSpec
 
     def test_parameter_shapes(self):
         """Verify key parameter shapes."""
         # conv1d: depthwise conv with groups=conv_dim
-        conv_dim = KEY_HEAD_DIM * NUM_KEY_HEADS * 2 + VALUE_HEAD_DIM * NUM_VALUE_HEADS
+        conv_dim = (
+            KEY_HEAD_DIM * NUM_KEY_HEADS * 2 + VALUE_HEAD_DIM * NUM_VALUE_HEADS
+        )
         self.assertEqual(
             list(self.gdn.conv1d.weight.shape),
             [conv_dim, 1, CONV_KERNEL_DIM],
@@ -314,7 +324,9 @@ class TestGatedDeltaNet(unittest.TestCase):
 
     def test_forward_output_shape(self):
         """Forward output shape should match [batch, seq_len, hidden_size]."""
-        hidden_states = paddle.randn([MICRO_BATCH_SIZE, SEQ_LENGTH, HIDDEN_SIZE])
+        hidden_states = paddle.randn(
+            [MICRO_BATCH_SIZE, SEQ_LENGTH, HIDDEN_SIZE]
+        )
         attention_mask = None
 
         output, output_bias = self.gdn(hidden_states, attention_mask)
@@ -327,7 +339,9 @@ class TestGatedDeltaNet(unittest.TestCase):
 
     def test_forward_output_finite(self):
         """Forward output should contain no NaN or Inf values."""
-        hidden_states = paddle.randn([MICRO_BATCH_SIZE, SEQ_LENGTH, HIDDEN_SIZE])
+        hidden_states = paddle.randn(
+            [MICRO_BATCH_SIZE, SEQ_LENGTH, HIDDEN_SIZE]
+        )
 
         output, _ = self.gdn(hidden_states, attention_mask=None)
 
@@ -338,7 +352,9 @@ class TestGatedDeltaNet(unittest.TestCase):
 
     def test_backward_all_grads(self):
         """All parameters in the forward path should receive gradients."""
-        hidden_states = paddle.randn([MICRO_BATCH_SIZE, SEQ_LENGTH, HIDDEN_SIZE])
+        hidden_states = paddle.randn(
+            [MICRO_BATCH_SIZE, SEQ_LENGTH, HIDDEN_SIZE]
+        )
         hidden_states.stop_gradient = False
 
         output, output_bias = self.gdn(hidden_states, attention_mask=None)
@@ -367,16 +383,22 @@ class TestGatedDeltaNet(unittest.TestCase):
                     f"Non-finite gradients for {name}",
                 )
 
-        self.assertGreater(params_with_grad, 0, "No parameters received gradients")
+        self.assertGreater(
+            params_with_grad, 0, "No parameters received gradients"
+        )
         if no_grad_params:
             print(f"  [WARNING] Parameters without gradients: {no_grad_params}")
 
     def test_packed_seq_not_supported(self):
         """Packed sequence should raise NotImplementedError."""
-        hidden_states = paddle.randn([MICRO_BATCH_SIZE, SEQ_LENGTH, HIDDEN_SIZE])
+        hidden_states = paddle.randn(
+            [MICRO_BATCH_SIZE, SEQ_LENGTH, HIDDEN_SIZE]
+        )
 
         with self.assertRaises(NotImplementedError):
-            self.gdn(hidden_states, attention_mask=None, packed_seq_params="dummy")
+            self.gdn(
+                hidden_states, attention_mask=None, packed_seq_params="dummy"
+            )
 
 
 class TestGatedDeltaNetWithBias(unittest.TestCase):
@@ -419,7 +441,9 @@ class TestGatedDeltaNetWithBias(unittest.TestCase):
 
     def test_forward_backward(self):
         """Forward and backward with bias should work correctly."""
-        hidden_states = paddle.randn([MICRO_BATCH_SIZE, SEQ_LENGTH, HIDDEN_SIZE])
+        hidden_states = paddle.randn(
+            [MICRO_BATCH_SIZE, SEQ_LENGTH, HIDDEN_SIZE]
+        )
         hidden_states.stop_gradient = False
 
         output, output_bias = self.gdn(hidden_states, attention_mask=None)
@@ -482,7 +506,9 @@ class TestGatedDeltaNetGQA(unittest.TestCase):
 
     def test_forward_shape(self):
         """GQA should produce correct output shape."""
-        hidden_states = paddle.randn([MICRO_BATCH_SIZE, SEQ_LENGTH, HIDDEN_SIZE])
+        hidden_states = paddle.randn(
+            [MICRO_BATCH_SIZE, SEQ_LENGTH, HIDDEN_SIZE]
+        )
         output, _ = self.gdn(hidden_states, attention_mask=None)
 
         self.assertEqual(output.shape[0], MICRO_BATCH_SIZE)
@@ -492,7 +518,9 @@ class TestGatedDeltaNetGQA(unittest.TestCase):
 
     def test_backward(self):
         """Backward through GQA should produce finite gradients for all params."""
-        hidden_states = paddle.randn([MICRO_BATCH_SIZE, SEQ_LENGTH, HIDDEN_SIZE])
+        hidden_states = paddle.randn(
+            [MICRO_BATCH_SIZE, SEQ_LENGTH, HIDDEN_SIZE]
+        )
         hidden_states.stop_gradient = False
 
         output, _ = self.gdn(hidden_states, attention_mask=None)

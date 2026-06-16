@@ -17,7 +17,11 @@ import unittest
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import paddle
@@ -52,7 +56,9 @@ class TestMoETopkFusionCuda(unittest.TestCase):
         )
         probs_for_choice = gate_probs.clone()
 
-        topk_probs, topk_indices = MoETopkFusion.apply(gate_probs, probs_for_choice, 2, False, 1, 1, False)
+        topk_probs, topk_indices = MoETopkFusion.apply(
+            gate_probs, probs_for_choice, 2, False, 1, 1, False
+        )
 
         self.assertEqual(topk_probs.shape, [2, 2])
         self.assertEqual(topk_indices.dtype, paddle.int64)
@@ -65,7 +71,9 @@ class TestMoETopkFusionCuda(unittest.TestCase):
             dtype="float32",
         )
 
-        topk_probs, topk_indices = MoETopkFusion.apply(gate_probs, gate_probs, 2, False, 1, 1, True)
+        topk_probs, topk_indices = MoETopkFusion.apply(
+            gate_probs, gate_probs, 2, False, 1, 1, True
+        )
 
         self.assertEqual(topk_indices.numpy().tolist(), [[1, 3], [2, 0]])
         sums = topk_probs.sum(axis=-1).numpy().tolist()
@@ -79,7 +87,9 @@ class TestMoETopkFusionCuda(unittest.TestCase):
             dtype="float32",
         )
 
-        topk_probs, topk_indices = MoETopkFusion.apply(gate_probs, probs_for_choice, 2, True, 4, 1, False)
+        topk_probs, topk_indices = MoETopkFusion.apply(
+            gate_probs, probs_for_choice, 2, True, 4, 1, False
+        )
 
         self.assertEqual(topk_indices.numpy().tolist(), [[0, 1]])
         self.assertEqual(topk_probs.numpy().tolist(), [[0.0, 0.1]])
@@ -91,7 +101,9 @@ class TestMoETopkFusionCuda(unittest.TestCase):
         )
         gate_probs.stop_gradient = False
 
-        topk_probs, _ = MoETopkFusion.apply(gate_probs, gate_probs, 2, False, 1, 1, False)
+        topk_probs, _ = MoETopkFusion.apply(
+            gate_probs, gate_probs, 2, False, 1, 1, False
+        )
         topk_probs.sum().backward()
 
         self.assertEqual(
@@ -103,23 +115,31 @@ class TestMoETopkFusionCuda(unittest.TestCase):
         gate_probs = paddle.ones([3, 4], dtype="float32")
         topk_indices = paddle.to_tensor([[0, 2], [1, 3], [0, 1]], dtype="int64")
 
-        routing_map, topk_indices_out, dispatch_mask = routing_map_fusion_forward(gate_probs, topk_indices)
+        routing_map, topk_indices_out, dispatch_mask = (
+            routing_map_fusion_forward(gate_probs, topk_indices)
+        )
 
         self.assertEqual(
             routing_map.numpy().tolist(),
             [[1.0, 0.0, 1.0, 0.0], [0.0, 1.0, 0.0, 1.0], [1.0, 1.0, 0.0, 0.0]],
         )
-        self.assertEqual(topk_indices_out.numpy().tolist(), [[0, 2], [1, 3], [0, 1]])
+        self.assertEqual(
+            topk_indices_out.numpy().tolist(), [[0, 2], [1, 3], [0, 1]]
+        )
         self.assertEqual(dispatch_mask.numpy().tolist(), [2, 2, 1, 1])
 
     def test_routing_map_forward_with_padding_and_text_masks(self):
         gate_probs = paddle.ones([4, 4], dtype="float32")
-        topk_indices = paddle.to_tensor([[0, 2], [1, 3], [0, 1], [2, 3]], dtype="int64")
+        topk_indices = paddle.to_tensor(
+            [[0, 2], [1, 3], [0, 1], [2, 3]], dtype="int64"
+        )
         input_ids = paddle.to_tensor([5, 0, 7, 8], dtype="int64")
         is_pure_text_line = paddle.to_tensor([1, 1, 0, 1], dtype="int32")
 
-        routing_map, topk_indices_out, dispatch_mask = routing_map_fusion_forward(
-            gate_probs, topk_indices, input_ids, is_pure_text_line
+        routing_map, topk_indices_out, dispatch_mask = (
+            routing_map_fusion_forward(
+                gate_probs, topk_indices, input_ids, is_pure_text_line
+            )
         )
 
         self.assertEqual(

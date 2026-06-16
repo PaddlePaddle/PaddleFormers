@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -25,10 +29,15 @@ from unittest.mock import MagicMock, patch
 
 import paddle
 
-from paddleformers.fleet.transformer.dot_product_attention import DotProductAttention
+from paddleformers.fleet.transformer.dot_product_attention import (
+    DotProductAttention,
+)
 from paddleformers.fleet.transformer.enums import AttnMaskType
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
-from paddleformers.fleet.utils import init_method_normal, scaled_init_method_normal
+from paddleformers.fleet.utils import (
+    init_method_normal,
+    scaled_init_method_normal,
+)
 
 
 def _make_config(**overrides):
@@ -321,7 +330,9 @@ class TestDotProductAttentionEager(unittest.TestCase):
         v = paddle.randn([2, 4, 4, 32], dtype=paddle.float16)
         with patch(
             "paddle.nn.functional.scaled_dot_product_attention",
-            side_effect=AssertionError("SDPA should not be called in eager mode"),
+            side_effect=AssertionError(
+                "SDPA should not be called in eager mode"
+            ),
         ) as mock_sdpa:
             out = attn(q, k, v, None)
             mock_sdpa.assert_not_called()
@@ -348,7 +359,9 @@ class TestDotProductAttentionEager(unittest.TestCase):
 class TestDotProductAttentionContextParallel(unittest.TestCase):
     """Tests for DotProductAttention with context parallelism (formerly CPDotProductAttention)."""
 
-    @patch("paddleformers.fleet.transformer.dot_product_attention.get_context_parallel_world_size")
+    @patch(
+        "paddleformers.fleet.transformer.dot_product_attention.get_context_parallel_world_size"
+    )
     def test_cp_packed_seq_raises(self, mock_get_cp_world_size):
         mock_get_cp_world_size.return_value = 2
         config = _make_config()

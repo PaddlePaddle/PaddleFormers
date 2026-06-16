@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -55,7 +59,9 @@ class TestSigmoidGateFusionStructure(unittest.TestCase):
                 SigmoidGateFusionTriton,
             )
 
-            self.assertTrue(issubclass(SigmoidGateFusionTriton, paddle.autograd.PyLayer))
+            self.assertTrue(
+                issubclass(SigmoidGateFusionTriton, paddle.autograd.PyLayer)
+            )
         except ImportError:
             self.skipTest("paddlefleet_ops not installed")
 

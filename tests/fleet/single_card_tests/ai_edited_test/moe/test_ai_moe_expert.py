@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -26,7 +30,9 @@ from unittest.mock import MagicMock, patch
 
 def _make_expert_config(**overrides):
     """Helper to create a config for expert testing."""
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
     defaults = {
         "hidden_size": 64,
@@ -53,7 +59,9 @@ class TestMoeExpert(unittest.TestCase):
     @patch("paddleformers.fleet.transformer.moe.moe_expert.utils")
     def test_grouped_mlp_expert_init(self, mock_utils):
         """Test GroupedMLPExpert initialization."""
-        from paddleformers.fleet.transformer.moe.moe_expert import GroupedMLPExpert
+        from paddleformers.fleet.transformer.moe.moe_expert import (
+            GroupedMLPExpert,
+        )
 
         mock_utils.get_pg_size.return_value = 1
         config = _make_expert_config()

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -32,7 +36,9 @@ class TestModelParallelConfig(unittest.TestCase):
         """Test default config values."""
         import paddle
 
-        from paddleformers.fleet.model_parallel_config import ModelParallelConfig
+        from paddleformers.fleet.model_parallel_config import (
+            ModelParallelConfig,
+        )
 
         config = ModelParallelConfig()
         self.assertEqual(config.tensor_model_parallel_size, 1)
@@ -51,21 +57,31 @@ class TestModelParallelConfig(unittest.TestCase):
 
     def test_sequence_parallel_false_when_tp_is_one(self):
         """Test that sequence_parallel is set to False when tp_size <= 1."""
-        from paddleformers.fleet.model_parallel_config import ModelParallelConfig
+        from paddleformers.fleet.model_parallel_config import (
+            ModelParallelConfig,
+        )
 
-        config = ModelParallelConfig(sequence_parallel=True, tensor_model_parallel_size=1)
+        config = ModelParallelConfig(
+            sequence_parallel=True, tensor_model_parallel_size=1
+        )
         self.assertFalse(config.sequence_parallel)
 
     def test_sequence_parallel_allowed_when_tp_gt_one(self):
         """Test sequence_parallel allowed when tp_size > 1."""
-        from paddleformers.fleet.model_parallel_config import ModelParallelConfig
+        from paddleformers.fleet.model_parallel_config import (
+            ModelParallelConfig,
+        )
 
-        config = ModelParallelConfig(sequence_parallel=True, tensor_model_parallel_size=4)
+        config = ModelParallelConfig(
+            sequence_parallel=True, tensor_model_parallel_size=4
+        )
         self.assertTrue(config.sequence_parallel)
 
     def test_expert_tensor_parallel_size_default(self):
         """Test expert_tensor_parallel_size defaults to tensor_model_parallel_size."""
-        from paddleformers.fleet.model_parallel_config import ModelParallelConfig
+        from paddleformers.fleet.model_parallel_config import (
+            ModelParallelConfig,
+        )
 
         config = ModelParallelConfig(tensor_model_parallel_size=4)
         self.assertEqual(config.expert_tensor_parallel_size, 4)
@@ -74,21 +90,27 @@ class TestModelParallelConfig(unittest.TestCase):
         """Test autocast_dtype defaults to params_dtype."""
         import paddle
 
-        from paddleformers.fleet.model_parallel_config import ModelParallelConfig
+        from paddleformers.fleet.model_parallel_config import (
+            ModelParallelConfig,
+        )
 
         config = ModelParallelConfig(params_dtype=paddle.float16)
         self.assertEqual(config.autocast_dtype, paddle.float16)
 
     def test_microbatch_group_size_per_vp_stage_default(self):
         """Test microbatch_group_size_per_vp_stage defaults to pp_size."""
-        from paddleformers.fleet.model_parallel_config import ModelParallelConfig
+        from paddleformers.fleet.model_parallel_config import (
+            ModelParallelConfig,
+        )
 
         config = ModelParallelConfig(pipeline_model_parallel_size=4)
         self.assertEqual(config.microbatch_group_size_per_vp_stage, 4)
 
     def test_sequence_parallel_without_tp_raises(self):
         """Test that sequence_parallel without tensor parallelism raises."""
-        from paddleformers.fleet.model_parallel_config import ModelParallelConfig
+        from paddleformers.fleet.model_parallel_config import (
+            ModelParallelConfig,
+        )
 
         # tensor_model_parallel_size=1 triggers auto-disable, but if we set it
         # to >1 and sequence_parallel, it should work.
@@ -100,7 +122,9 @@ class TestModelParallelConfig(unittest.TestCase):
 
     def test_defer_embedding_wgrad_without_pp_raises(self):
         """Test defer_embedding_wgrad with pp=1 raises ValueError."""
-        from paddleformers.fleet.model_parallel_config import ModelParallelConfig
+        from paddleformers.fleet.model_parallel_config import (
+            ModelParallelConfig,
+        )
 
         with self.assertRaises(ValueError) as ctx:
             ModelParallelConfig(
@@ -112,7 +136,9 @@ class TestModelParallelConfig(unittest.TestCase):
 
     def test_defer_embedding_wgrad_without_gaf_raises(self):
         """Test defer_embedding_wgrad without gradient_accumulation_fusion raises."""
-        from paddleformers.fleet.model_parallel_config import ModelParallelConfig
+        from paddleformers.fleet.model_parallel_config import (
+            ModelParallelConfig,
+        )
 
         with self.assertRaises(ValueError) as ctx:
             ModelParallelConfig(
@@ -120,11 +146,15 @@ class TestModelParallelConfig(unittest.TestCase):
                 pipeline_model_parallel_size=2,
                 gradient_accumulation_fusion=False,
             )
-        self.assertIn("gradient accumulation fusion", str(ctx.exception).lower())
+        self.assertIn(
+            "gradient accumulation fusion", str(ctx.exception).lower()
+        )
 
     def test_defer_embedding_wgrad_negative_limit_raises(self):
         """Test defer_embedding_wgrad with negative limit raises ValueError."""
-        from paddleformers.fleet.model_parallel_config import ModelParallelConfig
+        from paddleformers.fleet.model_parallel_config import (
+            ModelParallelConfig,
+        )
 
         with self.assertRaises(ValueError) as ctx:
             ModelParallelConfig(
@@ -137,7 +167,9 @@ class TestModelParallelConfig(unittest.TestCase):
 
     def test_defer_embedding_wgrad_valid(self):
         """Test valid defer_embedding_wgrad config."""
-        from paddleformers.fleet.model_parallel_config import ModelParallelConfig
+        from paddleformers.fleet.model_parallel_config import (
+            ModelParallelConfig,
+        )
 
         config = ModelParallelConfig(
             defer_embedding_wgrad_compute=True,
@@ -150,7 +182,9 @@ class TestModelParallelConfig(unittest.TestCase):
 
     def test_expert_and_tensor_parallel_requires_sequence_parallel(self):
         """Test that expert + tensor parallel requires sequence parallel."""
-        from paddleformers.fleet.model_parallel_config import ModelParallelConfig
+        from paddleformers.fleet.model_parallel_config import (
+            ModelParallelConfig,
+        )
 
         with self.assertRaises(ValueError) as ctx:
             ModelParallelConfig(
@@ -162,7 +196,9 @@ class TestModelParallelConfig(unittest.TestCase):
 
     def test_expert_and_tensor_parallel_with_sequence_parallel_ok(self):
         """Test that expert + tensor + sequence parallel is valid."""
-        from paddleformers.fleet.model_parallel_config import ModelParallelConfig
+        from paddleformers.fleet.model_parallel_config import (
+            ModelParallelConfig,
+        )
 
         config = ModelParallelConfig(
             expert_model_parallel_size=2,
@@ -173,7 +209,9 @@ class TestModelParallelConfig(unittest.TestCase):
 
     def test_overlap_p2p_comm_warmup_flush_valid(self):
         """Test overlap_p2p_comm_warmup_flush with valid config."""
-        from paddleformers.fleet.model_parallel_config import ModelParallelConfig
+        from paddleformers.fleet.model_parallel_config import (
+            ModelParallelConfig,
+        )
 
         config = ModelParallelConfig(
             overlap_p2p_comm=True,
@@ -184,7 +222,9 @@ class TestModelParallelConfig(unittest.TestCase):
 
     def test_overlap_p2p_comm_warmup_flush_with_batch_raises(self):
         """Test overlap_p2p_comm_warmup_flush with batch_p2p_comm raises."""
-        from paddleformers.fleet.model_parallel_config import ModelParallelConfig
+        from paddleformers.fleet.model_parallel_config import (
+            ModelParallelConfig,
+        )
 
         with self.assertRaises(ValueError):
             ModelParallelConfig(
@@ -195,7 +235,9 @@ class TestModelParallelConfig(unittest.TestCase):
 
     def test_overlap_p2p_comm_warmup_flush_without_overlap_raises(self):
         """Test overlap_p2p_comm_warmup_flush without overlap_p2p_comm raises."""
-        from paddleformers.fleet.model_parallel_config import ModelParallelConfig
+        from paddleformers.fleet.model_parallel_config import (
+            ModelParallelConfig,
+        )
 
         with self.assertRaises(ValueError):
             ModelParallelConfig(
@@ -206,7 +248,9 @@ class TestModelParallelConfig(unittest.TestCase):
 
     def test_custom_values(self):
         """Test custom config values."""
-        from paddleformers.fleet.model_parallel_config import ModelParallelConfig
+        from paddleformers.fleet.model_parallel_config import (
+            ModelParallelConfig,
+        )
 
         config = ModelParallelConfig(
             tensor_model_parallel_size=8,

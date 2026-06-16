@@ -67,10 +67,14 @@ class TestMoeBalanceLogging(unittest.TestCase):
 
         self.assertAlmostEqual(logs["tokens_per_expert_layer_0_mean"], 5.0)
         self.assertAlmostEqual(logs["tokens_per_expert_layer_0_max"], 8.0)
-        self.assertAlmostEqual(logs["tokens_per_expert_layer_0_max_mean_ratio"], 1.6)
+        self.assertAlmostEqual(
+            logs["tokens_per_expert_layer_0_max_mean_ratio"], 1.6
+        )
         self.assertAlmostEqual(logs["tokens_per_expert_avg_layer_0_mean"], 0.5)
         self.assertAlmostEqual(logs["local_tokens_per_card_layer_0_mean"], 20.0)
-        self.assertAlmostEqual(logs["local_tokens_per_card_layer_0_max_mean_ratio"], 1.0)
+        self.assertAlmostEqual(
+            logs["local_tokens_per_card_layer_0_max_mean_ratio"], 1.0
+        )
 
     def test_deepep_python_int_list_tokens_per_expert(self):
         tokens_per_expert = [3, 1, 5, 7]
@@ -79,7 +83,9 @@ class TestMoeBalanceLogging(unittest.TestCase):
         orig_all_gather_local_tokens = moe_utils._all_gather_local_tokens
 
         def wrapped_all_gather_local_tokens(local_tokens_per_expert, group):
-            captured["is_tensor"] = isinstance(local_tokens_per_expert, paddle.Tensor)
+            captured["is_tensor"] = isinstance(
+                local_tokens_per_expert, paddle.Tensor
+            )
             captured["is_cpu"] = local_tokens_per_expert.place.is_cpu_place()
             captured["dtype"] = local_tokens_per_expert.dtype
             captured["shape"] = list(local_tokens_per_expert.shape)
@@ -107,10 +113,14 @@ class TestMoeBalanceLogging(unittest.TestCase):
         self.assertAlmostEqual(logs["tokens_per_expert_layer_1_mean"], 4.0)
         self.assertAlmostEqual(logs["tokens_per_expert_layer_1_min"], 1.0)
         self.assertAlmostEqual(logs["tokens_per_expert_layer_1_max"], 7.0)
-        self.assertAlmostEqual(logs["tokens_per_expert_layer_1_max_mean_ratio"], 1.75)
+        self.assertAlmostEqual(
+            logs["tokens_per_expert_layer_1_max_mean_ratio"], 1.75
+        )
         self.assertAlmostEqual(logs["tokens_per_expert_avg_layer_1_mean"], 1.0)
         self.assertAlmostEqual(logs["local_tokens_per_card_layer_1_mean"], 16.0)
-        self.assertAlmostEqual(logs["local_tokens_per_card_layer_1_max_mean_ratio"], 1.0)
+        self.assertAlmostEqual(
+            logs["local_tokens_per_card_layer_1_max_mean_ratio"], 1.0
+        )
 
     def test_logs_object_enable_balance_gate(self):
         self.assertTrue(global_moe_balance_training_logs_enabled())

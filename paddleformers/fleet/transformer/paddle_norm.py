@@ -53,12 +53,18 @@ class RMSNorm(paddle.nn.Layer):
         **kwargs,
     ):
         super().__init__()
-        self.normalized_shape = config.hidden_size if normalized_shape is None else normalized_shape
-        self.variance_epsilon = config.rms_norm_eps if norm_eps is None else norm_eps
+        self.normalized_shape = (
+            config.hidden_size if normalized_shape is None else normalized_shape
+        )
+        self.variance_epsilon = (
+            config.rms_norm_eps if norm_eps is None else norm_eps
+        )
 
         self.weight = paddle.create_parameter(
             shape=[self.normalized_shape],
-            dtype=config.params_dtype if config.params_dtype is not None else paddle.get_default_dtype(),
+            dtype=config.params_dtype
+            if config.params_dtype is not None
+            else paddle.get_default_dtype(),
             default_initializer=paddle.nn.initializer.Constant(1.0),
         )
         self.config = config
@@ -95,17 +101,25 @@ class LayerNorm(paddle.nn.Layer):
         **kwargs,
     ):
         super().__init__()
-        self.normalized_shape = config.hidden_size if normalized_shape is None else normalized_shape
-        self.variance_epsilon = config.rms_norm_eps if norm_eps is None else norm_eps
+        self.normalized_shape = (
+            config.hidden_size if normalized_shape is None else normalized_shape
+        )
+        self.variance_epsilon = (
+            config.rms_norm_eps if norm_eps is None else norm_eps
+        )
         self.weight = paddle.create_parameter(
             shape=[self.normalized_shape],
-            dtype=config.params_dtype if config.params_dtype is not None else paddle.get_default_dtype(),
+            dtype=config.params_dtype
+            if config.params_dtype is not None
+            else paddle.get_default_dtype(),
             default_initializer=paddle.nn.initializer.Constant(1.0),
         )
         param_shape = [np.prod(self.normalized_shape)]
         self.bias = self.create_parameter(
             shape=param_shape,
-            dtype=config.params_dtype if config.params_dtype is not None else paddle.get_default_dtype(),
+            dtype=config.params_dtype
+            if config.params_dtype is not None
+            else paddle.get_default_dtype(),
             default_initializer=paddle.nn.initializer.Constant(0.0),
             is_bias=True,
         )
@@ -145,9 +159,13 @@ class RMSNormTriton(RMSNorm):
     """Wrapper for triton RMSNorm, used for fused QK norm."""
 
     def forward(self, hidden_states: Tensor):
-        from paddleformers.fleet.triton_ops.rms_norm_fusion import RMSNormFusionTriton
+        from paddleformers.fleet.triton_ops.rms_norm_fusion import (
+            RMSNormFusionTriton,
+        )
 
-        return RMSNormFusionTriton.apply(hidden_states, self.weight, self.variance_epsilon)
+        return RMSNormFusionTriton.apply(
+            hidden_states, self.weight, self.variance_epsilon
+        )
 
 
 class WrappedRMSNormTriton:
@@ -169,7 +187,9 @@ class WrappedRMSNormTriton:
             config=config,
             normalized_shape=hidden_size,
             norm_eps=eps,
-            input_is_parallel=input_is_parallel if input_is_parallel is not None else False,
+            input_is_parallel=input_is_parallel
+            if input_is_parallel is not None
+            else False,
         )
 
 
@@ -189,7 +209,10 @@ class WrappedPaddleNorm:
             raise Exception("Only RMSNorm for now.")
 
         if input_is_parallel is None:
-            input_is_parallel = config.sequence_parallel or config.tensor_model_parallel_size > 1
+            input_is_parallel = (
+                config.sequence_parallel
+                or config.tensor_model_parallel_size > 1
+            )
         return norm_cls(
             config=config,
             normalized_shape=hidden_size,
@@ -223,7 +246,9 @@ class WrappedPaddleNormPipe(paddle.nn.Layer):
     ):
         super().__init__()
         self.config = config
-        self.norm = WrappedPaddleNorm(config, hidden_size, eps, input_is_parallel)
+        self.norm = WrappedPaddleNorm(
+            config, hidden_size, eps, input_is_parallel
+        )
 
     def forward(self, dict_args: dict):
         if (
@@ -233,7 +258,9 @@ class WrappedPaddleNormPipe(paddle.nn.Layer):
             and not self.config.enable_mtp_magic_send
         ):
             hidden_states_concat = dict_args["hidden_states"]
-            tensor_list = paddle.split(hidden_states_concat, self.config.num_nextn_predict_layers + 1)
+            tensor_list = paddle.split(
+                hidden_states_concat, self.config.num_nextn_predict_layers + 1
+            )
             dict_args["hidden_states"] = tensor_list[0]
         rst = {
             **dict_args,
@@ -249,12 +276,17 @@ class WrappedPaddleNormPipe(paddle.nn.Layer):
             if self.config.gpt_model_use_experimental_version:
                 for i in range(1, len(tensor_list)):
                     tensor_list[i] = self.norm(tensor_list[i])
-            hidden_states_concat = paddle.concat([rst["hidden_states"], *tensor_list[1:]])
+            hidden_states_concat = paddle.concat(
+                [rst["hidden_states"], *tensor_list[1:]]
+            )
             rst["hidden_states"] = hidden_states_concat
         rst = {**dict_args, **rst}
 
         # Loss-path MD5 probe: final_layernorm output
-        if os.environ.get("LOG_LAYER_MD5", "0") == "1" or os.environ.get("LOG_LOSS_MD5", "0") == "1":
+        if (
+            os.environ.get("LOG_LAYER_MD5", "0") == "1"
+            or os.environ.get("LOG_LOSS_MD5", "0") == "1"
+        ):
             import hashlib
 
             rank = paddle.distributed.get_rank()
@@ -301,7 +333,10 @@ class L2Norm(paddle.nn.Layer):
             paddle.Tensor: The L2-normalized tensor.
         """
         x_float = x.float()
-        return (x_float * paddle.rsqrt(x_float.pow(2).mean(-1, keepdim=True) + self.eps)).astype(x.dtype)
+        return (
+            x_float
+            * paddle.rsqrt(x_float.pow(2).mean(-1, keepdim=True) + self.eps)
+        ).astype(x.dtype)
 
     def forward(self, x):
         """
@@ -316,12 +351,18 @@ class L2Norm(paddle.nn.Layer):
         return self._norm(x)
 
 
-def get_norm_extra_args(layer_or_spec, config, output_size, eps, input_is_parallel):
+def get_norm_extra_args(
+    layer_or_spec, config, output_size, eps, input_is_parallel
+):
     """
     Handle the difference of arguments signature between
     WrappedPaddleNorm and other Norm implementation.
     """
-    norm_cls = layer_or_spec.layer if isinstance(layer_or_spec, LayerSpec) else layer_or_spec
+    norm_cls = (
+        layer_or_spec.layer
+        if isinstance(layer_or_spec, LayerSpec)
+        else layer_or_spec
+    )
     extra_args = {
         "config": config,
         "input_is_parallel": input_is_parallel,

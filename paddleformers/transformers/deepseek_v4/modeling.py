@@ -99,22 +99,42 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             import paddle
 
             if matrix.ndim == 2:
-                gate, up = paddle.split(matrix, [intermediate_size, intermediate_size], axis=1)
+                gate, up = paddle.split(
+                    matrix, [intermediate_size, intermediate_size], axis=1
+                )
                 return paddle.concat([ortho_fn(gate), ortho_fn(up)], axis=1)
             elif matrix.ndim == 3:
                 expert_updates = []
                 for ei in range(matrix.shape[0]):
-                    gate, up = paddle.split(matrix[ei], [intermediate_size, intermediate_size], axis=1)
-                    expert_updates.append(paddle.concat([ortho_fn(gate), ortho_fn(up)], axis=1))
+                    gate, up = paddle.split(
+                        matrix[ei],
+                        [intermediate_size, intermediate_size],
+                        axis=1,
+                    )
+                    expert_updates.append(
+                        paddle.concat([ortho_fn(gate), ortho_fn(up)], axis=1)
+                    )
                 return paddle.stack(expert_updates, axis=0)
             else:
-                raise ValueError(f"FFN gate_up split expects 2D or 3D tensor, got shape {matrix.shape}")
+                raise ValueError(
+                    f"FFN gate_up split expects 2D or 3D tensor, got shape {matrix.shape}"
+                )
 
-        def _mla_per_head(matrix_2d_global, ortho_fn, head_num=None, axis=None, head_split_sizes=None):
+        def _mla_per_head(
+            matrix_2d_global,
+            ortho_fn,
+            head_num=None,
+            axis=None,
+            head_split_sizes=None,
+        ):
             """Slice MLA weights by heads."""
             import paddle
 
-            split_args = head_num if head_split_sizes is None else head_split_sizes * head_num
+            split_args = (
+                head_num
+                if head_split_sizes is None
+                else head_split_sizes * head_num
+            )
             groups = paddle.split(matrix_2d_global, split_args, axis=axis)
             processed_groups = [ortho_fn(group) for group in groups]
             return paddle.concat(processed_groups, axis=axis)
@@ -124,7 +144,9 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             import paddle
 
             if matrix_3d_global.ndim != 3:
-                raise ValueError(f"MoE expert split expects 3D tensor, got shape {matrix_3d_global.shape}")
+                raise ValueError(
+                    f"MoE expert split expects 3D tensor, got shape {matrix_3d_global.shape}"
+                )
             n_experts = matrix_3d_global.shape[0]
             return paddle.stack(
                 [ortho_fn(matrix_3d_global[ei]) for ei in range(n_experts)],
@@ -138,13 +160,17 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         num_hidden_layers = config.num_hidden_layers
         num_attention_head = config.num_attention_heads
 
-        use_mla = getattr(config, "q_lora_rank", None) and config.q_lora_rank > 0
+        use_mla = (
+            getattr(config, "q_lora_rank", None) and config.q_lora_rank > 0
+        )
         moe_grouped_gemm = getattr(config, "moe_grouped_gemm", False)
         use_gated_attn = getattr(config, "use_gated_attn", False)
         csa_compress_ratios = getattr(config, "csa_compress_ratios", None)
 
         # Get Muon configuration from muon_configs
-        muon_qkv_update_mode = muon_configs.get("muon_qkv_update_mode", "split_head")
+        muon_qkv_update_mode = muon_configs.get(
+            "muon_qkv_update_mode", "split_head"
+        )
         muon_ffn_split = muon_configs.get("muon_ffn_split", False)
 
         # Determine FFN slice strategy
@@ -173,26 +199,40 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
 
                 # Compressor weights
                 if ratio == 4:
-                    slice_config[f"{prefix}.self_attn.core_attention.compressor.linear_wkv.weight"] = (
+                    slice_config[
+                        f"{prefix}.self_attn.core_attention.compressor.linear_wkv.weight"
+                    ] = (
                         mla_slice_fn,
                         {
                             "head_num": 1,
                             "axis": 1,
-                            "head_split_sizes": [config.v_head_dim, config.v_head_dim],
+                            "head_split_sizes": [
+                                config.v_head_dim,
+                                config.v_head_dim,
+                            ],
                         },
                     )
-                    slice_config[f"{prefix}.self_attn.core_attention.compressor.linear_wgate.weight"] = (
+                    slice_config[
+                        f"{prefix}.self_attn.core_attention.compressor.linear_wgate.weight"
+                    ] = (
                         mla_slice_fn,
                         {
                             "head_num": 1,
                             "axis": 1,
-                            "head_split_sizes": [config.v_head_dim, config.v_head_dim],
+                            "head_split_sizes": [
+                                config.v_head_dim,
+                                config.v_head_dim,
+                            ],
                         },
                     )
                 # Indexer weights
-                print(f"layer: {layer_idx}, ratio: {ratio}, dense_mode: {config.csa_dense_mode}")
+                print(
+                    f"layer: {layer_idx}, ratio: {ratio}, dense_mode: {config.csa_dense_mode}"
+                )
                 if ratio == 4 and config.csa_dense_mode is False:
-                    slice_config[f"{prefix}.self_attn.core_attention.indexer.linear_wq_b.weight"] = (
+                    slice_config[
+                        f"{prefix}.self_attn.core_attention.indexer.linear_wq_b.weight"
+                    ] = (
                         mla_slice_fn,
                         {
                             "head_num": config.dsa_index_n_heads,
@@ -200,20 +240,30 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                         },
                     )
                     # Compressed weights
-                    slice_config[f"{prefix}.self_attn.core_attention.indexer.compressor.linear_wkv.weight"] = (
+                    slice_config[
+                        f"{prefix}.self_attn.core_attention.indexer.compressor.linear_wkv.weight"
+                    ] = (
                         mla_slice_fn,
                         {
                             "head_num": 1,
                             "axis": 1,
-                            "head_split_sizes": [config.dsa_index_head_dim, config.dsa_index_head_dim],
+                            "head_split_sizes": [
+                                config.dsa_index_head_dim,
+                                config.dsa_index_head_dim,
+                            ],
                         },
                     )
-                    slice_config[f"{prefix}.self_attn.core_attention.indexer.compressor.linear_wgate.weight"] = (
+                    slice_config[
+                        f"{prefix}.self_attn.core_attention.indexer.compressor.linear_wgate.weight"
+                    ] = (
                         mla_slice_fn,
                         {
                             "head_num": 1,
                             "axis": 1,
-                            "head_split_sizes": [config.dsa_index_head_dim, config.dsa_index_head_dim],
+                            "head_split_sizes": [
+                                config.dsa_index_head_dim,
+                                config.dsa_index_head_dim,
+                            ],
                         },
                     )
 
@@ -224,10 +274,15 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
 
                 # Fused experts
                 param_name = f"{prefix}.mlp.experts.up_gate_proj.weight"
-                slice_config[param_name] = (ffn_slice_fn, {"intermediate_size": moe_intermediate_size})
+                slice_config[param_name] = (
+                    ffn_slice_fn,
+                    {"intermediate_size": moe_intermediate_size},
+                )
 
                 # Shared experts
-                slice_config[f"{prefix}.mlp.shared_experts.up_gate_proj.weight"] = (
+                slice_config[
+                    f"{prefix}.mlp.shared_experts.up_gate_proj.weight"
+                ] = (
                     ffn_slice_fn,
                     {"intermediate_size": moe_intermediate_size},
                 )
@@ -237,20 +292,34 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 )
                 # Common experts
                 param_name = f"{prefix}.mlp.up_gate_proj.weight"
-                slice_config[param_name] = (ffn_slice_fn, {"intermediate_size": intermediate_size})
+                slice_config[param_name] = (
+                    ffn_slice_fn,
+                    {"intermediate_size": intermediate_size},
+                )
 
                 # Routed experts (per-expert)
-                if hasattr(config, "n_routed_experts") and config.n_routed_experts > 0:
+                if (
+                    hasattr(config, "n_routed_experts")
+                    and config.n_routed_experts > 0
+                ):
                     for expert_idx in range(config.n_routed_experts):
-                        slice_config[f"{prefix}.mlp.experts.{expert_idx}.up_gate_proj.weight"] = (
+                        slice_config[
+                            f"{prefix}.mlp.experts.{expert_idx}.up_gate_proj.weight"
+                        ] = (
                             ffn_slice_fn,
                             {"intermediate_size": moe_intermediate_size},
                         )
 
             # Fused MoE weights (grouped_gemm)
             if moe_grouped_gemm and fused_moe_fn is not None:
-                slice_config[f"{prefix}.mlp.experts.down_proj.weight"] = (fused_moe_fn, {})
-                slice_config[f"{prefix}.mlp.grouped_gemm_experts.weight2"] = (fused_moe_fn, {})
+                slice_config[f"{prefix}.mlp.experts.down_proj.weight"] = (
+                    fused_moe_fn,
+                    {},
+                )
+                slice_config[f"{prefix}.mlp.grouped_gemm_experts.weight2"] = (
+                    fused_moe_fn,
+                    {},
+                )
 
             # MLA weights
             if use_mla and mla_slice_fn is not None:
@@ -266,13 +335,25 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     {
                         "head_num": num_attention_head,
                         "axis": 1,
-                        "head_split_sizes": [config.qk_nope_head_dim, config.qk_rope_head_dim],
+                        "head_split_sizes": [
+                            config.qk_nope_head_dim,
+                            config.qk_rope_head_dim,
+                        ],
                     },
                 )
 
-                slice_config[f"{prefix}.self_attn.kv_a_proj_with_mqa.weight"] = (
+                slice_config[
+                    f"{prefix}.self_attn.kv_a_proj_with_mqa.weight"
+                ] = (
                     mla_slice_fn,
-                    {"head_num": 1, "axis": 1, "head_split_sizes": [config.kv_lora_rank, config.qk_rope_head_dim]},
+                    {
+                        "head_num": 1,
+                        "axis": 1,
+                        "head_split_sizes": [
+                            config.kv_lora_rank,
+                            config.qk_rope_head_dim,
+                        ],
+                    },
                 )
 
                 slice_config[f"{prefix}.self_attn.kv_b_proj.weight"] = (
@@ -280,7 +361,10 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     {
                         "head_num": num_attention_head,
                         "axis": 1,
-                        "head_split_sizes": [config.qk_nope_head_dim, config.v_head_dim],
+                        "head_split_sizes": [
+                            config.qk_nope_head_dim,
+                            config.v_head_dim,
+                        ],
                     },
                 )
 
@@ -299,12 +383,20 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         if config.mtp_num_layers > 0:
             num_nextn_predict_layers = config.mtp_num_layers
         else:
-            num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
-        for layer_idx in range(num_nextn_predict_layers):
-            _add_layer_slice_config(f"model.layers.{num_hidden_layers + layer_idx}", num_hidden_layers + layer_idx)
+            num_nextn_predict_layers = (
+                config.num_nextn_predict_layers
+                if config.num_nextn_predict_layers
+                else 0
+            )
         for layer_idx in range(num_nextn_predict_layers):
             _add_layer_slice_config(
-                f"model.layers.{num_hidden_layers + layer_idx}.transformer_layer", num_hidden_layers + layer_idx
+                f"model.layers.{num_hidden_layers + layer_idx}",
+                num_hidden_layers + layer_idx,
+            )
+        for layer_idx in range(num_nextn_predict_layers):
+            _add_layer_slice_config(
+                f"model.layers.{num_hidden_layers + layer_idx}.transformer_layer",
+                num_hidden_layers + layer_idx,
             )
 
         return slice_config
@@ -322,7 +414,10 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         """
         from functools import partial
 
-        from paddle.optimizer.muon import MuonParamInfo, _default_should_use_muon
+        from paddle.optimizer.muon import (
+            MuonParamInfo,
+            _default_should_use_muon,
+        )
 
         info_map = {}
         exclude_patterns = config.muon_configs["muon_exclude_patterns"]
@@ -349,7 +444,9 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             name = pp_to_single.get(pp_name, pp_name)
             use_muon = (
                 _default_should_use_muon(name, param.shape, exclude_patterns)
-                and _default_should_use_muon(param.name, param.shape, exclude_patterns)
+                and _default_should_use_muon(
+                    param.name, param.shape, exclude_patterns
+                )
                 and "hc_head_fn" not in name
                 and "mapping_proj" not in name
             )
@@ -401,7 +498,8 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         csa_compress_ratios = config.csa_compress_ratios
         num_head_empty_layers = (
             config.num_empty_layers_add_in_head
-            if hasattr(config, "num_empty_layers_add_in_head") and config.num_empty_layers_add_in_head
+            if hasattr(config, "num_empty_layers_add_in_head")
+            and config.num_empty_layers_add_in_head
             else 0
         )
         mtp_num_layers = getattr(config, "num_nextn_predict_layers", 0)
@@ -504,10 +602,14 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ]
 
             # --- MoE Gate ---
-            stmts += [f"{src}.ffn.gate.weight -> {tgt}.mlp.gate.weight, dtype='float32'"]
+            stmts += [
+                f"{src}.ffn.gate.weight -> {tgt}.mlp.gate.weight, dtype='float32'"
+            ]
             # Non-hash layers have e_score_correction_bias; hash layers use tid2eid
             if L >= moe_n_hash_layers:
-                stmts += [f"{src}.ffn.gate.bias -> {tgt}.mlp.gate.e_score_correction_bias"]
+                stmts += [
+                    f"{src}.ffn.gate.bias -> {tgt}.mlp.gate.e_score_correction_bias"
+                ]
             else:
                 stmts += [f"{src}.ffn.gate.tid2eid -> {tgt}.mlp.gate.tid2eid"]
 
@@ -517,7 +619,8 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     f"{src}.ffn.experts.{E}.w1.weight^T, "
                     f"{src}.ffn.experts.{E}.w3.weight^T "
                     f"-> {tgt}.mlp.experts.{E}.up_gate_proj.weight, axis=1",
-                    f"{src}.ffn.experts.{E}.w2.weight^T " f"-> {tgt}.mlp.experts.{E}.down_proj.weight",
+                    f"{src}.ffn.experts.{E}.w2.weight^T "
+                    f"-> {tgt}.mlp.experts.{E}.down_proj.weight",
                 ]
 
             # --- GroupGEMM fusion: stack all experts into single tensors ---
@@ -525,7 +628,9 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ep_weight1 = []
                 ep_weight2 = []
                 for E in range(num_experts):
-                    ep_weight1.append(f"{tgt}.mlp.experts.{E}.up_gate_proj.weight")
+                    ep_weight1.append(
+                        f"{tgt}.mlp.experts.{E}.up_gate_proj.weight"
+                    )
                     ep_weight2.append(f"{tgt}.mlp.experts.{E}.down_proj.weight")
                 stmts += [
                     f"{','.join(ep_weight1)} -> {tgt}.mlp.grouped_gemm_experts.weight1, axis=0",
@@ -538,7 +643,8 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     f"{src}.ffn.shared_experts.w1.weight^T, "
                     f"{src}.ffn.shared_experts.w3.weight^T "
                     f"-> {tgt}.mlp.shared_experts.up_gate_proj.weight, fused_ffn",
-                    f"{src}.ffn.shared_experts.w2.weight^T " f"-> {tgt}.mlp.shared_experts.down_proj.weight",
+                    f"{src}.ffn.shared_experts.w2.weight^T "
+                    f"-> {tgt}.mlp.shared_experts.down_proj.weight",
                 ]
 
         # === 3. Top-level mHC head contraction (output head HyperConnection) ===
@@ -551,7 +657,9 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         # === 4. MTP (Multi-Token Prediction) layers ===
         for i in range(mtp_num_layers):
             mtp_src = f"mtp.{i}"
-            mtp_tgt = f"model.layers.{num_decoder_layers + num_head_empty_layers + i}"
+            mtp_tgt = (
+                f"model.layers.{num_decoder_layers + num_head_empty_layers + i}"
+            )
             tl = f"{mtp_tgt}.transformer_layer"  # transformer_layer prefix in MTP
 
             # --- MTP-specific projections ---
@@ -614,7 +722,10 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
 
             # --- MTP CSA Compressor (if compress_ratio > 0 for this layer) ---
             mtp_layer_idx = num_decoder_layers + i
-            if mtp_layer_idx < len(csa_compress_ratios) and csa_compress_ratios[mtp_layer_idx] > 0:
+            if (
+                mtp_layer_idx < len(csa_compress_ratios)
+                and csa_compress_ratios[mtp_layer_idx] > 0
+            ):
                 comp_src = f"{mtp_src}.attn.compressor"
                 comp_tgt = f"{tl}.self_attn.core_attention.compressor"
                 stmts += [
@@ -647,7 +758,8 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     f"{mtp_src}.ffn.experts.{E}.w1.weight^T, "
                     f"{mtp_src}.ffn.experts.{E}.w3.weight^T "
                     f"-> {tl}.mlp.experts.{E}.up_gate_proj.weight, axis=1",
-                    f"{mtp_src}.ffn.experts.{E}.w2.weight^T " f"-> {tl}.mlp.experts.{E}.down_proj.weight",
+                    f"{mtp_src}.ffn.experts.{E}.w2.weight^T "
+                    f"-> {tl}.mlp.experts.{E}.down_proj.weight",
                 ]
 
             # --- GroupGEMM fusion for MTP experts ---
@@ -655,7 +767,9 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ep_weight1 = []
                 ep_weight2 = []
                 for E in range(num_experts):
-                    ep_weight1.append(f"{tl}.mlp.experts.{E}.up_gate_proj.weight")
+                    ep_weight1.append(
+                        f"{tl}.mlp.experts.{E}.up_gate_proj.weight"
+                    )
                     ep_weight2.append(f"{tl}.mlp.experts.{E}.down_proj.weight")
                 stmts += [
                     f"{','.join(ep_weight1)} -> {tl}.mlp.grouped_gemm_experts.weight1, axis=0",
@@ -668,7 +782,8 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     f"{mtp_src}.ffn.shared_experts.w1.weight^T, "
                     f"{mtp_src}.ffn.shared_experts.w3.weight^T "
                     f"-> {tl}.mlp.shared_experts.up_gate_proj.weight, fused_ffn",
-                    f"{mtp_src}.ffn.shared_experts.w2.weight^T " f"-> {tl}.mlp.shared_experts.down_proj.weight",
+                    f"{mtp_src}.ffn.shared_experts.w2.weight^T "
+                    f"-> {tl}.mlp.shared_experts.down_proj.weight",
                 ]
 
         return {"aoa_statements": stmts}
@@ -688,7 +803,8 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         csa_compress_ratios = config.csa_compress_ratios
         num_head_empty_layers = (
             config.num_empty_layers_add_in_head
-            if hasattr(config, "num_empty_layers_add_in_head") and config.num_empty_layers_add_in_head
+            if hasattr(config, "num_empty_layers_add_in_head")
+            and config.num_empty_layers_add_in_head
             else 0
         )
         mtp_num_layers = getattr(config, "num_nextn_predict_layers", 0)
@@ -711,7 +827,9 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         # === 2. MTP layers (inverse, reversed order) ===
         for i in reversed(range(mtp_num_layers)):
             mtp_tgt = f"mtp.{i}"
-            mtp_src = f"model.layers.{num_decoder_layers + num_head_empty_layers + i}"
+            mtp_src = (
+                f"model.layers.{num_decoder_layers + num_head_empty_layers + i}"
+            )
             tl = f"{mtp_src}.transformer_layer"
 
             # --- MTP-specific projections ---
@@ -772,7 +890,10 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
 
             # --- MTP CSA Compressor ---
             mtp_layer_idx = num_decoder_layers + i
-            if mtp_layer_idx < len(csa_compress_ratios) and csa_compress_ratios[mtp_layer_idx] > 0:
+            if (
+                mtp_layer_idx < len(csa_compress_ratios)
+                and csa_compress_ratios[mtp_layer_idx] > 0
+            ):
                 comp_src = f"{tl}.self_attn.core_attention.compressor"
                 comp_tgt = f"{mtp_tgt}.attn.compressor"
                 stmts += [
@@ -804,7 +925,9 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ep_weight1 = []
                 ep_weight2 = []
                 for E in range(num_experts):
-                    ep_weight1.append(f"{tl}.mlp.experts.{E}.up_gate_proj.weight")
+                    ep_weight1.append(
+                        f"{tl}.mlp.experts.{E}.up_gate_proj.weight"
+                    )
                     ep_weight2.append(f"{tl}.mlp.experts.{E}.down_proj.weight")
                 stmts += [
                     f"{tl}.mlp.grouped_gemm_experts.weight1 -> {','.join(ep_weight1)}, axis=0",
@@ -832,7 +955,8 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     f"{tl}.mlp.shared_experts.w3.weight, fused_ffn",
                     f"{tl}.mlp.shared_experts.w1.weight^T -> {mtp_tgt}.ffn.shared_experts.w1.weight",
                     f"{tl}.mlp.shared_experts.w3.weight^T -> {mtp_tgt}.ffn.shared_experts.w3.weight",
-                    f"{tl}.mlp.shared_experts.down_proj.weight^T " f"-> {mtp_tgt}.ffn.shared_experts.w2.weight",
+                    f"{tl}.mlp.shared_experts.down_proj.weight^T "
+                    f"-> {mtp_tgt}.ffn.shared_experts.w2.weight",
                 ]
 
         # === 3. Top-level mHC head contraction (inverse) ===
@@ -918,9 +1042,13 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ]
 
             # --- MoE Gate ---
-            stmts += [f"{src}.mlp.gate.weight -> {tgt}.ffn.gate.weight,dtype='float32'"]
+            stmts += [
+                f"{src}.mlp.gate.weight -> {tgt}.ffn.gate.weight,dtype='float32'"
+            ]
             if L >= moe_n_hash_layers:
-                stmts += [f"{src}.mlp.gate.e_score_correction_bias -> {tgt}.ffn.gate.bias"]
+                stmts += [
+                    f"{src}.mlp.gate.e_score_correction_bias -> {tgt}.ffn.gate.bias"
+                ]
             else:
                 stmts += [f"{src}.mlp.gate.tid2eid -> {tgt}.ffn.gate.tid2eid"]
 
@@ -929,7 +1057,9 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ep_weight1 = []
                 ep_weight2 = []
                 for E in range(num_experts):
-                    ep_weight1.append(f"{src}.mlp.experts.{E}.up_gate_proj.weight")
+                    ep_weight1.append(
+                        f"{src}.mlp.experts.{E}.up_gate_proj.weight"
+                    )
                     ep_weight2.append(f"{src}.mlp.experts.{E}.down_proj.weight")
                 stmts += [
                     f"{src}.mlp.grouped_gemm_experts.weight1 -> {','.join(ep_weight1)}, axis=0",
@@ -959,7 +1089,8 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     f"{src}.mlp.shared_experts.w3.weight, fused_ffn",
                     f"{src}.mlp.shared_experts.w1.weight^T -> {tgt}.ffn.shared_experts.w1.weight",
                     f"{src}.mlp.shared_experts.w3.weight^T -> {tgt}.ffn.shared_experts.w3.weight",
-                    f"{src}.mlp.shared_experts.down_proj.weight^T " f"-> {tgt}.ffn.shared_experts.w2.weight",
+                    f"{src}.mlp.shared_experts.down_proj.weight^T "
+                    f"-> {tgt}.ffn.shared_experts.w2.weight",
                 ]
 
         return {"aoa_statements": stmts}
@@ -970,13 +1101,21 @@ class DeepseekV4ForCausalLM(DeepseekV4PreTrainedModel):
 
     def __new__(cls, config):
         # Parallelism config safeguards
-        config.tensor_model_parallel_size = max(getattr(config, "tensor_model_parallel_size", 1), 1)
-        config.context_parallel_size = max(getattr(config, "context_parallel_size", 1), 1)
-        config.pipeline_model_parallel_size = max(getattr(config, "pipeline_model_parallel_size", 1), 1)
+        config.tensor_model_parallel_size = max(
+            getattr(config, "tensor_model_parallel_size", 1), 1
+        )
+        config.context_parallel_size = max(
+            getattr(config, "context_parallel_size", 1), 1
+        )
+        config.pipeline_model_parallel_size = max(
+            getattr(config, "pipeline_model_parallel_size", 1), 1
+        )
         config.virtual_pipeline_model_parallel_size = max(
             getattr(config, "virtual_pipeline_model_parallel_size", 1), 1
         )
-        config.expert_model_parallel_size = max(getattr(config, "expert_model_parallel_size", 1), 1)
+        config.expert_model_parallel_size = max(
+            getattr(config, "expert_model_parallel_size", 1), 1
+        )
         config.fuse_rms_norm = True
 
         # Ensure DSv4 critical switches are on
@@ -998,18 +1137,28 @@ class DeepseekV4ForCausalLM(DeepseekV4PreTrainedModel):
         return gpt_model
 
 
-class DeepseekV4ForCausalLMPipe(DeepseekV4PreTrainedModel, GeneralModelForCausalLMPipe):
+class DeepseekV4ForCausalLMPipe(
+    DeepseekV4PreTrainedModel, GeneralModelForCausalLMPipe
+):
     is_fleet = True
 
     def __new__(cls, config):
         # Parallelism config safeguards
-        config.tensor_model_parallel_size = max(getattr(config, "tensor_model_parallel_size", 1), 1)
-        config.context_parallel_size = max(getattr(config, "context_parallel_size", 1), 1)
-        config.pipeline_model_parallel_size = max(getattr(config, "pipeline_model_parallel_size", 1), 1)
+        config.tensor_model_parallel_size = max(
+            getattr(config, "tensor_model_parallel_size", 1), 1
+        )
+        config.context_parallel_size = max(
+            getattr(config, "context_parallel_size", 1), 1
+        )
+        config.pipeline_model_parallel_size = max(
+            getattr(config, "pipeline_model_parallel_size", 1), 1
+        )
         config.virtual_pipeline_model_parallel_size = max(
             getattr(config, "virtual_pipeline_model_parallel_size", 1), 1
         )
-        config.expert_model_parallel_size = max(getattr(config, "expert_model_parallel_size", 1), 1)
+        config.expert_model_parallel_size = max(
+            getattr(config, "expert_model_parallel_size", 1), 1
+        )
         config.fuse_rms_norm = True
 
         # Ensure DSv4 critical switches are on

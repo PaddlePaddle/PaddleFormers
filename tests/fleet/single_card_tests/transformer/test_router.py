@@ -176,17 +176,25 @@ class TestTopKRouter(unittest.TestCase):
         batch_size = 2
         seq_len = 5
         # Simulate Gates [B*S, E]
-        gates = paddle.rand([batch_size * seq_len, self.config.n_routed_experts])
+        gates = paddle.rand(
+            [batch_size * seq_len, self.config.n_routed_experts]
+        )
 
         # Test 1: noaux_tc
-        res = router._call_topk_method("noaux_tc", gates, k=2, n_group=1, topk_group=1)
-        self.assertIsNotNone(res, "_call_topk_method returned None for 'noaux_tc'")
+        res = router._call_topk_method(
+            "noaux_tc", gates, k=2, n_group=1, topk_group=1
+        )
+        self.assertIsNotNone(
+            res, "_call_topk_method returned None for 'noaux_tc'"
+        )
         self.assertIsInstance(res, tuple, "Should return a tuple")
         self.assertEqual(len(res), 2, "Should return (top_gate, top_idx)")
 
         # Test 2: greedy
         res_greedy = router._call_topk_method("greedy", gates, k=2)
-        self.assertIsNotNone(res_greedy, "_call_topk_method returned None for 'greedy'")
+        self.assertIsNotNone(
+            res_greedy, "_call_topk_method returned None for 'greedy'"
+        )
         self.assertEqual(len(res_greedy), 2)
 
     def test_forward_shape_and_logic(self):
@@ -223,7 +231,9 @@ class TestTopKRouter(unittest.TestCase):
 
         # 1. Verify DeepEP/TopKRouter specific None return values
         self.assertIsNone(capacity, "Capacity should be None for TopKRouter")
-        self.assertIsNone(token_priority, "Token priority should be None for TopKRouter")
+        self.assertIsNone(
+            token_priority, "Token priority should be None for TopKRouter"
+        )
 
         # 2. Verify Shapes
         expected_tokens = batch_size * seq_len
@@ -299,11 +309,15 @@ class TestTopKRouter(unittest.TestCase):
 
         batch_size, seq_len = 2, 4
         paddle.seed(42)
-        hidden_states = paddle.randn([batch_size, seq_len, self.config.hidden_size])
+        hidden_states = paddle.randn(
+            [batch_size, seq_len, self.config.hidden_size]
+        )
         # positions where input_ids==0 are padding tokens
         input_ids = paddle.to_tensor([[1, 2, 0, 0], [3, 4, 5, 0]])
 
-        _, top_gate, top_idx, gates_masked, mask, _, l_aux, _ = router(hidden_states, input_ids=input_ids)
+        _, top_gate, top_idx, gates_masked, mask, _, l_aux, _ = router(
+            hidden_states, input_ids=input_ids
+        )
 
         total = batch_size * seq_len
         k = self.config.num_experts_per_tok
@@ -529,7 +543,9 @@ class TestRoutedScalingFactorForward(unittest.TestCase):
         for t in range(num_tokens):
             for ki in range(k):
                 expert_id = top_idx[t, ki].item()
-                self.assertGreaterEqual(expert_id, 0, "Expert index should be non-negative")
+                self.assertGreaterEqual(
+                    expert_id, 0, "Expert index should be non-negative"
+                )
                 self.assertAlmostEqual(
                     probs[t, expert_id].item(),
                     top_gate[t, ki].item(),
@@ -614,7 +630,9 @@ class TestForwardOutputRenaming(unittest.TestCase):
         hidden = paddle.randn([batch_size, seq_len, self.config.hidden_size])
         input_ids = paddle.to_tensor([[1, 2, 0, 0], [3, 4, 5, 0]])
 
-        _, top_gate, top_idx, probs, mask, _, _, _ = router(hidden, input_ids=input_ids)
+        _, top_gate, top_idx, probs, mask, _, _, _ = router(
+            hidden, input_ids=input_ids
+        )
 
         # Padding flat positions: 2, 3, 7
         for p in [2, 3, 7]:
@@ -692,7 +710,9 @@ class TestCalZLoss(unittest.TestCase):
 
         batch_size, seq_len = 2, 4
         paddle.seed(4)
-        logits = paddle.randn([batch_size * seq_len, self.config.n_routed_experts])
+        logits = paddle.randn(
+            [batch_size * seq_len, self.config.n_routed_experts]
+        )
         input_ids = paddle.to_tensor([[1, 2, 0, 0], [3, 4, 5, 0]])
 
         loss = router._cal_z_loss(logits, input_ids)
@@ -702,7 +722,9 @@ class TestCalZLoss(unittest.TestCase):
         origin_mask = (input_ids != 0).astype(paddle.float32)
         loss_mask = origin_mask.reshape([-1])
         denom = origin_mask.sum() + origin_mask.shape[0] * 2
-        expected = (logits.logsumexp(1).square() * loss_mask).sum() / paddle.clip(denom, min=1e-6)
+        expected = (
+            logits.logsumexp(1).square() * loss_mask
+        ).sum() / paddle.clip(denom, min=1e-6)
         self.assertAlmostEqual(loss.item(), expected.item(), places=5)
 
     def test_experimental_version_without_mtp(self):
@@ -713,7 +735,9 @@ class TestCalZLoss(unittest.TestCase):
 
         batch_size, seq_len = 2, 4
         paddle.seed(5)
-        logits = paddle.randn([batch_size * seq_len, self.config.n_routed_experts])
+        logits = paddle.randn(
+            [batch_size * seq_len, self.config.n_routed_experts]
+        )
         input_ids = paddle.to_tensor([[1, 2, 3, 0], [5, 6, 7, 0]])
 
         loss = router._cal_z_loss(logits, input_ids)
@@ -721,7 +745,9 @@ class TestCalZLoss(unittest.TestCase):
         origin_mask = (input_ids != 0).astype(paddle.float32)
         loss_mask = origin_mask.reshape([-1])
         denom = origin_mask.sum()
-        expected = (logits.logsumexp(1).square() * loss_mask).sum() / paddle.clip(denom, min=1e-6)
+        expected = (
+            logits.logsumexp(1).square() * loss_mask
+        ).sum() / paddle.clip(denom, min=1e-6)
         self.assertAlmostEqual(loss.item(), expected.item(), places=5)
 
     def test_forward_z_loss_with_input_ids(self):
@@ -765,7 +791,9 @@ class TestPadTokenId(unittest.TestCase):
         hidden = paddle.randn([2, 4, self.config.hidden_size])
         input_ids = paddle.to_tensor([[1, 2, 0, 0], [3, 4, 5, 0]])
 
-        _, _, top_idx, probs, mask, _, _, _ = router(hidden, input_ids=input_ids)
+        _, _, top_idx, probs, mask, _, _, _ = router(
+            hidden, input_ids=input_ids
+        )
         for p in [2, 3, 7]:
             self.assertTrue((top_idx[p] == -1).all().item())
             self.assertAlmostEqual(mask[p].sum().item(), 0.0)
@@ -782,7 +810,9 @@ class TestPadTokenId(unittest.TestCase):
         # Token id 0 must NOT be masked; id 99 must be masked.
         input_ids = paddle.to_tensor([[1, 0, 99, 99], [2, 99, 3, 0]])
 
-        _, _, top_idx, probs, mask, _, _, _ = router(hidden, input_ids=input_ids)
+        _, _, top_idx, probs, mask, _, _, _ = router(
+            hidden, input_ids=input_ids
+        )
         # Padding flat positions where id == 99: 2, 3, 5
         for p in [2, 3, 5]:
             self.assertTrue((top_idx[p] == -1).all().item())
@@ -857,7 +887,9 @@ class TestPadTokenId(unittest.TestCase):
         self.assertEqual(loss_no_pad.shape, [])
         self.assertEqual(loss_with_pad.shape, [])
         # The two losses must differ (different effective denominator).
-        self.assertNotAlmostEqual(loss_no_pad.item(), loss_with_pad.item(), places=4)
+        self.assertNotAlmostEqual(
+            loss_no_pad.item(), loss_with_pad.item(), places=4
+        )
 
     def test_cal_z_loss_uses_pad_token_id(self):
         """_cal_z_loss masks tokens equal to config.pad_token_id."""
@@ -875,7 +907,9 @@ class TestPadTokenId(unittest.TestCase):
 
         loss_mask = (input_ids != 9).astype(paddle.float32).reshape([-1])
         denom = (input_ids != 9).astype(paddle.float32).sum()
-        expected = (logits.logsumexp(1).square() * loss_mask).sum() / paddle.clip(denom, min=1e-6)
+        expected = (
+            logits.logsumexp(1).square() * loss_mask
+        ).sum() / paddle.clip(denom, min=1e-6)
         self.assertAlmostEqual(loss.item(), expected.item(), places=5)
 
 

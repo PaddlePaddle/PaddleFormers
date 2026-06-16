@@ -32,10 +32,14 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import (
 
 if TYPE_CHECKING:
     from paddleformers.fleet.process_groups_config import ProcessGroupCollection
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
 from paddle._C_ops import matmul_grad
-from paddle.distributed.fleet.meta_parallel.zero_bubble_utils import WeightGradStore
+from paddle.distributed.fleet.meta_parallel.zero_bubble_utils import (
+    WeightGradStore,
+)
 
 from paddleformers.fleet.context_parallel_utils import (
     ContextParallelAllGatherOp,
@@ -66,14 +70,20 @@ _moe_router_logger = logging.getLogger(__name__)
 
 def _log_moe_md5(tensor, name, layer_idx=None):
     """Log MD5 of a tensor for MoE precision alignment debugging."""
-    from paddleformers.fleet.transformer.transformer_layer import TransformerLayer
+    from paddleformers.fleet.transformer.transformer_layer import (
+        TransformerLayer,
+    )
 
     if _LOG_LAYER_MD5 and TransformerLayer._gpt_model_use_experimental_version:
         if TransformerLayer._skip_mtp_probes:
             return  # Skip MTP passes — EC has no MTP
         data = tensor.detach().cast("float32").numpy().tobytes()
         md5 = hashlib.md5(data).hexdigest()
-        rank = paddle.distributed.get_rank() if paddle.distributed.is_initialized() else 0
+        rank = (
+            paddle.distributed.get_rank()
+            if paddle.distributed.is_initialized()
+            else 0
+        )
         layer_str = f" Layer={layer_idx}" if layer_idx is not None else ""
         print(
             f"[MD5 MoE] Rank={rank}{layer_str} {name} MD5={md5} shape={list(tensor.shape)}",
@@ -110,14 +120,18 @@ class FusedGateDetachMatmul(paddle.autograd.PyLayer):
 
         def _compute_weight_grad(x_cast, y_grad, weight):
             with paddle.amp.auto_cast(False):
-                w_grad = paddle.matmul(x_cast, y_grad, transpose_x=True).T  # 始终先算梯度
+                w_grad = paddle.matmul(
+                    x_cast, y_grad, transpose_x=True
+                ).T  # 始终先算梯度
 
             if hasattr(weight, "main_grad"):
                 if weight.main_grad is None:
-                    weight.main_grad = paddle.zeros(weight.shape, dtype=paddle.float32)
-                assert (
-                    w_grad.dtype == weight.main_grad.dtype
-                ), f"w_grad dtype {w_grad.dtype} != main_grad dtype {weight.main_grad.dtype}"
+                    weight.main_grad = paddle.zeros(
+                        weight.shape, dtype=paddle.float32
+                    )
+                assert w_grad.dtype == weight.main_grad.dtype, (
+                    f"w_grad dtype {w_grad.dtype} != main_grad dtype {weight.main_grad.dtype}"
+                )
                 weight.main_grad.add_(w_grad)
             else:
                 raise AssertionError("fp8 overlap need main_grad attribute")
@@ -182,7 +196,9 @@ def gate_detach_matmul(
     return score
 
 
-def _apply_routing_map_fusion(gates, top_idx, input_ids_none_zero_mask, input_ids=None, pad_token_id=0):
+def _apply_routing_map_fusion(
+    gates, top_idx, input_ids_none_zero_mask, input_ids=None, pad_token_id=0
+):
     from paddleformers.fleet.triton_ops import routing_map_fusion_forward
 
     if input_ids_none_zero_mask is not None and input_ids is not None:
@@ -223,7 +239,9 @@ class StandardMoERouter(nn.Layer):
         self.topk_group = config.topk_group
 
         self.routed_scaling_factor = config.routed_scaling_factor
-        self.routed_scaling_factor_learnable = config.routed_scaling_factor_learnable
+        self.routed_scaling_factor_learnable = (
+            config.routed_scaling_factor_learnable
+        )
 
         self.tensor_model_parallel_size = config.tensor_model_parallel_size
         self.sequence_parallel = config.sequence_parallel
@@ -234,7 +252,9 @@ class StandardMoERouter(nn.Layer):
         self.routing_type = config.moe_router_load_balancing_type
 
         if self.routing_type != "seq_aux_loss" and config.get("seq_aux", False):
-            raise ValueError(f"seq_aux is True but routing_type is {self.routing_type}. Please check.")
+            raise ValueError(
+                f"seq_aux is True but routing_type is {self.routing_type}. Please check."
+            )
 
         # Initialize gate weight with Normal distribution aligned with Megatron.
         self.weight = paddle.create_parameter(
@@ -244,17 +264,27 @@ class StandardMoERouter(nn.Layer):
         )
         config.init_method(self.weight)
 
-        if self.sequence_parallel and self.config.expert_model_parallel_size > 1:
+        if (
+            self.sequence_parallel
+            and self.config.expert_model_parallel_size > 1
+        ):
             mark_as_sequence_parallel_parameter(self.weight)
 
         if self.routed_scaling_factor_learnable:
             self.routed_scaling_factor_param = self.create_parameter(
                 shape=[self.num_experts],
                 dtype="float32",
-                default_initializer=nn.initializer.Constant(self.routed_scaling_factor),
+                default_initializer=nn.initializer.Constant(
+                    self.routed_scaling_factor
+                ),
             )
-            if self.sequence_parallel and self.config.expert_model_parallel_size > 1:
-                mark_as_sequence_parallel_parameter(self.routed_scaling_factor_param)
+            if (
+                self.sequence_parallel
+                and self.config.expert_model_parallel_size > 1
+            ):
+                mark_as_sequence_parallel_parameter(
+                    self.routed_scaling_factor_param
+                )
 
         if self.topk_method == "noaux_tc":
             if not self.config.gpt_model_use_experimental_version:
@@ -279,7 +309,9 @@ class StandardMoERouter(nn.Layer):
         self.is_hash_layer = False
         self.tid2eid = None
 
-    def gate_score_func(self, logits: paddle.Tensor, logits_type_promotion: bool = True) -> paddle.Tensor:
+    def gate_score_func(
+        self, logits: paddle.Tensor, logits_type_promotion: bool = True
+    ) -> paddle.Tensor:
         # [..., hidden_dim] -> [..., num_experts]
         with paddle.amp.auto_cast(False):
             if logits_type_promotion:
@@ -324,7 +356,9 @@ class StandardMoERouter(nn.Layer):
         Returns:
             int: A tensor value representing the calculated capacity for each expert.
         """
-        assert gates.ndim == 2, f"gates should be 2D, but got {gates.ndim}, {gates.shape}"
+        assert gates.ndim == 2, (
+            f"gates should be 2D, but got {gates.ndim}, {gates.shape}"
+        )
         # gates has shape of SE
         num_tokens = gates.shape[0]
         num_experts = gates.shape[1]
@@ -333,7 +367,9 @@ class StandardMoERouter(nn.Layer):
             capacity = min_capacity
         if capacity > max_capacity:
             capacity = max_capacity
-        assert capacity > 0, f"requires capacity > 0, capacity_factor: {capacity_factor}, input_shape: {gates.shape}"
+        assert capacity > 0, (
+            f"requires capacity > 0, capacity_factor: {capacity_factor}, input_shape: {gates.shape}"
+        )
 
         return capacity
 
@@ -355,9 +391,14 @@ class StandardMoERouter(nn.Layer):
         aux_loss = paddle.sum(me * ce) * float(self.num_experts)
         return aux_loss
 
-    def _cal_seq_aux_loss(self, probs, top_k, routing_map, seq_len, batch_size, input_ids=None):
+    def _cal_seq_aux_loss(
+        self, probs, top_k, routing_map, seq_len, batch_size, input_ids=None
+    ):
         # all_probs and routing_map should be computed using the runtime local sequence length on each worker.
-        if self.tensor_model_parallel_size > 1 or self.context_parallel_size > 1:
+        if (
+            self.tensor_model_parallel_size > 1
+            or self.context_parallel_size > 1
+        ):
             local_seq_len = seq_len
             # [B*S, E]
             if self.sequence_parallel and self.tensor_model_parallel_size > 1:
@@ -375,11 +416,15 @@ class StandardMoERouter(nn.Layer):
                     ]
                 )
                 # [B, S, E]
-                all_probs = ContextParallelAllGatherOp.apply(all_probs, axis=1, mode=self.config.cp_balance_mode)
+                all_probs = ContextParallelAllGatherOp.apply(
+                    all_probs, axis=1, mode=self.config.cp_balance_mode
+                )
                 local_seq_len = local_seq_len * self.context_parallel_size
             else:
                 # [B, S, E]
-                all_probs = all_probs.reshape([-1, local_seq_len, self.num_experts])
+                all_probs = all_probs.reshape(
+                    [-1, local_seq_len, self.num_experts]
+                )
             batch_size = all_probs.shape[0]
             # [B, S, E]
             routing_map = routing_map.reshape([batch_size, seq_len, -1])
@@ -398,9 +443,14 @@ class StandardMoERouter(nn.Layer):
         # fixed max_seq_len. PF's input_ids plays the role of EC's origin_input_ids.
         # [B, 1]
         if input_ids is not None:
-            if get_context_parallel_world_size() > 1 and self.config.experimental_dataflow:
+            if (
+                get_context_parallel_world_size() > 1
+                and self.config.experimental_dataflow
+            ):
                 # In EB data flow, we need to gather input_ids here to get right denom.
-                input_ids = ContextParallelGatherOp.apply(input_ids, axis=1, mode=self.config.cp_balance_mode)
+                input_ids = ContextParallelGatherOp.apply(
+                    input_ids, axis=1, mode=self.config.cp_balance_mode
+                )
             _ids = input_ids
             if _ids.ndim == 1:
                 _ids = _ids.unsqueeze(axis=0)
@@ -408,13 +458,20 @@ class StandardMoERouter(nn.Layer):
             if pad_token_id is None:
                 pad_token_id = 0
             origin_valid_mask = (_ids != pad_token_id).astype(paddle.float32)
-            if getattr(self.config, "gpt_model_use_experimental_version", False):
+            if getattr(
+                self.config, "gpt_model_use_experimental_version", False
+            ):
                 token_count_per_line = (
-                    origin_valid_mask.sum(axis=-1, keepdim=True) + self.config.num_nextn_predict_layers
+                    origin_valid_mask.sum(axis=-1, keepdim=True)
+                    + self.config.num_nextn_predict_layers
                 )
             else:
-                token_count_per_line = origin_valid_mask.sum(axis=-1, keepdim=True)
-            is_invalid_line_float = (token_count_per_line == 0).astype(paddle.float32)
+                token_count_per_line = origin_valid_mask.sum(
+                    axis=-1, keepdim=True
+                )
+            is_invalid_line_float = (token_count_per_line == 0).astype(
+                paddle.float32
+            )
             denom = token_count_per_line + 1e-6 * is_invalid_line_float
         else:
             denom = paddle.to_tensor(float(max_seq_len), dtype="float32")
@@ -425,18 +482,27 @@ class StandardMoERouter(nn.Layer):
             cost_coeff = (
                 routing_map.sum(axis=seq_axis, dtype="float32")
                 / denom
-                * paddle.to_tensor(float(self.num_experts) / top_k, dtype="float32")
+                * paddle.to_tensor(
+                    float(self.num_experts) / top_k, dtype="float32"
+                )
             )
             # Align with ernie: use mean instead of sum/S
             # [B, E] -> [B] -> []
-            seq_aux_loss = (cost_coeff * all_probs.mean(axis=seq_axis)).sum(axis=1).mean()
+            seq_aux_loss = (
+                (cost_coeff * all_probs.mean(axis=seq_axis)).sum(axis=1).mean()
+            )
         else:
             # [B, E]
             cost_coeff = routing_map.sum(axis=seq_axis, dtype="float32") / (
-                denom * paddle.to_tensor(top_k / self.num_experts, dtype="float32")
+                denom
+                * paddle.to_tensor(top_k / self.num_experts, dtype="float32")
             )
             # [B, E] -> [B] -> []
-            seq_aux_loss = (cost_coeff * all_probs.sum(axis=seq_axis) / denom).sum(axis=1).mean()
+            seq_aux_loss = (
+                (cost_coeff * all_probs.sum(axis=seq_axis) / denom)
+                .sum(axis=1)
+                .mean()
+            )
         return seq_aux_loss
 
     def _cal_z_loss(self, logits, input_ids=None) -> paddle.Tensor:
@@ -451,30 +517,47 @@ class StandardMoERouter(nn.Layer):
             paddle.Tensor: The z loss value.
         """
         if input_ids is not None:
-            if get_context_parallel_world_size() > 1 and self.config.experimental_dataflow:
+            if (
+                get_context_parallel_world_size() > 1
+                and self.config.experimental_dataflow
+            ):
                 # In EB data flow, we need to gather input_ids here to get right denom.
-                origin_input_ids = ContextParallelGatherOp.apply(input_ids, axis=1, mode=self.config.cp_balance_mode)
+                origin_input_ids = ContextParallelGatherOp.apply(
+                    input_ids, axis=1, mode=self.config.cp_balance_mode
+                )
             else:
                 origin_input_ids = input_ids
             pad_token_id = getattr(self.config, "pad_token_id", 0)
             if pad_token_id is None:
                 pad_token_id = 0
-            origin_loss_mask = (origin_input_ids != pad_token_id).astype(paddle.float32)
+            origin_loss_mask = (origin_input_ids != pad_token_id).astype(
+                paddle.float32
+            )
             loss_mask = (input_ids != pad_token_id).astype(paddle.float32)
             loss_mask = loss_mask.reshape([-1])
-            if getattr(self.config, "gpt_model_use_experimental_version", False):
+            if getattr(
+                self.config, "gpt_model_use_experimental_version", False
+            ):
                 # Align to EC, which also consider mtp token
-                denom = origin_loss_mask.sum() + origin_loss_mask.shape[0] * self.config.num_nextn_predict_layers
+                denom = (
+                    origin_loss_mask.sum()
+                    + origin_loss_mask.shape[0]
+                    * self.config.num_nextn_predict_layers
+                )
             else:
                 denom = origin_loss_mask.sum()
 
-            l_zloss = (logits.logsumexp(1).square() * loss_mask).sum() / paddle.clip(denom, min=1e-6)
+            l_zloss = (
+                logits.logsumexp(1).square() * loss_mask
+            ).sum() / paddle.clip(denom, min=1e-6)
         else:
             l_zloss = paddle.logsumexp(logits, axis=1).square().mean()
 
         return l_zloss
 
-    def _priority(self, topk_idx: paddle.Tensor, capacity: int) -> paddle.Tensor:
+    def _priority(
+        self, topk_idx: paddle.Tensor, capacity: int
+    ) -> paddle.Tensor:
         """_summary_
             The priority is the cumulative sum of the expert indices.
 
@@ -489,10 +572,16 @@ class StandardMoERouter(nn.Layer):
         # Shape: [seq_len * k]
         chosen_expert = topk_idx.reshape([-1])
         # Shape: [seq_len * k, num_experts].
-        token_priority = F.one_hot(chosen_expert, self.num_experts).cast(paddle.int32)
-        token_priority = paddle.logical_and(token_priority > 0, token_priority.cumsum(axis=0) <= capacity)
+        token_priority = F.one_hot(chosen_expert, self.num_experts).cast(
+            paddle.int32
+        )
+        token_priority = paddle.logical_and(
+            token_priority > 0, token_priority.cumsum(axis=0) <= capacity
+        )
         # Shape: [seq_len, num_experts].
-        token_priority = token_priority.reshape([-1, k, self.num_experts]).sum(axis=1)
+        token_priority = token_priority.reshape([-1, k, self.num_experts]).sum(
+            axis=1
+        )
 
         return (token_priority > 0.0).astype("float32")
 
@@ -549,7 +638,11 @@ class StandardMoERouter(nn.Layer):
 
         # 2a. Create the column indices for the assignment.
         # We need a tensor of shape [k_to_use, num_experts] where each row is [0, 1, 2, ..., num_experts-1].
-        col_indices = paddle.arange(num_experts).unsqueeze(0).expand_as(topk_token_indices)
+        col_indices = (
+            paddle.arange(num_experts)
+            .unsqueeze(0)
+            .expand_as(topk_token_indices)
+        )
 
         # 2b. Flatten the row (token) and column (expert) indices for advanced indexing.
         token_indices_flat = topk_token_indices.flatten()
@@ -569,7 +662,9 @@ class StandardMoERouter(nn.Layer):
 
         return token_priority_mask
 
-    def _topk_greedy(self, scores: paddle.Tensor, k: int) -> tuple[paddle.Tensor, paddle.Tensor]:
+    def _topk_greedy(
+        self, scores: paddle.Tensor, k: int
+    ) -> tuple[paddle.Tensor, paddle.Tensor]:
         """_summary_
 
         Args:
@@ -604,16 +699,26 @@ class StandardMoERouter(nn.Layer):
         Note: the group size is normal greater than the number of k
         """
         bsz_seq_len, n_experts = scores.shape
-        assert n_experts % n_group == 0, "n_experts must be divisible by n_groups"
+        assert n_experts % n_group == 0, (
+            "n_experts must be divisible by n_groups"
+        )
 
-        group_scores = scores.reshape([0, n_group, -1]).max(axis=-1)  # [n, n_group]
-        group_idx = paddle.topk(group_scores, k=topk_group, axis=-1, sorted=True)[1]  # [n, top_k_group]
+        group_scores = scores.reshape([0, n_group, -1]).max(
+            axis=-1
+        )  # [n, n_group]
+        group_idx = paddle.topk(
+            group_scores, k=topk_group, axis=-1, sorted=True
+        )[1]  # [n, top_k_group]
         group_mask = paddle.zeros_like(group_scores).put_along_axis(group_idx, paddle.to_tensor(1.0), axis=-1)  # fmt:skip
         score_mask = (
-            group_mask.unsqueeze(-1).expand([bsz_seq_len, n_group, n_experts // n_group]).reshape([bsz_seq_len, -1])
+            group_mask.unsqueeze(-1)
+            .expand([bsz_seq_len, n_group, n_experts // n_group])
+            .reshape([bsz_seq_len, -1])
         )  # [n, e]
         tmp_scores = scores * score_mask  # [n, e]
-        topk_weight, topk_idx = paddle.topk(tmp_scores, k=k, axis=-1, sorted=True)
+        topk_weight, topk_idx = paddle.topk(
+            tmp_scores, k=k, axis=-1, sorted=True
+        )
 
         return topk_weight, topk_idx
 
@@ -636,20 +741,35 @@ class StandardMoERouter(nn.Layer):
         Note: the group size is normal greater than the number of k
         """
         bsz_seq_len, n_experts = scores.shape
-        assert n_experts % n_group == 0, "n_experts must be divisible by n_groups"
+        assert n_experts % n_group == 0, (
+            "n_experts must be divisible by n_groups"
+        )
 
-        assert self.e_score_correction_bias is not None, "e_score_correction_bias is None"
+        assert self.e_score_correction_bias is not None, (
+            "e_score_correction_bias is None"
+        )
         if not self.config.gpt_model_use_experimental_version:
-            scores_for_choice = scores.reshape([bsz_seq_len, -1]) + self.e_score_correction_bias.detach().unsqueeze(0)
+            scores_for_choice = scores.reshape(
+                [bsz_seq_len, -1]
+            ) + self.e_score_correction_bias.detach().unsqueeze(0)
         else:
-            scores_for_choice = scores.reshape([bsz_seq_len, -1]) + self.e_score_correction_bias.detach()
+            scores_for_choice = (
+                scores.reshape([bsz_seq_len, -1])
+                + self.e_score_correction_bias.detach()
+            )
         if n_group == 1:
-            topk_weight, topk_idx = paddle.topk(scores_for_choice, k=k, axis=-1, sorted=True)
+            topk_weight, topk_idx = paddle.topk(
+                scores_for_choice, k=k, axis=-1, sorted=True
+            )
         else:
             group_scores = (
-                scores_for_choice.reshape([bsz_seq_len, self.n_group, -1]).topk(2, axis=-1)[0].sum(axis=-1)
+                scores_for_choice.reshape([bsz_seq_len, self.n_group, -1])
+                .topk(2, axis=-1)[0]
+                .sum(axis=-1)
             )  # fmt:skip [n, n_group]
-            group_idx = paddle.topk(group_scores, k=topk_group, axis=-1, sorted=True)[1]  # [n, top_k_group]
+            group_idx = paddle.topk(
+                group_scores, k=topk_group, axis=-1, sorted=True
+            )[1]  # [n, top_k_group]
             group_mask = paddle.zeros_like(group_scores).put_along_axis(group_idx, paddle.to_tensor(1.0, dtype="float32"), axis=-1)  # fmt:skip
             score_mask = (
                 group_mask.unsqueeze(-1)
@@ -657,7 +777,9 @@ class StandardMoERouter(nn.Layer):
                 .reshape([bsz_seq_len, -1])
             )  # [n, e]
             tmp_scores = scores_for_choice * score_mask  # [n, e]
-            topk_weight, topk_idx = paddle.topk(tmp_scores, k=k, axis=-1, sorted=True)
+            topk_weight, topk_idx = paddle.topk(
+                tmp_scores, k=k, axis=-1, sorted=True
+            )
 
         # The bias term b is used only to adjust affinity scores for Top-K expert selection (routing); it does not affect gating.
         # The gate applied during dispatch and to weight the FFN output is computed from the original affinity score s_{i,t} (without the bias).
@@ -691,7 +813,9 @@ class StandardMoERouter(nn.Layer):
                 [num_tokens, topk], dtype int64.
         """
         if self.tid2eid is None:
-            raise ValueError("tid2eid buffer is not registered; hash routing is not initialized.")
+            raise ValueError(
+                "tid2eid buffer is not registered; hash routing is not initialized."
+            )
         score_function = self.scoring_func
         orig_dtype = logits.dtype
         logits_fp32 = logits.cast("float32")
@@ -700,9 +824,13 @@ class StandardMoERouter(nn.Layer):
         elif score_function == "sigmoid":
             scores = F.sigmoid(logits_fp32).cast(orig_dtype)
         elif score_function == "sqrtsoftplus":
-            scores = paddle.sqrt(F.softplus(logits_fp32) + 1e-20).cast(orig_dtype)
+            scores = paddle.sqrt(F.softplus(logits_fp32) + 1e-20).cast(
+                orig_dtype
+            )
         else:
-            raise ValueError(f"Unsupported scoring_func in hash routing: {score_function!r}")
+            raise ValueError(
+                f"Unsupported scoring_func in hash routing: {score_function!r}"
+            )
 
         top_idx = self.tid2eid[flat_ids].cast(paddle.int64)  # [N, topk]
         top_gate = paddle.take_along_axis(scores, top_idx, axis=1)  # [N, topk]
@@ -724,7 +852,9 @@ class StandardMoERouter(nn.Layer):
 
         return top_gate, top_idx
 
-    def _call_topk_method(self, topk_method, gates, k, n_group=None, topk_group=None):
+    def _call_topk_method(
+        self, topk_method, gates, k, n_group=None, topk_group=None
+    ):
         if topk_method == "greedy":
             top_gate, top_idx = self._topk_greedy(gates, k=k)
         elif topk_method == "group_limited_greedy":
@@ -768,7 +898,12 @@ class StandardMoERouter(nn.Layer):
           on hash layers.
         """
         n_hash = getattr(self.config, "moe_n_hash_layers", 0)
-        self.is_hash_layer = not is_mtp_layer and n_hash > 0 and layer_number is not None and layer_number < n_hash
+        self.is_hash_layer = (
+            not is_mtp_layer
+            and n_hash > 0
+            and layer_number is not None
+            and layer_number < n_hash
+        )
         if not self.is_hash_layer:
             return
 
@@ -791,7 +926,10 @@ class StandardMoERouter(nn.Layer):
         # runnable from scratch.
         ids = paddle.arange(vocab_size, dtype=paddle.int64)
         tid2eid = paddle.stack(
-            [(ids + k) % self.num_experts for k in range(self.num_experts_per_tok)],
+            [
+                (ids + k) % self.num_experts
+                for k in range(self.num_experts_per_tok)
+            ],
             axis=1,
         )
         # Replace the placeholder attribute with a registered buffer.
@@ -827,19 +965,30 @@ class TopKRouter(StandardMoERouter):
             else:
                 seq_len, batch_size, d_model = input.shape
             input = input.reshape([-1, d_model])
-            if get_context_parallel_world_size() > 1 and self.config.experimental_dataflow:
+            if (
+                get_context_parallel_world_size() > 1
+                and self.config.experimental_dataflow
+            ):
                 # In EB dataflow, shape of input_ids [b, s],
                 # but shape of input is [b, s/cp, h] ([s/cp, b, h] in sp),
                 # so we need to scatter input_ids here to avid the assertion below
-                input_ids = ContextParallelScatterOp.apply(input_ids, axis=1, mode=self.config.cp_balance_mode)
+                input_ids = ContextParallelScatterOp.apply(
+                    input_ids, axis=1, mode=self.config.cp_balance_mode
+                )
             if input_ids is not None:
                 pad_token_id = getattr(self.config, "pad_token_id", 0)
                 if pad_token_id is None:
                     pad_token_id = 0
                 if self.sequence_parallel:
-                    input_ids_none_zero_mask = (input_ids != pad_token_id).transpose([1, 0]).reshape([-1, 1])
+                    input_ids_none_zero_mask = (
+                        (input_ids != pad_token_id)
+                        .transpose([1, 0])
+                        .reshape([-1, 1])
+                    )
                 else:
-                    input_ids_none_zero_mask = (input_ids != pad_token_id).reshape([-1, 1])
+                    input_ids_none_zero_mask = (
+                        input_ids != pad_token_id
+                    ).reshape([-1, 1])
                 batch_size_, seq_len_ = input_ids.shape
                 assert (batch_size_ == batch_size) and (seq_len_ == seq_len), (
                     f"input_ids shape mismatch with input: "
@@ -849,7 +998,9 @@ class TopKRouter(StandardMoERouter):
             else:
                 input_ids_none_zero_mask = None
         elif len(input.shape) == 2:
-            raise ValueError("The input tensor should have shape [batch_size, sequence_length, hidden_size]")
+            raise ValueError(
+                "The input tensor should have shape [batch_size, sequence_length, hidden_size]"
+            )
 
         # Hash routing requires input_ids; verify early.
         if self.is_hash_layer and input_ids is None:
@@ -873,14 +1024,18 @@ class TopKRouter(StandardMoERouter):
         # ---- Hash routing branch ----
         if self.is_hash_layer:
             if self.sequence_parallel:
-                flat_ids = input_ids.transpose([1, 0]).reshape([-1]).cast(paddle.int64)
+                flat_ids = (
+                    input_ids.transpose([1, 0]).reshape([-1]).cast(paddle.int64)
+                )
             else:
                 flat_ids = input_ids.reshape([-1]).cast(paddle.int64)
 
             top_gate, top_idx = self._hash_routing(logits, flat_ids)
 
             # Build full [num_tokens, num_experts] probs and routing mask.
-            probs = paddle.zeros_like(logits).put_along_axis(top_idx, top_gate.cast(logits.dtype), axis=1)
+            probs = paddle.zeros_like(logits).put_along_axis(
+                top_idx, top_gate.cast(logits.dtype), axis=1
+            )
             mask = (probs > 0).cast(logits.dtype)
 
             # Apply padding (input_ids == 0):
@@ -907,7 +1062,9 @@ class TopKRouter(StandardMoERouter):
         if input_ids_none_zero_mask is not None:
             # input_ids_none_zero_mask shape: [b*s,1]
             valid_mask = input_ids_none_zero_mask.astype(paddle.float32)
-            assert valid_mask.shape[0] == logits.shape[0], f"check valid_mask shape {valid_mask.shape}"
+            assert valid_mask.shape[0] == logits.shape[0], (
+                f"check valid_mask shape {valid_mask.shape}"
+            )
             logits = logits * valid_mask
             gates = gates * valid_mask
 
@@ -916,11 +1073,17 @@ class TopKRouter(StandardMoERouter):
         # Use clone() to ensure that the execution order of the grad nodes is consistent with EC.
         gates_ori = gates.clone()
         if self.scoring_func == "sigmoid":
-            if not getattr(self.config, "gpt_model_use_experimental_version", False):
-                gates_ori = gates_ori / (gates_ori.sum(axis=-1, keepdim=True) + 1e-20)
+            if not getattr(
+                self.config, "gpt_model_use_experimental_version", False
+            ):
+                gates_ori = gates_ori / (
+                    gates_ori.sum(axis=-1, keepdim=True) + 1e-20
+                )
             else:
                 # Use clip() to ensure the computation logic is consistent with EC; it may be useful when gradients are very small.
-                gates_ori = gates_ori / paddle.clip(gates_ori.sum(-1, keepdim=True), min=1e-12)
+                gates_ori = gates_ori / paddle.clip(
+                    gates_ori.sum(-1, keepdim=True), min=1e-12
+                )
 
         if getattr(self.config, "moe_topk_fusion", False):
             # Use MoETopkFusion Triton kernel for bit-exact alignment.
@@ -930,7 +1093,9 @@ class TopKRouter(StandardMoERouter):
             MoETopkFusion = _get_moe_topk_fusion()
             use_node_limit = self.n_group > 1
             if not self.config.gpt_model_use_experimental_version:
-                probs_for_choice = gates + self.e_score_correction_bias.detach().unsqueeze(0)
+                probs_for_choice = (
+                    gates + self.e_score_correction_bias.detach().unsqueeze(0)
+                )
             else:
                 probs_for_choice = gates + self.e_score_correction_bias.detach()
             if _LOG_LAYER_MD5 and self._layer_number == 0:
@@ -939,7 +1104,9 @@ class TopKRouter(StandardMoERouter):
                     "e_score_correction_bias",
                     self._layer_number,
                 )
-                _log_moe_md5(probs_for_choice, "probs_for_choice", self._layer_number)
+                _log_moe_md5(
+                    probs_for_choice, "probs_for_choice", self._layer_number
+                )
             top_gate, top_idx = MoETopkFusion.apply(
                 gates,  # gate_probs (original sigmoid scores)
                 probs_for_choice,  # probs_for_choice (with correction bias)
@@ -951,11 +1118,17 @@ class TopKRouter(StandardMoERouter):
             )
             # top_gate is already normalized by the Triton kernel when norm_topk_prob=True
 
-            _log_moe_md5(top_idx.cast("float32"), "topk_indices", self._layer_number)
+            _log_moe_md5(
+                top_idx.cast("float32"), "topk_indices", self._layer_number
+            )
             # Log raw weights and sum for alignment verification (re-computed from gate_probs)
             if _LOG_LAYER_MD5:
-                raw_topk_weights = paddle.take_along_axis(gates, top_idx, axis=-1)
-                _log_moe_md5(raw_topk_weights, "topk_weights_raw", self._layer_number)
+                raw_topk_weights = paddle.take_along_axis(
+                    gates, top_idx, axis=-1
+                )
+                _log_moe_md5(
+                    raw_topk_weights, "topk_weights_raw", self._layer_number
+                )
                 raw_sum = raw_topk_weights.sum(axis=-1, keepdim=True)
                 _log_moe_md5(raw_sum, "topk_raw_sum", self._layer_number)
         else:
@@ -968,12 +1141,17 @@ class TopKRouter(StandardMoERouter):
                 topk_group=self.topk_group,
             )
 
-            _log_moe_md5(top_idx.cast("float32"), "topk_indices", self._layer_number)
+            _log_moe_md5(
+                top_idx.cast("float32"), "topk_indices", self._layer_number
+            )
             _log_moe_md5(top_gate, "topk_weights_raw", self._layer_number)
 
         # z-loss
         if self.config.router_z_loss_coef:
-            l_zloss = self._cal_z_loss(logits, input_ids) * self.config.router_z_loss_coef
+            l_zloss = (
+                self._cal_z_loss(logits, input_ids)
+                * self.config.router_z_loss_coef
+            )
         else:
             l_zloss = None
 
@@ -1002,7 +1180,9 @@ class TopKRouter(StandardMoERouter):
 
         # norm
         if self.norm_topk_prob:
-            if not getattr(self.config, "gpt_model_use_experimental_version", False):
+            if not getattr(
+                self.config, "gpt_model_use_experimental_version", False
+            ):
                 denominator = top_gate.sum(axis=-1, keepdim=True) + 1e-20
                 top_gate = top_gate / denominator
             # When gpt_model_use_experimental_version is True, top_gate is already normalized by MoETopkFusion
@@ -1018,7 +1198,9 @@ class TopKRouter(StandardMoERouter):
             top_gate = top_gate * self.routed_scaling_factor
 
         # Reconstruct probs (combine weights in [S, E] sparse layout) from final top_gate.
-        probs = paddle.zeros_like(gates, dtype=top_gate.dtype).put_along_axis_(top_idx, top_gate, axis=1)
+        probs = paddle.zeros_like(gates, dtype=top_gate.dtype).put_along_axis_(
+            top_idx, top_gate, axis=1
+        )
 
         _log_moe_md5(probs, "probs", self._layer_number)
         _log_moe_md5(top_gate, "topk_weights_normed", self._layer_number)

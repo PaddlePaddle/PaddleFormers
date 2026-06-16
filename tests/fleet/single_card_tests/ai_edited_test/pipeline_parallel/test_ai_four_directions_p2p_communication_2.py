@@ -16,7 +16,11 @@ import sys
 import unittest
 
 REPO_ROOT = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    )
 )
 sys.path.insert(0, os.path.join(REPO_ROOT, "src"))
 
@@ -60,7 +64,9 @@ class ProcessGroup:
         return Request(self.calls, "recv_partial")
 
     def all_gather_partial_on_calc_stream(self, out, tensor, nranks, rank_id):
-        self.calls.append(("all_gather_partial_on_calc_stream", nranks, rank_id))
+        self.calls.append(
+            ("all_gather_partial_on_calc_stream", nranks, rank_id)
+        )
         return Request(self.calls, "all_gather_partial_on_calc_stream")
 
     def all_gather_partial(self, out, tensor, nranks, rank_id):
@@ -229,7 +235,9 @@ class TestFourDirectionsMetaAndPartial(FourDirectionsStateTest):
         ]
 
         def recv_single(tensor, src, group):
-            self.calls.append(("recv_single", src, group is self.hcg.pipe_group))
+            self.calls.append(
+                ("recv_single", src, group is self.hcg.pipe_group)
+            )
             self._fill(tensor, single_values.pop(0))
 
         paddle.distributed.recv = recv_single
@@ -306,7 +314,9 @@ class TestFourDirectionsMetaAndPartial(FourDirectionsStateTest):
             "recv_partial",
         )
         self.assertEqual(
-            fd.allgather_partial(tensor, nranks=2, rank_id=1, group=self.hcg.model_group).name,
+            fd.allgather_partial(
+                tensor, nranks=2, rank_id=1, group=self.hcg.model_group
+            ).name,
             "all_gather_partial_on_calc_stream",
         )
         self.assertEqual(
@@ -366,16 +376,28 @@ class TestFourDirectionsMetaAndPartial(FourDirectionsStateTest):
 
 class TestFourDirectionsHelperCore(FourDirectionsStateTest):
     def _install_lightweight_ops(self):
-        def send_partial(tensor, dst=0, nranks=1, rank_id=0, group=None, use_calc_stream=True):
-            self.calls.append(("send_partial", dst, nranks, rank_id, use_calc_stream))
+        def send_partial(
+            tensor, dst=0, nranks=1, rank_id=0, group=None, use_calc_stream=True
+        ):
+            self.calls.append(
+                ("send_partial", dst, nranks, rank_id, use_calc_stream)
+            )
             return Request(self.calls, f"send-{dst}")
 
-        def recv_partial(tensor, src=0, nranks=1, rank_id=0, group=None, use_calc_stream=True):
-            self.calls.append(("recv_partial", src, nranks, rank_id, use_calc_stream))
+        def recv_partial(
+            tensor, src=0, nranks=1, rank_id=0, group=None, use_calc_stream=True
+        ):
+            self.calls.append(
+                ("recv_partial", src, nranks, rank_id, use_calc_stream)
+            )
             return Request(self.calls, f"recv-{src}")
 
-        def allgather_partial(tensor, nranks=1, rank_id=0, group=None, use_calc_stream=True):
-            self.calls.append(("allgather_partial", nranks, rank_id, use_calc_stream))
+        def allgather_partial(
+            tensor, nranks=1, rank_id=0, group=None, use_calc_stream=True
+        ):
+            self.calls.append(
+                ("allgather_partial", nranks, rank_id, use_calc_stream)
+            )
             return Request(self.calls, "allgather")
 
         def wait(tensor, use_calc_stream=True):
@@ -402,7 +424,9 @@ class TestFourDirectionsHelperCore(FourDirectionsStateTest):
         self.assertEqual(len(recv_next), 2)
         self.assertTrue(any(call[0] == "request_wait" for call in self.calls))
         self.assertEqual(
-            len([call for call in self.calls if call[0] == "allgather_partial"]),
+            len(
+                [call for call in self.calls if call[0] == "allgather_partial"]
+            ),
             4,
         )
 
@@ -451,8 +475,12 @@ class TestFourDirectionsPublicHelper(FourDirectionsStateTest):
             return prev, nxt
 
         fd._p2p_helper = helper
-        paddle.distributed.send = lambda tensor, dst, group: self.calls.append(("send", dst))
-        paddle.distributed.recv = lambda tensor, src, group: self._fill(tensor, [0])
+        paddle.distributed.send = lambda tensor, dst, group: self.calls.append(
+            ("send", dst)
+        )
+        paddle.distributed.recv = lambda tensor, src, group: self._fill(
+            tensor, [0]
+        )
 
     def tearDown(self):
         fd._p2p_helper = self.old_helper
@@ -461,10 +489,14 @@ class TestFourDirectionsPublicHelper(FourDirectionsStateTest):
     def _prepared_helper(self):
         helper = fd.P2pHelper(use_cache=True)
         helper._send_recv_meta.recv_shape_message = [1]
-        helper._send_recv_meta.recv_dtype_message = paddle_2_number(paddle.float32)
+        helper._send_recv_meta.recv_dtype_message = paddle_2_number(
+            paddle.float32
+        )
         helper._send_recv_meta.recv_stop_gradient = False
         helper._send_recv_meta.send_shape_message = [1]
-        helper._send_recv_meta.send_dtype_message = paddle_2_number(paddle.float32)
+        helper._send_recv_meta.send_dtype_message = paddle_2_number(
+            paddle.float32
+        )
         helper._send_recv_meta.has_recv_meta = True
         helper._send_recv_meta.has_send_meta = True
         return helper
@@ -473,24 +505,44 @@ class TestFourDirectionsPublicHelper(FourDirectionsStateTest):
         helper = self._prepared_helper()
         tensor = self._tensor([1])
         self.assertIsNone(helper.recv_forward(pp_first_stage=True))
-        self.assertIsNotNone(helper.recv_forward(pp_first_stage=False, sync_recv=False))
+        self.assertIsNotNone(
+            helper.recv_forward(pp_first_stage=False, sync_recv=False)
+        )
         self.assertIsNone(helper.recv_backward(pp_last_stage=True))
         self.assertIsNotNone(helper.recv_backward(pp_last_stage=False))
         helper.send_forward(tensor, pp_last_stage=True)
         helper.send_forward(tensor, pp_last_stage=False)
         helper.send_backward(tensor, pp_first_stage=True)
         helper.send_backward(tensor, pp_first_stage=False)
-        self.assertIsNone(helper.send_forward_recv_backward(tensor, pp_last_stage=True))
-        self.assertIsNotNone(helper.send_forward_recv_backward(tensor, pp_last_stage=False))
-        self.assertIsNone(helper.send_backward_recv_forward(tensor, pp_first_stage=True))
-        self.assertIsNotNone(helper.send_backward_recv_forward(tensor, pp_first_stage=False))
-        prev, nxt = helper.send_forward_backward_recv_forward_backward(tensor, tensor, recv_prev=True, recv_next=True)
+        self.assertIsNone(
+            helper.send_forward_recv_backward(tensor, pp_last_stage=True)
+        )
+        self.assertIsNotNone(
+            helper.send_forward_recv_backward(tensor, pp_last_stage=False)
+        )
+        self.assertIsNone(
+            helper.send_backward_recv_forward(tensor, pp_first_stage=True)
+        )
+        self.assertIsNotNone(
+            helper.send_backward_recv_forward(tensor, pp_first_stage=False)
+        )
+        prev, nxt = helper.send_forward_backward_recv_forward_backward(
+            tensor, tensor, recv_prev=True, recv_next=True
+        )
         self.assertIsNotNone(prev)
         self.assertIsNotNone(nxt)
-        self.assertIsNone(helper.send_forward_recv_forward(None, recv_prev=False))
-        self.assertIsNotNone(helper.send_forward_recv_forward(tensor, recv_prev=True))
-        self.assertIsNone(helper.send_backward_recv_backward(tensor, recv_next=False))
-        self.assertIsNotNone(helper.send_backward_recv_backward(tensor, recv_next=True))
+        self.assertIsNone(
+            helper.send_forward_recv_forward(None, recv_prev=False)
+        )
+        self.assertIsNotNone(
+            helper.send_forward_recv_forward(tensor, recv_prev=True)
+        )
+        self.assertIsNone(
+            helper.send_backward_recv_backward(tensor, recv_next=False)
+        )
+        self.assertIsNotNone(
+            helper.send_backward_recv_backward(tensor, recv_next=True)
+        )
         self.assertTrue(any(call[0] == "timer_start" for call in self.calls))
 
 

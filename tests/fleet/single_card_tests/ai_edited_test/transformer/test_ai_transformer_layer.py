@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -25,15 +29,23 @@ from unittest.mock import patch
 
 import paddle
 
-from paddleformers.fleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
-from paddleformers.fleet.transformer.identity_op import IdentityFuncOp, IdentityOp
+from paddleformers.fleet.models.gpt.gpt_layer_specs import (
+    get_gpt_layer_local_spec,
+)
+from paddleformers.fleet.transformer.identity_op import (
+    IdentityFuncOp,
+    IdentityOp,
+)
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 from paddleformers.fleet.transformer.transformer_layer import (
     TransformerLayer,
     TransformerLayerSublayersSpec,
     tensors_clone,
 )
-from paddleformers.fleet.utils import init_method_normal, scaled_init_method_normal
+from paddleformers.fleet.utils import (
+    init_method_normal,
+    scaled_init_method_normal,
+)
 
 
 def _make_config(**overrides):
@@ -274,7 +286,9 @@ class TestTransformerLayerMTP(unittest.TestCase):
             captured["input_ids"] = kwargs.get("input_ids")
             return kwargs["hidden_states"]
 
-        with patch.object(layer, "_forward_impl", side_effect=mock_forward_impl):
+        with patch.object(
+            layer, "_forward_impl", side_effect=mock_forward_impl
+        ):
             result = layer.forward(dict_args)
 
         # During forward, input_ids should have been trimmed to [B, S]
@@ -316,7 +330,9 @@ class TestTransformerLayerMTP(unittest.TestCase):
             captured["input_ids"] = kwargs.get("input_ids")
             return kwargs["hidden_states"]
 
-        with patch.object(layer, "_forward_impl", side_effect=mock_forward_impl):
+        with patch.object(
+            layer, "_forward_impl", side_effect=mock_forward_impl
+        ):
             layer.forward(dict_args)
 
         # input_ids should be passed through without trimming
@@ -350,7 +366,9 @@ class TestTransformerLayerMTP(unittest.TestCase):
             captured["input_ids"] = kwargs.get("input_ids")
             return kwargs["hidden_states"]
 
-        with patch.object(layer, "_forward_impl", side_effect=mock_forward_impl):
+        with patch.object(
+            layer, "_forward_impl", side_effect=mock_forward_impl
+        ):
             layer.forward(dict_args)
 
         self.assertIsNone(captured["input_ids"])
@@ -396,7 +414,9 @@ class TestTransformerLayerBlockAttnRes(unittest.TestCase):
         self.assertEqual(layer.attn_res_block_size, 2)
 
     def test_block_attn_res_auto_blocks_in_forward(self):
-        config = _make_config(block_attention_residuals=True, attn_res_block_size=2)
+        config = _make_config(
+            block_attention_residuals=True, attn_res_block_size=2
+        )
         layer = _make_layer(config)
         layer.eval()
         x = paddle.randn([4, 8, 64])
@@ -432,7 +452,9 @@ class TestTransformerLayerContext(unittest.TestCase):
     """Tests for cross-attention context."""
 
 
-class TestTransformerLayerSublayersSpecShardedStateDictKeysMap(unittest.TestCase):
+class TestTransformerLayerSublayersSpecShardedStateDictKeysMap(
+    unittest.TestCase
+):
     """Tests for sharded_state_dict_keys_map in TransformerLayerSublayersSpec."""
 
     def test_default_empty_dict(self):
@@ -440,8 +462,12 @@ class TestTransformerLayerSublayersSpecShardedStateDictKeysMap(unittest.TestCase
         self.assertEqual(spec.sharded_state_dict_keys_map, {})
 
     def test_custom_map(self):
-        spec = TransformerLayerSublayersSpec(sharded_state_dict_keys_map={"old_key": "new_key"})
-        self.assertEqual(spec.sharded_state_dict_keys_map, {"old_key": "new_key"})
+        spec = TransformerLayerSublayersSpec(
+            sharded_state_dict_keys_map={"old_key": "new_key"}
+        )
+        self.assertEqual(
+            spec.sharded_state_dict_keys_map, {"old_key": "new_key"}
+        )
 
 
 if __name__ == "__main__":

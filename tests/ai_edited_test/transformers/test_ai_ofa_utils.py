@@ -16,7 +16,7 @@ import unittest
 
 import numpy as np
 import paddle
-import paddle.nn as nn
+from paddle import nn
 
 from paddleformers.transformers.ofa_utils import (
     compute_neuron_head_importance,

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -267,24 +271,32 @@ class TestLinearWithFrozenWeight(unittest.TestCase):
     """Tests for LinearWithFrozenWeight autograd function."""
 
     def test_forward_with_bias(self):
-        from paddleformers.fleet.tensor_parallel.layers import LinearWithFrozenWeight
+        from paddleformers.fleet.tensor_parallel.layers import (
+            LinearWithFrozenWeight,
+        )
 
         input_tensor = paddle.randn([4, 8], dtype=paddle.float32)
         weight = paddle.randn([8, 16], dtype=paddle.float32)
         weight.stop_gradient = True
         bias = paddle.randn([16], dtype=paddle.float32)
 
-        output = LinearWithFrozenWeight.apply(input_tensor, weight, bias, False, None)
+        output = LinearWithFrozenWeight.apply(
+            input_tensor, weight, bias, False, None
+        )
         self.assertEqual(output.shape, [4, 16])
 
     def test_forward_without_bias(self):
-        from paddleformers.fleet.tensor_parallel.layers import LinearWithFrozenWeight
+        from paddleformers.fleet.tensor_parallel.layers import (
+            LinearWithFrozenWeight,
+        )
 
         input_tensor = paddle.randn([4, 8], dtype=paddle.float32)
         weight = paddle.randn([8, 16], dtype=paddle.float32)
         weight.stop_gradient = True
 
-        output = LinearWithFrozenWeight.apply(input_tensor, weight, None, False, None)
+        output = LinearWithFrozenWeight.apply(
+            input_tensor, weight, None, False, None
+        )
         self.assertEqual(output.shape, [4, 16])
 
 
@@ -292,7 +304,9 @@ class TestLinearWithFrozenWeightFunc(unittest.TestCase):
     """Tests for linear_with_frozen_weight wrapper function."""
 
     def test_basic_call(self):
-        from paddleformers.fleet.tensor_parallel.layers import linear_with_frozen_weight
+        from paddleformers.fleet.tensor_parallel.layers import (
+            linear_with_frozen_weight,
+        )
 
         input_tensor = paddle.randn([4, 8], dtype=paddle.float32)
         weight = paddle.randn([8, 16], dtype=paddle.float32)
@@ -311,7 +325,9 @@ class TestLinearWithFrozenWeightFunc(unittest.TestCase):
         self.assertEqual(output.shape, [4, 16])
 
     def test_with_sequence_parallel(self):
-        from paddleformers.fleet.tensor_parallel.layers import linear_with_frozen_weight
+        from paddleformers.fleet.tensor_parallel.layers import (
+            linear_with_frozen_weight,
+        )
 
         input_tensor = paddle.randn([4, 8], dtype=paddle.float32)
         weight = paddle.randn([8, 16], dtype=paddle.float32)
@@ -333,7 +349,9 @@ class TestLinearWithFrozenWeightFunc(unittest.TestCase):
         self.assertEqual(output.shape, [4, 16])
 
     def test_grad_output_buffer_raises(self):
-        from paddleformers.fleet.tensor_parallel.layers import linear_with_frozen_weight
+        from paddleformers.fleet.tensor_parallel.layers import (
+            linear_with_frozen_weight,
+        )
 
         input_tensor = paddle.randn([4, 8], dtype=paddle.float32)
         weight = paddle.randn([8, 16], dtype=paddle.float32)
@@ -352,7 +370,9 @@ class TestLinearWithFrozenWeightFunc(unittest.TestCase):
             )
 
     def test_wgrad_deferral_limit_raises(self):
-        from paddleformers.fleet.tensor_parallel.layers import linear_with_frozen_weight
+        from paddleformers.fleet.tensor_parallel.layers import (
+            linear_with_frozen_weight,
+        )
 
         input_tensor = paddle.randn([4, 8], dtype=paddle.float32)
         weight = paddle.randn([8, 16], dtype=paddle.float32)
@@ -371,7 +391,9 @@ class TestLinearWithFrozenWeightFunc(unittest.TestCase):
             )
 
     def test_async_grad_allreduce_warns(self):
-        from paddleformers.fleet.tensor_parallel.layers import linear_with_frozen_weight
+        from paddleformers.fleet.tensor_parallel.layers import (
+            linear_with_frozen_weight,
+        )
 
         input_tensor = paddle.randn([4, 8], dtype=paddle.float32)
         weight = paddle.randn([8, 16], dtype=paddle.float32)
@@ -398,7 +420,9 @@ class TestLinearLayer(unittest.TestCase):
     """Tests for the Linear layer class (no tensor parallelism)."""
 
     def _make_config(self, **kwargs):
-        from paddleformers.fleet.model_parallel_config import ModelParallelConfig
+        from paddleformers.fleet.model_parallel_config import (
+            ModelParallelConfig,
+        )
 
         defaults = {
             "params_dtype": paddle.float32,
@@ -420,7 +444,9 @@ class TestLinearLayer(unittest.TestCase):
 
         config = self._make_config()
         init_method = paddle.nn.initializer.Constant(1.0)
-        layer = Linear(8, 16, config=config, init_method=init_method, bias=False)
+        layer = Linear(
+            8, 16, config=config, init_method=init_method, bias=False
+        )
         input_tensor = paddle.randn([2, 4, 8])
         output, output_bias = layer(input_tensor)
         self.assertEqual(output.shape, [2, 4, 16])
@@ -540,7 +566,9 @@ class TestColumnParallelLinearBasic(unittest.TestCase):
     """Tests for ColumnParallelLinear basics."""
 
     def _make_config(self, **kwargs):
-        from paddleformers.fleet.model_parallel_config import ModelParallelConfig
+        from paddleformers.fleet.model_parallel_config import (
+            ModelParallelConfig,
+        )
 
         defaults = {
             "params_dtype": paddle.float32,
@@ -565,7 +593,9 @@ class TestColumnParallelLinearBasic(unittest.TestCase):
         return mock
 
     def test_column_linear_basic(self):
-        from paddleformers.fleet.tensor_parallel.layers import ColumnParallelLinear
+        from paddleformers.fleet.tensor_parallel.layers import (
+            ColumnParallelLinear,
+        )
 
         config = self._make_config()
         init_method = paddle.nn.initializer.Constant(1.0)
@@ -574,13 +604,17 @@ class TestColumnParallelLinearBasic(unittest.TestCase):
             "paddleformers.fleet.tensor_parallel.layers.get_tensor_model_parallel_group_if_none",
             return_value=mock_group,
         ):
-            layer = ColumnParallelLinear(8, 16, config=config, init_method=init_method, bias=True)
+            layer = ColumnParallelLinear(
+                8, 16, config=config, init_method=init_method, bias=True
+            )
         input_tensor = paddle.randn([2, 4, 8])
         output, output_bias = layer(input_tensor)
         self.assertEqual(output.shape, [2, 4, 16])
 
     def test_column_linear_repr(self):
-        from paddleformers.fleet.tensor_parallel.layers import ColumnParallelLinear
+        from paddleformers.fleet.tensor_parallel.layers import (
+            ColumnParallelLinear,
+        )
 
         config = self._make_config()
         init_method = paddle.nn.initializer.Constant(1.0)
@@ -589,14 +623,18 @@ class TestColumnParallelLinearBasic(unittest.TestCase):
             "paddleformers.fleet.tensor_parallel.layers.get_tensor_model_parallel_group_if_none",
             return_value=mock_group,
         ):
-            layer = ColumnParallelLinear(8, 16, config=config, init_method=init_method, bias=True)
+            layer = ColumnParallelLinear(
+                8, 16, config=config, init_method=init_method, bias=True
+            )
         repr_str = repr(layer)
         self.assertIn("ColumnParallelLinear", repr_str)
         self.assertIn("in_features=8", repr_str)
         self.assertIn("out_features=16", repr_str)
 
     def test_column_linear_get_extra_state(self):
-        from paddleformers.fleet.tensor_parallel.layers import ColumnParallelLinear
+        from paddleformers.fleet.tensor_parallel.layers import (
+            ColumnParallelLinear,
+        )
 
         config = self._make_config()
         init_method = paddle.nn.initializer.Constant(1.0)
@@ -605,11 +643,15 @@ class TestColumnParallelLinearBasic(unittest.TestCase):
             "paddleformers.fleet.tensor_parallel.layers.get_tensor_model_parallel_group_if_none",
             return_value=mock_group,
         ):
-            layer = ColumnParallelLinear(8, 16, config=config, init_method=init_method, bias=True)
+            layer = ColumnParallelLinear(
+                8, 16, config=config, init_method=init_method, bias=True
+            )
         self.assertIsNone(layer.get_extra_state())
 
     def test_column_linear_set_extra_state(self):
-        from paddleformers.fleet.tensor_parallel.layers import ColumnParallelLinear
+        from paddleformers.fleet.tensor_parallel.layers import (
+            ColumnParallelLinear,
+        )
 
         config = self._make_config()
         init_method = paddle.nn.initializer.Constant(1.0)
@@ -618,7 +660,9 @@ class TestColumnParallelLinearBasic(unittest.TestCase):
             "paddleformers.fleet.tensor_parallel.layers.get_tensor_model_parallel_group_if_none",
             return_value=mock_group,
         ):
-            layer = ColumnParallelLinear(8, 16, config=config, init_method=init_method, bias=True)
+            layer = ColumnParallelLinear(
+                8, 16, config=config, init_method=init_method, bias=True
+            )
         layer.set_extra_state(None)
 
 
@@ -626,7 +670,9 @@ class TestRowParallelLinearBasic(unittest.TestCase):
     """Tests for RowParallelLinear basics."""
 
     def _make_config(self, **kwargs):
-        from paddleformers.fleet.model_parallel_config import ModelParallelConfig
+        from paddleformers.fleet.model_parallel_config import (
+            ModelParallelConfig,
+        )
 
         defaults = {
             "params_dtype": paddle.float32,
@@ -724,7 +770,9 @@ class TestVocabParallelEmbeddingBasic(unittest.TestCase):
     """Tests for VocabParallelEmbedding basics."""
 
     def _make_config(self, **kwargs):
-        from paddleformers.fleet.model_parallel_config import ModelParallelConfig
+        from paddleformers.fleet.model_parallel_config import (
+            ModelParallelConfig,
+        )
 
         defaults = {
             "params_dtype": paddle.float32,
@@ -739,7 +787,9 @@ class TestVocabParallelEmbeddingBasic(unittest.TestCase):
         return ModelParallelConfig(**defaults)
 
     def test_vocab_embedding_basic(self):
-        from paddleformers.fleet.tensor_parallel.layers import VocabParallelEmbedding
+        from paddleformers.fleet.tensor_parallel.layers import (
+            VocabParallelEmbedding,
+        )
 
         config = self._make_config()
         init_method = paddle.nn.initializer.Constant(1.0)
@@ -755,7 +805,9 @@ class TestVocabParallelEmbeddingBasic(unittest.TestCase):
         self.assertEqual(output.shape, [4, 8, 32])
 
     def test_vocab_embedding_deterministic_mode(self):
-        from paddleformers.fleet.tensor_parallel.layers import VocabParallelEmbedding
+        from paddleformers.fleet.tensor_parallel.layers import (
+            VocabParallelEmbedding,
+        )
 
         config = self._make_config(deterministic_mode=True)
         init_method = paddle.nn.initializer.Constant(1.0)

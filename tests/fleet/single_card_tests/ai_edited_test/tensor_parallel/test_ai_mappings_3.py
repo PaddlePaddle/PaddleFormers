@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -54,7 +58,9 @@ class TestReduceScatterWithInputSplitSizes(unittest.TestCase):
     """Tests for _reduce_scatter_along_first_dim with input_split_sizes."""
 
     @patch("paddleformers.fleet.tensor_parallel.mappings.paddle.split")
-    @patch("paddleformers.fleet.tensor_parallel.mappings.paddle.distributed.reduce_scatter")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.paddle.distributed.reduce_scatter"
+    )
     def test_with_input_split_sizes(self, mock_reduce_scatter, mock_split):
         """Test reduce_scatter with custom input split sizes."""
         group = _make_group(world_size=2, rank=0)
@@ -66,13 +72,19 @@ class TestReduceScatterWithInputSplitSizes(unittest.TestCase):
             paddle.randn([4, 8]),
         ]
 
-        _reduce_scatter_along_first_dim(x, group, input_split_sizes=input_split_sizes)
+        _reduce_scatter_along_first_dim(
+            x, group, input_split_sizes=input_split_sizes
+        )
         mock_reduce_scatter.assert_called_once()
         mock_split.assert_called_once()
 
     @patch("paddleformers.fleet.tensor_parallel.mappings.paddle.split")
-    @patch("paddleformers.fleet.tensor_parallel.mappings.paddle.distributed.reduce_scatter")
-    def test_with_input_split_sizes_and_global_buffer(self, mock_reduce_scatter, mock_split):
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.paddle.distributed.reduce_scatter"
+    )
+    def test_with_input_split_sizes_and_global_buffer(
+        self, mock_reduce_scatter, mock_split
+    ):
         """Test reduce_scatter with custom split sizes and global buffer."""
         group = _make_group(world_size=2, rank=0)
         x = paddle.randn([6, 8])
@@ -82,7 +94,9 @@ class TestReduceScatterWithInputSplitSizes(unittest.TestCase):
             paddle.randn([4, 8]),
         ]
 
-        with patch("paddleformers.fleet.tensor_parallel.mappings.get_global_memory_buffer") as mock_buf:
+        with patch(
+            "paddleformers.fleet.tensor_parallel.mappings.get_global_memory_buffer"
+        ) as mock_buf:
             mock_buf.return_value.get_tensor.return_value = paddle.randn([2, 8])
             _reduce_scatter_along_first_dim(
                 x,
@@ -140,7 +154,9 @@ class TestGatherAlongFirstDimActual(unittest.TestCase):
 class TestAllToAllSp2hp(unittest.TestCase):
     """Tests for all_to_all_sp2hp function."""
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none"
+    )
     @patch("paddleformers.fleet.tensor_parallel.mappings.paddle.split")
     @patch("paddleformers.fleet.tensor_parallel.mappings.all_to_all")
     def test_basic_sp2hp(self, mock_a2a, mock_split, mock_get_group):
@@ -157,13 +173,17 @@ class TestAllToAllSp2hp(unittest.TestCase):
             # Expected for world_size=1 with certain dimensions
             pass
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none"
+    )
     def test_sp2hp_last_dim_not_divisible(self, mock_get_group):
         """Test all_to_all_sp2hp when last dim not divisible by world_size."""
         group = _make_group(world_size=2, rank=0)
         mock_get_group.return_value = group
 
-        x = paddle.randn([2, 3])  # 3 not divisible by 2, 3%2=1 so assertion passes
+        x = paddle.randn(
+            [2, 3]
+        )  # 3 not divisible by 2, 3%2=1 so assertion passes
         # The source uses paddle.split with dim=1 which is incompatible
         # Patch paddle.split to avoid compat error and test the assertion logic
         with (
@@ -187,7 +207,9 @@ class TestAllToAllSp2hp(unittest.TestCase):
 class TestAllToAllHp2sp(unittest.TestCase):
     """Tests for all_to_all_hp2sp function."""
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none"
+    )
     @patch("paddleformers.fleet.tensor_parallel.mappings.all_to_all")
     def test_basic_hp2sp(self, mock_a2a, mock_get_group):
         """Test all_to_all_hp2sp with basic input."""
@@ -202,7 +224,9 @@ class TestAllToAllHp2sp(unittest.TestCase):
         except (AssertionError, Exception):
             pass  # May fail due to shape mismatch in mock
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none"
+    )
     @patch("paddleformers.fleet.tensor_parallel.mappings.all_to_all")
     def test_hp2sp_first_dim_not_divisible(self, mock_a2a, mock_get_group):
         """Test all_to_all_hp2sp raises when first dim not divisible."""

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -171,7 +175,9 @@ class TestWeightedQuickGeGLUBack(unittest.TestCase):
         g = paddle.randn([2, 4])
         y = paddle.randn([2, 8])
         weights = paddle.randn([2, 1])
-        input_grad, weights_grad = weighted_quick_geglu_back(g, y, weights, linear_offset=0.5)
+        input_grad, weights_grad = weighted_quick_geglu_back(
+            g, y, weights, linear_offset=0.5
+        )
         self.assertEqual(input_grad.shape, [2, 8])
         self.assertEqual(weights_grad.shape, [2, 1])
 
@@ -214,7 +220,9 @@ class TestWeightedBiasQuickGeGLUBack(unittest.TestCase):
         y = paddle.randn([2, 8])
         bias = paddle.randn([8])
         weights = paddle.randn([2, 1])
-        input_grad, bias_grad, weights_grad = weighted_bias_quick_geglu_back(g, y, bias, weights)
+        input_grad, bias_grad, weights_grad = weighted_bias_quick_geglu_back(
+            g, y, bias, weights
+        )
         self.assertEqual(input_grad.shape, [2, 8])
         self.assertEqual(bias_grad.shape, [2, 8])
         self.assertEqual(weights_grad.shape, [2, 1])
@@ -225,8 +233,12 @@ class TestWeightedBiasQuickGeGLUBack(unittest.TestCase):
         y = paddle.randn([2, 8])
         bias = paddle.randn([8])
         weights = paddle.randn([2, 1])
-        input_grad, bias_grad, weights_grad = weighted_bias_quick_geglu_back(g, y, bias, weights)
-        np.testing.assert_allclose(input_grad.numpy(), bias_grad.numpy(), atol=1e-6)
+        input_grad, bias_grad, weights_grad = weighted_bias_quick_geglu_back(
+            g, y, bias, weights
+        )
+        np.testing.assert_allclose(
+            input_grad.numpy(), bias_grad.numpy(), atol=1e-6
+        )
 
 
 class TestWeightedBiasQuickGeGLUImpl(unittest.TestCase):
@@ -252,7 +264,9 @@ class TestWeightedBiasQuickGeGLUImpl(unittest.TestCase):
         with self.assertRaises(AssertionError):
             weighted_bias_quick_geglu_impl(x, None, paddle.randn([2, 1]))
 
-    @patch("paddleformers.fleet.fusions.fused_bias_geglu.WeightedBiasQuickGeGLUFunction.apply")
+    @patch(
+        "paddleformers.fleet.fusions.fused_bias_geglu.WeightedBiasQuickGeGLUFunction.apply"
+    )
     def test_2d_input_with_bias(self, mock_apply):
         """Test 2D input with bias."""
         mock_apply.return_value = paddle.randn([2, 4])
@@ -262,13 +276,17 @@ class TestWeightedBiasQuickGeGLUImpl(unittest.TestCase):
         result = weighted_bias_quick_geglu_impl(x, bias, weights)
         mock_apply.assert_called_once()
 
-    @patch("paddleformers.fleet.fusions.fused_bias_geglu.WeightedQuickGeGLUFunction.apply")
+    @patch(
+        "paddleformers.fleet.fusions.fused_bias_geglu.WeightedQuickGeGLUFunction.apply"
+    )
     def test_with_clamp_value(self, mock_apply):
         """Test with clamp_value parameter."""
         mock_apply.return_value = paddle.randn([2, 4])
         x = paddle.randn([2, 8])
         weights = paddle.randn([2, 1])
-        result = weighted_bias_quick_geglu_impl(x, None, weights, clamp_value=6.0)
+        result = weighted_bias_quick_geglu_impl(
+            x, None, weights, clamp_value=6.0
+        )
         mock_apply.assert_called_once()
 
 
@@ -281,7 +299,9 @@ class TestWeightedBiasQuickGeGLUFunction(unittest.TestCase):
         bias = paddle.randn([8])
         weights = paddle.randn([2, 1])
         linear_offset = paddle.to_tensor(0.0)
-        result = WeightedBiasQuickGeGLUFunction.apply(x, bias, weights, False, linear_offset)
+        result = WeightedBiasQuickGeGLUFunction.apply(
+            x, bias, weights, False, linear_offset
+        )
         self.assertEqual(result.shape, [2, 4])
 
 

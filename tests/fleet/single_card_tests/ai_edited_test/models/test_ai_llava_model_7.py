@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -82,14 +86,18 @@ class TestLLaVAModelSetInputTensor(unittest.TestCase):
     def test_set_input_tensor_with_encoder_only(self):
         """set_input_tensor with add_encoder True should set vision_model input."""
         mock_vision = MagicMock()
-        model = self._make_model(add_encoder=True, add_decoder=False, vision_model=mock_vision)
+        model = self._make_model(
+            add_encoder=True, add_decoder=False, vision_model=mock_vision
+        )
         mock_tensor = MagicMock()
         model.set_input_tensor(mock_tensor)
         mock_vision.set_input_tensor.assert_called_once()
 
     def test_set_input_tensor_with_pre_process(self):
         """set_input_tensor with pre_process should store encoder_hidden_state."""
-        model = self._make_model(add_encoder=False, add_decoder=False, pre_process=True)
+        model = self._make_model(
+            add_encoder=False, add_decoder=False, pre_process=True
+        )
         mock_tensor = MagicMock()
         model.set_input_tensor(mock_tensor)
         self.assertEqual(model.encoder_hidden_state, mock_tensor)

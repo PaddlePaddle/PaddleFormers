@@ -20,6 +20,7 @@ import random
 from collections.abc import Generator
 
 import torch
+
 from paddlefleet_ops.deep_gemm.testing import get_arch_major
 from paddlefleet_ops.deep_gemm.utils import (
     align,
@@ -67,7 +68,11 @@ def get_kernel_types(dtype: torch.dtype) -> tuple:
     if dtype == torch.bfloat16:
         return (KernelType.KernelNoSF,)
 
-    return (KernelType.Kernel1D2D,) if get_arch_major() == 9 else (KernelType.Kernel1D1D,)
+    return (
+        (KernelType.Kernel1D2D,)
+        if get_arch_major() == 9
+        else (KernelType.Kernel1D1D,)
+    )
 
 
 def get_major_ab(allow_a_mn_major: bool, allow_b_mn_major: bool) -> Generator:
@@ -110,7 +115,9 @@ def enumerate_normal(dtype: torch.dtype) -> Generator:
         for m in m_fwd_list:
             for i in range(len(nk_list)):
                 n, k = nk_list[i]
-                out_dtype = torch.bfloat16 if i < len(bf16_output_nk) else torch.float
+                out_dtype = (
+                    torch.bfloat16 if i < len(bf16_output_nk) else torch.float
+                )
                 yield (
                     kernel_type,
                     m,
@@ -170,7 +177,9 @@ def enumerate_m_grouped_contiguous(dtype: torch.dtype) -> Generator:
             (8, 4096, 4096, 7168),
             (8, 4096, 7168, 2048),
         ):
-            for major_a, major_b in get_major_ab(False, get_arch_major() != 9 or dtype != torch.float8_e4m3fn):
+            for major_a, major_b in get_major_ab(
+                False, get_arch_major() != 9 or dtype != torch.float8_e4m3fn
+            ):
                 yield (
                     kernel_type,
                     num_groups,
@@ -233,7 +242,10 @@ def enumerate_k_grouped_sf_layout():
     assert alignment % 128 == 0
     for mn in (4096, 7168):
         for num_groups, avg_k in ((16, 2048), (8, 4096), (72, 384), (128, 256)):
-            ks = [align(int(random.uniform(0.7, 1.3) * avg_k), alignment) for _ in range(num_groups)]
+            ks = [
+                align(int(random.uniform(0.7, 1.3) * avg_k), alignment)
+                for _ in range(num_groups)
+            ]
             yield mn, ks, num_groups
 
 
@@ -277,8 +289,12 @@ def generate_normal(
         if kernel_type.is_1d1d() and accumulate
         else per_block_cast_to_fp8(b, use_ue8m0=use_ue8m0)
     )
-    a_fp8 = a_fp8 if major_a.is_k_major() else (a_fp8[0].T.contiguous().T, a_fp8[1])
-    b_fp8 = b_fp8 if major_b.is_k_major() else (b_fp8[0].T.contiguous().T, b_fp8[1])
+    a_fp8 = (
+        a_fp8 if major_a.is_k_major() else (a_fp8[0].T.contiguous().T, a_fp8[1])
+    )
+    b_fp8 = (
+        b_fp8 if major_b.is_k_major() else (b_fp8[0].T.contiguous().T, b_fp8[1])
+    )
     return a_fp8, b_fp8, c, d, ref_d
 
 
@@ -292,8 +308,14 @@ def generate_m_grouped_contiguous(
     use_ue8m0: bool = False,
     use_bf16: bool = False,
 ):
-    actual_ms = [int(expected_m_per_group * random.uniform(0.7, 1.3)) for _ in range(num_groups)]
-    aligned_ms = [align(actual_m, get_mk_alignment_for_contiguous_layout()) for actual_m in actual_ms]
+    actual_ms = [
+        int(expected_m_per_group * random.uniform(0.7, 1.3))
+        for _ in range(num_groups)
+    ]
+    aligned_ms = [
+        align(actual_m, get_mk_alignment_for_contiguous_layout())
+        for actual_m in actual_ms
+    ]
     m = sum(aligned_ms)
 
     a = torch.randn((m, k), device="cuda", dtype=torch.bfloat16)
@@ -310,7 +332,9 @@ def generate_m_grouped_contiguous(
         m_indices[actual_end:aligned_end] = -1
         ref_d[start:aligned_end] = a[start:aligned_end] @ b[i].t()
         start = aligned_end
-    ref_d = torch.where((m_indices == -1).unsqueeze(1), torch.zeros_like(ref_d), ref_d)
+    ref_d = torch.where(
+        (m_indices == -1).unsqueeze(1), torch.zeros_like(ref_d), ref_d
+    )
 
     if use_bf16:
         b = b if major_b.is_k_major() else b.mT.contiguous().mT
@@ -325,7 +349,11 @@ def generate_m_grouped_contiguous(
         b_fp8_list.append(out)
         b_fp8_scale.append(scale)
     b_fp8 = (paddle.stack(b_fp8_list, dim=0), paddle.stack(b_fp8_scale, dim=0))
-    b_fp8 = b_fp8 if major_b.is_k_major() else (b_fp8[0].mT.contiguous().mT, b_fp8[1])
+    b_fp8 = (
+        b_fp8
+        if major_b.is_k_major()
+        else (b_fp8[0].mT.contiguous().mT, b_fp8[1])
+    )
     return m, a_fp8, b_fp8, m_indices, d, ref_d
 
 
@@ -368,8 +396,12 @@ def generate_m_grouped_masked(
         ),
     )
     for i in range(num_groups):
-        a_fp8[0][i], a_fp8[1][i] = per_token_cast_to_fp8(a[i].to(torch.bfloat16), use_ue8m0=use_ue8m0)
-        b_fp8[0][i], b_fp8[1][i] = per_block_cast_to_fp8(b[i].to(torch.bfloat16), use_ue8m0=use_ue8m0)
+        a_fp8[0][i], a_fp8[1][i] = per_token_cast_to_fp8(
+            a[i].to(torch.bfloat16), use_ue8m0=use_ue8m0
+        )
+        b_fp8[0][i], b_fp8[1][i] = per_block_cast_to_fp8(
+            b[i].to(torch.bfloat16), use_ue8m0=use_ue8m0
+        )
     a_fp8 = (a_fp8[0].to(torch.float8_e4m3fn), a_fp8[1])
     b_fp8 = (b_fp8[0].to(torch.float8_e4m3fn), b_fp8[1])
 
@@ -416,16 +448,8 @@ def generate_k_grouped_contiguous(
         b_chunks = []
         prefix = 0
         for K in ks:
-            a_chunks.append(
-                a[
-                    prefix : prefix + K,
-                ].T.flatten()
-            )
-            b_chunks.append(
-                b[
-                    prefix : prefix + K,
-                ].T.flatten()
-            )
+            a_chunks.append(a[prefix : prefix + K,].T.flatten())
+            b_chunks.append(b[prefix : prefix + K,].T.flatten())
             prefix += K
         new_a = torch.concat(a_chunks)
         new_b = torch.concat(b_chunks)

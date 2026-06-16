@@ -23,7 +23,10 @@ from paddle.distributed import fleet
 from paddle.distributed.fleet.meta_parallel import LayerSpec
 
 from paddleformers.fleet.fusions.fused_bias_dropout import get_bias_dropout_add
-from paddleformers.fleet.models.backends import BackendSpecProvider, LocalSpecProvider
+from paddleformers.fleet.models.backends import (
+    BackendSpecProvider,
+    LocalSpecProvider,
+)
 from paddleformers.fleet.models.common.embeddings.language_model_embedding import (
     LanguageModelEmbedding,
 )
@@ -38,7 +41,10 @@ from paddleformers.fleet.models.common.language_loss.language_loss import (
     MTPLanguageLoss,
 )
 from paddleformers.fleet.models.gpt import GPTModel
-from paddleformers.fleet.models.gpt.gpt_embedding import GPTEmbedding, GPTEmbeddingSpec
+from paddleformers.fleet.models.gpt.gpt_embedding import (
+    GPTEmbedding,
+    GPTEmbeddingSpec,
+)
 from paddleformers.fleet.models.gpt.gpt_model import GPTSublayersSpec
 from paddleformers.fleet.models.gpt.lm_head import (
     GPTLMHead,
@@ -99,7 +105,9 @@ from paddleformers.fleet.transformer.transformer_layer import (
 )
 
 if TYPE_CHECKING:
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
 from paddleformers.fleet.transformer.paddle_norm import (
     WrappedPaddleNorm,
@@ -138,9 +146,13 @@ def get_attention_spec(
 
     # Triton-optimized RMSNorm only for self_attention QK norm (head_dim=128)
     # MLA uses larger latent_dim (1536) which exceeds Triton kernel limit (≤1024)
-    use_triton_qk_norm = config.normalization == "RMSNorm" and getattr(config, "qk_norm_fusion", False)
+    use_triton_qk_norm = config.normalization == "RMSNorm" and getattr(
+        config, "qk_norm_fusion", False
+    )
     if use_triton_qk_norm:
-        from paddleformers.fleet.transformer.paddle_norm import WrappedRMSNormTriton
+        from paddleformers.fleet.transformer.paddle_norm import (
+            WrappedRMSNormTriton,
+        )
 
         qk_norm = WrappedRMSNormTriton
     else:
@@ -163,12 +175,22 @@ def get_attention_spec(
                     q_proj=backend.column_parallel_linear(),
                     k_proj=backend.column_parallel_linear(),
                     v_proj=backend.column_parallel_linear(),
-                    gate_proj=backend.column_parallel_linear() if getattr(config, "gated_attention", False) else None,
+                    gate_proj=backend.column_parallel_linear()
+                    if getattr(config, "gated_attention", False)
+                    else None,
                     qkv_proj=backend.column_parallel_linear(),
                     core_attention=backend.core_attention(),
                     o_proj=backend.row_parallel_linear(),
-                    q_norm=(L2Norm if qk_l2_norm else (qk_norm if use_qk_norm else IdentityOp)),
-                    k_norm=(L2Norm if qk_l2_norm else (qk_norm if use_qk_norm else IdentityOp)),
+                    q_norm=(
+                        L2Norm
+                        if qk_l2_norm
+                        else (qk_norm if use_qk_norm else IdentityOp)
+                    ),
+                    k_norm=(
+                        L2Norm
+                        if qk_l2_norm
+                        else (qk_norm if use_qk_norm else IdentityOp)
+                    ),
                 ),
             )
         return LayerSpec(
@@ -181,9 +203,19 @@ def get_attention_spec(
                 qkv_proj=backend.column_parallel_linear(),
                 core_attention=backend.core_attention(),
                 o_proj=backend.row_parallel_linear(),
-                gate_proj=backend.column_parallel_linear() if gated_attention and align_mode else IdentityOp,
-                q_norm=(L2Norm if qk_l2_norm else (qk_norm if use_qk_norm else IdentityOp)),
-                k_norm=(L2Norm if qk_l2_norm else (qk_norm if use_qk_norm else IdentityOp)),
+                gate_proj=backend.column_parallel_linear()
+                if gated_attention and align_mode
+                else IdentityOp,
+                q_norm=(
+                    L2Norm
+                    if qk_l2_norm
+                    else (qk_norm if use_qk_norm else IdentityOp)
+                ),
+                k_norm=(
+                    L2Norm
+                    if qk_l2_norm
+                    else (qk_norm if use_qk_norm else IdentityOp)
+                ),
             ),
         )
     elif attention_layer_type == "gated_delta_net":
@@ -214,7 +246,10 @@ def get_attention_spec(
         gated_attention = getattr(config, "gated_attention", False)
 
         # Decide core_attention: DSAttention if dsa_index_n_heads is configured, else standard
-        use_dsa = config is not None and getattr(config, "dsa_index_n_heads", None) is not None
+        use_dsa = (
+            config is not None
+            and getattr(config, "dsa_index_n_heads", None) is not None
+        )
 
         if use_dsa:
             # DSA Indexer sublayers spec (duplicated linear, NOT tensor-parallel)
@@ -254,7 +289,9 @@ def get_attention_spec(
                 o_proj=backend.row_parallel_linear(),
                 q_a_layernorm=qk_norm_standard if use_qk_norm else IdentityOp,
                 kv_a_layernorm=qk_norm_standard if use_qk_norm else IdentityOp,
-                gate_proj=backend.column_parallel_linear() if gated_attention else None,
+                gate_proj=backend.column_parallel_linear()
+                if gated_attention
+                else None,
             ),
         )
     elif attention_layer_type == "dsv4_hybrid_attention":
@@ -288,7 +325,9 @@ def get_attention_spec(
         # DSA indexer requires normalized q as input, so here we cannot fuse
         # qk layernorm with linear projection and have to use unfused qk layernorm.
         qk_norm = (
-            backend.layer_norm(rms_norm=config.normalization == "RMSNorm", for_qk=True)
+            backend.layer_norm(
+                rms_norm=config.normalization == "RMSNorm", for_qk=True
+            )
             if getattr(config, "qk_layernorm", True)
             else IdentityOp
         )
@@ -380,7 +419,9 @@ def get_gpt_layer_local_spec(
 
     if paddle.distributed.is_initialized():
         try:
-            pp_configs = fleet.fleet._user_defined_strategy.hybrid_configs["pp_configs"]
+            pp_configs = fleet.fleet._user_defined_strategy.hybrid_configs[
+                "pp_configs"
+            ]
             use_overlap = pp_configs.forward_backward_overlap_scheduler
         except KeyError:
             # pp_configs key does not exist, no overlap configured
@@ -389,10 +430,12 @@ def get_gpt_layer_local_spec(
             # pp_configs attribute does not exist, no overlap configured
             use_overlap = False
         if use_overlap:
-            assert not config.enable_hyper_connections, "HyperConnectionTransformerLayer not supported for overlap."
-            assert (
-                transformer_cls.__name__ == TransformerLayer.__name__
-            ), "Only base TransformerLayer can be overlapped."
+            assert not config.enable_hyper_connections, (
+                "HyperConnectionTransformerLayer not supported for overlap."
+            )
+            assert transformer_cls.__name__ == TransformerLayer.__name__, (
+                "Only base TransformerLayer can be overlapped."
+            )
             transformer_cls = TransformerLayerWithOverlap
     exp_variant = getattr(config, "experimental_attention_variant", None)
     if exp_variant == "dsv4_hybrid":
@@ -450,7 +493,9 @@ def get_gpt_layer_local_spec(
             "config": config,
             "layer_number": layer_number,
             "is_mtp_layer": is_mtp_layer,
-            "hidden_dropout_prob": config.hidden_dropout_prob if config is not None else None,
+            "hidden_dropout_prob": config.hidden_dropout_prob
+            if config is not None
+            else None,
         },
     )
 
@@ -522,7 +567,10 @@ def get_gpt_decoder_layers_spec(
     # For integer N: Creates a pattern with one expert layer every N layers.
     # For string pattern: Evaluates the str directly (e.g. "[1,0,1]" for alternating expert/dense).
     if isinstance(config.moe_layer_freq, int):
-        moe_layer_pattern = [1 if (i % config.moe_layer_freq == 0) else 0 for i in range(config.num_hidden_layers)]
+        moe_layer_pattern = [
+            1 if (i % config.moe_layer_freq == 0) else 0
+            for i in range(config.num_hidden_layers)
+        ]
     elif isinstance(config.moe_layer_freq, list):
         moe_layer_pattern = config.moe_layer_freq
         assert len(moe_layer_pattern) == config.num_hidden_layers, (
@@ -531,16 +579,22 @@ def get_gpt_decoder_layers_spec(
             f"current moe layer pattern: {config.moe_layer_freq}"
         )
     else:
-        raise ValueError(f"Invalid moe_layer_freq: {type(config.moe_layer_freq)}, {config.moe_layer_freq}")
+        raise ValueError(
+            f"Invalid moe_layer_freq: {type(config.moe_layer_freq)}, {config.moe_layer_freq}"
+        )
 
     # Create the layer specs for the model.
     layer_specs = []
     for layer_number in range(config.num_hidden_layers):
         real_layer_number = layer_number + config.num_empty_layers_add_in_head
         if moe_layer_pattern[layer_number] == 1:
-            layer_specs.append(moe_layer_spec_func(layer_number=real_layer_number))
+            layer_specs.append(
+                moe_layer_spec_func(layer_number=real_layer_number)
+            )
         elif moe_layer_pattern[layer_number] == 0:
-            layer_specs.append(dense_layer_spec_func(layer_number=real_layer_number))
+            layer_specs.append(
+                dense_layer_spec_func(layer_number=real_layer_number)
+            )
         else:
             raise ValueError(f"Invalid layer pattern: {moe_layer_pattern}")
 
@@ -611,7 +665,9 @@ def get_gpt_spec(
     max_sequence_length: int,
     head_empty_layers_spec: list[LayerSpec] | None = None,
     tail_empty_layers_spec: list[LayerSpec] | None = None,
-    position_embedding_type: Literal["learned_absolute", "rope", "mrope", "none"] = "learned_absolute",
+    position_embedding_type: Literal[
+        "learned_absolute", "rope", "mrope", "none"
+    ] = "learned_absolute",
     rotary_percent: float = 1.0,
     rotary_base: int = 10000,
     swa_rotary_base: int = 10000,
@@ -626,7 +682,9 @@ def get_gpt_spec(
         "position_embedding_type": position_embedding_type,
     }
 
-    skip_weight_param_allocation = config.tie_word_embeddings and config.pipeline_model_parallel_size == 1
+    skip_weight_param_allocation = (
+        config.tie_word_embeddings and config.pipeline_model_parallel_size == 1
+    )
 
     language_embedding_spec = LayerSpec(layer=LanguageModelEmbedding)
     rope_embedding_spec = None
@@ -654,7 +712,9 @@ def get_gpt_spec(
             **embedding_extra_kwargs,
             **rope_embedding_extra_kwargs,
         }
-    elif position_embedding_type == "mrope" and not config.multi_latent_attention:
+    elif (
+        position_embedding_type == "mrope" and not config.multi_latent_attention
+    ):
         rope_embedding_spec = LayerSpec(layer=MultimodalRotaryEmbedding)
         rope_embedding_extra_kwargs = {
             "rotary_percent": rotary_percent,
@@ -667,9 +727,9 @@ def get_gpt_spec(
             **embedding_extra_kwargs,
             **rope_embedding_extra_kwargs,
         }
-        assert (
-            config.mrope_section is not None
-        ), "mrope require mrope_section setting, but we got None from TransformerConfig"
+        assert config.mrope_section is not None, (
+            "mrope require mrope_section setting, but we got None from TransformerConfig"
+        )
 
     embedding_spec = GPTEmbeddingSpec(
         language_embedding=language_embedding_spec,
@@ -696,8 +756,11 @@ def get_gpt_spec(
     mtp_loss_spec = None
     if config.separate_mtp_headloss:
         assert (
-            config.num_nextn_predict_layers is not None and config.num_nextn_predict_layers > 0
-        ), "If you set separate_mtp_headloss to True, mtp layer num must be greater than 0."
+            config.num_nextn_predict_layers is not None
+            and config.num_nextn_predict_layers > 0
+        ), (
+            "If you set separate_mtp_headloss to True, mtp layer num must be greater than 0."
+        )
 
         mtp_lm_head_spec = LayerSpec(
             layer=GPTMTPLMHead,
@@ -749,7 +812,9 @@ def get_gpt_spec(
             },
         )
 
-    norm_input_parallel = config.sequence_parallel and config.tensor_model_parallel_size > 1
+    norm_input_parallel = (
+        config.sequence_parallel and config.tensor_model_parallel_size > 1
+    )
 
     if config.enable_hyper_connections:
         from paddleformers.fleet.transformer.hyper_connection import (

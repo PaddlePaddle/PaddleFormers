@@ -40,8 +40,12 @@ class TestBlendableDataset(unittest.TestCase):
         dataset.desc = "test dataset"
 
         # Set up indices manually
-        dataset.dataset_index = np.random.randint(0, num_datasets, size=size).astype(np.uint8)
-        dataset.dataset_sample_index = np.random.randint(0, 100, size=size).astype(np.int64)
+        dataset.dataset_index = np.random.randint(
+            0, num_datasets, size=size
+        ).astype(np.uint8)
+        dataset.dataset_sample_index = np.random.randint(
+            0, 100, size=size
+        ).astype(np.int64)
 
         return dataset
 

@@ -37,7 +37,11 @@ def geglu(y):
         paddle.Tensor: Result of GEGLU activation: GELU(y1) * y2, where y1, y2 are the split halves.
     """
     y_1, y_2 = paddle.chunk(y, 2, -1)
-    return (y_1 * 0.5 * (1.0 + paddle.tanh(0.79788456 * y_1 * (1 + 0.044715 * y_1 * y_1)))) * y_2
+    return (
+        y_1
+        * 0.5
+        * (1.0 + paddle.tanh(0.79788456 * y_1 * (1 + 0.044715 * y_1 * y_1)))
+    ) * y_2
 
 
 @jit_fuser
@@ -72,8 +76,12 @@ def geglu_back(g, y):
     y_1, y_2 = paddle.chunk(y, 2, -1)
     tanh_out = paddle.tanh(0.79788456 * y_1 * (1 + 0.044715 * y_1 * y_1))
     # sqrt(2/pi) * 3 * 0.044715 -> 0.1070322243
-    ff = 0.5 * y_1 * ((1 - tanh_out * tanh_out) * (0.79788456 + 0.1070322243 * y_1 * y_1)) + 0.5 * (1 + tanh_out)
-    return paddle.concat(((g * y_2) * ff, g * (y_1 * 0.5 * (1.0 + tanh_out))), -1)
+    ff = 0.5 * y_1 * (
+        (1 - tanh_out * tanh_out) * (0.79788456 + 0.1070322243 * y_1 * y_1)
+    ) + 0.5 * (1 + tanh_out)
+    return paddle.concat(
+        ((g * y_2) * ff, g * (y_1 * 0.5 * (1.0 + tanh_out))), -1
+    )
 
 
 @jit_fuser
@@ -186,7 +194,11 @@ def bias_geglu_impl(input, bias):
     else:
         output = GeGLUFunction.apply(input)
 
-    return output if len(ori_shape) == 2 else output.view(ori_shape[0], ori_shape[1], -1)
+    return (
+        output
+        if len(ori_shape) == 2
+        else output.view(ori_shape[0], ori_shape[1], -1)
+    )
 
 
 # ------------------------- QUICK GEGLU FUSION --------------------------
@@ -214,7 +226,9 @@ def quick_geglu(y: paddle.Tensor, linear_offset: float = 0.0) -> paddle.Tensor:
 
 
 @jit_fuser
-def weighted_quick_geglu(y: paddle.Tensor, weights: paddle.Tensor, linear_offset: float = 0.0) -> paddle.Tensor:
+def weighted_quick_geglu(
+    y: paddle.Tensor, weights: paddle.Tensor, linear_offset: float = 0.0
+) -> paddle.Tensor:
     """Token-wise-weighted Quick-GEGLU activation.
 
     The weights tensor is expected to have the same first-dimension length as ``y`` and a trailing
@@ -240,7 +254,12 @@ def quick_geglu_back(g, y, linear_offset: float = 0.0) -> paddle.Tensor:
     """
     y_1, y_2 = paddle.chunk(y, 2, -1)
     sigmoid_out = paddle.sigmoid(1.702 * y_1)
-    dy_1 = g * sigmoid_out * (1 + 1.702 * y_1 * (1 - sigmoid_out)) * (y_2 + linear_offset)
+    dy_1 = (
+        g
+        * sigmoid_out
+        * (1 + 1.702 * y_1 * (1 - sigmoid_out))
+        * (y_2 + linear_offset)
+    )
     dy_2 = g * y_1 * sigmoid_out
     return paddle.concat((dy_1, dy_2), -1)
 
@@ -288,7 +307,9 @@ def weighted_bias_quick_geglu(
 
 
 @jit_fuser
-def weighted_bias_quick_geglu_back(g, y, bias, weights, linear_offset: float = 0.0):
+def weighted_bias_quick_geglu_back(
+    g, y, bias, weights, linear_offset: float = 0.0
+):
     """Backward helper for weighted Quick-GEGLU with bias.
 
     Returns gradients w.r.t input `y`, `bias`, and `weights`.
@@ -339,7 +360,9 @@ class WeightedQuickGeGLUFunction(paddle.autograd.PyLayer):
         Returns:
             paddle.Tensor: Output tensor of shape [N, H] after weighted Quick-GEGLU.
         """
-        input_for_backward = input.to(paddle.float8_e4m3fn) if fp8_input_store else input
+        input_for_backward = (
+            input.to(paddle.float8_e4m3fn) if fp8_input_store else input
+        )
         ctx.save_for_backward(input_for_backward, weights, linear_offset)
         ctx.ori_input_dtype = input.dtype
         ctx.fp8_input_store = fp8_input_store
@@ -359,7 +382,9 @@ class WeightedQuickGeGLUFunction(paddle.autograd.PyLayer):
         """
         input, weights, linear_offset = ctx.saved_tensor()
         input = input.to(ctx.ori_input_dtype) if ctx.fp8_input_store else input
-        input_grad, wgrad = weighted_quick_geglu_back(grad_output, input, weights, linear_offset)
+        input_grad, wgrad = weighted_quick_geglu_back(
+            grad_output, input, weights, linear_offset
+        )
         return input_grad, wgrad, None, None
 
 
@@ -389,7 +414,9 @@ class WeightedBiasQuickGeGLUFunction(paddle.autograd.PyLayer):
             paddle.Tensor: Output tensor of shape [N, H] after weighted Quick-GEGLU with bias.
         """
         # Optionally store the input in FP8 for memory savings.
-        input_for_backward = input.to(paddle.float8_e4m3fn) if fp8_input_store else input
+        input_for_backward = (
+            input.to(paddle.float8_e4m3fn) if fp8_input_store else input
+        )
 
         # Save tensors for backward.
         ctx.save_for_backward(input_for_backward, bias, weights, linear_offset)
@@ -452,10 +479,20 @@ def weighted_bias_quick_geglu_impl(
             -1,
         )
     input = input.view(-1, ori_shape[-1])
-    linear_offset = paddle.tensor(linear_offset, dtype=input.dtype, device=input.device)
+    linear_offset = paddle.tensor(
+        linear_offset, dtype=input.dtype, device=input.device
+    )
     if bias is not None:
-        output = WeightedBiasQuickGeGLUFunction.apply(input, bias, weights, fp8_input_store, linear_offset)
+        output = WeightedBiasQuickGeGLUFunction.apply(
+            input, bias, weights, fp8_input_store, linear_offset
+        )
     else:
-        output = WeightedQuickGeGLUFunction.apply(input, weights, fp8_input_store, linear_offset)
+        output = WeightedQuickGeGLUFunction.apply(
+            input, weights, fp8_input_store, linear_offset
+        )
 
-    return output if len(ori_shape) == 2 else output.view(ori_shape[0], ori_shape[1], -1)
+    return (
+        output
+        if len(ori_shape) == 2
+        else output.view(ori_shape[0], ori_shape[1], -1)
+    )

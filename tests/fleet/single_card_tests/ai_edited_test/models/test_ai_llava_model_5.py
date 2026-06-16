@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -30,7 +34,9 @@ class TestPixelShuffle(unittest.TestCase):
     def test_pixel_shuffle_basic_shape(self):
         import paddle
 
-        from paddleformers.fleet.models.multimodal.llava_model import pixel_shuffle
+        from paddleformers.fleet.models.multimodal.llava_model import (
+            pixel_shuffle,
+        )
 
         # N=sq*h*w, shape [n, n_pos, c]
         # sq=4, h=4, w=4, c=64 -> x shape [1, 64, 64]
@@ -42,7 +48,9 @@ class TestPixelShuffle(unittest.TestCase):
     def test_pixel_shuffle_version2(self):
         import paddle
 
-        from paddleformers.fleet.models.multimodal.llava_model import pixel_shuffle
+        from paddleformers.fleet.models.multimodal.llava_model import (
+            pixel_shuffle,
+        )
 
         x = paddle.randn([1, 64, 64])
         result = pixel_shuffle(x, scale_factor=0.5, version=2)
@@ -51,7 +59,9 @@ class TestPixelShuffle(unittest.TestCase):
     def test_pixel_shuffle_returns_correct_dims(self):
         import paddle
 
-        from paddleformers.fleet.models.multimodal.llava_model import pixel_shuffle
+        from paddleformers.fleet.models.multimodal.llava_model import (
+            pixel_shuffle,
+        )
 
         # sq=4, h=3, w=3, c=128 -> n_pos = 4*3*3 = 36, n = sq = 4
         # x shape [1, 36, 128]
@@ -69,7 +79,9 @@ class TestPixelShuffleEdgeCases(unittest.TestCase):
     def test_pixel_shuffle_single_position(self):
         import paddle
 
-        from paddleformers.fleet.models.multimodal.llava_model import pixel_shuffle
+        from paddleformers.fleet.models.multimodal.llava_model import (
+            pixel_shuffle,
+        )
 
         # sq=4, h=1, w=1, c=256 -> n_pos = 4, n = 4
         # x shape [1, 4, 256]
@@ -82,7 +94,9 @@ class TestPixelShuffleEdgeCases(unittest.TestCase):
     def test_pixel_shuffle_multiple_tiles(self):
         import paddle
 
-        from paddleformers.fleet.models.multimodal.llava_model import pixel_shuffle
+        from paddleformers.fleet.models.multimodal.llava_model import (
+            pixel_shuffle,
+        )
 
         x = paddle.randn([4, 64, 64])
         result = pixel_shuffle(x, scale_factor=0.5)
@@ -109,7 +123,9 @@ class TestLLaVAModelConstants(unittest.TestCase):
     """Test LLaVA model constants."""
 
     def test_ignore_index(self):
-        from paddleformers.fleet.models.multimodal.llava_model import IGNORE_INDEX
+        from paddleformers.fleet.models.multimodal.llava_model import (
+            IGNORE_INDEX,
+        )
 
         self.assertEqual(IGNORE_INDEX, -100)
 
@@ -121,12 +137,16 @@ class TestLLaVAModelConstants(unittest.TestCase):
         self.assertEqual(DEFAULT_IMAGE_TOKEN_INDEX, -200)
 
     def test_image_token(self):
-        from paddleformers.fleet.models.multimodal.llava_model import IMAGE_TOKEN
+        from paddleformers.fleet.models.multimodal.llava_model import (
+            IMAGE_TOKEN,
+        )
 
         self.assertEqual(IMAGE_TOKEN, "<image>")
 
     def test_video_token(self):
-        from paddleformers.fleet.models.multimodal.llava_model import VIDEO_TOKEN
+        from paddleformers.fleet.models.multimodal.llava_model import (
+            VIDEO_TOKEN,
+        )
 
         self.assertEqual(VIDEO_TOKEN, "<video>")
 
@@ -148,9 +168,13 @@ class TestLLaVAModelInit(unittest.TestCase):
     )
     @patch("paddleformers.fleet.models.multimodal.llava_model.RADIOViTModel")
     @patch("paddleformers.fleet.models.multimodal.llava_model.CLIPViTModel")
-    @patch("paddleformers.fleet.models.multimodal.llava_model.MultimodalProjector")
+    @patch(
+        "paddleformers.fleet.models.multimodal.llava_model.MultimodalProjector"
+    )
     @patch("paddleformers.fleet.models.multimodal.llava_model.GPTModel")
-    def test_init_clip_with_pixel_shuffle(self, mock_gpt, mock_proj, mock_clip, mock_radio, mock_num, mock_log):
+    def test_init_clip_with_pixel_shuffle(
+        self, mock_gpt, mock_proj, mock_clip, mock_radio, mock_num, mock_log
+    ):
         from paddleformers.fleet.models.multimodal.llava_model import LLaVAModel
 
         mock_lang_config = MagicMock()
@@ -202,9 +226,13 @@ class TestLLaVAModelForward(unittest.TestCase):
     )
     @patch("paddleformers.fleet.models.multimodal.llava_model.RADIOViTModel")
     @patch("paddleformers.fleet.models.multimodal.llava_model.CLIPViTModel")
-    @patch("paddleformers.fleet.models.multimodal.llava_model.MultimodalProjector")
+    @patch(
+        "paddleformers.fleet.models.multimodal.llava_model.MultimodalProjector"
+    )
     @patch("paddleformers.fleet.models.multimodal.llava_model.GPTModel")
-    def test_forward_basic(self, mock_gpt, mock_proj, mock_clip, mock_radio, mock_num, mock_log):
+    def test_forward_basic(
+        self, mock_gpt, mock_proj, mock_clip, mock_radio, mock_num, mock_log
+    ):
         import paddle
 
         from paddleformers.fleet.models.multimodal.llava_model import LLaVAModel

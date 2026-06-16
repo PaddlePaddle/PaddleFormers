@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -37,7 +41,9 @@ except ImportError:
 
 def _make_rmsnorm_config(**overrides):
     """Helper to create a TransformerConfig for FusedRmsNorm testing."""
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
     defaults = {
         "hidden_size": 128,
@@ -114,7 +120,9 @@ class TestFusedRmsNormErrors(unittest.TestCase):
     """Tests for FusedRmsNorm error cases."""
 
     def test_assertion_wrong_normalization(self):
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         config = TransformerConfig(
             hidden_size=64,

@@ -55,7 +55,9 @@ class TestCpFlashmaskBackwardDispatch(unittest.TestCase):
         mock_v2_grad = MagicMock(return_value=(dummy, dummy, dummy))
 
         with (
-            patch("paddleformers.fleet.context_parallel_utils.inspect.signature") as mock_sig,
+            patch(
+                "paddleformers.fleet.context_parallel_utils.inspect.signature"
+            ) as mock_sig,
             patch(
                 "paddleformers.fleet.context_parallel_utils.all_gather_balance",
                 side_effect=lambda x, **kw: x,
@@ -135,7 +137,9 @@ class TestFlashMaskAttnFunctorBackwardDispatch(unittest.TestCase):
         mock_v2_grad = MagicMock(return_value=(dummy, dummy, dummy))
 
         with (
-            patch("paddleformers.fleet.refined_recompute.flash_attn.inspect.signature") as mock_sig,
+            patch(
+                "paddleformers.fleet.refined_recompute.flash_attn.inspect.signature"
+            ) as mock_sig,
             patch(
                 "paddleformers.fleet.refined_recompute.flash_attn._C_ops.flashmask_attention_v2_grad",
                 mock_v2_grad,
@@ -171,7 +175,9 @@ class TestRefinedRecomputeFirstFwdDispatch(unittest.TestCase):
     (fa_version==3). The "block_mask" and "else" branches are already covered
     by test_ai_flash_attn.py."""
 
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer")
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer"
+    )
     @patch(
         "paddleformers.fleet.refined_recompute.flash_attn._C_ops.flashmask_attention_v2",
         create=True,

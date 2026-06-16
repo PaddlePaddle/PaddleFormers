@@ -19,7 +19,9 @@ from typing import TYPE_CHECKING
 import paddle
 
 if TYPE_CHECKING:
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
 
 class FleetLayer(paddle.nn.Layer):

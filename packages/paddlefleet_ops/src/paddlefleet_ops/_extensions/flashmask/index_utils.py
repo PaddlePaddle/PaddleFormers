@@ -37,19 +37,29 @@ def scan_maxmin_chunked(
     mask_tile = p_tile < seqlen
     b_tile = tl.load(input_ptr + i_bh * seqlen + p_tile, mask=mask_tile)
 
-    b_omax = tl.where(mask_tile, b_tile, INT_MIN).reshape((BN // chunk_size, chunk_size))
+    b_omax = tl.where(mask_tile, b_tile, INT_MIN).reshape(
+        (BN // chunk_size, chunk_size)
+    )
     b_omax = tl.max(b_omax, axis=1)
 
-    b_omin = tl.where(mask_tile, b_tile, INT_MAX).reshape((BN // chunk_size, chunk_size))
+    b_omin = tl.where(mask_tile, b_tile, INT_MAX).reshape(
+        (BN // chunk_size, chunk_size)
+    )
     b_omin = tl.min(b_omin, axis=1)
 
     offs_out = tl.arange(0, BN // chunk_size) + i_tile * (BN // chunk_size)
     mask_out = offs_out < num_chunks
-    tl.store(output_max_ptr + i_bh * num_chunks + offs_out, b_omax, mask=mask_out)
-    tl.store(output_min_ptr + i_bh * num_chunks + offs_out, b_omin, mask=mask_out)
+    tl.store(
+        output_max_ptr + i_bh * num_chunks + offs_out, b_omax, mask=mask_out
+    )
+    tl.store(
+        output_min_ptr + i_bh * num_chunks + offs_out, b_omin, mask=mask_out
+    )
 
 
-def prepare_maxmin(input: paddle.Tensor, chunk_size: int) -> tuple[paddle.Tensor, paddle.Tensor]:
+def prepare_maxmin(
+    input: paddle.Tensor, chunk_size: int
+) -> tuple[paddle.Tensor, paddle.Tensor]:
     bsz, num_heads, seq_len = input.shape
     num_chunks = (seq_len + chunk_size - 1) // chunk_size
 

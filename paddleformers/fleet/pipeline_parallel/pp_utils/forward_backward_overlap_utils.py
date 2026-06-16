@@ -34,7 +34,9 @@ from paddle.distributed.fleet.recompute import custom_state_manager
 #     custom_set_state_func = lambda x=None: None
 #     custom_state_manager.custom_get_state_func = custom_get_state_func
 #     custom_state_manager.custom_set_state_func = custom_set_state_func
-from paddle.distributed.fleet.recompute.recompute import switch_rng_state_tracker
+from paddle.distributed.fleet.recompute.recompute import (
+    switch_rng_state_tracker,
+)
 from paddle.framework import core
 
 
@@ -95,7 +97,11 @@ def detach_and_requires_grad(inputs):
 def clone_and_clear_dataptr(outputs, clear_dataptr=False):
     if isinstance(outputs, (tuple, list)):
         is_tuple = isinstance(outputs, tuple)
-        ret = [FakeClone.apply(o) for o in outputs if o is not None and isinstance(o, paddle.Tensor)]
+        ret = [
+            FakeClone.apply(o)
+            for o in outputs
+            if o is not None and isinstance(o, paddle.Tensor)
+        ]
 
         if clear_dataptr:
             for o in ret:
@@ -153,14 +159,18 @@ class ScheduleNode:
 
         # preserve RNG state
         self.fw_rng_state = paddle.get_rng_state()
-        self.fwd_rng_state_tracker = get_rng_state_tracker().get_states_tracker()
+        self.fwd_rng_state_tracker = (
+            get_rng_state_tracker().get_states_tracker()
+        )
         self.fwd_numpy_state = np.random.get_state()
         self.fwd_random_state = random.getstate()
         self.fwd_custom_state = custom_state_manager.custom_get_state_func()
 
         # preserve AMP state
         tracer = framework._dygraph_tracer()
-        self.is_fw_autocast = False if tracer._amp_level == core.AmpLevel.O0 else True
+        self.is_fw_autocast = (
+            False if tracer._amp_level == core.AmpLevel.O0 else True
+        )
         if tracer._amp_level == core.AmpLevel.O2:
             self.amp_level = "O2"
         elif tracer._amp_level in (core.AmpLevel.O1, core.AmpLevel.O0):
@@ -211,7 +221,9 @@ class ScheduleNode:
                     ),
                 ):
                     if self.labels is not None:
-                        outputs = self.fwd_func(self.inputs, self.labels, **kwargs)
+                        outputs = self.fwd_func(
+                            self.inputs, self.labels, **kwargs
+                        )
                     else:
                         outputs = self.fwd_func(self.inputs, **kwargs)
                     if self.scale_loss_factor is not None:
@@ -249,16 +261,22 @@ class ScheduleNode:
             if not isinstance(outputs, (tuple, list)):
                 outputs = (outputs,)
             outputs = [t for t in outputs if not t.stop_gradient]
-            assert len(outputs) == len(
-                output_grad
-            ), f"{len(outputs)} of {type(outputs[0])} vs {len(output_grad)} of {type(output_grad[0])}"
+            assert len(outputs) == len(output_grad), (
+                f"{len(outputs)} of {type(outputs[0])} vs {len(output_grad)} of {type(output_grad[0])}"
+            )
 
             paddle.autograd.backward(outputs, output_grad)
 
         inputs = dict_to_tuple_helper(self.inputs)
         if not isinstance(inputs, (tuple, list)):
             inputs = (inputs,)
-        grad = tuple([t.grad for t in inputs if isinstance(t, paddle.Tensor) and not t.stop_gradient])
+        grad = tuple(
+            [
+                t.grad
+                for t in inputs
+                if isinstance(t, paddle.Tensor) and not t.stop_gradient
+            ]
+        )
         # grad = tuple([e.grad if e is not None and not e.stop_gradient else None for e in inputs])
         self._reset_states()
 

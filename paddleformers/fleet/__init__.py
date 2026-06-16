@@ -14,9 +14,11 @@
 
 # Re-export from Paddle for backward compatibility (PaddleFormers imports these from paddleformers.fleet)
 
-from . import parallel_state as parallel_state
-from . import training as training
-from . import version as version
+from . import (
+    parallel_state as parallel_state,
+    training as training,
+    version as version,
+)
 from .package_info import (
     __contact_emails__,
     __contact_names__,

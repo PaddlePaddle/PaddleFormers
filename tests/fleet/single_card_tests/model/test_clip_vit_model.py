@@ -21,7 +21,9 @@ import paddle
 from paddle.distributed import fleet
 
 import paddleformers.fleet.parallel_state as ps
-from paddleformers.fleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
+from paddleformers.fleet.models.gpt.gpt_layer_specs import (
+    get_gpt_layer_local_spec,
+)
 from paddleformers.fleet.models.vision.clip_vit_model import CLIPViTModel
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 

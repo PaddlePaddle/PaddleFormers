@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -27,17 +31,27 @@ class TestIsPpFirstStage(unittest.TestCase):
     """Tests for is_pp_first_stage in pipeline_parallel/utils.py."""
 
     def test_rank_zero_is_first(self):
-        from paddleformers.fleet.pipeline_parallel.utils import is_pp_first_stage
+        from paddleformers.fleet.pipeline_parallel.utils import (
+            is_pp_first_stage,
+        )
 
         mock_group = MagicMock()
-        with patch("paddleformers.fleet.pipeline_parallel.utils.get_pg_rank", return_value=0):
+        with patch(
+            "paddleformers.fleet.pipeline_parallel.utils.get_pg_rank",
+            return_value=0,
+        ):
             self.assertTrue(is_pp_first_stage(mock_group))
 
     def test_rank_nonzero_not_first(self):
-        from paddleformers.fleet.pipeline_parallel.utils import is_pp_first_stage
+        from paddleformers.fleet.pipeline_parallel.utils import (
+            is_pp_first_stage,
+        )
 
         mock_group = MagicMock()
-        with patch("paddleformers.fleet.pipeline_parallel.utils.get_pg_rank", return_value=1):
+        with patch(
+            "paddleformers.fleet.pipeline_parallel.utils.get_pg_rank",
+            return_value=1,
+        ):
             self.assertFalse(is_pp_first_stage(mock_group))
 
 
@@ -81,27 +95,37 @@ class TestIsVpFirstStage(unittest.TestCase):
     """Tests for is_vp_first_stage in pipeline_parallel/utils.py."""
 
     def test_vp_size_none(self):
-        from paddleformers.fleet.pipeline_parallel.utils import is_vp_first_stage
+        from paddleformers.fleet.pipeline_parallel.utils import (
+            is_vp_first_stage,
+        )
 
         self.assertTrue(is_vp_first_stage(vp_stage=0, vp_size=None))
 
     def test_vp_size_one(self):
-        from paddleformers.fleet.pipeline_parallel.utils import is_vp_first_stage
+        from paddleformers.fleet.pipeline_parallel.utils import (
+            is_vp_first_stage,
+        )
 
         self.assertTrue(is_vp_first_stage(vp_stage=0, vp_size=1))
 
     def test_vp_stage_zero(self):
-        from paddleformers.fleet.pipeline_parallel.utils import is_vp_first_stage
+        from paddleformers.fleet.pipeline_parallel.utils import (
+            is_vp_first_stage,
+        )
 
         self.assertTrue(is_vp_first_stage(vp_stage=0, vp_size=4))
 
     def test_vp_stage_nonzero(self):
-        from paddleformers.fleet.pipeline_parallel.utils import is_vp_first_stage
+        from paddleformers.fleet.pipeline_parallel.utils import (
+            is_vp_first_stage,
+        )
 
         self.assertFalse(is_vp_first_stage(vp_stage=2, vp_size=4))
 
     def test_vp_size_le_one_assertion(self):
-        from paddleformers.fleet.pipeline_parallel.utils import is_vp_first_stage
+        from paddleformers.fleet.pipeline_parallel.utils import (
+            is_vp_first_stage,
+        )
 
         with self.assertRaises(AssertionError):
             is_vp_first_stage(vp_stage=3, vp_size=1)

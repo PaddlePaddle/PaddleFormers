@@ -21,16 +21,18 @@ from . import is_flash_mask_available
 
 if is_flash_mask_available():
     try:
-        from .flash_mask import flash_attention as _flash_attention
-        from .flash_mask import flashmask_attention as _flashmask_attention
+        from .flash_mask import (
+            flash_attention as _flash_attention,
+            flashmask_attention as _flashmask_attention,
+        )
     except (ImportError, ModuleNotFoundError):
-        from .flash_mask.cute.interface import flash_attention as _flash_attention
         from .flash_mask.cute.interface import (
+            flash_attention as _flash_attention,
             flashmask_attention as _flashmask_attention,
         )
 else:
-    from paddle.nn.functional.flash_attention import flash_attention as _flash_attention
     from paddle.nn.functional.flash_attention import (
+        flash_attention as _flash_attention,
         flashmask_attention as _flashmask_attention,
     )
 
@@ -62,13 +64,23 @@ def flashmask_attention(
     if "xpu" in paddle.get_device():
         fa_version = 2
     else:
-        fa_version = paddle.base.framework.get_flags(["FLAGS_flash_attn_version"])["FLAGS_flash_attn_version"]
+        fa_version = paddle.base.framework.get_flags(
+            ["FLAGS_flash_attn_version"]
+        )["FLAGS_flash_attn_version"]
 
     bsz, q_len, num_heads, q_head_dim = query.shape
     v_head_dim = value.shape[-1]
-    is_fa4_support_d192_dv128 = "use_varlen" in inspect.signature(_flashmask_attention).parameters
+    is_fa4_support_d192_dv128 = (
+        "use_varlen" in inspect.signature(_flashmask_attention).parameters
+    )
     need_value_padding = (
-        not (fa_version == 4 and use_varlen and is_fa4_support_d192_dv128 and q_head_dim == 192 and v_head_dim == 128)
+        not (
+            fa_version == 4
+            and use_varlen
+            and is_fa4_support_d192_dv128
+            and q_head_dim == 192
+            and v_head_dim == 128
+        )
     ) and q_head_dim != v_head_dim
 
     if need_value_padding:
@@ -79,7 +91,9 @@ def flashmask_attention(
         value = paddle.concat([value, value_padding], axis=-1)
 
     if use_varlen:
-        flashmask_attention_func = partial(_flashmask_attention, use_varlen=True)
+        flashmask_attention_func = partial(
+            _flashmask_attention, use_varlen=True
+        )
     else:
         flashmask_attention_func = _flashmask_attention
 

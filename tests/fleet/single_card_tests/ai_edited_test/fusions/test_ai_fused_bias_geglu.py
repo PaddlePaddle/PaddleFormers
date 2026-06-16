@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -112,7 +116,9 @@ class TestQuickGeGLUFunctions(unittest.TestCase):
 
     def test_weighted_quick_geglu(self):
         """Test weighted_quick_geglu function."""
-        from paddleformers.fleet.fusions.fused_bias_geglu import weighted_quick_geglu
+        from paddleformers.fleet.fusions.fused_bias_geglu import (
+            weighted_quick_geglu,
+        )
 
         y = paddle.randn([4, 16])
         weights = paddle.randn([4, 1])
@@ -121,7 +127,9 @@ class TestQuickGeGLUFunctions(unittest.TestCase):
 
     def test_quick_geglu_back_exists(self):
         """Test quick_geglu_back function exists."""
-        from paddleformers.fleet.fusions.fused_bias_geglu import quick_geglu_back
+        from paddleformers.fleet.fusions.fused_bias_geglu import (
+            quick_geglu_back,
+        )
 
         self.assertTrue(callable(quick_geglu_back))
 

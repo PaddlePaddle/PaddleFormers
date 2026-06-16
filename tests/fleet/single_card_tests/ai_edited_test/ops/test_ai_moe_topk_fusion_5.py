@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -30,7 +34,9 @@ import unittest
 def _setup_triton_mock():
     """Create a mock triton module so we can import without GPU."""
     triton_mock = types.ModuleType("triton")
-    triton_mock.jit = lambda fn=None, **kwargs: ((lambda f: f) if fn is None else fn)
+    triton_mock.jit = lambda fn=None, **kwargs: (
+        (lambda f: f) if fn is None else fn
+    )
     triton_mock.language = types.ModuleType("triton.language")
     triton_mock.language.constexpr = None
     tl = triton_mock.language
@@ -170,7 +176,9 @@ class TestMoETopkFusionNodeLimitLogic(unittest.TestCase):
         """Test dispatch mask is the sum over sequence dimension."""
         import paddle
 
-        routing_map = paddle.to_tensor([[1, 0, 0, 1], [0, 1, 1, 0]], dtype=paddle.float32)
+        routing_map = paddle.to_tensor(
+            [[1, 0, 0, 1], [0, 1, 1, 0]], dtype=paddle.float32
+        )
         dispatch_mask = routing_map.sum(axis=0).to(paddle.int64)
 
         self.assertEqual(dispatch_mask[0].item(), 1)

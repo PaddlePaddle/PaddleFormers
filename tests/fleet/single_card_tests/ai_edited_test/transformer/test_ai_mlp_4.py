@@ -27,7 +27,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -39,7 +43,10 @@ import paddle.nn.functional as F
 from paddleformers.fleet.fusions.fused_bias_swiglu import WeightedSwiGLUFunction
 from paddleformers.fleet.transformer.mlp import MLP
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
-from paddleformers.fleet.utils import init_method_normal, scaled_init_method_normal
+from paddleformers.fleet.utils import (
+    init_method_normal,
+    scaled_init_method_normal,
+)
 
 
 def _make_config(**overrides):

@@ -66,7 +66,9 @@ class TestMiniMaxM2Config(unittest.TestCase):
         self.assertEqual(config.rope_scaling["rope_type"], "linear")
 
     def test_keys_to_ignore_at_inference(self):
-        self.assertEqual(MiniMaxM2Config.keys_to_ignore_at_inference, ["past_key_values"])
+        self.assertEqual(
+            MiniMaxM2Config.keys_to_ignore_at_inference, ["past_key_values"]
+        )
 
 
 if __name__ == "__main__":

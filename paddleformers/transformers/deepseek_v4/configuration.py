@@ -201,7 +201,9 @@ class DeepseekV4Config(PretrainedConfig):
                 # Only apply if the Fleet-equivalent parameter was not explicitly set
                 # (i.e. still at default). For positional params, we check if they differ
                 # from their default value.
-                setattr(self, f"_hf_{hf_name}", val)  # keep original for save_pretrained
+                setattr(
+                    self, f"_hf_{hf_name}", val
+                )  # keep original for save_pretrained
 
         self.vocab_size = vocab_size
         self.hidden_size = hidden_size
@@ -287,7 +289,9 @@ class DeepseekV4Config(PretrainedConfig):
         # Parallelism
         self.tensor_model_parallel_size = tensor_model_parallel_size
         self.pipeline_model_parallel_size = pipeline_model_parallel_size
-        self.virtual_pipeline_model_parallel_size = virtual_pipeline_model_parallel_size
+        self.virtual_pipeline_model_parallel_size = (
+            virtual_pipeline_model_parallel_size
+        )
         self.expert_model_parallel_size = expert_model_parallel_size
         self.context_parallel_size = context_parallel_size
         self.sequence_parallel = sequence_parallel

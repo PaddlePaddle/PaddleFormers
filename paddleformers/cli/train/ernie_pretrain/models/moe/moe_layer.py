@@ -92,9 +92,18 @@ class Fp8MoeGateDispatchAndQuant(paddle.autograd.PyLayer):
     ):
         """forward"""
         set_grad_in_dtype_non_consistent(ctx)
-        assert moe_gate_dispatch_and_quant is not None, "Please use new version Paddle."
+        assert moe_gate_dispatch_and_quant is not None, (
+            "Please use new version Paddle."
+        )
         with paddle.amp.auto_cast(enable=False):
-            (out_fp8, scale, combine_weights, scatter_index, expert_offset, expert_id,) = moe_gate_dispatch_and_quant(
+            (
+                out_fp8,
+                scale,
+                combine_weights,
+                scatter_index,
+                expert_offset,
+                expert_id,
+            ) = moe_gate_dispatch_and_quant(
                 x,
                 gate_logtis,
                 corr_bias=corr_bias,
@@ -174,7 +183,9 @@ class MoEStatics(nn.Layer):
                 shape=[num_experts_groups, num_experts],
                 dtype="float32",
                 is_bias=True,
-                attr=paddle.ParamAttr(name=paddle.utils.unique_name.generate("corr_bias")),
+                attr=paddle.ParamAttr(
+                    name=paddle.utils.unique_name.generate("corr_bias")
+                ),
             )
             p.stop_gradient = False
             self.e_score_correction_bias = p
@@ -183,7 +194,9 @@ class MoEStatics(nn.Layer):
             if getattr(config, "build_skip_comm_buffer", False):
                 self.e_score_correction_bias.color = {
                     "color": "skip_comm",
-                    "group": paddle.distributed.new_group([paddle.distributed.get_rank()]),
+                    "group": paddle.distributed.new_group(
+                        [paddle.distributed.get_rank()]
+                    ),
                 }
             p = paddle.zeros(
                 shape=[num_experts_groups, num_experts],
@@ -209,7 +222,11 @@ class GateCombine(PyLayer):
             ctx.x, ctx.combine_weights, ctx.scatter_index, grad_y
         )
         grad_combine_weight = grad_combine_weight_helper.sum(-1)
-        return grad_x, grad_combine_weight.reshape(ctx.combine_weights.shape), None
+        return (
+            grad_x,
+            grad_combine_weight.reshape(ctx.combine_weights.shape),
+            None,
+        )
 
 
 class FusionFP8Expert(paddle.autograd.PyLayer):
@@ -220,12 +237,18 @@ class FusionFP8Expert(paddle.autograd.PyLayer):
         t1 = hidden_states.transpose([1, 0, 2, 3]).contiguous()
         expert_num = t1.shape[0]
         tokens_num = t1.shape[1] * t1.shape[2]
-        tokens_per_expert = paddle.full([expert_num], fill_value=tokens_num, dtype="int32")
+        tokens_per_expert = paddle.full(
+            [expert_num], fill_value=tokens_num, dtype="int32"
+        )
 
         t1 = t1.reshape([-1, hidden_states.shape[-1]])
         out = ctx.node.forward_no_prob(t1, tokens_per_expert)
 
-        expert_output = out.reshape(hidden_states.shape).transpose([1, 0, 2, 3]).contiguous()
+        expert_output = (
+            out.reshape(hidden_states.shape)
+            .transpose([1, 0, 2, 3])
+            .contiguous()
+        )
 
         ctx.save_for_backward(tokens_per_expert)
         return expert_output
@@ -250,7 +273,15 @@ class AlltoAll(PyLayer):
             return x
         output = paddle.empty_like(x)
         output.stop_gradient = False
-        task = stream.alltoall_single(output, x, None, None, group, sync_op=sync_op, use_calc_stream=sync_op)
+        task = stream.alltoall_single(
+            output,
+            x,
+            None,
+            None,
+            group,
+            sync_op=sync_op,
+            use_calc_stream=sync_op,
+        )
         if not sync_op:
             return output, task
         else:
@@ -263,10 +294,17 @@ class AlltoAll(PyLayer):
 
 class AlltoAllExpertOverlap(PyLayer):
     @staticmethod
-    def forward(ctx, input, group, num_local_experts, forward_func_dict, is_first_fwd=False):
-        assert (
-            dist.get_world_size(group) > 1
-        ), "AlltoAllExpertOverlap is not supported for a world size less than or equal to 1."
+    def forward(
+        ctx,
+        input,
+        group,
+        num_local_experts,
+        forward_func_dict,
+        is_first_fwd=False,
+    ):
+        assert dist.get_world_size(group) > 1, (
+            "AlltoAllExpertOverlap is not supported for a world size less than or equal to 1."
+        )
 
         ctx.bw_funcs = {}
         ctx.group = group
@@ -277,14 +315,18 @@ class AlltoAllExpertOverlap(PyLayer):
         all2all_ins = paddle.unbind(input, axis=0)
         for stage_id in range(1):
             stage_input = all2all_ins[stage_id]
-            x_out, task = AlltoAll.apply(stage_input, group=group, sync_op=False)
+            x_out, task = AlltoAll.apply(
+                stage_input, group=group, sync_op=False
+            )
             all2all_tasks.append((task, x_out))
 
         expert_outputs = []
         for stage_id in range(num_local_experts):
             if stage_id + 1 != num_local_experts:
                 stage_input = all2all_ins[stage_id + 1]
-                x_out, task = AlltoAll.apply(stage_input, group=group, sync_op=False)
+                x_out, task = AlltoAll.apply(
+                    stage_input, group=group, sync_op=False
+                )
                 all2all_tasks.append((task, x_out))
 
             task, dispatched_input = all2all_tasks[stage_id]
@@ -303,11 +345,15 @@ class AlltoAllExpertOverlap(PyLayer):
         all2all_tasks = []
         expert_outputs = []
 
-        out_grad_list = paddle.split(out_grad, num_or_sections=out_grad.shape[1], axis=1)
+        out_grad_list = paddle.split(
+            out_grad, num_or_sections=out_grad.shape[1], axis=1
+        )
         for stage_id in range(ctx.num_local_experts):
             (grad_cur_stage,) = ctx.bw_funcs[stage_id](out_grad_list[stage_id])
 
-            x_out, task = AlltoAll.apply(grad_cur_stage, group=ctx.group, sync_op=False)
+            x_out, task = AlltoAll.apply(
+                grad_cur_stage, group=ctx.group, sync_op=False
+            )
             all2all_tasks.append(task)
             expert_outputs.append(x_out)
 
@@ -367,7 +413,9 @@ def dispatching(x, dispatch_mask, scatter_index, num_experts, capacity):
     scatter_index = scatter_index.unbind(1)
     dispatch_mask = dispatch_mask.unbind(1)
     for i_scatter_index, i_dispatch_mask in zip(scatter_index, dispatch_mask):
-        init_output = paddle.zeros([num_experts * capacity, x.shape[-1]], dtype="float32")
+        init_output = paddle.zeros(
+            [num_experts * capacity, x.shape[-1]], dtype="float32"
+        )
         updates = x * i_dispatch_mask.unsqueeze(-1).cast(x.dtype)
         if output is None:
             output = paddle.scatter(
@@ -469,11 +517,15 @@ class MOELayer(nn.Layer):
         self.use_correction_bias = moe_statics is not None
         self.moe_statics = moe_statics
         if self.use_correction_bias:
-            logger.info(f"using correction bias, aux-coef:{self.gate.config.router_aux_loss_coef}")
+            logger.info(
+                f"using correction bias, aux-coef:{self.gate.config.router_aux_loss_coef}"
+            )
             assert self.gate.config.moe_use_aux_free
 
         self.is_mp_moe = (
-            hasattr(fleet.fleet, "_hcg") and group is fleet.get_hybrid_communicate_group().get_model_parallel_group()
+            hasattr(fleet.fleet, "_hcg")
+            and group
+            is fleet.get_hybrid_communicate_group().get_model_parallel_group()
         )
         self.is_ep_moe = (
             hasattr(fleet.fleet, "_hcg")
@@ -481,7 +533,8 @@ class MOELayer(nn.Layer):
                 fleet.get_hybrid_communicate_group(),
                 "get_moe_sharding_parallel_world_size",
             )
-            and fleet.get_hybrid_communicate_group().get_moe_sharding_parallel_world_size() > 0
+            and fleet.get_hybrid_communicate_group().get_moe_sharding_parallel_world_size()
+            > 0
         )
         is_dummy_moe = dist.get_world_size(group) == 1
 
@@ -501,7 +554,7 @@ class MOELayer(nn.Layer):
 
         if expert_color is not None:
             for p in self.experts.parameters():
-                setattr(p, "color", expert_color)
+                p.color = expert_color
 
         self.world_size = dist.get_world_size(self.group)
         self.rank = dist.get_rank(self.group)
@@ -511,7 +564,10 @@ class MOELayer(nn.Layer):
             self.rank = 0
 
         self.num_local_experts = len(self.experts)
-        self.dispatch_by_task = hasattr(self.gate, "dispatch_by_task") and self.gate.dispatch_by_task
+        self.dispatch_by_task = (
+            hasattr(self.gate, "dispatch_by_task")
+            and self.gate.dispatch_by_task
+        )
 
         assert not self.dispatch_by_task, "no dispatch_by_task for now"
 
@@ -533,9 +589,15 @@ class MOELayer(nn.Layer):
             expert_outputs = []
             if isinstance(self.experts, nn.LayerList):
                 if self.config.use_fp8_fuse_node:
-                    expert_output = FusionFP8Expert.apply(dispatched_input, self)
+                    expert_output = FusionFP8Expert.apply(
+                        dispatched_input, self
+                    )
                 else:
-                    chunks = dispatched_input.transpose([1, 0, 2, 3]).contiguous().unbind(0)
+                    chunks = (
+                        dispatched_input.transpose([1, 0, 2, 3])
+                        .contiguous()
+                        .unbind(0)
+                    )
                     assert len(chunks) == len(self.experts), (
                         len(chunks),
                         len(self.experts),
@@ -549,50 +611,74 @@ class MOELayer(nn.Layer):
                 dispatched_input = dispatched_input.transpose([1, 0, 2, 3])
                 dispatched_input.contiguous()
                 orig_shape = dispatched_input.shape
-                chunks = dispatched_input.reshape([orig_shape[0], -1, orig_shape[-1]])
+                chunks = dispatched_input.reshape(
+                    [orig_shape[0], -1, orig_shape[-1]]
+                )
                 chunks = self.experts(chunks)
-                chunks = chunks.reshape(orig_shape[:-1] + [chunks.shape[-1]]).unbind(0)
+                chunks = chunks.reshape(
+                    orig_shape[:-1] + [chunks.shape[-1]]
+                ).unbind(0)
                 expert_outputs += chunks
                 expert_output = paddle.stack(expert_outputs, axis=1)
         return expert_output
 
     def fp8_quant_weight(self):
-        expert_w1_list = [expert.up_gate_proj.weight for expert in self.experts if expert is not None]
-        expert_w2_list = [expert.down_proj.weight for expert in self.experts if expert is not None]
+        expert_w1_list = [
+            expert.up_gate_proj.weight
+            for expert in self.experts
+            if expert is not None
+        ]
+        expert_w2_list = [
+            expert.down_proj.weight
+            for expert in self.experts
+            if expert is not None
+        ]
 
         expert_w1 = expert_w1_list[0]
         expert_w2 = expert_w2_list[0]
 
-        fp8_weight_stacked_w1, fp8_scale_stacked_w1 = paddle.incubate.nn.functional.fused_stack_transpose_quant(
-            expert_w1_list, transpose=False
+        fp8_weight_stacked_w1, fp8_scale_stacked_w1 = (
+            paddle.incubate.nn.functional.fused_stack_transpose_quant(
+                expert_w1_list, transpose=False
+            )
         )
-        setattr(expert_w1, "fp8_weight_stacked", fp8_weight_stacked_w1)
-        setattr(expert_w1, "fp8_scale_stacked", fp8_scale_stacked_w1)
+        expert_w1.fp8_weight_stacked = fp8_weight_stacked_w1
+        expert_w1.fp8_scale_stacked = fp8_scale_stacked_w1
 
-        fp8_weight_stacked_w1_t, fp8_scale_stacked_w1_t = paddle.incubate.nn.functional.fused_stack_transpose_quant(
-            expert_w1_list, transpose=True
+        fp8_weight_stacked_w1_t, fp8_scale_stacked_w1_t = (
+            paddle.incubate.nn.functional.fused_stack_transpose_quant(
+                expert_w1_list, transpose=True
+            )
         )
-        setattr(expert_w1, "fp8_weight_stacked_transpose", fp8_weight_stacked_w1_t)
-        setattr(expert_w1, "fp8_scale_stacked_transpose", fp8_scale_stacked_w1_t)
+        expert_w1.fp8_weight_stacked_transpose = fp8_weight_stacked_w1_t
+        expert_w1.fp8_scale_stacked_transpose = fp8_scale_stacked_w1_t
 
-        fp8_weight_stacked_w2, fp8_scale_stacked_w2 = paddle.incubate.nn.functional.fused_stack_transpose_quant(
-            expert_w2_list, transpose=False
+        fp8_weight_stacked_w2, fp8_scale_stacked_w2 = (
+            paddle.incubate.nn.functional.fused_stack_transpose_quant(
+                expert_w2_list, transpose=False
+            )
         )
-        setattr(expert_w2, "fp8_weight_stacked", fp8_weight_stacked_w2)
-        setattr(expert_w2, "fp8_scale_stacked", fp8_scale_stacked_w2)
+        expert_w2.fp8_weight_stacked = fp8_weight_stacked_w2
+        expert_w2.fp8_scale_stacked = fp8_scale_stacked_w2
 
-        fp8_weight_stacked_w2_t, fp8_scale_stacked_w2_t = paddle.incubate.nn.functional.fused_stack_transpose_quant(
-            expert_w2_list, transpose=True
+        fp8_weight_stacked_w2_t, fp8_scale_stacked_w2_t = (
+            paddle.incubate.nn.functional.fused_stack_transpose_quant(
+                expert_w2_list, transpose=True
+            )
         )
-        setattr(expert_w2, "fp8_weight_stacked_transpose", fp8_weight_stacked_w2_t)
-        setattr(expert_w2, "fp8_scale_stacked_transpose", fp8_scale_stacked_w2_t)
+        expert_w2.fp8_weight_stacked_transpose = fp8_weight_stacked_w2_t
+        expert_w2.fp8_scale_stacked_transpose = fp8_scale_stacked_w2_t
 
-    def fused_gate_logits_process(self, gate_logits, token_type_ids, offload_helper=None):
+    def fused_gate_logits_process(
+        self, gate_logits, token_type_ids, offload_helper=None
+    ):
         k = self.k
         max_prob = None
 
         if self.group_experts:
-            prob = self.gate.act(gate_logits.reshape([gate_logits.shape[0], k, -1]))
+            prob = self.gate.act(
+                gate_logits.reshape([gate_logits.shape[0], k, -1])
+            )
             max_prob = prob.max(-1, keepdim=True)
             prob /= max_prob
             prob = prob.reshape([prob.shape[0], -1])
@@ -604,7 +690,9 @@ class MOELayer(nn.Layer):
         """
         Quantization is performed within the op
         """
-        assert not self.config.use_ep_comm_overlap, "ep_comm_overlap is not supported"
+        assert not self.config.use_ep_comm_overlap, (
+            "ep_comm_overlap is not supported"
+        )
 
         seqlen, d_model = input.shape
         args = ()
@@ -617,13 +705,21 @@ class MOELayer(nn.Layer):
         ) = self.gate(input, *args)
 
         if self.input_preprocess is not None:
-            input, gate_logits = self.input_preprocess(input, gate_logits, capacity)
+            input, gate_logits = self.input_preprocess(
+                input, gate_logits, capacity
+            )
 
         k = self.k
-        prob, max_prob = self.fused_gate_logits_process(gate_logits, token_type_ids)
+        prob, max_prob = self.fused_gate_logits_process(
+            gate_logits, token_type_ids
+        )
 
         with profile("dispatch_op"):
-            corr_bias = self.moe_statics.e_score_correction_bias[0].detach() if self.use_correction_bias else None
+            corr_bias = (
+                self.moe_statics.e_score_correction_bias[0].detach()
+                if self.use_correction_bias
+                else None
+            )
 
             (
                 dispatched_input,
@@ -632,7 +728,9 @@ class MOELayer(nn.Layer):
                 dispatch_mask,
                 _,
                 fp8_dispatched_handle,
-            ) = Fp8MoeGateDispatchAndQuant.apply(input, prob, corr_bias, k=k, capacity=capacity, use_pad=True)
+            ) = Fp8MoeGateDispatchAndQuant.apply(
+                input, prob, corr_bias, k=k, capacity=capacity, use_pad=True
+            )
 
         dispatch_mask = paddle.diff(F.pad(dispatch_mask, (1, 0)))
         if self.use_correction_bias:
@@ -647,11 +745,17 @@ class MOELayer(nn.Layer):
             if max_prob is not None:
                 if token_type_ids is not None:
                     p = paddle.ones_like(combine_weights_unnorm.unsqueeze(-1))
-                    p = paddle.scatter_nd_add(p, paddle.nonzero(token_type_ids == 0), -1 + max_prob)
+                    p = paddle.scatter_nd_add(
+                        p, paddle.nonzero(token_type_ids == 0), -1 + max_prob
+                    )
                 else:
                     p = max_prob
-                combine_weights_unnorm = (combine_weights_unnorm.unsqueeze(-1) * p).squeeze(-1)
-                prob = (prob.reshape([p.shape[0], k, -1]) * p).reshape([p.shape[0], -1])
+                combine_weights_unnorm = (
+                    combine_weights_unnorm.unsqueeze(-1) * p
+                ).squeeze(-1)
+                prob = (prob.reshape([p.shape[0], k, -1]) * p).reshape(
+                    [p.shape[0], -1]
+                )
         if self.gate.norm_gate_logits:
             combine_weights = combine_weights_unnorm / paddle.clip(
                 combine_weights_unnorm.sum(-1, keepdim=True), min=1e-12
@@ -671,7 +775,9 @@ class MOELayer(nn.Layer):
             )
 
         dispatched_input = reshape_for_a2a(dispatched_input)
-        fp8_dispatched_handle["scale"] = reshape_for_a2a(fp8_dispatched_handle["scale"])
+        fp8_dispatched_handle["scale"] = reshape_for_a2a(
+            fp8_dispatched_handle["scale"]
+        )
         dispatch_mask.stop_gradient = True
         scatter_index.stop_gradient = True
         return (
@@ -697,10 +803,14 @@ class MOELayer(nn.Layer):
         ) = self.gate(input, *args)
 
         if self.input_preprocess is not None:
-            input, gate_logits = self.input_preprocess(input, gate_logits, capacity)
+            input, gate_logits = self.input_preprocess(
+                input, gate_logits, capacity
+            )
 
         k = self.k
-        prob, max_prob = self.fused_gate_logits_process(gate_logits, token_type_ids)
+        prob, max_prob = self.fused_gate_logits_process(
+            gate_logits, token_type_ids
+        )
 
         with profile("dispatch_op"):
             if "corr_bias" in inspect.signature(moe_gate_dispatch).parameters:
@@ -709,11 +819,19 @@ class MOELayer(nn.Layer):
                 else:
                     compat_args = (None,)
             else:
-                assert not self.use_correction_bias, "correction bias not supported, rebuild moe-ops"
+                assert not self.use_correction_bias, (
+                    "correction bias not supported, rebuild moe-ops"
+                )
                 compat_args = ()
 
             if not self.config.use_ep_comm_overlap:
-                (dispatched_input, combine_weights_unnorm, scatter_index, dispatch_mask, _,) = moe_gate_dispatch(
+                (
+                    dispatched_input,
+                    combine_weights_unnorm,
+                    scatter_index,
+                    dispatch_mask,
+                    _,
+                ) = moe_gate_dispatch(
                     input,
                     prob,
                     *compat_args,
@@ -751,12 +869,22 @@ class MOELayer(nn.Layer):
             if self.group_experts:
                 if max_prob is not None:
                     if token_type_ids is not None:
-                        p = paddle.ones_like(combine_weights_unnorm.unsqueeze(-1))
-                        p = paddle.scatter_nd_add(p, paddle.nonzero(token_type_ids == 0), -1 + max_prob)
+                        p = paddle.ones_like(
+                            combine_weights_unnorm.unsqueeze(-1)
+                        )
+                        p = paddle.scatter_nd_add(
+                            p,
+                            paddle.nonzero(token_type_ids == 0),
+                            -1 + max_prob,
+                        )
                     else:
                         p = max_prob
-                    combine_weights_unnorm = (combine_weights_unnorm.unsqueeze(-1) * p).squeeze(-1)
-                    prob = (prob.reshape([p.shape[0], k, -1]) * p).reshape([p.shape[0], -1])
+                    combine_weights_unnorm = (
+                        combine_weights_unnorm.unsqueeze(-1) * p
+                    ).squeeze(-1)
+                    prob = (prob.reshape([p.shape[0], k, -1]) * p).reshape(
+                        [p.shape[0], -1]
+                    )
             if self.gate.norm_gate_logits:
                 combine_weights = combine_weights_unnorm / paddle.clip(
                     combine_weights_unnorm.sum(-1, keepdim=True), min=1e-12
@@ -820,12 +948,19 @@ class MOELayer(nn.Layer):
                 tokens_type_mask,
                 dispatch_tokens_mask,
             )
-            router_loss += self.gate.router_aux_loss_coef[token_type or 0] * l_aux
+            router_loss += (
+                self.gate.router_aux_loss_coef[token_type or 0] * l_aux
+            )
         else:
             router_loss += self.zero * gate_prob[0, 0]
         if self.gate.config.moe_orthogonal_loss_lambda:
-            orthogonal_loss = self.gate._cal_orthogonal_loss(token_type, use_group)
-            router_loss += self.gate.moe_orthogonal_loss_lambda[token_type or 0] * orthogonal_loss
+            orthogonal_loss = self.gate._cal_orthogonal_loss(
+                token_type, use_group
+            )
+            router_loss += (
+                self.gate.moe_orthogonal_loss_lambda[token_type or 0]
+                * orthogonal_loss
+            )
         return router_loss
 
     def calc_router_loss_and_logging(
@@ -851,9 +986,13 @@ class MOELayer(nn.Layer):
 
         return router_loss
 
-    def combine_expert_output(self, expert_output, combine_weights, scatter_index):
+    def combine_expert_output(
+        self, expert_output, combine_weights, scatter_index
+    ):
         expert_output = expert_output.reshape([-1, expert_output.shape[-1]])
-        combined_output = combining_fused(expert_output, combine_weights, scatter_index)
+        combined_output = combining_fused(
+            expert_output, combine_weights, scatter_index
+        )
 
         if self.output_postprocess is not None:
             combined_output = self.output_postprocess(combined_output)
@@ -868,14 +1007,18 @@ class MOELayer(nn.Layer):
         all2all_ins = paddle.unbind(x, axis=0)
         for stage_id in range(1):
             stage_input = all2all_ins[stage_id]
-            x_out, task = AlltoAll.apply(stage_input, group=self.group, sync_op=False)
+            x_out, task = AlltoAll.apply(
+                stage_input, group=self.group, sync_op=False
+            )
             all2all_tasks.append((task, x_out))
 
         expert_outputs = []
         for stage_id in range(self.num_local_experts):
             if stage_id + 1 != self.num_local_experts:
                 stage_input = all2all_ins[stage_id + 1]
-                x_out, task = AlltoAll.apply(stage_input, group=self.group, sync_op=False)
+                x_out, task = AlltoAll.apply(
+                    stage_input, group=self.group, sync_op=False
+                )
                 all2all_tasks.append((task, x_out))
 
             task, dispatched_input = all2all_tasks[stage_id]
@@ -900,7 +1043,9 @@ class MOELayer(nn.Layer):
             input = input.reshape([-1, input.shape[-1]])
         else:
             orig_shape = None
-        assert len(input.shape) == 2, f"input Tensor must have dimensions: (s)equence, (d)im, got:{input.shape}"
+        assert len(input.shape) == 2, (
+            f"input Tensor must have dimensions: (s)equence, (d)im, got:{input.shape}"
+        )
 
         hidden_size = input.shape[1]
         if token_type_ids is not None:
@@ -922,8 +1067,12 @@ class MOELayer(nn.Layer):
         use_async = self.shared_experts is not None
         gate_input = input
 
-        use_fp8_fuse_node = self.config.use_combine_before_a2a and self.config.use_fp8_fuse_node
-        use_quant_before_a2a = self.config.use_quant_before_a2a and use_fp8_fuse_node
+        use_fp8_fuse_node = (
+            self.config.use_combine_before_a2a and self.config.use_fp8_fuse_node
+        )
+        use_quant_before_a2a = (
+            self.config.use_quant_before_a2a and use_fp8_fuse_node
+        )
 
         with profile("fused_gate_and_dispatch"):
             fp8_dispatched_handle = None
@@ -950,14 +1099,16 @@ class MOELayer(nn.Layer):
                 ) = self.gate_and_distpach(gate_input, token_type_ids)
 
         if self.config.use_combine_before_a2a:
-            assert (
-                not self.config.use_ep_comm_overlap
-            ), "Dont support `use_ep_comm_overlap` when enable `use_combine_before_a2a`."
+            assert not self.config.use_ep_comm_overlap, (
+                "Dont support `use_ep_comm_overlap` when enable `use_combine_before_a2a`."
+            )
             cw_shape = combine_weights.shape
             si_shape = scatter_index.shape
             scatter_index = scatter_index.reshape([-1])
 
-            token_combine_weights = paddle.zeros([cw_shape[0] * cw_shape[1]], dtype=combine_weights.dtype)
+            token_combine_weights = paddle.zeros(
+                [cw_shape[0] * cw_shape[1]], dtype=combine_weights.dtype
+            )
             token_combine_weights = paddle.scatter(
                 token_combine_weights,
                 scatter_index,
@@ -965,15 +1116,23 @@ class MOELayer(nn.Layer):
                 overwrite=False,
             )
 
-            token_combine_weights = token_combine_weights.reshape([cw_shape[0], cw_shape[1], 1])
-            token_combine_weights = AlltoAll.apply(token_combine_weights, self.group)
+            token_combine_weights = token_combine_weights.reshape(
+                [cw_shape[0], cw_shape[1], 1]
+            )
+            token_combine_weights = AlltoAll.apply(
+                token_combine_weights, self.group
+            )
 
         if not self.config.use_ep_comm_overlap:
             if use_quant_before_a2a:
                 # To enable backward pass overlap, the all-to-all (a2a) operation is performed inside
                 # FP8FusedWLCHFunc, eliminating the need for external a2a. However, be careful not
                 # to skip the computation of shared_experts.
-                shared_out = self.shared_experts(input) if self.shared_experts is not None else None
+                shared_out = (
+                    self.shared_experts(input)
+                    if self.shared_experts is not None
+                    else None
+                )
             else:
                 with profile("moe_comm_and_shared_expert"):
                     if use_async:
@@ -985,15 +1144,21 @@ class MOELayer(nn.Layer):
                             is_first_fwd=is_first_fwd,
                         )
                     else:
-                        dispatched_input = AlltoAll.apply(dispatched_input, self.group)
+                        dispatched_input = AlltoAll.apply(
+                            dispatched_input, self.group
+                        )
 
             if use_fp8_fuse_node:
                 expert_out = FP8FusedWLCHFunc.apply(
                     dispatched_input,
                     token_combine_weights,
                     self,
-                    recompute_fwd_gate_up=recompute_fwd_gate_up_func(self.config, self.layer_idx),
-                    dequant_input=("dequant_input" in self.config.fp8_mem_configs)
+                    recompute_fwd_gate_up=recompute_fwd_gate_up_func(
+                        self.config, self.layer_idx
+                    ),
+                    dequant_input=(
+                        "dequant_input" in self.config.fp8_mem_configs
+                    )
                     and self.config.fp8_mem_configs["dequant_input"],
                     quant_before_a2a=use_quant_before_a2a,
                     async_a2a=self.config.use_async_a2a,
@@ -1009,7 +1174,11 @@ class MOELayer(nn.Layer):
                 )
 
                 if self.config.use_combine_before_a2a:
-                    token_combine_weights = token_combine_weights.clone().reshape(expert_out.shape[:-1] + [1])
+                    token_combine_weights = (
+                        token_combine_weights.clone().reshape(
+                            expert_out.shape[:-1] + [1]
+                        )
+                    )
                     expert_out = expert_out * token_combine_weights
         else:
             assert (
@@ -1051,17 +1220,26 @@ class MOELayer(nn.Layer):
             if self.config.use_combine_before_a2a:
                 expert_out = expert_out.reshape([-1, hidden_size])
                 scatter_index = scatter_index.reshape(si_shape)
-                combined_output = paddle.incubate.nn.functional.moe_combine_no_weight(
-                    expert_out, combine_weights, scatter_index, epsilon=1e-15
+                combined_output = (
+                    paddle.incubate.nn.functional.moe_combine_no_weight(
+                        expert_out,
+                        combine_weights,
+                        scatter_index,
+                        epsilon=1e-15,
+                    )
                 )
             else:
-                combined_output = self.combine_expert_output(expert_out, combine_weights, scatter_index)
+                combined_output = self.combine_expert_output(
+                    expert_out, combine_weights, scatter_index
+                )
 
         if self.shared_experts is not None:
             combined_output += shared_out
 
         if orig_shape:
-            combined_output = combined_output.clone().reshape(orig_shape[:-1] + [combined_output.shape[-1]])
+            combined_output = combined_output.clone().reshape(
+                orig_shape[:-1] + [combined_output.shape[-1]]
+            )
         return combined_output, combine_weights, router_loss2, gate_logits
 
     def sharded_state_dict(
@@ -1103,19 +1281,27 @@ class FP8FusedWLCHFunc(paddle.autograd.PyLayer):
         num_local_experts = custom_map.num_local_experts
 
         def a2a_fn(input_fp8, input_scale):
-            return AlltoAll.apply(input_fp8, group), AlltoAll.apply(input_scale, group)
+            return AlltoAll.apply(input_fp8, group), AlltoAll.apply(
+                input_scale, group
+            )
 
         if quant_before_a2a:
             assert fp8_dispatched_handle is not None
             assert hidden_states.dtype == paddle.float8_e4m3fn
-            hidden_states, scale = a2a_fn(hidden_states, fp8_dispatched_handle["scale"])
+            hidden_states, scale = a2a_fn(
+                hidden_states, fp8_dispatched_handle["scale"]
+            )
             scale = scale.reshape([-1, scale.shape[-1]])
         else:
             scale = None
 
         hidden_states = hidden_states.reshape([-1, hidden_states.shape[-1]])
-        dispatched_probs = dispatched_probs.reshape([-1, dispatched_probs.shape[-1]])
-        tokens_per_expert = [np.prod(hidden_states.shape[:-1]) // num_local_experts] * num_local_experts
+        dispatched_probs = dispatched_probs.reshape(
+            [-1, dispatched_probs.shape[-1]]
+        )
+        tokens_per_expert = [
+            np.prod(hidden_states.shape[:-1]) // num_local_experts
+        ] * num_local_experts
 
         out = ctx.node.forward(
             hidden_states,
@@ -1147,7 +1333,13 @@ class FP8FusedWLCHFunc(paddle.autograd.PyLayer):
 
 
 class MlpNode:
-    def __init__(self, custom_map, max_topk, recompute_fwd_gate_up=False, dequant_input=False):
+    def __init__(
+        self,
+        custom_map,
+        max_topk,
+        recompute_fwd_gate_up=False,
+        dequant_input=False,
+    ):
         self.token_dispatcher = custom_map.dispatcher
         self.experts = custom_map.experts
         self.experts_group_gemm_node = ExpertsGroupGemmContiguousNode(
@@ -1159,7 +1351,9 @@ class MlpNode:
         self.zip_node = ZipNode(self.token_dispatcher)
         self.dispatched_indices = None
         self.dispatched_probs = None
-        self.tokens_per_expert = self.token_dispatcher._comm_manager.tokens_per_expert_list
+        self.tokens_per_expert = (
+            self.token_dispatcher._comm_manager.tokens_per_expert_list
+        )
         self.router_topk = max_topk
 
     def reset_status(self):
@@ -1179,19 +1373,23 @@ class MlpNode:
         num_experts = len(self.tokens_per_expert)
 
         self.dispatched_indices = dispatched_indices.to(paddle.int32)
-        (unzipped_tokens, zipped_expertwise_rowmap, unzipped_probs) = self.unzip_node.forward(
-            hs_2d_dispatched,
-            self.dispatched_indices,
-            dispatched_probs,
-            topk=self.router_topk,
-            num_experts=num_experts,
-            tokens_per_expert=self.tokens_per_expert,
+        (unzipped_tokens, zipped_expertwise_rowmap, unzipped_probs) = (
+            self.unzip_node.forward(
+                hs_2d_dispatched,
+                self.dispatched_indices,
+                dispatched_probs,
+                topk=self.router_topk,
+                num_experts=num_experts,
+                tokens_per_expert=self.tokens_per_expert,
+            )
         )
         hs_2d_dispatched._record_stream()
         dispatched_indices._record_stream()
         dispatched_probs._record_stream()
 
-        padding_token_per_experts = [(x + 127) // 128 * 128 for x in self.tokens_per_expert]
+        padding_token_per_experts = [
+            (x + 127) // 128 * 128 for x in self.tokens_per_expert
+        ]
         expert_out = self.experts_group_gemm_node.forward(
             unzipped_tokens,
             unzipped_probs,
@@ -1227,14 +1425,18 @@ class MlpNode:
         )
         hidden_states_out_grad._record_stream()
 
-        expert_out, probs_grad = self.experts_group_gemm_node.backward(unzipped_grad)
+        expert_out, probs_grad = self.experts_group_gemm_node.backward(
+            unzipped_grad
+        )
 
-        hs_fp8_dispatched_grad, dispatched_probs_grad = self.unzip_node.backward(
-            expert_out,
-            hidden_states_out_grad,
-            probs_grad,
-            self.dispatched_indices,
-            num_experts=len(self.tokens_per_expert),
+        hs_fp8_dispatched_grad, dispatched_probs_grad = (
+            self.unzip_node.backward(
+                expert_out,
+                hidden_states_out_grad,
+                probs_grad,
+                self.dispatched_indices,
+                num_experts=len(self.tokens_per_expert),
+            )
         )
         self.reset_status()
         return hs_fp8_dispatched_grad, dispatched_probs_grad
@@ -1259,7 +1461,9 @@ class Fp8FusedMoeFunc(paddle.autograd.PyLayer):
             recompute_fwd_gate_up=recompute_fwd_gate_up,
             dequant_input=dequant_input,
         )
-        out = ctx.node.forward(hidden_states, dispatched_indices, dispatched_probs)
+        out = ctx.node.forward(
+            hidden_states, dispatched_indices, dispatched_probs
+        )
 
         if is_first_fwd:
             ctx.node.release_mem()
@@ -1267,5 +1471,7 @@ class Fp8FusedMoeFunc(paddle.autograd.PyLayer):
 
     @staticmethod
     def backward(ctx, output_grad):
-        hidden_states_grad, dispatched_probs_grad = ctx.node.backward(output_grad)
+        hidden_states_grad, dispatched_probs_grad = ctx.node.backward(
+            output_grad
+        )
         return hidden_states_grad, dispatched_probs_grad, None

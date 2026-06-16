@@ -100,8 +100,14 @@ def tl_csa_indexer_topk_fwd_impl(
                     ascending = (i & (1 << (i1 + 1))) != 0
                     j = i ^ (1 << (i1 - i2))
                     if i < j and (
-                        (ascending and topk_value_shared[i] > topk_value_shared[j])
-                        or (not ascending and topk_value_shared[i] < topk_value_shared[j])
+                        (
+                            ascending
+                            and topk_value_shared[i] > topk_value_shared[j]
+                        )
+                        or (
+                            not ascending
+                            and topk_value_shared[i] < topk_value_shared[j]
+                        )
                     ):
                         val = topk_value_shared[i]
                         topk_value_shared[i] = topk_value_shared[j]
@@ -190,11 +196,15 @@ def tl_csa_indexer_topk_fwd_impl(
                 T.sync_threads()
 
                 for i in T.Parallel(block_K):
-                    valid_flag = (k_st + i >= valid_start) & (k_st + i < valid_end)
+                    valid_flag = (k_st + i >= valid_start) & (
+                        k_st + i < valid_end
+                    )
                     if not valid_flag:
                         logits_sum[i] = float("-inf")
                     j = offset + i
-                    topk_index_shared[j] = T.if_then_else(valid_flag, k_st + i, -1)
+                    topk_index_shared[j] = T.if_then_else(
+                        valid_flag, k_st + i, -1
+                    )
                     topk_value_shared[j] = logits_sum[i]
                 T.sync_threads()
 
@@ -256,7 +266,9 @@ def _tilelang_dtype(tensor):
         return "bfloat16"
     if tensor.dtype == paddle.float16:
         return "float16"
-    raise TypeError(f"TileLang CSA indexer expects bf16/fp16 inputs, got {tensor.dtype}")
+    raise TypeError(
+        f"TileLang CSA indexer expects bf16/fp16 inputs, got {tensor.dtype}"
+    )
 
 
 def _shape(tensor):
@@ -289,11 +301,17 @@ def _validate_interface_inputs(
         _require_tensor(name, tensor)
         _require_contiguous(name, tensor)
     if index_q.ndim != 4:
-        raise ValueError(f"index_q must have shape [B, S, H_i, D_i], got {_shape(index_q)}")
+        raise ValueError(
+            f"index_q must have shape [B, S, H_i, D_i], got {_shape(index_q)}"
+        )
     if index_k_comp.ndim != 3:
-        raise ValueError(f"index_k_comp must have shape [B, S_comp, D_i], got {_shape(index_k_comp)}")
+        raise ValueError(
+            f"index_k_comp must have shape [B, S_comp, D_i], got {_shape(index_k_comp)}"
+        )
     if weights.ndim != 3:
-        raise ValueError(f"weights must have shape [B, S, H_i], got {_shape(weights)}")
+        raise ValueError(
+            f"weights must have shape [B, S, H_i], got {_shape(weights)}"
+        )
 
     batch, seq_len, heads, dim = _shape(index_q)
     batch_k, _, dim_k = _shape(index_k_comp)
@@ -309,7 +327,9 @@ def _validate_interface_inputs(
     if heads > 64 or heads % 8 != 0:
         raise ValueError(f"heads must be <= 64 and divisible by 8, got {heads}")
     if int(topk_effective) <= 0:
-        raise ValueError(f"topk_effective must be positive, got {topk_effective}")
+        raise ValueError(
+            f"topk_effective must be positive, got {topk_effective}"
+        )
     if int(block_K) <= 0:
         raise ValueError(f"block_K must be positive, got {block_K}")
     if int(num_stages) != 0:
@@ -389,14 +409,19 @@ def csa_indexer_topk_fwd_interface(
 
     # Build or validate ValidRange
     if valid_range is None:
-        valid_range = _build_causal_valid_range(batch, seq_len, seq_len_comp, ratio, int(seq_offset))
+        valid_range = _build_causal_valid_range(
+            batch, seq_len, seq_len_comp, ratio, int(seq_offset)
+        )
     else:
         _require_tensor("valid_range", valid_range)
         if valid_range.ndim != 3 or valid_range.shape[2] != 2:
-            raise ValueError(f"valid_range must have shape [B, S, 2], got {_shape(valid_range)}")
+            raise ValueError(
+                f"valid_range must have shape [B, S, 2], got {_shape(valid_range)}"
+            )
         if valid_range.shape[0] != batch or valid_range.shape[1] != seq_len:
             raise ValueError(
-                f"valid_range shape {_shape(valid_range)} incompatible with " f"index_q shape {_shape(index_q)}"
+                f"valid_range shape {_shape(valid_range)} incompatible with "
+                f"index_q shape {_shape(index_q)}"
             )
         if valid_range.dtype != paddle.int32:
             valid_range = valid_range.cast("int32")

@@ -58,7 +58,9 @@ class CSASparseAttention(paddle.autograd.PyLayer):
         )
         dq = dq.reshape(query.shape)
         dkv = dkv.reshape(kv_full.shape)
-        d_attn_sink = d_attn_sink.reshape(attn_sink.shape).cast(ctx.attn_sink_dtype)
+        d_attn_sink = d_attn_sink.reshape(attn_sink.shape).cast(
+            ctx.attn_sink_dtype
+        )
         return (dq, dkv, d_attn_sink, None)
 
 

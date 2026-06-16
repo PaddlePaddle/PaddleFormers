@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -27,14 +31,18 @@ class TestGetPaddingBasic(unittest.TestCase):
     """Test get_padding basic scenarios."""
 
     def test_no_padding_needed(self):
-        from paddleformers.fleet.models.multimodal.context_parallel import get_padding
+        from paddleformers.fleet.models.multimodal.context_parallel import (
+            get_padding,
+        )
 
         # seq_len=32, no sp, no cp, no fp8
         result = get_padding(seq_len=32, cp_size=1, tp_size=1, has_sp=False)
         self.assertEqual(result, 0)
 
     def test_fp8_padding(self):
-        from paddleformers.fleet.models.multimodal.context_parallel import get_padding
+        from paddleformers.fleet.models.multimodal.context_parallel import (
+            get_padding,
+        )
 
         result = get_padding(
             seq_len=33,
@@ -47,7 +55,9 @@ class TestGetPaddingBasic(unittest.TestCase):
         self.assertGreater(result, 0)
 
     def test_mxfp8_padding(self):
-        from paddleformers.fleet.models.multimodal.context_parallel import get_padding
+        from paddleformers.fleet.models.multimodal.context_parallel import (
+            get_padding,
+        )
 
         result = get_padding(
             seq_len=33,
@@ -68,7 +78,9 @@ class TestGetPaddingWithSequenceParallel(unittest.TestCase):
     """Test get_padding with sequence parallelism."""
 
     def test_sp_with_tp(self):
-        from paddleformers.fleet.models.multimodal.context_parallel import get_padding
+        from paddleformers.fleet.models.multimodal.context_parallel import (
+            get_padding,
+        )
 
         result = get_padding(seq_len=33, cp_size=1, tp_size=4, has_sp=True)
         # padding_factor = tp_size = 4
@@ -76,7 +88,9 @@ class TestGetPaddingWithSequenceParallel(unittest.TestCase):
         self.assertEqual(result, expected)
 
     def test_sp_aligned(self):
-        from paddleformers.fleet.models.multimodal.context_parallel import get_padding
+        from paddleformers.fleet.models.multimodal.context_parallel import (
+            get_padding,
+        )
 
         result = get_padding(seq_len=32, cp_size=1, tp_size=4, has_sp=True)
         self.assertEqual(result, 0)
@@ -86,7 +100,9 @@ class TestGetPaddingWithContextParallel(unittest.TestCase):
     """Test get_padding with context parallelism."""
 
     def test_cp_only(self):
-        from paddleformers.fleet.models.multimodal.context_parallel import get_padding
+        from paddleformers.fleet.models.multimodal.context_parallel import (
+            get_padding,
+        )
 
         result = get_padding(seq_len=33, cp_size=2, tp_size=1, has_sp=False)
         # padding_factor = cp_size * 2 = 4
@@ -94,7 +110,9 @@ class TestGetPaddingWithContextParallel(unittest.TestCase):
         self.assertEqual(result, expected)
 
     def test_cp_with_sp(self):
-        from paddleformers.fleet.models.multimodal.context_parallel import get_padding
+        from paddleformers.fleet.models.multimodal.context_parallel import (
+            get_padding,
+        )
 
         result = get_padding(seq_len=33, cp_size=2, tp_size=4, has_sp=True)
         # padding_factor = tp_size * cp_size * 2 = 16
@@ -102,7 +120,9 @@ class TestGetPaddingWithContextParallel(unittest.TestCase):
         self.assertEqual(result, expected)
 
     def test_cp_aligned(self):
-        from paddleformers.fleet.models.multimodal.context_parallel import get_padding
+        from paddleformers.fleet.models.multimodal.context_parallel import (
+            get_padding,
+        )
 
         result = get_padding(seq_len=32, cp_size=2, tp_size=4, has_sp=True)
         # 32 is a multiple of 16
@@ -113,7 +133,9 @@ class TestGetPaddingWithTPCommOverlap(unittest.TestCase):
     """Test get_padding with TP comm overlap."""
 
     def test_tp_comm_overlap(self):
-        from paddleformers.fleet.models.multimodal.context_parallel import get_padding
+        from paddleformers.fleet.models.multimodal.context_parallel import (
+            get_padding,
+        )
 
         result = get_padding(
             seq_len=576,
@@ -126,7 +148,9 @@ class TestGetPaddingWithTPCommOverlap(unittest.TestCase):
         self.assertEqual(result, 64)
 
     def test_tp_comm_overlap_missing_decoder_seq_len_raises(self):
-        from paddleformers.fleet.models.multimodal.context_parallel import get_padding
+        from paddleformers.fleet.models.multimodal.context_parallel import (
+            get_padding,
+        )
 
         with self.assertRaises(AssertionError):
             get_padding(

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -93,7 +97,9 @@ class TestParallelState(unittest.TestCase):
         """Test initialize_model_parallel sets all groups."""
         import paddleformers.fleet.parallel_state as ps
 
-        with mock.patch("paddleformers.fleet.parallel_state.GlobalMemoryBuffer"):
+        with mock.patch(
+            "paddleformers.fleet.parallel_state.GlobalMemoryBuffer"
+        ):
             hcg = mock.MagicMock()
             hcg._mp_comm_group = self._make_mock_group(4, 0)
             hcg._mp_group = [0, 1, 2, 3]
@@ -109,13 +115,17 @@ class TestParallelState(unittest.TestCase):
             self.assertIsNotNone(ps._TENSOR_MODEL_PARALLEL_GROUP)
             self.assertIsNotNone(ps._PIPELINE_MODEL_PARALLEL_GROUP)
             self.assertIsNotNone(ps._DATA_PARALLEL_GROUP)
-            self.assertEqual(ps._TENSOR_MODEL_PARALLEL_GLOBAL_RANKS, [0, 1, 2, 3])
+            self.assertEqual(
+                ps._TENSOR_MODEL_PARALLEL_GLOBAL_RANKS, [0, 1, 2, 3]
+            )
 
     def test_initialize_model_parallel_with_virtual_pipeline(self):
         """Test initialize with virtual_pipeline_model_parallel_size."""
         import paddleformers.fleet.parallel_state as ps
 
-        with mock.patch("paddleformers.fleet.parallel_state.GlobalMemoryBuffer"):
+        with mock.patch(
+            "paddleformers.fleet.parallel_state.GlobalMemoryBuffer"
+        ):
             hcg = mock.MagicMock()
             hcg._mp_comm_group = self._make_mock_group(4, 0)
             hcg._mp_group = [0, 1, 2, 3]
@@ -126,7 +136,9 @@ class TestParallelState(unittest.TestCase):
             hcg._cp_comm_group = None
             hcg._cp_sharding_comm_group = None
 
-            ps.initialize_model_parallel(hcg, virtual_pipeline_model_parallel_size=2)
+            ps.initialize_model_parallel(
+                hcg, virtual_pipeline_model_parallel_size=2
+            )
             self.assertEqual(ps._VIRTUAL_PIPELINE_MODEL_PARALLEL_WORLD_SIZE, 2)
             self.assertEqual(ps._VIRTUAL_PIPELINE_MODEL_PARALLEL_RANK, 0)
 
@@ -134,7 +146,9 @@ class TestParallelState(unittest.TestCase):
         """Test that virtual pipeline with single pp stage raises."""
         import paddleformers.fleet.parallel_state as ps
 
-        with mock.patch("paddleformers.fleet.parallel_state.GlobalMemoryBuffer"):
+        with mock.patch(
+            "paddleformers.fleet.parallel_state.GlobalMemoryBuffer"
+        ):
             hcg = mock.MagicMock()
             hcg._mp_comm_group = self._make_mock_group(4, 0)
             hcg._mp_group = [0, 1, 2, 3]
@@ -146,7 +160,9 @@ class TestParallelState(unittest.TestCase):
             hcg._cp_sharding_comm_group = None
 
             with self.assertRaises(RuntimeError):
-                ps.initialize_model_parallel(hcg, virtual_pipeline_model_parallel_size=2)
+                ps.initialize_model_parallel(
+                    hcg, virtual_pipeline_model_parallel_size=2
+                )
 
     def test_get_tensor_model_parallel_group_not_initialized(self):
         """Test assertion when tensor model parallel group not initialized."""
@@ -202,7 +218,9 @@ class TestParallelState(unittest.TestCase):
         """Test tensor model parallel rank from group."""
         import paddleformers.fleet.parallel_state as ps
 
-        ps._TENSOR_MODEL_PARALLEL_GROUP = self._make_mock_group(nranks=4, rank=2)
+        ps._TENSOR_MODEL_PARALLEL_GROUP = self._make_mock_group(
+            nranks=4, rank=2
+        )
         ps._MPU_TENSOR_MODEL_PARALLEL_WORLD_SIZE = None
         ps._MPU_TENSOR_MODEL_PARALLEL_RANK = None
         rank = ps.get_tensor_model_parallel_rank()
@@ -307,7 +325,9 @@ class TestParallelState(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             ps.set_virtual_pipeline_model_parallel_rank(1)
-            self.assertTrue(any(issubclass(x.category, DeprecationWarning) for x in w))
+            self.assertTrue(
+                any(issubclass(x.category, DeprecationWarning) for x in w)
+            )
 
     def test_get_data_parallel_group_with_cp(self):
         """Test data parallel group with context parallel."""
@@ -330,14 +350,18 @@ class TestParallelState(unittest.TestCase):
         import paddleformers.fleet.parallel_state as ps
 
         with self.assertRaises(AssertionError):
-            ps.get_data_parallel_group(check_initialized=True, with_context_parallel=False)
+            ps.get_data_parallel_group(
+                check_initialized=True, with_context_parallel=False
+            )
 
     def test_get_data_parallel_group_with_cp_not_initialized(self):
         """Test data parallel group with CP assertion when not initialized."""
         import paddleformers.fleet.parallel_state as ps
 
         with self.assertRaises(AssertionError):
-            ps.get_data_parallel_group(check_initialized=True, with_context_parallel=True)
+            ps.get_data_parallel_group(
+                check_initialized=True, with_context_parallel=True
+            )
 
     def test_get_expert_model_parallel_group(self):
         """Test get expert model parallel group."""
@@ -390,7 +414,9 @@ class TestParallelState(unittest.TestCase):
         """Test expert model parallel rank default."""
         import paddleformers.fleet.parallel_state as ps
 
-        with mock.patch("paddle.distributed.is_initialized", return_value=False):
+        with mock.patch(
+            "paddle.distributed.is_initialized", return_value=False
+        ):
             rank = ps.get_expert_model_parallel_rank()
             self.assertEqual(rank, 0)
 
@@ -439,7 +465,9 @@ class TestParallelState(unittest.TestCase):
         """Test expert tensor parallel world size from group."""
         import paddleformers.fleet.parallel_state as ps
 
-        ps._EXPERT_TENSOR_PARALLEL_GROUP = self._make_mock_group(4, 0, world_size=4)
+        ps._EXPERT_TENSOR_PARALLEL_GROUP = self._make_mock_group(
+            4, 0, world_size=4
+        )
         ps._MPU_EXPERT_TENSOR_PARALLEL_WORLD_SIZE = None
         size = ps.get_expert_tensor_parallel_world_size()
         self.assertEqual(size, 4)
@@ -480,7 +508,9 @@ class TestParallelState(unittest.TestCase):
         import paddleformers.fleet.parallel_state as ps
 
         ps._EXPERT_TENSOR_AND_MODEL_PARALLEL_GROUP = self._make_mock_group(8, 0)
-        result = ps.get_expert_tensor_and_model_parallel_group(check_initialized=False)
+        result = ps.get_expert_tensor_and_model_parallel_group(
+            check_initialized=False
+        )
         self.assertIsNotNone(result)
 
     def test_get_expert_tensor_and_model_parallel_world_size_no_dist(self):
@@ -503,9 +533,13 @@ class TestParallelState(unittest.TestCase):
         """Test expert tensor and model parallel world size with distributed."""
         import paddleformers.fleet.parallel_state as ps
 
-        ps._EXPERT_TENSOR_AND_MODEL_PARALLEL_GROUP = self._make_mock_group(8, 0, world_size=8)
-        with mock.patch("paddle.distributed.is_available", return_value=True):  # noqa: SIM117
-            with mock.patch("paddle.distributed.is_initialized", return_value=True):
+        ps._EXPERT_TENSOR_AND_MODEL_PARALLEL_GROUP = self._make_mock_group(
+            8, 0, world_size=8
+        )
+        with mock.patch("paddle.distributed.is_available", return_value=True):
+            with mock.patch(
+                "paddle.distributed.is_initialized", return_value=True
+            ):
                 size = ps.get_expert_tensor_and_model_parallel_world_size()
                 self.assertEqual(size, 8)
 
@@ -515,8 +549,10 @@ class TestParallelState(unittest.TestCase):
 
         group = self._make_mock_group(8, 3, world_size=8)
         ps._EXPERT_TENSOR_AND_MODEL_PARALLEL_GROUP = group
-        with mock.patch("paddle.distributed.is_available", return_value=True):  # noqa: SIM117
-            with mock.patch("paddle.distributed.is_initialized", return_value=True):
+        with mock.patch("paddle.distributed.is_available", return_value=True):
+            with mock.patch(
+                "paddle.distributed.is_initialized", return_value=True
+            ):
                 rank = ps.get_expert_tensor_and_model_parallel_rank()
                 self.assertEqual(rank, 3)
 
@@ -531,7 +567,9 @@ class TestParallelState(unittest.TestCase):
         """Test global memory buffer lifecycle."""
         import paddleformers.fleet.parallel_state as ps
 
-        with mock.patch("paddleformers.fleet.parallel_state.GlobalMemoryBuffer") as mock_gmb:
+        with mock.patch(
+            "paddleformers.fleet.parallel_state.GlobalMemoryBuffer"
+        ) as mock_gmb:
             ps._set_global_memory_buffer()
             self.assertTrue(ps.have_global_memory_buffer())
             buf = ps.get_global_memory_buffer()
@@ -543,7 +581,9 @@ class TestParallelState(unittest.TestCase):
         """Test that double initialization raises."""
         import paddleformers.fleet.parallel_state as ps
 
-        with mock.patch("paddleformers.fleet.parallel_state.GlobalMemoryBuffer"):
+        with mock.patch(
+            "paddleformers.fleet.parallel_state.GlobalMemoryBuffer"
+        ):
             ps._set_global_memory_buffer()
             with self.assertRaises(AssertionError):
                 ps._set_global_memory_buffer()

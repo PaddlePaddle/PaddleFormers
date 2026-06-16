@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -44,7 +48,7 @@ class TestTimerBasicOperations(unittest.TestCase):
         from paddleformers.fleet.timers import _Timer
 
         timer = _Timer("test")
-        with mock.patch("paddle.device.synchronize"):  # noqa: SIM117
+        with mock.patch("paddle.device.synchronize"):
             with mock.patch("paddle.device.get_device", return_value="cpu"):
                 timer.start()
         self.assertTrue(timer.started_)
@@ -64,7 +68,7 @@ class TestTimerBasicOperations(unittest.TestCase):
 
         timer = _Timer("test")
         timer.started_ = True
-        with mock.patch("paddle.device.synchronize"):  # noqa: SIM117
+        with mock.patch("paddle.device.synchronize"):
             with mock.patch("paddle.device.get_device", return_value="cpu"):
                 timer.stop()
         self.assertFalse(timer.started_)
@@ -122,7 +126,7 @@ class TestTimerElapsed(unittest.TestCase):
         timer = _Timer("test")
         timer.started_ = True
         timer.elapsed_ = 3.0
-        with mock.patch("paddle.device.get_device", return_value="cpu"):  # noqa: SIM117
+        with mock.patch("paddle.device.get_device", return_value="cpu"):
             with mock.patch("paddle.device.synchronize"):
                 elapsed = timer.elapsed(reset=True)
         # The elapsed() method restarts the timer if it was running,
@@ -267,7 +271,7 @@ class TestRuntimeTimer(unittest.TestCase):
         from paddleformers.fleet.timers import RuntimeTimer
 
         rt = RuntimeTimer()
-        with mock.patch.object(rt.timer, "elapsed", return_value=1.5):  # noqa: SIM117
+        with mock.patch.object(rt.timer, "elapsed", return_value=1.5):
             with mock.patch("builtins.print") as mock_print:
                 rt.log()
                 mock_print.assert_called_once()
@@ -286,7 +290,7 @@ class TestTimersLog(unittest.TestCase):
         timers("test")
         timers("test").elapsed_ = 1.5
 
-        with mock.patch("paddle.device.get_device", return_value="cpu"):  # noqa: SIM117
+        with mock.patch("paddle.device.get_device", return_value="cpu"):
             with mock.patch("builtins.print") as mock_print:
                 timers.log(names=["test"], normalizer=1.0)
                 mock_print.assert_called_once()
@@ -301,7 +305,7 @@ class TestTimersLog(unittest.TestCase):
         timers("slow")
         timers("slow").elapsed_ = 5.0
 
-        with mock.patch("paddle.device.get_device", return_value="cpu"):  # noqa: SIM117
+        with mock.patch("paddle.device.get_device", return_value="cpu"):
             with mock.patch("builtins.print") as mock_print:
                 timers.log(names=["fast", "slow"], normalizer=1.0)
                 output = mock_print.call_args[0][0]

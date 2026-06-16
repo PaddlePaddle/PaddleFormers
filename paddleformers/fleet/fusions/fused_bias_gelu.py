@@ -29,7 +29,9 @@ from paddleformers.fleet.jit import jit_fuser
 @jit_fuser
 def bias_gelu(bias, y):
     x = bias + y
-    return x * 0.5 * (1.0 + paddle.tanh(0.79788456 * x * (1 + 0.044715 * x * x)))
+    return (
+        x * 0.5 * (1.0 + paddle.tanh(0.79788456 * x * (1 + 0.044715 * x * x)))
+    )
 
 
 # gradient of tanh approximation of gelu
@@ -40,7 +42,9 @@ def bias_gelu_back(g, bias, y):
     x = bias + y
     tanh_out = paddle.tanh(0.79788456 * x * (1 + 0.044715 * x * x))
     # sqrt(2/pi) * 3 * 0.044715 -> 0.1070322243
-    ff = 0.5 * x * ((1 - tanh_out * tanh_out) * (0.79788456 + 0.1070322243 * x * x)) + 0.5 * (1 + tanh_out)
+    ff = 0.5 * x * (
+        (1 - tanh_out * tanh_out) * (0.79788456 + 0.1070322243 * x * x)
+    ) + 0.5 * (1 + tanh_out)
     return ff * g
 
 

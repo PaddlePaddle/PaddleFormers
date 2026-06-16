@@ -40,7 +40,9 @@ def build_overlapped_nodes(forward_chunk, backward_chunk):
     forward_decoder_layer_num = 0
     backward_decoder_layer_num = 0
 
-    assert isinstance(forward_chunk, ScheduleChunk) and isinstance(backward_chunk, ScheduleChunk)
+    assert isinstance(forward_chunk, ScheduleChunk) and isinstance(
+        backward_chunk, ScheduleChunk
+    )
     for n in forward_chunk.nodes:
         if isinstance(n, overlap_element_class):
             forward_decoder_layer_num += 1
@@ -48,7 +50,9 @@ def build_overlapped_nodes(forward_chunk, backward_chunk):
         if isinstance(n, overlap_element_class):
             backward_decoder_layer_num += 1
 
-    overlap_layers_num = min(forward_decoder_layer_num, backward_decoder_layer_num)
+    overlap_layers_num = min(
+        forward_decoder_layer_num, backward_decoder_layer_num
+    )
 
     # construct forward pre- and post-chunks
     forward_pre_layers = []
@@ -96,7 +100,9 @@ def build_overlapped_nodes(forward_chunk, backward_chunk):
     overlap_node = ScheduleChunk(
         [
             TransformerLayerOverlappedScheduleNode(forward_node, backward_node)
-            for forward_node, backward_node in zip(forward_overlap_layers, backward_overlap_layers)
+            for forward_node, backward_node in zip(
+                forward_overlap_layers, backward_overlap_layers
+            )
         ]
     )
     return (
@@ -131,7 +137,9 @@ class TransformerEncoder(PipelineLayer):
         del kwargs["config"]
 
         topology = (
-            None if self.config.pipeline_model_parallel_size == 1 else fleet.get_hybrid_communicate_group().topology()
+            None
+            if self.config.pipeline_model_parallel_size == 1
+            else fleet.get_hybrid_communicate_group().topology()
         )
 
         super().__init__(
@@ -147,7 +155,9 @@ class TransformerEncoder(PipelineLayer):
             name_prefix = f"model.{self.modal}"
         else:
             name_prefix = "model"
-        self.add_sequential_layer(layers, LayerDesc(spec.embedding), name_prefix)
+        self.add_sequential_layer(
+            layers, LayerDesc(spec.embedding), name_prefix
+        )
 
         self.get_encoder_layer_desc_list(layers, spec, name_prefix)
 
@@ -158,7 +168,9 @@ class TransformerEncoder(PipelineLayer):
     def get_encoder_layer_desc_list(self, layers, spec, name_prefix):
         i = 0
         for head_empty_layer in spec.head_empty_layers:
-            self.add_sequential_layer(layers, LayerDesc(head_empty_layer), f"{name_prefix}.layers.{i}")
+            self.add_sequential_layer(
+                layers, LayerDesc(head_empty_layer), f"{name_prefix}.layers.{i}"
+            )
             i += 1
         for transformer_layer_spec in spec.transformer_layers:
             self.add_sequential_layer(
@@ -168,7 +180,9 @@ class TransformerEncoder(PipelineLayer):
             )
             i += 1
         for tail_empty_layer in spec.tail_empty_layers:
-            self.add_sequential_layer(layers, LayerDesc(tail_empty_layer), f"{name_prefix}.layers.{i}")
+            self.add_sequential_layer(
+                layers, LayerDesc(tail_empty_layer), f"{name_prefix}.layers.{i}"
+            )
             i += 1
 
     def overlapped_forward_backward(
@@ -184,7 +198,9 @@ class TransformerEncoder(PipelineLayer):
     ):
         if backward_loss_fn_node is not None:
             if scaler:
-                backward_input_grads = backward_loss_fn_node.backward(scaler=scaler)
+                backward_input_grads = backward_loss_fn_node.backward(
+                    scaler=scaler
+                )
             else:
                 backward_input_grads = backward_loss_fn_node.backward()
 
@@ -197,7 +213,10 @@ class TransformerEncoder(PipelineLayer):
         ) = build_overlapped_nodes(forward_chunk, backward_chunk)
 
         if len(overlap_node.nodes) > 0:
-            assert not any(isinstance(node, TransformerLayerNode) for node in overlap_node.nodes)
+            assert not any(
+                isinstance(node, TransformerLayerNode)
+                for node in overlap_node.nodes
+            )
             # origin assert, why ?
             # assert not any(
             #     isinstance(node, TransformerLayerNode)
@@ -284,7 +303,10 @@ class TransformerEncoder(PipelineLayer):
                 corresponding name prefixes. The indices represent the position of
                 each layer in the sequential order.
         """
-        return {str(index): x["name_prefix"] for index, x in enumerate(self._sequential_layers)}
+        return {
+            str(index): x["name_prefix"]
+            for index, x in enumerate(self._sequential_layers)
+        }
 
     def get_shardlayer_prefix(self, name_splited):
         """_summary_
@@ -303,16 +325,25 @@ class TransformerEncoder(PipelineLayer):
         Returns:
             _type_: _description_
         """
-        shared_layer_names = {s.layer_name for s in self.layers if isinstance(s, SharedLayerDesc)}
-        assert name_splited[1] in shared_layer_names, f"The shared layer name {name_splited[1]} must be in prefixes!"
+        shared_layer_names = {
+            s.layer_name for s in self.layers if isinstance(s, SharedLayerDesc)
+        }
+        assert name_splited[1] in shared_layer_names, (
+            f"The shared layer name {name_splited[1]} must be in prefixes!"
+        )
         shared_layer_key = name_splited[1]
         for idx, layer in enumerate(self.layers):
-            if isinstance(layer, SharedLayerDesc) and layer.layer_name == shared_layer_key:
+            if (
+                isinstance(layer, SharedLayerDesc)
+                and layer.layer_name == shared_layer_key
+            ):
                 if self.get_stage_from_index(idx) == self._stage_id:
                     return self.get_sequential_name_prefixes()[str(idx)]
 
         # the prefix must be in the current stage, else raise error
-        raise ValueError(f"The shared layer {shared_layer_key} must be in the current stage!")
+        raise ValueError(
+            f"The shared layer {shared_layer_key} must be in the current stage!"
+        )
 
     def _set_pipeline_name_mapping(self, mappings=None):
         """
@@ -340,7 +371,9 @@ class TransformerEncoder(PipelineLayer):
             first_key = first_key.split(".")
             # if use virtual pp_degree, the prefix is like 0.0.xxx
             # else it will be like 0.xxx
-            use_virtual_pp_degree = first_key[0].isdigit() and first_key[1].isdigit()
+            use_virtual_pp_degree = (
+                first_key[0].isdigit() and first_key[1].isdigit()
+            )
 
             prefixes = self.get_sequential_name_prefixes()
             for k in state_dict_keys:
@@ -348,7 +381,9 @@ class TransformerEncoder(PipelineLayer):
                 if use_virtual_pp_degree:
                     if name_splited[0].isdigit():
                         if name_splited[1].isdigit():
-                            idx = str(int(name_splited[0]) + int(name_splited[1]))
+                            idx = str(
+                                int(name_splited[0]) + int(name_splited[1])
+                            )
                             single_name = [prefixes[idx]]
                             single_name.extend(name_splited[2:])
                         else:
@@ -370,7 +405,9 @@ class TransformerEncoder(PipelineLayer):
                     # for normal pp layer
                     if idx.isdigit():
                         # allow empty prefix
-                        single_name = [] if prefixes[idx] == "" else [prefixes[idx]]
+                        single_name = (
+                            [] if prefixes[idx] == "" else [prefixes[idx]]
+                        )
                         single_name.extend(name_splited[1:])
                     elif idx == "shared_layers":
                         single_name = [self.get_shardlayer_prefix(name_splited)]
@@ -420,7 +457,9 @@ class TransformerEncoder(PipelineLayer):
     def set_state_dict(self, state_dict, *args, **kwargs):
         if self._pipeline_name_mapping is None:
             self._set_pipeline_name_mapping()
-        assert len(self._pipeline_name_mapping) > 0, "The pipeline stage must have parameters!"
+        assert len(self._pipeline_name_mapping) > 0, (
+            "The pipeline stage must have parameters!"
+        )
 
         for k in list(state_dict.keys()):
             v = state_dict.pop(k)
@@ -443,7 +482,9 @@ class TransformerEncoder(PipelineLayer):
                 structure_name_to_tensor[k] = v
             else:
                 old_v = structure_name_to_tensor[k]
-                assert old_v is v, f"Shared tensor with different structure name: {k}"
+                assert old_v is v, (
+                    f"Shared tensor with different structure name: {k}"
+                )
 
         missing_shared_keys = {}
         for k, v in self._pp_to_single_mapping.items():
@@ -490,7 +531,9 @@ class TransformerEncoder(PipelineLayer):
 
         renamed_sharded_state_dict = {}
         for k, v in sharded_state_dict.items():
-            global_expert_id_offset = getattr(v, "global_expert_id_offset", None)
+            global_expert_id_offset = getattr(
+                v, "global_expert_id_offset", None
+            )
             layer_cnt = getattr(v, "layer_cnt", None)
             if global_expert_id_offset is not None:
                 new_key = increment_expert_number(k, global_expert_id_offset)
@@ -519,7 +562,9 @@ class TransformerEncoder(PipelineLayer):
         else:
             for idx, layer in enumerate(self.run_function):
                 if isinstance(layer, TransformerLayer):
-                    layer.fp8_quant_weight(batch_mode=batch_mode, quant_transpose=quant_transpose)
+                    layer.fp8_quant_weight(
+                        batch_mode=batch_mode, quant_transpose=quant_transpose
+                    )
 
     def use_fp8(self):
         if self._num_virtual_pipeline_stages > 1:

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -69,7 +73,9 @@ class TestSplitTensorAlongLastDim(unittest.TestCase):
         )
 
         tensor = paddle.randn([4, 8])
-        result = split_tensor_along_last_dim(tensor, 2, contiguous_split_chunks=True)
+        result = split_tensor_along_last_dim(
+            tensor, 2, contiguous_split_chunks=True
+        )
         self.assertEqual(len(result), 2)
         for chunk in result:
             self.assertTrue(chunk.is_contiguous())
@@ -172,21 +178,25 @@ class TestGatherSplit1DTensor(unittest.TestCase):
     """Tests for gather_split_1d_tensor."""
 
     def test_gather_asserts_1d(self):
-        from paddleformers.fleet.tensor_parallel.utils import gather_split_1d_tensor
+        from paddleformers.fleet.tensor_parallel.utils import (
+            gather_split_1d_tensor,
+        )
 
         tensor = paddle.randn([2, 3])
         with self.assertRaises(AssertionError):
             gather_split_1d_tensor(tensor)
 
     def test_gather_with_mock(self):
-        from paddleformers.fleet.tensor_parallel.utils import gather_split_1d_tensor
+        from paddleformers.fleet.tensor_parallel.utils import (
+            gather_split_1d_tensor,
+        )
 
         mock_group = MagicMock()
         mock_group.world_size = 2
 
         tensor = paddle.arange(5, dtype=paddle.float32)
 
-        with patch(  # noqa: SIM117
+        with patch(
             "paddleformers.fleet.tensor_parallel.utils.get_tensor_model_parallel_group_if_none",
             return_value=mock_group,
         ):
@@ -204,17 +214,23 @@ class TestVocabUtility(unittest.TestCase):
         from paddleformers.fleet.tensor_parallel.utils import VocabUtility
 
         # rank 0, world_size 2, per_partition=100
-        start, end = VocabUtility.vocab_range_from_per_partition_vocab_size(100, 0, 2)
+        start, end = VocabUtility.vocab_range_from_per_partition_vocab_size(
+            100, 0, 2
+        )
         self.assertEqual(start, 0)
         self.assertEqual(end, 100)
 
         # rank 1, world_size 2, per_partition=100
-        start, end = VocabUtility.vocab_range_from_per_partition_vocab_size(100, 1, 2)
+        start, end = VocabUtility.vocab_range_from_per_partition_vocab_size(
+            100, 1, 2
+        )
         self.assertEqual(start, 100)
         self.assertEqual(end, 200)
 
         # rank 0, world_size 1
-        start, end = VocabUtility.vocab_range_from_per_partition_vocab_size(500, 0, 1)
+        start, end = VocabUtility.vocab_range_from_per_partition_vocab_size(
+            500, 0, 1
+        )
         self.assertEqual(start, 0)
         self.assertEqual(end, 500)
 

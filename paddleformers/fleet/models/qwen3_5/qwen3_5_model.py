@@ -85,7 +85,11 @@ class Qwen3_5RMSNorm(paddle.nn.Layer):
         self.normalized_shape = dim
 
         # Resolve eps from either calling convention
-        self.variance_epsilon = eps if eps is not None else (norm_eps if norm_eps is not None else config.rms_norm_eps)
+        self.variance_epsilon = (
+            eps
+            if eps is not None
+            else (norm_eps if norm_eps is not None else config.rms_norm_eps)
+        )
 
         # Weight initialized to 0 (1-centered parameterization)
         self.weight = paddle.create_parameter(
@@ -102,8 +106,12 @@ class Qwen3_5RMSNorm(paddle.nn.Layer):
         input_dtype = hidden_states.dtype
         hidden_states = hidden_states.astype("float32")
         variance = hidden_states.pow(2).mean(-1, keepdim=True)
-        hidden_states = hidden_states * paddle.rsqrt(variance + self.variance_epsilon)
-        return (hidden_states * (1.0 + self.weight.astype("float32"))).astype(input_dtype)
+        hidden_states = hidden_states * paddle.rsqrt(
+            variance + self.variance_epsilon
+        )
+        return (hidden_states * (1.0 + self.weight.astype("float32"))).astype(
+            input_dtype
+        )
 
     def enable_sequence_parallel(self):
         mark_as_sequence_parallel_parameter(self.weight)
@@ -133,7 +141,10 @@ class Qwen3_5RMSNormPipe(paddle.nn.Layer):
         )
 
     def forward(self, dict_args: dict):
-        if self.config.num_nextn_predict_layers is not None and self.config.num_nextn_predict_layers > 0:
+        if (
+            self.config.num_nextn_predict_layers is not None
+            and self.config.num_nextn_predict_layers > 0
+        ):
             hidden_states_concat = dict_args["hidden_states"]
             tensor_list = paddle.split(
                 hidden_states_concat,
@@ -144,8 +155,13 @@ class Qwen3_5RMSNormPipe(paddle.nn.Layer):
             **dict_args,
             "hidden_states": self.norm(dict_args["hidden_states"]),
         }
-        if self.config.num_nextn_predict_layers is not None and self.config.num_nextn_predict_layers > 0:
-            hidden_states_concat = paddle.concat([rst["hidden_states"], *tensor_list[1:]])
+        if (
+            self.config.num_nextn_predict_layers is not None
+            and self.config.num_nextn_predict_layers > 0
+        ):
+            hidden_states_concat = paddle.concat(
+                [rst["hidden_states"], *tensor_list[1:]]
+            )
             rst["hidden_states"] = hidden_states_concat
         return rst
 
@@ -174,8 +190,12 @@ class Qwen3_5VisionModel(TransformerEncoder):
         layers = []
         name_prefix = f"model.{self.modal}" if self.modal else "model"
 
-        self.add_sequential_layer(layers, LayerDesc(spec.embedding), name_prefix)
+        self.add_sequential_layer(
+            layers, LayerDesc(spec.embedding), name_prefix
+        )
         self.get_encoder_layer_desc_list(layers, spec, name_prefix)
-        self.add_sequential_layer(layers, LayerDesc(spec.merger), f"{name_prefix}.merger")
+        self.add_sequential_layer(
+            layers, LayerDesc(spec.merger), f"{name_prefix}.merger"
+        )
 
         return layers

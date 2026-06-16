@@ -33,7 +33,9 @@ from paddleformers.fleet.models.gpt import GPTConfig
 
 def get_gpu_models_via_nvidia_smi():
     try:
-        output = subprocess.check_output("nvidia-smi --query-gpu=name --format=csv,noheader", shell=True)
+        output = subprocess.check_output(
+            "nvidia-smi --query-gpu=name --format=csv,noheader", shell=True
+        )
         models = output.decode().strip().replace("NVIDIA", "")
         return models
     except Exception as e:
@@ -102,8 +104,12 @@ class TestGPTModel(unittest.TestCase):
             normalization="RMSNorm",
             hidden_dropout_prob=0.0,
             attention_dropout=0.0,
-            init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-            output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+            init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
+            output_layer_init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
             tie_word_embeddings=True,
             use_qk_norm=True,
         )
@@ -121,12 +127,18 @@ class TestGPTModel(unittest.TestCase):
             print(f"{name}: {param_norm:.6f}, {param_abssum:.6f}")
 
         data = list(range(sequence_length))
-        input_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat((micro_batch_size, 1))
-        position_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat((micro_batch_size, 1))
-        attention_mask = paddle.ones((micro_batch_size, 1, sequence_length, sequence_length), dtype=bool)
-        labels = paddle.to_tensor(list(range(1, sequence_length + 1)), dtype=paddle.int64).repeat(
+        input_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat(
             (micro_batch_size, 1)
         )
+        position_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat(
+            (micro_batch_size, 1)
+        )
+        attention_mask = paddle.ones(
+            (micro_batch_size, 1, sequence_length, sequence_length), dtype=bool
+        )
+        labels = paddle.to_tensor(
+            list(range(1, sequence_length + 1)), dtype=paddle.int64
+        ).repeat((micro_batch_size, 1))
 
         gpt_pipe_model = NoPipelineParallel(self.gpt_model, self.strategy)
         data = (
@@ -151,19 +163,19 @@ class TestGPTModel(unittest.TestCase):
         print("embed_tokens_grad_norm", embed_tokens_grad_norm)
 
         if judge_machine_type() == "H":
-            assert (
-                loss.item() == 5.399779796600342
-            ), f"loss is not equal ({loss.item()} != 5.399779796600342), please check your modify"
-            assert (
-                embed_tokens_grad_norm == 4.742391586303711
-            ), f"grad norm of embed_tokens is not equal ({embed_tokens_grad_norm} != 4.742391586303711), please check your modify"
+            assert loss.item() == 5.399779796600342, (
+                f"loss is not equal ({loss.item()} != 5.399779796600342), please check your modify"
+            )
+            assert embed_tokens_grad_norm == 4.742391586303711, (
+                f"grad norm of embed_tokens is not equal ({embed_tokens_grad_norm} != 4.742391586303711), please check your modify"
+            )
         elif judge_machine_type() == "V":
-            assert (
-                loss.item() == 5.344659805297852
-            ), f"loss is not equal ({loss.item()} != 5.344659805297852), please check your modify"
-            assert (
-                embed_tokens_grad_norm == 4.078969478607178
-            ), f"grad norm of embed_tokens is not equal ({embed_tokens_grad_norm} != 4.078969478607178), please check your modify"
+            assert loss.item() == 5.344659805297852, (
+                f"loss is not equal ({loss.item()} != 5.344659805297852), please check your modify"
+            )
+            assert embed_tokens_grad_norm == 4.078969478607178, (
+                f"grad norm of embed_tokens is not equal ({embed_tokens_grad_norm} != 4.078969478607178), please check your modify"
+            )
 
         state_dict = self.gpt_model.sharded_state_dict()
         for name, tensor in state_dict.items():

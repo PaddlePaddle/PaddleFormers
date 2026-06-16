@@ -15,7 +15,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -34,7 +38,9 @@ from paddleformers.fleet.transformer.moe.moe_utils import (
 class TestManualBackwardFunction(unittest.TestCase):
     """Tests for manual_backward function."""
 
-    @patch("paddleformers.fleet.transformer.moe.moe_utils.framework._dygraph_tracer")
+    @patch(
+        "paddleformers.fleet.transformer.moe.moe_utils.framework._dygraph_tracer"
+    )
     def test_returns_none_backward_fn_when_is_first_fwd(self, mock_tracer):
         """manual_backward should return (None, out) when is_first_fwd=True."""
         mock_tracer.return_value = MagicMock()

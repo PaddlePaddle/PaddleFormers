@@ -17,7 +17,9 @@ import unittest
 import numpy as np
 import paddle
 
-from paddleformers.fleet.transformer.moe.moe_router import _apply_routing_map_fusion
+from paddleformers.fleet.transformer.moe.moe_router import (
+    _apply_routing_map_fusion,
+)
 
 
 def reference_topk(
@@ -48,7 +50,9 @@ def reference_topk(
             group_scores.append(group_score)
 
         group_scores = paddle.stack(group_scores, axis=-1)  # [seq_len, n_group]
-        _, selected_groups = paddle.topk(group_scores, k=topk_group, axis=-1)  # [seq_len, topk_group]
+        _, selected_groups = paddle.topk(
+            group_scores, k=topk_group, axis=-1
+        )  # [seq_len, topk_group]
 
         # Create mask for selected groups
         mask = paddle.zeros_like(probs_for_choice)
@@ -88,7 +92,9 @@ class TestMoETopkFusionTriton(unittest.TestCase):
 
     def test_forward_no_node_limit(self):
         """Test forward pass without node limit."""
-        gate_probs = paddle.rand([self.seq_len, self.n_experts], dtype="float32")
+        gate_probs = paddle.rand(
+            [self.seq_len, self.n_experts], dtype="float32"
+        )
         gate_probs = paddle.nn.functional.softmax(gate_probs, axis=-1)
         probs_for_choice = gate_probs.clone()
 
@@ -107,15 +113,21 @@ class TestMoETopkFusionTriton(unittest.TestCase):
         paddle.enable_compat(scope={"triton"}, silent=True)
         from paddleformers.fleet.triton_ops import MoETopkFusion
 
-        triton_probs, triton_indices = MoETopkFusion.apply(gate_probs, probs_for_choice, self.moe_k, False, 1, 1, True)
+        triton_probs, triton_indices = MoETopkFusion.apply(
+            gate_probs, probs_for_choice, self.moe_k, False, 1, 1, True
+        )
         paddle.disable_compat()
 
         # Check indices match (may differ in tie-breaking, so check probs instead)
-        np.testing.assert_allclose(ref_probs.numpy(), triton_probs.numpy(), rtol=1e-4, atol=1e-4)
+        np.testing.assert_allclose(
+            ref_probs.numpy(), triton_probs.numpy(), rtol=1e-4, atol=1e-4
+        )
 
     def test_forward_with_node_limit(self):
         """Test forward pass with node limit (group selection)."""
-        gate_probs = paddle.rand([self.seq_len, self.n_experts], dtype="float32")
+        gate_probs = paddle.rand(
+            [self.seq_len, self.n_experts], dtype="float32"
+        )
         gate_probs = paddle.nn.functional.softmax(gate_probs, axis=-1)
 
         # Add correction bias for choice
@@ -143,11 +155,15 @@ class TestMoETopkFusionTriton(unittest.TestCase):
 
         # Verify normalization (probs should sum to 1)
         prob_sums = triton_probs.sum(axis=-1)
-        np.testing.assert_allclose(prob_sums.numpy(), np.ones(self.seq_len), rtol=1e-4, atol=1e-4)
+        np.testing.assert_allclose(
+            prob_sums.numpy(), np.ones(self.seq_len), rtol=1e-4, atol=1e-4
+        )
 
     def test_backward(self):
         """Test backward pass gradient computation."""
-        gate_probs = paddle.rand([self.seq_len, self.n_experts], dtype="float32")
+        gate_probs = paddle.rand(
+            [self.seq_len, self.n_experts], dtype="float32"
+        )
         gate_probs = paddle.nn.functional.softmax(gate_probs, axis=-1)
         gate_probs.stop_gradient = False
         probs_for_choice = gate_probs.clone().detach()
@@ -155,7 +171,9 @@ class TestMoETopkFusionTriton(unittest.TestCase):
         paddle.enable_compat(scope={"triton"}, silent=True)
         from paddleformers.fleet.triton_ops import MoETopkFusion
 
-        triton_probs, triton_indices = MoETopkFusion.apply(gate_probs, probs_for_choice, self.moe_k, False, 1, 1, True)
+        triton_probs, triton_indices = MoETopkFusion.apply(
+            gate_probs, probs_for_choice, self.moe_k, False, 1, 1, True
+        )
 
         # Backward
         dy = paddle.randn_like(triton_probs) * 0.01
@@ -169,8 +187,12 @@ class TestMoETopkFusionTriton(unittest.TestCase):
 
     def test_routing_map_forward(self):
         """Test routing map generation."""
-        gate_probs = paddle.rand([self.seq_len, self.n_experts], dtype="float32")
-        topk_indices = paddle.randint(0, self.n_experts, [self.seq_len, self.moe_k], dtype="int64")
+        gate_probs = paddle.rand(
+            [self.seq_len, self.n_experts], dtype="float32"
+        )
+        topk_indices = paddle.randint(
+            0, self.n_experts, [self.seq_len, self.moe_k], dtype="int64"
+        )
 
         paddle.enable_compat(scope={"triton"}, silent=True)
         from paddleformers.fleet.triton_ops import routing_map_fusion_forward
@@ -197,14 +219,18 @@ class TestMoETopkFusionTriton(unittest.TestCase):
         paddle.enable_compat(scope={"triton"}, silent=True)
         from paddleformers.fleet.triton_ops import MoETopkFusion
 
-        triton_probs, triton_indices = MoETopkFusion.apply(gate_probs, probs_for_choice, self.moe_k, False, 1, 1, True)
+        triton_probs, triton_indices = MoETopkFusion.apply(
+            gate_probs, probs_for_choice, self.moe_k, False, 1, 1, True
+        )
         paddle.disable_compat()
 
         self.assertEqual(triton_probs.dtype, paddle.bfloat16)
 
 
 def _router_branch_reference(gates, top_idx, input_ids_none_zero_mask):
-    mask = paddle.zeros_like(gates).put_along_axis(top_idx, paddle.to_tensor(1.0, dtype=gates.dtype), axis=1)
+    mask = paddle.zeros_like(gates).put_along_axis(
+        top_idx, paddle.to_tensor(1.0, dtype=gates.dtype), axis=1
+    )
     if input_ids_none_zero_mask is not None:
         valid_mask = input_ids_none_zero_mask
         mask = mask * valid_mask.cast(mask.dtype)
@@ -221,21 +247,29 @@ class TestRoutingMapFusionRouterBranch(unittest.TestCase):
 
     def _make_inputs(self, dtype="float32"):
         gates = paddle.rand([self.seq_len, self.n_experts], dtype=dtype)
-        top_idx = paddle.randint(0, self.n_experts, [self.seq_len, self.moe_k], dtype="int64")
+        top_idx = paddle.randint(
+            0, self.n_experts, [self.seq_len, self.moe_k], dtype="int64"
+        )
         return gates, top_idx
 
     def test_equivalence_without_padding(self):
         gates, top_idx = self._make_inputs("float32")
 
         paddle.enable_compat(scope={"triton"}, silent=True)
-        fused_mask, fused_top_idx, dispatch_mask = _apply_routing_map_fusion(gates, top_idx.clone(), None)
+        fused_mask, fused_top_idx, dispatch_mask = _apply_routing_map_fusion(
+            gates, top_idx.clone(), None
+        )
         paddle.disable_compat()
-        ref_mask, ref_top_idx = _router_branch_reference(gates, top_idx.clone(), None)
+        ref_mask, ref_top_idx = _router_branch_reference(
+            gates, top_idx.clone(), None
+        )
 
         self.assertEqual(fused_mask.shape, [self.seq_len, self.n_experts])
         self.assertEqual(dispatch_mask.shape, [self.n_experts])
         np.testing.assert_array_equal(fused_mask.numpy(), ref_mask.numpy())
-        np.testing.assert_array_equal(fused_top_idx.numpy(), ref_top_idx.numpy())
+        np.testing.assert_array_equal(
+            fused_top_idx.numpy(), ref_top_idx.numpy()
+        )
         np.testing.assert_array_equal(
             dispatch_mask.numpy(),
             ref_mask.cast("int64").sum(axis=0).numpy(),
@@ -252,14 +286,20 @@ class TestRoutingMapFusionRouterBranch(unittest.TestCase):
         valid_mask = (input_ids != 0).reshape([-1, 1]).cast("float32")
 
         paddle.enable_compat(scope={"triton"}, silent=True)
-        fused_mask, fused_top_idx, fused_dispatch_mask = _apply_routing_map_fusion(
-            gates, top_idx.clone(), valid_mask, input_ids=input_ids
+        fused_mask, fused_top_idx, fused_dispatch_mask = (
+            _apply_routing_map_fusion(
+                gates, top_idx.clone(), valid_mask, input_ids=input_ids
+            )
         )
         paddle.disable_compat()
-        ref_mask, ref_top_idx = _router_branch_reference(gates, top_idx.clone(), valid_mask)
+        ref_mask, ref_top_idx = _router_branch_reference(
+            gates, top_idx.clone(), valid_mask
+        )
 
         np.testing.assert_array_equal(fused_mask.numpy(), ref_mask.numpy())
-        np.testing.assert_array_equal(fused_top_idx.numpy(), ref_top_idx.numpy())
+        np.testing.assert_array_equal(
+            fused_top_idx.numpy(), ref_top_idx.numpy()
+        )
         padded_rows = (valid_mask.squeeze(-1) == 0).numpy()
         self.assertTrue((fused_top_idx.numpy()[padded_rows] == -1).all())
         self.assertTrue((fused_mask.numpy()[padded_rows] == 0).all())
@@ -272,16 +312,22 @@ class TestRoutingMapFusionRouterBranch(unittest.TestCase):
         gates, top_idx = self._make_inputs("bfloat16")
 
         paddle.enable_compat(scope={"triton"}, silent=True)
-        fused_mask, fused_top_idx, fused_dispatch_mask = _apply_routing_map_fusion(gates, top_idx.clone(), None)
+        fused_mask, fused_top_idx, fused_dispatch_mask = (
+            _apply_routing_map_fusion(gates, top_idx.clone(), None)
+        )
         paddle.disable_compat()
-        ref_mask, ref_top_idx = _router_branch_reference(gates, top_idx.clone(), None)
+        ref_mask, ref_top_idx = _router_branch_reference(
+            gates, top_idx.clone(), None
+        )
 
         self.assertEqual(fused_mask.dtype, paddle.bfloat16)
         np.testing.assert_array_equal(
             fused_mask.cast("float32").numpy(),
             ref_mask.cast("float32").numpy(),
         )
-        np.testing.assert_array_equal(fused_top_idx.numpy(), ref_top_idx.numpy())
+        np.testing.assert_array_equal(
+            fused_top_idx.numpy(), ref_top_idx.numpy()
+        )
         np.testing.assert_array_equal(
             fused_dispatch_mask.numpy(),
             ref_mask.cast("int64").sum(axis=0).numpy(),

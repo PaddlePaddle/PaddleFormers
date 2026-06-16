@@ -25,7 +25,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from paddleformers.fleet.training.initialize import initialize_fleet as initialize_fleet
+from paddleformers.fleet.training.initialize import (
+    initialize_fleet as initialize_fleet,
+)
 
 from .global_vars import get_args, get_timers
 

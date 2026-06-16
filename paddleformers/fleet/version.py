@@ -13,8 +13,7 @@
 # limitations under the License.
 
 try:
-    from ._version import __version__ as __version__
-    from ._version import commit as commit
+    from ._version import __version__ as __version__, commit as commit
 except ImportError:
     from paddleformers import __version__ as __version__
     from paddleformers.version import commit as commit

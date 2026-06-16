@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -83,7 +87,9 @@ class TestBlockAttnResConstruction(unittest.TestCase):
         spec = BlockAttnResSublayersSpec()
 
         block = BlockAttnRes(config=config, sublayers_spec=spec)
-        self.assertTrue(paddle.allclose(block.proj_weight, paddle.zeros([64])).item())
+        self.assertTrue(
+            paddle.allclose(block.proj_weight, paddle.zeros([64])).item()
+        )
 
 
 class TestBlockAttnResForward(unittest.TestCase):

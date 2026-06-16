@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -73,7 +77,9 @@ class TestApplyEcComplex3dMrope(unittest.TestCase):
 
         # mrope_section must satisfy: point_num >= mrope_section[0]
         # point_num = head_dim // 2 = 4, so mrope_section[0] <= 4
-        q_out, k_out = _apply_ec_complex_3d_mrope(query, key, position_ids, head_dim=head_dim, mrope_section=[2, 1, 1])
+        q_out, k_out = _apply_ec_complex_3d_mrope(
+            query, key, position_ids, head_dim=head_dim, mrope_section=[2, 1, 1]
+        )
         self.assertEqual(q_out.shape, query.shape)
         self.assertEqual(k_out.shape, key.shape)
 
@@ -106,7 +112,9 @@ class TestApplyEcComplex3dMrope(unittest.TestCase):
         for j in range(seq_len - 2):
             position_ids[0, j, :] = j
 
-        q_out, k_out = _apply_ec_complex_3d_mrope(query, key, position_ids, head_dim=head_dim, mrope_section=[2, 1, 1])
+        q_out, k_out = _apply_ec_complex_3d_mrope(
+            query, key, position_ids, head_dim=head_dim, mrope_section=[2, 1, 1]
+        )
         self.assertEqual(q_out.shape, query.shape)
         self.assertEqual(k_out.shape, key.shape)
 
@@ -151,9 +159,15 @@ class TestSelfAttentionRecompute(unittest.TestCase):
     """Tests for SelfAttention recompute configuration."""
 
     @patch("paddleformers.fleet.transformer.attention.build_spec_layer")
-    @patch("paddleformers.fleet.transformer.attention.get_pg_size", return_value=1)
-    @patch("paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups")
-    def test_selective_recompute_with_list(self, mock_pg, mock_size, mock_build):
+    @patch(
+        "paddleformers.fleet.transformer.attention.get_pg_size", return_value=1
+    )
+    @patch(
+        "paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups"
+    )
+    def test_selective_recompute_with_list(
+        self, mock_pg, mock_size, mock_build
+    ):
         """Test SelfAttention with selective recompute (list)."""
         mock_pg.return_value = MagicMock()
         mock_build.return_value = MagicMock()
@@ -190,9 +204,15 @@ class TestSelfAttentionRecompute(unittest.TestCase):
         self.assertTrue(attn.recompute_core_attention)
 
     @patch("paddleformers.fleet.transformer.attention.build_spec_layer")
-    @patch("paddleformers.fleet.transformer.attention.get_pg_size", return_value=1)
-    @patch("paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups")
-    def test_selective_recompute_with_dict(self, mock_pg, mock_size, mock_build):
+    @patch(
+        "paddleformers.fleet.transformer.attention.get_pg_size", return_value=1
+    )
+    @patch(
+        "paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups"
+    )
+    def test_selective_recompute_with_dict(
+        self, mock_pg, mock_size, mock_build
+    ):
         """Test SelfAttention with selective recompute (dict)."""
         mock_pg.return_value = MagicMock()
         mock_build.return_value = MagicMock()
@@ -239,8 +259,12 @@ class TestSelfAttentionGatedAttention(unittest.TestCase):
     """Tests for SelfAttention gated attention configuration."""
 
     @patch("paddleformers.fleet.transformer.attention.build_spec_layer")
-    @patch("paddleformers.fleet.transformer.attention.get_pg_size", return_value=1)
-    @patch("paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups")
+    @patch(
+        "paddleformers.fleet.transformer.attention.get_pg_size", return_value=1
+    )
+    @patch(
+        "paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups"
+    )
     def test_gated_attention_enabled(self, mock_pg, mock_size, mock_build):
         """Test SelfAttention with gated attention enabled."""
         mock_pg.return_value = MagicMock()
@@ -322,8 +346,12 @@ class TestVHAAttentionInit(unittest.TestCase):
         )
 
     @patch("paddleformers.fleet.transformer.attention.build_spec_layer")
-    @patch("paddleformers.fleet.transformer.attention.get_pg_size", return_value=1)
-    @patch("paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups")
+    @patch(
+        "paddleformers.fleet.transformer.attention.get_pg_size", return_value=1
+    )
+    @patch(
+        "paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups"
+    )
     def test_vha_creates_parameters(self, mock_pg, mock_size, mock_build):
         """VHA init should create vha_premix_weight, vha_postmix_U, vha_postmix_V."""
         attn = self._make_vha_attn(mock_pg, mock_build)
@@ -332,8 +360,12 @@ class TestVHAAttentionInit(unittest.TestCase):
         self.assertEqual(list(attn.vha_postmix_V.shape), [8, 2])
 
     @patch("paddleformers.fleet.transformer.attention.build_spec_layer")
-    @patch("paddleformers.fleet.transformer.attention.get_pg_size", return_value=1)
-    @patch("paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups")
+    @patch(
+        "paddleformers.fleet.transformer.attention.get_pg_size", return_value=1
+    )
+    @patch(
+        "paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups"
+    )
     def test_vha_premix_output_shape(self, mock_pg, mock_size, mock_build):
         """_apply_vha_premix should expand query from kv_heads to num_heads."""
         attn = self._make_vha_attn(mock_pg, mock_build)
@@ -344,8 +376,12 @@ class TestVHAAttentionInit(unittest.TestCase):
         self.assertEqual(list(out.shape), [2, 4, 8, 16])
 
     @patch("paddleformers.fleet.transformer.attention.build_spec_layer")
-    @patch("paddleformers.fleet.transformer.attention.get_pg_size", return_value=1)
-    @patch("paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups")
+    @patch(
+        "paddleformers.fleet.transformer.attention.get_pg_size", return_value=1
+    )
+    @patch(
+        "paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups"
+    )
     def test_vha_postmix_identity_at_init(self, mock_pg, mock_size, mock_build):
         """_apply_vha_postmix should be near-identity at init (V=0)."""
         attn = self._make_vha_attn(mock_pg, mock_build)

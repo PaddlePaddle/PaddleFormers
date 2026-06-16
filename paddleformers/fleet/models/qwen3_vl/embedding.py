@@ -36,7 +36,9 @@ class VisionEmbedding(FleetLayer):
     ):
         super().__init__(config)
         self.spatial_merge_size = config.spatial_merge_size
-        self.spatial_merge_unit = self.spatial_merge_size * self.spatial_merge_size
+        self.spatial_merge_unit = (
+            self.spatial_merge_size * self.spatial_merge_size
+        )
         self.patch_size = config.patch_size
         self.temporal_patch_size = config.temporal_patch_size
         self.in_channels = config.in_channels
@@ -55,7 +57,9 @@ class VisionEmbedding(FleetLayer):
             stride=kernel_size,
             bias=True,
         )
-        self.pos_embed = nn.Embedding(config.num_position_embeddings, config.hidden_size)
+        self.pos_embed = nn.Embedding(
+            config.num_position_embeddings, config.hidden_size
+        )
         self.num_grid_per_side = int(config.num_position_embeddings**0.5)
 
         self.rotary_pos_emb = None
@@ -91,7 +95,11 @@ class VisionEmbedding(FleetLayer):
             )
             wpos_ids = wpos_ids.transpose([0, 2, 1, 3])
             wpos_ids = wpos_ids.flatten()
-            pos_ids.append(paddle.stack(x=[hpos_ids, wpos_ids], axis=-1).tile(repeat_times=[t, 1]))
+            pos_ids.append(
+                paddle.stack(x=[hpos_ids, wpos_ids], axis=-1).tile(
+                    repeat_times=[t, 1]
+                )
+            )
         pos_ids = paddle.concat(x=pos_ids, axis=0)
         max_grid_size = int(grid_thw[:, 1:].max())
         # Get raw freqs [max_grid_size, head_dim//2] and index with 2D pos_ids
@@ -101,7 +109,9 @@ class VisionEmbedding(FleetLayer):
         rotary_pos_emb = freqs[pos_ids].flatten(start_axis=1)
         # rotary_pos_emb: [seq_len, head_dim//2] (2 spatial dims * dim//2 freqs)
         # Repeat to cover full head_dim so apply_rotary_pos_emb rotates all dims
-        rotary_pos_emb = paddle.concat([rotary_pos_emb, rotary_pos_emb], axis=-1)
+        rotary_pos_emb = paddle.concat(
+            [rotary_pos_emb, rotary_pos_emb], axis=-1
+        )
         rotary_pos_emb = rotary_pos_emb[None, :, None, :]
         return rotary_pos_emb
 
@@ -123,8 +133,12 @@ class VisionEmbedding(FleetLayer):
 
             h_idxs_floor = h_idxs.int()
             w_idxs_floor = w_idxs.int()
-            h_idxs_ceil = (h_idxs.int() + 1).clip(max=self.num_grid_per_side - 1)
-            w_idxs_ceil = (w_idxs.int() + 1).clip(max=self.num_grid_per_side - 1)
+            h_idxs_ceil = (h_idxs.int() + 1).clip(
+                max=self.num_grid_per_side - 1
+            )
+            w_idxs_ceil = (w_idxs.int() + 1).clip(
+                max=self.num_grid_per_side - 1
+            )
 
             dh = h_idxs - h_idxs_floor.astype("float32")
             dw = w_idxs - w_idxs_floor.astype("float32")
@@ -151,9 +165,13 @@ class VisionEmbedding(FleetLayer):
                 weight_list[i].extend(weights[i].tolist())
 
         idx_tensor = paddle.to_tensor(idx_list, dtype="int64")
-        weight_tensor = paddle.to_tensor(weight_list, dtype=self.pos_embed.weight.dtype)
+        weight_tensor = paddle.to_tensor(
+            weight_list, dtype=self.pos_embed.weight.dtype
+        )
         pos_embeds = self.pos_embed(idx_tensor) * weight_tensor[:, :, None]
-        patch_pos_embeds = pos_embeds[0] + pos_embeds[1] + pos_embeds[2] + pos_embeds[3]
+        patch_pos_embeds = (
+            pos_embeds[0] + pos_embeds[1] + pos_embeds[2] + pos_embeds[3]
+        )
 
         patch_pos_embeds = paddle.split(
             patch_pos_embeds,
@@ -162,7 +180,9 @@ class VisionEmbedding(FleetLayer):
 
         patch_pos_embeds_permute = []
         merge_size = self.spatial_merge_size
-        for pos_embed, t, h, w in zip(patch_pos_embeds, grid_ts, grid_hs, grid_ws):
+        for pos_embed, t, h, w in zip(
+            patch_pos_embeds, grid_ts, grid_hs, grid_ws
+        ):
             pos_embed = pos_embed.tile([int(t), 1])
             pos_embed = (
                 pos_embed.reshape(
@@ -186,7 +206,9 @@ class VisionEmbedding(FleetLayer):
         self,
         grid_thw: paddle.Tensor,
     ):
-        seqlens = paddle.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0])
+        seqlens = paddle.repeat_interleave(
+            grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]
+        )
         cu_seqlens = seqlens.cumsum(axis=0).astype("int32")
         cu_seqlens = F.pad(cu_seqlens.unsqueeze(0), [1, 0], value=0).squeeze(0)
 
@@ -217,7 +239,12 @@ class VisionEmbedding(FleetLayer):
             ]
         )
 
-        hidden_states = self.patch_embed(pixel_values).flatten(2).transpose([0, 2, 1]).reshape([-1, self.embed_dim])
+        hidden_states = (
+            self.patch_embed(pixel_values)
+            .flatten(2)
+            .transpose([0, 2, 1])
+            .reshape([-1, self.embed_dim])
+        )
         pos_embeds = self.fast_pos_embed_interpolate(grid_thw)
         hidden_states = hidden_states + pos_embeds
 

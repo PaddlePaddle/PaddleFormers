@@ -25,7 +25,9 @@ from paddle.distributed.fleet.meta_parallel import NoPipelineParallel
 import paddleformers.fleet.parallel_state as ps
 from paddleformers.fleet.gpt_builders import gpt_builder
 from paddleformers.fleet.models.gpt import GPTConfig
-from paddleformers.fleet.transformer.multi_token_prediction import WeightOnlyMTPLayer
+from paddleformers.fleet.transformer.multi_token_prediction import (
+    WeightOnlyMTPLayer,
+)
 
 
 class TestWeightOnlyMTP(unittest.TestCase):
@@ -75,8 +77,12 @@ class TestWeightOnlyMTP(unittest.TestCase):
             normalization="RMSNorm",
             hidden_dropout_prob=0.0,
             attention_dropout=0.0,
-            init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-            output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+            init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
+            output_layer_init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
             tie_word_embeddings=True,
             use_qk_norm=True,
             num_nextn_predict_layers=1,
@@ -92,17 +98,21 @@ class TestWeightOnlyMTP(unittest.TestCase):
             if isinstance(layer, WeightOnlyMTPLayer):
                 found_weight_only_mtp = True
                 break
-        assert found_weight_only_mtp, "GPTModel with mtp_load_weight_only=True should contain a WeightOnlyMTPLayer"
+        assert found_weight_only_mtp, (
+            "GPTModel with mtp_load_weight_only=True should contain a WeightOnlyMTPLayer"
+        )
 
     def test_weight_only_mtp_params_marked(self):
         """Test that all params in WeightOnlyMTPLayer have is_weight_only_mtp=True."""
         weight_only_params = self.gpt_model._get_weight_only_params()
-        assert len(weight_only_params) > 0, "Model with mtp_load_weight_only=True should have weight-only params"
+        assert len(weight_only_params) > 0, (
+            "Model with mtp_load_weight_only=True should have weight-only params"
+        )
 
         for param in weight_only_params:
-            assert getattr(
-                param, "is_weight_only_mtp", False
-            ), "Weight-only MTP param should have is_weight_only_mtp=True"
+            assert getattr(param, "is_weight_only_mtp", False), (
+                "Weight-only MTP param should have is_weight_only_mtp=True"
+            )
 
     def test_weight_only_mtp_forward_is_noop(self):
         """Test that WeightOnlyMTPLayer.forward is a no-op (returns input unchanged)."""
@@ -118,7 +128,9 @@ class TestWeightOnlyMTP(unittest.TestCase):
             "some_key": "some_value",
         }
         output = mtp_layer.forward(test_dict)
-        assert output is test_dict, "WeightOnlyMTPLayer.forward should return the input dict unchanged"
+        assert output is test_dict, (
+            "WeightOnlyMTPLayer.forward should return the input dict unchanged"
+        )
 
     def test_offload_weight_only_params(self):
         """Test offloading weight-only MTP params from GPU to CPU pinned memory."""
@@ -128,24 +140,32 @@ class TestWeightOnlyMTP(unittest.TestCase):
         # First reload to make sure all params are on GPU
         self.gpt_model.reload_weight_only_params()
         for param in self.gpt_model._get_weight_only_params():
-            assert param.place.is_gpu_place(), f"After reload, param should be on GPU but is on {param.place}"
+            assert param.place.is_gpu_place(), (
+                f"After reload, param should be on GPU but is on {param.place}"
+            )
 
         # Offload to CPU
         self.gpt_model.offload_weight_only_params()
         for param in self.gpt_model._get_weight_only_params():
-            assert not param.place.is_gpu_place(), f"After offload, param should be on CPU but is on {param.place}"
+            assert not param.place.is_gpu_place(), (
+                f"After offload, param should be on CPU but is on {param.place}"
+            )
 
     def test_reload_weight_only_params(self):
         """Test reloading weight-only MTP params from CPU back to GPU."""
         # Offload first
         self.gpt_model.offload_weight_only_params()
         for param in self.gpt_model._get_weight_only_params():
-            assert not param.place.is_gpu_place(), f"After offload, param should be on CPU but is on {param.place}"
+            assert not param.place.is_gpu_place(), (
+                f"After offload, param should be on CPU but is on {param.place}"
+            )
 
         # Reload back to GPU
         self.gpt_model.reload_weight_only_params()
         for param in self.gpt_model._get_weight_only_params():
-            assert param.place.is_gpu_place(), f"After reload, param should be on GPU but is on {param.place}"
+            assert param.place.is_gpu_place(), (
+                f"After reload, param should be on GPU but is on {param.place}"
+            )
 
     def test_offload_reload_preserves_values(self):
         """Test that offload and reload preserves parameter values."""
@@ -204,12 +224,18 @@ class TestWeightOnlyMTP(unittest.TestCase):
         micro_batch_size = 1
 
         data = list(range(sequence_length))
-        input_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat((micro_batch_size, 1))
-        position_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat((micro_batch_size, 1))
-        attention_mask = paddle.ones((micro_batch_size, 1, sequence_length, sequence_length), dtype=bool)
-        labels = paddle.to_tensor(list(range(1, sequence_length + 1)), dtype=paddle.int64).repeat(
+        input_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat(
             (micro_batch_size, 1)
         )
+        position_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat(
+            (micro_batch_size, 1)
+        )
+        attention_mask = paddle.ones(
+            (micro_batch_size, 1, sequence_length, sequence_length), dtype=bool
+        )
+        labels = paddle.to_tensor(
+            list(range(1, sequence_length + 1)), dtype=paddle.int64
+        ).repeat((micro_batch_size, 1))
 
         # Make sure params are on GPU for forward pass
         self.gpt_model.reload_weight_only_params()

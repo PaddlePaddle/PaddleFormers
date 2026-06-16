@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 # Tests for src/paddleformers.fleet/fusions/fused_bias_swiglu.py
@@ -46,14 +50,18 @@ class TestSwigluBackward(unittest.TestCase):
         expected, _ = paddle._C_ops.swiglu_grad(y, None, g)
         out = swiglu_back(g, y)
         self.assertEqual(out.shape, y.shape)
-        np.testing.assert_allclose(out.numpy(), expected.numpy(), rtol=1e-5, atol=1e-5)
+        np.testing.assert_allclose(
+            out.numpy(), expected.numpy(), rtol=1e-5, atol=1e-5
+        )
 
 
 class TestBiasSwigluBack(unittest.TestCase):
     """bias_swiglu_back(g, y, bias) must equal native swiglu_grad(y+bias, g)."""
 
     def test_bias_swiglu_back_matches_native_grad_with_bias(self):
-        from paddleformers.fleet.fusions.fused_bias_swiglu import bias_swiglu_back
+        from paddleformers.fleet.fusions.fused_bias_swiglu import (
+            bias_swiglu_back,
+        )
 
         paddle.seed(0)
         g = paddle.randn([4, 4])
@@ -62,7 +70,9 @@ class TestBiasSwigluBack(unittest.TestCase):
         expected, _ = paddle._C_ops.swiglu_grad(y + bias, None, g)
         out = bias_swiglu_back(g, y, bias)
         self.assertEqual(out.shape, y.shape)
-        np.testing.assert_allclose(out.numpy(), expected.numpy(), rtol=1e-5, atol=1e-5)
+        np.testing.assert_allclose(
+            out.numpy(), expected.numpy(), rtol=1e-5, atol=1e-5
+        )
 
 
 class TestWeightedSwigluBack(unittest.TestCase):
@@ -107,7 +117,9 @@ class TestCpuOffloadInputBranch(unittest.TestCase):
     """Cover the cpu_offload_input=True branch of BiasSwiGLU/SwiGLU PyLayers."""
 
     def test_bias_swiglu_function_forward_cpu_offload(self):
-        from paddleformers.fleet.fusions.fused_bias_swiglu import BiasSwiGLUFunction
+        from paddleformers.fleet.fusions.fused_bias_swiglu import (
+            BiasSwiGLUFunction,
+        )
 
         mock_ctx = mock.MagicMock()
         inp = paddle.randn([4, 8])

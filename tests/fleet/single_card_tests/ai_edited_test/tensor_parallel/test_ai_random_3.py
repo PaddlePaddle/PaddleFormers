@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -41,7 +45,9 @@ class TestInitializeRngTracker(unittest.TestCase):
 
     def test_creates_tracker(self):
         """Test that initialize_rng_tracker creates a tracker."""
-        from paddleformers.fleet.tensor_parallel.random import initialize_rng_tracker
+        from paddleformers.fleet.tensor_parallel.random import (
+            initialize_rng_tracker,
+        )
 
         initialize_rng_tracker()
         from paddleformers.fleet.tensor_parallel import random as rng_module
@@ -52,7 +58,9 @@ class TestInitializeRngTracker(unittest.TestCase):
     def test_idempotent(self):
         """Test that calling initialize_rng_tracker twice does not recreate."""
         from paddleformers.fleet.tensor_parallel import random as rng_module
-        from paddleformers.fleet.tensor_parallel.random import initialize_rng_tracker
+        from paddleformers.fleet.tensor_parallel.random import (
+            initialize_rng_tracker,
+        )
 
         initialize_rng_tracker()
         tracker1 = rng_module._CUDA_RNG_STATE_TRACKER
@@ -65,7 +73,9 @@ class TestInitializeRngTracker(unittest.TestCase):
     def test_force_reset(self):
         """Test force_reset=True recreates the tracker."""
         from paddleformers.fleet.tensor_parallel import random as rng_module
-        from paddleformers.fleet.tensor_parallel.random import initialize_rng_tracker
+        from paddleformers.fleet.tensor_parallel.random import (
+            initialize_rng_tracker,
+        )
 
         initialize_rng_tracker()
         tracker1 = rng_module._CUDA_RNG_STATE_TRACKER
@@ -77,14 +87,18 @@ class TestInitializeRngTracker(unittest.TestCase):
 
     def test_cudagraphable_rng_not_supported(self):
         """Test that use_cudagraphable_rng=True raises assertion."""
-        from paddleformers.fleet.tensor_parallel.random import initialize_rng_tracker
+        from paddleformers.fleet.tensor_parallel.random import (
+            initialize_rng_tracker,
+        )
 
         with self.assertRaises(AssertionError):
             initialize_rng_tracker(use_cudagraphable_rng=True)
 
     def test_te_rng_tracker_not_supported(self):
         """Test that use_te_rng_tracker=True raises assertion."""
-        from paddleformers.fleet.tensor_parallel.random import initialize_rng_tracker
+        from paddleformers.fleet.tensor_parallel.random import (
+            initialize_rng_tracker,
+        )
 
         with self.assertRaises(AssertionError):
             initialize_rng_tracker(use_te_rng_tracker=True)
@@ -102,14 +116,18 @@ class TestGetCudaRngTracker(unittest.TestCase):
 
     def test_returns_tracker(self):
         """Test that get_cuda_rng_tracker returns a tracker."""
-        from paddleformers.fleet.tensor_parallel.random import get_cuda_rng_tracker
+        from paddleformers.fleet.tensor_parallel.random import (
+            get_cuda_rng_tracker,
+        )
 
         tracker = get_cuda_rng_tracker()
         self.assertIsNotNone(tracker)
 
     def test_cudagraphable_rng_not_supported(self):
         """Test that use_cudagraphable_rng=True raises assertion."""
-        from paddleformers.fleet.tensor_parallel.random import get_cuda_rng_tracker
+        from paddleformers.fleet.tensor_parallel.random import (
+            get_cuda_rng_tracker,
+        )
 
         with self.assertRaises(AssertionError):
             get_cuda_rng_tracker(use_cudagraphable_rng=True)
@@ -121,7 +139,9 @@ class TestGetAllRngStates(unittest.TestCase):
     def test_uninitialized_raises(self):
         """Test get_all_rng_states raises when not initialized."""
         from paddleformers.fleet.tensor_parallel import random as rng_module
-        from paddleformers.fleet.tensor_parallel.random import get_all_rng_states
+        from paddleformers.fleet.tensor_parallel.random import (
+            get_all_rng_states,
+        )
 
         rng_module._CUDA_RNG_STATE_TRACKER = None
         rng_module._CUDA_RNG_STATE_TRACKER_INITIALIZED = False
@@ -143,7 +163,9 @@ class TestInferenceRngTracker(unittest.TestCase):
     def test_inference_tracker_add_is_noop(self):
         """Test that inference tracker add does nothing."""
         from paddleformers.fleet.tensor_parallel import random as rng_module
-        from paddleformers.fleet.tensor_parallel.random import initialize_rng_tracker
+        from paddleformers.fleet.tensor_parallel.random import (
+            initialize_rng_tracker,
+        )
 
         initialize_rng_tracker(inference_rng_tracker=True)
         tracker = rng_module._CUDA_RNG_STATE_TRACKER
@@ -153,7 +175,9 @@ class TestInferenceRngTracker(unittest.TestCase):
     def test_inference_tracker_set_states_is_noop(self):
         """Test that inference tracker set_states does nothing."""
         from paddleformers.fleet.tensor_parallel import random as rng_module
-        from paddleformers.fleet.tensor_parallel.random import initialize_rng_tracker
+        from paddleformers.fleet.tensor_parallel.random import (
+            initialize_rng_tracker,
+        )
 
         initialize_rng_tracker(inference_rng_tracker=True)
         tracker = rng_module._CUDA_RNG_STATE_TRACKER
@@ -165,7 +189,9 @@ class TestInferenceRngTracker(unittest.TestCase):
         import contextlib
 
         from paddleformers.fleet.tensor_parallel import random as rng_module
-        from paddleformers.fleet.tensor_parallel.random import initialize_rng_tracker
+        from paddleformers.fleet.tensor_parallel.random import (
+            initialize_rng_tracker,
+        )
 
         initialize_rng_tracker(inference_rng_tracker=True)
         tracker = rng_module._CUDA_RNG_STATE_TRACKER

@@ -80,9 +80,9 @@ _MODEL_PARALLEL_ATTRIBUTE_DEFAULTS = {
 def param_is_not_tensor_parallel_duplicate(param):
     """Returns true if the passed-in parameter is not a duplicate parameter
     on another TP rank."""
-    return (hasattr(param, "tensor_model_parallel") and param.tensor_model_parallel) or (
-        get_tensor_model_parallel_rank() == 0
-    )
+    return (
+        hasattr(param, "tensor_model_parallel") and param.tensor_model_parallel
+    ) or (get_tensor_model_parallel_rank() == 0)
 
 
 def set_tensor_model_parallel_attributes(tensor, is_parallel, dim, stride):
@@ -112,16 +112,22 @@ def copy_tensor_model_parallel_attributes(destination_tensor, source_tensor):
 
     def maybe_copy(attribute):
         if hasattr(source_tensor, attribute):
-            setattr(destination_tensor, attribute, getattr(source_tensor, attribute))
+            setattr(
+                destination_tensor, attribute, getattr(source_tensor, attribute)
+            )
 
     for attribute in _MODEL_PARALLEL_ATTRIBUTE_DEFAULTS:
         maybe_copy(attribute)
 
 
-def _initialize_affine_weight_gpu(weight, init_method, partition_dim, stride=1, is_expert=False):
+def _initialize_affine_weight_gpu(
+    weight, init_method, partition_dim, stride=1, is_expert=False
+):
     """Initialize affine weight for model parallel on GPU."""
 
-    set_tensor_model_parallel_attributes(tensor=weight, is_parallel=True, dim=partition_dim, stride=stride)
+    set_tensor_model_parallel_attributes(
+        tensor=weight, is_parallel=True, dim=partition_dim, stride=stride
+    )
 
     if not is_expert:
         if dist.get_world_size() <= 1:
@@ -133,7 +139,9 @@ def _initialize_affine_weight_gpu(weight, init_method, partition_dim, stride=1, 
         if dist.get_world_size() <= 1:
             init_method(weight)
         else:
-            with get_cuda_rng_tracker().fork(get_expert_parallel_rng_tracker_name()):
+            with get_cuda_rng_tracker().fork(
+                get_expert_parallel_rng_tracker_name()
+            ):
                 init_method(weight)
 
 
@@ -158,17 +166,25 @@ def _initialize_affine_weight_cpu(
     the relevant chunk."""
 
     if not skip_set_tensor_parallel_attributes:
-        set_tensor_model_parallel_attributes(tensor=weight, is_parallel=True, dim=partition_dim, stride=stride)
+        set_tensor_model_parallel_attributes(
+            tensor=weight, is_parallel=True, dim=partition_dim, stride=stride
+        )
 
     # Initialize master weight
-    master_weight = paddle.empty([input_size, output_size], dtype=paddle.float, requires_grad=False)
+    master_weight = paddle.empty(
+        [input_size, output_size], dtype=paddle.float, requires_grad=False
+    )
     init_method(master_weight)
     master_weight = master_weight.to(dtype=params_dtype)
     # Split and copy
 
     per_partition_per_stride_size = divide(per_partition_size, stride)
-    split_num = divide(master_weight.shape[partition_dim], per_partition_per_stride_size)
-    weight_list = paddle.split(master_weight, num_or_sections=split_num, axis=partition_dim)
+    split_num = divide(
+        master_weight.shape[partition_dim], per_partition_per_stride_size
+    )
+    weight_list = paddle.split(
+        master_weight, num_or_sections=split_num, axis=partition_dim
+    )
     if rank is None:
         rank = get_tensor_model_parallel_rank()
         world_size = get_tensor_model_parallel_world_size()
@@ -216,14 +232,20 @@ class VocabParallelEmbedding(paddle.nn.Layer):
         self.tp_group = tp_group
         self._dtype = config.params_dtype
 
-        self.tp_group = get_tensor_model_parallel_group_if_none(self.tp_group, check_initialized=False)
-
-        (self.vocab_start_index, self.vocab_end_index) = VocabUtility.vocab_range_from_global_vocab_size(
-            self.num_embeddings,
-            get_pg_rank(self.tp_group),
-            get_pg_size(self.tp_group),
+        self.tp_group = get_tensor_model_parallel_group_if_none(
+            self.tp_group, check_initialized=False
         )
-        self.num_embeddings_per_partition = self.vocab_end_index - self.vocab_start_index
+
+        (self.vocab_start_index, self.vocab_end_index) = (
+            VocabUtility.vocab_range_from_global_vocab_size(
+                self.num_embeddings,
+                get_pg_rank(self.tp_group),
+                get_pg_size(self.tp_group),
+            )
+        )
+        self.num_embeddings_per_partition = (
+            self.vocab_end_index - self.vocab_start_index
+        )
         self.deterministic_mode = config.deterministic_mode
         self.world_size = get_pg_size(self.tp_group)
 
@@ -255,7 +277,9 @@ class VocabParallelEmbedding(paddle.nn.Layer):
                 default_initializer=paddle.nn.initializer.Constant(0.0),
             )
             if config.perform_initialization:
-                _initialize_affine_weight_gpu(self.weight, init_method, partition_dim=0, stride=1)
+                _initialize_affine_weight_gpu(
+                    self.weight, init_method, partition_dim=0, stride=1
+                )
         self.weight.is_distributed = True if self.world_size > 1 else False
 
     def forward(self, input_):
@@ -266,7 +290,9 @@ class VocabParallelEmbedding(paddle.nn.Layer):
         """
         if get_pg_size(self.tp_group) > 1:
             # Build the mask.
-            input_mask = (input_ < self.vocab_start_index) | (input_ >= self.vocab_end_index)
+            input_mask = (input_ < self.vocab_start_index) | (
+                input_ >= self.vocab_end_index
+            )
             # Mask the input.
             masked_input = input_.clone() - self.vocab_start_index
             masked_input[input_mask] = 0
@@ -286,10 +312,14 @@ class VocabParallelEmbedding(paddle.nn.Layer):
             # Data format change to avoid explicit transpose : [b s h] --> [s b h].
             # output_parallel = output_parallel.transpose(0, 1).contiguous()
             output_parallel = output_parallel.transpose([1, 0, 2]).contiguous()
-            output = reduce_scatter_to_sequence_parallel_region(output_parallel, group=self.tp_group)
+            output = reduce_scatter_to_sequence_parallel_region(
+                output_parallel, group=self.tp_group
+            )
         else:
             # Reduce across all the model parallel GPUs.
-            output = reduce_from_tensor_model_parallel_region(output_parallel, group=self.tp_group)
+            output = reduce_from_tensor_model_parallel_region(
+                output_parallel, group=self.tp_group
+            )
         return output
 
     def sharded_state_dict(
@@ -298,7 +328,9 @@ class VocabParallelEmbedding(paddle.nn.Layer):
     ):
         state_dict = self.state_dict(structured_name_prefix="")
         shard_rules = None if self.world_size == 1 else {"weight": 0}
-        return build_sharded_state_dict(state_dict, shard_rules, structured_name_prefix)
+        return build_sharded_state_dict(
+            state_dict, shard_rules, structured_name_prefix
+        )
 
 
 class LinearWithFrozenWeight(paddle.autograd.Function):
@@ -397,17 +429,21 @@ def linear_with_frozen_weight(
         )
 
     assert grad_output_buffer is None, (
-        "grad_output_buffer kwarg is only supported with " "linear_with_grad_accumulation_and_async_allreduce"
+        "grad_output_buffer kwarg is only supported with "
+        "linear_with_grad_accumulation_and_async_allreduce"
     )
 
     assert wgrad_deferral_limit is None, (
-        "This arg is only supported with " "linear_with_grad_accumulation_and_async_allreduce"
+        "This arg is only supported with "
+        "linear_with_grad_accumulation_and_async_allreduce"
     )
 
     tp_group = get_tensor_model_parallel_group_if_none(tp_group)
 
     if sequence_parallel:
-        input = gather_from_sequence_parallel_region(input, tensor_parallel_output_grad=True, group=tp_group)
+        input = gather_from_sequence_parallel_region(
+            input, tensor_parallel_output_grad=True, group=tp_group
+        )
     else:
         input = input
 
@@ -459,7 +495,9 @@ class LinearWithGradAccumulationAndAsyncCommunication(paddle.autograd.Function):
             dim_size = list(input.shape)
             dim_size[0] = dim_size[0] * tp_group.world_size
 
-            all_gather_buffer = get_global_memory_buffer().get_tensor(dim_size, input.dtype, "mpu")
+            all_gather_buffer = get_global_memory_buffer().get_tensor(
+                dim_size, input.dtype, "mpu"
+            )
             dist.stream.all_gather(all_gather_buffer, input, group=tp_group)
             total_input = all_gather_buffer
         else:
@@ -497,7 +535,10 @@ class LinearWithGradAccumulationAndAsyncCommunication(paddle.autograd.Function):
 
         wgrad_compute = True
         if grad_output_buffer is not None:
-            if wgrad_deferral_limit == 0 or len(grad_output_buffer) < wgrad_deferral_limit:
+            if (
+                wgrad_deferral_limit == 0
+                or len(grad_output_buffer) < wgrad_deferral_limit
+            ):
                 grad_output_buffer.append(grad_output)
                 wgrad_compute = False
 
@@ -506,8 +547,12 @@ class LinearWithGradAccumulationAndAsyncCommunication(paddle.autograd.Function):
                 dim_size = list(input.shape)
                 dim_size[0] = dim_size[0] * tp_group.world_size
 
-                all_gather_buffer = get_global_memory_buffer().get_tensor(dim_size, input.dtype, "mpu")
-                handle = dist.stream.all_gather(all_gather_buffer, input, group=tp_group, sync_op=False)
+                all_gather_buffer = get_global_memory_buffer().get_tensor(
+                    dim_size, input.dtype, "mpu"
+                )
+                handle = dist.stream.all_gather(
+                    all_gather_buffer, input, group=tp_group, sync_op=False
+                )
 
                 # Here we rely on CUDA_DEVICE_MAX_CONNECTIONS=1 to ensure that the
                 # gather is scheduled before the input gradient computation
@@ -524,7 +569,9 @@ class LinearWithGradAccumulationAndAsyncCommunication(paddle.autograd.Function):
             handle.wait()
 
         if wgrad_compute:
-            grad_output, total_input = prepare_input_tensors_for_wgrad_compute(grad_output, total_input)
+            grad_output, total_input = prepare_input_tensors_for_wgrad_compute(
+                grad_output, total_input
+            )
 
         if ctx.allreduce_dgrad and input_needs_grad:
             # Asynchronous all-reduce
@@ -536,9 +583,13 @@ class LinearWithGradAccumulationAndAsyncCommunication(paddle.autograd.Function):
             assert not ctx.allreduce_dgrad
             if input_needs_grad:
                 dim_size = list(input.shape)
-                sub_grad_input = paddle.empty(dim_size, dtype=input.dtype, requires_grad=False)
+                sub_grad_input = paddle.empty(
+                    dim_size, dtype=input.dtype, requires_grad=False
+                )
                 # reduce_scatter
-                handle = _reduce_scatter_base(sub_grad_input, grad_input, group=tp_group, sync_op=False)
+                handle = _reduce_scatter_base(
+                    sub_grad_input, grad_input, group=tp_group, sync_op=False
+                )
                 # Here we rely on CUDA_DEVICE_MAX_CONNECTIONS=1 to ensure that the
                 # reduce scatter is scheduled before the weight gradient computation
             else:
@@ -547,14 +598,20 @@ class LinearWithGradAccumulationAndAsyncCommunication(paddle.autograd.Function):
         if ctx.gradient_accumulation_fusion:
             if wgrad_compute:
                 if weight.main_grad.dtype == paddle.float32:
-                    fused_weight_gradient_mlp_cuda.wgrad_gemm_accum_fp32(total_input, grad_output, weight.main_grad)
+                    fused_weight_gradient_mlp_cuda.wgrad_gemm_accum_fp32(
+                        total_input, grad_output, weight.main_grad
+                    )
                 elif weight.main_grad.dtype in (
                     paddle.float16,
                     paddle.bfloat16,
                 ):
-                    fused_weight_gradient_mlp_cuda.wgrad_gemm_accum_fp16(total_input, grad_output, weight.main_grad)
+                    fused_weight_gradient_mlp_cuda.wgrad_gemm_accum_fp16(
+                        total_input, grad_output, weight.main_grad
+                    )
                 else:
-                    raise RuntimeError("Unsupported gradient type for gradient accumulation fusion")
+                    raise RuntimeError(
+                        "Unsupported gradient type for gradient accumulation fusion"
+                    )
 
             if hasattr(weight, "grad_added_to_main_grad"):
                 # When overlap_grad_reduce is True, need to ensure that backward hooks
@@ -894,14 +951,16 @@ class Linear(paddle.nn.Layer):
         if weight is None:
             if self.weight is None:
                 raise RuntimeError(
-                    "weight was not supplied to Linear forward pass " "and skip_weight_param_allocation is True."
+                    "weight was not supplied to Linear forward pass "
+                    "and skip_weight_param_allocation is True."
                 )
             weight = self.weight
         else:
             expected_shape = [self.input_size, self.output_size]
             if weight.shape != expected_shape:
                 raise RuntimeError(
-                    f"supplied weight's shape is {tuple(weight.shape)}, " f"not {expected_shape} as expected"
+                    f"supplied weight's shape is {tuple(weight.shape)}, "
+                    f"not {expected_shape} as expected"
                 )
 
         bias = self.bias if not self.skip_bias_add else None
@@ -909,14 +968,17 @@ class Linear(paddle.nn.Layer):
         if self.config.defer_embedding_wgrad_compute:
             if (
                 self.config.wgrad_deferral_limit == 0
-                or len(self.embedding_activation_buffer) < self.config.wgrad_deferral_limit
+                or len(self.embedding_activation_buffer)
+                < self.config.wgrad_deferral_limit
             ):
                 self.embedding_activation_buffer.append(input_)
 
         if not weight.requires_grad:
             self._forward_impl = linear_with_frozen_weight
         else:
-            self._forward_impl = linear_with_grad_accumulation_and_async_allreduce
+            self._forward_impl = (
+                linear_with_grad_accumulation_and_async_allreduce
+            )
 
         output = self._forward_impl(
             input=input_,
@@ -925,14 +987,24 @@ class Linear(paddle.nn.Layer):
             gradient_accumulation_fusion=False,
             allreduce_dgrad=False,
             sequence_parallel=False,
-            grad_output_buffer=(self.grad_output_buffer if self.config.defer_embedding_wgrad_compute else None),
+            grad_output_buffer=(
+                self.grad_output_buffer
+                if self.config.defer_embedding_wgrad_compute
+                else None
+            ),
             wgrad_deferral_limit=(
-                self.config.wgrad_deferral_limit if self.config.defer_embedding_wgrad_compute else None
+                self.config.wgrad_deferral_limit
+                if self.config.defer_embedding_wgrad_compute
+                else None
             ),
             tp_group=None,
         )
 
-        output_bias = self.bias.clone() if (self.skip_bias_add and self.bias is not None) else None
+        output_bias = (
+            self.bias.clone()
+            if (self.skip_bias_add and self.bias is not None)
+            else None
+        )
 
         return output, output_bias
 
@@ -942,7 +1014,9 @@ class Linear(paddle.nn.Layer):
     ):
         """Weight is replicated, no sharding rules needed."""
         state_dict = self.state_dict(structured_name_prefix="")
-        return build_sharded_state_dict(state_dict, None, structured_name_prefix)
+        return build_sharded_state_dict(
+            state_dict, None, structured_name_prefix
+        )
 
     def set_extra_state(self, state):
         """Extra state is ignored"""
@@ -1051,7 +1125,9 @@ class ColumnParallelLinear(paddle.nn.Layer):
         self.world_size = get_pg_size(self.tp_group)
         rank = get_pg_rank(self.tp_group)
         self.rank = rank
-        self.explicit_expert_comm = self.is_expert and (self.world_size > 1 or self.expert_parallel)
+        self.explicit_expert_comm = self.is_expert and (
+            self.world_size > 1 or self.expert_parallel
+        )
         self.output_size_per_partition = divide(output_size, self.world_size)
 
         # Parameters.
@@ -1096,7 +1172,9 @@ class ColumnParallelLinear(paddle.nn.Layer):
                         is_expert=self.is_expert,
                     )
 
-            self.weight.allreduce = not (self.is_expert and self.expert_parallel)
+            self.weight.allreduce = not (
+                self.is_expert and self.expert_parallel
+            )
             self.weight.is_distributed = True if self.world_size > 1 else False
         else:
             self.weight = None
@@ -1128,12 +1206,18 @@ class ColumnParallelLinear(paddle.nn.Layer):
             )
             self.sequence_parallel = False
 
-        self.allreduce_dgrad = self.world_size > 1 and not self.sequence_parallel and not self.disable_grad_reduce
+        self.allreduce_dgrad = (
+            self.world_size > 1
+            and not self.sequence_parallel
+            and not self.disable_grad_reduce
+        )
 
         self.gradient_accumulation_fusion = False
 
         if self.allreduce_dgrad and self.sequence_parallel:
-            raise RuntimeError("`allreduce_dgrad` and `sequence_parallel` cannot be enabled at the same time.")
+            raise RuntimeError(
+                "`allreduce_dgrad` and `sequence_parallel` cannot be enabled at the same time."
+            )
 
         self._forward_impl = linear_with_grad_accumulation_and_async_allreduce
 
@@ -1170,7 +1254,8 @@ class ColumnParallelLinear(paddle.nn.Layer):
             expected_shape = [self.input_size, self.output_size_per_partition]
             if weight.shape != expected_shape:
                 raise RuntimeError(
-                    f"supplied weight's shape is {tuple(weight.shape)}, " f"not {expected_shape} as expected"
+                    f"supplied weight's shape is {tuple(weight.shape)}, "
+                    f"not {expected_shape} as expected"
                 )
 
         bias = self.bias if not self.skip_bias_add else None
@@ -1180,8 +1265,14 @@ class ColumnParallelLinear(paddle.nn.Layer):
             and self.world_size == 1
             and self.bias is not None
         ):
-            output = paddle.incubate.nn.functional.fused_linear(input_, weight, self.bias)
-            output_bias = self.bias.clone() if (self.skip_bias_add and self.bias is not None) else None
+            output = paddle.incubate.nn.functional.fused_linear(
+                input_, weight, self.bias
+            )
+            output_bias = (
+                self.bias.clone()
+                if (self.skip_bias_add and self.bias is not None)
+                else None
+            )
             return output, output_bias
 
         if (
@@ -1203,7 +1294,8 @@ class ColumnParallelLinear(paddle.nn.Layer):
         if self.config.defer_embedding_wgrad_compute:
             if (
                 self.config.wgrad_deferral_limit == 0
-                or len(self.embedding_activation_buffer) < self.config.wgrad_deferral_limit
+                or len(self.embedding_activation_buffer)
+                < self.config.wgrad_deferral_limit
             ):
                 self.embedding_activation_buffer.append(input_parallel)
 
@@ -1211,18 +1303,24 @@ class ColumnParallelLinear(paddle.nn.Layer):
         if not weight.requires_grad:
             self._forward_impl = linear_with_frozen_weight
         else:
-            self._forward_impl = linear_with_grad_accumulation_and_async_allreduce
+            self._forward_impl = (
+                linear_with_grad_accumulation_and_async_allreduce
+            )
 
-        allreduce_dgrad = False if self.explicit_expert_comm else self.allreduce_dgrad
+        allreduce_dgrad = (
+            False if self.explicit_expert_comm else self.allreduce_dgrad
+        )
 
         if self.config._cpu_offloading_context is not None:
             if self.config._cpu_offloading_context.inside_context is True:
                 if not HAVE_TE:
-                    assert (
-                        self.config.cpu_offloading is False
-                    ), "CPU Offloading cannot be enabled while TE is not present"
+                    assert self.config.cpu_offloading is False, (
+                        "CPU Offloading cannot be enabled while TE is not present"
+                    )
                 else:
-                    input_parallel.activation_offloading = self.config.cpu_offloading_activations
+                    input_parallel.activation_offloading = (
+                        self.config.cpu_offloading_activations
+                    )
 
         output_parallel = self._forward_impl(
             input=input_parallel,
@@ -1230,10 +1328,18 @@ class ColumnParallelLinear(paddle.nn.Layer):
             bias=bias,
             gradient_accumulation_fusion=self.gradient_accumulation_fusion,
             allreduce_dgrad=allreduce_dgrad,
-            sequence_parallel=False if self.explicit_expert_comm else self.sequence_parallel,
-            grad_output_buffer=(self.grad_output_buffer if self.config.defer_embedding_wgrad_compute else None),
+            sequence_parallel=False
+            if self.explicit_expert_comm
+            else self.sequence_parallel,
+            grad_output_buffer=(
+                self.grad_output_buffer
+                if self.config.defer_embedding_wgrad_compute
+                else None
+            ),
             wgrad_deferral_limit=(
-                self.config.wgrad_deferral_limit if self.config.defer_embedding_wgrad_compute else None
+                self.config.wgrad_deferral_limit
+                if self.config.defer_embedding_wgrad_compute
+                else None
             ),
             tp_group=self.tp_group,
         )
@@ -1245,10 +1351,16 @@ class ColumnParallelLinear(paddle.nn.Layer):
 
         if gather_output:
             # All-gather across the partitions.
-            output = gather_from_tensor_model_parallel_region(output_parallel, group=self.tp_group)
+            output = gather_from_tensor_model_parallel_region(
+                output_parallel, group=self.tp_group
+            )
         else:
             output = output_parallel
-        output_bias = self.bias.clone() if (self.skip_bias_add and self.bias is not None) else None
+        output_bias = (
+            self.bias.clone()
+            if (self.skip_bias_add and self.bias is not None)
+            else None
+        )
 
         return output, output_bias
 
@@ -1259,7 +1371,9 @@ class ColumnParallelLinear(paddle.nn.Layer):
         """Sharding along axis 1, bias sharded"""
         state_dict = self.state_dict(structured_name_prefix="")
         shard_rules = None if self.world_size == 1 else {"weight": 1, "bias": 0}
-        return build_sharded_state_dict(state_dict, shard_rules, structured_name_prefix)
+        return build_sharded_state_dict(
+            state_dict, shard_rules, structured_name_prefix
+        )
 
     def set_extra_state(self, state):
         """Extra state is ignored"""
@@ -1346,7 +1460,9 @@ class RowParallelLinear(paddle.nn.Layer):
         self._dtype = config.params_dtype
 
         if self.sequence_parallel and not self.input_is_parallel:
-            raise RuntimeError("To enable `sequence_parallel`, `input_is_parallel` must be `True`")
+            raise RuntimeError(
+                "To enable `sequence_parallel`, `input_is_parallel` must be `True`"
+            )
 
         # Divide the weight matrix along the last dimension.
         self.tp_group = get_tensor_model_parallel_group_if_none(
@@ -1355,7 +1471,9 @@ class RowParallelLinear(paddle.nn.Layer):
 
         self.world_size = get_pg_size(self.tp_group)
         rank = get_pg_rank(self.tp_group)
-        self.explicit_expert_comm = self.is_expert and (self.world_size > 1 or self.expert_parallel)
+        self.explicit_expert_comm = self.is_expert and (
+            self.world_size > 1 or self.expert_parallel
+        )
 
         self.input_size_per_partition = divide(input_size, self.world_size)
 
@@ -1444,24 +1562,30 @@ class RowParallelLinear(paddle.nn.Layer):
             input_parallel = input_
         else:
             assert not self.sequence_parallel
-            input_parallel = scatter_to_tensor_model_parallel_region(input_, group=self.tp_group)
+            input_parallel = scatter_to_tensor_model_parallel_region(
+                input_, group=self.tp_group
+            )
 
         # Matrix multiply.
         if not self.weight.requires_grad:
             self._forward_impl = linear_with_frozen_weight
         else:
-            self._forward_impl = linear_with_grad_accumulation_and_async_allreduce
+            self._forward_impl = (
+                linear_with_grad_accumulation_and_async_allreduce
+            )
 
         allreduce_dgrad = False
 
         if self.config._cpu_offloading_context is not None:
             if self.config._cpu_offloading_context.inside_context is True:
                 if not HAVE_TE:
-                    assert (
-                        self.config.cpu_offloading is False
-                    ), "CPU Offloading cannot be enabled while TE is not present"
+                    assert self.config.cpu_offloading is False, (
+                        "CPU Offloading cannot be enabled while TE is not present"
+                    )
                 else:
-                    input_parallel.activation_offloading = self.config.cpu_offloading_activations
+                    input_parallel.activation_offloading = (
+                        self.config.cpu_offloading_activations
+                    )
 
         output_parallel = self._forward_impl(
             input=input_parallel,
@@ -1479,7 +1603,9 @@ class RowParallelLinear(paddle.nn.Layer):
             assert self.skip_bias_add
             output_ = output_parallel
         elif self.sequence_parallel:
-            output_ = reduce_scatter_to_sequence_parallel_region(output_parallel, group=self.tp_group)
+            output_ = reduce_scatter_to_sequence_parallel_region(
+                output_parallel, group=self.tp_group
+            )
         else:
             output_ = reduce_from_tensor_model_parallel_region(
                 output_parallel, group=self.tp_group, is_expert=self.is_expert
@@ -1499,7 +1625,9 @@ class RowParallelLinear(paddle.nn.Layer):
         """Sharding along axis 0, bias not sharded"""
         state_dict = self.state_dict(structured_name_prefix="")
         shard_rules = None if self.world_size == 1 else {"weight": 0}
-        return build_sharded_state_dict(state_dict, shard_rules, structured_name_prefix)
+        return build_sharded_state_dict(
+            state_dict, shard_rules, structured_name_prefix
+        )
 
     def set_extra_state(self, state):
         """Extra state is ignored"""

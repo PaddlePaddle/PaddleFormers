@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -101,7 +105,9 @@ class TestPipelineParallelWithInterleaveVirtualRank(unittest.TestCase):
             PipelineParallelWithInterleave,
         )
 
-        pp = PipelineParallelWithInterleave.__new__(PipelineParallelWithInterleave)
+        pp = PipelineParallelWithInterleave.__new__(
+            PipelineParallelWithInterleave
+        )
         pp.accumulate_steps = 4
         pp.num_stages = 4
         pp.num_model_chunks = 2
@@ -116,7 +122,9 @@ class TestPipelineParallelWithInterleaveVirtualRank(unittest.TestCase):
             PipelineParallelWithInterleave,
         )
 
-        pp = PipelineParallelWithInterleave.__new__(PipelineParallelWithInterleave)
+        pp = PipelineParallelWithInterleave.__new__(
+            PipelineParallelWithInterleave
+        )
         pp.accumulate_steps = 8
         pp.num_stages = 4
         pp.num_model_chunks = 2
@@ -134,7 +142,9 @@ class TestPipelineParallelWithInterleaveCheckSanity(unittest.TestCase):
             PipelineParallelWithInterleave,
         )
 
-        pp = PipelineParallelWithInterleave.__new__(PipelineParallelWithInterleave)
+        pp = PipelineParallelWithInterleave.__new__(
+            PipelineParallelWithInterleave
+        )
         pp.num_stages = 4
         pp.accumulate_steps = 8
         with patch("paddle.framework.in_dynamic_mode", return_value=True):
@@ -145,7 +155,9 @@ class TestPipelineParallelWithInterleaveCheckSanity(unittest.TestCase):
             PipelineParallelWithInterleave,
         )
 
-        pp = PipelineParallelWithInterleave.__new__(PipelineParallelWithInterleave)
+        pp = PipelineParallelWithInterleave.__new__(
+            PipelineParallelWithInterleave
+        )
         pp.num_stages = 4
         pp.accumulate_steps = 8
         with (
@@ -159,7 +171,9 @@ class TestPipelineParallelWithInterleaveCheckSanity(unittest.TestCase):
             PipelineParallelWithInterleave,
         )
 
-        pp = PipelineParallelWithInterleave.__new__(PipelineParallelWithInterleave)
+        pp = PipelineParallelWithInterleave.__new__(
+            PipelineParallelWithInterleave
+        )
         pp.num_stages = 2
         pp.accumulate_steps = 8
         with (
@@ -173,7 +187,9 @@ class TestPipelineParallelWithInterleaveCheckSanity(unittest.TestCase):
             PipelineParallelWithInterleave,
         )
 
-        pp = PipelineParallelWithInterleave.__new__(PipelineParallelWithInterleave)
+        pp = PipelineParallelWithInterleave.__new__(
+            PipelineParallelWithInterleave
+        )
         pp.num_stages = 4
         pp.accumulate_steps = 4
         with (
@@ -191,7 +207,9 @@ class TestGetSchedulerName(unittest.TestCase):
             PipelineParallelWithInterleave,
         )
 
-        pp = PipelineParallelWithInterleave.__new__(PipelineParallelWithInterleave)
+        pp = PipelineParallelWithInterleave.__new__(
+            PipelineParallelWithInterleave
+        )
         pp.overlap_schedule_mode = False
         pp._overlap_p2p_comm = False
         name = pp._get_scheduler_name()
@@ -207,7 +225,9 @@ class TestOverlapCommGrads(unittest.TestCase):
             PipelineParallelWithInterleave,
         )
 
-        pp = PipelineParallelWithInterleave.__new__(PipelineParallelWithInterleave)
+        pp = PipelineParallelWithInterleave.__new__(
+            PipelineParallelWithInterleave
+        )
         pp._comm_overlap = False
         # Should return early
         pp._overlap_comm_grads()
@@ -217,7 +237,9 @@ class TestOverlapCommGrads(unittest.TestCase):
             PipelineParallelWithInterleave,
         )
 
-        pp = PipelineParallelWithInterleave.__new__(PipelineParallelWithInterleave)
+        pp = PipelineParallelWithInterleave.__new__(
+            PipelineParallelWithInterleave
+        )
         pp._comm_overlap = True
         pp.stage_id = 0
         pp._backward_step_count = 1
@@ -237,7 +259,9 @@ class TestSyncOverlapGrads(unittest.TestCase):
             PipelineParallelWithInterleave,
         )
 
-        pp = PipelineParallelWithInterleave.__new__(PipelineParallelWithInterleave)
+        pp = PipelineParallelWithInterleave.__new__(
+            PipelineParallelWithInterleave
+        )
         pp._comm_overlap = False
         pp._sync_overlap_grads()
 
@@ -246,7 +270,9 @@ class TestSyncOverlapGrads(unittest.TestCase):
             PipelineParallelWithInterleave,
         )
 
-        pp = PipelineParallelWithInterleave.__new__(PipelineParallelWithInterleave)
+        pp = PipelineParallelWithInterleave.__new__(
+            PipelineParallelWithInterleave
+        )
         pp._comm_overlap = True
         pp._backward_step_count = 8
         pp.accumulate_steps = 4
@@ -267,7 +293,9 @@ class TestSyncOverlapGrads(unittest.TestCase):
             PipelineParallelWithInterleave,
         )
 
-        pp = PipelineParallelWithInterleave.__new__(PipelineParallelWithInterleave)
+        pp = PipelineParallelWithInterleave.__new__(
+            PipelineParallelWithInterleave
+        )
         pp._comm_overlap = True
         pp._backward_step_count = 5
         pp.accumulate_steps = 4

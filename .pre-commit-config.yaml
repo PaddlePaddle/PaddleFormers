@@ -67,7 +67,8 @@ repos:
       - id: yamlfmt
         exclude: |
           (?x)^(
-            \.clang-format
+            \.clang-format|
+            \.github/workflows/cherry-pick\.yml
           )$
   - repo: https://github.com/PFCCLab/ast-grep-pre-commit-mirror
     rev: v0.40.0.1

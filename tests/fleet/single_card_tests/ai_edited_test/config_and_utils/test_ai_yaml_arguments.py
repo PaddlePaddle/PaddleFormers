@@ -17,7 +17,11 @@ import tempfile
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -163,7 +167,9 @@ class TestLoadYaml(unittest.TestCase):
 a: 1
 b: 2
 """
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write(yaml_content)
             f.flush()
             result = load_yaml(f.name)
@@ -182,7 +188,9 @@ model:
 training:
   lr: 0.001
 """
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write(yaml_content)
             f.flush()
             result = load_yaml(f.name)
@@ -196,7 +204,9 @@ training:
         from paddleformers.fleet.training.yaml_arguments import load_yaml
 
         yaml_content = ""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write(yaml_content)
             f.flush()
             result = load_yaml(f.name)
@@ -213,7 +223,9 @@ items:
   - 2
   - 3
 """
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write(yaml_content)
             f.flush()
             result = load_yaml(f.name)

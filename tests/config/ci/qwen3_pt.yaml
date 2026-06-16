@@ -2,24 +2,19 @@
 dataset_type: "pretrain"
 input_dir: "1.0 ./data/pre-training/llama_openwebtext_100k"
 split: "998,1,1"
-
 eval_iters: 10
-
 max_seq_len: 4096
 num_samples_each_epoch: 6000000
 packing: true
 mix_strategy: concat
-
 truncate_packing: true
 dataloader_shuffle: false
 dataloader_num_workers: 4
 prefetch_factor: 24
-
 ### model
 model_name_or_path: ./Qwen3-30B-A3B-Base
 _attn_implementation: flashmask
 use_qk_norm: true
-
 ### finetuning
 # base
 stage: PT
@@ -42,11 +37,9 @@ disable_tqdm: true
 eval_accumulation_steps: 1
 output_dir: ./checkpoints/qwen3-30b-a3b-single-card
 continue_training: false
-
 # train
 warmup_steps: 10
 learning_rate: 1.0e-5
-
 # performance
 recompute_granularity: full
 recompute_method: uniform
@@ -56,27 +49,21 @@ pipeline_model_parallel_size: 1
 expert_model_parallel_size: 1
 sequence_parallel: false
 use_expert_parallel: false
-
-# compute 
+# compute
 moe_expert_fusion: true
 apply_rope_fusion: true
 moe_router_fusion: true
-
-# 
+#
 moe_ep_barrier: false
 moe_router_force_load_balancing: false
-
-
 optim: adamw
 bf16: true
 fp16_opt_level: O2
 amp_master_grad: true
 fuse_swiglu: true
-
 # unified_checkpoint: false
 save_checkpoint_format: "flex_checkpoint"
 load_checkpoint_format: "flex_checkpoint"
 moe_router_fusion: false
-
 router_aux_loss_coef: 0.0
 moe_deep_gemm: false

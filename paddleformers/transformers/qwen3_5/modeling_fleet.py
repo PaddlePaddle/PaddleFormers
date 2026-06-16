@@ -34,7 +34,9 @@ from paddleformers.fleet.models.gpt.gpt_layer_specs import (
     get_gpt_spec,
 )
 from paddleformers.fleet.models.gpt.lm_head import GPTLMHead
-from paddleformers.fleet.models.qwen3_5.layer_specs import get_qwen3_5_vision_spec
+from paddleformers.fleet.models.qwen3_5.layer_specs import (
+    get_qwen3_5_vision_spec,
+)
 from paddleformers.fleet.models.qwen3_5.qwen3_5_model import (
     Qwen3_5RMSNorm,
     Qwen3_5RMSNormPipe,
@@ -199,7 +201,9 @@ def get_qwen3_5_language_spec(config):
     if layer_types is None:
         layer_types = ["full_attention"] * config.num_hidden_layers
 
-    empty_layer_spec = LayerSpec(layer=EmptyLayer, extra_kwargs={"config": config})
+    empty_layer_spec = LayerSpec(
+        layer=EmptyLayer, extra_kwargs={"config": config}
+    )
     head_empty_layers = [empty_layer_spec] * config.num_empty_layers_add_in_head
     tail_empty_layers = [empty_layer_spec] * config.num_empty_layers_add_in_tail
 
@@ -234,9 +238,15 @@ def get_qwen3_5_language_spec(config):
         attn_spec = sub.self_attn
         if hasattr(attn_spec, "sublayers_spec"):
             attn_sub = attn_spec.sublayers_spec
-            if hasattr(attn_sub, "q_norm") and attn_sub.q_norm is WrappedPaddleNorm:
+            if (
+                hasattr(attn_sub, "q_norm")
+                and attn_sub.q_norm is WrappedPaddleNorm
+            ):
                 attn_sub.q_norm = Qwen3_5RMSNorm
-            if hasattr(attn_sub, "k_norm") and attn_sub.k_norm is WrappedPaddleNorm:
+            if (
+                hasattr(attn_sub, "k_norm")
+                and attn_sub.k_norm is WrappedPaddleNorm
+            ):
                 attn_sub.k_norm = Qwen3_5RMSNorm
 
         transformer_layers_spec.append(spec)
@@ -244,7 +254,9 @@ def get_qwen3_5_language_spec(config):
     full_spec = get_gpt_spec(
         config=config,
         transformer_layers_spec=transformer_layers_spec,
-        mtp_layers_spec=_build_mtp_layers_spec(config, transformer_layers_spec) if config.mtp_num_layers > 0 else None,
+        mtp_layers_spec=_build_mtp_layers_spec(config, transformer_layers_spec)
+        if config.mtp_num_layers > 0
+        else None,
         vocab_size=config.vocab_size,
         max_sequence_length=config.max_sequence_length,
         head_empty_layers_spec=head_empty_layers,
@@ -315,7 +327,11 @@ def build_qwen3_5_model(config, criterion):
         config=language_config,
         vision_model=NoPipelineParallel(vision_model, strategy),
         language_model=NoPipelineParallel(language_model, strategy),
-        spatial_merge_size=getattr(config, "spatial_merge_size", config.vision_config.spatial_merge_size),
+        spatial_merge_size=getattr(
+            config,
+            "spatial_merge_size",
+            config.vision_config.spatial_merge_size,
+        ),
         image_token_id=config.image_token_id,
         video_token_id=config.video_token_id,
     )
@@ -382,8 +398,12 @@ class Qwen3_5Model(FleetLayer):
             return output[0]
         return output
 
-    def get_video_features(self, pixel_values_videos, video_grid_thw=None, **kwargs):
-        return self.get_image_features(pixel_values_videos, video_grid_thw, **kwargs)
+    def get_video_features(
+        self, pixel_values_videos, video_grid_thw=None, **kwargs
+    ):
+        return self.get_image_features(
+            pixel_values_videos, video_grid_thw, **kwargs
+        )
 
     def get_placeholder_mask(
         self,
@@ -394,25 +414,39 @@ class Qwen3_5Model(FleetLayer):
     ):
         if input_ids is None:
             embed_fn = self.get_input_embeddings()
-            special_image_mask = (inputs_embeds == embed_fn(paddle.to_tensor(self.image_token_id, dtype="int64"))).all(
-                -1
-            )
-            special_video_mask = (inputs_embeds == embed_fn(paddle.to_tensor(self.video_token_id, dtype="int64"))).all(
-                -1
-            )
+            special_image_mask = (
+                inputs_embeds
+                == embed_fn(
+                    paddle.to_tensor(self.image_token_id, dtype="int64")
+                )
+            ).all(-1)
+            special_video_mask = (
+                inputs_embeds
+                == embed_fn(
+                    paddle.to_tensor(self.video_token_id, dtype="int64")
+                )
+            ).all(-1)
         else:
             special_image_mask = input_ids == self.image_token_id
             special_video_mask = input_ids == self.video_token_id
 
         # n_image_tokens = special_image_mask.sum()
-        special_image_mask = special_image_mask.unsqueeze(-1).expand_as(inputs_embeds)
+        special_image_mask = special_image_mask.unsqueeze(-1).expand_as(
+            inputs_embeds
+        )
         if image_features is not None:
-            assert int(inputs_embeds[special_image_mask].numel()) == int(image_features.numel())
+            assert int(inputs_embeds[special_image_mask].numel()) == int(
+                image_features.numel()
+            )
 
         # n_video_tokens = special_video_mask.sum()
-        special_video_mask = special_video_mask.unsqueeze(-1).expand_as(inputs_embeds)
+        special_video_mask = special_video_mask.unsqueeze(-1).expand_as(
+            inputs_embeds
+        )
         if video_features is not None:
-            assert int(inputs_embeds[special_video_mask].numel()) == int(video_features.numel())
+            assert int(inputs_embeds[special_video_mask].numel()) == int(
+                video_features.numel()
+            )
 
         return special_image_mask, special_video_mask
 
@@ -437,8 +471,12 @@ class Qwen3_5Model(FleetLayer):
         llm_w = w // spatial_merge_size
         seq_len = llm_t * llm_h * llm_w
 
-        pos_w = paddle.arange(start_position, start_position + llm_w).tile([llm_h * llm_t])
-        pos_h = paddle.arange(start_position, start_position + llm_h).repeat_interleave(llm_w * llm_t)
+        pos_w = paddle.arange(start_position, start_position + llm_w).tile(
+            [llm_h * llm_t]
+        )
+        pos_h = paddle.arange(
+            start_position, start_position + llm_h
+        ).repeat_interleave(llm_w * llm_t)
         pos_t = paddle.full([seq_len], start_position, dtype="int64")
         pos_t = pos_t * time_interval
 
@@ -475,7 +513,9 @@ class Qwen3_5Model(FleetLayer):
                 input_token_type = input_token_type[mask]
 
             input_type_group = []
-            for key, group in itertools.groupby(enumerate(input_token_type.tolist()), lambda x: x[1]):
+            for key, group in itertools.groupby(
+                enumerate(input_token_type.tolist()), lambda x: x[1]
+            ):
                 group = list(group)
                 input_type_group.append((key, group[0][0], group[-1][0] + 1))
 
@@ -484,7 +524,10 @@ class Qwen3_5Model(FleetLayer):
             for modality_type, start_idx, end_idx in input_type_group:
                 if modality_type == 0:
                     text_len = end_idx - start_idx
-                    llm_pos_ids_list.append(paddle.arange(text_len).reshape([1, -1]).expand([3, -1]) + current_pos)
+                    llm_pos_ids_list.append(
+                        paddle.arange(text_len).reshape([1, -1]).expand([3, -1])
+                        + current_pos
+                    )
                     current_pos += text_len
                 else:
                     grid_thw = next(grid_iters[modality_type])
@@ -495,11 +538,21 @@ class Qwen3_5Model(FleetLayer):
                         spatial_merge_size,
                     )
                     llm_pos_ids_list.append(vision_position_ids)
-                    h_val = int(grid_thw[1].item()) if isinstance(grid_thw, Tensor) else int(grid_thw[1])
-                    w_val = int(grid_thw[2].item()) if isinstance(grid_thw, Tensor) else int(grid_thw[2])
+                    h_val = (
+                        int(grid_thw[1].item())
+                        if isinstance(grid_thw, Tensor)
+                        else int(grid_thw[1])
+                    )
+                    w_val = (
+                        int(grid_thw[2].item())
+                        if isinstance(grid_thw, Tensor)
+                        else int(grid_thw[2])
+                    )
                     current_pos += max(h_val, w_val) // spatial_merge_size
 
-            llm_positions = paddle.concat(llm_pos_ids_list, axis=1).reshape([3, -1])
+            llm_positions = paddle.concat(llm_pos_ids_list, axis=1).reshape(
+                [3, -1]
+            )
 
             if attention_mask is not None:
                 mask = attention_mask[batch_idx].astype("bool")
@@ -507,9 +560,13 @@ class Qwen3_5Model(FleetLayer):
             else:
                 position_ids[:, batch_idx] = llm_positions
 
-            mrope_position_deltas.append(int(llm_positions.max().item()) + 1 - len(current_input_ids))
+            mrope_position_deltas.append(
+                int(llm_positions.max().item()) + 1 - len(current_input_ids)
+            )
 
-        mrope_position_deltas = paddle.to_tensor(mrope_position_deltas, dtype="int64").unsqueeze(1)
+        mrope_position_deltas = paddle.to_tensor(
+            mrope_position_deltas, dtype="int64"
+        ).unsqueeze(1)
 
         return position_ids, mrope_position_deltas
 
@@ -536,7 +593,9 @@ class Qwen3_5Model(FleetLayer):
             and (image_grid_thw is not None or video_grid_thw is not None)
         )
 
-        if can_compute_mrope and (self.rope_deltas is None or past_key_values_length == 0):
+        if can_compute_mrope and (
+            self.rope_deltas is None or past_key_values_length == 0
+        ):
             position_ids, rope_deltas = self.get_rope_index(
                 input_ids,
                 mm_token_type_ids=mm_token_type_ids,
@@ -556,7 +615,9 @@ class Qwen3_5Model(FleetLayer):
                     paddle.zeros_like(position_ids),
                     position_ids,
                 )
-                position_ids = position_ids.reshape([1, batch_size, -1]).tile([3, 1, 1])
+                position_ids = position_ids.reshape([1, batch_size, -1]).tile(
+                    [3, 1, 1]
+                )
             else:
                 position_ids = (
                     paddle.arange(
@@ -587,28 +648,42 @@ class Qwen3_5Model(FleetLayer):
         mm_token_type_ids = dict_args.get("mm_token_type_ids", None)
         past_key_values = dict_args.get("past_key_values", None)
 
-        if inputs_embeds is None and input_ids is not None and self.language_model is not None:
-            inputs_embeds = self.language_embedding.embedding.embed_tokens(input_ids)
+        if (
+            inputs_embeds is None
+            and input_ids is not None
+            and self.language_model is not None
+        ):
+            inputs_embeds = self.language_embedding.embedding.embed_tokens(
+                input_ids
+            )
 
         if pixel_values is not None and self.visual is not None:
-            image_features = self.get_image_features(pixel_values, image_grid_thw)
+            image_features = self.get_image_features(
+                pixel_values, image_grid_thw
+            )
             image_features = image_features.astype(inputs_embeds.dtype)
             image_mask, _ = self.get_placeholder_mask(
                 input_ids,
                 inputs_embeds,
                 image_features=image_features,
             )
-            inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_features)
+            inputs_embeds = inputs_embeds.masked_scatter(
+                image_mask, image_features
+            )
 
         if pixel_values_videos is not None and self.visual is not None:
-            video_features = self.get_video_features(pixel_values_videos, video_grid_thw)
+            video_features = self.get_video_features(
+                pixel_values_videos, video_grid_thw
+            )
             video_features = video_features.astype(inputs_embeds.dtype)
             _, video_mask = self.get_placeholder_mask(
                 input_ids,
                 inputs_embeds,
                 video_features=video_features,
             )
-            inputs_embeds = inputs_embeds.masked_scatter(video_mask, video_features)
+            inputs_embeds = inputs_embeds.masked_scatter(
+                video_mask, video_features
+            )
 
         if position_ids is None:
             position_ids = self.compute_3d_position_ids(
@@ -623,35 +698,49 @@ class Qwen3_5Model(FleetLayer):
 
         num_nextn = getattr(self.config, "num_nextn_predict_layers", 0) or 0
 
-        if num_nextn > 0 and not getattr(self.config, "mtp_load_weight_only", False):
+        if num_nextn > 0 and not getattr(
+            self.config, "mtp_load_weight_only", False
+        ):
             seq_len = inputs_embeds.shape[1]
             base_len = seq_len - num_nextn
             main_embeds = inputs_embeds[:, :base_len, :]
             mtp_parts = []
             for depth in range(num_nextn):
-                shifted = inputs_embeds[:, (depth + 1) : (depth + 1 + base_len), :]
+                shifted = inputs_embeds[
+                    :, (depth + 1) : (depth + 1 + base_len), :
+                ]
                 mtp_parts.append(shifted)
 
             if self.config.sequence_parallel:
                 main_embeds = main_embeds.transpose([1, 0, 2]).contiguous()
-                main_embeds = scatter_to_sequence_parallel_region(main_embeds, group=self.tp_group)
+                main_embeds = scatter_to_sequence_parallel_region(
+                    main_embeds, group=self.tp_group
+                )
                 mtp_scattered = []
                 for mtp in mtp_parts:
                     mtp = mtp.transpose([1, 0, 2]).contiguous()
-                    mtp = scatter_to_sequence_parallel_region(mtp, group=self.tp_group)
+                    mtp = scatter_to_sequence_parallel_region(
+                        mtp, group=self.tp_group
+                    )
                     mtp_scattered.append(mtp)
-                inputs_embeds = paddle.concat([main_embeds] + mtp_scattered, axis=0)
+                inputs_embeds = paddle.concat(
+                    [main_embeds] + mtp_scattered, axis=0
+                )
             else:
                 inputs_embeds = paddle.concat([main_embeds] + mtp_parts, axis=0)
         elif self.config.sequence_parallel:
             inputs_embeds = inputs_embeds.transpose([1, 0, 2]).contiguous()
-            inputs_embeds = scatter_to_sequence_parallel_region(inputs_embeds, group=self.tp_group)
+            inputs_embeds = scatter_to_sequence_parallel_region(
+                inputs_embeds, group=self.tp_group
+            )
 
         dict_args["position_ids"] = position_ids
         dict_args["input_ids"] = None
         dict_args["decoder_input"] = inputs_embeds
 
-        lm_dict_args = self.language_embedding(dict_args, decoder_input=inputs_embeds)
+        lm_dict_args = self.language_embedding(
+            dict_args, decoder_input=inputs_embeds
+        )
 
         for layer in self.language_backbone:
             lm_dict_args = layer(lm_dict_args)
@@ -711,14 +800,18 @@ class FleetQwen3_5ForConditionalGeneration(FleetLayer, PretrainedModel):
         if self.model.language_model is not None:
             language_model = self.model.language_model._layers
             if hasattr(language_model, "sharded_state_dict"):
-                lm_sharded = language_model.sharded_state_dict(structured_name_prefix="")
+                lm_sharded = language_model.sharded_state_dict(
+                    structured_name_prefix=""
+                )
                 sharded_state_dict.update(lm_sharded)
 
         # Get sharded state dict from vision model (Qwen3_5VisionModel wrapped in NoPipelineParallel)
         if self.model.visual is not None:
             vision_model = self.model.visual._layers
             if hasattr(vision_model, "sharded_state_dict"):
-                vm_sharded = vision_model.sharded_state_dict(structured_name_prefix="")
+                vm_sharded = vision_model.sharded_state_dict(
+                    structured_name_prefix=""
+                )
                 sharded_state_dict.update(vm_sharded)
 
         # Get criterion parameters if any

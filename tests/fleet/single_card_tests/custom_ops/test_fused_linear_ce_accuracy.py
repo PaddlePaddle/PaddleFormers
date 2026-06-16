@@ -37,7 +37,9 @@ os.environ["FLAGS_cudnn_deterministic"] = "1"
 os.environ["FLAGS_embedding_deterministic"] = "1"
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
 
-from paddleformers.fleet.models.common.language_loss.language_loss import LanguageLoss
+from paddleformers.fleet.models.common.language_loss.language_loss import (
+    LanguageLoss,
+)
 from paddleformers.fleet.models.gpt.lm_head import GPTLMHead
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 
@@ -103,8 +105,12 @@ def _make_pair(hidden_size=64, vocab_size=256, num_chunks=1):
         )
         return lm_head
 
-    cfg_bsl = _make_config(hidden_size, vocab_size, fused_linear_ce_loss_chunk=0)
-    cfg_fused = _make_config(hidden_size, vocab_size, fused_linear_ce_loss_chunk=num_chunks)
+    cfg_bsl = _make_config(
+        hidden_size, vocab_size, fused_linear_ce_loss_chunk=0
+    )
+    cfg_fused = _make_config(
+        hidden_size, vocab_size, fused_linear_ce_loss_chunk=num_chunks
+    )
 
     lm_head_bsl = _make_lm_head(cfg_bsl)
     lm_head_fused = _make_lm_head(cfg_fused)
@@ -125,7 +131,9 @@ def _make_pair(hidden_size=64, vocab_size=256, num_chunks=1):
 # ---------------------------------------------------------------------------
 # 构造输入
 # ---------------------------------------------------------------------------
-def _make_inputs(batch, seq, hidden_size, vocab_size, ignore_ratio=0.0, seed=42):
+def _make_inputs(
+    batch, seq, hidden_size, vocab_size, ignore_ratio=0.0, seed=42
+):
     """生成随机 hidden_states [B, S, H] 和 labels [B, S]。"""
     paddle.seed(seed)
     hidden = paddle.randn([batch, seq, hidden_size], dtype="float32")
@@ -192,9 +200,19 @@ class TestFusedLinearCEAccuracy(unittest.TestCase):
     def _assert_close(self, a, b, msg, atol=None, rtol=None):
         atol = atol if atol is not None else self.LOSS_ATOL
         rtol = rtol if rtol is not None else self.LOSS_RTOL
-        a_np = a.numpy().flatten() if isinstance(a, paddle.Tensor) else np.array([float(a)])
-        b_np = b.numpy().flatten() if isinstance(b, paddle.Tensor) else np.array([float(b)])
-        np.testing.assert_allclose(a_np, b_np, atol=atol, rtol=rtol, err_msg=msg)
+        a_np = (
+            a.numpy().flatten()
+            if isinstance(a, paddle.Tensor)
+            else np.array([float(a)])
+        )
+        b_np = (
+            b.numpy().flatten()
+            if isinstance(b, paddle.Tensor)
+            else np.array([float(b)])
+        )
+        np.testing.assert_allclose(
+            a_np, b_np, atol=atol, rtol=rtol, err_msg=msg
+        )
 
     # ------------------------------------------------------------------
     # 场景 1：基本 loss 对比（无 mask）
@@ -248,7 +266,9 @@ class TestFusedLinearCEAccuracy(unittest.TestCase):
         _, _, gw_b, _ = _forward_backward(*bsl, hidden, labels)
         _, _, gw_f, _ = _forward_backward(*fused, hidden, labels)
 
-        self._assert_close(gw_b, gw_f, "grad_weight", atol=self.GRAD_ATOL, rtol=self.GRAD_RTOL)
+        self._assert_close(
+            gw_b, gw_f, "grad_weight", atol=self.GRAD_ATOL, rtol=self.GRAD_RTOL
+        )
 
     # ------------------------------------------------------------------
     # 场景 5：grad_bias 对比
@@ -261,7 +281,9 @@ class TestFusedLinearCEAccuracy(unittest.TestCase):
         _, _, _, gb_b = _forward_backward(*bsl, hidden, labels)
         _, _, _, gb_f = _forward_backward(*fused, hidden, labels)
 
-        self._assert_close(gb_b, gb_f, "grad_bias", atol=self.GRAD_ATOL, rtol=self.GRAD_RTOL)
+        self._assert_close(
+            gb_b, gb_f, "grad_bias", atol=self.GRAD_ATOL, rtol=self.GRAD_RTOL
+        )
 
     # ------------------------------------------------------------------
     # 场景 6：高 ignore 比例

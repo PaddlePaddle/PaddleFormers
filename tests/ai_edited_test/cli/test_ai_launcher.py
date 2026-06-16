@@ -58,7 +58,10 @@ class TestLaunch(unittest.TestCase):
                 del sys.modules[mod_name]
 
         # Clean up cached module references
-        for mod_name in ["paddleformers.cli.train.tuner", "paddleformers.cli.launcher"]:
+        for mod_name in [
+            "paddleformers.cli.train.tuner",
+            "paddleformers.cli.launcher",
+        ]:
             if mod_name in sys.modules:
                 del sys.modules[mod_name]
 
@@ -67,7 +70,9 @@ class TestLaunch(unittest.TestCase):
         from paddleformers.cli.launcher import launch
 
         with patch("paddleformers.cli.launcher.run_tuner") as mock_run_tuner:
-            with patch("paddleformers.cli.launcher.run_export") as mock_run_export:
+            with patch(
+                "paddleformers.cli.launcher.run_export"
+            ) as mock_run_export:
                 with patch.object(sys, "argv", ["launcher", "train"]):
                     launch()
                     mock_run_tuner.assert_called_once()
@@ -78,7 +83,9 @@ class TestLaunch(unittest.TestCase):
         from paddleformers.cli.launcher import launch
 
         with patch("paddleformers.cli.launcher.run_tuner") as mock_run_tuner:
-            with patch("paddleformers.cli.launcher.run_export") as mock_run_export:
+            with patch(
+                "paddleformers.cli.launcher.run_export"
+            ) as mock_run_export:
                 with patch.object(sys, "argv", ["launcher", "export"]):
                     launch()
                     mock_run_export.assert_called_once()

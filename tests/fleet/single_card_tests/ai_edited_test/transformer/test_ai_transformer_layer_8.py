@@ -17,7 +17,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -52,7 +56,9 @@ def _make_layer():
         hidden_dropout_prob=0.0,
         attention_dropout=0.0,
         init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-        output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+        output_layer_init_method=functools.partial(
+            paddle.nn.init.xavier_uniform_, gain=1.0
+        ),
         tie_word_embeddings=False,
         use_qk_norm=True,
     )
@@ -139,7 +145,9 @@ class TestTransformerLayerFP8Quant(unittest.TestCase):
         layer = _make_layer()
         layer.mlp = MagicMock(spec=MoELayer)
         layer.fp8_quant_weight(batch_mode=True, quant_transpose=False)
-        layer.mlp.fp8_quant_weight.assert_called_once_with(batch_mode=True, quant_transpose=False)
+        layer.mlp.fp8_quant_weight.assert_called_once_with(
+            batch_mode=True, quant_transpose=False
+        )
 
 
 class TestTransformerLayerUseFP8(unittest.TestCase):

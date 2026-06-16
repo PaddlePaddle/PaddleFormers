@@ -72,7 +72,9 @@ def tuple_to_dict_helper(input_tensor):
 
 def dict_to_tuple_helper(output_tensor):
     if isinstance(output_tensor, dict):
-        output_tensor_tuple = convert_tensor_dict_to_tuple(output_tensor_dict=output_tensor)
+        output_tensor_tuple = convert_tensor_dict_to_tuple(
+            output_tensor_dict=output_tensor
+        )
     else:  # single tensor or tensor tuple
         output_tensor_tuple = output_tensor
     return output_tensor_tuple

@@ -95,8 +95,12 @@ class TestGPTModel(unittest.TestCase):
             moe_intermediate_size=1024,
             moe_token_dispatcher_type="alltoall",
             n_shared_experts=1,
-            init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-            output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+            init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
+            output_layer_init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
             tie_word_embeddings=True,
             use_qk_norm=True,
             recompute_granularity=None,
@@ -128,15 +132,19 @@ class TestGPTModel(unittest.TestCase):
         micro_batch_size = 1
 
         data = list(range(sequence_length))
-        input_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat((micro_batch_size, 1))
-        position_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat((micro_batch_size, 1))
+        input_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat(
+            (micro_batch_size, 1)
+        )
+        position_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat(
+            (micro_batch_size, 1)
+        )
         attention_mask = paddle.ones(
             (micro_batch_size, 1, sequence_length, sequence_length),
             dtype=bool,
         )
-        labels = paddle.to_tensor(list(range(1, sequence_length + 1)), dtype=paddle.int64).repeat(
-            (micro_batch_size, 1)
-        )
+        labels = paddle.to_tensor(
+            list(range(1, sequence_length + 1)), dtype=paddle.int64
+        ).repeat((micro_batch_size, 1))
 
         return (
             {
@@ -173,13 +181,17 @@ class TestGPTModel(unittest.TestCase):
         # Run model without recompute
         print("\n=== Running model WITHOUT recompute ===")
         self.setUp()
-        loss_no_recompute, grads_no_recompute = self._run_model_and_get_results(base_config)
+        loss_no_recompute, grads_no_recompute = self._run_model_and_get_results(
+            base_config
+        )
         print(f"Loss (no recompute): {loss_no_recompute}")
 
         # Run model with recompute
         print("\n=== Running model WITH recompute ===")
         self.setUp()
-        loss_with_recompute, grads_with_recompute = self._run_model_and_get_results(recompute_config)
+        loss_with_recompute, grads_with_recompute = (
+            self._run_model_and_get_results(recompute_config)
+        )
         print(f"Loss (with recompute): {loss_with_recompute}")
 
         # Compare loss
@@ -202,7 +214,9 @@ class TestGPTModel(unittest.TestCase):
                 grad_norm_no_recompute = grad_no_recompute.norm().item()
                 grad_norm_with_recompute = grad_with_recompute.norm().item()
 
-                max_diff = (grad_no_recompute - grad_with_recompute).abs().max().item()
+                max_diff = (
+                    (grad_no_recompute - grad_with_recompute).abs().max().item()
+                )
 
                 print(
                     f"{name}: norm_diff={abs(grad_norm_no_recompute - grad_norm_with_recompute):.8f}, max_diff={max_diff:.8f}"

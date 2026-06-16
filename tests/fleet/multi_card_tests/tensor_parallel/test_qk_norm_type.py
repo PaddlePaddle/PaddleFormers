@@ -40,13 +40,17 @@ from paddleformers.fleet.tensor_parallel.layers import (
     ColumnParallelLinear,
     RowParallelLinear,
 )
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.training.initialize import initialize_fleet
 from paddleformers.fleet.transformer.attention import (
     SelfAttention,
     SelfAttentionSublayersSpec,
 )
-from paddleformers.fleet.transformer.dot_product_attention import DotProductAttention
+from paddleformers.fleet.transformer.dot_product_attention import (
+    DotProductAttention,
+)
 from paddleformers.fleet.transformer.enums import AttnMaskType
 from paddleformers.fleet.transformer.paddle_norm import WrappedPaddleNorm
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
@@ -162,7 +166,9 @@ class TestQKNormTypeDistributed(unittest.TestCase):
         self.tp_size = TENSOR_PARALLEL
         self.seed = SEED
 
-    def _check_gpu_forward(self, sp: bool, qk_norm_type: str, use_qk_norm: bool = True):
+    def _check_gpu_forward(
+        self, sp: bool, qk_norm_type: str, use_qk_norm: bool = True
+    ):
         """Test that forward produces correct shape and dtype."""
         _set_random_seed(self.seed)
         model_parallel_cuda_manual_seed(self.seed)
@@ -173,19 +179,27 @@ class TestQKNormTypeDistributed(unittest.TestCase):
             qk_norm_type=qk_norm_type,
             use_qk_norm=use_qk_norm,
         )
-        pg_collection = ProcessGroupCollection.use_mpu_process_groups(required_pgs=["tp", "cp"])
+        pg_collection = ProcessGroupCollection.use_mpu_process_groups(
+            required_pgs=["tp", "cp"]
+        )
         attn = _build_attn(config, pg_collection=pg_collection)
 
         sp_size = self.tp_size if sp else 1
 
         if sp:
-            hidden_states = paddle.randn([SEQ_LENGTH // sp_size, MICRO_BATCH_SIZE, HIDDEN_SIZE])
+            hidden_states = paddle.randn(
+                [SEQ_LENGTH // sp_size, MICRO_BATCH_SIZE, HIDDEN_SIZE]
+            )
         else:
-            hidden_states = paddle.randn([MICRO_BATCH_SIZE, SEQ_LENGTH, HIDDEN_SIZE])
+            hidden_states = paddle.randn(
+                [MICRO_BATCH_SIZE, SEQ_LENGTH, HIDDEN_SIZE]
+            )
 
         output, bias = attn(hidden_states, attention_mask=None)
 
-        self.assertEqual(output.ndim, 3, f"Output should be 3D, got {output.ndim}D")
+        self.assertEqual(
+            output.ndim, 3, f"Output should be 3D, got {output.ndim}D"
+        )
 
         if sp:
             self.assertEqual(output.shape[0], SEQ_LENGTH // sp_size)
@@ -204,19 +218,27 @@ class TestQKNormTypeDistributed(unittest.TestCase):
 
     def test_per_layer_forward_no_sp(self):
         """Test per_layer qk_norm_type forward without SP."""
-        self._check_gpu_forward(sp=False, qk_norm_type="per_layer", use_qk_norm=True)
+        self._check_gpu_forward(
+            sp=False, qk_norm_type="per_layer", use_qk_norm=True
+        )
 
     def test_per_layer_forward_with_sp(self):
         """Test per_layer qk_norm_type forward with SP."""
-        self._check_gpu_forward(sp=True, qk_norm_type="per_layer", use_qk_norm=True)
+        self._check_gpu_forward(
+            sp=True, qk_norm_type="per_layer", use_qk_norm=True
+        )
 
     def test_no_qk_norm_forward_no_sp(self):
         """Test forward without QK normalization and without SP."""
-        self._check_gpu_forward(sp=False, qk_norm_type="per_head", use_qk_norm=False)
+        self._check_gpu_forward(
+            sp=False, qk_norm_type="per_head", use_qk_norm=False
+        )
 
     def test_no_qk_norm_forward_with_sp(self):
         """Test forward without QK normalization and with SP."""
-        self._check_gpu_forward(sp=True, qk_norm_type="per_head", use_qk_norm=False)
+        self._check_gpu_forward(
+            sp=True, qk_norm_type="per_head", use_qk_norm=False
+        )
 
 
 if __name__ == "__main__":

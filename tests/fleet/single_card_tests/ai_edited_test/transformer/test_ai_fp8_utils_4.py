@@ -17,7 +17,9 @@ import sys
 import types
 import unittest
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+REPO_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 sys.path.insert(0, os.path.join(REPO_ROOT, "src"))
 
 import paddle
@@ -52,7 +54,9 @@ class TensorBox:
 
 class Projection:
     def __init__(self, shape, with_main_grad=False):
-        self.weight = TensorBox(paddle.ones(shape, dtype="float32"), with_main_grad)
+        self.weight = TensorBox(
+            paddle.ones(shape, dtype="float32"), with_main_grad
+        )
 
 
 class Expert:
@@ -63,18 +67,30 @@ class Expert:
 
 class GroupedWeights:
     def __init__(self, with_main_grad=False):
-        self.weight1 = TensorBox(paddle.ones([2, 2, 4], dtype="float32"), with_main_grad)
-        self.weight2 = TensorBox(paddle.ones([2, 4, 2], dtype="float32"), with_main_grad)
+        self.weight1 = TensorBox(
+            paddle.ones([2, 2, 4], dtype="float32"), with_main_grad
+        )
+        self.weight2 = TensorBox(
+            paddle.ones([2, 4, 2], dtype="float32"), with_main_grad
+        )
 
 
 class LoRAGroupedWeights:
     def __init__(self):
         self.weight1 = paddle.ones([1, 2, 4], dtype="float32")
         self.weight2 = paddle.ones([1, 4, 2], dtype="float32")
-        self.weight1_lora_A = TensorBox(paddle.ones([1, 2, 2], dtype="float32"), True)
-        self.weight1_lora_B = TensorBox(paddle.ones([1, 2, 4], dtype="float32"), False)
-        self.weight2_lora_A = TensorBox(paddle.ones([1, 4, 2], dtype="float32"), True)
-        self.weight2_lora_B = TensorBox(paddle.ones([1, 2, 2], dtype="float32"), False)
+        self.weight1_lora_A = TensorBox(
+            paddle.ones([1, 2, 2], dtype="float32"), True
+        )
+        self.weight1_lora_B = TensorBox(
+            paddle.ones([1, 2, 4], dtype="float32"), False
+        )
+        self.weight2_lora_A = TensorBox(
+            paddle.ones([1, 4, 2], dtype="float32"), True
+        )
+        self.weight2_lora_B = TensorBox(
+            paddle.ones([1, 2, 2], dtype="float32"), False
+        )
         self.disable_lora = False
         self.merged = False
         self.scaling = 0.5
@@ -111,7 +127,9 @@ class MethodCalls:
     def __init__(self):
         self.names = []
 
-    def bwd_down_input_fp8(self, expert_w2, out_grad, o1, unzipped_probs, inplace_swiglu_prob=False):
+    def bwd_down_input_fp8(
+        self, expert_w2, out_grad, o1, unzipped_probs, inplace_swiglu_prob=False
+    ):
         del expert_w2, unzipped_probs, inplace_swiglu_prob
         self.names.append("bwd_down_input_fp8")
         do1 = paddle.ones(o1.shape, dtype="float32")
@@ -148,7 +166,9 @@ class FunctionalWithBatchedGemm:
     def __getattr__(self, name):
         return getattr(self.original, name)
 
-    def batched_gemm(self, x, dy, tokens_per_expert, trans_lhs=False, trans_rhs=False):
+    def batched_gemm(
+        self, x, dy, tokens_per_expert, trans_lhs=False, trans_rhs=False
+    ):
         del x, dy, tokens_per_expert, trans_lhs, trans_rhs
         self.calls.append("batched_gemm")
         return paddle.ones([1, 2, 3], dtype="float32")
@@ -199,12 +219,18 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
         had_swiglu = hasattr(functional, "swiglu")
         old_swiglu = getattr(functional, "swiglu", None)
         incubate_functional = paddle.incubate.nn.functional
-        had_fused_transpose = hasattr(incubate_functional, "fused_transpose_wlch_split_quant")
-        old_fused_transpose = getattr(incubate_functional, "fused_transpose_wlch_split_quant", None)
+        had_fused_transpose = hasattr(
+            incubate_functional, "fused_transpose_wlch_split_quant"
+        )
+        old_fused_transpose = getattr(
+            incubate_functional, "fused_transpose_wlch_split_quant", None
+        )
         fake_fqo = types.ModuleType("FusedQuantOps")
         # importlib.util.find_spec requires __spec__ to be set on the module,
         # otherwise it raises ValueError when the module is already in sys.modules.
-        fake_fqo.__spec__ = importlib.util.spec_from_loader("FusedQuantOps", loader=None)
+        fake_fqo.__spec__ = importlib.util.spec_from_loader(
+            "FusedQuantOps", loader=None
+        )
 
         def fake_bwd(o1, do2, probs, flag):
             return o1, probs, do2, flag
@@ -243,7 +269,9 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
             if had_swiglu:
                 functional.swiglu = old_swiglu
             if had_fused_transpose:
-                incubate_functional.fused_transpose_wlch_split_quant = old_fused_transpose
+                incubate_functional.fused_transpose_wlch_split_quant = (
+                    old_fused_transpose
+                )
 
     def test_fwd_swiglu_and_lora_weight_grad_accumulation(self):
         node = ExpertsGroupGemmContiguousNode(CustomMap())
@@ -263,7 +291,9 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
         self.assertEqual(lora_b.grad.shape, [1, 2, 3])
 
     def test_empty_backward_initializes_main_grads(self):
-        split_node = ExpertsGroupGemmContiguousNode(CustomMap(with_main_grad=True), use_fp8_mlp=False)
+        split_node = ExpertsGroupGemmContiguousNode(
+            CustomMap(with_main_grad=True), use_fp8_mlp=False
+        )
         split_node.tokens_per_expert = [0, 0]
         dx, probs_grad = split_node.backward(
             paddle.empty([0, 2], dtype="float32"),
@@ -272,7 +302,9 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
         self.assertEqual(dx.shape, [0, 2])
         self.assertEqual(probs_grad.shape, [0, 1])
         self.assertIsNotNone(split_node.experts[0].down_proj.weight.main_grad)
-        self.assertIsNotNone(split_node.experts[0].up_gate_proj.weight.main_grad)
+        self.assertIsNotNone(
+            split_node.experts[0].up_gate_proj.weight.main_grad
+        )
 
         grouped_node = ExpertsGroupGemmContiguousNode(
             CustomMap(with_main_grad=True),
@@ -286,8 +318,12 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
         )
         self.assertEqual(grouped_dx.shape, [0, 2])
         self.assertEqual(grouped_probs_grad.shape, [0, 1])
-        self.assertIsNotNone(grouped_node.grouped_gemm_experts.weight1.main_grad)
-        self.assertIsNotNone(grouped_node.grouped_gemm_experts.weight2.main_grad)
+        self.assertIsNotNone(
+            grouped_node.grouped_gemm_experts.weight1.main_grad
+        )
+        self.assertIsNotNone(
+            grouped_node.grouped_gemm_experts.weight2.main_grad
+        )
 
     def test_backward_subbatch_slices_and_restores_state(self):
         node = ExpertsGroupGemmContiguousNode(
@@ -325,7 +361,9 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
         old_flag = fp8_utils.USE_INPLACE_SWIGLU_BWD
         try:
             fp8_utils.USE_INPLACE_SWIGLU_BWD = False
-            node = ExpertsGroupGemmContiguousNode(CustomMap(with_main_grad=True), use_fp8_mlp=True)
+            node = ExpertsGroupGemmContiguousNode(
+                CustomMap(with_main_grad=True), use_fp8_mlp=True
+            )
             node.o1 = paddle.ones([2, 4], dtype="float32")
             node.input = paddle.ones([2, 2], dtype="float32")
             node.input_fp8 = paddle.ones([2, 2], dtype="float32")
@@ -347,7 +385,9 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
 
             out_grad = paddle.ones([2, 2], dtype="float32")
             probs = paddle.ones([2, 1], dtype="float32")
-            dx, probs_grad = node.backward_impl_fp8(out_grad, probs, a2a_async_fn=a2a)
+            dx, probs_grad = node.backward_impl_fp8(
+                out_grad, probs, a2a_async_fn=a2a
+            )
             self.assertIs(dx, out_grad)
             self.assertEqual(probs_grad.shape, [2, 1])
             self.assertTrue(task.wait_called)
@@ -355,7 +395,9 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
             self.assertIn("reset_state", calls.names)
 
             fp8_utils.USE_INPLACE_SWIGLU_BWD = True
-            node = ExpertsGroupGemmContiguousNode(CustomMap(with_main_grad=True), use_fp8_mlp=True)
+            node = ExpertsGroupGemmContiguousNode(
+                CustomMap(with_main_grad=True), use_fp8_mlp=True
+            )
             node.o1 = paddle.ones([2, 4], dtype="float32")
             node.input = paddle.ones([2, 2], dtype="float32")
             node.input_fp8 = paddle.ones([2, 2], dtype="float32")
@@ -410,7 +452,9 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
 
         try:
             paddle.device.cuda = FakeCuda
-            x_fp8, x_scale = tilewise_quant(paddle.empty([0, 128], dtype="float32"))
+            x_fp8, x_scale = tilewise_quant(
+                paddle.empty([0, 128], dtype="float32")
+            )
         finally:
             paddle.device.cuda = old_cuda
 
@@ -422,36 +466,57 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
         old_split_group = fp8_utils.split_group_gemm
         old_deep = getattr(fp8_utils, "deep_gemm", None)
         old_quant = paddle.incubate.nn.functional.fp8_quant_blockwise
-        old_swiglu_quant = getattr(fp8_utils, "fuse_weighted_swiglu_fp8_quant", None)
+        old_swiglu_quant = getattr(
+            fp8_utils, "fuse_weighted_swiglu_fp8_quant", None
+        )
         old_swiglu_bwd_flag = fp8_utils.USE_INPLACE_SWIGLU_BWD
-        old_fused_weighted_bwd = getattr(fp8_utils, "fused_swiglu_weighted_bwd", None)
-        old_fused_weighted_clamp_bwd = getattr(fp8_utils, "fused_swiglu_weighted_clamp_bwd", None)
-        old_fused_backward = getattr(fp8_utils, "fused_swiglu_scale_backward", None)
+        old_fused_weighted_bwd = getattr(
+            fp8_utils, "fused_swiglu_weighted_bwd", None
+        )
+        old_fused_weighted_clamp_bwd = getattr(
+            fp8_utils, "fused_swiglu_weighted_clamp_bwd", None
+        )
+        old_fused_backward = getattr(
+            fp8_utils, "fused_swiglu_scale_backward", None
+        )
         old_fused_forward = fp8_utils.fused_swiglu_scale_forward
-        old_fused_swiglu_probs_bwd = getattr(fp8_utils, "_fused_swiglu_probs_bwd", None)
+        old_fused_swiglu_probs_bwd = getattr(
+            fp8_utils, "_fused_swiglu_probs_bwd", None
+        )
         fake_deep = FakeDeepGemm()
         split_calls = []
         try:
             fp8_utils.deep_gemm = fake_deep
-            fp8_utils.fused_stack_quant = lambda weights, transpose=False, num_expert=None, use_ue8m0=False: (
-                paddle.ones([num_expert or 1, 2, 4], dtype="float32"),
-                paddle.ones([num_expert or 1, 2, 1], dtype="float32"),
+            fp8_utils.fused_stack_quant = (
+                lambda weights,
+                transpose=False,
+                num_expert=None,
+                use_ue8m0=False: (
+                    paddle.ones([num_expert or 1, 2, 4], dtype="float32"),
+                    paddle.ones([num_expert or 1, 2, 1], dtype="float32"),
+                )
             )
 
             def fake_split(*args, **kwargs):
                 split_calls.append((args, kwargs))
 
             fp8_utils.split_group_gemm = fake_split
-            paddle.incubate.nn.functional.fp8_quant_blockwise = lambda x, **kwargs: (
-                x,
-                paddle.ones([x.shape[0], 1], dtype="float32"),
+            paddle.incubate.nn.functional.fp8_quant_blockwise = (
+                lambda x, **kwargs: (
+                    x,
+                    paddle.ones([x.shape[0], 1], dtype="float32"),
+                )
             )
-            fp8_utils.fuse_weighted_swiglu_fp8_quant = lambda o1, probs, **kwargs: (
-                o1[:, :2],
-                paddle.ones([o1.shape[0], 1], dtype="float32"),
+            fp8_utils.fuse_weighted_swiglu_fp8_quant = (
+                lambda o1, probs, **kwargs: (
+                    o1[:, :2],
+                    paddle.ones([o1.shape[0], 1], dtype="float32"),
+                )
             )
-            fp8_utils.fused_swiglu_scale_forward = lambda o1, probs: paddle.ones(
-                [o1.shape[0], max(1, o1.shape[1] // 2)], dtype=o1.dtype
+            fp8_utils.fused_swiglu_scale_forward = (
+                lambda o1, probs: paddle.ones(
+                    [o1.shape[0], max(1, o1.shape[1] // 2)], dtype=o1.dtype
+                )
             )
             fp8_utils.fused_swiglu_scale_backward = lambda o1, probs, do2: (
                 paddle.ones(o1.shape, dtype=o1.dtype),
@@ -462,12 +527,18 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
             fp8_utils._fused_swiglu_probs_bwd = lambda o1, do2, probs, flag: (
                 paddle.ones(o1.shape, dtype=o1.dtype),
                 paddle.ones([o1.shape[0], 1], dtype="float32"),
-                paddle.ones([o1.shape[0], max(1, o1.shape[1] // 2)], dtype=o1.dtype),
+                paddle.ones(
+                    [o1.shape[0], max(1, o1.shape[1] // 2)], dtype=o1.dtype
+                ),
             )
-            fp8_utils.fused_swiglu_weighted_clamp_bwd = lambda o1, probs, do2, cv: (
-                paddle.ones(o1.shape, dtype=o1.dtype),
-                paddle.ones([o1.shape[0], 1], dtype="float32"),
-                paddle.ones([o1.shape[0], max(1, o1.shape[1] // 2)], dtype=o1.dtype),
+            fp8_utils.fused_swiglu_weighted_clamp_bwd = (
+                lambda o1, probs, do2, cv: (
+                    paddle.ones(o1.shape, dtype=o1.dtype),
+                    paddle.ones([o1.shape[0], 1], dtype="float32"),
+                    paddle.ones(
+                        [o1.shape[0], max(1, o1.shape[1] // 2)], dtype=o1.dtype
+                    ),
+                )
             )
 
             node = ExpertsGroupGemmContiguousNode(
@@ -478,11 +549,15 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
                 use_ue8m0=True,
             )
             node.tokens_per_expert = [2]
-            node.tokens_per_expert_indices = paddle.to_tensor([0, 0], dtype="int32")
+            node.tokens_per_expert_indices = paddle.to_tensor(
+                [0, 0], dtype="int32"
+            )
             node.m_indices = paddle.to_tensor([0, 0], dtype="int32")
             weights1 = paddle.ones([1, 2, 4], dtype="float32")
             weights2 = paddle.ones([1, 2, 4], dtype="float32")
-            gate = node.fwd_gate_up_fp8(paddle.ones([2, 2], dtype="float32"), weights1, 1, [2])
+            gate = node.fwd_gate_up_fp8(
+                paddle.ones([2, 2], dtype="float32"), weights1, 1, [2]
+            )
             down = node.fwd_down_fp8(
                 paddle.ones([2, 4], dtype="float32"),
                 paddle.ones([2, 1], dtype="float32"),
@@ -496,7 +571,9 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
                 paddle.ones([2, 1], dtype="float32"),
             )
             dx = node.bwd_gate_up_input_fp8(do1, weights1)
-            empty_gate = node.fwd_gate_up_bf16(paddle.empty([0, 2], dtype="float32"), weights1)
+            empty_gate = node.fwd_gate_up_bf16(
+                paddle.empty([0, 2], dtype="float32"), weights1
+            )
             empty_down = node.fwd_down_bf16(
                 paddle.empty([0, 4], dtype="float32"),
                 paddle.empty([0, 1], dtype="float32"),
@@ -524,7 +601,9 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
                 paddle.empty([0, 4], dtype="float32"),
                 paddle.empty([0, 1], dtype="float32"),
             )[0]
-            empty_gate_grad = node.bwd_gate_up_input_bf16(paddle.empty([0, 4], dtype="float32"), weights1)
+            empty_gate_grad = node.bwd_gate_up_input_bf16(
+                paddle.empty([0, 4], dtype="float32"), weights1
+            )
         finally:
             fp8_utils.fused_stack_quant = old_fused_stack
             fp8_utils.split_group_gemm = old_split_group
@@ -549,7 +628,9 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
                 if hasattr(fp8_utils, "fused_swiglu_weighted_clamp_bwd"):
                     delattr(fp8_utils, "fused_swiglu_weighted_clamp_bwd")
             else:
-                fp8_utils.fused_swiglu_weighted_clamp_bwd = old_fused_weighted_clamp_bwd
+                fp8_utils.fused_swiglu_weighted_clamp_bwd = (
+                    old_fused_weighted_clamp_bwd
+                )
             if old_fused_swiglu_probs_bwd is None:
                 if hasattr(fp8_utils, "_fused_swiglu_probs_bwd"):
                     delattr(fp8_utils, "_fused_swiglu_probs_bwd")
@@ -576,40 +657,60 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
         self.assertTrue(fake_deep.calls)
 
     def test_weight_and_lora_backward_paths_with_stubs(self):
-        old_fused_backward = getattr(fp8_utils, "fused_swiglu_scale_backward", None)
+        old_fused_backward = getattr(
+            fp8_utils, "fused_swiglu_scale_backward", None
+        )
         old_fused_forward = fp8_utils.fused_swiglu_scale_forward
         old_batched = paddle.incubate.nn.functional.batched_gemm
         old_kitchen = fp8_utils.kitchen_gemm
         old_deep = getattr(fp8_utils, "deep_gemm", None)
-        old_dequant = getattr(paddle.incubate.nn.functional, "fused_act_dequant", None)
-        had_dequant = hasattr(paddle.incubate.nn.functional, "fused_act_dequant")
+        old_dequant = getattr(
+            paddle.incubate.nn.functional, "fused_act_dequant", None
+        )
+        had_dequant = hasattr(
+            paddle.incubate.nn.functional, "fused_act_dequant"
+        )
         fake_deep = FakeDeepGemm()
         kitchen_calls = []
         try:
-            fp8_utils.fused_swiglu_scale_forward = lambda o1, probs: paddle.ones(
-                [o1.shape[0], max(1, o1.shape[1] // 2)], dtype=o1.dtype
+            fp8_utils.fused_swiglu_scale_forward = (
+                lambda o1, probs: paddle.ones(
+                    [o1.shape[0], max(1, o1.shape[1] // 2)], dtype=o1.dtype
+                )
             )
             fp8_utils.fused_swiglu_scale_backward = lambda o1, probs, do2: (
                 paddle.ones(o1.shape, dtype=o1.dtype),
                 paddle.ones([o1.shape[0], 1], dtype="float32"),
             )
 
-            def fake_batched_gemm(x, dy, tokens_per_expert, trans_lhs=False, trans_rhs=False):
+            def fake_batched_gemm(
+                x, dy, tokens_per_expert, trans_lhs=False, trans_rhs=False
+            ):
                 del tokens_per_expert, trans_rhs
                 if len(x.shape) == 2:
                     if trans_lhs:
                         if x.shape[1] == 4:
-                            return paddle.ones([1, 4, dy.shape[1]], dtype="float32")
-                        return paddle.ones([1, x.shape[1], dy.shape[1]], dtype="float32")
+                            return paddle.ones(
+                                [1, 4, dy.shape[1]], dtype="float32"
+                            )
+                        return paddle.ones(
+                            [1, x.shape[1], dy.shape[1]], dtype="float32"
+                        )
                     return paddle.ones([1, x.shape[1], 2], dtype="float32")
                 return paddle.ones([1, 2, 4], dtype="float32")
 
             paddle.incubate.nn.functional.batched_gemm = fake_batched_gemm
-            paddle.incubate.nn.functional.fused_act_dequant = lambda x, scale: paddle.ones(x.shape, dtype="float32")
-            fp8_utils.kitchen_gemm = lambda *args, **kwargs: kitchen_calls.append((args, kwargs))
+            paddle.incubate.nn.functional.fused_act_dequant = (
+                lambda x, scale: paddle.ones(x.shape, dtype="float32")
+            )
+            fp8_utils.kitchen_gemm = (
+                lambda *args, **kwargs: kitchen_calls.append((args, kwargs))
+            )
             fp8_utils.deep_gemm = fake_deep
 
-            node = ExpertsGroupGemmContiguousNode(CustomMap(), use_fp8_mlp=True, moe_expert_fusion=False)
+            node = ExpertsGroupGemmContiguousNode(
+                CustomMap(), use_fp8_mlp=True, moe_expert_fusion=False
+            )
             node.tokens_per_expert = [2]
             node.fused_transpose_split_quant = lambda x, scale, tokens, pow2: (
                 paddle.ones([2, 2, 2], dtype="float32"),
@@ -646,16 +747,24 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
                 paddle.ones([2, 2], dtype="float32"),
                 [w_main],
             )
-            grouped_node = ExpertsGroupGemmContiguousNode(CustomMap(), use_fp8_mlp=False, moe_expert_fusion=True)
+            grouped_node = ExpertsGroupGemmContiguousNode(
+                CustomMap(), use_fp8_mlp=False, moe_expert_fusion=True
+            )
             grouped_node.tokens_per_expert = [2]
             grouped_node.input = paddle.ones([2, 2], dtype="float32")
             grouped_node.dequant_input = False
             grouped_node.use_fp8_mlp = False
             grouped_node.moe_deep_gemm = False
-            grouped_weight = TensorBox(paddle.ones([1, 2, 2], dtype="float32"), False)
-            grouped_node.bf16_weight_grad(paddle.ones([2, 2], dtype="float32"), None, grouped_weight)
+            grouped_weight = TensorBox(
+                paddle.ones([1, 2, 2], dtype="float32"), False
+            )
+            grouped_node.bf16_weight_grad(
+                paddle.ones([2, 2], dtype="float32"), None, grouped_weight
+            )
 
-            lora_node = ExpertsGroupGemmContiguousNode(CustomMap(), use_fp8_mlp=False, moe_expert_fusion=True)
+            lora_node = ExpertsGroupGemmContiguousNode(
+                CustomMap(), use_fp8_mlp=False, moe_expert_fusion=True
+            )
             lora_node.grouped_gemm_experts = LoRAGroupedWeights()
             lora_node.tokens_per_expert = [2]
             lora_node.o1 = paddle.ones([2, 4], dtype="float32")
@@ -665,7 +774,9 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
                 paddle.ones([2, 4], dtype="float32"),
                 paddle.ones([2, 1], dtype="float32"),
             )
-            lora_node.bwd_gate_up_input_bf16 = lambda do1, w1: paddle.ones([2, 2], dtype="float32")
+            lora_node.bwd_gate_up_input_bf16 = lambda do1, w1: paddle.ones(
+                [2, 2], dtype="float32"
+            )
             dx, probs_grad = lora_node.backward_impl_bf16(
                 paddle.ones([2, 2], dtype="float32"),
                 paddle.ones([2, 1], dtype="float32"),
@@ -702,8 +813,12 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
         self.assertTrue(kitchen_calls)
         self.assertEqual(dx.shape, [2, 2])
         self.assertEqual(probs_grad.shape, [2, 1])
-        self.assertIsNotNone(lora_node.grouped_gemm_experts.weight1_lora_A.main_grad)
-        self.assertIsNotNone(lora_node.grouped_gemm_experts.weight2_lora_A.main_grad)
+        self.assertIsNotNone(
+            lora_node.grouped_gemm_experts.weight1_lora_A.main_grad
+        )
+        self.assertIsNotNone(
+            lora_node.grouped_gemm_experts.weight2_lora_A.main_grad
+        )
 
     def test_backward_impl_fp8_a2a_non_bf16_weight_paths(self):
         node = ExpertsGroupGemmContiguousNode(
@@ -718,15 +833,21 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
         node.input = paddle.ones([2, 2], dtype="float32")
         node.use_bf16_gemm_weight_grad = False
         node.dw_p2p_overlap = False
-        node.bwd_down_input_fp8 = lambda w2, grad, o1, probs, inplace_swiglu_prob=False: (
-            paddle.ones([2, 4], dtype="float32"),
-            paddle.ones([2, 2], dtype="float32"),
-            paddle.ones([2, 1], dtype="float32"),
+        node.bwd_down_input_fp8 = (
+            lambda w2, grad, o1, probs, inplace_swiglu_prob=False: (
+                paddle.ones([2, 4], dtype="float32"),
+                paddle.ones([2, 2], dtype="float32"),
+                paddle.ones([2, 1], dtype="float32"),
+            )
         )
         calls = []
         node.bwd_gate_up_input_fp8 = lambda do1, w1, dx=None: dx
-        node.bwd_gate_up_weight = lambda *args, **kwargs: calls.append("gate_weight")
-        node.bwd_down_weight = lambda *args, **kwargs: calls.append("down_weight")
+        node.bwd_gate_up_weight = lambda *args, **kwargs: calls.append(
+            "gate_weight"
+        )
+        node.bwd_down_weight = lambda *args, **kwargs: calls.append(
+            "down_weight"
+        )
         task = TaskRecorder()
 
         def a2a(x):

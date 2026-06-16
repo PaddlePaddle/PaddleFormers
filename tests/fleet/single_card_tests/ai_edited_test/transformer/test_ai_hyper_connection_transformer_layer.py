@@ -16,15 +16,23 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
 
 import paddle
 
-from paddleformers.fleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.models.gpt.gpt_layer_specs import (
+    get_gpt_layer_local_spec,
+)
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.transformer.hyper_connection import (
     HyperConnectionContractLayer,
     HyperConnectionExpandLayer,
@@ -37,7 +45,10 @@ from paddleformers.fleet.transformer.transformer_layer import (
     TransformerLayer,
     TransformerLayerSublayersSpec,
 )
-from paddleformers.fleet.utils import init_method_normal, scaled_init_method_normal
+from paddleformers.fleet.utils import (
+    init_method_normal,
+    scaled_init_method_normal,
+)
 
 # Initialize CUDA RNG tracker for tensor parallel layers
 model_parallel_cuda_manual_seed(42, tp_rank=0, ep_rank=0, etp_rank=0)
@@ -132,7 +143,9 @@ class TestSinkhornKnopp(unittest.TestCase):
         x = paddle.randn([8, n, n])
         result = SinkhornKnopp.apply(x, 20)
         row_sums = result.sum(axis=-1)
-        self.assertTrue(paddle.allclose(row_sums, paddle.ones_like(row_sums), atol=1e-4))
+        self.assertTrue(
+            paddle.allclose(row_sums, paddle.ones_like(row_sums), atol=1e-4)
+        )
 
     def test_doubly_stochastic_cols_sum_to_one(self):
         """Columns of output should sum to approximately 1."""
@@ -140,7 +153,9 @@ class TestSinkhornKnopp(unittest.TestCase):
         x = paddle.randn([8, n, n])
         result = SinkhornKnopp.apply(x, 20)
         col_sums = result.sum(axis=-2)
-        self.assertTrue(paddle.allclose(col_sums, paddle.ones_like(col_sums), atol=1e-4))
+        self.assertTrue(
+            paddle.allclose(col_sums, paddle.ones_like(col_sums), atol=1e-4)
+        )
 
     def test_output_non_negative(self):
         """Output matrix entries should be non-negative."""
@@ -199,7 +214,9 @@ class TestHyperConnectionModule(unittest.TestCase):
         self.assertIsNotNone(self.module.alpha_res)
         self.assertIsNotNone(self.module.bias)
         self.assertEqual(list(self.module.alpha_pre.shape), [1])
-        self.assertEqual(list(self.module.bias.shape), [self.n * self.n + 2 * self.n])
+        self.assertEqual(
+            list(self.module.bias.shape), [self.n * self.n + 2 * self.n]
+        )
 
     def test_forward_output_shapes(self):
         """forward() should return (aggregated, h_res, h_post) with correct shapes."""
@@ -234,12 +251,16 @@ class TestHyperConnectionModule(unittest.TestCase):
             with self.subTest(high_precision_mhc=high_precision_mhc):
                 config = _make_hc_config(high_precision_mhc=high_precision_mhc)
                 module = HyperConnectionModule(config=config, layer_number=1)
-                module = paddle.amp.decorate(models=module, level="O2", dtype="bfloat16")
+                module = paddle.amp.decorate(
+                    models=module, level="O2", dtype="bfloat16"
+                )
                 x = paddle.randn([2, 4, self.n * self.C]).astype("bfloat16")
 
                 aggregated, h_res, h_post = module(x)
 
-                self.assertEqual(module.config.high_precision_mhc, high_precision_mhc)
+                self.assertEqual(
+                    module.config.high_precision_mhc, high_precision_mhc
+                )
                 self.assertEqual(aggregated.dtype, expected_dtype)
                 self.assertEqual(h_res.dtype, expected_dtype)
                 self.assertEqual(h_post.dtype, expected_dtype)
@@ -278,8 +299,12 @@ class TestHyperConnectionModule(unittest.TestCase):
         _, _, h_res = self.module.compute_mappings(x)
         row_sums = h_res.sum(axis=-1)
         col_sums = h_res.sum(axis=-2)
-        self.assertTrue(paddle.allclose(row_sums, paddle.ones_like(row_sums), atol=1e-3))
-        self.assertTrue(paddle.allclose(col_sums, paddle.ones_like(col_sums), atol=1e-3))
+        self.assertTrue(
+            paddle.allclose(row_sums, paddle.ones_like(row_sums), atol=1e-3)
+        )
+        self.assertTrue(
+            paddle.allclose(col_sums, paddle.ones_like(col_sums), atol=1e-3)
+        )
 
     # ---------- aggregate ----------
 
@@ -307,7 +332,12 @@ class TestHyperConnectionModule(unittest.TestCase):
     def test_apply_h_res_shape(self):
         """apply_h_res should preserve shape [..., n*C]."""
         B, S = 2, 4
-        h_res = paddle.eye(self.n).unsqueeze(0).unsqueeze(0).expand([B, S, self.n, self.n])
+        h_res = (
+            paddle.eye(self.n)
+            .unsqueeze(0)
+            .unsqueeze(0)
+            .expand([B, S, self.n, self.n])
+        )
         residual = paddle.randn([B, S, self.n * self.C])
         result = self.module.apply_h_res(h_res, residual)
         self.assertEqual(list(result.shape), [B, S, self.n * self.C])
@@ -315,7 +345,12 @@ class TestHyperConnectionModule(unittest.TestCase):
     def test_apply_h_res_identity_preserves_input(self):
         """With identity h_res, output should equal input."""
         B, S = 2, 4
-        h_res = paddle.eye(self.n).unsqueeze(0).unsqueeze(0).expand([B, S, self.n, self.n])
+        h_res = (
+            paddle.eye(self.n)
+            .unsqueeze(0)
+            .unsqueeze(0)
+            .expand([B, S, self.n, self.n])
+        )
         residual = paddle.randn([B, S, self.n * self.C])
         result = self.module.apply_h_res(h_res, residual)
         self.assertTrue(paddle.allclose(result, residual, atol=1e-5))
@@ -425,7 +460,9 @@ class TestHyperConnectionModule(unittest.TestCase):
             with self.subTest(high_precision_mhc=high_precision_mhc):
                 config = _make_hc_config(high_precision_mhc=high_precision_mhc)
                 module = HyperConnectionModule(config=config, layer_number=1)
-                module = paddle.amp.decorate(models=module, level="O2", dtype="bfloat16")
+                module = paddle.amp.decorate(
+                    models=module, level="O2", dtype="bfloat16"
+                )
                 x = paddle.randn([B, S, self.n * self.C]).astype("bfloat16")
                 _, h_res, h_post = module(x)
                 layer_output = paddle.randn([B, S, self.C]).astype("bfloat16")
@@ -441,10 +478,14 @@ class TestHyperConnectionModule(unittest.TestCase):
                     fused=False,
                 )
 
-                self.assertEqual(module.config.high_precision_mhc, high_precision_mhc)
+                self.assertEqual(
+                    module.config.high_precision_mhc, high_precision_mhc
+                )
                 self.assertEqual(result.dtype, expected_dtype)
                 self.assertEqual(list(result.shape), [B, S, self.n * self.C])
-                self.assertFalse(paddle.isnan(result.astype("float32")).any().item())
+                self.assertFalse(
+                    paddle.isnan(result.astype("float32")).any().item()
+                )
 
     # ---------- input_expand / output_contract ----------
 
@@ -496,7 +537,9 @@ class TestHyperConnectionModule(unittest.TestCase):
         head_fn = paddle.randn([n * C, n])
         base = paddle.zeros([n])
         scale = paddle.ones([1])
-        result = HyperConnectionModule.learned_output_contract(x, head_fn, base, scale, n, 1e-6)
+        result = HyperConnectionModule.learned_output_contract(
+            x, head_fn, base, scale, n, 1e-6
+        )
         self.assertEqual(list(result.shape), [B, S, C])
 
     def test_learned_output_contract_no_nan(self):
@@ -508,7 +551,9 @@ class TestHyperConnectionModule(unittest.TestCase):
         head_fn = paddle.randn([n * C, n])
         base = paddle.zeros([n])
         scale = paddle.ones([1])
-        result = HyperConnectionModule.learned_output_contract(x, head_fn, base, scale, n, 1e-6)
+        result = HyperConnectionModule.learned_output_contract(
+            x, head_fn, base, scale, n, 1e-6
+        )
         self.assertFalse(paddle.isnan(result).any().item())
 
     # ---------- gradient flow ----------
@@ -571,7 +616,9 @@ class TestHyperConnectionExpandLayer(unittest.TestCase):
         hidden_states = paddle.randn([S, B, self.C])
         dict_args = {"hidden_states": hidden_states}
         result = self.layer.forward(dict_args)
-        self.assertEqual(list(result["hidden_states"].shape), [S, B, self.n * self.C])
+        self.assertEqual(
+            list(result["hidden_states"].shape), [S, B, self.n * self.C]
+        )
 
     def test_forward_preserves_other_keys(self):
         """Forward should not modify other keys in dict_args."""
@@ -626,7 +673,9 @@ class TestHyperConnectionContractLayer(unittest.TestCase):
         dict_args = {"hidden_states": hidden_states}
         result = layer.forward(dict_args)
         # Main part: [S, B, C], MTP parts: [S, B, C] each -> total [3*S, B, C]
-        self.assertEqual(list(result["hidden_states"].shape), [total_S, B, self.C])
+        self.assertEqual(
+            list(result["hidden_states"].shape), [total_S, B, self.C]
+        )
 
     def test_forward_with_mtp_preserves_multistream(self):
         """With MTP enabled, should save mhc_multistream in dict_args."""
@@ -639,7 +688,9 @@ class TestHyperConnectionContractLayer(unittest.TestCase):
         dict_args = {"hidden_states": hidden_states}
         result = layer.forward(dict_args)
         self.assertIn("mhc_multistream", result)
-        self.assertTrue(paddle.equal_all(result["mhc_multistream"], hidden_states))
+        self.assertTrue(
+            paddle.equal_all(result["mhc_multistream"], hidden_states)
+        )
 
     def test_expand_then_contract_pipeline(self):
         """Expand layer followed by contract layer should produce [S, B, C] output."""
@@ -649,7 +700,9 @@ class TestHyperConnectionContractLayer(unittest.TestCase):
         dict_args = {"hidden_states": hidden_states}
         expanded = expand_layer.forward(dict_args)
         contracted = self.layer.forward(expanded)
-        self.assertEqual(list(contracted["hidden_states"].shape), [S, B, self.C])
+        self.assertEqual(
+            list(contracted["hidden_states"].shape), [S, B, self.C]
+        )
 
 
 # ==============================================================================
@@ -669,7 +722,9 @@ class TestHyperConnectionTransformerLayerConstruction(unittest.TestCase):
     def test_has_hyper_connection_sublayers(self):
         config = _make_hc_config()
         layer = _make_hc_layer(config)
-        self.assertIsInstance(layer.self_attention_hyper_connection, HyperConnectionModule)
+        self.assertIsInstance(
+            layer.self_attention_hyper_connection, HyperConnectionModule
+        )
         self.assertIsInstance(layer.mlp_hyper_connection, HyperConnectionModule)
 
     def test_raises_without_hc_spec(self):
@@ -723,7 +778,9 @@ class TestHyperConnectionTransformerLayerForward(unittest.TestCase):
         }
         result = self.layer.forward(dict_args)
         self.assertIn("hidden_states", result)
-        self.assertEqual(list(result["hidden_states"].shape), [S, B, self.n * self.C])
+        self.assertEqual(
+            list(result["hidden_states"].shape), [S, B, self.n * self.C]
+        )
 
     def test_forward_no_nan(self):
         """Output should not contain NaN values."""
@@ -748,7 +805,9 @@ class TestHyperConnectionTransformerLayerForward(unittest.TestCase):
             "rotary_pos_emb": rotary_pos_emb,
         }
         result = self.layer.forward(dict_args)
-        self.assertEqual(list(result["hidden_states"].shape), [S, B, self.n * self.C])
+        self.assertEqual(
+            list(result["hidden_states"].shape), [S, B, self.n * self.C]
+        )
 
     def test_forward_deterministic_in_eval(self):
         """Two forward passes with same input should produce same output in eval mode."""
@@ -764,7 +823,9 @@ class TestHyperConnectionTransformerLayerForward(unittest.TestCase):
         }
         result1 = self.layer.forward(dict_args1)
         result2 = self.layer.forward(dict_args2)
-        self.assertTrue(paddle.allclose(result1["hidden_states"], result2["hidden_states"]))
+        self.assertTrue(
+            paddle.allclose(result1["hidden_states"], result2["hidden_states"])
+        )
 
     def test_forward_output_differs_from_input(self):
         """Output should be different from input (layer transforms data)."""
@@ -775,7 +836,9 @@ class TestHyperConnectionTransformerLayerForward(unittest.TestCase):
             "attention_mask": None,
         }
         result = self.layer.forward(dict_args)
-        self.assertFalse(paddle.allclose(result["hidden_states"], hidden_states))
+        self.assertFalse(
+            paddle.allclose(result["hidden_states"], hidden_states)
+        )
 
     def test_forward_gradient_flow(self):
         """Gradient should flow through the full forward pass."""
@@ -804,7 +867,9 @@ class TestHyperConnectionTransformerLayerForward(unittest.TestCase):
             "position_ids": position_ids,
         }
         result = self.layer.forward(dict_args)
-        self.assertEqual(list(result["hidden_states"].shape), [S, B, self.n * self.C])
+        self.assertEqual(
+            list(result["hidden_states"].shape), [S, B, self.n * self.C]
+        )
 
 
 class TestHyperConnectionTransformerLayerRecompute(unittest.TestCase):
@@ -885,12 +950,16 @@ class TestGetGptLayerSpecWithHC(unittest.TestCase):
         spec = get_gpt_layer_local_spec(config)
         from paddle.distributed.fleet.meta_parallel import LayerSpec
 
-        self.assertIsInstance(spec.sublayers_spec.self_attention_hyper_connection, LayerSpec)
+        self.assertIsInstance(
+            spec.sublayers_spec.self_attention_hyper_connection, LayerSpec
+        )
         self.assertEqual(
             spec.sublayers_spec.self_attention_hyper_connection.layer,
             HyperConnectionModule,
         )
-        self.assertIsInstance(spec.sublayers_spec.mlp_hyper_connection, LayerSpec)
+        self.assertIsInstance(
+            spec.sublayers_spec.mlp_hyper_connection, LayerSpec
+        )
         self.assertEqual(
             spec.sublayers_spec.mlp_hyper_connection.layer,
             HyperConnectionModule,
@@ -1064,7 +1133,9 @@ class TestMTPLayerWithHCConcatEmbeddings(unittest.TestCase):
         decoder_input = paddle.randn([S, B, self.C])
         # mask shape: [B, 1, S]
         mask = paddle.ones([B, 1, S])
-        result = self.layer._concat_embeddings(hidden_states, decoder_input, mtp_hidden_inputs_mask=mask)
+        result = self.layer._concat_embeddings(
+            hidden_states, decoder_input, mtp_hidden_inputs_mask=mask
+        )
         self.assertEqual(list(result.shape), [S, B, self.n * self.C])
 
     def test_with_zero_mask(self):
@@ -1073,7 +1144,9 @@ class TestMTPLayerWithHCConcatEmbeddings(unittest.TestCase):
         hidden_states = paddle.randn([S, B, self.n * self.C])
         decoder_input = paddle.randn([S, B, self.C])
         mask = paddle.zeros([B, 1, S])
-        result_zero = self.layer._concat_embeddings(hidden_states, decoder_input, mtp_hidden_inputs_mask=mask)
+        result_zero = self.layer._concat_embeddings(
+            hidden_states, decoder_input, mtp_hidden_inputs_mask=mask
+        )
         self.assertFalse(paddle.isnan(result_zero).any().item())
 
 
@@ -1144,7 +1217,9 @@ class TestMTPLayerWithHCForward(unittest.TestCase):
         dict_args = self._make_dict_args(with_mhc_multistream=True)
         result = self.layer.forward(dict_args)
         total_S = (self.num_mtp + 1) * self.S
-        self.assertEqual(list(result["hidden_states"].shape), [total_S, self.B, self.C])
+        self.assertEqual(
+            list(result["hidden_states"].shape), [total_S, self.B, self.C]
+        )
 
     def test_forward_no_nan(self):
         """Forward output should not contain NaN."""
@@ -1192,7 +1267,9 @@ class TestMTPLayerWithHCTrainMTPOnly(unittest.TestCase):
             "mhc_multistream": mhc_multistream,
         }
         result = self.layer.forward(dict_args)
-        self.assertEqual(list(result["hidden_states"].shape), [total_S, self.B, self.C])
+        self.assertEqual(
+            list(result["hidden_states"].shape), [total_S, self.B, self.C]
+        )
 
     def test_train_mtp_only_no_nan(self):
         """train_mtp_only output should not contain NaN."""

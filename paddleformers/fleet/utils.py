@@ -22,7 +22,6 @@ import inspect
 import math
 import operator
 import warnings
-from collections.abc import Callable
 from contextlib import nullcontext
 from functools import reduce
 from typing import TYPE_CHECKING, Any
@@ -54,6 +53,7 @@ except Exception:
 
 if TYPE_CHECKING:
     import logging
+    from collections.abc import Callable
 
 
 class WrappedTensor:
@@ -103,7 +103,9 @@ class GlobalMemoryBuffer:
             self.buffer.get((name, dtype), None) is None
             or compute_numel(self.buffer[(name, dtype)].shape) < required_len
         ):
-            mem_alloc_context = mem_alloc_context if mem_alloc_context else nullcontext
+            mem_alloc_context = (
+                mem_alloc_context if mem_alloc_context else nullcontext
+            )
             with mem_alloc_context():
                 self.buffer[(name, dtype)] = paddle.empty(
                     [required_len],
@@ -116,7 +118,9 @@ class GlobalMemoryBuffer:
 
 def ensure_divisibility(numerator, denominator):
     """Ensure that numerator is divisible by the denominator."""
-    assert numerator % denominator == 0, f"{numerator} is not divisible by {denominator}"
+    assert numerator % denominator == 0, (
+        f"{numerator} is not divisible by {denominator}"
+    )
 
 
 def divide(numerator, denominator):
@@ -142,7 +146,9 @@ def get_magic_init_method(sigma):
     """Magic init method: randn(...).scale(sigma) under fp32 default dtype guard."""
 
     def init_method(weight):
-        weight.set_value(paddle.randn(weight.shape, dtype=weight.dtype).scale(sigma))
+        weight.set_value(
+            paddle.randn(weight.shape, dtype=weight.dtype).scale(sigma)
+        )
 
     return init_method
 
@@ -156,7 +162,11 @@ def get_pg_size(group=None):
     Returns:
         int: World size (1 if distributed not initialized or group is None, else group.size())
     """
-    if not paddle.distributed.is_initialized() or group is None or len(group.ranks) == 1:
+    if (
+        not paddle.distributed.is_initialized()
+        or group is None
+        or len(group.ranks) == 1
+    ):
         return 1
     return group.nranks
 
@@ -175,7 +185,9 @@ def get_pg_rank(group=None):
     return group.rank
 
 
-def log_single_rank(logger: logging.Logger, *args: Any, rank: int = 0, **kwargs: Any):
+def log_single_rank(
+    logger: logging.Logger, *args: Any, rank: int = 0, **kwargs: Any
+):
     """If paddle distributed is initialized, write log on only one rank
 
     Args:
@@ -194,22 +206,32 @@ def log_single_rank(logger: logging.Logger, *args: Any, rank: int = 0, **kwargs:
         logger.log(*args, **kwargs)
 
 
-def get_tensor_model_parallel_group_if_none(tp_group, is_expert=False, check_initialized=False):
+def get_tensor_model_parallel_group_if_none(
+    tp_group, is_expert=False, check_initialized=False
+):
     """Issue a deprecation warning if tp_group is None and return the default tp group."""
     if not paddle.distributed.is_initialized():
         return None
 
     if tp_group is None:
-        if paddle.distributed.is_initialized() and paddle.distributed.get_rank() == 0:
+        if (
+            paddle.distributed.is_initialized()
+            and paddle.distributed.get_rank() == 0
+        ):
             warnings.warn(
-                "Warning: tp_group is None, using default tp group. " "Passing tp_group will be mandatory soon",
+                "Warning: tp_group is None, using default tp group. "
+                "Passing tp_group will be mandatory soon",
                 DeprecationWarning,
                 stacklevel=2,
             )
         if is_expert:
-            tp_group = parallel_state.get_expert_tensor_parallel_group(check_initialized=check_initialized)
+            tp_group = parallel_state.get_expert_tensor_parallel_group(
+                check_initialized=check_initialized
+            )
         else:
-            tp_group = parallel_state.get_tensor_model_parallel_group(check_initialized=check_initialized)
+            tp_group = parallel_state.get_tensor_model_parallel_group(
+                check_initialized=check_initialized
+            )
     return tp_group
 
 
@@ -219,7 +241,9 @@ def prepare_input_tensors_for_wgrad_compute(grad_output, all_gathered_input):
     all_gathered_input = all_gathered_input.contiguous()
     # Convert the tensor shapes to 2D for execution compatibility
     if grad_output.dim() == 3:
-        grad_output = grad_output.reshape([grad_output.shape[0] * grad_output.shape[1], grad_output.shape[2]])
+        grad_output = grad_output.reshape(
+            [grad_output.shape[0] * grad_output.shape[1], grad_output.shape[2]]
+        )
         all_gathered_input = all_gathered_input.reshape(
             [
                 all_gathered_input.shape[0] * all_gathered_input.shape[1],
@@ -240,7 +264,9 @@ def get_paddle_version():
 def is_paddle_min_version(version, check_equality=True):
     """Check if minimum version of `paddle` is installed."""
     if not HAVE_PACKAGING:
-        raise ImportError("packaging is not installed. Please install it with `pip install packaging`.")
+        raise ImportError(
+            "packaging is not installed. Please install it with `pip install packaging`."
+        )
     if check_equality:
         return get_paddle_version() >= PkgVersion(version)
     return get_paddle_version() > PkgVersion(version)
@@ -251,28 +277,38 @@ def is_paddle_min_version(version, check_equality=True):
 
 def get_batch_on_this_cp_rank(inputs, cp_balance_mode="dualchunk_allgather"):
     if isinstance(inputs, paddle.Tensor):
-        return ContextParallelScatterOp.apply(inputs, axis=-1, mode=cp_balance_mode)
+        return ContextParallelScatterOp.apply(
+            inputs, axis=-1, mode=cp_balance_mode
+        )
     elif isinstance(inputs, dict):
         res = {}
         keys = ["input_ids", "position_ids", "labels"]
         for k, tensor in inputs.items():
             if k in keys:
-                res[k] = ContextParallelScatterOp.apply(tensor, axis=-1, mode=cp_balance_mode)
+                res[k] = ContextParallelScatterOp.apply(
+                    tensor, axis=-1, mode=cp_balance_mode
+                )
             else:
                 res[k] = tensor
     elif isinstance(inputs, list):
-        raise AssertionError("the inputs is list, please check all the inputs can be split by context parallelism")
+        raise AssertionError(
+            "the inputs is list, please check all the inputs can be split by context parallelism"
+        )
         # res = []
         # for tensor in inputs:
         #     res.append(ContextParallelScatterOp.apply(tensor, axis=-1))
     else:
-        raise ValueError(f"the inputs should be a dict, but is type: {type(inputs)}")
+        raise ValueError(
+            f"the inputs should be a dict, but is type: {type(inputs)}"
+        )
     return res
 
 
 # NVTX profiling
 _nvtx_enabled: bool = False  # Whether NVTX range profiling is enabled
-_nvtx_range_messages: list[str] = []  # Messages associated with active NVTX ranges
+_nvtx_range_messages: list[
+    str
+] = []  # Messages associated with active NVTX ranges
 
 
 def _nvtx_range_get_func_path():
@@ -332,7 +368,8 @@ def nvtx_range_pop(msg=None, suffix=None) -> None:
     last_msg = _nvtx_range_messages.pop()
     if msg is not None and msg != last_msg:
         raise ValueError(
-            f"Attempted to pop NVTX range from stack with msg={msg}, " f"but last range has msg={last_msg}"
+            f"Attempted to pop NVTX range from stack with msg={msg}, "
+            f"but last range has msg={last_msg}"
         )
 
     # Pop NVTX range
@@ -386,7 +423,9 @@ def nvtx_decorator(message: str | None = None, color: str | None = None):
     return decorator
 
 
-def get_attr_wrapped_model(model, attr, allow_none=True, return_model_obj=False):
+def get_attr_wrapped_model(
+    model, attr, allow_none=True, return_model_obj=False
+):
     """Get an attribute from a wrapped model.
     If return_model_obj is true, return the object that has the 'attr' attribute;
     otherwise, return the attribute directly."""
@@ -405,7 +444,9 @@ def get_attr_wrapped_model(model, attr, allow_none=True, return_model_obj=False)
 
     while condition(model, attr):
         if not hasattr(model, "module"):
-            raise RuntimeError(f"_get_attr_wrapped_model couldn't find attribute {attr}")
+            raise RuntimeError(
+                f"_get_attr_wrapped_model couldn't find attribute {attr}"
+            )
 
         model = model.module
 
@@ -441,7 +482,9 @@ def _kernel_make_viewless_tensor(inp, requires_grad):
     data, without linking the viewed tensor, referenced via the '._base'
     field.
     """
-    out = paddle.empty((1,), dtype=inp.dtype, device=inp.device, requires_grad=requires_grad)
+    out = paddle.empty(
+        (1,), dtype=inp.dtype, device=inp.device, requires_grad=requires_grad
+    )
     out.data = inp.data
     return out
 
@@ -492,7 +535,8 @@ def deprecate_inference_params(inference_context, inference_params):
     """Print warning for deprecated `inference_params`."""
     if inference_context is None and inference_params is not None:
         warnings.warn(
-            "`inference_params` renamed to `inference_context`, and will be " "removed in `paddleformers.fleet`"
+            "`inference_params` renamed to `inference_context`, and will be "
+            "removed in `paddleformers.fleet`"
         )
         return inference_params
     return inference_context

@@ -116,11 +116,15 @@ def initialize_model_parallel(
 
     if virtual_pipeline_model_parallel_size is not None:
         if not hcg._pp_comm_group.nranks > 1:
-            raise RuntimeError("pipeline-model-parallel size should be greater than 1 with interleaved schedule")
+            raise RuntimeError(
+                "pipeline-model-parallel size should be greater than 1 with interleaved schedule"
+            )
         global _VIRTUAL_PIPELINE_MODEL_PARALLEL_RANK
         global _VIRTUAL_PIPELINE_MODEL_PARALLEL_WORLD_SIZE
         _VIRTUAL_PIPELINE_MODEL_PARALLEL_RANK = 0
-        _VIRTUAL_PIPELINE_MODEL_PARALLEL_WORLD_SIZE = virtual_pipeline_model_parallel_size
+        _VIRTUAL_PIPELINE_MODEL_PARALLEL_WORLD_SIZE = (
+            virtual_pipeline_model_parallel_size
+        )
 
     # Initialize global memory buffer
     # This isn't really "parallel state" but there isn't another good place to
@@ -132,7 +136,9 @@ def initialize_model_parallel(
 def get_tensor_model_parallel_group(check_initialized=True):
     """Get the tensor-model-parallel group the caller rank belongs to."""
     if check_initialized:
-        assert _TENSOR_MODEL_PARALLEL_GROUP is not None, "tensor model parallel group is not initialized"
+        assert _TENSOR_MODEL_PARALLEL_GROUP is not None, (
+            "tensor model parallel group is not initialized"
+        )
     return _TENSOR_MODEL_PARALLEL_GROUP
 
 
@@ -141,7 +147,11 @@ def get_tensor_model_parallel_world_size():
     global _MPU_TENSOR_MODEL_PARALLEL_WORLD_SIZE
     if _MPU_TENSOR_MODEL_PARALLEL_WORLD_SIZE is not None:
         return _MPU_TENSOR_MODEL_PARALLEL_WORLD_SIZE
-    return 1 if get_tensor_model_parallel_group(False) is None else get_tensor_model_parallel_group().nranks
+    return (
+        1
+        if get_tensor_model_parallel_group(False) is None
+        else get_tensor_model_parallel_group().nranks
+    )
 
 
 def get_tensor_model_parallel_rank():
@@ -157,42 +167,54 @@ def get_tensor_model_parallel_rank():
 def get_pipeline_model_parallel_group(check_initialized=True):
     """Get the pipeline-model-parallel group the caller rank belongs to."""
     if check_initialized:
-        assert _PIPELINE_MODEL_PARALLEL_GROUP is not None, "pipeline_model parallel group is not initialized"
+        assert _PIPELINE_MODEL_PARALLEL_GROUP is not None, (
+            "pipeline_model parallel group is not initialized"
+        )
     return _PIPELINE_MODEL_PARALLEL_GROUP
 
 
-def get_data_parallel_group(check_initialized=True, with_context_parallel=False):
+def get_data_parallel_group(
+    check_initialized=True, with_context_parallel=False
+):
     """Get the data-parallel group the caller rank belongs to."""
     if with_context_parallel:
         if check_initialized:
-            assert (
-                _DATA_PARALLEL_GROUP_WITH_CP is not None
-            ), "data parallel group with context parallel combined is not initialized"
+            assert _DATA_PARALLEL_GROUP_WITH_CP is not None, (
+                "data parallel group with context parallel combined is not initialized"
+            )
         return _DATA_PARALLEL_GROUP_WITH_CP
     else:
         if check_initialized:
-            assert _DATA_PARALLEL_GROUP is not None, "data parallel group is not initialized"
+            assert _DATA_PARALLEL_GROUP is not None, (
+                "data parallel group is not initialized"
+            )
         return _DATA_PARALLEL_GROUP
 
 
 def get_expert_model_parallel_group(check_initialized=True):
     """Get the expert-model-parallel group the caller rank belongs to."""
     if check_initialized:
-        assert _EXPERT_MODEL_PARALLEL_GROUP is not None, "expert model parallel group is not initialized"
+        assert _EXPERT_MODEL_PARALLEL_GROUP is not None, (
+            "expert model parallel group is not initialized"
+        )
     return _EXPERT_MODEL_PARALLEL_GROUP
 
 
 def get_expert_data_parallel_group(check_initialized=True):
     """Get expert data parallel group."""
     if check_initialized:
-        assert _EXPERT_DATA_PARALLEL_GROUP is not None, "Expert data parallel group is not initialized"
+        assert _EXPERT_DATA_PARALLEL_GROUP is not None, (
+            "Expert data parallel group is not initialized"
+        )
     return _EXPERT_DATA_PARALLEL_GROUP
 
 
 def get_context_parallel_group(check_initialized=False):
     """Get the context-parallel group the caller rank belongs to."""
     if check_initialized:
-        assert _CONTEXT_PARALLEL_GROUP is not None, "context parallel group is not initialized"
+        assert _CONTEXT_PARALLEL_GROUP is not None, (
+            "context parallel group is not initialized"
+        )
     return _CONTEXT_PARALLEL_GROUP
 
 
@@ -223,14 +245,21 @@ def set_pipeline_model_parallel_world_size(world_size):
 
 def get_pipeline_model_parallel_rank():
     # TODO: Support get_pipeline_model_parallel_rank
-    warnings.warn("get_pipeline_model_parallel_rank is not implemented yet, always returns 0 for now. ")
+    warnings.warn(
+        "get_pipeline_model_parallel_rank is not implemented yet, always returns 0 for now. "
+    )
     return 0
 
 
 def is_pipeline_first_stage(ignore_virtual=True, vp_stage=None):
     """Return True if in the first pipeline model-parallel stage, False otherwise."""
-    if not ignore_virtual and get_virtual_pipeline_model_parallel_world_size() is not None:
-        assert vp_stage is not None, "vp_stage must be passed if virtual pipeline is enabled"
+    if (
+        not ignore_virtual
+        and get_virtual_pipeline_model_parallel_world_size() is not None
+    ):
+        assert vp_stage is not None, (
+            "vp_stage must be passed if virtual pipeline is enabled"
+        )
 
         if vp_stage != 0:
             return False
@@ -239,12 +268,19 @@ def is_pipeline_first_stage(ignore_virtual=True, vp_stage=None):
 
 def is_pipeline_last_stage(ignore_virtual=True, vp_stage=None):
     """Return True if in the last pipeline-model-parallel stage, False otherwise."""
-    if not ignore_virtual and get_virtual_pipeline_model_parallel_world_size() is not None:
-        assert vp_stage is not None, "vp_stage must be passed if virtual pipeline is enabled"
+    if (
+        not ignore_virtual
+        and get_virtual_pipeline_model_parallel_world_size() is not None
+    ):
+        assert vp_stage is not None, (
+            "vp_stage must be passed if virtual pipeline is enabled"
+        )
 
         if vp_stage != (get_virtual_pipeline_model_parallel_world_size() - 1):
             return False
-    return get_pipeline_model_parallel_rank() == (get_pipeline_model_parallel_world_size() - 1)
+    return get_pipeline_model_parallel_rank() == (
+        get_pipeline_model_parallel_world_size() - 1
+    )
 
 
 def get_virtual_pipeline_model_parallel_rank():
@@ -274,7 +310,10 @@ def get_expert_model_parallel_rank():
     """Return caller's rank in the expert-model-parallel group."""
     if _MPU_EXPERT_MODEL_PARALLEL_RANK is not None:
         return _MPU_EXPERT_MODEL_PARALLEL_RANK
-    if paddle.distributed.is_initialized() and get_expert_model_parallel_group(False) is not None:
+    if (
+        paddle.distributed.is_initialized()
+        and get_expert_model_parallel_group(False) is not None
+    ):
         return get_expert_model_parallel_group().rank
     else:
         return 0
@@ -305,7 +344,9 @@ def get_embedding_group(check_initialized=True):
 def get_expert_tensor_parallel_group(check_initialized=False):
     """Get the expert-tensor-parallel group the caller rank belongs to."""
     if check_initialized:
-        assert _EXPERT_TENSOR_PARALLEL_GROUP is not None, "Expert tensor parallel group is not initialized"
+        assert _EXPERT_TENSOR_PARALLEL_GROUP is not None, (
+            "Expert tensor parallel group is not initialized"
+        )
     return _EXPERT_TENSOR_PARALLEL_GROUP
 
 
@@ -347,15 +388,18 @@ def set_expert_tensor_parallel_rank(rank):
 def get_expert_tensor_and_model_parallel_group(check_initialized=True):
     """Get the expert-tensor and expert-model group the caller rank belongs to."""
     if check_initialized:
-        assert (
-            _EXPERT_TENSOR_AND_MODEL_PARALLEL_GROUP is not None
-        ), "Expert tensor and model parallel group is not initialized"
+        assert _EXPERT_TENSOR_AND_MODEL_PARALLEL_GROUP is not None, (
+            "Expert tensor and model parallel group is not initialized"
+        )
     return _EXPERT_TENSOR_AND_MODEL_PARALLEL_GROUP
 
 
 def get_expert_tensor_and_model_parallel_world_size():
     """Return world size for the expert model parallel group times expert tensor parallel group."""
-    if paddle.distributed.is_available() and paddle.distributed.is_initialized():
+    if (
+        paddle.distributed.is_available()
+        and paddle.distributed.is_initialized()
+    ):
         world_size = get_expert_tensor_and_model_parallel_group().size()
         return world_size
     else:
@@ -364,7 +408,10 @@ def get_expert_tensor_and_model_parallel_world_size():
 
 def get_expert_tensor_and_model_parallel_rank():
     """Return caller's rank in the joint tensor- and expert-model-parallel group."""
-    if paddle.distributed.is_available() and paddle.distributed.is_initialized():
+    if (
+        paddle.distributed.is_available()
+        and paddle.distributed.is_initialized()
+    ):
         return get_expert_tensor_and_model_parallel_group().rank()
     else:
         return 0
@@ -376,7 +423,9 @@ def get_expert_tensor_and_model_parallel_rank():
 def _set_global_memory_buffer():
     """Initialize global buffer."""
     global _GLOBAL_MEMORY_BUFFER
-    assert _GLOBAL_MEMORY_BUFFER is None, "global memory buffer is already initialized"
+    assert _GLOBAL_MEMORY_BUFFER is None, (
+        "global memory buffer is already initialized"
+    )
     _GLOBAL_MEMORY_BUFFER = GlobalMemoryBuffer()
 
 
@@ -388,7 +437,9 @@ def have_global_memory_buffer():
 def get_global_memory_buffer():
     """Return the global GlobalMemoryBuffer object"""
     global _GLOBAL_MEMORY_BUFFER
-    assert _GLOBAL_MEMORY_BUFFER is not None, "global memory buffer is not initialized"
+    assert _GLOBAL_MEMORY_BUFFER is not None, (
+        "global memory buffer is not initialized"
+    )
     return _GLOBAL_MEMORY_BUFFER
 
 

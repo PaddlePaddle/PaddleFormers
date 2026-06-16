@@ -20,7 +20,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import paddle
@@ -32,7 +36,9 @@ from paddleformers.fleet.tensor_parallel.layers import (
     RowParallelLinear,
     VocabParallelEmbedding,
 )
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 from tests.multi_card_tests.tensor_parallel.test_utilities import Utils
 
@@ -114,7 +120,9 @@ class Test:
 
         return vocab_tp4, row_tp4, col_tp4
 
-    @pytest.mark.skipif(not paddle.cuda.is_available(), reason="CUDA not available")
+    @pytest.mark.skipif(
+        not paddle.cuda.is_available(), reason="CUDA not available"
+    )
     def test_init(self):
         vocab_tp1, row_tp1, col_tp1 = self.get_tp1_weights()
         vocab_tp4, row_tp4, col_tp4 = self.get_tp4_weights()

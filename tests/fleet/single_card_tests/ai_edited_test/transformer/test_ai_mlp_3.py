@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -26,7 +30,10 @@ import paddle.nn.functional as F
 
 from paddleformers.fleet.transformer.mlp import MLP
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
-from paddleformers.fleet.utils import init_method_normal, scaled_init_method_normal
+from paddleformers.fleet.utils import (
+    init_method_normal,
+    scaled_init_method_normal,
+)
 
 
 def _make_config(**overrides):
@@ -49,7 +56,9 @@ def _make_config(**overrides):
 
 
 def _make_mlp_spec(config):
-    from paddleformers.fleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
+    from paddleformers.fleet.models.gpt.gpt_layer_specs import (
+        get_gpt_layer_local_spec,
+    )
 
     spec = get_gpt_layer_local_spec(config)
     return spec.sublayers_spec.mlp.sublayers_spec

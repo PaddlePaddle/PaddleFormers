@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -58,7 +62,9 @@ class TestPaddleFleetInit(unittest.TestCase):
         """Test that mpu is an alias for parallel_state."""
         import paddleformers.fleet
 
-        self.assertIs(paddleformers.fleet.mpu, paddleformers.fleet.parallel_state)
+        self.assertIs(
+            paddleformers.fleet.mpu, paddleformers.fleet.parallel_state
+        )
 
     def test_timers_import(self):
         """Test that Timers can be imported from top-level package."""

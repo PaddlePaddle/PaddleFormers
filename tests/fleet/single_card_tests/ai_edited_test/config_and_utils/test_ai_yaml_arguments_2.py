@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -65,7 +69,9 @@ class TestFlattenConfigsEdgeCases(unittest.TestCase):
         """Test _flatten_configs preserves numeric types."""
         from paddleformers.fleet.training.yaml_arguments import _flatten_configs
 
-        cfg = OmegaConf.create({"model": {"layers": 12, "dim": 768.5, "dropout": 0.1}})
+        cfg = OmegaConf.create(
+            {"model": {"layers": 12, "dim": 768.5, "dropout": 0.1}}
+        )
         result = _flatten_configs(cfg)
         self.assertEqual(result.layers, 12)
         self.assertAlmostEqual(result.dim, 768.5)
@@ -84,7 +90,9 @@ class TestFlattenConfigsEdgeCases(unittest.TestCase):
         """Test _flatten_configs preserves boolean values."""
         from paddleformers.fleet.training.yaml_arguments import _flatten_configs
 
-        cfg = OmegaConf.create({"training": {"use_fp16": True, "use_bf16": False}})
+        cfg = OmegaConf.create(
+            {"training": {"use_fp16": True, "use_bf16": False}}
+        )
         result = _flatten_configs(cfg)
         self.assertTrue(result.use_fp16)
         self.assertFalse(result.use_bf16)
@@ -103,7 +111,9 @@ training:
   use_cuda: true
   debug: false
 """
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write(yaml_content)
             f.flush()
             result = load_yaml(f.name)
@@ -120,7 +130,9 @@ training:
   learning_rate: 0.0001
   weight_decay: 1e-4
 """
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write(yaml_content)
             f.flush()
             result = load_yaml(f.name)
@@ -137,7 +149,9 @@ model:
   num_layers: 24
   hidden_size: 1024
 """
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write(yaml_content)
             f.flush()
             result = load_yaml(f.name)
@@ -155,7 +169,9 @@ level1:
     level3:
       value: deep
 """
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write(yaml_content)
             f.flush()
             result = load_yaml(f.name)
@@ -174,7 +190,9 @@ training:
 optimizer:
   lr: 0.001
 """
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write(yaml_content)
             f.flush()
             result = load_yaml(f.name)
@@ -188,7 +206,9 @@ optimizer:
         from paddleformers.fleet.training.yaml_arguments import load_yaml
 
         yaml_content = "key: value\n"
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write(yaml_content)
             f.flush()
             result = load_yaml(f.name)

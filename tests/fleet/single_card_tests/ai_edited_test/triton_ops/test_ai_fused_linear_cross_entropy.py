@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -330,15 +334,17 @@ class TestFusedLinearCrossEntropyForwardEdgeCases(unittest.TestCase):
         weight.stop_gradient = True
         target = paddle.randint(0, V, [BT])
 
-        loss, grad_input, grad_weight, grad_bias = fused_linear_cross_entropy_forward(
-            _input=_input,
-            weight=weight,
-            target=target,
-            bias=None,
-            ignore_index=-100,
-            reduction="mean",
-            num_chunks=1,
-            ec_align=False,
+        loss, grad_input, grad_weight, grad_bias = (
+            fused_linear_cross_entropy_forward(
+                _input=_input,
+                weight=weight,
+                target=target,
+                bias=None,
+                ignore_index=-100,
+                reduction="mean",
+                num_chunks=1,
+                ec_align=False,
+            )
         )
 
         self.assertIsNotNone(grad_input)
@@ -358,15 +364,17 @@ class TestFusedLinearCrossEntropyForwardEdgeCases(unittest.TestCase):
         bias = paddle.randn([V], dtype=paddle.float32)
         target = paddle.randint(0, V, [BT])
 
-        loss, grad_input, grad_weight, grad_bias = fused_linear_cross_entropy_forward(
-            _input=_input,
-            weight=weight,
-            target=target,
-            bias=bias,
-            ignore_index=-100,
-            reduction="mean",
-            num_chunks=1,
-            ec_align=False,
+        loss, grad_input, grad_weight, grad_bias = (
+            fused_linear_cross_entropy_forward(
+                _input=_input,
+                weight=weight,
+                target=target,
+                bias=bias,
+                ignore_index=-100,
+                reduction="mean",
+                num_chunks=1,
+                ec_align=False,
+            )
         )
 
         self.assertIsNotNone(grad_bias)
@@ -384,15 +392,17 @@ class TestFusedLinearCrossEntropyForwardEdgeCases(unittest.TestCase):
         weight.stop_gradient = False
         target = paddle.randint(0, V, [BT])
 
-        loss, grad_input, grad_weight, grad_bias = fused_linear_cross_entropy_forward(
-            _input=_input,
-            weight=weight,
-            target=target,
-            bias=None,
-            ignore_index=-100,
-            reduction="mean",
-            num_chunks=1,
-            ec_align=True,
+        loss, grad_input, grad_weight, grad_bias = (
+            fused_linear_cross_entropy_forward(
+                _input=_input,
+                weight=weight,
+                target=target,
+                bias=None,
+                ignore_index=-100,
+                reduction="mean",
+                num_chunks=1,
+                ec_align=True,
+            )
         )
 
         self.assertIsNotNone(grad_weight)
@@ -411,15 +421,17 @@ class TestFusedLinearCrossEntropyForwardEdgeCases(unittest.TestCase):
         weight.stop_gradient = False
         target = paddle.randint(0, V, [BT])
 
-        loss, grad_input, grad_weight, grad_bias = fused_linear_cross_entropy_forward(
-            _input=_input,
-            weight=weight,
-            target=target,
-            bias=None,
-            ignore_index=-100,
-            reduction="sum",
-            num_chunks=1,
-            ec_align=False,
+        loss, grad_input, grad_weight, grad_bias = (
+            fused_linear_cross_entropy_forward(
+                _input=_input,
+                weight=weight,
+                target=target,
+                bias=None,
+                ignore_index=-100,
+                reduction="sum",
+                num_chunks=1,
+                ec_align=False,
+            )
         )
 
         self.assertIsNotNone(loss)
@@ -437,15 +449,17 @@ class TestFusedLinearCrossEntropyForwardEdgeCases(unittest.TestCase):
         weight.stop_gradient = False
         target = paddle.to_tensor([0, -100, 5, 3])
 
-        loss, grad_input, grad_weight, grad_bias = fused_linear_cross_entropy_forward(
-            _input=_input,
-            weight=weight,
-            target=target,
-            bias=None,
-            ignore_index=-100,
-            reduction="mean",
-            num_chunks=1,
-            ec_align=False,
+        loss, grad_input, grad_weight, grad_bias = (
+            fused_linear_cross_entropy_forward(
+                _input=_input,
+                weight=weight,
+                target=target,
+                bias=None,
+                ignore_index=-100,
+                reduction="mean",
+                num_chunks=1,
+                ec_align=False,
+            )
         )
 
         self.assertIsNotNone(loss)
@@ -463,15 +477,17 @@ class TestFusedLinearCrossEntropyForwardEdgeCases(unittest.TestCase):
         weight.stop_gradient = False
         target = paddle.randint(0, V, [BT])
 
-        loss, grad_input, grad_weight, grad_bias = fused_linear_cross_entropy_forward(
-            _input=_input,
-            weight=weight,
-            target=target,
-            bias=None,
-            ignore_index=-100,
-            reduction="mean",
-            num_chunks=4,
-            ec_align=False,
+        loss, grad_input, grad_weight, grad_bias = (
+            fused_linear_cross_entropy_forward(
+                _input=_input,
+                weight=weight,
+                target=target,
+                bias=None,
+                ignore_index=-100,
+                reduction="mean",
+                num_chunks=4,
+                ec_align=False,
+            )
         )
 
         self.assertIsNotNone(loss)
@@ -510,7 +526,9 @@ class TestFusedLinearCrossEntropyBackwardEdgeCases(unittest.TestCase):
             grad_output, grad_input, grad_weight, grad_bias
         )
 
-        self.assertTrue(paddle.allclose(result_gi, original_grad_input * 0.5, atol=1e-5))
+        self.assertTrue(
+            paddle.allclose(result_gi, original_grad_input * 0.5, atol=1e-5)
+        )
 
     def test_backward_with_grad_output_vector(self):
         """Test backward when grad_output is a vector."""

@@ -20,7 +20,11 @@ from typing import TYPE_CHECKING
 
 import paddle
 
-from paddleformers.fleet.utils import get_pg_rank, get_pg_size, make_viewless_tensor
+from paddleformers.fleet.utils import (
+    get_pg_rank,
+    get_pg_size,
+    make_viewless_tensor,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -92,7 +96,9 @@ def get_pp_prev_rank(pp_group: paddle.distributed.communication.group.Group):
 
 def make_viewless(e):
     """Make_viewless util func"""
-    e = make_viewless_tensor(inp=e, requires_grad=e.requires_grad, keep_graph=True)
+    e = make_viewless_tensor(
+        inp=e, requires_grad=e.requires_grad, keep_graph=True
+    )
     return e
 
 
@@ -162,11 +168,15 @@ class ScheduleNode:
         """
         self.name = name
         self.forward_func = forward_func
-        self.backward_func = backward_func if backward_func else self.default_backward_func
+        self.backward_func = (
+            backward_func if backward_func else self.default_backward_func
+        )
         self.stream = stream
         self.event = event
         self.free_input = free_input
-        assert self.free_input is False, "free_input is not supported yet , please set it to false"
+        assert self.free_input is False, (
+            "free_input is not supported yet , please set it to false"
+        )
         self.inputs = None
         self.outputs = None
 
@@ -189,9 +199,9 @@ class ScheduleNode:
                 output_grad = (output_grad,)
             if not isinstance(outputs, (tuple, list)):
                 outputs = (outputs,)
-            assert len(outputs) == len(
-                output_grad
-            ), f"{len(outputs)} of {type(outputs[0])} vs {len(output_grad)} of {type(output_grad[0])}"
+            assert len(outputs) == len(output_grad), (
+                f"{len(outputs)} of {type(outputs[0])} vs {len(output_grad)} of {type(output_grad[0])}"
+            )
 
             paddle.autograd.backward(outputs, output_grad)
 
@@ -216,7 +226,10 @@ class ScheduleNode:
         with stream_acquire_context(self.stream, self.event):
             paddle.cuda.nvtx.range_push(f"{self.name} forward")
             with paddle.cuda.stream(self.stream):
-                self.inputs = [make_viewless(e).detach() if e is not None else None for e in inputs]
+                self.inputs = [
+                    make_viewless(e).detach() if e is not None else None
+                    for e in inputs
+                ]
                 for i, input in enumerate(self.inputs):
                     if input is not None:
                         input.requires_grad = inputs[i].requires_grad
@@ -227,7 +240,14 @@ class ScheduleNode:
                 if not isinstance(data, tuple):
                     data = make_viewless(data)
                 else:
-                    data = tuple([make_viewless(e) if isinstance(e, paddle.Tensor) else e for e in data])
+                    data = tuple(
+                        [
+                            make_viewless(e)
+                            if isinstance(e, paddle.Tensor)
+                            else e
+                            for e in data
+                        ]
+                    )
 
                 self.output = data
             paddle.cuda.nvtx.range_pop()

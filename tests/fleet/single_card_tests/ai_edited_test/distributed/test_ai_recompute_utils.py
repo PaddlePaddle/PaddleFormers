@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -43,7 +47,9 @@ class _MockConfig:
         self.num_empty_layers_add_in_head = num_empty_layers_add_in_head
         self.num_empty_layers_add_in_tail = num_empty_layers_add_in_tail
         self.pipeline_model_parallel_size = pipeline_model_parallel_size
-        self.virtual_pipeline_model_parallel_size = virtual_pipeline_model_parallel_size
+        self.virtual_pipeline_model_parallel_size = (
+            virtual_pipeline_model_parallel_size
+        )
         self.recompute_granularity = recompute_granularity
         self.recompute_method = recompute_method
         self.recompute_num_layers = recompute_num_layers
@@ -56,7 +62,9 @@ class TestNeedRecomputeInBlock(unittest.TestCase):
         """Test with negative recompute_num_layers recomputes all."""
         from paddleformers.fleet.recompute_utils import need_recompute_in_block
 
-        config = _MockConfig(num_hidden_layers=8, pipeline_model_parallel_size=1)
+        config = _MockConfig(
+            num_hidden_layers=8, pipeline_model_parallel_size=1
+        )
         self.assertTrue(need_recompute_in_block(0, config, -1))
         self.assertTrue(need_recompute_in_block(7, config, -1))
 
@@ -64,7 +72,9 @@ class TestNeedRecomputeInBlock(unittest.TestCase):
         """Test basic block recompute."""
         from paddleformers.fleet.recompute_utils import need_recompute_in_block
 
-        config = _MockConfig(num_hidden_layers=8, pipeline_model_parallel_size=1)
+        config = _MockConfig(
+            num_hidden_layers=8, pipeline_model_parallel_size=1
+        )
         # chunk_size=8, recompute first 4 layers
         self.assertTrue(need_recompute_in_block(0, config, 4))
         self.assertTrue(need_recompute_in_block(3, config, 4))
@@ -75,7 +85,9 @@ class TestNeedRecomputeInBlock(unittest.TestCase):
         """Test block recompute with pipeline parallelism."""
         from paddleformers.fleet.recompute_utils import need_recompute_in_block
 
-        config = _MockConfig(num_hidden_layers=8, pipeline_model_parallel_size=2)
+        config = _MockConfig(
+            num_hidden_layers=8, pipeline_model_parallel_size=2
+        )
         # chunk_size=4, recompute first 2 layers per chunk
         self.assertTrue(need_recompute_in_block(0, config, 2))
         self.assertTrue(need_recompute_in_block(1, config, 2))
@@ -113,7 +125,9 @@ class TestNeedRecomputeInBlock(unittest.TestCase):
         """Test that recompute_num_layers > chunk_size raises."""
         from paddleformers.fleet.recompute_utils import need_recompute_in_block
 
-        config = _MockConfig(num_hidden_layers=8, pipeline_model_parallel_size=1)
+        config = _MockConfig(
+            num_hidden_layers=8, pipeline_model_parallel_size=1
+        )
         # chunk_size=8
         with self.assertRaises(AssertionError):
             need_recompute_in_block(0, config, 9)
@@ -124,7 +138,9 @@ class TestNeedRecomputeInFirstN(unittest.TestCase):
 
     def test_recompute_first_n_basic(self):
         """Test basic first_n recompute."""
-        from paddleformers.fleet.recompute_utils import need_recompute_in_first_n
+        from paddleformers.fleet.recompute_utils import (
+            need_recompute_in_first_n,
+        )
 
         config = _MockConfig(
             num_hidden_layers=8,
@@ -138,7 +154,9 @@ class TestNeedRecomputeInFirstN(unittest.TestCase):
 
     def test_recompute_first_n_with_pp(self):
         """Test first_n recompute with pipeline parallelism."""
-        from paddleformers.fleet.recompute_utils import need_recompute_in_first_n
+        from paddleformers.fleet.recompute_utils import (
+            need_recompute_in_first_n,
+        )
 
         config = _MockConfig(
             num_hidden_layers=8,
@@ -158,7 +176,9 @@ class TestNeedRecomputeInFirstN(unittest.TestCase):
 
     def test_recompute_first_n_with_vpp(self):
         """Test first_n recompute with VPP."""
-        from paddleformers.fleet.recompute_utils import need_recompute_in_first_n
+        from paddleformers.fleet.recompute_utils import (
+            need_recompute_in_first_n,
+        )
 
         config = _MockConfig(
             num_hidden_layers=8,
@@ -179,7 +199,9 @@ class TestNeedRecomputeInFirstN(unittest.TestCase):
 
     def test_recompute_first_n_none_raises(self):
         """Test that None recompute_num_layers raises."""
-        from paddleformers.fleet.recompute_utils import need_recompute_in_first_n
+        from paddleformers.fleet.recompute_utils import (
+            need_recompute_in_first_n,
+        )
 
         config = _MockConfig()
         with self.assertRaises(AssertionError):

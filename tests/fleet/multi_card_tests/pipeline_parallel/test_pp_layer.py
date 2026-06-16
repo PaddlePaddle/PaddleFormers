@@ -142,7 +142,9 @@ def get_alex_spec(num_classes=10):
                     extra_kwargs={"kernel_size": 2, "stride": 2},
                 ),
             ],
-            reshape_layer=LayerSpec(layer=ReshapeHelp, extra_kwargs={"shape": [-1, 256]}),
+            reshape_layer=LayerSpec(
+                layer=ReshapeHelp, extra_kwargs={"shape": [-1, 256]}
+            ),
             classifier=LayerSpec(
                 layer=nn.Linear,
                 extra_kwargs={"in_features": 256, "out_features": num_classes},
@@ -176,7 +178,9 @@ class TestPipeLayerAPI(unittest.TestCase):
 
     def test_pipelayer_desc(self):
         alex_desc = get_alex_spec()
-        pipe_model = build_spec_layer(alex_desc, num_stages=self.pipeline_parallel_size)
+        pipe_model = build_spec_layer(
+            alex_desc, num_stages=self.pipeline_parallel_size
+        )
         np.testing.assert_array_equal(len(pipe_model.parameters()), 6)
 
     def test_pipelayer_desc_single(self):
@@ -244,7 +248,9 @@ class TestPipeLayerAPI(unittest.TestCase):
 
     def test_pipelayer_segment_method_list(self):
         alex_desc = get_alex_spec()
-        pipe_model = build_spec_layer(alex_desc, num_stages=self.pipeline_parallel_size, seg_method=[0, 4])
+        pipe_model = build_spec_layer(
+            alex_desc, num_stages=self.pipeline_parallel_size, seg_method=[0, 4]
+        )
         stage_id = self.hcg.get_stage_id()
         if stage_id == 0:
             np.testing.assert_array_equal(len(pipe_model.parameters()), 4)

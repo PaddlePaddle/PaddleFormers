@@ -45,7 +45,9 @@ if TYPE_CHECKING:
     from paddle.distributed.communication.group import Group
 
 
-_USE_ACCURACY_COMPATIBLE_KERNEL = os.environ.get("FLAGS_use_accuracy_compatible_kernel", "0") == "1"
+_USE_ACCURACY_COMPATIBLE_KERNEL = (
+    os.environ.get("FLAGS_use_accuracy_compatible_kernel", "0") == "1"
+)
 
 
 def use_accuracy_compatible_kernel() -> bool:
@@ -58,9 +60,13 @@ def use_accuracy_compatible_kernel() -> bool:
     return _USE_ACCURACY_COMPATIBLE_KERNEL
 
 
-def _unpermute_scatter(permuted_tokens: paddle.Tensor, sorted_indices: paddle.Tensor, restore_shape) -> paddle.Tensor:
+def _unpermute_scatter(
+    permuted_tokens: paddle.Tensor, sorted_indices: paddle.Tensor, restore_shape
+) -> paddle.Tensor:
     output_tokens = paddle.zeros(restore_shape, dtype=permuted_tokens.dtype)
-    output_tokens.scatter_(index=sorted_indices, updates=permuted_tokens, overwrite=False)
+    output_tokens.scatter_(
+        index=sorted_indices, updates=permuted_tokens, overwrite=False
+    )
     return output_tokens
 
 
@@ -89,8 +95,12 @@ class ApplyPermutedProbs(PyLayer):
     def backward(ctx, grad_output):
         permuted_tokens, permuted_probs = ctx.saved_tensor()
         grad_tokens = grad_output * permuted_probs.unsqueeze(-1)
-        grad_probs = (permuted_tokens.cast("float32") * grad_output.cast("float32")).sum(axis=-1)
-        return grad_tokens.cast(ctx.input_dtype), grad_probs.cast(permuted_probs.dtype)
+        grad_probs = (
+            permuted_tokens.cast("float32") * grad_output.cast("float32")
+        ).sum(axis=-1)
+        return grad_tokens.cast(ctx.input_dtype), grad_probs.cast(
+            permuted_probs.dtype
+        )
 
 
 def barrier_ep(ep_group):
@@ -125,7 +135,9 @@ def permute(
     routing_map = routing_map.cast(paddle.bool).T.contiguous()
 
     # Create a dense expert-to-token mapping from the sparse token-to-expert mapping
-    token_indices = paddle.arange(num_tokens).unsqueeze(0).expand([num_experts, -1])
+    token_indices = (
+        paddle.arange(num_tokens).unsqueeze(0).expand([num_experts, -1])
+    )
     sorted_indices = token_indices.masked_select(routing_map)
 
     # use the mapping to permute the tokens
@@ -162,17 +174,27 @@ def unpermute(
     assert not drop_and_pad, "token-drop and pads is not supported"
 
     if probs is not None:
-        assert routing_map is not None, "Mask must be provided to permute the probs."
-        permuted_probs = probs.T.contiguous().masked_select(routing_map.T.contiguous().cast(paddle.bool))
+        assert routing_map is not None, (
+            "Mask must be provided to permute the probs."
+        )
+        permuted_probs = probs.T.contiguous().masked_select(
+            routing_map.T.contiguous().cast(paddle.bool)
+        )
         if use_accuracy_compatible_kernel():
-            permuted_tokens = ApplyPermutedProbs.apply(permuted_tokens, permuted_probs)
+            permuted_tokens = ApplyPermutedProbs.apply(
+                permuted_tokens, permuted_probs
+            )
         else:
             permuted_tokens = permuted_tokens * permuted_probs.unsqueeze(-1)
 
     if use_accuracy_compatible_kernel():
-        output_tokens = _unpermute_fp32_accum(permuted_tokens, sorted_indices, restore_shape)
+        output_tokens = _unpermute_fp32_accum(
+            permuted_tokens, sorted_indices, restore_shape
+        )
     else:
-        output_tokens = _unpermute_scatter(permuted_tokens, sorted_indices, restore_shape)
+        output_tokens = _unpermute_scatter(
+            permuted_tokens, sorted_indices, restore_shape
+        )
 
     return output_tokens
 
@@ -230,7 +252,9 @@ class _AllToAll(paddle.autograd.PyLayer):
         if dist.get_world_size(group) <= 1:
             return input
 
-        output = paddle.empty(output_shape, dtype=input.dtype, requires_grad=True)
+        output = paddle.empty(
+            output_shape, dtype=input.dtype, requires_grad=True
+        )
         paddle.distributed.barrier(group)
         task = dist.alltoall_single(
             output,
@@ -273,7 +297,9 @@ class RandomSTE(paddle.autograd.PyLayer):
         if dist.get_world_size() <= 1:
             return paddle.randn(x.shape).cast(x.dtype)
         else:
-            with get_cuda_rng_tracker().fork(get_expert_parallel_rng_tracker_name()):
+            with get_cuda_rng_tracker().fork(
+                get_expert_parallel_rng_tracker_name()
+            ):
                 return paddle.randn(x.shape).cast(x.dtype)
 
     @staticmethod
@@ -471,7 +497,9 @@ class FakeClone(paddle.autograd.PyLayer):
         """Forward pass"""
         if input.is_contiguous():
             fake_output = paddle.Tensor()
-            fake_output.get_tensor()._share_data_nocheck_with(input.get_tensor())
+            fake_output.get_tensor()._share_data_nocheck_with(
+                input.get_tensor()
+            )
         else:
             fake_output = input.clone()
         return fake_output
@@ -497,7 +525,9 @@ def manual_backward(f: Callable, is_first_fwd: bool, *args: list[Any]):
         tracer._has_grad = True  # turn on grad trace so we can manual backward
 
     detached_args = detach_and_requires_grad_(*args)
-    detached_args_clone = [FakeClone.apply(a) if is_tensor(a) else a for a in detached_args]
+    detached_args_clone = [
+        FakeClone.apply(a) if is_tensor(a) else a for a in detached_args
+    ]
     out = f(*detached_args_clone)
     if isinstance(out, list):
         out = tuple(out)
@@ -508,7 +538,9 @@ def manual_backward(f: Callable, is_first_fwd: bool, *args: list[Any]):
         tracer._has_grad = orig
         return None, out
 
-    out_cached = [FakeClone.apply(o) for o in out if o is not None]  # do not cache stop_gradient output
+    out_cached = [
+        FakeClone.apply(o) for o in out if o is not None
+    ]  # do not cache stop_gradient output
 
     for o in out_cached:
         o._clear_dataptr()  # free mem
@@ -519,7 +551,9 @@ def manual_backward(f: Callable, is_first_fwd: bool, *args: list[Any]):
         grad = list(grad)
         grad = [g for g in grad if g is not None]
         assert grad and out_cached, (len(grad), len(out_cached))
-        grad, out_cached = zip(*[(g, o) for g, o in zip(grad, out_cached) if not o.stop_gradient])
+        grad, out_cached = zip(
+            *[(g, o) for g, o in zip(grad, out_cached) if not o.stop_gradient]
+        )
 
         assert len(grad) == len(out_cached), (len(grad), len(out_cached), f)
 
@@ -532,7 +566,9 @@ def manual_backward(f: Callable, is_first_fwd: bool, *args: list[Any]):
 class FilterScores(PyLayer):
     @staticmethod
     def forward(ctx, probs, indices):
-        topk_scores = paddle._C_ops._run_custom_op("filter_scores", probs, indices)[0]
+        topk_scores = paddle._C_ops._run_custom_op(
+            "filter_scores", probs, indices
+        )[0]
         ctx.save_for_backward(indices)
         return topk_scores
 
@@ -553,7 +589,9 @@ def fused_expert_parallel_TC_topk_router_metadata(
     expert_frequency_offset,
     K,
 ):
-    return paddle._C_ops._run_custom_op("router_metadata", dispatched_indices, expert_frequency_offset, K)
+    return paddle._C_ops._run_custom_op(
+        "router_metadata", dispatched_indices, expert_frequency_offset, K
+    )
 
 
 def count_cumsum(
@@ -594,7 +632,9 @@ def k_grouped_bf16_gemm_tn_contiguous_aligned(a, b, d, ks, ks_tensor, c):
         # 1. Compute start offsets for both source and destination
         # We use cumsum to find where each group begins
         src_offsets = paddle.cat([paddle.tensor([0]), ks_tensor.cumsum(0)[:-1]])
-        dst_offsets = paddle.cat([paddle.tensor([0]), padded_ks_tensor.cumsum(0)[:-1]])
+        dst_offsets = paddle.cat(
+            [paddle.tensor([0]), padded_ks_tensor.cumsum(0)[:-1]]
+        )
 
         # 2. Calculate the "shift" required for every single element
         # diff represents how much further each group moves in the padded tensor
@@ -706,12 +746,14 @@ def reduce_scatter_group(input, group=None):
     if parallelism == 1:
         return input.clone()
     output_shape = input.shape
-    assert (
-        input.shape[0] % parallelism == 0
-    ), f"Input sequence length {input.shape[0]} can't be divided exactly by sequence parallelism {parallelism}"
+    assert input.shape[0] % parallelism == 0, (
+        f"Input sequence length {input.shape[0]} can't be divided exactly by sequence parallelism {parallelism}"
+    )
     output_shape[0] = output_shape[0] // parallelism
     output = paddle.empty(shape=output_shape, dtype=input.dtype)
-    dist.stream.reduce_scatter(output, input, op=dist.ReduceOp.SUM, group=group, use_calc_stream=True)
+    dist.stream.reduce_scatter(
+        output, input, op=dist.ReduceOp.SUM, group=group, use_calc_stream=True
+    )
     return output
 
 

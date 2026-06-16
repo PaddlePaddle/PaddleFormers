@@ -19,7 +19,9 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from paddleformers.fleet.packed_seq_params import PackedSeqParams
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
 import math
 
@@ -78,14 +80,26 @@ class RotaryEmbedding(nn.Layer):
 
         self.seq_len_interpolation_factor = seq_len_interpolation_factor
         self.inv_freq = 1.0 / (
-            rotary_base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim)
+            rotary_base
+            ** (
+                paddle.arange(0, dim, 2, dtype=paddle.int64).astype(
+                    dtype=paddle.float32
+                )
+                / dim
+            )
         )
 
         if rope_scaling:
-            self.inv_freq = self._apply_scaling(self.inv_freq, factor=rope_scaling_factor)
+            self.inv_freq = self._apply_scaling(
+                self.inv_freq, factor=rope_scaling_factor
+            )
 
         self.cp_group = (
-            cp_group if cp_group is not None else parallel_state.get_context_parallel_group(check_initialized=False)
+            cp_group
+            if cp_group is not None
+            else parallel_state.get_context_parallel_group(
+                check_initialized=False
+            )
         )
 
         self._cast_to_low_precision = False
@@ -103,7 +117,9 @@ class RotaryEmbedding(nn.Layer):
 
         factor = factor  # `8` in the original implementation
         low_freq_factor = low_freq_factor  # `1` in the original implementation
-        high_freq_factor = high_freq_factor  # `4` in the original implementation
+        high_freq_factor = (
+            high_freq_factor  # `4` in the original implementation
+        )
         old_context_len = original_max_position_embeddings  # `8192` in the original implementation
 
         low_freq_wavelen = old_context_len / low_freq_factor
@@ -112,16 +128,28 @@ class RotaryEmbedding(nn.Layer):
         wavelen = 2 * math.pi / freqs
         # wavelen < high_freq_wavelen: do nothing
         # wavelen > low_freq_wavelen: divide by factor
-        inv_freq_llama = paddle.where(wavelen > low_freq_wavelen, freqs / factor, freqs)
+        inv_freq_llama = paddle.where(
+            wavelen > low_freq_wavelen, freqs / factor, freqs
+        )
         # otherwise: interpolate between the two, using a smooth factor
-        smooth_factor = (old_context_len / wavelen - low_freq_factor) / (high_freq_factor - low_freq_factor)
-        smoothed_inv_freq = (1 - smooth_factor) * inv_freq_llama / factor + smooth_factor * inv_freq_llama
-        is_medium_freq = ~(wavelen < high_freq_wavelen) * ~(wavelen > low_freq_wavelen)
-        inv_freq_llama = paddle.where(is_medium_freq, smoothed_inv_freq, inv_freq_llama)
+        smooth_factor = (old_context_len / wavelen - low_freq_factor) / (
+            high_freq_factor - low_freq_factor
+        )
+        smoothed_inv_freq = (
+            1 - smooth_factor
+        ) * inv_freq_llama / factor + smooth_factor * inv_freq_llama
+        is_medium_freq = ~(wavelen < high_freq_wavelen) * ~(
+            wavelen > low_freq_wavelen
+        )
+        inv_freq_llama = paddle.where(
+            is_medium_freq, smoothed_inv_freq, inv_freq_llama
+        )
 
         return inv_freq_llama
 
-    def get_freqs_non_repeated(self, max_seq_len: int, offset: int = 0, position_ids: Tensor = None) -> Tensor:
+    def get_freqs_non_repeated(
+        self, max_seq_len: int, offset: int = 0, position_ids: Tensor = None
+    ) -> Tensor:
         """Generates matrix of frequencies based on positions in the sequence,
         used to create positional encodings"""
         if position_ids is not None:
@@ -137,9 +165,14 @@ class RotaryEmbedding(nn.Layer):
             else:
                 # For 3D position_ids (M-RoPE), this function should not be called
                 # Fall back to max_seq_len to avoid cryptic errors
-                seq = paddle.arange(max_seq_len).astype(self.inv_freq.dtype) + offset
+                seq = (
+                    paddle.arange(max_seq_len).astype(self.inv_freq.dtype)
+                    + offset
+                )
         else:
-            seq = paddle.arange(max_seq_len).astype(self.inv_freq.dtype) + offset
+            seq = (
+                paddle.arange(max_seq_len).astype(self.inv_freq.dtype) + offset
+            )
 
         if self.seq_len_interpolation_factor is not None:
             seq *= 1 / self.seq_len_interpolation_factor
@@ -148,7 +181,9 @@ class RotaryEmbedding(nn.Layer):
 
         return freqs
 
-    def get_cos_sin(self, max_seq_len: int, offset: int = 0) -> (Tensor, Tensor):
+    def get_cos_sin(
+        self, max_seq_len: int, offset: int = 0
+    ) -> (Tensor, Tensor):
         """Cosine and sine values for RoPE are precomputed for all positions up to the maximum
         sequence length"""
         freqs = self.get_freqs_non_repeated(max_seq_len, offset)
@@ -173,13 +208,17 @@ class RotaryEmbedding(nn.Layer):
         Returns:
             Tensor: Embeddings after applying RoPE.
         """
-        freqs = self.get_freqs_non_repeated(max_seq_len, offset, position_ids=position_ids)
+        freqs = self.get_freqs_non_repeated(
+            max_seq_len, offset, position_ids=position_ids
+        )
         # first part even vector components, second part odd vector components,
         #  2 * dim in dimension size
         if not self.rotary_interleaved:
             emb = paddle.cat((freqs, freqs), axis=-1)
         else:
-            emb = paddle.stack((freqs.reshape((-1, 1)), freqs.reshape((-1, 1))), axis=-1).reshape((freqs.shape[0], -1))
+            emb = paddle.stack(
+                (freqs.reshape((-1, 1)), freqs.reshape((-1, 1))), axis=-1
+            ).reshape((freqs.shape[0], -1))
         # emb [1, seq_len, 1, dim]
         emb = emb[None, :, None, :]
         return emb
@@ -204,7 +243,9 @@ class RotaryEmbedding(nn.Layer):
         if packed_seq_params is not None:
             # max_seqlen are the max sequence length in the packed sequence before being divived
             # by the tp and cp size.
-            return max(packed_seq_params.max_seqlen_q, packed_seq_params.max_seqlen_kv)
+            return max(
+                packed_seq_params.max_seqlen_q, packed_seq_params.max_seqlen_kv
+            )
         else:
             if transformer_config.sequence_parallel:
                 seq_axis = 0
@@ -259,13 +300,22 @@ class MultimodalRotaryEmbedding(nn.Layer):
         self.rotary_interleaved = rotary_interleaved
 
         self.seq_len_interpolation_factor = seq_len_interpolation_factor
-        self.inv_freq = 1.0 / (rotary_base ** (paddle.arange(0, head_dim, 2, dtype=paddle.float32) / head_dim))
-
-        self.cp_group = (
-            cp_group if cp_group is not None else parallel_state.get_context_parallel_group(check_initialized=False)
+        self.inv_freq = 1.0 / (
+            rotary_base
+            ** (paddle.arange(0, head_dim, 2, dtype=paddle.float32) / head_dim)
         )
 
-    def forward(self, position_ids: paddle.Tensor, mrope_section: list[int]) -> Tensor:
+        self.cp_group = (
+            cp_group
+            if cp_group is not None
+            else parallel_state.get_context_parallel_group(
+                check_initialized=False
+            )
+        )
+
+    def forward(
+        self, position_ids: paddle.Tensor, mrope_section: list[int]
+    ) -> Tensor:
         """Forward pass of multimodal RoPE embedding.
 
         Args:
@@ -283,11 +333,18 @@ class MultimodalRotaryEmbedding(nn.Layer):
 
         with paddle.amp.auto_cast(False):
             inv_freq_expanded = (
-                self.inv_freq.unsqueeze(0).unsqueeze(-1).cast(paddle.float32).expand([3, position_ids.shape[1], -1, 1])
+                self.inv_freq.unsqueeze(0)
+                .unsqueeze(-1)
+                .cast(paddle.float32)
+                .expand([3, position_ids.shape[1], -1, 1])
             )
-            position_ids_expanded = position_ids.unsqueeze(2).cast(paddle.float32)
+            position_ids_expanded = position_ids.unsqueeze(2).cast(
+                paddle.float32
+            )
 
-            freqs = paddle.matmul(inv_freq_expanded, position_ids_expanded).transpose([0, 1, 3, 2])
+            freqs = paddle.matmul(
+                inv_freq_expanded, position_ids_expanded
+            ).transpose([0, 1, 3, 2])
 
             freqs = self.apply_interleaved_mrope(freqs, mrope_section)
             emb = paddle.cat((freqs, freqs), axis=-1)
@@ -358,14 +415,18 @@ class Rope2DPosEmbRepeated(nn.Layer):
         flat_pos = paddle.arange(0, N).float()
         x_pos = flat_pos % self.max_width
         y_pos = flat_pos // self.max_width
-        dim_range = paddle.arange(0, self.dim, 4)[: (self.dim // 4)].float()  # C/4
+        dim_range = paddle.arange(0, self.dim, 4)[
+            : (self.dim // 4)
+        ].float()  # C/4
         freqs = 1.0 / (self.rotary_base ** (dim_range / self.dim))
         x_freqs = paddle.outer(x_pos, freqs).float()  # N, C/4
         y_freqs = paddle.outer(y_pos, freqs).float()  # N, C/4
         x_cis = paddle.polar(paddle.ones_like(x_freqs), x_freqs)  # N, C/4
         y_cis = paddle.polar(paddle.ones_like(y_freqs), y_freqs)  # N, C/4
         # N, C/4, 2
-        freqs_cis = paddle.cat([x_cis.unsqueeze(dim=-1), y_cis.unsqueeze(dim=-1)], dim=-1)
+        freqs_cis = paddle.cat(
+            [x_cis.unsqueeze(dim=-1), y_cis.unsqueeze(dim=-1)], dim=-1
+        )
         # max_height, max_width, C/2
         freqs_cis = freqs_cis.reshape(self.max_height, self.max_width, -1)
         return freqs_cis
@@ -379,16 +440,24 @@ class Rope2DPosEmbRepeated(nn.Layer):
             freqs_cis: tensor of shape (sum(t * height * width), dim//2)
         """
         if not hasattr(self, "freqs_cis"):
-            self.register_buffer("freqs_cis", self._precompute_freqs_cis(), persistent=False)
+            self.register_buffer(
+                "freqs_cis", self._precompute_freqs_cis(), persistent=False
+            )
 
         shapes = grid_thws.tolist()
-        assert all(1 <= h <= self.max_height and 1 <= w <= self.max_width for t, h, w in shapes), (
+        assert all(
+            1 <= h <= self.max_height and 1 <= w <= self.max_width
+            for t, h, w in shapes
+        ), (
             shapes,
             self.max_height,
             self.max_width,
         )
         freqs_cis = paddle.cat(
-            [self.freqs_cis[:h, :w].reshape(-1, self.dim // 2).repeat(t, 1) for t, h, w in shapes],
+            [
+                self.freqs_cis[:h, :w].reshape(-1, self.dim // 2).repeat(t, 1)
+                for t, h, w in shapes
+            ],
             dim=0,
         )
         return freqs_cis

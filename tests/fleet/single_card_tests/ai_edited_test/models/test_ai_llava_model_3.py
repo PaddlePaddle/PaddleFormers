@@ -17,14 +17,21 @@ import unittest
 from collections import namedtuple
 
 REPO_ROOT = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    )
 )
 sys.path.insert(0, os.path.join(REPO_ROOT, "src"))
 
 import paddle
 
 from paddleformers.fleet.models.multimodal import llava_model
-from paddleformers.fleet.models.multimodal.llava_model import LLaVAModel, pixel_shuffle
+from paddleformers.fleet.models.multimodal.llava_model import (
+    LLaVAModel,
+    pixel_shuffle,
+)
 
 
 class MinimalLLaVA:
@@ -32,7 +39,9 @@ class MinimalLLaVA:
         return LLaVAModel._preprocess_data(self, *args, **kwargs)
 
     def _process_embedding_token_parallel(self, *args, **kwargs):
-        return LLaVAModel._process_embedding_token_parallel(self, *args, **kwargs)
+        return LLaVAModel._process_embedding_token_parallel(
+            self, *args, **kwargs
+        )
 
     def _apply_tile_tagging(self, *args, **kwargs):
         return LLaVAModel._apply_tile_tagging(self, *args, **kwargs)
@@ -42,7 +51,9 @@ class InferenceContext:
     def __init__(self, image_tokens_count=None):
         self.key_value_memory_dict = {}
         if image_tokens_count is not None:
-            self.key_value_memory_dict["image_tokens_count"] = image_tokens_count
+            self.key_value_memory_dict["image_tokens_count"] = (
+                image_tokens_count
+            )
 
 
 class RecordingVisionModel:
@@ -141,22 +152,28 @@ class TestLLaVAPreprocessNoMock(unittest.TestCase):
         model = make_preprocess_model()
         model._language_max_sequence_length = 3
         input_ids = paddle.to_tensor([[5, -200, 6]], dtype="int64")
-        language_embeddings = paddle.to_tensor([[[5.0, 5.5], [0.0, 0.5], [6.0, 6.5]]], dtype="float32")
-        image_embeddings = paddle.to_tensor([[[20.0, 20.5]], [[21.0, 21.5]]], dtype="float32")
+        language_embeddings = paddle.to_tensor(
+            [[[5.0, 5.5], [0.0, 0.5], [6.0, 6.5]]], dtype="float32"
+        )
+        image_embeddings = paddle.to_tensor(
+            [[[20.0, 20.5]], [[21.0, 21.5]]], dtype="float32"
+        )
         labels = paddle.to_tensor([[50, 51, 52]], dtype="int64")
         loss_mask = paddle.ones([1, 3], dtype="float32")
 
-        final_embedding, final_labels, final_loss_mask = LLaVAModel._preprocess_data(
-            model,
-            image_embeddings,
-            language_embeddings,
-            input_ids,
-            loss_mask,
-            labels,
-            False,
-            None,
-            -200,
-            paddle.to_tensor([1], dtype="int64"),
+        final_embedding, final_labels, final_loss_mask = (
+            LLaVAModel._preprocess_data(
+                model,
+                image_embeddings,
+                language_embeddings,
+                input_ids,
+                loss_mask,
+                labels,
+                False,
+                None,
+                -200,
+                paddle.to_tensor([1], dtype="int64"),
+            )
         )
 
         self.assertEqual(final_embedding.shape, [3, 1, 2])
@@ -174,20 +191,24 @@ class TestLLaVAPreprocessNoMock(unittest.TestCase):
         model._language_max_sequence_length = 5
         model.vision_model._is_fsdp_managed_module = True
         input_ids = paddle.to_tensor([[7, 8]], dtype="int64")
-        language_embeddings = paddle.to_tensor([[[7.0, 7.5], [8.0, 8.5]]], dtype="float32")
+        language_embeddings = paddle.to_tensor(
+            [[[7.0, 7.5], [8.0, 8.5]]], dtype="float32"
+        )
         image_embeddings = paddle.ones([1, 1, 2], dtype="float32")
 
-        final_embedding, final_labels, final_loss_mask = LLaVAModel._preprocess_data(
-            model,
-            image_embeddings,
-            language_embeddings,
-            input_ids,
-            paddle.ones([1, 2], dtype="float32"),
-            None,
-            False,
-            None,
-            -200,
-            paddle.to_tensor([], dtype="int64"),
+        final_embedding, final_labels, final_loss_mask = (
+            LLaVAModel._preprocess_data(
+                model,
+                image_embeddings,
+                language_embeddings,
+                input_ids,
+                paddle.ones([1, 2], dtype="float32"),
+                None,
+                False,
+                None,
+                -200,
+                paddle.to_tensor([], dtype="int64"),
+            )
         )
 
         self.assertEqual(final_embedding.shape, [5, 1, 2])
@@ -220,7 +241,9 @@ class TestLLaVATokenParallelAndTaggingNoMock(unittest.TestCase):
         labels = paddle.ones([1, 4], dtype="int64")
         loss_mask = paddle.ones([1, 4], dtype="float32")
         packed = {"marker": True}
-        result = LLaVAModel._process_embedding_token_parallel(model, embeddings, labels, loss_mask, packed)
+        result = LLaVAModel._process_embedding_token_parallel(
+            model, embeddings, labels, loss_mask, packed
+        )
         self.assertIs(result[0], embeddings)
         self.assertIs(result[3], packed)
 
@@ -259,12 +282,16 @@ class TestLLaVATokenParallelAndTaggingNoMock(unittest.TestCase):
             dtype="float32",
         )
 
-        result = LLaVAModel._apply_tile_tagging(model, image_embeddings, paddle.to_tensor([2], dtype="int64"))
+        result = LLaVAModel._apply_tile_tagging(
+            model, image_embeddings, paddle.to_tensor([2], dtype="int64")
+        )
 
         self.assertEqual(result.shape, [5, 2, 2])
         self.assertTrue(paddle.allclose(result[2:], image_embeddings))
         with self.assertRaises(AssertionError):
-            LLaVAModel._apply_tile_tagging(model, image_embeddings, paddle.to_tensor([1, 1], dtype="int64"))
+            LLaVAModel._apply_tile_tagging(
+                model, image_embeddings, paddle.to_tensor([1, 1], dtype="int64")
+            )
 
 
 class TestLLaVAForwardNoMock(unittest.TestCase):
@@ -276,8 +303,12 @@ class TestLLaVAForwardNoMock(unittest.TestCase):
         model._pixel_shuffle = False
         model._tile_tags = None
         model.image_token_index = -200
-        vision_output = paddle.to_tensor([[[0.0, 0.5], [1.0, 1.5], [2.0, 2.5]]], dtype="float32")
-        model.vision_model = RecordingVisionModel(vision_output, class_token_len=1)
+        vision_output = paddle.to_tensor(
+            [[[0.0, 0.5], [1.0, 1.5], [2.0, 2.5]]], dtype="float32"
+        )
+        model.vision_model = RecordingVisionModel(
+            vision_output, class_token_len=1
+        )
         model.vision_projection = RecordingProjection(offset=10.0)
         loss_mask = paddle.ones([1, 3], dtype="float32")
 
@@ -293,14 +324,18 @@ class TestLLaVAForwardNoMock(unittest.TestCase):
 
         self.assertIs(returned_loss_mask, loss_mask)
         self.assertEqual(output.shape, [2, 1, 2])
-        self.assertEqual(output[:, 0, :].numpy().tolist(), [[11.0, 11.5], [12.0, 12.5]])
+        self.assertEqual(
+            output[:, 0, :].numpy().tolist(), [[11.0, 11.5], [12.0, 12.5]]
+        )
 
     def test_forward_decoder_uses_encoder_hidden_state_and_language_model(self):
         model = make_preprocess_model()
         model.add_encoder = False
         model.add_decoder = True
         model.sequence_parallel_lm = False
-        model.encoder_hidden_state = paddle.to_tensor([[[20.0, 20.5]], [[21.0, 21.5]]], dtype="float32")
+        model.encoder_hidden_state = paddle.to_tensor(
+            [[[20.0, 20.5]], [[21.0, 21.5]]], dtype="float32"
+        )
         model.image_token_index = -200
         model.language_model = RecordingLanguageModel()
 
@@ -328,7 +363,9 @@ class TestLLaVAForwardNoMock(unittest.TestCase):
         model.sequence_parallel_lm = False
         model.image_token_index = -200
         model.language_model = RecordingLanguageModel()
-        model.vision_model = RecordingVisionModel(paddle.ones([1, 2, 2], dtype="float32"))
+        model.vision_model = RecordingVisionModel(
+            paddle.ones([1, 2, 2], dtype="float32")
+        )
         context = InferenceContext(image_tokens_count=2)
 
         output, new_loss_mask = LLaVAModel.forward(
@@ -359,12 +396,16 @@ class TestLLaVAExtraUtilityNoMock(unittest.TestCase):
         self.assertEqual(version_one.numel(), x.numel())
 
     def test_load_state_hooks_preserve_unmatched_keys(self):
-        incompatible_type = namedtuple("IncompatibleKeys", ["missing_keys", "unexpected_keys"])
+        incompatible_type = namedtuple(
+            "IncompatibleKeys", ["missing_keys", "unexpected_keys"]
+        )
         incompatible = incompatible_type(
             missing_keys=["a.weight", "b.weight", "c.extra_state"],
             unexpected_keys=["unexpected.extra_state", "unexpected.weight"],
         )
-        llava_model._load_state_dict_hook_ignore_param_names(["b.weight", "not.present"], None, incompatible)
+        llava_model._load_state_dict_hook_ignore_param_names(
+            ["b.weight", "not.present"], None, incompatible
+        )
         llava_model._load_state_dict_hook_ignore_extra_state(None, incompatible)
         self.assertEqual(incompatible.missing_keys, ["a.weight"])
         self.assertEqual(incompatible.unexpected_keys, ["unexpected.weight"])

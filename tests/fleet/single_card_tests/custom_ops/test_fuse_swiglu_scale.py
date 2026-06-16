@@ -20,7 +20,9 @@ import paddle.nn.functional as F
 from paddle import base
 from paddle.base import core
 
-from paddleformers.fleet.fusions.fused_swiglu_scale import fused_swiglu_scale_forward
+from paddleformers.fleet.fusions.fused_swiglu_scale import (
+    fused_swiglu_scale_forward,
+)
 
 
 class TestFusedSwiGLUScale(unittest.TestCase):
@@ -188,11 +190,15 @@ class TestFusedSwiGLUScale(unittest.TestCase):
             except Exception:
                 self.skipTest("cannot query GPU memory")
         if free_bytes < 40 * (1 << 30) or free_bytes < x_bytes * 5:
-            self.skipTest(f"need >=40GB free GPU mem, have {free_bytes / 1e9:.1f}GB")
+            self.skipTest(
+                f"need >=40GB free GPU mem, have {free_bytes / 1e9:.1f}GB"
+            )
 
         paddle.device.cuda.empty_cache()
         # Use small fp32 host arrays then cast on device to limit host RAM.
-        x_ref = paddle.randn([rows, 2 * hidden], dtype="float32").astype("bfloat16")
+        x_ref = paddle.randn([rows, 2 * hidden], dtype="float32").astype(
+            "bfloat16"
+        )
         scale_ref = paddle.uniform([rows, 1], dtype="float32", min=0.5, max=1.5)
         x_ref.stop_gradient = False
         scale_ref.stop_gradient = False
@@ -233,7 +239,9 @@ class TestFusedSwiGLUScale(unittest.TestCase):
         grid-stride row loop in VectorizedFusedSwiGLUFwd/Bwd fires multiple
         times per block. Memory footprint is ~ rows * 2*hidden * sizeof(dtype).
         """
-        if dtype == "bfloat16" and not core.is_bfloat16_supported(base.CUDAPlace(0)):
+        if dtype == "bfloat16" and not core.is_bfloat16_supported(
+            base.CUDAPlace(0)
+        ):
             self.skipTest("bf16 not supported")
 
         x_np = np.random.normal(0, 1.0, (rows, 2 * hidden)).astype("float32")
@@ -305,7 +313,9 @@ class TestFusedSwiGLUScale(unittest.TestCase):
         try:
             from paddlefleet_ops import fused_swiglu_weighted_clamp_bwd
         except ImportError:
-            self.skipTest("fused_swiglu_weighted_clamp_bwd not in installed extension")
+            self.skipTest(
+                "fused_swiglu_weighted_clamp_bwd not in installed extension"
+            )
 
         rows, hidden = 65536, 8
         x_np = np.random.normal(0, 1.0, (rows, 2 * hidden)).astype("float32")
@@ -317,7 +327,9 @@ class TestFusedSwiGLUScale(unittest.TestCase):
         dout = paddle.to_tensor(dout_np).astype("bfloat16")
 
         clamp_value = 7.0
-        dx, dprobs, out = fused_swiglu_weighted_clamp_bwd(x, probs, dout, clamp_value)
+        dx, dprobs, out = fused_swiglu_weighted_clamp_bwd(
+            x, probs, dout, clamp_value
+        )
 
         # Reference: clamp(g, cv); clamp(v, -cv, cv); silu(g_eff)*v_eff
         cv = clamp_value
@@ -326,9 +338,13 @@ class TestFusedSwiGLUScale(unittest.TestCase):
         v_eff = paddle.clip(val, -cv, cv)
         silu_g = F.silu(g_eff)
         swiglu = silu_g * v_eff
-        out_ref = (swiglu * probs.astype("float32").unsqueeze(-1)).astype("bfloat16")
+        out_ref = (swiglu * probs.astype("float32").unsqueeze(-1)).astype(
+            "bfloat16"
+        )
         # dprobs[row] = sum_h(dout * silu(clamp(g)) * clamp(v))
-        dprobs_ref = paddle.sum(dout.astype("float32") * swiglu, axis=-1, keepdim=True).astype("bfloat16")
+        dprobs_ref = paddle.sum(
+            dout.astype("float32") * swiglu, axis=-1, keepdim=True
+        ).astype("bfloat16")
 
         # The point of this test is exercising the kernel's row grid-stride
         # loop and the shared_sum cross-iteration __syncthreads in the

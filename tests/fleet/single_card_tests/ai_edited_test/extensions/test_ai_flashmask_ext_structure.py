@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -85,7 +89,9 @@ class TestFlashmaskExtensions(unittest.TestCase):
     def test_bitonic_merge_exists(self):
         """Test _bitonic_merge is defined in index_utils."""
         try:
-            from paddlefleet_ops._extensions.flashmask.index_utils import _bitonic_merge
+            from paddlefleet_ops._extensions.flashmask.index_utils import (
+                _bitonic_merge,
+            )
 
             self.assertIsNotNone(_bitonic_merge)
         except ImportError:

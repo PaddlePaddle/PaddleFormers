@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -32,7 +36,9 @@ from unittest.mock import MagicMock
 def _setup_triton_mock():
     """Create a mock triton module so we can import without GPU."""
     triton_mock = types.ModuleType("triton")
-    triton_mock.jit = lambda fn=None, **kwargs: ((lambda f: f) if fn is None else fn)
+    triton_mock.jit = lambda fn=None, **kwargs: (
+        (lambda f: f) if fn is None else fn
+    )
     triton_mock.language = types.ModuleType("triton.language")
     triton_mock.language.constexpr = None
     tl = triton_mock.language
@@ -82,7 +88,9 @@ class TestLigerFusedLinearCrossEntropyBackward(unittest.TestCase):
         grad_input = paddle.randn([4, 8])
         grad_weight = paddle.randn([8, 16])  # ec_align: [H, V]
         grad_bias = None
-        ctx.saved_tensor = MagicMock(return_value=(grad_input, grad_weight, grad_bias))
+        ctx.saved_tensor = MagicMock(
+            return_value=(grad_input, grad_weight, grad_bias)
+        )
         ctx.weight_requires_grad = True
         ctx.ec_align = True
         ctx.has_bias = False
@@ -110,7 +118,9 @@ class TestLigerFusedLinearCrossEntropyBackward(unittest.TestCase):
         grad_input = paddle.randn([4, 8])
         grad_weight = paddle.randn([16, 8])  # no ec_align: [V, H]
         grad_bias = None
-        ctx.saved_tensor = MagicMock(return_value=(grad_input, grad_weight, grad_bias))
+        ctx.saved_tensor = MagicMock(
+            return_value=(grad_input, grad_weight, grad_bias)
+        )
         ctx.weight_requires_grad = True
         ctx.ec_align = False
         ctx.has_bias = False
@@ -140,7 +150,9 @@ class TestLigerFusedLinearCrossEntropyBackward(unittest.TestCase):
         grad_input = paddle.randn([4, 8])
         grad_weight = paddle.randn([16, 8])
         grad_bias = None
-        ctx.saved_tensor = MagicMock(return_value=(grad_input, grad_weight, grad_bias))
+        ctx.saved_tensor = MagicMock(
+            return_value=(grad_input, grad_weight, grad_bias)
+        )
         ctx.weight_requires_grad = True
         ctx.ec_align = False
         ctx.has_bias = False
@@ -168,7 +180,9 @@ class TestLigerFusedLinearCrossEntropyBackward(unittest.TestCase):
         grad_input = paddle.randn([4, 8])
         grad_weight = paddle.randn([16, 8])
         grad_bias = paddle.randn([16])
-        ctx.saved_tensor = MagicMock(return_value=(grad_input, grad_weight, grad_bias))
+        ctx.saved_tensor = MagicMock(
+            return_value=(grad_input, grad_weight, grad_bias)
+        )
         ctx.weight_requires_grad = False
         ctx.ec_align = False
         ctx.has_bias = True
@@ -192,7 +206,9 @@ class TestLigerFusedLinearCrossEntropyBackward(unittest.TestCase):
         grad_input = paddle.randn([4, 8])
         grad_weight = None
         grad_bias = None
-        ctx.saved_tensor = MagicMock(return_value=(grad_input, grad_weight, grad_bias))
+        ctx.saved_tensor = MagicMock(
+            return_value=(grad_input, grad_weight, grad_bias)
+        )
         ctx.weight_requires_grad = False
         ctx.ec_align = False
         ctx.has_bias = False

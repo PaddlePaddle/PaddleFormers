@@ -15,7 +15,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -142,7 +146,9 @@ class TestGatherFromSequenceParallelRegion(unittest.TestCase):
         """Forward with None group should return input."""
         ctx = MagicMock()
         x = paddle.randn([4, 8])
-        result = _GatherFromSequenceParallelRegion.forward(ctx, x, None, True, None, False)
+        result = _GatherFromSequenceParallelRegion.forward(
+            ctx, x, None, True, None, False
+        )
         self.assertTrue(_tensors_equal(result, x))
 
 
@@ -153,7 +159,9 @@ class TestReduceScatterToSequenceParallelRegion(unittest.TestCase):
         """Forward with None group should return input."""
         ctx = MagicMock()
         x = paddle.randn([4, 8])
-        result = _ReduceScatterToSequenceParallelRegion.forward(ctx, x, None, None, False)
+        result = _ReduceScatterToSequenceParallelRegion.forward(
+            ctx, x, None, None, False
+        )
         self.assertTrue(_tensors_equal(result, x))
 
 

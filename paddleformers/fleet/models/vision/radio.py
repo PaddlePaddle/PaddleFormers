@@ -25,7 +25,9 @@ from paddleformers.fleet.config_logger import (
     has_config_logger_enabled,
     log_config_to_disk,
 )
-from paddleformers.fleet.models.common.vision_layer.vision_layer import VisionLayer
+from paddleformers.fleet.models.common.vision_layer.vision_layer import (
+    VisionLayer,
+)
 from paddleformers.fleet.process_groups_config import ProcessGroupCollection
 from paddleformers.fleet.tensor_parallel.layers import ColumnParallelLinear
 from paddleformers.fleet.transformer.enums import ModelType
@@ -86,7 +88,9 @@ class RADIOViTModel(VisionLayer):
         super().__init__(config=transformer_config)
 
         if has_config_logger_enabled(transformer_config):
-            log_config_to_disk(transformer_config, locals(), prefix=type(self).__name__)
+            log_config_to_disk(
+                transformer_config, locals(), prefix=type(self).__name__
+            )
 
         self.class_token_len = class_token_len
         self.visual_hidden_size = transformer_config.hidden_size
@@ -109,7 +113,9 @@ class RADIOViTModel(VisionLayer):
         # TODO: are we actually going to use this anywhere?
         self.use_mask_token = use_mask_token
         if self.use_mask_token:
-            self.mask_token = nn.Parameter(paddle.zeros(1, self.visual_hidden_size))
+            self.mask_token = nn.Parameter(
+                paddle.zeros(1, self.visual_hidden_size)
+            )
 
         self.add_class_token = add_class_token
         self.class_token_len = class_token_len
@@ -122,9 +128,9 @@ class RADIOViTModel(VisionLayer):
                 )
             )
 
-        self.seq_length = (img_h // self.patch_dim) * (img_w // self.patch_dim) + (
-            self.class_token_len if self.add_class_token else 0
-        )
+        self.seq_length = (img_h // self.patch_dim) * (
+            img_w // self.patch_dim
+        ) + (self.class_token_len if self.add_class_token else 0)
 
         pos_scale = self.visual_hidden_size**-0.5
         self.position_embeddings = nn.Parameter(
@@ -146,7 +152,9 @@ class RADIOViTModel(VisionLayer):
             bias=embedder_bias,
             config=transformer_config,
             gather_output=True,
-            init_method=lambda tensor: paddle.normal(mean=0.0, std=1.0, shape=tensor.shape),
+            init_method=lambda tensor: paddle.normal(
+                mean=0.0, std=1.0, shape=tensor.shape
+            ),
         )
 
         self.model_type = ModelType.encoder_or_decoder
@@ -187,7 +195,9 @@ class RADIOViTModel(VisionLayer):
         """
         self.decoder.set_input_tensor(input_tensor)
 
-    def forward(self, x: paddle.Tensor, attention_mask: paddle.Tensor | None = None) -> paddle.Tensor:
+    def forward(
+        self, x: paddle.Tensor, attention_mask: paddle.Tensor | None = None
+    ) -> paddle.Tensor:
         """Forward function of the RADIO ViT Model. This function passes the input tensors
         through the embedding layer and then the transformer.
 
@@ -200,7 +210,9 @@ class RADIOViTModel(VisionLayer):
         """
 
         if not HAVE_EINOPS:
-            raise ImportError("einops is required for RADIOViTModel, please install it with `pip install einops`")
+            raise ImportError(
+                "einops is required for RADIOViTModel, please install it with `pip install einops`"
+            )
 
         input_size = x.shape[2:]
         py = x.shape[-2] // self.patch_dim
@@ -218,11 +230,17 @@ class RADIOViTModel(VisionLayer):
         x, _ = self.apply_pos_enc(x, input_size=input_size)
 
         if self.add_class_token:
-            class_token = self.class_token.expand(x.shape[0], -1, -1)  # [batch, class_token_len, hidden_size]
+            class_token = self.class_token.expand(
+                x.shape[0], -1, -1
+            )  # [batch, class_token_len, hidden_size]
 
-            x = paddle.concat([class_token, x], dim=1)  # [batch, seq_length + class_token_len, hidden_size]
+            x = paddle.concat(
+                [class_token, x], dim=1
+            )  # [batch, seq_length + class_token_len, hidden_size]
 
-        assert x.shape[1] == self.seq_length, f"{x.shape[1]} != {self.seq_length}"
+        assert x.shape[1] == self.seq_length, (
+            f"{x.shape[1]} != {self.seq_length}"
+        )
 
         if self.ln_pre:
             x = self.ln_pre(x)
@@ -283,7 +301,9 @@ class RADIOViTModel(VisionLayer):
         if patch_idxs is None:
             return pos_embed
 
-        exp_patch_idxs = patch_idxs.unsqueeze(-1).expand(-1, -1, pos_embed.shape[-1])
+        exp_patch_idxs = patch_idxs.unsqueeze(-1).expand(
+            -1, -1, pos_embed.shape[-1]
+        )
 
         pos_embed = paddle.gather(
             pos_embed.expand(patch_idxs.shape[0], -1, -1),
@@ -297,7 +317,9 @@ class RADIOViTModel(VisionLayer):
         if (self.max_num_rows, self.max_num_cols) == input_dims:
             return self.position_embeddings
 
-        pos_embed = self.position_embeddings.reshape(1, self.max_num_rows, self.max_num_cols, -1).permute(0, 3, 1, 2)
+        pos_embed = self.position_embeddings.reshape(
+            1, self.max_num_rows, self.max_num_cols, -1
+        ).permute(0, 3, 1, 2)
 
         def window_select(pos_embed):
             if input_dims[0] < pos_embed.shape[-2]:
@@ -309,25 +331,33 @@ class RADIOViTModel(VisionLayer):
         if self.has_cpe:
             if self.training:
                 min_scale = math.sqrt(0.1)
-                scale = paddle.rand(batch_size, 1, 1, device=pos_embed.device) * (1 - min_scale) + min_scale
+                scale = (
+                    paddle.rand(batch_size, 1, 1, device=pos_embed.device)
+                    * (1 - min_scale)
+                    + min_scale
+                )
                 aspect_min = math.log(3 / 4)
                 aspect_max = -aspect_min
                 aspect = paddle.exp(
-                    paddle.rand(batch_size, 1, 1, device=pos_embed.device) * (aspect_max - aspect_min) + aspect_min
+                    paddle.rand(batch_size, 1, 1, device=pos_embed.device)
+                    * (aspect_max - aspect_min)
+                    + aspect_min
                 )
 
                 scale_x = scale * aspect
                 scale_y = scale * (1 / aspect)
                 scale_xy = paddle.stack([scale_x, scale_y], dim=-1).clamp_(0, 1)
 
-                pos_xy = paddle.rand(batch_size, 1, 1, 2, device=pos_embed.device) * (1 - scale_xy)
+                pos_xy = paddle.rand(
+                    batch_size, 1, 1, 2, device=pos_embed.device
+                ) * (1 - scale_xy)
 
-                lin_x = paddle.linspace(0, 1, steps=input_dims[1], device=pos_embed.device)[None, None].expand(
-                    batch_size, input_dims[0], -1
-                )
-                lin_y = paddle.linspace(0, 1, steps=input_dims[0], device=pos_embed.device)[None, :, None].expand(
-                    batch_size, -1, input_dims[1]
-                )
+                lin_x = paddle.linspace(
+                    0, 1, steps=input_dims[1], device=pos_embed.device
+                )[None, None].expand(batch_size, input_dims[0], -1)
+                lin_y = paddle.linspace(
+                    0, 1, steps=input_dims[0], device=pos_embed.device
+                )[None, :, None].expand(batch_size, -1, input_dims[1])
 
                 lin_xy = paddle.stack([lin_x, lin_y], dim=-1)
 

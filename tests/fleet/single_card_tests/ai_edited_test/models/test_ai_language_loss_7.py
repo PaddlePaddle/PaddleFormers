@@ -79,7 +79,9 @@ class TestMTPLanguageLoss(unittest.TestCase):
 
         labels = paddle.zeros([1, 4], dtype="int64")
         with self.assertRaises(AssertionError):
-            loss_layer.forward({"mtp_logits": [paddle.zeros([1, 2, 2])], "labels": labels})
+            loss_layer.forward(
+                {"mtp_logits": [paddle.zeros([1, 2, 2])], "labels": labels}
+            )
 
     def test_forward_missing_mtp_logits_raises(self):
         from paddleformers.fleet.models.common.language_loss.language_loss import (
@@ -124,10 +126,14 @@ class TestMainLanguageLoss(unittest.TestCase):
         self.assertIn("mtp_2_loss", cls.mtp_loss_tracker)
 
     def test_forward_train_mtp_only_zero_lm(self):
-        layer, _ = self._make(train_mtp_only=True, add_mtp_loss=True, mtp_loss_scaling_factor=1.0)
+        layer, _ = self._make(
+            train_mtp_only=True, add_mtp_loss=True, mtp_loss_scaling_factor=1.0
+        )
         labels = paddle.zeros([1, 6], dtype="int64")
         mtp_loss = [paddle.to_tensor(4.0), paddle.to_tensor(4.0)]
-        out = layer.forward({"mtp_loss": mtp_loss, "logits": paddle.zeros([1, 4, 8])}, labels)
+        out = layer.forward(
+            {"mtp_loss": mtp_loss, "logits": paddle.zeros([1, 4, 8])}, labels
+        )
         # lm=0, add loss-detach -> 数值 = 0
         self.assertAlmostEqual(float(out.numpy()), 4.0, places=4)
         layer._forward.assert_not_called()
@@ -136,7 +142,9 @@ class TestMainLanguageLoss(unittest.TestCase):
         layer, _ = self._make(add_mtp_loss=False)
         labels = paddle.zeros([1, 6], dtype="int64")
         mtp_loss = [paddle.to_tensor(7.0)]
-        out = layer.forward({"mtp_loss": mtp_loss, "logits": paddle.zeros([1, 4, 8])}, labels)
+        out = layer.forward(
+            {"mtp_loss": mtp_loss, "logits": paddle.zeros([1, 4, 8])}, labels
+        )
         # 不加 mtp: 仅 lm_loss=10
         self.assertAlmostEqual(float(out.numpy()), 10.0, places=4)
 
@@ -176,7 +184,9 @@ class TestGPTMainLMHead(unittest.TestCase):
         from paddleformers.fleet.models.gpt.lm_head import GPTMainLMHead
 
         head = GPTMainLMHead.__new__(GPTMainLMHead)
-        head.config = make_config(block_attention_residuals=False, num_nextn_predict_layers=2)
+        head.config = make_config(
+            block_attention_residuals=False, num_nextn_predict_layers=2
+        )
         head._forward = MagicMock(return_value="LOGITS")
         head.block_attn_res = MagicMock()
 
@@ -194,7 +204,9 @@ class TestGPTMainLMHead(unittest.TestCase):
         from paddleformers.fleet.models.gpt.lm_head import GPTMainLMHead
 
         head = GPTMainLMHead.__new__(GPTMainLMHead)
-        head.config = make_config(block_attention_residuals=True, num_nextn_predict_layers=1)
+        head.config = make_config(
+            block_attention_residuals=True, num_nextn_predict_layers=1
+        )
         head._forward = MagicMock(return_value="L")
         hidden = paddle.arange(4 * 4, dtype="float32").reshape([4, 4])
         applied = paddle.ones_like(hidden)
@@ -210,17 +222,25 @@ class TestGptBuilderSeparateMtp(unittest.TestCase):
     def test_tail_empty_layers_reduced_by_one_and_loss_overridden(self):
         from paddleformers.fleet import gpt_builders as gb
 
-        cfg = make_config(num_empty_layers_add_in_tail=3, separate_mtp_headloss=True)
+        cfg = make_config(
+            num_empty_layers_add_in_tail=3, separate_mtp_headloss=True
+        )
         # 补充 gpt_builder 需要的其它属性
         cfg.num_nextn_predict_layers = 2
         cfg.num_layers = 1
 
         with (
-            patch.object(gb, "get_gpt_layer_local_spec", return_value=MagicMock()),
+            patch.object(
+                gb, "get_gpt_layer_local_spec", return_value=MagicMock()
+            ),
             patch.object(gb, "get_gpt_decoder_layers_spec", return_value=[]),
             patch.object(gb, "get_gpt_mtp_layers_spec", return_value=[]),
-            patch.object(gb, "get_gpt_spec", return_value=MagicMock()) as mock_spec,
-            patch.object(gb, "build_spec_layer", return_value="MODEL") as mock_build,
+            patch.object(
+                gb, "get_gpt_spec", return_value=MagicMock()
+            ) as mock_spec,
+            patch.object(
+                gb, "build_spec_layer", return_value="MODEL"
+            ) as mock_build,
             patch.object(gb, "MainLanguageLoss") as mock_main_loss,
             patch.object(gb, "LanguageLoss") as mock_lang_loss,
             patch.object(gb, "EmptyLayer"),
@@ -233,26 +253,36 @@ class TestGptBuilderSeparateMtp(unittest.TestCase):
             self.assertEqual(len(kwargs["tail_empty_layers_spec"]), 2)
             # loss_fn 被 MainLanguageLoss 覆盖
             mock_main_loss.assert_called_once_with(cfg)
-            self.assertEqual(mock_build.call_args.kwargs["loss_fn"], "MAIN_LOSS")
+            self.assertEqual(
+                mock_build.call_args.kwargs["loss_fn"], "MAIN_LOSS"
+            )
 
     def test_tail_empty_layers_unchanged_when_flag_off(self):
         from paddleformers.fleet import gpt_builders as gb
 
-        cfg = make_config(num_empty_layers_add_in_tail=3, separate_mtp_headloss=False)
+        cfg = make_config(
+            num_empty_layers_add_in_tail=3, separate_mtp_headloss=False
+        )
         cfg.num_nextn_predict_layers = 0
         cfg.num_layers = 1
         with (
-            patch.object(gb, "get_gpt_layer_local_spec", return_value=MagicMock()),
+            patch.object(
+                gb, "get_gpt_layer_local_spec", return_value=MagicMock()
+            ),
             patch.object(gb, "get_gpt_decoder_layers_spec", return_value=[]),
             patch.object(gb, "get_gpt_mtp_layers_spec", return_value=[]),
-            patch.object(gb, "get_gpt_spec", return_value=MagicMock()) as mock_spec,
+            patch.object(
+                gb, "get_gpt_spec", return_value=MagicMock()
+            ) as mock_spec,
             patch.object(gb, "build_spec_layer", return_value="M"),
             patch.object(gb, "MainLanguageLoss") as mock_main_loss,
             patch.object(gb, "LanguageLoss"),
             patch.object(gb, "EmptyLayer"),
         ):
             gb.gpt_builder(cfg, num_stages=2)
-            self.assertEqual(len(mock_spec.call_args.kwargs["tail_empty_layers_spec"]), 3)
+            self.assertEqual(
+                len(mock_spec.call_args.kwargs["tail_empty_layers_spec"]), 3
+            )
             mock_main_loss.assert_not_called()
 
 
@@ -265,9 +295,14 @@ class TestGetGptSpecSeparateBranch(unittest.TestCase):
             MTPLanguageLoss,
         )
         from paddleformers.fleet.models.gpt import gpt_layer_specs as spec_mod
-        from paddleformers.fleet.models.gpt.lm_head import GPTMainLMHead, GPTMTPLMHead
+        from paddleformers.fleet.models.gpt.lm_head import (
+            GPTMainLMHead,
+            GPTMTPLMHead,
+        )
 
-        cfg = make_config(separate_mtp_headloss=True, num_nextn_predict_layers=2)
+        cfg = make_config(
+            separate_mtp_headloss=True, num_nextn_predict_layers=2
+        )
         out = spec_mod.get_gpt_spec(
             config=cfg,
             transformer_layers_spec=[],
@@ -288,7 +323,9 @@ class TestGetGptSpecSeparateBranch(unittest.TestCase):
         from paddleformers.fleet.models.gpt import gpt_layer_specs as spec_mod
         from paddleformers.fleet.models.gpt.lm_head import GPTLMHead
 
-        cfg = make_config(separate_mtp_headloss=False, num_nextn_predict_layers=0)
+        cfg = make_config(
+            separate_mtp_headloss=False, num_nextn_predict_layers=0
+        )
         out = spec_mod.get_gpt_spec(
             config=cfg,
             transformer_layers_spec=[],
@@ -386,7 +423,9 @@ class TestGPTMainLMHeadPassthrough(unittest.TestCase):
         from paddleformers.fleet.models.gpt.lm_head import GPTMainLMHead
 
         head = GPTMainLMHead.__new__(GPTMainLMHead)
-        head.config = make_config(block_attention_residuals=False, num_nextn_predict_layers=2)
+        head.config = make_config(
+            block_attention_residuals=False, num_nextn_predict_layers=2
+        )
 
         received = {}
 
@@ -410,7 +449,9 @@ class TestGetGptSpecAssert(unittest.TestCase):
     def test_separate_without_mtp_layers_raises(self):
         from paddleformers.fleet.models.gpt import gpt_layer_specs as spec_mod
 
-        cfg = make_config(separate_mtp_headloss=True, num_nextn_predict_layers=0)
+        cfg = make_config(
+            separate_mtp_headloss=True, num_nextn_predict_layers=0
+        )
         with self.assertRaises(AssertionError):
             spec_mod.get_gpt_spec(
                 config=cfg,

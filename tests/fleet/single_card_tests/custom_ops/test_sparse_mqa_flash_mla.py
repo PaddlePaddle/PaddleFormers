@@ -23,10 +23,12 @@ from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 
 try:
     import paddlefleet_ops
-
     from paddleformers.fleet.tilelang_ops.attn import sparse_mqa
 
-    _HAS_FLASH_MLA = paddlefleet_ops.is_flash_mla_available() and sparse_mqa._flash_mla_sparse_fwd is not None
+    _HAS_FLASH_MLA = (
+        paddlefleet_ops.is_flash_mla_available()
+        and sparse_mqa._flash_mla_sparse_fwd is not None
+    )
 except (ImportError, RuntimeError, AttributeError):
     _HAS_FLASH_MLA = False
 
@@ -70,7 +72,9 @@ class TestSparseMQAFlashMLAForward(unittest.TestCase):
     def test_flash_mla_forward_matches_tilelang(self):
         q, kv, attn_sink, topk_idxs = self._make_inputs()
 
-        tile_out, tile_lse = sparse_mqa.sparse_attn(q, kv, attn_sink, topk_idxs, sm_scale=self.softmax_scale)
+        tile_out, tile_lse = sparse_mqa.sparse_attn(
+            q, kv, attn_sink, topk_idxs, sm_scale=self.softmax_scale
+        )
 
         flash_out, flash_lse = sparse_mqa.sparse_attn(
             q,
@@ -124,10 +128,14 @@ class TestSparseMQAFlashMLAForward(unittest.TestCase):
         )
 
     def test_fallback_path(self):
-        old_flash_mla_sparse_fwd = getattr(sparse_mqa, "_flash_mla_sparse_fwd", None)
+        old_flash_mla_sparse_fwd = getattr(
+            sparse_mqa, "_flash_mla_sparse_fwd", None
+        )
         try:
             sparse_mqa._flash_mla_sparse_fwd = None
-            with self.assertRaisesRegex(RuntimeError, "flash_mla is not available"):
+            with self.assertRaisesRegex(
+                RuntimeError, "flash_mla is not available"
+            ):
                 sparse_mqa.flash_mla_sparse_attn(None, None, None, None)
         finally:
             sparse_mqa._flash_mla_sparse_fwd = old_flash_mla_sparse_fwd
@@ -139,7 +147,9 @@ class TestSparseMQAFlashMLAForward(unittest.TestCase):
         ):
             self.assertEqual(sparse_mqa._get_topk_alignment(), 64)
 
-        with self.assertRaisesRegex(ValueError, "csa_sparse_attn_backend='paddle' is invalid"):
+        with self.assertRaisesRegex(
+            ValueError, "csa_sparse_attn_backend='paddle' is invalid"
+        ):
             config = TransformerConfig(
                 experimental_attention_variant="dsv4_hybrid",
                 csa_compress_ratios=[0],

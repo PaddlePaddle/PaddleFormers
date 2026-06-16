@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -39,7 +43,9 @@ class TestTransformerEncoderHelperMethods(unittest.TestCase):
         mock_config.pipeline_model_parallel_size = 1
         mock_config.virtual_pipeline_model_parallel_size = 1
 
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             encoder.config = mock_config
             encoder._sequential_layers = []
@@ -58,7 +64,9 @@ class TestTransformerEncoderHelperMethods(unittest.TestCase):
         mock_config.pipeline_model_parallel_size = 1
         mock_config.virtual_pipeline_model_parallel_size = 1
 
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             encoder.config = mock_config
             encoder._sequential_layers = [
@@ -78,7 +86,9 @@ class TestTransformerEncoderHelperMethods(unittest.TestCase):
         mock_config.pipeline_model_parallel_size = 1
         mock_config.virtual_pipeline_model_parallel_size = 1
 
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             encoder.config = mock_config
             encoder._sequential_layers = [
@@ -99,7 +109,9 @@ class TestTransformerEncoderHelperMethods(unittest.TestCase):
         mock_config.pipeline_model_parallel_size = 1
         mock_config.virtual_pipeline_model_parallel_size = 1
 
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             encoder.config = mock_config
 
@@ -119,7 +131,9 @@ class TestBuildOverlappedNodesEncoder(unittest.TestCase):
         forward_chunk = ScheduleChunk([])
         backward_chunk = ScheduleChunk([])
 
-        fwd_pre, bwd_pre, overlap, fwd_post, bwd_post = build_overlapped_nodes(forward_chunk, backward_chunk)
+        fwd_pre, bwd_pre, overlap, fwd_post, bwd_post = build_overlapped_nodes(
+            forward_chunk, backward_chunk
+        )
 
         self.assertEqual(len(overlap.nodes), 0)
         self.assertEqual(len(fwd_pre.nodes), 0)
@@ -152,16 +166,22 @@ class TestTransformerEncoderOverlappedForwardBackward(unittest.TestCase):
         mock_config.pipeline_model_parallel_size = 1
         mock_config.virtual_pipeline_model_parallel_size = 1
 
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             encoder.config = mock_config
 
             forward_chunk = ScheduleChunk([])
             backward_chunk = ScheduleChunk([])
 
-            with patch("paddleformers.fleet.transformer.transformer_encoder.build_overlapped_nodes") as mock_build:
+            with patch(
+                "paddleformers.fleet.transformer.transformer_encoder.build_overlapped_nodes"
+            ) as mock_build:
                 mock_pre = MagicMock()
-                mock_pre.forward.return_value = {"input": paddle.randn([2, 8, 64])}
+                mock_pre.forward.return_value = {
+                    "input": paddle.randn([2, 8, 64])
+                }
                 mock_pre.backward.return_value = paddle.randn([2, 8, 64])
                 mock_build.return_value = (
                     mock_pre,
@@ -172,15 +192,17 @@ class TestTransformerEncoderOverlappedForwardBackward(unittest.TestCase):
                 )
 
                 forward_inputs = {"input": paddle.randn([2, 8, 64])}
-                fwd_out, fwd_loss, bwd_grads = encoder.overlapped_forward_backward(
-                    forward_chunk=forward_chunk,
-                    forward_inputs=forward_inputs,
-                    forward_loss_fn_node=None,
-                    backward_chunk=backward_chunk,
-                    backward_loss_fn_node=None,
-                    backward_input_grads=paddle.randn([2, 8, 64]),
-                    scaler=None,
-                    p2p_async_handle=None,
+                fwd_out, fwd_loss, bwd_grads = (
+                    encoder.overlapped_forward_backward(
+                        forward_chunk=forward_chunk,
+                        forward_inputs=forward_inputs,
+                        forward_loss_fn_node=None,
+                        backward_chunk=backward_chunk,
+                        backward_loss_fn_node=None,
+                        backward_input_grads=paddle.randn([2, 8, 64]),
+                        scaler=None,
+                        p2p_async_handle=None,
+                    )
                 )
                 self.assertIsNone(fwd_loss)
 
@@ -197,7 +219,9 @@ class TestTransformerEncoderFP8(unittest.TestCase):
         mock_config.pipeline_model_parallel_size = 1
         mock_config.virtual_pipeline_model_parallel_size = 1
 
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             encoder.config = mock_config
             encoder._num_virtual_pipeline_stages = 1
@@ -213,7 +237,9 @@ class TestTransformerEncoderFP8(unittest.TestCase):
         mock_config.pipeline_model_parallel_size = 1
         mock_config.virtual_pipeline_model_parallel_size = 1
 
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             encoder.config = mock_config
             encoder._num_virtual_pipeline_stages = 1
@@ -235,7 +261,9 @@ class TestTransformerEncoderNameMapping(unittest.TestCase):
         mock_config.pipeline_model_parallel_size = 1
         mock_config.virtual_pipeline_model_parallel_size = 1
 
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             encoder.config = mock_config
             encoder._pipeline_name_mapping = None

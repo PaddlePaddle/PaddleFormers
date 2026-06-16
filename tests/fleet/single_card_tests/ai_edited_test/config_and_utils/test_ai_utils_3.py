@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import functools
@@ -109,7 +113,9 @@ class TestPrepareInputTensorsForWgradCompute(unittest.TestCase):
 
     def test_2d_input(self):
         """Test with 2D input tensors."""
-        from paddleformers.fleet.utils import prepare_input_tensors_for_wgrad_compute
+        from paddleformers.fleet.utils import (
+            prepare_input_tensors_for_wgrad_compute,
+        )
 
         grad = paddle.randn([4, 8])
         inp = paddle.randn([4, 8])
@@ -119,7 +125,9 @@ class TestPrepareInputTensorsForWgradCompute(unittest.TestCase):
 
     def test_3d_input_reshaped(self):
         """Test with 3D input tensors get reshaped to 2D."""
-        from paddleformers.fleet.utils import prepare_input_tensors_for_wgrad_compute
+        from paddleformers.fleet.utils import (
+            prepare_input_tensors_for_wgrad_compute,
+        )
 
         grad = paddle.randn([2, 4, 8])
         inp = paddle.randn([2, 4, 8])

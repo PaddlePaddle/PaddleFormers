@@ -50,7 +50,10 @@ from paddleformers.fleet.transformer.multi_latent_attention import (
     MLASelfAttentionSublayersSpec,
 )
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
-from paddleformers.fleet.utils import init_method_normal, scaled_init_method_normal
+from paddleformers.fleet.utils import (
+    init_method_normal,
+    scaled_init_method_normal,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -81,7 +84,11 @@ class LayerNormStub(paddle.nn.Layer):
     ):
         super().__init__()
         size = hidden_size if hidden_size is not None else normalized_shape
-        self.eps = eps if eps is not None else (epsilon if epsilon is not None else 1e-5)
+        self.eps = (
+            eps
+            if eps is not None
+            else (epsilon if epsilon is not None else 1e-5)
+        )
         self.weight = paddle.nn.Parameter(paddle.ones([size]))
         self.bias = paddle.nn.Parameter(paddle.zeros([size]))
 
@@ -232,7 +239,9 @@ def _make_causal_topk_indices(b, sq, sk, topk):
             row_indices = paddle.concat([row_indices, pad])
         indices_list.append(row_indices)
     # [sq, topk] -> expand to [b, sq, topk]
-    indices = paddle.stack(indices_list, axis=0).unsqueeze(0).expand([b, sq, topk])
+    indices = (
+        paddle.stack(indices_list, axis=0).unsqueeze(0).expand([b, sq, topk])
+    )
     return indices
 
 
@@ -262,7 +271,9 @@ class TestHadamardTransform(unittest.TestCase):
         x = paddle.randn([4, 8])
         out_unscaled = hadamard_transform(x)
         out_scaled = hadamard_transform(x, scale=0.5)
-        self.assertTrue(paddle.allclose(out_scaled, out_unscaled * 0.5, atol=1e-5))
+        self.assertTrue(
+            paddle.allclose(out_scaled, out_unscaled * 0.5, atol=1e-5)
+        )
 
     def test_1d_input(self):
         x = paddle.randn([16])
@@ -293,7 +304,9 @@ class TestUnfusedDSAAttention(unittest.TestCase):
         query = paddle.randn([self.b, self.s, self.nhpp, self.qk_hd])
         key = paddle.randn([self.b, self.s, self.nhpp, self.qk_hd])
         value = paddle.randn([self.b, self.s, self.nhpp, self.v_hd])
-        out = _unfused_dsa_attention(query, key, value, None, self.softmax_scale)
+        out = _unfused_dsa_attention(
+            query, key, value, None, self.softmax_scale
+        )
         self.assertEqual(out.shape, [self.b, self.s, self.nhpp * self.v_hd])
 
     def test_with_causal_mask(self):
@@ -305,7 +318,9 @@ class TestUnfusedDSAAttention(unittest.TestCase):
             diagonal=1,
         )
         mask = causal.unsqueeze(0).unsqueeze(0)  # [1, 1, s, s]
-        out = _unfused_dsa_attention(query, key, value, mask, self.softmax_scale)
+        out = _unfused_dsa_attention(
+            query, key, value, mask, self.softmax_scale
+        )
         self.assertEqual(out.shape, [self.b, self.s, self.nhpp * self.v_hd])
 
     def test_asymmetric_dims(self):
@@ -369,8 +384,12 @@ class TestIndexer(unittest.TestCase):
 
     def test_forward_before_topk_shapes(self):
         self._prepare_indexer_bf16()
-        hidden = paddle.randn([self.b, self.s, self.config.hidden_size]).cast("bfloat16")
-        q_latent = paddle.randn([self.b, self.s, self.config.q_lora_rank]).cast("bfloat16")
+        hidden = paddle.randn([self.b, self.s, self.config.hidden_size]).cast(
+            "bfloat16"
+        )
+        q_latent = paddle.randn([self.b, self.s, self.config.q_lora_rank]).cast(
+            "bfloat16"
+        )
 
         q, k, weights = self.indexer.forward_before_topk(hidden, q_latent)
         self.assertEqual(
@@ -402,7 +421,9 @@ class TestIndexer(unittest.TestCase):
         )
         k = paddle.randn([self.b, self.s, self.config.dsa_index_head_dim])
         weights = paddle.randn([self.b, self.s, self.config.dsa_index_n_heads])
-        index_scores, topk_indices = self.indexer.compute_index_scores(q, k, weights, mask=None)
+        index_scores, topk_indices = self.indexer.compute_index_scores(
+            q, k, weights, mask=None
+        )
         self.assertEqual(list(index_scores.shape), [self.b, self.s, self.s])
         self.assertEqual(
             list(topk_indices.shape),
@@ -420,15 +441,21 @@ class TestIndexer(unittest.TestCase):
         )
         k = paddle.randn([self.b, self.s, self.config.dsa_index_head_dim])
         weights = paddle.randn([self.b, self.s, self.config.dsa_index_n_heads])
-        _, topk_indices = self.indexer.compute_index_scores(q, k, weights, mask=None)
+        _, topk_indices = self.indexer.compute_index_scores(
+            q, k, weights, mask=None
+        )
         self.assertTrue((topk_indices >= 0).all().item())
         self.assertTrue((topk_indices < self.s).all().item())
 
     def test_backward(self):
         """Indexer parameters receive gradients."""
         self._prepare_indexer_bf16()
-        hidden = paddle.randn([self.b, self.s, self.config.hidden_size]).cast("bfloat16")
-        q_latent = paddle.randn([self.b, self.s, self.config.q_lora_rank]).cast("bfloat16")
+        hidden = paddle.randn([self.b, self.s, self.config.hidden_size]).cast(
+            "bfloat16"
+        )
+        q_latent = paddle.randn([self.b, self.s, self.config.q_lora_rank]).cast(
+            "bfloat16"
+        )
 
         q, k, weights = self.indexer.forward_before_topk(hidden, q_latent)
         # rotate_activation requires bf16, so skip it in this unit test
@@ -437,7 +464,9 @@ class TestIndexer(unittest.TestCase):
         loss.backward()
 
         for name, param in self.indexer.named_parameters():
-            self.assertIsNotNone(param.grad, f"Parameter {name} has no gradient")
+            self.assertIsNotNone(
+                param.grad, f"Parameter {name} has no gradient"
+            )
 
 
 # ===========================================================================
@@ -454,10 +483,16 @@ class TestComputeDSAIndexerLoss(unittest.TestCase):
     def _make_inputs(self, sparse=False):
         index_scores = paddle.randn([self.b, self.sq, self.sk], dtype="float32")
         if sparse:
-            topk_indices = _make_causal_topk_indices(self.b, self.sq, self.sk, self.topk)
+            topk_indices = _make_causal_topk_indices(
+                self.b, self.sq, self.sk, self.topk
+            )
         else:
-            topk_indices = paddle.randint(0, self.sk, [self.b, self.sq, self.topk]).cast("int64")
-        query = paddle.randn([self.sq, self.b, self.np, self.hn], dtype="float32")
+            topk_indices = paddle.randint(
+                0, self.sk, [self.b, self.sq, self.topk]
+            ).cast("int64")
+        query = paddle.randn(
+            [self.sq, self.b, self.np, self.hn], dtype="float32"
+        )
         key = paddle.randn([self.sk, self.b, self.np, self.hn], dtype="float32")
         return index_scores, topk_indices, query, key
 
@@ -534,7 +569,9 @@ class TestFusedDSAIndexerLoss(unittest.TestCase):
         weights.stop_gradient = False
         k = paddle.randn([self.sk, self.b, self.d], dtype="float32")
         k.stop_gradient = False
-        query = paddle.randn([self.sq, self.b, self.np, self.hn], dtype="float32")
+        query = paddle.randn(
+            [self.sq, self.b, self.np, self.hn], dtype="float32"
+        )
         key = paddle.randn([self.sk, self.b, self.np, self.hn], dtype="float32")
         if with_mask:
             causal = paddle.triu(
@@ -641,7 +678,9 @@ class TestDSAIndexerLossAutoScaler(unittest.TestCase):
         self.assertTrue(True)  # Just verify no error
 
     def test_loss_scale(self):
-        DSAIndexerLossAutoScaler.set_loss_scale(paddle.to_tensor(2.0, dtype="float32"))
+        DSAIndexerLossAutoScaler.set_loss_scale(
+            paddle.to_tensor(2.0, dtype="float32")
+        )
         output = self._make_non_leaf_output([2, 4])
         indexer_loss = paddle.to_tensor(1.0, dtype="float32")
         indexer_loss.stop_gradient = False
@@ -677,7 +716,9 @@ class TestMLASelfAttentionWithDSA(unittest.TestCase):
         # But weights_proj does hidden.cast("float32") internally and expects
         # fp32 weights, so convert it back to fp32 after the global bf16 cast.
         model = model.to(dtype="bfloat16")
-        model.core_attention.indexer.weights_proj = model.core_attention.indexer.weights_proj.to(dtype="float32")
+        model.core_attention.indexer.weights_proj = (
+            model.core_attention.indexer.weights_proj.to(dtype="float32")
+        )
         return model
 
     def _make_hidden(self, dtype="bfloat16"):
@@ -760,7 +801,9 @@ class TestMLASelfAttentionWithDSA(unittest.TestCase):
         self.assertIsNotNone(hidden.grad)
         for name, param in model.named_parameters():
             if not param.stop_gradient:
-                self.assertIsNotNone(param.grad, f"Parameter {name} has no gradient")
+                self.assertIsNotNone(
+                    param.grad, f"Parameter {name} has no gradient"
+                )
                 self.assertTrue(
                     paddle.isfinite(param.grad).all().item(),
                     f"Parameter {name} has non-finite gradient",
@@ -804,16 +847,24 @@ class TestDSAIndexerLossLoggingHelperSaveLoss(unittest.TestCase):
     def test_save_loss_initializes_values(self):
         """First call should create the 'values' tensor with correct size."""
         loss = paddle.to_tensor(0.5, dtype="float32")
-        DSAIndexerLossLoggingHelper.save_loss_to_tracker(loss, layer_number=1, num_layers=4)
+        DSAIndexerLossLoggingHelper.save_loss_to_tracker(
+            loss, layer_number=1, num_layers=4
+        )
         self.assertIn("values", DSAIndexerLossLoggingHelper.tracker)
-        self.assertEqual(list(DSAIndexerLossLoggingHelper.tracker["values"].shape), [4])
+        self.assertEqual(
+            list(DSAIndexerLossLoggingHelper.tracker["values"].shape), [4]
+        )
 
     def test_save_loss_accumulates(self):
         """Multiple saves to the same layer should accumulate."""
         loss1 = paddle.to_tensor(0.5, dtype="float32")
         loss2 = paddle.to_tensor(0.3, dtype="float32")
-        DSAIndexerLossLoggingHelper.save_loss_to_tracker(loss1, layer_number=1, num_layers=4)
-        DSAIndexerLossLoggingHelper.save_loss_to_tracker(loss2, layer_number=1, num_layers=4)
+        DSAIndexerLossLoggingHelper.save_loss_to_tracker(
+            loss1, layer_number=1, num_layers=4
+        )
+        DSAIndexerLossLoggingHelper.save_loss_to_tracker(
+            loss2, layer_number=1, num_layers=4
+        )
         self.assertTrue(
             paddle.allclose(
                 DSAIndexerLossLoggingHelper.tracker["values"][0],
@@ -826,8 +877,12 @@ class TestDSAIndexerLossLoggingHelperSaveLoss(unittest.TestCase):
         """Saving to different layers puts values in correct positions."""
         loss1 = paddle.to_tensor(1.0, dtype="float32")
         loss2 = paddle.to_tensor(2.0, dtype="float32")
-        DSAIndexerLossLoggingHelper.save_loss_to_tracker(loss1, layer_number=1, num_layers=3)
-        DSAIndexerLossLoggingHelper.save_loss_to_tracker(loss2, layer_number=3, num_layers=3)
+        DSAIndexerLossLoggingHelper.save_loss_to_tracker(
+            loss1, layer_number=1, num_layers=3
+        )
+        DSAIndexerLossLoggingHelper.save_loss_to_tracker(
+            loss2, layer_number=3, num_layers=3
+        )
         values = DSAIndexerLossLoggingHelper.tracker["values"]
         self.assertAlmostEqual(values[0].item(), 1.0, places=5)
         self.assertAlmostEqual(values[1].item(), 0.0, places=5)
@@ -836,7 +891,9 @@ class TestDSAIndexerLossLoggingHelperSaveLoss(unittest.TestCase):
     def test_save_loss_none_layer_number_noop(self):
         """layer_number=None should be a no-op."""
         loss = paddle.to_tensor(1.0, dtype="float32")
-        DSAIndexerLossLoggingHelper.save_loss_to_tracker(loss, layer_number=None, num_layers=4)
+        DSAIndexerLossLoggingHelper.save_loss_to_tracker(
+            loss, layer_number=None, num_layers=4
+        )
         self.assertNotIn("values", DSAIndexerLossLoggingHelper.tracker)
 
     def test_save_loss_stores_groups(self):
@@ -851,8 +908,12 @@ class TestDSAIndexerLossLoggingHelperSaveLoss(unittest.TestCase):
             reduce_group=mock_reduce,
             avg_group=mock_avg,
         )
-        self.assertIs(DSAIndexerLossLoggingHelper.tracker["reduce_group"], mock_reduce)
-        self.assertIs(DSAIndexerLossLoggingHelper.tracker["avg_group"], mock_avg)
+        self.assertIs(
+            DSAIndexerLossLoggingHelper.tracker["reduce_group"], mock_reduce
+        )
+        self.assertIs(
+            DSAIndexerLossLoggingHelper.tracker["avg_group"], mock_avg
+        )
 
 
 class TestDSAIndexerLossLoggingHelperClean(unittest.TestCase):
@@ -867,7 +928,9 @@ class TestDSAIndexerLossLoggingHelperClean(unittest.TestCase):
     def test_clean_zeros_values(self):
         """Clean should zero out the values tensor."""
         loss = paddle.to_tensor(1.0, dtype="float32")
-        DSAIndexerLossLoggingHelper.save_loss_to_tracker(loss, layer_number=1, num_layers=3)
+        DSAIndexerLossLoggingHelper.save_loss_to_tracker(
+            loss, layer_number=1, num_layers=3
+        )
         DSAIndexerLossLoggingHelper.clean_loss_in_tracker()
         values = DSAIndexerLossLoggingHelper.tracker["values"]
         self.assertTrue(paddle.allclose(values, paddle.zeros([3])))
@@ -889,7 +952,9 @@ class TestDSAIndexerLossLoggingHelperClean(unittest.TestCase):
     def test_clean_empty_tracker_noop(self):
         """Clean on empty tracker should not raise."""
         DSAIndexerLossLoggingHelper.clean_loss_in_tracker()
-        self.assertIsNone(DSAIndexerLossLoggingHelper.tracker.get("reduce_group"))
+        self.assertIsNone(
+            DSAIndexerLossLoggingHelper.tracker.get("reduce_group")
+        )
 
 
 class TestDSAIndexerLossLoggingHelperReduce(unittest.TestCase):
@@ -912,10 +977,14 @@ class TestDSAIndexerLossLoggingHelperReduce(unittest.TestCase):
         """None nextn layer count should be treated as zero."""
         config = SimpleNamespace(num_hidden_layers=4, mtp_num_layers=0)
         config.num_nextn_predict_layers = None
-        self.assertEqual(DSAIndexerLossLoggingHelper.get_total_num_layers(config), 4)
+        self.assertEqual(
+            DSAIndexerLossLoggingHelper.get_total_num_layers(config), 4
+        )
 
     @patch("paddleformers.fleet.transformer.dsa_attention.parallel_state")
-    def test_reduce_empty_tracker_with_num_layers_joins_pp_reduce(self, mock_ps):
+    def test_reduce_empty_tracker_with_num_layers_joins_pp_reduce(
+        self, mock_ps
+    ):
         """Empty tracker should initialize zeros and join PP all_reduce."""
         pp_group = MagicMock()
         pp_group.nranks = 2
@@ -952,7 +1021,9 @@ class TestDSAIndexerLossLoggingHelperReduce(unittest.TestCase):
         mock_ps.get_data_parallel_group.return_value = None
 
         loss = paddle.to_tensor(2.0, dtype="float32")
-        DSAIndexerLossLoggingHelper.save_loss_to_tracker(loss, layer_number=1, num_layers=2)
+        DSAIndexerLossLoggingHelper.save_loss_to_tracker(
+            loss, layer_number=1, num_layers=2
+        )
         original_values = DSAIndexerLossLoggingHelper.tracker["values"].clone()
         DSAIndexerLossLoggingHelper.reduce_loss_in_tracker()
         self.assertTrue(
@@ -971,7 +1042,9 @@ class TestDSAIndexerLossLoggingHelperReduce(unittest.TestCase):
         mock_ps.get_data_parallel_group.return_value = None
 
         loss = paddle.to_tensor(1.0, dtype="float32")
-        DSAIndexerLossLoggingHelper.save_loss_to_tracker(loss, layer_number=1, num_layers=2)
+        DSAIndexerLossLoggingHelper.save_loss_to_tracker(
+            loss, layer_number=1, num_layers=2
+        )
         with patch("paddle.distributed.all_reduce") as mock_all_reduce:
             DSAIndexerLossLoggingHelper.reduce_loss_in_tracker()
             mock_all_reduce.assert_called_once()
@@ -985,7 +1058,9 @@ class TestDSAIndexerLossLoggingHelperReduce(unittest.TestCase):
         mock_ps.get_data_parallel_group.return_value = dp_group
 
         loss = paddle.to_tensor(4.0, dtype="float32")
-        DSAIndexerLossLoggingHelper.save_loss_to_tracker(loss, layer_number=1, num_layers=2)
+        DSAIndexerLossLoggingHelper.save_loss_to_tracker(
+            loss, layer_number=1, num_layers=2
+        )
         with patch("paddle.distributed.all_reduce"):
             DSAIndexerLossLoggingHelper.reduce_loss_in_tracker()
             # After DP reduce, values should be divided by nranks
@@ -1039,7 +1114,9 @@ class TestDSAIndexerLossLoggingHelperReduce(unittest.TestCase):
         mock_ps.get_data_parallel_group.return_value = None
 
         loss = paddle.to_tensor(1.0, dtype="float32")
-        DSAIndexerLossLoggingHelper.save_loss_to_tracker(loss, layer_number=1, num_layers=2)
+        DSAIndexerLossLoggingHelper.save_loss_to_tracker(
+            loss, layer_number=1, num_layers=2
+        )
         with patch("paddle.distributed.all_reduce") as mock_all_reduce:
             DSAIndexerLossLoggingHelper.reduce_loss_in_tracker()
             mock_all_reduce.assert_not_called()
@@ -1053,7 +1130,9 @@ class TestDSAIndexerLossLoggingHelperReduce(unittest.TestCase):
         mock_ps.get_data_parallel_group.return_value = dp_group
 
         loss = paddle.to_tensor(1.0, dtype="float32")
-        DSAIndexerLossLoggingHelper.save_loss_to_tracker(loss, layer_number=1, num_layers=2)
+        DSAIndexerLossLoggingHelper.save_loss_to_tracker(
+            loss, layer_number=1, num_layers=2
+        )
         with patch("paddle.distributed.all_reduce") as mock_all_reduce:
             DSAIndexerLossLoggingHelper.reduce_loss_in_tracker()
             mock_all_reduce.assert_not_called()
@@ -1073,16 +1152,24 @@ class TestDSAIndexerLossLoggingHelperTrackMetrics(unittest.TestCase):
     @patch.object(DSAIndexerLossLoggingHelper, "reduce_loss_in_tracker")
     def test_track_metrics_empty_tracker_noop(self, mock_reduce):
         """With no values, track_indexer_metrics should be a no-op after reduce."""
-        DSAIndexerLossLoggingHelper.track_indexer_metrics(loss_scale=1.0, iteration=10, num_layers=2)
+        DSAIndexerLossLoggingHelper.track_indexer_metrics(
+            loss_scale=1.0, iteration=10, num_layers=2
+        )
         mock_reduce.assert_called_once_with(num_layers=2)
 
     @patch.object(DSAIndexerLossLoggingHelper, "reduce_loss_in_tracker")
     def test_track_metrics_logs_loss(self, mock_reduce):
         """track_indexer_metrics should log the averaged indexer loss."""
         loss = paddle.to_tensor(2.0, dtype="float32")
-        DSAIndexerLossLoggingHelper.save_loss_to_tracker(loss, layer_number=1, num_layers=2)
-        with self.assertLogs("paddleformers.fleet.transformer.dsa_attention", level="INFO") as cm:
-            DSAIndexerLossLoggingHelper.track_indexer_metrics(loss_scale=1.0, iteration=42)
+        DSAIndexerLossLoggingHelper.save_loss_to_tracker(
+            loss, layer_number=1, num_layers=2
+        )
+        with self.assertLogs(
+            "paddleformers.fleet.transformer.dsa_attention", level="INFO"
+        ) as cm:
+            DSAIndexerLossLoggingHelper.track_indexer_metrics(
+                loss_scale=1.0, iteration=42
+            )
         log_output = "\n".join(cm.output)
         self.assertIn("42", log_output)
         self.assertIn("indexer loss", log_output)
@@ -1091,28 +1178,42 @@ class TestDSAIndexerLossLoggingHelperTrackMetrics(unittest.TestCase):
     def test_track_metrics_updates_total_loss_dict(self, mock_reduce):
         """track_indexer_metrics should add 'indexer loss' to total_loss_dict."""
         loss = paddle.to_tensor(4.0, dtype="float32")
-        DSAIndexerLossLoggingHelper.save_loss_to_tracker(loss, layer_number=1, num_layers=2)
+        DSAIndexerLossLoggingHelper.save_loss_to_tracker(
+            loss, layer_number=1, num_layers=2
+        )
         total_loss_dict = {}
-        DSAIndexerLossLoggingHelper.track_indexer_metrics(loss_scale=0.5, iteration=1, total_loss_dict=total_loss_dict)
+        DSAIndexerLossLoggingHelper.track_indexer_metrics(
+            loss_scale=0.5, iteration=1, total_loss_dict=total_loss_dict
+        )
         self.assertIn("indexer loss", total_loss_dict)
         # loss=4.0 at layer 1 only, num_layers=2
         # avg = (4.0 * 0.5) / 2 = 1.0
         expected = 1.0
-        self.assertAlmostEqual(total_loss_dict["indexer loss"].item(), expected, places=4)
+        self.assertAlmostEqual(
+            total_loss_dict["indexer loss"].item(), expected, places=4
+        )
 
     @patch.object(DSAIndexerLossLoggingHelper, "reduce_loss_in_tracker")
     def test_track_metrics_accumulates_total_loss_dict(self, mock_reduce):
         """Calling track_indexer_metrics twice should accumulate in total_loss_dict."""
         loss1 = paddle.to_tensor(2.0, dtype="float32")
-        DSAIndexerLossLoggingHelper.save_loss_to_tracker(loss1, layer_number=1, num_layers=1)
+        DSAIndexerLossLoggingHelper.save_loss_to_tracker(
+            loss1, layer_number=1, num_layers=1
+        )
         total_loss_dict = {}
-        DSAIndexerLossLoggingHelper.track_indexer_metrics(loss_scale=1.0, iteration=1, total_loss_dict=total_loss_dict)
+        DSAIndexerLossLoggingHelper.track_indexer_metrics(
+            loss_scale=1.0, iteration=1, total_loss_dict=total_loss_dict
+        )
         first_value = total_loss_dict["indexer loss"].item()
 
         # Save and track again
         loss2 = paddle.to_tensor(3.0, dtype="float32")
-        DSAIndexerLossLoggingHelper.save_loss_to_tracker(loss2, layer_number=1, num_layers=1)
-        DSAIndexerLossLoggingHelper.track_indexer_metrics(loss_scale=1.0, iteration=2, total_loss_dict=total_loss_dict)
+        DSAIndexerLossLoggingHelper.save_loss_to_tracker(
+            loss2, layer_number=1, num_layers=1
+        )
+        DSAIndexerLossLoggingHelper.track_indexer_metrics(
+            loss_scale=1.0, iteration=2, total_loss_dict=total_loss_dict
+        )
         self.assertAlmostEqual(
             total_loss_dict["indexer loss"].item(),
             first_value + 3.0,
@@ -1123,9 +1224,13 @@ class TestDSAIndexerLossLoggingHelperTrackMetrics(unittest.TestCase):
     def test_track_metrics_with_writer(self, mock_reduce):
         """track_indexer_metrics should call writer.add_scalar when provided."""
         loss = paddle.to_tensor(1.0, dtype="float32")
-        DSAIndexerLossLoggingHelper.save_loss_to_tracker(loss, layer_number=1, num_layers=1)
+        DSAIndexerLossLoggingHelper.save_loss_to_tracker(
+            loss, layer_number=1, num_layers=1
+        )
         mock_writer = MagicMock()
-        DSAIndexerLossLoggingHelper.track_indexer_metrics(loss_scale=1.0, iteration=100, writer=mock_writer)
+        DSAIndexerLossLoggingHelper.track_indexer_metrics(
+            loss_scale=1.0, iteration=100, writer=mock_writer
+        )
         mock_writer.add_scalar.assert_called_once()
         args = mock_writer.add_scalar.call_args
         self.assertEqual(args[0][0], "indexer loss")
@@ -1135,8 +1240,12 @@ class TestDSAIndexerLossLoggingHelperTrackMetrics(unittest.TestCase):
     def test_track_metrics_cleans_tracker(self, mock_reduce):
         """track_indexer_metrics should clean the tracker after logging."""
         loss = paddle.to_tensor(1.0, dtype="float32")
-        DSAIndexerLossLoggingHelper.save_loss_to_tracker(loss, layer_number=1, num_layers=2)
-        DSAIndexerLossLoggingHelper.track_indexer_metrics(loss_scale=1.0, iteration=1)
+        DSAIndexerLossLoggingHelper.save_loss_to_tracker(
+            loss, layer_number=1, num_layers=2
+        )
+        DSAIndexerLossLoggingHelper.track_indexer_metrics(
+            loss_scale=1.0, iteration=1
+        )
         # After track_indexer_metrics, values should be zeroed
         values = DSAIndexerLossLoggingHelper.tracker["values"]
         self.assertTrue(paddle.allclose(values, paddle.zeros([2])))
@@ -1145,18 +1254,24 @@ class TestDSAIndexerLossLoggingHelperTrackMetrics(unittest.TestCase):
     def test_track_metrics_loss_scale_applied(self, mock_reduce):
         """loss_scale should be multiplied into the loss values."""
         loss = paddle.to_tensor(6.0, dtype="float32")
-        DSAIndexerLossLoggingHelper.save_loss_to_tracker(loss, layer_number=1, num_layers=1)
+        DSAIndexerLossLoggingHelper.save_loss_to_tracker(
+            loss, layer_number=1, num_layers=1
+        )
         total_loss_dict = {}
         DSAIndexerLossLoggingHelper.track_indexer_metrics(
             loss_scale=0.25, iteration=1, total_loss_dict=total_loss_dict
         )
         # 6.0 * 0.25 / 1 = 1.5
-        self.assertAlmostEqual(total_loss_dict["indexer loss"].item(), 1.5, places=4)
+        self.assertAlmostEqual(
+            total_loss_dict["indexer loss"].item(), 1.5, places=4
+        )
 
     @patch.object(DSAIndexerLossLoggingHelper, "reduce_loss_in_tracker")
     def test_track_metrics_averages_over_csa_indexer_layers(self, mock_reduce):
         """CSA logging should average over layers with ratio == 4."""
-        DSAIndexerLossLoggingHelper.tracker["values"] = paddle.to_tensor([0.0, 2.0, 0.0, 4.0], dtype="float32")
+        DSAIndexerLossLoggingHelper.tracker["values"] = paddle.to_tensor(
+            [0.0, 2.0, 0.0, 4.0], dtype="float32"
+        )
         total_loss_dict = {}
         DSAIndexerLossLoggingHelper.track_indexer_metrics(
             loss_scale=1.0,
@@ -1164,7 +1279,9 @@ class TestDSAIndexerLossLoggingHelperTrackMetrics(unittest.TestCase):
             total_loss_dict=total_loss_dict,
             csa_compress_ratios=[0, 4, 128, 4],
         )
-        self.assertAlmostEqual(total_loss_dict["indexer loss"].item(), 3.0, places=4)
+        self.assertAlmostEqual(
+            total_loss_dict["indexer loss"].item(), 3.0, places=4
+        )
 
     @patch.object(DSAIndexerLossLoggingHelper, "reduce_loss_in_tracker")
     def test_track_metrics_no_csa_indexer_layers_noop(self, mock_reduce):
@@ -1217,15 +1334,21 @@ class TestIndexerForward(unittest.TestCase):
     def test_forward_returns_scores_and_indices(self):
         """DSAIndexer.forward should return (index_scores, topk_indices)."""
         self._prepare_indexer_bf16()
-        hidden = paddle.randn([self.b, self.s, self.config.hidden_size]).cast("bfloat16")
-        q_latent = paddle.randn([self.b, self.s, self.config.q_lora_rank]).cast("bfloat16")
+        hidden = paddle.randn([self.b, self.s, self.config.hidden_size]).cast(
+            "bfloat16"
+        )
+        q_latent = paddle.randn([self.b, self.s, self.config.q_lora_rank]).cast(
+            "bfloat16"
+        )
         causal = paddle.triu(
             paddle.full([self.s, self.s], float("-inf"), dtype="float32"),
             diagonal=1,
         )
         mask = causal.unsqueeze(0).unsqueeze(0)
 
-        index_scores, topk_indices = self.indexer.forward(hidden, q_latent, attention_mask=mask)
+        index_scores, topk_indices = self.indexer.forward(
+            hidden, q_latent, attention_mask=mask
+        )
         self.assertEqual(list(index_scores.shape), [self.b, self.s, self.s])
         self.assertEqual(
             list(topk_indices.shape),
@@ -1235,9 +1358,15 @@ class TestIndexerForward(unittest.TestCase):
     def test_forward_no_mask(self):
         """DSAIndexer.forward should work with mask=None."""
         self._prepare_indexer_bf16()
-        hidden = paddle.randn([self.b, self.s, self.config.hidden_size]).cast("bfloat16")
-        q_latent = paddle.randn([self.b, self.s, self.config.q_lora_rank]).cast("bfloat16")
-        index_scores, topk_indices = self.indexer.forward(hidden, q_latent, attention_mask=None)
+        hidden = paddle.randn([self.b, self.s, self.config.hidden_size]).cast(
+            "bfloat16"
+        )
+        q_latent = paddle.randn([self.b, self.s, self.config.q_lora_rank]).cast(
+            "bfloat16"
+        )
+        index_scores, topk_indices = self.indexer.forward(
+            hidden, q_latent, attention_mask=None
+        )
         self.assertEqual(list(index_scores.shape), [self.b, self.s, self.s])
 
 
@@ -1272,14 +1401,18 @@ class TestIndexerComputeScoresWithMask(unittest.TestCase):
             ]
         )
         k = paddle.randn([self.b, self.s, self.config.dsa_index_head_dim])
-        weights = paddle.abs(paddle.randn([self.b, self.s, self.config.dsa_index_n_heads]))
+        weights = paddle.abs(
+            paddle.randn([self.b, self.s, self.config.dsa_index_n_heads])
+        )
         causal = paddle.triu(
             paddle.full([self.s, self.s], float("-inf"), dtype="float32"),
             diagonal=1,
         )
         mask = causal.unsqueeze(0).unsqueeze(0)
 
-        index_scores, topk_indices = self.indexer.compute_index_scores(q, k, weights, mask=mask)
+        index_scores, topk_indices = self.indexer.compute_index_scores(
+            q, k, weights, mask=mask
+        )
         # For a later position (e.g., position 5), all topk indices should be <= 5
         pos = 5
         later_token_indices = topk_indices[:, pos, :]
@@ -1338,7 +1471,9 @@ class TestComputeDSAIndexerLossWithMask(unittest.TestCase):
         )
         # KL divergence can be slightly negative due to numerical noise,
         # but should be very close to non-negative
-        self.assertTrue(loss.item() > -0.1, f"Loss is too negative: {loss.item()}")
+        self.assertTrue(
+            loss.item() > -0.1, f"Loss is too negative: {loss.item()}"
+        )
         self.assertTrue(paddle.isfinite(loss).item())
 
 
@@ -1454,7 +1589,9 @@ class TestFusedDSAIndexerLossNoMask(unittest.TestCase):
         weights.stop_gradient = False
         k = paddle.randn([self.sk, self.b, self.d], dtype="float32")
         k.stop_gradient = False
-        query = paddle.randn([self.sq, self.b, self.np, self.hn], dtype="float32")
+        query = paddle.randn(
+            [self.sq, self.b, self.np, self.hn], dtype="float32"
+        )
         key = paddle.randn([self.sk, self.b, self.np, self.hn], dtype="float32")
 
         loss = FusedDSAIndexerLoss.apply(
@@ -1492,7 +1629,9 @@ class TestFusedDSAIndexerLossSparseLoss(unittest.TestCase):
         weights.stop_gradient = False
         k = paddle.randn([self.sk, self.b, self.d], dtype="float32")
         k.stop_gradient = False
-        query = paddle.randn([self.sq, self.b, self.np, self.hn], dtype="float32")
+        query = paddle.randn(
+            [self.sq, self.b, self.np, self.hn], dtype="float32"
+        )
         key = paddle.randn([self.sk, self.b, self.np, self.hn], dtype="float32")
         causal = paddle.triu(
             paddle.full([self.sq, self.sk], float("-inf"), dtype="float32"),
@@ -1523,7 +1662,9 @@ class TestFusedDSAIndexerLossSparseLoss(unittest.TestCase):
         weights.stop_gradient = False
         k = paddle.randn([self.sk, self.b, self.d], dtype="float32")
         k.stop_gradient = False
-        query = paddle.randn([self.sq, self.b, self.np, self.hn], dtype="float32")
+        query = paddle.randn(
+            [self.sq, self.b, self.np, self.hn], dtype="float32"
+        )
         key = paddle.randn([self.sk, self.b, self.np, self.hn], dtype="float32")
         causal = paddle.triu(
             paddle.full([self.sq, self.sk], float("-inf"), dtype="float32"),
@@ -1614,7 +1755,9 @@ class TestMLASelfAttentionWithDSASparseLoss(unittest.TestCase):
             attn_mask_type=AttnMaskType.causal,
         )
         model = model.to(dtype="bfloat16")
-        model.core_attention.indexer.weights_proj = model.core_attention.indexer.weights_proj.to(dtype="float32")
+        model.core_attention.indexer.weights_proj = (
+            model.core_attention.indexer.weights_proj.to(dtype="float32")
+        )
         return model
 
     def _make_hidden(self, dtype="bfloat16"):
@@ -1661,7 +1804,9 @@ class TestMLASelfAttentionWithDSAZeroLossCoeff(unittest.TestCase):
             attn_mask_type=AttnMaskType.causal,
         )
         model = model.to(dtype="bfloat16")
-        model.core_attention.indexer.weights_proj = model.core_attention.indexer.weights_proj.to(dtype="float32")
+        model.core_attention.indexer.weights_proj = (
+            model.core_attention.indexer.weights_proj.to(dtype="float32")
+        )
         return model
 
     def test_forward_zero_loss_coeff(self):
@@ -1721,8 +1866,12 @@ class TestIndexerWithRopeType(unittest.TestCase):
     def test_forward_before_topk_rope(self):
         """forward_before_topk should work with rope_type='rope'."""
         self._prepare_indexer_bf16()
-        hidden = paddle.randn([self.b, self.s, self.config.hidden_size]).cast("bfloat16")
-        q_latent = paddle.randn([self.b, self.s, self.config.q_lora_rank]).cast("bfloat16")
+        hidden = paddle.randn([self.b, self.s, self.config.hidden_size]).cast(
+            "bfloat16"
+        )
+        q_latent = paddle.randn([self.b, self.s, self.config.q_lora_rank]).cast(
+            "bfloat16"
+        )
         q, k, weights = self.indexer.forward_before_topk(hidden, q_latent)
         self.assertEqual(
             list(q.shape),
@@ -1733,7 +1882,9 @@ class TestIndexerWithRopeType(unittest.TestCase):
                 self.config.dsa_index_head_dim,
             ],
         )
-        self.assertEqual(list(k.shape), [self.b, self.s, self.config.dsa_index_head_dim])
+        self.assertEqual(
+            list(k.shape), [self.b, self.s, self.config.dsa_index_head_dim]
+        )
 
 
 class TestIndexerUnsupportedRopeType(unittest.TestCase):
@@ -1797,9 +1948,15 @@ class TestDSAttentionValueError(unittest.TestCase):
     def test_x_none_raises(self):
         model = self._build_dsattention()
         model.eval()
-        query = paddle.randn([self.b, self.s, self.np, self.qk_hd]).cast("bfloat16")
-        key = paddle.randn([self.b, self.s, self.np, self.qk_hd]).cast("bfloat16")
-        value = paddle.randn([self.b, self.s, self.np, self.v_hd]).cast("bfloat16")
+        query = paddle.randn([self.b, self.s, self.np, self.qk_hd]).cast(
+            "bfloat16"
+        )
+        key = paddle.randn([self.b, self.s, self.np, self.qk_hd]).cast(
+            "bfloat16"
+        )
+        value = paddle.randn([self.b, self.s, self.np, self.v_hd]).cast(
+            "bfloat16"
+        )
         mask = None
         with self.assertRaises(ValueError) as ctx:
             model(
@@ -1815,9 +1972,15 @@ class TestDSAttentionValueError(unittest.TestCase):
     def test_qr_none_raises(self):
         model = self._build_dsattention()
         model.eval()
-        query = paddle.randn([self.b, self.s, self.np, self.qk_hd]).cast("bfloat16")
-        key = paddle.randn([self.b, self.s, self.np, self.qk_hd]).cast("bfloat16")
-        value = paddle.randn([self.b, self.s, self.np, self.v_hd]).cast("bfloat16")
+        query = paddle.randn([self.b, self.s, self.np, self.qk_hd]).cast(
+            "bfloat16"
+        )
+        key = paddle.randn([self.b, self.s, self.np, self.qk_hd]).cast(
+            "bfloat16"
+        )
+        value = paddle.randn([self.b, self.s, self.np, self.v_hd]).cast(
+            "bfloat16"
+        )
         with self.assertRaises(ValueError) as ctx:
             model(
                 query,
@@ -1865,25 +2028,39 @@ class TestDSAttentionMaskBranches(unittest.TestCase):
             pg_collection=mock_pg,
         )
         model = model.to(dtype="bfloat16")
-        model.indexer.weights_proj = model.indexer.weights_proj.to(dtype="float32")
+        model.indexer.weights_proj = model.indexer.weights_proj.to(
+            dtype="float32"
+        )
         return model
 
     def test_elif_attention_mask_not_none(self):
         """Cover the elif branch: attn_mask_type=None but attention_mask is not None."""
         model = self._build_dsattention()
         model.eval()
-        query = paddle.randn([self.b, self.s, self.np, self.qk_hd]).cast("bfloat16")
-        key = paddle.randn([self.b, self.s, self.np, self.qk_hd]).cast("bfloat16")
-        value = paddle.randn([self.b, self.s, self.np, self.v_hd]).cast("bfloat16")
-        x = paddle.randn([self.b, self.s, self.config.hidden_size]).cast("bfloat16")
-        qr = paddle.randn([self.b, self.s, self.config.q_lora_rank]).cast("bfloat16")
+        query = paddle.randn([self.b, self.s, self.np, self.qk_hd]).cast(
+            "bfloat16"
+        )
+        key = paddle.randn([self.b, self.s, self.np, self.qk_hd]).cast(
+            "bfloat16"
+        )
+        value = paddle.randn([self.b, self.s, self.np, self.v_hd]).cast(
+            "bfloat16"
+        )
+        x = paddle.randn([self.b, self.s, self.config.hidden_size]).cast(
+            "bfloat16"
+        )
+        qr = paddle.randn([self.b, self.s, self.config.q_lora_rank]).cast(
+            "bfloat16"
+        )
 
         # Provide attention_mask but no attn_mask_type -> elif branch
         causal = paddle.triu(
             paddle.full([self.s, self.s], float("-inf"), dtype="float32"),
             diagonal=1,
         )
-        attention_mask = causal.unsqueeze(0).unsqueeze(0).expand([self.b, 1, self.s, self.s])
+        attention_mask = (
+            causal.unsqueeze(0).unsqueeze(0).expand([self.b, 1, self.s, self.s])
+        )
 
         output = model(
             query,
@@ -1894,17 +2071,29 @@ class TestDSAttentionMaskBranches(unittest.TestCase):
             x=x,
             qr=qr,
         )
-        self.assertEqual(list(output.shape), [self.b, self.s, self.np * self.v_hd])
+        self.assertEqual(
+            list(output.shape), [self.b, self.s, self.np * self.v_hd]
+        )
 
     def test_else_no_mask_no_type(self):
         """Cover the else branch: attn_mask_type=None and attention_mask=None."""
         model = self._build_dsattention()
         model.eval()
-        query = paddle.randn([self.b, self.s, self.np, self.qk_hd]).cast("bfloat16")
-        key = paddle.randn([self.b, self.s, self.np, self.qk_hd]).cast("bfloat16")
-        value = paddle.randn([self.b, self.s, self.np, self.v_hd]).cast("bfloat16")
-        x = paddle.randn([self.b, self.s, self.config.hidden_size]).cast("bfloat16")
-        qr = paddle.randn([self.b, self.s, self.config.q_lora_rank]).cast("bfloat16")
+        query = paddle.randn([self.b, self.s, self.np, self.qk_hd]).cast(
+            "bfloat16"
+        )
+        key = paddle.randn([self.b, self.s, self.np, self.qk_hd]).cast(
+            "bfloat16"
+        )
+        value = paddle.randn([self.b, self.s, self.np, self.v_hd]).cast(
+            "bfloat16"
+        )
+        x = paddle.randn([self.b, self.s, self.config.hidden_size]).cast(
+            "bfloat16"
+        )
+        qr = paddle.randn([self.b, self.s, self.config.q_lora_rank]).cast(
+            "bfloat16"
+        )
 
         # No attention_mask, no attn_mask_type -> else branch
         output = model(
@@ -1916,7 +2105,9 @@ class TestDSAttentionMaskBranches(unittest.TestCase):
             x=x,
             qr=qr,
         )
-        self.assertEqual(list(output.shape), [self.b, self.s, self.np * self.v_hd])
+        self.assertEqual(
+            list(output.shape), [self.b, self.s, self.np * self.v_hd]
+        )
 
 
 if __name__ == "__main__":

@@ -74,8 +74,12 @@ class TestGPTModelStateDict(unittest.TestCase):
             normalization="RMSNorm",
             hidden_dropout_prob=0.0,
             attention_dropout=0.0,
-            init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-            output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+            init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
+            output_layer_init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
             tie_word_embeddings=True,
             use_qk_norm=True,
         )

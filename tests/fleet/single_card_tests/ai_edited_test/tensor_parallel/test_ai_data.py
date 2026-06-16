@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -76,8 +80,10 @@ class TestBuildKeySizeNumelDictionaries(unittest.TestCase):
             patch("paddle.distributed.is_initialized", return_value=True),
             patch.object(dist, "broadcast"),
         ):
-            key_size, key_numel, total_numel = _build_key_size_numel_dictionaries(
-                ["w1", "w2"], data, tp_group=mock_group
+            key_size, key_numel, total_numel = (
+                _build_key_size_numel_dictionaries(
+                    ["w1", "w2"], data, tp_group=mock_group
+                )
             )
 
         self.assertEqual(key_size["w1"], [4, 8])
@@ -107,15 +113,19 @@ class TestBuildKeySizeNumelDictionaries(unittest.TestCase):
         def mock_broadcast(tensor, src, group=None):
             # Simulate broadcast by filling with expected sizes
             # w1: [4, 8, 0, 0, 0], w2: [16, 0, 0, 0, 0]
-            expected = paddle.to_tensor([4, 8, 0, 0, 0, 16, 0, 0, 0, 0], dtype=paddle.int32)
+            expected = paddle.to_tensor(
+                [4, 8, 0, 0, 0, 16, 0, 0, 0, 0], dtype=paddle.int32
+            )
             tensor.copy_(expected, False)
 
         with (
             patch("paddle.distributed.is_initialized", return_value=True),
             patch.object(dist, "broadcast", side_effect=mock_broadcast),
         ):
-            key_size, key_numel, total_numel = _build_key_size_numel_dictionaries(
-                ["w1", "w2"], data, tp_group=mock_group
+            key_size, key_numel, total_numel = (
+                _build_key_size_numel_dictionaries(
+                    ["w1", "w2"], data, tp_group=mock_group
+                )
             )
 
         self.assertEqual(key_size["w1"], [4, 8])
@@ -159,7 +169,9 @@ class TestBroadcastData(unittest.TestCase):
                 ),
             ),
         ):
-            output = broadcast_data(["w1", "w2"], data, paddle.float32, tp_group=mock_group)
+            output = broadcast_data(
+                ["w1", "w2"], data, paddle.float32, tp_group=mock_group
+            )
 
         self.assertIn("w1", output)
         self.assertIn("w2", output)
@@ -196,7 +208,9 @@ class TestBroadcastData(unittest.TestCase):
                 ),
             ),
         ):
-            output = broadcast_data(["w1", "w2"], data, paddle.float32, tp_group=mock_group)
+            output = broadcast_data(
+                ["w1", "w2"], data, paddle.float32, tp_group=mock_group
+            )
 
         self.assertIn("w1", output)
         self.assertIn("w2", output)

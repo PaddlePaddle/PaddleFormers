@@ -66,7 +66,11 @@ def fused_linear_cross_entropy_forward(
 
     chunk_size = triton.cdiv(BT, num_chunks)
 
-    grad_input = paddle.zeros([BT, H], dtype=paddle.float32) if input_requires_grad else None
+    grad_input = (
+        paddle.zeros([BT, H], dtype=paddle.float32)
+        if input_requires_grad
+        else None
+    )
     # ec_align 模式：grad_weight 使用 [H, V] 布局，与 ernie-core 的 GEMM shape 一致。
     # 默认模式：grad_weight 使用 [V, H] 布局（与 weight.shape 一致，main_grad 可直接 add_）。
     if input_requires_grad and weight_requires_grad:
@@ -78,7 +82,9 @@ def fused_linear_cross_entropy_forward(
     else:
         grad_weight = None
     grad_bias = (
-        paddle.zeros([bias.shape[0]], dtype=paddle.float32) if (input_requires_grad and bias is not None) else None
+        paddle.zeros([bias.shape[0]], dtype=paddle.float32)
+        if (input_requires_grad and bias is not None)
+        else None
     )
 
     loss_1d = paddle.zeros([BT], dtype=paddle.float32)
@@ -91,7 +97,9 @@ def fused_linear_cross_entropy_forward(
         end_idx = min((chunk_id + 1) * chunk_size, BT)
         _input_chunk = _input[start_idx:end_idx]
 
-        logits_chunk = paddle.compat.nn.functional.linear(_input_chunk, weight, bias)
+        logits_chunk = paddle.compat.nn.functional.linear(
+            _input_chunk, weight, bias
+        )
 
         target_chunk = target[start_idx:end_idx]
         n_rows = logits_chunk.shape[0]
@@ -122,7 +130,9 @@ def fused_linear_cross_entropy_forward(
         grad_logits_chunk = logits_chunk
 
         if input_requires_grad:
-            grad_input[start_idx:end_idx] = paddle.matmul(grad_logits_chunk, weight)
+            grad_input[start_idx:end_idx] = paddle.matmul(
+                grad_logits_chunk, weight
+            )
 
         if grad_weight is not None:
             with paddle.amp.auto_cast(False):
@@ -167,7 +177,9 @@ def fused_linear_cross_entropy_forward(
     return loss, grad_input, grad_weight, grad_bias
 
 
-def fused_linear_cross_entropy_backward(grad_output, grad_input, grad_weight, grad_bias):
+def fused_linear_cross_entropy_backward(
+    grad_output, grad_input, grad_weight, grad_bias
+):
     """反向：当 grad_output != 1.0 时，对已保存的梯度做缩放。"""
     if grad_output.shape == [] and float(grad_output) == 1.0:
         return grad_input, grad_weight, grad_bias
@@ -243,15 +255,17 @@ class LigerFusedLinearCrossEntropyFunction(paddle.autograd.PyLayer):
         num_chunks = args[6]
         ec_align = args[7]
 
-        loss, grad_input, grad_weight, grad_bias = fused_linear_cross_entropy_forward(
-            _input=_input,
-            weight=weight,
-            target=target,
-            bias=bias,
-            ignore_index=ignore_index,
-            reduction=reduction,
-            num_chunks=num_chunks,
-            ec_align=ec_align,
+        loss, grad_input, grad_weight, grad_bias = (
+            fused_linear_cross_entropy_forward(
+                _input=_input,
+                weight=weight,
+                target=target,
+                bias=bias,
+                ignore_index=ignore_index,
+                reduction=reduction,
+                num_chunks=num_chunks,
+                ec_align=ec_align,
+            )
         )
 
         ctx.save_for_backward(
@@ -268,15 +282,19 @@ class LigerFusedLinearCrossEntropyFunction(paddle.autograd.PyLayer):
     @staticmethod
     def backward(ctx, grad_output):
         (grad_input, grad_weight, grad_bias) = ctx.saved_tensor()
-        grad_input, grad_weight, grad_bias = fused_linear_cross_entropy_backward(
-            grad_output, grad_input, grad_weight, grad_bias
+        grad_input, grad_weight, grad_bias = (
+            fused_linear_cross_entropy_backward(
+                grad_output, grad_input, grad_weight, grad_bias
+            )
         )
 
         if ctx.weight_requires_grad and grad_weight is not None:
             weight = ctx.weight_ref
             if hasattr(weight, "main_grad"):
                 if weight.main_grad is None:
-                    weight.main_grad = paddle.zeros(weight.shape, dtype=paddle.float32)
+                    weight.main_grad = paddle.zeros(
+                        weight.shape, dtype=paddle.float32
+                    )
                 if ctx.ec_align:
                     # ec_align: grad_weight=[H,V]，main_grad=[V,H]，需转置后累加
                     weight.main_grad.add_(grad_weight.T)

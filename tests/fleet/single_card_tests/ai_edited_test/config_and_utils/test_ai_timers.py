@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -292,7 +296,9 @@ class TestTimers(unittest.TestCase):
 
         mock_writer = MagicMock()
         # Make isinstance check pass for SummaryWriter
-        with patch("paddleformers.fleet.timers.SummaryWriter", type(mock_writer)):
+        with patch(
+            "paddleformers.fleet.timers.SummaryWriter", type(mock_writer)
+        ):
             timers.write(names=["write_test"], writer=mock_writer, iteration=10)
         mock_writer.add_scalar.assert_called_once()
 
@@ -302,7 +308,9 @@ class TestTimers(unittest.TestCase):
         timers = Timers()
         timers("t")
         with self.assertRaises(AssertionError):
-            timers.write(names=["t"], writer=MagicMock(), iteration=0, normalizer=0.0)
+            timers.write(
+                names=["t"], writer=MagicMock(), iteration=0, normalizer=0.0
+            )
 
     def test_timers_call_with_use_event_no_cuda(self):
         """Test Timers call with use_event=True but no CUDA returns _Timer."""

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -24,7 +28,10 @@ from unittest.mock import MagicMock, patch
 
 import paddle
 
-from paddleformers.fleet.models.multimodal.llava_model import LLaVAModel, pixel_shuffle
+from paddleformers.fleet.models.multimodal.llava_model import (
+    LLaVAModel,
+    pixel_shuffle,
+)
 
 
 class TestPixelShuffleVersion2(unittest.TestCase):
@@ -62,7 +69,9 @@ class TestLLaVAModelSetInputTensorBoth(unittest.TestCase):
     def test_sets_both_encoder_and_decoder(self):
         """set_input_tensor with both add_encoder and add_decoder should set vision_model input."""
         mock_vision = MagicMock()
-        model = self._make_model(add_encoder=True, add_decoder=True, vision_model=mock_vision)
+        model = self._make_model(
+            add_encoder=True, add_decoder=True, vision_model=mock_vision
+        )
         mock_tensor = MagicMock()
         model.set_input_tensor(mock_tensor)
         mock_vision.set_input_tensor.assert_called_once()

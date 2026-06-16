@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -160,14 +164,18 @@ class TestSetGlobalVariables(unittest.TestCase):
 
     def test_set_global_variables_none_raises(self):
         """Test set_global_variables raises when args is None."""
-        from paddleformers.fleet.training.global_vars import set_global_variables
+        from paddleformers.fleet.training.global_vars import (
+            set_global_variables,
+        )
 
         with self.assertRaises(AssertionError):
             set_global_variables(None)
 
     def test_set_global_variables_already_initialized_raises(self):
         """Test set_global_variables raises when already initialized."""
-        from paddleformers.fleet.training.global_vars import set_global_variables
+        from paddleformers.fleet.training.global_vars import (
+            set_global_variables,
+        )
 
         set_global_variables(mock.MagicMock())
         with self.assertRaises(AssertionError) as ctx:
@@ -209,7 +217,9 @@ class TestUnsetGlobalVariables(unittest.TestCase):
     def test_unset_clears_both(self):
         """Test unset_global_variables clears both args and timers."""
         import paddleformers.fleet.training.global_vars as gv
-        from paddleformers.fleet.training.global_vars import unset_global_variables
+        from paddleformers.fleet.training.global_vars import (
+            unset_global_variables,
+        )
 
         gv._GLOBAL_ARGS = mock.MagicMock()
         gv._GLOBAL_TIMERS = mock.MagicMock()
@@ -219,7 +229,9 @@ class TestUnsetGlobalVariables(unittest.TestCase):
 
     def test_unset_when_none(self):
         """Test unset when already None."""
-        from paddleformers.fleet.training.global_vars import unset_global_variables
+        from paddleformers.fleet.training.global_vars import (
+            unset_global_variables,
+        )
 
         unset_global_variables()  # Should not raise
 
@@ -229,13 +241,17 @@ class TestEnsureVarHelpers(unittest.TestCase):
 
     def test_ensure_initialized_passes_when_not_none(self):
         """Test _ensure_var_is_initialized passes when var is not None."""
-        from paddleformers.fleet.training.global_vars import _ensure_var_is_initialized
+        from paddleformers.fleet.training.global_vars import (
+            _ensure_var_is_initialized,
+        )
 
         _ensure_var_is_initialized("some_value", "test")
 
     def test_ensure_initialized_raises_when_none(self):
         """Test _ensure_var_is_initialized raises when var is None."""
-        from paddleformers.fleet.training.global_vars import _ensure_var_is_initialized
+        from paddleformers.fleet.training.global_vars import (
+            _ensure_var_is_initialized,
+        )
 
         with self.assertRaises(AssertionError):
             _ensure_var_is_initialized(None, "test_var")

@@ -23,7 +23,11 @@ from paddle.distributed import fleet
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 from paddleformers.fleet.pipeline_parallel.pp_utils.forward_backward_overlap_utils import (
@@ -143,7 +147,10 @@ class TestP2PCommunicationInit(unittest.TestCase):
     """Test p2p_communication initialization with real PP."""
 
     @unittest.skipIf(
-        not (paddle.is_compiled_with_cuda() and paddle.distributed.is_initialized()),
+        not (
+            paddle.is_compiled_with_cuda()
+            and paddle.distributed.is_initialized()
+        ),
         "Requires CUDA and distributed environment",
     )
     def test_initialize_p2p_groups(self):

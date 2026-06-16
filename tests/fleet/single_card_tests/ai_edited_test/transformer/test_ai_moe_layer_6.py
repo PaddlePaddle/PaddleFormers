@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -38,7 +42,9 @@ class TestMoELayerImport(unittest.TestCase):
 
     def test_add_auxiliary_loss_import(self):
         """Test that AddAuxiliaryLoss can be imported from moe_layer module."""
-        from paddleformers.fleet.transformer.moe.moe_layer import AddAuxiliaryLoss
+        from paddleformers.fleet.transformer.moe.moe_layer import (
+            AddAuxiliaryLoss,
+        )
 
         self.assertIsNotNone(AddAuxiliaryLoss)
 

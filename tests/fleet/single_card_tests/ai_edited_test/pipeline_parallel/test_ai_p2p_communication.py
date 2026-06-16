@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -43,7 +47,9 @@ class TestP2pBatchedP2pOps(unittest.TestCase):
 
         mock_hcg = self._make_mock_hcg()
         # No tensors to send/recv should not raise
-        with patch("paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.allgather_partial"):
+        with patch(
+            "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.allgather_partial"
+        ):
             _batched_p2p_ops(None, None, None, None, mock_hcg)
 
     def test_send_prev_only(self):
@@ -57,8 +63,12 @@ class TestP2pBatchedP2pOps(unittest.TestCase):
         tensor = paddle.randn([2, 3])
 
         with (
-            patch("paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.batch_send_recv_on_calc_stream"),
-            patch("paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.allgather_partial"),
+            patch(
+                "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.batch_send_recv_on_calc_stream"
+            ),
+            patch(
+                "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.allgather_partial"
+            ),
             patch.dict(os.environ, {"FLAGS_p2p_device_synchronize": "0"}),
         ):
             _batched_p2p_ops(tensor, None, None, None, mock_hcg)
@@ -74,8 +84,12 @@ class TestP2pBatchedP2pOps(unittest.TestCase):
         tensor = paddle.randn([2, 3])
 
         with (
-            patch("paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.batch_send_recv_on_calc_stream"),
-            patch("paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.allgather_partial"),
+            patch(
+                "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.batch_send_recv_on_calc_stream"
+            ),
+            patch(
+                "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.allgather_partial"
+            ),
             patch.dict(os.environ, {"FLAGS_p2p_device_synchronize": "0"}),
         ):
             _batched_p2p_ops(None, tensor, None, None, mock_hcg)
@@ -91,8 +105,12 @@ class TestP2pBatchedP2pOps(unittest.TestCase):
         tensor = paddle.randn([2, 3])
 
         with (
-            patch("paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.batch_send_recv_on_calc_stream"),
-            patch("paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.allgather_partial"),
+            patch(
+                "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.batch_send_recv_on_calc_stream"
+            ),
+            patch(
+                "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.allgather_partial"
+            ),
             patch.dict(os.environ, {"FLAGS_p2p_device_synchronize": "0"}),
         ):
             _batched_p2p_ops(None, None, tensor, None, mock_hcg)
@@ -108,8 +126,12 @@ class TestP2pBatchedP2pOps(unittest.TestCase):
         tensor = paddle.randn([2, 3])
 
         with (
-            patch("paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.batch_send_recv_on_calc_stream"),
-            patch("paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.allgather_partial"),
+            patch(
+                "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.batch_send_recv_on_calc_stream"
+            ),
+            patch(
+                "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.allgather_partial"
+            ),
             patch.dict(os.environ, {"FLAGS_p2p_device_synchronize": "0"}),
         ):
             _batched_p2p_ops(None, None, None, tensor, mock_hcg)
@@ -214,7 +236,9 @@ class TestP2pHelper(unittest.TestCase):
                 "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication._batched_p2p_ops",
                 return_value=None,
             ),
-            patch("paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.allgather_partial"),
+            patch(
+                "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.allgather_partial"
+            ),
         ):
             recv_prev, recv_next, reqs = _p2p_helper(
                 tensor_send_next=None,
@@ -256,7 +280,9 @@ class TestP2pHelper(unittest.TestCase):
                 "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication._batched_p2p_ops",
                 return_value=None,
             ),
-            patch("paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.allgather_partial"),
+            patch(
+                "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.allgather_partial"
+            ),
         ):
             recv_prev, recv_next, reqs = _p2p_helper(
                 tensor_send_next=None,
@@ -298,7 +324,9 @@ class TestP2pHelper(unittest.TestCase):
                 "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication._batched_p2p_ops",
                 return_value=None,
             ),
-            patch("paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.allgather_partial"),
+            patch(
+                "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.allgather_partial"
+            ),
         ):
             recv_prev, recv_next, reqs = _p2p_helper(
                 tensor_send_next=None,
@@ -340,7 +368,9 @@ class TestP2pHelper(unittest.TestCase):
                 "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication._batched_p2p_ops",
                 return_value=None,
             ),
-            patch("paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.allgather_partial"),
+            patch(
+                "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.allgather_partial"
+            ),
         ):
             recv_prev, recv_next, reqs = _p2p_helper(
                 tensor_send_next=None,

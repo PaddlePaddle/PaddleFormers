@@ -21,11 +21,15 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from paddle.distributed.communication.group import Group
 
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
 import paddle
 from paddle import Tensor
-from paddle.incubate.nn.functional import fused_rotary_position_embedding as fused_rope
+from paddle.incubate.nn.functional import (
+    fused_rotary_position_embedding as fused_rope,
+)
 
 if paddle.is_compiled_with_cuda():
     try:
@@ -50,7 +54,9 @@ __all__ = [
 ]
 
 
-def get_pos_emb_on_this_cp_rank(pos_emb: Tensor, seq_dim: int, cp_group: Group) -> Tensor:
+def get_pos_emb_on_this_cp_rank(
+    pos_emb: Tensor, seq_dim: int, cp_group: Group
+) -> Tensor:
     """Get the position embedding on the current context parallel rank.
 
     Args:
@@ -59,7 +65,9 @@ def get_pos_emb_on_this_cp_rank(pos_emb: Tensor, seq_dim: int, cp_group: Group) 
         cp_group (Group): The context parallel group
     """
     if cp_group is None:
-        raise ValueError("cp_group must be provided to get positional embedding per CP rank")
+        raise ValueError(
+            "cp_group must be provided to get positional embedding per CP rank"
+        )
     cp_size = get_pg_size(cp_group)
     cp_rank = get_pg_rank(cp_group)
     cp_idx = paddle.to_tensor([cp_rank, (2 * cp_size - cp_rank - 1)])
@@ -70,7 +78,9 @@ def get_pos_emb_on_this_cp_rank(pos_emb: Tensor, seq_dim: int, cp_group: Group) 
         *pos_emb.shape[(seq_dim + 1) :],
     )
     pos_emb = pos_emb.index_select(seq_dim, cp_idx)
-    pos_emb = pos_emb.view(*pos_emb.shape[:seq_dim], -1, *pos_emb.shape[(seq_dim + 2) :])
+    pos_emb = pos_emb.view(
+        *pos_emb.shape[:seq_dim], -1, *pos_emb.shape[(seq_dim + 2) :]
+    )
     return pos_emb
 
 
@@ -171,7 +181,9 @@ def _apply_rotary_pos_emb_bshd(
             # Fall through to unfused path for unsupported cases
         else:
             # Fused path: delegate to Paddle's fused_rope kernel
-            assert isinstance(t, tuple), "The input for fused_rope should be a tuple of tensors"
+            assert isinstance(t, tuple), (
+                "The input for fused_rope should be a tuple of tensors"
+            )
             return fused_rope(
                 *t,
                 sin=sin,
@@ -224,12 +236,16 @@ def _apply_rotary_pos_emb_bshd(
                 # freqs: [S, B, D] -> slice to [S_sp, B, D]
                 seq_len = freqs.shape[0]
                 seq_per_rank = seq_len // sp_size
-                freqs = freqs[sp_rank * seq_per_rank : (sp_rank + 1) * seq_per_rank, :, :]
+                freqs = freqs[
+                    sp_rank * seq_per_rank : (sp_rank + 1) * seq_per_rank, :, :
+                ]
             else:
                 # freqs: [B, S, D] -> slice to [B, S_sp, D]
                 seq_len = freqs.shape[1]
                 seq_per_rank = seq_len // sp_size
-                freqs = freqs[:, sp_rank * seq_per_rank : (sp_rank + 1) * seq_per_rank, :]
+                freqs = freqs[
+                    :, sp_rank * seq_per_rank : (sp_rank + 1) * seq_per_rank, :
+                ]
 
     # For M-RoPE with sequence parallel, freqs may be [S, B, D] while t is [B, S, H, D].
     # When the first two dims are swapped (same product but different order), transpose
@@ -295,7 +311,9 @@ def _apply_rotary_pos_emb_bshd(
     return result
 
 
-def _get_thd_freqs_on_this_cp_rank(cp_rank: int, cp_size: int, x: Tensor, freqs: Tensor, offset: int = 0) -> Tensor:
+def _get_thd_freqs_on_this_cp_rank(
+    cp_rank: int, cp_size: int, x: Tensor, freqs: Tensor, offset: int = 0
+) -> Tensor:
     """Get the correct frequency slice for this context parallel rank with optional sequence offset.
 
     Args:
@@ -331,7 +349,9 @@ def _get_thd_freqs_on_this_cp_rank(cp_rank: int, cp_size: int, x: Tensor, freqs:
                 ],
                 freqs[
                     :,
-                    offset + full_seqlen - (cp_rank + 1) * cp_seg : offset + full_seqlen - cp_rank * cp_seg,
+                    offset + full_seqlen - (cp_rank + 1) * cp_seg : offset
+                    + full_seqlen
+                    - cp_rank * cp_seg,
                 ],
             ]
         )
@@ -395,7 +415,9 @@ def _apply_rotary_pos_emb_thd(
     cp_size = get_pg_size(cp_group)
     cp_rank = get_pg_rank(cp_group)
 
-    total_seq_len = total_seq_len if total_seq_len is not None else cu_seqlens[-1]
+    total_seq_len = (
+        total_seq_len if total_seq_len is not None else cu_seqlens[-1]
+    )
 
     # Handle two different frequency tensor formats:
     # 1. If freqs.size(1) == total_seq_len: freqs contains all positions across all sequences
@@ -429,7 +451,11 @@ def _apply_rotary_pos_emb_thd(
         for i, x in enumerate(sequence_splits):
             # cu_seqlens[i] is the starting offset of this sequence in the original batch
             seq_start_offset = cu_seqlens_list[i]
-            freq_slices.append(_get_thd_freqs_on_this_cp_rank(cp_rank, cp_size, x, freqs, seq_start_offset))
+            freq_slices.append(
+                _get_thd_freqs_on_this_cp_rank(
+                    cp_rank, cp_size, x, freqs, seq_start_offset
+                )
+            )
 
         freqs_packed = paddle.cat(freq_slices, axis=1)
         # [b,seq,num_heads,head_dim]
@@ -453,7 +479,10 @@ def _apply_rotary_pos_emb_thd(
         seqlens = ((cu_seqlens[1:] - cu_seqlens[:-1]) // cp_size).tolist()
         sequence_splits = paddle.split(t, seqlens, axis=1 if t.ndim == 4 else 0)
         freqs_packed = paddle.cat(
-            [_get_thd_freqs_on_this_cp_rank(cp_rank, cp_size, x, freqs) for x in sequence_splits],
+            [
+                _get_thd_freqs_on_this_cp_rank(cp_rank, cp_size, x, freqs)
+                for x in sequence_splits
+            ],
             axis=1,
         )
 

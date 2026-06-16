@@ -24,12 +24,20 @@ from paddle.distributed import fleet
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
-from paddleformers.fleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
+from paddleformers.fleet.models.gpt.gpt_layer_specs import (
+    get_gpt_layer_local_spec,
+)
 from paddleformers.fleet.process_groups_config import ProcessGroupCollection
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.training.initialize import initialize_fleet
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 
@@ -122,8 +130,12 @@ class TestTransformerLayerBasic(unittest.TestCase):
             rms_norm_eps=1e-5,
             hidden_dropout_prob=0.0,
             attention_dropout=0.0,
-            init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-            output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+            init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
+            output_layer_init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
         )
         cls.pg_collection = ProcessGroupCollection.use_mpu_process_groups()
 
@@ -138,17 +150,29 @@ class TestTransformerLayerBasic(unittest.TestCase):
     @_requires_gpu_compute
     def test_forward_shape(self):
         """Test transformer layer forward produces correct output shape."""
-        hidden_states = paddle.randn([2, 8, self.hidden_size], dtype=paddle.float32)
+        hidden_states = paddle.randn(
+            [2, 8, self.hidden_size], dtype=paddle.float32
+        )
         result = self.transformer_layer({"hidden_states": hidden_states})
-        self.assertEqual(result["hidden_states"].shape, [2, 8, self.hidden_size])
+        self.assertEqual(
+            result["hidden_states"].shape, [2, 8, self.hidden_size]
+        )
 
     @_requires_gpu_compute
     def test_forward_with_attention_mask(self):
         """Test transformer layer forward with attention mask."""
-        hidden_states = paddle.randn([2, 8, self.hidden_size], dtype=paddle.float32)
-        attention_mask = paddle.triu(paddle.full([8, 8], float("-inf"), dtype=paddle.float32), diagonal=1)
-        result = self.transformer_layer({"hidden_states": hidden_states, "attention_mask": attention_mask})
-        self.assertEqual(result["hidden_states"].shape, [2, 8, self.hidden_size])
+        hidden_states = paddle.randn(
+            [2, 8, self.hidden_size], dtype=paddle.float32
+        )
+        attention_mask = paddle.triu(
+            paddle.full([8, 8], float("-inf"), dtype=paddle.float32), diagonal=1
+        )
+        result = self.transformer_layer(
+            {"hidden_states": hidden_states, "attention_mask": attention_mask}
+        )
+        self.assertEqual(
+            result["hidden_states"].shape, [2, 8, self.hidden_size]
+        )
 
 
 class TestTransformerLayerWithMoe(unittest.TestCase):
@@ -174,12 +198,18 @@ class TestTransformerLayerWithMoe(unittest.TestCase):
             rms_norm_eps=1e-5,
             hidden_dropout_prob=0.0,
             attention_dropout=0.0,
-            init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-            output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+            init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
+            output_layer_init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
         )
         cls.pg_collection = ProcessGroupCollection.use_mpu_process_groups()
 
-        layer_spec = get_gpt_layer_local_spec(cls.config, num_experts=cls.n_experts, moe_expert_fusion=False)
+        layer_spec = get_gpt_layer_local_spec(
+            cls.config, num_experts=cls.n_experts, moe_expert_fusion=False
+        )
         cls.transformer_layer = layer_spec.layer(
             cls.config,
             layer_spec.sublayers_spec,
@@ -190,17 +220,27 @@ class TestTransformerLayerWithMoe(unittest.TestCase):
     @_requires_gpu_compute
     def test_forward_moe_shape(self):
         """Test transformer layer with MoE produces correct output shape."""
-        hidden_states = paddle.randn([2, 8, self.hidden_size], dtype=paddle.float32)
+        hidden_states = paddle.randn(
+            [2, 8, self.hidden_size], dtype=paddle.float32
+        )
         result = self.transformer_layer({"hidden_states": hidden_states})
-        self.assertEqual(result["hidden_states"].shape, [2, 8, self.hidden_size])
+        self.assertEqual(
+            result["hidden_states"].shape, [2, 8, self.hidden_size]
+        )
 
     @_requires_gpu_compute
     def test_forward_moe_with_labels(self):
         """Test transformer layer with MoE and input_ids for aux loss."""
-        hidden_states = paddle.randn([2, 8, self.hidden_size], dtype=paddle.float32)
+        hidden_states = paddle.randn(
+            [2, 8, self.hidden_size], dtype=paddle.float32
+        )
         input_ids = paddle.randint(0, 100, [2, 8])
-        result = self.transformer_layer({"hidden_states": hidden_states, "input_ids": input_ids})
-        self.assertEqual(result["hidden_states"].shape, [2, 8, self.hidden_size])
+        result = self.transformer_layer(
+            {"hidden_states": hidden_states, "input_ids": input_ids}
+        )
+        self.assertEqual(
+            result["hidden_states"].shape, [2, 8, self.hidden_size]
+        )
 
 
 if __name__ == "__main__":

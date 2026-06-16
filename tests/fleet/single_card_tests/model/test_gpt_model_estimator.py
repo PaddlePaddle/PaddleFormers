@@ -48,7 +48,9 @@ class TestEstimatorForGLM45Air(unittest.TestCase):
         )
 
     def test_estimator(self):
-        total_params, activated_params = self.estimator.estimate_num_parameters()
+        total_params, activated_params = (
+            self.estimator.estimate_num_parameters()
+        )
         flops_per_token = self.estimator.estimate_flops_per_token()
 
         gbs = 1

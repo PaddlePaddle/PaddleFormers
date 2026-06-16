@@ -23,13 +23,21 @@ from paddle.distributed import fleet
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import paddleformers.fleet
-from paddleformers.fleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
+from paddleformers.fleet.models.gpt.gpt_layer_specs import (
+    get_gpt_layer_local_spec,
+)
 from paddleformers.fleet.process_groups_config import ProcessGroupCollection
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.training.initialize import initialize_fleet
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 
@@ -145,7 +153,9 @@ class TestMoELayerForward(unittest.TestCase):
     def test_moe_forward_shape(self):
         """Test MoELayer forward produces correct output shape."""
         with paddle.no_grad():
-            hidden_states = paddle.randn([2, 8, self.hidden_size], dtype=paddle.float32)
+            hidden_states = paddle.randn(
+                [2, 8, self.hidden_size], dtype=paddle.float32
+            )
             output, _ = self.moe_layer(hidden_states)
             self.assertEqual(output.shape, [2, 8, self.hidden_size])
 
@@ -153,7 +163,9 @@ class TestMoELayerForward(unittest.TestCase):
     def test_moe_forward_with_labels(self):
         """Test MoELayer forward with labels for auxiliary loss."""
         with paddle.no_grad():
-            hidden_states = paddle.randn([2, 8, self.hidden_size], dtype=paddle.float32)
+            hidden_states = paddle.randn(
+                [2, 8, self.hidden_size], dtype=paddle.float32
+            )
             output, _ = self.moe_layer(hidden_states)
             self.assertEqual(output.shape, [2, 8, self.hidden_size])
 
@@ -197,21 +209,27 @@ class TestMoEGateRouter(unittest.TestCase):
     def test_gate_output_shape(self):
         """Test gate produces correct output with 8-tuple."""
         with paddle.no_grad():
-            hidden_states = paddle.randn([2, 8, self.hidden_size], dtype=paddle.float32)
+            hidden_states = paddle.randn(
+                [2, 8, self.hidden_size], dtype=paddle.float32
+            )
             self.gate.moe_router_score_function = "softmax"
             result = self.gate(hidden_states)
             # TopKRouter returns 8-tuple: (capacity, topk_weights, topk_indices, probs, mask, priorities, aux_loss, z_loss)
             self.assertEqual(len(result), 8)
             topk_weights = result[1]
             topk_indices = result[2]
-            self.assertEqual(topk_weights.shape[1], self.config.num_experts_per_tok)
+            self.assertEqual(
+                topk_weights.shape[1], self.config.num_experts_per_tok
+            )
             self.assertEqual(topk_weights.shape, topk_indices.shape)
 
     @_requires_gpu_compute
     def test_gate_sigmoid_score_function(self):
         """Test gate with sigmoid score function."""
         with paddle.no_grad():
-            hidden_states = paddle.randn([2, 8, self.hidden_size], dtype=paddle.float32)
+            hidden_states = paddle.randn(
+                [2, 8, self.hidden_size], dtype=paddle.float32
+            )
             self.gate.moe_router_score_function = "sigmoid"
             result = self.gate(hidden_states)
             # TopKRouter returns 8-tuple
@@ -264,7 +282,9 @@ class TestMoEConfigVariants(unittest.TestCase):
         """Test MoELayer with shared experts."""
         moe_layer, config = self._build_moe(n_experts=4, n_shared=2)
         with paddle.no_grad():
-            hidden = paddle.randn([2, 4, self.hidden_size], dtype=paddle.float32)
+            hidden = paddle.randn(
+                [2, 4, self.hidden_size], dtype=paddle.float32
+            )
             output, _ = moe_layer(hidden)
             self.assertEqual(output.shape, [2, 4, self.hidden_size])
 

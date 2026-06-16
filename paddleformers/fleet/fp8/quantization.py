@@ -17,7 +17,9 @@ import functools
 import paddle
 
 
-def get_quant_func(fp8_recipe, input_trans=False, out_scale_trans=False, pow2_scale=False):
+def get_quant_func(
+    fp8_recipe, input_trans=False, out_scale_trans=False, pow2_scale=False
+):
     """
     Get quant function by recipe
     """
@@ -38,6 +40,8 @@ def get_quant_func(fp8_recipe, input_trans=False, out_scale_trans=False, pow2_sc
             using_pow2_scale=pow2_scale,
         )
     else:
-        raise ValueError(f"fp8_recipe {fp8_recipe} is not supported. Supported recipes are blockwise.")
+        raise ValueError(
+            f"fp8_recipe {fp8_recipe} is not supported. Supported recipes are blockwise."
+        )
 
     return inp_quant_func, weight_quant_func

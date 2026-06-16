@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -49,7 +53,9 @@ class TestAttentionSetForRecomputeInputLayernorm(unittest.TestCase):
 
     def test_raises_not_implemented(self):
         """set_for_recompute_input_layernorm should raise NotImplementedError on base class."""
-        with patch.object(SelfAttention, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            SelfAttention, "__init__", lambda self, *a, **kw: None
+        ):
             attn = SelfAttention.__new__(SelfAttention)
             with self.assertRaises(NotImplementedError):
                 attn.set_for_recompute_input_layernorm()
@@ -71,8 +77,12 @@ class TestCrossAttentionInitValidation(unittest.TestCase):
     """Tests for CrossAttention initialization validation."""
 
     @patch("paddleformers.fleet.transformer.attention.build_spec_layer")
-    @patch("paddleformers.fleet.transformer.attention.get_pg_size", return_value=1)
-    @patch("paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups")
+    @patch(
+        "paddleformers.fleet.transformer.attention.get_pg_size", return_value=1
+    )
+    @patch(
+        "paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups"
+    )
     def test_cross_attention_rejects_gqa(self, mock_pg, mock_size, mock_build):
         """CrossAttention should reject group query attention."""
         mock_pg.return_value = MagicMock(
@@ -118,8 +128,12 @@ class TestAttentionInitAttributes(unittest.TestCase):
     """Tests for Attention attribute setup via concrete subclasses."""
 
     @patch("paddleformers.fleet.transformer.attention.build_spec_layer")
-    @patch("paddleformers.fleet.transformer.attention.get_pg_size", return_value=1)
-    @patch("paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups")
+    @patch(
+        "paddleformers.fleet.transformer.attention.get_pg_size", return_value=1
+    )
+    @patch(
+        "paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups"
+    )
     def test_attention_sets_layer_number(self, mock_pg, mock_size, mock_build):
         """SelfAttention should set layer_number from constructor."""
         mock_pg.return_value = MagicMock(
@@ -149,9 +163,15 @@ class TestAttentionInitAttributes(unittest.TestCase):
         self.assertEqual(attn.layer_number, 3)
 
     @patch("paddleformers.fleet.transformer.attention.build_spec_layer")
-    @patch("paddleformers.fleet.transformer.attention.get_pg_size", return_value=1)
-    @patch("paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups")
-    def test_attention_sets_attention_type(self, mock_pg, mock_size, mock_build):
+    @patch(
+        "paddleformers.fleet.transformer.attention.get_pg_size", return_value=1
+    )
+    @patch(
+        "paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups"
+    )
+    def test_attention_sets_attention_type(
+        self, mock_pg, mock_size, mock_build
+    ):
         """SelfAttention should have attention_type='self'."""
         mock_pg.return_value = MagicMock(
             tp=MagicMock(world_size=1, rank=0),

@@ -51,13 +51,21 @@ if "torch" in sys.modules and sys.modules["torch"] is None:
 
 logger = logging.getLogger(__name__)
 ops_dir = Path(__file__).parent
-cuda_capability = paddle.cuda.get_device_capability() if paddle.is_compiled_with_cuda() else None
+cuda_capability = (
+    paddle.cuda.get_device_capability()
+    if paddle.is_compiled_with_cuda()
+    else None
+)
 if paddle.is_compiled_with_cuda():
     _python_version = sys.version_info
     _python_version_str = ".".join(map(str, _python_version[:3]))
     _cuda_version = get_cuda_version()
     _cuda_version_str = ".".join(map(str, _cuda_version))
-    _capability_str = f"{cuda_capability[0]}.{cuda_capability[1]}" if cuda_capability else "unavailable"
+    _capability_str = (
+        f"{cuda_capability[0]}.{cuda_capability[1]}"
+        if cuda_capability
+        else "unavailable"
+    )
 
     DEEP_GEMM_HINT = (
         "For developers: guard imports with `is_deep_gemm_available()` and only call `paddlefleet_ops.deep_gemm` when flag branch enabled.\n"
@@ -99,7 +107,9 @@ FLASH_MASK_HINT = (
 )
 
 
-def _build_notice(lib_module: str, reason: str, hint_for_error: str | None = None) -> tuple[str, str]:
+def _build_notice(
+    lib_module: str, reason: str, hint_for_error: str | None = None
+) -> tuple[str, str]:
     """Compose warning/error messages; only errors carry extra hints."""
     warning = f"{lib_module} not supported: {reason}"
     error_reason = f"{reason} \n{hint_for_error}" if hint_for_error else reason
@@ -107,33 +117,47 @@ def _build_notice(lib_module: str, reason: str, hint_for_error: str | None = Non
     return warning, error
 
 
-def _hopper_requirement(lib_module: str, hint: str | None = None) -> tuple[str, str]:
+def _hopper_requirement(
+    lib_module: str, hint: str | None = None
+) -> tuple[str, str]:
     reason = (
-        f"{lib_module} requires GPU compute capability >= 9.0 (Hopper). " f"Current capability: {_capability_str}."
+        f"{lib_module} requires GPU compute capability >= 9.0 (Hopper). "
+        f"Current capability: {_capability_str}."
     )
     return _build_notice(lib_module, reason, hint_for_error=hint)
 
 
-def _cutedsl_requirement(lib_module: str, hint: str | None = None) -> tuple[str, str]:
+def _cutedsl_requirement(
+    lib_module: str, hint: str | None = None
+) -> tuple[str, str]:
     reason = f"{lib_module} requires Python 3.12. Current Python version: {_python_version_str}."
     return _build_notice(lib_module, reason, hint_for_error=hint)
 
 
-def _blackwell_requirement(lib_module: str, hint: str | None = None) -> tuple[str, str]:
+def _blackwell_requirement(
+    lib_module: str, hint: str | None = None
+) -> tuple[str, str]:
     reason = (
-        f"{lib_module} requires GPU compute capability >= 10.0 (Blackwell). " f"Current capability: {_capability_str}."
+        f"{lib_module} requires GPU compute capability >= 10.0 (Blackwell). "
+        f"Current capability: {_capability_str}."
     )
     return _build_notice(lib_module, reason, hint_for_error=hint)
 
 
-def _sonic_moe_requirement(lib_module: str, hint: str | None = None) -> tuple[str, str]:
+def _sonic_moe_requirement(
+    lib_module: str, hint: str | None = None
+) -> tuple[str, str]:
     reasons = []
     if sys.version_info < (3, 12):
-        reasons.append(f"Python >= 3.12 required (current {_python_version_str})")
+        reasons.append(
+            f"Python >= 3.12 required (current {_python_version_str})"
+        )
     if _cuda_version < (12, 9):
         reasons.append(f"CUDA >= 12.9 required (current {_cuda_version_str})")
     if not cuda_capability or cuda_capability[0] < 10:
-        reasons.append(f"GPU compute capability >= 10.0 (Blackwell) required (current {_capability_str})")
+        reasons.append(
+            f"GPU compute capability >= 10.0 (Blackwell) required (current {_capability_str})"
+        )
     reason = "; ".join(reasons) if reasons else "Runtime requirements not met."
     return _build_notice(lib_module, reason, hint_for_error=hint)
 
@@ -155,7 +179,11 @@ if paddle.is_compiled_with_cuda():
             _HYBRID_EP_AVAILABLE = True
     if paddle.cuda.get_device_capability()[0] >= 10:
         _FLASH_MASK_AVAILABLE = True
-    if sys.version_info >= (3, 12) and paddle.cuda.get_device_capability()[0] >= 10 and _cuda_version >= (12, 9):
+    if (
+        sys.version_info >= (3, 12)
+        and paddle.cuda.get_device_capability()[0] >= 10
+        and _cuda_version >= (12, 9)
+    ):
         _SONIC_MOE_AVAILABLE = True
     if sys.version_info >= (3, 12):
         _CUDNN_FRONTEND_AVAILABLE = True
@@ -200,10 +228,14 @@ def _try_load_nvshmem(ops_dir: Path):
             if nvshmem_spec and nvshmem_spec.submodule_search_locations:
                 nvshmem_dir = nvshmem_spec.submodule_search_locations[0]
                 nvshmem_host_lib_path = get_nvshmem_host_lib_path(nvshmem_dir)
-                logger.info(f"Pre-loading NVSHMEM library from: {nvshmem_host_lib_path}")
+                logger.info(
+                    f"Pre-loading NVSHMEM library from: {nvshmem_host_lib_path}"
+                )
                 ctypes.CDLL(str(nvshmem_host_lib_path), mode=ctypes.RTLD_GLOBAL)
         except Exception as e:
-            raise RuntimeError(f"Unexpected error during NVSHMEM pre-loading: {e}") from e
+            raise RuntimeError(
+                f"Unexpected error during NVSHMEM pre-loading: {e}"
+            ) from e
 
 
 def _safe_load_ecosystem_lib(
@@ -226,7 +258,9 @@ def _safe_load_ecosystem_lib(
             module_globals[lib_name] = module
             logger.info(f"Successfully loaded ecosystem library: {lib_name}")
         except ImportError as e:
-            raise ImportError(f"Failed to import ecosystem library '{lib_name}': {e}") from e
+            raise ImportError(
+                f"Failed to import ecosystem library '{lib_name}': {e}"
+            ) from e
 
 
 import_custom_ops(
@@ -238,7 +272,9 @@ import_custom_ops(
 # 别名：算子注册名改为 paddlefleet_fused_swiglu_probs_bwd 以避免与 FusedQuantOps 冲突，
 # 但对外仍保持 fused_swiglu_probs_bwd 的导入接口。
 if "paddlefleet_fused_swiglu_probs_bwd" in globals():
-    globals()["fused_swiglu_probs_bwd"] = globals()["paddlefleet_fused_swiglu_probs_bwd"]
+    globals()["fused_swiglu_probs_bwd"] = globals()[
+        "paddlefleet_fused_swiglu_probs_bwd"
+    ]
 
 blocked_import_messages: dict[str, str] = {}
 
@@ -247,7 +283,9 @@ if paddle.is_compiled_with_cuda():
         paddle.enable_compat(scope={"deep_gemm", "triton"}, silent=True)
         _safe_load_ecosystem_lib("deep_gemm", ops_dir, globals())
     else:
-        warning, error = _hopper_requirement("paddlefleet_ops.deep_gemm", hint=DEEP_GEMM_HINT)
+        warning, error = _hopper_requirement(
+            "paddlefleet_ops.deep_gemm", hint=DEEP_GEMM_HINT
+        )
         logger.warning(warning)
         blocked_import_messages["paddlefleet_ops.deep_gemm"] = error
     if is_deep_ep_available():
@@ -256,7 +294,9 @@ if paddle.is_compiled_with_cuda():
         _try_load_nvshmem(ops_dir)
         _safe_load_ecosystem_lib("deep_ep", ops_dir, globals())
     else:
-        warning, error = _hopper_requirement("paddlefleet_ops.deep_ep", hint=DEEP_EP_HINT)
+        warning, error = _hopper_requirement(
+            "paddlefleet_ops.deep_ep", hint=DEEP_EP_HINT
+        )
         logger.warning(warning)
         blocked_import_messages["paddlefleet_ops.deep_ep"] = error
 
@@ -265,7 +305,9 @@ if paddle.is_compiled_with_cuda():
         os.environ["HYBRID_EP_SKIP_DEEP_EP"] = "1"
         _safe_load_ecosystem_lib("hybrid_ep", ops_dir, globals())
     else:
-        warning, error = _hopper_requirement("paddlefleet_ops.hybrid_ep", hint=HYBRID_EP_HINT)
+        warning, error = _hopper_requirement(
+            "paddlefleet_ops.hybrid_ep", hint=HYBRID_EP_HINT
+        )
         logger.warning(warning)
         blocked_import_messages["paddlefleet_ops.hybrid_ep"] = error
 
@@ -276,7 +318,9 @@ if paddle.is_compiled_with_cuda():
         )
         _safe_load_ecosystem_lib("sonicmoe", ops_dir, globals(), ["quack"])
     else:
-        warning, error = _sonic_moe_requirement("paddlefleet_ops.sonicmoe", hint=SONIC_MOE_HINT)
+        warning, error = _sonic_moe_requirement(
+            "paddlefleet_ops.sonicmoe", hint=SONIC_MOE_HINT
+        )
         logger.warning(warning)
         blocked_import_messages["paddlefleet_ops.sonicmoe"] = error
 
@@ -284,14 +328,18 @@ if paddle.is_compiled_with_cuda():
         paddle.enable_compat(scope={"flash_mla"}, silent=True)
         _safe_load_ecosystem_lib("flash_mla", ops_dir, globals())
     else:
-        warning, error = _hopper_requirement("paddlefleet_ops.flash_mla", hint=FLASH_MLA_HINT)
+        warning, error = _hopper_requirement(
+            "paddlefleet_ops.flash_mla", hint=FLASH_MLA_HINT
+        )
         logger.warning(warning)
         blocked_import_messages["paddlefleet_ops.flash_mla"] = error
 
     if is_flash_mask_available():
         _safe_load_ecosystem_lib("flash_mask", ops_dir, globals())
     else:
-        warning, error = _blackwell_requirement("paddlefleet_ops.flash_mask", hint=FLASH_MASK_HINT)
+        warning, error = _blackwell_requirement(
+            "paddlefleet_ops.flash_mask", hint=FLASH_MASK_HINT
+        )
         logger.warning(warning)
         blocked_import_messages["paddlefleet_ops.flash_mask"] = error
 
@@ -299,12 +347,16 @@ if paddle.is_compiled_with_cuda():
         paddle.enable_compat(scope={"cudnn"}, silent=True)
         _safe_load_ecosystem_lib("cudnn", ops_dir, globals())
     else:
-        warning, error = _cutedsl_requirement("paddlefleet_ops.cudnn", hint=CUDNN_FRONTEND_HINT)
+        warning, error = _cutedsl_requirement(
+            "paddlefleet_ops.cudnn", hint=CUDNN_FRONTEND_HINT
+        )
         logger.warning(warning)
         blocked_import_messages["paddlefleet_ops.cudnn"] = error
 
     if blocked_import_messages:
-        sys.meta_path.insert(0, HardwareIncompatibleBlocker(blocked_import_messages))
+        sys.meta_path.insert(
+            0, HardwareIncompatibleBlocker(blocked_import_messages)
+        )
 
     try:
         paddle.enable_compat(scope={"triton"}, silent=True)

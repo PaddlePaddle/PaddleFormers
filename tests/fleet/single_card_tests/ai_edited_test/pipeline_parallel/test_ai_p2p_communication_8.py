@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -186,7 +190,9 @@ class TestP2pDynamicShapeP2pHelper(unittest.TestCase):
             patch.object(helper, "_send_meta"),
             patch.object(helper, "_recv_meta"),
         ):
-            helper.send_forward_recv_forward(MagicMock(), recv_prev=True, overlap_p2p_comm=False)
+            helper.send_forward_recv_forward(
+                MagicMock(), recv_prev=True, overlap_p2p_comm=False
+            )
             self.assertEqual(helper._dynamic_cnt, 1)
 
     def test_send_forward_recv_backward_dynamic_raises(self):
@@ -245,7 +251,9 @@ class TestP2pHelperOverlapP2pComm(unittest.TestCase):
                 return_value=(MagicMock(), None, mock_handle),
             ),
         ):
-            result = helper.send_forward_recv_forward(mock_tensor, recv_prev=True, overlap_p2p_comm=True)
+            result = helper.send_forward_recv_forward(
+                mock_tensor, recv_prev=True, overlap_p2p_comm=True
+            )
             # When overlap, returns tuple of (input_tensor, wait_handles)
             self.assertIsInstance(result, tuple)
             self.assertEqual(len(result), 2)
@@ -271,7 +279,9 @@ class TestP2pHelperOverlapP2pComm(unittest.TestCase):
                 return_value=(None, MagicMock(), mock_handle),
             ),
         ):
-            result = helper.send_backward_recv_backward(mock_tensor, recv_next=True, overlap_p2p_comm=True)
+            result = helper.send_backward_recv_backward(
+                mock_tensor, recv_next=True, overlap_p2p_comm=True
+            )
             self.assertIsInstance(result, tuple)
             self.assertEqual(len(result), 2)
 

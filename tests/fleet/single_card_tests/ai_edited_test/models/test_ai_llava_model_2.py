@@ -18,13 +18,20 @@ from collections import namedtuple
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import paddle
 
 from paddleformers.fleet.models.multimodal import llava_model
-from paddleformers.fleet.models.multimodal.llava_model import LLaVAModel, pixel_shuffle
+from paddleformers.fleet.models.multimodal.llava_model import (
+    LLaVAModel,
+    pixel_shuffle,
+)
 
 
 class MinimalLLaVA:
@@ -62,7 +69,9 @@ class TestLLaVAModelUtilities(unittest.TestCase):
         model.add_decoder = True
         model.language_model = RecorderLayer("weight")
 
-        self.assertEqual(LLaVAModel.shared_embedding_or_output_weight(model), "weight")
+        self.assertEqual(
+            LLaVAModel.shared_embedding_or_output_weight(model), "weight"
+        )
 
         model.add_decoder = False
         self.assertIsNone(LLaVAModel.shared_embedding_or_output_weight(model))
@@ -113,13 +122,17 @@ class TestLLaVAModelUtilities(unittest.TestCase):
         self.assertTrue(model.vision_projection.param.stop_gradient)
 
     def test_load_state_dict_hooks_remove_expected_keys_only(self):
-        incompatible_type = namedtuple("IncompatibleKeys", ["missing_keys", "unexpected_keys"])
+        incompatible_type = namedtuple(
+            "IncompatibleKeys", ["missing_keys", "unexpected_keys"]
+        )
         incompatible = incompatible_type(
             missing_keys=["vision_projection.weight", "language.weight"],
             unexpected_keys=["decoder.extra_state", "decoder.weight"],
         )
 
-        llava_model._load_state_dict_hook_ignore_param_names(["vision_projection.weight"], None, incompatible)
+        llava_model._load_state_dict_hook_ignore_param_names(
+            ["vision_projection.weight"], None, incompatible
+        )
         llava_model._load_state_dict_hook_ignore_extra_state(None, incompatible)
 
         self.assertEqual(incompatible.missing_keys, ["language.weight"])
@@ -154,7 +167,9 @@ class TestLLaVAModelUtilities(unittest.TestCase):
                 15.0,
             ],
         )
-        self.assertEqual(version_two.numpy().tolist(), version_one.numpy().tolist())
+        self.assertEqual(
+            version_two.numpy().tolist(), version_one.numpy().tolist()
+        )
 
 
 if __name__ == "__main__":

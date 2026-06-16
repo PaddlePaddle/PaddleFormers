@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -118,7 +122,9 @@ class TestCudaRNGStatesTrackerSetStates(unittest.TestCase):
 class TestCudaRNGStatesTrackerAdd(unittest.TestCase):
     """Tests for CudaRNGStatesTracker.add method."""
 
-    @patch("paddleformers.fleet.tensor_parallel.random.paddle.cuda.get_rng_state")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.random.paddle.cuda.get_rng_state"
+    )
     @patch("paddleformers.fleet.tensor_parallel.random.paddle.cuda.manual_seed")
     @patch("paddleformers.fleet.tensor_parallel.random._set_cuda_rng_state")
     def test_add_new_state(self, mock_set_rng, mock_manual_seed, mock_get_rng):
@@ -130,10 +136,14 @@ class TestCudaRNGStatesTrackerAdd(unittest.TestCase):
         self.assertIn("test", tracker.states_)
         self.assertIn(42, tracker.seeds_)
 
-    @patch("paddleformers.fleet.tensor_parallel.random.paddle.cuda.get_rng_state")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.random.paddle.cuda.get_rng_state"
+    )
     @patch("paddleformers.fleet.tensor_parallel.random.paddle.cuda.manual_seed")
     @patch("paddleformers.fleet.tensor_parallel.random._set_cuda_rng_state")
-    def test_add_duplicate_seed_raises(self, mock_set_rng, mock_manual_seed, mock_get_rng):
+    def test_add_duplicate_seed_raises(
+        self, mock_set_rng, mock_manual_seed, mock_get_rng
+    ):
         """Test adding a duplicate seed raises ValueError."""
         mock_get_rng.return_value = MagicMock()
         tracker = CudaRNGStatesTracker()
@@ -142,10 +152,14 @@ class TestCudaRNGStatesTrackerAdd(unittest.TestCase):
             tracker.add("test2", 42)
         self.assertIn("seed 42 already exists", str(ctx.exception))
 
-    @patch("paddleformers.fleet.tensor_parallel.random.paddle.cuda.get_rng_state")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.random.paddle.cuda.get_rng_state"
+    )
     @patch("paddleformers.fleet.tensor_parallel.random.paddle.cuda.manual_seed")
     @patch("paddleformers.fleet.tensor_parallel.random._set_cuda_rng_state")
-    def test_add_duplicate_name_raises(self, mock_set_rng, mock_manual_seed, mock_get_rng):
+    def test_add_duplicate_name_raises(
+        self, mock_set_rng, mock_manual_seed, mock_get_rng
+    ):
         """Test adding a duplicate name raises ValueError."""
         mock_get_rng.return_value = MagicMock()
         tracker = CudaRNGStatesTracker()
@@ -164,7 +178,7 @@ class TestCudaRNGStatesTrackerFork(unittest.TestCase):
     def test_fork_unknown_name_raises(self, mock_cpu_get, mock_get, mock_set):
         """Test fork raises for unknown RNG state name."""
         tracker = CudaRNGStatesTracker()
-        with self.assertRaises(Exception) as ctx:  # noqa: SIM117
+        with self.assertRaises(Exception) as ctx:
             with tracker.fork("unknown"):
                 pass
         self.assertIn("not added", str(ctx.exception))
@@ -193,7 +207,9 @@ class TestGetCudaRNGState(unittest.TestCase):
         with self.assertRaises(AssertionError):
             _get_cuda_rng_state(graph_safe=True)
 
-    @patch("paddleformers.fleet.tensor_parallel.random.paddle.cuda.get_rng_state")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.random.paddle.cuda.get_rng_state"
+    )
     def test_normal_call(self, mock_get):
         """Test normal call delegates to paddle.cuda.get_rng_state."""
         mock_get.return_value = MagicMock()
@@ -209,7 +225,9 @@ class TestSetCudaRNGState(unittest.TestCase):
         with self.assertRaises(AssertionError):
             _set_cuda_rng_state(MagicMock(), graph_safe=True)
 
-    @patch("paddleformers.fleet.tensor_parallel.random.paddle.cuda.set_rng_state")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.random.paddle.cuda.set_rng_state"
+    )
     def test_normal_call(self, mock_set):
         """Test normal call delegates to paddle.cuda.set_rng_state."""
         state = MagicMock()
@@ -230,7 +248,10 @@ class TestInitializeRNGTracker(unittest.TestCase):
         with self.assertRaises(AssertionError):
             initialize_rng_tracker(use_te_rng_tracker=True)
 
-    @patch("paddleformers.fleet.tensor_parallel.random._CUDA_RNG_STATE_TRACKER", None)
+    @patch(
+        "paddleformers.fleet.tensor_parallel.random._CUDA_RNG_STATE_TRACKER",
+        None,
+    )
     @patch(
         "paddleformers.fleet.tensor_parallel.random._CUDA_RNG_STATE_TRACKER_INITIALIZED",
         False,
@@ -241,7 +262,9 @@ class TestInitializeRNGTracker(unittest.TestCase):
         import paddleformers.fleet.tensor_parallel.random as random_mod
 
         original_tracker = getattr(random_mod, "_CUDA_RNG_STATE_TRACKER", None)
-        original_init = getattr(random_mod, "_CUDA_RNG_STATE_TRACKER_INITIALIZED", False)
+        original_init = getattr(
+            random_mod, "_CUDA_RNG_STATE_TRACKER_INITIALIZED", False
+        )
         random_mod._CUDA_RNG_STATE_TRACKER = None
         random_mod._CUDA_RNG_STATE_TRACKER_INITIALIZED = False
         try:
@@ -276,11 +299,15 @@ class TestTrackerNames(unittest.TestCase):
 
     def test_expert_parallel_name(self):
         """Test expert parallel tracker name getter."""
-        self.assertEqual(get_expert_parallel_rng_tracker_name(), "expert-parallel-rng")
+        self.assertEqual(
+            get_expert_parallel_rng_tracker_name(), "expert-parallel-rng"
+        )
 
     def test_data_parallel_name(self):
         """Test data parallel tracker name getter."""
-        self.assertEqual(get_data_parallel_rng_tracker_name(), "data-parallel-rng")
+        self.assertEqual(
+            get_data_parallel_rng_tracker_name(), "data-parallel-rng"
+        )
 
 
 class TestModelParallelCudaManualSeed(unittest.TestCase):

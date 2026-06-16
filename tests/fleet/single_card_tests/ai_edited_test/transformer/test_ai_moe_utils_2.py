@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -141,7 +145,9 @@ class TestSortChunksByIdxs(unittest.TestCase):
         split_sizes = paddle.to_tensor([2, 2, 2])
         sorted_idxs = paddle.to_tensor([2, 0, 1])
 
-        output, permuted_probs = sort_chunks_by_idxs(input_tensor, split_sizes, sorted_idxs)
+        output, permuted_probs = sort_chunks_by_idxs(
+            input_tensor, split_sizes, sorted_idxs
+        )
         self.assertEqual(output.shape[0], 6)
         self.assertIsNone(permuted_probs)
 
@@ -161,7 +167,10 @@ class TestAllGatherLocalTokens(unittest.TestCase):
         mock_group = MagicMock()
         mock_group.is_member.return_value = False
 
-        with patch("paddleformers.fleet.transformer.moe.moe_utils.get_pg_size", return_value=1):
+        with patch(
+            "paddleformers.fleet.transformer.moe.moe_utils.get_pg_size",
+            return_value=1,
+        ):
             result = _all_gather_local_tokens(tokens, group=mock_group)
             self.assertEqual(result.shape[0], 1)
 
@@ -235,7 +244,9 @@ class TestLogMoeBalance(unittest.TestCase):
             ),
             patch(
                 "paddleformers.fleet.transformer.moe.moe_utils._all_gather_local_tokens",
-                return_value=paddle.to_tensor([[1, 2], [3, 4]], dtype="float32"),
+                return_value=paddle.to_tensor(
+                    [[1, 2], [3, 4]], dtype="float32"
+                ),
             ),
         ):
             log_moe_balance(
@@ -300,8 +311,12 @@ class TestPermuteUnpermuteRoundTrip(unittest.TestCase):
     def test_round_trip_with_probs(self):
         """Test that permute then unpermute restores original shape."""
         tokens = paddle.randn([4, 8], dtype="float32")
-        routing_map = paddle.to_tensor([[1, 0], [0, 1], [1, 0], [0, 1]], dtype="float32")
-        probs = paddle.to_tensor([[0.6, 0.4], [0.7, 0.3], [0.5, 0.5], [0.8, 0.2]], dtype="float32")
+        routing_map = paddle.to_tensor(
+            [[1, 0], [0, 1], [1, 0], [0, 1]], dtype="float32"
+        )
+        probs = paddle.to_tensor(
+            [[0.6, 0.4], [0.7, 0.3], [0.5, 0.5], [0.8, 0.2]], dtype="float32"
+        )
 
         permuted, sorted_indices = permute(tokens, routing_map)
         self.assertEqual(permuted.shape[0], 4)

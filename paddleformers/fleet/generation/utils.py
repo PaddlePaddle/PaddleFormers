@@ -44,12 +44,19 @@ def apply_repetition_penalty(logits, input_ids, penalty):
     input_ids_expanded = input_ids.unsqueeze(-1).expand([-1, -1, vocab_size])
 
     # Create position mask
-    positions = paddle.arange(vocab_size).unsqueeze(0).unsqueeze(0).expand([batch_size, seq_len, -1])
+    positions = (
+        paddle.arange(vocab_size)
+        .unsqueeze(0)
+        .unsqueeze(0)
+        .expand([batch_size, seq_len, -1])
+    )
     token_mask = (positions == input_ids_expanded).astype("float32")
 
     # Get logits for tokens that appear in input
     # [batch_size, vocab_size]
-    token_appearance = token_mask.sum(axis=1)  # How many times each token appears
+    token_appearance = token_mask.sum(
+        axis=1
+    )  # How many times each token appears
     mask = token_appearance > 0
 
     # Apply penalty: divide positive logits, multiply negative logits
@@ -122,7 +129,9 @@ def sample_with_top_p(logits, top_p):
     # Sort logits in descending order
     sorted_indices = paddle.argsort(logits, descending=True, axis=-1)
     # Use gather_nd instead of gather (Paddle's gather has index shape restrictions)
-    batch_indices = paddle.arange(batch_size).unsqueeze(-1).expand([-1, vocab_size])
+    batch_indices = (
+        paddle.arange(batch_size).unsqueeze(-1).expand([-1, vocab_size])
+    )
     indices = paddle.stack([batch_indices, sorted_indices], axis=-1)
     sorted_logits = paddle.gather_nd(logits, indices)
 

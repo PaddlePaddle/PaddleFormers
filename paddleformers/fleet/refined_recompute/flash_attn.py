@@ -26,12 +26,19 @@ from paddleformers.fleet.context_parallel_utils import (
     cp_flashmask_allgatherkv_balance_backward,
     cp_flashmask_allgatherkv_balance_forward,
 )
-from paddleformers.fleet.refined_recompute.queue_check import global_rr_queue_log
+from paddleformers.fleet.refined_recompute.queue_check import (
+    global_rr_queue_log,
+)
 
 _flash_mask_available = False
 try:
-    if paddle.cuda.is_available() and paddle.cuda.get_device_capability()[0] == 10:
-        from paddlefleet_ops.flash_mask.cute.flashmask_utils import FlashMaskInfoPaddle
+    if (
+        paddle.cuda.is_available()
+        and paddle.cuda.get_device_capability()[0] == 10
+    ):
+        from paddlefleet_ops.flash_mask.cute.flashmask_utils import (
+            FlashMaskInfoPaddle,
+        )
         from paddlefleet_ops.flash_mask.cute.interface import (
             _flash_attn_bwd,
             _flash_attn_fwd,
@@ -57,14 +64,25 @@ def _get_fa_version(hdim):
         return 2
     # Xiangrui: For deterministic, NOT support for hdim > 128 currently.
     if "block_mask" in inspect.signature(flashmask_attention).parameters:
-        if paddle.get_flags(["FLAGS_cudnn_deterministic"])["FLAGS_cudnn_deterministic"] and hdim > 128:
+        if (
+            paddle.get_flags(["FLAGS_cudnn_deterministic"])[
+                "FLAGS_cudnn_deterministic"
+            ]
+            and hdim > 128
+        ):
             return 2
-    elif paddle.get_flags(["FLAGS_cudnn_deterministic"])["FLAGS_cudnn_deterministic"]:
+    elif paddle.get_flags(["FLAGS_cudnn_deterministic"])[
+        "FLAGS_cudnn_deterministic"
+    ]:
         return 2
-    fa_version = paddle.base.framework.get_flags(["FLAGS_flash_attn_version"])["FLAGS_flash_attn_version"]
+    fa_version = paddle.base.framework.get_flags(["FLAGS_flash_attn_version"])[
+        "FLAGS_flash_attn_version"
+    ]
     # Fall back to version 3 if flash_mask is not available
     if fa_version == 4 and not _flash_mask_available:
-        logger.warning("FlashMask (fa_version=4) is not available, falling back to fa_version=3")
+        logger.warning(
+            "FlashMask (fa_version=4) is not available, falling back to fa_version=3"
+        )
         return 3
     return fa_version
 
@@ -145,12 +163,16 @@ class FlashAttnFunctor(PyLayer):
             result_attention = hold_tensors["result_attention"]
             softmax_lse = hold_tensors["softmax_lse"]
             causal = hold_tensors["causal"]
-            ctx.save_for_backward(q, k, v, result_attention, softmax_lse, causal)
+            ctx.save_for_backward(
+                q, k, v, result_attention, softmax_lse, causal
+            )
         elif fa_version == 4:
             result_attention = hold_tensors["result_attention"]
             softmax_lse = hold_tensors["softmax_lse"]
             causal = hold_tensors["causal"]
-            ctx.save_for_backward(q, k, v, result_attention, softmax_lse, causal)
+            ctx.save_for_backward(
+                q, k, v, result_attention, softmax_lse, causal
+            )
         else:
             raise ValueError(f"Invalid flash attention version: {fa_version}")
 
@@ -227,7 +249,11 @@ class FlashAttnFunctor(PyLayer):
                 softmax_lse,
                 flashmask_info,
                 causal=causal,
-                deterministic=bool(paddle.get_flags(["FLAGS_cudnn_deterministic"])["FLAGS_cudnn_deterministic"]),
+                deterministic=bool(
+                    paddle.get_flags(["FLAGS_cudnn_deterministic"])[
+                        "FLAGS_cudnn_deterministic"
+                    ]
+                ),
             )
         else:
             raise ValueError(f"Invalid flash attention version: {fa_version}")
@@ -279,8 +305,12 @@ class RefinedRcomputeFlashAttention:
             )
         else:
             # This is the second forward pass, executed during the backward pass of recompute.
-            assert not self._hold_tensors_queue.empty(), "queue should not be empty"
-            attn_output, attn_weights = self._second_fwd(query_states, key_states, value_states)
+            assert not self._hold_tensors_queue.empty(), (
+                "queue should not be empty"
+            )
+            attn_output, attn_weights = self._second_fwd(
+                query_states, key_states, value_states
+            )
 
         return attn_output, attn_weights
 
@@ -300,21 +330,25 @@ class RefinedRcomputeFlashAttention:
         without tracking gradients (`@paddle.no_grad()`). It saves the necessary
         intermediate tensors for the backward pass into a queue and returns the final output.
         """
-        query_states, key_states, value_states = flashattn_auto_cast(query_states, key_states, value_states)
+        query_states, key_states, value_states = flashattn_auto_cast(
+            query_states, key_states, value_states
+        )
 
         fa_version = _get_fa_version(query_states.shape[-1])
         if fa_version == 2:
-            (result_attention, result_softmax, softmax_lse, seed_offset) = _C_ops.flash_attn(
-                query_states,
-                key_states,
-                value_states,
-                None,
-                None,
-                dropout,
-                causal,
-                return_softmax,
-                not training,
-                "",
+            (result_attention, result_softmax, softmax_lse, seed_offset) = (
+                _C_ops.flash_attn(
+                    query_states,
+                    key_states,
+                    value_states,
+                    None,
+                    None,
+                    dropout,
+                    causal,
+                    return_softmax,
+                    not training,
+                    "",
+                )
             )
             # Store all tensors needed for the backward pass in a dictionary.
             hold_tensors = {
@@ -380,10 +414,16 @@ class RefinedRcomputeFlashAttention:
         reconstructs the computation graph, enabling the custom backward pass to run.
         """
         hold_tensors = self._hold_tensors_queue.get()
-        query_states, key_states, value_states = flashattn_auto_cast(query_states, key_states, value_states)
+        query_states, key_states, value_states = flashattn_auto_cast(
+            query_states, key_states, value_states
+        )
         # Call the surrogate PyLayer to link the backward pass.
-        output = FlashAttnFunctor.apply(query_states, key_states, value_states, hold_tensors)
-        return output, hold_tensors.get("result_softmax")  # Use .get for safety with FA v3
+        output = FlashAttnFunctor.apply(
+            query_states, key_states, value_states, hold_tensors
+        )
+        return output, hold_tensors.get(
+            "result_softmax"
+        )  # Use .get for safety with FA v3
 
     def __call__(self, *args, **kwds):
         """Makes the class instance callable, similar to a standard nn.Layer."""
@@ -568,7 +608,11 @@ class FlashMaskAttnFunctor(PyLayer):
                 softmax_lse,
                 flashmask_info,
                 causal=causal,
-                deterministic=bool(paddle.get_flags(["FLAGS_cudnn_deterministic"])["FLAGS_cudnn_deterministic"]),
+                deterministic=bool(
+                    paddle.get_flags(["FLAGS_cudnn_deterministic"])[
+                        "FLAGS_cudnn_deterministic"
+                    ]
+                ),
             )
         else:
             raise ValueError(f"Invalid flash attention version: {fa_version}")
@@ -589,7 +633,9 @@ class RefinedRcomputeFlashMaskAttention:
     def __init__(self):
         """Initializes the class, creating a queue to hold intermediate tensors."""
         self._hold_tensors_queue = queue.Queue()
-        global_rr_queue_log.update(self._hold_tensors_queue, "flashmask_attention")
+        global_rr_queue_log.update(
+            self._hold_tensors_queue, "flashmask_attention"
+        )
 
     def forward(
         self,
@@ -620,8 +666,12 @@ class RefinedRcomputeFlashMaskAttention:
             )
         else:
             # This is the second forward pass, executed during the backward pass of recompute.
-            assert not self._hold_tensors_queue.empty(), "queue should not be empty"
-            attn_output = self._second_fwd(query_states, key_states, value_states, startend_row_indices)
+            assert not self._hold_tensors_queue.empty(), (
+                "queue should not be empty"
+            )
+            attn_output = self._second_fwd(
+                query_states, key_states, value_states, startend_row_indices
+            )
 
         return attn_output
 
@@ -641,20 +691,24 @@ class RefinedRcomputeFlashMaskAttention:
         The first forward pass for masked attention. It runs the actual computation,
         saves intermediate tensors to the queue, and returns the output.
         """
-        query_states, key_states, value_states = flashattn_auto_cast(query_states, key_states, value_states)
+        query_states, key_states, value_states = flashattn_auto_cast(
+            query_states, key_states, value_states
+        )
         fa_version = _get_fa_version(query_states.shape[-1])
         if fa_version == 2:
-            (result_attention, result_softmax, softmax_lse, seed_offset) = _C_ops.flashmask_attention(
-                query_states,
-                key_states,
-                value_states,
-                startend_row_indices,
-                None,
-                dropout,
-                causal,
-                return_softmax,
-                not training,
-                "",
+            (result_attention, result_softmax, softmax_lse, seed_offset) = (
+                _C_ops.flashmask_attention(
+                    query_states,
+                    key_states,
+                    value_states,
+                    startend_row_indices,
+                    None,
+                    dropout,
+                    causal,
+                    return_softmax,
+                    not training,
+                    "",
+                )
             )
             hold_tensors = {
                 "result_attention": result_attention,
@@ -724,13 +778,17 @@ class RefinedRcomputeFlashMaskAttention:
         self._hold_tensors_queue.put(hold_tensors)
         return result_attention
 
-    def _second_fwd(self, query_states, key_states, value_states, startend_row_indices):
+    def _second_fwd(
+        self, query_states, key_states, value_states, startend_row_indices
+    ):
         """
         The second forward pass for masked attention. It reconstructs the graph
         by calling the `FlashMaskAttnFunctor` surrogate layer.
         """
         hold_tensors = self._hold_tensors_queue.get()
-        query_states, key_states, value_states = flashattn_auto_cast(query_states, key_states, value_states)
+        query_states, key_states, value_states = flashattn_auto_cast(
+            query_states, key_states, value_states
+        )
         output = FlashMaskAttnFunctor.apply(
             query_states,
             key_states,
@@ -802,17 +860,19 @@ class FlashMaskAttnCpFunctor(PyLayer):
         fa_version = ctx.fa_version
 
         # Compute gradients
-        query_grad, key_grad, value_grad = cp_flashmask_allgatherkv_balance_backward(
-            q,
-            k,
-            v,
-            startend_row_indices,
-            result_attention,
-            softmax_lse,
-            grad,
-            group,
-            causal,
-            fa_version,
+        query_grad, key_grad, value_grad = (
+            cp_flashmask_allgatherkv_balance_backward(
+                q,
+                k,
+                v,
+                startend_row_indices,
+                result_attention,
+                softmax_lse,
+                grad,
+                group,
+                causal,
+                fa_version,
+            )
         )
 
         # Manually release memory.
@@ -831,7 +891,9 @@ class RefinedRcomputeFlashMaskCpAttention:
     def __init__(self):
         """Initializes the class, creating a queue to hold intermediate tensors."""
         self._hold_tensors_queue = queue.Queue()
-        global_rr_queue_log.update(self._hold_tensors_queue, "flashmask_attention_rr")
+        global_rr_queue_log.update(
+            self._hold_tensors_queue, "flashmask_attention_rr"
+        )
 
     def forward(
         self,
@@ -864,8 +926,12 @@ class RefinedRcomputeFlashMaskCpAttention:
             )
         else:
             # This is the second forward pass, executed during the backward pass of recompute.
-            assert not self._hold_tensors_queue.empty(), "queue should not be empty"
-            attn_output = self._second_fwd(query_states, key_states, value_states)
+            assert not self._hold_tensors_queue.empty(), (
+                "queue should not be empty"
+            )
+            attn_output = self._second_fwd(
+                query_states, key_states, value_states
+            )
 
         return attn_output
 
@@ -889,10 +955,14 @@ class RefinedRcomputeFlashMaskCpAttention:
 
         # Validate input parameters
         if dropout > 0.0:
-            raise NotImplementedError("Dropout is not supported in FlashMask context parallel yet.")
+            raise NotImplementedError(
+                "Dropout is not supported in FlashMask context parallel yet."
+            )
 
         if causal:
-            raise NotImplementedError("FlashMaskContextParallel does not support causal=True yet.")
+            raise NotImplementedError(
+                "FlashMaskContextParallel does not support causal=True yet."
+            )
 
         if fixed_seed_offset is not None:
             raise NotImplementedError("Fixed seed offset is not supported yet.")
@@ -908,14 +978,16 @@ class RefinedRcomputeFlashMaskCpAttention:
             f"Current query sequence length: {query_states.shape[1]}"
         )
 
-        result_attention, softmax_lse, startend_row_indices, fa_version = cp_flashmask_allgatherkv_balance_forward(
-            query_states,
-            key_states,
-            value_states,
-            startend_row_indices,
-            group,
-            causal,
-            training,
+        result_attention, softmax_lse, startend_row_indices, fa_version = (
+            cp_flashmask_allgatherkv_balance_forward(
+                query_states,
+                key_states,
+                value_states,
+                startend_row_indices,
+                group,
+                causal,
+                training,
+            )
         )
 
         hold_tensors = {
@@ -936,7 +1008,9 @@ class RefinedRcomputeFlashMaskCpAttention:
         by calling the `FlashMaskAttnFunctor` surrogate layer.
         """
         hold_tensors = self._hold_tensors_queue.get()
-        output = FlashMaskAttnCpFunctor.apply(query_states, key_states, value_states, hold_tensors)
+        output = FlashMaskAttnCpFunctor.apply(
+            query_states, key_states, value_states, hold_tensors
+        )
         return output
 
     def __call__(self, *args, **kwds):

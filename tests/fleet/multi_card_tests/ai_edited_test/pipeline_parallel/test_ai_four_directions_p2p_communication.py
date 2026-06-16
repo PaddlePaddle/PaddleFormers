@@ -24,7 +24,11 @@ from paddle.distributed import fleet
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 from paddleformers.fleet.pipeline_parallel.pp_utils.four_directions_p2p_communication import (
@@ -73,7 +77,9 @@ def _init_pp():
 def setUpModule():
     _init_pp()
     hcg = fleet.get_hybrid_communicate_group()
-    initialize_p2p_groups(hcg, enable_partial_send_recv=True, enable_timer=False)
+    initialize_p2p_groups(
+        hcg, enable_partial_send_recv=True, enable_timer=False
+    )
     np.random.seed(42)
     paddle.seed(42)
 
@@ -117,7 +123,9 @@ class TestSendRecvMetaSetSendMessage(unittest.TestCase):
         tensor = paddle.randn([3, 6, 9], dtype="float32")
         meta.set_send_message(tensor)
         self.assertEqual(meta.send_shape_message, [3, 6, 9])
-        self.assertEqual(meta.send_dtype_message, paddle_2_number(paddle.float32))
+        self.assertEqual(
+            meta.send_dtype_message, paddle_2_number(paddle.float32)
+        )
 
     def test_set_send_message_tuple_tensor(self):
         """Verify set_send_message works with tuple input."""
@@ -277,7 +285,9 @@ class TestSendRecvMetaCommunication(unittest.TestCase):
         else:
             meta.recv_meta(pp_group)
             self.assertEqual(meta.recv_shape_message, [2, 4])
-            self.assertEqual(meta.recv_dtype_message, paddle_2_number(paddle.float32))
+            self.assertEqual(
+                meta.recv_dtype_message, paddle_2_number(paddle.float32)
+            )
 
     def test_send_recv_meta_tuple_tensor(self):
         """Test send_meta and recv_meta with tuple of tensors."""
@@ -337,7 +347,9 @@ class TestAllgatherPartialGroup(unittest.TestCase):
 
         mock_group = NonMemberGroup()
         tensor = paddle.randn([4, 8], dtype="float32")
-        result = allgather_partial(tensor, nranks=2, rank_id=0, group=mock_group)
+        result = allgather_partial(
+            tensor, nranks=2, rank_id=0, group=mock_group
+        )
         self.assertIsNone(result)
 
 

@@ -38,7 +38,8 @@ def _assert_close(actual, expected, rtol, atol, name):
         diff = (a - e).abs()
         denom = e.abs().clip(min=1e-12)
         raise AssertionError(
-            f"{name} mismatch: max abs={diff.max().item():.4e} " f"max rel={(diff / denom).max().item():.4e}"
+            f"{name} mismatch: max abs={diff.max().item():.4e} "
+            f"max rel={(diff / denom).max().item():.4e}"
         )
 
 
@@ -47,11 +48,17 @@ def _make_inputs(b, sq, sk, h, d, topk, seed=2026):
     index_q = paddle.randn([b, sq, h, d]).astype("bfloat16")
     index_k = paddle.randn([b, sk, d]).astype("bfloat16")
     weights = paddle.randn([b, sq, h]).astype("bfloat16")
-    target = paddle.nn.functional.softmax(paddle.randn([b, sq, topk]).astype("float32"), axis=-1)
-    topk_probs = paddle.nn.functional.softmax(paddle.randn([b, sq, topk]).astype("float32"), axis=-1)
+    target = paddle.nn.functional.softmax(
+        paddle.randn([b, sq, topk]).astype("float32"), axis=-1
+    )
+    topk_probs = paddle.nn.functional.softmax(
+        paddle.randn([b, sq, topk]).astype("float32"), axis=-1
+    )
     topk_indices = paddle.randint(0, sk, [b, sq, topk]).astype("int32")
     mask = paddle.rand([b, sq, topk]) < 0.05
-    topk_indices = paddle.where(mask, paddle.full_like(topk_indices, -1), topk_indices)
+    topk_indices = paddle.where(
+        mask, paddle.full_like(topk_indices, -1), topk_indices
+    )
     return index_q, weights, index_k, target, topk_probs, topk_indices
 
 
@@ -93,8 +100,12 @@ def _ref_csa_indexer_backward(
     idx = topk_indices.cast("int64")
     valid_mask = topk_indices >= 0  # [B, S, topk]
     safe_idx = paddle.where(valid_mask, idx, paddle.zeros_like(idx))
-    topk_scores = paddle.take_along_axis(scores, safe_idx, axis=-1)  # [B, S, topk]
-    topk_scores = paddle.where(valid_mask, topk_scores, paddle.zeros_like(topk_scores))
+    topk_scores = paddle.take_along_axis(
+        scores, safe_idx, axis=-1
+    )  # [B, S, topk]
+    topk_scores = paddle.where(
+        valid_mask, topk_scores, paddle.zeros_like(topk_scores)
+    )
 
     # cuDNN internal loss: sum((topk_probs - target) * topk_scores) * scale * grad_loss
     scale = loss_coeff / float(b * sq)
@@ -116,7 +127,9 @@ class TestCudnnHelpers(unittest.TestCase):
     """Cover _to_bf16 helper in csa_indexer_bwd_cudnn.py."""
 
     def setUp(self):
-        from paddleformers.fleet.cudnn_ops.indexer.csa_indexer_bwd_cudnn import _to_bf16
+        from paddleformers.fleet.cudnn_ops.indexer.csa_indexer_bwd_cudnn import (
+            _to_bf16,
+        )
 
         self._to_bf16 = _to_bf16
 
@@ -138,7 +151,8 @@ class TestCudnnHelpers(unittest.TestCase):
 
 
 @unittest.skipIf(
-    not paddle.device.is_compiled_with_cuda() or paddle.device.cuda.get_device_capability()[0] != 10,
+    not paddle.device.is_compiled_with_cuda()
+    or paddle.device.cuda.get_device_capability()[0] != 10,
     "CudnnCsaIndexerBwd requires Blackwell GPU (SM100)",
 )
 class TestCudnnCsaIndexerBwd(unittest.TestCase):
@@ -152,7 +166,9 @@ class TestCudnnCsaIndexerBwd(unittest.TestCase):
     def test_basic_output_shapes(self):
         """Basic call returns correct shapes and dtypes."""
         b, sq, sk, h, d, topk = 1, 1024, 256, 64, 128, 128
-        index_q, weights, index_k, target, topk_probs, topk_indices = _make_inputs(b, sq, sk, h, d, topk)
+        index_q, weights, index_k, target, topk_probs, topk_indices = (
+            _make_inputs(b, sq, sk, h, d, topk)
+        )
         grad_q, grad_w, grad_k = self.cudnn_fn(
             index_q,
             weights,
@@ -173,7 +189,9 @@ class TestCudnnCsaIndexerBwd(unittest.TestCase):
     def test_grad_loss_none_equals_one(self):
         """grad_loss=None should be treated as scalar 1.0."""
         b, sq, sk, h, d, topk = 1, 1024, 256, 64, 128, 128
-        index_q, weights, index_k, target, topk_probs, topk_indices = _make_inputs(b, sq, sk, h, d, topk, seed=11)
+        index_q, weights, index_k, target, topk_probs, topk_indices = (
+            _make_inputs(b, sq, sk, h, d, topk, seed=11)
+        )
         grad_q_none, grad_w_none, grad_k_none = self.cudnn_fn(
             index_q.clone(),
             weights.clone(),
@@ -201,7 +219,9 @@ class TestCudnnCsaIndexerBwd(unittest.TestCase):
     def test_grad_loss_bf16_cast(self):
         """grad_loss in non-fp32 dtype should be cast to fp32 internally."""
         b, sq, sk, h, d, topk = 1, 1024, 256, 64, 128, 128
-        index_q, weights, index_k, target, topk_probs, topk_indices = _make_inputs(b, sq, sk, h, d, topk, seed=12)
+        index_q, weights, index_k, target, topk_probs, topk_indices = (
+            _make_inputs(b, sq, sk, h, d, topk, seed=12)
+        )
         grad_q, grad_w, grad_k = self.cudnn_fn(
             index_q,
             weights,
@@ -217,7 +237,9 @@ class TestCudnnCsaIndexerBwd(unittest.TestCase):
     def test_fp32_inputs_cast_and_grads_restored(self):
         """fp32 inputs should be cast to bf16 internally; grads restored to fp32."""
         b, sq, sk, h, d, topk = 1, 1024, 256, 64, 128, 128
-        index_q, weights, index_k, target, topk_probs, topk_indices = _make_inputs(b, sq, sk, h, d, topk, seed=13)
+        index_q, weights, index_k, target, topk_probs, topk_indices = (
+            _make_inputs(b, sq, sk, h, d, topk, seed=13)
+        )
         grad_q, grad_w, grad_k = self.cudnn_fn(
             index_q.cast("float32"),
             weights.cast("float32"),
@@ -235,7 +257,9 @@ class TestCudnnCsaIndexerBwd(unittest.TestCase):
     def test_topk_indices_int64_cast(self):
         """int64 topk_indices should be cast to int32 internally."""
         b, sq, sk, h, d, topk = 1, 1024, 256, 64, 128, 128
-        index_q, weights, index_k, target, topk_probs, topk_indices = _make_inputs(b, sq, sk, h, d, topk, seed=14)
+        index_q, weights, index_k, target, topk_probs, topk_indices = (
+            _make_inputs(b, sq, sk, h, d, topk, seed=14)
+        )
         grad_q, grad_w, grad_k = self.cudnn_fn(
             index_q,
             weights,
@@ -251,7 +275,9 @@ class TestCudnnCsaIndexerBwd(unittest.TestCase):
     def test_target_predict_bf16_cast(self):
         """bf16 target/topk_probs should be cast to fp32 (new buffer)."""
         b, sq, sk, h, d, topk = 1, 1024, 256, 64, 128, 128
-        index_q, weights, index_k, target, topk_probs, topk_indices = _make_inputs(b, sq, sk, h, d, topk, seed=15)
+        index_q, weights, index_k, target, topk_probs, topk_indices = (
+            _make_inputs(b, sq, sk, h, d, topk, seed=15)
+        )
         grad_q, grad_w, grad_k = self.cudnn_fn(
             index_q,
             weights,
@@ -267,7 +293,9 @@ class TestCudnnCsaIndexerBwd(unittest.TestCase):
     def test_custom_block_I(self):
         """block_I=64 covers the non-default tile size path."""
         b, sq, sk, h, d, topk = 1, 1024, 256, 64, 128, 128
-        index_q, weights, index_k, target, topk_probs, topk_indices = _make_inputs(b, sq, sk, h, d, topk, seed=16)
+        index_q, weights, index_k, target, topk_probs, topk_indices = (
+            _make_inputs(b, sq, sk, h, d, topk, seed=16)
+        )
         grad_q, grad_w, grad_k = self.cudnn_fn(
             index_q,
             weights,
@@ -284,7 +312,9 @@ class TestCudnnCsaIndexerBwd(unittest.TestCase):
     def test_saved_tensors_not_mutated(self):
         """Wrapper must clone target/topk_probs; cuDNN overwrites in place."""
         b, sq, sk, h, d, topk = 1, 1024, 256, 64, 128, 128
-        index_q, weights, index_k, target, topk_probs, topk_indices = _make_inputs(b, sq, sk, h, d, topk, seed=17)
+        index_q, weights, index_k, target, topk_probs, topk_indices = (
+            _make_inputs(b, sq, sk, h, d, topk, seed=17)
+        )
         target_before = target.clone()
         topk_probs_before = topk_probs.clone()
         self.cudnn_fn(
@@ -303,7 +333,9 @@ class TestCudnnCsaIndexerBwd(unittest.TestCase):
     def test_grad_loss_scales_output(self):
         """grad_loss=2.0 should produce ~2x the gradients of grad_loss=1.0."""
         b, sq, sk, h, d, topk = 1, 1024, 256, 64, 128, 128
-        index_q, weights, index_k, target, topk_probs, topk_indices = _make_inputs(b, sq, sk, h, d, topk, seed=18)
+        index_q, weights, index_k, target, topk_probs, topk_indices = (
+            _make_inputs(b, sq, sk, h, d, topk, seed=18)
+        )
         grad_q_1, _, _ = self.cudnn_fn(
             index_q.clone(),
             weights.clone(),
@@ -324,7 +356,9 @@ class TestCudnnCsaIndexerBwd(unittest.TestCase):
             loss_coeff=0.01,
             grad_loss=paddle.to_tensor(2.0, dtype="float32"),
         )
-        _assert_close(grad_q_2, grad_q_1 * 2, rtol=1e-2, atol=1e-3, name="2x scale")
+        _assert_close(
+            grad_q_2, grad_q_1 * 2, rtol=1e-2, atol=1e-3, name="2x scale"
+        )
 
     def test_parity_against_reference(self):
         """Numerical parity: cuDNN backward vs pure-paddle autograd reference.
@@ -340,7 +374,9 @@ class TestCudnnCsaIndexerBwd(unittest.TestCase):
         loss_coeff = 0.01
         grad_loss_val = 1.0
 
-        index_q, weights, index_k, target, topk_probs, topk_indices = _make_inputs(b, sq, sk, h, d, topk, seed=42)
+        index_q, weights, index_k, target, topk_probs, topk_indices = (
+            _make_inputs(b, sq, sk, h, d, topk, seed=42)
+        )
 
         # cuDNN result
         grad_q_cudnn, grad_w_cudnn, grad_k_cudnn = self.cudnn_fn(
@@ -366,8 +402,12 @@ class TestCudnnCsaIndexerBwd(unittest.TestCase):
             grad_loss=paddle.to_tensor(grad_loss_val, dtype="float32"),
         )
 
-        _assert_close(grad_q_cudnn, grad_q_ref, rtol=5e-2, atol=5e-2, name="d_index_q")
-        _assert_close(grad_w_cudnn, grad_w_ref, rtol=5e-2, atol=5e-2, name="d_weights")
+        _assert_close(
+            grad_q_cudnn, grad_q_ref, rtol=5e-2, atol=5e-2, name="d_index_q"
+        )
+        _assert_close(
+            grad_w_cudnn, grad_w_ref, rtol=5e-2, atol=5e-2, name="d_weights"
+        )
         _assert_close(
             grad_k_cudnn,
             grad_k_ref,
@@ -380,7 +420,9 @@ class TestCudnnCsaIndexerBwd(unittest.TestCase):
         """Parity on a small sq for fast debugging."""
         b, sq, sk, h, d, topk = 1, 16, 128, 64, 128, 128
         loss_coeff = 0.1
-        index_q, weights, index_k, target, topk_probs, topk_indices = _make_inputs(b, sq, sk, h, d, topk, seed=100)
+        index_q, weights, index_k, target, topk_probs, topk_indices = (
+            _make_inputs(b, sq, sk, h, d, topk, seed=100)
+        )
         grad_q_cudnn, grad_w_cudnn, grad_k_cudnn = self.cudnn_fn(
             index_q.clone(),
             weights.clone(),
@@ -401,9 +443,15 @@ class TestCudnnCsaIndexerBwd(unittest.TestCase):
             loss_coeff=loss_coeff,
             grad_loss=paddle.to_tensor(1.0, dtype="float32"),
         )
-        _assert_close(grad_q_cudnn, grad_q_ref, rtol=5e-2, atol=5e-2, name="small d_q")
-        _assert_close(grad_w_cudnn, grad_w_ref, rtol=5e-2, atol=5e-2, name="small d_w")
-        _assert_close(grad_k_cudnn, grad_k_ref, rtol=5e-2, atol=5e-2, name="small d_k")
+        _assert_close(
+            grad_q_cudnn, grad_q_ref, rtol=5e-2, atol=5e-2, name="small d_q"
+        )
+        _assert_close(
+            grad_w_cudnn, grad_w_ref, rtol=5e-2, atol=5e-2, name="small d_w"
+        )
+        _assert_close(
+            grad_k_cudnn, grad_k_ref, rtol=5e-2, atol=5e-2, name="small d_k"
+        )
 
     def test_parity_topk_equals_sk(self):
         """Parity when topk == sk (full coverage, no -1 indices)."""
@@ -413,8 +461,12 @@ class TestCudnnCsaIndexerBwd(unittest.TestCase):
         index_q = paddle.randn([b, sq, h, d]).astype("bfloat16")
         index_k = paddle.randn([b, sk, d]).astype("bfloat16")
         weights = paddle.randn([b, sq, h]).astype("bfloat16")
-        target = F.softmax(paddle.randn([b, sq, topk]).astype("float32"), axis=-1)
-        topk_probs = F.softmax(paddle.randn([b, sq, topk]).astype("float32"), axis=-1)
+        target = F.softmax(
+            paddle.randn([b, sq, topk]).astype("float32"), axis=-1
+        )
+        topk_probs = F.softmax(
+            paddle.randn([b, sq, topk]).astype("float32"), axis=-1
+        )
         # All indices valid (no -1), cover full sk range
         topk_indices = paddle.randint(0, sk, [b, sq, topk]).astype("int32")
 
@@ -438,15 +490,23 @@ class TestCudnnCsaIndexerBwd(unittest.TestCase):
             loss_coeff=loss_coeff,
             grad_loss=paddle.to_tensor(1.0, dtype="float32"),
         )
-        _assert_close(grad_q_cudnn, grad_q_ref, rtol=5e-2, atol=5e-2, name="full d_q")
-        _assert_close(grad_w_cudnn, grad_w_ref, rtol=5e-2, atol=5e-2, name="full d_w")
-        _assert_close(grad_k_cudnn, grad_k_ref, rtol=5e-2, atol=5e-2, name="full d_k")
+        _assert_close(
+            grad_q_cudnn, grad_q_ref, rtol=5e-2, atol=5e-2, name="full d_q"
+        )
+        _assert_close(
+            grad_w_cudnn, grad_w_ref, rtol=5e-2, atol=5e-2, name="full d_w"
+        )
+        _assert_close(
+            grad_k_cudnn, grad_k_ref, rtol=5e-2, atol=5e-2, name="full d_k"
+        )
 
     def test_parity_large_loss_coeff(self):
         """Parity with a larger loss_coeff to exercise scaling path."""
         b, sq, sk, h, d, topk = 1, 128, 256, 64, 128, 128
         loss_coeff = 1.0
-        index_q, weights, index_k, target, topk_probs, topk_indices = _make_inputs(b, sq, sk, h, d, topk, seed=300)
+        index_q, weights, index_k, target, topk_probs, topk_indices = (
+            _make_inputs(b, sq, sk, h, d, topk, seed=300)
+        )
         grad_q_cudnn, grad_w_cudnn, grad_k_cudnn = self.cudnn_fn(
             index_q.clone(),
             weights.clone(),
@@ -467,9 +527,15 @@ class TestCudnnCsaIndexerBwd(unittest.TestCase):
             loss_coeff=loss_coeff,
             grad_loss=paddle.to_tensor(1.0, dtype="float32"),
         )
-        _assert_close(grad_q_cudnn, grad_q_ref, rtol=5e-2, atol=5e-2, name="lcoeff d_q")
-        _assert_close(grad_w_cudnn, grad_w_ref, rtol=5e-2, atol=5e-2, name="lcoeff d_w")
-        _assert_close(grad_k_cudnn, grad_k_ref, rtol=5e-2, atol=5e-2, name="lcoeff d_k")
+        _assert_close(
+            grad_q_cudnn, grad_q_ref, rtol=5e-2, atol=5e-2, name="lcoeff d_q"
+        )
+        _assert_close(
+            grad_w_cudnn, grad_w_ref, rtol=5e-2, atol=5e-2, name="lcoeff d_w"
+        )
+        _assert_close(
+            grad_k_cudnn, grad_k_ref, rtol=5e-2, atol=5e-2, name="lcoeff d_k"
+        )
 
     def test_invalid_indices_zero_contribution(self):
         """Positions with topk_indices == -1 should not contribute to gradients."""
@@ -478,11 +544,17 @@ class TestCudnnCsaIndexerBwd(unittest.TestCase):
         index_q = paddle.randn([b, sq, h, d]).astype("bfloat16")
         index_k = paddle.randn([b, sk, d]).astype("bfloat16")
         weights = paddle.randn([b, sq, h]).astype("bfloat16")
-        target = F.softmax(paddle.randn([b, sq, topk]).astype("float32"), axis=-1)
-        topk_probs = F.softmax(paddle.randn([b, sq, topk]).astype("float32"), axis=-1)
+        target = F.softmax(
+            paddle.randn([b, sq, topk]).astype("float32"), axis=-1
+        )
+        topk_probs = F.softmax(
+            paddle.randn([b, sq, topk]).astype("float32"), axis=-1
+        )
 
         # All valid indices
-        topk_indices_valid = paddle.randint(0, sk, [b, sq, topk]).astype("int32")
+        topk_indices_valid = paddle.randint(0, sk, [b, sq, topk]).astype(
+            "int32"
+        )
         # Set half to -1
         topk_indices_half = topk_indices_valid.clone()
         topk_indices_half[:, :, topk // 2 :] = -1
@@ -526,7 +598,9 @@ class TestCudnnCsaIndexerBwd(unittest.TestCase):
     def test_no_nan_inf_in_grads(self):
         """All gradient outputs must be finite (no NaN/Inf)."""
         b, sq, sk, h, d, topk = 1, 128, 256, 64, 128, 128
-        index_q, weights, index_k, target, topk_probs, topk_indices = _make_inputs(b, sq, sk, h, d, topk, seed=500)
+        index_q, weights, index_k, target, topk_probs, topk_indices = (
+            _make_inputs(b, sq, sk, h, d, topk, seed=500)
+        )
         grad_q, grad_w, grad_k = self.cudnn_fn(
             index_q,
             weights,
@@ -552,7 +626,9 @@ class TestCudnnCsaIndexerBwd(unittest.TestCase):
         """Parity with b>1 to verify batch dimension correctness."""
         b, sq, sk, h, d, topk = 2, 64, 128, 64, 128, 128
         loss_coeff = 0.01
-        index_q, weights, index_k, target, topk_probs, topk_indices = _make_inputs(b, sq, sk, h, d, topk, seed=600)
+        index_q, weights, index_k, target, topk_probs, topk_indices = (
+            _make_inputs(b, sq, sk, h, d, topk, seed=600)
+        )
         grad_q_cudnn, grad_w_cudnn, grad_k_cudnn = self.cudnn_fn(
             index_q.clone(),
             weights.clone(),
@@ -573,9 +649,15 @@ class TestCudnnCsaIndexerBwd(unittest.TestCase):
             loss_coeff=loss_coeff,
             grad_loss=paddle.to_tensor(1.0, dtype="float32"),
         )
-        _assert_close(grad_q_cudnn, grad_q_ref, rtol=5e-2, atol=5e-2, name="batch d_q")
-        _assert_close(grad_w_cudnn, grad_w_ref, rtol=5e-2, atol=5e-2, name="batch d_w")
-        _assert_close(grad_k_cudnn, grad_k_ref, rtol=5e-2, atol=5e-2, name="batch d_k")
+        _assert_close(
+            grad_q_cudnn, grad_q_ref, rtol=5e-2, atol=5e-2, name="batch d_q"
+        )
+        _assert_close(
+            grad_w_cudnn, grad_w_ref, rtol=5e-2, atol=5e-2, name="batch d_w"
+        )
+        _assert_close(
+            grad_k_cudnn, grad_k_ref, rtol=5e-2, atol=5e-2, name="batch d_k"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -615,7 +697,9 @@ class TestTileLangCSAIndexerLossBackwardCudnn(unittest.TestCase):
     """Cover TileLangCSAIndexerLoss.backward cudnn branch."""
 
     def setUp(self):
-        from paddleformers.fleet.transformer.csa_attention import TileLangCSAIndexerLoss
+        from paddleformers.fleet.transformer.csa_attention import (
+            TileLangCSAIndexerLoss,
+        )
 
         self.PyLayer = TileLangCSAIndexerLoss
 
@@ -652,8 +736,12 @@ class TestTileLangCSAIndexerLossBackwardCudnn(unittest.TestCase):
             weights = paddle.randn([b, sq, h]).astype("bfloat16")
             index_k = paddle.randn([b, sk, d]).astype("bfloat16")
             topk_indices = paddle.randint(0, sk, [b, sq, topk]).astype("int32")
-            topk_probs = paddle.nn.functional.softmax(paddle.randn([b, sq, topk]).astype("float32"), axis=-1)
-            target = paddle.nn.functional.softmax(paddle.randn([b, sq, topk]).astype("float32"), axis=-1)
+            topk_probs = paddle.nn.functional.softmax(
+                paddle.randn([b, sq, topk]).astype("float32"), axis=-1
+            )
+            target = paddle.nn.functional.softmax(
+                paddle.randn([b, sq, topk]).astype("float32"), axis=-1
+            )
 
             class FakeCtx:
                 pass
@@ -755,8 +843,12 @@ class TestTileLangCSAIndexerLossAutoScalerCudnn(unittest.TestCase):
             weights = paddle.randn([b, sq, h]).astype("bfloat16")
             index_k = paddle.randn([b, sk, d]).astype("bfloat16")
             topk_indices = paddle.randint(0, sk, [b, sq, topk]).astype("int32")
-            topk_probs = paddle.nn.functional.softmax(paddle.randn([b, sq, topk]).astype("float32"), axis=-1)
-            target = paddle.nn.functional.softmax(paddle.randn([b, sq, topk]).astype("float32"), axis=-1)
+            topk_probs = paddle.nn.functional.softmax(
+                paddle.randn([b, sq, topk]).astype("float32"), axis=-1
+            )
+            target = paddle.nn.functional.softmax(
+                paddle.randn([b, sq, topk]).astype("float32"), axis=-1
+            )
 
             class FakeCtx:
                 pass
@@ -795,7 +887,9 @@ class TestTileLangCSAIndexerLossAutoScalerCudnn(unittest.TestCase):
         captured = self._run_with_scale(0.7)
         self.assertIsInstance(captured["grad_loss"], paddle.Tensor)
         self.assertEqual(captured["grad_loss"].dtype, paddle.float32)
-        self.assertAlmostEqual(float(captured["grad_loss"].item()), 0.7, places=5)
+        self.assertAlmostEqual(
+            float(captured["grad_loss"].item()), 0.7, places=5
+        )
 
     def test_unknown_backend_raises(self):
         """Unknown backend in AutoScaler should raise NotImplementedError."""
@@ -834,13 +928,17 @@ class TestTransformerConfigCsaIndexerBackend(unittest.TestCase):
     """Cover csa_indexer_backend field default and __post_init__ validation."""
 
     def test_default_value(self):
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         cfg = TransformerConfig()
         self.assertEqual(cfg.csa_indexer_backend, "tilelang")
 
     def test_valid_cudnn_value(self):
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         cfg = TransformerConfig(
             experimental_attention_variant="dsv4_hybrid",
@@ -852,7 +950,9 @@ class TestTransformerConfigCsaIndexerBackend(unittest.TestCase):
         self.assertEqual(cfg.csa_indexer_backend, "cudnn")
 
     def test_valid_tilelang_value(self):
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         cfg = TransformerConfig(
             experimental_attention_variant="dsv4_hybrid",
@@ -864,7 +964,9 @@ class TestTransformerConfigCsaIndexerBackend(unittest.TestCase):
         self.assertEqual(cfg.csa_indexer_backend, "tilelang")
 
     def test_invalid_value_raises(self):
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         with self.assertRaises(ValueError) as cm:
             TransformerConfig(
@@ -877,7 +979,9 @@ class TestTransformerConfigCsaIndexerBackend(unittest.TestCase):
         self.assertIn("invalid_backend", str(cm.exception))
 
     def test_attribute_map_registered(self):
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         self.assertIn("csa_indexer_backend", TransformerConfig.transform_rules)
 

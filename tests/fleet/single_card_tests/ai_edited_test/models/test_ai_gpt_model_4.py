@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -72,7 +76,9 @@ class TestGPTModelGetLayerDescList(unittest.TestCase):
 
         layers = model.get_layer_desc_list(spec, tie_word_embeddings=False)
         self.assertTrue(len(layers) > 0)
-        self.assertTrue(layers[0]["name_prefix"].startswith("model.language_model"))
+        self.assertTrue(
+            layers[0]["name_prefix"].startswith("model.language_model")
+        )
 
     def test_qwen3_5_name_prefix(self):
         """Test qwen3_5 model type uses language_model prefix."""
@@ -80,7 +86,9 @@ class TestGPTModelGetLayerDescList(unittest.TestCase):
         spec = _make_spec()
 
         layers = model.get_layer_desc_list(spec, tie_word_embeddings=False)
-        self.assertTrue(layers[0]["name_prefix"].startswith("model.language_model"))
+        self.assertTrue(
+            layers[0]["name_prefix"].startswith("model.language_model")
+        )
 
     def test_default_name_prefix(self):
         """Test default model type uses 'model' prefix."""
@@ -140,7 +148,9 @@ class TestGPTModelGetLayerDescList(unittest.TestCase):
     def test_with_tail_empty_layers(self):
         """Test get_layer_desc_list with tail_empty_layers."""
         model = _make_model()
-        spec = _make_spec(tail_empty_layers=[LayerSpec(_DummyLayer), LayerSpec(_DummyLayer)])
+        spec = _make_spec(
+            tail_empty_layers=[LayerSpec(_DummyLayer), LayerSpec(_DummyLayer)]
+        )
 
         layers = model.get_layer_desc_list(spec, tie_word_embeddings=False)
         self.assertTrue(len(layers) > 0)

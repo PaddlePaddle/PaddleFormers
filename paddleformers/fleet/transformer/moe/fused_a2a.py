@@ -20,9 +20,11 @@ import paddle
 from paddle import framework
 from paddle.autograd import PyLayer
 from paddle.distributed.communication.group import Group
-from paddlefleet_ops import is_deep_ep_available, is_hybrid_ep_available
 
-from paddleformers.fleet.refined_recompute.queue_check import global_rr_queue_log
+from paddlefleet_ops import is_deep_ep_available, is_hybrid_ep_available
+from paddleformers.fleet.refined_recompute.queue_check import (
+    global_rr_queue_log,
+)
 
 from .fp8_utils import FP8_ALIGN
 from .moe_utils import manual_backward
@@ -161,11 +163,18 @@ def _need_new_hybrid_ep_buffer(
         or config.num_of_experts_per_rank != num_local_experts
     )
     if num_sms_dispatch_api is not None:
-        need_new_buffer |= _hybrid_ep_buffer.num_sms_dispatch_api != num_sms_dispatch_api
+        need_new_buffer |= (
+            _hybrid_ep_buffer.num_sms_dispatch_api != num_sms_dispatch_api
+        )
     if num_sms_combine_api is not None:
-        need_new_buffer |= _hybrid_ep_buffer.num_sms_combine_api != num_sms_combine_api
+        need_new_buffer |= (
+            _hybrid_ep_buffer.num_sms_combine_api != num_sms_combine_api
+        )
     if num_sms_preprocessing_api is not None:
-        need_new_buffer |= _hybrid_ep_buffer.num_sms_preprocessing_api != num_sms_preprocessing_api
+        need_new_buffer |= (
+            _hybrid_ep_buffer.num_sms_preprocessing_api
+            != num_sms_preprocessing_api
+        )
     return need_new_buffer
 
 
@@ -242,7 +251,14 @@ def fused_dispatch_forward_func(
     # Do MoE dispatch
     # NOTES: the CPU will wait for GPU's signal to arrive,
     # so this is not compatible with CUDA graph
-    (recv_x, recv_token_indices, recv_token_probs, num_recv_tokens_per_expert_list, handle, event,) = buffer.dispatch(
+    (
+        recv_x,
+        recv_token_indices,
+        recv_token_probs,
+        num_recv_tokens_per_expert_list,
+        handle,
+        event,
+    ) = buffer.dispatch(
         x,
         topk_idx=token_indices,
         topk_weights=token_probs,
@@ -433,7 +449,9 @@ class DeepEPCombine(PyLayer):
         moe_ep_barrier: bool = True,
     ):
         """Forward pass of fused combine."""
-        combined_x = fused_combine_forward_func(x, group, states, previous_event, moe_ep_barrier=moe_ep_barrier)
+        combined_x = fused_combine_forward_func(
+            x, group, states, previous_event, moe_ep_barrier=moe_ep_barrier
+        )
 
         ctx.handle = states["handle"]
         ctx.group = group
@@ -487,7 +505,7 @@ class DeepEPCombineAsync(PyLayer):
 
         wait_for_deepep(group.id)
 
-        return (combined_x,) + fn_out  # noqa: RUF005
+        return (combined_x,) + fn_out
 
     @staticmethod
     def backward(ctx, grad_output, *fn_out_grads):
@@ -502,7 +520,7 @@ class DeepEPCombineAsync(PyLayer):
         fn_args_grads = ctx.bwf(*fn_out_grads)
 
         wait_for_deepep(ctx.group.id)
-        return (grad_x,) + fn_args_grads  # noqa: RUF005
+        return (grad_x,) + fn_args_grads
 
 
 class DeepEPCombineAsyncFunctor(PyLayer):
@@ -527,7 +545,7 @@ class DeepEPCombineAsyncFunctor(PyLayer):
         ctx.handle = states["handle"]
         ctx.group = group
 
-        return (combined_x,) + fn_out  # noqa: RUF005
+        return (combined_x,) + fn_out
 
     @staticmethod
     def backward(ctx, grad_output, *fn_out_grads):
@@ -542,7 +560,7 @@ class DeepEPCombineAsyncFunctor(PyLayer):
         fn_args_grads = ctx.bwf(*fn_out_grads)
 
         wait_for_deepep(ctx.group.id)
-        return (grad_x,) + fn_args_grads  # noqa: RUF005
+        return (grad_x,) + fn_args_grads
 
 
 class DeepEPCombineAsyncRefinedRecompute:
@@ -551,7 +569,9 @@ class DeepEPCombineAsyncRefinedRecompute:
     def __init__(self):
         """__init__"""
         self._hold_tensors_queue = queue.Queue()
-        global_rr_queue_log.update(self._hold_tensors_queue, "DeepEPCombineAsync")
+        global_rr_queue_log.update(
+            self._hold_tensors_queue, "DeepEPCombineAsync"
+        )
 
     def forward(self, x, group, states, *fn_args, fn):
         """forward"""
@@ -571,7 +591,9 @@ class DeepEPCombineAsyncRefinedRecompute:
                     "(recompute) pass. This usually indicates a first-forward / recompute-forward call count mismatch."
                 )
             hold_tensors = self._hold_tensors_queue.get()
-            output = self._second_fwd(hold_tensors, x, group, states, fn, *fn_args)
+            output = self._second_fwd(
+                hold_tensors, x, group, states, fn, *fn_args
+            )
             return output
 
     @paddle.no_grad()
@@ -585,7 +607,9 @@ class DeepEPCombineAsyncRefinedRecompute:
         )
 
         if fn is None:
-            raise ValueError("[DeepEPCombineAsyncRefinedRecompute] fn must not be None when using RefinedRecompute.")
+            raise ValueError(
+                "[DeepEPCombineAsyncRefinedRecompute] fn must not be None when using RefinedRecompute."
+            )
         _, fn_out = manual_backward(fn, True, *fn_args)
 
         # After wait, the handle in states still holds metadata needed for backward
@@ -596,7 +620,9 @@ class DeepEPCombineAsyncRefinedRecompute:
 
     def _second_fwd(self, hold_tensors, x, group, states, fn, *fn_args):
         """_second_fwd"""
-        return DeepEPCombineAsyncFunctor.apply(hold_tensors, x, group, states, *fn_args, fn=fn)
+        return DeepEPCombineAsyncFunctor.apply(
+            hold_tensors, x, group, states, *fn_args, fn=fn
+        )
 
     def __call__(self, *args, **kwargs):
         """__call__"""
@@ -677,7 +703,9 @@ if HAVE_DEEP_EP:
         states["handle"] = handle
         if combine_overlap_handle is None:
             if use_rr_deepep_combine:
-                raise ValueError("use_rr_deepep_combine requires combine_overlap_handle to be provided (not None).")
+                raise ValueError(
+                    "use_rr_deepep_combine requires combine_overlap_handle to be provided (not None)."
+                )
             return DeepEPCombine.apply(
                 x,
                 group,
@@ -688,15 +716,23 @@ if HAVE_DEEP_EP:
             )
         else:
             if previous_event is not None:
-                raise ValueError("previous_event must be None when combine_overlap_handle is provided.")
+                raise ValueError(
+                    "previous_event must be None when combine_overlap_handle is provided."
+                )
             if not isinstance(combine_overlap_handle, dict):
                 raise TypeError("combine_overlap_handle must be a dict.")
             if "fn" not in combine_overlap_handle:
-                raise ValueError("combine_overlap_handle must contain 'fn' key.")
+                raise ValueError(
+                    "combine_overlap_handle must contain 'fn' key."
+                )
             if "fn_args" not in combine_overlap_handle:
-                raise ValueError("combine_overlap_handle must contain 'fn_args' key.")
+                raise ValueError(
+                    "combine_overlap_handle must contain 'fn_args' key."
+                )
             if not isinstance(combine_overlap_handle["fn_args"], tuple):
-                raise TypeError("combine_overlap_handle['fn_args'] must be a tuple.")
+                raise TypeError(
+                    "combine_overlap_handle['fn_args'] must be a tuple."
+                )
             if not use_rr_deepep_combine:
                 combined_x, *fn_out = DeepEPCombineAsync.apply(
                     x,
@@ -732,7 +768,9 @@ class HybridEPDispatch(PyLayer):
     """Fused HybridEP dispatch bridge for Paddle autograd."""
 
     @staticmethod
-    def forward(ctx, x, token_indices, token_probs, manager, fp8_dispatch=False):
+    def forward(
+        ctx, x, token_indices, token_probs, manager, fp8_dispatch=False
+    ):
         recv_x, recv_token_probs, scale = manager._dispatch_with_permute_impl(
             x, token_indices, token_probs, use_fp8=fp8_dispatch
         )
@@ -751,7 +789,9 @@ class HybridEPDispatch(PyLayer):
             grad_output = grad_output.astype(ctx.hidden_dtype)
         grad_x, grad_dense_probs = ctx.buffer.combine_with_unpermute(
             hidden=grad_output.contiguous(),
-            probs=None if grad_token_probs is None else grad_token_probs.astype("float32"),
+            probs=None
+            if grad_token_probs is None
+            else grad_token_probs.astype("float32"),
             handle=ctx.handle,
             pad_multiple=FP8_ALIGN if ctx.use_fp8_dispatch else None,
         )

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -89,7 +93,9 @@ class TestLoadStateDictHooks(unittest.TestCase):
 
     def test_ignore_param_names_removes_missing(self):
         """Test _load_state_dict_hook_ignore_param_names removes matching keys."""
-        incompatible_keys = namedtuple("IncompatibleKeys", ["missing_keys", "unexpected_keys"])
+        incompatible_keys = namedtuple(
+            "IncompatibleKeys", ["missing_keys", "unexpected_keys"]
+        )
         keys = incompatible_keys(
             missing_keys=["vision_projection.fc1.weight", "other.weight"],
             unexpected_keys=[],
@@ -103,7 +109,9 @@ class TestLoadStateDictHooks(unittest.TestCase):
 
     def test_ignore_param_names_no_match(self):
         """Test hook when param_name is not in missing keys."""
-        incompatible_keys = namedtuple("IncompatibleKeys", ["missing_keys", "unexpected_keys"])
+        incompatible_keys = namedtuple(
+            "IncompatibleKeys", ["missing_keys", "unexpected_keys"]
+        )
         keys = incompatible_keys(
             missing_keys=["other.weight"],
             unexpected_keys=[],
@@ -117,7 +125,9 @@ class TestLoadStateDictHooks(unittest.TestCase):
 
     def test_ignore_extra_state_removes(self):
         """Test _load_state_dict_hook_ignore_extra_state removes _extra_state keys."""
-        incompatible_keys = namedtuple("IncompatibleKeys", ["missing_keys", "unexpected_keys"])
+        incompatible_keys = namedtuple(
+            "IncompatibleKeys", ["missing_keys", "unexpected_keys"]
+        )
         keys = incompatible_keys(
             missing_keys=["layer._extra_state"],
             unexpected_keys=["other._extra_state"],
@@ -128,7 +138,9 @@ class TestLoadStateDictHooks(unittest.TestCase):
 
     def test_ignore_extra_state_no_extra(self):
         """Test hook when no _extra_state keys present."""
-        incompatible_keys = namedtuple("IncompatibleKeys", ["missing_keys", "unexpected_keys"])
+        incompatible_keys = namedtuple(
+            "IncompatibleKeys", ["missing_keys", "unexpected_keys"]
+        )
         keys = incompatible_keys(
             missing_keys=["layer.weight"],
             unexpected_keys=[],
@@ -165,7 +177,9 @@ class TestLLaVAModelMethods(unittest.TestCase):
 
         mock_tensor = paddle.randn([10, 64])
         model.set_input_tensor([mock_tensor])
-        model.language_model.set_input_tensor.assert_called_once_with(mock_tensor)
+        model.language_model.set_input_tensor.assert_called_once_with(
+            mock_tensor
+        )
 
     def test_freeze_all(self):
         """Test freeze method freezes all modules."""

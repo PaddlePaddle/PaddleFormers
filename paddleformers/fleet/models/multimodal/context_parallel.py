@@ -51,9 +51,9 @@ def get_padding(
     if has_sp and decoder_tp_comm_overlap:
         # If TP Comm Overlap is enabled for combined text+image embedding in LM backbone,
         # user needs to provide decoder_seq_len with any potential padding needed for SP+CP
-        assert (
-            decoder_seq_len is not None
-        ), "Please provide decoder seq length when using TP comm overlap for LM backbone"
+        assert decoder_seq_len is not None, (
+            "Please provide decoder seq length when using TP comm overlap for LM backbone"
+        )
         padding = decoder_seq_len - seq_len
         return padding
 
@@ -68,12 +68,17 @@ def get_padding(
     elif fp8_enabled:
         padding_factor = 32 if fp8_recipe == "mxfp8" else 16
 
-    padding = int((seq_len + padding_factor - 1) // padding_factor * padding_factor) - seq_len
+    padding = (
+        int((seq_len + padding_factor - 1) // padding_factor * padding_factor)
+        - seq_len
+    )
 
     return padding
 
 
-def get_packed_seq_params(tokens, img_seq_len, padding_needed, cp_size, use_packed_sequence=False):
+def get_packed_seq_params(
+    tokens, img_seq_len, padding_needed, cp_size, use_packed_sequence=False
+):
     """Get PackedSeqParams for CP.
 
     Args:

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import types
@@ -28,7 +32,9 @@ def _setup_triton_mock():
     if "triton" in sys.modules:
         return sys.modules["triton"]
     triton_mock = types.ModuleType("triton")
-    triton_mock.jit = lambda fn=None, **kwargs: ((lambda f: f) if fn is None else fn)
+    triton_mock.jit = lambda fn=None, **kwargs: (
+        (lambda f: f) if fn is None else fn
+    )
     triton_mock.language = types.ModuleType("triton.language")
     triton_mock.language.constexpr = None
     sys.modules.setdefault("triton", triton_mock)

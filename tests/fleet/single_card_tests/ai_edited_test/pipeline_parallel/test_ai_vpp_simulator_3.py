@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -26,7 +30,10 @@ class TestChunkExtra(unittest.TestCase):
     """Additional Chunk tests for vpp_simulator."""
 
     def test_chunk_layer_id_forward(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import Chunk, ChunkType
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            Chunk,
+            ChunkType,
+        )
 
         chunk = Chunk(
             virtual_pp_rank=1,
@@ -42,7 +49,10 @@ class TestChunkExtra(unittest.TestCase):
         self.assertEqual(chunk.layer_id, 6)
 
     def test_chunk_layer_id_backward(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import Chunk, ChunkType
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            Chunk,
+            ChunkType,
+        )
 
         chunk = Chunk(
             virtual_pp_rank=0,
@@ -58,7 +68,10 @@ class TestChunkExtra(unittest.TestCase):
         self.assertEqual(chunk.layer_id, 1)
 
     def test_chunk_layer_id_bubble_none(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import Chunk, ChunkType
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            Chunk,
+            ChunkType,
+        )
 
         chunk = Chunk(
             virtual_pp_rank=0,
@@ -73,7 +86,10 @@ class TestChunkExtra(unittest.TestCase):
         self.assertIsNone(chunk.layer_id)
 
     def test_chunk_str_forward(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import Chunk, ChunkType
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            Chunk,
+            ChunkType,
+        )
 
         chunk = Chunk(
             virtual_pp_rank=0,
@@ -90,7 +106,10 @@ class TestChunkExtra(unittest.TestCase):
         self.assertIn("3", s)  # acc_step+1
 
     def test_chunk_str_backward(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import Chunk, ChunkType
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            Chunk,
+            ChunkType,
+        )
 
         chunk = Chunk(
             virtual_pp_rank=1,
@@ -106,7 +125,10 @@ class TestChunkExtra(unittest.TestCase):
         self.assertIn("B", s)
 
     def test_chunk_str_bubble(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import Chunk, ChunkType
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            Chunk,
+            ChunkType,
+        )
 
         chunk = Chunk(
             virtual_pp_rank=0,
@@ -124,7 +146,10 @@ class TestChunkExtra(unittest.TestCase):
         self.assertIn("4", s)
 
     def test_chunk_repr(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import Chunk, ChunkType
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            Chunk,
+            ChunkType,
+        )
 
         chunk = Chunk(
             virtual_pp_rank=0,
@@ -139,7 +164,10 @@ class TestChunkExtra(unittest.TestCase):
         self.assertEqual(repr(chunk), str(chunk))
 
     def test_chunk_barrier_step(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import Chunk, ChunkType
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            Chunk,
+            ChunkType,
+        )
 
         chunk = Chunk(
             virtual_pp_rank=0,
@@ -159,7 +187,9 @@ class TestPPChunkRecorderInit(unittest.TestCase):
     """Tests for PPChunkRecorder initialization."""
 
     def test_init_default(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import PPChunkRecorder
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            PPChunkRecorder,
+        )
 
         recorder = PPChunkRecorder(
             pp_degree=4,
@@ -183,7 +213,9 @@ class TestPPChunkRecorderStep(unittest.TestCase):
     """Tests for PPChunkRecorder.step."""
 
     def test_step_resets_stamp(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import PPChunkRecorder
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            PPChunkRecorder,
+        )
 
         recorder = PPChunkRecorder(
             pp_degree=2,
@@ -198,7 +230,9 @@ class TestPPChunkRecorderStep(unittest.TestCase):
         self.assertEqual(recorder.acc_stamp, [0, 0, 0, 0])
 
     def test_step_multiple_times(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import PPChunkRecorder
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            PPChunkRecorder,
+        )
 
         recorder = PPChunkRecorder(
             pp_degree=2,
@@ -219,7 +253,9 @@ class TestPPChunkRecorderRecordChunkForward(unittest.TestCase):
     """Tests for PPChunkRecorder.record_chunk_forward."""
 
     def test_record_valid_layer(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import PPChunkRecorder
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            PPChunkRecorder,
+        )
 
         recorder = PPChunkRecorder(
             pp_degree=2,
@@ -243,7 +279,9 @@ class TestPPChunkRecorderRecordChunkForward(unittest.TestCase):
         self.assertEqual(recorder2.acc_stamp, [0, 0, 0, 0])
 
     def test_record_out_of_range_high(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import PPChunkRecorder
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            PPChunkRecorder,
+        )
 
         recorder = PPChunkRecorder(
             pp_degree=2,
@@ -257,7 +295,9 @@ class TestPPChunkRecorderRecordChunkForward(unittest.TestCase):
         self.assertFalse(result)
 
     def test_record_out_of_range_low(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import PPChunkRecorder
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            PPChunkRecorder,
+        )
 
         recorder = PPChunkRecorder(
             pp_degree=2,
@@ -272,7 +312,9 @@ class TestPPChunkRecorderRecordChunkForward(unittest.TestCase):
         self.assertFalse(result)
 
     def test_record_with_empty_head(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import PPChunkRecorder
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            PPChunkRecorder,
+        )
 
         recorder = PPChunkRecorder(
             pp_degree=2,
@@ -288,7 +330,9 @@ class TestPPChunkRecorderRecordChunkForward(unittest.TestCase):
         self.assertEqual(len(recorder.acc_stamp), 4)
 
     def test_record_multiple_times(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import PPChunkRecorder
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            PPChunkRecorder,
+        )
 
         recorder = PPChunkRecorder(
             pp_degree=2,

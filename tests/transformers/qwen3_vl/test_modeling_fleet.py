@@ -17,8 +17,8 @@ import types
 import unittest
 
 import paddle
-import paddle.nn as nn
 import paddle.nn.functional as F
+from paddle import nn
 
 _FLEET_IMPORT_ERROR = None
 
@@ -37,7 +37,10 @@ except Exception as error:
     _FLEET_IMPORT_ERROR = error
 
 
-@unittest.skipUnless(Qwen3VLVisionModel is not None, f"paddleformers.fleet import failed: {_FLEET_IMPORT_ERROR}")
+@unittest.skipUnless(
+    Qwen3VLVisionModel is not None,
+    f"paddleformers.fleet import failed: {_FLEET_IMPORT_ERROR}",
+)
 class Qwen3VLFleetPositionalEncodingTest(unittest.TestCase):
     FAST_POS_EMBED_ATOL = 2e-5
 
@@ -53,7 +56,12 @@ class Qwen3VLFleetPositionalEncodingTest(unittest.TestCase):
         model.spatial_merge_size = 2
         model.num_grid_per_side = 70
         model.pos_embed = nn.Embedding(model.num_grid_per_side**2, 8)
-        weight = paddle.arange(model.num_grid_per_side**2 * 8, dtype="float32").reshape([-1, 8]) / 1000.0
+        weight = (
+            paddle.arange(
+                model.num_grid_per_side**2 * 8, dtype="float32"
+            ).reshape([-1, 8])
+            / 1000.0
+        )
         model.pos_embed.weight.set_value(weight)
         model.rotary_pos_emb = Qwen3VLVisionRotaryEmbedding(4)
 
@@ -63,7 +71,11 @@ class Qwen3VLFleetPositionalEncodingTest(unittest.TestCase):
             "fast_pos_embed_interpolate",
             "get_packed_seq_params",
         ]:
-            setattr(model, name, types.MethodType(getattr(Qwen3VLVisionModel, name), model))
+            setattr(
+                model,
+                name,
+                types.MethodType(getattr(Qwen3VLVisionModel, name), model),
+            )
 
         return model
 
@@ -74,7 +86,10 @@ class Qwen3VLFleetPositionalEncodingTest(unittest.TestCase):
         max_hw = max(max(height, width) for _, height, width in grid_thw_list)
         freq_table = self.model.rotary_pos_emb(max_hw)
 
-        total_tokens = sum(int(frames * height * width) for frames, height, width in grid_thw_list)
+        total_tokens = sum(
+            int(frames * height * width)
+            for frames, height, width in grid_thw_list
+        )
         pos_ids = paddle.empty([total_tokens, 2], dtype="int64")
 
         offset = 0
@@ -87,11 +102,21 @@ class Qwen3VLFleetPositionalEncodingTest(unittest.TestCase):
             intra_row = paddle.arange(merge_size)
             intra_col = paddle.arange(merge_size)
 
-            row_idx = block_rows[:, None, None, None] * merge_size + intra_row[None, None, :, None]
-            col_idx = block_cols[None, :, None, None] * merge_size + intra_col[None, None, None, :]
+            row_idx = (
+                block_rows[:, None, None, None] * merge_size
+                + intra_row[None, None, :, None]
+            )
+            col_idx = (
+                block_cols[None, :, None, None] * merge_size
+                + intra_col[None, None, None, :]
+            )
 
-            row_idx = row_idx.expand([merged_h, merged_w, merge_size, merge_size]).reshape([-1])
-            col_idx = col_idx.expand([merged_h, merged_w, merge_size, merge_size]).reshape([-1])
+            row_idx = row_idx.expand(
+                [merged_h, merged_w, merge_size, merge_size]
+            ).reshape([-1])
+            col_idx = col_idx.expand(
+                [merged_h, merged_w, merge_size, merge_size]
+            ).reshape([-1])
 
             coords = paddle.stack([row_idx, col_idx], axis=-1)
             if num_frames > 1:
@@ -105,7 +130,11 @@ class Qwen3VLFleetPositionalEncodingTest(unittest.TestCase):
         return embeddings.flatten(start_axis=1)
 
     def _legacy_fast_pos_embed_interpolate(self, grid_thw):
-        grid_ts, grid_hs, grid_ws = grid_thw[:, 0], grid_thw[:, 1], grid_thw[:, 2]
+        grid_ts, grid_hs, grid_ws = (
+            grid_thw[:, 0],
+            grid_thw[:, 1],
+            grid_thw[:, 2],
+        )
 
         idx_list = [[] for _ in range(4)]
         weight_list = [[] for _ in range(4)]
@@ -146,19 +175,31 @@ class Qwen3VLFleetPositionalEncodingTest(unittest.TestCase):
                 weight_list[i].extend(weights[i].tolist())
 
         idx_tensor = paddle.to_tensor(idx_list, dtype="int64")
-        weight_tensor = paddle.to_tensor(weight_list, dtype=self.model.pos_embed.weight.dtype)
-        pos_embeds = self.model.pos_embed(idx_tensor) * weight_tensor[:, :, None]
-        patch_pos_embeds = pos_embeds[0] + pos_embeds[1] + pos_embeds[2] + pos_embeds[3]
+        weight_tensor = paddle.to_tensor(
+            weight_list, dtype=self.model.pos_embed.weight.dtype
+        )
+        pos_embeds = (
+            self.model.pos_embed(idx_tensor) * weight_tensor[:, :, None]
+        )
+        patch_pos_embeds = (
+            pos_embeds[0] + pos_embeds[1] + pos_embeds[2] + pos_embeds[3]
+        )
 
-        patch_pos_embeds = patch_pos_embeds.split([int(h) * int(w) for h, w in zip(grid_hs, grid_ws)])
+        patch_pos_embeds = patch_pos_embeds.split(
+            [int(h) * int(w) for h, w in zip(grid_hs, grid_ws)]
+        )
 
         patch_pos_embeds_permute = []
         merge_size = self.model.spatial_merge_size
-        for pos_embed, t, h, w in zip(patch_pos_embeds, grid_ts, grid_hs, grid_ws):
+        for pos_embed, t, h, w in zip(
+            patch_pos_embeds, grid_ts, grid_hs, grid_ws
+        ):
             h_merged = int(h) // merge_size
             w_merged = int(w) // merge_size
             pos_embed = (
-                pos_embed.reshape([int(t), h_merged, merge_size, w_merged, merge_size, -1])
+                pos_embed.reshape(
+                    [int(t), h_merged, merge_size, w_merged, merge_size, -1]
+                )
                 .permute(0, 1, 3, 2, 4, 5)
                 .flatten(0, 4)
             )
@@ -166,7 +207,9 @@ class Qwen3VLFleetPositionalEncodingTest(unittest.TestCase):
 
         return paddle.cat(patch_pos_embeds_permute)
 
-    def test_fast_pos_embed_interpolate_matches_legacy_reference_with_expected_tolerance(self):
+    def test_fast_pos_embed_interpolate_matches_legacy_reference_with_expected_tolerance(
+        self,
+    ):
         for grid_thw in (
             paddle.to_tensor([[1, 6, 8], [1, 14, 14]], dtype="int64"),
             paddle.to_tensor([[1, 8, 6], [1, 4, 8]], dtype="int64"),
@@ -199,18 +242,28 @@ class Qwen3VLFleetPositionalEncodingTest(unittest.TestCase):
                 self.assertTrue(bool(paddle.equal_all(actual, expected)))
 
     def test_get_packed_seq_params_matches_legacy_reference(self):
-        grid_thw = paddle.to_tensor([[2, 4, 4], [1, 6, 8], [3, 2, 2]], dtype="int64")
+        grid_thw = paddle.to_tensor(
+            [[2, 4, 4], [1, 6, 8], [3, 2, 2]], dtype="int64"
+        )
 
         actual = self.model.get_packed_seq_params(grid_thw)
 
-        seqlens = safe_repeat_interleave_values(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0])
-        expected_cu_seqlens = F.pad(seqlens.cumsum(axis=0, dtype=paddle.int32), (1, 0), value=0).contiguous()
+        seqlens = safe_repeat_interleave_values(
+            grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]
+        )
+        expected_cu_seqlens = F.pad(
+            seqlens.cumsum(axis=0, dtype=paddle.int32), (1, 0), value=0
+        ).contiguous()
 
         self.assertEqual(actual.max_seqlen_q, seqlens.max().item())
         self.assertEqual(actual.max_seqlen_kv, seqlens.max().item())
         self.assertEqual(actual.qkv_format, "thd")
-        self.assertTrue(bool(paddle.equal_all(actual.cu_seqlens_q, expected_cu_seqlens)))
-        self.assertTrue(bool(paddle.equal_all(actual.cu_seqlens_kv, expected_cu_seqlens)))
+        self.assertTrue(
+            bool(paddle.equal_all(actual.cu_seqlens_q, expected_cu_seqlens))
+        )
+        self.assertTrue(
+            bool(paddle.equal_all(actual.cu_seqlens_kv, expected_cu_seqlens))
+        )
 
 
 if __name__ == "__main__":

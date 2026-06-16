@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -38,7 +42,9 @@ class TestLayerSpec(unittest.TestCase):
     def test_layer_spec_creation_with_class(self):
         from paddle.distributed.fleet.meta_parallel import LayerSpec
 
-        spec = LayerSpec(layer=paddle.nn.Linear, extra_kwargs={"in_features": 10})
+        spec = LayerSpec(
+            layer=paddle.nn.Linear, extra_kwargs={"in_features": 10}
+        )
         self.assertEqual(spec.layer, paddle.nn.Linear)
         self.assertEqual(spec.extra_kwargs, {"in_features": 10})
 
@@ -66,7 +72,9 @@ class TestLayerSpec(unittest.TestCase):
     def test_layer_spec_sublayers_spec(self):
         from paddle.distributed.fleet.meta_parallel import LayerSpec
 
-        spec = LayerSpec(layer=paddle.nn.Linear, sublayers_spec=paddle.nn.Sequential)
+        spec = LayerSpec(
+            layer=paddle.nn.Linear, sublayers_spec=paddle.nn.Sequential
+        )
         self.assertEqual(spec.sublayers_spec, paddle.nn.Sequential)
 
     def test_layer_spec_default_sublayers_spec_none(self):
@@ -113,14 +121,20 @@ class TestGetLayer(unittest.TestCase):
         self.assertEqual(result, my_fn)
 
     def test_get_layer_with_spec_containing_type(self):
-        from paddle.distributed.fleet.meta_parallel import LayerSpec, get_spec_layer
+        from paddle.distributed.fleet.meta_parallel import (
+            LayerSpec,
+            get_spec_layer,
+        )
 
         spec = LayerSpec(layer=paddle.nn.ReLU)
         result = get_spec_layer(spec)
         self.assertEqual(result, paddle.nn.ReLU)
 
     def test_get_layer_with_spec_containing_function(self):
-        from paddle.distributed.fleet.meta_parallel import LayerSpec, get_spec_layer
+        from paddle.distributed.fleet.meta_parallel import (
+            LayerSpec,
+            get_spec_layer,
+        )
 
         def my_fn():
             pass
@@ -130,7 +144,10 @@ class TestGetLayer(unittest.TestCase):
         self.assertEqual(result, my_fn)
 
     def test_get_layer_with_spec_containing_tuple(self):
-        from paddle.distributed.fleet.meta_parallel import LayerSpec, get_spec_layer
+        from paddle.distributed.fleet.meta_parallel import (
+            LayerSpec,
+            get_spec_layer,
+        )
 
         spec = LayerSpec(layer=("os.path", "join"))
         result = get_spec_layer(spec)
@@ -152,7 +169,10 @@ class TestBuildLayer(unittest.TestCase):
         self.assertEqual(result, my_fn)
 
     def test_build_layer_with_spec_containing_function(self):
-        from paddle.distributed.fleet.meta_parallel import LayerSpec, build_spec_layer
+        from paddle.distributed.fleet.meta_parallel import (
+            LayerSpec,
+            build_spec_layer,
+        )
 
         def my_fn():
             return 42
@@ -168,14 +188,20 @@ class TestBuildLayer(unittest.TestCase):
         self.assertIsInstance(result, paddle.nn.ReLU)
 
     def test_build_layer_with_spec_containing_class(self):
-        from paddle.distributed.fleet.meta_parallel import LayerSpec, build_spec_layer
+        from paddle.distributed.fleet.meta_parallel import (
+            LayerSpec,
+            build_spec_layer,
+        )
 
         spec = LayerSpec(layer=paddle.nn.ReLU)
         result = build_spec_layer(spec)
         self.assertIsInstance(result, paddle.nn.ReLU)
 
     def test_build_layer_with_import_path(self):
-        from paddle.distributed.fleet.meta_parallel import LayerSpec, build_spec_layer
+        from paddle.distributed.fleet.meta_parallel import (
+            LayerSpec,
+            build_spec_layer,
+        )
 
         spec = LayerSpec(layer=("paddle.nn", "ReLU"))
         result = build_spec_layer(spec)
@@ -183,7 +209,10 @@ class TestBuildLayer(unittest.TestCase):
 
     def test_build_layer_extra_kwargs_conflict_warning(self):
         """Test that a warning is raised when extra_kwargs and kwargs have same key."""
-        from paddle.distributed.fleet.meta_parallel import LayerSpec, build_spec_layer
+        from paddle.distributed.fleet.meta_parallel import (
+            LayerSpec,
+            build_spec_layer,
+        )
 
         spec = LayerSpec(
             layer=paddle.nn.Linear,
@@ -194,7 +223,10 @@ class TestBuildLayer(unittest.TestCase):
 
     def test_build_layer_exception_with_improved_message(self):
         """Test that build_spec_layer re-raises with improved error message."""
-        from paddle.distributed.fleet.meta_parallel import LayerSpec, build_spec_layer
+        from paddle.distributed.fleet.meta_parallel import (
+            LayerSpec,
+            build_spec_layer,
+        )
 
         spec = LayerSpec(layer=paddle.nn.Linear, extra_kwargs={})
         # Missing required arguments should produce an error mentioning Linear

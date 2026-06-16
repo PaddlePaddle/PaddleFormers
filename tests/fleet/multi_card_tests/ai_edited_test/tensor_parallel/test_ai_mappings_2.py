@@ -23,7 +23,11 @@ from paddle.distributed import fleet
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 from paddleformers.fleet.tensor_parallel.mappings import (
@@ -35,7 +39,9 @@ from paddleformers.fleet.tensor_parallel.mappings import (
     _ReduceScatterToSequenceParallelRegion,
     _ScatterToModelParallelRegion,
 )
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.training.initialize import initialize_fleet
 from paddleformers.fleet.utils import get_tensor_model_parallel_group_if_none
 
@@ -84,7 +90,9 @@ class TestGatherFromModelParallelRegionBasic(unittest.TestCase):
         tp_group = get_tensor_model_parallel_group_if_none(tp_group=None)
 
         input_data = paddle.ones([8]).cuda() * dist.get_rank()
-        actual_output = _GatherFromModelParallelRegion.symbolic(None, input_data, tp_group)
+        actual_output = _GatherFromModelParallelRegion.symbolic(
+            None, input_data, tp_group
+        )
         parts = [paddle.ones([8]).cuda() * r for r in range(TP_SIZE)]
         expected = paddle.concat(parts)
         self.assertTrue(paddle.equal_all(actual_output, expected))
@@ -98,7 +106,9 @@ class TestScatterToModelParallelRegionBasic(unittest.TestCase):
         tp_group = get_tensor_model_parallel_group_if_none(tp_group=None)
         input_data = paddle.rand((8, 16)).cuda()
 
-        output_data = _ScatterToModelParallelRegion.symbolic(None, input_data, tp_group)
+        output_data = _ScatterToModelParallelRegion.symbolic(
+            None, input_data, tp_group
+        )
         rank = dist.get_rank()
         expected = input_data[:, rank * 4 : (rank + 1) * 4]
         self.assertTrue(paddle.equal_all(output_data, expected))
@@ -124,7 +134,9 @@ class TestReduceFromModelParallelRegionBasic(unittest.TestCase):
         tp_group = get_tensor_model_parallel_group_if_none(tp_group=None)
         input_data = paddle.ones([1]).cuda() * dist.get_rank()
 
-        output = _ReduceFromModelParallelRegion.symbolic(None, input_data, tp_group)
+        output = _ReduceFromModelParallelRegion.symbolic(
+            None, input_data, tp_group
+        )
         expected = paddle.ones([1]).cuda() * sum(range(TP_SIZE))
         self.assertTrue(paddle.equal_all(output, expected))
 
@@ -137,7 +149,9 @@ class TestGatherFromSequenceParallelRegion(unittest.TestCase):
         tp_group = get_tensor_model_parallel_group_if_none(tp_group=None)
         input_data = paddle.ones([4]).cuda() * dist.get_rank()
 
-        output_data = _GatherFromSequenceParallelRegion.symbolic(None, input_data, tp_group)
+        output_data = _GatherFromSequenceParallelRegion.symbolic(
+            None, input_data, tp_group
+        )
         parts = [paddle.ones([4]).cuda() * r for r in range(TP_SIZE)]
         expected = paddle.concat(parts)
         self.assertTrue(paddle.equal_all(output_data, expected))
@@ -150,9 +164,13 @@ class TestReduceScatterToSequenceParallelRegion(unittest.TestCase):
         """Reduce-scatter should reduce then scatter along sequence dim."""
         tp_group = get_tensor_model_parallel_group_if_none(tp_group=None)
 
-        full_input = paddle.concat([paddle.ones([4]).cuda() * r for r in range(TP_SIZE)])
+        full_input = paddle.concat(
+            [paddle.ones([4]).cuda() * r for r in range(TP_SIZE)]
+        )
 
-        output_data = _ReduceScatterToSequenceParallelRegion.symbolic(None, full_input, tp_group)
+        output_data = _ReduceScatterToSequenceParallelRegion.symbolic(
+            None, full_input, tp_group
+        )
         # Verify output shape
         self.assertIsNotNone(output_data)
         self.assertEqual(output_data.shape[-1], 4)
@@ -166,7 +184,9 @@ class TestAllGatherFromTensorParallelRegion(unittest.TestCase):
         tp_group = get_tensor_model_parallel_group_if_none(tp_group=None)
 
         input_data = paddle.ones([4, 4]).cuda() * dist.get_rank()
-        output = _AllGatherFromTensorParallelRegion.symbolic(None, input_data, tp_group)
+        output = _AllGatherFromTensorParallelRegion.symbolic(
+            None, input_data, tp_group
+        )
         # Output should have TP_SIZE times the last dim
         self.assertEqual(output.shape[-1], 4 * TP_SIZE)
 

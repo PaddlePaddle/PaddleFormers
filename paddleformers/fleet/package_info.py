@@ -13,17 +13,20 @@
 # limitations under the License.
 
 
-from .version import __version__ as __version__
-from .version import commit as commit
+from .version import __version__ as __version__, commit as commit
 
 __all__ = ["__version__", "commit"]
 
 __package_name__ = "paddleformers.fleet"
 __contact_names__ = "PaddlePaddle"
 __contact_emails__ = "Paddle-better@baidu.com"
-__homepage__ = "https://www.paddlepaddle.org.cn/documentation/guides/index_cn.html"
+__homepage__ = (
+    "https://www.paddlepaddle.org.cn/documentation/guides/index_cn.html"
+)
 __repository_url__ = "https://github.com/PaddlePaddle/PaddleFleet"
 __download_url__ = "https://github.com/PaddlePaddle/PaddleFleet/releases"
-__description__ = "PaddleFleet - Core Functional Library for Large Scale Distributed Training"
+__description__ = (
+    "PaddleFleet - Core Functional Library for Large Scale Distributed Training"
+)
 __license__ = ("Apache Software License",)
 __keywords__ = "paddlepaddle,deep learning, machine learning, gpu, NLP, language, transformer, paddle"

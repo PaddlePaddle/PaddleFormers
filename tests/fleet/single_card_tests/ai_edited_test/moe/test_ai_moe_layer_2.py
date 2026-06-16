@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -28,7 +32,9 @@ import paddle
 
 def _make_moe_config(**overrides):
     """Helper to create a TransformerConfig for MoE testing."""
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
     defaults = {
         "hidden_size": 64,
@@ -184,7 +190,9 @@ class TestMoELayerInitExpertParallelParse(unittest.TestCase):
     @patch("paddleformers.fleet.transformer.moe.moe_layer.paddle.version")
     @patch("paddleformers.fleet.transformer.moe.moe_layer.paddlefleet_ops")
     @patch("paddleformers.fleet.transformer.moe.moe_layer.utils")
-    def test_num_experts_less_than_ep_raises(self, mock_utils, mock_paddlefleet_ops, mock_version):
+    def test_num_experts_less_than_ep_raises(
+        self, mock_utils, mock_paddlefleet_ops, mock_version
+    ):
         """Test that num_experts < expert_model_parallel_size raises."""
         from paddleformers.fleet.transformer.moe.moe_layer import MoELayer
 
@@ -206,7 +214,9 @@ class TestMoELayerInitExpertParallelParse(unittest.TestCase):
     @patch("paddleformers.fleet.transformer.moe.moe_layer.paddle.version")
     @patch("paddleformers.fleet.transformer.moe.moe_layer.paddlefleet_ops")
     @patch("paddleformers.fleet.transformer.moe.moe_layer.utils")
-    def test_num_experts_not_divisible_by_ep_raises(self, mock_utils, mock_paddlefleet_ops, mock_version):
+    def test_num_experts_not_divisible_by_ep_raises(
+        self, mock_utils, mock_paddlefleet_ops, mock_version
+    ):
         """Test that num_experts % expert_model_parallel_size != 0 raises."""
         from paddleformers.fleet.transformer.moe.moe_layer import MoELayer
 

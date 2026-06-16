@@ -40,7 +40,9 @@ from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.hybrid_parallel_
 from paddle.distributed.fleet.utils import timer_helper as timer
 from paddle.distributed.fleet.utils.hybrid_parallel_util import unwrap_optimizer
 from paddle.distributed.fleet.utils.log_util import logger
-from paddle.distributed.fleet.utils.mix_precision_utils import MixPrecisionOptimizer
+from paddle.distributed.fleet.utils.mix_precision_utils import (
+    MixPrecisionOptimizer,
+)
 from paddle.framework import core
 from paddle.nn import ClipGradByGlobalNorm, clip
 
@@ -53,7 +55,10 @@ class MoEHybridParallelClipGrad:
     def __init__(self, clip, hcg, timers=None):
         self._clip = clip
         self._hcg = hcg
-        if hasattr(hcg, "get_moe_sharding_parallel_world_size") and hcg.get_moe_sharding_parallel_world_size() > 0:
+        if (
+            hasattr(hcg, "get_moe_sharding_parallel_world_size")
+            and hcg.get_moe_sharding_parallel_world_size() > 0
+        ):
             # hybrid expert parallel
             self.moe_group = hcg.get_expert_parallel_group()
             self.moe_sharding_group = hcg.get_moe_sharding_parallel_group()
@@ -63,7 +68,11 @@ class MoEHybridParallelClipGrad:
         self.processed_steps = 0
 
     def _global_norm(
-        self, global_norm_var_dist, global_norm_var_not_dist, global_norm_var_dist_moe, global_norm_var_not_dist_moe
+        self,
+        global_norm_var_dist,
+        global_norm_var_not_dist,
+        global_norm_var_dist_moe,
+        global_norm_var_not_dist_moe,
     ):
         # sharding first
         sharding_flag = self._hcg.get_sharding_parallel_world_size() > 1
@@ -182,7 +191,8 @@ class MoEHybridParallelClipGrad:
             sum_square = clip._squared_l2_norm(merge_grad)
 
             not_shared_enable = (not hasattr(p, "is_firstly_shared")) or (
-                hasattr(p, "is_firstly_shared") and getattr(p, "is_firstly_shared", True)
+                hasattr(p, "is_firstly_shared")
+                and getattr(p, "is_firstly_shared", True)
             )
 
             if not_shared_enable:
@@ -210,9 +220,9 @@ class MoEHybridParallelClipGrad:
                     elif g.dtype == paddle.float32:
                         sum_square_dist_fp32.append(sum_square)
                 else:
-                    assert not getattr(
-                        p, "no_sync", False
-                    ), f"moe param shoud be distributed, got: {p.name}, shape={p.shape}"
+                    assert not getattr(p, "no_sync", False), (
+                        f"moe param shoud be distributed, got: {p.name}, shape={p.shape}"
+                    )
                     if g.dtype == paddle.float16:
                         sum_square_not_dist_fp16.append(sum_square)
                     if g.dtype == paddle.bfloat16:
@@ -220,7 +230,9 @@ class MoEHybridParallelClipGrad:
                     elif g.dtype == paddle.float32:
                         sum_square_not_dist_fp32.append(sum_square)
             else:
-                assert not getattr(p, "no_sync", False), "MoE cannot handle shared param"
+                assert not getattr(p, "no_sync", False), (
+                    "MoE cannot handle shared param"
+                )
 
         def add_n_list(tensor_list):
             if not tensor_list:
@@ -267,14 +279,28 @@ class MoEHybridParallelClipGrad:
             sum_square_not_dist_fp32,
         )
 
-        global_norm_var_dist_moe = global_norm_dist_moe_fp16 + global_norm_dist_moe_bf16 + global_norm_dist_moe_fp32
-
-        global_norm_var_not_dist_moe = (
-            global_norm_not_dist_moe_fp16 + global_norm_not_dist_moe_bf16 + global_norm_not_dist_moe_fp32
+        global_norm_var_dist_moe = (
+            global_norm_dist_moe_fp16
+            + global_norm_dist_moe_bf16
+            + global_norm_dist_moe_fp32
         )
 
-        global_norm_var_dist = global_norm_dist_fp16 + global_norm_dist_bf16 + global_norm_dist_fp32
-        global_norm_var_not_dist = global_norm_not_dist_fp16 + global_norm_not_dist_bf16 + global_norm_not_dist_fp32
+        global_norm_var_not_dist_moe = (
+            global_norm_not_dist_moe_fp16
+            + global_norm_not_dist_moe_bf16
+            + global_norm_not_dist_moe_fp32
+        )
+
+        global_norm_var_dist = (
+            global_norm_dist_fp16
+            + global_norm_dist_bf16
+            + global_norm_dist_fp32
+        )
+        global_norm_var_not_dist = (
+            global_norm_not_dist_fp16
+            + global_norm_not_dist_bf16
+            + global_norm_not_dist_fp32
+        )
         result = self._comm_and_clip(
             params_grads,
             global_norm_var_dist,
@@ -295,15 +321,22 @@ class MoEHybridParallelClipGrad:
         global_norm_var_dist_moe,
         global_norm_var_not_dist_moe,
     ):
-
         self._global_norm(
-            global_norm_var_dist, global_norm_var_not_dist, global_norm_var_dist_moe, global_norm_var_not_dist_moe
+            global_norm_var_dist,
+            global_norm_var_not_dist,
+            global_norm_var_dist_moe,
+            global_norm_var_not_dist_moe,
         )
 
         global_norm_var_fp32 = paddle.sqrt(
-            global_norm_var_dist + global_norm_var_not_dist + global_norm_var_dist_moe + global_norm_var_not_dist_moe
+            global_norm_var_dist
+            + global_norm_var_not_dist
+            + global_norm_var_dist_moe
+            + global_norm_var_not_dist_moe
         )
-        self.stat["global_grad_norm"] = global_norm_var_fp32.astype("float32").item()
+        self.stat["global_grad_norm"] = global_norm_var_fp32.astype(
+            "float32"
+        ).item()
 
         max_global_norm = paddle.full(
             shape=[],
@@ -315,12 +348,17 @@ class MoEHybridParallelClipGrad:
             y=paddle.maximum(x=global_norm_var_fp32, y=max_global_norm)
             + paddle.full(shape=[], dtype=paddle.float32, fill_value=1.0e-6),
         )
-        logger.info(f"hybrid-moe-clip, var={clip_var.item()}, global_norm:{global_norm_var_fp32.item()}")
+        logger.info(
+            f"hybrid-moe-clip, var={clip_var.item()}, global_norm:{global_norm_var_fp32.item()}"
+        )
         clip_var_fp16 = paddle.cast(clip_var, paddle.float16)
 
         if (
-            not isinstance(paddle.framework._current_expected_place(), paddle.CustomPlace)
-            or paddle.framework._current_expected_place().get_device_type() == "npu"
+            not isinstance(
+                paddle.framework._current_expected_place(), paddle.CustomPlace
+            )
+            or paddle.framework._current_expected_place().get_device_type()
+            == "npu"
         ):
             clip_var_bf16 = paddle.cast(clip_var, paddle.bfloat16)
         for p, g in params_grads:
@@ -332,7 +370,9 @@ class MoEHybridParallelClipGrad:
                 g.multiply_(clip_var_fp16)
             elif g.dtype == paddle.bfloat16:
                 if paddle.is_compiled_with_xpu():
-                    raise NotImplementedError("BF16 is not supported on XPU now")
+                    raise NotImplementedError(
+                        "BF16 is not supported on XPU now"
+                    )
                 g.multiply_(clip_var_bf16)
             else:
                 g.multiply_(clip_var)
@@ -356,12 +396,17 @@ class MoEHybridParallelOptimizer(HPBase):
             f"moe_sharding_degree:{hcg.get_moe_sharding_parallel_world_size()}, sharding_degree:{hcg.get_sharding_parallel_world_size()}, ep_degree:{hcg.get_expert_parallel_world_size()}"
         )
         if hcg.get_moe_sharding_parallel_world_size() > 0:
-            split_param = strategy.hybrid_configs["sharding_configs"].split_param
+            split_param = strategy.hybrid_configs[
+                "sharding_configs"
+            ].split_param
             assert (
-                hcg.get_sharding_parallel_world_size() >= 1 and split_param is True
+                hcg.get_sharding_parallel_world_size() >= 1
+                and split_param is True
             ), "Hybrid expert parallel only supports ShardingV2 now"
         if hcg.get_sharding_parallel_world_size() > 1:
-            split_param = strategy.hybrid_configs["sharding_configs"].split_param
+            split_param = strategy.hybrid_configs[
+                "sharding_configs"
+            ].split_param
             use_muon_sharding = getattr(strategy, "use_muon_sharding", False)
             if use_muon_sharding:
                 ShardingOptimizer = MuonShardingOptimizer
@@ -384,7 +429,9 @@ class MoEHybridParallelOptimizer(HPBase):
         self._strategy = strategy
         self._hcg = hcg
 
-        self._use_dp_mode = self._hcg.get_parallel_mode() == ParallelMode.DATA_PARALLEL
+        self._use_dp_mode = (
+            self._hcg.get_parallel_mode() == ParallelMode.DATA_PARALLEL
+        )
 
         self._need_dp = self._hcg.get_data_parallel_world_size() > 1
 
@@ -394,7 +441,10 @@ class MoEHybridParallelOptimizer(HPBase):
 
         self._sep_enable = self._hcg.get_sep_parallel_world_size() > 1
 
-        if isinstance(self._inner_opt._grad_clip, ClipGradByGlobalNorm) and not self._use_dp_mode:
+        if (
+            isinstance(self._inner_opt._grad_clip, ClipGradByGlobalNorm)
+            and not self._use_dp_mode
+        ):
             logger.warning(
                 "While using ClipGradByGlobalNorm in TensorParallel, PipelineParallel "
                 "or Sharding, the grad clip of original optimizer will be changed."
@@ -413,13 +463,28 @@ class MoEHybridParallelOptimizer(HPBase):
             if (
                 inner_opt._parameter_list
                 and not isinstance(inner_opt._parameter_list[0], dict)
-                and len([p for p in inner_opt._parameter_list if hasattr(p, "main_grad")]) > 0
+                and len(
+                    [
+                        p
+                        for p in inner_opt._parameter_list
+                        if hasattr(p, "main_grad")
+                    ]
+                )
+                > 0
             ):
-                inner_opt._grad_clip = MoEHybridParallelClipGrad(inner_opt._grad_clip, hcg, self._timers)
+                inner_opt._grad_clip = MoEHybridParallelClipGrad(
+                    inner_opt._grad_clip, hcg, self._timers
+                )
             else:
-                inner_opt._grad_clip = MoEHybridParallelClipGrad(inner_opt._grad_clip, hcg, self._timers)
-                if inner_opt._parameter_list and isinstance(inner_opt._parameter_list[0], dict):
+                inner_opt._grad_clip = MoEHybridParallelClipGrad(
+                    inner_opt._grad_clip, hcg, self._timers
+                )
+                if inner_opt._parameter_list and isinstance(
+                    inner_opt._parameter_list[0], dict
+                ):
                     for item in inner_opt._param_groups:
                         if "grad_clip" in item.keys():
-                            item["grad_clip"] = MoEHybridParallelClipGrad(inner_opt._grad_clip, hcg, self._timers)
+                            item["grad_clip"] = MoEHybridParallelClipGrad(
+                                inner_opt._grad_clip, hcg, self._timers
+                            )
         self.processed_steps = 0

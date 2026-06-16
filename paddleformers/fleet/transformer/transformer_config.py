@@ -25,7 +25,11 @@ from typing import TYPE_CHECKING, Literal
 import paddle.nn.functional as F
 
 from ..model_parallel_config import ModelParallelConfig
-from ..utils import get_magic_init_method, init_method_normal, scaled_init_method_normal
+from ..utils import (
+    get_magic_init_method,
+    init_method_normal,
+    scaled_init_method_normal,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -946,7 +950,9 @@ class TransformerConfig(ModelParallelConfig):
             elif callable(value):
                 setattr(self, key, value)
             else:
-                raise TypeError(f"hidden_act must be str or callable, but get {type(value)}")
+                raise TypeError(
+                    f"hidden_act must be str or callable, but get {type(value)}"
+                )
         elif key == "dtype":
             self.params_dtype = value
         else:
@@ -962,13 +968,22 @@ class TransformerConfig(ModelParallelConfig):
         """
         super().__post_init__()
         if self.enable_mtp_magic_send:
-            assert self.num_nextn_predict_layers == 1, "enable_mtp_magic_send only supports num_nextn_predict_layers=1"
-            assert (
-                self.pipeline_model_parallel_size > 1
-            ), "enable_mtp_magic_send requires pipeline_model_parallel_size > 1"
-            if self.virtual_pipeline_model_parallel_size is not None and self.virtual_pipeline_model_parallel_size > 1:
-                assert self.overlap_p2p_comm, "enable_mtp_magic_send with vpp requires overlap_p2p_comm=True"
-                assert self.variable_seq_lengths, "enable_mtp_magic_send with vpp requires variable_seq_lengths=True"
+            assert self.num_nextn_predict_layers == 1, (
+                "enable_mtp_magic_send only supports num_nextn_predict_layers=1"
+            )
+            assert self.pipeline_model_parallel_size > 1, (
+                "enable_mtp_magic_send requires pipeline_model_parallel_size > 1"
+            )
+            if (
+                self.virtual_pipeline_model_parallel_size is not None
+                and self.virtual_pipeline_model_parallel_size > 1
+            ):
+                assert self.overlap_p2p_comm, (
+                    "enable_mtp_magic_send with vpp requires overlap_p2p_comm=True"
+                )
+                assert self.variable_seq_lengths, (
+                    "enable_mtp_magic_send with vpp requires variable_seq_lengths=True"
+                )
 
         if self.intermediate_size is None:
             self.intermediate_size = 4 * self.hidden_size
@@ -1014,10 +1029,14 @@ class TransformerConfig(ModelParallelConfig):
             self.embedding_init_method_std = self.init_method_std
 
         if self.embedding_init_method is None:
-            if self.init_method is None or (self.embedding_init_method_std != self.init_method_std):
+            if self.init_method is None or (
+                self.embedding_init_method_std != self.init_method_std
+            ):
                 # In this case, we set both the init method and the embedding init method to
                 #  whatever std value requested (or defaulted) for the embedding_init_layer
-                self.embedding_init_method = init_method_normal(self.embedding_init_method_std)
+                self.embedding_init_method = init_method_normal(
+                    self.embedding_init_method_std
+                )
             else:
                 # Replicate the current behavior where if you are not changing the std of the
                 #  embedding init differently and the init method is set, we fallback to the
@@ -1027,26 +1046,40 @@ class TransformerConfig(ModelParallelConfig):
 
         if self.magic_init:
             if self.hidden_size == 0:
-                raise ValueError("hidden_size must be non-zero when magic_init is True.")
+                raise ValueError(
+                    "hidden_size must be non-zero when magic_init is True."
+                )
             sigma = math.sqrt(0.3333 / self.hidden_size)
             self.init_method = get_magic_init_method(sigma)
             self.init_method_std = sigma
         elif self.init_method is None:
             self.init_method = init_method_normal(self.init_method_std)
 
-        if self.first_k_dense_replace and self.moe_layer_freq is not None and not isinstance(self.moe_layer_freq, int):
-            raise ValueError("Cannot specify both first_k_dense_replace and moe_layer_freq.")
+        if (
+            self.first_k_dense_replace
+            and self.moe_layer_freq is not None
+            and not isinstance(self.moe_layer_freq, int)
+        ):
+            raise ValueError(
+                "Cannot specify both first_k_dense_replace and moe_layer_freq."
+            )
         if self.first_k_dense_replace is None and self.moe_layer_freq is None:
             self.moe_layer_freq = 1
         if self.first_k_dense_replace:
             if self.moe_layer_freq:
                 moe_layer_pattern = [
                     1 if ((i + 1) % self.moe_layer_freq == 0) else 0
-                    for i in range(self.num_hidden_layers - self.first_k_dense_replace)
+                    for i in range(
+                        self.num_hidden_layers - self.first_k_dense_replace
+                    )
                 ]
             else:
-                moe_layer_pattern = [1] * (self.num_hidden_layers - self.first_k_dense_replace)
-            self.moe_layer_freq = [0] * self.first_k_dense_replace + moe_layer_pattern
+                moe_layer_pattern = [1] * (
+                    self.num_hidden_layers - self.first_k_dense_replace
+                )
+            self.moe_layer_freq = [
+                0
+            ] * self.first_k_dense_replace + moe_layer_pattern
         if self.recompute_granularity == "":
             self.recompute_granularity = None
 
@@ -1061,19 +1094,25 @@ class TransformerConfig(ModelParallelConfig):
                     "block",
                     "first_n",
                     "uniform",
-                ], "when recompute_granularity=full, recompute_method must be one of block, first_n and uniform"
-                assert (
-                    self.recompute_num_layers is not None
-                ), "when recompute_granularity=full, recompute_num_layers mustn't be None"
+                ], (
+                    "when recompute_granularity=full, recompute_method must be one of block, first_n and uniform"
+                )
+                assert self.recompute_num_layers is not None, (
+                    "when recompute_granularity=full, recompute_num_layers mustn't be None"
+                )
             elif self.recompute_granularity == "selective":
                 assert self.recompute_method in [
                     "block",
                     "first_n",
                     None,
-                ], "when recompute_granularity=selective, recompute_method must be one of block and first_n"
+                ], (
+                    "when recompute_granularity=selective, recompute_method must be one of block and first_n"
+                )
                 assert self.recompute_modules is not None
             else:
-                raise ValueError("recompute_granularity must be one of full and selective")
+                raise ValueError(
+                    "recompute_granularity must be one of full and selective"
+                )
 
         if self.magic_init:
             self.output_layer_init_method = self.init_method
@@ -1093,10 +1132,14 @@ class TransformerConfig(ModelParallelConfig):
             self.embedding_init_method = self.init_method
             self.embedding_init_method_std = self.init_method_std
         elif self.embedding_init_method is None:
-            if self.init_method is None or (self.embedding_init_method_std != self.init_method_std):
+            if self.init_method is None or (
+                self.embedding_init_method_std != self.init_method_std
+            ):
                 # In this case, we set both the init method and the embedding init method to
                 #  whatever std value requested (or defaulted) for the embedding_init_layer
-                self.embedding_init_method = init_method_normal(self.embedding_init_method_std)
+                self.embedding_init_method = init_method_normal(
+                    self.embedding_init_method_std
+                )
             else:
                 # Replicate the current behavior where if you are not changing the std of the
                 #  embedding init differently and the init method is set, we fallback to the
@@ -1108,9 +1151,13 @@ class TransformerConfig(ModelParallelConfig):
         if self.experimental_attention_variant == "dsv4_hybrid":
             if self.csa_compress_ratios is None:
                 raise ValueError(
-                    "experimental_attention_variant='dsv4_hybrid' requires " "csa_compress_ratios to be set."
+                    "experimental_attention_variant='dsv4_hybrid' requires "
+                    "csa_compress_ratios to be set."
                 )
-            if len(self.csa_compress_ratios) != self.num_hidden_layers + self.num_nextn_predict_layers:
+            if (
+                len(self.csa_compress_ratios)
+                != self.num_hidden_layers + self.num_nextn_predict_layers
+            ):
                 raise ValueError(
                     f"csa_compress_ratios length ({len(self.csa_compress_ratios)}) "
                     f"must equal num_hidden_layers ({self.num_hidden_layers + self.num_nextn_predict_layers})."
@@ -1118,7 +1165,10 @@ class TransformerConfig(ModelParallelConfig):
             valid_ratios = {0, 4, 128}
             for i, r in enumerate(self.csa_compress_ratios):
                 if r not in valid_ratios:
-                    raise ValueError(f"csa_compress_ratios[{i}]={r} is invalid. " f"Must be one of {valid_ratios}.")
+                    raise ValueError(
+                        f"csa_compress_ratios[{i}]={r} is invalid. "
+                        f"Must be one of {valid_ratios}."
+                    )
 
             valid_tilelang_backends = {None, "attention_paddle_compat"}
             if self.csa_tilelang_backend not in valid_tilelang_backends:
@@ -1126,11 +1176,17 @@ class TransformerConfig(ModelParallelConfig):
                     f"csa_tilelang_backend={self.csa_tilelang_backend!r} is invalid. "
                     f"Must be one of {valid_tilelang_backends}."
                 )
-            if self.csa_tilelang_backend is None and self.csa_tilelang_enable_indexer:
+            if (
+                self.csa_tilelang_backend is None
+                and self.csa_tilelang_enable_indexer
+            ):
                 raise ValueError(
                     "csa_tilelang_enable_indexer=True requires csa_tilelang_backend='attention_paddle_compat'."
                 )
-            if self.csa_tilelang_backend is None and self.csa_tilelang_enable_sparse_attn:
+            if (
+                self.csa_tilelang_backend is None
+                and self.csa_tilelang_enable_sparse_attn
+            ):
                 raise ValueError(
                     "csa_tilelang_enable_sparse_attn=True requires csa_tilelang_backend='attention_paddle_compat'."
                 )
@@ -1153,7 +1209,10 @@ class TransformerConfig(ModelParallelConfig):
                     "it is required to allocate the tid2eid lookup buffer."
                 )
             if self.actual_vocab_size <= 0:
-                raise ValueError(f"actual_vocab_size must be positive, got " f"{self.actual_vocab_size}.")
+                raise ValueError(
+                    f"actual_vocab_size must be positive, got "
+                    f"{self.actual_vocab_size}."
+                )
             if self.moe_n_hash_layers > self.num_hidden_layers:
                 raise ValueError(
                     f"moe_n_hash_layers ({self.moe_n_hash_layers}) cannot exceed "
@@ -1165,11 +1224,18 @@ class TransformerConfig(ModelParallelConfig):
                     f"{{'softmax', 'sigmoid', 'sqrtsoftplus'}}, got "
                     f"{self.scoring_func!r}."
                 )
-            if self.num_experts_per_tok is None or self.num_experts_per_tok <= 0:
+            if (
+                self.num_experts_per_tok is None
+                or self.num_experts_per_tok <= 0
+            ):
                 raise ValueError(
-                    "num_experts_per_tok (top-k) must be a positive integer " "when moe_n_hash_layers > 0."
+                    "num_experts_per_tok (top-k) must be a positive integer "
+                    "when moe_n_hash_layers > 0."
                 )
-            if self.n_routed_experts is None or self.n_routed_experts < self.num_experts_per_tok:
+            if (
+                self.n_routed_experts is None
+                or self.n_routed_experts < self.num_experts_per_tok
+            ):
                 raise ValueError(
                     f"n_routed_experts ({self.n_routed_experts}) must be >= "
                     f"num_experts_per_tok ({self.num_experts_per_tok}) "
@@ -1177,13 +1243,19 @@ class TransformerConfig(ModelParallelConfig):
                 )
 
         if self.window_attn_skip_freq is not None:
-            if isinstance(self.window_attn_skip_freq, int) and self.window_attn_skip_freq <= 0:
+            if (
+                isinstance(self.window_attn_skip_freq, int)
+                and self.window_attn_skip_freq <= 0
+            ):
                 raise ValueError(
                     f"window_attn_skip_freq must be a positive integer when "
                     f"specified as int, but got {self.window_attn_skip_freq}."
                 )
 
-        if self.num_nextn_predict_layers > 0 and self.window_attn_skip_freq is not None:
+        if (
+            self.num_nextn_predict_layers > 0
+            and self.window_attn_skip_freq is not None
+        ):
             if not isinstance(self.window_attn_skip_freq, list):
                 raise TypeError(
                     f"window_attn_skip_freq must be a list of length "
@@ -1193,13 +1265,19 @@ class TransformerConfig(ModelParallelConfig):
                     f"when num_nextn_predict_layers > 0, "
                     f"but got {type(self.window_attn_skip_freq).__name__} instead."
                 )
-            if len(self.window_attn_skip_freq) != self.num_hidden_layers + self.num_nextn_predict_layers:
+            if (
+                len(self.window_attn_skip_freq)
+                != self.num_hidden_layers + self.num_nextn_predict_layers
+            ):
                 raise ValueError(
                     f"self.window_attn_skip_freq ({len(self.window_attn_skip_freq)}) "
                     f"must equal num_hidden_layers + num_nextn_predict_layers ({self.num_hidden_layers + self.num_nextn_predict_layers})."
                 )
 
-        if self.num_nextn_predict_layers == 0 and self.window_attn_skip_freq is not None:
+        if (
+            self.num_nextn_predict_layers == 0
+            and self.window_attn_skip_freq is not None
+        ):
             if (
                 isinstance(self.window_attn_skip_freq, list)
                 and len(self.window_attn_skip_freq) != self.num_hidden_layers
@@ -1211,5 +1289,6 @@ class TransformerConfig(ModelParallelConfig):
 
         if not (0.0 <= self.head_wise_swa_ratio <= 1.0):
             raise ValueError(
-                f"head_wise_swa_ratio must be between 0.0 and 1.0, " f"but got {self.head_wise_swa_ratio}."
+                f"head_wise_swa_ratio must be between 0.0 and 1.0, "
+                f"but got {self.head_wise_swa_ratio}."
             )

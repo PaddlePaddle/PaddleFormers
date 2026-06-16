@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -28,7 +32,9 @@ import paddle
 
 def _make_config(**overrides):
     """Helper to create a TransformerConfig with sensible defaults."""
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
     defaults = {
         "hidden_size": 64,
@@ -48,7 +54,9 @@ class TestLanguageModelEmbeddingInit(unittest.TestCase):
         "paddleformers.fleet.models.common.embeddings.language_model_embedding.get_tensor_model_parallel_group_if_none",
         return_value=None,
     )
-    @patch("paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel"
+    )
     def test_init_with_learned_absolute(self, mock_tp, mock_get_group):
         from paddleformers.fleet.models.common.embeddings.language_model_embedding import (
             LanguageModelEmbedding,
@@ -71,7 +79,9 @@ class TestLanguageModelEmbeddingInit(unittest.TestCase):
         "paddleformers.fleet.models.common.embeddings.language_model_embedding.get_tensor_model_parallel_group_if_none",
         return_value=None,
     )
-    @patch("paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel"
+    )
     def test_init_with_rope(self, mock_tp, mock_get_group):
         from paddleformers.fleet.models.common.embeddings.language_model_embedding import (
             LanguageModelEmbedding,
@@ -91,7 +101,9 @@ class TestLanguageModelEmbeddingInit(unittest.TestCase):
         "paddleformers.fleet.models.common.embeddings.language_model_embedding.get_tensor_model_parallel_group_if_none",
         return_value=None,
     )
-    @patch("paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel"
+    )
     def test_init_with_tokentypes(self, mock_tp, mock_get_group):
         from paddleformers.fleet.models.common.embeddings.language_model_embedding import (
             LanguageModelEmbedding,
@@ -112,7 +124,9 @@ class TestLanguageModelEmbeddingInit(unittest.TestCase):
         "paddleformers.fleet.models.common.embeddings.language_model_embedding.get_tensor_model_parallel_group_if_none",
         return_value=None,
     )
-    @patch("paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel"
+    )
     def test_init_no_tokentypes(self, mock_tp, mock_get_group):
         from paddleformers.fleet.models.common.embeddings.language_model_embedding import (
             LanguageModelEmbedding,
@@ -131,7 +145,9 @@ class TestLanguageModelEmbeddingInit(unittest.TestCase):
         "paddleformers.fleet.models.common.embeddings.language_model_embedding.get_tensor_model_parallel_group_if_none",
         return_value=None,
     )
-    @patch("paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel"
+    )
     def test_sequence_parallel_requires_scatter(self, mock_tp, mock_get_group):
         from paddleformers.fleet.models.common.embeddings.language_model_embedding import (
             LanguageModelEmbedding,
@@ -154,7 +170,9 @@ class TestLanguageModelEmbeddingInit(unittest.TestCase):
 class TestLanguageModelEmbeddingForward(unittest.TestCase):
     """Tests for LanguageModelEmbedding forward pass."""
 
-    @patch("paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel"
+    )
     def test_forward_with_position_embedding(self, mock_tp):
         from paddleformers.fleet.models.common.embeddings.language_model_embedding import (
             LanguageModelEmbedding,
@@ -176,12 +194,16 @@ class TestLanguageModelEmbeddingForward(unittest.TestCase):
         )
         position_ids = paddle.randint(0, 128, [2, 8])
         # Replace the position embedding weight to get deterministic output
-        emb.position_embeddings.weight.set_value(paddle.randn([128, 64], dtype="float32"))
+        emb.position_embeddings.weight.set_value(
+            paddle.randn([128, 64], dtype="float32")
+        )
 
         result = emb(input_ids, position_ids)
         self.assertEqual(result.shape, [2, 8, 64])
 
-    @patch("paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel"
+    )
     def test_forward_without_position_embedding(self, mock_tp):
         from paddleformers.fleet.models.common.embeddings.language_model_embedding import (
             LanguageModelEmbedding,
@@ -205,7 +227,9 @@ class TestLanguageModelEmbeddingForward(unittest.TestCase):
         result = emb(input_ids, position_ids)
         self.assertEqual(result.shape, [2, 8, 64])
 
-    @patch("paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel"
+    )
     def test_forward_with_tokentype_ids(self, mock_tp):
         from paddleformers.fleet.models.common.embeddings.language_model_embedding import (
             LanguageModelEmbedding,
@@ -230,7 +254,9 @@ class TestLanguageModelEmbeddingForward(unittest.TestCase):
         result = emb(input_ids, position_ids, tokentype_ids=tokentype_ids)
         self.assertEqual(result.shape, [2, 8, 64])
 
-    @patch("paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel"
+    )
     def test_forward_no_tokentype_ids_with_none_tokentype(self, mock_tp):
         from paddleformers.fleet.models.common.embeddings.language_model_embedding import (
             LanguageModelEmbedding,
@@ -254,7 +280,9 @@ class TestLanguageModelEmbeddingForward(unittest.TestCase):
         result = emb(input_ids, position_ids, tokentype_ids=None)
         self.assertEqual(result.shape, [2, 8, 64])
 
-    @patch("paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel"
+    )
     def test_forward_with_fp32_residual(self, mock_tp):
         from paddleformers.fleet.models.common.embeddings.language_model_embedding import (
             LanguageModelEmbedding,
@@ -286,7 +314,9 @@ class TestLanguageModelEmbeddingForward(unittest.TestCase):
 class TestLanguageModelEmbeddingSequenceParallel(unittest.TestCase):
     """Tests for LanguageModelEmbedding with sequence_parallel=True."""
 
-    @patch("paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel"
+    )
     def test_sequence_parallel_scatter_and_clone(self, mock_tp):
         from paddleformers.fleet.models.common.embeddings.language_model_embedding import (
             LanguageModelEmbedding,
@@ -305,7 +335,9 @@ class TestLanguageModelEmbeddingSequenceParallel(unittest.TestCase):
         mock_tp.VocabParallelEmbedding.return_value = mock_vocab_emb
 
         # Mock scatter_to_sequence_parallel_region to return identity
-        mock_tp.scatter_to_sequence_parallel_region = MagicMock(side_effect=lambda x, **kw: x)
+        mock_tp.scatter_to_sequence_parallel_region = MagicMock(
+            side_effect=lambda x, **kw: x
+        )
 
         # Mock get_cuda_rng_tracker
         mock_tracker = MagicMock()
@@ -326,7 +358,9 @@ class TestLanguageModelEmbeddingSequenceParallel(unittest.TestCase):
         result = emb(input_ids, position_ids)
         self.assertEqual(result.shape, [2, 8, 64])
 
-    @patch("paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel"
+    )
     def test_sequence_parallel_reduce_scatter_enabled(self, mock_tp):
         from paddleformers.fleet.models.common.embeddings.language_model_embedding import (
             LanguageModelEmbedding,
@@ -370,7 +404,9 @@ class TestLanguageModelEmbeddingSequenceParallel(unittest.TestCase):
 class TestLanguageModelEmbeddingProperties(unittest.TestCase):
     """Tests for properties and utility methods."""
 
-    @patch("paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel"
+    )
     def test_embedding_weight_property(self, mock_tp):
         from paddleformers.fleet.models.common.embeddings.language_model_embedding import (
             LanguageModelEmbedding,
@@ -389,7 +425,9 @@ class TestLanguageModelEmbeddingProperties(unittest.TestCase):
         )
         self.assertIs(emb.embedding_weight, mock_weight)
 
-    @patch("paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel"
+    )
     def test_zero_parameters(self, mock_tp):
         from paddleformers.fleet.models.common.embeddings.language_model_embedding import (
             LanguageModelEmbedding,
@@ -408,16 +446,30 @@ class TestLanguageModelEmbeddingProperties(unittest.TestCase):
             num_tokentypes=2,
         )
         # Initialize position embeddings weight
-        emb.position_embeddings.weight.set_value(paddle.randn([128, 64], dtype="float32"))
-        emb.tokentype_embeddings.weight.set_value(paddle.randn([2, 64], dtype="float32"))
+        emb.position_embeddings.weight.set_value(
+            paddle.randn([128, 64], dtype="float32")
+        )
+        emb.tokentype_embeddings.weight.set_value(
+            paddle.randn([2, 64], dtype="float32")
+        )
 
         emb.zero_parameters()
 
         # Verify all weights are zero
-        self.assertTrue(paddle.allclose(emb.embed_tokens.weight.data, paddle.zeros_like(mock_weight)))
-        self.assertTrue(paddle.allclose(emb.position_embeddings.weight.data, paddle.zeros([128, 64])))
+        self.assertTrue(
+            paddle.allclose(
+                emb.embed_tokens.weight.data, paddle.zeros_like(mock_weight)
+            )
+        )
+        self.assertTrue(
+            paddle.allclose(
+                emb.position_embeddings.weight.data, paddle.zeros([128, 64])
+            )
+        )
 
-    @patch("paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.language_model_embedding.tensor_parallel"
+    )
     def test_zero_parameters_no_tokentypes(self, mock_tp):
         from paddleformers.fleet.models.common.embeddings.language_model_embedding import (
             LanguageModelEmbedding,
@@ -434,11 +486,19 @@ class TestLanguageModelEmbeddingProperties(unittest.TestCase):
             vocab_size=1000,
             max_sequence_length=128,
         )
-        emb.position_embeddings.weight.set_value(paddle.randn([128, 64], dtype="float32"))
+        emb.position_embeddings.weight.set_value(
+            paddle.randn([128, 64], dtype="float32")
+        )
 
         emb.zero_parameters()
-        self.assertTrue(paddle.allclose(emb.embed_tokens.weight.data, paddle.zeros_like(mock_weight)))
+        self.assertTrue(
+            paddle.allclose(
+                emb.embed_tokens.weight.data, paddle.zeros_like(mock_weight)
+            )
+        )
 
 
-class TestLanguageModelEmbeddingWithTokentypeAndSequenceParallel(unittest.TestCase):
+class TestLanguageModelEmbeddingWithTokentypeAndSequenceParallel(
+    unittest.TestCase
+):
     """Test tokentype embedding with sequence parallel."""

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -32,7 +36,9 @@ class TestFthenBInit(unittest.TestCase):
             PipelineParallelWithInterleaveFthenB,
         )
 
-        pp = PipelineParallelWithInterleaveFthenB.__new__(PipelineParallelWithInterleaveFthenB)
+        pp = PipelineParallelWithInterleaveFthenB.__new__(
+            PipelineParallelWithInterleaveFthenB
+        )
         pp.overlap_schedule_mode = False
         self.assertFalse(pp.overlap_schedule_mode)
 
@@ -41,7 +47,9 @@ class TestFthenBInit(unittest.TestCase):
             PipelineParallelWithInterleaveFthenB,
         )
 
-        pp = PipelineParallelWithInterleaveFthenB.__new__(PipelineParallelWithInterleaveFthenB)
+        pp = PipelineParallelWithInterleaveFthenB.__new__(
+            PipelineParallelWithInterleaveFthenB
+        )
         name = pp._get_scheduler_name()
         self.assertEqual(name, "PipelineParallelWithInterleaveFthenB")
 
@@ -50,7 +58,9 @@ class TestFthenBInit(unittest.TestCase):
             PipelineParallelWithInterleaveFthenB,
         )
 
-        pp = PipelineParallelWithInterleaveFthenB.__new__(PipelineParallelWithInterleaveFthenB)
+        pp = PipelineParallelWithInterleaveFthenB.__new__(
+            PipelineParallelWithInterleaveFthenB
+        )
         pp._init_user_bubble_hooks()
         self.assertIsNone(pp.bubble_hooks)
 
@@ -63,7 +73,9 @@ class TestFthenBCheckSanity(unittest.TestCase):
             PipelineParallelWithInterleaveFthenB,
         )
 
-        pp = PipelineParallelWithInterleaveFthenB.__new__(PipelineParallelWithInterleaveFthenB)
+        pp = PipelineParallelWithInterleaveFthenB.__new__(
+            PipelineParallelWithInterleaveFthenB
+        )
         pp.num_stages = 4
         with patch("paddle.framework.in_dynamic_mode", return_value=True):
             pp._check_sanity()
@@ -73,7 +85,9 @@ class TestFthenBCheckSanity(unittest.TestCase):
             PipelineParallelWithInterleaveFthenB,
         )
 
-        pp = PipelineParallelWithInterleaveFthenB.__new__(PipelineParallelWithInterleaveFthenB)
+        pp = PipelineParallelWithInterleaveFthenB.__new__(
+            PipelineParallelWithInterleaveFthenB
+        )
         pp.num_stages = 4
         with (
             patch("paddle.framework.in_dynamic_mode", return_value=False),
@@ -86,7 +100,9 @@ class TestFthenBCheckSanity(unittest.TestCase):
             PipelineParallelWithInterleaveFthenB,
         )
 
-        pp = PipelineParallelWithInterleaveFthenB.__new__(PipelineParallelWithInterleaveFthenB)
+        pp = PipelineParallelWithInterleaveFthenB.__new__(
+            PipelineParallelWithInterleaveFthenB
+        )
         pp.num_stages = 2
         with (
             patch("paddle.framework.in_dynamic_mode", return_value=True),
@@ -103,7 +119,9 @@ class TestFthenBGetVirtualPPRank(unittest.TestCase):
             PipelineParallelWithInterleaveFthenB,
         )
 
-        pp = PipelineParallelWithInterleaveFthenB.__new__(PipelineParallelWithInterleaveFthenB)
+        pp = PipelineParallelWithInterleaveFthenB.__new__(
+            PipelineParallelWithInterleaveFthenB
+        )
         pp.accumulate_steps = 4
         pp.num_stages = 4
         pp.num_model_chunks = 2
@@ -116,7 +134,9 @@ class TestFthenBGetVirtualPPRank(unittest.TestCase):
             PipelineParallelWithInterleaveFthenB,
         )
 
-        pp = PipelineParallelWithInterleaveFthenB.__new__(PipelineParallelWithInterleaveFthenB)
+        pp = PipelineParallelWithInterleaveFthenB.__new__(
+            PipelineParallelWithInterleaveFthenB
+        )
         pp.accumulate_steps = 4
         pp.num_stages = 4
         pp.num_model_chunks = 2
@@ -130,7 +150,9 @@ class TestFthenBGetVirtualPPRank(unittest.TestCase):
             PipelineParallelWithInterleaveFthenB,
         )
 
-        pp = PipelineParallelWithInterleaveFthenB.__new__(PipelineParallelWithInterleaveFthenB)
+        pp = PipelineParallelWithInterleaveFthenB.__new__(
+            PipelineParallelWithInterleaveFthenB
+        )
         pp.accumulate_steps = 4
         pp.num_stages = 4
         pp.num_model_chunks = 2
@@ -147,7 +169,9 @@ class TestFthenBOverlapCommGrads(unittest.TestCase):
             PipelineParallelWithInterleaveFthenB,
         )
 
-        pp = PipelineParallelWithInterleaveFthenB.__new__(PipelineParallelWithInterleaveFthenB)
+        pp = PipelineParallelWithInterleaveFthenB.__new__(
+            PipelineParallelWithInterleaveFthenB
+        )
         pp._comm_overlap = False
         pp._overlap_comm_grads()
 
@@ -156,7 +180,9 @@ class TestFthenBOverlapCommGrads(unittest.TestCase):
             PipelineParallelWithInterleaveFthenB,
         )
 
-        pp = PipelineParallelWithInterleaveFthenB.__new__(PipelineParallelWithInterleaveFthenB)
+        pp = PipelineParallelWithInterleaveFthenB.__new__(
+            PipelineParallelWithInterleaveFthenB
+        )
         pp._comm_overlap = True
         pp.stage_id = 1
         pp._backward_step_count = 1
@@ -173,7 +199,9 @@ class TestFthenBOverlapCommGrads(unittest.TestCase):
             PipelineParallelWithInterleaveFthenB,
         )
 
-        pp = PipelineParallelWithInterleaveFthenB.__new__(PipelineParallelWithInterleaveFthenB)
+        pp = PipelineParallelWithInterleaveFthenB.__new__(
+            PipelineParallelWithInterleaveFthenB
+        )
         pp._comm_overlap = True
         pp.stage_id = 0
         pp._backward_step_count = 1
@@ -187,7 +215,9 @@ class TestFthenBOverlapCommGrads(unittest.TestCase):
             PipelineParallelWithInterleaveFthenB,
         )
 
-        pp = PipelineParallelWithInterleaveFthenB.__new__(PipelineParallelWithInterleaveFthenB)
+        pp = PipelineParallelWithInterleaveFthenB.__new__(
+            PipelineParallelWithInterleaveFthenB
+        )
         pp._comm_overlap = True
         pp.stage_id = 1
         pp._backward_step_count = 8
@@ -207,7 +237,9 @@ class TestFthenBSyncOverlapGrads(unittest.TestCase):
             PipelineParallelWithInterleaveFthenB,
         )
 
-        pp = PipelineParallelWithInterleaveFthenB.__new__(PipelineParallelWithInterleaveFthenB)
+        pp = PipelineParallelWithInterleaveFthenB.__new__(
+            PipelineParallelWithInterleaveFthenB
+        )
         pp._comm_overlap = False
         pp._sync_overlap_grads()
 
@@ -216,7 +248,9 @@ class TestFthenBSyncOverlapGrads(unittest.TestCase):
             PipelineParallelWithInterleaveFthenB,
         )
 
-        pp = PipelineParallelWithInterleaveFthenB.__new__(PipelineParallelWithInterleaveFthenB)
+        pp = PipelineParallelWithInterleaveFthenB.__new__(
+            PipelineParallelWithInterleaveFthenB
+        )
         pp._comm_overlap = True
         pp._backward_step_count = 8
         pp.accumulate_steps = 4
@@ -235,7 +269,9 @@ class TestFthenBSyncOverlapGrads(unittest.TestCase):
             PipelineParallelWithInterleaveFthenB,
         )
 
-        pp = PipelineParallelWithInterleaveFthenB.__new__(PipelineParallelWithInterleaveFthenB)
+        pp = PipelineParallelWithInterleaveFthenB.__new__(
+            PipelineParallelWithInterleaveFthenB
+        )
         pp._comm_overlap = True
         pp._backward_step_count = 5
         pp.accumulate_steps = 4

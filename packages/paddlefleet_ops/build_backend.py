@@ -46,11 +46,21 @@ def is_git_repo():
 
 
 def get_git_commit_hash(cwd: Path | None) -> str:
-    return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=cwd).strip().decode("utf-8")
+    return (
+        subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=cwd)
+        .strip()
+        .decode("utf-8")
+    )
 
 
 def _get_current_branch(cwd: Path | None) -> str:
-    return subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=cwd).strip().decode("utf-8")
+    return (
+        subprocess.check_output(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=cwd
+        )
+        .strip()
+        .decode("utf-8")
+    )
 
 
 def _find_base_branch(cwd: Path) -> str:
@@ -92,7 +102,9 @@ def _generate_version_info():
     version_py = _pkg_root / "src" / "paddlefleet_ops" / "version.py"
 
     if version_py.exists() and not is_git_repo():
-        logger.info("The version.py file already exists (not in git repo), keeping it")
+        logger.info(
+            "The version.py file already exists (not in git repo), keeping it"
+        )
         return
 
     if os.environ.get("PADDLEFLEET_VERSION") is not None:
@@ -100,7 +112,9 @@ def _generate_version_info():
     else:
         base_version = _version_txt.read_text().strip()
         base_branch = _find_base_branch(_workspace_root)
-        packages_commit = _get_last_packages_commit(_workspace_root, base_branch)
+        packages_commit = _get_last_packages_commit(
+            _workspace_root, base_branch
+        )
         commit_short = packages_commit[:8]
         # Use the commit's committer date (merge time) instead of current build time
         date_str = (
@@ -123,21 +137,37 @@ def _generate_version_info():
         else:
             final_version = f"{base_version}.dev{date_str}+{commit_short}"
 
-    git_commit_hash = _get_last_packages_commit(_workspace_root, _find_base_branch(_workspace_root))
+    git_commit_hash = _get_last_packages_commit(
+        _workspace_root, _find_base_branch(_workspace_root)
+    )
 
     with open(version_py, "w") as f:
-        f.write("# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.\n")
+        f.write(
+            "# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.\n"
+        )
         f.write("#\n")
-        f.write('# Licensed under the Apache License, Version 2.0 (the "License");\n')
-        f.write("# you may not use this file except in compliance with the License.\n")
+        f.write(
+            '# Licensed under the Apache License, Version 2.0 (the "License");\n'
+        )
+        f.write(
+            "# you may not use this file except in compliance with the License.\n"
+        )
         f.write("# You may obtain a copy of the License at\n")
         f.write("#\n")
         f.write("#     http://www.apache.org/licenses/LICENSE-2.0\n")
         f.write("#\n")
-        f.write("# Unless required by applicable law or agreed to in writing, software\n")
-        f.write('# distributed under the License is distributed on an "AS IS" BASIS,\n')
-        f.write("# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n")
-        f.write("# See the License for the specific language governing permissions and\n")
+        f.write(
+            "# Unless required by applicable law or agreed to in writing, software\n"
+        )
+        f.write(
+            '# distributed under the License is distributed on an "AS IS" BASIS,\n'
+        )
+        f.write(
+            "# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n"
+        )
+        f.write(
+            "# See the License for the specific language governing permissions and\n"
+        )
         f.write("# limitations under the License.\n")
         f.write("\n")
         f.write('"""Generate version info file with git metadata."""\n')
@@ -205,11 +235,17 @@ def get_requires_for_build_editable(config_settings=None):
 
 
 def prepare_metadata_for_build_wheel(metadata_directory, config_settings=None):
-    return orig.prepare_metadata_for_build_wheel(metadata_directory, config_settings)
+    return orig.prepare_metadata_for_build_wheel(
+        metadata_directory, config_settings
+    )
 
 
-def prepare_metadata_for_build_editable(metadata_directory, config_settings=None):
-    return orig.prepare_metadata_for_build_editable(metadata_directory, config_settings)
+def prepare_metadata_for_build_editable(
+    metadata_directory, config_settings=None
+):
+    return orig.prepare_metadata_for_build_editable(
+        metadata_directory, config_settings
+    )
 
 
 def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
@@ -217,15 +253,21 @@ def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
     check_patchelf_exists()
     check_submodule_updated()
     _prepare_ecosystem(use_symlinks=False)
-    return orig.build_wheel(wheel_directory, config_settings, metadata_directory)
+    return orig.build_wheel(
+        wheel_directory, config_settings, metadata_directory
+    )
 
 
-def build_editable(wheel_directory, config_settings=None, metadata_directory=None):
+def build_editable(
+    wheel_directory, config_settings=None, metadata_directory=None
+):
     check_cuda_arch_list()
     check_patchelf_exists()
     check_submodule_updated()
     _prepare_ecosystem(use_symlinks=True)
-    return orig.build_editable(wheel_directory, config_settings, metadata_directory)
+    return orig.build_editable(
+        wheel_directory, config_settings, metadata_directory
+    )
 
 
 def build_sdist(sdist_directory, config_settings=None):

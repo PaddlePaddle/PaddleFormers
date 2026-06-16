@@ -161,7 +161,9 @@ class TestRoutedScalingFactorConfig(unittest.TestCase):
 
     def test_routed_scaling_factor_float(self):
         """routed_scaling_factor accepts a float value (e.g., 2.5 for DeepSeek-V3)."""
-        config = TransformerConfig(num_hidden_layers=4, routed_scaling_factor=2.5)
+        config = TransformerConfig(
+            num_hidden_layers=4, routed_scaling_factor=2.5
+        )
         self.assertAlmostEqual(config.routed_scaling_factor, 2.5)
 
     def test_routed_scaling_factor_learnable_true(self):
@@ -236,7 +238,9 @@ class TestMagicInit(unittest.TestCase):
                 magic_init=True,
             )
             expected_sigma = math.sqrt(0.3333 / hidden_size)
-            self.assertAlmostEqual(config.init_method_std, expected_sigma, places=6)
+            self.assertAlmostEqual(
+                config.init_method_std, expected_sigma, places=6
+            )
 
     def test_magic_init_true_init_method_matches_get_magic_init_method(self):
         """When magic_init is True, init method should match get_magic_init_method."""

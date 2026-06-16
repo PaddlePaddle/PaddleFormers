@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -97,7 +101,9 @@ class TestAllToAllForward(unittest.TestCase):
         mock_a2a = MagicMock()
         mappings_mod.dist.all_to_all_single = mock_a2a
         try:
-            _AllToAll.forward(MagicMock(), group, x, output_split_sizes, input_split_sizes)
+            _AllToAll.forward(
+                MagicMock(), group, x, output_split_sizes, input_split_sizes
+            )
             mock_a2a.assert_called_once()
         finally:
             if original_fn is not None:
@@ -146,7 +152,9 @@ class TestAllGatherLastDim(unittest.TestCase):
         result = _AllGatherFromTensorParallelRegion.apply(x, None)
         self.assertTrue(result is x)
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings._gather_along_last_dim")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings._gather_along_last_dim"
+    )
     def test_forward_gathers(self, mock_gather):
         """Test forward calls _gather_along_last_dim."""
         group = _make_group(world_size=2, rank=0)
@@ -161,7 +169,9 @@ class TestAllGatherLastDim(unittest.TestCase):
         result = _AllGatherFromTensorParallelRegion.apply(x, None)
         self.assertTrue(result is x)
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings._reduce_scatter_along_last_dim")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings._reduce_scatter_along_last_dim"
+    )
     def test_backward_reduce_scatters_last_dim(self, mock_rs):
         """Test backward calls _reduce_scatter_along_last_dim."""
         group = _make_group(world_size=2, rank=0)
@@ -179,7 +189,9 @@ class TestReduceScatterLastDim(unittest.TestCase):
         result = _ReduceScatterToTensorParallelRegion.apply(x, None)
         self.assertTrue(result is x)
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings._reduce_scatter_along_last_dim")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings._reduce_scatter_along_last_dim"
+    )
     def test_forward_reduce_scatters(self, mock_rs):
         """Test forward calls _reduce_scatter_along_last_dim."""
         group = _make_group(world_size=2, rank=0)
@@ -188,7 +200,9 @@ class TestReduceScatterLastDim(unittest.TestCase):
         _ReduceScatterToTensorParallelRegion.apply(x, group)
         mock_rs.assert_called_once()
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings._gather_along_last_dim")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings._gather_along_last_dim"
+    )
     def test_backward_gathers(self, mock_gather):
         """Test backward calls _gather_along_last_dim."""
         group = _make_group(world_size=2, rank=0)
@@ -207,7 +221,9 @@ class TestReduceScatterLastDim(unittest.TestCase):
 class TestAllGatherLastDimWrapper(unittest.TestCase):
     """Tests for all_gather_last_dim_from_tensor_parallel_region."""
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none"
+    )
     def test_wrapper_calls_apply(self, mock_get_group):
         """Test wrapper calls apply with the correct group."""
         group = _make_group(world_size=1, rank=0)
@@ -220,8 +236,12 @@ class TestAllGatherLastDimWrapper(unittest.TestCase):
 class TestReduceScatterLastDimWrapper(unittest.TestCase):
     """Tests for reduce_scatter_last_dim_to_tensor_parallel_region."""
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none")
-    @patch("paddleformers.fleet.tensor_parallel.mappings._reduce_scatter_along_last_dim")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none"
+    )
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings._reduce_scatter_along_last_dim"
+    )
     def test_wrapper_calls_apply(self, mock_rs, mock_get_group):
         """Test wrapper calls apply with the correct group."""
         group = _make_group(world_size=2, rank=0)
@@ -269,7 +289,9 @@ class TestSymbolicFunctions(unittest.TestCase):
         _ScatterToModelParallelRegion.symbolic(MagicMock(), x, group)
         mock_split.assert_called_once()
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings._gather_along_last_dim")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings._gather_along_last_dim"
+    )
     def test_gather_from_model_parallel_symbolic(self, mock_gather):
         """Test _GatherFromModelParallelRegion symbolic calls gather."""
         from paddleformers.fleet.tensor_parallel.mappings import (
@@ -286,19 +308,25 @@ class TestSymbolicFunctions(unittest.TestCase):
 class TestGatherFromSequenceParallelRegionBackward(unittest.TestCase):
     """Tests for _GatherFromSequenceParallelRegion backward."""
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings._split_along_first_dim")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings._split_along_first_dim"
+    )
     def test_backward_tp_output_grad_false(self, mock_split):
         """Test backward calls _split_along_first_dim when tp_output_grad=False."""
         group = _make_group(world_size=2, rank=0)
         mock_split.return_value = paddle.randn([2, 4])
         x = paddle.randn([4, 4])
-        _GatherFromSequenceParallelRegion.apply(x, group, tensor_parallel_output_grad=False)
+        _GatherFromSequenceParallelRegion.apply(
+            x, group, tensor_parallel_output_grad=False
+        )
 
 
 class TestReduceScatterToSequenceParallelRegionBackward(unittest.TestCase):
     """Tests for _ReduceScatterToSequenceParallelRegion backward."""
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings._gather_along_first_dim")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings._gather_along_first_dim"
+    )
     def test_backward_gathers_first_dim(self, mock_gather):
         """Test backward calls _gather_along_first_dim."""
         group = _make_group(world_size=2, rank=0)

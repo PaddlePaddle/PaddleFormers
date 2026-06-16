@@ -20,7 +20,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import paddle
@@ -40,7 +44,9 @@ from paddleformers.fleet.tensor_parallel.mappings import (
     gather_from_tensor_model_parallel_region,
     scatter_to_tensor_model_parallel_region,
 )
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 from tests.multi_card_tests.tensor_parallel.test_utilities import Utils
 
@@ -75,7 +81,9 @@ def test_LinearWithFrozenWeight(tensor_parallel, allreduce_dgrad):
         grad_output_buffer,
         wgrad_deferral_limit,
     )
-    output = gather_from_tensor_model_parallel_region(output_parallel)  # no-op if tensor_parallel == 1.
+    output = gather_from_tensor_model_parallel_region(
+        output_parallel
+    )  # no-op if tensor_parallel == 1.
     output.sum().backward()
 
     expected_output = paddle.ones([8, 8]).cuda()
@@ -152,8 +160,12 @@ def test_ColumnParallelLinear(
     rank = ps.get_tensor_model_parallel_rank()
     assert paddle.equal_all(output, output_baseline)
     assert paddle.allclose(input_data.grad, input_grad_baseline)
-    assert paddle.allclose(col_tp4.weight.grad, weight_grad_baseline[:, rank * 2 : (rank + 1) * 2])
-    assert paddle.allclose(col_tp4.bias.grad, bias_grad_baseline[rank * 2 : (rank + 1) * 2])
+    assert paddle.allclose(
+        col_tp4.weight.grad, weight_grad_baseline[:, rank * 2 : (rank + 1) * 2]
+    )
+    assert paddle.allclose(
+        col_tp4.bias.grad, bias_grad_baseline[rank * 2 : (rank + 1) * 2]
+    )
 
     sharded_dict = col_tp4.sharded_state_dict()
     assert "bias" in sharded_dict
@@ -242,7 +254,9 @@ def test_RowParallelLinear(
 
     assert paddle.allclose(output, output_baseline, atol=1e-7)
     assert paddle.allclose(input_data.grad, input_grad_baseline)
-    assert paddle.allclose(row_tp4.weight.grad, weight_grad_baseline[rank * 2 : (rank + 1) * 2, :])
+    assert paddle.allclose(
+        row_tp4.weight.grad, weight_grad_baseline[rank * 2 : (rank + 1) * 2, :]
+    )
     assert paddle.allclose(row_tp4.bias.grad, bias_grad_baseline)
 
     sharded_dict = row_tp4.sharded_state_dict()
@@ -283,7 +297,9 @@ def embedding_baseline():
         tp_group=tp1_group,
     )
 
-    input_data = paddle.tensor([[6, 3, 4, 1, 7, 13, 8, 0], [0, 5, 12, 11, 9, 2, 1, 15]])
+    input_data = paddle.tensor(
+        [[6, 3, 4, 1, 7, 13, 8, 0], [0, 5, 12, 11, 9, 2, 1, 15]]
+    )
     input_data.requires_grad = True
 
     output = emb_tp1(input_data)
@@ -292,7 +308,9 @@ def embedding_baseline():
     return output, emb_tp1.weight.grad
 
 
-def test_VocabParallelEmbedding(tensor_parallel, output_baseline, weight_grad_baseline):
+def test_VocabParallelEmbedding(
+    tensor_parallel, output_baseline, weight_grad_baseline
+):
     transformer_config = TransformerConfig(
         num_hidden_layers=1,
         hidden_size=12,
@@ -309,7 +327,9 @@ def test_VocabParallelEmbedding(tensor_parallel, output_baseline, weight_grad_ba
         config=transformer_config,
     )
 
-    input_data = paddle.tensor([[6, 3, 4, 1, 7, 13, 8, 0], [0, 5, 12, 11, 9, 2, 1, 15]])
+    input_data = paddle.tensor(
+        [[6, 3, 4, 1, 7, 13, 8, 0], [0, 5, 12, 11, 9, 2, 1, 15]]
+    )
     input_data.requires_grad = True
 
     output = emb_tp4(input_data)
@@ -317,7 +337,9 @@ def test_VocabParallelEmbedding(tensor_parallel, output_baseline, weight_grad_ba
 
     rank = dist.get_rank()
     assert paddle.equal_all(output, output_baseline)
-    assert paddle.allclose(emb_tp4.weight.grad, weight_grad_baseline[rank * 4 : (rank + 1) * 4, :])
+    assert paddle.allclose(
+        emb_tp4.weight.grad, weight_grad_baseline[rank * 4 : (rank + 1) * 4, :]
+    )
 
     sharded_dict = emb_tp4.sharded_state_dict()
     assert "bias" not in sharded_dict
@@ -373,7 +395,9 @@ def test_Linear_forward_basic():
     output, output_bias = layer(input_data)
 
     assert output.shape == [4, 6], f"Expected [4,6], got {output.shape}"
-    assert output_bias is None, "skip_bias_add=False should return None as output_bias"
+    assert output_bias is None, (
+        "skip_bias_add=False should return None as output_bias"
+    )
 
     output.sum().backward()
     assert input_data.grad is not None
@@ -397,7 +421,9 @@ def test_Linear_skip_bias_add():
     output, output_bias = layer(input_data)
 
     assert output.shape == [4, 6]
-    assert output_bias is not None, "skip_bias_add=True should return the bias tensor"
+    assert output_bias is not None, (
+        "skip_bias_add=True should return the bias tensor"
+    )
     assert output_bias.shape == [6]
 
     # Verify: output + broadcast(bias) equals the manually computed result.
@@ -582,7 +608,9 @@ def test_Linear_via_backend_linear():
 
     backend = LocalSpecProvider()
     LinearCls = backend.linear()
-    assert LinearCls is Linear, f"backend.linear() should return Linear, got {LinearCls}"
+    assert LinearCls is Linear, (
+        f"backend.linear() should return Linear, got {LinearCls}"
+    )
 
     config = _make_linear_config()
     paddle.manual_seed(7)
@@ -616,7 +644,9 @@ if __name__ == "__main__":
     tensor_parallel = 4
     Utils.initialize_model_parallel(tensor_parallel, 1)
     test_LinearWithFrozenWeight(4, True)
-    output_tp1, input_grad_tp1, weight_grad_tp1, bias_grad_tp1 = column_parallel_baseline()
+    output_tp1, input_grad_tp1, weight_grad_tp1, bias_grad_tp1 = (
+        column_parallel_baseline()
+    )
     test_ColumnParallelLinear(
         tensor_parallel,
         output_tp1,
@@ -624,7 +654,9 @@ if __name__ == "__main__":
         weight_grad_tp1,
         bias_grad_tp1,
     )
-    output_tp1, input_grad_tp1, weight_grad_tp1, bias_grad_tp1 = row_parallel_baseline()
+    output_tp1, input_grad_tp1, weight_grad_tp1, bias_grad_tp1 = (
+        row_parallel_baseline()
+    )
     test_RowParallelLinear(
         tensor_parallel,
         output_tp1,

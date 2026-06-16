@@ -23,7 +23,9 @@ from paddleformers.fleet.tensor_parallel.layers import (
     ColumnParallelLinear,
     RowParallelLinear,
 )
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.transformer.mlp import MLPSublayersSpec
 from paddleformers.fleet.transformer.moe.moe_layer import MoELayer, MoESublayers
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
@@ -94,7 +96,9 @@ class TestMoELayerFp8QuantWeight(unittest.TestCase):
         layer.fp8_quant_weight(batch_mode=False, quant_transpose=None)
 
         for weight in self._expert_weights(layer):
-            self.assertEqual(weight.fp8_weight_stacked.dtype, paddle.float8_e4m3fn)
+            self.assertEqual(
+                weight.fp8_weight_stacked.dtype, paddle.float8_e4m3fn
+            )
             self.assertEqual(weight.fp8_scale_stacked.dtype, paddle.float32)
             self.assertEqual(
                 weight.fp8_weight_stacked_transpose.dtype,
@@ -112,7 +116,9 @@ class TestMoELayerFp8QuantWeight(unittest.TestCase):
         layer.fp8_quant_weight(batch_mode=False, quant_transpose=False)
 
         for weight in self._expert_weights(layer):
-            self.assertEqual(weight.fp8_weight_stacked.dtype, paddle.float8_e4m3fn)
+            self.assertEqual(
+                weight.fp8_weight_stacked.dtype, paddle.float8_e4m3fn
+            )
             self.assertEqual(weight.fp8_scale_stacked.dtype, paddle.float32)
             # fp8_weight_stacked_transpose is explicitly set to None
             self.assertIsNone(weight.fp8_weight_stacked_transpose)
@@ -123,7 +129,9 @@ class TestMoELayerFp8QuantWeight(unittest.TestCase):
         layer.fp8_quant_weight(batch_mode=False, quant_transpose=True)
 
         for weight in self._expert_weights(layer):
-            self.assertEqual(weight.fp8_weight_stacked.dtype, paddle.float8_e4m3fn)
+            self.assertEqual(
+                weight.fp8_weight_stacked.dtype, paddle.float8_e4m3fn
+            )
             self.assertEqual(weight.fp8_scale_stacked.dtype, paddle.float32)
             self.assertEqual(
                 weight.fp8_weight_stacked_transpose.dtype,

@@ -44,7 +44,9 @@ def _tilelang_dtype(tensor):
         return "bfloat16"
     if tensor.dtype == paddle.float16:
         return "float16"
-    raise TypeError(f"TileLang CSA indexer backward expects bf16/fp16 inputs, got {tensor.dtype}")
+    raise TypeError(
+        f"TileLang CSA indexer backward expects bf16/fp16 inputs, got {tensor.dtype}"
+    )
 
 
 def _shape(tensor):
@@ -80,15 +82,25 @@ def _validate_interface_inputs(
         _require_tensor(name, tensor)
         _require_contiguous(name, tensor)
     if index_q.ndim != 4:
-        raise ValueError(f"index_q must have shape [B, S, H_i, D_i], got {_shape(index_q)}")
+        raise ValueError(
+            f"index_q must have shape [B, S, H_i, D_i], got {_shape(index_q)}"
+        )
     if weights.ndim != 3:
-        raise ValueError(f"weights must have shape [B, S, H_i], got {_shape(weights)}")
+        raise ValueError(
+            f"weights must have shape [B, S, H_i], got {_shape(weights)}"
+        )
     if index_k_comp.ndim != 3:
-        raise ValueError(f"index_k_comp must have shape [B, S_comp, D_i], got {_shape(index_k_comp)}")
+        raise ValueError(
+            f"index_k_comp must have shape [B, S_comp, D_i], got {_shape(index_k_comp)}"
+        )
     if topk_indices.ndim != 3:
-        raise ValueError(f"topk_indices must have shape [B, S, topk], got {_shape(topk_indices)}")
+        raise ValueError(
+            f"topk_indices must have shape [B, S, topk], got {_shape(topk_indices)}"
+        )
     if grad_scores.ndim != 3:
-        raise ValueError(f"grad_scores must have shape [B, S, topk], got {_shape(grad_scores)}")
+        raise ValueError(
+            f"grad_scores must have shape [B, S, topk], got {_shape(grad_scores)}"
+        )
 
     batch, seq_len, heads, dim = _shape(index_q)
     batch_w, seq_len_w, heads_w = _shape(weights)
@@ -107,11 +119,17 @@ def _validate_interface_inputs(
             f"index_q={_shape(index_q)}, weights={_shape(weights)}, topk_indices={_shape(topk_indices)}, grad_scores={_shape(grad_scores)}"
         )
     if heads != heads_w:
-        raise ValueError(f"heads mismatch: index_q={_shape(index_q)}, weights={_shape(weights)}")
+        raise ValueError(
+            f"heads mismatch: index_q={_shape(index_q)}, weights={_shape(weights)}"
+        )
     if dim != dim_k:
-        raise ValueError(f"dim mismatch: index_q={_shape(index_q)}, index_k_comp={_shape(index_k_comp)}")
+        raise ValueError(
+            f"dim mismatch: index_q={_shape(index_q)}, index_k_comp={_shape(index_k_comp)}"
+        )
     if topk_effective != topk_g:
-        raise ValueError(f"topk mismatch: topk_indices={_shape(topk_indices)}, grad_scores={_shape(grad_scores)}")
+        raise ValueError(
+            f"topk mismatch: topk_indices={_shape(topk_indices)}, grad_scores={_shape(grad_scores)}"
+        )
     if heads > 64 or heads % 8 != 0:
         raise ValueError(f"heads must be <= 64 and divisible by 8, got {heads}")
     if topk_effective <= 0:
@@ -201,13 +219,16 @@ def tl_csa_indexer_bwd_impl(
 
             for bi_i in T.serial(num_blocks):
                 for i in T.Parallel(block_I):
-                    indices_shared[i] = TopkIndices[i_b, i_t, bi_i * block_I + i]
+                    indices_shared[i] = TopkIndices[
+                        i_b, i_t, bi_i * block_I + i
+                    ]
                     grad_shared[i] = OGrad[i_b, i_t, bi_i * block_I + i]
                 T.sync_threads()
 
                 for i, j in T.Parallel(block_I, dim):
                     index_k_shared[i, j] = T.if_then_else(
-                        (indices_shared[i] >= 0) & (indices_shared[i] < seq_len_comp),
+                        (indices_shared[i] >= 0)
+                        & (indices_shared[i] < seq_len_comp),
                         IndexKComp[i_b, indices_shared[i], j],
                         0,
                     )
@@ -230,7 +251,8 @@ def tl_csa_indexer_bwd_impl(
                 d_weights_i = T.alloc_fragment((block_I, heads), dtype=FP32)
                 for i, j in T.Parallel(block_I, heads):
                     d_weights_i[i, j] = T.if_then_else(
-                        (indices_shared[i] >= 0) & (indices_shared[i] < seq_len_comp),
+                        (indices_shared[i] >= 0)
+                        & (indices_shared[i] < seq_len_comp),
                         grad_shared[i] * logits[i, j],
                         0,
                     )
@@ -238,7 +260,11 @@ def tl_csa_indexer_bwd_impl(
 
                 for i, j in T.Parallel(block_I, heads):
                     d_logits_qk[i, j] = T.if_then_else(
-                        ((indices_shared[i] >= 0) & (indices_shared[i] < seq_len_comp)) & (logits[i, j] > 0),
+                        (
+                            (indices_shared[i] >= 0)
+                            & (indices_shared[i] < seq_len_comp)
+                        )
+                        & (logits[i, j] > 0),
                         grad_shared[i] * weights_shared[j],
                         0,
                     )
@@ -265,7 +291,9 @@ def tl_csa_indexer_bwd_impl(
                 )
 
                 for i, j in T.Parallel(block_I, dim):
-                    if (indices_shared[i] >= 0) & (indices_shared[i] < seq_len_comp):
+                    if (indices_shared[i] >= 0) & (
+                        indices_shared[i] < seq_len_comp
+                    ):
                         T.atomic_add(
                             dIndexKComp[i_b, indices_shared[i], j],
                             d_index_k_frag[i, j],
@@ -363,13 +391,16 @@ def tl_csa_indexer_bwd_det_impl(
 
             for bi_i in T.serial(num_blocks):
                 for i in T.Parallel(block_I):
-                    indices_shared[i] = TopkIndices[i_b, i_t, bi_i * block_I + i]
+                    indices_shared[i] = TopkIndices[
+                        i_b, i_t, bi_i * block_I + i
+                    ]
                     grad_shared[i] = OGrad[i_b, i_t, bi_i * block_I + i]
                 T.sync_threads()
 
                 for i, j in T.Parallel(block_I, dim):
                     index_k_shared[i, j] = T.if_then_else(
-                        (indices_shared[i] >= 0) & (indices_shared[i] < seq_len_comp),
+                        (indices_shared[i] >= 0)
+                        & (indices_shared[i] < seq_len_comp),
                         IndexKComp[i_b, indices_shared[i], j],
                         0,
                     )
@@ -392,7 +423,8 @@ def tl_csa_indexer_bwd_det_impl(
                 d_weights_i = T.alloc_fragment((block_I, heads), dtype=FP32)
                 for i, j in T.Parallel(block_I, heads):
                     d_weights_i[i, j] = T.if_then_else(
-                        (indices_shared[i] >= 0) & (indices_shared[i] < seq_len_comp),
+                        (indices_shared[i] >= 0)
+                        & (indices_shared[i] < seq_len_comp),
                         grad_shared[i] * logits[i, j],
                         0,
                     )
@@ -400,7 +432,11 @@ def tl_csa_indexer_bwd_det_impl(
 
                 for i, j in T.Parallel(block_I, heads):
                     d_logits_qk[i, j] = T.if_then_else(
-                        ((indices_shared[i] >= 0) & (indices_shared[i] < seq_len_comp)) & (logits[i, j] > 0),
+                        (
+                            (indices_shared[i] >= 0)
+                            & (indices_shared[i] < seq_len_comp)
+                        )
+                        & (logits[i, j] > 0),
                         grad_shared[i] * weights_shared[j],
                         0,
                     )
@@ -428,10 +464,13 @@ def tl_csa_indexer_bwd_det_impl(
 
                 # Deterministic: write to per-token buffer (no atomics)
                 for i, j in T.Parallel(block_I, dim):
-                    dIndexKComp_buf[i_b, i_t, bi_i * block_I + i, j] = T.if_then_else(
-                        (indices_shared[i] >= 0) & (indices_shared[i] < seq_len_comp),
-                        d_index_k_frag[i, j],
-                        0,
+                    dIndexKComp_buf[i_b, i_t, bi_i * block_I + i, j] = (
+                        T.if_then_else(
+                            (indices_shared[i] >= 0)
+                            & (indices_shared[i] < seq_len_comp),
+                            d_index_k_frag[i, j],
+                            0,
+                        )
                     )
                 # Prevent the race condition: threads in the warp might overwrite topk in the next loop
                 T.sync_threads()
@@ -519,10 +558,16 @@ def _build_indexer_csr_index(topk_indices, S_comp):
         flat_idx,
     )
 
-    sort_perm = paddle.argsort(flat_idx_shifted, axis=1, stable=True).cast("int32")
-    sorted_idx = paddle.take_along_axis(flat_idx_shifted, sort_perm.cast("int64"), axis=1)
+    sort_perm = paddle.argsort(flat_idx_shifted, axis=1, stable=True).cast(
+        "int32"
+    )
+    sorted_idx = paddle.take_along_axis(
+        flat_idx_shifted, sort_perm.cast("int64"), axis=1
+    )
 
-    boundaries = paddle.arange(S_comp + 1, dtype="int64").unsqueeze(0).expand([B, -1])
+    boundaries = (
+        paddle.arange(S_comp + 1, dtype="int64").unsqueeze(0).expand([B, -1])
+    )
     seg_offsets = paddle.searchsorted(sorted_idx, boundaries).cast("int32")
 
     return sort_perm, seg_offsets
@@ -562,7 +607,9 @@ def csa_indexer_bwd_interface(
         num_stages,
     )
 
-    deterministic = paddle.get_flags(["FLAGS_cudnn_deterministic"])["FLAGS_cudnn_deterministic"]
+    deterministic = paddle.get_flags(["FLAGS_cudnn_deterministic"])[
+        "FLAGS_cudnn_deterministic"
+    ]
 
     batch, seq_len, heads, dim = index_q.shape
     _, seq_len_comp, _ = index_k_comp.shape
@@ -583,8 +630,12 @@ def csa_indexer_bwd_interface(
             [batch, seq_len, pad],
             grad_scores.dtype,
         )
-        topk_indices = paddle.concat([topk_indices, topk_pad], axis=-1).contiguous()
-        grad_scores = paddle.concat([grad_scores, grad_pad], axis=-1).contiguous()
+        topk_indices = paddle.concat(
+            [topk_indices, topk_pad], axis=-1
+        ).contiguous()
+        grad_scores = paddle.concat(
+            [grad_scores, grad_pad], axis=-1
+        ).contiguous()
 
     if weights.dtype != paddle.float32:
         weights = weights.cast("float32").contiguous()
@@ -627,7 +678,9 @@ def csa_indexer_bwd_interface(
             num_stages=num_stages,
             num_threads=num_threads,
         )
-        dindexk_buf = paddle.empty([batch, seq_len, padded_topk, dim], dtype="float32")
+        dindexk_buf = paddle.empty(
+            [batch, seq_len, padded_topk, dim], dtype="float32"
+        )
         kernel_det(
             index_q,
             index_k_comp,
@@ -640,8 +693,12 @@ def csa_indexer_bwd_interface(
         )
 
         # CSR-ordered deterministic reduction
-        sort_perm, seg_offsets = _build_indexer_csr_index(topk_indices, seq_len_comp)
-        reduce_kernel = dindexk_reduce(batch, seq_len, seq_len_comp, padded_topk, dim)
+        sort_perm, seg_offsets = _build_indexer_csr_index(
+            topk_indices, seq_len_comp
+        )
+        reduce_kernel = dindexk_reduce(
+            batch, seq_len, seq_len_comp, padded_topk, dim
+        )
         grad_k_comp = reduce_kernel(dindexk_buf, sort_perm, seg_offsets)
 
     return grad_q, grad_weights, grad_k_comp

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -26,7 +30,9 @@ class TestVPPSimulatorSchedule(unittest.TestCase):
     """Tests for VPPSimulator schedule with various configurations."""
 
     def test_schedule_pp2_vpp2_acc4(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import VPPSimulator
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            VPPSimulator,
+        )
 
         sim = VPPSimulator(pp_degree=2, vpp_degree=2, num_acc_steps=4)
         table = sim.schedule()
@@ -36,7 +42,9 @@ class TestVPPSimulatorSchedule(unittest.TestCase):
             self.assertGreater(len(stage), 0)
 
     def test_schedule_pp4_vpp2_acc8(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import VPPSimulator
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            VPPSimulator,
+        )
 
         sim = VPPSimulator(pp_degree=4, vpp_degree=2, num_acc_steps=8)
         table = sim.schedule()
@@ -44,7 +52,9 @@ class TestVPPSimulatorSchedule(unittest.TestCase):
         self.assertEqual(len(table), 4)
 
     def test_schedule_balanced_memory(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import VPPSimulator
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            VPPSimulator,
+        )
 
         # num_acc_steps in [pp_degree, pp_degree*2)
         sim = VPPSimulator(pp_degree=4, vpp_degree=2, num_acc_steps=5)
@@ -52,7 +62,9 @@ class TestVPPSimulatorSchedule(unittest.TestCase):
         self.assertTrue(sim._is_scheduled)
 
     def test_schedule_without_batch_send_recv(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import VPPSimulator
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            VPPSimulator,
+        )
 
         sim = VPPSimulator(
             pp_degree=2,
@@ -68,7 +80,9 @@ class TestVPPSimulatorGetVirtualPpRank(unittest.TestCase):
     """Tests for _get_virtual_pp_rank with different micro steps."""
 
     def test_first_chunk_steps_forward(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import VPPSimulator
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            VPPSimulator,
+        )
 
         sim = VPPSimulator(pp_degree=2, vpp_degree=2, num_acc_steps=4)
         # First chunk steps
@@ -76,7 +90,9 @@ class TestVPPSimulatorGetVirtualPpRank(unittest.TestCase):
         self.assertEqual(rank, 0)
 
     def test_first_chunk_steps_second_vpp(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import VPPSimulator
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            VPPSimulator,
+        )
 
         sim = VPPSimulator(pp_degree=2, vpp_degree=2, num_acc_steps=4)
         # first_chunk_acc = (4 % 2) + 2 = 4
@@ -85,7 +101,9 @@ class TestVPPSimulatorGetVirtualPpRank(unittest.TestCase):
         self.assertIsInstance(rank, int)
 
     def test_beyond_first_chunk_steps(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import VPPSimulator
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            VPPSimulator,
+        )
 
         sim = VPPSimulator(pp_degree=2, vpp_degree=2, num_acc_steps=4)
         # Beyond first chunk steps
@@ -93,7 +111,9 @@ class TestVPPSimulatorGetVirtualPpRank(unittest.TestCase):
         self.assertIsInstance(rank, int)
 
     def test_backward(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import VPPSimulator
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            VPPSimulator,
+        )
 
         sim = VPPSimulator(pp_degree=2, vpp_degree=2, num_acc_steps=4)
         rank = sim._get_virtual_pp_rank(0, forward=False)
@@ -209,7 +229,9 @@ class TestVPPSimulatorBubbleRate(unittest.TestCase):
     """Tests for bubble rate computation."""
 
     def test_bubble_rate_reasonable(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import VPPSimulator
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            VPPSimulator,
+        )
 
         sim = VPPSimulator(pp_degree=4, vpp_degree=2, num_acc_steps=8)
         rate = sim.compute_bubble_rate()
@@ -217,7 +239,9 @@ class TestVPPSimulatorBubbleRate(unittest.TestCase):
         self.assertLess(rate, 1.0)
 
     def test_bubble_rate_balanced_memory(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import VPPSimulator
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            VPPSimulator,
+        )
 
         sim = VPPSimulator(pp_degree=4, vpp_degree=2, num_acc_steps=6)
         rate = sim.compute_bubble_rate()
@@ -229,7 +253,9 @@ class TestVPPSimulatorWarmupSteadySteps(unittest.TestCase):
     """Tests for _get_warmup_and_steady_steps."""
 
     def test_standard_vpp(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import VPPSimulator
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            VPPSimulator,
+        )
 
         sim = VPPSimulator(pp_degree=4, vpp_degree=2, num_acc_steps=8)
         # For stage_id=0
@@ -241,7 +267,9 @@ class TestVPPSimulatorWarmupSteadySteps(unittest.TestCase):
         self.assertIsInstance(steady, int)
 
     def test_balanced_memory_vpp(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import VPPSimulator
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            VPPSimulator,
+        )
 
         # num_acc_steps in [pp_degree, pp_degree*2)
         sim = VPPSimulator(pp_degree=4, vpp_degree=2, num_acc_steps=5)
@@ -250,7 +278,9 @@ class TestVPPSimulatorWarmupSteadySteps(unittest.TestCase):
         self.assertGreater(steady, 0)
 
     def test_warmup_decreases_with_stage(self):
-        from paddleformers.fleet.pipeline_parallel.vpp_simulator import VPPSimulator
+        from paddleformers.fleet.pipeline_parallel.vpp_simulator import (
+            VPPSimulator,
+        )
 
         sim = VPPSimulator(pp_degree=4, vpp_degree=2, num_acc_steps=8)
         warmup_0, _ = sim._get_warmup_and_steady_steps(0)

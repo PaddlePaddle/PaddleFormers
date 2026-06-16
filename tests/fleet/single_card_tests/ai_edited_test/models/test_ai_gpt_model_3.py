@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -84,13 +88,19 @@ class TestBuildOverlappedNodes(unittest.TestCase):
     def test_build_overlapped_nodes_empty_chunks(self):
         from paddle.distributed.fleet.meta_parallel import ScheduleChunk
 
-        from paddleformers.fleet.models.gpt.gpt_model import build_overlapped_nodes
+        from paddleformers.fleet.models.gpt.gpt_model import (
+            build_overlapped_nodes,
+        )
 
         forward_chunk = ScheduleChunk([])
         backward_chunk = ScheduleChunk([])
 
-        with patch("paddleformers.fleet.models.gpt.gpt_model.TransformerLayerNode"):  # noqa: SIM117
-            with patch("paddleformers.fleet.models.gpt.gpt_model.TransformerLayerOverlappedScheduleNode"):
+        with patch(
+            "paddleformers.fleet.models.gpt.gpt_model.TransformerLayerNode"
+        ):
+            with patch(
+                "paddleformers.fleet.models.gpt.gpt_model.TransformerLayerOverlappedScheduleNode"
+            ):
                 (
                     fwd_pre,
                     bwd_pre,

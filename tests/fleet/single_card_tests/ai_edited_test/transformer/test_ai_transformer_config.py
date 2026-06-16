@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -105,7 +109,9 @@ class TestTransformerConfigPostInitValidation(unittest.TestCase):
         self.assertEqual(cfg.intermediate_size, 512)
 
     def test_head_dim_none_computed_from_hidden_and_heads(self):
-        cfg = _make_config(hidden_size=256, num_attention_heads=8, head_dim=None)
+        cfg = _make_config(
+            hidden_size=256, num_attention_heads=8, head_dim=None
+        )
         self.assertEqual(cfg.head_dim, 32)
 
     def test_head_dim_explicit(self):

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -33,7 +37,9 @@ class TestOverlapScheduleNodeRecompute(unittest.TestCase):
             ScheduleNode,
         )
 
-        node = ScheduleNode(lambda inputs, **kw: inputs * 2, name="recompute_node")
+        node = ScheduleNode(
+            lambda inputs, **kw: inputs * 2, name="recompute_node"
+        )
         node.use_recompute = True
         node.fw_rng_state = MagicMock()
         node.fwd_rng_state_tracker = {}

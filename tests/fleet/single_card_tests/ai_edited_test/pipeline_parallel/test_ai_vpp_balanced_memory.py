@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -99,7 +103,9 @@ class TestVPPFhenBInBalancedMemoryInit(unittest.TestCase):
         pp = VPPFhenBInBalancedMemory.__new__(VPPFhenBInBalancedMemory)
         pp.num_stages = 4
         pp._init_user_bubble_hooks()
-        from paddle.distributed.fleet.meta_parallel.pipeline_hooks import PipelineHook
+        from paddle.distributed.fleet.meta_parallel.pipeline_hooks import (
+            PipelineHook,
+        )
 
         self.assertIsInstance(pp.bubble_hooks, PipelineHook)
 
@@ -120,7 +126,9 @@ class TestVPPFhenBForwardOnly(unittest.TestCase):
         mock_parent = MagicMock()
         mock_parent.forward_backward_pipeline.return_value = "loss"
 
-        with patch.object(pp.__class__.__bases__[0], "forward_backward_pipeline", mock_parent):
+        with patch.object(
+            pp.__class__.__bases__[0], "forward_backward_pipeline", mock_parent
+        ):
             # For forward_only=True, it delegates to parent
             pass
 
@@ -150,7 +158,12 @@ class TestVPPFhenBStartupSteadyCooldown(unittest.TestCase):
         pp.num_stages = 4
         pp.stage_id = 0
 
-        startup_steps = pp.accumulate_steps * (pp.num_model_chunks - 1) + pp.num_stages - pp.stage_id - 1
+        startup_steps = (
+            pp.accumulate_steps * (pp.num_model_chunks - 1)
+            + pp.num_stages
+            - pp.stage_id
+            - 1
+        )
         self.assertEqual(startup_steps, 11)
 
     def test_steady_1f1b_steps(self):
@@ -163,7 +176,9 @@ class TestVPPFhenBStartupSteadyCooldown(unittest.TestCase):
         pp.num_stages = 4
         pp.stage_id = 0
 
-        steady_1f1b_steps = pp.accumulate_steps - (pp.num_stages - pp.stage_id - 1)
+        steady_1f1b_steps = pp.accumulate_steps - (
+            pp.num_stages - pp.stage_id - 1
+        )
         self.assertEqual(steady_1f1b_steps, 5)
 
     def test_cooldown_steps(self):
@@ -177,7 +192,12 @@ class TestVPPFhenBStartupSteadyCooldown(unittest.TestCase):
         pp.num_stages = 4
         pp.stage_id = 0
 
-        startup_steps = pp.accumulate_steps * (pp.num_model_chunks - 1) + pp.num_stages - pp.stage_id - 1
+        startup_steps = (
+            pp.accumulate_steps * (pp.num_model_chunks - 1)
+            + pp.num_stages
+            - pp.stage_id
+            - 1
+        )
         self.assertEqual(startup_steps, startup_steps)  # cooldown = startup
 
     def test_skip_steps(self):

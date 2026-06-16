@@ -49,11 +49,15 @@ NUM_EXPERTS = 4
 N, K = 512, 256  # must be multiples of TILE
 
 
-def _make_weight_list(num_experts=NUM_EXPERTS, shape=(N, K), dtype=paddle.bfloat16):
+def _make_weight_list(
+    num_experts=NUM_EXPERTS, shape=(N, K), dtype=paddle.bfloat16
+):
     return [paddle.randn(shape, dtype=dtype) for _ in range(num_experts)]
 
 
-def _blockwise_dequant_per_expert(stacked_w, stacked_s, num_experts, rows_per_expert):
+def _blockwise_dequant_per_expert(
+    stacked_w, stacked_s, num_experts, rows_per_expert
+):
     """
     Split stacked FP8 weight and blockwise scale per expert, dequant each
     via fused_act_dequant (requires scale shape [M, K/128]).
@@ -66,7 +70,9 @@ def _blockwise_dequant_per_expert(stacked_w, stacked_s, num_experts, rows_per_ex
     results = []
     for i in range(num_experts):
         w_i = stacked_w[i * rows_per_expert : (i + 1) * rows_per_expert]
-        s_i = stacked_s[i * scale_rows_per_expert : (i + 1) * scale_rows_per_expert]
+        s_i = stacked_s[
+            i * scale_rows_per_expert : (i + 1) * scale_rows_per_expert
+        ]
         # fused_act_dequant expects scale shape [M, K/128], not [M/128, K/128]
         s_expanded = s_i.repeat_interleave(TILE, axis=0)
         dq_i = paddle.incubate.nn.functional.fused_act_dequant(w_i, s_expanded)
@@ -94,7 +100,9 @@ class TestDequantAccuracy(unittest.TestCase):
     def test_nontranspose(self):
         weights = _make_weight_list()
         w_fp8, scale = fused_stack_quant(weights, transpose=False)
-        dequant_list = _blockwise_dequant_per_expert(w_fp8, scale, NUM_EXPERTS, N)
+        dequant_list = _blockwise_dequant_per_expert(
+            w_fp8, scale, NUM_EXPERTS, N
+        )
         for idx, (orig, dq) in enumerate(zip(weights, dequant_list)):
             np.testing.assert_allclose(
                 orig.astype(paddle.float32).numpy(),
@@ -107,7 +115,9 @@ class TestDequantAccuracy(unittest.TestCase):
     def test_transpose(self):
         weights = _make_weight_list()
         w_fp8, scale = fused_stack_quant(weights, transpose=True)
-        dequant_list = _blockwise_dequant_per_expert(w_fp8, scale, NUM_EXPERTS, K)
+        dequant_list = _blockwise_dequant_per_expert(
+            w_fp8, scale, NUM_EXPERTS, K
+        )
         for idx, (orig, dq) in enumerate(zip(weights, dequant_list)):
             np.testing.assert_allclose(
                 orig.astype(paddle.float32).numpy(),
@@ -142,8 +152,12 @@ class TestCacheHit(unittest.TestCase):
             self.skipTest("CUDA required")
         paddle.seed(0)
         self.weights = _make_weight_list()
-        self.w_nt, self.s_nt = fused_stack_quant_without_cache(self.weights, transpose=False)
-        self.w_t, self.s_t = fused_stack_quant_without_cache(self.weights, transpose=True)
+        self.w_nt, self.s_nt = fused_stack_quant_without_cache(
+            self.weights, transpose=False
+        )
+        self.w_t, self.s_t = fused_stack_quant_without_cache(
+            self.weights, transpose=True
+        )
 
     def _attach_cache(self, with_transpose_cache):
         """Attach pre-computed cache attributes to weights[0]."""
@@ -155,10 +169,16 @@ class TestCacheHit(unittest.TestCase):
 
     def _assert_dequant_close(self, w_fp8, scale, transpose):
         rows = K if transpose else N
-        dequant_list = _blockwise_dequant_per_expert(w_fp8, scale, NUM_EXPERTS, rows)
+        dequant_list = _blockwise_dequant_per_expert(
+            w_fp8, scale, NUM_EXPERTS, rows
+        )
         for idx, (orig, dq) in enumerate(zip(self.weights, dequant_list)):
             expected = orig.astype(paddle.float32).numpy()
-            actual = dq.T.astype(paddle.float32).numpy() if transpose else dq.astype(paddle.float32).numpy()
+            actual = (
+                dq.T.astype(paddle.float32).numpy()
+                if transpose
+                else dq.astype(paddle.float32).numpy()
+            )
             np.testing.assert_allclose(
                 expected,
                 actual,

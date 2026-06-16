@@ -22,8 +22,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
-from importlib.metadata import PackageNotFoundError
-from importlib.metadata import version as get_pkg_version
+from importlib.metadata import PackageNotFoundError, version as get_pkg_version
 from pathlib import Path
 
 import backends
@@ -112,7 +111,9 @@ class EcosystemLibrary:
 
         # Special pre-build step for DeepGEMM: link CUTLASS headers into deep_gemm/include
         if self.name.lower() == "deepgemm":
-            cutlass_root = self.source_dir / "third-party" / "cutlass" / "include"
+            cutlass_root = (
+                self.source_dir / "third-party" / "cutlass" / "include"
+            )
             target_include_dir = self.source_dir / "deep_gemm" / "include"
             target_include_dir.mkdir(parents=True, exist_ok=True)
 
@@ -143,11 +144,15 @@ class EcosystemLibrary:
             _env = os.environ.copy()
             _env.update(self._extra_env)
             if self._include_dirs:
-                abs_dirs = [str(self.source_dir / d) for d in self._include_dirs]
+                abs_dirs = [
+                    str(self.source_dir / d) for d in self._include_dirs
+                ]
                 extra = os.pathsep.join(abs_dirs)
                 for var in ("C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH"):
                     existing = _env.get(var, "")
-                    _env[var] = f"{extra}{os.pathsep}{existing}" if existing else extra
+                    _env[var] = (
+                        f"{extra}{os.pathsep}{existing}" if existing else extra
+                    )
             subprocess.check_call(cmd, cwd=self.source_dir, env=_env)
         except subprocess.CalledProcessError as e:
             logger.error(f"Failed to build {self.name}: {e}")
@@ -166,7 +171,9 @@ class EcosystemLibrary:
                 remove_path(dst)
                 logger.info(f"Copying {src} -> {dst}")
                 if src.is_dir():
-                    shutil.copytree(src, dst, symlinks=False, dirs_exist_ok=True)
+                    shutil.copytree(
+                        src, dst, symlinks=False, dirs_exist_ok=True
+                    )
                 else:
                     shutil.copy(src, dst)
 
@@ -197,7 +204,9 @@ def check_submodule_updated():
             "third_party/flash-attention/setup.py",
             "third_party/FlashMLA/setup.py",
         ]
-        missing_paths = [path for path in required_paths if not (PKG_ROOT / path).exists()]
+        missing_paths = [
+            path for path in required_paths if not (PKG_ROOT / path).exists()
+        ]
         if missing_paths:
             logger.error(
                 "\033[91m Found uninitialized submodules. Please use "
@@ -266,7 +275,9 @@ def _detect_local_gpu_arch():
             ["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader"],
             stderr=subprocess.DEVNULL,
         )
-        caps = {line.strip() for line in out.decode().splitlines() if line.strip()}
+        caps = {
+            line.strip() for line in out.decode().splitlines() if line.strip()
+        }
         # Return the first available architecture (usually all GPUs are same)
         return caps[0] if caps else None
     except Exception:
@@ -290,12 +301,16 @@ def get_cuda_version():
 
     match = re.search(r"release (\d+)\.(\d+)", version_output)
     if not match:
-        raise ValueError(f"Cannot parse CUDA version from nvcc output:\n{version_output}")
+        raise ValueError(
+            f"Cannot parse CUDA version from nvcc output:\n{version_output}"
+        )
     cuda_major = int(match.group(1))
     cuda_minor = int(match.group(2))
 
     if cuda_major < 12:
-        raise ValueError(f"CUDA version must be >= 12. Detected version: {cuda_major}.{cuda_minor}")
+        raise ValueError(
+            f"CUDA version must be >= 12. Detected version: {cuda_major}.{cuda_minor}"
+        )
     return cuda_major, cuda_minor
 
 
@@ -315,7 +330,9 @@ def get_special_build_deps():
         elif cuda_major == 13:
             deps.append("paddle-nvidia-nvshmem-cu13>=3.3.9,<3.5")
         else:
-            raise ValueError(f"Unsupported CUDA version: {cuda_major}.{cuda_minor}.")
+            raise ValueError(
+                f"Unsupported CUDA version: {cuda_major}.{cuda_minor}."
+            )
         return deps
     elif backends.IS_XPU:
         try:
@@ -325,7 +342,9 @@ def get_special_build_deps():
 
         if xpu_version is not None:
             if Version(xpu_version) < Version("3.3.0"):
-                raise ValueError(f"paddlepaddle-xpu {xpu_version} is too old, >=3.3.0 required.")
+                raise ValueError(
+                    f"paddlepaddle-xpu {xpu_version} is too old, >=3.3.0 required."
+                )
             deps = [f"paddlepaddle-xpu=={xpu_version}"]
         else:
             deps = ["paddlepaddle-xpu>=3.3.0"]
@@ -341,13 +360,22 @@ def get_libs():
     # Falls back to sensible defaults derived from the detected CUDA version:
     #   < 12.8  → SM90 only
     #   ≥ 12.8 / 13.x → SM90 + SM100 + SM103
-    _default_arch = "9.0" if (cuda_major == 12 and cuda_minor < 8) else "9.0;10.0;10.3"
-    _raw = os.environ.get("PADDLE_CUDA_ARCH_LIST") or _detect_local_gpu_arch() or _default_arch
+    _default_arch = (
+        "9.0" if (cuda_major == 12 and cuda_minor < 8) else "9.0;10.0;10.3"
+    )
+    _raw = (
+        os.environ.get("PADDLE_CUDA_ARCH_LIST")
+        or _detect_local_gpu_arch()
+        or _default_arch
+    )
     # Normalize: some callers use comma-separated (e.g. "8.0,9.0,10.0,10.3").
     # Paddle's _get_cuda_arch_flags only accepts semicolon-separated values,
     # and DeepEP only supports SM90/SM100/SM103 — drop anything outside that set.
     _supported = {"9.0", "10.0", "10.3"}
-    _deep_ep_arch = ";".join(a for a in re.split(r"[;,]", _raw) if a.strip() in _supported) or _default_arch
+    _deep_ep_arch = (
+        ";".join(a for a in re.split(r"[;,]", _raw) if a.strip() in _supported)
+        or _default_arch
+    )
 
     LIBRARIES: list[EcosystemLibrary] = [
         EcosystemLibrary(
@@ -396,7 +424,9 @@ def get_libs():
             extra_env={
                 "PADDLE_CUDA_ARCH_LIST": "",
                 "FLASH_MLA_DISABLE_SM90": str("9.0" not in _deep_ep_arch),
-                "FLASH_MLA_DISABLE_SM100": str((cuda_major, cuda_minor) <= (12, 8)),
+                "FLASH_MLA_DISABLE_SM100": str(
+                    (cuda_major, cuda_minor) <= (12, 8)
+                ),
             },
         ),
     ]

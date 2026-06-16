@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -63,8 +67,12 @@ class TestMLASelfAttentionBackwardDW(unittest.TestCase):
                 "paddleformers.fleet.transformer.multi_latent_attention.Attention.__init__",
                 return_value=None,
             ),
-            patch("paddleformers.fleet.transformer.multi_latent_attention.RotaryEmbedding"),
-            patch("paddleformers.fleet.transformer.multi_latent_attention.build_spec_layer"),
+            patch(
+                "paddleformers.fleet.transformer.multi_latent_attention.RotaryEmbedding"
+            ),
+            patch(
+                "paddleformers.fleet.transformer.multi_latent_attention.build_spec_layer"
+            ),
             patch(
                 "paddleformers.fleet.transformer.multi_latent_attention.ProcessGroupCollection.use_mpu_process_groups"
             ),
@@ -147,9 +155,15 @@ class TestMultiLatentAttentionGate(unittest.TestCase):
             mla.use_rr_flash_attention = False
             mla.training = True
             mla.attn_mask_type = MagicMock()
-            mla.core_attention = MagicMock(return_value=paddle.randn([1, 4, 2, 16]))
-            mla.o_proj = MagicMock(return_value=(paddle.randn([1, 4, 64]), None))
-            mla.gate_proj = MagicMock(return_value=(paddle.randn([1, 4, 64]), None))
+            mla.core_attention = MagicMock(
+                return_value=paddle.randn([1, 4, 2, 16])
+            )
+            mla.o_proj = MagicMock(
+                return_value=(paddle.randn([1, 4, 64]), None)
+            )
+            mla.gate_proj = MagicMock(
+                return_value=(paddle.randn([1, 4, 64]), None)
+            )
             mla.recompute_gated_attn = False
             return mla
 

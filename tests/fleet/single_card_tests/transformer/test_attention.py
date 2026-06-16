@@ -20,14 +20,19 @@ from paddleformers.fleet.transformer.attention import (
     SelfAttention,
     SelfAttentionSublayersSpec,
 )
-from paddleformers.fleet.transformer.dot_product_attention import DotProductAttention
+from paddleformers.fleet.transformer.dot_product_attention import (
+    DotProductAttention,
+)
 from paddleformers.fleet.transformer.enums import AttnMaskType
 from paddleformers.fleet.transformer.multi_latent_attention import (
     MLASelfAttention,
     MLASelfAttentionSublayersSpec,
 )
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
-from paddleformers.fleet.utils import init_method_normal, scaled_init_method_normal
+from paddleformers.fleet.utils import (
+    init_method_normal,
+    scaled_init_method_normal,
+)
 
 
 class BiasedLinear(paddle.nn.Layer):
@@ -62,7 +67,9 @@ class TestSelfAttention(unittest.TestCase):
 
         # TODO(liangshuhao): make these args formal
         self.config.num_key_value_heads = self.config.num_attention_heads
-        self.config.head_dim = self.config.hidden_size // self.config.num_attention_heads
+        self.config.head_dim = (
+            self.config.hidden_size // self.config.num_attention_heads
+        )
         self.config.softmax_scale = None
         self.config.use_bias = True
         self.config.no_rope_freq = None
@@ -71,7 +78,9 @@ class TestSelfAttention(unittest.TestCase):
         self.config.rotary_interleaved = False
         self.config.multi_latent_attention = False
         self.config.init_method = init_method_normal(0.02)
-        self.config.output_layer_init_method = scaled_init_method_normal(0.02, 1, 2.0)
+        self.config.output_layer_init_method = scaled_init_method_normal(
+            0.02, 1, 2.0
+        )
         self.config.rms_norm_eps = 1e-5
         self.config.context_parallel_size = 1
         self.config.apply_query_key_layer_scaling = False
@@ -106,9 +115,13 @@ class TestSelfAttention(unittest.TestCase):
         hidden_states = paddle.randn(
             (micro_batch_size, sequence_length, hidden_size),
         )
-        rotary_pos_emb = paddle.randn((1, sequence_length, 1, self.config.head_dim))
+        rotary_pos_emb = paddle.randn(
+            (1, sequence_length, 1, self.config.head_dim)
+        )
 
-        output, bias = self.self_attn(hidden_states, attention_mask=None, rotary_pos_emb=rotary_pos_emb)
+        output, bias = self.self_attn(
+            hidden_states, attention_mask=None, rotary_pos_emb=rotary_pos_emb
+        )
 
         # Check if output and bias have the correct shape
         assert output.shape[0] == micro_batch_size
@@ -127,7 +140,9 @@ class TestSelfAttentionQKNormPerLayer(unittest.TestCase):
             num_attention_heads=4,
         )
         self.config.num_key_value_heads = self.config.num_attention_heads
-        self.config.head_dim = self.config.hidden_size // self.config.num_attention_heads
+        self.config.head_dim = (
+            self.config.hidden_size // self.config.num_attention_heads
+        )
         self.config.softmax_scale = None
         self.config.use_bias = True
         self.config.no_rope_freq = None
@@ -136,7 +151,9 @@ class TestSelfAttentionQKNormPerLayer(unittest.TestCase):
         self.config.rotary_interleaved = False
         self.config.multi_latent_attention = False
         self.config.init_method = init_method_normal(0.02)
-        self.config.output_layer_init_method = scaled_init_method_normal(0.02, 1, 2.0)
+        self.config.output_layer_init_method = scaled_init_method_normal(
+            0.02, 1, 2.0
+        )
         self.config.rms_norm_eps = 1e-5
         self.config.context_parallel_size = 1
         self.config.apply_query_key_layer_scaling = False
@@ -172,9 +189,13 @@ class TestSelfAttentionQKNormPerLayer(unittest.TestCase):
         hidden_states = paddle.randn(
             (micro_batch_size, sequence_length, hidden_size),
         )
-        rotary_pos_emb = paddle.randn((1, sequence_length, 1, self.config.head_dim))
+        rotary_pos_emb = paddle.randn(
+            (1, sequence_length, 1, self.config.head_dim)
+        )
 
-        output, bias = self.self_attn(hidden_states, attention_mask=None, rotary_pos_emb=rotary_pos_emb)
+        output, bias = self.self_attn(
+            hidden_states, attention_mask=None, rotary_pos_emb=rotary_pos_emb
+        )
 
         # Check if output and bias have the correct shape
         assert output.shape[0] == micro_batch_size
@@ -192,7 +213,9 @@ class TestMLASelfAttention(unittest.TestCase):
         )
 
         self.config.num_key_value_heads = self.config.num_attention_heads
-        self.config.head_dim = self.config.hidden_size // self.config.num_attention_heads
+        self.config.head_dim = (
+            self.config.hidden_size // self.config.num_attention_heads
+        )
         self.config.softmax_scale = None
         self.config.use_bias = True
         self.config.no_rope_freq = None
@@ -201,7 +224,9 @@ class TestMLASelfAttention(unittest.TestCase):
         self.config.rotary_interleaved = False
         self.config.multi_latent_attention = True
         self.config.init_method = init_method_normal(0.02)
-        self.config.output_layer_init_method = scaled_init_method_normal(0.02, 1, 2.0)
+        self.config.output_layer_init_method = scaled_init_method_normal(
+            0.02, 1, 2.0
+        )
         self.config.rms_norm_eps = 1e-5
         self.config.context_parallel_size = 1
         self.config.apply_query_key_layer_scaling = False
@@ -309,7 +334,9 @@ class TestGatedSelfAttention(unittest.TestCase):
         config.rotary_interleaved = False
         config.multi_latent_attention = False
         config.init_method = init_method_normal(0.02)
-        config.output_layer_init_method = scaled_init_method_normal(0.02, 1, 2.0)
+        config.output_layer_init_method = scaled_init_method_normal(
+            0.02, 1, 2.0
+        )
         config.rms_norm_eps = 1e-5
         config.context_parallel_size = 1
         config.apply_query_key_layer_scaling = False
@@ -347,9 +374,13 @@ class TestGatedSelfAttention(unittest.TestCase):
         hidden_states = paddle.randn((batch_size, seq_len, config.hidden_size))
         rotary_pos_emb = paddle.randn((1, seq_len, 1, config.head_dim))
 
-        output, bias = attn(hidden_states, attention_mask=None, rotary_pos_emb=rotary_pos_emb)
+        output, bias = attn(
+            hidden_states, attention_mask=None, rotary_pos_emb=rotary_pos_emb
+        )
 
-        self.assertEqual(output.shape, [batch_size, seq_len, config.hidden_size])
+        self.assertEqual(
+            output.shape, [batch_size, seq_len, config.hidden_size]
+        )
         self.assertEqual(bias.shape[0], config.hidden_size)
         self.assertTrue(
             paddle.all(paddle.isfinite(output)).item(),
@@ -366,7 +397,9 @@ class TestGatedSelfAttention(unittest.TestCase):
         hidden_states.stop_gradient = False
         rotary_pos_emb = paddle.randn((1, seq_len, 1, config.head_dim))
 
-        output, bias = attn(hidden_states, attention_mask=None, rotary_pos_emb=rotary_pos_emb)
+        output, bias = attn(
+            hidden_states, attention_mask=None, rotary_pos_emb=rotary_pos_emb
+        )
         loss = output.sum()
         loss.backward()
 
@@ -379,7 +412,9 @@ class TestGatedSelfAttention(unittest.TestCase):
 
         # Check all parameter gradients exist and are finite
         for name, param in attn.named_parameters():
-            self.assertIsNotNone(param.grad, f"Parameter {name} has no gradient")
+            self.assertIsNotNone(
+                param.grad, f"Parameter {name} has no gradient"
+            )
             self.assertTrue(
                 paddle.all(paddle.isfinite(param.grad)).item(),
                 f"Parameter {name} gradient contains NaN or Inf",
@@ -395,11 +430,15 @@ class TestGatedSelfAttention(unittest.TestCase):
         hidden_states.stop_gradient = False
         rotary_pos_emb = paddle.randn((1, seq_len, 1, config.head_dim))
 
-        output, bias = attn(hidden_states, attention_mask=None, rotary_pos_emb=rotary_pos_emb)
+        output, bias = attn(
+            hidden_states, attention_mask=None, rotary_pos_emb=rotary_pos_emb
+        )
         loss = output.sum()
         loss.backward()
 
-        self.assertEqual(output.shape, [batch_size, seq_len, config.hidden_size])
+        self.assertEqual(
+            output.shape, [batch_size, seq_len, config.hidden_size]
+        )
         self.assertIsNotNone(hidden_states.grad)
         self.assertTrue(
             paddle.all(paddle.isfinite(output)).item(),
@@ -419,11 +458,17 @@ class TestGatedSelfAttention(unittest.TestCase):
 
         seq_len, batch_size = 32, 2
         paddle.manual_seed(123)
-        hidden_states = paddle.randn((batch_size, seq_len, config_gated.hidden_size))
+        hidden_states = paddle.randn(
+            (batch_size, seq_len, config_gated.hidden_size)
+        )
         rotary_pos_emb = paddle.randn((1, seq_len, 1, config_gated.head_dim))
 
-        out_gated, _ = attn_gated(hidden_states, attention_mask=None, rotary_pos_emb=rotary_pos_emb)
-        out_ungated, _ = attn_ungated(hidden_states, attention_mask=None, rotary_pos_emb=rotary_pos_emb)
+        out_gated, _ = attn_gated(
+            hidden_states, attention_mask=None, rotary_pos_emb=rotary_pos_emb
+        )
+        out_ungated, _ = attn_ungated(
+            hidden_states, attention_mask=None, rotary_pos_emb=rotary_pos_emb
+        )
 
         # Outputs should differ because gated has extra gate projection
         self.assertFalse(

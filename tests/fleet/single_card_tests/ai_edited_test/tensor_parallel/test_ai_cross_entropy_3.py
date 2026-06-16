@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -42,19 +46,27 @@ class TestCalculateLogitsMax(unittest.TestCase):
     def test_returns_float_tensor(self):
         """Test that logits are cast to float."""
         logits = paddle.to_tensor([[1.0, 2.0, 3.0]], dtype=paddle.float16)
-        result_logits, logits_max = VocabParallelCrossEntropy.calculate_logits_max(logits)
+        result_logits, logits_max = (
+            VocabParallelCrossEntropy.calculate_logits_max(logits)
+        )
         self.assertEqual(result_logits.dtype, paddle.float32)
 
     def test_logits_max_correct(self):
         """Test that logits_max is the max along last dim."""
         logits = paddle.to_tensor([[1.0, 5.0, 3.0]], dtype=paddle.float32)
-        result_logits, logits_max = VocabParallelCrossEntropy.calculate_logits_max(logits)
+        result_logits, logits_max = (
+            VocabParallelCrossEntropy.calculate_logits_max(logits)
+        )
         self.assertAlmostEqual(logits_max.item(), 5.0)
 
     def test_logits_max_2d(self):
         """Test logits_max with 2D input."""
-        logits = paddle.to_tensor([[1.0, 5.0, 3.0], [4.0, 2.0, 6.0]], dtype=paddle.float32)
-        result_logits, logits_max = VocabParallelCrossEntropy.calculate_logits_max(logits)
+        logits = paddle.to_tensor(
+            [[1.0, 5.0, 3.0], [4.0, 2.0, 6.0]], dtype=paddle.float32
+        )
+        result_logits, logits_max = (
+            VocabParallelCrossEntropy.calculate_logits_max(logits)
+        )
         self.assertAlmostEqual(logits_max[0].item(), 5.0)
         self.assertAlmostEqual(logits_max[1].item(), 6.0)
 
@@ -112,11 +124,15 @@ class TestCalculateCrossEntropyLoss(unittest.TestCase):
         exp_logits = paddle.to_tensor([[math.exp(-4.0), 1.0, math.exp(-2.0)]])
         sum_exp_logits = paddle.to_tensor([exp_logits.sum().item()])
 
-        result_exp, loss = VocabParallelCrossEntropy.calculate_cross_entropy_loss(
-            exp_logits, predicted_logits, sum_exp_logits
+        result_exp, loss = (
+            VocabParallelCrossEntropy.calculate_cross_entropy_loss(
+                exp_logits, predicted_logits, sum_exp_logits
+            )
         )
 
-        self.assertAlmostEqual(loss.item(), math.log(sum_exp_logits.item()), places=4)
+        self.assertAlmostEqual(
+            loss.item(), math.log(sum_exp_logits.item()), places=4
+        )
 
     def test_exp_logits_normalized(self):
         """Test that exp_logits are normalized (softmax probabilities)."""
@@ -125,8 +141,10 @@ class TestCalculateCrossEntropyLoss(unittest.TestCase):
         exp_logits = paddle.to_tensor([[1.0, 2.0, 3.0]])
         sum_exp_logits = paddle.to_tensor([6.0])
 
-        result_exp, loss = VocabParallelCrossEntropy.calculate_cross_entropy_loss(
-            exp_logits, predicted_logits, sum_exp_logits
+        result_exp, loss = (
+            VocabParallelCrossEntropy.calculate_cross_entropy_loss(
+                exp_logits, predicted_logits, sum_exp_logits
+            )
         )
 
         # After normalization, each exp_logit should be divided by sum
@@ -147,7 +165,9 @@ class TestPrepareGradientCalculationOperands(unittest.TestCase):
             arange_1d,
             softmax_update,
             grad_input,
-        ) = VocabParallelCrossEntropy.prepare_gradient_calculation_operands(softmax, target_mask)
+        ) = VocabParallelCrossEntropy.prepare_gradient_calculation_operands(
+            softmax, target_mask
+        )
 
         self.assertEqual(grad_2d.shape, [2, 3])
         self.assertEqual(arange_1d.shape, [2])
@@ -158,7 +178,11 @@ class TestPrepareGradientCalculationOperands(unittest.TestCase):
         softmax = paddle.to_tensor([[0.1, 0.5, 0.4], [0.2, 0.3, 0.5]])
         target_mask = paddle.to_tensor([False, True])
 
-        _, _, softmax_update, _ = VocabParallelCrossEntropy.prepare_gradient_calculation_operands(softmax, target_mask)
+        _, _, softmax_update, _ = (
+            VocabParallelCrossEntropy.prepare_gradient_calculation_operands(
+                softmax, target_mask
+            )
+        )
 
         self.assertAlmostEqual(softmax_update[0].item(), 1.0)
         self.assertAlmostEqual(softmax_update[1].item(), 0.0)
@@ -206,7 +230,9 @@ class TestVocabParallelCrossEntropyForward(unittest.TestCase):
     )
     def test_forward_no_tp_group(self, mock_ws, mock_rank, mock_group):
         """Test forward without tensor parallel group."""
-        logits = paddle.to_tensor([[1.0, 2.0, 3.0]], dtype=paddle.float32, stop_gradient=False)
+        logits = paddle.to_tensor(
+            [[1.0, 2.0, 3.0]], dtype=paddle.float32, stop_gradient=False
+        )
         target = paddle.to_tensor([2])
 
         loss = _VocabParallelCrossEntropy.apply(logits, target, 0.0)
@@ -231,7 +257,9 @@ class TestVocabParallelCrossEntropyBackward(unittest.TestCase):
     )
     def test_backward_no_label_smoothing(self, mock_ws, mock_rank, mock_group):
         """Test backward without label smoothing."""
-        logits = paddle.to_tensor([[1.0, 2.0, 3.0]], dtype=paddle.float32, stop_gradient=False)
+        logits = paddle.to_tensor(
+            [[1.0, 2.0, 3.0]], dtype=paddle.float32, stop_gradient=False
+        )
         target = paddle.to_tensor([2])
 
         loss = _VocabParallelCrossEntropy.apply(logits, target, 0.0)

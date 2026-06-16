@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -37,7 +41,9 @@ class TestQwen3_5RMSNorm(unittest.TestCase):
     """Test Qwen3_5RMSNorm class."""
 
     def _make_config(self, **overrides):
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         defaults = {
             "num_hidden_layers": 2,
@@ -55,7 +61,9 @@ class TestQwen3_5RMSNorm(unittest.TestCase):
         self.assertEqual(norm.normalized_shape, 64)
         self.assertEqual(norm.variance_epsilon, 1e-5)
         # Weight should be initialized to 0
-        np.testing.assert_allclose(norm.weight.numpy(), paddle.zeros([64]).numpy())
+        np.testing.assert_allclose(
+            norm.weight.numpy(), paddle.zeros([64]).numpy()
+        )
 
     def test_constructor_normalized_shape(self):
         """Test constructor with normalized_shape kwarg."""
@@ -107,7 +115,9 @@ class TestQwen3_5RMSNormPipe(unittest.TestCase):
     """Test Qwen3_5RMSNormPipe class."""
 
     def _make_config(self, **overrides):
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         defaults = {
             "num_hidden_layers": 2,
@@ -131,7 +141,9 @@ class TestQwen3_5RMSNormPipe(unittest.TestCase):
         config = self._make_config()
         pipe = Qwen3_5RMSNormPipe(config, hidden_size=64)
         x = paddle.randn([4, 8, 64])
-        result = pipe({"hidden_states": x, "attention_mask": paddle.ones([4, 1])})
+        result = pipe(
+            {"hidden_states": x, "attention_mask": paddle.ones([4, 1])}
+        )
         self.assertIn("attention_mask", result)
 
     def test_build_schedule_node(self):
@@ -158,7 +170,9 @@ class TestQwen3_5VisionSublayersSpec(unittest.TestCase):
         """Test setting values."""
         mock_emb = MagicMock()
         mock_merger = MagicMock()
-        spec = Qwen3_5VisionSublayersSpec(embedding=mock_emb, merger=mock_merger)
+        spec = Qwen3_5VisionSublayersSpec(
+            embedding=mock_emb, merger=mock_merger
+        )
         self.assertEqual(spec.embedding, mock_emb)
         self.assertEqual(spec.merger, mock_merger)
 

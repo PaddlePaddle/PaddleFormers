@@ -50,16 +50,23 @@ def test_gather_split_1d_tensor():
     input_tensor = paddle.ones((2, 4)).cuda() * Utils.rank
     actual_output_tensor = util.gather_split_1d_tensor(input_tensor.flatten())
     if Utils.rank % 2 == 0:
-        expected_output_tensor = paddle.concat((input_tensor.flatten(), input_tensor.flatten() + 1))
+        expected_output_tensor = paddle.concat(
+            (input_tensor.flatten(), input_tensor.flatten() + 1)
+        )
     else:
-        expected_output_tensor = paddle.concat((input_tensor.flatten() - 1, input_tensor.flatten()))
+        expected_output_tensor = paddle.concat(
+            (input_tensor.flatten() - 1, input_tensor.flatten())
+        )
     assert paddle.equal_all(actual_output_tensor, expected_output_tensor)
 
 
 def test_vocab():
     global_vocab_size = 1600
     per_partition_vocab_size = 1600 / Utils.world_size
-    assert (Utils.rank * per_partition_vocab_size, (Utils.rank + 1) * per_partition_vocab_size,) == (
+    assert (
+        Utils.rank * per_partition_vocab_size,
+        (Utils.rank + 1) * per_partition_vocab_size,
+    ) == (
         util.VocabUtility.vocab_range_from_per_partition_vocab_size(
             global_vocab_size // Utils.world_size, Utils.rank, Utils.world_size
         )
@@ -67,11 +74,17 @@ def test_vocab():
     assert (
         Utils.rank * per_partition_vocab_size,
         (Utils.rank + 1) * per_partition_vocab_size,
-    ) == (util.VocabUtility.vocab_range_from_global_vocab_size(global_vocab_size, Utils.rank, Utils.world_size))
+    ) == (
+        util.VocabUtility.vocab_range_from_global_vocab_size(
+            global_vocab_size, Utils.rank, Utils.world_size
+        )
+    )
 
 
 if __name__ == "__main__":
-    Utils.initialize_model_parallel(tensor_parallel_size=2, pipeline_parallel_size=2)
+    Utils.initialize_model_parallel(
+        tensor_parallel_size=2, pipeline_parallel_size=2
+    )
     test_split_tensor_along_last_dim()
     test_split_tensor_into_1d_equal_chunks()
     test_gather_split_1d_tensor()

@@ -50,7 +50,9 @@ def set_tensors(obj: Any, tensors: list[paddle.Tensor], pos: list[int]) -> Any:
     if isinstance(obj, tuple):
         return tuple(set_tensors(x, tensors, pos) for x in obj)
     if isinstance(obj, dict):
-        return {k: set_tensors(obj[k], tensors, pos) for k in sorted(obj.keys())}
+        return {
+            k: set_tensors(obj[k], tensors, pos) for k in sorted(obj.keys())
+        }
     return obj
 
 
@@ -59,14 +61,24 @@ class CUDAGraphContext:
     eager_warmup_steps: int = 0
     captured: bool = False
 
-    inputs_tensor_buffer: list[paddle.Tensor] | None = field(default_factory=list)
-    inputs_grads_buffer: list[paddle.Tensor | None] = field(default_factory=list)
+    inputs_tensor_buffer: list[paddle.Tensor] | None = field(
+        default_factory=list
+    )
+    inputs_grads_buffer: list[paddle.Tensor | None] = field(
+        default_factory=list
+    )
 
     static_params: list[paddle.Tensor] = field(default_factory=list)
-    static_params_grads: list[paddle.Tensor | None] = field(default_factory=list)
+    static_params_grads: list[paddle.Tensor | None] = field(
+        default_factory=list
+    )
 
-    outputs_tensor_buffer: list[paddle.Tensor] | None = field(default_factory=list)
-    outputs_grads_buffer: list[paddle.Tensor | None] = field(default_factory=list)
+    outputs_tensor_buffer: list[paddle.Tensor] | None = field(
+        default_factory=list
+    )
+    outputs_grads_buffer: list[paddle.Tensor | None] = field(
+        default_factory=list
+    )
 
     fwd_cudagraph: graphs.CUDAGraph | None = None
     bwd_cudagraph: graphs.CUDAGraph | None = None
@@ -115,7 +127,9 @@ def autocudagraph(
 
             is_grad_enabled = paddle.is_grad_enabled()
             self_instance = bound.arguments.get("self", None)
-            self_instance = self_instance if isinstance(self_instance, nn.Layer) else None
+            self_instance = (
+                self_instance if isinstance(self_instance, nn.Layer) else None
+            )
 
             if dispatch_key_fn is not None:
                 key = dispatch_key_fn(bound.arguments)
@@ -160,11 +174,15 @@ def autocudagraph(
                     c.stop_gradient = t.stop_gradient
                     ctx.inputs_tensor_buffer.append(c)
 
-                static_bound.arguments = set_tensors(static_bound.arguments, ctx.inputs_tensor_buffer, [0])
+                static_bound.arguments = set_tensors(
+                    static_bound.arguments, ctx.inputs_tensor_buffer, [0]
+                )
 
                 ctx.outputs_grads_buffer = [
                     paddle.empty_like(t) if not t.stop_gradient else None
-                    for t in get_tensors(func(*static_bound.args, **static_bound.kwargs))
+                    for t in get_tensors(
+                        func(*static_bound.args, **static_bound.kwargs)
+                    )
                 ]
 
                 # [Gradient Accumulation Backup]
@@ -172,7 +190,11 @@ def autocudagraph(
                 # to prevent dummy backward passes from overwriting them during capture.
                 if self_instance is not None:
                     with paddle.no_grad():
-                        saved_grads = {p: p.grad.clone() for p in self_instance.parameters() if p.grad is not None}
+                        saved_grads = {
+                            p: p.grad.clone()
+                            for p in self_instance.parameters()
+                            if p.grad is not None
+                        }
 
                 pool_id = CUDAGraph.gen_new_memory_pool_id()
                 ctx.fwd_cudagraph = graphs.CUDAGraph(pool_id=pool_id)
@@ -187,7 +209,9 @@ def autocudagraph(
                     )
                     bwd_outputs = []
                     bwd_outputs_grads = []
-                    for ot, og in zip(get_tensors(outputs), ctx.outputs_grads_buffer):
+                    for ot, og in zip(
+                        get_tensors(outputs), ctx.outputs_grads_buffer
+                    ):
                         if og is not None:
                             bwd_outputs.append(ot)
                             bwd_outputs_grads.append(og)
@@ -221,25 +245,35 @@ def autocudagraph(
                 assert output_static_list or not paddle.is_grad_enabled()
 
                 if output_static_list:
-                    paddle.autograd.backward(output_static_list, grad_static_list, retain_graph=True)
+                    paddle.autograd.backward(
+                        output_static_list, grad_static_list, retain_graph=True
+                    )
                 ctx.bwd_cudagraph.capture_end()
                 paddle.device.synchronize()
 
-                ctx.inputs_grads_buffer = [t.grad for t in ctx.inputs_tensor_buffer]
+                ctx.inputs_grads_buffer = [
+                    t.grad for t in ctx.inputs_tensor_buffer
+                ]
 
                 # [Gradient Accumulation Restore]
                 # Recover internal weight gradients post-capture
                 # to ensure cross-step gradient accumulation remains intact.
                 if self_instance is not None:
                     ctx.static_params = list(self_instance.parameters())
-                    ctx.static_params_grads = [p.grad for p in ctx.static_params]
+                    ctx.static_params_grads = [
+                        p.grad for p in ctx.static_params
+                    ]
 
                 class CUDAGraphRunner(paddle.autograd.PyLayer):
                     @staticmethod
                     def forward(ctx_runner, dummy_trigger, *dynamic_in_tensors):
-                        ctx_runner.needs_grad = [not t.stop_gradient for t in dynamic_in_tensors]
+                        ctx_runner.needs_grad = [
+                            not t.stop_gradient for t in dynamic_in_tensors
+                        ]
 
-                        for stat_t, dyn_t in zip(ctx.inputs_tensor_buffer, dynamic_in_tensors):
+                        for stat_t, dyn_t in zip(
+                            ctx.inputs_tensor_buffer, dynamic_in_tensors
+                        ):
                             stat_t.copy_(dyn_t)
 
                         ctx.fwd_cudagraph.replay()
@@ -250,7 +284,9 @@ def autocudagraph(
 
                     @staticmethod
                     def backward(ctx_runner, *grad_outputs):
-                        for sg, go in zip(ctx.outputs_grads_buffer, grad_outputs):
+                        for sg, go in zip(
+                            ctx.outputs_grads_buffer, grad_outputs
+                        ):
                             if sg is not None and go is not None:
                                 sg.copy_(go)
 
@@ -267,8 +303,16 @@ def autocudagraph(
                             ctx.inputs_tensor_buffer,
                             ctx_runner.needs_grad,
                         ):
-                            actual_grad = static_grad if static_grad is not None else stat_t.grad
-                            grads.append(actual_grad.clone() if (ng and actual_grad is not None) else None)
+                            actual_grad = (
+                                static_grad
+                                if static_grad is not None
+                                else stat_t.grad
+                            )
+                            grads.append(
+                                actual_grad.clone()
+                                if (ng and actual_grad is not None)
+                                else None
+                            )
                         return tuple(grads)
 
                 ctx.runner = CUDAGraphRunner
@@ -280,8 +324,12 @@ def autocudagraph(
                             p.grad.copy_(saved_grad, False)
 
             dynamic_in_tensors = get_tensors(bound.arguments)
-            flat_returned_tensors = ctx.runner.apply(dummy_trigger, *dynamic_in_tensors)
-            final_outputs = set_tensors(ctx.outputs_tensor_buffer, flat_returned_tensors, [0])
+            flat_returned_tensors = ctx.runner.apply(
+                dummy_trigger, *dynamic_in_tensors
+            )
+            final_outputs = set_tensors(
+                ctx.outputs_tensor_buffer, flat_returned_tensors, [0]
+            )
 
             return final_outputs
 

@@ -18,15 +18,21 @@ from unittest.mock import MagicMock, patch
 from paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils import set_seed
 
 
-@unittest.skip("get_rng_state_tracker is a C extension singleton that cannot be reliably patched in CI")
+@unittest.skip(
+    "get_rng_state_tracker is a C extension singleton that cannot be reliably patched in CI"
+)
 class TestSetSeed(unittest.TestCase):
     """Tests for set_seed function."""
 
     @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.fleet")
     @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.dist")
     @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.paddle")
-    @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.get_rng_state_tracker")
-    def test_set_seed_without_hcg(self, mock_tracker, mock_paddle, mock_dist, mock_fleet):
+    @patch(
+        "paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.get_rng_state_tracker"
+    )
+    def test_set_seed_without_hcg(
+        self, mock_tracker, mock_paddle, mock_dist, mock_fleet
+    ):
         """Test set_seed when fleet has no _hcg attribute."""
         mock_fleet._hcg = None
         type(mock_fleet).__contains__ = lambda self, item: False
@@ -42,7 +48,9 @@ class TestSetSeed(unittest.TestCase):
 
     @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.fleet")
     @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.paddle")
-    @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.get_rng_state_tracker")
+    @patch(
+        "paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.get_rng_state_tracker"
+    )
     def test_set_seed_with_hcg(self, mock_tracker, mock_paddle, mock_fleet):
         """Test set_seed when fleet has _hcg attribute."""
         mock_hcg = MagicMock()
@@ -66,8 +74,12 @@ class TestSetSeed(unittest.TestCase):
     @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.fleet")
     @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.dist")
     @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.paddle")
-    @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.get_rng_state_tracker")
-    def test_set_seed_different_seeds_for_different_ranks(self, mock_tracker, mock_paddle, mock_dist, mock_fleet):
+    @patch(
+        "paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.get_rng_state_tracker"
+    )
+    def test_set_seed_different_seeds_for_different_ranks(
+        self, mock_tracker, mock_paddle, mock_dist, mock_fleet
+    ):
         """Test that different ranks get different seeds."""
         mock_fleet._hcg = None
         mock_dist.get_rank.return_value = 0

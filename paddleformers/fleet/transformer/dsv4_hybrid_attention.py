@@ -47,7 +47,9 @@ from paddleformers.fleet.transformer.attention import Attention
 if TYPE_CHECKING:
     from paddleformers.fleet.process_groups_config import ProcessGroupCollection
     from paddleformers.fleet.transformer.enums import AttnMaskType
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
 
 def _q_rms_norm(q: Tensor, eps: float) -> Tensor:
@@ -58,10 +60,13 @@ def _q_rms_norm(q: Tensor, eps: float) -> Tensor:
 from paddleformers.fleet.transformer.utils import get_doc_lens
 
 
-def build_document_rope_freqs(rotary_pos_emb: nn.Layer, sq: int, startend_row_indices: Tensor):
+def build_document_rope_freqs(
+    rotary_pos_emb: nn.Layer, sq: int, startend_row_indices: Tensor
+):
     """Build RoPE frequencies that restart from zero for each document."""
     assert (
-        startend_row_indices.shape[0] == 1 and startend_row_indices.shape[1] == 1
+        startend_row_indices.shape[0] == 1
+        and startend_row_indices.shape[1] == 1
     ), "Document RoPE currently expects batch_size == 1 and head == 1."
 
     doc_lens = get_doc_lens(startend_row_indices)
@@ -78,7 +83,9 @@ def build_document_rope_freqs(rotary_pos_emb: nn.Layer, sq: int, startend_row_in
         freqs = paddle.concat(
             [
                 freqs,
-                paddle.zeros([sq - freqs.shape[0], freqs.shape[-1]], dtype=freqs.dtype),
+                paddle.zeros(
+                    [sq - freqs.shape[0], freqs.shape[-1]], dtype=freqs.dtype
+                ),
             ],
             axis=0,
         )
@@ -173,7 +180,9 @@ class DSv4HybridAttention(Attention):
                 self.qk_pos_emb_head_dim,
                 rotary_base=rope_base,
                 scaling_factor=getattr(config, "rotary_scaling_factor", 40),
-                original_max_position_embeddings=getattr(config, "original_max_position_embeddings", 4096),
+                original_max_position_embeddings=getattr(
+                    config, "original_max_position_embeddings", 4096
+                ),
                 beta_fast=getattr(config, "beta_fast", 32),
                 beta_slow=getattr(config, "beta_slow", 1),
                 mscale=getattr(config, "mscale", 1.0),
@@ -201,16 +210,18 @@ class DSv4HybridAttention(Attention):
 
         # Grouped output projection
         self.o_local_groups = config.o_groups
-        assert (
-            self.query_projection_size % config.o_groups == 0
-        ), "num_attention_heads * v_head_dim must be divisible by o_groups"
+        assert self.query_projection_size % config.o_groups == 0, (
+            "num_attention_heads * v_head_dim must be divisible by o_groups"
+        )
         group_proj_in_size = self.query_projection_size // config.o_groups
         group_proj_out_size = config.o_groups * config.o_lora_rank
 
         self.linear_o_group_proj = self.create_parameter(
             shape=[group_proj_out_size, group_proj_in_size],
             dtype=config.dtype if hasattr(config, "dtype") else "bfloat16",
-            default_initializer=nn.initializer.Normal(std=getattr(config, "init_method_std", 0.02)),
+            default_initializer=nn.initializer.Normal(
+                std=getattr(config, "init_method_std", 0.02)
+            ),
         )
 
         linear_proj_in_size = config.o_groups * config.o_lora_rank
@@ -243,7 +254,9 @@ class DSv4HybridAttention(Attention):
         Returns:
             (output [b, sq, hidden_size], bias=None)
         """
-        startend_row_indices = kwargs.get("attn_mask_startend_row_indices", None)
+        startend_row_indices = kwargs.get(
+            "attn_mask_startend_row_indices", None
+        )
 
         # Get Q, K, V tensors
         # In CP mode, pass position_offset so RoPE uses correct global positions.
@@ -255,14 +268,20 @@ class DSv4HybridAttention(Attention):
                 f"DSv4HybridAttention requires cp_balance_mode='contiguous_allgather', "
                 f"got '{self.config.cp_balance_mode}'"
             )
-        cp_rank = getattr(cp_pg, "rank", 0) if cp_pg is not None and cp_size > 1 else 0
+        cp_rank = (
+            getattr(cp_pg, "rank", 0)
+            if cp_pg is not None and cp_size > 1
+            else 0
+        )
         _, sq, _ = hidden_states.shape
         position_offset = cp_rank * sq if cp_size > 1 else 0
 
-        query, key, value, q_compressed, kv_compressed = self.get_query_key_value_tensors(
-            hidden_states=hidden_states,
-            startend_row_indices=startend_row_indices,
-            position_offset=position_offset,
+        query, key, value, q_compressed, kv_compressed = (
+            self.get_query_key_value_tensors(
+                hidden_states=hidden_states,
+                startend_row_indices=startend_row_indices,
+                position_offset=position_offset,
+            )
         )
 
         # Core attention (CompressedSparseAttention)
@@ -283,10 +302,14 @@ class DSv4HybridAttention(Attention):
         nope_dim = self.v_head_dim - pos_dim
 
         if pos_dim > 0:
-            core_attn_out = core_attn_out.reshape([b, sq, self.num_attention_heads, self.v_head_dim])
+            core_attn_out = core_attn_out.reshape(
+                [b, sq, self.num_attention_heads, self.v_head_dim]
+            )
             # Get RoPE frequencies for inverse
             if startend_row_indices is not None:
-                freqs, mscale = build_document_rope_freqs(self.rotary_pos_emb, sq, startend_row_indices)
+                freqs, mscale = build_document_rope_freqs(
+                    self.rotary_pos_emb, sq, startend_row_indices
+                )
             else:
                 # Get RoPE frequencies for inverse; use global positions in CP mode
                 rope_len = sq + position_offset
@@ -316,8 +339,12 @@ class DSv4HybridAttention(Attention):
 
         # Grouped output projection
         core_attn_out = core_attn_out.reshape([b, sq, self.o_local_groups, -1])
-        wo_a_weight = self.linear_o_group_proj.reshape([self.o_local_groups, self.config.o_lora_rank, -1])
-        core_attn_out = paddle.einsum("...gd,grd->...gr", core_attn_out, wo_a_weight)
+        wo_a_weight = self.linear_o_group_proj.reshape(
+            [self.o_local_groups, self.config.o_lora_rank, -1]
+        )
+        core_attn_out = paddle.einsum(
+            "...gd,grd->...gr", core_attn_out, wo_a_weight
+        )
         core_attn_out = core_attn_out.reshape([b, sq, -1])
 
         # Output projection
@@ -325,7 +352,9 @@ class DSv4HybridAttention(Attention):
 
         return output, bias
 
-    def get_query_key_value_tensors(self, hidden_states: Tensor, startend_row_indices: Tensor | None = None):
+    def get_query_key_value_tensors(
+        self, hidden_states: Tensor, startend_row_indices: Tensor | None = None
+    ):
         """Override in subclass."""
         raise NotImplementedError
 
@@ -448,7 +477,9 @@ class DSv4HybridSelfAttention(DSv4HybridAttention):
         b, sq, _ = hidden_states.shape
 
         # Q path
-        q_compressed, _ = self.linear_q_down_proj(hidden_states)  # [b, sq, q_lora_rank]
+        q_compressed, _ = self.linear_q_down_proj(
+            hidden_states
+        )  # [b, sq, q_lora_rank]
         q_compressed = self.q_layernorm(q_compressed)
 
         q, _ = self.linear_q_up_proj(q_compressed)  # [b, sq, n * v_head_dim]
@@ -466,7 +497,9 @@ class DSv4HybridSelfAttention(DSv4HybridAttention):
         if pos_dim > 0:
             # Get RoPE frequencies
             if startend_row_indices is not None:
-                freqs, mscale = build_document_rope_freqs(self.rotary_pos_emb, sq, startend_row_indices)
+                freqs, mscale = build_document_rope_freqs(
+                    self.rotary_pos_emb, sq, startend_row_indices
+                )
             else:
                 # Get RoPE frequencies for global positions
                 rope_len = sq + position_offset

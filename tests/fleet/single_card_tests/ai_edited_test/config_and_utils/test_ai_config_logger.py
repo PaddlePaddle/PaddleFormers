@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -200,7 +204,9 @@ class TestConfigLogger(unittest.TestCase):
             config = MagicMock()
             config.config_logger_dir = tmpdir
 
-            with patch("paddleformers.fleet.config_logger.parallel_state") as mock_ps:
+            with patch(
+                "paddleformers.fleet.config_logger.parallel_state"
+            ) as mock_ps:
                 mock_ps.get_all_ranks.return_value = "0_0_0_0_0"
 
                 data = {"key1": "value1", "key2": 42}
@@ -222,7 +228,9 @@ class TestConfigLogger(unittest.TestCase):
             config = MagicMock()
             config.config_logger_dir = tmpdir
 
-            with patch("paddleformers.fleet.config_logger.parallel_state") as mock_ps:
+            with patch(
+                "paddleformers.fleet.config_logger.parallel_state"
+            ) as mock_ps:
                 mock_ps.get_all_ranks.return_value = "0_0_0_0_0"
 
                 mock_self = MagicMock()
@@ -240,7 +248,9 @@ class TestConfigLogger(unittest.TestCase):
             config = MagicMock()
             config.config_logger_dir = tmpdir
 
-            with patch("paddleformers.fleet.config_logger.parallel_state") as mock_ps:
+            with patch(
+                "paddleformers.fleet.config_logger.parallel_state"
+            ) as mock_ps:
                 mock_ps.get_all_ranks.return_value = "0_0_0_0_0"
 
                 data = OrderedDict([("a", 1), ("b", 2)])
@@ -259,7 +269,9 @@ class TestConfigLogger(unittest.TestCase):
             config = MagicMock()
             config.config_logger_dir = new_dir
 
-            with patch("paddleformers.fleet.config_logger.parallel_state") as mock_ps:
+            with patch(
+                "paddleformers.fleet.config_logger.parallel_state"
+            ) as mock_ps:
                 mock_ps.get_all_ranks.return_value = "0_0_0_0_0"
 
                 data = {"test": True}
@@ -287,7 +299,9 @@ class TestConfigLogger(unittest.TestCase):
             config.config_logger_dir = tmpdir
 
             data = {"key": "value"}
-            log_config_to_disk(config, data, prefix="rank_test", rank_str="1_2_3_4_5")
+            log_config_to_disk(
+                config, data, prefix="rank_test", rank_str="1_2_3_4_5"
+            )
 
             files = os.listdir(tmpdir)
             self.assertTrue(any("rank_1_2_3_4_5" in f for f in files))

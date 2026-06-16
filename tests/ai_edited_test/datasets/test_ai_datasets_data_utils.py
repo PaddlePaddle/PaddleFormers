@@ -83,7 +83,9 @@ class TestConvertToTokensForPT(unittest.TestCase):
         mock_tokenizer.convert_tokens_to_ids.return_value = [1, 2, 3]
 
         dial = [{"content": "hello world"}]
-        tokens = convert_to_tokens_for_pt(dial, mock_tokenizer, max_src_len=1024)
+        tokens = convert_to_tokens_for_pt(
+            dial, mock_tokenizer, max_src_len=1024
+        )
 
         # Should join content and tokenize
         mock_tokenizer.tokenize.assert_called_once_with("hello world")
@@ -94,7 +96,11 @@ class TestConvertToTokensForPT(unittest.TestCase):
         mock_tokenizer = MagicMock()
         mock_tokenizer.tokenize.return_value = ["t1", "t2"]
 
-        dial = [{"content": "line1"}, {"content": "line2"}, {"content": "line3"}]
+        dial = [
+            {"content": "line1"},
+            {"content": "line2"},
+            {"content": "line3"},
+        ]
         convert_to_tokens_for_pt(dial, mock_tokenizer, max_src_len=1024)
 
         mock_tokenizer.tokenize.assert_called_once_with("line1\nline2\nline3")
@@ -123,7 +129,9 @@ class TestConvertToInputIds(unittest.TestCase):
         mock_tokenizer.convert_tokens_to_ids.return_value = [10, 20]
 
         dials = [[{"content": "hello"}]]
-        input_ids, num_tokens = convert_to_input_ids(dials, mock_tokenizer, "base", 1024)
+        input_ids, num_tokens = convert_to_input_ids(
+            dials, mock_tokenizer, "base", 1024
+        )
 
         self.assertEqual(input_ids, [[10, 20]])
         self.assertEqual(num_tokens, 2)
@@ -135,7 +143,9 @@ class TestConvertToInputIds(unittest.TestCase):
         mock_tokenizer.encode_chat_inputs.return_value = [([1, 2], [3, 4])]
 
         dials = [[{"role": "user", "content": "hello"}]]
-        input_ids, num_tokens = convert_to_input_ids(dials, mock_tokenizer, "chat", 1024)
+        input_ids, num_tokens = convert_to_input_ids(
+            dials, mock_tokenizer, "chat", 1024
+        )
 
         self.assertEqual(len(input_ids), 1)
         self.assertGreater(num_tokens, 0)
@@ -154,7 +164,9 @@ class TestConvertToInputIds(unittest.TestCase):
         mock_tokenizer.convert_tokens_to_ids.return_value = [5]
 
         dials = [[{"content": "a"}], [{"content": "b"}]]
-        input_ids, num_tokens = convert_to_input_ids(dials, mock_tokenizer, "base", 1024)
+        input_ids, num_tokens = convert_to_input_ids(
+            dials, mock_tokenizer, "base", 1024
+        )
 
         self.assertEqual(len(input_ids), 2)
         self.assertEqual(num_tokens, 2)
@@ -187,7 +199,9 @@ class TestCalculateMatchedGroup(unittest.TestCase):
             ("id1", 100, None),
             ("id2", 200, None),
         ]
-        result, ret_sequences = calculate_matched_group(sequences, 500, is_finished=True)
+        result, ret_sequences = calculate_matched_group(
+            sequences, 500, is_finished=True
+        )
         self.assertEqual(ret_sequences, [])
 
     def test_is_finished_false(self):
@@ -197,7 +211,9 @@ class TestCalculateMatchedGroup(unittest.TestCase):
             ("id2", 200, None),
             ("id3", 300, None),
         ]
-        result, ret_sequences = calculate_matched_group(sequences, 500, is_finished=False)
+        result, ret_sequences = calculate_matched_group(
+            sequences, 500, is_finished=False
+        )
         # When not finished, the last packed group is returned as ret_sequences
         self.assertIsInstance(ret_sequences, list)
 

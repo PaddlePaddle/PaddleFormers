@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -35,12 +39,16 @@ class TestExpertModelParallelState(unittest.TestCase):
     def test_get_expert_model_parallel_rank_not_initialized(self):
         """Test get_expert_model_parallel_rank returns 0 when not initialized."""
         import paddleformers.fleet.parallel_state as ps
-        from paddleformers.fleet.parallel_state import get_expert_model_parallel_rank
+        from paddleformers.fleet.parallel_state import (
+            get_expert_model_parallel_rank,
+        )
 
         original = ps._MPU_EXPERT_MODEL_PARALLEL_RANK
         ps._MPU_EXPERT_MODEL_PARALLEL_RANK = None
 
-        with mock.patch("paddle.distributed.is_initialized", return_value=False):
+        with mock.patch(
+            "paddle.distributed.is_initialized", return_value=False
+        ):
             rank = get_expert_model_parallel_rank()
             self.assertEqual(rank, 0)
 
@@ -71,7 +79,9 @@ class TestExpertModelParallelState(unittest.TestCase):
     def test_get_expert_model_parallel_group_not_initialized(self):
         """Test get_expert_model_parallel_group raises when not initialized."""
         import paddleformers.fleet.parallel_state as ps
-        from paddleformers.fleet.parallel_state import get_expert_model_parallel_group
+        from paddleformers.fleet.parallel_state import (
+            get_expert_model_parallel_group,
+        )
 
         original = ps._EXPERT_MODEL_PARALLEL_GROUP
         ps._EXPERT_MODEL_PARALLEL_GROUP = None
@@ -84,7 +94,9 @@ class TestExpertModelParallelState(unittest.TestCase):
     def test_get_expert_data_parallel_group_not_initialized(self):
         """Test get_expert_data_parallel_group raises when not initialized."""
         import paddleformers.fleet.parallel_state as ps
-        from paddleformers.fleet.parallel_state import get_expert_data_parallel_group
+        from paddleformers.fleet.parallel_state import (
+            get_expert_data_parallel_group,
+        )
 
         original = ps._EXPERT_DATA_PARALLEL_GROUP
         ps._EXPERT_DATA_PARALLEL_GROUP = None
@@ -111,7 +123,9 @@ class TestExpertTensorParallelState(unittest.TestCase):
     def test_set_expert_tensor_parallel_rank(self):
         """Test set_expert_tensor_parallel_rank."""
         import paddleformers.fleet.parallel_state as ps
-        from paddleformers.fleet.parallel_state import set_expert_tensor_parallel_rank
+        from paddleformers.fleet.parallel_state import (
+            set_expert_tensor_parallel_rank,
+        )
 
         set_expert_tensor_parallel_rank(3)
         self.assertEqual(ps._MPU_EXPERT_TENSOR_PARALLEL_RANK, 3)
@@ -119,7 +133,9 @@ class TestExpertTensorParallelState(unittest.TestCase):
     def test_get_expert_tensor_parallel_rank_not_initialized(self):
         """Test get_expert_tensor_parallel_rank returns 0 when not initialized."""
         import paddleformers.fleet.parallel_state as ps
-        from paddleformers.fleet.parallel_state import get_expert_tensor_parallel_rank
+        from paddleformers.fleet.parallel_state import (
+            get_expert_tensor_parallel_rank,
+        )
 
         original = ps._MPU_EXPERT_TENSOR_PARALLEL_RANK
         original_group = ps._EXPERT_TENSOR_PARALLEL_GROUP
@@ -139,7 +155,9 @@ class TestContextParallelState(unittest.TestCase):
     def test_get_context_parallel_group_none(self):
         """Test get_context_parallel_group returns None when not initialized."""
         import paddleformers.fleet.parallel_state as ps
-        from paddleformers.fleet.parallel_state import get_context_parallel_group
+        from paddleformers.fleet.parallel_state import (
+            get_context_parallel_group,
+        )
 
         original = ps._CONTEXT_PARALLEL_GROUP
         ps._CONTEXT_PARALLEL_GROUP = None
@@ -152,7 +170,9 @@ class TestContextParallelState(unittest.TestCase):
     def test_get_context_parallel_group_raises(self):
         """Test get_context_parallel_group raises when check_initialized=True."""
         import paddleformers.fleet.parallel_state as ps
-        from paddleformers.fleet.parallel_state import get_context_parallel_group
+        from paddleformers.fleet.parallel_state import (
+            get_context_parallel_group,
+        )
 
         original = ps._CONTEXT_PARALLEL_GROUP
         ps._CONTEXT_PARALLEL_GROUP = None
@@ -165,7 +185,9 @@ class TestContextParallelState(unittest.TestCase):
     def test_get_context_parallel_world_size_one_when_none(self):
         """Test get_context_parallel_world_size returns 1 when group is None."""
         import paddleformers.fleet.parallel_state as ps
-        from paddleformers.fleet.parallel_state import get_context_parallel_world_size
+        from paddleformers.fleet.parallel_state import (
+            get_context_parallel_world_size,
+        )
 
         original = ps._CONTEXT_PARALLEL_GROUP
         ps._CONTEXT_PARALLEL_GROUP = None
@@ -225,7 +247,9 @@ class TestPipelineHelpers(unittest.TestCase):
 
     def test_get_pipeline_model_parallel_rank_warns(self):
         """Test get_pipeline_model_parallel_rank issues warning."""
-        from paddleformers.fleet.parallel_state import get_pipeline_model_parallel_rank
+        from paddleformers.fleet.parallel_state import (
+            get_pipeline_model_parallel_rank,
+        )
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
@@ -266,7 +290,9 @@ class TestGlobalMemoryBuffer(unittest.TestCase):
     def test_destroy_global_memory_buffer(self):
         """Test destroy_global_memory_buffer sets buffer to None."""
         import paddleformers.fleet.parallel_state as ps
-        from paddleformers.fleet.parallel_state import destroy_global_memory_buffer
+        from paddleformers.fleet.parallel_state import (
+            destroy_global_memory_buffer,
+        )
 
         ps._GLOBAL_MEMORY_BUFFER = mock.MagicMock()
         destroy_global_memory_buffer()
@@ -296,7 +322,9 @@ class TestDataParallelGroupWithCP(unittest.TestCase):
         ps._DATA_PARALLEL_GROUP_WITH_CP = None
 
         with self.assertRaises(AssertionError):
-            get_data_parallel_group(with_context_parallel=True, check_initialized=True)
+            get_data_parallel_group(
+                with_context_parallel=True, check_initialized=True
+            )
 
         ps._DATA_PARALLEL_GROUP_WITH_CP = original
 

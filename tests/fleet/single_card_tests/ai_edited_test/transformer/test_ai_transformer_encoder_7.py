@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -32,7 +36,9 @@ from paddleformers.fleet.transformer.transformer_encoder import (
     TransformerEncoder,
     build_overlapped_nodes,
 )
-from paddleformers.fleet.transformer.transformer_layer import TransformerLayerNode
+from paddleformers.fleet.transformer.transformer_layer import (
+    TransformerLayerNode,
+)
 
 
 def _make_schedule_node(name=""):
@@ -83,7 +89,9 @@ class TestTransformerEncoderGetHardwareFlops(unittest.TestCase):
 
     def test_get_hardware_flops_returns_expected_value(self):
         """get_hardware_flops should return 989e3."""
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             result = encoder.get_hardware_flops()
             self.assertEqual(result, 989e3)
@@ -94,7 +102,9 @@ class TestTransformerEncoderAddSequentialLayer(unittest.TestCase):
 
     def test_add_sequential_layer_appends_dict(self):
         """add_sequential_layer should append a dict with layer and name_prefix."""
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             layers = []
             mock_desc = MagicMock()
@@ -105,7 +115,9 @@ class TestTransformerEncoderAddSequentialLayer(unittest.TestCase):
 
     def test_add_sequential_layer_default_prefix(self):
         """add_sequential_layer with no prefix should use empty string."""
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             layers = []
             mock_desc = MagicMock()
@@ -114,7 +126,9 @@ class TestTransformerEncoderAddSequentialLayer(unittest.TestCase):
 
     def test_add_sequential_layer_multiple(self):
         """add_sequential_layer should append multiple entries in order."""
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             layers = []
             for i in range(5):
@@ -129,7 +143,9 @@ class TestTransformerEncoderGetSequentialLayers(unittest.TestCase):
 
     def test_get_sequential_layers_extracts_layer_only(self):
         """get_sequential_layers should return only the layer objects from sequential layers."""
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             mock_layer1 = MagicMock()
             mock_layer2 = MagicMock()
@@ -146,7 +162,9 @@ class TestTransformerEncoderGetNamePrefixes(unittest.TestCase):
 
     def test_get_name_prefixes(self):
         """get_sequential_name_prefixes should return index->prefix mapping."""
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             encoder._sequential_layers = [
                 {"layer": MagicMock(), "name_prefix": "embed"},
@@ -164,7 +182,9 @@ class TestTransformerEncoderStateDictQwenVL(unittest.TestCase):
 
     def test_state_dict_strips_qwen3_vl_prefix(self):
         """state_dict should strip 'model.language_model.' prefix for qwen3_vl."""
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             encoder.config = MagicMock()
             encoder.config.model_type = "qwen3_vl"
@@ -173,14 +193,18 @@ class TestTransformerEncoderStateDictQwenVL(unittest.TestCase):
 
             mock_super_sd = MagicMock()
             mock_val = MagicMock()
-            mock_super_sd.return_value = {"model.language_model.0.weight": mock_val}
+            mock_super_sd.return_value = {
+                "model.language_model.0.weight": mock_val
+            }
             with patch.object(PipelineLayer, "state_dict", mock_super_sd):
                 result = encoder.state_dict()
                 self.assertIn("model.weight", result)
 
     def test_state_dict_no_prefix_for_non_qwen3(self):
         """state_dict should not strip prefix when model_type is not qwen3_vl."""
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             encoder.config = MagicMock()
             encoder.config.model_type = "gpt"

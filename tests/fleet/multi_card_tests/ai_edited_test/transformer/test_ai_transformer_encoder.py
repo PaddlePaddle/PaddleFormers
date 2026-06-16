@@ -24,12 +24,20 @@ from paddle.distributed import fleet
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
-from paddleformers.fleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
+from paddleformers.fleet.models.gpt.gpt_layer_specs import (
+    get_gpt_layer_local_spec,
+)
 from paddleformers.fleet.process_groups_config import ProcessGroupCollection
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.training.initialize import initialize_fleet
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 
@@ -126,7 +134,9 @@ def _build_transformer_config(**overrides):
         attention_dropout=0.0,
         normalization="RMSNorm",
         init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-        output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+        output_layer_init_method=functools.partial(
+            paddle.nn.init.xavier_uniform_, gain=1.0
+        ),
     )
     defaults.update(overrides)
     return TransformerConfig(**defaults)
@@ -145,7 +155,9 @@ class TestTransformerEncoderConstruction(unittest.TestCase):
                 TransformerEncoder,
             )
 
-            encoder = TransformerEncoder(layer_spec.sublayers_spec, config=config)
+            encoder = TransformerEncoder(
+                layer_spec.sublayers_spec, config=config
+            )
             self.assertIsNotNone(encoder)
             self.assertIsInstance(encoder, paddle.nn.Layer)
         except (AttributeError, TypeError) as e:
@@ -161,7 +173,9 @@ class TestTransformerEncoderConstruction(unittest.TestCase):
                 TransformerEncoder,
             )
 
-            encoder = TransformerEncoder(layer_spec.sublayers_spec, config=config)
+            encoder = TransformerEncoder(
+                layer_spec.sublayers_spec, config=config
+            )
             state = encoder.state_dict()
             self.assertIsInstance(state, dict)
             self.assertTrue(len(state) > 0)

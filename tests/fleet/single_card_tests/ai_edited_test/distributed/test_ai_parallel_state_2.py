@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -37,7 +41,9 @@ class TestParallelStateGetters(unittest.TestCase):
         """Test get_tensor_model_parallel_group returns None with check_initialized=False."""
         from paddleformers.fleet import parallel_state
 
-        result = parallel_state.get_tensor_model_parallel_group(check_initialized=False)
+        result = parallel_state.get_tensor_model_parallel_group(
+            check_initialized=False
+        )
         self.assertIsNone(result)
 
     def test_get_pipeline_model_parallel_group_uninitialized(self):
@@ -98,7 +104,9 @@ class TestParallelStateGetters(unittest.TestCase):
         """Test get_context_parallel_group returns None by default."""
         from paddleformers.fleet import parallel_state
 
-        result = parallel_state.get_context_parallel_group(check_initialized=False)
+        result = parallel_state.get_context_parallel_group(
+            check_initialized=False
+        )
         self.assertIsNone(result)
 
     def test_get_context_parallel_world_size_default(self):
@@ -159,7 +167,9 @@ class TestExpertParallelState(unittest.TestCase):
         """Test get_expert_tensor_parallel_group returns None by default."""
         from paddleformers.fleet import parallel_state
 
-        result = parallel_state.get_expert_tensor_parallel_group(check_initialized=False)
+        result = parallel_state.get_expert_tensor_parallel_group(
+            check_initialized=False
+        )
         self.assertIsNone(result)
 
 

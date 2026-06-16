@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -50,16 +54,24 @@ class TestRefinedRcomputeFlashMaskCpAttentionInit(unittest.TestCase):
 class TestRefinedRcomputeFlashMaskCpAttentionForward(unittest.TestCase):
     """Tests for RefinedRcomputeFlashMaskCpAttention.forward."""
 
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.cp_flashmask_allgatherkv_balance_forward")
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.fleet.get_hybrid_communicate_group")
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer")
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.cp_flashmask_allgatherkv_balance_forward"
+    )
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.fleet.get_hybrid_communicate_group"
+    )
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer"
+    )
     def test_first_fwd_no_grad(self, mock_tracer, mock_hcg, mock_cp_forward):
         """Test forward dispatches to _first_fwd when no grad."""
         mock_tracer_obj = MagicMock()
         mock_tracer_obj._has_grad = False
         mock_tracer.return_value = mock_tracer_obj
 
-        mock_hcg.return_value.get_context_parallel_group.return_value = MagicMock()
+        mock_hcg.return_value.get_context_parallel_group.return_value = (
+            MagicMock()
+        )
 
         mock_cp_forward.return_value = (
             paddle.randn([2, 4, 8], dtype=paddle.bfloat16),
@@ -77,7 +89,9 @@ class TestRefinedRcomputeFlashMaskCpAttentionForward(unittest.TestCase):
         result = attn.forward(q, k, v, startend)
         self.assertFalse(attn._hold_tensors_queue.empty())
 
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer")
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer"
+    )
     def test_second_fwd_with_grad(self, mock_tracer):
         """Test forward dispatches to _second_fwd when grad is active."""
         mock_tracer_obj = MagicMock()
@@ -88,7 +102,9 @@ class TestRefinedRcomputeFlashMaskCpAttentionForward(unittest.TestCase):
         hold_tensors = {
             "result_attention": paddle.randn([2, 4, 8], dtype=paddle.bfloat16),
             "softmax_lse": paddle.randn([2, 4], dtype=paddle.float32),
-            "startend_row_indices": paddle.to_tensor([0, 4, 8], dtype=paddle.int32),
+            "startend_row_indices": paddle.to_tensor(
+                [0, 4, 8], dtype=paddle.int32
+            ),
             "group": MagicMock(),
             "causal": False,
             "fa_version": 2,
@@ -107,7 +123,9 @@ class TestRefinedRcomputeFlashMaskCpAttentionForward(unittest.TestCase):
             result = attn.forward(q, k, v, startend)
             mock_functor.assert_called_once()
 
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer")
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer"
+    )
     def test_second_fwd_empty_queue_raises(self, mock_tracer):
         """Test second_fwd raises when queue is empty."""
         mock_tracer_obj = MagicMock()
@@ -127,10 +145,18 @@ class TestRefinedRcomputeFlashMaskCpAttentionForward(unittest.TestCase):
 class TestRefinedRcomputeFlashMaskCpAttentionDropoutRaises(unittest.TestCase):
     """Tests for dropout/causal validation."""
 
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.cp_flashmask_allgatherkv_balance_forward")
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.fleet.get_hybrid_communicate_group")
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer")
-    def test_dropout_not_supported(self, mock_tracer, mock_hcg, mock_cp_forward):
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.cp_flashmask_allgatherkv_balance_forward"
+    )
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.fleet.get_hybrid_communicate_group"
+    )
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer"
+    )
+    def test_dropout_not_supported(
+        self, mock_tracer, mock_hcg, mock_cp_forward
+    ):
         """Test dropout > 0 raises NotImplementedError."""
         mock_tracer_obj = MagicMock()
         mock_tracer_obj._has_grad = False
@@ -145,9 +171,15 @@ class TestRefinedRcomputeFlashMaskCpAttentionDropoutRaises(unittest.TestCase):
         with self.assertRaises(NotImplementedError):
             attn.forward(q, k, v, startend, dropout=0.1)
 
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.cp_flashmask_allgatherkv_balance_forward")
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.fleet.get_hybrid_communicate_group")
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer")
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.cp_flashmask_allgatherkv_balance_forward"
+    )
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.fleet.get_hybrid_communicate_group"
+    )
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer"
+    )
     def test_causal_not_supported(self, mock_tracer, mock_hcg, mock_cp_forward):
         """Test causal=True raises NotImplementedError."""
         mock_tracer_obj = MagicMock()
@@ -163,10 +195,18 @@ class TestRefinedRcomputeFlashMaskCpAttentionDropoutRaises(unittest.TestCase):
         with self.assertRaises(NotImplementedError):
             attn.forward(q, k, v, startend, causal=True)
 
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.cp_flashmask_allgatherkv_balance_forward")
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.fleet.get_hybrid_communicate_group")
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer")
-    def test_fixed_seed_offset_not_supported(self, mock_tracer, mock_hcg, mock_cp_forward):
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.cp_flashmask_allgatherkv_balance_forward"
+    )
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.fleet.get_hybrid_communicate_group"
+    )
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer"
+    )
+    def test_fixed_seed_offset_not_supported(
+        self, mock_tracer, mock_hcg, mock_cp_forward
+    ):
         """Test fixed_seed_offset not None raises NotImplementedError."""
         mock_tracer_obj = MagicMock()
         mock_tracer_obj._has_grad = False
@@ -185,10 +225,18 @@ class TestRefinedRcomputeFlashMaskCpAttentionDropoutRaises(unittest.TestCase):
 class TestRefinedRcomputeFlashMaskCpAttentionSeqLenAssertion(unittest.TestCase):
     """Tests for query sequence length assertion."""
 
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.cp_flashmask_allgatherkv_balance_forward")
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.fleet.get_hybrid_communicate_group")
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer")
-    def test_query_seq_len_must_be_even(self, mock_tracer, mock_hcg, mock_cp_forward):
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.cp_flashmask_allgatherkv_balance_forward"
+    )
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.fleet.get_hybrid_communicate_group"
+    )
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer"
+    )
+    def test_query_seq_len_must_be_even(
+        self, mock_tracer, mock_hcg, mock_cp_forward
+    ):
         """Test assertion that query seq len must be divisible by 2."""
         mock_tracer_obj = MagicMock()
         mock_tracer_obj._has_grad = False
@@ -207,7 +255,9 @@ class TestRefinedRcomputeFlashMaskCpAttentionSeqLenAssertion(unittest.TestCase):
 class TestRefinedRcomputeFlashMaskCpAttentionCall(unittest.TestCase):
     """Tests for __call__ delegation."""
 
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.RefinedRcomputeFlashMaskCpAttention.forward")
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.RefinedRcomputeFlashMaskCpAttention.forward"
+    )
     def test_call_delegates_to_forward(self, mock_forward):
         """Test __call__ delegates to forward."""
         mock_forward.return_value = paddle.randn([2, 4, 8])
@@ -234,7 +284,9 @@ class TestFlashMaskAttnCpFunctorForwardAndBackward(unittest.TestCase):
         hold_tensors = {
             "result_attention": result_attn,
             "softmax_lse": paddle.randn([2, 4], dtype=paddle.float32),
-            "startend_row_indices": paddle.to_tensor([0, 4, 8], dtype=paddle.int32),
+            "startend_row_indices": paddle.to_tensor(
+                [0, 4, 8], dtype=paddle.int32
+            ),
             "group": MagicMock(),
             "causal": False,
             "fa_version": 2,

@@ -50,15 +50,23 @@ def _set_random_seed(
     """Set random seed for reproducibility."""
     if seed_ is not None and seed_ > 0:
         # Ensure that different pipeline MP stages get different seeds.
-        seed = seed_ + (100 * paddleformers.fleet.parallel_state.get_pipeline_model_parallel_rank())
+        seed = seed_ + (
+            100
+            * paddleformers.fleet.parallel_state.get_pipeline_model_parallel_rank()
+        )
         # Ensure different data parallel ranks get different seeds
         if data_parallel_random_init:
-            seed = seed + (10 * paddleformers.fleet.parallel_state.get_data_parallel_rank())
+            seed = seed + (
+                10 * paddleformers.fleet.parallel_state.get_data_parallel_rank()
+            )
         random.seed(seed)
         np.random.seed(seed)
         paddle.manual_seed(seed)
 
-        if paddle.distributed.is_initialized() and paddle.cuda.device_count() > 0:
+        if (
+            paddle.distributed.is_initialized()
+            and paddle.cuda.device_count() > 0
+        ):
             paddleformers.fleet.tensor_parallel.model_parallel_cuda_manual_seed(
                 seed,
                 te_rng_tracker,
@@ -82,18 +90,33 @@ def check_grads(dist_model, serial_model, tp_group):
     for name, p in dist_model.named_parameters():
         if "qkv_proj.weight" in name or "up_gate_proj.weight" in name:
             grad = _gather_along_last_dim(p.grad, tp_group)
-        elif "o_proj.weight" in name or "down_proj.weight" in name or "embed_tokens.weight" in name:
+        elif (
+            "o_proj.weight" in name
+            or "down_proj.weight" in name
+            or "embed_tokens.weight" in name
+        ):
             grad = _gather_along_first_dim(p.grad, tp_group)
         else:
             grad = p.grad
 
-        both_zero = grad.abs().max() == 0 and serial_grads[name].abs().max() == 0
+        both_zero = (
+            grad.abs().max() == 0 and serial_grads[name].abs().max() == 0
+        )
         sim_ok = both_zero or cal_sim(grad, serial_grads[name]) > 0.999
-        if not (paddle.allclose(grad, serial_grads[name], atol=5e-7, rtol=1e-6) and sim_ok):
-            print(f"{name} failed, serial grad:{serial_grads[name]}, dist:{grad}")
+        if not (
+            paddle.allclose(grad, serial_grads[name], atol=5e-7, rtol=1e-6)
+            and sim_ok
+        ):
+            print(
+                f"{name} failed, serial grad:{serial_grads[name]}, dist:{grad}"
+            )
             diff = paddle.abs(serial_grads[name] - grad)
-            print(f"max diff: {diff.max()}, sim:{cal_sim(serial_grads[name], grad)}")
-            raise AssertionError(f"{name} failed in check grad, serial:{serial_grads[name].shape}, dist:{grad.shape}")
+            print(
+                f"max diff: {diff.max()}, sim:{cal_sim(serial_grads[name], grad)}"
+            )
+            raise AssertionError(
+                f"{name} failed in check grad, serial:{serial_grads[name].shape}, dist:{grad.shape}"
+            )
 
 
 def single_device_baseline(seed, batch_size, seq_len, vocab_size, config):
@@ -105,10 +128,16 @@ def single_device_baseline(seed, batch_size, seq_len, vocab_size, config):
     gpt_model = gpt_builder(config, num_stages=1)
 
     paddle.manual_seed(seed)
-    data = paddle.randint(low=0, high=vocab_size, shape=(batch_size, seq_len + 1))
+    data = paddle.randint(
+        low=0, high=vocab_size, shape=(batch_size, seq_len + 1)
+    )
     input_ids = data[:, :-1]
     labels = data[:, 1:]
-    position_ids = paddle.arange(seq_len, dtype=paddle.int64).unsqueeze(0).expand([batch_size, -1])
+    position_ids = (
+        paddle.arange(seq_len, dtype=paddle.int64)
+        .unsqueeze(0)
+        .expand([batch_size, -1])
+    )
 
     strategy = fleet.DistributedStrategy()
     gpt_pipe_model = NoPipelineParallel(gpt_model, strategy)
@@ -143,10 +172,16 @@ def run_tp_sp(
     register_sequence_parallel_allreduce_hooks(gpt_model, 1, False)
 
     paddle.manual_seed(seed)
-    data = paddle.randint(low=0, high=vocab_size, shape=(batch_size, seq_len + 1))
+    data = paddle.randint(
+        low=0, high=vocab_size, shape=(batch_size, seq_len + 1)
+    )
     input_ids = data[:, :-1]
     labels = data[:, 1:]
-    position_ids = paddle.arange(seq_len, dtype=paddle.int64).unsqueeze(0).expand([batch_size, -1])
+    position_ids = (
+        paddle.arange(seq_len, dtype=paddle.int64)
+        .unsqueeze(0)
+        .expand([batch_size, -1])
+    )
 
     tp_group = ps.get_tensor_model_parallel_group()
 
@@ -194,8 +229,12 @@ def _make_serial_config(**extra):
         "rotary_percent": 1.0,
         "rotary_base": 10000,
         "rope_scaling": 1.0,
-        "init_method": functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-        "output_layer_init_method": functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+        "init_method": functools.partial(
+            paddle.nn.init.xavier_uniform_, gain=1.0
+        ),
+        "output_layer_init_method": functools.partial(
+            paddle.nn.init.xavier_uniform_, gain=1.0
+        ),
         "use_qk_norm": True,
     }
     kwargs.update(extra)
@@ -223,8 +262,12 @@ def _make_dist_config(**extra):
         "rotary_percent": 1.0,
         "rotary_base": 10000,
         "rope_scaling": 1.0,
-        "init_method": functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-        "output_layer_init_method": functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+        "init_method": functools.partial(
+            paddle.nn.init.xavier_uniform_, gain=1.0
+        ),
+        "output_layer_init_method": functools.partial(
+            paddle.nn.init.xavier_uniform_, gain=1.0
+        ),
         "use_qk_norm": True,
     }
     kwargs.update(extra)
@@ -238,13 +281,17 @@ class TestTPSP(unittest.TestCase):
         then initialize fleet once with TP=4."""
         # --- serial baselines (TP group not yet created) ---
         serial_cfg = _make_serial_config()
-        cls.tp_sp_baseline = single_device_baseline(SEED, BATCH_SIZE, SEQ_LEN, VOCAB_SIZE, serial_cfg)
+        cls.tp_sp_baseline = single_device_baseline(
+            SEED, BATCH_SIZE, SEQ_LEN, VOCAB_SIZE, serial_cfg
+        )
 
         serial_cfg_bar = _make_serial_config(
             block_attention_residuals=True,
             attn_res_block_size=2,
         )
-        cls.tp_sp_bar_baseline = single_device_baseline(SEED, BATCH_SIZE, SEQ_LEN, VOCAB_SIZE, serial_cfg_bar)
+        cls.tp_sp_bar_baseline = single_device_baseline(
+            SEED, BATCH_SIZE, SEQ_LEN, VOCAB_SIZE, serial_cfg_bar
+        )
 
         # --- initialize fleet (sets global TP=4) ---
         strategy = fleet.DistributedStrategy()

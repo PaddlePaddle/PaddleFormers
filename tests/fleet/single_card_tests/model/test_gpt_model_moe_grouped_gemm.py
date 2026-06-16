@@ -25,10 +25,10 @@ from paddle.distributed import fleet
 
 # from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
 from paddle.distributed.fleet.meta_parallel import NoPipelineParallel
-from paddlefleet_ops.utils import get_cuda_version
 
 # from tests.unit_tests.test_utilities import Utils
 import paddleformers.fleet.parallel_state as ps
+from paddlefleet_ops.utils import get_cuda_version
 from paddleformers.fleet.gpt_builders import gpt_builder
 from paddleformers.fleet.models.gpt import GPTConfig
 
@@ -38,7 +38,9 @@ SKIP_TESTS = REPO_FLAG != "paddleformers.fleet"
 
 def get_gpu_models_via_nvidia_smi():
     try:
-        output = subprocess.check_output("nvidia-smi --query-gpu=name --format=csv,noheader", shell=True)
+        output = subprocess.check_output(
+            "nvidia-smi --query-gpu=name --format=csv,noheader", shell=True
+        )
         models = output.decode().strip().replace("NVIDIA", "")
         return models
     except Exception as e:
@@ -117,8 +119,12 @@ class TestGPTModel(unittest.TestCase):
             moe_intermediate_size=1024,
             moe_token_dispatcher_type="alltoall",
             n_shared_experts=1,
-            init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-            output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+            init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
+            output_layer_init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
             use_qk_norm=True,
             moe_expert_fusion=True,
             moe_deep_gemm=False,
@@ -137,12 +143,18 @@ class TestGPTModel(unittest.TestCase):
             print(f"{name}: {param_norm:.6f}, {param_abssum:.6f}")
 
         data = list(range(sequence_length))
-        input_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat((micro_batch_size, 1))
-        position_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat((micro_batch_size, 1))
-        attention_mask = paddle.ones((micro_batch_size, 1, sequence_length, sequence_length), dtype=bool)
-        labels = paddle.to_tensor(list(range(1, sequence_length + 1)), dtype=paddle.int64).repeat(
+        input_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat(
             (micro_batch_size, 1)
         )
+        position_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat(
+            (micro_batch_size, 1)
+        )
+        attention_mask = paddle.ones(
+            (micro_batch_size, 1, sequence_length, sequence_length), dtype=bool
+        )
+        labels = paddle.to_tensor(
+            list(range(1, sequence_length + 1)), dtype=paddle.int64
+        ).repeat((micro_batch_size, 1))
 
         data = (
             {
@@ -154,7 +166,9 @@ class TestGPTModel(unittest.TestCase):
         )
 
         gpt_pipe_model = NoPipelineParallel(self.gpt_model, self.strategy)
-        gpt_pipe_model = paddle.amp.decorate(models=gpt_pipe_model, level="O2", dtype="bfloat16")
+        gpt_pipe_model = paddle.amp.decorate(
+            models=gpt_pipe_model, level="O2", dtype="bfloat16"
+        )
         loss = gpt_pipe_model.forward_backward_pipeline(data)
 
         for name, param in self.gpt_model.named_parameters():
@@ -175,27 +189,27 @@ class TestGPTModel(unittest.TestCase):
         repo_name = os.environ.get("repo_flag")
         if judge_machine_type() == "H":
             if version == 13:
-                assert (
-                    loss.item() == 5.239296913146973
-                ), f"loss not equal ({loss.item()} != 5.239296913146973), please check your modify"
-                assert (
-                    embed_tokens_grad_norm == 2.796875
-                ), f"grad norm of embed_tokens not equal ({embed_tokens_grad_norm} != 2.796875), please check your modify"
+                assert loss.item() == 5.239296913146973, (
+                    f"loss not equal ({loss.item()} != 5.239296913146973), please check your modify"
+                )
+                assert embed_tokens_grad_norm == 2.796875, (
+                    f"grad norm of embed_tokens not equal ({embed_tokens_grad_norm} != 2.796875), please check your modify"
+                )
             else:  # 12.X
                 if cuda_minor == 6:
-                    assert (
-                        loss.item() == 5.239708423614502
-                    ), f"loss not equal ({loss.item()} != 5.239708423614502), please check your modify"
-                    assert (
-                        embed_tokens_grad_norm == 2.796875
-                    ), f"grad norm of embed_tokens not equal ({embed_tokens_grad_norm} != 2.796875), please check your modify"
+                    assert loss.item() == 5.239708423614502, (
+                        f"loss not equal ({loss.item()} != 5.239708423614502), please check your modify"
+                    )
+                    assert embed_tokens_grad_norm == 2.796875, (
+                        f"grad norm of embed_tokens not equal ({embed_tokens_grad_norm} != 2.796875), please check your modify"
+                    )
                 else:  # 12.9
-                    assert (
-                        loss.item() == 5.239296913146973
-                    ), f"loss not equal ({loss.item()} != 5.239296913146973), please check your modify"
-                    assert (
-                        embed_tokens_grad_norm == 2.796875
-                    ), f"grad norm of embed_tokens not equal ({embed_tokens_grad_norm} != 2.796875), please check your modify"
+                    assert loss.item() == 5.239296913146973, (
+                        f"loss not equal ({loss.item()} != 5.239296913146973), please check your modify"
+                    )
+                    assert embed_tokens_grad_norm == 2.796875, (
+                        f"grad norm of embed_tokens not equal ({embed_tokens_grad_norm} != 2.796875), please check your modify"
+                    )
         elif judge_machine_type() == "V":
             pass  # TODO: add V machine test
 

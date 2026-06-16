@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -96,7 +100,9 @@ class TestGlobalMemoryBuffer(unittest.TestCase):
         mock_ctx.return_value.__enter__ = MagicMock(return_value=None)
         mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
 
-        t = buf.get_tensor([2, 3], paddle.float32, "ctx_test", mem_alloc_context=mock_ctx)
+        t = buf.get_tensor(
+            [2, 3], paddle.float32, "ctx_test", mem_alloc_context=mock_ctx
+        )
         self.assertEqual(t.shape, [2, 3])
         mock_ctx.assert_called_once()
 
@@ -247,14 +253,18 @@ class TestGetTensorModelParallelGroupIfNone(unittest.TestCase):
     """Tests for get_tensor_model_parallel_group_if_none in paddleformers.fleet.utils."""
 
     def test_not_initialized_returns_none(self):
-        from paddleformers.fleet.utils import get_tensor_model_parallel_group_if_none
+        from paddleformers.fleet.utils import (
+            get_tensor_model_parallel_group_if_none,
+        )
 
         with patch("paddle.distributed.is_initialized", return_value=False):
             result = get_tensor_model_parallel_group_if_none(None)
             self.assertIsNone(result)
 
     def test_with_explicit_group(self):
-        from paddleformers.fleet.utils import get_tensor_model_parallel_group_if_none
+        from paddleformers.fleet.utils import (
+            get_tensor_model_parallel_group_if_none,
+        )
 
         mock_group = MagicMock()
         with patch("paddle.distributed.is_initialized", return_value=True):
@@ -262,7 +272,9 @@ class TestGetTensorModelParallelGroupIfNone(unittest.TestCase):
             self.assertEqual(result, mock_group)
 
     def test_none_group_warns_and_gets_default(self):
-        from paddleformers.fleet.utils import get_tensor_model_parallel_group_if_none
+        from paddleformers.fleet.utils import (
+            get_tensor_model_parallel_group_if_none,
+        )
 
         with (
             patch("paddle.distributed.is_initialized", return_value=True),
@@ -274,7 +286,9 @@ class TestGetTensorModelParallelGroupIfNone(unittest.TestCase):
             self.assertIsNotNone(result)
 
     def test_none_group_is_expert(self):
-        from paddleformers.fleet.utils import get_tensor_model_parallel_group_if_none
+        from paddleformers.fleet.utils import (
+            get_tensor_model_parallel_group_if_none,
+        )
 
         with (
             patch("paddle.distributed.is_initialized", return_value=True),
@@ -282,7 +296,9 @@ class TestGetTensorModelParallelGroupIfNone(unittest.TestCase):
             patch("paddleformers.fleet.utils.parallel_state") as mock_ps,
         ):
             mock_ps.get_expert_tensor_parallel_group.return_value = MagicMock()
-            result = get_tensor_model_parallel_group_if_none(None, is_expert=True)
+            result = get_tensor_model_parallel_group_if_none(
+                None, is_expert=True
+            )
             self.assertIsNotNone(result)
 
 
@@ -290,7 +306,9 @@ class TestPrepareInputTensorsForWgradCompute(unittest.TestCase):
     """Tests for prepare_input_tensors_for_wgrad_compute in paddleformers.fleet.utils."""
 
     def test_3d_tensors_reshaped_to_2d(self):
-        from paddleformers.fleet.utils import prepare_input_tensors_for_wgrad_compute
+        from paddleformers.fleet.utils import (
+            prepare_input_tensors_for_wgrad_compute,
+        )
 
         grad = paddle.randn([2, 3, 4])
         inp = paddle.randn([2, 3, 4])
@@ -299,7 +317,9 @@ class TestPrepareInputTensorsForWgradCompute(unittest.TestCase):
         self.assertEqual(a_in.shape, [6, 4])
 
     def test_2d_tensors_unchanged(self):
-        from paddleformers.fleet.utils import prepare_input_tensors_for_wgrad_compute
+        from paddleformers.fleet.utils import (
+            prepare_input_tensors_for_wgrad_compute,
+        )
 
         grad = paddle.randn([6, 4])
         inp = paddle.randn([6, 4])
@@ -308,7 +328,9 @@ class TestPrepareInputTensorsForWgradCompute(unittest.TestCase):
         self.assertEqual(a_in.shape, [6, 4])
 
     def test_contiguous_called(self):
-        from paddleformers.fleet.utils import prepare_input_tensors_for_wgrad_compute
+        from paddleformers.fleet.utils import (
+            prepare_input_tensors_for_wgrad_compute,
+        )
 
         grad = paddle.randn([2, 3, 4]).transpose([0, 2, 1])
         inp = paddle.randn([2, 3, 4]).transpose([0, 2, 1])
@@ -422,7 +444,7 @@ class TestNvtxFunctions(unittest.TestCase):
         utils_module._nvtx_range_messages = []
         try:
             # Pop on empty stack should raise even if nvprof_nvtx_pop is mocked
-            with (  # noqa: SIM117
+            with (
                 patch("paddle.base.core.nvprof_nvtx_push"),
                 patch("paddle.base.core.nvprof_nvtx_pop"),
             ):
@@ -475,7 +497,9 @@ class TestGetAttrWrappedModel(unittest.TestCase):
         outer = MagicMock()
         outer.module = inner
         outer.my_attr = None
-        result = get_attr_wrapped_model(outer, "my_attr", allow_none=False, return_model_obj=True)
+        result = get_attr_wrapped_model(
+            outer, "my_attr", allow_none=False, return_model_obj=True
+        )
         self.assertEqual(result, inner)
 
     def test_allow_none_true(self):
@@ -557,7 +581,9 @@ class TestMakeViewlessTensor(unittest.TestCase):
         # _is_view might not be available on all paddle versions, test only if available
         if hasattr(view, "_is_view"):
             try:
-                result = make_viewless_tensor(view, requires_grad=False, keep_graph=False)
+                result = make_viewless_tensor(
+                    view, requires_grad=False, keep_graph=False
+                )
                 self.assertEqual(result.shape, [2, 4])
             except Exception:
                 pass
@@ -571,7 +597,9 @@ class TestMakeViewlessTensor(unittest.TestCase):
         view.stop_gradient = False
         if hasattr(view, "_is_view"):
             try:
-                result = make_viewless_tensor(view, requires_grad=False, keep_graph=True)
+                result = make_viewless_tensor(
+                    view, requires_grad=False, keep_graph=True
+                )
                 self.assertEqual(result.shape, [2, 4])
             except Exception:
                 pass
@@ -639,7 +667,9 @@ class TestGetBatchOnThisCpRank(unittest.TestCase):
             "labels": mock_labels,
             "other_key": "not_scattered",
         }
-        with patch("paddleformers.fleet.utils.ContextParallelScatterOp") as mock_cp_op:
+        with patch(
+            "paddleformers.fleet.utils.ContextParallelScatterOp"
+        ) as mock_cp_op:
             mock_cp_op.apply.side_effect = lambda x, **kw: x
             result = get_batch_on_this_cp_rank(inputs)
         self.assertIn("input_ids", result)
@@ -650,7 +680,9 @@ class TestGetBatchOnThisCpRank(unittest.TestCase):
         from paddleformers.fleet.utils import get_batch_on_this_cp_rank
 
         t = paddle.randn([2, 4])
-        with patch("paddleformers.fleet.utils.ContextParallelScatterOp") as mock_cp_op:
+        with patch(
+            "paddleformers.fleet.utils.ContextParallelScatterOp"
+        ) as mock_cp_op:
             mock_cp_op.apply.return_value = t
             result = get_batch_on_this_cp_rank(t)
         self.assertIsNotNone(result)

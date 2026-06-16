@@ -16,14 +16,20 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
 
 import paddle
 
-from paddleformers.fleet.transformer.dot_product_attention import DotProductAttention
+from paddleformers.fleet.transformer.dot_product_attention import (
+    DotProductAttention,
+)
 from paddleformers.fleet.transformer.enums import AttnMaskType
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 
@@ -86,7 +92,9 @@ class TestDotProductAttentionGroupQueryAttention(unittest.TestCase):
         query = paddle.randn([bsz, seq_len, num_heads, head_dim])
         key = paddle.randn([bsz, seq_len, num_kv_heads, head_dim])
         value = paddle.randn([bsz, seq_len, num_kv_heads, head_dim])
-        attention_mask = paddle.triu(paddle.ones([bsz, 1, seq_len, seq_len]) * -1e4, diagonal=1)
+        attention_mask = paddle.triu(
+            paddle.ones([bsz, 1, seq_len, seq_len]) * -1e4, diagonal=1
+        )
 
         config._attn_implementation = "eager"
         output = attn(
@@ -140,7 +148,9 @@ class TestDotProductAttentionLearnableSoftmax(unittest.TestCase):
             attention_type="self",
         )
         self.assertIsNotNone(attn.softmax_offset)
-        self.assertEqual(attn.softmax_offset.shape, [4])  # num_attention_heads_per_partition
+        self.assertEqual(
+            attn.softmax_offset.shape, [4]
+        )  # num_attention_heads_per_partition
 
 
 class TestDotProductAttentionSlidingWindow(unittest.TestCase):

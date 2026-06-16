@@ -52,7 +52,9 @@ class KimiK25VisionModel(TransformerEncoder):
         else:
             name_prefix = "model"
 
-        self.add_sequential_layer(layers, LayerDesc(spec.embedding), f"{name_prefix}.patch_embed")
+        self.add_sequential_layer(
+            layers, LayerDesc(spec.embedding), f"{name_prefix}.patch_embed"
+        )
         self.get_encoder_layer_desc_list(layers, spec, name_prefix)
 
         self.add_sequential_layer(
@@ -66,7 +68,9 @@ class KimiK25VisionModel(TransformerEncoder):
             LayerDesc(spec.sdtpool_merger),
             f"{name_prefix}.sdtpool_merger",
         )
-        self.add_sequential_layer(layers, LayerDesc(spec.merger), f"{name_prefix}.mm_projector")
+        self.add_sequential_layer(
+            layers, LayerDesc(spec.merger), f"{name_prefix}.mm_projector"
+        )
 
         return layers
 
@@ -110,7 +114,9 @@ class KimiK25VisionTransformerLayer(TransformerLayer):
         if self.full_recompute:
             hidden_states = dict_args["hidden_states"]
             attention_mask = dict_args.get("attention_mask", None)
-            attn_mask_startend_row_indices = dict_args.get("attn_mask_startend_row_indices", None)
+            attn_mask_startend_row_indices = dict_args.get(
+                "attn_mask_startend_row_indices", None
+            )
             context = dict_args.get("context", None)
             context_mask = dict_args.get("context_mask", None)
             attention_bias = dict_args.get("attention_bias", None)
@@ -126,7 +132,9 @@ class KimiK25VisionTransformerLayer(TransformerLayer):
                 else None,
                 context=context,
                 context_mask=context_mask,
-                rope_freqs_cis=rope_freqs_cis.clone() if rope_freqs_cis is not None else None,  # Clone is necessary!
+                rope_freqs_cis=rope_freqs_cis.clone()
+                if rope_freqs_cis is not None
+                else None,  # Clone is necessary!
                 attention_bias=attention_bias,
                 packed_seq_params=packed_seq_params,
             )

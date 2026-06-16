@@ -171,11 +171,20 @@ class TestErnieMoEConfig(unittest.TestCase):
 
     def test_attribute_map(self):
         """Test the attribute_map mappings."""
-        self.assertEqual(ErnieMoEConfig.attribute_map["n_positions"], "max_position_embeddings")
+        self.assertEqual(
+            ErnieMoEConfig.attribute_map["n_positions"],
+            "max_position_embeddings",
+        )
         self.assertEqual(ErnieMoEConfig.attribute_map["n_embd"], "hidden_size")
-        self.assertEqual(ErnieMoEConfig.attribute_map["n_layer"], "num_hidden_layers")
-        self.assertEqual(ErnieMoEConfig.attribute_map["n_head"], "num_attention_heads")
-        self.assertEqual(ErnieMoEConfig.attribute_map["n_inner"], "intermediate_size")
+        self.assertEqual(
+            ErnieMoEConfig.attribute_map["n_layer"], "num_hidden_layers"
+        )
+        self.assertEqual(
+            ErnieMoEConfig.attribute_map["n_head"], "num_attention_heads"
+        )
+        self.assertEqual(
+            ErnieMoEConfig.attribute_map["n_inner"], "intermediate_size"
+        )
 
     def test_insert_empty_layer_none_becomes_empty_list(self):
         """Test insert_empty_layer None becomes empty list."""
@@ -198,7 +207,9 @@ class TestPretrainedInitConfiguration(unittest.TestCase):
 
     def test_contains_tiny_random_ernie(self):
         """Test that tiny-random-ernie config exists."""
-        self.assertIn("ernie/tiny-random-ernie", ERNIE_PRETRAINED_INIT_CONFIGURATION)
+        self.assertIn(
+            "ernie/tiny-random-ernie", ERNIE_PRETRAINED_INIT_CONFIGURATION
+        )
 
     def test_tiny_random_ernie_values(self):
         """Test tiny-random-ernie config values."""

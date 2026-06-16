@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import functools
@@ -103,7 +107,9 @@ class TestGetQuantFuncExtra(unittest.TestCase):
         ):
             try:
                 _, weight_func = mod.get_quant_func("blockwise")
-                self.assertEqual(weight_func.keywords.get("quant_method"), "128x128")
+                self.assertEqual(
+                    weight_func.keywords.get("quant_method"), "128x128"
+                )
             except (AttributeError, ImportError):
                 pass
 
@@ -117,7 +123,9 @@ class TestGetQuantFuncExtra(unittest.TestCase):
         ):
             try:
                 _, weight_func = mod.get_quant_func("blockwise")
-                self.assertEqual(weight_func.keywords.get("input_transpose"), False)
+                self.assertEqual(
+                    weight_func.keywords.get("input_transpose"), False
+                )
             except (AttributeError, ImportError):
                 pass
 

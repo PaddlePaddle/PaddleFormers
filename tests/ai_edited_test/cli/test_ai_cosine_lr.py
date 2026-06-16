@@ -138,7 +138,9 @@ class TestCosineScheduleWithWarmup(unittest.TestCase):
         prev_lr = scheduler.lr_lambda(100)
         for step in range(200, 1001, 100):
             curr_lr = scheduler.lr_lambda(step)
-            self.assertLessEqual(curr_lr, prev_lr + 1e-6)  # Allow tiny numerical errors
+            self.assertLessEqual(
+                curr_lr, prev_lr + 1e-6
+            )  # Allow tiny numerical errors
             prev_lr = curr_lr
 
 

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -29,7 +33,9 @@ from unittest import mock
 class TestDistributedModel(unittest.TestCase):
     """Tests for the distributed_model function."""
 
-    def _make_mock_hcg(self, parallel_mode="PIPELINE_PARALLEL", num_virtual_stages=1):
+    def _make_mock_hcg(
+        self, parallel_mode="PIPELINE_PARALLEL", num_virtual_stages=1
+    ):
         """Helper to create a mock HCG object."""
         from paddle.distributed.fleet.base.topology import ParallelMode
 
@@ -122,12 +128,14 @@ class TestDistributedModel(unittest.TestCase):
         ):
             mock_fleet._user_defined_strategy = mock_strategy
             mock_fleet._hcg = mock_hcg
-            with (  # noqa: SIM117
+            with (
                 mock.patch(
                     "paddle.distributed.fleet.meta_parallel.PipelineLayer",
                     PipelineLayer,
                 ),
-                mock.patch.object(PipelineLayer, "__instancecheck__", return_value=False),
+                mock.patch.object(
+                    PipelineLayer, "__instancecheck__", return_value=False
+                ),
             ):
                 # Not a PipelineLayer instance
                 with self.assertRaises(AssertionError):

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -37,7 +41,9 @@ class TestVocabParallelCrossEntropyCalculateLogitsMax(unittest.TestCase):
     def test_returns_logits_and_max(self):
         """Test that calculate_logits_max returns tuple of (logits, max)."""
         logits = paddle.randn([2, 4], dtype=paddle.float32)
-        result_logits, logits_max = VocabParallelCrossEntropy.calculate_logits_max(logits)
+        result_logits, logits_max = (
+            VocabParallelCrossEntropy.calculate_logits_max(logits)
+        )
         self.assertEqual(result_logits.shape, [2, 4])
         self.assertEqual(logits_max.shape, [2])
 
@@ -57,8 +63,10 @@ class TestVocabParallelCrossEntropyCalculatePredictedLogits(unittest.TestCase):
         logits = paddle.randn([2, 4], dtype=paddle.float32)
         logits_max = paddle.randn([2])
         target = paddle.to_tensor([[10], [0]])  # 10 is out of range
-        target_mask, _, predicted_logits, sum_exp, exp_logits = VocabParallelCrossEntropy.calculate_predicted_logits(
-            logits, target, logits_max, 0, 4
+        target_mask, _, predicted_logits, sum_exp, exp_logits = (
+            VocabParallelCrossEntropy.calculate_predicted_logits(
+                logits, target, logits_max, 0, 4
+            )
         )
         # The first row should be masked since target=10 is outside [0,4)
         self.assertTrue(target_mask[0, 0])
@@ -68,8 +76,10 @@ class TestVocabParallelCrossEntropyCalculatePredictedLogits(unittest.TestCase):
         logits = paddle.to_tensor([[1.0, 2.0, 3.0, 4.0]], dtype=paddle.float32)
         logits_max = paddle.to_tensor([4.0])
         target = paddle.to_tensor([[2]])
-        target_mask, _, predicted_logits, _, _ = VocabParallelCrossEntropy.calculate_predicted_logits(
-            logits, target, logits_max, 0, 4
+        target_mask, _, predicted_logits, _, _ = (
+            VocabParallelCrossEntropy.calculate_predicted_logits(
+                logits, target, logits_max, 0, 4
+            )
         )
         # Target 2 is within range [0, 4), should not be masked
         self.assertFalse(target_mask[0, 0])
@@ -79,8 +89,10 @@ class TestVocabParallelCrossEntropyCalculatePredictedLogits(unittest.TestCase):
         logits = paddle.randn([3, 8], dtype=paddle.float32)
         logits_max = paddle.randn([3])
         target = paddle.to_tensor([[0], [1], [2]])
-        _, _, predicted_logits, sum_exp, exp_logits = VocabParallelCrossEntropy.calculate_predicted_logits(
-            logits, target, logits_max, 0, 8
+        _, _, predicted_logits, sum_exp, exp_logits = (
+            VocabParallelCrossEntropy.calculate_predicted_logits(
+                logits, target, logits_max, 0, 8
+            )
         )
         self.assertEqual(predicted_logits.shape, [3, 1])
         self.assertEqual(sum_exp.shape, [3])
@@ -95,8 +107,10 @@ class TestVocabParallelCrossEntropyCalculateCrossEntropyLoss(unittest.TestCase):
         exp_logits = paddle.randn([2, 4], dtype=paddle.float32)
         predicted_logits = paddle.randn([2])
         sum_exp = paddle.randn([2])
-        updated_exp, loss = VocabParallelCrossEntropy.calculate_cross_entropy_loss(
-            exp_logits, predicted_logits, sum_exp
+        updated_exp, loss = (
+            VocabParallelCrossEntropy.calculate_cross_entropy_loss(
+                exp_logits, predicted_logits, sum_exp
+            )
         )
         self.assertEqual(loss.shape, [2])
 
@@ -106,10 +120,16 @@ class TestVocabParallelCrossEntropyCalculateCrossEntropyLoss(unittest.TestCase):
         predicted_logits = paddle.randn([2])
         # Use the actual row sums as sum_exp for correct normalization
         sum_exp = exp_logits.sum(axis=-1)
-        VocabParallelCrossEntropy.calculate_cross_entropy_loss(exp_logits, predicted_logits, sum_exp)
+        VocabParallelCrossEntropy.calculate_cross_entropy_loss(
+            exp_logits, predicted_logits, sum_exp
+        )
         # After normalization, each row should sum to ~1
         row_sums = exp_logits.sum(axis=-1)
-        self.assertTrue(paddle.allclose(row_sums, paddle.ones([2], dtype=paddle.float32), atol=1e-5))
+        self.assertTrue(
+            paddle.allclose(
+                row_sums, paddle.ones([2], dtype=paddle.float32), atol=1e-5
+            )
+        )
 
 
 class TestVocabParallelCrossEntropyPrepareGradientCalc(unittest.TestCase):
@@ -124,7 +144,9 @@ class TestVocabParallelCrossEntropyPrepareGradientCalc(unittest.TestCase):
             arange_1d,
             softmax_update,
             grad_input,
-        ) = VocabParallelCrossEntropy.prepare_gradient_calculation_operands(softmax, target_mask)
+        ) = VocabParallelCrossEntropy.prepare_gradient_calculation_operands(
+            softmax, target_mask
+        )
         self.assertEqual(grad_2d.shape, [2, 4])
         self.assertEqual(arange_1d.shape, [2])
         self.assertEqual(softmax_update.shape, [2])
@@ -136,7 +158,9 @@ class TestVocabParallelCrossEntropyCalculateGradients(unittest.TestCase):
     # The source code has a shape incompatibility in calculate_gradients:
     # grad_input.mul_(grad_output.unsqueeze(dim=-1)) fails when shapes
     # don't broadcast correctly for in-place operation. Skip this test.
-    @unittest.skip("Source code has shape incompatibility in calculate_gradients in-place mul_")
+    @unittest.skip(
+        "Source code has shape incompatibility in calculate_gradients in-place mul_"
+    )
     def test_gradient_shape(self):
         """Test gradient output shape matches input shape."""
         softmax = paddle.randn([2, 4], dtype=paddle.float32)
@@ -146,7 +170,9 @@ class TestVocabParallelCrossEntropyCalculateGradients(unittest.TestCase):
             arange_1d,
             softmax_update,
             grad_input,
-        ) = VocabParallelCrossEntropy.prepare_gradient_calculation_operands(softmax, target_mask)
+        ) = VocabParallelCrossEntropy.prepare_gradient_calculation_operands(
+            softmax, target_mask
+        )
         masked_target_1d = paddle.to_tensor([0, 1])
         # grad_output shape must match grad_input shape for in-place mul_
         grad_output = paddle.randn([2, 4])
@@ -221,7 +247,9 @@ class TestVocabParallelCrossEntropyBackwardLabelSmoothing(unittest.TestCase):
 class TestVocabParallelCrossEntropyFunction(unittest.TestCase):
     """Tests for vocab_parallel_cross_entropy wrapper function."""
 
-    @patch("paddleformers.fleet.tensor_parallel.cross_entropy._VocabParallelCrossEntropy.apply")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.cross_entropy._VocabParallelCrossEntropy.apply"
+    )
     def test_wrapper_calls_apply(self, mock_apply):
         """Test wrapper delegates to _VocabParallelCrossEntropy.apply."""
         mock_apply.return_value = paddle.randn([2])

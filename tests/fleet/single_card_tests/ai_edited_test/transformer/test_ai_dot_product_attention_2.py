@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -25,7 +29,9 @@ from unittest.mock import MagicMock, patch
 import paddle
 
 from paddleformers.fleet.process_groups_config import ProcessGroupCollection
-from paddleformers.fleet.transformer.dot_product_attention import DotProductAttention
+from paddleformers.fleet.transformer.dot_product_attention import (
+    DotProductAttention,
+)
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 
 
@@ -121,8 +127,10 @@ class TestDotProductAttentionConstruction(unittest.TestCase):
     @patch.object(ProcessGroupCollection, "use_mpu_process_groups")
     def test_pg_collection_without_tp_raises(self, mock_pg):
         mock_pg.return_value = None
-        with self.assertRaises(Exception):  # noqa: B017
-            DotProductAttention(_make_config(), 1, "padding", "self", pg_collection=None)
+        with self.assertRaises(Exception):
+            DotProductAttention(
+                _make_config(), 1, "padding", "self", pg_collection=None
+            )
 
 
 class TestDotProductAttentionSoftmaxType(unittest.TestCase):
@@ -152,7 +160,9 @@ class TestDotProductAttentionSoftmaxType(unittest.TestCase):
         mock_pg_obj.tp.world_size = 1
         mock_pg.return_value = mock_pg_obj
 
-        config = _make_config(softmax_type="off-by-one", perform_initialization=False)
+        config = _make_config(
+            softmax_type="off-by-one", perform_initialization=False
+        )
         dpa = DotProductAttention(
             config,
             layer_number=1,
@@ -169,7 +179,9 @@ class TestDotProductAttentionSoftmaxType(unittest.TestCase):
         mock_pg_obj.tp.world_size = 1
         mock_pg.return_value = mock_pg_obj
 
-        config = _make_config(softmax_type="learnable", perform_initialization=False)
+        config = _make_config(
+            softmax_type="learnable", perform_initialization=False
+        )
         dpa = DotProductAttention(
             config,
             layer_number=1,
@@ -227,7 +239,9 @@ class TestDotProductAttentionNumHeads(unittest.TestCase):
 class TestDotProductAttentionContextParallel(unittest.TestCase):
     """Tests for DotProductAttention with context parallelism (formerly CPDotProductAttention)."""
 
-    @patch("paddleformers.fleet.transformer.dot_product_attention.get_context_parallel_world_size")
+    @patch(
+        "paddleformers.fleet.transformer.dot_product_attention.get_context_parallel_world_size"
+    )
     def test_forward_asserts_packed_seq(self, mock_cp_size):
         mock_cp_size.return_value = 2
         config = _make_config()
@@ -244,7 +258,9 @@ class TestDotProductAttentionContextParallel(unittest.TestCase):
         with self.assertRaises(AssertionError):
             attn(q, k, v, mask, packed_seq_params="fake")
 
-    @patch("paddleformers.fleet.transformer.dot_product_attention.get_context_parallel_world_size")
+    @patch(
+        "paddleformers.fleet.transformer.dot_product_attention.get_context_parallel_world_size"
+    )
     def test_forward_asserts_attention_bias(self, mock_cp_size):
         mock_cp_size.return_value = 2
         config = _make_config()

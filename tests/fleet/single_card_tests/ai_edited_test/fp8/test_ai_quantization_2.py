@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -50,7 +54,9 @@ class TestGetQuantFuncBlockwiseParams(unittest.TestCase):
         try:
             inp_func, weight_func = get_quant_func("blockwise")
             self.assertIsInstance(weight_func, functools.partial)
-            self.assertEqual(weight_func.keywords.get("quant_method"), "128x128")
+            self.assertEqual(
+                weight_func.keywords.get("quant_method"), "128x128"
+            )
         except (AttributeError, ImportError):
             pass
 
@@ -89,9 +95,15 @@ class TestGetQuantFuncBlockwiseParams(unittest.TestCase):
         from paddleformers.fleet.fp8.quantization import get_quant_func
 
         try:
-            inp_func, weight_func = get_quant_func("blockwise", out_scale_trans=True)
-            self.assertEqual(inp_func.keywords.get("output_scale_transpose"), True)
-            self.assertEqual(weight_func.keywords.get("output_scale_transpose"), True)
+            inp_func, weight_func = get_quant_func(
+                "blockwise", out_scale_trans=True
+            )
+            self.assertEqual(
+                inp_func.keywords.get("output_scale_transpose"), True
+            )
+            self.assertEqual(
+                weight_func.keywords.get("output_scale_transpose"), True
+            )
         except (AttributeError, ImportError):
             pass
 

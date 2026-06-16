@@ -69,13 +69,18 @@ class GenerationConfig:
         """Validate configuration."""
         if self.decode_strategy not in ["greedy_search", "sampling"]:
             raise ValueError(
-                f"decode_strategy must be one of ['greedy_search', 'sampling'], " f"got {self.decode_strategy}"
+                f"decode_strategy must be one of ['greedy_search', 'sampling'], "
+                f"got {self.decode_strategy}"
             )
         if self.temperature <= 0:
-            raise ValueError(f"temperature must be positive, got {self.temperature}")
+            raise ValueError(
+                f"temperature must be positive, got {self.temperature}"
+            )
         if self.top_k < 1:
             raise ValueError(f"top_k must be >= 1, got {self.top_k}")
         if not (0 < self.top_p <= 1.0):
             raise ValueError(f"top_p must be in (0, 1.0], got {self.top_p}")
         if self.repetition_penalty <= 0:
-            raise ValueError(f"repetition_penalty must be positive, got {self.repetition_penalty}")
+            raise ValueError(
+                f"repetition_penalty must be positive, got {self.repetition_penalty}"
+            )

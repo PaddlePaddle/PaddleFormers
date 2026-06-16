@@ -26,7 +26,9 @@ import paddleformers.fleet.tensor_parallel
 from paddleformers.fleet.models.kimi_k25.kimi_k25_builders import (
     kimi_k25_vision_builder,
 )
-from paddleformers.fleet.models.kimi_k25.kimi_k25_model import KimiK25VisionModel
+from paddleformers.fleet.models.kimi_k25.kimi_k25_model import (
+    KimiK25VisionModel,
+)
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 
 
@@ -48,7 +50,10 @@ def _set_random_seed(
         np.random.seed(seed)
         paddle.manual_seed(seed)
 
-        if paddle.distributed.is_initialized() and paddle.cuda.device_count() > 0:
+        if (
+            paddle.distributed.is_initialized()
+            and paddle.cuda.device_count() > 0
+        ):
             paddleformers.fleet.tensor_parallel.model_parallel_cuda_manual_seed(
                 seed,
                 te_rng_tracker,
@@ -189,9 +194,15 @@ class TestKimiK25VisionModelFleet(unittest.TestCase):
         cu_seqlens_rm_last = cu_seqlens[:-1]
         repeats = cu_seqlens_rm_first - cu_seqlens_rm_last
 
-        startend_row_indices_lts = paddle.repeat_interleave(cu_seqlens_rm_first, repeats).reshape([1, 1, -1, 1])
-        startend_row_indices_ute = paddle.repeat_interleave(cu_seqlens_rm_last, repeats).reshape([1, 1, -1, 1])
-        startend_row_indices = paddle.concat([startend_row_indices_lts, startend_row_indices_ute], axis=-1)
+        startend_row_indices_lts = paddle.repeat_interleave(
+            cu_seqlens_rm_first, repeats
+        ).reshape([1, 1, -1, 1])
+        startend_row_indices_ute = paddle.repeat_interleave(
+            cu_seqlens_rm_last, repeats
+        ).reshape([1, 1, -1, 1])
+        startend_row_indices = paddle.concat(
+            [startend_row_indices_lts, startend_row_indices_ute], axis=-1
+        )
         return startend_row_indices
 
     def test_model_construction(self):
@@ -227,7 +238,9 @@ class TestKimiK25VisionModelFleet(unittest.TestCase):
         num_patches = 4 * 4  # 16 patches
         pixel_values = paddle.randn([num_patches, 3, 14, 14])
         grid_thws = paddle.to_tensor([[1, 4, 4]])
-        attn_mask_startend_row_indices = self._get_attn_mask_startend_row_indices(grid_thws)
+        attn_mask_startend_row_indices = (
+            self._get_attn_mask_startend_row_indices(grid_thws)
+        )
 
         input_dict = {
             "pixel_values": pixel_values,
@@ -237,7 +250,9 @@ class TestKimiK25VisionModelFleet(unittest.TestCase):
 
         output = model(input_dict)
         self.assertIn("hidden_states", output)
-        print(f"Single image output hidden_states type: {type(output['hidden_states'])}")
+        print(
+            f"Single image output hidden_states type: {type(output['hidden_states'])}"
+        )
 
     def test_forward_multi_frame_video(self):
         """Test forward pass with multiple frames (video)."""
@@ -247,7 +262,9 @@ class TestKimiK25VisionModelFleet(unittest.TestCase):
         num_patches = 2 * 4 * 4  # 32 patches
         pixel_values = paddle.randn([num_patches, 3, 14, 14])
         grid_thws = paddle.to_tensor([[2, 4, 4]])
-        attn_mask_startend_row_indices = self._get_attn_mask_startend_row_indices(grid_thws)
+        attn_mask_startend_row_indices = (
+            self._get_attn_mask_startend_row_indices(grid_thws)
+        )
 
         input_dict = {
             "pixel_values": pixel_values,
@@ -257,7 +274,9 @@ class TestKimiK25VisionModelFleet(unittest.TestCase):
 
         output = model(input_dict)
         self.assertIn("hidden_states", output)
-        print(f"Multi-frame output hidden_states type: {type(output['hidden_states'])}")
+        print(
+            f"Multi-frame output hidden_states type: {type(output['hidden_states'])}"
+        )
 
     def test_forward_batch_images(self):
         """Test forward pass with a batch of images."""
@@ -269,7 +288,9 @@ class TestKimiK25VisionModelFleet(unittest.TestCase):
         total_patches = 32
         pixel_values = paddle.randn([total_patches, 3, 14, 14])
         grid_thws = paddle.to_tensor([[1, 4, 4], [1, 4, 4]])
-        attn_mask_startend_row_indices = self._get_attn_mask_startend_row_indices(grid_thws)
+        attn_mask_startend_row_indices = (
+            self._get_attn_mask_startend_row_indices(grid_thws)
+        )
 
         input_dict = {
             "pixel_values": pixel_values,
@@ -290,7 +311,9 @@ class TestKimiK25VisionModelFleet(unittest.TestCase):
         total_patches = 16 + 36
         pixel_values = paddle.randn([total_patches, 3, 14, 14])
         grid_thws = paddle.to_tensor([[1, 4, 4], [1, 6, 6]])
-        attn_mask_startend_row_indices = self._get_attn_mask_startend_row_indices(grid_thws)
+        attn_mask_startend_row_indices = (
+            self._get_attn_mask_startend_row_indices(grid_thws)
+        )
 
         input_dict = {
             "pixel_values": pixel_values,
@@ -308,7 +331,9 @@ class TestKimiK25VisionModelFleet(unittest.TestCase):
         num_patches = 16
         pixel_values = paddle.randn([num_patches, 3, 14, 14])
         grid_thws = paddle.to_tensor([[1, 4, 4]])
-        attn_mask_startend_row_indices = self._get_attn_mask_startend_row_indices(grid_thws)
+        attn_mask_startend_row_indices = (
+            self._get_attn_mask_startend_row_indices(grid_thws)
+        )
 
         # Create attention mask
         attention_mask = paddle.ones([1, num_patches])
@@ -328,9 +353,13 @@ class TestKimiK25VisionModelFleet(unittest.TestCase):
         model, config = self._create_model(params_dtype=paddle.float32)
 
         num_patches = 16
-        pixel_values = paddle.randn([num_patches, 3, 14, 14], dtype=paddle.float32)
+        pixel_values = paddle.randn(
+            [num_patches, 3, 14, 14], dtype=paddle.float32
+        )
         grid_thws = paddle.to_tensor([[1, 4, 4]])
-        attn_mask_startend_row_indices = self._get_attn_mask_startend_row_indices(grid_thws)
+        attn_mask_startend_row_indices = (
+            self._get_attn_mask_startend_row_indices(grid_thws)
+        )
 
         input_dict = {
             "pixel_values": pixel_values,
@@ -341,15 +370,21 @@ class TestKimiK25VisionModelFleet(unittest.TestCase):
         output = model(input_dict)
         self.assertIn("hidden_states", output)
 
-    @unittest.skip("float16 dtype has issue with GPU weight initialization in paddleformers.fleet")
+    @unittest.skip(
+        "float16 dtype has issue with GPU weight initialization in paddleformers.fleet"
+    )
     def test_model_dtype_float16(self):
         """Test model with float16 dtype."""
         model, config = self._create_model(params_dtype=paddle.float16)
 
         num_patches = 16
-        pixel_values = paddle.randn([num_patches, 3, 14, 14], dtype=paddle.float16)
+        pixel_values = paddle.randn(
+            [num_patches, 3, 14, 14], dtype=paddle.float16
+        )
         grid_thws = paddle.to_tensor([[1, 4, 4]])
-        attn_mask_startend_row_indices = self._get_attn_mask_startend_row_indices(grid_thws)
+        attn_mask_startend_row_indices = (
+            self._get_attn_mask_startend_row_indices(grid_thws)
+        )
 
         input_dict = {
             "pixel_values": pixel_values,
@@ -368,7 +403,9 @@ class TestKimiK25VisionModelFleet(unittest.TestCase):
             num_patches = 16
             pixel_values = paddle.randn([num_patches, 3, 14, 14])
             grid_thws = paddle.to_tensor([[1, 4, 4]])
-            attn_mask_startend_row_indices = self._get_attn_mask_startend_row_indices(grid_thws)
+            attn_mask_startend_row_indices = (
+                self._get_attn_mask_startend_row_indices(grid_thws)
+            )
 
             input_dict = {
                 "pixel_values": pixel_values,
@@ -388,7 +425,9 @@ class TestKimiK25VisionModelFleet(unittest.TestCase):
         pixel_values = paddle.randn([num_patches, 3, 14, 14])
         pixel_values.stop_gradient = False
         grid_thws = paddle.to_tensor([[1, 4, 4]])
-        attn_mask_startend_row_indices = self._get_attn_mask_startend_row_indices(grid_thws)
+        attn_mask_startend_row_indices = (
+            self._get_attn_mask_startend_row_indices(grid_thws)
+        )
 
         input_dict = {
             "pixel_values": pixel_values,
@@ -423,7 +462,9 @@ class TestKimiK25VisionModelFleet(unittest.TestCase):
         num_patches = 16
         pixel_values = paddle.randn([num_patches, 3, 14, 14])
         grid_thws = paddle.to_tensor([[1, 4, 4]])
-        attn_mask_startend_row_indices = self._get_attn_mask_startend_row_indices(grid_thws)
+        attn_mask_startend_row_indices = (
+            self._get_attn_mask_startend_row_indices(grid_thws)
+        )
 
         input_dict = {
             "pixel_values": pixel_values,
@@ -442,7 +483,9 @@ class TestKimiK25VisionModelFleet(unittest.TestCase):
         num_patches = 16
         pixel_values = paddle.randn([num_patches, 3, 14, 14])
         grid_thws = paddle.to_tensor([[1, 4, 4]])
-        attn_mask_startend_row_indices = self._get_attn_mask_startend_row_indices(grid_thws)
+        attn_mask_startend_row_indices = (
+            self._get_attn_mask_startend_row_indices(grid_thws)
+        )
 
         input_dict = {
             "pixel_values": pixel_values,

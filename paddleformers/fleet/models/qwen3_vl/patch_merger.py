@@ -37,12 +37,16 @@ class Qwen3VLVisionPathMerger(nn.Module):
         use_postshuffle_norm: bool = False,
     ):
         super().__init__()
-        context_dim = context_dim if context_dim is not None else config.hidden_size
+        context_dim = (
+            context_dim if context_dim is not None else config.hidden_size
+        )
         dim = dim if dim is not None else config.out_hidden_size
 
         self.hidden_size = context_dim * (config.spatial_merge_size**2)
         norm_dim = self.hidden_size if use_postshuffle_norm else context_dim
-        self.norm = build_spec_layer(sublayers_spec.norm, config=config, hidden_size=norm_dim)
+        self.norm = build_spec_layer(
+            sublayers_spec.norm, config=config, hidden_size=norm_dim
+        )
         self.use_postshuffle_norm = use_postshuffle_norm
         self.mlp = build_spec_layer(
             LayerSpec(

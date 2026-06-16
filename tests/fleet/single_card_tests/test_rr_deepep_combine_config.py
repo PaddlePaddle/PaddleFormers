@@ -156,7 +156,9 @@ class TestDeepEPCombineAsyncRefinedRecomputeInit(unittest.TestCase):
 
 
 try:
-    from paddleformers.fleet.transformer.moe.token_dispatcher import _DeepEPManager
+    from paddleformers.fleet.transformer.moe.token_dispatcher import (
+        _DeepEPManager,
+    )
 
     HAS_DEEP_EP_MANAGER = True
 except (ImportError, RuntimeError):
@@ -198,7 +200,9 @@ class TestDeepEPManagerCombineRR(unittest.TestCase):
                 combine_overlap_handle=overlap_handle,
                 use_rr_deepep_combine=True,
             )
-        self.assertIsInstance(manager._rr_fusedcombined, DeepEPCombineAsyncRefinedRecompute)
+        self.assertIsInstance(
+            manager._rr_fusedcombined, DeepEPCombineAsyncRefinedRecompute
+        )
 
     def test_rr_type_mismatch_raises(self):
         """combine() raises RuntimeError when _rr_fusedcombined has wrong type."""
@@ -216,27 +220,41 @@ class TestDeepEPManagerCombineRR(unittest.TestCase):
 
 
 try:
-    from paddleformers.fleet.transformer.moe.moe_layer import MoELayer  # noqa: F401
+    from paddleformers.fleet.transformer.moe.moe_layer import (
+        MoELayer,  # noqa: F401
+    )
 
     HAS_MOE_LAYER = True
 except (ImportError, RuntimeError):
     HAS_MOE_LAYER = False
 
 
-@unittest.skipUnless(HAS_MOE_LAYER, "MoELayer not available (DeepEP dependency)")
+@unittest.skipUnless(
+    HAS_MOE_LAYER, "MoELayer not available (DeepEP dependency)"
+)
 class TestRRRecomputeUpdate(unittest.TestCase):
     """Tests MoELayer.rr_recompute_update() validation logic."""
 
     def _make_moe_layer_mock(self, **overrides):
         """Create a mock MoELayer with necessary attributes."""
         mock = MagicMock()
-        mock.moe_token_dispatcher_type = overrides.get("dispatcher_type", "deepep")
-        mock.moe_shared_expert_overlap = overrides.get("shared_expert_overlap", True)
+        mock.moe_token_dispatcher_type = overrides.get(
+            "dispatcher_type", "deepep"
+        )
+        mock.moe_shared_expert_overlap = overrides.get(
+            "shared_expert_overlap", True
+        )
         mock.use_rr_deepep_combine = False
         mock.config = MagicMock()
-        mock.config.recompute_modules = overrides.get("recompute_modules", ["moe_combine"])
-        mock.config.recompute_granularity = overrides.get("recompute_granularity", "full")
-        mock.config.recompute_method = overrides.get("recompute_method", "first_n")
+        mock.config.recompute_modules = overrides.get(
+            "recompute_modules", ["moe_combine"]
+        )
+        mock.config.recompute_granularity = overrides.get(
+            "recompute_granularity", "full"
+        )
+        mock.config.recompute_method = overrides.get(
+            "recompute_method", "first_n"
+        )
         if "layer_number" in overrides:
             mock.layer_number = overrides["layer_number"]
         return mock
@@ -247,7 +265,9 @@ class TestRRRecomputeUpdate(unittest.TestCase):
 
         mock = self._make_moe_layer_mock(dispatcher_type="alltoall")
         with self.assertRaises(ValueError) as ctx:
-            MoELayer.rr_recompute_update(mock, in_full_recompute=True, in_mlp_recompute=False)
+            MoELayer.rr_recompute_update(
+                mock, in_full_recompute=True, in_mlp_recompute=False
+            )
         self.assertIn("only supported in DeepEP mode", str(ctx.exception))
 
     def test_no_shared_expert_overlap_raises(self):
@@ -256,7 +276,9 @@ class TestRRRecomputeUpdate(unittest.TestCase):
 
         mock = self._make_moe_layer_mock(shared_expert_overlap=False)
         with self.assertRaises(ValueError) as ctx:
-            MoELayer.rr_recompute_update(mock, in_full_recompute=True, in_mlp_recompute=False)
+            MoELayer.rr_recompute_update(
+                mock, in_full_recompute=True, in_mlp_recompute=False
+            )
         self.assertIn("only supported in DeepEP mode", str(ctx.exception))
 
     def test_no_recompute_granularity_raises(self):
@@ -265,7 +287,9 @@ class TestRRRecomputeUpdate(unittest.TestCase):
 
         mock = self._make_moe_layer_mock(recompute_granularity=None)
         with self.assertRaises(ValueError) as ctx:
-            MoELayer.rr_recompute_update(mock, in_full_recompute=True, in_mlp_recompute=False)
+            MoELayer.rr_recompute_update(
+                mock, in_full_recompute=True, in_mlp_recompute=False
+            )
         self.assertIn("recompute_granularity must be set", str(ctx.exception))
 
     def test_list_mode_sets_flag(self):
@@ -273,7 +297,9 @@ class TestRRRecomputeUpdate(unittest.TestCase):
         from paddleformers.fleet.transformer.moe.moe_layer import MoELayer
 
         mock = self._make_moe_layer_mock(recompute_modules=["moe_combine"])
-        MoELayer.rr_recompute_update(mock, in_full_recompute=True, in_mlp_recompute=False)
+        MoELayer.rr_recompute_update(
+            mock, in_full_recompute=True, in_mlp_recompute=False
+        )
         self.assertTrue(mock.use_rr_deepep_combine)
 
     def test_dict_mode_wrong_method_raises(self):
@@ -285,7 +311,9 @@ class TestRRRecomputeUpdate(unittest.TestCase):
             recompute_method="uniform",
         )
         with self.assertRaises(ValueError) as ctx:
-            MoELayer.rr_recompute_update(mock, in_full_recompute=True, in_mlp_recompute=False)
+            MoELayer.rr_recompute_update(
+                mock, in_full_recompute=True, in_mlp_recompute=False
+            )
         self.assertIn("recompute_method='first_n'", str(ctx.exception))
 
     def test_dict_mode_no_layer_number_raises(self):
@@ -295,7 +323,9 @@ class TestRRRecomputeUpdate(unittest.TestCase):
         mock = self._make_moe_layer_mock(recompute_modules={"moe_combine": 4})
         del mock.layer_number  # Remove the attribute
         with self.assertRaises(ValueError) as ctx:
-            MoELayer.rr_recompute_update(mock, in_full_recompute=True, in_mlp_recompute=False)
+            MoELayer.rr_recompute_update(
+                mock, in_full_recompute=True, in_mlp_recompute=False
+            )
         self.assertIn("layer_number must be set", str(ctx.exception))
 
     def test_rr_without_recompute_active_raises(self):
@@ -304,18 +334,28 @@ class TestRRRecomputeUpdate(unittest.TestCase):
 
         mock = self._make_moe_layer_mock(recompute_modules=["moe_combine"])
         with self.assertRaises(ValueError) as ctx:
-            MoELayer.rr_recompute_update(mock, in_full_recompute=False, in_mlp_recompute=False)
-        self.assertIn("meaningless when neither full_recompute", str(ctx.exception))
+            MoELayer.rr_recompute_update(
+                mock, in_full_recompute=False, in_mlp_recompute=False
+            )
+        self.assertIn(
+            "meaningless when neither full_recompute", str(ctx.exception)
+        )
 
-    @patch("paddleformers.fleet.transformer.moe.moe_layer.need_recompute_in_first_n")
+    @patch(
+        "paddleformers.fleet.transformer.moe.moe_layer.need_recompute_in_first_n"
+    )
     def test_dict_mode_sets_flag_via_need_recompute(self, mock_need_recompute):
         """Dict mode uses need_recompute_in_first_n to decide use_rr_deepep_combine."""
         from paddleformers.fleet.transformer.moe.moe_layer import MoELayer
 
         # When need_recompute_in_first_n returns False, use_rr_deepep_combine = True
         mock_need_recompute.return_value = False
-        mock = self._make_moe_layer_mock(recompute_modules={"moe_combine": 4}, layer_number=5)
-        MoELayer.rr_recompute_update(mock, in_full_recompute=True, in_mlp_recompute=False)
+        mock = self._make_moe_layer_mock(
+            recompute_modules={"moe_combine": 4}, layer_number=5
+        )
+        MoELayer.rr_recompute_update(
+            mock, in_full_recompute=True, in_mlp_recompute=False
+        )
         self.assertTrue(mock.use_rr_deepep_combine)
 
 
@@ -344,7 +384,9 @@ class TestDeepEPCombineAsyncFunctor(unittest.TestCase):
             "paddleformers.fleet.transformer.moe.fused_a2a.manual_backward",
             return_value=(MagicMock(), mock_fn_out),
         ):
-            result = DeepEPCombineAsyncFunctor.apply(hold_tensors, x, group, states, fn_arg, fn=lambda *a: None)
+            result = DeepEPCombineAsyncFunctor.apply(
+                hold_tensors, x, group, states, fn_arg, fn=lambda *a: None
+            )
 
         # Result should be (combined_x, *fn_out)
         self.assertIsNotNone(result)
@@ -376,7 +418,9 @@ class TestDeepEPCombineAsyncFunctor(unittest.TestCase):
                 "paddleformers.fleet.transformer.moe.fused_a2a.wait_for_deepep",
             ),
         ):
-            result = DeepEPCombineAsyncFunctor.backward(mock_ctx, grad_output, fn_out_grad)
+            result = DeepEPCombineAsyncFunctor.backward(
+                mock_ctx, grad_output, fn_out_grad
+            )
 
         # Should return (grad_x,) + fn_args_grads
         self.assertIsInstance(result, tuple)

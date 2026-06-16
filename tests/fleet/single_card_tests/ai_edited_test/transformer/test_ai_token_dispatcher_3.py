@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -43,8 +47,14 @@ except (ImportError, ModuleNotFoundError, Exception):
 class TestDeepepManagerSetupMetadata(unittest.TestCase):
     """Tests for _DeepepManager setup_metadata."""
 
-    @patch("paddleformers.fleet.transformer.moe.token_dispatcher.fused_dispatch", True)
-    @patch("paddleformers.fleet.transformer.moe.token_dispatcher.fused_combine", True)
+    @patch(
+        "paddleformers.fleet.transformer.moe.token_dispatcher.fused_dispatch",
+        True,
+    )
+    @patch(
+        "paddleformers.fleet.transformer.moe.token_dispatcher.fused_combine",
+        True,
+    )
     def test_setup_metadata_with_topk_weights(self):
         """Test setup_metadata with pre-computed topk_weights and topk_indices."""
         manager = _DeepepManager(
@@ -64,8 +74,14 @@ class TestDeepepManagerSetupMetadata(unittest.TestCase):
         self.assertIsNotNone(manager.token_probs)
         self.assertIsNotNone(manager.token_indices)
 
-    @patch("paddleformers.fleet.transformer.moe.token_dispatcher.fused_dispatch", True)
-    @patch("paddleformers.fleet.transformer.moe.token_dispatcher.fused_combine", True)
+    @patch(
+        "paddleformers.fleet.transformer.moe.token_dispatcher.fused_dispatch",
+        True,
+    )
+    @patch(
+        "paddleformers.fleet.transformer.moe.token_dispatcher.fused_combine",
+        True,
+    )
     def test_setup_metadata_without_topk(self):
         """Test setup_metadata without pre-computed topk data."""
         manager = _DeepepManager(
@@ -91,8 +107,14 @@ class TestDeepepManagerSetupMetadata(unittest.TestCase):
 class TestDeepepManagerGetNumberofTokens(unittest.TestCase):
     """Tests for _DeepepManager get_number_of_tokens_per_expert."""
 
-    @patch("paddleformers.fleet.transformer.moe.token_dispatcher.fused_dispatch", True)
-    @patch("paddleformers.fleet.transformer.moe.token_dispatcher.fused_combine", True)
+    @patch(
+        "paddleformers.fleet.transformer.moe.token_dispatcher.fused_dispatch",
+        True,
+    )
+    @patch(
+        "paddleformers.fleet.transformer.moe.token_dispatcher.fused_combine",
+        True,
+    )
     def test_get_number_of_tokens_per_expert_requires_dispatch(self):
         """Test get_number_of_tokens_per_expert needs dispatch to set tokens_per_expert."""
         manager = _DeepepManager(
@@ -112,8 +134,14 @@ class TestDeepepManagerGetNumberofTokens(unittest.TestCase):
 class TestDeepepManagerGetDispatchedMetadata(unittest.TestCase):
     """Tests for _DeepepManager get_dispatched_metadata."""
 
-    @patch("paddleformers.fleet.transformer.moe.token_dispatcher.fused_dispatch", True)
-    @patch("paddleformers.fleet.transformer.moe.token_dispatcher.fused_combine", True)
+    @patch(
+        "paddleformers.fleet.transformer.moe.token_dispatcher.fused_dispatch",
+        True,
+    )
+    @patch(
+        "paddleformers.fleet.transformer.moe.token_dispatcher.fused_combine",
+        True,
+    )
     def test_get_dispatched_metadata_requires_dispatch(self):
         """Test get_dispatched_metadata needs dispatch to set dispatched_indices."""
         manager = _DeepepManager(

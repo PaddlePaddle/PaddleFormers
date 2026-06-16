@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -29,7 +33,9 @@ import unittest
 def _setup_triton_mock():
     """Create a mock triton module so we can import without GPU."""
     triton_mock = types.ModuleType("triton")
-    triton_mock.jit = lambda fn=None, **kwargs: ((lambda f: f) if fn is None else fn)
+    triton_mock.jit = lambda fn=None, **kwargs: (
+        (lambda f: f) if fn is None else fn
+    )
     triton_mock.language = types.ModuleType("triton.language")
     triton_mock.language.constexpr = None
     tl = triton_mock.language
@@ -71,19 +77,25 @@ class TestRMSNormFusionTritonDefinition(unittest.TestCase):
 
     def test_class_exists(self):
         """Test that RMSNormFusionTriton class can be imported."""
-        from paddleformers.fleet.triton_ops.rms_norm_fusion import RMSNormFusionTriton
+        from paddleformers.fleet.triton_ops.rms_norm_fusion import (
+            RMSNormFusionTriton,
+        )
 
         self.assertTrue(callable(RMSNormFusionTriton))
 
     def test_has_forward(self):
         """Test that RMSNormFusionTriton has forward method."""
-        from paddleformers.fleet.triton_ops.rms_norm_fusion import RMSNormFusionTriton
+        from paddleformers.fleet.triton_ops.rms_norm_fusion import (
+            RMSNormFusionTriton,
+        )
 
         self.assertTrue(hasattr(RMSNormFusionTriton, "forward"))
 
     def test_has_backward(self):
         """Test that RMSNormFusionTriton has backward method."""
-        from paddleformers.fleet.triton_ops.rms_norm_fusion import RMSNormFusionTriton
+        from paddleformers.fleet.triton_ops.rms_norm_fusion import (
+            RMSNormFusionTriton,
+        )
 
         self.assertTrue(hasattr(RMSNormFusionTriton, "backward"))
 
@@ -94,7 +106,9 @@ class TestRMSNormKernels(unittest.TestCase):
 
     def test_fwd_kernel_callable(self):
         """Test rms_norm_fwd_kernel is callable."""
-        from paddleformers.fleet.triton_ops.rms_norm_fusion import rms_norm_fwd_kernel
+        from paddleformers.fleet.triton_ops.rms_norm_fusion import (
+            rms_norm_fwd_kernel,
+        )
 
         self.assertTrue(callable(rms_norm_fwd_kernel))
 

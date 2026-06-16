@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -38,7 +42,9 @@ from unittest.mock import MagicMock
 def _setup_triton_mock():
     """Create a mock triton module so we can import without GPU."""
     triton_mock = types.ModuleType("triton")
-    triton_mock.jit = lambda fn=None, **kwargs: ((lambda f: f) if fn is None else fn)
+    triton_mock.jit = lambda fn=None, **kwargs: (
+        (lambda f: f) if fn is None else fn
+    )
     triton_mock.language = types.ModuleType("triton.language")
     triton_mock.language.constexpr = None
     tl = triton_mock.language
@@ -111,6 +117,7 @@ class TestExtractRawPtrs(unittest.TestCase):
     def test_mode_1(self):
         """Test _extract_raw_ptrs with mode=1."""
         import paddle
+
         from paddlefleet_ops._extensions.flashmask.rr_attn_estimate_triton_op import (
             _extract_raw_ptrs,
         )
@@ -124,6 +131,7 @@ class TestExtractRawPtrs(unittest.TestCase):
     def test_mode_2_causal(self):
         """Test _extract_raw_ptrs with mode=2, causal=True."""
         import paddle
+
         from paddlefleet_ops._extensions.flashmask.rr_attn_estimate_triton_op import (
             _extract_raw_ptrs,
         )
@@ -137,6 +145,7 @@ class TestExtractRawPtrs(unittest.TestCase):
     def test_mode_2_non_causal(self):
         """Test _extract_raw_ptrs with mode=2, causal=False."""
         import paddle
+
         from paddlefleet_ops._extensions.flashmask.rr_attn_estimate_triton_op import (
             _extract_raw_ptrs,
         )
@@ -150,6 +159,7 @@ class TestExtractRawPtrs(unittest.TestCase):
     def test_mode_4(self):
         """Test _extract_raw_ptrs with mode=4."""
         import paddle
+
         from paddlefleet_ops._extensions.flashmask.rr_attn_estimate_triton_op import (
             _extract_raw_ptrs,
         )
@@ -165,6 +175,7 @@ class TestExtractRawPtrs(unittest.TestCase):
     def test_invalid_mode_raises(self):
         """Test _extract_raw_ptrs raises for invalid mode."""
         import paddle
+
         from paddlefleet_ops._extensions.flashmask.rr_attn_estimate_triton_op import (
             _extract_raw_ptrs,
         )
@@ -204,6 +215,7 @@ class TestRrAttnEstimateValidation(unittest.TestCase):
     def test_ndim_validation(self):
         """Test that startend_row_indices must be 4D."""
         import paddle
+
         from paddlefleet_ops._extensions.flashmask.rr_attn_estimate_triton_op import (
             rr_attn_estimate_triton_func,
         )
@@ -218,6 +230,7 @@ class TestRrAttnEstimateValidation(unittest.TestCase):
     def test_batch_size_mismatch(self):
         """Test that q and k must have same batch size."""
         import paddle
+
         from paddlefleet_ops._extensions.flashmask.rr_attn_estimate_triton_op import (
             rr_attn_estimate_triton_func,
         )
@@ -232,6 +245,7 @@ class TestRrAttnEstimateValidation(unittest.TestCase):
     def test_stride_must_be_positive(self):
         """Test that stride must be positive."""
         import paddle
+
         from paddlefleet_ops._extensions.flashmask.rr_attn_estimate_triton_op import (
             rr_attn_estimate_triton_func,
         )
@@ -251,6 +265,7 @@ class TestRawPtrsDataclass(unittest.TestCase):
     def test_raw_ptrs_creation(self):
         """Test RawPtrs can be created with all fields."""
         import paddle
+
         from paddlefleet_ops._extensions.flashmask.rr_attn_estimate_triton_op import (
             RawPtrs,
         )
@@ -266,6 +281,7 @@ class TestRawPtrsDataclass(unittest.TestCase):
     def test_raw_ptrs_frozen(self):
         """Test RawPtrs is frozen (immutable)."""
         import paddle
+
         from paddlefleet_ops._extensions.flashmask.rr_attn_estimate_triton_op import (
             RawPtrs,
         )
@@ -287,6 +303,7 @@ class TestStrideMaxMinPtrsDataclass(unittest.TestCase):
     def test_creation(self):
         """Test StrideMaxMinPtrs can be created with all fields."""
         import paddle
+
         from paddlefleet_ops._extensions.flashmask.rr_attn_estimate_triton_op import (
             StrideMaxMinPtrs,
         )
@@ -307,6 +324,7 @@ class TestStrideMaxMinPtrsDataclass(unittest.TestCase):
     def test_frozen(self):
         """Test StrideMaxMinPtrs is frozen."""
         import paddle
+
         from paddlefleet_ops._extensions.flashmask.rr_attn_estimate_triton_op import (
             StrideMaxMinPtrs,
         )

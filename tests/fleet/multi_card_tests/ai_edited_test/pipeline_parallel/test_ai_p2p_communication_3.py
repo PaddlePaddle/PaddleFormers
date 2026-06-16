@@ -17,7 +17,11 @@ import unittest
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import paddle
@@ -85,7 +89,9 @@ class TestP2PHelperAllocationAndOps(unittest.TestCase):
         self.old_hcg = p2p_communication._hcg
         self.old_batched = p2p_communication._batched_p2p_ops
         self.old_ops = p2p_communication._p2p_ops
-        self.old_batch_send_recv = p2p_communication.batch_send_recv_on_calc_stream
+        self.old_batch_send_recv = (
+            p2p_communication.batch_send_recv_on_calc_stream
+        )
         self.old_allgather_partial = p2p_communication.allgather_partial
         self.old_sync_send = p2p_communication._sync_send
         p2p_communication._hcg = DummyHCG()
@@ -94,7 +100,9 @@ class TestP2PHelperAllocationAndOps(unittest.TestCase):
         p2p_communication._hcg = self.old_hcg
         p2p_communication._batched_p2p_ops = self.old_batched
         p2p_communication._p2p_ops = self.old_ops
-        p2p_communication.batch_send_recv_on_calc_stream = self.old_batch_send_recv
+        p2p_communication.batch_send_recv_on_calc_stream = (
+            self.old_batch_send_recv
+        )
         p2p_communication.allgather_partial = self.old_allgather_partial
         p2p_communication._sync_send = self.old_sync_send
 
@@ -131,7 +139,9 @@ class TestP2PHelperAllocationAndOps(unittest.TestCase):
         )
 
         self.assertEqual(reqs, None)
-        self.assertEqual([tensor.shape for tensor in recv_prev], [[1, 2], [2, 1]])
+        self.assertEqual(
+            [tensor.shape for tensor in recv_prev], [[1, 2], [2, 1]]
+        )
         self.assertEqual(recv_prev[0].dtype, paddle.float32)
         self.assertEqual(recv_prev[1].dtype, paddle.int64)
         self.assertTrue(recv_prev[0].stop_gradient)
@@ -162,7 +172,9 @@ class TestP2PHelperAllocationAndOps(unittest.TestCase):
         )
 
         self.assertIsNone(recv_prev)
-        self.assertEqual([tensor.shape for tensor in recv_next], [[1, 2], [2, 1]])
+        self.assertEqual(
+            [tensor.shape for tensor in recv_next], [[1, 2], [2, 1]]
+        )
         self.assertIs(recorded[0][3], recv_next)
 
     def test_unbatched_helper_waits_or_returns_wait_handles(self):
@@ -222,7 +234,9 @@ class TestP2PHelperAllocationAndOps(unittest.TestCase):
         recv_next = paddle.ones([1], dtype="float32")
         try:
             hcg.stage_id = 0
-            even_reqs = p2p_communication._p2p_ops(send_prev, recv_prev, send_next, recv_next, hcg)
+            even_reqs = p2p_communication._p2p_ops(
+                send_prev, recv_prev, send_next, recv_next, hcg
+            )
             self.assertEqual(
                 [(name, rank) for name, _, rank, _ in calls],
                 [("send", 3), ("recv", 2), ("send", 2), ("recv", 3)],
@@ -231,7 +245,9 @@ class TestP2PHelperAllocationAndOps(unittest.TestCase):
 
             calls.clear()
             hcg.stage_id = 1
-            odd_reqs = p2p_communication._p2p_ops(send_prev, recv_prev, send_next, recv_next, hcg)
+            odd_reqs = p2p_communication._p2p_ops(
+                send_prev, recv_prev, send_next, recv_next, hcg
+            )
             self.assertEqual(
                 [(name, rank) for name, _, rank, _ in calls],
                 [("recv", 2), ("send", 3), ("recv", 3), ("send", 2)],
@@ -245,10 +261,14 @@ class TestP2PHelperAllocationAndOps(unittest.TestCase):
         recorded = []
 
         def fake_batch(ops):
-            recorded.append([(op.op.__name__, op.peer, op.tensor) for op in ops])
+            recorded.append(
+                [(op.op.__name__, op.peer, op.tensor) for op in ops]
+            )
 
         p2p_communication.batch_send_recv_on_calc_stream = fake_batch
-        p2p_communication.allgather_partial = lambda *args, **kwargs: recorded.append(("allgather", args[0]))
+        p2p_communication.allgather_partial = (
+            lambda *args, **kwargs: recorded.append(("allgather", args[0]))
+        )
         hcg = p2p_communication._hcg
         tensors = [paddle.ones([1], dtype="float32") for _ in range(4)]
 
@@ -263,7 +283,9 @@ class TestP2PHelperAllocationAndOps(unittest.TestCase):
                 ("_recv_on_calc_stream", 3),
             ],
         )
-        self.assertEqual(len([item for item in recorded if item[0] == "allgather"]), 2)
+        self.assertEqual(
+            len([item for item in recorded if item[0] == "allgather"]), 2
+        )
 
         recorded.clear()
         p2p_communication._sync_send = True

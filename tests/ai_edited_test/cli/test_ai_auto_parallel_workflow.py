@@ -128,7 +128,10 @@ class TestAutoParallelWorkflowValidation(unittest.TestCase):
         config_architectures = ["Qwen2Moe"]
 
         if (
-            any(architecture in str(config_architectures) for architecture in architectures_to_check)
+            any(
+                architecture in str(config_architectures)
+                for architecture in architectures_to_check
+            )
             and training_args.data_parallel_size > 1
         ):
             training_args.use_expert_parallel = True

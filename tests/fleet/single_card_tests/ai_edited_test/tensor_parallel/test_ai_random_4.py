@@ -15,7 +15,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -122,7 +126,7 @@ class TestCudaRNGStatesTrackerFork(unittest.TestCase):
         """fork should raise when state name is not tracked."""
         tracker = CudaRNGStatesTracker()
         # fork is a contextmanager, exception is raised on __enter__
-        with self.assertRaises(Exception), tracker.fork("unknown_state"):  # noqa: B017
+        with self.assertRaises(Exception), tracker.fork("unknown_state"):
             pass
 
 

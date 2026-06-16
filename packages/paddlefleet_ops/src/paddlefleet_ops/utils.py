@@ -49,7 +49,9 @@ def import_custom_ops(package, module_name, global_ns):
                 logging.warning(f"Failed to import op {func_name}: {e}")
 
     except Exception:
-        logging.warning(f"Ops of {package} import failed, it may be not compiled.")
+        logging.warning(
+            f"Ops of {package} import failed, it may be not compiled."
+        )
 
 
 class ModuleContext:
@@ -114,7 +116,9 @@ class HardwareIncompatibleBlocker(importlib.abc.MetaPathFinder):
 
     def find_spec(self, fullname, path, target=None):
         for module_name, error_msg in self.error_messages.items():
-            if fullname == module_name or fullname.startswith(module_name + "."):
+            if fullname == module_name or fullname.startswith(
+                module_name + "."
+            ):
                 raise RuntimeError(error_msg)
 
 
@@ -146,7 +150,9 @@ def get_cuda_version():
 
     match = re.search(r"release (\d+)\.(\d+)", version_output)
     if not match:
-        raise ValueError(f"Cannot parse CUDA version from nvcc output:\n{version_output}")
+        raise ValueError(
+            f"Cannot parse CUDA version from nvcc output:\n{version_output}"
+        )
     cuda_major = int(match.group(1))
     cuda_minor = int(match.group(2))
     return cuda_major, cuda_minor

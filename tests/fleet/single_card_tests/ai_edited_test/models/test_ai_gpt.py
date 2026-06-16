@@ -17,7 +17,11 @@ import unittest
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 from paddle import nn
@@ -159,7 +163,9 @@ class TestGPTModelDescriptorUtilities(unittest.TestCase):
 
     def test_get_layer_desc_list_uses_default_prefixes_and_lm_head(self):
         model = LightweightGPTModel(Config())
-        layers = model.get_layer_desc_list(self._spec(), tie_word_embeddings=False)
+        layers = model.get_layer_desc_list(
+            self._spec(), tie_word_embeddings=False
+        )
 
         self.assertEqual(
             [layer["name_prefix"] for layer in layers],
@@ -236,7 +242,9 @@ class TestGPTModelWeightOnlyAndShardPrefix(unittest.TestCase):
         model = LightweightGPTModel(Config())
         model._values = [gpu_param, cpu_param, ignored]
 
-        self.assertEqual(model._get_weight_only_params(), [gpu_param, cpu_param])
+        self.assertEqual(
+            model._get_weight_only_params(), [gpu_param, cpu_param]
+        )
 
         model.offload_weight_only_params()
         self.assertTrue(gpu_param.pin_memory_called)
@@ -249,10 +257,14 @@ class TestGPTModelWeightOnlyAndShardPrefix(unittest.TestCase):
         self.assertIs(cpu_param.shared_to, cpu_param)
 
     def test_get_shardlayer_prefix_success_assertion_and_stage_error(self):
-        shared = SharedLayerDesc("embed", DummyEmbedding, shared_weight_attr="embedding_weight")
+        shared = SharedLayerDesc(
+            "embed", DummyEmbedding, shared_weight_attr="embedding_weight"
+        )
         model = LightweightGPTModel(Config())
         model.layers = [shared]
-        model._sequential_layers = [{"layer": shared, "name_prefix": "model.embed"}]
+        model._sequential_layers = [
+            {"layer": shared, "name_prefix": "model.embed"}
+        ]
 
         self.assertEqual(
             model.get_shardlayer_prefix(["shared_layers", "embed", "weight"]),

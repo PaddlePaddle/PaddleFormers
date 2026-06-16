@@ -28,7 +28,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -44,7 +48,9 @@ from paddle import nn
 
 def _make_moe_config(**overrides):
     """Helper: create a TransformerConfig with sensible MoE defaults."""
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
     defaults = {
         "hidden_size": 64,
@@ -211,8 +217,12 @@ class TestLatentMoEInit(unittest.TestCase):
         self.assertTrue(layer.use_latent_moe)
         # fc1: hidden_size → latent_size
         self.assertIsInstance(layer.fc1_latent_proj, nn.Linear)
-        self.assertEqual(layer.fc1_latent_proj.weight.shape[0], 64)  # in_features
-        self.assertEqual(layer.fc1_latent_proj.weight.shape[1], 32)  # out_features
+        self.assertEqual(
+            layer.fc1_latent_proj.weight.shape[0], 64
+        )  # in_features
+        self.assertEqual(
+            layer.fc1_latent_proj.weight.shape[1], 32
+        )  # out_features
         # fc2: latent_size → hidden_size
         self.assertIsInstance(layer.fc2_latent_proj, nn.Linear)
         self.assertEqual(layer.fc2_latent_proj.weight.shape[0], 32)
@@ -276,11 +286,13 @@ class TestDispatchPreprocessLatent(unittest.TestCase):
             stub.fc1_latent_proj = nn.Linear(hidden_size, latent_size)
         # Make token_dispatcher pass isinstance check by patching the class to `object`
         stub.token_dispatcher = MagicMock()
-        stub.token_dispatcher.dispatch_preprocess_overlap.return_value = paddle.randn(
-            [4, latent_size if use_latent_moe else hidden_size]
+        stub.token_dispatcher.dispatch_preprocess_overlap.return_value = (
+            paddle.randn([4, latent_size if use_latent_moe else hidden_size])
         )
         stub.token_dispatcher._comm_manager.token_probs = paddle.ones([4, 2])
-        stub.token_dispatcher._comm_manager.token_indices = paddle.zeros([4, 2], dtype="int64")
+        stub.token_dispatcher._comm_manager.token_indices = paddle.zeros(
+            [4, 2], dtype="int64"
+        )
         return stub
 
     def test_dispatch_preprocess_applies_fc1_when_latent(self):
@@ -296,7 +308,9 @@ class TestDispatchPreprocessLatent(unittest.TestCase):
             "paddleformers.fleet.transformer.moe.moe_layer.MoEFlexTokenDispatcher",
             new=object,
         ):
-            result = MoELayer.dispatch_preprocess(stub, (hidden, probs, indices))
+            result = MoELayer.dispatch_preprocess(
+                stub, (hidden, probs, indices)
+            )
 
         # dispatch_preprocess_overlap receives tensor of latent_size=32
         call_args = stub.token_dispatcher.dispatch_preprocess_overlap.call_args
@@ -355,7 +369,9 @@ class TestAuxLossComputeLatent(unittest.TestCase):
         aux_loss = paddle.zeros([1])
         z_loss = None
 
-        output = MoELayer.aux_loss_compute(stub, (hidden, aux_loss, z_loss, residuals))
+        output = MoELayer.aux_loss_compute(
+            stub, (hidden, aux_loss, z_loss, residuals)
+        )
 
         # Must be expanded back to hidden_size=64
         self.assertEqual(output.shape[-1], 64)
@@ -370,7 +386,9 @@ class TestAuxLossComputeLatent(unittest.TestCase):
         aux_loss = paddle.zeros([1])
         z_loss = None
 
-        output = MoELayer.aux_loss_compute(stub, (hidden, aux_loss, z_loss, residuals))
+        output = MoELayer.aux_loss_compute(
+            stub, (hidden, aux_loss, z_loss, residuals)
+        )
 
         self.assertEqual(output.shape[-1], 64)
 
@@ -406,8 +424,12 @@ class TestAuxLossComputeZLoss(unittest.TestCase):
         aux_loss = paddle.zeros([1])
         z_loss = paddle.to_tensor([0.5], dtype="float32")
 
-        with patch.object(AddAuxiliaryLoss, "apply", side_effect=lambda x, _loss: x) as mock_apply:
-            MoELayer.aux_loss_compute(stub, (hidden, aux_loss, z_loss, residuals))
+        with patch.object(
+            AddAuxiliaryLoss, "apply", side_effect=lambda x, _loss: x
+        ) as mock_apply:
+            MoELayer.aux_loss_compute(
+                stub, (hidden, aux_loss, z_loss, residuals)
+            )
             # AddAuxiliaryLoss.apply should be called once for z_loss
             # (aux_loss path is skipped because router_aux_loss_coef=0.0)
             mock_apply.assert_called_once()
@@ -430,8 +452,12 @@ class TestAuxLossComputeZLoss(unittest.TestCase):
         aux_loss = paddle.zeros([1])
         z_loss = paddle.to_tensor([0.5], dtype="float32")
 
-        with patch.object(AddAuxiliaryLoss, "apply", side_effect=lambda x, _loss: x) as mock_apply:
-            MoELayer.aux_loss_compute(stub, (hidden, aux_loss, z_loss, residuals))
+        with patch.object(
+            AddAuxiliaryLoss, "apply", side_effect=lambda x, _loss: x
+        ) as mock_apply:
+            MoELayer.aux_loss_compute(
+                stub, (hidden, aux_loss, z_loss, residuals)
+            )
             mock_apply.assert_not_called()
 
     def test_z_loss_skipped_when_none(self):
@@ -447,8 +473,12 @@ class TestAuxLossComputeZLoss(unittest.TestCase):
         aux_loss = paddle.zeros([1])
         z_loss = None
 
-        with patch.object(AddAuxiliaryLoss, "apply", side_effect=lambda x, _loss: x) as mock_apply:
-            MoELayer.aux_loss_compute(stub, (hidden, aux_loss, z_loss, residuals))
+        with patch.object(
+            AddAuxiliaryLoss, "apply", side_effect=lambda x, _loss: x
+        ) as mock_apply:
+            MoELayer.aux_loss_compute(
+                stub, (hidden, aux_loss, z_loss, residuals)
+            )
             mock_apply.assert_not_called()
 
     def test_z_loss_and_aux_loss_both_applied(self):
@@ -464,8 +494,12 @@ class TestAuxLossComputeZLoss(unittest.TestCase):
         aux_loss = paddle.to_tensor([1.0], dtype="float32")
         z_loss = paddle.to_tensor([0.5], dtype="float32")
 
-        with patch.object(AddAuxiliaryLoss, "apply", side_effect=lambda x, _loss: x) as mock_apply:
-            MoELayer.aux_loss_compute(stub, (hidden, aux_loss, z_loss, residuals))
+        with patch.object(
+            AddAuxiliaryLoss, "apply", side_effect=lambda x, _loss: x
+        ) as mock_apply:
+            MoELayer.aux_loss_compute(
+                stub, (hidden, aux_loss, z_loss, residuals)
+            )
             self.assertEqual(
                 mock_apply.call_count,
                 2,
@@ -487,7 +521,9 @@ class TestAuxLossComputeZLoss(unittest.TestCase):
 class TestForwardLatent(unittest.TestCase):
     """Test latent projections inside MoELayer.forward (single-card path)."""
 
-    def _make_forward_stub(self, use_latent_moe, hidden_size=64, latent_size=32):
+    def _make_forward_stub(
+        self, use_latent_moe, hidden_size=64, latent_size=32
+    ):
         """
         Minimal stub for forward().  Mocks gate + expert computation so we can
         observe whether fc1/fc2 projections are applied.
@@ -533,7 +569,9 @@ class TestForwardLatent(unittest.TestCase):
         )
 
         # _forward_single_card_moe returns a tensor in latent or hidden space
-        stub._forward_single_card_moe.return_value = paddle.randn([bs * seq, expert_out_size])
+        stub._forward_single_card_moe.return_value = paddle.randn(
+            [bs * seq, expert_out_size]
+        )
 
         return stub, bs, seq
 
@@ -583,7 +621,9 @@ class TestForwardLatent(unittest.TestCase):
         self.assertEqual(dispatched_input.shape[-1], 64)
         self.assertEqual(output.shape, [bs, seq, 64])
 
-    def _make_forward_stub_for_zloss(self, training, z_loss_val, router_aux_loss_coef=0.0):
+    def _make_forward_stub_for_zloss(
+        self, training, z_loss_val, router_aux_loss_coef=0.0
+    ):
         """Build a stub for forward() focused on z_loss testing."""
         num_experts = 4
         topk = 2
@@ -616,7 +656,9 @@ class TestForwardLatent(unittest.TestCase):
             aux_loss,
             z_loss_val,
         )
-        stub._forward_single_card_moe.return_value = paddle.randn([bs * seq, hidden_size])
+        stub._forward_single_card_moe.return_value = paddle.randn(
+            [bs * seq, hidden_size]
+        )
         return stub, bs, seq
 
     def test_forward_applies_z_loss_when_training(self):
@@ -627,10 +669,14 @@ class TestForwardLatent(unittest.TestCase):
         )
 
         z_loss = paddle.to_tensor([0.5], dtype="float32")
-        stub, bs, seq = self._make_forward_stub_for_zloss(training=True, z_loss_val=z_loss)
+        stub, bs, seq = self._make_forward_stub_for_zloss(
+            training=True, z_loss_val=z_loss
+        )
         hidden = paddle.randn([bs, seq, 64])
 
-        with patch.object(AddAuxiliaryLoss, "apply", side_effect=lambda x, _loss: x) as mock_apply:
+        with patch.object(
+            AddAuxiliaryLoss, "apply", side_effect=lambda x, _loss: x
+        ) as mock_apply:
             MoELayer.forward(stub, hidden)
             # aux_loss path skipped (coef=0.0), only z_loss path fires
             mock_apply.assert_called_once()
@@ -648,10 +694,14 @@ class TestForwardLatent(unittest.TestCase):
         )
 
         z_loss = paddle.to_tensor([0.5], dtype="float32")
-        stub, bs, seq = self._make_forward_stub_for_zloss(training=False, z_loss_val=z_loss)
+        stub, bs, seq = self._make_forward_stub_for_zloss(
+            training=False, z_loss_val=z_loss
+        )
         hidden = paddle.randn([bs, seq, 64])
 
-        with patch.object(AddAuxiliaryLoss, "apply", side_effect=lambda x, _loss: x) as mock_apply:
+        with patch.object(
+            AddAuxiliaryLoss, "apply", side_effect=lambda x, _loss: x
+        ) as mock_apply:
             MoELayer.forward(stub, hidden)
             mock_apply.assert_not_called()
 
@@ -662,10 +712,14 @@ class TestForwardLatent(unittest.TestCase):
             MoELayer,
         )
 
-        stub, bs, seq = self._make_forward_stub_for_zloss(training=True, z_loss_val=None)
+        stub, bs, seq = self._make_forward_stub_for_zloss(
+            training=True, z_loss_val=None
+        )
         hidden = paddle.randn([bs, seq, 64])
 
-        with patch.object(AddAuxiliaryLoss, "apply", side_effect=lambda x, _loss: x) as mock_apply:
+        with patch.object(
+            AddAuxiliaryLoss, "apply", side_effect=lambda x, _loss: x
+        ) as mock_apply:
             MoELayer.forward(stub, hidden)
             mock_apply.assert_not_called()
 
@@ -677,10 +731,14 @@ class TestForwardLatent(unittest.TestCase):
         )
 
         z_loss = paddle.to_tensor([0.5], dtype="float32")
-        stub, bs, seq = self._make_forward_stub_for_zloss(training=True, z_loss_val=z_loss, router_aux_loss_coef=0.01)
+        stub, bs, seq = self._make_forward_stub_for_zloss(
+            training=True, z_loss_val=z_loss, router_aux_loss_coef=0.01
+        )
         hidden = paddle.randn([bs, seq, 64])
 
-        with patch.object(AddAuxiliaryLoss, "apply", side_effect=lambda x, _loss: x) as mock_apply:
+        with patch.object(
+            AddAuxiliaryLoss, "apply", side_effect=lambda x, _loss: x
+        ) as mock_apply:
             MoELayer.forward(stub, hidden)
             self.assertEqual(
                 mock_apply.call_count,
@@ -714,7 +772,9 @@ class TestCustomForwardLatent(unittest.TestCase):
             paddle.randn([bs_seq, expert_out_size]),
             None,
         )
-        stub.routed_experts_compute.return_value = paddle.randn([bs_seq, expert_out_size])
+        stub.routed_experts_compute.return_value = paddle.randn(
+            [bs_seq, expert_out_size]
+        )
         stub.combine.return_value = paddle.randn([bs_seq, expert_out_size])
         return stub, bs_seq
 
@@ -726,8 +786,12 @@ class TestCustomForwardLatent(unittest.TestCase):
         hidden = paddle.randn([bs_seq, 64])
         output = MoELayer.custom_forward(stub, hidden, MagicMock(), MagicMock())
         dispatch_input = stub.dispatch.call_args[0][0]
-        self.assertEqual(dispatch_input.shape[-1], 32, "dispatch must receive latent_size=32")
-        self.assertEqual(output.shape[-1], 64, "output must be restored to hidden_size=64")
+        self.assertEqual(
+            dispatch_input.shape[-1], 32, "dispatch must receive latent_size=32"
+        )
+        self.assertEqual(
+            output.shape[-1], 64, "output must be restored to hidden_size=64"
+        )
 
     def test_custom_forward_skips_projections_when_not_latent(self):
         """Without latent MoE, hidden_states flow unchanged at full hidden_size."""
@@ -768,7 +832,9 @@ class TestFusionMoeForwardLatent(unittest.TestCase):
             paddle.randn([bs_seq, expert_out_size]),
             None,
         )
-        stub.token_dispatcher._comm_manager.combine.return_value = paddle.randn([bs_seq, expert_out_size])
+        stub.token_dispatcher._comm_manager.combine.return_value = paddle.randn(
+            [bs_seq, expert_out_size]
+        )
         return stub, bs_seq
 
     def test_fusion_moe_forward_applies_fc1_fc2_when_latent(self):
@@ -780,11 +846,19 @@ class TestFusionMoeForwardLatent(unittest.TestCase):
 
         stub, bs_seq = self._make_stub(use_latent_moe=True)
         hidden = paddle.randn([bs_seq, 64])
-        with patch.object(FusionMoePyLayer, "apply", return_value=paddle.randn([bs_seq, 32])):
-            output = MoELayer.fusion_moe_forward(stub, hidden, MagicMock(), MagicMock(), None)
+        with patch.object(
+            FusionMoePyLayer, "apply", return_value=paddle.randn([bs_seq, 32])
+        ):
+            output = MoELayer.fusion_moe_forward(
+                stub, hidden, MagicMock(), MagicMock(), None
+            )
         dispatch_input = stub.dispatch.call_args[0][0]
-        self.assertEqual(dispatch_input.shape[-1], 32, "dispatch must receive latent_size=32")
-        self.assertEqual(output.shape[-1], 64, "output must be restored to hidden_size=64")
+        self.assertEqual(
+            dispatch_input.shape[-1], 32, "dispatch must receive latent_size=32"
+        )
+        self.assertEqual(
+            output.shape[-1], 64, "output must be restored to hidden_size=64"
+        )
 
     def test_fusion_moe_forward_skips_projections_when_not_latent(self):
         """Without latent MoE, hidden_states flow unchanged at full hidden_size."""
@@ -795,8 +869,12 @@ class TestFusionMoeForwardLatent(unittest.TestCase):
 
         stub, bs_seq = self._make_stub(use_latent_moe=False)
         hidden = paddle.randn([bs_seq, 64])
-        with patch.object(FusionMoePyLayer, "apply", return_value=paddle.randn([bs_seq, 64])):
-            output = MoELayer.fusion_moe_forward(stub, hidden, MagicMock(), MagicMock(), None)
+        with patch.object(
+            FusionMoePyLayer, "apply", return_value=paddle.randn([bs_seq, 64])
+        ):
+            output = MoELayer.fusion_moe_forward(
+                stub, hidden, MagicMock(), MagicMock(), None
+            )
         dispatch_input = stub.dispatch.call_args[0][0]
         self.assertEqual(dispatch_input.shape[-1], 64)
         self.assertEqual(output.shape[-1], 64)

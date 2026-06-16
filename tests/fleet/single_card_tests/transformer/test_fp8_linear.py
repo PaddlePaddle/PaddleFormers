@@ -85,7 +85,9 @@ class TestParallelMLP(unittest.TestCase):
 
     def test_utils(self):
         batch_size = 16384
-        np_x = np.random.randn(batch_size, self.config.hidden_size).astype("float32")
+        np_x = np.random.randn(batch_size, self.config.hidden_size).astype(
+            "float32"
+        )
         pd_x_bf16 = paddle.to_tensor(np_x).to(paddle.bfloat16)
         assert is_fp8_tensor(pd_x_bf16) is False
 
@@ -102,7 +104,9 @@ class TestParallelMLP(unittest.TestCase):
         batch_size = 16384
 
         for i in range(self.acc_step):
-            np_x = np.random.randn(batch_size, self.config.hidden_size).astype("float32")
+            np_x = np.random.randn(batch_size, self.config.hidden_size).astype(
+                "float32"
+            )
             pd_x_fp32 = paddle.to_tensor(np_x)
             pd_x_bf16 = paddle.to_tensor(np_x).to(paddle.bfloat16)
 
@@ -118,10 +122,16 @@ class TestParallelMLP(unittest.TestCase):
             out_diff = calc_diff(out_fp32, out_fp8)
             assert out_diff < 0.001, f"iter {i} failed, out_diff: {out_diff}"
 
-            w_grad_diff = calc_diff(self.fp32_linear.weight.grad, self.fp8_linear.weight.main_grad.T)
+            w_grad_diff = calc_diff(
+                self.fp32_linear.weight.grad, self.fp8_linear.weight.main_grad.T
+            )
             x_grad_diff = calc_diff(pd_x_fp32.grad, pd_x_bf16.grad)
-            assert w_grad_diff < 0.001, f"iter {i} failed, w_grad_diff: {w_grad_diff}"
-            assert x_grad_diff < 0.001, f"iter {i} failed, x_grad_diff: {x_grad_diff}"
+            assert w_grad_diff < 0.001, (
+                f"iter {i} failed, w_grad_diff: {w_grad_diff}"
+            )
+            assert x_grad_diff < 0.001, (
+                f"iter {i} failed, x_grad_diff: {x_grad_diff}"
+            )
             # paddle.cuda.nvtx.range_pop()
 
 

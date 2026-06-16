@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -30,7 +34,9 @@ class TestGPTModelBuildOverlappedNodes(unittest.TestCase):
 
     def test_build_overlapped_nodes_function_exists(self):
         """build_overlapped_nodes should be importable from gpt_model."""
-        from paddleformers.fleet.models.gpt.gpt_model import build_overlapped_nodes
+        from paddleformers.fleet.models.gpt.gpt_model import (
+            build_overlapped_nodes,
+        )
 
         self.assertTrue(callable(build_overlapped_nodes))
 

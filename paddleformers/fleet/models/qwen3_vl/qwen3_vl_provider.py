@@ -71,11 +71,12 @@ class Qwen3VLVisionProvider(TransformerConfig):
     def provide(self) -> "Qwen3VLVisionModel":
         pp_size = self.pipeline_model_parallel_size
 
-        is_pipeline_asymmetric = getattr(self, "account_for_embedding_in_pipeline_split", False) or getattr(
-            self, "account_for_loss_in_pipeline_split", False
-        )
+        is_pipeline_asymmetric = getattr(
+            self, "account_for_embedding_in_pipeline_split", False
+        ) or getattr(self, "account_for_loss_in_pipeline_split", False)
         is_pipeline_asymmetric |= (
-            getattr(self, "num_empty_layers_add_in_head", None) or getattr(self, "num_empty_layers_add_in_tail", None)
+            getattr(self, "num_empty_layers_add_in_head", None)
+            or getattr(self, "num_empty_layers_add_in_tail", None)
         ) is not None
 
         # Initialize model as meta data instead of allocating data on a device

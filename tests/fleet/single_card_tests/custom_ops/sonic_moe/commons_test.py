@@ -90,7 +90,9 @@ class TestCommons(TestCase):
     def get_activation_function(self, is_glu: bool) -> nn.Module:
         return nn.GLU() if is_glu else nn.GELU(approximate="tanh")
 
-    def collect_gradients_from_module_and_zero_grads(self, model: nn.Module) -> dict[str, paddle.Tensor]:
+    def collect_gradients_from_module_and_zero_grads(
+        self, model: nn.Module
+    ) -> dict[str, paddle.Tensor]:
         grads = {}
         for weight_name, weight in model.named_parameters():
             grads[weight_name] = weight.grad

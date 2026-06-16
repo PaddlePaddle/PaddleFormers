@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -47,9 +51,13 @@ except (ImportError, ModuleNotFoundError):
 if not _triton_available:
     _mock_tl = types.ModuleType("triton.language")
     _mock_triton = types.ModuleType("triton")
-    _mock_triton.jit = lambda fn=None, **kw: (fn if fn is not None else lambda f: f)
+    _mock_triton.jit = lambda fn=None, **kw: (
+        fn if fn is not None else lambda f: f
+    )
     _mock_triton.cdiv = lambda a, b: (a + b - 1) // b
-    _mock_triton.next_power_of_2 = lambda n: (1 << (n - 1).bit_length() if n > 0 else 1)
+    _mock_triton.next_power_of_2 = lambda n: (
+        1 << (n - 1).bit_length() if n > 0 else 1
+    )
     sys.modules.setdefault("triton", _mock_triton)
     sys.modules.setdefault("triton.language", _mock_tl)
 
@@ -64,60 +72,88 @@ class TestPrepareMaxminBasic(unittest.TestCase):
     # which is a triton kernel launch. With the mock triton, the
     # __getitem__ syntax doesn't properly invoke the mock, so these
     # tests that rely on mocking scan_maxmin_chunked are skipped.
-    @unittest.skip("Cannot mock triton kernel launch [grid](...) pattern with mock triton")
+    @unittest.skip(
+        "Cannot mock triton kernel launch [grid](...) pattern with mock triton"
+    )
     def test_prepare_maxmin_output_shape(self):
         """Test prepare_maxmin output shapes."""
-        from paddlefleet_ops._extensions.flashmask.index_utils import prepare_maxmin
+        from paddlefleet_ops._extensions.flashmask.index_utils import (
+            prepare_maxmin,
+        )
 
         x = paddle.randint(0, 100, [2, 4, 32], dtype="int32")
-        with mock.patch("paddlefleet_ops._extensions.flashmask.index_utils.scan_maxmin_chunked") as mock_kernel:
+        with mock.patch(
+            "paddlefleet_ops._extensions.flashmask.index_utils.scan_maxmin_chunked"
+        ) as mock_kernel:
             result_max, result_min = prepare_maxmin(x, chunk_size=8)
             # Verify the kernel is called
             self.assertTrue(mock_kernel.called)
 
-    @unittest.skip("Cannot mock triton kernel launch [grid](...) pattern with mock triton")
+    @unittest.skip(
+        "Cannot mock triton kernel launch [grid](...) pattern with mock triton"
+    )
     def test_prepare_maxmin_chunk_size_divisible(self):
         """Test prepare_maxmin with chunk_size evenly dividing seq_len."""
-        from paddlefleet_ops._extensions.flashmask.index_utils import prepare_maxmin
+        from paddlefleet_ops._extensions.flashmask.index_utils import (
+            prepare_maxmin,
+        )
 
         # bsz=1, num_heads=2, seq_len=16, chunk_size=4 => num_chunks=4
         x = paddle.randint(0, 100, [1, 2, 16], dtype="int32")
-        with mock.patch("paddlefleet_ops._extensions.flashmask.index_utils.scan_maxmin_chunked") as mock_kernel:
+        with mock.patch(
+            "paddlefleet_ops._extensions.flashmask.index_utils.scan_maxmin_chunked"
+        ) as mock_kernel:
             prepare_maxmin(x, chunk_size=4)
             call_args = mock_kernel.call_args[0]
             # Check num_chunks parameter
             self.assertEqual(call_args[4], 4)  # num_chunks
 
-    @unittest.skip("Cannot mock triton kernel launch [grid](...) pattern with mock triton")
+    @unittest.skip(
+        "Cannot mock triton kernel launch [grid](...) pattern with mock triton"
+    )
     def test_prepare_maxmin_chunk_size_not_divisible(self):
         """Test prepare_maxmin when seq_len is not divisible by chunk_size."""
-        from paddlefleet_ops._extensions.flashmask.index_utils import prepare_maxmin
+        from paddlefleet_ops._extensions.flashmask.index_utils import (
+            prepare_maxmin,
+        )
 
         # seq_len=10, chunk_size=4 => num_chunks=3 (ceil(10/4))
         x = paddle.randint(0, 100, [1, 1, 10], dtype="int32")
-        with mock.patch("paddlefleet_ops._extensions.flashmask.index_utils.scan_maxmin_chunked") as mock_kernel:
+        with mock.patch(
+            "paddlefleet_ops._extensions.flashmask.index_utils.scan_maxmin_chunked"
+        ) as mock_kernel:
             prepare_maxmin(x, chunk_size=4)
             call_args = mock_kernel.call_args[0]
             self.assertEqual(call_args[4], 3)  # num_chunks
 
     def test_prepare_maxmin_output_dtype(self):
         """Test prepare_maxmin output tensors are int32."""
-        from paddlefleet_ops._extensions.flashmask.index_utils import prepare_maxmin
+        from paddlefleet_ops._extensions.flashmask.index_utils import (
+            prepare_maxmin,
+        )
 
         x = paddle.randint(0, 100, [1, 2, 8], dtype="int32")
-        with mock.patch("paddlefleet_ops._extensions.flashmask.index_utils.scan_maxmin_chunked"):
+        with mock.patch(
+            "paddlefleet_ops._extensions.flashmask.index_utils.scan_maxmin_chunked"
+        ):
             result_max, result_min = prepare_maxmin(x, chunk_size=4)
             self.assertEqual(result_max.dtype, paddle.int32)
             self.assertEqual(result_min.dtype, paddle.int32)
 
-    @unittest.skip("Cannot mock triton kernel launch [grid](...) pattern with mock triton")
+    @unittest.skip(
+        "Cannot mock triton kernel launch [grid](...) pattern with mock triton"
+    )
     def test_prepare_maxmin_grid_calculation(self):
         """Test that grid for scan_maxmin_chunked is correctly calculated."""
-        from paddlefleet_ops._extensions.flashmask.index_utils import prepare_maxmin
+        from paddlefleet_ops._extensions.flashmask.index_utils import (
+            prepare_maxmin,
+        )
 
         # bsz=2, num_heads=3, seq_len=20, BN=512
         x = paddle.randint(0, 100, [2, 3, 20], dtype="int32")
-        with mock.patch("paddlefleet_ops._extensions.flashmask.index_utils.scan_maxmin_chunked") as mock_kernel:
+        with mock.patch(
+            "paddlefleet_ops._extensions.flashmask.index_utils.scan_maxmin_chunked"
+        ) as mock_kernel:
             prepare_maxmin(x, chunk_size=4)
             grid = mock_kernel.call_args[0][0]
             # grid = ((seq_len + BN - 1) // BN, bsz * num_heads)
@@ -129,47 +165,71 @@ class TestPrepareMaxminBasic(unittest.TestCase):
 class TestPrepareMaxminEdgeCases(unittest.TestCase):
     """Edge case tests for prepare_maxmin function."""
 
-    @unittest.skip("Cannot mock triton kernel launch [grid](...) pattern with mock triton")
+    @unittest.skip(
+        "Cannot mock triton kernel launch [grid](...) pattern with mock triton"
+    )
     def test_prepare_maxmin_single_element(self):
         """Test prepare_maxmin with seq_len=1."""
-        from paddlefleet_ops._extensions.flashmask.index_utils import prepare_maxmin
+        from paddlefleet_ops._extensions.flashmask.index_utils import (
+            prepare_maxmin,
+        )
 
         x = paddle.randint(0, 100, [1, 1, 1], dtype="int32")
-        with mock.patch("paddlefleet_ops._extensions.flashmask.index_utils.scan_maxmin_chunked") as mock_kernel:
+        with mock.patch(
+            "paddlefleet_ops._extensions.flashmask.index_utils.scan_maxmin_chunked"
+        ) as mock_kernel:
             prepare_maxmin(x, chunk_size=8)
             call_args = mock_kernel.call_args[0]
             self.assertEqual(call_args[4], 1)  # num_chunks=1
 
-    @unittest.skip("Cannot mock triton kernel launch [grid](...) pattern with mock triton")
+    @unittest.skip(
+        "Cannot mock triton kernel launch [grid](...) pattern with mock triton"
+    )
     def test_prepare_maxmin_large_chunk(self):
         """Test prepare_maxmin with chunk_size larger than seq_len."""
-        from paddlefleet_ops._extensions.flashmask.index_utils import prepare_maxmin
+        from paddlefleet_ops._extensions.flashmask.index_utils import (
+            prepare_maxmin,
+        )
 
         # seq_len=8, chunk_size=16 => num_chunks=1
         x = paddle.randint(0, 100, [1, 1, 8], dtype="int32")
-        with mock.patch("paddlefleet_ops._extensions.flashmask.index_utils.scan_maxmin_chunked") as mock_kernel:
+        with mock.patch(
+            "paddlefleet_ops._extensions.flashmask.index_utils.scan_maxmin_chunked"
+        ) as mock_kernel:
             prepare_maxmin(x, chunk_size=16)
             call_args = mock_kernel.call_args[0]
             self.assertEqual(call_args[4], 1)
 
-    @unittest.skip("Cannot mock triton kernel launch [grid](...) pattern with mock triton")
+    @unittest.skip(
+        "Cannot mock triton kernel launch [grid](...) pattern with mock triton"
+    )
     def test_prepare_maxmin_chunk_size_equals_seq_len(self):
         """Test prepare_maxmin when chunk_size equals seq_len."""
-        from paddlefleet_ops._extensions.flashmask.index_utils import prepare_maxmin
+        from paddlefleet_ops._extensions.flashmask.index_utils import (
+            prepare_maxmin,
+        )
 
         x = paddle.randint(0, 100, [2, 3, 8], dtype="int32")
-        with mock.patch("paddlefleet_ops._extensions.flashmask.index_utils.scan_maxmin_chunked") as mock_kernel:
+        with mock.patch(
+            "paddlefleet_ops._extensions.flashmask.index_utils.scan_maxmin_chunked"
+        ) as mock_kernel:
             prepare_maxmin(x, chunk_size=8)
             call_args = mock_kernel.call_args[0]
             self.assertEqual(call_args[4], 1)
 
-    @unittest.skip("Cannot mock triton kernel launch [grid](...) pattern with mock triton")
+    @unittest.skip(
+        "Cannot mock triton kernel launch [grid](...) pattern with mock triton"
+    )
     def test_prepare_maxmin_batch_size_handling(self):
         """Test that prepare_maxmin correctly handles batch and head dims."""
-        from paddlefleet_ops._extensions.flashmask.index_utils import prepare_maxmin
+        from paddlefleet_ops._extensions.flashmask.index_utils import (
+            prepare_maxmin,
+        )
 
         x = paddle.randint(0, 100, [4, 8, 32], dtype="int32")
-        with mock.patch("paddlefleet_ops._extensions.flashmask.index_utils.scan_maxmin_chunked") as mock_kernel:
+        with mock.patch(
+            "paddlefleet_ops._extensions.flashmask.index_utils.scan_maxmin_chunked"
+        ) as mock_kernel:
             prepare_maxmin(x, chunk_size=16)
             grid = mock_kernel.call_args[0][0]
             # grid = (1, 4*8) = (1, 32)
@@ -201,37 +261,55 @@ class TestScanMaxminChunkedKernel(unittest.TestCase):
 class TestPrepareMaxminBatched(unittest.TestCase):
     """Tests for prepare_maxmin with different batch configurations."""
 
-    @unittest.skip("Cannot mock triton kernel launch [grid](...) pattern with mock triton")
+    @unittest.skip(
+        "Cannot mock triton kernel launch [grid](...) pattern with mock triton"
+    )
     def test_prepare_maxmin_single_batch(self):
         """Test prepare_maxmin with single batch."""
-        from paddlefleet_ops._extensions.flashmask.index_utils import prepare_maxmin
+        from paddlefleet_ops._extensions.flashmask.index_utils import (
+            prepare_maxmin,
+        )
 
         x = paddle.randint(0, 100, [1, 1, 64], dtype="int32")
-        with mock.patch("paddlefleet_ops._extensions.flashmask.index_utils.scan_maxmin_chunked") as mock_kernel:
+        with mock.patch(
+            "paddlefleet_ops._extensions.flashmask.index_utils.scan_maxmin_chunked"
+        ) as mock_kernel:
             prepare_maxmin(x, chunk_size=16)
             grid = mock_kernel.call_args[0][0]
             # seq_len=64, BN=512 => (1, 1)
             self.assertEqual(grid, (1, 1))
 
-    @unittest.skip("Cannot mock triton kernel launch [grid](...) pattern with mock triton")
+    @unittest.skip(
+        "Cannot mock triton kernel launch [grid](...) pattern with mock triton"
+    )
     def test_prepare_maxmin_many_heads(self):
         """Test prepare_maxmin with many attention heads."""
-        from paddlefleet_ops._extensions.flashmask.index_utils import prepare_maxmin
+        from paddlefleet_ops._extensions.flashmask.index_utils import (
+            prepare_maxmin,
+        )
 
         x = paddle.randint(0, 100, [1, 32, 128], dtype="int32")
-        with mock.patch("paddlefleet_ops._extensions.flashmask.index_utils.scan_maxmin_chunked") as mock_kernel:
+        with mock.patch(
+            "paddlefleet_ops._extensions.flashmask.index_utils.scan_maxmin_chunked"
+        ) as mock_kernel:
             prepare_maxmin(x, chunk_size=32)
             grid = mock_kernel.call_args[0][0]
             self.assertEqual(grid, (1, 32))
 
-    @unittest.skip("Cannot mock triton kernel launch [grid](...) pattern with mock triton")
+    @unittest.skip(
+        "Cannot mock triton kernel launch [grid](...) pattern with mock triton"
+    )
     def test_prepare_maxmin_kernel_params(self):
         """Test that kernel parameters are correctly passed."""
-        from paddlefleet_ops._extensions.flashmask.index_utils import prepare_maxmin
+        from paddlefleet_ops._extensions.flashmask.index_utils import (
+            prepare_maxmin,
+        )
 
         x = paddle.randint(0, 100, [2, 3, 48], dtype="int32")
         chunk_size = 12
-        with mock.patch("paddlefleet_ops._extensions.flashmask.index_utils.scan_maxmin_chunked") as mock_kernel:
+        with mock.patch(
+            "paddlefleet_ops._extensions.flashmask.index_utils.scan_maxmin_chunked"
+        ) as mock_kernel:
             prepare_maxmin(x, chunk_size=chunk_size)
             kwargs = mock_kernel.call_args[1]
             self.assertEqual(kwargs["chunk_size"], chunk_size)

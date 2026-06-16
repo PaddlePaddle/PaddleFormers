@@ -15,9 +15,10 @@
 import unittest
 
 import paddle
+from parameterized import parameterized
+
 from paddlefleet_ops.sonicmoe import KernelBackendMoE, MoE, enable_quack_gemm
 from paddlefleet_ops.sonicmoe.enums import ActivationType
-from parameterized import parameterized
 
 from .commons_test import TestCommons
 
@@ -27,7 +28,8 @@ _SEED = 42
 _gpu_capability = paddle.device.cuda.get_device_capability()
 _IS_SM90A = _gpu_capability == (9, 0)
 _SKIP_REASON = (
-    f"MmaF16BF16Op requires sm_90a, " f"but current GPU capability is sm_{_gpu_capability[0]}{_gpu_capability[1]}a"
+    f"MmaF16BF16Op requires sm_90a, "
+    f"but current GPU capability is sm_{_gpu_capability[0]}{_gpu_capability[1]}a"
 )
 # torch._dynamo.config.cache_size_limit = 1024
 # torch._dynamo.config.accumulated_cache_size_limit = 1024
@@ -109,15 +111,21 @@ class MoETest(TestCommons):
             moe_kernel = paddle.compile(moe_kernel, fullgraph=True)
 
         paddle.cuda.empty_cache()
-        x_paddle = 0.02 * paddle.randn(T, H, device=device, dtype=dtype, requires_grad=True)
+        x_paddle = 0.02 * paddle.randn(
+            T, H, device=device, dtype=dtype, requires_grad=True
+        )
         x_kernel = x_paddle.clone().detach().requires_grad_()
 
         # with torch.autocast(x_paddle.device.type, paddle.float32):
         if True:
             with enable_quack_gemm(use_quack_gemm):
-                y_kernel = moe_kernel(x_kernel, kernel_backend_moe=kernel_backend_moe)[0]
+                y_kernel = moe_kernel(
+                    x_kernel, kernel_backend_moe=kernel_backend_moe
+                )[0]
 
-            y_paddle = moe_paddle(x_paddle, kernel_backend_moe=KernelBackendMoE.sonicmoe)[0]
+            y_paddle = moe_paddle(
+                x_paddle, kernel_backend_moe=KernelBackendMoE.sonicmoe
+            )[0]
             self.assert_equal_tensors(
                 y_kernel.float(),
                 y_paddle.float(),
@@ -127,7 +135,9 @@ class MoETest(TestCommons):
                 dtype=dtype,
             )
 
-        dy_paddle = 0.02 * paddle.randn(T, H, device=device, dtype=dtype, requires_grad=True)
+        dy_paddle = 0.02 * paddle.randn(
+            T, H, device=device, dtype=dtype, requires_grad=True
+        )
         dy_kernel = dy_paddle.clone().detach().requires_grad_()
 
         W = list(moe.parameters())

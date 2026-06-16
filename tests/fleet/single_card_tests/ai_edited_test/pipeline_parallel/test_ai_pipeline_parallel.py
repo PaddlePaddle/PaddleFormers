@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -28,22 +32,34 @@ class TestGetAction(unittest.TestCase):
     """Tests for get_action function."""
 
     def test_get_action_dp(self):
-        from paddle.distributed.fleet.meta_parallel.pipeline_parallel import get_action
-        from paddle.distributed.fleet.utils.tensor_fusion_helper import HOOK_ACTION
+        from paddle.distributed.fleet.meta_parallel.pipeline_parallel import (
+            get_action,
+        )
+        from paddle.distributed.fleet.utils.tensor_fusion_helper import (
+            HOOK_ACTION,
+        )
 
         result = get_action(is_dp=True)
         self.assertEqual(result, HOOK_ACTION.ALL_REDUCE)
 
     def test_get_action_shard_split(self):
-        from paddle.distributed.fleet.meta_parallel.pipeline_parallel import get_action
-        from paddle.distributed.fleet.utils.tensor_fusion_helper import HOOK_ACTION
+        from paddle.distributed.fleet.meta_parallel.pipeline_parallel import (
+            get_action,
+        )
+        from paddle.distributed.fleet.utils.tensor_fusion_helper import (
+            HOOK_ACTION,
+        )
 
         result = get_action(is_dp=False, shard_split_param=True)
         self.assertEqual(result, HOOK_ACTION.REDUCE_SCATTER)
 
     def test_get_action_reduce(self):
-        from paddle.distributed.fleet.meta_parallel.pipeline_parallel import get_action
-        from paddle.distributed.fleet.utils.tensor_fusion_helper import HOOK_ACTION
+        from paddle.distributed.fleet.meta_parallel.pipeline_parallel import (
+            get_action,
+        )
+        from paddle.distributed.fleet.utils.tensor_fusion_helper import (
+            HOOK_ACTION,
+        )
 
         result = get_action(is_dp=False, shard_split_param=False)
         self.assertEqual(result, HOOK_ACTION.REDUCE)
@@ -75,7 +91,9 @@ class TestPipelineParallelMicroStepLocations(unittest.TestCase):
             PipelineParallelMicroStepLocations.FORWARD_BEGIN.value,
             "forward_begin",
         )
-        self.assertEqual(PipelineParallelMicroStepLocations.FORWARD_END.value, "forward_end")
+        self.assertEqual(
+            PipelineParallelMicroStepLocations.FORWARD_END.value, "forward_end"
+        )
         self.assertEqual(
             PipelineParallelMicroStepLocations.BACKWARD_BEGIN.value,
             "backward_begin",
@@ -97,7 +115,9 @@ class TestPipelineParallelMicroStepCallback(unittest.TestCase):
 
         callback = PipelineParallelMicroStepCallback()
         self.assertEqual(
-            len(callback.hooks[PipelineParallelMicroStepLocations.FORWARD_BEGIN]),
+            len(
+                callback.hooks[PipelineParallelMicroStepLocations.FORWARD_BEGIN]
+            ),
             0,
         )
 
@@ -109,9 +129,13 @@ class TestPipelineParallelMicroStepCallback(unittest.TestCase):
 
         callback = PipelineParallelMicroStepCallback()
         fn = MagicMock()
-        callback.register_hook(PipelineParallelMicroStepLocations.FORWARD_BEGIN, fn)
+        callback.register_hook(
+            PipelineParallelMicroStepLocations.FORWARD_BEGIN, fn
+        )
         self.assertEqual(
-            len(callback.hooks[PipelineParallelMicroStepLocations.FORWARD_BEGIN]),
+            len(
+                callback.hooks[PipelineParallelMicroStepLocations.FORWARD_BEGIN]
+            ),
             1,
         )
 
@@ -133,8 +157,12 @@ class TestPipelineParallelMicroStepCallback(unittest.TestCase):
 
         callback = PipelineParallelMicroStepCallback()
         fn = MagicMock()
-        callback.register_hook(PipelineParallelMicroStepLocations.FORWARD_END, fn)
-        callback.on_location(PipelineParallelMicroStepLocations.FORWARD_END, step_id=0)
+        callback.register_hook(
+            PipelineParallelMicroStepLocations.FORWARD_END, fn
+        )
+        callback.on_location(
+            PipelineParallelMicroStepLocations.FORWARD_END, step_id=0
+        )
         fn.assert_called_once_with(step_id=0)
 
     def test_on_location_invalid(self):
@@ -367,7 +395,9 @@ class TestNoPipelineParallel(unittest.TestCase):
         with self.assertRaises(AssertionError):
             npp._check_micro_batch_data_valid("not_a_tensor")
 
-    def _create_npp_for_eval(self, accumulate_steps=1, micro_batch_size=2, delay_scale_loss=False):
+    def _create_npp_for_eval(
+        self, accumulate_steps=1, micro_batch_size=2, delay_scale_loss=False
+    ):
         """Helper to create a NoPipelineParallel instance for eval_batch tests."""
         import paddle
         from paddle.distributed.fleet.meta_parallel.pipeline_parallel import (
@@ -382,7 +412,9 @@ class TestNoPipelineParallel(unittest.TestCase):
 
         mock_layers = MagicMock()
         mock_layers._loss_fn = [mock_loss_fn]
-        mock_layers.forward = MagicMock(side_effect=lambda x: paddle.randn([micro_batch_size, 1]))
+        mock_layers.forward = MagicMock(
+            side_effect=lambda x: paddle.randn([micro_batch_size, 1])
+        )
 
         npp._layers = mock_layers
         npp.accumulate_steps = accumulate_steps
@@ -415,7 +447,9 @@ class TestNoPipelineParallel(unittest.TestCase):
         """Test eval_batch with _delay_scale_loss=True."""
         import paddle
 
-        npp = self._create_npp_for_eval(accumulate_steps=2, micro_batch_size=2, delay_scale_loss=True)
+        npp = self._create_npp_for_eval(
+            accumulate_steps=2, micro_batch_size=2, delay_scale_loss=True
+        )
         data = (paddle.randn([4, 3]), paddle.randn([4, 1]))
         result = npp.eval_batch(data, compute_loss=True)
         self.assertIsInstance(result, paddle.Tensor)

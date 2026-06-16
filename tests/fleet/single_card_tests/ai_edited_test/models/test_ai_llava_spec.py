@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -38,7 +42,9 @@ class TestDecoderModelWithLocalDefaultSpec(unittest.TestCase):
         _llava_spec_importable,
         "paddleformers.fleet.models.multimodal.llava_spec cannot be imported (missing get_mlp_layer_spec in gpt_layer_specs)",
     )
-    @patch("paddleformers.fleet.models.multimodal.llava_spec.get_mlp_layer_spec")
+    @patch(
+        "paddleformers.fleet.models.multimodal.llava_spec.get_mlp_layer_spec"
+    )
     def test_returns_layer_spec(self, mock_mlp):
         from paddleformers.fleet.models.multimodal.llava_spec import (
             decoder_model_with_local_default_spec,
@@ -53,12 +59,16 @@ class TestDecoderModelWithLocalDefaultSpec(unittest.TestCase):
         _llava_spec_importable,
         "paddleformers.fleet.models.multimodal.llava_spec cannot be imported (missing get_mlp_layer_spec in gpt_layer_specs)",
     )
-    @patch("paddleformers.fleet.models.multimodal.llava_spec.get_mlp_layer_spec")
+    @patch(
+        "paddleformers.fleet.models.multimodal.llava_spec.get_mlp_layer_spec"
+    )
     def test_spec_has_transformer_layer(self, mock_mlp):
         from paddleformers.fleet.models.multimodal.llava_spec import (
             decoder_model_with_local_default_spec,
         )
-        from paddleformers.fleet.transformer.transformer_layer import TransformerLayer
+        from paddleformers.fleet.transformer.transformer_layer import (
+            TransformerLayer,
+        )
 
         mock_mlp.return_value = MagicMock()
 
@@ -69,7 +79,9 @@ class TestDecoderModelWithLocalDefaultSpec(unittest.TestCase):
         _llava_spec_importable,
         "paddleformers.fleet.models.multimodal.llava_spec cannot be imported (missing get_mlp_layer_spec in gpt_layer_specs)",
     )
-    @patch("paddleformers.fleet.models.multimodal.llava_spec.get_mlp_layer_spec")
+    @patch(
+        "paddleformers.fleet.models.multimodal.llava_spec.get_mlp_layer_spec"
+    )
     def test_spec_has_submodules(self, mock_mlp):
         from paddleformers.fleet.models.multimodal.llava_spec import (
             decoder_model_with_local_default_spec,
@@ -88,7 +100,9 @@ class TestDecoderModelWithLocalDefaultSpec(unittest.TestCase):
         _llava_spec_importable,
         "paddleformers.fleet.models.multimodal.llava_spec cannot be imported (missing get_mlp_layer_spec in gpt_layer_specs)",
     )
-    @patch("paddleformers.fleet.models.multimodal.llava_spec.get_mlp_layer_spec")
+    @patch(
+        "paddleformers.fleet.models.multimodal.llava_spec.get_mlp_layer_spec"
+    )
     def test_spec_has_self_attention(self, mock_mlp):
         from paddleformers.fleet.models.multimodal.llava_spec import (
             decoder_model_with_local_default_spec,
@@ -103,7 +117,9 @@ class TestDecoderModelWithLocalDefaultSpec(unittest.TestCase):
         _llava_spec_importable,
         "paddleformers.fleet.models.multimodal.llava_spec cannot be imported (missing get_mlp_layer_spec in gpt_layer_specs)",
     )
-    @patch("paddleformers.fleet.models.multimodal.llava_spec.get_mlp_layer_spec")
+    @patch(
+        "paddleformers.fleet.models.multimodal.llava_spec.get_mlp_layer_spec"
+    )
     def test_spec_has_mlp(self, mock_mlp):
         from paddleformers.fleet.models.multimodal.llava_spec import (
             decoder_model_with_local_default_spec,
@@ -118,7 +134,9 @@ class TestDecoderModelWithLocalDefaultSpec(unittest.TestCase):
         _llava_spec_importable,
         "paddleformers.fleet.models.multimodal.llava_spec cannot be imported (missing get_mlp_layer_spec in gpt_layer_specs)",
     )
-    @patch("paddleformers.fleet.models.multimodal.llava_spec.get_mlp_layer_spec")
+    @patch(
+        "paddleformers.fleet.models.multimodal.llava_spec.get_mlp_layer_spec"
+    )
     def test_spec_has_bias_dropout_add(self, mock_mlp):
         from paddleformers.fleet.models.multimodal.llava_spec import (
             decoder_model_with_local_default_spec,
@@ -138,7 +156,9 @@ class TestDecoderModelWithMoE(unittest.TestCase):
         _llava_spec_importable,
         "paddleformers.fleet.models.multimodal.llava_spec cannot be imported (missing get_mlp_layer_spec in gpt_layer_specs)",
     )
-    @patch("paddleformers.fleet.models.multimodal.llava_spec.get_mlp_layer_spec")
+    @patch(
+        "paddleformers.fleet.models.multimodal.llava_spec.get_mlp_layer_spec"
+    )
     def test_moe_spec(self, mock_mlp):
         from paddleformers.fleet.models.multimodal.llava_spec import (
             decoder_model_with_local_default_spec,
@@ -146,9 +166,13 @@ class TestDecoderModelWithMoE(unittest.TestCase):
 
         mock_mlp.return_value = MagicMock()
 
-        result = decoder_model_with_local_default_spec(num_experts=8, moe_expert_fusion=True)
+        result = decoder_model_with_local_default_spec(
+            num_experts=8, moe_expert_fusion=True
+        )
         self.assertIsNotNone(result)
-        mock_mlp.assert_called_once_with(use_te=False, num_experts=8, moe_expert_fusion=True)
+        mock_mlp.assert_called_once_with(
+            use_te=False, num_experts=8, moe_expert_fusion=True
+        )
 
 
 class TestDecoderModelWithQKLayerNorm(unittest.TestCase):
@@ -158,7 +182,9 @@ class TestDecoderModelWithQKLayerNorm(unittest.TestCase):
         _llava_spec_importable,
         "paddleformers.fleet.models.multimodal.llava_spec cannot be imported (missing get_mlp_layer_spec in gpt_layer_specs)",
     )
-    @patch("paddleformers.fleet.models.multimodal.llava_spec.get_mlp_layer_spec")
+    @patch(
+        "paddleformers.fleet.models.multimodal.llava_spec.get_mlp_layer_spec"
+    )
     def test_qk_layernorm_param_passed(self, mock_mlp):
         from paddleformers.fleet.models.multimodal.llava_spec import (
             decoder_model_with_local_default_spec,

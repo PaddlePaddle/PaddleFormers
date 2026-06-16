@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -30,7 +34,9 @@ import unittest
 def _setup_triton_mock():
     """Create a mock triton module so we can import without GPU."""
     triton_mock = types.ModuleType("triton")
-    triton_mock.jit = lambda fn=None, **kwargs: ((lambda f: f) if fn is None else fn)
+    triton_mock.jit = lambda fn=None, **kwargs: (
+        (lambda f: f) if fn is None else fn
+    )
     triton_mock.language = types.ModuleType("triton.language")
     triton_mock.language.constexpr = None
     tl = triton_mock.language
@@ -74,7 +80,9 @@ class TestRMSNormFusionTritonForward(unittest.TestCase):
         """Test forward has expected parameters."""
         import inspect
 
-        from paddleformers.fleet.triton_ops.rms_norm_fusion import RMSNormFusionTriton
+        from paddleformers.fleet.triton_ops.rms_norm_fusion import (
+            RMSNormFusionTriton,
+        )
 
         sig = inspect.signature(RMSNormFusionTriton.forward)
         params = list(sig.parameters.keys())
@@ -87,7 +95,9 @@ class TestRMSNormFusionTritonForward(unittest.TestCase):
         """Test backward has expected parameters."""
         import inspect
 
-        from paddleformers.fleet.triton_ops.rms_norm_fusion import RMSNormFusionTriton
+        from paddleformers.fleet.triton_ops.rms_norm_fusion import (
+            RMSNormFusionTriton,
+        )
 
         sig = inspect.signature(RMSNormFusionTriton.backward)
         params = list(sig.parameters.keys())

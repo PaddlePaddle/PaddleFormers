@@ -22,7 +22,9 @@ from paddleformers.fleet.config_logger import (
     has_config_logger_enabled,
     log_config_to_disk,
 )
-from paddleformers.fleet.models.common.vision_layer.vision_layer import VisionLayer
+from paddleformers.fleet.models.common.vision_layer.vision_layer import (
+    VisionLayer,
+)
 from paddleformers.fleet.process_groups_config import ProcessGroupCollection
 from paddleformers.fleet.transformer.enums import ModelType
 from paddleformers.fleet.transformer.transformer_block import TransformerBlock
@@ -63,7 +65,9 @@ class CLIPViTModel(VisionLayer):
         pg_collection: ProcessGroupCollection | None = None,
         vp_stage: int | None = None,
     ) -> None:
-        error_msg = f"CLIPViTModel model subtype {model_subtype} is not supported."
+        error_msg = (
+            f"CLIPViTModel model subtype {model_subtype} is not supported."
+        )
         assert model_subtype in [
             "clip",
             "siglip",
@@ -78,7 +82,9 @@ class CLIPViTModel(VisionLayer):
         super().__init__(config=transformer_config)
 
         if has_config_logger_enabled(transformer_config):
-            log_config_to_disk(transformer_config, locals(), prefix=type(self).__name__)
+            log_config_to_disk(
+                transformer_config, locals(), prefix=type(self).__name__
+            )
 
         self.class_token_len = class_token_len
         self.visual_hidden_size = transformer_config.hidden_size
@@ -90,12 +96,16 @@ class CLIPViTModel(VisionLayer):
         assert self.img_w % self.patch_dim == 0
         self.num_patches_per_dim_h = self.img_h // self.patch_dim
         self.num_patches_per_dim_w = self.img_w // self.patch_dim
-        self.num_patches = self.num_patches_per_dim_h * self.num_patches_per_dim_w
+        self.num_patches = (
+            self.num_patches_per_dim_h * self.num_patches_per_dim_w
+        )
 
         self.add_class_token = add_class_token
         self.class_token_len = class_token_len
 
-        self.seq_length = self.num_patches + (self.class_token_len if self.add_class_token else 0)
+        self.seq_length = self.num_patches + (
+            self.class_token_len if self.add_class_token else 0
+        )
 
         self.ln_pre = None
         self.ln_post = None
@@ -179,7 +189,9 @@ class CLIPViTModel(VisionLayer):
         """
         self.decoder.set_input_tensor(input_tensor)
 
-    def forward(self, x: paddle.Tensor, attention_mask: paddle.Tensor | None = None) -> paddle.Tensor:
+    def forward(
+        self, x: paddle.Tensor, attention_mask: paddle.Tensor | None = None
+    ) -> paddle.Tensor:
         """Forward function of the CLIP ViT Model. This function passes the input tensors
         through the embedding layer and then the transformer.
 
@@ -191,14 +203,22 @@ class CLIPViTModel(VisionLayer):
             x (paddle.Tensor): output after final transformer block of shape [b, s, h].
         """
         x = self.conv1(x)  # shape = [batch, hidden_size, grid, grid]
-        x = x.reshape(x.shape[0], x.shape[1], -1)  # [batch, hidden_size, grid ** 2]
+        x = x.reshape(
+            x.shape[0], x.shape[1], -1
+        )  # [batch, hidden_size, grid ** 2]
         x = x.permute(0, 2, 1)  # [batch, grid ** 2, hidden_size]
 
         if self.add_class_token:
-            class_token = self.class_token.expand(x.shape[0], -1, -1)  # [batch, class_token_len, hidden_size]
-            x = paddle.concat([class_token, x], dim=1)  # [batch, grid ** 2 + class_token_len, hidden_size]
+            class_token = self.class_token.expand(
+                x.shape[0], -1, -1
+            )  # [batch, class_token_len, hidden_size]
+            x = paddle.concat(
+                [class_token, x], dim=1
+            )  # [batch, grid ** 2 + class_token_len, hidden_size]
 
-        assert x.shape[1] == self.seq_length, f"{x.shape[1]} != {self.seq_length}"
+        assert x.shape[1] == self.seq_length, (
+            f"{x.shape[1]} != {self.seq_length}"
+        )
         x = x + self.position_embeddings(self.position_ids)
         if self.ln_pre:
             x = self.ln_pre(x)
@@ -237,24 +257,34 @@ def get_num_image_embeddings(
         class_token_len = 8
         keep_class_token = not disable_vision_class_token
     elif vision_model_type.startswith("hf://"):
-        from paddleformers.fleet.models.huggingface.module import get_hf_model_type
+        from paddleformers.fleet.models.huggingface.module import (
+            get_hf_model_type,
+        )
 
         model_type = get_hf_model_type(vision_model_type)
 
         if "siglip" in model_type:
             keep_class_token = False
         else:
-            raise NotImplementedError(f"unsupported huggingface vision model: {vision_model_type}")
+            raise NotImplementedError(
+                f"unsupported huggingface vision model: {vision_model_type}"
+            )
     else:
-        raise NotImplementedError(f"unknown vision model type {vision_model_type}")
+        raise NotImplementedError(
+            f"unknown vision model type {vision_model_type}"
+        )
 
     num_patches_per_dim_h = img_h // patch_dim
     num_patches_per_dim_w = img_w // patch_dim
     num_patches = num_patches_per_dim_h * num_patches_per_dim_w
-    num_image_embeddings_per_tile = num_patches + (class_token_len if keep_class_token else 0)
+    num_image_embeddings_per_tile = num_patches + (
+        class_token_len if keep_class_token else 0
+    )
 
     if pixel_shuffle:
-        num_image_embeddings_per_tile = int(num_image_embeddings_per_tile * (0.5**2))
+        num_image_embeddings_per_tile = int(
+            num_image_embeddings_per_tile * (0.5**2)
+        )
 
     if use_tile_tags:
         if tokenizer_type in ("llama3p1", "chatml", "qwen2p0", "qwen2p5"):
@@ -266,6 +296,8 @@ def get_num_image_embeddings(
             if tokenizer_type.startswith("qwen"):
                 num_image_embeddings_per_tile += 1  # add padding 0
         elif max_num_tiles > 100:
-            raise ValueError(f"max number of tiles {max_num_tiles} not supported")
+            raise ValueError(
+                f"max number of tiles {max_num_tiles} not supported"
+            )
 
     return num_image_embeddings_per_tile

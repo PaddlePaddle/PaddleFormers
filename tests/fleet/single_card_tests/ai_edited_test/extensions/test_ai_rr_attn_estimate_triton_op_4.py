@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -39,7 +43,9 @@ from unittest.mock import MagicMock
 def _setup_triton_mock():
     """Create a mock triton module so we can import without GPU."""
     triton_mock = types.ModuleType("triton")
-    triton_mock.jit = lambda fn=None, **kwargs: ((lambda f: f) if fn is None else fn)
+    triton_mock.jit = lambda fn=None, **kwargs: (
+        (lambda f: f) if fn is None else fn
+    )
     triton_mock.language = types.ModuleType("triton.language")
     triton_mock.language.constexpr = None
     tl = triton_mock.language
@@ -90,6 +96,7 @@ class TestPrepareStrideMaxminPtrs(unittest.TestCase):
     def test_stride_must_be_positive(self):
         """Test _prepare_stride_maxmin_ptrs raises for non-positive stride."""
         import paddle
+
         from paddlefleet_ops._extensions.flashmask.rr_attn_estimate_triton_op import (
             RawPtrs,
             _prepare_stride_maxmin_ptrs,
@@ -108,6 +115,7 @@ class TestPrepareStrideMaxminPtrs(unittest.TestCase):
     def test_mode_1_returns_stride_ptrs(self):
         """Test _prepare_stride_maxmin_ptrs with mode=1."""
         import paddle
+
         from paddlefleet_ops._extensions.flashmask.rr_attn_estimate_triton_op import (
             RawPtrs,
             _prepare_stride_maxmin_ptrs,
@@ -128,6 +136,7 @@ class TestPrepareStrideMaxminPtrs(unittest.TestCase):
     def test_mode_2_causal_returns_lt_end(self):
         """Test _prepare_stride_maxmin_ptrs with mode=2 causal=True."""
         import paddle
+
         from paddlefleet_ops._extensions.flashmask.rr_attn_estimate_triton_op import (
             RawPtrs,
             _prepare_stride_maxmin_ptrs,
@@ -147,6 +156,7 @@ class TestPrepareStrideMaxminPtrs(unittest.TestCase):
     def test_mode_2_non_causal_returns_ut_end(self):
         """Test _prepare_stride_maxmin_ptrs with mode=2 causal=False."""
         import paddle
+
         from paddlefleet_ops._extensions.flashmask.rr_attn_estimate_triton_op import (
             RawPtrs,
             _prepare_stride_maxmin_ptrs,
@@ -159,13 +169,16 @@ class TestPrepareStrideMaxminPtrs(unittest.TestCase):
             ut_end=paddle.randint(0, 10, [2, 2, 16], dtype=paddle.int32),
         )
 
-        result = _prepare_stride_maxmin_ptrs(raw, mode=2, causal=False, stride=4)
+        result = _prepare_stride_maxmin_ptrs(
+            raw, mode=2, causal=False, stride=4
+        )
         self.assertIsNotNone(result.ut_end_max)
         self.assertIsNotNone(result.ut_end_min)
 
     def test_mode_4_returns_all_stride_ptrs(self):
         """Test _prepare_stride_maxmin_ptrs with mode=4."""
         import paddle
+
         from paddlefleet_ops._extensions.flashmask.rr_attn_estimate_triton_op import (
             RawPtrs,
             _prepare_stride_maxmin_ptrs,
@@ -208,6 +221,7 @@ class TestRrAttnEstimateHeadMapping(unittest.TestCase):
     def test_num_q_heads_must_be_divisible_by_num_indices_heads(self):
         """Test that num_q_heads % num_indices_heads == 0."""
         import paddle
+
         from paddlefleet_ops._extensions.flashmask.rr_attn_estimate_triton_op import (
             rr_attn_estimate_triton_func,
         )
@@ -223,6 +237,7 @@ class TestRrAttnEstimateHeadMapping(unittest.TestCase):
     def test_num_q_heads_must_be_divisible_by_num_kv_heads(self):
         """Test that num_q_heads % num_kv_heads == 0."""
         import paddle
+
         from paddlefleet_ops._extensions.flashmask.rr_attn_estimate_triton_op import (
             rr_attn_estimate_triton_func,
         )

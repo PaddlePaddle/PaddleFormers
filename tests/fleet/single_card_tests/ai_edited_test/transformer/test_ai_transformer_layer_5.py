@@ -16,7 +16,9 @@ import os
 import sys
 import unittest
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+REPO_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 sys.path.insert(0, os.path.join(REPO_ROOT, "src"))
 
 import paddle
@@ -117,7 +119,9 @@ class FakeOverlapMLP(paddle.nn.Layer):
 
 
 class InitConfig:
-    def __init__(self, cp_comm_type, recompute_modules, recompute_method="block"):
+    def __init__(
+        self, cp_comm_type, recompute_modules, recompute_method="block"
+    ):
         self.gpt_model_use_experimental_version = False
         self.hidden_dropout_prob = 0.0
         self.sequence_parallel = False
@@ -191,7 +195,9 @@ def build_gpt_model_with_moe():
         hidden_dropout_prob=0.0,
         attention_dropout=0.0,
         init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-        output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+        output_layer_init_method=functools.partial(
+            paddle.nn.init.xavier_uniform_, gain=1.0
+        ),
         tie_word_embeddings=False,
         use_qk_norm=True,
     )
@@ -210,13 +216,17 @@ class TestTransformerLayerConstructorAndHelpers(unittest.TestCase):
         self.old_build_spec_layer = transformer_layer.build_spec_layer
         self.old_recompute = transformer_layer.recompute
         self.old_log_layer_md5 = TransformerLayer._LOG_LAYER_MD5
-        self.old_experimental = TransformerLayer._gpt_model_use_experimental_version
+        self.old_experimental = (
+            TransformerLayer._gpt_model_use_experimental_version
+        )
 
     def tearDown(self):
         transformer_layer.build_spec_layer = self.old_build_spec_layer
         transformer_layer.recompute = self.old_recompute
         TransformerLayer._LOG_LAYER_MD5 = self.old_log_layer_md5
-        TransformerLayer._gpt_model_use_experimental_version = self.old_experimental
+        TransformerLayer._gpt_model_use_experimental_version = (
+            self.old_experimental
+        )
 
     def _spec(self):
         return TransformerLayerSublayersSpec(
@@ -248,7 +258,9 @@ class TestTransformerLayerConstructorAndHelpers(unittest.TestCase):
         self._install_build_stub()
         config = InitConfig(["zero", "one"], ["norm", "mlp"])
 
-        layer = TransformerLayer(config, self._spec(), layer_number=0, pg_collection=PGCollection())
+        layer = TransformerLayer(
+            config, self._spec(), layer_number=0, pg_collection=PGCollection()
+        )
 
         self.assertTrue(layer.recompute_input_layernorm)
         self.assertTrue(layer.recompute_post_attention_layernorm)
@@ -259,7 +271,9 @@ class TestTransformerLayerConstructorAndHelpers(unittest.TestCase):
         self._install_build_stub()
         config = InitConfig("ring", {"norm": 1, "mlp": 1}, "first_n")
 
-        layer = TransformerLayer(config, self._spec(), layer_number=0, pg_collection=PGCollection())
+        layer = TransformerLayer(
+            config, self._spec(), layer_number=0, pg_collection=PGCollection()
+        )
 
         self.assertTrue(layer.recompute_input_layernorm)
         self.assertTrue(layer.recompute_post_attention_layernorm)
@@ -294,7 +308,9 @@ class TestTransformerLayerConstructorAndHelpers(unittest.TestCase):
         self.assertFalse(output.stop_gradient)
 
     def test_forward_mlp_recompute_md5_block_and_first_forward_branches(self):
-        transformer_layer.recompute = lambda func, *args, **kwargs: func(*args, **kwargs)
+        transformer_layer.recompute = lambda func, *args, **kwargs: func(
+            *args, **kwargs
+        )
         TransformerLayer._LOG_LAYER_MD5 = True
         TransformerLayer._gpt_model_use_experimental_version = True
         model = get_gpt_transformer_layer()
@@ -343,7 +359,9 @@ class TestTransformerLayerConstructorAndHelpers(unittest.TestCase):
         )
         model._forward_mlp = lambda hidden_states, **kwargs: hidden_states + 3.0
 
-        output, context = TransformerLayer._forward_impl(model, paddle.ones([1, 2], dtype="float32"))
+        output, context = TransformerLayer._forward_impl(
+            model, paddle.ones([1, 2], dtype="float32")
+        )
         self.assertEqual(context.shape, [1, 2])
 
         forward_model = get_gpt_transformer_layer()
@@ -365,14 +383,20 @@ class TestTransformerLayerConstructorAndHelpers(unittest.TestCase):
         block_model.layer_number = 1
         block_model.attn_res_block_size = 4
         block_model.mlp = paddle.nn.Identity()
-        block_model.block_attn_res_before_attention = lambda partial, blocks: partial
+        block_model.block_attn_res_before_attention = (
+            lambda partial, blocks: partial
+        )
         block_model.block_attn_res_before_mlp = lambda partial, blocks: partial
         block_model._forward_attention = lambda **kwargs: (
             kwargs["hidden_states"].cast("bfloat16"),
             None,
         )
-        block_model._forward_mlp = lambda hidden_states, **kwargs: hidden_states.cast("float32")
-        block_output = TransformerLayer._forward_impl(block_model, paddle.ones([1, 2], dtype="float32"), blocks=[])
+        block_model._forward_mlp = (
+            lambda hidden_states, **kwargs: hidden_states.cast("float32")
+        )
+        block_output = TransformerLayer._forward_impl(
+            block_model, paddle.ones([1, 2], dtype="float32"), blocks=[]
+        )
         self.assertEqual(block_output.shape, [1, 2])
 
     def test_overlap_helper_methods_drive_moe_paths(self):
@@ -393,12 +417,18 @@ class TestTransformerLayerConstructorAndHelpers(unittest.TestCase):
         attn_out, _ = TransformerLayerWithOverlap.compute_attention(
             model, {"hidden_states": hidden_states}, is_first_fwd=True
         )
-        mlp_out = TransformerLayerWithOverlap.compute_mlp(model, attn_out, is_first_fwd=True)
-        preprocessed = TransformerLayerWithOverlap.pre_process_compute(model, hidden_states)
+        mlp_out = TransformerLayerWithOverlap.compute_mlp(
+            model, attn_out, is_first_fwd=True
+        )
+        preprocessed = TransformerLayerWithOverlap.pre_process_compute(
+            model, hidden_states
+        )
         dispatched = TransformerLayerWithOverlap.dispatch_preprocess_compute(
             model, (preprocessed[1], preprocessed[3], preprocessed[4])
         )
-        post = TransformerLayerWithOverlap.post_process_compute(model, (mlp_out, hidden_states), is_first_fwd=True)
+        post = TransformerLayerWithOverlap.post_process_compute(
+            model, (mlp_out, hidden_states), is_first_fwd=True
+        )
 
         self.assertEqual(dispatched[0].shape, [1, 2])
         self.assertFalse(post.stop_gradient)
@@ -409,7 +439,9 @@ class TestTransformerLayerConstructorAndHelpers(unittest.TestCase):
         try:
             node = TransformerLayerNode(DenseLayer(), TinyConfig())
             mtp_grad = paddle.full([1, 2], 5.0, dtype="float32")
-            grads = node.backward([paddle.ones([1, 2], dtype="float32"), mtp_grad])
+            grads = node.backward(
+                [paddle.ones([1, 2], dtype="float32"), mtp_grad]
+            )
         finally:
             transformer_layer.ScheduleNode = original_schedule_node
 

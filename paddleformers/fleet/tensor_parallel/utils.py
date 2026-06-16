@@ -89,10 +89,14 @@ def gather_split_1d_tensor(tensor, tp_group=None):
     Args:
         tensor: A Tensor or view of this rank's portion of the data.
     """
-    assert tensor.ndim == 1, f"Input tensor's rank should be 1, but got {tensor.ndim}"
+    assert tensor.ndim == 1, (
+        f"Input tensor's rank should be 1, but got {tensor.ndim}"
+    )
     tp_group = get_tensor_model_parallel_group_if_none(tp_group)
     numel_gathered = paddle.numel(tensor) * tp_group.world_size
-    gathered = paddle.empty([numel_gathered], dtype=tensor.dtype, requires_grad=False)
+    gathered = paddle.empty(
+        [numel_gathered], dtype=tensor.dtype, requires_grad=False
+    )
 
     dist.stream.all_gather(gathered, tensor, tp_group)
     return gathered
@@ -115,7 +119,11 @@ class VocabUtility:
         return index_f, index_l
 
     @staticmethod
-    def vocab_range_from_global_vocab_size(global_vocab_size: int, rank: int, world_size: int) -> Sequence[int]:
+    def vocab_range_from_global_vocab_size(
+        global_vocab_size: int, rank: int, world_size: int
+    ) -> Sequence[int]:
         """Vocab range from global vocab size."""
         per_partition_vocab_size = divide(global_vocab_size, world_size)
-        return VocabUtility.vocab_range_from_per_partition_vocab_size(per_partition_vocab_size, rank, world_size)
+        return VocabUtility.vocab_range_from_per_partition_vocab_size(
+            per_partition_vocab_size, rank, world_size
+        )

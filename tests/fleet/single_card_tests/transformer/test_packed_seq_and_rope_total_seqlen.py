@@ -30,7 +30,9 @@ import paddle
 from paddleformers.fleet.models.common.embeddings.rope_utils import (
     _apply_rotary_pos_emb_thd,
 )
-from paddleformers.fleet.transformer.dot_product_attention import DotProductAttention
+from paddleformers.fleet.transformer.dot_product_attention import (
+    DotProductAttention,
+)
 from paddleformers.fleet.transformer.enums import AttnMaskType
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 
@@ -72,7 +74,9 @@ class TestPackedSeqFlashMaskAttention(unittest.TestCase):
         v_splits = paddle.split(value, lengths, axis=1)
         outputs = []
         for q, k, v in zip(q_splits, k_splits, v_splits):
-            out = paddle.nn.functional.scaled_dot_product_attention(q, k, v, None, 0.0, is_causal=False)
+            out = paddle.nn.functional.scaled_dot_product_attention(
+                q, k, v, None, 0.0, is_causal=False
+            )
             outputs.append(out)
         return paddle.concat(outputs, axis=1)
 
@@ -88,7 +92,11 @@ class TestPackedSeqFlashMaskAttention(unittest.TestCase):
             ],
             axis=1,
         )
-        return paddle.repeat_interleave(indices_per_segment, lengths, axis=0).unsqueeze(0).unsqueeze(0)
+        return (
+            paddle.repeat_interleave(indices_per_segment, lengths, axis=0)
+            .unsqueeze(0)
+            .unsqueeze(0)
+        )
 
     def _run_test(self, seqlens):
         total_seq = sum(seqlens)
@@ -96,16 +104,24 @@ class TestPackedSeqFlashMaskAttention(unittest.TestCase):
         head_dim = 32
         batch = 1
 
-        query = paddle.randn([batch, total_seq, num_heads, head_dim], dtype="float16")
-        key = paddle.randn([batch, total_seq, num_heads, head_dim], dtype="float16")
-        value = paddle.randn([batch, total_seq, num_heads, head_dim], dtype="float16")
+        query = paddle.randn(
+            [batch, total_seq, num_heads, head_dim], dtype="float16"
+        )
+        key = paddle.randn(
+            [batch, total_seq, num_heads, head_dim], dtype="float16"
+        )
+        value = paddle.randn(
+            [batch, total_seq, num_heads, head_dim], dtype="float16"
+        )
 
         cu_seqlens = paddle.to_tensor(
             [0, *list(paddle.cumsum(paddle.to_tensor(seqlens)).numpy())],
             dtype="int32",
         )
 
-        ref_output = self._reference_split_loop_attention(query, key, value, cu_seqlens)
+        ref_output = self._reference_split_loop_attention(
+            query, key, value, cu_seqlens
+        )
 
         # Use DotProductAttention with attn_mask_startend_row_indices
         # (same pattern as test_mla_flash_mask.py)
@@ -171,16 +187,22 @@ class TestTotalSeqLenRoPE(unittest.TestCase):
         head_dim = 16
         num_heads = 2
 
-        t = paddle.randn([1, total_tokens, num_heads, head_dim], dtype="float32")
+        t = paddle.randn(
+            [1, total_tokens, num_heads, head_dim], dtype="float32"
+        )
         cu_seqlens = paddle.to_tensor([0, 16, 48], dtype="int32")
         freqs = paddle.randn([1, total_tokens, 1, head_dim], dtype="float32")
 
         # With correct total_seq_len, should hit CASE 1 (exact mapping)
-        result_with_total = _apply_rotary_pos_emb_thd(t, cu_seqlens, total_seq_len=total_tokens, freqs=freqs)
+        result_with_total = _apply_rotary_pos_emb_thd(
+            t, cu_seqlens, total_seq_len=total_tokens, freqs=freqs
+        )
 
         # Without total_seq_len (None), should also hit CASE 1 since
         # cu_seqlens[-1] == total_tokens in this non-padded case
-        result_without_total = _apply_rotary_pos_emb_thd(t, cu_seqlens, total_seq_len=None, freqs=freqs)
+        result_without_total = _apply_rotary_pos_emb_thd(
+            t, cu_seqlens, total_seq_len=None, freqs=freqs
+        )
 
         np.testing.assert_allclose(
             result_with_total.numpy(),
@@ -202,10 +224,14 @@ class TestTotalSeqLenRoPE(unittest.TestCase):
         head_dim = 16
         num_heads = 2
 
-        t = paddle.randn([1, padded_total, num_heads, head_dim], dtype="float32")
+        t = paddle.randn(
+            [1, padded_total, num_heads, head_dim], dtype="float32"
+        )
 
         # Padded cu_seqlens: last value is padded_total
-        cu_seqlens_padded = paddle.to_tensor([0, 16, padded_total], dtype="int32")
+        cu_seqlens_padded = paddle.to_tensor(
+            [0, 16, padded_total], dtype="int32"
+        )
 
         # freqs covers max_seqlen positions (CASE 2: traditional mapping)
         max_seqlen = padded_total  # max segment length
@@ -213,7 +239,9 @@ class TestTotalSeqLenRoPE(unittest.TestCase):
 
         # total_seq_len = padded_total (consistent with padded cu_seqlens),
         # freqs.size(1) == padded_total == total_seq_len -> CASE 1
-        result = _apply_rotary_pos_emb_thd(t, cu_seqlens_padded, total_seq_len=padded_total, freqs=freqs)
+        result = _apply_rotary_pos_emb_thd(
+            t, cu_seqlens_padded, total_seq_len=padded_total, freqs=freqs
+        )
 
         # Verify output shape matches input
         self.assertEqual(result.shape, t.shape)
@@ -224,14 +252,20 @@ class TestTotalSeqLenRoPE(unittest.TestCase):
         head_dim = 16
         num_heads = 2
 
-        t = paddle.randn([1, total_tokens, num_heads, head_dim], dtype="float32")
+        t = paddle.randn(
+            [1, total_tokens, num_heads, head_dim], dtype="float32"
+        )
         cu_seqlens = paddle.to_tensor([0, 16, 32], dtype="int32")
         # freqs with size matching cu_seqlens[-1] for CASE 1
         freqs = paddle.randn([1, total_tokens, 1, head_dim], dtype="float32")
 
         # total_seq_len=None should fallback to cu_seqlens[-1]=32
-        result_none = _apply_rotary_pos_emb_thd(t, cu_seqlens, total_seq_len=None, freqs=freqs)
-        result_explicit = _apply_rotary_pos_emb_thd(t, cu_seqlens, total_seq_len=total_tokens, freqs=freqs)
+        result_none = _apply_rotary_pos_emb_thd(
+            t, cu_seqlens, total_seq_len=None, freqs=freqs
+        )
+        result_explicit = _apply_rotary_pos_emb_thd(
+            t, cu_seqlens, total_seq_len=total_tokens, freqs=freqs
+        )
 
         np.testing.assert_allclose(
             result_none.numpy(),

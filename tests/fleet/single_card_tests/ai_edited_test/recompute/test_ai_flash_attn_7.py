@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -69,7 +73,9 @@ class TestGetFAVersionGPU(unittest.TestCase):
         "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_device",
         return_value="gpu:0",
     )
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.paddle.base.framework.get_flags")
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.paddle.base.framework.get_flags"
+    )
     def test_gpu_returns_flag_value(self, mock_get_flags, mock_device):
         """Test GPU returns FLAGS_flash_attn_version."""
         mock_get_flags.return_value = {"FLAGS_flash_attn_version": 3}
@@ -90,7 +96,9 @@ class TestGetFAVersionGPU(unittest.TestCase):
         "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_device",
         return_value="gpu:0",
     )
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.paddle.base.framework.get_flags")
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.paddle.base.framework.get_flags"
+    )
     def test_gpu_flag_version_2(self, mock_get_flags, mock_device):
         """Test GPU returns 2 when flag is set to 2."""
         mock_get_flags.return_value = {"FLAGS_flash_attn_version": 2}
@@ -119,7 +127,9 @@ class TestGetFAVersionDeterministic(unittest.TestCase):
         "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_flags",
         return_value={"FLAGS_cudnn_deterministic": True},
     )
-    def test_deterministic_no_block_mask_returns_2(self, mock_get_flags, mock_device):
+    def test_deterministic_no_block_mask_returns_2(
+        self, mock_get_flags, mock_device
+    ):
         """Test deterministic mode returns 2 when no block_mask param."""
         with patch(
             "paddleformers.fleet.refined_recompute.flash_attn.inspect.signature",
@@ -136,7 +146,9 @@ class TestGetFAVersionDeterministic(unittest.TestCase):
         "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_flags",
         return_value={"FLAGS_cudnn_deterministic": True},
     )
-    def test_deterministic_with_block_mask_small_hdim(self, mock_get_flags, mock_device):
+    def test_deterministic_with_block_mask_small_hdim(
+        self, mock_get_flags, mock_device
+    ):
         """Test deterministic with block_mask and small hdim returns 2."""
         with patch(
             "paddleformers.fleet.refined_recompute.flash_attn.inspect.signature",
@@ -153,7 +165,9 @@ class TestGetFAVersionDeterministic(unittest.TestCase):
         "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_flags",
         return_value={"FLAGS_cudnn_deterministic": True},
     )
-    def test_deterministic_with_block_mask_large_hdim(self, mock_get_flags, mock_device):
+    def test_deterministic_with_block_mask_large_hdim(
+        self, mock_get_flags, mock_device
+    ):
         """Test deterministic with block_mask and large hdim returns 2."""
         with patch(
             "paddleformers.fleet.refined_recompute.flash_attn.inspect.signature",
@@ -170,7 +184,9 @@ class TestGetFAVersionDeterministic(unittest.TestCase):
         "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_flags",
         return_value={"FLAGS_cudnn_deterministic": True},
     )
-    def test_deterministic_with_block_mask_hdim_128(self, mock_get_flags, mock_device):
+    def test_deterministic_with_block_mask_hdim_128(
+        self, mock_get_flags, mock_device
+    ):
         """Test deterministic with block_mask and hdim=128 returns 2."""
         with patch(
             "paddleformers.fleet.refined_recompute.flash_attn.inspect.signature",
@@ -187,7 +203,9 @@ class TestGetFAVersionNonDeterministic(unittest.TestCase):
         "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_device",
         return_value="gpu:0",
     )
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.paddle.base.framework.get_flags")
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.paddle.base.framework.get_flags"
+    )
     def test_non_deterministic_returns_flag(self, mock_get_flags, mock_device):
         """Test non-deterministic returns flag value."""
         mock_get_flags.return_value = {"FLAGS_flash_attn_version": 4}

@@ -35,7 +35,9 @@ MTP_DEGREE = 3
 
 def get_gpu_models_via_nvidia_smi():
     try:
-        output = subprocess.check_output("nvidia-smi --query-gpu=name --format=csv,noheader", shell=True)
+        output = subprocess.check_output(
+            "nvidia-smi --query-gpu=name --format=csv,noheader", shell=True
+        )
         models = output.decode().strip().replace("NVIDIA", "")
         return models
     except Exception as e:
@@ -66,15 +68,23 @@ def _set_random_seed(
     """Set random seed for reproducibility."""
     if seed_ is not None and seed_ > 0:
         # Ensure that different pipeline MP stages get different seeds.
-        seed = seed_ + (100 * paddleformers.fleet.parallel_state.get_pipeline_model_parallel_rank())
+        seed = seed_ + (
+            100
+            * paddleformers.fleet.parallel_state.get_pipeline_model_parallel_rank()
+        )
         # Ensure different data parallel ranks get different seeds
         if data_parallel_random_init:
-            seed = seed + (10 * paddleformers.fleet.parallel_state.get_data_parallel_rank())
+            seed = seed + (
+                10 * paddleformers.fleet.parallel_state.get_data_parallel_rank()
+            )
         random.seed(seed)
         np.random.seed(seed)
         paddle.manual_seed(seed)
 
-        if paddle.distributed.is_initialized() and paddle.cuda.device_count() > 0:
+        if (
+            paddle.distributed.is_initialized()
+            and paddle.cuda.device_count() > 0
+        ):
             paddleformers.fleet.tensor_parallel.model_parallel_cuda_manual_seed(
                 seed,
                 te_rng_tracker,
@@ -134,7 +144,9 @@ def run_pp(
         num_stages=config.pipeline_model_parallel_size,
         seg_method="layer:TransformerLayer|EmptyLayer",
     )
-    gpt_model = paddle.amp.decorate(models=gpt_model, optimizers=None, level="O2", dtype="bfloat16")
+    gpt_model = paddle.amp.decorate(
+        models=gpt_model, optimizers=None, level="O2", dtype="bfloat16"
+    )
 
     gpt_pipe_model = distributed_model(gpt_model)
 
@@ -145,7 +157,9 @@ def run_pp(
     )
     input_ids = data[:, :-1]
     labels = data[:, 1:]
-    position_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat((micro_batch_size, 1))
+    position_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat(
+        (micro_batch_size, 1)
+    )
 
     inputs = (
         {
@@ -185,8 +199,12 @@ class TestPP(unittest.TestCase):
             rotary_percent=1.0,
             rotary_base=10000,
             rope_scaling=1.0,
-            init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-            output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+            init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
+            output_layer_init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
             use_qk_norm=True,
             num_empty_layers_add_in_head=2,
             num_empty_layers_add_in_tail=3,
@@ -225,8 +243,12 @@ class TestPP(unittest.TestCase):
         if judge_machine_type() == "H":
             actual_md5 = overlap_loss._md5sum()
             expected_md5 = "e5fdb6c3bc189ea3e4f2235f0e73353d"
-            print(f"PP loss MD5 - Actual: {actual_md5}, Expected: {expected_md5}")
-            assert actual_md5 == expected_md5, f"PP loss MD5 mismatch! Actual: {actual_md5}, Expected: {expected_md5}"
+            print(
+                f"PP loss MD5 - Actual: {actual_md5}, Expected: {expected_md5}"
+            )
+            assert actual_md5 == expected_md5, (
+                f"PP loss MD5 mismatch! Actual: {actual_md5}, Expected: {expected_md5}"
+            )
             if paddle.distributed.get_rank() == 0:
                 baseline = {
                     "_layers.shared_layers.embed.embedding.embed_tokens.weight": "235347d268241e782b3cdeb491818326",
@@ -266,7 +288,9 @@ class TestPP(unittest.TestCase):
                     "_layers.9.1.mlp.shared_experts.down_proj.weight": "8615e16eb658ea9ae102cbc0d8f64d18",
                 }
                 for name, param in overlap_gpt_model.named_parameters():
-                    assert param.grad._md5sum() == baseline[name], f"{name}'s grad has diff"
+                    assert param.grad._md5sum() == baseline[name], (
+                        f"{name}'s grad has diff"
+                    )
         elif judge_machine_type() == "B":
             assert overlap_loss._md5sum() == "a7d554835b295e80ec1211e740cfa188"
             if paddle.distributed.get_rank() == 0:
@@ -308,7 +332,9 @@ class TestPP(unittest.TestCase):
                     "_layers.9.1.mlp.shared_experts.down_proj.weight": "b5b58e8860d1f3d6abc5d1601fe4b170",
                 }
                 for name, param in overlap_gpt_model.named_parameters():
-                    assert param.grad._md5sum() == baseline[name], f"{name}'s grad has diff"
+                    assert param.grad._md5sum() == baseline[name], (
+                        f"{name}'s grad has diff"
+                    )
 
 
 if __name__ == "__main__":

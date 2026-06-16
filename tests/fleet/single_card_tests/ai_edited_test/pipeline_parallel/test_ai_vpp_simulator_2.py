@@ -20,7 +20,11 @@ import unittest
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -179,7 +183,9 @@ class TestVPPSimulatorEdgeBranches(unittest.TestCase):
         vpp_simulator = ensure_vpp_simulator_importable()
         PPChunkRecorder = vpp_simulator.PPChunkRecorder
         get_global_pp_recorder = vpp_simulator.get_global_pp_recorder
-        set_global_pp_chunk_recorder = vpp_simulator.set_global_pp_chunk_recorder
+        set_global_pp_chunk_recorder = (
+            vpp_simulator.set_global_pp_chunk_recorder
+        )
 
         recorder = PPChunkRecorder(2, 1, 2, 4, 0, 0)
         set_global_pp_chunk_recorder(recorder)
@@ -197,7 +203,9 @@ class TestVPPSimulatorDrawWithMatplotlibStubs(unittest.TestCase):
         self.original_range = getattr(self.vpp_simulator, "range", None)
         self.vpp_simulator.plt = Pyplot()
         self.vpp_simulator.patches = Patches()
-        self.vpp_simulator.range = lambda *args: ScaledRange(builtins.range(*args))
+        self.vpp_simulator.range = lambda *args: ScaledRange(
+            builtins.range(*args)
+        )
 
     def tearDown(self):
         self.vpp_simulator.plt = self.original_plt
@@ -212,7 +220,9 @@ class TestVPPSimulatorDrawWithMatplotlibStubs(unittest.TestCase):
             old_cwd = os.getcwd()
             os.chdir(tmpdir)
             try:
-                self.vpp_simulator.VPPSimulator(pp_degree=2, vpp_degree=2, num_acc_steps=4).draw_chunks()
+                self.vpp_simulator.VPPSimulator(
+                    pp_degree=2, vpp_degree=2, num_acc_steps=4
+                ).draw_chunks()
                 self.assertTrue(os.path.exists("pipeline_schedule.png"))
             finally:
                 os.chdir(old_cwd)
@@ -222,7 +232,9 @@ class TestVPPSimulatorDrawWithMatplotlibStubs(unittest.TestCase):
             old_cwd = os.getcwd()
             os.chdir(tmpdir)
             try:
-                self.vpp_simulator.VPPSimulator(pp_degree=2, vpp_degree=2, num_acc_steps=4).draw_balls()
+                self.vpp_simulator.VPPSimulator(
+                    pp_degree=2, vpp_degree=2, num_acc_steps=4
+                ).draw_balls()
                 self.assertTrue(os.path.exists("balls.png"))
             finally:
                 os.chdir(old_cwd)

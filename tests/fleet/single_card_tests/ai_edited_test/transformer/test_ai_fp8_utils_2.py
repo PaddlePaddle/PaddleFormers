@@ -17,7 +17,11 @@ import unittest
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import paddle
@@ -31,10 +35,16 @@ from paddleformers.fleet.transformer.moe.fp8_utils import (
 class CachedWeight:
     def __init__(self):
         self.shape = [2, 2]
-        self.fp8_weight_stacked = paddle.arange(12, dtype="float32").reshape([6, 2])
-        self.fp8_scale_stacked = paddle.arange(18, dtype="float32").reshape([6, 3])
+        self.fp8_weight_stacked = paddle.arange(12, dtype="float32").reshape(
+            [6, 2]
+        )
+        self.fp8_scale_stacked = paddle.arange(18, dtype="float32").reshape(
+            [6, 3]
+        )
         self.fp8_weight_stacked_transpose = None
-        self.fp8_scale_stacked_transpose = paddle.full([9, 2], 5.0, dtype="float32")
+        self.fp8_scale_stacked_transpose = paddle.full(
+            [9, 2], 5.0, dtype="float32"
+        )
 
 
 class InvalidCachedWeight:
@@ -55,7 +65,9 @@ class TestFP8WeightScaleBranches(unittest.TestCase):
     def test_transpose_uses_explicit_num_experts_and_ue8m0_scale(self):
         weight = CachedWeight()
 
-        fp8_weight, fp8_scale = _get_fp8_weight_and_scale(weight, transpose=True, num_expert=3, use_ue8m0=True)
+        fp8_weight, fp8_scale = _get_fp8_weight_and_scale(
+            weight, transpose=True, num_expert=3, use_ue8m0=True
+        )
 
         self.assertEqual(fp8_weight.shape, [6, 2])
         self.assertIs(fp8_scale, weight.fp8_scale_stacked_transpose)
@@ -94,17 +106,25 @@ class TestExpertsGroupGemmContiguousNodeMore(unittest.TestCase):
 
     def test_constructor_validates_subbatch_size(self):
         with self.assertRaises(AssertionError):
-            ExpertsGroupGemmContiguousNode(CustomMap(), moe_subbatch_token_num_after_dispatch=127)
+            ExpertsGroupGemmContiguousNode(
+                CustomMap(), moe_subbatch_token_num_after_dispatch=127
+            )
 
     def test_gen_m_indices_accepts_lists_tensors_and_empty_counts(self):
         node = ExpertsGroupGemmContiguousNode(CustomMap())
 
-        self.assertEqual(node.gen_m_indices([2, 0, 1]).numpy().tolist(), [0, 0, 2])
         self.assertEqual(
-            node.gen_m_indices(paddle.to_tensor([1, 2], dtype="int64")).numpy().tolist(),
+            node.gen_m_indices([2, 0, 1]).numpy().tolist(), [0, 0, 2]
+        )
+        self.assertEqual(
+            node.gen_m_indices(paddle.to_tensor([1, 2], dtype="int64"))
+            .numpy()
+            .tolist(),
             [0, 1, 1],
         )
-        self.assertEqual(node.gen_m_indices(paddle.to_tensor([], dtype="int64")).shape, [0])
+        self.assertEqual(
+            node.gen_m_indices(paddle.to_tensor([], dtype="int64")).shape, [0]
+        )
 
     def test_fwd_gate_up_bf16_empty_split_and_grouped_outputs(self):
         node = ExpertsGroupGemmContiguousNode(CustomMap(), use_fp8_mlp=False)
@@ -119,7 +139,9 @@ class TestExpertsGroupGemmContiguousNodeMore(unittest.TestCase):
         self.assertEqual(split_output.shape, [0, 6])
         self.assertIs(node.input, x)
 
-        grouped = ExpertsGroupGemmContiguousNode(CustomMap(), use_fp8_mlp=False, moe_expert_fusion=True)
+        grouped = ExpertsGroupGemmContiguousNode(
+            CustomMap(), use_fp8_mlp=False, moe_expert_fusion=True
+        )
         grouped.tokens_per_expert = paddle.to_tensor([0, 0], dtype="int64")
         grouped_weight = paddle.ones([2, 4, 8], dtype="float32")
 
@@ -127,7 +149,9 @@ class TestExpertsGroupGemmContiguousNodeMore(unittest.TestCase):
         self.assertEqual(grouped_output.shape, [0, 8])
 
     def test_fwd_gate_up_uses_bf16_path_and_records_deep_gemm_indices(self):
-        node = ExpertsGroupGemmContiguousNode(CustomMap(), use_fp8_mlp=False, moe_deep_gemm=True)
+        node = ExpertsGroupGemmContiguousNode(
+            CustomMap(), use_fp8_mlp=False, moe_deep_gemm=True
+        )
         x = paddle.empty([0, 4], dtype="float32")
         weight = [paddle.ones([4, 6], dtype="float32")]
 

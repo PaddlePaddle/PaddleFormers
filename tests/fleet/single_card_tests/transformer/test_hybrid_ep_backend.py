@@ -71,7 +71,9 @@ class _ExpertProjection:
 
 class _TinyExpert:
     def __init__(self, hidden_size=2, intermediate_size=1):
-        self.up_gate_proj = _ExpertProjection([hidden_size, intermediate_size * 2])
+        self.up_gate_proj = _ExpertProjection(
+            [hidden_size, intermediate_size * 2]
+        )
         self.down_proj = _ExpertProjection([intermediate_size, hidden_size])
 
 
@@ -87,7 +89,9 @@ def _new_hybrid_manager(**overrides):
         "router_topk": overrides.pop("router_topk", 2),
         "num_experts": overrides.pop("num_experts", 4),
         "num_local_experts": overrides.pop("num_local_experts", 2),
-        "hybridep_buffer_configs": overrides.pop("hybridep_buffer_configs", None),
+        "hybridep_buffer_configs": overrides.pop(
+            "hybridep_buffer_configs", None
+        ),
     }
     manager = _HybridEPManager(**init_kwargs)
     for key, value in overrides.items():
@@ -250,13 +254,17 @@ class TestHybridEPBackendSelection(unittest.TestCase):
 class TestHybridEPMetadata(unittest.TestCase):
     def test_topk_indices_can_be_converted_to_dense_metadata(self):
         manager = _new_hybrid_manager(num_experts=4)
-        token_indices = paddle.to_tensor([[1, -1], [0, 2], [3, 1]], dtype="int64")
+        token_indices = paddle.to_tensor(
+            [[1, -1], [0, 2], [3, 1]], dtype="int64"
+        )
         token_weights = paddle.to_tensor(
             [[0.5, 0.0], [0.25, 0.75], [0.6, 0.4]],
             dtype="float16",
         )
 
-        routing_map, probs = manager._indices_to_dense_metadata(token_indices, token_weights)
+        routing_map, probs = manager._indices_to_dense_metadata(
+            token_indices, token_weights
+        )
 
         self.assertEqual(
             routing_map.numpy().tolist(),
@@ -292,7 +300,9 @@ class TestHybridEPMetadata(unittest.TestCase):
             [[0.7, 0.0, 0.3, 0.0], [0.0, 0.6, 0.4, 0.0]],
             dtype="float16",
         )
-        topk_weights = paddle.to_tensor([[0.7, 0.3], [0.6, 0.4]], dtype="float32")
+        topk_weights = paddle.to_tensor(
+            [[0.7, 0.3], [0.6, 0.4]], dtype="float32"
+        )
         topk_indices = paddle.to_tensor([[0, 2], [1, 2]], dtype="int64")
 
         manager.setup_metadata(
@@ -303,8 +313,12 @@ class TestHybridEPMetadata(unittest.TestCase):
         )
 
         self.assertEqual(manager.routing_probs.dtype, paddle.float32)
-        self.assertTrue(paddle.allclose(manager.token_probs, topk_weights, atol=1e-6).item())
-        self.assertEqual(manager.token_indices.numpy().tolist(), [[0, 2], [1, 2]])
+        self.assertTrue(
+            paddle.allclose(manager.token_probs, topk_weights, atol=1e-6).item()
+        )
+        self.assertEqual(
+            manager.token_indices.numpy().tolist(), [[0, 2], [1, 2]]
+        )
         self.assertTrue(manager.token_indices.stop_gradient)
 
     def test_setup_metadata_falls_back_to_dense_topk(self):
@@ -338,7 +352,9 @@ class TestHybridEPMetadata(unittest.TestCase):
             ],
             dtype="bool",
         )
-        tokens_per_expert = manager._extract_tokens_per_expert(2, local_expert_routing_map)
+        tokens_per_expert = manager._extract_tokens_per_expert(
+            2, local_expert_routing_map
+        )
         self.assertEqual(tokens_per_expert.numpy().tolist(), [1, 1, 1])
 
         hidden_states = paddle.ones([2, 3], dtype="float32")
@@ -356,8 +372,12 @@ class TestHybridEPMetadata(unittest.TestCase):
 
     def test_dispatch_metadata_uses_cached_dense_metadata_when_available(self):
         manager = _new_hybrid_manager(router_topk=2, num_experts=4)
-        routing_map = paddle.to_tensor([[True, False, True, False]], dtype="bool")
-        routing_probs = paddle.to_tensor([[0.2, 0.0, 0.8, 0.0]], dtype="float32")
+        routing_map = paddle.to_tensor(
+            [[True, False, True, False]], dtype="bool"
+        )
+        routing_probs = paddle.to_tensor(
+            [[0.2, 0.0, 0.8, 0.0]], dtype="float32"
+        )
         manager.routing_map = routing_map
         manager.routing_probs = routing_probs
 
@@ -419,15 +439,24 @@ class TestHybridEPDispatchBoundary(unittest.TestCase):
             create=True,
         ):
             first = manager_a._get_buffer(paddle.zeros([4, 8], dtype="float32"))
-            second = manager_b._get_buffer(paddle.zeros([2, 8], dtype="float32"))
-            larger = manager_b._get_buffer(paddle.zeros([8, 8], dtype="float32"))
-            reused_larger = manager_a._get_buffer(paddle.zeros([6, 8], dtype="float32"))
+            second = manager_b._get_buffer(
+                paddle.zeros([2, 8], dtype="float32")
+            )
+            larger = manager_b._get_buffer(
+                paddle.zeros([8, 8], dtype="float32")
+            )
+            reused_larger = manager_a._get_buffer(
+                paddle.zeros([6, 8], dtype="float32")
+            )
 
         self.assertIs(first, second)
         self.assertIsNot(first, larger)
         self.assertIs(larger, reused_larger)
         self.assertEqual(
-            [item.max_num_of_tokens_per_rank for item in _ConstructedHybridEPBuffer.instances],
+            [
+                item.max_num_of_tokens_per_rank
+                for item in _ConstructedHybridEPBuffer.instances
+            ],
             [4, 8],
         )
 
@@ -444,21 +473,37 @@ class TestHybridEPDispatchBoundary(unittest.TestCase):
             num_sms_preprocessing_api=32,
         )
 
-        self.assertFalse(fused_a2a._need_new_hybrid_ep_buffer(group, 8, 4, 2, 8, 16, 32))
-        self.assertTrue(fused_a2a._need_new_hybrid_ep_buffer(group, 8, 4, 2, 9, 16, 32))
-        self.assertTrue(fused_a2a._need_new_hybrid_ep_buffer(group, 8, 4, 2, 8, 17, 32))
-        self.assertTrue(fused_a2a._need_new_hybrid_ep_buffer(group, 8, 4, 2, 8, 16, 33))
-        self.assertFalse(fused_a2a._need_new_hybrid_ep_buffer(group, 8, 4, 2, None, None, None))
+        self.assertFalse(
+            fused_a2a._need_new_hybrid_ep_buffer(group, 8, 4, 2, 8, 16, 32)
+        )
+        self.assertTrue(
+            fused_a2a._need_new_hybrid_ep_buffer(group, 8, 4, 2, 9, 16, 32)
+        )
+        self.assertTrue(
+            fused_a2a._need_new_hybrid_ep_buffer(group, 8, 4, 2, 8, 17, 32)
+        )
+        self.assertTrue(
+            fused_a2a._need_new_hybrid_ep_buffer(group, 8, 4, 2, 8, 16, 33)
+        )
+        self.assertFalse(
+            fused_a2a._need_new_hybrid_ep_buffer(
+                group, 8, 4, 2, None, None, None
+            )
+        )
 
     def test_dispatch_with_permute_uses_hybrid_ep_runtime_contract(self):
-        routing_map = paddle.to_tensor([[True, False], [False, True]], dtype="bool")
+        routing_map = paddle.to_tensor(
+            [[True, False], [False, True]], dtype="bool"
+        )
         manager = _new_hybrid_manager(
             group=_HybridEPGroup(nranks=1),
             router_topk=1,
             num_experts=2,
             num_local_experts=2,
             routing_map=routing_map,
-            routing_probs=paddle.to_tensor([[1.0, 0.0], [0.0, 1.0]], dtype="float32"),
+            routing_probs=paddle.to_tensor(
+                [[1.0, 0.0], [0.0, 1.0]], dtype="float32"
+            ),
         )
         padded_counts = paddle.to_tensor([1, 1], dtype="int64")
         buffer = _RecordingHybridEPBuffer(
@@ -498,8 +543,12 @@ class TestHybridEPDispatchBoundary(unittest.TestCase):
             router_topk=1,
             num_experts=2,
             num_local_experts=2,
-            routing_map=paddle.to_tensor([[True, False], [False, True]], dtype="bool"),
-            routing_probs=paddle.to_tensor([[1.0, 0.0], [0.0, 1.0]], dtype="float32"),
+            routing_map=paddle.to_tensor(
+                [[True, False], [False, True]], dtype="bool"
+            ),
+            routing_probs=paddle.to_tensor(
+                [[1.0, 0.0], [0.0, 1.0]], dtype="float32"
+            ),
         )
         buffer = _RecordingHybridEPBuffer(
             dispatch_results=[
@@ -593,7 +642,9 @@ class TestHybridEPDispatchBoundary(unittest.TestCase):
                     paddle.to_tensor([1, 1], dtype="int64"),
                     _make_hybrid_ep_handle(
                         num_dispatched_tokens=2,
-                        local_expert_routing_map=paddle.to_tensor([[True, False], [False, True]], dtype="bool"),
+                        local_expert_routing_map=paddle.to_tensor(
+                            [[True, False], [False, True]], dtype="bool"
+                        ),
                     ),
                 )
             ]
@@ -613,7 +664,9 @@ class TestHybridEPDispatchBoundary(unittest.TestCase):
         self.assertIs(fp8_handle["scale"], scale)
         self.assertIs(manager.token_indices, token_indices)
         self.assertIs(manager.token_probs, token_weights)
-        self.assertEqual(manager.get_number_of_tokens_per_expert().numpy().tolist(), [1, 1])
+        self.assertEqual(
+            manager.get_number_of_tokens_per_expert().numpy().tolist(), [1, 1]
+        )
 
     def test_public_combine_rejects_overlap_and_clears_runtime_state(self):
         manager = _new_hybrid_manager(
@@ -622,12 +675,16 @@ class TestHybridEPDispatchBoundary(unittest.TestCase):
             num_experts=2,
             num_local_experts=2,
         )
-        buffer = _RecordingHybridEPBuffer(combine_results=[(paddle.ones([2, 4], dtype="float32"), None)])
+        buffer = _RecordingHybridEPBuffer(
+            combine_results=[(paddle.ones([2, 4], dtype="float32"), None)]
+        )
         manager._active_buffer = buffer
         manager.handle = _make_hybrid_ep_handle(token_data_type="BF16")
         manager.dispatched_probs = paddle.ones([2], dtype="float32")
         manager.tokens_per_expert = paddle.to_tensor([1, 1], dtype="int64")
-        manager.padded_tokens_per_expert = paddle.to_tensor([1, 1], dtype="int64")
+        manager.padded_tokens_per_expert = paddle.to_tensor(
+            [1, 1], dtype="int64"
+        )
 
         with self.assertRaisesRegex(NotImplementedError, "combine overlap"):
             manager.combine(
@@ -652,10 +709,15 @@ class TestHybridEPDispatchBoundary(unittest.TestCase):
             manager.get_dispatched_metadata()
 
         manager.dispatched_indices = paddle.to_tensor([0, 1], dtype="int64")
-        manager.dispatched_probs = paddle.to_tensor([0.5, 0.25], dtype="float32")
+        manager.dispatched_probs = paddle.to_tensor(
+            [0.5, 0.25], dtype="float32"
+        )
 
         self.assertEqual(
-            tuple(item.numpy().tolist() for item in manager.get_dispatched_metadata()),
+            tuple(
+                item.numpy().tolist()
+                for item in manager.get_dispatched_metadata()
+            ),
             ([0, 1], [0.5, 0.25]),
         )
 
@@ -663,12 +725,18 @@ class TestHybridEPDispatchBoundary(unittest.TestCase):
 class TestHybridEPAutogradBridge(unittest.TestCase):
     def test_dispatch_pylayer_maps_dense_prob_grad_back_to_topk(self):
         grad_x = paddle.full([2, 4], 3.0, dtype="float32")
-        grad_dense_probs = paddle.to_tensor([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]], dtype="float32")
-        buffer = _RecordingHybridEPBuffer(combine_results=[(grad_x, grad_dense_probs)])
+        grad_dense_probs = paddle.to_tensor(
+            [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]], dtype="float32"
+        )
+        buffer = _RecordingHybridEPBuffer(
+            combine_results=[(grad_x, grad_dense_probs)]
+        )
         handle = _make_hybrid_ep_handle(token_data_type="UINT8")
 
         class DispatchingManager:
-            def _dispatch_with_permute_impl(self, x, token_indices, token_probs, use_fp8):
+            def _dispatch_with_permute_impl(
+                self, x, token_indices, token_probs, use_fp8
+            ):
                 self._active_buffer = buffer
                 self.handle = handle
                 self.use_fp8 = use_fp8
@@ -685,7 +753,9 @@ class TestHybridEPAutogradBridge(unittest.TestCase):
         token_probs = paddle.ones([2, 2], dtype="float32")
         token_probs.stop_gradient = False
 
-        recv_x, recv_probs, scale = HybridEPDispatch.apply(x, token_indices, token_probs, manager, True)
+        recv_x, recv_probs, scale = HybridEPDispatch.apply(
+            x, token_indices, token_probs, manager, True
+        )
         (recv_x.sum() + recv_probs.sum() + scale.sum()).backward()
 
         self.assertTrue(manager.use_fp8)
@@ -698,8 +768,12 @@ class TestHybridEPAutogradBridge(unittest.TestCase):
             ).item()
         )
         self.assertEqual(buffer.combine_calls[-1]["pad_multiple"], FP8_ALIGN)
-        self.assertEqual(buffer.combine_calls[-1]["hidden"].dtype, paddle.float32)
-        self.assertEqual(buffer.combine_calls[-1]["probs"].dtype, paddle.float32)
+        self.assertEqual(
+            buffer.combine_calls[-1]["hidden"].dtype, paddle.float32
+        )
+        self.assertEqual(
+            buffer.combine_calls[-1]["probs"].dtype, paddle.float32
+        )
 
     def test_combine_pylayer_replays_dispatch_in_backward(self):
         combined = paddle.ones([2, 4], dtype="float32")
@@ -731,7 +805,9 @@ class TestHybridEPAutogradBridge(unittest.TestCase):
         manager.handle = handle
         manager._active_buffer = buffer
         manager.tokens_per_expert = paddle.to_tensor([1, 1], dtype="int64")
-        manager.padded_tokens_per_expert = paddle.to_tensor([1, 1], dtype="int64")
+        manager.padded_tokens_per_expert = paddle.to_tensor(
+            [1, 1], dtype="int64"
+        )
         x = paddle.zeros([2, 4], dtype="float32")
         x.stop_gradient = False
 
@@ -757,7 +833,9 @@ class TestHybridEPAutogradBridge(unittest.TestCase):
         grad_output = paddle.ones([3, 4], dtype="float32")
         replayed_grad = paddle.arange(12, dtype="float32").reshape([3, 4])
         handle = _make_hybrid_ep_handle(token_data_type="BF16")
-        buffer = _RecordingHybridEPBuffer(dispatch_results=[(replayed_grad, None, None, None, None)])
+        buffer = _RecordingHybridEPBuffer(
+            dispatch_results=[(replayed_grad, None, None, None, None)]
+        )
 
         result = _replay_hybrid_ep_dispatch_backward(
             buffer,
@@ -767,7 +845,9 @@ class TestHybridEPAutogradBridge(unittest.TestCase):
             use_fp8_dispatch=False,
         )
 
-        self.assertEqual(result.numpy().tolist(), replayed_grad[:2].numpy().tolist())
+        self.assertEqual(
+            result.numpy().tolist(), replayed_grad[:2].numpy().tolist()
+        )
         self.assertEqual(buffer.update_template_config_calls, [])
         self.assertIs(buffer.dispatch_calls[-1]["handle"], handle)
         self.assertIsNone(buffer.dispatch_calls[-1]["pad_multiple"])
@@ -782,7 +862,9 @@ class TestHybridEPExpertInputCounts(unittest.TestCase):
         )
 
         self.assertEqual(
-            node.gen_m_indices(paddle.to_tensor([1, 0, 2], dtype="int64")).numpy().tolist(),
+            node.gen_m_indices(paddle.to_tensor([1, 0, 2], dtype="int64"))
+            .numpy()
+            .tolist(),
             [0, 2, 2],
         )
         self.assertEqual(
@@ -796,7 +878,9 @@ class TestHybridEPExpertInputCounts(unittest.TestCase):
             num_experts=3,
             num_local_experts=3,
         )
-        manager.padded_tokens_per_expert = paddle.to_tensor([2, 0, 1], dtype="int32")
+        manager.padded_tokens_per_expert = paddle.to_tensor(
+            [2, 0, 1], dtype="int32"
+        )
         custom_map = _HybridEPCustomMap(manager)
 
         counts, num_tokens = _hybrid_ep_prepare_expert_counts(
@@ -808,7 +892,9 @@ class TestHybridEPExpertInputCounts(unittest.TestCase):
         self.assertEqual(counts, [2, 0, 1])
         self.assertEqual(num_tokens, 3)
 
-        manager.padded_tokens_per_expert = paddle.to_tensor([4, 2], dtype="int32")
+        manager.padded_tokens_per_expert = paddle.to_tensor(
+            [4, 2], dtype="int32"
+        )
         counts, num_tokens = _hybrid_ep_prepare_expert_counts(
             custom_map,
             use_fp8_mlp=True,
@@ -856,7 +942,9 @@ class TestHybridEPExpertInputCounts(unittest.TestCase):
             num_experts=2,
             num_local_experts=2,
         )
-        manager.padded_tokens_per_expert = paddle.to_tensor([0, 0], dtype="int64")
+        manager.padded_tokens_per_expert = paddle.to_tensor(
+            [0, 0], dtype="int64"
+        )
         custom_map = _HybridEPCustomMap(
             manager,
             experts=[_TinyExpert(), _TinyExpert()],
@@ -887,7 +975,9 @@ class TestHybridEPExpertInputCounts(unittest.TestCase):
             num_experts=2,
             num_local_experts=2,
         )
-        manager.padded_tokens_per_expert = paddle.to_tensor([0, 0], dtype="int64")
+        manager.padded_tokens_per_expert = paddle.to_tensor(
+            [0, 0], dtype="int64"
+        )
         custom_map = _HybridEPCustomMap(
             manager,
             experts=[_TinyExpert(), _TinyExpert()],
@@ -900,7 +990,9 @@ class TestHybridEPExpertInputCounts(unittest.TestCase):
             use_fp8_mlp=True,
             moe_deep_gemm=False,
             moe_expert_fusion=False,
-            fp8_dispatched_handle={"scale": paddle.ones([2, 1], dtype="float32")},
+            fp8_dispatched_handle={
+                "scale": paddle.ones([2, 1], dtype="float32")
+            },
         )
 
         self.assertEqual(output.shape, [0, 2])

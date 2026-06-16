@@ -129,7 +129,9 @@ class TestPreparePipelineDPOInputsFunc(unittest.TestCase):
                 {
                     "input_ids": paddle.zeros([2, 10]),
                     "attention_mask": paddle.ones([2, 10]),
-                    "position_ids": paddle.arange(10).unsqueeze(0).expand([2, 10]),
+                    "position_ids": paddle.arange(10)
+                    .unsqueeze(0)
+                    .expand([2, 10]),
                     "response_labels": paddle.ones([2, 10]),
                     "response_indexs": paddle.ones([4, 2]),
                     "score_deltas": None,
@@ -157,8 +159,16 @@ class TestFleetMergeDpoLabels(unittest.TestCase):
         result = fleet_merge_dpo_labels(labels, logprobs)
 
         self.assertEqual(len(result), 2)
-        self.assertEqual(result[0], ["a", "b"] + [reference_chosen_logps[0], reference_rejected_logps[0]])
-        self.assertEqual(result[1], ["e", "f"] + [reference_chosen_logps[1], reference_rejected_logps[1]])
+        self.assertEqual(
+            result[0],
+            ["a", "b"]
+            + [reference_chosen_logps[0], reference_rejected_logps[0]],
+        )
+        self.assertEqual(
+            result[1],
+            ["e", "f"]
+            + [reference_chosen_logps[1], reference_rejected_logps[1]],
+        )
 
 
 class TestDPOTrainerInit(unittest.TestCase):
@@ -182,7 +192,17 @@ class TestDPOTrainerInit(unittest.TestCase):
 
     def test_unknown_loss_type_detected(self):
         """Test that unknown loss types are correctly identified."""
-        valid_loss_types = {"sigmoid", "hinge", "ipo", "kto_pair", "sppo_hard", "nca_pair", "dpop", "or", "simpo"}
+        valid_loss_types = {
+            "sigmoid",
+            "hinge",
+            "ipo",
+            "kto_pair",
+            "sppo_hard",
+            "nca_pair",
+            "dpop",
+            "or",
+            "simpo",
+        }
         self.assertNotIn("unknown_type", valid_loss_types)
         self.assertNotIn("bco_pair", valid_loss_types)
 

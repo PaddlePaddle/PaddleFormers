@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -141,7 +145,9 @@ class TestL2NormDetailed(unittest.TestCase):
         out = norm(x)
         # L2Norm normalizes so that mean of squared values along last dim is ~1
         mean_sq = out.float().pow(2).mean(-1)
-        self.assertTrue(paddle.allclose(mean_sq, paddle.ones_like(mean_sq), atol=0.1).item())
+        self.assertTrue(
+            paddle.allclose(mean_sq, paddle.ones_like(mean_sq), atol=0.1).item()
+        )
 
     def test_custom_eps(self):
         """Test L2Norm with custom eps."""
@@ -165,7 +171,9 @@ class TestWrappedPaddleNormPipe(unittest.TestCase):
 
     def test_forward_with_mtp_enabled(self):
         """Test WrappedPaddleNormPipe with MTP layers enabled."""
-        config = _make_config(num_nextn_predict_layers=2, mtp_load_weight_only=False)
+        config = _make_config(
+            num_nextn_predict_layers=2, mtp_load_weight_only=False
+        )
         norm_pipe = WrappedPaddleNormPipe(config=config, hidden_size=128)
         # hidden_states is concatenated: [main, mtp_0, mtp_1]
         dict_args = {
@@ -189,7 +197,9 @@ class TestGetNormExtraArgs(unittest.TestCase):
     def test_with_wrapped_paddle_norm(self):
         """Test with WrappedPaddleNorm."""
         config = _make_config()
-        extra_args = get_norm_extra_args(WrappedPaddleNorm, config, 128, 1e-5, False)
+        extra_args = get_norm_extra_args(
+            WrappedPaddleNorm, config, 128, 1e-5, False
+        )
         self.assertIn("hidden_size", extra_args)
         self.assertIn("eps", extra_args)
         self.assertEqual(extra_args["hidden_size"], 128)

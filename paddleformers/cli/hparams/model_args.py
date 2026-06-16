@@ -13,31 +13,51 @@
 # limitations under the License.
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Union
 
 
 @dataclass
 class VisionArguments:
-    attn_implementation: str = field(default="eager", metadata={"help": "Attention implementation"})
-    attn_sep: bool = field(default=True, metadata={"help": "Whether to separate attention"})
-    depth: int = field(default=32, metadata={"help": "Depth of the vision model"})
-    embed_dim: int = field(default=1280, metadata={"help": "Embedding dimension"})
-    hidden_act: str = field(default="quick_gelu", metadata={"help": "Hidden activation function"})
+    attn_implementation: str = field(
+        default="eager", metadata={"help": "Attention implementation"}
+    )
+    attn_sep: bool = field(
+        default=True, metadata={"help": "Whether to separate attention"}
+    )
+    depth: int = field(
+        default=32, metadata={"help": "Depth of the vision model"}
+    )
+    embed_dim: int = field(
+        default=1280, metadata={"help": "Embedding dimension"}
+    )
+    hidden_act: str = field(
+        default="quick_gelu", metadata={"help": "Hidden activation function"}
+    )
     hidden_size: int = field(default=1280, metadata={"help": "Hidden size"})
     in_channels: int = field(default=3, metadata={"help": "Input channels"})
     mlp_ratio: int = field(default=4, metadata={"help": "MLP ratio"})
-    model_type: str = field(default="DFNRope_vision_transformer", metadata={"help": "Vision model type"})
-    num_heads: int = field(default=16, metadata={"help": "Number of attention heads"})
+    model_type: str = field(
+        default="DFNRope_vision_transformer",
+        metadata={"help": "Vision model type"},
+    )
+    num_heads: int = field(
+        default=16, metadata={"help": "Number of attention heads"}
+    )
     patch_size: int = field(default=14, metadata={"help": "Patch size"})
-    spatial_merge_size: int = field(default=2, metadata={"help": "Spatial merge size"})
-    tensor_model_parallel_size: int = field(default=4, metadata={"help": "Tensor parallel degree"})
-    vit_num_recompute_layers: int = field(default=10000, metadata={"help": "Number of recompute layers"})
+    spatial_merge_size: int = field(
+        default=2, metadata={"help": "Spatial merge size"}
+    )
+    tensor_model_parallel_size: int = field(
+        default=4, metadata={"help": "Tensor parallel degree"}
+    )
+    vit_num_recompute_layers: int = field(
+        default=10000, metadata={"help": "Number of recompute layers"}
+    )
 
 
 @dataclass
 class FP8MemConfigs:
     shared_expert: bool = False
-    recompute_fwd_gate_up: Union[bool, List[int]] = False
+    recompute_fwd_gate_up: bool | list[int] = False
     dequant_input: bool = False
     offline_quant_expert_weight: bool = False
 
@@ -53,26 +73,60 @@ class FP8FusedOpsConfigs:
 
 @dataclass
 class ErniePretrainArgument:
-    use_quant_before_a2a: bool = field(default=False, metadata={"help": "Whether to use quant before a2a"})
-    use_async_a2a: bool = field(default=False, metadata={"help": "Whether to use async a2a"})
-    use_rms_qkv_recompute: bool = field(default=False, metadata={"help": "Whether to use rms qkv recompute"})
-    moe_logging: bool = field(default=False, metadata={"help": "Whether to use moe logging"})
-    use_recompute: bool = field(default=False, metadata={"help": "Whether to use recompute"})
-    num_nextn_predict_layers: int = field(default=0, metadata={"help": "Multi token pred depth"})
-    use_fp8_mlp: bool = field(default=False, metadata={"help": "Whether to use fp8 mlp"})
-    num_hidden_layers: int = field(default=2, metadata={"help": "Number of hidden layers"})
-    num_empty_layers_add_in_tail: int = field(default=0, metadata={"help": "Number of empty layers add in tail"})
-    use_fp8_fuse_node: bool = field(default=False, metadata={"help": "Whether to use fp8 fuse node"})
-    use_ep_comm_overlap: bool = field(default=False, metadata={"help": "Whether to use ep comm overlap"})
+    use_quant_before_a2a: bool = field(
+        default=False, metadata={"help": "Whether to use quant before a2a"}
+    )
+    use_async_a2a: bool = field(
+        default=False, metadata={"help": "Whether to use async a2a"}
+    )
+    use_rms_qkv_recompute: bool = field(
+        default=False, metadata={"help": "Whether to use rms qkv recompute"}
+    )
+    moe_logging: bool = field(
+        default=False, metadata={"help": "Whether to use moe logging"}
+    )
+    use_recompute: bool = field(
+        default=False, metadata={"help": "Whether to use recompute"}
+    )
+    num_nextn_predict_layers: int = field(
+        default=0, metadata={"help": "Multi token pred depth"}
+    )
+    use_fp8_mlp: bool = field(
+        default=False, metadata={"help": "Whether to use fp8 mlp"}
+    )
+    num_hidden_layers: int = field(
+        default=2, metadata={"help": "Number of hidden layers"}
+    )
+    num_empty_layers_add_in_tail: int = field(
+        default=0, metadata={"help": "Number of empty layers add in tail"}
+    )
+    use_fp8_fuse_node: bool = field(
+        default=False, metadata={"help": "Whether to use fp8 fuse node"}
+    )
+    use_ep_comm_overlap: bool = field(
+        default=False, metadata={"help": "Whether to use ep comm overlap"}
+    )
     fp8_mem_configs: FP8MemConfigs = field(default_factory=FP8MemConfigs)
-    fp8_fused_ops_configs: FP8FusedOpsConfigs = field(default_factory=FP8FusedOpsConfigs)
-    use_combine_before_a2a: bool = field(default=False, metadata={"help": "Whether to use combine before a2a"})
-    moe_num_experts: Union[int, list] = 0
-    moe_k: int = field(default=2, metadata={"help": "Number of keys per experts"})
+    fp8_fused_ops_configs: FP8FusedOpsConfigs = field(
+        default_factory=FP8FusedOpsConfigs
+    )
+    use_combine_before_a2a: bool = field(
+        default=False, metadata={"help": "Whether to use combine before a2a"}
+    )
+    moe_num_experts: int | list = 0
+    moe_k: int = field(
+        default=2, metadata={"help": "Number of keys per experts"}
+    )
     moe_capacity = ()
-    moe_use_aux_free: bool = field(default=False, metadata={"help": "Whether to use aux free"})
-    moe_gate: str = field(default="top2_fused", metadata={"help": "MoE gate type"})
-    transpose_split_quant: bool = field(default=False, metadata={"help": "Whether to use transpose split quant"})
+    moe_use_aux_free: bool = field(
+        default=False, metadata={"help": "Whether to use aux free"}
+    )
+    moe_gate: str = field(
+        default="top2_fused", metadata={"help": "MoE gate type"}
+    )
+    transpose_split_quant: bool = field(
+        default=False, metadata={"help": "Whether to use transpose split quant"}
+    )
 
 
 @dataclass
@@ -84,8 +138,11 @@ class ModelArguments:
         default=None,
         metadata={"help": "Pretrained model path to local directory."},
     )
-    tokenizer_name_or_path: Optional[str] = field(
-        default=None, metadata={"help": "Pretrained tokenizer name or path if not the same as model_name"}
+    tokenizer_name_or_path: str | None = field(
+        default=None,
+        metadata={
+            "help": "Pretrained tokenizer name or path if not the same as model_name"
+        },
     )
     continue_training: bool = field(
         default=True,
@@ -100,23 +157,34 @@ class ModelArguments:
         default="SFT",
         metadata={"help": "The type of training, including SFT, DPO, VL-SFT."},
     )
-    use_mem_eff_attn: Optional[bool] = field(default=True, metadata={"help": "use use_mem_eff_attn"})
+    use_mem_eff_attn: bool | None = field(
+        default=True, metadata={"help": "use use_mem_eff_attn"}
+    )
     use_attn_mask_startend_row_indices: bool = field(
         default=True,
-        metadata={"help": "Whether to use attn_mask_start_row_indices in flash attention."},
+        metadata={
+            "help": "Whether to use attn_mask_start_row_indices in flash attention."
+        },
     )
     use_sparse_flash_attn: bool = field(
         default=True,
-        metadata={"help": "Under use attn_mask_start_row_indices=True, whether use sparse flash attention or not."},
+        metadata={
+            "help": "Under use attn_mask_start_row_indices=True, whether use sparse flash attention or not."
+        },
     )
     use_global_causal_attn: bool = field(
-        default=False, metadata={"help": "Whether to use global causal attention in packing data"}
+        default=False,
+        metadata={
+            "help": "Whether to use global causal attention in packing data"
+        },
     )
     mtp_attention_flexible: bool = field(
         default=False,
-        metadata={"help": "Whether to use mask_seq_len (max_seq_len - mtp_depth) for MTP attention masks."},
+        metadata={
+            "help": "Whether to use mask_seq_len (max_seq_len - mtp_depth) for MTP attention masks."
+        },
     )
-    rope_3d: Optional[bool] = field(default=True, metadata={"help": "use rope3d"})
+    rope_3d: bool | None = field(default=True, metadata={"help": "use rope3d"})
     fuse_softmax_mask: bool = field(
         default=False,
         metadata={"help": "Whether to fuse softmax and add"},
@@ -125,10 +193,14 @@ class ModelArguments:
         default=False,
         metadata={"help": "GPT3 model, use fast layernorm"},
     )
-    _attn_implementation: str = field(default="flashmask", metadata={"help": "Attention implementation"})
+    _attn_implementation: str = field(
+        default="flashmask", metadata={"help": "Attention implementation"}
+    )
     fuse_gate_detach_matmul: bool = field(
         default=True,
-        metadata={"help": "Whether to use the fused gate-detach matmul implementation."},
+        metadata={
+            "help": "Whether to use the fused gate-detach matmul implementation."
+        },
     )
     download_hub: str = field(
         default=None,
@@ -147,41 +219,53 @@ class ModelArguments:
             )
         },
     )
-    neftune: bool = field(default=False, metadata={"help": "Whether to apply NEFT"})
-    neftune_noise_alpha: float = field(default=5.0, metadata={"help": "NEFT noise alpha"})
+    neftune: bool = field(
+        default=False, metadata={"help": "Whether to apply NEFT"}
+    )
+    neftune_noise_alpha: float = field(
+        default=5.0, metadata={"help": "NEFT noise alpha"}
+    )
 
     # performance
     pp_seg_method: str = field(
         default="layer:DecoderLayer|EmptyLayer",
-        metadata={"help": ("The method used to segment the pipeline layers among pipeline stages. ")},
+        metadata={
+            "help": (
+                "The method used to segment the pipeline layers among pipeline stages. "
+            )
+        },
     )
 
     # MoE
-    moe_group: Optional[str] = field(
+    moe_group: str | None = field(
         default="dummy",
-        metadata={"help": "MoE communication group. Supported values: 'mp', 'dummy'."},
+        metadata={
+            "help": "MoE communication group. Supported values: 'mp', 'dummy'."
+        },
     )
-    moe_multimodal_dispatch_use_allgather: Optional[str] = field(
+    moe_multimodal_dispatch_use_allgather: str | None = field(
         default="v2-alltoall-unpad",
         metadata={"help": "moe dispatch use unpad allgather strategy."},
     )
 
-    moe_group_experts: Optional[bool] = field(
+    moe_group_experts: bool | None = field(
         default=False,
-        metadata={"help": "Whether to apply group-wise processing to expert gate logits."},
+        metadata={
+            "help": "Whether to apply group-wise processing to expert gate logits."
+        },
     )
-    moe_orthogonal_loss_lambda: Optional[float] = field(
+    moe_orthogonal_loss_lambda: float | None = field(
         default=0.0,
         metadata={"help": "Lambda value for moe orthogonal loss."},
     )
-    moe_use_hard_gate: Optional[bool] = field(
+    moe_use_hard_gate: bool | None = field(
         default=False,
         metadata={
             "help": "Whether to use hard gate. If `moe_use_hard_gate` is True, a hard "
             "routing strategy is used instead of a learned gating network."
         },
     )
-    moe_use_aux_free: Optional[bool] = field(
+    moe_use_aux_free: bool | None = field(
         default=None,
         metadata={
             "help": "Whether to use auxiliary‑loss‑free routing. If True, "
@@ -191,7 +275,9 @@ class ModelArguments:
     )
 
     # LoRA
-    fine_tuning: str = field(default="LoRA", metadata={"help": "The checkpoint type."})
+    fine_tuning: str = field(
+        default="LoRA", metadata={"help": "The checkpoint type."}
+    )
     lora: bool = field(
         default=False,
         metadata={"help": "Whether to use LoRA technique."},
@@ -200,7 +286,9 @@ class ModelArguments:
         default=8,
         metadata={"help": "Lora rank."},
     )
-    lora_path: str = field(default=None, metadata={"help": "Initialize lora state dict."})
+    lora_path: str = field(
+        default=None, metadata={"help": "Initialize lora state dict."}
+    )
     rslora: bool = field(
         default=False,
         metadata={"help": "Whether to use RsLoRA"},
@@ -220,19 +308,34 @@ class ModelArguments:
 
     # criterion
     model_with_dpo_criterion: bool = field(
-        default=False, metadata={"help": "Whether the model contains dpo criterion"}
+        default=False,
+        metadata={"help": "Whether the model contains dpo criterion"},
     )
 
     # vl model
-    vision_config: VisionArguments = field(default_factory=VisionArguments, metadata={"help": "Vision configuration"})
-    ernie_model_config: ErniePretrainArgument = field(
-        default_factory=ErniePretrainArgument, metadata={"help": "Ernie pretrain configuration"}
+    vision_config: VisionArguments = field(
+        default_factory=VisionArguments,
+        metadata={"help": "Vision configuration"},
     )
-    bos_token_id: int = field(default=0, metadata={"help": "Beginning of sentence token ID"})
-    eos_token_id: int = field(default=1, metadata={"help": "End of sentence token ID"})
-    max_position_embeddings: int = field(default=4096, metadata={"help": "Maximum position embeddings"})
-    moe_gate: str = field(default="top2_fused", metadata={"help": "MoE gate type"})
-    loss_subbatch_seqlen: int = field(default=32768, metadata={"help": "Sub batch size for loss calculation"})
+    ernie_model_config: ErniePretrainArgument = field(
+        default_factory=ErniePretrainArgument,
+        metadata={"help": "Ernie pretrain configuration"},
+    )
+    bos_token_id: int = field(
+        default=0, metadata={"help": "Beginning of sentence token ID"}
+    )
+    eos_token_id: int = field(
+        default=1, metadata={"help": "End of sentence token ID"}
+    )
+    max_position_embeddings: int = field(
+        default=4096, metadata={"help": "Maximum position embeddings"}
+    )
+    moe_gate: str = field(
+        default="top2_fused", metadata={"help": "MoE gate type"}
+    )
+    loss_subbatch_seqlen: int = field(
+        default=32768, metadata={"help": "Sub batch size for loss calculation"}
+    )
 
     def __post_init__(self):
         if self.fine_tuning.lower() == "LoRA".lower():

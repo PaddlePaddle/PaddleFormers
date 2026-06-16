@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -68,7 +72,9 @@ class TestColumnParallelLinearInit(unittest.TestCase):
         "paddleformers.fleet.tensor_parallel.layers.get_tensor_model_parallel_rank",
         return_value=0,
     )
-    @patch("paddleformers.fleet.tensor_parallel.layers._initialize_affine_weight_gpu")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers._initialize_affine_weight_gpu"
+    )
     def test_init_basic(self, mock_init_w, mock_rank, mock_ws):
         """Test basic initialization of ColumnParallelLinear."""
         config = _make_config()
@@ -91,7 +97,9 @@ class TestColumnParallelLinearInit(unittest.TestCase):
         "paddleformers.fleet.tensor_parallel.layers.get_tensor_model_parallel_rank",
         return_value=0,
     )
-    @patch("paddleformers.fleet.tensor_parallel.layers._initialize_affine_weight_gpu")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers._initialize_affine_weight_gpu"
+    )
     def test_init_with_bias(self, mock_init_w, mock_rank, mock_ws):
         """Test ColumnParallelLinear with bias."""
         config = _make_config()
@@ -115,7 +123,9 @@ class TestColumnParallelLinearInit(unittest.TestCase):
         "paddleformers.fleet.tensor_parallel.layers.get_tensor_model_parallel_rank",
         return_value=0,
     )
-    @patch("paddleformers.fleet.tensor_parallel.layers._initialize_affine_weight_gpu")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers._initialize_affine_weight_gpu"
+    )
     def test_init_gather_output(self, mock_init_w, mock_rank, mock_ws):
         """Test ColumnParallelLinear with gather_output=True."""
         config = _make_config()
@@ -138,7 +148,9 @@ class TestColumnParallelLinearInit(unittest.TestCase):
         "paddleformers.fleet.tensor_parallel.layers.get_tensor_model_parallel_rank",
         return_value=0,
     )
-    @patch("paddleformers.fleet.tensor_parallel.layers._initialize_affine_weight_gpu")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers._initialize_affine_weight_gpu"
+    )
     def test_init_stride(self, mock_init_w, mock_rank, mock_ws):
         """Test ColumnParallelLinear with custom stride."""
         config = _make_config()
@@ -164,7 +176,9 @@ class TestRowParallelLinearInit(unittest.TestCase):
         "paddleformers.fleet.tensor_parallel.layers.get_tensor_model_parallel_rank",
         return_value=0,
     )
-    @patch("paddleformers.fleet.tensor_parallel.layers._initialize_affine_weight_gpu")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers._initialize_affine_weight_gpu"
+    )
     def test_init_basic(self, mock_init_w, mock_rank, mock_ws):
         """Test basic initialization of RowParallelLinear."""
         config = _make_config()
@@ -188,7 +202,9 @@ class TestRowParallelLinearInit(unittest.TestCase):
         "paddleformers.fleet.tensor_parallel.layers.get_tensor_model_parallel_rank",
         return_value=0,
     )
-    @patch("paddleformers.fleet.tensor_parallel.layers._initialize_affine_weight_gpu")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers._initialize_affine_weight_gpu"
+    )
     def test_init_input_is_parallel(self, mock_init_w, mock_rank, mock_ws):
         """Test RowParallelLinear with input_is_parallel=True."""
         config = _make_config()
@@ -209,7 +225,9 @@ class TestRowParallelLinearInit(unittest.TestCase):
 class TestLinearLayer(unittest.TestCase):
     """Tests for Linear layer."""
 
-    @patch("paddleformers.fleet.tensor_parallel.layers._initialize_affine_weight_gpu")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers._initialize_affine_weight_gpu"
+    )
     def test_linear_forward(self, mock_init_w):
         """Test basic forward of Linear."""
         config = _make_config()
@@ -221,23 +239,33 @@ class TestLinearLayer(unittest.TestCase):
         self.assertIsInstance(output, tuple)
         self.assertEqual(output[0].shape, [2, 32])
 
-    @patch("paddleformers.fleet.tensor_parallel.layers._initialize_affine_weight_gpu")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers._initialize_affine_weight_gpu"
+    )
     def test_linear_no_bias(self, mock_init_w):
         """Test Linear without bias."""
         config = _make_config()
         init_method = lambda x: None
-        layer = Linear(16, 32, config=config, init_method=init_method, bias=False)
+        layer = Linear(
+            16, 32, config=config, init_method=init_method, bias=False
+        )
         self.assertIsNone(layer.bias)
 
-    @patch("paddleformers.fleet.tensor_parallel.layers._initialize_affine_weight_gpu")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers._initialize_affine_weight_gpu"
+    )
     def test_linear_skip_bias_add(self, mock_init_w):
         """Test Linear with skip_bias_add."""
         config = _make_config()
         init_method = lambda x: None
-        layer = Linear(16, 32, config=config, init_method=init_method, skip_bias_add=True)
+        layer = Linear(
+            16, 32, config=config, init_method=init_method, skip_bias_add=True
+        )
         self.assertTrue(layer.skip_bias_add)
 
-    @patch("paddleformers.fleet.tensor_parallel.layers._initialize_affine_weight_gpu")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.layers._initialize_affine_weight_gpu"
+    )
     def test_linear_repr(self, mock_init_w):
         """Test Linear __repr__."""
         config = _make_config()
@@ -253,7 +281,9 @@ class TestTPAttributes(unittest.TestCase):
     def test_set_tensor_model_parallel_attributes(self):
         """Test setting TP attributes on a tensor."""
         t = paddle.randn([4, 4])
-        set_tensor_model_parallel_attributes(t, is_parallel=True, dim=1, stride=2)
+        set_tensor_model_parallel_attributes(
+            t, is_parallel=True, dim=1, stride=2
+        )
         self.assertTrue(t.tensor_model_parallel)
         self.assertEqual(t.partition_dim, 1)
         self.assertEqual(t.partition_stride, 2)
@@ -269,7 +299,9 @@ class TestTPAttributes(unittest.TestCase):
     def test_set_defaults_preserves_existing(self):
         """Test that defaults do not overwrite existing attributes."""
         t = paddle.randn([4, 4])
-        set_tensor_model_parallel_attributes(t, is_parallel=True, dim=0, stride=1)
+        set_tensor_model_parallel_attributes(
+            t, is_parallel=True, dim=0, stride=1
+        )
         set_defaults_if_not_set_tensor_model_parallel_attributes(t)
         self.assertTrue(t.tensor_model_parallel)
         self.assertEqual(t.partition_dim, 0)
@@ -277,7 +309,9 @@ class TestTPAttributes(unittest.TestCase):
     def test_param_is_not_tensor_parallel_duplicate_true(self):
         """Test param_is_not_tensor_parallel_duplicate returns True."""
         t = paddle.randn([4, 4])
-        set_tensor_model_parallel_attributes(t, is_parallel=False, dim=1, stride=1)
+        set_tensor_model_parallel_attributes(
+            t, is_parallel=False, dim=1, stride=1
+        )
         # When is_parallel=False, tensor_model_parallel is False.
         # The function returns True when tensor_model_parallel is True OR rank==0.
         # Since is_parallel=False, tensor_model_parallel is False.
@@ -287,7 +321,9 @@ class TestTPAttributes(unittest.TestCase):
     def test_param_is_not_tensor_parallel_duplicate_false(self):
         """Test param_is_not_tensor_parallel_duplicate returns False for parallel params on non-zero rank."""
         t = paddle.randn([4, 4])
-        set_tensor_model_parallel_attributes(t, is_parallel=True, dim=1, stride=1)
+        set_tensor_model_parallel_attributes(
+            t, is_parallel=True, dim=1, stride=1
+        )
         # When is_parallel=True, tensor_model_parallel is True.
         # The function returns True when tensor_model_parallel is True OR rank==0.
         # With is_parallel=True, it always returns True regardless of rank.

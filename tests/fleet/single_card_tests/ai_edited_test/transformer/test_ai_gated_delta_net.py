@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -113,7 +117,9 @@ class TestPaddleChunkGatedDeltaRule(unittest.TestCase):
         g = paddle.randn([batch, seq, heads])
         beta = paddle.randn([batch, seq, heads])
 
-        out, state = paddle_chunk_gated_delta_rule(query, key, value, g=g, beta=beta)
+        out, state = paddle_chunk_gated_delta_rule(
+            query, key, value, g=g, beta=beta
+        )
         self.assertEqual(out.shape, [batch, seq, heads, v_dim])
         self.assertIsNone(state)  # output_final_state=False
 
@@ -125,7 +131,9 @@ class TestPaddleChunkGatedDeltaRule(unittest.TestCase):
         g = paddle.randn([batch, seq, heads])
         beta = paddle.randn([batch, seq, heads])
 
-        out, state = paddle_chunk_gated_delta_rule(query, key, value, g=g, beta=beta, output_final_state=True)
+        out, state = paddle_chunk_gated_delta_rule(
+            query, key, value, g=g, beta=beta, output_final_state=True
+        )
         self.assertIsNotNone(state)
         self.assertEqual(state.shape, [batch, heads, k_dim, v_dim])
 
@@ -138,7 +146,9 @@ class TestPaddleChunkGatedDeltaRule(unittest.TestCase):
         beta = paddle.randn([batch, seq, heads])
         initial = paddle.randn([batch, heads, k_dim, v_dim])
 
-        out, state = paddle_chunk_gated_delta_rule(query, key, value, g=g, beta=beta, initial_state=initial)
+        out, state = paddle_chunk_gated_delta_rule(
+            query, key, value, g=g, beta=beta, initial_state=initial
+        )
         self.assertEqual(out.shape, [batch, seq, heads, v_dim])
 
     def test_custom_chunk_size(self):
@@ -149,7 +159,9 @@ class TestPaddleChunkGatedDeltaRule(unittest.TestCase):
         g = paddle.randn([batch, seq, heads])
         beta = paddle.randn([batch, seq, heads])
 
-        out, state = paddle_chunk_gated_delta_rule(query, key, value, g=g, beta=beta, chunk_size=2)
+        out, state = paddle_chunk_gated_delta_rule(
+            query, key, value, g=g, beta=beta, chunk_size=2
+        )
         self.assertEqual(out.shape, [batch, seq, heads, v_dim])
 
     def test_preserves_dtype(self):
@@ -160,7 +172,9 @@ class TestPaddleChunkGatedDeltaRule(unittest.TestCase):
         g = paddle.randn([batch, seq, heads], dtype="float32")
         beta = paddle.randn([batch, seq, heads], dtype="float32")
 
-        out, _ = paddle_chunk_gated_delta_rule(query, key, value, g=g, beta=beta)
+        out, _ = paddle_chunk_gated_delta_rule(
+            query, key, value, g=g, beta=beta
+        )
         self.assertEqual(out.dtype, paddle.float32)
 
     def test_use_qk_l2norm_in_kernel(self):

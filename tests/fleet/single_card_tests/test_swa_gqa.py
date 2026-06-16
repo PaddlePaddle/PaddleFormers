@@ -31,14 +31,19 @@ from paddleformers.fleet.transformer.attention import (
     SelfAttention,
     SelfAttentionSublayersSpec,
 )
-from paddleformers.fleet.transformer.dot_product_attention import DotProductAttention
+from paddleformers.fleet.transformer.dot_product_attention import (
+    DotProductAttention,
+)
 from paddleformers.fleet.transformer.enums import AttnMaskType
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 from paddleformers.fleet.transformer.utils import (
     is_layer_window_attention,
     startend_row_indices_add_sliding_window,
 )
-from paddleformers.fleet.utils import init_method_normal, scaled_init_method_normal
+from paddleformers.fleet.utils import (
+    init_method_normal,
+    scaled_init_method_normal,
+)
 
 strategy = paddle.distributed.fleet.DistributedStrategy()
 initialize_fleet(strategy=strategy)
@@ -168,7 +173,9 @@ class TestStartendRowIndicesAddSlidingWindow(unittest.TestCase):
         # Large values so SWA should clip them
         indices = paddle.ones([bsz, 1, seq, 1], dtype=paddle.int32) * 10000
         window_size = 4
-        result = startend_row_indices_add_sliding_window(indices, (window_size, 0), 0.0, kv_num_heads)
+        result = startend_row_indices_add_sliding_window(
+            indices, (window_size, 0), 0.0, kv_num_heads
+        )
         # Output shape should be [bsz, kv_num_heads, seq, 1]
         self.assertEqual(list(result.shape), [bsz, kv_num_heads, seq, 1])
 
@@ -179,12 +186,16 @@ class TestStartendRowIndicesAddSlidingWindow(unittest.TestCase):
         # Set all start indices to a large value (simulating full attention)
         indices = paddle.ones([bsz, 1, seq, 1], dtype=paddle.int32) * 10000
 
-        result = startend_row_indices_add_sliding_window(indices, (window_size, 0), 0.0, kv_num_heads)
+        result = startend_row_indices_add_sliding_window(
+            indices, (window_size, 0), 0.0, kv_num_heads
+        )
 
         # Expected: LTS_SWA = arange(window_size, seq + window_size)
         # = [3, 4, 5, 6, 7, 8, 9, 10]
         # where(10000 < LTS_SWA, 10000, LTS_SWA) -> LTS_SWA (since 10000 > all)
-        expected = paddle.arange(window_size, seq + window_size, dtype=paddle.int32).reshape([1, 1, seq, 1])
+        expected = paddle.arange(
+            window_size, seq + window_size, dtype=paddle.int32
+        ).reshape([1, 1, seq, 1])
         self.assertTrue(
             paddle.equal_all(result, expected).item(),
             f"Expected {expected.numpy()}, got {result.numpy()}",
@@ -195,9 +206,13 @@ class TestStartendRowIndicesAddSlidingWindow(unittest.TestCase):
         bsz, seq, kv_num_heads = 1, 8, 1
         window_size = 100  # Very large window
         # Small indices that are within the window
-        indices = paddle.arange(1, seq + 1, dtype=paddle.int32).reshape([bsz, 1, seq, 1])
+        indices = paddle.arange(1, seq + 1, dtype=paddle.int32).reshape(
+            [bsz, 1, seq, 1]
+        )
 
-        result = startend_row_indices_add_sliding_window(indices, (window_size, 0), 0.0, kv_num_heads)
+        result = startend_row_indices_add_sliding_window(
+            indices, (window_size, 0), 0.0, kv_num_heads
+        )
 
         # LTS_SWA = arange(100, 108) which is always larger than indices [1..8]
         # So where(indices < LTS_SWA) is True -> keep indices
@@ -213,15 +228,21 @@ class TestStartendRowIndicesAddSlidingWindow(unittest.TestCase):
         head_wise_swa_ratio = 0.5  # 2 out of 4 heads are SWA
 
         # Large values for all heads
-        indices = paddle.ones([bsz, kv_num_heads, seq, 1], dtype=paddle.int32) * 10000
+        indices = (
+            paddle.ones([bsz, kv_num_heads, seq, 1], dtype=paddle.int32) * 10000
+        )
 
-        result = startend_row_indices_add_sliding_window(indices, (window_size, 0), head_wise_swa_ratio, kv_num_heads)
+        result = startend_row_indices_add_sliding_window(
+            indices, (window_size, 0), head_wise_swa_ratio, kv_num_heads
+        )
 
         # swa_head_num = int(0.5 * 4) = 2
         # non_swa_head_num = 4 - 2 = 2
         # First 2 heads (non-SWA) should retain original values
         non_swa_result = result[:, :2, :, :]
-        expected_non_swa = paddle.ones([bsz, 2, seq, 1], dtype=paddle.int32) * 10000
+        expected_non_swa = (
+            paddle.ones([bsz, 2, seq, 1], dtype=paddle.int32) * 10000
+        )
         self.assertTrue(
             paddle.equal_all(non_swa_result, expected_non_swa).item(),
             "Non-SWA heads should retain original indices",
@@ -246,7 +267,9 @@ class TestStartendRowIndicesAddSlidingWindow(unittest.TestCase):
         # All heads should be fully clipped
         indices = paddle.ones([bsz, 1, seq, 1], dtype=paddle.int32) * 10000
 
-        result = startend_row_indices_add_sliding_window(indices, (window_size, 0), 0.0, kv_num_heads)
+        result = startend_row_indices_add_sliding_window(
+            indices, (window_size, 0), 0.0, kv_num_heads
+        )
 
         # All heads should be SWA-clipped
         expected = (
@@ -273,8 +296,12 @@ class TestTransformerConfigSWAFields(unittest.TestCase):
         config = TransformerConfig(num_hidden_layers=4)
         self.assertEqual(config.swa_head_dim, config.head_dim)
         self.assertEqual(config.swa_v_head_dim, config.v_head_dim)
-        self.assertEqual(config.swa_num_attention_heads, config.num_attention_heads)
-        self.assertEqual(config.swa_num_key_value_heads, config.num_key_value_heads)
+        self.assertEqual(
+            config.swa_num_attention_heads, config.num_attention_heads
+        )
+        self.assertEqual(
+            config.swa_num_key_value_heads, config.num_key_value_heads
+        )
         self.assertEqual(config.swa_rope_theta, 10000)
         self.assertEqual(config.head_wise_swa_ratio, 0.0)
         self.assertIsNone(config.attention_value_scale)
@@ -454,7 +481,9 @@ class TestSelfAttentionSWA(unittest.TestCase):
         config.rotary_interleaved = False
         config.multi_latent_attention = False
         config.init_method = init_method_normal(0.02)
-        config.output_layer_init_method = scaled_init_method_normal(0.02, 1, 2.0)
+        config.output_layer_init_method = scaled_init_method_normal(
+            0.02, 1, 2.0
+        )
         config.rms_norm_eps = 1e-5
         config.context_parallel_size = 1
         config.apply_query_key_layer_scaling = False
@@ -546,9 +575,17 @@ class TestSelfAttentionSWA(unittest.TestCase):
         attn.bfloat16()
 
         seq_len, batch_size = 32, 2
-        hidden_states = paddle.randn((batch_size, seq_len, config.hidden_size)).cuda().cast(paddle.bfloat16)
+        hidden_states = (
+            paddle.randn((batch_size, seq_len, config.hidden_size))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
         # swa_rotary_pos_emb with swa_head_dim
-        swa_rotary_pos_emb = paddle.randn((1, seq_len, 1, config.swa_head_dim)).cuda().cast(paddle.bfloat16)
+        swa_rotary_pos_emb = (
+            paddle.randn((1, seq_len, 1, config.swa_head_dim))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
         startend = (
             paddle.arange(1, seq_len + 1, dtype=paddle.int32)
             .reshape([1, 1, seq_len, 1])
@@ -563,7 +600,9 @@ class TestSelfAttentionSWA(unittest.TestCase):
             swa_rotary_pos_emb=swa_rotary_pos_emb,
         )
 
-        self.assertEqual(output.shape, [batch_size, seq_len, config.hidden_size])
+        self.assertEqual(
+            output.shape, [batch_size, seq_len, config.hidden_size]
+        )
 
     def test_non_swa_forward_shape(self):
         """Non-SWA layer forward should produce correct output shape."""
@@ -580,7 +619,9 @@ class TestSelfAttentionSWA(unittest.TestCase):
             rotary_pos_emb=rotary_pos_emb,
         )
 
-        self.assertEqual(output.shape, [batch_size, seq_len, config.hidden_size])
+        self.assertEqual(
+            output.shape, [batch_size, seq_len, config.hidden_size]
+        )
 
     @unittest.skipIf(
         not paddle.is_compiled_with_cuda(),
@@ -593,9 +634,17 @@ class TestSelfAttentionSWA(unittest.TestCase):
         attn.bfloat16()
 
         seq_len, batch_size = 16, 2
-        hidden_states = paddle.randn((batch_size, seq_len, config.hidden_size)).cuda().cast(paddle.bfloat16)
+        hidden_states = (
+            paddle.randn((batch_size, seq_len, config.hidden_size))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
         hidden_states.stop_gradient = False
-        swa_rotary_pos_emb = paddle.randn((1, seq_len, 1, config.swa_head_dim)).cuda().cast(paddle.bfloat16)
+        swa_rotary_pos_emb = (
+            paddle.randn((1, seq_len, 1, config.swa_head_dim))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
         startend = (
             paddle.arange(1, seq_len + 1, dtype=paddle.int32)
             .reshape([1, 1, seq_len, 1])
@@ -683,7 +732,9 @@ class TestSelfAttentionSWADifferentHeadDims(unittest.TestCase):
         config.rotary_interleaved = False
         config.multi_latent_attention = False
         config.init_method = init_method_normal(0.02)
-        config.output_layer_init_method = scaled_init_method_normal(0.02, 1, 2.0)
+        config.output_layer_init_method = scaled_init_method_normal(
+            0.02, 1, 2.0
+        )
         config.rms_norm_eps = 1e-5
         config.context_parallel_size = 1
         config.apply_query_key_layer_scaling = False
@@ -802,7 +853,9 @@ class TestSelfAttentionSWAGated(unittest.TestCase):
         config.rotary_interleaved = False
         config.multi_latent_attention = False
         config.init_method = init_method_normal(0.02)
-        config.output_layer_init_method = scaled_init_method_normal(0.02, 1, 2.0)
+        config.output_layer_init_method = scaled_init_method_normal(
+            0.02, 1, 2.0
+        )
         config.rms_norm_eps = 1e-5
         config.context_parallel_size = 1
         config.apply_query_key_layer_scaling = False
@@ -842,8 +895,16 @@ class TestSelfAttentionSWAGated(unittest.TestCase):
         self.assertTrue(attn.is_swa)
 
         seq_len, batch_size = 32, 2
-        hidden_states = paddle.randn((batch_size, seq_len, config.hidden_size)).cuda().cast(paddle.bfloat16)
-        swa_rotary_pos_emb = paddle.randn((1, seq_len, 1, config.swa_head_dim)).cuda().cast(paddle.bfloat16)
+        hidden_states = (
+            paddle.randn((batch_size, seq_len, config.hidden_size))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
+        swa_rotary_pos_emb = (
+            paddle.randn((1, seq_len, 1, config.swa_head_dim))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
         startend = (
             paddle.arange(1, seq_len + 1, dtype=paddle.int32)
             .reshape([1, 1, seq_len, 1])
@@ -858,7 +919,9 @@ class TestSelfAttentionSWAGated(unittest.TestCase):
             swa_rotary_pos_emb=swa_rotary_pos_emb,
         )
 
-        self.assertEqual(output.shape, [batch_size, seq_len, config.hidden_size])
+        self.assertEqual(
+            output.shape, [batch_size, seq_len, config.hidden_size]
+        )
 
     @unittest.skipIf(
         not paddle.is_compiled_with_cuda(),
@@ -882,9 +945,17 @@ class TestSelfAttentionSWAGated(unittest.TestCase):
         attn.bfloat16()
 
         seq_len, batch_size = 16, 2
-        hidden_states = paddle.randn((batch_size, seq_len, config.hidden_size)).cuda().cast(paddle.bfloat16)
+        hidden_states = (
+            paddle.randn((batch_size, seq_len, config.hidden_size))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
         hidden_states.stop_gradient = False
-        swa_rotary_pos_emb = paddle.randn((1, seq_len, 1, config.swa_head_dim)).cuda().cast(paddle.bfloat16)
+        swa_rotary_pos_emb = (
+            paddle.randn((1, seq_len, 1, config.swa_head_dim))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
         startend = (
             paddle.arange(1, seq_len + 1, dtype=paddle.int32)
             .reshape([1, 1, seq_len, 1])
@@ -936,7 +1007,9 @@ class TestSelfAttentionValueScale(unittest.TestCase):
         config.rotary_interleaved = False
         config.multi_latent_attention = False
         config.init_method = init_method_normal(0.02)
-        config.output_layer_init_method = scaled_init_method_normal(0.02, 1, 2.0)
+        config.output_layer_init_method = scaled_init_method_normal(
+            0.02, 1, 2.0
+        )
         config.rms_norm_eps = 1e-5
         config.context_parallel_size = 1
         config.apply_query_key_layer_scaling = False
@@ -1011,7 +1084,9 @@ class TestSelfAttentionValueScale(unittest.TestCase):
             rotary_pos_emb=rotary_pos_emb,
         )
 
-        self.assertEqual(output.shape, [batch_size, seq_len, config.hidden_size])
+        self.assertEqual(
+            output.shape, [batch_size, seq_len, config.hidden_size]
+        )
         self.assertTrue(
             paddle.all(paddle.isfinite(output)).item(),
             "Output with value_scale contains NaN or Inf",
@@ -1026,7 +1101,9 @@ class TestSelfAttentionValueScale(unittest.TestCase):
 class TestDotProductAttentionSoftmaxOffset(unittest.TestCase):
     """Tests for softmax_offset initialization with different softmax types."""
 
-    def _make_config(self, softmax_type="vanilla", add_full_sink=False, add_swa_sink=False):
+    def _make_config(
+        self, softmax_type="vanilla", add_full_sink=False, add_swa_sink=False
+    ):
         config = TransformerConfig(
             num_hidden_layers=4,
             hidden_size=512,
@@ -1048,7 +1125,9 @@ class TestDotProductAttentionSoftmaxOffset(unittest.TestCase):
         config.rotary_interleaved = False
         config.multi_latent_attention = False
         config.init_method = init_method_normal(0.02)
-        config.output_layer_init_method = scaled_init_method_normal(0.02, 1, 2.0)
+        config.output_layer_init_method = scaled_init_method_normal(
+            0.02, 1, 2.0
+        )
         config.rms_norm_eps = 1e-5
         config.context_parallel_size = 1
         config.apply_query_key_layer_scaling = False
@@ -1213,7 +1292,9 @@ class TestSelfAttentionPartialRoPE(unittest.TestCase):
         config.rotary_interleaved = False
         config.multi_latent_attention = False
         config.init_method = init_method_normal(0.02)
-        config.output_layer_init_method = scaled_init_method_normal(0.02, 1, 2.0)
+        config.output_layer_init_method = scaled_init_method_normal(
+            0.02, 1, 2.0
+        )
         config.rms_norm_eps = 1e-5
         config.context_parallel_size = 1
         config.apply_query_key_layer_scaling = False
@@ -1269,9 +1350,15 @@ class TestSelfAttentionPartialRoPE(unittest.TestCase):
         attn.bfloat16()
 
         seq_len, batch_size = 16, 2
-        hidden_states = paddle.randn((batch_size, seq_len, config.hidden_size)).cuda().cast(paddle.bfloat16)
+        hidden_states = (
+            paddle.randn((batch_size, seq_len, config.hidden_size))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
         # RoPE emb with qk_rope_head_dim (64, not full 128)
-        swa_rotary_pos_emb = paddle.randn((1, seq_len, 1, 64)).cuda().cast(paddle.bfloat16)
+        swa_rotary_pos_emb = (
+            paddle.randn((1, seq_len, 1, 64)).cuda().cast(paddle.bfloat16)
+        )
         startend = (
             paddle.arange(1, seq_len + 1, dtype=paddle.int32)
             .reshape([1, 1, seq_len, 1])
@@ -1286,7 +1373,9 @@ class TestSelfAttentionPartialRoPE(unittest.TestCase):
             swa_rotary_pos_emb=swa_rotary_pos_emb,
         )
 
-        self.assertEqual(output.shape, [batch_size, seq_len, config.hidden_size])
+        self.assertEqual(
+            output.shape, [batch_size, seq_len, config.hidden_size]
+        )
         self.assertTrue(
             paddle.all(paddle.isfinite(output)).item(),
             "Partial RoPE output contains NaN or Inf",
@@ -1341,7 +1430,9 @@ class TestSWAComputationalCorrectness(unittest.TestCase):
         config.rotary_interleaved = False
         config.multi_latent_attention = False
         config.init_method = init_method_normal(0.02)
-        config.output_layer_init_method = scaled_init_method_normal(0.02, 1, 2.0)
+        config.output_layer_init_method = scaled_init_method_normal(
+            0.02, 1, 2.0
+        )
         config.rms_norm_eps = 1e-5
         config.context_parallel_size = 1
         config.apply_query_key_layer_scaling = False
@@ -1387,11 +1478,27 @@ class TestSWAComputationalCorrectness(unittest.TestCase):
 
         seq_len, batch_size = 16, 2
         paddle.manual_seed(42)
-        hidden_states = paddle.randn((batch_size, seq_len, config.hidden_size)).cuda().cast(paddle.bfloat16)
+        hidden_states = (
+            paddle.randn((batch_size, seq_len, config.hidden_size))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
 
-        swa_rotary = paddle.randn((1, seq_len, 1, config.swa_head_dim)).cuda().cast(paddle.bfloat16)
-        rotary_a = paddle.randn((1, seq_len, 1, config.head_dim)).cuda().cast(paddle.bfloat16)
-        rotary_b = paddle.randn((1, seq_len, 1, config.head_dim)).cuda().cast(paddle.bfloat16)
+        swa_rotary = (
+            paddle.randn((1, seq_len, 1, config.swa_head_dim))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
+        rotary_a = (
+            paddle.randn((1, seq_len, 1, config.head_dim))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
+        rotary_b = (
+            paddle.randn((1, seq_len, 1, config.head_dim))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
         startend = (
             paddle.arange(1, seq_len + 1, dtype=paddle.int32)
             .reshape([1, 1, seq_len, 1])
@@ -1478,13 +1585,23 @@ class TestSWAComputationalCorrectness(unittest.TestCase):
         attn_no_scale.bfloat16()
 
         paddle.manual_seed(100)
-        attn_with_scale = self._build_attn(config_with_scale, layer_number=0).cuda()
+        attn_with_scale = self._build_attn(
+            config_with_scale, layer_number=0
+        ).cuda()
         attn_with_scale.bfloat16()
 
         seq_len, batch_size = 16, 2
         paddle.manual_seed(200)
-        hidden_states = paddle.randn((batch_size, seq_len, config_no_scale.hidden_size)).cuda().cast(paddle.bfloat16)
-        swa_rotary = paddle.randn((1, seq_len, 1, config_no_scale.swa_head_dim)).cuda().cast(paddle.bfloat16)
+        hidden_states = (
+            paddle.randn((batch_size, seq_len, config_no_scale.hidden_size))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
+        swa_rotary = (
+            paddle.randn((1, seq_len, 1, config_no_scale.swa_head_dim))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
         startend = (
             paddle.arange(1, seq_len + 1, dtype=paddle.int32)
             .reshape([1, 1, seq_len, 1])
@@ -1529,8 +1646,16 @@ class TestSWAComputationalCorrectness(unittest.TestCase):
         attn.bfloat16()
 
         seq_len, batch_size = 16, 2
-        hidden_states = paddle.randn((batch_size, seq_len, config.hidden_size)).cuda().cast(paddle.bfloat16)
-        swa_rotary = paddle.randn((1, seq_len, 1, config.swa_head_dim)).cuda().cast(paddle.bfloat16)
+        hidden_states = (
+            paddle.randn((batch_size, seq_len, config.hidden_size))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
+        swa_rotary = (
+            paddle.randn((1, seq_len, 1, config.swa_head_dim))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
         startend = (
             paddle.arange(1, seq_len + 1, dtype=paddle.int32)
             .reshape([1, 1, seq_len, 1])
@@ -1552,7 +1677,9 @@ class TestSWAComputationalCorrectness(unittest.TestCase):
         )
 
         self.assertTrue(
-            paddle.allclose(out1.cast(paddle.float32), out2.cast(paddle.float32), atol=1e-6).item(),
+            paddle.allclose(
+                out1.cast(paddle.float32), out2.cast(paddle.float32), atol=1e-6
+            ).item(),
             "Same input should produce same output (deterministic)",
         )
         self.assertTrue(
@@ -1575,9 +1702,17 @@ class TestSWAComputationalCorrectness(unittest.TestCase):
         attn.bfloat16()
 
         seq_len, batch_size = 16, 2
-        hidden_states = paddle.randn((batch_size, seq_len, config.hidden_size)).cuda().cast(paddle.bfloat16)
+        hidden_states = (
+            paddle.randn((batch_size, seq_len, config.hidden_size))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
         hidden_states.stop_gradient = False
-        swa_rotary = paddle.randn((1, seq_len, 1, config.swa_head_dim)).cuda().cast(paddle.bfloat16)
+        swa_rotary = (
+            paddle.randn((1, seq_len, 1, config.swa_head_dim))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
         startend = (
             paddle.arange(1, seq_len + 1, dtype=paddle.int32)
             .reshape([1, 1, seq_len, 1])
@@ -1609,7 +1744,9 @@ class TestSWAComputationalCorrectness(unittest.TestCase):
         for name, param in attn.named_parameters():
             if param.stop_gradient:
                 continue
-            self.assertIsNotNone(param.grad, f"Parameter '{name}' has no gradient")
+            self.assertIsNotNone(
+                param.grad, f"Parameter '{name}' has no gradient"
+            )
             self.assertTrue(
                 paddle.all(paddle.isfinite(param.grad)).item(),
                 f"Parameter '{name}' gradient contains NaN or Inf",
@@ -1638,8 +1775,16 @@ class TestSWAComputationalCorrectness(unittest.TestCase):
 
         seq_len, batch_size = 16, 2
         paddle.manual_seed(123)
-        hidden_states = paddle.randn((batch_size, seq_len, config_gated.hidden_size)).cuda().cast(paddle.bfloat16)
-        swa_rotary = paddle.randn((1, seq_len, 1, config_gated.swa_head_dim)).cuda().cast(paddle.bfloat16)
+        hidden_states = (
+            paddle.randn((batch_size, seq_len, config_gated.hidden_size))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
+        swa_rotary = (
+            paddle.randn((1, seq_len, 1, config_gated.swa_head_dim))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
         startend = (
             paddle.arange(1, seq_len + 1, dtype=paddle.int32)
             .reshape([1, 1, seq_len, 1])
@@ -1681,9 +1826,17 @@ class TestSWAComputationalCorrectness(unittest.TestCase):
         attn.bfloat16()
 
         seq_len, batch_size = 16, 2
-        hidden_states = paddle.randn((batch_size, seq_len, config.hidden_size)).cuda().cast(paddle.bfloat16)
+        hidden_states = (
+            paddle.randn((batch_size, seq_len, config.hidden_size))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
         hidden_states.stop_gradient = False
-        swa_rotary = paddle.randn((1, seq_len, 1, config.swa_head_dim)).cuda().cast(paddle.bfloat16)
+        swa_rotary = (
+            paddle.randn((1, seq_len, 1, config.swa_head_dim))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
         startend = (
             paddle.arange(1, seq_len + 1, dtype=paddle.int32)
             .reshape([1, 1, seq_len, 1])
@@ -1722,7 +1875,9 @@ class TestSWAComputationalCorrectness(unittest.TestCase):
 
         Verify: partial and full RoPE produce different outputs.
         """
-        config_partial = self._make_config(is_swa_layer=True, rotary_percent=0.5)
+        config_partial = self._make_config(
+            is_swa_layer=True, rotary_percent=0.5
+        )
         config_full = self._make_config(is_swa_layer=True, rotary_percent=1.0)
 
         paddle.manual_seed(42)
@@ -1735,10 +1890,18 @@ class TestSWAComputationalCorrectness(unittest.TestCase):
 
         seq_len, batch_size = 16, 2
         paddle.manual_seed(123)
-        hidden_states = paddle.randn((batch_size, seq_len, config_partial.hidden_size)).cuda().cast(paddle.bfloat16)
+        hidden_states = (
+            paddle.randn((batch_size, seq_len, config_partial.hidden_size))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
 
-        swa_rotary_partial = paddle.randn((1, seq_len, 1, 64)).cuda().cast(paddle.bfloat16)
-        swa_rotary_full = paddle.randn((1, seq_len, 1, 128)).cuda().cast(paddle.bfloat16)
+        swa_rotary_partial = (
+            paddle.randn((1, seq_len, 1, 64)).cuda().cast(paddle.bfloat16)
+        )
+        swa_rotary_full = (
+            paddle.randn((1, seq_len, 1, 128)).cuda().cast(paddle.bfloat16)
+        )
         startend = (
             paddle.arange(1, seq_len + 1, dtype=paddle.int32)
             .reshape([1, 1, seq_len, 1])
@@ -1773,11 +1936,19 @@ class TestSWAComputationalCorrectness(unittest.TestCase):
         attn.bfloat16()
 
         seq_len, batch_size = 16, 2
-        hidden_states = paddle.randn((batch_size, seq_len, config.hidden_size)).cuda().cast(paddle.bfloat16)
+        hidden_states = (
+            paddle.randn((batch_size, seq_len, config.hidden_size))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
 
         rope_dim = int(config.swa_head_dim * config.rotary_percent)  # 64
-        zero_rotary = paddle.zeros((1, seq_len, 1, rope_dim)).cuda().cast(paddle.bfloat16)
-        nonzero_rotary = paddle.randn((1, seq_len, 1, rope_dim)).cuda().cast(paddle.bfloat16)
+        zero_rotary = (
+            paddle.zeros((1, seq_len, 1, rope_dim)).cuda().cast(paddle.bfloat16)
+        )
+        nonzero_rotary = (
+            paddle.randn((1, seq_len, 1, rope_dim)).cuda().cast(paddle.bfloat16)
+        )
         startend = (
             paddle.arange(1, seq_len + 1, dtype=paddle.int32)
             .reshape([1, 1, seq_len, 1])
@@ -1815,9 +1986,13 @@ class TestSWAComputationalCorrectness(unittest.TestCase):
         # Simulate causal mask: start at position 0 for all (full attention)
         # After SWA, start should be clipped to max(0, pos - window_size + 1)
         # represented as LTS: min(original_LTS, pos + window_size)
-        original_indices = paddle.arange(0, seq, dtype=paddle.int32).reshape([bsz, 1, seq, 1])
+        original_indices = paddle.arange(0, seq, dtype=paddle.int32).reshape(
+            [bsz, 1, seq, 1]
+        )
 
-        result = startend_row_indices_add_sliding_window(original_indices, (window_size, 0), 0.0, kv_num_heads)
+        result = startend_row_indices_add_sliding_window(
+            original_indices, (window_size, 0), 0.0, kv_num_heads
+        )
 
         # LTS_SWA = [3, 4, 5, 6, 7, 8, 9, 10]
         # original = [0, 1, 2, 3, 4, 5, 6, 7]
@@ -1830,8 +2005,12 @@ class TestSWAComputationalCorrectness(unittest.TestCase):
 
         # Now test with larger original indices (e.g., full attention LTS = seq)
         # original_indices = [8, 8, 8, 8, 8, 8, 8, 8] (all attending from start)
-        full_attn_indices = paddle.ones([bsz, 1, seq, 1], dtype=paddle.int32) * seq
-        result2 = startend_row_indices_add_sliding_window(full_attn_indices, (window_size, 0), 0.0, kv_num_heads)
+        full_attn_indices = (
+            paddle.ones([bsz, 1, seq, 1], dtype=paddle.int32) * seq
+        )
+        result2 = startend_row_indices_add_sliding_window(
+            full_attn_indices, (window_size, 0), 0.0, kv_num_heads
+        )
 
         # LTS_SWA = [3, 4, 5, 6, 7, 8, 9, 10]
         # original = [8, 8, 8, 8, 8, 8, 8, 8]
@@ -1846,7 +2025,9 @@ class TestSWAComputationalCorrectness(unittest.TestCase):
         # pos 5: where(8 < 8) → False → LTS_SWA=8
         # pos 6: where(8 < 9) → True → original=8
         # pos 7: where(8 < 10) → True → original=8
-        expected2 = paddle.to_tensor([3, 4, 5, 6, 7, 8, 8, 8], dtype=paddle.int32).reshape([bsz, 1, seq, 1])
+        expected2 = paddle.to_tensor(
+            [3, 4, 5, 6, 7, 8, 8, 8], dtype=paddle.int32
+        ).reshape([bsz, 1, seq, 1])
         self.assertTrue(
             paddle.equal_all(result2, expected2).item(),
             f"Expected {expected2.numpy().flatten()}, got {result2.numpy().flatten()}",
@@ -1866,9 +2047,13 @@ class TestSWAComputationalCorrectness(unittest.TestCase):
         head_wise_swa_ratio = 0.5
 
         # All heads initially have large LTS values (full attention)
-        original = paddle.ones([bsz, kv_num_heads, seq, 1], dtype=paddle.int32) * 1000
+        original = (
+            paddle.ones([bsz, kv_num_heads, seq, 1], dtype=paddle.int32) * 1000
+        )
 
-        result = startend_row_indices_add_sliding_window(original, (window_size, 0), head_wise_swa_ratio, kv_num_heads)
+        result = startend_row_indices_add_sliding_window(
+            original, (window_size, 0), head_wise_swa_ratio, kv_num_heads
+        )
 
         # non-SWA heads (first 2) should keep original values
         non_swa_heads = result[:, :2, :, :]
@@ -1926,7 +2111,9 @@ class TestSWAComputationalCorrectness(unittest.TestCase):
         config.rotary_interleaved = False
         config.multi_latent_attention = False
         config.init_method = init_method_normal(0.02)
-        config.output_layer_init_method = scaled_init_method_normal(0.02, 1, 2.0)
+        config.output_layer_init_method = scaled_init_method_normal(
+            0.02, 1, 2.0
+        )
         config.rms_norm_eps = 1e-5
         config.context_parallel_size = 1
         config.apply_query_key_layer_scaling = False
@@ -1942,22 +2129,38 @@ class TestSWAComputationalCorrectness(unittest.TestCase):
         config.add_swa_attention_sink_bias = False
 
         # MTP layer with layer_number=0 → for_swa_layer_number = 0 + 4 = 4 → pattern[4]=1 → SWA
-        attn_mtp = self._build_attn(config, layer_number=0, is_mtp_layer=True).cuda()
+        attn_mtp = self._build_attn(
+            config, layer_number=0, is_mtp_layer=True
+        ).cuda()
         attn_mtp.bfloat16()
 
         self.assertTrue(attn_mtp.is_swa)
 
         # Non-MTP layer with layer_number=0 → for_swa = 0 - 0 = 0 → pattern[0]=0 → NOT SWA
-        attn_normal = self._build_attn(config, layer_number=0, is_mtp_layer=False).cuda()
+        attn_normal = self._build_attn(
+            config, layer_number=0, is_mtp_layer=False
+        ).cuda()
         attn_normal.bfloat16()
 
         self.assertFalse(attn_normal.is_swa)
 
         # Verify they produce different outputs with swa_rotary
         seq_len, batch_size = 16, 2
-        hidden_states = paddle.randn((batch_size, seq_len, config.hidden_size)).cuda().cast(paddle.bfloat16)
-        swa_rotary = paddle.randn((1, seq_len, 1, config.swa_head_dim)).cuda().cast(paddle.bfloat16)
-        rotary = paddle.randn((1, seq_len, 1, config.head_dim)).cuda().cast(paddle.bfloat16)
+        hidden_states = (
+            paddle.randn((batch_size, seq_len, config.hidden_size))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
+        swa_rotary = (
+            paddle.randn((1, seq_len, 1, config.swa_head_dim))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
+        rotary = (
+            paddle.randn((1, seq_len, 1, config.head_dim))
+            .cuda()
+            .cast(paddle.bfloat16)
+        )
         startend = (
             paddle.arange(1, seq_len + 1, dtype=paddle.int32)
             .reshape([1, 1, seq_len, 1])
@@ -2036,20 +2239,32 @@ class TestDotProductAttentionFlashMaskSWA(unittest.TestCase):
         )
         return attn
 
-    @patch("paddleformers.fleet.transformer.dot_product_attention.flashmask_attention")
+    @patch(
+        "paddleformers.fleet.transformer.dot_product_attention.flashmask_attention"
+    )
     def test_flashmask_path_applies_sliding_window(self, mock_fm):
         """Verify startend_row_indices_add_sliding_window is called when is_swa."""
         attn = self._make_swa_dot_product_attention()
 
         batch_size, seq_len, num_heads, head_dim = 2, 8, 4, 64
-        query = paddle.randn([batch_size, seq_len, num_heads, head_dim], dtype="bfloat16")
-        key = paddle.randn([batch_size, seq_len, num_heads, head_dim], dtype="bfloat16")
-        value = paddle.randn([batch_size, seq_len, num_heads, head_dim], dtype="bfloat16")
+        query = paddle.randn(
+            [batch_size, seq_len, num_heads, head_dim], dtype="bfloat16"
+        )
+        key = paddle.randn(
+            [batch_size, seq_len, num_heads, head_dim], dtype="bfloat16"
+        )
+        value = paddle.randn(
+            [batch_size, seq_len, num_heads, head_dim], dtype="bfloat16"
+        )
         # startend_row_indices: [bsz, 1, seq_len, 1] - LTS format
-        attn_mask_startend_row_indices = paddle.zeros([batch_size, 1, seq_len, 1], dtype="int32")
+        attn_mask_startend_row_indices = paddle.zeros(
+            [batch_size, 1, seq_len, 1], dtype="int32"
+        )
 
         # Mock flashmask_attention to return proper shape [b, s, h, d]
-        mock_fm.return_value = paddle.randn([batch_size, seq_len, num_heads, head_dim], dtype="bfloat16")
+        mock_fm.return_value = paddle.randn(
+            [batch_size, seq_len, num_heads, head_dim], dtype="bfloat16"
+        )
 
         output = attn(
             query,
@@ -2067,7 +2282,9 @@ class TestDotProductAttentionFlashMaskSWA(unittest.TestCase):
         passed_indices = call_kwargs[1]["startend_row_indices"]
         self.assertEqual(passed_indices.shape[1], num_heads)
         # Output shape: [batch, seq, hidden]
-        self.assertEqual(output.shape, [batch_size, seq_len, num_heads * head_dim])
+        self.assertEqual(
+            output.shape, [batch_size, seq_len, num_heads * head_dim]
+        )
 
 
 class TestGPTEmbeddingSWA(unittest.TestCase):
@@ -2103,7 +2320,9 @@ class TestGPTEmbeddingSWA(unittest.TestCase):
             swa_num_key_value_heads=4,
         )
         config.init_method = init_method_normal(0.02)
-        config.output_layer_init_method = scaled_init_method_normal(0.02, 1, 2.0)
+        config.output_layer_init_method = scaled_init_method_normal(
+            0.02, 1, 2.0
+        )
         config.apply_rope_fusion = False
         config.sequence_parallel = False
         config.multimodal_embedding = False
@@ -2138,13 +2357,19 @@ class TestGPTEmbeddingSWA(unittest.TestCase):
         with w.catch_warnings(record=True) as caught:
             w.simplefilter("always")
             emb, _ = self._make_swa_embedding(window_attn_skip_freq=None)
-            swa_warnings = [x for x in caught if "window_attn_skip_freq is None" in str(x.message)]
+            swa_warnings = [
+                x
+                for x in caught
+                if "window_attn_skip_freq is None" in str(x.message)
+            ]
             self.assertGreater(len(swa_warnings), 0)
         self.assertIsNotNone(emb.swa_rotary_pos_emb)
 
     def test_swa_rotary_forward_produces_swa_emb(self):
         """Forward pass with SWA should produce swa_rotary_pos_emb in output."""
-        emb, config = self._make_swa_embedding(window_attn_skip_freq=[1, 0, 1, 0])
+        emb, config = self._make_swa_embedding(
+            window_attn_skip_freq=[1, 0, 1, 0]
+        )
 
         batch_size, seq_len = 2, 16
         input_ids = paddle.randint(0, 1000, [batch_size, seq_len])
@@ -2162,7 +2387,9 @@ class TestGPTEmbeddingSWA(unittest.TestCase):
 
     def test_swa_rotary_forward_with_rope_fusion(self):
         """Forward with apply_rope_fusion should produce swa cos/sin."""
-        emb, config = self._make_swa_embedding(window_attn_skip_freq=[1, 0, 1, 0])
+        emb, config = self._make_swa_embedding(
+            window_attn_skip_freq=[1, 0, 1, 0]
+        )
         config.apply_rope_fusion = True
 
         batch_size, seq_len = 2, 16

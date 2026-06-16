@@ -29,7 +29,9 @@ from paddleformers.fleet.transformer.attention import (
     SelfAttentionVHA,
     SelfAttentionVHASublayersSpec,
 )
-from paddleformers.fleet.transformer.dot_product_attention import DotProductAttention
+from paddleformers.fleet.transformer.dot_product_attention import (
+    DotProductAttention,
+)
 from paddleformers.fleet.transformer.enums import AttnMaskType
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 from paddleformers.fleet.transformer.utils import (
@@ -37,7 +39,10 @@ from paddleformers.fleet.transformer.utils import (
     get_doc_starts,
     startend_row_indices_add_sliding_window,
 )
-from paddleformers.fleet.utils import init_method_normal, scaled_init_method_normal
+from paddleformers.fleet.utils import (
+    init_method_normal,
+    scaled_init_method_normal,
+)
 
 strategy = paddle.distributed.fleet.DistributedStrategy()
 initialize_fleet(strategy=strategy)
@@ -92,7 +97,9 @@ class TestSelfAttentionVHA(unittest.TestCase):
         config.rotary_interleaved = False
         config.multi_latent_attention = False
         config.init_method = init_method_normal(0.02)
-        config.output_layer_init_method = scaled_init_method_normal(0.02, 1, 2.0)
+        config.output_layer_init_method = scaled_init_method_normal(
+            0.02, 1, 2.0
+        )
         config.rms_norm_eps = 1e-5
         config.context_parallel_size = 1
         config.apply_query_key_layer_scaling = False
@@ -195,7 +202,9 @@ class TestSelfAttentionVHA(unittest.TestCase):
         attn = self._build_vha(config)
         hidden = paddle.randn([2, 16, 256])
         rotary_pos_emb = paddle.randn([1, 16, 1, 32])
-        output, bias = attn(hidden, attention_mask=None, rotary_pos_emb=rotary_pos_emb)
+        output, bias = attn(
+            hidden, attention_mask=None, rotary_pos_emb=rotary_pos_emb
+        )
         self.assertEqual(list(output.shape), [2, 16, 256])
 
     def test_backward_gradients(self):
@@ -204,7 +213,9 @@ class TestSelfAttentionVHA(unittest.TestCase):
         hidden = paddle.randn([2, 16, 256])
         hidden.stop_gradient = False
         rotary_pos_emb = paddle.randn([1, 16, 1, 32])
-        output, bias = attn(hidden, attention_mask=None, rotary_pos_emb=rotary_pos_emb)
+        output, bias = attn(
+            hidden, attention_mask=None, rotary_pos_emb=rotary_pos_emb
+        )
         loss = output.sum()
         loss.backward()
         self.assertIsNotNone(hidden.grad)
@@ -355,7 +366,9 @@ class TestSelfAttentionExperimentalVersion(unittest.TestCase):
         config.rotary_interleaved = False
         config.multi_latent_attention = False
         config.init_method = init_method_normal(0.02)
-        config.output_layer_init_method = scaled_init_method_normal(0.02, 1, 2.0)
+        config.output_layer_init_method = scaled_init_method_normal(
+            0.02, 1, 2.0
+        )
         config.rms_norm_eps = 1e-5
         config.context_parallel_size = 1
         config.apply_query_key_layer_scaling = False
@@ -524,12 +537,16 @@ class TestDocMaskUtils(unittest.TestCase):
     """Tests for get_doc_lens and get_doc_starts."""
 
     def test_get_doc_lens_single_doc(self):
-        mask = paddle.to_tensor([4, 4, 4, 4], dtype=paddle.int32).reshape([1, 1, 4, 1])
+        mask = paddle.to_tensor([4, 4, 4, 4], dtype=paddle.int32).reshape(
+            [1, 1, 4, 1]
+        )
         doc_lens = get_doc_lens(mask)
         self.assertEqual(doc_lens.numpy().tolist(), [4])
 
     def test_get_doc_lens_multi_doc(self):
-        mask = paddle.to_tensor([3, 3, 3, 6, 6, 6], dtype=paddle.int32).reshape([1, 1, 6, 1])
+        mask = paddle.to_tensor([3, 3, 3, 6, 6, 6], dtype=paddle.int32).reshape(
+            [1, 1, 6, 1]
+        )
         doc_lens = get_doc_lens(mask)
         self.assertEqual(doc_lens.numpy().tolist(), [3, 3])
 
@@ -551,7 +568,9 @@ class TestStartendRowIndicesNumVec2(unittest.TestCase):
         bsz, seq, kv_num_heads = 1, 8, 2
         window_size = 3
         indices = paddle.ones([bsz, 1, seq, 2], dtype=paddle.int32) * 10000
-        result = startend_row_indices_add_sliding_window(indices, (window_size, 0), 0.0, kv_num_heads)
+        result = startend_row_indices_add_sliding_window(
+            indices, (window_size, 0), 0.0, kv_num_heads
+        )
         self.assertEqual(result.shape[-1], 2)
         self.assertEqual(result.shape[1], kv_num_heads)
 

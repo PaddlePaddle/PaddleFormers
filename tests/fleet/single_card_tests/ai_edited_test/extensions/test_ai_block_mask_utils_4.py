@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -38,7 +42,9 @@ from unittest.mock import MagicMock
 def _setup_triton_mock():
     """Create a mock triton module so we can import without GPU."""
     triton_mock = types.ModuleType("triton")
-    triton_mock.jit = lambda fn=None, **kwargs: ((lambda f: f) if fn is None else fn)
+    triton_mock.jit = lambda fn=None, **kwargs: (
+        (lambda f: f) if fn is None else fn
+    )
     triton_mock.language = types.ModuleType("triton.language")
     triton_mock.language.constexpr = None
     tl = triton_mock.language
@@ -90,7 +96,9 @@ class TestBlockMaskUtilsKernels(unittest.TestCase):
 
     def test_load_bounds_callable(self):
         """Test _load_bounds kernel is callable."""
-        from paddlefleet_ops._extensions.flashmask.block_mask_utils import _load_bounds
+        from paddlefleet_ops._extensions.flashmask.block_mask_utils import (
+            _load_bounds,
+        )
 
         self.assertTrue(callable(_load_bounds))
 
@@ -152,7 +160,9 @@ class TestBlockMaskUtilsKernels(unittest.TestCase):
 
     def test_top_p_kernel_callable(self):
         """Test top_p_kernel is callable."""
-        from paddlefleet_ops._extensions.flashmask.block_mask_utils import top_p_kernel
+        from paddlefleet_ops._extensions.flashmask.block_mask_utils import (
+            top_p_kernel,
+        )
 
         self.assertTrue(callable(top_p_kernel))
 

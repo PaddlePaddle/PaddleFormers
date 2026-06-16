@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -24,7 +28,10 @@ from unittest.mock import MagicMock
 
 import paddle
 
-from paddleformers.fleet.transformer.moe.moe_expert import BMMFunction, GroupedMLPExpert
+from paddleformers.fleet.transformer.moe.moe_expert import (
+    BMMFunction,
+    GroupedMLPExpert,
+)
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 
 

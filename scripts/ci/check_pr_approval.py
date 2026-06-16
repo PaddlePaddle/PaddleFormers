@@ -40,7 +40,8 @@ def check_approval(count, required_reviewers):
             required_reviewers_login.add(rr)
 
     if (
-        len(set(approved_user_ids) & required_reviewers_int) + len(approved_user_logins & required_reviewers_login)
+        len(set(approved_user_ids) & required_reviewers_int)
+        + len(approved_user_logins & required_reviewers_login)
         >= count
     ):
         print("TRUE")
@@ -52,4 +53,6 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1].isdigit():
         check_approval(int(sys.argv[1]), sys.argv[2:])
     else:
-        print("Usage: python check_pr_approval.py [count] [required reviewer id] ...")
+        print(
+            "Usage: python check_pr_approval.py [count] [required reviewer id] ..."
+        )

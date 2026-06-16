@@ -50,15 +50,23 @@ def _set_random_seed(
     """Set random seed for reproducibility."""
     if seed_ is not None and seed_ > 0:
         # Ensure that different pipeline MP stages get different seeds.
-        seed = seed_ + (100 * paddleformers.fleet.parallel_state.get_pipeline_model_parallel_rank())
+        seed = seed_ + (
+            100
+            * paddleformers.fleet.parallel_state.get_pipeline_model_parallel_rank()
+        )
         # Ensure different data parallel ranks get different seeds
         if data_parallel_random_init:
-            seed = seed + (10 * paddleformers.fleet.parallel_state.get_data_parallel_rank())
+            seed = seed + (
+                10 * paddleformers.fleet.parallel_state.get_data_parallel_rank()
+            )
         random.seed(seed)
         np.random.seed(seed)
         paddle.manual_seed(seed)
 
-        if paddle.distributed.is_initialized() and paddle.cuda.device_count() > 0:
+        if (
+            paddle.distributed.is_initialized()
+            and paddle.cuda.device_count() > 0
+        ):
             paddleformers.fleet.tensor_parallel.model_parallel_cuda_manual_seed(
                 seed,
                 te_rng_tracker,
@@ -82,11 +90,18 @@ def check_grads(dist_model, serial_model, tp_group):
     for name, p in dist_model.named_parameters():
         if "qkv_proj.weight" in name or "up_gate_proj.weight" in name:
             grad = _gather_along_last_dim(p.grad, tp_group)
-        elif "o_proj.weight" in name or "down_proj.weight" in name or "embed_tokens.weight" in name:
+        elif (
+            "o_proj.weight" in name
+            or "down_proj.weight" in name
+            or "embed_tokens.weight" in name
+        ):
             grad = _gather_along_first_dim(p.grad, tp_group)
         else:
             grad = p.grad
-        assert paddle.allclose(grad, serial_grads[name], atol=5e-8) and cal_sim(grad, serial_grads[name]) > 0.999
+        assert (
+            paddle.allclose(grad, serial_grads[name], atol=5e-8)
+            and cal_sim(grad, serial_grads[name]) > 0.999
+        )
 
 
 def single_device_baseline(seed, batch_size, seq_len, vocab_size, config):
@@ -98,10 +113,16 @@ def single_device_baseline(seed, batch_size, seq_len, vocab_size, config):
     gpt_model = gpt_builder(config, num_stages=1)
 
     paddle.manual_seed(seed)
-    data = paddle.randint(low=0, high=vocab_size, shape=(batch_size, seq_len + 1))
+    data = paddle.randint(
+        low=0, high=vocab_size, shape=(batch_size, seq_len + 1)
+    )
     input_ids = data[:, :-1]
     labels = data[:, 1:]
-    position_ids = paddle.arange(seq_len, dtype=paddle.int64).unsqueeze(0).expand([batch_size, -1])
+    position_ids = (
+        paddle.arange(seq_len, dtype=paddle.int64)
+        .unsqueeze(0)
+        .expand([batch_size, -1])
+    )
 
     strategy = fleet.DistributedStrategy()
     gpt_pipe_model = NoPipelineParallel(gpt_model, strategy)
@@ -157,10 +178,16 @@ def run_tp_sp(
     register_sequence_parallel_allreduce_hooks(gpt_model, 1, False)
 
     paddle.manual_seed(seed)
-    data = paddle.randint(low=0, high=vocab_size, shape=(batch_size, seq_len + 1))
+    data = paddle.randint(
+        low=0, high=vocab_size, shape=(batch_size, seq_len + 1)
+    )
     input_ids = data[:, :-1]
     labels = data[:, 1:]
-    position_ids = paddle.arange(seq_len, dtype=paddle.int64).unsqueeze(0).expand([batch_size, -1])
+    position_ids = (
+        paddle.arange(seq_len, dtype=paddle.int64)
+        .unsqueeze(0)
+        .expand([batch_size, -1])
+    )
 
     tp_group = ps.get_tensor_model_parallel_group()
 
@@ -176,11 +203,13 @@ def run_tp_sp(
     loss = gpt_pipe_model.forward_backward_pipeline(inputs)
 
     is_within_range = (
-        lambda loss, loss_baseline: False if loss_baseline == 0 else abs(loss - loss_baseline) / loss_baseline <= 0.015
+        lambda loss, loss_baseline: False
+        if loss_baseline == 0
+        else abs(loss - loss_baseline) / loss_baseline <= 0.015
     )
-    assert is_within_range(
-        loss, loss_baseline
-    ), f"TP-SP Loss: {loss}, Baseline Loss: {loss_baseline}, Diff: {abs(loss - loss_baseline) / loss_baseline * 100:.2f}%, The difference is out of the tolerance range 1.5%."
+    assert is_within_range(loss, loss_baseline), (
+        f"TP-SP Loss: {loss}, Baseline Loss: {loss_baseline}, Diff: {abs(loss - loss_baseline) / loss_baseline * 100:.2f}%, The difference is out of the tolerance range 1.5%."
+    )
 
     # check_grads(gpt_pipe_model, gpt_model_baseline, tp_group)
 
@@ -216,11 +245,17 @@ class TestTPSP(unittest.TestCase):
             rotary_percent=1.0,
             rotary_base=10000,
             rope_scaling=1.0,
-            init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-            output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+            init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
+            output_layer_init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
             use_qk_norm=True,
         )
-        loss, gpt_model = single_device_baseline(self.seed, self.batch_size, self.seq_len, self.vocab_size, config)
+        loss, gpt_model = single_device_baseline(
+            self.seed, self.batch_size, self.seq_len, self.vocab_size, config
+        )
 
         dist_config = GPTConfig(
             moe_expert_fusion=False,
@@ -247,8 +282,12 @@ class TestTPSP(unittest.TestCase):
             rotary_percent=1.0,
             rotary_base=10000,
             rope_scaling=1.0,
-            init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-            output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+            init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
+            output_layer_init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
             use_qk_norm=True,
         )
         run_tp_sp(

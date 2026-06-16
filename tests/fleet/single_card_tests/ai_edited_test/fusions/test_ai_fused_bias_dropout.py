@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -87,7 +91,9 @@ class TestBiasDropoutAddFunc(unittest.TestCase):
 
     def test_get_bias_dropout_add(self):
         """Test get_bias_dropout_add returns callable."""
-        from paddleformers.fleet.fusions.fused_bias_dropout import get_bias_dropout_add
+        from paddleformers.fleet.fusions.fused_bias_dropout import (
+            get_bias_dropout_add,
+        )
 
         func = get_bias_dropout_add(True, fused=True)
         self.assertTrue(callable(func))

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -30,7 +34,9 @@ from unittest.mock import MagicMock, patch
 def _setup_triton_mock():
     """Create a mock triton module so we can import without GPU."""
     triton_mock = types.ModuleType("triton")
-    triton_mock.jit = lambda fn=None, **kwargs: ((lambda f: f) if fn is None else fn)
+    triton_mock.jit = lambda fn=None, **kwargs: (
+        (lambda f: f) if fn is None else fn
+    )
     triton_mock.language = types.ModuleType("triton.language")
     triton_mock.language.constexpr = None
     tl = triton_mock.language
@@ -59,7 +65,9 @@ class TestIsPackageInstalled(unittest.TestCase):
 
     def test_installed_package(self):
         """Test _is_package_installed returns True for installed packages."""
-        from paddleformers.fleet.triton_ops.triton_compat import _is_package_installed
+        from paddleformers.fleet.triton_ops.triton_compat import (
+            _is_package_installed,
+        )
 
         # paddle should always be installed
         result = _is_package_installed("paddle")
@@ -67,14 +75,20 @@ class TestIsPackageInstalled(unittest.TestCase):
 
     def test_not_installed_package(self):
         """Test _is_package_installed returns False for non-existent packages."""
-        from paddleformers.fleet.triton_ops.triton_compat import _is_package_installed
+        from paddleformers.fleet.triton_ops.triton_compat import (
+            _is_package_installed,
+        )
 
-        result = _is_package_installed("this_package_definitely_does_not_exist_12345")
+        result = _is_package_installed(
+            "this_package_definitely_does_not_exist_12345"
+        )
         self.assertFalse(result)
 
     def test_cached_result(self):
         """Test _is_package_installed caches results (returns same value)."""
-        from paddleformers.fleet.triton_ops.triton_compat import _is_package_installed
+        from paddleformers.fleet.triton_ops.triton_compat import (
+            _is_package_installed,
+        )
 
         result1 = _is_package_installed("paddle")
         result2 = _is_package_installed("paddle")
@@ -87,7 +101,9 @@ class TestSwapDriverGuard(unittest.TestCase):
 
     def test_swap_driver_guard_wraps_function(self):
         """Test _swap_driver_guard returns a wrapper function."""
-        from paddleformers.fleet.triton_ops.triton_compat import _swap_driver_guard
+        from paddleformers.fleet.triton_ops.triton_compat import (
+            _swap_driver_guard,
+        )
 
         def dummy_fn():
             return 42
@@ -97,7 +113,9 @@ class TestSwapDriverGuard(unittest.TestCase):
 
     def test_swap_driver_guard_preserves_return(self):
         """Test _swap_driver_guard preserves function return value."""
-        from paddleformers.fleet.triton_ops.triton_compat import _swap_driver_guard
+        from paddleformers.fleet.triton_ops.triton_compat import (
+            _swap_driver_guard,
+        )
 
         # Mock the triton driver to avoid ImportError
         mock_driver = MagicMock()
@@ -197,7 +215,9 @@ class TestModuleStructure(unittest.TestCase):
 
     def test_is_package_installed_is_cached(self):
         """Test _is_package_installed is cached (has __wrapped__)."""
-        from paddleformers.fleet.triton_ops.triton_compat import _is_package_installed
+        from paddleformers.fleet.triton_ops.triton_compat import (
+            _is_package_installed,
+        )
 
         # functools.cache wraps the function
         self.assertTrue(callable(_is_package_installed))

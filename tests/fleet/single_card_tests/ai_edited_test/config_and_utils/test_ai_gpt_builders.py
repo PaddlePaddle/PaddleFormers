@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -29,7 +33,9 @@ class TestGptBuilder(unittest.TestCase):
     """Tests for gpt_builder and _get_transformer_layer_spec_func in paddleformers.fleet.gpt_builders."""
 
     def test_get_transformer_layer_spec_func_returns_partial(self):
-        from paddleformers.fleet.gpt_builders import _get_transformer_layer_spec_func
+        from paddleformers.fleet.gpt_builders import (
+            _get_transformer_layer_spec_func,
+        )
 
         mock_config = MagicMock()
         mock_config.use_qk_norm = False
@@ -41,7 +47,9 @@ class TestGptBuilder(unittest.TestCase):
         self.assertIsInstance(func, partial)
 
     def test_get_transformer_layer_spec_func_mla(self):
-        from paddleformers.fleet.gpt_builders import _get_transformer_layer_spec_func
+        from paddleformers.fleet.gpt_builders import (
+            _get_transformer_layer_spec_func,
+        )
 
         mock_config = MagicMock()
         mock_config.use_qk_norm = True
@@ -53,7 +61,9 @@ class TestGptBuilder(unittest.TestCase):
         self.assertIsInstance(func, partial)
 
     def test_get_transformer_layer_spec_func_with_experts(self):
-        from paddleformers.fleet.gpt_builders import _get_transformer_layer_spec_func
+        from paddleformers.fleet.gpt_builders import (
+            _get_transformer_layer_spec_func,
+        )
 
         mock_config = MagicMock()
         mock_config.use_qk_norm = False
@@ -91,9 +101,15 @@ class TestGptBuilder(unittest.TestCase):
         mock_loss = MagicMock()
 
         with (
-            patch("paddleformers.fleet.gpt_builders.get_gpt_spec") as mock_get_spec,
-            patch("paddleformers.fleet.gpt_builders.build_spec_layer") as mock_build,
-            patch("paddleformers.fleet.gpt_builders.get_gpt_layer_local_spec") as mock_layer_spec,
+            patch(
+                "paddleformers.fleet.gpt_builders.get_gpt_spec"
+            ) as mock_get_spec,
+            patch(
+                "paddleformers.fleet.gpt_builders.build_spec_layer"
+            ) as mock_build,
+            patch(
+                "paddleformers.fleet.gpt_builders.get_gpt_layer_local_spec"
+            ) as mock_layer_spec,
         ):
             mock_layer_spec.return_value = MagicMock()
             mock_build.return_value = MagicMock()
@@ -125,9 +141,15 @@ class TestGptBuilder(unittest.TestCase):
         mock_loss = MagicMock()
 
         with (
-            patch("paddleformers.fleet.gpt_builders.get_gpt_spec") as mock_get_spec,
-            patch("paddleformers.fleet.gpt_builders.build_spec_layer") as mock_build,
-            patch("paddleformers.fleet.gpt_builders.get_gpt_decoder_layers_spec") as mock_decoder,
+            patch(
+                "paddleformers.fleet.gpt_builders.get_gpt_spec"
+            ) as mock_get_spec,
+            patch(
+                "paddleformers.fleet.gpt_builders.build_spec_layer"
+            ) as mock_build,
+            patch(
+                "paddleformers.fleet.gpt_builders.get_gpt_decoder_layers_spec"
+            ) as mock_decoder,
         ):
             mock_decoder.return_value = [MagicMock()]
             mock_build.return_value = MagicMock()
@@ -160,10 +182,18 @@ class TestGptBuilder(unittest.TestCase):
         mock_config.separate_mtp_headloss = False
 
         with (
-            patch("paddleformers.fleet.gpt_builders.get_gpt_spec") as mock_get_spec,
-            patch("paddleformers.fleet.gpt_builders.build_spec_layer") as mock_build,
-            patch("paddleformers.fleet.gpt_builders.get_gpt_layer_local_spec") as mock_layer_spec,
-            patch("paddleformers.fleet.gpt_builders.LanguageLoss") as mock_loss_cls,
+            patch(
+                "paddleformers.fleet.gpt_builders.get_gpt_spec"
+            ) as mock_get_spec,
+            patch(
+                "paddleformers.fleet.gpt_builders.build_spec_layer"
+            ) as mock_build,
+            patch(
+                "paddleformers.fleet.gpt_builders.get_gpt_layer_local_spec"
+            ) as mock_layer_spec,
+            patch(
+                "paddleformers.fleet.gpt_builders.LanguageLoss"
+            ) as mock_loss_cls,
         ):
             mock_layer_spec.return_value = MagicMock()
             mock_loss_instance = MagicMock()

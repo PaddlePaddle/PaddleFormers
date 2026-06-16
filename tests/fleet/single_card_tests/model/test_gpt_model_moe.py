@@ -34,7 +34,9 @@ from paddleformers.fleet.models.gpt import GPTConfig
 
 def get_gpu_models_via_nvidia_smi():
     try:
-        output = subprocess.check_output("nvidia-smi --query-gpu=name --format=csv,noheader", shell=True)
+        output = subprocess.check_output(
+            "nvidia-smi --query-gpu=name --format=csv,noheader", shell=True
+        )
         models = output.decode().strip().replace("NVIDIA", "")
         return models
     except Exception as e:
@@ -108,8 +110,12 @@ class TestGPTModel(unittest.TestCase):
             moe_intermediate_size=1024,
             moe_token_dispatcher_type="alltoall",
             n_shared_experts=1,
-            init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-            output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+            init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
+            output_layer_init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
             tie_word_embeddings=True,
             use_qk_norm=True,
         )
@@ -127,12 +133,18 @@ class TestGPTModel(unittest.TestCase):
             print(f"{name}: {param_norm:.6f}, {param_abssum:.6f}")
 
         data = list(range(sequence_length))
-        input_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat((micro_batch_size, 1))
-        position_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat((micro_batch_size, 1))
-        attention_mask = paddle.ones((micro_batch_size, 1, sequence_length, sequence_length), dtype=bool)
-        labels = paddle.to_tensor(list(range(1, sequence_length + 1)), dtype=paddle.int64).repeat(
+        input_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat(
             (micro_batch_size, 1)
         )
+        position_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat(
+            (micro_batch_size, 1)
+        )
+        attention_mask = paddle.ones(
+            (micro_batch_size, 1, sequence_length, sequence_length), dtype=bool
+        )
+        labels = paddle.to_tensor(
+            list(range(1, sequence_length + 1)), dtype=paddle.int64
+        ).repeat((micro_batch_size, 1))
 
         data = (
             {
@@ -163,19 +175,19 @@ class TestGPTModel(unittest.TestCase):
 
         repo_name = os.environ.get("repo_flag")
         if judge_machine_type() == "H":
-            assert (
-                loss.item() == 5.295381546020508
-            ), f"loss not equal ({loss.item()} != 5.295381546020508), please check your modify"
-            assert (
-                embed_tokens_grad_norm == 5.6999006271362305
-            ), f"grad norm of embed_tokens not equal ({embed_tokens_grad_norm} != 5.6999006271362305), please check your modify"
+            assert loss.item() == 5.295381546020508, (
+                f"loss not equal ({loss.item()} != 5.295381546020508), please check your modify"
+            )
+            assert embed_tokens_grad_norm == 5.6999006271362305, (
+                f"grad norm of embed_tokens not equal ({embed_tokens_grad_norm} != 5.6999006271362305), please check your modify"
+            )
         elif judge_machine_type() == "V":
-            assert (
-                loss.item() == 5.284281253814697
-            ), f"loss not equal ({loss.item()} != 5.284281253814697), please check your modify"
-            assert (
-                embed_tokens_grad_norm == 9.912039756774902
-            ), f"grad norm of embed_tokens not equal ({embed_tokens_grad_norm} != 9.912039756774902, please check your modify"
+            assert loss.item() == 5.284281253814697, (
+                f"loss not equal ({loss.item()} != 5.284281253814697), please check your modify"
+            )
+            assert embed_tokens_grad_norm == 9.912039756774902, (
+                f"grad norm of embed_tokens not equal ({embed_tokens_grad_norm} != 9.912039756774902, please check your modify"
+            )
 
 
 if __name__ == "__main__":

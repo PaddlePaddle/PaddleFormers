@@ -63,7 +63,9 @@ class TestFP8SimulateQAT(unittest.TestCase):
         y_ref = fp8_simulate(x, self.block_size)
         print_io("test_forward_matches (qat)", x, y_qat)
         print_io("test_forward_matches (ref)", x, y_ref)
-        np.testing.assert_allclose(y_qat.numpy(), y_ref.numpy(), rtol=1e-5, atol=1e-5)
+        np.testing.assert_allclose(
+            y_qat.numpy(), y_ref.numpy(), rtol=1e-5, atol=1e-5
+        )
 
     def test_quantization_error_bounded(self):
         """Quantization error should be bounded (not too large)."""
@@ -83,7 +85,9 @@ class TestFP8SimulateQAT(unittest.TestCase):
         loss = y.sum()
         loss.backward()
         print(f"  Grad (first 8): {x.grad.numpy().flatten()[:8]}")
-        np.testing.assert_allclose(x.grad.numpy(), np.ones_like(x.grad.numpy()), rtol=1e-5, atol=1e-5)
+        np.testing.assert_allclose(
+            x.grad.numpy(), np.ones_like(x.grad.numpy()), rtol=1e-5, atol=1e-5
+        )
 
     def test_different_block_sizes(self):
         """Should work with different block sizes."""
@@ -105,7 +109,9 @@ class TestFP8SimulateQAT(unittest.TestCase):
         """act_quant with inplace=True."""
         x = paddle.randn([2, 256]).astype("bfloat16")
         x_clone = x.clone()
-        result = act_quant(x_clone, block_size=128, scale_fmt="ue8m0", inplace=True)
+        result = act_quant(
+            x_clone, block_size=128, scale_fmt="ue8m0", inplace=True
+        )
         # inplace returns the input tensor modified
         self.assertEqual(result.shape, x.shape)
         self.assertEqual(result.dtype, x.dtype)
@@ -144,7 +150,11 @@ class TestFP8SimulateQAT(unittest.TestCase):
                 self.eps = 1e-5
 
             def forward(self, x):
-                return x * paddle.rsqrt(x.square().mean(-1, keepdim=True) + self.eps) * self.weight
+                return (
+                    x
+                    * paddle.rsqrt(x.square().mean(-1, keepdim=True) + self.eps)
+                    * self.weight
+                )
 
         head_dim = 128
         pos_dim = 64

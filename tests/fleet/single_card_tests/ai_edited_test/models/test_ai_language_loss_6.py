@@ -15,7 +15,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -34,7 +38,9 @@ class TestMTPLanguageLossForward(unittest.TestCase):
 
     def test_forward_requires_mtp_logits(self):
         """MTPLanguageLoss.forward should assert mtp_logits is provided."""
-        with patch.object(MTPLanguageLoss, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            MTPLanguageLoss, "__init__", lambda self, *a, **kw: None
+        ):
             loss = MTPLanguageLoss.__new__(MTPLanguageLoss)
             loss.config = MagicMock()
             loss.config.num_nextn_predict_layers = 2
@@ -51,7 +57,9 @@ class TestMTPLanguageLossForward(unittest.TestCase):
 
     def test_forward_requires_labels(self):
         """MTPLanguageLoss.forward should assert labels is provided."""
-        with patch.object(MTPLanguageLoss, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            MTPLanguageLoss, "__init__", lambda self, *a, **kw: None
+        ):
             loss = MTPLanguageLoss.__new__(MTPLanguageLoss)
             loss.config = MagicMock()
             loss.config.num_nextn_predict_layers = 2
@@ -59,7 +67,9 @@ class TestMTPLanguageLossForward(unittest.TestCase):
             loss.config.mtp_distillation_loss = False
 
             with self.assertRaises(AssertionError):
-                loss.forward({"mtp_logits": [MagicMock(), MagicMock()], "labels": None})
+                loss.forward(
+                    {"mtp_logits": [MagicMock(), MagicMock()], "labels": None}
+                )
 
 
 class TestMainLanguageLossForward(unittest.TestCase):
@@ -67,7 +77,9 @@ class TestMainLanguageLossForward(unittest.TestCase):
 
     def test_forward_requires_mtp_config(self):
         """MainLanguageLoss.forward should assert num_nextn_predict_layers > 0."""
-        with patch.object(MainLanguageLoss, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            MainLanguageLoss, "__init__", lambda self, *a, **kw: None
+        ):
             loss = MainLanguageLoss.__new__(MainLanguageLoss)
             loss.config = MagicMock()
             loss.config.num_nextn_predict_layers = 0
@@ -83,7 +95,9 @@ class TestMainLanguageLossBuildScheduleNode(unittest.TestCase):
         """build_schedule_node should return a ScheduleNode named 'MainLanguageLoss'."""
         from paddle.distributed.fleet.meta_parallel import ScheduleNode
 
-        with patch.object(MainLanguageLoss, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            MainLanguageLoss, "__init__", lambda self, *a, **kw: None
+        ):
             loss = MainLanguageLoss.__new__(MainLanguageLoss)
             loss.forward = MagicMock()
             node = loss.build_schedule_node()
@@ -97,7 +111,9 @@ class TestMTPLanguageLossBuildScheduleNode(unittest.TestCase):
         """build_schedule_node should return a ScheduleNode named 'MTPLanguageLoss'."""
         from paddle.distributed.fleet.meta_parallel import ScheduleNode
 
-        with patch.object(MTPLanguageLoss, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            MTPLanguageLoss, "__init__", lambda self, *a, **kw: None
+        ):
             loss = MTPLanguageLoss.__new__(MTPLanguageLoss)
             loss.forward = MagicMock()
             node = loss.build_schedule_node()

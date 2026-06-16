@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -131,7 +135,9 @@ class TestKimiK25VisionPathMerger(unittest.TestCase):
 
         # Mock pre_norm and proj
         merger.pre_norm = MagicMock(return_value=paddle.randn([2, 4, 64]))
-        merger.proj = MagicMock(return_value=(paddle.randn([2, 32]), paddle.randn([32])))
+        merger.proj = MagicMock(
+            return_value=(paddle.randn([2, 32]), paddle.randn([32]))
+        )
 
         dict_args = {
             "hidden_states": [

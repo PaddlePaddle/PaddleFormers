@@ -18,13 +18,18 @@ from unittest.mock import MagicMock
 import paddle
 import paddle.nn.functional as F
 
-from paddleformers.fleet.transformer.dot_product_attention import DotProductAttention
+from paddleformers.fleet.transformer.dot_product_attention import (
+    DotProductAttention,
+)
 from paddleformers.fleet.transformer.multi_latent_attention import (
     MLASelfAttention,
     MLASelfAttentionSublayersSpec,
 )
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
-from paddleformers.fleet.utils import init_method_normal, scaled_init_method_normal
+from paddleformers.fleet.utils import (
+    init_method_normal,
+    scaled_init_method_normal,
+)
 
 
 class BiasedLinear(paddle.nn.Layer):
@@ -117,7 +122,9 @@ def _make_sublayers_spec(gate_proj_cls=None):
 
 def _build_mla(gated_attention=False, **config_overrides):
     """Build an MLASelfAttention with or without gated attention."""
-    config = _make_mla_config(gated_attention=gated_attention, **config_overrides)
+    config = _make_mla_config(
+        gated_attention=gated_attention, **config_overrides
+    )
     gate_cls = BiasedLinear if gated_attention else None
     spec = _make_sublayers_spec(gate_proj_cls=gate_cls)
     attn = MLASelfAttention(
@@ -161,7 +168,9 @@ class TestMLAGateConstruction(unittest.TestCase):
         """If config says gated but spec has no gate_proj, gate is disabled."""
         config = _make_mla_config(gated_attention=True)
         spec = _make_sublayers_spec(gate_proj_cls=None)  # No gate in spec
-        attn = MLASelfAttention(config=config, sublayers_spec=spec, layer_number=1)
+        attn = MLASelfAttention(
+            config=config, sublayers_spec=spec, layer_number=1
+        )
         self.assertFalse(attn.gated_attention)
         self.assertIsNone(attn.gate_proj)
 
@@ -293,7 +302,9 @@ class TestGetAttentionSpecGate(unittest.TestCase):
         return config
 
     def test_mla_gated_has_gate_proj(self):
-        from paddleformers.fleet.models.gpt.gpt_layer_specs import get_attention_spec
+        from paddleformers.fleet.models.gpt.gpt_layer_specs import (
+            get_attention_spec,
+        )
 
         config = self._make_mock_config(gated=True)
         spec = get_attention_spec(
@@ -304,7 +315,9 @@ class TestGetAttentionSpecGate(unittest.TestCase):
         self.assertIsNotNone(gate_proj)
 
     def test_mla_not_gated_gate_proj_is_none(self):
-        from paddleformers.fleet.models.gpt.gpt_layer_specs import get_attention_spec
+        from paddleformers.fleet.models.gpt.gpt_layer_specs import (
+            get_attention_spec,
+        )
 
         config = self._make_mock_config(gated=False)
         spec = get_attention_spec(
@@ -315,8 +328,12 @@ class TestGetAttentionSpecGate(unittest.TestCase):
         self.assertIsNone(gate_proj)
 
     def test_mla_gated_gate_proj_is_column_parallel(self):
-        from paddleformers.fleet.models.gpt.gpt_layer_specs import get_attention_spec
-        from paddleformers.fleet.tensor_parallel.layers import ColumnParallelLinear
+        from paddleformers.fleet.models.gpt.gpt_layer_specs import (
+            get_attention_spec,
+        )
+        from paddleformers.fleet.tensor_parallel.layers import (
+            ColumnParallelLinear,
+        )
 
         config = self._make_mock_config(gated=True)
         spec = get_attention_spec(
@@ -327,7 +344,9 @@ class TestGetAttentionSpecGate(unittest.TestCase):
         self.assertEqual(gate_proj, ColumnParallelLinear)
 
     def test_self_attention_type_unaffected(self):
-        from paddleformers.fleet.models.gpt.gpt_layer_specs import get_attention_spec
+        from paddleformers.fleet.models.gpt.gpt_layer_specs import (
+            get_attention_spec,
+        )
         from paddleformers.fleet.transformer.identity_op import IdentityOp
 
         config = self._make_mock_config(gated=True)

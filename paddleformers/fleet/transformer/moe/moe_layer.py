@@ -22,7 +22,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import paddle
-import paddlefleet_ops
 from paddle import framework, nn
 from paddle.autograd import PyLayer
 from paddle.distributed.fleet.utils.sequence_parallel_utils import (
@@ -31,11 +30,15 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import (
     mark_as_sequence_parallel_parameter,
 )
 
+import paddlefleet_ops
+
 if TYPE_CHECKING:
     from paddle.distributed.fleet.meta_parallel import LayerSpec
 
     from paddleformers.fleet.process_groups_config import ProcessGroupCollection
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
 from paddleformers.fleet import utils
 from paddleformers.fleet.recompute_utils import need_recompute_in_first_n
@@ -63,14 +66,20 @@ _LOG_LAYER_MD5 = os.environ.get("LOG_LAYER_MD5", "0") == "1"
 
 def _log_moe_md5(tensor, name, layer_idx=None):
     """Log MD5 of a tensor for MoE precision alignment debugging."""
-    from paddleformers.fleet.transformer.transformer_layer import TransformerLayer
+    from paddleformers.fleet.transformer.transformer_layer import (
+        TransformerLayer,
+    )
 
     if _LOG_LAYER_MD5 and TransformerLayer._gpt_model_use_experimental_version:
         if TransformerLayer._skip_mtp_probes:
             return  # Skip MTP passes — EC has no MTP
         data = tensor.detach().cast("float32").numpy().tobytes()
         md5 = hashlib.md5(data).hexdigest()
-        rank = paddle.distributed.get_rank() if paddle.distributed.is_initialized() else 0
+        rank = (
+            paddle.distributed.get_rank()
+            if paddle.distributed.is_initialized()
+            else 0
+        )
         layer_str = f" Layer={layer_idx}" if layer_idx is not None else ""
         print(
             f"[MD5 MoE] Rank={rank}{layer_str} {name} MD5={md5} shape={list(tensor.shape)}",
@@ -153,7 +162,9 @@ class MoELayer(nn.Layer):
         self.n_shared_experts = config.n_shared_experts
         self.moe_shared_expert_intermediate_size = None
         if self.n_shared_experts:
-            self.moe_shared_expert_intermediate_size = self.moe_intermediate_size * self.n_shared_experts
+            self.moe_shared_expert_intermediate_size = (
+                self.moe_intermediate_size * self.n_shared_experts
+            )
         self.num_experts_per_tok = config.num_experts_per_tok
         self.hidden_act = config.hidden_act
         self.sequence_parallel = config.sequence_parallel
@@ -168,11 +179,15 @@ class MoELayer(nn.Layer):
         self.fp8_dispatch = bool(config.fp8) and not self.using_sonic_moe
         self.fp8_wgrad = config.fp8_wgrad
         self.moe_expert_fusion = config.moe_expert_fusion
-        self.moe_subbatch_token_num_after_dispatch = config.moe_subbatch_token_num_after_dispatch
+        self.moe_subbatch_token_num_after_dispatch = (
+            config.moe_subbatch_token_num_after_dispatch
+        )
         if self.using_sonic_moe:
-            assert paddlefleet_ops.is_sonic_moe_available(), paddlefleet_ops.blocked_import_messages[
-                "paddlefleet_ops.sonicmoe"
-            ]
+            assert paddlefleet_ops.is_sonic_moe_available(), (
+                paddlefleet_ops.blocked_import_messages[
+                    "paddlefleet_ops.sonicmoe"
+                ]
+            )
         self.router_aux_loss_coef = config.router_aux_loss_coef
         self.moe_deep_gemm = config.moe_deep_gemm
 
@@ -182,14 +197,18 @@ class MoELayer(nn.Layer):
                 incompatible_reasons.append("moe_expert_fusion must be True")
             if incompatible_reasons:
                 logging.warning(
-                    "moe_deep_gemm=True is ignored because %s; " "setting moe_deep_gemm to False.",
+                    "moe_deep_gemm=True is ignored because %s; "
+                    "setting moe_deep_gemm to False.",
                     " and ".join(incompatible_reasons),
                 )
                 self.moe_deep_gemm = False
         self.moe_ep_barrier = config.moe_ep_barrier
 
         # Latent MoE initialization
-        self.use_latent_moe = self.config.moe_latent_size is not None and self.config.moe_latent_size > 0
+        self.use_latent_moe = (
+            self.config.moe_latent_size is not None
+            and self.config.moe_latent_size > 0
+        )
         if self.use_latent_moe:
             logging.info(
                 f"Latent MoE enabled: hidden_size={self.config.hidden_size} -> moe_latent_size={self.config.moe_latent_size}"
@@ -210,8 +229,14 @@ class MoELayer(nn.Layer):
             # Update expert config to use latent size
             routed_expert_config.hidden_size = self.config.moe_latent_size
         self.moe_group = pg_collection.ep
-        self.expert_model_parallel_size = utils.get_pg_size(self.moe_group) if self.moe_group is not None else 1
-        self.num_local_experts = self.num_experts // self.expert_model_parallel_size
+        self.expert_model_parallel_size = (
+            utils.get_pg_size(self.moe_group)
+            if self.moe_group is not None
+            else 1
+        )
+        self.num_local_experts = (
+            self.num_experts // self.expert_model_parallel_size
+        )
         # MoE-Related Configs
         self._init_expert_parallel()
 
@@ -220,7 +245,11 @@ class MoELayer(nn.Layer):
         self.expert_class = StandardMLPExpert
         self.shared_expert_class = StandardMLPSharedExpert
 
-        if self.expert_model_parallel_size <= 1 and self.sequence_parallel and self.tensor_model_parallel_size > 1:
+        if (
+            self.expert_model_parallel_size <= 1
+            and self.sequence_parallel
+            and self.tensor_model_parallel_size > 1
+        ):
             routed_expert_config.sequence_parallel = False
             shared_expert_config.sequence_parallel = False
         elif (
@@ -230,7 +259,10 @@ class MoELayer(nn.Layer):
         ):
             routed_expert_config.tensor_model_parallel_size = 1
 
-        if paddle.is_compiled_with_cuda() and paddle.device.get_device_capability()[0] < 9:
+        if (
+            paddle.is_compiled_with_cuda()
+            and paddle.device.get_device_capability()[0] < 9
+        ):
             # TODO: Support Ampere architecture after upgrade deepep in paddlepaddle
             if self.moe_token_dispatcher_type in ("deepep", "hybridep"):
                 logger.info(
@@ -239,15 +271,25 @@ class MoELayer(nn.Layer):
                 )
                 self.moe_token_dispatcher_type = "alltoall"
             if self.moe_deep_gemm:
-                logger.warning("moe_deep_gemm is not supported when device capability < 9.0.")
+                logger.warning(
+                    "moe_deep_gemm is not supported when device capability < 9.0."
+                )
                 self.moe_deep_gemm = False
 
         self.moe_use_fusion_node = config.moe_use_fusion_node
         if self.expert_model_parallel_size > 1:
             if self.moe_token_dispatcher_type in ("deepep", "hybridep"):
-                self.use_hybrid_ep_backend = is_hybrid_ep_backend_selected(self.moe_token_dispatcher_type)
-                if self.moe_use_fusion_node and self.use_hybrid_ep_backend and self.moe_shared_expert_overlap:
-                    logger.info("HybridEP backend does not support moe_shared_expert_overlap; disabling it.")
+                self.use_hybrid_ep_backend = is_hybrid_ep_backend_selected(
+                    self.moe_token_dispatcher_type
+                )
+                if (
+                    self.moe_use_fusion_node
+                    and self.use_hybrid_ep_backend
+                    and self.moe_shared_expert_overlap
+                ):
+                    logger.info(
+                        "HybridEP backend does not support moe_shared_expert_overlap; disabling it."
+                    )
                     self.moe_shared_expert_overlap = False
             else:
                 logger.info(
@@ -262,11 +304,17 @@ class MoELayer(nn.Layer):
 
         if self.fp8:
             if paddle.version.cuda() == "12.6":
-                raise NotImplementedError("fp8 is not supported when cuda version == 12.6.")
-            assert self.moe_use_fusion_node, "fp8 can only be used when moe_use_fusion_node = True."
+                raise NotImplementedError(
+                    "fp8 is not supported when cuda version == 12.6."
+                )
+            assert self.moe_use_fusion_node, (
+                "fp8 can only be used when moe_use_fusion_node = True."
+            )
 
         if self.use_ue8m0:
-            assert paddle.device.cuda.get_device_capability()[0] == 10, "use_ue8m0 requires Blackwell GPU (SM100)"
+            assert paddle.device.cuda.get_device_capability()[0] == 10, (
+                "use_ue8m0 requires Blackwell GPU (SM100)"
+            )
 
         expert_args = {}
         expert_args["config"] = routed_expert_config
@@ -275,14 +323,25 @@ class MoELayer(nn.Layer):
         expert_args["mlp_spec"] = self.moe_sublayers.mlp_spec
 
         use_fused_weight = self.moe_expert_fusion
-        if self.fp8 and (self.moe_expert_fusion is False) and self.moe_deep_gemm:
+        if (
+            self.fp8
+            and (self.moe_expert_fusion is False)
+            and self.moe_deep_gemm
+        ):
             raise ValueError(
                 "For fp8 deep_gemm (i.e. use k-grouped gemm in backward), moe_expert_fusion must be True."
             )
-        if self.fp8 and self.moe_expert_fusion and self.moe_deep_gemm is False and self.using_sonic_moe is False:
+        if (
+            self.fp8
+            and self.moe_expert_fusion
+            and self.moe_deep_gemm is False
+            and self.using_sonic_moe is False
+        ):
             use_fused_weight = False
         if self.using_sonic_moe:
-            assert use_fused_weight is True, "for sonic moe, expert weight must be fused."
+            assert use_fused_weight is True, (
+                "for sonic moe, expert weight must be fused."
+            )
 
         if use_fused_weight:
             if self.using_sonic_moe:
@@ -312,7 +371,9 @@ class MoELayer(nn.Layer):
         shared_expert_args = deepcopy(expert_args)
         shared_expert_args["config"].use_bias = shared_expert_config.use_bias
         shared_expert_args["config"].hidden_size = self.config.hidden_size
-        shared_expert_args["moe_intermediate_size"] = self.moe_shared_expert_intermediate_size
+        shared_expert_args["moe_intermediate_size"] = (
+            self.moe_shared_expert_intermediate_size
+        )
         shared_expert_args["is_expert"] = False
         if self.n_shared_experts > 0:
             self.shared_experts = self.shared_expert_class(**shared_expert_args)
@@ -322,13 +383,25 @@ class MoELayer(nn.Layer):
         # when sp is enabled, mark shared_experts as sequence parallel, because:
         # 1. shared_experts only process local tokens which shape is [s/tp,b,h]
         # 2. shared_experts'weight and bias will not be splited across tp ranks
-        if self.sequence_parallel and self.expert_model_parallel_size > 1 and self.shared_experts is not None:
-            mark_as_sequence_parallel_parameter(self.shared_experts.up_gate_proj.weight)
+        if (
+            self.sequence_parallel
+            and self.expert_model_parallel_size > 1
+            and self.shared_experts is not None
+        ):
+            mark_as_sequence_parallel_parameter(
+                self.shared_experts.up_gate_proj.weight
+            )
             if shared_expert_config.use_bias:
-                mark_as_sequence_parallel_parameter(self.shared_experts.up_gate_proj.bias)
-            mark_as_sequence_parallel_parameter(self.shared_experts.down_proj.weight)
+                mark_as_sequence_parallel_parameter(
+                    self.shared_experts.up_gate_proj.bias
+                )
+            mark_as_sequence_parallel_parameter(
+                self.shared_experts.down_proj.weight
+            )
             if shared_expert_config.use_bias:
-                mark_as_sequence_parallel_parameter(self.shared_experts.down_proj.bias)
+                mark_as_sequence_parallel_parameter(
+                    self.shared_experts.down_proj.bias
+                )
 
         if self.expert_model_parallel_size > 1:
             if self.moe_token_dispatcher_type in ("deepep", "hybridep"):
@@ -339,11 +412,14 @@ class MoELayer(nn.Layer):
                     self.moe_group,
                     self.moe_ep_barrier,
                     dispatcher_type=self.moe_token_dispatcher_type,
-                    hybridep_buffer_configs=getattr(config, "hybridep_buffer_configs", None),
+                    hybridep_buffer_configs=getattr(
+                        config, "hybridep_buffer_configs", None
+                    ),
                 )
                 if (
                     self.moe_token_dispatcher_type == "deepep"
-                    and getattr(config, "deepep_buffer_configs", None) is not None
+                    and getattr(config, "deepep_buffer_configs", None)
+                    is not None
                 ):
                     configure_buffer(**config.deepep_buffer_configs)
             elif self.moe_token_dispatcher_type == "alltoall":
@@ -360,20 +436,30 @@ class MoELayer(nn.Layer):
                     local_expert_indices,
                 )
             else:
-                raise NotImplementedError(f"Unsupported moe_token_dispatcher_type {self.moe_token_dispatcher_type}")
+                raise NotImplementedError(
+                    f"Unsupported moe_token_dispatcher_type {self.moe_token_dispatcher_type}"
+                )
 
-        self.recompute_moe_gate_up = getattr(self.config, "recompute_moe_gate_up", False) or (
+        self.recompute_moe_gate_up = getattr(
+            self.config, "recompute_moe_gate_up", False
+        ) or (
             self.config.recompute_granularity == "selective"
             and self.config.recompute_modules is not None
             and "moe_gate_up" in self.config.recompute_modules
         )
-        self.recompute_moe_premute = getattr(self.config, "recompute_moe_premute", False) or (
+        self.recompute_moe_premute = getattr(
+            self.config, "recompute_moe_premute", False
+        ) or (
             self.config.recompute_granularity == "selective"
             and self.config.recompute_modules is not None
             and "moe_premute" in self.config.recompute_modules
         )
-        self.use_auto_subbatch = getattr(self.config, "use_auto_subbatch", False)
-        self.moe_subbatch_diag = getattr(self.config, "moe_subbatch_diag", False)
+        self.use_auto_subbatch = getattr(
+            self.config, "use_auto_subbatch", False
+        )
+        self.moe_subbatch_diag = getattr(
+            self.config, "moe_subbatch_diag", False
+        )
 
         if self.expert_model_parallel_size > 1:
             self.is_mp_moe = False
@@ -393,7 +479,9 @@ class MoELayer(nn.Layer):
                     if self.is_mp_moe or self.is_ep_moe:
                         p.is_distributed = True
             else:
-                assert self.experts is not None, "experts should be initialized."
+                assert self.experts is not None, (
+                    "experts should be initialized."
+                )
                 for p in self.experts.parameters():
                     p.is_moe_param = True
                     p.color = {
@@ -408,14 +496,22 @@ class MoELayer(nn.Layer):
         self.use_rr_deepep_combine = False
 
     def rr_recompute_update(self, in_full_recompute, in_mlp_recompute):
-        if self.config.recompute_modules is not None and "moe_combine" in self.config.recompute_modules:
-            if self.moe_token_dispatcher_type != "deepep" or not self.moe_shared_expert_overlap:
+        if (
+            self.config.recompute_modules is not None
+            and "moe_combine" in self.config.recompute_modules
+        ):
+            if (
+                self.moe_token_dispatcher_type != "deepep"
+                or not self.moe_shared_expert_overlap
+            ):
                 raise ValueError(
                     "moe_combine RR is only supported in DeepEP mode with "
                     "moe_shared_expert_overlap enabled (combine_overlap scenario)."
                 )
             if self.config.recompute_granularity is None:
-                raise ValueError("recompute_granularity must be set when moe_combine RR is enabled.")
+                raise ValueError(
+                    "recompute_granularity must be set when moe_combine RR is enabled."
+                )
             if isinstance(self.config.recompute_modules, list):
                 self.use_rr_deepep_combine = True
             elif isinstance(self.config.recompute_modules, dict):
@@ -436,14 +532,20 @@ class MoELayer(nn.Layer):
                     self.config,
                     self.config.recompute_modules["moe_combine"],
                 )
-        if (not in_full_recompute) and (not in_mlp_recompute) and self.use_rr_deepep_combine:
+        if (
+            (not in_full_recompute)
+            and (not in_mlp_recompute)
+            and self.use_rr_deepep_combine
+        ):
             raise ValueError(
                 "Enabling rr for moe_combine is meaningless when neither full_recompute "
                 "nor mlp_recompute is active."
             )
 
     def _init_expert_parallel(self):
-        def _parse_moe_expert_parallel(num_experts: int, expert_model_parallel_size: int) -> int:
+        def _parse_moe_expert_parallel(
+            num_experts: int, expert_model_parallel_size: int
+        ) -> int:
             """
             Args:
                 num_experts: Total number of experts
@@ -452,21 +554,25 @@ class MoELayer(nn.Layer):
             Returns:
                 n_routed_experts_per_device: Number of experts per device
             """
-            assert (
-                num_experts >= expert_model_parallel_size
-            ), f"expert num_experts={num_experts} >= moe_world_size={expert_model_parallel_size}"
-            assert (
-                num_experts % expert_model_parallel_size == 0
-            ), f"expert num_experts={num_experts} % moe_world_size={expert_model_parallel_size} == 0"
+            assert num_experts >= expert_model_parallel_size, (
+                f"expert num_experts={num_experts} >= moe_world_size={expert_model_parallel_size}"
+            )
+            assert num_experts % expert_model_parallel_size == 0, (
+                f"expert num_experts={num_experts} % moe_world_size={expert_model_parallel_size} == 0"
+            )
 
-            n_routed_experts_per_device = num_experts // expert_model_parallel_size
+            n_routed_experts_per_device = (
+                num_experts // expert_model_parallel_size
+            )
             return n_routed_experts_per_device
 
         if self.expert_model_parallel_size > 1:
             self.moe_grad_group = self.pg_collection.expt_dp
             self.moe_rank = utils.get_pg_rank(self.moe_group)
             self.moe_rank = max(self.moe_rank, 0)
-            self.num_experts_per_device = _parse_moe_expert_parallel(self.num_experts, self.expert_model_parallel_size)
+            self.num_experts_per_device = _parse_moe_expert_parallel(
+                self.num_experts, self.expert_model_parallel_size
+            )
         else:
             self.moe_group = None
             self.moe_rank = 0
@@ -480,18 +586,26 @@ class MoELayer(nn.Layer):
     ):
         outputs = []
         tokens_per_expert = (
-            tokens_per_expert.tolist() if not isinstance(tokens_per_expert, list) else tokens_per_expert
+            tokens_per_expert.tolist()
+            if not isinstance(tokens_per_expert, list)
+            else tokens_per_expert
         )
-        chunks = paddle.split(dispatched_input, num_or_sections=tokens_per_expert, axis=0)
+        chunks = paddle.split(
+            dispatched_input, num_or_sections=tokens_per_expert, axis=0
+        )
         scale_chunks = None
         if use_accuracy_compatible_kernel():
-            per_token_scale = getattr(self.token_dispatcher, "global_input_probs", None)
+            per_token_scale = getattr(
+                self.token_dispatcher, "global_input_probs", None
+            )
             if per_token_scale is None:
                 raise RuntimeError(
                     "FLAGS_use_accuracy_compatible_kernel requires dispatched "
                     "router probabilities from the token dispatcher."
                 )
-            scale_chunks = paddle.split(per_token_scale, num_or_sections=tokens_per_expert, axis=0)
+            scale_chunks = paddle.split(
+                per_token_scale, num_or_sections=tokens_per_expert, axis=0
+            )
         for i, chunk in enumerate(chunks):
             if tokens_per_expert[i] == 0:
                 continue
@@ -501,7 +615,9 @@ class MoELayer(nn.Layer):
             if scale_chunks is None:
                 expert_output = expert(chunk)[0]
             else:
-                expert_output = expert(chunk, per_token_scale=scale_chunks[i])[0]
+                expert_output = expert(chunk, per_token_scale=scale_chunks[i])[
+                    0
+                ]
             outputs += [expert_output]
 
         if not outputs:
@@ -521,23 +637,29 @@ class MoELayer(nn.Layer):
         hidden_states = self.token_dispatcher.dispatch_preprocess(
             hidden_states, probs, routing_map, topk_weights, topk_indices
         )
-        hidden_states, fp8_dispatched_handle = self.token_dispatcher.token_dispatch(
-            hidden_states,
-            self.fp8_dispatch,
-            async_finish=async_finish,
-            use_ue8m0=self.use_ue8m0,
+        hidden_states, fp8_dispatched_handle = (
+            self.token_dispatcher.token_dispatch(
+                hidden_states,
+                self.fp8_dispatch,
+                async_finish=async_finish,
+                use_ue8m0=self.use_ue8m0,
+            )
         )
         return hidden_states, fp8_dispatched_handle
 
     def permute(self, hidden_states: paddle.Tensor):
-        global_input_tokens, tokens_per_expert = self.token_dispatcher.dispatch_postprocess(hidden_states)
+        global_input_tokens, tokens_per_expert = (
+            self.token_dispatcher.dispatch_postprocess(hidden_states)
+        )
         return global_input_tokens, tokens_per_expert
 
     def unpermute(self, hidden_states: paddle.Tensor):
         return self.token_dispatcher.combine_preprocess(hidden_states)
 
     def combine(self, hidden_states: paddle.Tensor, async_finish: bool = False):
-        hidden_states = self.token_dispatcher.token_combine(hidden_states, async_finish=async_finish)
+        hidden_states = self.token_dispatcher.token_combine(
+            hidden_states, async_finish=async_finish
+        )
         return self.token_dispatcher.combine_postprocess(hidden_states)
 
     def routed_experts_compute(
@@ -566,7 +688,9 @@ class MoELayer(nn.Layer):
 
         should_log_balance = framework._dygraph_tracer()._has_grad
         with profile("dispatch"):
-            hidden_states, _ = self.dispatch(hidden_states, probs, routing_map, topk_weights, topk_indices)
+            hidden_states, _ = self.dispatch(
+                hidden_states, probs, routing_map, topk_weights, topk_indices
+            )
         if should_log_balance and global_moe_balance_training_logs_enabled():
             log_moe_balance(
                 self.layer_number,
@@ -611,7 +735,9 @@ class MoELayer(nn.Layer):
                 self.num_experts_per_tok,
                 self.token_dispatcher._comm_manager.tokens_per_expert,
             )
-        dispatched_indices = self.token_dispatcher._comm_manager.dispatched_indices
+        dispatched_indices = (
+            self.token_dispatcher._comm_manager.dispatched_indices
+        )
         dispatched_probs = self.token_dispatcher._comm_manager.dispatched_probs
 
         with profile("fusion_mlp"):
@@ -702,7 +828,9 @@ class MoELayer(nn.Layer):
         if self.use_latent_moe:
             hidden_states = self.fc1_latent_proj(hidden_states)
         assert isinstance(self.token_dispatcher, MoEFlexTokenDispatcher)
-        hidden_states = self.token_dispatcher.dispatch_preprocess_overlap(hidden_states, token_probs, token_indices)
+        hidden_states = self.token_dispatcher.dispatch_preprocess_overlap(
+            hidden_states, token_probs, token_indices
+        )
         token_probs = self.token_dispatcher._comm_manager.token_probs
         token_indices = self.token_dispatcher._comm_manager.token_indices
         return hidden_states, token_indices, token_probs
@@ -710,17 +838,23 @@ class MoELayer(nn.Layer):
     def compute_dispatch(self, args, async_finish=False):
         hidden_states, token_indices, token_weights = args
         if self.moe_use_fusion_node:
-            dispatched_hidden_states, fp8_dispatched_handle = self.token_dispatcher.token_dispatch_overlap(
-                hidden_states,
-                token_indices,
-                token_weights,
-                self.fp8_dispatch,
-                async_finish=async_finish,
-                use_ue8m0=self.use_ue8m0,
+            dispatched_hidden_states, fp8_dispatched_handle = (
+                self.token_dispatcher.token_dispatch_overlap(
+                    hidden_states,
+                    token_indices,
+                    token_weights,
+                    self.fp8_dispatch,
+                    async_finish=async_finish,
+                    use_ue8m0=self.use_ue8m0,
+                )
             )
-            dispatched_probs = self.token_dispatcher._comm_manager.dispatched_probs
+            dispatched_probs = (
+                self.token_dispatcher._comm_manager.dispatched_probs
+            )
             # NOTE: tokens_per_expert_list is stateful and should be saved for recompute.
-            tokens_per_expert = self.token_dispatcher._comm_manager.tokens_per_expert
+            tokens_per_expert = (
+                self.token_dispatcher._comm_manager.tokens_per_expert
+            )
             # dispatched_hidden_states's dtype is fp8, but its gradient's dtype is bf16, so type separation is required; the actual values are passed via a dictionary.
             dispatched_hidden_states, guard_status = GradDtypeGuard.apply(
                 dispatched_hidden_states, hidden_states.dtype
@@ -728,7 +862,9 @@ class MoELayer(nn.Layer):
             guard_status["x"].stop_gradient = True
             dispatched_indices = None
             if not self._use_hybrid_ep_fusion():
-                dispatched_indices = self.token_dispatcher._comm_manager.dispatched_indices
+                dispatched_indices = (
+                    self.token_dispatcher._comm_manager.dispatched_indices
+                )
             return (
                 dispatched_hidden_states,
                 dispatched_indices,
@@ -748,8 +884,12 @@ class MoELayer(nn.Layer):
                 tokens_per_expert,
                 guard_status,
             ) = args
-            self.token_dispatcher._comm_manager.tokens_per_expert = tokens_per_expert
-            dispatched_hidden_states = GradDtypeUnguard.apply(dispatched_hidden_states, guard_status)
+            self.token_dispatcher._comm_manager.tokens_per_expert = (
+                tokens_per_expert
+            )
+            dispatched_hidden_states = GradDtypeUnguard.apply(
+                dispatched_hidden_states, guard_status
+            )
             if self._use_hybrid_ep_fusion():
                 hidden_states = self._run_hybrid_ep_fusion(
                     dispatched_hidden_states,
@@ -761,7 +901,9 @@ class MoELayer(nn.Layer):
                 hidden_states = FusionMoePyLayer.apply(
                     dispatched_hidden_states,
                     dispatched_probs,
-                    dispatched_indices.clone() if is_first_fwd else dispatched_indices,
+                    dispatched_indices.clone()
+                    if is_first_fwd
+                    else dispatched_indices,
                     self,
                     self.num_experts_per_tok,
                     use_fp8_mlp=self.fp8,
@@ -840,7 +982,16 @@ class MoELayer(nn.Layer):
 
         layer_idx = getattr(self, "layer_number", None)
         _log_moe_md5(hidden_states, "moe_input", layer_idx)
-        (capacity, topk_weights, topk_indices, probs, mask, priorities, aux_loss, z_loss,) = self.gate(
+        (
+            capacity,
+            topk_weights,
+            topk_indices,
+            probs,
+            mask,
+            priorities,
+            aux_loss,
+            z_loss,
+        ) = self.gate(
             hidden_states,
             input_ids=input_ids,
         )
@@ -898,7 +1049,9 @@ class MoELayer(nn.Layer):
                     reshaped_input, mask, probs, topk_indices, topk_weights
                 )
             else:
-                output = self._forward_single_card_moe(reshaped_input, topk_indices, topk_weights)
+                output = self._forward_single_card_moe(
+                    reshaped_input, topk_indices, topk_weights
+                )
             # Latent MoE: project back from latent space
             if self.use_latent_moe:
                 output = self.fc2_latent_proj(output)
@@ -945,12 +1098,18 @@ class MoELayer(nn.Layer):
         """
 
         _, d_model = hidden_states.shape
-        final_hidden_states = paddle.zeros_like(hidden_states, dtype=hidden_states.dtype)
+        final_hidden_states = paddle.zeros_like(
+            hidden_states, dtype=hidden_states.dtype
+        )
 
         # One hot encode the selected experts to create an expert mask
         # this will be used to easily index which expert is going to be sollicitated
-        expert_mask = paddle.nn.functional.one_hot(selected_experts, num_classes=self.num_experts).transpose([2, 1, 0])
-        tokens_per_expert = expert_mask.reshape([expert_mask.shape[0], -1]).sum(axis=-1)
+        expert_mask = paddle.nn.functional.one_hot(
+            selected_experts, num_classes=self.num_experts
+        ).transpose([2, 1, 0])
+        tokens_per_expert = expert_mask.reshape([expert_mask.shape[0], -1]).sum(
+            axis=-1
+        )
         # Loop over all available experts in the model and perform the computation on each expert
         for expert_idx in range(self.num_experts):
             expert_layer = self.experts[expert_idx]
@@ -996,7 +1155,9 @@ class MoELayer(nn.Layer):
             output: Output hidden states, shape: [seq_len, hidden_size]
         """
 
-        def _convert_routing_map_and_probs(routing_map: paddle.Tensor, probs: paddle.Tensor, topk: int):
+        def _convert_routing_map_and_probs(
+            routing_map: paddle.Tensor, probs: paddle.Tensor, topk: int
+        ):
             routing_map = routing_map.astype("bool")
             masked_probs = probs * routing_map.astype("float32")
             weights, indices = paddle.topk(masked_probs, k=topk, axis=-1)
@@ -1013,8 +1174,12 @@ class MoELayer(nn.Layer):
             return final_hidden_states.cast(hidden_states.dtype)
         else:
             tokens_per_expert = routing_map.sum(axis=0)
-            permuted_local_hidden_states, sorted_indices = permute(hidden_states, routing_map, tokens_per_expert)
-            grouped_expert_out = self.grouped_gemm_experts(permuted_local_hidden_states, tokens_per_expert)[0]
+            permuted_local_hidden_states, sorted_indices = permute(
+                hidden_states, routing_map, tokens_per_expert
+            )
+            grouped_expert_out = self.grouped_gemm_experts(
+                permuted_local_hidden_states, tokens_per_expert
+            )[0]
             final_hidden_states = unpermute(
                 grouped_expert_out,
                 sorted_indices,
@@ -1028,7 +1193,9 @@ class MoELayer(nn.Layer):
         if not (self.moe_use_fusion_node and self.fp8):
             return
 
-        def quantize_weights(weight_list, weight_obj=None, quant_transpose=None):
+        def quantize_weights(
+            weight_list, weight_obj=None, quant_transpose=None
+        ):
             """Helper function to quantize a list of weights."""
             if weight_obj is None:
                 weight_obj = weight_list[0]
@@ -1067,8 +1234,12 @@ class MoELayer(nn.Layer):
                 expert_w1 = self.grouped_gemm_experts.weight1
                 expert_w2 = self.grouped_gemm_experts.weight2
                 local_expert_num = expert_w1.shape[0]
-                expert_w1_list = [expert_w1[i, :, :] for i in range(local_expert_num)]
-                expert_w2_list = [expert_w2[i, :, :] for i in range(local_expert_num)]
+                expert_w1_list = [
+                    expert_w1[i, :, :] for i in range(local_expert_num)
+                ]
+                expert_w2_list = [
+                    expert_w2[i, :, :] for i in range(local_expert_num)
+                ]
 
                 # Batch mode: process all experts' weights together
                 if expert_w1_list:
@@ -1085,18 +1256,32 @@ class MoELayer(nn.Layer):
                     )
 
             else:
-                raise NotImplementedError("Not support individual mode for fuse_expert_fp8_weight_quant yet.")
+                raise NotImplementedError(
+                    "Not support individual mode for fuse_expert_fp8_weight_quant yet."
+                )
 
             return
 
         if batch_mode:
             # Batch mode: process all experts' weights together
-            expert_w1_list = [expert.up_gate_proj.weight for expert in self.experts if expert is not None]
-            expert_w2_list = [expert.down_proj.weight for expert in self.experts if expert is not None]
+            expert_w1_list = [
+                expert.up_gate_proj.weight
+                for expert in self.experts
+                if expert is not None
+            ]
+            expert_w2_list = [
+                expert.down_proj.weight
+                for expert in self.experts
+                if expert is not None
+            ]
             if expert_w1_list:
-                quantize_weights(expert_w1_list, expert_w1_list[0], quant_transpose)
+                quantize_weights(
+                    expert_w1_list, expert_w1_list[0], quant_transpose
+                )
             if expert_w2_list:
-                quantize_weights(expert_w2_list, expert_w2_list[0], quant_transpose)
+                quantize_weights(
+                    expert_w2_list, expert_w2_list[0], quant_transpose
+                )
 
         else:
             # Individual mode: process each expert's weights separately
@@ -1118,7 +1303,9 @@ class MoELayer(nn.Layer):
 
     def set_layer_number(self, layer_number, is_mtp_layer: bool = False):
         self.layer_number = layer_number
-        assert hasattr(self.gate, "set_layer_number"), "expect gate has method 'set_layer_number'"
+        assert hasattr(self.gate, "set_layer_number"), (
+            "expect gate has method 'set_layer_number'"
+        )
         # Hash routing activation (moe_n_hash_layers) is decided by the router
         # itself based on layer_number. See TopKRouter._setup_hash_layer.
         self.gate.set_layer_number(layer_number, is_mtp_layer=is_mtp_layer)

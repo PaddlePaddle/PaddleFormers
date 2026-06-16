@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -90,7 +94,9 @@ class TestTransformerUtils(unittest.TestCase):
 
     def test_is_layer_window_attention_no_sliding_window(self):
         """Test is_layer_window_attention with no sliding window."""
-        from paddleformers.fleet.transformer.utils import is_layer_window_attention
+        from paddleformers.fleet.transformer.utils import (
+            is_layer_window_attention,
+        )
 
         result = is_layer_window_attention(None, None, 1)
         self.assertFalse(result)
@@ -101,7 +107,9 @@ class TestProcessGroupCollection(unittest.TestCase):
 
     def test_use_mpu_process_groups(self):
         """Test use_mpu_process_groups."""
-        from paddleformers.fleet.process_groups_config import ProcessGroupCollection
+        from paddleformers.fleet.process_groups_config import (
+            ProcessGroupCollection,
+        )
 
         pg = ProcessGroupCollection.use_mpu_process_groups()
         self.assertIsNotNone(pg)

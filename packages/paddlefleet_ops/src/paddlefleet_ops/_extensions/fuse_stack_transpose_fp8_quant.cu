@@ -12,35 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <limits>
+#include <limits> // NOLINT
 
-#include "paddle/phi/kernels/funcs/fast_divmod.h"
-#include "paddle/phi/kernels/funcs/segmented_array.h"
-#include "paddle/phi/kernels/fusion/gpu/quant_utils.h"
-#include "paddle/phi/kernels/primitive/datamover_primitives.h"
+#include "paddle/phi/kernels/funcs/fast_divmod.h"              // NOLINT
+#include "paddle/phi/kernels/funcs/segmented_array.h"          // NOLINT
+#include "paddle/phi/kernels/fusion/gpu/quant_utils.h"         // NOLINT
+#include "paddle/phi/kernels/primitive/datamover_primitives.h" // NOLINT
 
 using FastDivMod = phi::funcs::FastDivMod<int64_t>;
 
 template <typename ScaleT, bool using_ue8m0_scale>
-__device__ __forceinline__ void StoreScaleFleetCustom(ScaleT* ptr,
-                                                      size_t idx,
+__device__ __forceinline__ void StoreScaleFleetCustom(ScaleT *ptr, size_t idx,
                                                       float val) {
   if constexpr (using_ue8m0_scale) {
     int exp = (__float_as_int(val) >> 23) & 0xFF;
-    reinterpret_cast<uint8_t*>(ptr)[idx] = static_cast<uint8_t>(exp);
+    reinterpret_cast<uint8_t *>(ptr)[idx] = static_cast<uint8_t>(exp);
   } else {
     ptr[idx] = val;
   }
 }
 
 template <typename ArrayT>
-__device__ void BlockLoadFleetCustom(ArrayT input_array,
-                                     __nv_bfloat16 x[8][4],
-                                     size_t K,
-                                     size_t block_y,
-                                     size_t block_x) {
-  const __nv_bfloat16* input =
-      reinterpret_cast<const __nv_bfloat16*>(input_array.data[blockIdx.z]);
+__device__ void BlockLoadFleetCustom(ArrayT input_array, __nv_bfloat16 x[8][4],
+                                     size_t K, size_t block_y, size_t block_x) {
+  const __nv_bfloat16 *input =
+      reinterpret_cast<const __nv_bfloat16 *>(input_array.data[blockIdx.z]);
 
   for (size_t i = 0; i < 8; i++) {
     size_t idx_m = block_y * 128 + static_cast<size_t>(threadIdx.y) + i * 16;
@@ -48,7 +44,7 @@ __device__ void BlockLoadFleetCustom(ArrayT input_array,
     size_t idx = idx_m * K + idx_k;
 
     using LoadT = phi::kps::details::VectorType<__nv_bfloat16, 4>;
-    LoadT data = *reinterpret_cast<const LoadT*>(input + idx);
+    LoadT data = *reinterpret_cast<const LoadT *>(input + idx);
     for (int j = 0; j < 4; j++) {
       x[i][j] = data.val[j];
     }
@@ -72,8 +68,8 @@ __device__ float BlockReduceScaleFleetCustom(__nv_bfloat16 x[8][4],
   __nv_bfloat16 local_max = 0.0;
 #pragma unroll
   for (uint32_t i = 0; i < 8; i++) {
-    __nv_bfloat162 v0 = *reinterpret_cast<__nv_bfloat162*>(&x[i][0]);
-    __nv_bfloat162 v1 = *reinterpret_cast<__nv_bfloat162*>(&x[i][2]);
+    __nv_bfloat162 v0 = *reinterpret_cast<__nv_bfloat162 *>(&x[i][0]);
+    __nv_bfloat162 v1 = *reinterpret_cast<__nv_bfloat162 *>(&x[i][2]);
     v0 = __habs2(v0);
     v1 = __habs2(v1);
     v0 = __hmax2(v1, v0);
@@ -100,11 +96,8 @@ __device__ float BlockReduceScaleFleetCustom(__nv_bfloat16 x[8][4],
   return block_scale;
 }
 
-template <typename OutT,
-          typename ArrayT,
-          typename ScaleT,
-          bool using_pow2_scaling,
-          bool using_ue8m0_scale,
+template <typename OutT, typename ArrayT, typename ScaleT,
+          bool using_pow2_scaling, bool using_ue8m0_scale,
           bool output_scale_transpose>
 #if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ > 900))
 // Force nvcc to squash register to avoid low occupancy
@@ -114,11 +107,9 @@ __global__ void __launch_bounds__(512, 4)
 __global__ void __launch_bounds__(512)
 #endif
     FusedStackQuantGPUKernelFleetCustom(ArrayT input_array,
-                                        OutT* __restrict__ out,
-                                        ScaleT* __restrict__ scale,
-                                        size_t M,
-                                        size_t K,
-                                        FastDivMod K_div_128) {
+                                        OutT *__restrict__ out,
+                                        ScaleT *__restrict__ scale, size_t M,
+                                        size_t K, FastDivMod K_div_128) {
   size_t block_y = K_div_128.Div(blockIdx.x);
   size_t block_x = static_cast<size_t>(blockIdx.x) - block_y * (K / 128);
 
@@ -150,8 +141,8 @@ __global__ void __launch_bounds__(512)
         // [N*M, K/128]
         idx = global_row * (K / 128) + block_x;
       }
-      StoreScaleFleetCustom<ScaleT, using_ue8m0_scale>(
-          scale, idx, __frcp_rn(block_scale));
+      StoreScaleFleetCustom<ScaleT, using_ue8m0_scale>(scale, idx,
+                                                       __frcp_rn(block_scale));
     }
   } else {
     if (tid == 0) {
@@ -164,8 +155,8 @@ __global__ void __launch_bounds__(512)
         // [N*M/128, K/128]
         idx = (blockIdx.z * (M / 128) + block_y) * (K / 128) + block_x;
       }
-      StoreScaleFleetCustom<ScaleT, using_ue8m0_scale>(
-          scale, idx, __frcp_rn(block_scale));
+      StoreScaleFleetCustom<ScaleT, using_ue8m0_scale>(scale, idx,
+                                                       __frcp_rn(block_scale));
     }
   }
 
@@ -183,15 +174,12 @@ __global__ void __launch_bounds__(512)
       float output_scaled = x_fp32 * block_scale;
       data.val[j] = static_cast<OutT>(output_scaled);
     }
-    *reinterpret_cast<StoreT*>(out + idx) = data;
+    *reinterpret_cast<StoreT *>(out + idx) = data;
   }
 }
 
-template <typename OutT,
-          typename ArrayT,
-          typename ScaleT,
-          bool using_pow2_scaling,
-          bool using_ue8m0_scale,
+template <typename OutT, typename ArrayT, typename ScaleT,
+          bool using_pow2_scaling, bool using_ue8m0_scale,
           bool output_scale_transpose>
 #if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ > 900))
 // Force nvcc to squash register to avoid low occupancy
@@ -201,10 +189,9 @@ __global__ void __launch_bounds__(512, 4)
 __global__ void __launch_bounds__(512)
 #endif
     FusedStackTransposeQuantGPUKernelFleetCustom(ArrayT input_array,
-                                                 OutT* __restrict__ out,
-                                                 ScaleT* __restrict__ scale,
-                                                 size_t M,
-                                                 size_t K,
+                                                 OutT *__restrict__ out,
+                                                 ScaleT *__restrict__ scale,
+                                                 size_t M, size_t K,
                                                  FastDivMod K_div_128) {
   size_t block_y = K_div_128.Div(blockIdx.x);
   size_t block_x = static_cast<size_t>(blockIdx.x) - block_y * (K / 128);
@@ -237,8 +224,8 @@ __global__ void __launch_bounds__(512)
         // [N*K, M/128]
         idx = global_row * (M / 128) + block_y;
       }
-      StoreScaleFleetCustom<ScaleT, using_ue8m0_scale>(
-          scale, idx, __frcp_rn(block_scale));
+      StoreScaleFleetCustom<ScaleT, using_ue8m0_scale>(scale, idx,
+                                                       __frcp_rn(block_scale));
     }
   } else {
     if (tid == 0) {
@@ -251,8 +238,8 @@ __global__ void __launch_bounds__(512)
         // [N*K/128, M/128]
         idx = (blockIdx.z * (K / 128) + block_x) * (M / 128) + block_y;
       }
-      StoreScaleFleetCustom<ScaleT, using_ue8m0_scale>(
-          scale, idx, __frcp_rn(block_scale));
+      StoreScaleFleetCustom<ScaleT, using_ue8m0_scale>(scale, idx,
+                                                       __frcp_rn(block_scale));
     }
   }
 
@@ -280,14 +267,13 @@ __global__ void __launch_bounds__(512)
     for (uint32_t j = 0; j < 4; j++) {
       data.val[j] = shm[i * 16 + threadIdx.y][threadIdx.x * 4 + j];
     }
-    *reinterpret_cast<StoreT*>(out + idx) = data;
+    *reinterpret_cast<StoreT *>(out + idx) = data;
   }
 }
 
-std::tuple<int64_t, int64_t, int64_t> FusedStackQuantCommonCheckFleetCustom(
-    const std::vector<paddle::Tensor>& x) {
-  PADDLE_ENFORCE_GT(x.size(),
-                    0UL,
+std::tuple<int64_t, int64_t, int64_t>
+FusedStackQuantCommonCheckFleetCustom(const std::vector<paddle::Tensor> &x) {
+  PADDLE_ENFORCE_GT(x.size(), 0UL,
                     common::errors::InvalidArgument(
                         "Number of Inputs(x) must be larger than 0, but"
                         " received value is:%d.",
@@ -295,56 +281,41 @@ std::tuple<int64_t, int64_t, int64_t> FusedStackQuantCommonCheckFleetCustom(
   int64_t N = x.size();
   for (int i = 0; i < N; ++i) {
     PADDLE_ENFORCE_EQ(
-        x[i].dtype(),
-        phi::DataType::BFLOAT16,
+        x[i].dtype(), phi::DataType::BFLOAT16,
         common::errors::InvalidArgument(
             "input must be bfloat16, but received dtype: %s", x[i].dtype()));
   }
   auto input_dims = x[0].dims();
   PADDLE_ENFORCE_EQ(
-      input_dims.size(),
-      2U,
+      input_dims.size(), 2U,
       common::errors::InvalidArgument(
           "input must be 2-D, but received dims: %s", input_dims.to_str()));
   int64_t M = input_dims[0];
   int64_t K = input_dims[1];
   for (int i = 1; i < N; ++i) {
     input_dims = x[i].dims();
-    PADDLE_ENFORCE_EQ(input_dims.size(),
-                      2U,
+    PADDLE_ENFORCE_EQ(input_dims.size(), 2U,
                       common::errors::InvalidArgument(
                           "input must be 2-D, but received input[%d] dims: %s",
-                          i,
-                          input_dims.to_str()));
+                          i, input_dims.to_str()));
     PADDLE_ENFORCE_EQ(
-        input_dims[0],
-        M,
+        input_dims[0], M,
         common::errors::InvalidArgument(
-            "input [%d] must be shape %d, %d, but received dims: %s",
-            i,
-            M,
-            K,
+            "input [%d] must be shape %d, %d, but received dims: %s", i, M, K,
             input_dims.to_str()));
     PADDLE_ENFORCE_EQ(
-        input_dims[1],
-        K,
+        input_dims[1], K,
         common::errors::InvalidArgument(
-            "input [%d] must be shape %d, %d, but received dims: %s",
-            i,
-            M,
-            K,
+            "input [%d] must be shape %d, %d, but received dims: %s", i, M, K,
             input_dims.to_str()));
   }
-  PADDLE_ENFORCE_LE(N,
-                    65535,
+  PADDLE_ENFORCE_LE(N, 65535,
                     common::errors::InvalidArgument(
                         "The batch size (N) must be no larger than 65535."));
-  PADDLE_ENFORCE_EQ(M % 128,
-                    0,
+  PADDLE_ENFORCE_EQ(M % 128, 0,
                     common::errors::InvalidArgument(
                         "The upper dim (M) must be multiple of 128."));
-  PADDLE_ENFORCE_EQ(K % 128,
-                    0,
+  PADDLE_ENFORCE_EQ(K % 128, 0,
                     common::errors::InvalidArgument(
                         "The lower dim (K) must be multiple of 128."));
   return {N, M, K};
@@ -372,10 +343,8 @@ std::tuple<int64_t, int64_t, int64_t> FusedStackQuantCommonCheckFleetCustom(
  */
 template <bool Transpose>
 std::vector<paddle::Tensor> fuse_stack_transpose_fp8_quant_fleet_custom(
-    const std::vector<paddle::Tensor>& X,
-    const bool& using_pow2_scaling,
-    const bool& using_ue8m0_scale,
-    const bool& output_scale_transpose) {
+    const std::vector<paddle::Tensor> &X, const bool &using_pow2_scaling,
+    const bool &using_ue8m0_scale, const bool &output_scale_transpose) {
   int64_t N, M, K;
   std::tie(N, M, K) = FusedStackQuantCommonCheckFleetCustom(X);
 
@@ -433,20 +402,17 @@ std::vector<paddle::Tensor> fuse_stack_transpose_fp8_quant_fleet_custom(
     PD_CHECK(shape[1] == K);
   }
 
-  PADDLE_ENFORCE_LE(N,
-                    65535,
+  PADDLE_ENFORCE_LE(N, 65535,
                     common::errors::InvalidArgument(
                         "The batch size (N) must be no larger than 65535."));
-  PADDLE_ENFORCE_EQ(M % 128,
-                    0,
+  PADDLE_ENFORCE_EQ(M % 128, 0,
                     common::errors::InvalidArgument(
                         "The upper dim (M) must be multiple of 128."));
-  PADDLE_ENFORCE_EQ(K % 128,
-                    0,
+  PADDLE_ENFORCE_EQ(K % 128, 0,
                     common::errors::InvalidArgument(
                         "The lower dim (K) must be multiple of 128."));
 
-  const auto& place = X[0].place();
+  const auto &place = X[0].place();
   paddle::Tensor out =
       paddle::empty(out_shape, paddle::DataType::FLOAT8_E4M3FN, place);
   paddle::Tensor scale = paddle::empty(
@@ -462,8 +428,7 @@ std::vector<paddle::Tensor> fuse_stack_transpose_fp8_quant_fleet_custom(
   // Launch kernel
   int64_t grid_x = (M / 128) * (K / 128);
   PADDLE_ENFORCE_LE(
-      grid_x,
-      static_cast<int64_t>(std::numeric_limits<int>::max()),
+      grid_x, static_cast<int64_t>(std::numeric_limits<int>::max()),
       common::errors::InvalidArgument(
           "grid.x exceeds INT_MAX in fuse_stack_transpose_fp8_quant."));
   dim3 grid(static_cast<uint32_t>(grid_x), 1, N);
@@ -471,63 +436,45 @@ std::vector<paddle::Tensor> fuse_stack_transpose_fp8_quant_fleet_custom(
 
   FastDivMod K_div_128(K / 128);
   {
-    using namespace phi;  // NOLINT(build/namespaces)
+    // NOLINTNEXTLINE(build/namespaces)
+    using namespace phi;
 
-#define LAUNCH_KERN(ScaleT, POW2, UE8M0, TRANS)                      \
-  if (Transpose) {                                                   \
-    FusedStackTransposeQuantGPUKernelFleetCustom<phi::float8_e4m3fn, \
-                                                 decltype(array),    \
-                                                 ScaleT,             \
-                                                 POW2,               \
-                                                 UE8M0,              \
-                                                 TRANS>              \
-        <<<grid, block, 0, X[0].stream()>>>(                         \
-            array,                                                   \
-            out.data<phi::float8_e4m3fn>(),                          \
-            reinterpret_cast<ScaleT*>(scale.data<ScaleT>()),         \
-            M,                                                       \
-            K,                                                       \
-            K_div_128);                                              \
-  } else {                                                           \
-    FusedStackQuantGPUKernelFleetCustom<phi::float8_e4m3fn,          \
-                                        decltype(array),             \
-                                        ScaleT,                      \
-                                        POW2,                        \
-                                        UE8M0,                       \
-                                        TRANS>                       \
-        <<<grid, block, 0, X[0].stream()>>>(                         \
-            array,                                                   \
-            out.data<phi::float8_e4m3fn>(),                          \
-            reinterpret_cast<ScaleT*>(scale.data<ScaleT>()),         \
-            M,                                                       \
-            K,                                                       \
-            K_div_128);                                              \
+#define LAUNCH_KERN(ScaleT, POW2, UE8M0, TRANS)                                \
+  if (Transpose) {                                                             \
+    FusedStackTransposeQuantGPUKernelFleetCustom<                              \
+        phi::float8_e4m3fn, decltype(array), ScaleT, POW2, UE8M0, TRANS>       \
+        <<<grid, block, 0, X[0].stream()>>>(                                   \
+            array, out.data<phi::float8_e4m3fn>(),                             \
+            reinterpret_cast<ScaleT *>(scale.data<ScaleT>()), M, K,            \
+            K_div_128);                                                        \
+  } else {                                                                     \
+    FusedStackQuantGPUKernelFleetCustom<phi::float8_e4m3fn, decltype(array),   \
+                                        ScaleT, POW2, UE8M0, TRANS>            \
+        <<<grid, block, 0, X[0].stream()>>>(                                   \
+            array, out.data<phi::float8_e4m3fn>(),                             \
+            reinterpret_cast<ScaleT *>(scale.data<ScaleT>()), M, K,            \
+            K_div_128);                                                        \
   }
 
     switch (funcs::CalcArraySize(N)) {
       SEGMENTED_ARRAY_KERNEL_HELPER({
         funcs::ConstPointerArray<phi::bfloat16, kArraySize> array;
-        std::vector<const phi::bfloat16*> ptrs(X.size());
+        std::vector<const phi::bfloat16 *> ptrs(X.size());
         for (int i = 0; i < X.size(); ++i) {
           ptrs[i] = X[i].data<phi::bfloat16>();
         }
-        const phi::bfloat16** dev_ptr = nullptr;
+        const phi::bfloat16 **dev_ptr = nullptr;
         paddle::Tensor ptr_tensor;
         if constexpr (kArraySize ==
                       funcs::SegmentedArraySize::kVariableLength) {
-          size_t nbytes = ptrs.size() * sizeof(const phi::bfloat16*);
+          size_t nbytes = ptrs.size() * sizeof(const phi::bfloat16 *);
           ptr_tensor = paddle::empty({static_cast<int64_t>(nbytes)},
-                                     paddle::DataType::UINT8,
-                                     X[0].place());
-          dev_ptr = reinterpret_cast<const phi::bfloat16**>(ptr_tensor.data());
-          auto err = cudaMemcpyAsync(dev_ptr,
-                                     ptrs.data(),
-                                     nbytes,
-                                     cudaMemcpyHostToDevice,
-                                     X[0].stream());
+                                     paddle::DataType::UINT8, X[0].place());
+          dev_ptr = reinterpret_cast<const phi::bfloat16 **>(ptr_tensor.data());
+          auto err = cudaMemcpyAsync(dev_ptr, ptrs.data(), nbytes,
+                                     cudaMemcpyHostToDevice, X[0].stream());
           PD_CHECK(err == cudaSuccess,
-                   "cudaMemcpyAsync error: ",
-                   cudaGetErrorString(err));
+                   "cudaMemcpyAsync error: ", cudaGetErrorString(err));
         }
         array.Set(ptrs, dev_ptr);
 
@@ -571,16 +518,14 @@ std::vector<paddle::Tensor> fuse_stack_transpose_fp8_quant_fleet_custom(
 
 PD_BUILD_OP(fuse_stack_fp8_quant)
     .Inputs({paddle::Vec("X")})
-    .Attrs({"using_pow2_scaling: bool",
-            "using_ue8m0_scale: bool",
+    .Attrs({"using_pow2_scaling: bool", "using_ue8m0_scale: bool",
             "output_scale_transpose: bool"})
     .Outputs({"output", "scale"})
     .SetKernelFn(PD_KERNEL(fuse_stack_transpose_fp8_quant_fleet_custom<false>));
 
 PD_BUILD_OP(fuse_stack_transpose_fp8_quant)
     .Inputs({paddle::Vec("X")})
-    .Attrs({"using_pow2_scaling: bool",
-            "using_ue8m0_scale: bool",
+    .Attrs({"using_pow2_scaling: bool", "using_ue8m0_scale: bool",
             "output_scale_transpose: bool"})
     .Outputs({"output", "scale"})
     .SetKernelFn(PD_KERNEL(fuse_stack_transpose_fp8_quant_fleet_custom<true>));

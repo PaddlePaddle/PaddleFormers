@@ -50,7 +50,11 @@ class TestSFTConfig(unittest.TestCase):
         self.assertEqual(config.ssa_group_size_ratio, 0.25)
 
     def test_autotuner_benchmark_mode(self):
-        config = SFTConfig(output_dir="/tmp/test_sft_output", autotuner_benchmark=True, bf16=True)
+        config = SFTConfig(
+            output_dir="/tmp/test_sft_output",
+            autotuner_benchmark=True,
+            bf16=True,
+        )
         self.assertEqual(config.max_steps, 5)
         self.assertTrue(config.do_train)
         self.assertFalse(config.do_export)

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -60,7 +64,9 @@ class TestAllGatherBalanceSingleRank(unittest.TestCase):
 
     def test_single_rank_returns_clone(self):
         """Test all_gather_balance returns clone when parallelism == 1."""
-        from paddleformers.fleet.context_parallel_utils import all_gather_balance
+        from paddleformers.fleet.context_parallel_utils import (
+            all_gather_balance,
+        )
 
         x = paddle.randn([8, 16])
         mock_group = mock.MagicMock()
@@ -71,7 +77,9 @@ class TestAllGatherBalanceSingleRank(unittest.TestCase):
 
     def test_single_rank_returns_different_object(self):
         """Test that single rank returns a different tensor object."""
-        from paddleformers.fleet.context_parallel_utils import all_gather_balance
+        from paddleformers.fleet.context_parallel_utils import (
+            all_gather_balance,
+        )
 
         x = paddle.randn([4, 8])
         mock_group = mock.MagicMock()
@@ -86,7 +94,9 @@ class TestReduceScatterAnyAxisSingleRank(unittest.TestCase):
 
     def test_single_rank_returns_clone(self):
         """Test reduce_scatter_any_axis returns clone when parallelism == 1."""
-        from paddleformers.fleet.context_parallel_utils import reduce_scatter_any_axis
+        from paddleformers.fleet.context_parallel_utils import (
+            reduce_scatter_any_axis,
+        )
 
         x = paddle.randn([8, 16])
         mock_group = mock.MagicMock()
@@ -97,7 +107,9 @@ class TestReduceScatterAnyAxisSingleRank(unittest.TestCase):
 
     def test_single_rank_returns_different_object(self):
         """Test that single rank returns a different tensor object."""
-        from paddleformers.fleet.context_parallel_utils import reduce_scatter_any_axis
+        from paddleformers.fleet.context_parallel_utils import (
+            reduce_scatter_any_axis,
+        )
 
         x = paddle.randn([4, 8])
         mock_group = mock.MagicMock()
@@ -149,7 +161,7 @@ class TestScatterBalanceMultiRank(unittest.TestCase):
         mock_group.nranks = 2
         mock_group.rank = 0
 
-        with mock.patch("paddle.slice") as mock_slice:  # noqa: SIM117
+        with mock.patch("paddle.slice") as mock_slice:
             with mock.patch("paddle.concat") as mock_concat:
                 mock_slice.return_value = paddle.randn([2, 16])
                 mock_concat.return_value = paddle.randn([4, 16])
@@ -165,7 +177,9 @@ class TestReduceScatterAnyAxisMultiRank(unittest.TestCase):
 
     def test_assertion_on_undivisible_length(self):
         """Test reduce_scatter_any_axis asserts on undivisible axis."""
-        from paddleformers.fleet.context_parallel_utils import reduce_scatter_any_axis
+        from paddleformers.fleet.context_parallel_utils import (
+            reduce_scatter_any_axis,
+        )
 
         x = paddle.randn([7, 16])
         mock_group = mock.MagicMock()
@@ -215,7 +229,9 @@ class TestAllGatherBalanceDefaultGroup(unittest.TestCase):
 
     def test_none_group_uses_fleet(self):
         """Test that None group triggers fleet.get_hybrid_communicate_group."""
-        from paddleformers.fleet.context_parallel_utils import all_gather_balance
+        from paddleformers.fleet.context_parallel_utils import (
+            all_gather_balance,
+        )
 
         x = paddle.randn([8, 16])
         mock_hcg = mock.MagicMock()
@@ -236,7 +252,9 @@ class TestReduceScatterDefaultGroup(unittest.TestCase):
 
     def test_none_group_uses_context_parallel_group(self):
         """Test that None group triggers context parallel group."""
-        from paddleformers.fleet.context_parallel_utils import reduce_scatter_any_axis
+        from paddleformers.fleet.context_parallel_utils import (
+            reduce_scatter_any_axis,
+        )
 
         x = paddle.randn([8, 16])
         mock_hcg = mock.MagicMock()

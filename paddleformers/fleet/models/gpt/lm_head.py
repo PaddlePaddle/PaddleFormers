@@ -13,7 +13,10 @@
 # limitations under the License.
 
 import paddle
-from paddle.distributed.fleet.meta_parallel import ScheduleNode, build_spec_layer
+from paddle.distributed.fleet.meta_parallel import (
+    ScheduleNode,
+    build_spec_layer,
+)
 from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
     build_sharded_state_dict,
 )
@@ -29,7 +32,9 @@ from paddleformers.fleet.transformer.identity_op import IdentityOp
 class GPTLMHead(ColumnParallelLinear):
     def __init__(self, **kwargs):
         self.config = kwargs["config"]
-        self.skip_weight_param_allocation = kwargs["skip_weight_param_allocation"]
+        self.skip_weight_param_allocation = kwargs[
+            "skip_weight_param_allocation"
+        ]
         self._dtype = self.config.params_dtype
 
         # Extract block_attn_res spec before passing kwargs to super
@@ -43,7 +48,9 @@ class GPTLMHead(ColumnParallelLinear):
         stride = kwargs["stride"] if "stride" in kwargs.keys() else 1
         init_method = kwargs["init_method"]
         keep_master_weight_for_test = (
-            kwargs["keep_master_weight_for_test"] if "keep_master_weight_for_test" in kwargs.keys() else False
+            kwargs["keep_master_weight_for_test"]
+            if "keep_master_weight_for_test" in kwargs.keys()
+            else False
         )
 
         if not self.skip_weight_param_allocation:
@@ -86,7 +93,9 @@ class GPTLMHead(ColumnParallelLinear):
             self.weight.is_distributed = True if self.world_size > 1 else False
 
         # Final Block Attention Residual (applied before LM head projection)
-        self.block_attn_res = build_spec_layer(block_attn_res_spec, config=self.config)
+        self.block_attn_res = build_spec_layer(
+            block_attn_res_spec, config=self.config
+        )
 
     def build_schedule_node(self):
         return ScheduleNode(self.forward, name="GPTLMHead")
@@ -102,7 +111,10 @@ class GPTLMHead(ColumnParallelLinear):
 
             return (hidden_states, self.weight, self.bias)
 
-        if self.config.recompute_modules is not None and "lm_head" in self.config.recompute_modules:
+        if (
+            self.config.recompute_modules is not None
+            and "lm_head" in self.config.recompute_modules
+        ):
             recompute_func = super().forward
 
             def recompute_handler(hidden_states, weight):
@@ -118,13 +130,22 @@ class GPTLMHead(ColumnParallelLinear):
         # Loss-path MD5 probe: lm_head weight and logits
         import os
 
-        if os.environ.get("LOG_LAYER_MD5", "0") == "1" or os.environ.get("LOG_LOSS_MD5", "0") == "1":
+        if (
+            os.environ.get("LOG_LAYER_MD5", "0") == "1"
+            or os.environ.get("LOG_LOSS_MD5", "0") == "1"
+        ):
             import hashlib
 
             rank = paddle.distributed.get_rank()
-            w_md5 = hashlib.md5(self.weight.cast("float32").numpy().tobytes()).hexdigest()
-            h_md5 = hashlib.md5(hidden_states.cast("float32").numpy().tobytes()).hexdigest()
-            l_md5 = hashlib.md5(logits.cast("float32").numpy().tobytes()).hexdigest()
+            w_md5 = hashlib.md5(
+                self.weight.cast("float32").numpy().tobytes()
+            ).hexdigest()
+            h_md5 = hashlib.md5(
+                hidden_states.cast("float32").numpy().tobytes()
+            ).hexdigest()
+            l_md5 = hashlib.md5(
+                logits.cast("float32").numpy().tobytes()
+            ).hexdigest()
             print(
                 f"[LOSS_PATH_MD5] rank={rank} lm_head_weight shape={list(self.weight.shape)} md5={w_md5}",
                 flush=True,
@@ -175,7 +196,9 @@ class GPTLMHead(ColumnParallelLinear):
         """Sharding along axis 0, bias sharded"""
         state_dict = self.state_dict(structured_name_prefix="")
         shard_rules = None if self.world_size == 1 else {"weight": 0, "bias": 0}
-        return build_sharded_state_dict(state_dict, shard_rules, structured_name_prefix)
+        return build_sharded_state_dict(
+            state_dict, shard_rules, structured_name_prefix
+        )
 
 
 class GPTMainLMHead(GPTLMHead):
@@ -184,7 +207,9 @@ class GPTMainLMHead(GPTLMHead):
     def __init__(self, **kwargs):
         block_attn_res_spec = kwargs.pop("block_attn_res", IdentityOp)
         super().__init__(**kwargs)
-        self.block_attn_res = build_spec_layer(block_attn_res_spec, config=self.config)
+        self.block_attn_res = build_spec_layer(
+            block_attn_res_spec, config=self.config
+        )
 
     def build_schedule_node(self):
         return ScheduleNode(self.forward, name="GPTMainLMHead")

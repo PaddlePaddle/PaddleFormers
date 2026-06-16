@@ -22,7 +22,11 @@ from paddle.distributed import fleet
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 from paddleformers.fleet.pipeline_parallel.pp_utils.forward_backward_overlap_utils import (
@@ -84,7 +88,9 @@ class TestFakeCloneForwardBackward(unittest.TestCase):
         # backward should pass grad_output through
         grad_output = paddle.randn([4, 8], dtype="float32")
         paddle.autograd.backward([cloned], [grad_output])
-        np.testing.assert_allclose(x.grad.numpy(), grad_output.numpy(), rtol=1e-5)
+        np.testing.assert_allclose(
+            x.grad.numpy(), grad_output.numpy(), rtol=1e-5
+        )
 
 
 class TestCloneAndClearDataptrSingleTensor(unittest.TestCase):
@@ -181,7 +187,9 @@ class TestScheduleNodeForwardNoRecompute(unittest.TestCase):
 
     def test_schedule_node_forward_no_recompute(self):
         """ScheduleNode.forward should call fwd_func and return its output."""
-        node = ScheduleNode(fwd_func=lambda inputs, **kwargs: inputs * 2, name="double_node")
+        node = ScheduleNode(
+            fwd_func=lambda inputs, **kwargs: inputs * 2, name="double_node"
+        )
         inputs = paddle.to_tensor([1.0, 2.0, 3.0], stop_gradient=False)
         output = node.forward(inputs)
         np.testing.assert_allclose(output.numpy(), [2.0, 4.0, 6.0], rtol=1e-5)
@@ -217,8 +225,12 @@ class TestScheduleChunkForwardBackward(unittest.TestCase):
 
     def test_schedule_chunk_forward_backward(self):
         """ScheduleChunk should chain forward and backward through its nodes."""
-        node1 = ScheduleNode(fwd_func=lambda inputs, **kwargs: inputs * 2, name="mul_node")
-        node2 = ScheduleNode(fwd_func=lambda inputs, **kwargs: inputs + 1, name="add_node")
+        node1 = ScheduleNode(
+            fwd_func=lambda inputs, **kwargs: inputs * 2, name="mul_node"
+        )
+        node2 = ScheduleNode(
+            fwd_func=lambda inputs, **kwargs: inputs + 1, name="add_node"
+        )
         chunk = ScheduleChunk([node1, node2])
         inputs = paddle.to_tensor([1.0, 2.0, 3.0], stop_gradient=False)
 

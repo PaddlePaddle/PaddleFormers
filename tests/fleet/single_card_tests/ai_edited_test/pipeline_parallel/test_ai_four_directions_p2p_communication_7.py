@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -120,7 +124,9 @@ class TestFourDirsPartialSendRecvWithGroup(unittest.TestCase):
                 "paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication._partial_allgather_op",
                 return_value=MagicMock(),
             ),
-            patch("paddle.distributed.collective._get_default_group") as mock_default,
+            patch(
+                "paddle.distributed.collective._get_default_group"
+            ) as mock_default,
         ):
             mock_default.return_value = MagicMock()
             allgather_partial(

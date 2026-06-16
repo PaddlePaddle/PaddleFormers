@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -61,7 +65,10 @@ class TestGlobalVars(unittest.TestCase):
             get_timers()
 
     def test_set_timers_and_get_timers(self):
-        from paddleformers.fleet.training.global_vars import _set_timers, get_timers
+        from paddleformers.fleet.training.global_vars import (
+            _set_timers,
+            get_timers,
+        )
 
         _set_timers()
         timers = get_timers()
@@ -75,14 +82,18 @@ class TestGlobalVars(unittest.TestCase):
             _set_timers()
 
     def test_ensure_var_is_initialized_none_raises(self):
-        from paddleformers.fleet.training.global_vars import _ensure_var_is_initialized
+        from paddleformers.fleet.training.global_vars import (
+            _ensure_var_is_initialized,
+        )
 
         with self.assertRaises(AssertionError) as ctx:
             _ensure_var_is_initialized(None, "test_var")
         self.assertIn("test_var", str(ctx.exception))
 
     def test_ensure_var_is_initialized_not_none_passes(self):
-        from paddleformers.fleet.training.global_vars import _ensure_var_is_initialized
+        from paddleformers.fleet.training.global_vars import (
+            _ensure_var_is_initialized,
+        )
 
         # Should not raise
         _ensure_var_is_initialized("some_value", "test_var")
@@ -135,7 +146,9 @@ class TestGlobalVars(unittest.TestCase):
         self.assertIsNotNone(get_timers())
 
     def test_set_global_variables_none_raises(self):
-        from paddleformers.fleet.training.global_vars import set_global_variables
+        from paddleformers.fleet.training.global_vars import (
+            set_global_variables,
+        )
 
         with self.assertRaises(AssertionError):
             set_global_variables(None)
@@ -167,7 +180,9 @@ class TestGlobalVars(unittest.TestCase):
             get_timers()
 
     def test_unset_global_variables_when_not_set(self):
-        from paddleformers.fleet.training.global_vars import unset_global_variables
+        from paddleformers.fleet.training.global_vars import (
+            unset_global_variables,
+        )
 
         # Should not raise even when nothing is set
         unset_global_variables()

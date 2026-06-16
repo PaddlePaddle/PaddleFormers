@@ -79,7 +79,9 @@ class Chunk:
         self.end = end
         self.barrier_step = barrier_step
         self.layer_id = (
-            self.virtual_pp_rank * pp_degree + self.stage_id if self.chunk_type != ChunkType.BUBBLE else None
+            self.virtual_pp_rank * pp_degree + self.stage_id
+            if self.chunk_type != ChunkType.BUBBLE
+            else None
         )
 
     def __str__(self):
@@ -124,7 +126,9 @@ class VPPSimulator:
         self.chunks = []
         self.schedule_table = [[] for _ in range(self.pp_degree)]
 
-        self.first_chunk_acc = (self.num_acc_steps % self.pp_degree) + self.pp_degree
+        self.first_chunk_acc = (
+            self.num_acc_steps % self.pp_degree
+        ) + self.pp_degree
         self.num_steps = self.num_acc_steps * self.vpp_degree
         self.layer_num = self.pp_degree * self.vpp_degree
 
@@ -136,7 +140,9 @@ class VPPSimulator:
         num_chunks = self.num_acc_steps * self.pp_degree * self.vpp_degree * 2
         num_done_chunks = 0
 
-        undone_micro_step = [0] * self.pp_degree  # First unprocessed chunk index for each stage
+        undone_micro_step = [
+            0
+        ] * self.pp_degree  # First unprocessed chunk index for each stage
         stage_index = 0  # Pointer to current stage being processed
 
         while num_done_chunks < num_chunks:
@@ -154,7 +160,9 @@ class VPPSimulator:
                 preorder_chunk = self._get_preorder_chunk(chunk)
 
                 if preorder_chunk is not None:
-                    if preorder_chunk.end == 0:  # Previous chunk not processed yet
+                    if (
+                        preorder_chunk.end == 0
+                    ):  # Previous chunk not processed yet
                         # print(f"{stage_index}, {micro_step} : {preorder_chunk} -> {chunk} skipped")
                         stage_index = (stage_index + 1) % self.pp_degree
                         continue
@@ -177,7 +185,9 @@ class VPPSimulator:
         self.schedule_table[chunk.stage_id].append(chunk)
 
     def _barrier_two_chunk(self, c1, c2):
-        assert c1.chunk_type == c2.chunk_type, f"{c1} and {c2} should have the same chunk type"
+        assert c1.chunk_type == c2.chunk_type, (
+            f"{c1} and {c2} should have the same chunk type"
+        )
         c1.start = max(c1.start, c2.start)
         # print(f"{c1} <-- {c2} barrier")
 
@@ -185,10 +195,16 @@ class VPPSimulator:
         # barrier steady phase
         barrier_steps = []
         for stage_id in range(0, self.pp_degree - 1):
-            warmup_steps, steady_steps = self._get_warmup_and_steady_steps(stage_id)
-            barrier_steps.append(range(warmup_steps, warmup_steps + 2 * steady_steps))
+            warmup_steps, steady_steps = self._get_warmup_and_steady_steps(
+                stage_id
+            )
+            barrier_steps.append(
+                range(warmup_steps, warmup_steps + 2 * steady_steps)
+            )
 
-        last_stage_warmup_steps, last_stage_steady_steps = self._get_warmup_and_steady_steps(self.pp_degree - 1)
+        last_stage_warmup_steps, last_stage_steady_steps = (
+            self._get_warmup_and_steady_steps(self.pp_degree - 1)
+        )
         for micro_step in range(
             last_stage_warmup_steps,
             last_stage_warmup_steps + 2 * last_stage_steady_steps,
@@ -198,7 +214,10 @@ class VPPSimulator:
                 # Standard VPP scheduling step for each stage
                 target_step = micro_step
                 # Step for each stage under VPPFhenBInBalancedMemory scheduling
-                if self.num_acc_steps >= self.pp_degree and self.num_acc_steps < self.pp_degree * 2:
+                if (
+                    self.num_acc_steps >= self.pp_degree
+                    and self.num_acc_steps < self.pp_degree * 2
+                ):
                     target_step = micro_step - (self.pp_degree - stage_id - 1)
                 if target_step in barrier_steps[stage_id]:
                     self._barrier_two_chunk(
@@ -219,13 +238,27 @@ class VPPSimulator:
 
         # barrier cooldown phase
         for barrier_stage_id in range(1, self.pp_degree):
-            barrier_warmup_steps, barrier_steady_steps = self._get_warmup_and_steady_steps(barrier_stage_id)
-            barrier_micro_steps = barrier_warmup_steps + 2 * barrier_steady_steps - 1  # Last Backward in steady phase
-            barrier_chunk = self.schedule_table[barrier_stage_id][barrier_micro_steps]
+            barrier_warmup_steps, barrier_steady_steps = (
+                self._get_warmup_and_steady_steps(barrier_stage_id)
+            )
+            barrier_micro_steps = (
+                barrier_warmup_steps + 2 * barrier_steady_steps - 1
+            )  # Last Backward in steady phase
+            barrier_chunk = self.schedule_table[barrier_stage_id][
+                barrier_micro_steps
+            ]
             for stage_id in range(0, barrier_stage_id):
-                warmup_steps, steady_steps = self._get_warmup_and_steady_steps(stage_id)
-                target_step = warmup_steps + steady_steps * 2 + (barrier_stage_id - stage_id - 1)
-                self._barrier_two_chunk(self.schedule_table[stage_id][target_step], barrier_chunk)
+                warmup_steps, steady_steps = self._get_warmup_and_steady_steps(
+                    stage_id
+                )
+                target_step = (
+                    warmup_steps
+                    + steady_steps * 2
+                    + (barrier_stage_id - stage_id - 1)
+                )
+                self._barrier_two_chunk(
+                    self.schedule_table[stage_id][target_step], barrier_chunk
+                )
 
         for stage_id in range(0, self.pp_degree - 1):
             for micro_step, chunk in enumerate(self.schedule_table[stage_id]):
@@ -239,7 +272,11 @@ class VPPSimulator:
                     )
 
     def _get_consume_time(self, virtual_pp_rank, acc_step, chunk_type):
-        return 1 if chunk_type == ChunkType.FORWARD or chunk_type == ChunkType.BUBBLE else 2
+        return (
+            1
+            if chunk_type == ChunkType.FORWARD or chunk_type == ChunkType.BUBBLE
+            else 2
+        )
 
     def _get_preorder_chunk(self, chunk):
         if chunk.chunk_type == ChunkType.BUBBLE:
@@ -249,30 +286,49 @@ class VPPSimulator:
             return (
                 None
                 if chunk.layer_id == 0
-                else self._find_preorder_chunk_from_stage(chunk, (stage_id - 1 + self.pp_degree) % self.pp_degree)
+                else self._find_preorder_chunk_from_stage(
+                    chunk, (stage_id - 1 + self.pp_degree) % self.pp_degree
+                )
             )
         elif chunk.chunk_type == ChunkType.BACKWARD:
             return (
                 None
                 if chunk.layer_id == self.vpp_degree * self.pp_degree - 1
-                else self._find_preorder_chunk_from_stage(chunk, (stage_id + 1) % self.pp_degree)
+                else self._find_preorder_chunk_from_stage(
+                    chunk, (stage_id + 1) % self.pp_degree
+                )
             )
         else:
             raise NotImplementedError
 
     def _find_preorder_chunk_from_stage(self, chunk, stage_id):
         for preorder_chunk in self.schedule_table[stage_id]:
-            if preorder_chunk.chunk_type == chunk.chunk_type and preorder_chunk.acc_step == chunk.acc_step:
-                if (chunk.chunk_type == ChunkType.FORWARD and chunk.layer_id == preorder_chunk.layer_id + 1) or (
-                    chunk.chunk_type == ChunkType.BACKWARD and chunk.layer_id == preorder_chunk.layer_id - 1
+            if (
+                preorder_chunk.chunk_type == chunk.chunk_type
+                and preorder_chunk.acc_step == chunk.acc_step
+            ):
+                if (
+                    chunk.chunk_type == ChunkType.FORWARD
+                    and chunk.layer_id == preorder_chunk.layer_id + 1
+                ) or (
+                    chunk.chunk_type == ChunkType.BACKWARD
+                    and chunk.layer_id == preorder_chunk.layer_id - 1
                 ):
                     return preorder_chunk
         raise ValueError(f"No pre-order chunks found for chunk: {chunk}")
 
     def _get_warmup_and_steady_steps(self, stage_id):
         # VPPFhenBInBalancedMemory
-        if self.num_acc_steps >= self.pp_degree and self.num_acc_steps < self.pp_degree * 2:
-            warmup_steps = self.num_acc_steps * (self.vpp_degree - 1) + self.pp_degree - stage_id - 1
+        if (
+            self.num_acc_steps >= self.pp_degree
+            and self.num_acc_steps < self.pp_degree * 2
+        ):
+            warmup_steps = (
+                self.num_acc_steps * (self.vpp_degree - 1)
+                + self.pp_degree
+                - stage_id
+                - 1
+            )
             steady_steps = self.num_acc_steps - (self.pp_degree - stage_id - 1)
             return warmup_steps, steady_steps
 
@@ -307,9 +363,13 @@ class VPPSimulator:
                 forward_micro_step_counter[i] = 0
                 backward_micro_step_counter[i] = 0
 
-            warmup_steps, steady_steps = self._get_warmup_and_steady_steps(stage_id)
+            warmup_steps, steady_steps = self._get_warmup_and_steady_steps(
+                stage_id
+            )
             for micro_step in range(warmup_steps):
-                virtual_pp_rank = self._get_virtual_pp_rank(micro_step, forward=True)
+                virtual_pp_rank = self._get_virtual_pp_rank(
+                    micro_step, forward=True
+                )
                 real_micro_step = forward_micro_step_counter[virtual_pp_rank]
                 forward_micro_step_counter[virtual_pp_rank] += 1
                 self._add_chunk(
@@ -327,13 +387,21 @@ class VPPSimulator:
 
             for micro_step in range(steady_steps):
                 forward_micro_step_id = micro_step + warmup_steps
-                forward_virtual_pp_rank = self._get_virtual_pp_rank(forward_micro_step_id, forward=True)
+                forward_virtual_pp_rank = self._get_virtual_pp_rank(
+                    forward_micro_step_id, forward=True
+                )
                 backward_micro_step_id = micro_step
-                backward_virtual_pp_rank = self._get_virtual_pp_rank(backward_micro_step_id, forward=False)
+                backward_virtual_pp_rank = self._get_virtual_pp_rank(
+                    backward_micro_step_id, forward=False
+                )
 
-                real_forward_micro_step = forward_micro_step_counter[forward_virtual_pp_rank]
+                real_forward_micro_step = forward_micro_step_counter[
+                    forward_virtual_pp_rank
+                ]
                 forward_micro_step_counter[forward_virtual_pp_rank] += 1
-                real_backward_micro_step = backward_micro_step_counter[backward_virtual_pp_rank]
+                real_backward_micro_step = backward_micro_step_counter[
+                    backward_virtual_pp_rank
+                ]
                 backward_micro_step_counter[backward_virtual_pp_rank] += 1
                 barrier_step = micro_step + (self.pp_degree - stage_id - 1)
 
@@ -365,7 +433,9 @@ class VPPSimulator:
                 )
 
             for micro_step in range(steady_steps, self.num_steps):
-                virtual_pp_rank = self._get_virtual_pp_rank(micro_step, forward=False)
+                virtual_pp_rank = self._get_virtual_pp_rank(
+                    micro_step, forward=False
+                )
                 real_micro_step = backward_micro_step_counter[virtual_pp_rank]
                 backward_micro_step_counter[virtual_pp_rank] += 1
                 self._add_chunk(
@@ -396,9 +466,15 @@ class VPPSimulator:
         max_end = 0
         sum_exec = 0
         for i in range(self.pp_degree):
-            min_start = min(min_start, *(c.start for c in self.schedule_table[i]))
+            min_start = min(
+                min_start, *(c.start for c in self.schedule_table[i])
+            )
             max_end = max(max_end, *(c.end for c in self.schedule_table[i]))
-            sum_exec += sum(c.end - c.start for c in self.schedule_table[i] if c.chunk_type != ChunkType.BUBBLE)
+            sum_exec += sum(
+                c.end - c.start
+                for c in self.schedule_table[i]
+                if c.chunk_type != ChunkType.BUBBLE
+            )
 
         total_time = max_end - min_start
         total_possible_time = self.pp_degree * total_time
@@ -420,13 +496,24 @@ class VPPSimulator:
         cmap = plt.cm.get_cmap("viridis")
 
         # Generate color dictionary
-        color_map = {i: cmap(i / (self.vpp_degree - 1)) for i in range(self.vpp_degree)}
+        color_map = {
+            i: cmap(i / (self.vpp_degree - 1)) for i in range(self.vpp_degree)
+        }
 
-        max_time = max(chunk.end for stage in self.schedule_table for chunk in stage) + 1 if self.schedule_table else 1
+        max_time = (
+            max(chunk.end for stage in self.schedule_table for chunk in stage)
+            + 1
+            if self.schedule_table
+            else 1
+        )
 
         # Get figure and axes dimensions for calculating adaptive height
-        fig_width, fig_height = fig.get_size_inches()  # Get figure dimensions (inches)
-        ax_pos = ax.get_window_extent()  # Get axes position and dimensions (pixels)
+        fig_width, fig_height = (
+            fig.get_size_inches()
+        )  # Get figure dimensions (inches)
+        ax_pos = (
+            ax.get_window_extent()
+        )  # Get axes position and dimensions (pixels)
         dpi = fig.dpi  # Get resolution
 
         # Set a fixed rectangle height ratio
@@ -436,8 +523,8 @@ class VPPSimulator:
         # Draw each Chunk
         for stage_idx, chunks in enumerate(self.schedule_table):
             y_pos = (
-                self.pp_degree - stage_idx - 1
-            ) * stage_height  # Y position corresponds to stage_id, adjusted by stage_height
+                (self.pp_degree - stage_idx - 1) * stage_height
+            )  # Y position corresponds to stage_id, adjusted by stage_height
             for chunk in chunks:
                 if chunk.chunk_type == ChunkType.BUBBLE:
                     continue
@@ -473,9 +560,15 @@ class VPPSimulator:
 
         # Set axes
         ax.set_xlim(0, max_time)
-        ax.set_ylim(0, fig_height * rect_height_ratio)  # Set y-axis range based on figure height and ratio
-        ax.set_yticks(range(self.pp_degree + 1) * stage_height)  # Adjust yticks position
-        ax.set_yticklabels([f"Stage {i}" for i in range(self.pp_degree - 1, -1, -1)] + [""])
+        ax.set_ylim(
+            0, fig_height * rect_height_ratio
+        )  # Set y-axis range based on figure height and ratio
+        ax.set_yticks(
+            range(self.pp_degree + 1) * stage_height
+        )  # Adjust yticks position
+        ax.set_yticklabels(
+            [f"Stage {i}" for i in range(self.pp_degree - 1, -1, -1)] + [""]
+        )
         ax.set_xlabel("Time Step")
         ax.set_title("Pipeline Schedule Visualization")
         ax.grid(axis="y", alpha=0.5)
@@ -501,7 +594,10 @@ class VPPSimulator:
         for schedule in self.schedule_table:
             for chunk in schedule:
                 if chunk.chunk_type == ChunkType.BACKWARD:
-                    if start_time_to_backward_chunks.get(chunk.start, None) is None:
+                    if (
+                        start_time_to_backward_chunks.get(chunk.start, None)
+                        is None
+                    ):
                         start_time_to_backward_chunks[chunk.start] = []
                     start_time_to_backward_chunks[chunk.start].append(chunk)
 
@@ -512,7 +608,9 @@ class VPPSimulator:
                 chunk = chunks[i]
                 next_chunk = chunks[i + 1]
                 print(f"chunk: {chunk}, next_chunk: {next_chunk}")
-                assert chunk.acc_step + 1 == next_chunk.acc_step, f"{chunk.acc_step} + 1 != {next_chunk.acc_step}"
+                assert chunk.acc_step + 1 == next_chunk.acc_step, (
+                    f"{chunk.acc_step} + 1 != {next_chunk.acc_step}"
+                )
                 links[chunk.layer_id][chunk.acc_step] = next_chunk.layer_id
                 print(f"links: {links}")
 
@@ -613,7 +711,8 @@ class PPChunkRecorder:
 
     def record_chunk_forward(self, layer_id):
         if (
-            layer_id >= (self.num_hidden_layers + self.num_empty_layers_add_in_head)
+            layer_id
+            >= (self.num_hidden_layers + self.num_empty_layers_add_in_head)
             or layer_id < self.num_empty_layers_add_in_head
         ):
             return False

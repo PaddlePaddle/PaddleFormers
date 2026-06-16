@@ -65,7 +65,9 @@ LARGE_COSINE_SIM_THRESH = 0.998
 
 def _requires_cutile(test_func):
     """Decorator to skip tests when cuTile is not available."""
-    return unittest.skipUnless(is_cutile_available(), "cuTile (cuda.tile) not installed")(test_func)
+    return unittest.skipUnless(
+        is_cutile_available(), "cuTile (cuda.tile) not installed"
+    )(test_func)
 
 
 def _rand(*shape, dtype=DTYPE, requires_grad=False):
@@ -90,7 +92,9 @@ def _assert_close(a, b, atol, rtol, msg=""):
     )
 
 
-def _assert_cosine_similar(a: Tensor, b: Tensor, threshold: float, msg: str = ""):
+def _assert_cosine_similar(
+    a: Tensor, b: Tensor, threshold: float, msg: str = ""
+):
     """Assert that flattened tensors have cosine similarity >= threshold."""
     a_flat = a.flatten().astype("float32")
     b_flat = b.flatten().astype("float32")
@@ -99,7 +103,10 @@ def _assert_cosine_similar(a: Tensor, b: Tensor, threshold: float, msg: str = ""
     norm_b = paddle.norm(b_flat)
     sim = (dot / (norm_a * norm_b + 1e-12)).item()
     max_abs_diff = paddle.max(paddle.abs(a_flat - b_flat)).item()
-    assert sim >= threshold, f"{msg}: cosine similarity {sim:.6f} < {threshold} " f"(max_abs_diff={max_abs_diff:.6e})"
+    assert sim >= threshold, (
+        f"{msg}: cosine similarity {sim:.6f} < {threshold} "
+        f"(max_abs_diff={max_abs_diff:.6e})"
+    )
 
 
 def _assert_not_all_zero(t: Tensor, msg: str = ""):
@@ -183,7 +190,9 @@ class TestNativeSinkhorn(unittest.TestCase):
 
         _assert_close(out_f, out_r, FWD_ATOL, FWD_RTOL, "sinkhorn fwd")
         _assert_close(grad_f, grad_r, BWD_ATOL, BWD_RTOL, "sinkhorn bwd")
-        _assert_cosine_similar(grad_f, grad_r, COSINE_SIM_THRESH, "sinkhorn grad cosine")
+        _assert_cosine_similar(
+            grad_f, grad_r, COSINE_SIM_THRESH, "sinkhorn grad cosine"
+        )
         _assert_not_all_zero(grad_f, "sinkhorn grad")
 
     def test_shape_8192_1_4_iters5(self):
@@ -230,7 +239,9 @@ class TestFusedSinkhorn(unittest.TestCase):
         fwd_rtol = LARGE_FWD_RTOL if is_large else FWD_RTOL
         bwd_atol = LARGE_BWD_ATOL if is_large else BWD_ATOL
         bwd_rtol = LARGE_BWD_RTOL if is_large else BWD_RTOL
-        cosine_thresh = LARGE_COSINE_SIM_THRESH if is_large else COSINE_SIM_THRESH
+        cosine_thresh = (
+            LARGE_COSINE_SIM_THRESH if is_large else COSINE_SIM_THRESH
+        )
 
         # -- fused path --
         inp_f = data.clone()
@@ -248,7 +259,9 @@ class TestFusedSinkhorn(unittest.TestCase):
 
         _assert_close(out_f, out_r, fwd_atol, fwd_rtol, "fused sinkhorn fwd")
         _assert_close(grad_f, grad_r, bwd_atol, bwd_rtol, "fused sinkhorn bwd")
-        _assert_cosine_similar(grad_f, grad_r, cosine_thresh, "fused sinkhorn grad cosine")
+        _assert_cosine_similar(
+            grad_f, grad_r, cosine_thresh, "fused sinkhorn grad cosine"
+        )
 
 
 # ============================================================================
@@ -282,9 +295,15 @@ class TestNativeHAggregate(unittest.TestCase):
         paddle.autograd.backward([oref], [grad_out])
 
         _assert_close(of, oref, FWD_ATOL, FWD_RTOL, "h_aggregate fwd")
-        _assert_close(xf.grad, xr.grad, BWD_ATOL, BWD_RTOL, "h_aggregate grad_x")
-        _assert_close(hf.grad, hr.grad, BWD_ATOL, BWD_RTOL, "h_aggregate grad_h")
-        _assert_cosine_similar(xf.grad, xr.grad, COSINE_SIM_THRESH, "h_aggregate grad_x cosine")
+        _assert_close(
+            xf.grad, xr.grad, BWD_ATOL, BWD_RTOL, "h_aggregate grad_x"
+        )
+        _assert_close(
+            hf.grad, hr.grad, BWD_ATOL, BWD_RTOL, "h_aggregate grad_h"
+        )
+        _assert_cosine_similar(
+            xf.grad, xr.grad, COSINE_SIM_THRESH, "h_aggregate grad_x cosine"
+        )
         _assert_not_all_zero(xf.grad, "h_aggregate grad_x")
         _assert_not_all_zero(hf.grad, "h_aggregate grad_h")
 
@@ -314,7 +333,9 @@ class TestFusedHAggregate(unittest.TestCase):
         self._run_fwd_bwd(65536, 1, 4, 8192)
 
     def _run_fwd_bwd(self, s, b, n, C):
-        from paddleformers.fleet.fusions.fused_mhc_kernels import fused_h_aggregate
+        from paddleformers.fleet.fusions.fused_mhc_kernels import (
+            fused_h_aggregate,
+        )
 
         x_data = _rand(s, b, n, C)
         h_data = _rand(s, b, n)
@@ -326,7 +347,9 @@ class TestFusedHAggregate(unittest.TestCase):
         fwd_rtol = LARGE_FWD_RTOL if is_large else FWD_RTOL
         bwd_atol = LARGE_BWD_ATOL if is_large else BWD_ATOL
         bwd_rtol = LARGE_BWD_RTOL if is_large else BWD_RTOL
-        cosine_thresh = LARGE_COSINE_SIM_THRESH if is_large else COSINE_SIM_THRESH
+        cosine_thresh = (
+            LARGE_COSINE_SIM_THRESH if is_large else COSINE_SIM_THRESH
+        )
 
         # -- fused --
         xf = x_data.clone()
@@ -345,9 +368,15 @@ class TestFusedHAggregate(unittest.TestCase):
         paddle.autograd.backward([oref], [grad_out])
 
         _assert_close(of, oref, fwd_atol, fwd_rtol, "fused h_aggregate fwd")
-        _assert_close(xf.grad, xr.grad, bwd_atol, bwd_rtol, "fused h_aggregate grad_x")
-        _assert_close(hf.grad, hr.grad, bwd_atol, bwd_rtol, "fused h_aggregate grad_h")
-        _assert_cosine_similar(xf.grad, xr.grad, cosine_thresh, "fused h_aggregate grad_x cosine")
+        _assert_close(
+            xf.grad, xr.grad, bwd_atol, bwd_rtol, "fused h_aggregate grad_x"
+        )
+        _assert_close(
+            hf.grad, hr.grad, bwd_atol, bwd_rtol, "fused h_aggregate grad_h"
+        )
+        _assert_cosine_similar(
+            xf.grad, xr.grad, cosine_thresh, "fused h_aggregate grad_x cosine"
+        )
 
 
 # ============================================================================
@@ -399,10 +428,14 @@ class TestNativeHPostBDA(unittest.TestCase):
             ("x", x_f.grad, x_r.grad),
         ]:
             _assert_close(gf, gr, BWD_ATOL, BWD_RTOL, f"h_post_bda bwd {name}")
-            _assert_cosine_similar(gf, gr, COSINE_SIM_THRESH, f"h_post_bda bwd {name} cosine")
+            _assert_cosine_similar(
+                gf, gr, COSINE_SIM_THRESH, f"h_post_bda bwd {name} cosine"
+            )
             _assert_not_all_zero(gf, f"h_post_bda bwd {name}")
         if with_bias:
-            _assert_close(bi_f.grad, bi_r.grad, BWD_ATOL, BWD_RTOL, "h_post_bda bwd bias")
+            _assert_close(
+                bi_f.grad, bi_r.grad, BWD_ATOL, BWD_RTOL, "h_post_bda bwd bias"
+            )
 
     def test_no_bias_8192_1_4_4096(self):
         self._run_fwd_bwd(8192, 1, 4, 4096, with_bias=False)
@@ -430,7 +463,9 @@ class TestFusedHPostBDA(unittest.TestCase):
         self._run_fwd_bwd(65536, 1, 4, 8192, with_bias=True)
 
     def _run_fwd_bwd(self, s, b, n, C, with_bias):
-        from paddleformers.fleet.fusions.fused_mhc_kernels import fused_h_post_bda
+        from paddleformers.fleet.fusions.fused_mhc_kernels import (
+            fused_h_post_bda,
+        )
 
         hr_data = _rand(s, b, n, n)
         orig_data = _rand(s, b, n, C)
@@ -445,7 +480,9 @@ class TestFusedHPostBDA(unittest.TestCase):
         fwd_rtol = LARGE_FWD_RTOL if is_large else FWD_RTOL
         bwd_atol = LARGE_BWD_ATOL if is_large else BWD_ATOL
         bwd_rtol = LARGE_BWD_RTOL if is_large else BWD_RTOL
-        cosine_thresh = LARGE_COSINE_SIM_THRESH if is_large else COSINE_SIM_THRESH
+        cosine_thresh = (
+            LARGE_COSINE_SIM_THRESH if is_large else COSINE_SIM_THRESH
+        )
 
         def _make_inputs():
             hr = hr_data.clone()
@@ -478,8 +515,12 @@ class TestFusedHPostBDA(unittest.TestCase):
             ("h_post", hp_f.grad, hp_r.grad),
             ("x", x_f.grad, x_r.grad),
         ]:
-            _assert_close(gf, gr, bwd_atol, bwd_rtol, f"fused h_post_bda bwd {name}")
-            _assert_cosine_similar(gf, gr, cosine_thresh, f"fused h_post_bda bwd {name} cosine")
+            _assert_close(
+                gf, gr, bwd_atol, bwd_rtol, f"fused h_post_bda bwd {name}"
+            )
+            _assert_cosine_similar(
+                gf, gr, cosine_thresh, f"fused h_post_bda bwd {name} cosine"
+            )
         if with_bias:
             _assert_close(
                 bi_f.grad,
@@ -528,8 +569,12 @@ class TestNativeProjRms(unittest.TestCase):
         _assert_close(proj_f, proj_r, FWD_ATOL, FWD_RTOL, "proj_rms proj fwd")
         _assert_close(r_f, r_r, FWD_ATOL, FWD_RTOL, "proj_rms r fwd")
         _assert_close(xf.grad, xr.grad, BWD_ATOL, BWD_RTOL, "proj_rms bwd x")
-        _assert_close(wf.grad, wr.grad.t(), BWD_ATOL, BWD_RTOL, "proj_rms bwd weight")
-        _assert_cosine_similar(xf.grad, xr.grad, COSINE_SIM_THRESH, "proj_rms grad_x cosine")
+        _assert_close(
+            wf.grad, wr.grad.t(), BWD_ATOL, BWD_RTOL, "proj_rms bwd weight"
+        )
+        _assert_cosine_similar(
+            xf.grad, xr.grad, COSINE_SIM_THRESH, "proj_rms grad_x cosine"
+        )
         _assert_not_all_zero(xf.grad, "proj_rms grad_x")
         _assert_not_all_zero(wf.grad, "proj_rms grad_w")
 
@@ -570,9 +615,9 @@ class TestFusedProjRms(unittest.TestCase):
         w = paddle.zeros([K, N], dtype="float32")
         w[-1, 0] = 1.0  # so proj[-1, 0] should be 1.0
         proj, r = fused_proj_rms(x, w, 1e-6)
-        assert (
-            abs(proj[-1, 0].item() - 1.0) < 1e-3
-        ), f"Last element incorrect: {proj[-1, 0].item()}, possible address overflow"
+        assert abs(proj[-1, 0].item() - 1.0) < 1e-3, (
+            f"Last element incorrect: {proj[-1, 0].item()}, possible address overflow"
+        )
         assert proj[0, 0].item() == 0.0, "First element should be zero"
 
     def _run_fwd_bwd(self, M, N, K, eps=1e-6):
@@ -591,7 +636,9 @@ class TestFusedProjRms(unittest.TestCase):
         tf32_bwd_rtol = LARGE_TF32_BWD_RTOL if is_large else TF32_BWD_RTOL
         fwd_atol = LARGE_FWD_ATOL if is_large else FWD_ATOL
         fwd_rtol = LARGE_FWD_RTOL if is_large else FWD_RTOL
-        cosine_thresh = LARGE_COSINE_SIM_THRESH if is_large else COSINE_SIM_THRESH
+        cosine_thresh = (
+            LARGE_COSINE_SIM_THRESH if is_large else COSINE_SIM_THRESH
+        )
 
         # -- fused (expects weight [K, N]) --
         xf = x_data.clone()
@@ -631,8 +678,12 @@ class TestFusedProjRms(unittest.TestCase):
             tf32_bwd_rtol,
             "fused proj_rms bwd weight",
         )
-        _assert_cosine_similar(xf.grad, xr.grad, cosine_thresh, "fused proj_rms grad_x cosine")
-        _assert_cosine_similar(wf.grad, wr.grad.t(), cosine_thresh, "fused proj_rms grad_w cosine")
+        _assert_cosine_similar(
+            xf.grad, xr.grad, cosine_thresh, "fused proj_rms grad_x cosine"
+        )
+        _assert_cosine_similar(
+            wf.grad, wr.grad.t(), cosine_thresh, "fused proj_rms grad_w cosine"
+        )
 
 
 # ============================================================================
@@ -675,7 +726,9 @@ class TestEndToEndNative(unittest.TestCase):
             h_pre = h[..., :n].sigmoid()
             h_post = h[..., n : 2 * n].sigmoid() * 2
             h_res_logits = h[..., 2 * n :]
-            h_res = native_sinkhorn(h_res_logits.reshape([s, b, n, n]), sinkhorn_iters, eps)
+            h_res = native_sinkhorn(
+                h_res_logits.reshape([s, b, n, n]), sinkhorn_iters, eps
+            )
 
             aggregated = native_h_aggregate(hs.reshape([s, b, n, C]), h_pre)
 
@@ -706,7 +759,9 @@ class TestEndToEndNative(unittest.TestCase):
             h_pre = h[..., :n].sigmoid()
             h_post = h[..., n : 2 * n].sigmoid() * 2
             h_res_logits = h[..., 2 * n :]
-            h_res = _ref_sinkhorn(h_res_logits.reshape([s, b, n, n]), sinkhorn_iters, eps)
+            h_res = _ref_sinkhorn(
+                h_res_logits.reshape([s, b, n, n]), sinkhorn_iters, eps
+            )
 
             aggregated = _ref_h_aggregate(hs.reshape([s, b, n, C]), h_pre)
 
@@ -727,7 +782,9 @@ class TestEndToEndNative(unittest.TestCase):
 
         _assert_close(agg_m, agg_r, FWD_ATOL, FWD_RTOL, "E2E aggregated output")
         _assert_close(out_m, out_r, FWD_ATOL, FWD_RTOL, "E2E h_post_bda output")
-        _assert_cosine_similar(grad_m, grad_r, COSINE_SIM_THRESH, "E2E hidden_states grad")
+        _assert_cosine_similar(
+            grad_m, grad_r, COSINE_SIM_THRESH, "E2E hidden_states grad"
+        )
         _assert_not_all_zero(grad_m, "E2E grad")
 
 
@@ -770,7 +827,9 @@ class TestEndToEndFused(unittest.TestCase):
             h_pre = h[..., :n].sigmoid()
             h_post = h[..., n : 2 * n].sigmoid() * 2
             h_res_logits = h[..., 2 * n :]
-            h_res = fused_sinkhorn(h_res_logits.reshape([s, b, n, n]), sinkhorn_iters, eps)
+            h_res = fused_sinkhorn(
+                h_res_logits.reshape([s, b, n, n]), sinkhorn_iters, eps
+            )
 
             aggregated = fused_h_aggregate(hs.reshape([s, b, n, C]), h_pre)
 
@@ -801,7 +860,9 @@ class TestEndToEndFused(unittest.TestCase):
             h_pre = h[..., :n].sigmoid()
             h_post = h[..., n : 2 * n].sigmoid() * 2
             h_res_logits = h[..., 2 * n :]
-            h_res = _ref_sinkhorn(h_res_logits.reshape([s, b, n, n]), sinkhorn_iters, eps)
+            h_res = _ref_sinkhorn(
+                h_res_logits.reshape([s, b, n, n]), sinkhorn_iters, eps
+            )
 
             aggregated = _ref_h_aggregate(hs.reshape([s, b, n, C]), h_pre)
 
@@ -834,7 +895,9 @@ class TestEndToEndFused(unittest.TestCase):
             E2E_FUSED_FWD_RTOL,
             "E2E fused h_post_bda output",
         )
-        _assert_cosine_similar(grad_f, grad_r, COSINE_SIM_THRESH, "E2E fused hidden_states grad")
+        _assert_cosine_similar(
+            grad_f, grad_r, COSINE_SIM_THRESH, "E2E fused hidden_states grad"
+        )
 
 
 # ============================================================================
@@ -860,7 +923,9 @@ class TestFusedMHCErrorHandling(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             fused_sinkhorn(paddle.randn([2, 4, 4]), 5)
         with self.assertRaises(RuntimeError):
-            fused_h_aggregate(paddle.randn([2, 2, 4, 64]), paddle.randn([2, 2, 4]))
+            fused_h_aggregate(
+                paddle.randn([2, 2, 4, 64]), paddle.randn([2, 2, 4])
+            )
         with self.assertRaises(RuntimeError):
             fused_h_post_bda(
                 paddle.randn([2, 2, 4, 4]),

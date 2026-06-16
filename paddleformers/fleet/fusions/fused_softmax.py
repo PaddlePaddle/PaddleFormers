@@ -31,7 +31,9 @@ class SoftmaxOne(nn.Layer):
     Supports fixed or learnable offset
     """
 
-    def __init__(self, dim: int | None = None, denominator_offset: Tensor | float = 1.0) -> None:
+    def __init__(
+        self, dim: int | None = None, denominator_offset: Tensor | float = 1.0
+    ) -> None:
         super().__init__()
         self.dim = dim
         self.denominator_offset = denominator_offset
@@ -39,7 +41,9 @@ class SoftmaxOne(nn.Layer):
     def forward(self, x: Tensor) -> Tensor:
         """forward pass"""
         # sink: [np] --> [1, np, 1, 1] --> [b, np, sq, 1]
-        sink = self.denominator_offset.reshape(1, -1, 1, 1).expand(x.size(0), -1, x.size(2), -1)
+        sink = self.denominator_offset.reshape(1, -1, 1, 1).expand(
+            x.size(0), -1, x.size(2), -1
+        )
         # qk: [b, np, sq, sk] --> [b, np, sq, sk+1]
         qk = paddle.concat([x, sink], axis=-1)
         # do softmax, and remove sink token at the end
@@ -75,9 +79,9 @@ class FusedScaleMaskSoftmax(nn.Layer):
         super().__init__()
         self.input_in_fp16 = input_in_fp16
         self.input_in_bf16 = input_in_bf16
-        assert not (
-            self.input_in_fp16 and self.input_in_bf16
-        ), "both fp16 and bf16 flags cannot be active at the same time."
+        assert not (self.input_in_fp16 and self.input_in_bf16), (
+            "both fp16 and bf16 flags cannot be active at the same time."
+        )
         self.input_in_float16 = self.input_in_fp16 or self.input_in_bf16
         self.attn_mask_type = attn_mask_type
         self.scaled_masked_softmax_fusion = scaled_masked_softmax_fusion
@@ -85,7 +89,9 @@ class FusedScaleMaskSoftmax(nn.Layer):
         self.softmax_in_fp32 = softmax_in_fp32
         self.scale = scale
         self.sliding_window = sliding_window
-        assert self.scale is None or softmax_in_fp32, "softmax should be in fp32 when scaled"
+        assert self.scale is None or softmax_in_fp32, (
+            "softmax should be in fp32 when scaled"
+        )
 
     def forward(
         self,
@@ -111,7 +117,11 @@ class FusedScaleMaskSoftmax(nn.Layer):
         sq, sk = input.shape[2], input.shape[3]
         if self.sliding_window is not None:
             mask = get_sliding_window_causal_mask(sq, sk, self.sliding_window)
-        elif self.attn_mask_type == AttnMaskType.causal and mask is None and sq > 1:
+        elif (
+            self.attn_mask_type == AttnMaskType.causal
+            and mask is None
+            and sq > 1
+        ):
             # If sq == 1 then either KV cache is used or one-element context is passed
             # so keeping mask=None in this case; subsequent code should handle it
             assert sq == sk, "causal mask is only for self attention"

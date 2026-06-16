@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -91,7 +95,9 @@ class TestPermuteDetailed(unittest.TestCase):
     def test_permute_preserves_values(self):
         """Test that permute preserves token values."""
         tokens = paddle.randn([4, 8], dtype="float32")
-        routing_map = paddle.to_tensor([[1, 0], [1, 0], [1, 0], [1, 0]], dtype="float32")
+        routing_map = paddle.to_tensor(
+            [[1, 0], [1, 0], [1, 0], [1, 0]], dtype="float32"
+        )
         permuted, sorted_indices = permute(tokens, routing_map)
         # All tokens go to expert 0, should be in original order
         self.assertTrue(paddle.allclose(tokens, permuted).item())
@@ -113,8 +119,12 @@ class TestUnpermuteDetailed(unittest.TestCase):
         permuted_tokens = paddle.randn([4, 8], dtype="float32")
         sorted_indices = paddle.to_tensor([0, 1, 2, 3], dtype="int64")
         restore_shape = [4, 8]
-        probs = paddle.to_tensor([[0.6, 0.4], [0.7, 0.3], [0.5, 0.5], [0.8, 0.2]], dtype="float32")
-        routing_map = paddle.to_tensor([[1, 0], [0, 1], [1, 0], [0, 1]], dtype="float32")
+        probs = paddle.to_tensor(
+            [[0.6, 0.4], [0.7, 0.3], [0.5, 0.5], [0.8, 0.2]], dtype="float32"
+        )
+        routing_map = paddle.to_tensor(
+            [[1, 0], [0, 1], [1, 0], [0, 1]], dtype="float32"
+        )
         output = unpermute(
             permuted_tokens,
             sorted_indices,

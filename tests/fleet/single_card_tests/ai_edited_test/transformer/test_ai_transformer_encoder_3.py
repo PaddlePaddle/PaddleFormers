@@ -17,7 +17,9 @@ import unittest
 
 import paddle
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+REPO_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 sys.path.insert(0, os.path.join(REPO_ROOT, "src"))
 
 from paddle import nn
@@ -28,8 +30,12 @@ from paddle.distributed.fleet.meta_parallel import (
 )
 
 from paddleformers.fleet.transformer import transformer_encoder
-from paddleformers.fleet.transformer.transformer_encoder import TransformerEncoder
-from paddleformers.fleet.transformer.transformer_layer import TransformerLayerNode
+from paddleformers.fleet.transformer.transformer_encoder import (
+    TransformerEncoder,
+)
+from paddleformers.fleet.transformer.transformer_layer import (
+    TransformerLayerNode,
+)
 
 
 class Value:
@@ -195,10 +201,14 @@ class TestTransformerEncoderPipelineMappingNoMock(unittest.TestCase):
         handle = P2PHandle()
 
         forward_inputs, loss, grads = model.overlapped_forward_backward(
-            ScheduleChunk([ForwardNode(1.0), OverlapNode(2.0), ForwardNode(3.0)]),
+            ScheduleChunk(
+                [ForwardNode(1.0), OverlapNode(2.0), ForwardNode(3.0)]
+            ),
             {"hidden_states": paddle.ones([1], dtype="float32")},
             forward_loss,
-            ScheduleChunk([BackwardNode(5.0), OverlapNode(4.0), BackwardNode(6.0)]),
+            ScheduleChunk(
+                [BackwardNode(5.0), OverlapNode(4.0), BackwardNode(6.0)]
+            ),
             backward_loss,
             None,
             scaler="scale",
@@ -214,7 +224,9 @@ class TestTransformerEncoderPipelineMappingNoMock(unittest.TestCase):
         self.assertEqual(handle.calls[2][0], "forward_async")
 
     def test_set_pipeline_mapping_handles_virtual_and_shared_names(self):
-        shared = SharedLayerDesc("embed", DummyEmbedding, shared_weight_attr="embedding_weight")
+        shared = SharedLayerDesc(
+            "embed", DummyEmbedding, shared_weight_attr="embedding_weight"
+        )
         model = LightweightEncoder(
             [
                 "0.0.weight",
@@ -232,16 +244,24 @@ class TestTransformerEncoderPipelineMappingNoMock(unittest.TestCase):
 
         mapping = model._set_pipeline_name_mapping()
 
-        self.assertEqual(mapping["model.embed.weight"], "shared_layers.embed.weight")
+        self.assertEqual(
+            mapping["model.embed.weight"], "shared_layers.embed.weight"
+        )
         self.assertEqual(mapping["model.layers.1.weight"], "0.tail.weight")
         self.assertEqual(mapping["plain.bias"], "plain.bias")
-        self.assertEqual(model._pp_to_single_mapping["0.0.weight"], "model.embed.weight")
+        self.assertEqual(
+            model._pp_to_single_mapping["0.0.weight"], "model.embed.weight"
+        )
 
     def test_shared_layer_prefix_requires_current_stage(self):
-        shared = SharedLayerDesc("embed", DummyEmbedding, shared_weight_attr="embedding_weight")
+        shared = SharedLayerDesc(
+            "embed", DummyEmbedding, shared_weight_attr="embedding_weight"
+        )
         model = LightweightEncoder([])
         model.layers = [shared]
-        model._sequential_layers = [{"layer": shared, "name_prefix": "model.embed"}]
+        model._sequential_layers = [
+            {"layer": shared, "name_prefix": "model.embed"}
+        ]
         model._stage_id = 0
         model._stage_for_index = 1
 
@@ -253,15 +273,21 @@ class TestTransformerEncoderPipelineMappingNoMock(unittest.TestCase):
             ["0.weight", "extra.bias"],
             model_type="qwen3_5",
         )
-        model._sequential_layers = [{"layer": object(), "name_prefix": "model.layers.0"}]
+        model._sequential_layers = [
+            {"layer": object(), "name_prefix": "model.layers.0"}
+        ]
         self._install_parent(model)
 
         state = model.state_dict()
         self.assertIn("model.layers.0.weight", state)
         self.assertIn("extra.bias", state)
-        self.assertEqual(state["model.layers.0.weight"].key, "model.layers.0.weight")
+        self.assertEqual(
+            state["model.layers.0.weight"].key, "model.layers.0.weight"
+        )
 
-        result = model.set_state_dict({"model.layers.0.weight": Value("single"), "ignored": Value("x")})
+        result = model.set_state_dict(
+            {"model.layers.0.weight": Value("single"), "ignored": Value("x")}
+        )
         self.assertEqual(result, "loaded")
         self.assertEqual(list(model.loaded_state.keys()), ["0.weight"])
 
@@ -309,7 +335,11 @@ class TestTransformerEncoderPipelineMappingNoMock(unittest.TestCase):
                 "global_expert_id_offset",
             )
         )
-        self.assertFalse(hasattr(sharded["model.layers.2.layer_norm.weight_layer_7"], "layer_cnt"))
+        self.assertFalse(
+            hasattr(
+                sharded["model.layers.2.layer_norm.weight_layer_7"], "layer_cnt"
+            )
+        )
 
 
 if __name__ == "__main__":

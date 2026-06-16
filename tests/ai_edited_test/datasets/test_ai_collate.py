@@ -28,7 +28,9 @@ from paddleformers.datasets.DPODataset import Sequence
 class TestCalcPaddingSize(unittest.TestCase):
     """Tests for calc_padding_size function."""
 
-    def _make_training_args(self, cp_size=1, sp_size=1, fp8=False, sequence_parallel=True):
+    def _make_training_args(
+        self, cp_size=1, sp_size=1, fp8=False, sequence_parallel=True
+    ):
         args = MagicMock()
         args.context_parallel_size = cp_size
         args.tensor_model_parallel_size = sp_size
@@ -38,41 +40,53 @@ class TestCalcPaddingSize(unittest.TestCase):
 
     def test_basic_no_parallel(self):
         """Test with no parallelism (cp=1, sp=1)."""
-        args = self._make_training_args(cp_size=1, sp_size=1, sequence_parallel=False)
+        args = self._make_training_args(
+            cp_size=1, sp_size=1, sequence_parallel=False
+        )
         result = calc_padding_size(100, args)
         self.assertEqual(result, 100)
 
     def test_with_sequence_parallel(self):
         """Test with sequence parallel (sp=2)."""
-        args = self._make_training_args(cp_size=1, sp_size=2, sequence_parallel=True)
+        args = self._make_training_args(
+            cp_size=1, sp_size=2, sequence_parallel=True
+        )
         result = calc_padding_size(100, args)
         # padding_to_size = 2 * 1 * 2 = 4, ceil(100/4)*4 = 100
         self.assertEqual(result, 100)
 
     def test_with_context_parallel(self):
         """Test with context parallel (cp=2)."""
-        args = self._make_training_args(cp_size=2, sp_size=1, sequence_parallel=False)
+        args = self._make_training_args(
+            cp_size=2, sp_size=1, sequence_parallel=False
+        )
         result = calc_padding_size(5, args)
         # padding_to_size = 2 * 2 * 1 = 4, ceil(5/4)*4 = 8
         self.assertEqual(result, 8)
 
     def test_with_fp8(self):
         """Test with fp8 enabled (rounds up to multiple of 4)."""
-        args = self._make_training_args(cp_size=1, sp_size=2, sequence_parallel=True, fp8=True)
+        args = self._make_training_args(
+            cp_size=1, sp_size=2, sequence_parallel=True, fp8=True
+        )
         result = calc_padding_size(5, args)
         # padding_to_size = 2 (cp*sp>1), then (2+3)//4*4 = 4, then 4*1*2=8, ceil(5/8)*8=8
         self.assertEqual(result, 8)
 
     def test_already_aligned(self):
         """Test when seq_len is already aligned."""
-        args = self._make_training_args(cp_size=2, sp_size=2, sequence_parallel=True)
+        args = self._make_training_args(
+            cp_size=2, sp_size=2, sequence_parallel=True
+        )
         result = calc_padding_size(8, args)
         # padding_to_size = 2*2*2=8, ceil(8/8)*8 = 8
         self.assertEqual(result, 8)
 
     def test_with_sp_not_enabled(self):
         """Test when sequence_parallel is False, sp_size is ignored."""
-        args = self._make_training_args(cp_size=1, sp_size=4, sequence_parallel=False)
+        args = self._make_training_args(
+            cp_size=1, sp_size=4, sequence_parallel=False
+        )
         result = calc_padding_size(10, args)
         # sp_size is 1 (since sequence_parallel=False), padding_to_size=1, ceil(10/1)*1=10
         self.assertEqual(result, 10)
@@ -102,7 +116,9 @@ class TestDPOCollateFn(unittest.TestCase):
             has_mm=[False],
         )
 
-    def _make_training_args(self, cp_size=1, sp_size=1, fp8=False, sequence_parallel=True):
+    def _make_training_args(
+        self, cp_size=1, sp_size=1, fp8=False, sequence_parallel=True
+    ):
         args = MagicMock()
         args.context_parallel_size = cp_size
         args.tensor_model_parallel_size = sp_size
@@ -130,7 +146,9 @@ class TestDPOCollateFn(unittest.TestCase):
         tokenizer = MagicMock()
         args = self._make_training_args()
 
-        result = dpo_collate_fn(batch, tokenizer, args, max_seq_len=4, use_filtered_label_loss=False)
+        result = dpo_collate_fn(
+            batch, tokenizer, args, max_seq_len=4, use_filtered_label_loss=False
+        )
 
         self.assertIn("input_ids", result)
         self.assertIn("position_ids", result)
@@ -162,7 +180,9 @@ class TestDPOCollateFn(unittest.TestCase):
         tokenizer = MagicMock()
         args = self._make_training_args()
 
-        result = dpo_collate_fn(batch, tokenizer, args, max_seq_len=4, use_filtered_label_loss=False)
+        result = dpo_collate_fn(
+            batch, tokenizer, args, max_seq_len=4, use_filtered_label_loss=False
+        )
 
         self.assertIn("attn_mask_startend_row_indices", result)
 
@@ -181,7 +201,12 @@ class TestDPOCollateFn(unittest.TestCase):
         args = self._make_training_args()
 
         result = dpo_collate_fn(
-            batch, tokenizer, args, max_seq_len=4, use_filtered_label_loss=True, use_response_score_delta=True
+            batch,
+            tokenizer,
+            args,
+            max_seq_len=4,
+            use_filtered_label_loss=True,
+            use_response_score_delta=True,
         )
 
         self.assertIn("score_deltas", result)
@@ -207,7 +232,12 @@ class TestDPOCollateFn(unittest.TestCase):
         args = self._make_training_args()
 
         result = dpo_collate_fn(
-            batch, tokenizer, args, max_seq_len=None, padding_free=True, use_filtered_label_loss=False
+            batch,
+            tokenizer,
+            args,
+            max_seq_len=None,
+            padding_free=True,
+            use_filtered_label_loss=False,
         )
 
         self.assertIn("input_ids", result)
@@ -227,7 +257,13 @@ class TestDPOCollateFn(unittest.TestCase):
         tokenizer = MagicMock()
         args = self._make_training_args()
 
-        result = dpo_collate_fn(batch, tokenizer, args, max_seq_len=None, use_filtered_label_loss=False)
+        result = dpo_collate_fn(
+            batch,
+            tokenizer,
+            args,
+            max_seq_len=None,
+            use_filtered_label_loss=False,
+        )
         self.assertIn("input_ids", result)
 
 

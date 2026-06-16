@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -33,7 +37,9 @@ except ImportError:
 
 def _make_moe_config(**overrides):
     """Helper to create a TransformerConfig for MoE testing."""
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
     defaults = {
         "hidden_size": 64,
@@ -137,7 +143,9 @@ class TestMoELayer(unittest.TestCase):
 
     def test_grad_dtype_unguard_forward(self):
         """Test GradDtypeUnguard PyLayer forward."""
-        from paddleformers.fleet.transformer.moe.moe_layer import GradDtypeUnguard
+        from paddleformers.fleet.transformer.moe.moe_layer import (
+            GradDtypeUnguard,
+        )
 
         x = paddle.randn([4, 64], dtype=paddle.float32)
         status = {"x": x}

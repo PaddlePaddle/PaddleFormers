@@ -91,7 +91,9 @@ class TestComputeOptimalTransport(unittest.TestCase):
             self.assertTrue((P >= 0).numpy().all())
         except TypeError:
             # paddle.zeros API change in newer versions
-            self.skipTest("compute_optimal_transport uses deprecated paddle.zeros API")
+            self.skipTest(
+                "compute_optimal_transport uses deprecated paddle.zeros API"
+            )
 
     def test_convergence(self):
         """Test that optimal transport converges."""
@@ -99,10 +101,14 @@ class TestComputeOptimalTransport(unittest.TestCase):
         r = paddle.ones([2]) / 2.0
         c = paddle.ones([2]) / 2.0
         try:
-            P, iters = compute_optimal_transport(M, r, c, lam=1.0, max_iters=100)
+            P, iters = compute_optimal_transport(
+                M, r, c, lam=1.0, max_iters=100
+            )
             self.assertTrue((P >= 0).numpy().all())
         except TypeError:
-            self.skipTest("compute_optimal_transport uses deprecated paddle.zeros API")
+            self.skipTest(
+                "compute_optimal_transport uses deprecated paddle.zeros API"
+            )
 
 
 class TestCalOrthogonalLossOptEachWeightFunc(unittest.TestCase):
@@ -120,7 +126,9 @@ class TestCalOrthogonalLossOptEachWeightFunc(unittest.TestCase):
     def test_with_group(self):
         """Test orthogonal loss with grouping."""
         weight = paddle.randn([16, 8])
-        loss = cal_orthogonal_loss_opt_each_weight_func(weight, moe_k=2, use_group=True, eps=paddle.to_tensor([1e-12]))
+        loss = cal_orthogonal_loss_opt_each_weight_func(
+            weight, moe_k=2, use_group=True, eps=paddle.to_tensor([1e-12])
+        )
         self.assertIsInstance(loss.item(), float)
 
     def test_identity_weight_has_low_loss(self):

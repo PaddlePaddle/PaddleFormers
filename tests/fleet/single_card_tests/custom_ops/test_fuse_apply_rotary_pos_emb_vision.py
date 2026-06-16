@@ -38,6 +38,7 @@ import unittest
 
 import numpy as np
 import paddle
+
 from paddlefleet_ops import fused_apply_rotary_pos_emb_vision
 
 #   float32  : 1e-6  (CUDA device cosf/sinf vs Paddle API can differ by ±1 ULP
@@ -75,8 +76,12 @@ def apply_rotary_pos_emb_vision_ref(tensor, freqs):
     """
     orig_dtype = tensor.dtype
     tensor = tensor.astype("float32")
-    cos = freqs.cos().unsqueeze(1).tile([1, 1, 2]).unsqueeze(0).astype("float32")
-    sin = freqs.sin().unsqueeze(1).tile([1, 1, 2]).unsqueeze(0).astype("float32")
+    cos = (
+        freqs.cos().unsqueeze(1).tile([1, 1, 2]).unsqueeze(0).astype("float32")
+    )
+    sin = (
+        freqs.sin().unsqueeze(1).tile([1, 1, 2]).unsqueeze(0).astype("float32")
+    )
     output = tensor * cos + rotate_half(tensor) * sin
     return output.astype(orig_dtype)
 
@@ -153,7 +158,10 @@ class TestApplyRopevisionForward(unittest.TestCase):
             ref_np,
             rtol=rtol,
             atol=atol,
-            err_msg=(f"Forward mismatch: batch={batch} seq={seq} " f"heads={heads} dim={dim} dtype={dtype}"),
+            err_msg=(
+                f"Forward mismatch: batch={batch} seq={seq} "
+                f"heads={heads} dim={dim} dtype={dtype}"
+            ),
         )
 
     # ---- float32 ----
@@ -226,16 +234,24 @@ class TestApplyRopevisionBackward(unittest.TestCase):
         tensor_ref.stop_gradient = False
         freqs_ref = paddle.to_tensor(freqs_np, place="gpu")
         out_ref = apply_rotary_pos_emb_vision_ref(tensor_ref, freqs_ref)
-        d_out_ref = paddle.to_tensor(d_out_np, place="gpu").astype(out_ref.dtype)
-        grad_ref = paddle.grad(outputs=[out_ref], inputs=[tensor_ref], grad_outputs=[d_out_ref])[0]
+        d_out_ref = paddle.to_tensor(d_out_np, place="gpu").astype(
+            out_ref.dtype
+        )
+        grad_ref = paddle.grad(
+            outputs=[out_ref], inputs=[tensor_ref], grad_outputs=[d_out_ref]
+        )[0]
 
         # ---- CUDA backward ----
         tensor_cuda = paddle.to_tensor(tensor_np, place="gpu").astype(dtype)
         tensor_cuda.stop_gradient = False
         freqs_cuda = paddle.to_tensor(freqs_np, place="gpu")
         out_cuda = fused_apply_rotary_pos_emb_vision(tensor_cuda, freqs_cuda)
-        d_out_cuda = paddle.to_tensor(d_out_np, place="gpu").astype(out_cuda.dtype)
-        grad_cuda = paddle.grad(outputs=[out_cuda], inputs=[tensor_cuda], grad_outputs=[d_out_cuda])[0]
+        d_out_cuda = paddle.to_tensor(d_out_np, place="gpu").astype(
+            out_cuda.dtype
+        )
+        grad_cuda = paddle.grad(
+            outputs=[out_cuda], inputs=[tensor_cuda], grad_outputs=[d_out_cuda]
+        )[0]
 
         atol, rtol = _TOL[dtype]
         ref_np = grad_ref.numpy().astype("float32")
@@ -245,7 +261,10 @@ class TestApplyRopevisionBackward(unittest.TestCase):
             ref_np,
             rtol=rtol,
             atol=atol,
-            err_msg=(f"Backward mismatch: batch={batch} seq={seq} " f"heads={heads} dim={dim} dtype={dtype}"),
+            err_msg=(
+                f"Backward mismatch: batch={batch} seq={seq} "
+                f"heads={heads} dim={dim} dtype={dtype}"
+            ),
         )
 
     # ---- float32 ----
@@ -368,7 +387,9 @@ class TestApplyRopevisionEdgeCases(unittest.TestCase):
         freqs = paddle.zeros([seq, half], dtype="float32").cuda()
         out = fused_apply_rotary_pos_emb_vision(tensor, freqs)
         d_out = paddle.zeros_like(out)
-        grad = paddle.grad(outputs=[out], inputs=[tensor], grad_outputs=[d_out])[0]
+        grad = paddle.grad(
+            outputs=[out], inputs=[tensor], grad_outputs=[d_out]
+        )[0]
         self.assertEqual(list(grad.shape), [batch, seq, heads, dim])
         self.assertEqual(grad.numel(), 0)
 
@@ -455,7 +476,8 @@ class TestApplyRopevision3DForward(unittest.TestCase):
             rtol=rtol,
             atol=atol,
             err_msg=(
-                f"3D Forward mismatch: seq={seq} heads={heads} " f"dim={dim} dtype={dtype} freqs_dtype={freqs_dtype}"
+                f"3D Forward mismatch: seq={seq} heads={heads} "
+                f"dim={dim} dtype={dtype} freqs_dtype={freqs_dtype}"
             ),
         )
 
@@ -504,14 +526,22 @@ class TestApplyRopevision3DBackward(unittest.TestCase):
         # ---- Reference backward (via 4D) ----
         # Use the same freqs dtype to ensure fair comparison:
         # cast freqs to freqs_dtype then back to fp32 (simulating precision loss)
-        tensor_ref_4d = paddle.to_tensor(tensor_np.reshape(1, seq, heads, dim), place="gpu").astype(dtype)
+        tensor_ref_4d = paddle.to_tensor(
+            tensor_np.reshape(1, seq, heads, dim), place="gpu"
+        ).astype(dtype)
         tensor_ref_4d.stop_gradient = False
-        freqs_ref = paddle.to_tensor(freqs_np, place="gpu").astype(freqs_dtype).astype("float32")
+        freqs_ref = (
+            paddle.to_tensor(freqs_np, place="gpu")
+            .astype(freqs_dtype)
+            .astype("float32")
+        )
         out_ref = apply_rotary_pos_emb_vision_ref(tensor_ref_4d, freqs_ref)
-        d_out_ref = paddle.to_tensor(d_out_np.reshape(1, seq, heads, dim), place="gpu").astype(dtype)
-        grad_ref = paddle.grad(outputs=[out_ref], inputs=[tensor_ref_4d], grad_outputs=[d_out_ref])[0].squeeze(
-            0
-        )  # [seq, heads, dim]
+        d_out_ref = paddle.to_tensor(
+            d_out_np.reshape(1, seq, heads, dim), place="gpu"
+        ).astype(dtype)
+        grad_ref = paddle.grad(
+            outputs=[out_ref], inputs=[tensor_ref_4d], grad_outputs=[d_out_ref]
+        )[0].squeeze(0)  # [seq, heads, dim]
 
         # ---- CUDA backward (3D) ----
         tensor_cuda = paddle.to_tensor(tensor_np, place="gpu").astype(dtype)
@@ -519,7 +549,9 @@ class TestApplyRopevision3DBackward(unittest.TestCase):
         freqs_cuda = paddle.to_tensor(freqs_np, place="gpu").astype(freqs_dtype)
         out_cuda = fused_apply_rotary_pos_emb_vision(tensor_cuda, freqs_cuda)
         d_out_cuda = paddle.to_tensor(d_out_np, place="gpu").astype(dtype)
-        grad_cuda = paddle.grad(outputs=[out_cuda], inputs=[tensor_cuda], grad_outputs=[d_out_cuda])[0]
+        grad_cuda = paddle.grad(
+            outputs=[out_cuda], inputs=[tensor_cuda], grad_outputs=[d_out_cuda]
+        )[0]
 
         self.assertEqual(list(grad_cuda.shape), [seq, heads, dim])
 
@@ -530,7 +562,8 @@ class TestApplyRopevision3DBackward(unittest.TestCase):
             rtol=rtol,
             atol=atol,
             err_msg=(
-                f"3D Backward mismatch: seq={seq} heads={heads} " f"dim={dim} dtype={dtype} freqs_dtype={freqs_dtype}"
+                f"3D Backward mismatch: seq={seq} heads={heads} "
+                f"dim={dim} dtype={dtype} freqs_dtype={freqs_dtype}"
             ),
         )
 
@@ -622,7 +655,11 @@ def print_precision():
     DTYPES = ["float32", "float16", "bfloat16"]
     NUM_SEEDS = 5
 
-    hdr = f"{'shape':<14} {'dtype':<10} " f"{'fwd_atol':>12} {'fwd_rtol':>12}  " f"{'bwd_atol':>12} {'bwd_rtol':>12}"
+    hdr = (
+        f"{'shape':<14} {'dtype':<10} "
+        f"{'fwd_atol':>12} {'fwd_rtol':>12}  "
+        f"{'bwd_atol':>12} {'bwd_rtol':>12}"
+    )
     sep = "─" * len(hdr)
     print()
     print("=" * len(hdr))
@@ -638,9 +675,13 @@ def print_precision():
 
             for seed in range(NUM_SEEDS):
                 np.random.seed(seed)
-                tensor_np = np.random.randn(batch, seq, heads, dim).astype("float32")
+                tensor_np = np.random.randn(batch, seq, heads, dim).astype(
+                    "float32"
+                )
                 freqs_np = np.random.randn(seq, dim // 2).astype("float32")
-                dout_np = np.random.randn(batch, seq, heads, dim).astype("float32")
+                dout_np = np.random.randn(batch, seq, heads, dim).astype(
+                    "float32"
+                )
 
                 tensor = paddle.to_tensor(tensor_np, place="gpu").astype(dtype)
                 freqs = paddle.to_tensor(freqs_np, place="gpu")
@@ -653,7 +694,9 @@ def print_precision():
                 c32 = cuda_out.numpy().astype("float32")
                 diff = np.abs(r32 - c32)
                 worst_fa = max(worst_fa, float(diff.max()))
-                worst_fr = max(worst_fr, float((diff / (np.abs(r32) + 1e-8)).max()))
+                worst_fr = max(
+                    worst_fr, float((diff / (np.abs(r32) + 1e-8)).max())
+                )
 
                 # backward
                 t_ref = paddle.to_tensor(tensor_np, place="gpu").astype(dtype)
@@ -676,7 +719,9 @@ def print_precision():
                 cg = g_cus.numpy().astype("float32")
                 gdiff = np.abs(rg - cg)
                 worst_ba = max(worst_ba, float(gdiff.max()))
-                worst_br = max(worst_br, float((gdiff / (np.abs(rg) + 1e-8)).max()))
+                worst_br = max(
+                    worst_br, float((gdiff / (np.abs(rg) + 1e-8)).max())
+                )
 
             print(
                 f"{label:<14} {dtype:<10} "
@@ -693,7 +738,10 @@ def print_precision():
 
 
 if __name__ == "__main__":
-    if len(__import__("sys").argv) > 1 and __import__("sys").argv[1] == "--precision":
+    if (
+        len(__import__("sys").argv) > 1
+        and __import__("sys").argv[1] == "--precision"
+    ):
         print_precision()
     else:
         unittest.main(verbosity=2)

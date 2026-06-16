@@ -31,7 +31,9 @@ def _tilelang_dtype(tensor):
         return "bfloat16"
     if tensor.dtype == paddle.float16:
         return "float16"
-    raise TypeError(f"TileLang CSA attention target expects bf16/fp16 inputs, got {tensor.dtype}")
+    raise TypeError(
+        f"TileLang CSA attention target expects bf16/fp16 inputs, got {tensor.dtype}"
+    )
 
 
 def _shape(tensor):
@@ -63,11 +65,17 @@ def _validate_interface_inputs(
         _require_tensor(name, tensor)
         _require_contiguous(name, tensor)
     if query.ndim != 4:
-        raise ValueError(f"query must have shape [B, S, H, D], got {_shape(query)}")
+        raise ValueError(
+            f"query must have shape [B, S, H, D], got {_shape(query)}"
+        )
     if key_comp.ndim != 3:
-        raise ValueError(f"key_comp must have shape [B, S_comp, D], got {_shape(key_comp)}")
+        raise ValueError(
+            f"key_comp must have shape [B, S_comp, D], got {_shape(key_comp)}"
+        )
     if topk_indices.ndim != 3:
-        raise ValueError(f"topk_indices must have shape [B, S, topk], got {_shape(topk_indices)}")
+        raise ValueError(
+            f"topk_indices must have shape [B, S, topk], got {_shape(topk_indices)}"
+        )
 
     batch, seq_len, heads, dim = _shape(query)
     batch_k, _, dim_k = _shape(key_comp)
@@ -77,15 +85,21 @@ def _validate_interface_inputs(
             f"batch mismatch: query={_shape(query)}, key_comp={_shape(key_comp)}, topk_indices={_shape(topk_indices)}"
         )
     if seq_len != seq_len_i:
-        raise ValueError(f"sequence mismatch: query={_shape(query)}, topk_indices={_shape(topk_indices)}")
+        raise ValueError(
+            f"sequence mismatch: query={_shape(query)}, topk_indices={_shape(topk_indices)}"
+        )
     if dim != dim_k:
-        raise ValueError(f"dim mismatch: query={_shape(query)}, key_comp={_shape(key_comp)}")
+        raise ValueError(
+            f"dim mismatch: query={_shape(query)}, key_comp={_shape(key_comp)}"
+        )
     if dim & (dim - 1):
         raise ValueError(f"dim must be a power of 2, got {dim}")
     if heads <= 0:
         raise ValueError(f"heads must be positive, got {heads}")
     if heads > 64 and heads % 64 != 0:
-        raise ValueError(f"heads must be a multiple of 64 when heads > 64, got {heads}")
+        raise ValueError(
+            f"heads must be a multiple of 64 when heads > 64, got {heads}"
+        )
     if topk_effective <= 0:
         raise ValueError("topk_indices last dimension must be positive")
     if int(block_I) <= 0:
@@ -177,9 +191,12 @@ def tl_csa_attn_target_reducesum(
             num_blocks = T.ceildiv(topk, block_I)
             for block_idx in T.Pipelined(num_blocks, num_stages=num_stages):
                 for i in T.Parallel(block_I):
-                    indices_shared[i] = TopkIndices[by, s_i, block_idx * block_I + i]
+                    indices_shared[i] = TopkIndices[
+                        by, s_i, block_idx * block_I + i
+                    ]
                     safe_indices_shared[i] = T.if_then_else(
-                        (indices_shared[i] >= 0) & (indices_shared[i] < seq_len_comp),
+                        (indices_shared[i] >= 0)
+                        & (indices_shared[i] < seq_len_comp),
                         indices_shared[i],
                         0,
                     )
@@ -187,7 +204,8 @@ def tl_csa_attn_target_reducesum(
 
                 for i, d_i in T.Parallel(block_I, dim):
                     key_shared[i, d_i] = T.if_then_else(
-                        (indices_shared[i] >= 0) & (indices_shared[i] < seq_len_comp),
+                        (indices_shared[i] >= 0)
+                        & (indices_shared[i] < seq_len_comp),
                         KeyComp[by, safe_indices_shared[i], d_i],
                         0,
                     )
@@ -203,7 +221,9 @@ def tl_csa_attn_target_reducesum(
                 )
                 for h_i, i in T.Parallel(h_per_block, block_I):
                     logits[h_i, i] = T.if_then_else(
-                        ((h_base + h_i) < heads) & (indices_shared[i] >= 0) & (indices_shared[i] < seq_len_comp),
+                        ((h_base + h_i) < heads)
+                        & (indices_shared[i] >= 0)
+                        & (indices_shared[i] < seq_len_comp),
                         logits[h_i, i] * SoftmaxScale[0],
                         -T.infinity(FP32),
                     )
@@ -211,7 +231,9 @@ def tl_csa_attn_target_reducesum(
                 T.fill(block_max, -T.infinity(FP32))
                 T.reduce_max(logits, block_max, dim=1, clear=False)
                 for h_i in T.Parallel(h_per_block):
-                    row_sum[h_i] *= T.exp(row_max[h_i] - T.max(row_max[h_i], block_max[h_i]))
+                    row_sum[h_i] *= T.exp(
+                        row_max[h_i] - T.max(row_max[h_i], block_max[h_i])
+                    )
                     row_max[h_i] = T.max(row_max[h_i], block_max[h_i])
                 for h_i, i in T.Parallel(h_per_block, block_I):
                     logits[h_i, i] = T.exp(logits[h_i, i] - row_max[h_i])
@@ -223,9 +245,12 @@ def tl_csa_attn_target_reducesum(
             # Pass 2: compute normalized probs and reduce over heads
             for block_idx in T.Pipelined(num_blocks, num_stages=num_stages):
                 for i in T.Parallel(block_I):
-                    indices_shared[i] = TopkIndices[by, s_i, block_idx * block_I + i]
+                    indices_shared[i] = TopkIndices[
+                        by, s_i, block_idx * block_I + i
+                    ]
                     safe_indices_shared[i] = T.if_then_else(
-                        (indices_shared[i] >= 0) & (indices_shared[i] < seq_len_comp),
+                        (indices_shared[i] >= 0)
+                        & (indices_shared[i] < seq_len_comp),
                         indices_shared[i],
                         0,
                     )
@@ -233,7 +258,8 @@ def tl_csa_attn_target_reducesum(
 
                 for i, d_i in T.Parallel(block_I, dim):
                     key_shared[i, d_i] = T.if_then_else(
-                        (indices_shared[i] >= 0) & (indices_shared[i] < seq_len_comp),
+                        (indices_shared[i] >= 0)
+                        & (indices_shared[i] < seq_len_comp),
                         KeyComp[by, safe_indices_shared[i], d_i],
                         0,
                     )
@@ -253,7 +279,8 @@ def tl_csa_attn_target_reducesum(
                         & (indices_shared[i] >= 0)
                         & (indices_shared[i] < seq_len_comp)
                         & (row_sum[h_i] > 0),
-                        T.exp(logits[h_i, i] * SoftmaxScale[0] - row_max[h_i]) / row_sum[h_i],
+                        T.exp(logits[h_i, i] * SoftmaxScale[0] - row_max[h_i])
+                        / row_sum[h_i],
                         0,
                     )
                 T.fill(reduce_sum, 0)

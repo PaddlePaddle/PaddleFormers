@@ -65,7 +65,9 @@ class TestPadding(unittest.TestCase):
         """Test that original data is preserved after padding on axis 1."""
         x = paddle.randn([64, 100])
         result = padding(x, 1)
-        np.testing.assert_allclose(result[:, :100].numpy(), x.numpy(), rtol=1e-5)
+        np.testing.assert_allclose(
+            result[:, :100].numpy(), x.numpy(), rtol=1e-5
+        )
 
     def test_padding_128_multiple(self):
         """Test that 128-multiple size is padded correctly."""

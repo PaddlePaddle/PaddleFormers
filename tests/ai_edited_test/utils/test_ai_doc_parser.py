@@ -34,7 +34,9 @@ class TestDocParserInit(unittest.TestCase):
         self.assertIsNone(parser.ocr_infer_model)
 
     def test_custom_init(self):
-        parser = DocParser(ocr_lang="en", layout_analysis=True, use_gpu=True, device_id=0)
+        parser = DocParser(
+            ocr_lang="en", layout_analysis=True, use_gpu=True, device_id=0
+        )
         self.assertEqual(parser.ocr_lang, "en")
         self.assertTrue(parser.layout_analysis)
         self.assertTrue(parser.use_gpu)
@@ -112,7 +114,9 @@ class TestDocParserNormalizeBox(unittest.TestCase):
         box = [10, 20, 30, 40]
         old_size = (100, 200)
         new_size = (50, 100)
-        result = DocParser._normalize_box(box, old_size, new_size, offset_x=5, offset_y=10)
+        result = DocParser._normalize_box(
+            box, old_size, new_size, offset_x=5, offset_y=10
+        )
         self.assertEqual(len(result), 4)
 
 
@@ -120,7 +124,9 @@ class TestDocParserExpandImageToA4Size(unittest.TestCase):
     def test_expand_tall_image(self):
         # Tall image: h/w >= 1.42
         image = np.ones((500, 200, 3), dtype=np.uint8) * 255
-        result, offset_x, offset_y = DocParser.expand_image_to_a4_size(image, center=True)
+        result, offset_x, offset_y = DocParser.expand_image_to_a4_size(
+            image, center=True
+        )
         self.assertEqual(result.shape[0], 500)
         # Width should have expanded
         self.assertGreaterEqual(result.shape[1], 200)
@@ -128,20 +134,26 @@ class TestDocParserExpandImageToA4Size(unittest.TestCase):
     def test_expand_wide_image(self):
         # Wide image: h/w <= 1.40
         image = np.ones((200, 500, 3), dtype=np.uint8) * 255
-        result, offset_x, offset_y = DocParser.expand_image_to_a4_size(image, center=True)
+        result, offset_x, offset_y = DocParser.expand_image_to_a4_size(
+            image, center=True
+        )
         self.assertEqual(result.shape[1], 500)
         # Height should have expanded
         self.assertGreaterEqual(result.shape[0], 200)
 
     def test_expand_tall_no_center(self):
         image = np.ones((500, 200, 3), dtype=np.uint8) * 255
-        result, offset_x, offset_y = DocParser.expand_image_to_a4_size(image, center=False)
+        result, offset_x, offset_y = DocParser.expand_image_to_a4_size(
+            image, center=False
+        )
         self.assertEqual(offset_x, 0)
         self.assertEqual(offset_y, 0)
 
     def test_expand_wide_no_center(self):
         image = np.ones((200, 500, 3), dtype=np.uint8) * 255
-        result, offset_x, offset_y = DocParser.expand_image_to_a4_size(image, center=False)
+        result, offset_x, offset_y = DocParser.expand_image_to_a4_size(
+            image, center=False
+        )
         self.assertEqual(offset_x, 0)
         self.assertEqual(offset_y, 0)
 
@@ -157,7 +169,9 @@ class TestDocParserExpandImageToA4Size(unittest.TestCase):
 class TestDocParserCall(unittest.TestCase):
     def test_call_delegates_to_parse(self):
         parser = DocParser()
-        with patch.object(parser, "parse", return_value={"doc": "test"}) as mock_parse:
+        with patch.object(
+            parser, "parse", return_value={"doc": "test"}
+        ) as mock_parse:
             parser(doc={"doc": "test"})
             mock_parse.assert_called_once_with(doc={"doc": "test"})
 

@@ -17,7 +17,11 @@ import unittest
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import paddle
@@ -36,8 +40,12 @@ from paddleformers.fleet.transformer.moe.fp8_utils import (
 class CachedWeight:
     def __init__(self):
         self.shape = [2, 3]
-        self.fp8_weight_stacked = paddle.arange(12, dtype="float32").reshape([4, 3])
-        self.fp8_scale_stacked = paddle.arange(8, dtype="float32").reshape([4, 2])
+        self.fp8_weight_stacked = paddle.arange(12, dtype="float32").reshape(
+            [4, 3]
+        )
+        self.fp8_scale_stacked = paddle.arange(8, dtype="float32").reshape(
+            [4, 2]
+        )
         self.fp8_weight_stacked_transpose = None
         self.fp8_scale_stacked_transpose = None
 
@@ -62,7 +70,9 @@ class TestFP8WeightAndScaleCachedPaths(unittest.TestCase):
         weight.fp8_weight_stacked_transpose = paddle.ones([3, 4])
         weight.fp8_scale_stacked_transpose = paddle.ones([2, 4])
 
-        fp8_weight, fp8_scale = _get_fp8_weight_and_scale(weight, transpose=True)
+        fp8_weight, fp8_scale = _get_fp8_weight_and_scale(
+            weight, transpose=True
+        )
 
         self.assertIs(fp8_weight, weight.fp8_weight_stacked_transpose)
         self.assertIs(fp8_scale, weight.fp8_scale_stacked_transpose)
@@ -70,7 +80,9 @@ class TestFP8WeightAndScaleCachedPaths(unittest.TestCase):
     def test_builds_transpose_from_cached_non_transposed_tensors(self):
         weight = CachedWeight()
 
-        fp8_weight, fp8_scale = _get_fp8_weight_and_scale(weight, transpose=True)
+        fp8_weight, fp8_scale = _get_fp8_weight_and_scale(
+            weight, transpose=True
+        )
 
         self.assertEqual(fp8_weight.shape, [6, 2])
         self.assertEqual(fp8_scale.shape, [4, 2])
@@ -132,7 +144,9 @@ class TestFP8UtilityBranches(unittest.TestCase):
         self.assertEqual(result.shape, [0, 3])
         self.assertEqual(result.dtype, paddle.float32)
 
-    @unittest.skipIf(not paddle.is_compiled_with_cuda(), "CUDA is required for FP8 tensors")
+    @unittest.skipIf(
+        not paddle.is_compiled_with_cuda(), "CUDA is required for FP8 tensors"
+    )
     def test_tilewise_quant_empty_input(self):
         x = paddle.empty([0, FP8_ALIGN], dtype="bfloat16")
 

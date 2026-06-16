@@ -61,7 +61,9 @@ def get_1d_sincos_pos_embed(embed_dim, t_size, cls_token=False):
     grid_t = paddle.arange(t_size, dtype=paddle.float32)
     pos_embed = get_1d_sincos_pos_embed_from_grid(embed_dim, grid_t)
     if cls_token:
-        pos_embed = paddle.concatenate([paddle.zeros([1, embed_dim]), pos_embed], axis=0)
+        pos_embed = paddle.concatenate(
+            [paddle.zeros([1, embed_dim]), pos_embed], axis=0
+        )
     return pos_embed
 
 
@@ -110,7 +112,9 @@ class Learnable2DInterpPosEmbDivided_fixed(nn.Layer):
         self.weight = nn.Parameter(paddle.empty(height, width, dim))
         self.register_buffer(
             "time_weight",
-            get_1d_sincos_pos_embed(self.dim, self.num_frames).float().unsqueeze(1),
+            get_1d_sincos_pos_embed(self.dim, self.num_frames)
+            .float()
+            .unsqueeze(1),
             persistent=False,
         )
 
@@ -119,10 +123,14 @@ class Learnable2DInterpPosEmbDivided_fixed(nn.Layer):
     def reset_parameters(self):
         nn.init.normal_(self.weight)
 
-    def forward(self, x: paddle.Tensor, grid_thws: paddle.Tensor) -> paddle.Tensor:
+    def forward(
+        self, x: paddle.Tensor, grid_thws: paddle.Tensor
+    ) -> paddle.Tensor:
         pos_embs = []
         for t, h, w in grid_thws.tolist():
-            assert t <= self.num_frames, f"t:{t} > self.num_frames:{self.num_frames}"
+            assert t <= self.num_frames, (
+                f"t:{t} > self.num_frames:{self.num_frames}"
+            )
             if (h, w) == self.weight.shape[:-1]:
                 pos_emb_2d = self.weight.flatten(end_dim=1)
             else:
@@ -135,7 +143,10 @@ class Learnable2DInterpPosEmbDivided_fixed(nn.Layer):
             if t == 1:
                 pos_emb_3d = pos_emb_2d
             else:
-                pos_emb_3d = pos_emb_2d.unsqueeze(0).repeat(t, 1, 1) + self.time_weight[0:t]
+                pos_emb_3d = (
+                    pos_emb_2d.unsqueeze(0).repeat(t, 1, 1)
+                    + self.time_weight[0:t]
+                )
 
             pos_embs.append(pos_emb_3d.reshape(-1, pos_emb_3d.shape[-1]))
 
@@ -165,10 +176,14 @@ class MoonVision3dPatchEmbed(FleetLayer):
         if self.patch_size is None:
             raise ValueError("patch_size is required in config")
 
-        assert isinstance(self.patch_size, int | Sequence), f"Invalid patch_size type: {type(self.patch_size)}"
+        assert isinstance(self.patch_size, int | Sequence), (
+            f"Invalid patch_size type: {type(self.patch_size)}"
+        )
         if isinstance(self.patch_size, int):
             self.patch_size = (self.patch_size, self.patch_size)
-        assert len(self.patch_size) == 2, f"Expected patch_size to be a tuple of 2, got {self.patch_size}"
+        assert len(self.patch_size) == 2, (
+            f"Expected patch_size to be a tuple of 2, got {self.patch_size}"
+        )
 
         self.proj = nn.Conv2d(
             self.in_dim,
@@ -186,9 +201,13 @@ class MoonVision3dPatchEmbed(FleetLayer):
                 dim=self.out_dim,
             )
         else:
-            raise NotImplementedError(f"Not support pos_emb_type: {config.pos_emb_type}")
+            raise NotImplementedError(
+                f"Not support pos_emb_type: {config.pos_emb_type}"
+            )
 
-        assert sublayers_spec.rope_embedding is not None, "rotary_pos_emb must be specified"
+        assert sublayers_spec.rope_embedding is not None, (
+            "rotary_pos_emb must be specified"
+        )
         self.rotary_pos_emb = build_spec_layer(
             sublayers_spec.rope_embedding,
         )
@@ -214,7 +233,9 @@ class MoonVision3dPatchEmbed(FleetLayer):
             "grid_thws": grid_thws,
             "hidden_states": hidden_states,
             "attention_mask": dict_args.get("attention_mask", None),
-            "attn_mask_startend_row_indices": dict_args.get("attn_mask_startend_row_indices", None),
+            "attn_mask_startend_row_indices": dict_args.get(
+                "attn_mask_startend_row_indices", None
+            ),
             "rope_freqs_cis": rope_freqs_cis,
         }
         return preproc_output

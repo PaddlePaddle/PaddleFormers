@@ -19,7 +19,11 @@ import unittest
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import paddle
@@ -83,12 +87,16 @@ class TestMoESublayersDataclass(unittest.TestCase):
 class TestLogMoEMD5(unittest.TestCase):
     def setUp(self):
         self.old_log = moe_layer._LOG_LAYER_MD5
-        self.old_experimental = TransformerLayer._gpt_model_use_experimental_version
+        self.old_experimental = (
+            TransformerLayer._gpt_model_use_experimental_version
+        )
         self.old_skip = TransformerLayer._skip_mtp_probes
 
     def tearDown(self):
         moe_layer._LOG_LAYER_MD5 = self.old_log
-        TransformerLayer._gpt_model_use_experimental_version = self.old_experimental
+        TransformerLayer._gpt_model_use_experimental_version = (
+            self.old_experimental
+        )
         TransformerLayer._skip_mtp_probes = self.old_skip
 
     def test_log_moe_md5_skip_probe_branch(self):
@@ -98,7 +106,9 @@ class TestLogMoEMD5(unittest.TestCase):
 
         captured = io.StringIO()
         with contextlib.redirect_stdout(captured):
-            moe_layer._log_moe_md5(paddle.to_tensor([1.0], dtype="float32"), "hidden", 7)
+            moe_layer._log_moe_md5(
+                paddle.to_tensor([1.0], dtype="float32"), "hidden", 7
+            )
 
         self.assertEqual(captured.getvalue(), "")
 
@@ -109,7 +119,9 @@ class TestLogMoEMD5(unittest.TestCase):
 
         captured = io.StringIO()
         with contextlib.redirect_stdout(captured):
-            moe_layer._log_moe_md5(paddle.to_tensor([1.0, 2.0], dtype="float32"), "hidden", 7)
+            moe_layer._log_moe_md5(
+                paddle.to_tensor([1.0, 2.0], dtype="float32"), "hidden", 7
+            )
 
         output = captured.getvalue()
         self.assertIn("[MD5 MoE]", output)

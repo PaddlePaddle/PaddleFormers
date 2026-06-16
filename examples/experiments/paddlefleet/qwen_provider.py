@@ -16,8 +16,8 @@
 # Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Optional
 
 import paddle
 import paddle.nn.functional as F
@@ -42,7 +42,7 @@ class Qwen3MoEModelProvider(GPTModelProvider):
     init_method_std: int = 0.02
     hidden_dropout: float = 0.0
     vocab_size: int = 151936
-    tie_word_embeddings: Optional[bool] = False
+    tie_word_embeddings: bool | None = False
     layernorm_epsilon: float = 1e-6
     autocast_dtype: paddle.dtype = paddle.bfloat16
     params_dtype: paddle.dtype = paddle.bfloat16
@@ -96,7 +96,7 @@ class Qwen3MoEModelSingleCardProvider(Qwen3MoEModelProvider):
     hidden_size: int = 128
     intermediate_size: int = 128
     num_key_value_heads: int = 4
-    num_nextn_predict_layers: Optional[int] = 0
+    num_nextn_predict_layers: int | None = 0
     use_bias: bool = False
     vocab_size: int = 37888
 

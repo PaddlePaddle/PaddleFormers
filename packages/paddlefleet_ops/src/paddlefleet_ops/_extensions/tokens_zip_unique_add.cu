@@ -14,26 +14,23 @@
 
 #include "paddle/common/array.h"
 #include "paddle/phi/kernels/funcs/aligned_vector.h"
-#include "utils.h"  // NOLINT
+#include "utils.h" // NOLINT
 
 template <typename ZipT, typename UnzipT, typename ZipPtrsT, int VecSize>
 __global__ void tokens_zip_unique_add_kernel(
-    ZipPtrsT zipped_ptrs,
-    const UnzipT* __restrict__ unzipped,
-    const int64_t* __restrict__ index_unzipped,
-    const int64_t unzipped_rows,
-    const int64_t subbatch_rows,
-    const int hidden_size) {
+    ZipPtrsT zipped_ptrs, const UnzipT *__restrict__ unzipped,
+    const int64_t *__restrict__ index_unzipped, const int64_t unzipped_rows,
+    const int64_t subbatch_rows, const int hidden_size) {
   for (int64_t unzipped_row = blockIdx.x; unzipped_row < unzipped_rows;
        unzipped_row += gridDim.x) {
     int64_t zipped_row = index_unzipped[unzipped_row];
-    if (zipped_row < 0) continue;
-    auto* zipped_ptr = zipped_ptrs[zipped_row / subbatch_rows] +
+    if (zipped_row < 0)
+      continue;
+    auto *zipped_ptr = zipped_ptrs[zipped_row / subbatch_rows] +
                        (zipped_row % subbatch_rows) * hidden_size;
-    const auto* unzipped_ptr = unzipped + unzipped_row * hidden_size;
+    const auto *unzipped_ptr = unzipped + unzipped_row * hidden_size;
     for (int64_t i = static_cast<int64_t>(threadIdx.x) * VecSize;
-         i < hidden_size;
-         i += static_cast<int64_t>(blockDim.x) * VecSize) {
+         i < hidden_size; i += static_cast<int64_t>(blockDim.x) * VecSize) {
       phi::AlignedVector<ZipT, VecSize> zipped_tmp;
       phi::AlignedVector<UnzipT, VecSize> unzipped_tmp;
       phi::Load(zipped_ptr + i, &zipped_tmp);
@@ -47,12 +44,11 @@ __global__ void tokens_zip_unique_add_kernel(
   }
 }
 
-std::vector<paddle::Tensor> tokens_zip_unique_add_impl(
-    const std::vector<paddle::Tensor>& zipped_origin,
-    const paddle::Tensor& unzipped,
-    const paddle::Tensor& index_unzipped,
-    int64_t zipped_rows,
-    int64_t subbatch_rows) {
+std::vector<paddle::Tensor>
+tokens_zip_unique_add_impl(const std::vector<paddle::Tensor> &zipped_origin,
+                           const paddle::Tensor &unzipped,
+                           const paddle::Tensor &index_unzipped,
+                           int64_t zipped_rows, int64_t subbatch_rows) {
   int64_t num_split = static_cast<int64_t>(zipped_origin.size());
   PD_CHECK(num_split >= 1, "num_split should be larger than or equal to 1");
 
@@ -125,46 +121,43 @@ std::vector<paddle::Tensor> tokens_zip_unique_add_impl(
   auto stream = unzipped.stream();
   paddle::Tensor ptr_tensor;
 
-#define LAUNCH_TOKENS_ZIP_UNIQUE_ADD_CASE_IMPL(__ZipT, __UnzipT, __out_ptrs)  \
-  do {                                                                        \
-    auto stream = unzipped.stream();                                          \
-    tokens_zip_unique_add_kernel<                                             \
-        __ZipT,                                                               \
-        __UnzipT,                                                             \
-        typename std::remove_reference<decltype(__out_ptrs)>::type,           \
-        kVecSize><<<grid, block, 0, stream>>>(__out_ptrs,                     \
-                                              unzipped.data<__UnzipT>(),      \
-                                              index_unzipped.data<int64_t>(), \
-                                              unzipped_rows,                  \
-                                              subbatch_rows,                  \
-                                              hidden_size);                   \
+#define LAUNCH_TOKENS_ZIP_UNIQUE_ADD_CASE_IMPL(__ZipT, __UnzipT, __out_ptrs)   \
+  do {                                                                         \
+    auto stream = unzipped.stream();                                           \
+    tokens_zip_unique_add_kernel<                                              \
+        __ZipT, __UnzipT,                                                      \
+        typename std::remove_reference<decltype(__out_ptrs)>::type, kVecSize>  \
+        <<<grid, block, 0, stream>>>(__out_ptrs, unzipped.data<__UnzipT>(),    \
+                                     index_unzipped.data<int64_t>(),           \
+                                     unzipped_rows, subbatch_rows,             \
+                                     hidden_size);                             \
   } while (0)
 
-#define LAUNCH_TOKENS_ZIP_UNIQUE_ADD_FIX_CASE(__ZipT, __UnzipT, __num_split) \
-  if (num_split <= __num_split) {                                            \
-    phi::Array<__ZipT*, __num_split> array;                                  \
-    for (int64_t i = 0; i < num_split; ++i) {                                \
-      array[i] = zipped[i].data<__ZipT>();                                   \
-    }                                                                        \
-    LAUNCH_TOKENS_ZIP_UNIQUE_ADD_CASE_IMPL(__ZipT, __UnzipT, array);         \
-    break;                                                                   \
+#define LAUNCH_TOKENS_ZIP_UNIQUE_ADD_FIX_CASE(__ZipT, __UnzipT, __num_split)   \
+  if (num_split <= __num_split) {                                              \
+    phi::Array<__ZipT *, __num_split> array;                                   \
+    for (int64_t i = 0; i < num_split; ++i) {                                  \
+      array[i] = zipped[i].data<__ZipT>();                                     \
+    }                                                                          \
+    LAUNCH_TOKENS_ZIP_UNIQUE_ADD_CASE_IMPL(__ZipT, __UnzipT, array);           \
+    break;                                                                     \
   }
 
-#define LAUNCH_TOKENS_ZIP_UNIQUE_ADD_DYNAMIC_CASE(__ZipT, __UnzipT)      \
-  paddle::Tensor ptr_tensor;                                             \
-  auto device_ptrs =                                                     \
-      GetTensorDevicePtrs<__ZipT>(zipped, &ptr_tensor, stream, place);   \
-  LAUNCH_TOKENS_ZIP_UNIQUE_ADD_CASE_IMPL(__ZipT, __UnzipT, device_ptrs); \
+#define LAUNCH_TOKENS_ZIP_UNIQUE_ADD_DYNAMIC_CASE(__ZipT, __UnzipT)            \
+  paddle::Tensor ptr_tensor;                                                   \
+  auto device_ptrs =                                                           \
+      GetTensorDevicePtrs<__ZipT>(zipped, &ptr_tensor, stream, place);         \
+  LAUNCH_TOKENS_ZIP_UNIQUE_ADD_CASE_IMPL(__ZipT, __UnzipT, device_ptrs);       \
   break
 
-#define LAUNCH_TOKENS_ZIP_UNIQUE_ADD(__ZipT, __UnzipT)           \
-  do {                                                           \
-    LAUNCH_TOKENS_ZIP_UNIQUE_ADD_FIX_CASE(__ZipT, __UnzipT, 1);  \
-    LAUNCH_TOKENS_ZIP_UNIQUE_ADD_FIX_CASE(__ZipT, __UnzipT, 2);  \
-    LAUNCH_TOKENS_ZIP_UNIQUE_ADD_FIX_CASE(__ZipT, __UnzipT, 4);  \
-    LAUNCH_TOKENS_ZIP_UNIQUE_ADD_FIX_CASE(__ZipT, __UnzipT, 8);  \
-    LAUNCH_TOKENS_ZIP_UNIQUE_ADD_FIX_CASE(__ZipT, __UnzipT, 16); \
-    LAUNCH_TOKENS_ZIP_UNIQUE_ADD_DYNAMIC_CASE(__ZipT, __UnzipT); \
+#define LAUNCH_TOKENS_ZIP_UNIQUE_ADD(__ZipT, __UnzipT)                         \
+  do {                                                                         \
+    LAUNCH_TOKENS_ZIP_UNIQUE_ADD_FIX_CASE(__ZipT, __UnzipT, 1);                \
+    LAUNCH_TOKENS_ZIP_UNIQUE_ADD_FIX_CASE(__ZipT, __UnzipT, 2);                \
+    LAUNCH_TOKENS_ZIP_UNIQUE_ADD_FIX_CASE(__ZipT, __UnzipT, 4);                \
+    LAUNCH_TOKENS_ZIP_UNIQUE_ADD_FIX_CASE(__ZipT, __UnzipT, 8);                \
+    LAUNCH_TOKENS_ZIP_UNIQUE_ADD_FIX_CASE(__ZipT, __UnzipT, 16);               \
+    LAUNCH_TOKENS_ZIP_UNIQUE_ADD_DYNAMIC_CASE(__ZipT, __UnzipT);               \
   } while (0)
 
   if (grid > 0) {
@@ -185,22 +178,18 @@ std::vector<paddle::Tensor> tokens_zip_unique_add_impl(
 }
 
 std::vector<paddle::Tensor> tokens_zip_unique_add(
-    const paddle::Tensor& zipped_origin,
-    const paddle::Tensor& unzipped,
-    const paddle::Tensor& index_unzipped,
-    int64_t zipped_rows) {
-  return tokens_zip_unique_add_impl(
-      {zipped_origin}, unzipped, index_unzipped, zipped_rows, 0);
+    const paddle::Tensor &zipped_origin, const paddle::Tensor &unzipped,
+    const paddle::Tensor &index_unzipped, int64_t zipped_rows) {
+  return tokens_zip_unique_add_impl({zipped_origin}, unzipped, index_unzipped,
+                                    zipped_rows, 0);
 }
 
 void tokens_zip_unique_add_subbatch(
-    const std::vector<paddle::Tensor>& zipped_origin,
-    const paddle::Tensor& unzipped,
-    const paddle::Tensor& index_unzipped,
-    int64_t zipped_rows,
-    int64_t subbatch_rows) {
-  tokens_zip_unique_add_impl(
-      zipped_origin, unzipped, index_unzipped, zipped_rows, subbatch_rows);
+    const std::vector<paddle::Tensor> &zipped_origin,
+    const paddle::Tensor &unzipped, const paddle::Tensor &index_unzipped,
+    int64_t zipped_rows, int64_t subbatch_rows) {
+  tokens_zip_unique_add_impl(zipped_origin, unzipped, index_unzipped,
+                             zipped_rows, subbatch_rows);
 }
 
 PD_BUILD_OP(tokens_zip_unique_add)

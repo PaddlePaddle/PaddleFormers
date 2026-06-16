@@ -22,8 +22,13 @@ from paddle.nn.functional.flash_attention import flashmask_attention
 
 _flash_mask_available = False
 try:
-    if paddle.cuda.is_available() and paddle.cuda.get_device_capability()[0] == 10:
-        from paddlefleet_ops.flash_mask.cute.flashmask_utils import FlashMaskInfoPaddle
+    if (
+        paddle.cuda.is_available()
+        and paddle.cuda.get_device_capability()[0] == 10
+    ):
+        from paddlefleet_ops.flash_mask.cute.flashmask_utils import (
+            FlashMaskInfoPaddle,
+        )
         from paddlefleet_ops.flash_mask.cute.interface import (
             _flash_attn_bwd,
             _flash_attn_fwd,
@@ -58,10 +63,14 @@ def mark_context_parallel_parameter_disable_scale_grad(param_or_layer):
         param_or_layer.weight.context_parallel_disable_scale_grad = True
         if hasattr(param_or_layer, "bias") and param_or_layer.bias is not None:
             param_or_layer.bias.context_parallel_disable_scale_grad = True
-    elif isinstance(param_or_layer, (paddle.base.framework.Parameter, paddle.Tensor)):
+    elif isinstance(
+        param_or_layer, (paddle.base.framework.Parameter, paddle.Tensor)
+    ):
         param_or_layer.context_parallel_disable_scale_grad = True
     else:
-        raise TypeError(f"param should be 'Parameter' or 'Tensor' or 'Layer', but received {type(param_or_layer)}")
+        raise TypeError(
+            f"param should be 'Parameter' or 'Tensor' or 'Layer', but received {type(param_or_layer)}"
+        )
 
 
 def context_parallel_parameter_disable_scale_grad(param):
@@ -110,9 +119,9 @@ def scatter_balance(input_tensor, group=None, axis=0):
     seq_len = input_tensor.shape[axis]
 
     # Ensure sequence length is divisible by parallelism * 2 for balanced splitting
-    assert (
-        seq_len % (parallelism * 2) == 0
-    ), f"Input sequence length {seq_len} can't be divided exactly by sequence parallelism * 2 {parallelism * 2}"
+    assert seq_len % (parallelism * 2) == 0, (
+        f"Input sequence length {seq_len} can't be divided exactly by sequence parallelism * 2 {parallelism * 2}"
+    )
 
     interval = seq_len // parallelism // 2
     total_len = input_tensor.shape[axis]
@@ -170,12 +179,21 @@ def all_gather_balance(input_tensor, group=None, axis=0):
         output_shape_start = list(chunk_start.shape)
         output_shape_start[axis] = output_shape_start[axis] * parallelism
 
-        gathered_start = paddle.empty(shape=output_shape_start, dtype=input_tensor.dtype)
-        dist.stream.all_gather(gathered_start, chunk_start, group=group, use_calc_stream=True)
+        gathered_start = paddle.empty(
+            shape=output_shape_start, dtype=input_tensor.dtype
+        )
+        dist.stream.all_gather(
+            gathered_start, chunk_start, group=group, use_calc_stream=True
+        )
 
         # Gather end chunks
-        gathered_end_list = [paddle.empty(chunk_end.shape, dtype=input_tensor.dtype) for _ in range(parallelism)]
-        dist.stream.all_gather(gathered_end_list, chunk_end, group=group, use_calc_stream=True)
+        gathered_end_list = [
+            paddle.empty(chunk_end.shape, dtype=input_tensor.dtype)
+            for _ in range(parallelism)
+        ]
+        dist.stream.all_gather(
+            gathered_end_list, chunk_end, group=group, use_calc_stream=True
+        )
 
         # Reverse the end chunks to reconstruct original order
         gathered_end_list.reverse()
@@ -184,16 +202,28 @@ def all_gather_balance(input_tensor, group=None, axis=0):
         return result
     else:
         # Handle other axes
-        gathered_start_list = [paddle.empty(chunk_start.shape, dtype=input_tensor.dtype) for _ in range(parallelism)]
-        dist.stream.all_gather(gathered_start_list, chunk_start, group=group, use_calc_stream=True)
+        gathered_start_list = [
+            paddle.empty(chunk_start.shape, dtype=input_tensor.dtype)
+            for _ in range(parallelism)
+        ]
+        dist.stream.all_gather(
+            gathered_start_list, chunk_start, group=group, use_calc_stream=True
+        )
 
-        gathered_end_list = [paddle.empty(chunk_end.shape, dtype=input_tensor.dtype) for _ in range(parallelism)]
-        dist.stream.all_gather(gathered_end_list, chunk_end, group=group, use_calc_stream=True)
+        gathered_end_list = [
+            paddle.empty(chunk_end.shape, dtype=input_tensor.dtype)
+            for _ in range(parallelism)
+        ]
+        dist.stream.all_gather(
+            gathered_end_list, chunk_end, group=group, use_calc_stream=True
+        )
 
         # Reverse the end chunks
         gathered_end_list = gathered_end_list[::-1]
 
-        result = paddle.concat(gathered_start_list + gathered_end_list, axis=axis)
+        result = paddle.concat(
+            gathered_start_list + gathered_end_list, axis=axis
+        )
         return result
 
 
@@ -240,9 +270,14 @@ def reduce_scatter_any_axis(input_tensor, axis, group=None):
         # General case for other axes using alltoall
         input_chunks = paddle.split(input_tensor, parallelism, axis=axis)
 
-        output_buffers = [paddle.empty(input_chunks[0].shape, dtype=input_tensor.dtype) for _ in range(parallelism)]
+        output_buffers = [
+            paddle.empty(input_chunks[0].shape, dtype=input_tensor.dtype)
+            for _ in range(parallelism)
+        ]
 
-        dist.stream.alltoall(output_buffers, input_chunks, group=group, use_calc_stream=True)
+        dist.stream.alltoall(
+            output_buffers, input_chunks, group=group, use_calc_stream=True
+        )
 
         # Sum the received chunks
         result = paddle.stack(output_buffers, axis=0).sum(axis=0)
@@ -286,13 +321,19 @@ def reduce_scatter_any_axis_balance(input_tensor, axis, group=None):
 
     # Combine corresponding start and end chunks
     combined_chunks = [
-        paddle.concat([start_chunk, end_chunk], axis=axis) for start_chunk, end_chunk in zip(chunks_start, chunks_end)
+        paddle.concat([start_chunk, end_chunk], axis=axis)
+        for start_chunk, end_chunk in zip(chunks_start, chunks_end)
     ]
 
     # Perform alltoall communication
-    output_buffers = [paddle.empty(combined_chunks[0].shape, dtype=input_tensor.dtype) for _ in range(parallelism)]
+    output_buffers = [
+        paddle.empty(combined_chunks[0].shape, dtype=input_tensor.dtype)
+        for _ in range(parallelism)
+    ]
 
-    dist.stream.alltoall(output_buffers, combined_chunks, group=group, use_calc_stream=True)
+    dist.stream.alltoall(
+        output_buffers, combined_chunks, group=group, use_calc_stream=True
+    )
 
     # Sum the received chunks
     result = paddle.stack(output_buffers, axis=0).sum(axis=0)
@@ -343,7 +384,10 @@ def all_gather_contiguous(input_tensor, group=None, axis=0):
         )
         return gathered
     else:
-        tensor_list = [paddle.empty(input_tensor.shape, dtype=input_tensor.dtype) for _ in range(nranks)]
+        tensor_list = [
+            paddle.empty(input_tensor.shape, dtype=input_tensor.dtype)
+            for _ in range(nranks)
+        ]
         dist.stream.all_gather(
             tensor_list,
             input_tensor.contiguous(),
@@ -375,14 +419,19 @@ def reduce_scatter_contiguous(input_tensor, axis, group=None):
         return output
     else:
         chunks = paddle.split(input_tensor, nranks, axis=axis)
-        bufs = [paddle.empty(chunks[0].shape, dtype=input_tensor.dtype) for _ in range(nranks)]
+        bufs = [
+            paddle.empty(chunks[0].shape, dtype=input_tensor.dtype)
+            for _ in range(nranks)
+        ]
         dist.stream.alltoall(
             bufs,
             [c.contiguous() for c in chunks],
             group=group,
             use_calc_stream=True,
         )
-        return paddle.stack(bufs).cast("float32").sum(0).cast(input_tensor.dtype)
+        return (
+            paddle.stack(bufs).cast("float32").sum(0).cast(input_tensor.dtype)
+        )
 
 
 class ContextParallelScatterOp(PyLayer):
@@ -413,7 +462,9 @@ class ContextParallelScatterOp(PyLayer):
     @staticmethod
     def backward(ctx, grad_output):
         if ctx.mode == "contiguous_allgather":
-            return all_gather_contiguous(grad_output, group=ctx.group, axis=ctx.axis)
+            return all_gather_contiguous(
+                grad_output, group=ctx.group, axis=ctx.axis
+            )
         return all_gather_balance(grad_output, axis=ctx.axis, group=ctx.group)
 
 
@@ -445,7 +496,9 @@ class ContextParallelGatherOp(PyLayer):
     @staticmethod
     def backward(ctx, grad_output):
         if ctx.mode == "contiguous_allgather":
-            return scatter_contiguous(grad_output, group=ctx.group, axis=ctx.axis)
+            return scatter_contiguous(
+                grad_output, group=ctx.group, axis=ctx.axis
+            )
         return scatter_balance(grad_output, axis=ctx.axis, group=ctx.group)
 
 
@@ -477,11 +530,17 @@ class ContextParallelAllGatherOp(PyLayer):
     @staticmethod
     def backward(ctx, grad_output):
         if ctx.mode == "contiguous_allgather":
-            return reduce_scatter_contiguous(grad_output, axis=ctx.axis, group=ctx.group)
-        return reduce_scatter_any_axis_balance(grad_output, axis=ctx.axis, group=ctx.group)
+            return reduce_scatter_contiguous(
+                grad_output, axis=ctx.axis, group=ctx.group
+            )
+        return reduce_scatter_any_axis_balance(
+            grad_output, axis=ctx.axis, group=ctx.group
+        )
 
 
-def preprocess_index(startend_row_indices, chunk_id, seq_blocksize, max_seqlen_q):
+def preprocess_index(
+    startend_row_indices, chunk_id, seq_blocksize, max_seqlen_q
+):
     """
     Preprocess startend row indices for a single chunk.
     Adjusts the startend_row_indices relative to the chunk's starting position and
@@ -533,14 +592,18 @@ def preprocess_index_dual_chunks(
     indices_second = paddle.clip(indices_second, min=0, max=max_seqlen_q)
 
     # Offset second chunk indices to avoid overlap
-    indices_second = paddle.where(indices_second != 0, indices_second + max_seqlen_q, indices_second)
+    indices_second = paddle.where(
+        indices_second != 0, indices_second + max_seqlen_q, indices_second
+    )
 
     # Combine indices from both chunks
     combined_indices = paddle.maximum(indices_first, indices_second)
     return combined_indices
 
 
-def cp_flashmask_allgatherkv_balance_forward(query, key, value, startend_row_indices, group, causal, is_training):
+def cp_flashmask_allgatherkv_balance_forward(
+    query, key, value, startend_row_indices, group, causal, is_training
+):
     """
     Forward pass of context parallel flashmask attention with balanced all-gather strategy.
     This function implements the forward pass of flash attention with context parallelism
@@ -559,7 +622,9 @@ def cp_flashmask_allgatherkv_balance_forward(query, key, value, startend_row_ind
             used by the forward kernel and must be passed to the backward
             counterpart to keep fwd/bwd consistent.
     """
-    paddle.base.core.nvprof_nvtx_push("cp_flashmask_allgatherkv_balance_forward")
+    paddle.base.core.nvprof_nvtx_push(
+        "cp_flashmask_allgatherkv_balance_forward"
+    )
 
     rank = group.rank
     cp_size = group.world_size
@@ -583,11 +648,15 @@ def cp_flashmask_allgatherkv_balance_forward(query, key, value, startend_row_ind
     )
 
     # Perform flashmask attention with startend_row_indices
-    fa_version = paddle.base.framework.get_flags(["FLAGS_flash_attn_version"])["FLAGS_flash_attn_version"]
+    fa_version = paddle.base.framework.get_flags(["FLAGS_flash_attn_version"])[
+        "FLAGS_flash_attn_version"
+    ]
     # Apply deterministic override here so forward and backward use the same
     # effective fa_version (mirrors backward's previous logic and the
     # framework flashmask_attention's internal deterministic fallback).
-    deterministic = paddle.get_flags(["FLAGS_cudnn_deterministic"])["FLAGS_cudnn_deterministic"]
+    deterministic = paddle.get_flags(["FLAGS_cudnn_deterministic"])[
+        "FLAGS_cudnn_deterministic"
+    ]
     if "block_mask" in inspect.signature(flashmask_attention).parameters:
         if deterministic and query.shape[-1] > 128:
             fa_version = 2
@@ -651,7 +720,9 @@ def cp_flashmask_allgatherkv_balance_backward(
     Returns:
         tuple: (query_grad, key_grad, value_grad)
     """
-    paddle.base.core.nvprof_nvtx_push("cp_flashmask_allgatherkv_balance_backward")
+    paddle.base.core.nvprof_nvtx_push(
+        "cp_flashmask_allgatherkv_balance_backward"
+    )
 
     # All-gather key and value tensors (same as forward pass)
     key_gathered = all_gather_balance(key, axis=1, group=group)
@@ -659,62 +730,72 @@ def cp_flashmask_allgatherkv_balance_backward(
 
     if fa_version == 2:
         # Create seed offset tensor (required for gradient computation)
-        seed_offset = paddle.zeros(shape=[query.shape[1], query.shape[2]], dtype=paddle.int64)
+        seed_offset = paddle.zeros(
+            shape=[query.shape[1], query.shape[2]], dtype=paddle.int64
+        )
 
         # Compute gradients using flashmask attention backward pass
-        query_grad, key_grad_gathered, value_grad_gathered = paddle._C_ops.flashmask_attention_grad(
-            query,
-            key_gathered,
-            value_gathered,
-            startend_row_indices,
-            output,
-            log_sum_exp,
-            seed_offset,
-            output_grad,
-            0.0,  # dropout probability
-            causal,
+        query_grad, key_grad_gathered, value_grad_gathered = (
+            paddle._C_ops.flashmask_attention_grad(
+                query,
+                key_gathered,
+                value_gathered,
+                startend_row_indices,
+                output,
+                log_sum_exp,
+                seed_offset,
+                output_grad,
+                0.0,  # dropout probability
+                causal,
+            )
         )
     elif fa_version == 3:
         sig_params = inspect.signature(flashmask_attention).parameters
         if "group" in sig_params:
-            query_grad, key_grad_gathered, value_grad_gathered = paddle._C_ops.flashmask_attention_v2_grad(
-                query,
-                key_gathered,
-                value_gathered,
-                output,
-                log_sum_exp,
-                startend_row_indices,
-                None,  # block_mask
-                output_grad,
-                query.shape[-1] ** (-0.5),
-                False,
-                0,  # rank
-                1,  # nranks
+            query_grad, key_grad_gathered, value_grad_gathered = (
+                paddle._C_ops.flashmask_attention_v2_grad(
+                    query,
+                    key_gathered,
+                    value_gathered,
+                    output,
+                    log_sum_exp,
+                    startend_row_indices,
+                    None,  # block_mask
+                    output_grad,
+                    query.shape[-1] ** (-0.5),
+                    False,
+                    0,  # rank
+                    1,  # nranks
+                )
             )
         elif "block_mask" in sig_params:
-            query_grad, key_grad_gathered, value_grad_gathered = paddle._C_ops.flashmask_attention_v2_grad(
-                query,
-                key_gathered,
-                value_gathered,
-                output,
-                log_sum_exp,
-                startend_row_indices,
-                None,  # block_mask
-                output_grad,
-                query.shape[-1] ** (-0.5),
-                False,
+            query_grad, key_grad_gathered, value_grad_gathered = (
+                paddle._C_ops.flashmask_attention_v2_grad(
+                    query,
+                    key_gathered,
+                    value_gathered,
+                    output,
+                    log_sum_exp,
+                    startend_row_indices,
+                    None,  # block_mask
+                    output_grad,
+                    query.shape[-1] ** (-0.5),
+                    False,
+                )
             )
         else:
-            query_grad, key_grad_gathered, value_grad_gathered = paddle._C_ops.flashmask_attention_v2_grad(
-                query,
-                key_gathered,
-                value_gathered,
-                output,
-                log_sum_exp,
-                startend_row_indices,
-                output_grad,
-                query.shape[-1] ** (-0.5),
-                False,
+            query_grad, key_grad_gathered, value_grad_gathered = (
+                paddle._C_ops.flashmask_attention_v2_grad(
+                    query,
+                    key_gathered,
+                    value_gathered,
+                    output,
+                    log_sum_exp,
+                    startend_row_indices,
+                    output_grad,
+                    query.shape[-1] ** (-0.5),
+                    False,
+                )
             )
     elif fa_version == 4 and _flash_mask_available:
         if startend_row_indices is not None:
@@ -733,14 +814,22 @@ def cp_flashmask_allgatherkv_balance_backward(
             log_sum_exp,
             flashmask_info,
             causal=causal,
-            deterministic=paddle.get_flags(["FLAGS_cudnn_deterministic"])["FLAGS_cudnn_deterministic"],
+            deterministic=paddle.get_flags(["FLAGS_cudnn_deterministic"])[
+                "FLAGS_cudnn_deterministic"
+            ],
         )
     else:
-        raise ValueError(f"FlashAttention version {fa_version} is not supported.")
+        raise ValueError(
+            f"FlashAttention version {fa_version} is not supported."
+        )
 
     # Reduce-scatter key and value gradients
-    key_grad = reduce_scatter_any_axis_balance(key_grad_gathered, axis=1, group=group)
-    value_grad = reduce_scatter_any_axis_balance(value_grad_gathered, axis=1, group=group)
+    key_grad = reduce_scatter_any_axis_balance(
+        key_grad_gathered, axis=1, group=group
+    )
+    value_grad = reduce_scatter_any_axis_balance(
+        value_grad_gathered, axis=1, group=group
+    )
 
     paddle.base.core.nvprof_nvtx_pop()
     return query_grad, key_grad, value_grad
@@ -775,7 +864,9 @@ def scatter_with_padding(input_tensor, num_pad, axis, group):
         if rank_pad > 0 and cp_rank == rank_idx - 1:
             pad_list = [0 for _ in range(0, input_tensor.ndim * 2)]
             pad_list[axis * input_tensor.ndim * 2 + 1] = rank_pad
-            cur_res = paddle.nn.functional.pad(cur_res, pad_list, mode="constant", value=0)
+            cur_res = paddle.nn.functional.pad(
+                cur_res, pad_list, mode="constant", value=0
+            )
     else:
         shape = input_tensor.shape
         shape[axis] = avg_num
@@ -792,7 +883,9 @@ def all_gather_without_padding(input_tensor, num_pad, axis, group):
     dist.stream.all_gather(output_tensor, input_tensor, group)
     if num_pad > 0:
         pad_start = output_tensor.shape[axis] - num_pad
-        output_tensor = paddle.slice(output_tensor, axes=[axis], starts=[0], ends=[pad_start])
+        output_tensor = paddle.slice(
+            output_tensor, axes=[axis], starts=[0], ends=[pad_start]
+        )
     return output_tensor
 
 
@@ -822,7 +915,9 @@ class ContextParallelNormalScatter(PyLayer):
         if ctx.group.nranks == 1:
             return grad_output.clone()
 
-        return all_gather_without_padding(grad_output, ctx.num_pad, ctx.axis, ctx.group)
+        return all_gather_without_padding(
+            grad_output, ctx.num_pad, ctx.axis, ctx.group
+        )
 
 
 class ContextParallelNormalGather(PyLayer):
@@ -849,7 +944,9 @@ class ContextParallelNormalGather(PyLayer):
         if ctx.group.nranks == 1:
             return grad_output.clone()
 
-        return scatter_with_padding(grad_output, ctx.num_pad, ctx.axis, ctx.group)
+        return scatter_with_padding(
+            grad_output, ctx.num_pad, ctx.axis, ctx.group
+        )
 
 
 class FlashMaskContextParallel(PyLayer):
@@ -896,10 +993,14 @@ class FlashMaskContextParallel(PyLayer):
         """
         # Validate input parameters
         if dropout > 0.0:
-            raise NotImplementedError("Dropout is not supported in FlashMask context parallel yet.")
+            raise NotImplementedError(
+                "Dropout is not supported in FlashMask context parallel yet."
+            )
 
         if causal:
-            raise NotImplementedError("FlashMaskContextParallel does not support causal=True yet.")
+            raise NotImplementedError(
+                "FlashMaskContextParallel does not support causal=True yet."
+            )
 
         if fixed_seed_offset is not None:
             raise NotImplementedError("Fixed seed offset is not supported yet.")
@@ -916,12 +1017,16 @@ class FlashMaskContextParallel(PyLayer):
         )
 
         # Perform forward pass
-        output, log_sum_exp, startend_row_indices, fa_version = cp_flashmask_allgatherkv_balance_forward(
-            query, key, value, startend_row_indices, group, causal, training
+        output, log_sum_exp, startend_row_indices, fa_version = (
+            cp_flashmask_allgatherkv_balance_forward(
+                query, key, value, startend_row_indices, group, causal, training
+            )
         )
 
         # Save tensors for backward pass
-        ctx.save_for_backward(query, key, value, output, log_sum_exp, startend_row_indices)
+        ctx.save_for_backward(
+            query, key, value, output, log_sum_exp, startend_row_indices
+        )
         ctx.group = group
         ctx.causal = causal
         ctx.fa_version = fa_version
@@ -939,23 +1044,27 @@ class FlashMaskContextParallel(PyLayer):
             tuple: Gradients for all input arguments
         """
         # Retrieve saved tensors
-        query, key, value, output, log_sum_exp, startend_row_indices = ctx.saved_tensor()
+        query, key, value, output, log_sum_exp, startend_row_indices = (
+            ctx.saved_tensor()
+        )
         group = ctx.group
         causal = ctx.causal
         fa_version = ctx.fa_version
 
         # Compute gradients
-        query_grad, key_grad, value_grad = cp_flashmask_allgatherkv_balance_backward(
-            query,
-            key,
-            value,
-            startend_row_indices,
-            output,
-            log_sum_exp,
-            output_grad,
-            group,
-            causal,
-            fa_version,
+        query_grad, key_grad, value_grad = (
+            cp_flashmask_allgatherkv_balance_backward(
+                query,
+                key,
+                value,
+                startend_row_indices,
+                output,
+                log_sum_exp,
+                output_grad,
+                group,
+                causal,
+                fa_version,
+            )
         )
 
         return query_grad, key_grad, value_grad

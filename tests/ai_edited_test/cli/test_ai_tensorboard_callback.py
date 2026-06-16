@@ -79,7 +79,9 @@ class TestRewriteLogs(unittest.TestCase):
 class TestTensorBoardCallback(unittest.TestCase):
     """Tests for TensorBoardCallback class."""
 
-    @unittest.skip("is_tensorboard_available check may not be patchable in all CI environments")
+    @unittest.skip(
+        "is_tensorboard_available check may not be patchable in all CI environments"
+    )
     def test_init_requires_tensorboard(self):
         """Test that TensorBoardCallback raises RuntimeError without tensorboard."""
         mock_model = MagicMock()
@@ -103,7 +105,9 @@ class TestTensorBoardCallback(unittest.TestCase):
         args = MagicMock()
 
         # Need to mock SummaryWriter import
-        with patch("paddleformers.cli.train.ernie_pretrain.src.callbacks.tensorboard_callback.importlib"):
+        with patch(
+            "paddleformers.cli.train.ernie_pretrain.src.callbacks.tensorboard_callback.importlib"
+        ):
             try:
                 TensorBoardCallback(args, mock_model)
             except Exception:

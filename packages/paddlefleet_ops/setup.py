@@ -74,7 +74,9 @@ class CustomBdistWheel(_bdist_wheel):
         # NOTE: we intentionally keep the build/ directory (.o files) on disk
         # so that setuptools can use incremental compilation on the next build.
         if hasattr(self, "bdist_dir") and self.bdist_dir:
-            extensions_path = Path(self.bdist_dir) / "paddlefleet_ops" / "_extensions"
+            extensions_path = (
+                Path(self.bdist_dir) / "paddlefleet_ops" / "_extensions"
+            )
             for ext in (".cu", ".h", ".txt"):
                 for file in extensions_path.glob(f"*{ext}"):
                     try:
@@ -99,7 +101,9 @@ def _detect_local_gpu_arch():
             ["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader"],
             stderr=subprocess.DEVNULL,
         )
-        caps = {line.strip() for line in out.decode().splitlines() if line.strip()}
+        caps = {
+            line.strip() for line in out.decode().splitlines() if line.strip()
+        }
         return ";".join(sorted(caps)) if caps else None
     except Exception:
         return None
@@ -134,10 +138,14 @@ def _build_gencode_flags(cuda_major: int, cuda_minor: int) -> list[str]:
 
     if not raw:
         # Fallback: version-based default
-        raw = "9.0" if (cuda_major == 12 and cuda_minor < 8) else "9.0;10.0;10.3"
+        raw = (
+            "9.0" if (cuda_major == 12 and cuda_minor < 8) else "9.0;10.0;10.3"
+        )
 
     archs = [a.strip() for a in re.split(r"[;,]", raw) if a.strip()]
-    flags = [_ARCH_TO_GENCODE[arch] for arch in archs if arch in _ARCH_TO_GENCODE]
+    flags = [
+        _ARCH_TO_GENCODE[arch] for arch in archs if arch in _ARCH_TO_GENCODE
+    ]
 
     logging.info(f"CUDA gencode flags: {flags}")
     return flags
@@ -226,7 +234,10 @@ def setup_ops_extension():
     class _RelativeSourcesExt(ext_module.__class__):
         @property
         def sources(self):
-            return [os.path.relpath(s, _pkg_dir) if os.path.isabs(s) else s for s in self._sources]
+            return [
+                os.path.relpath(s, _pkg_dir) if os.path.isabs(s) else s
+                for s in self._sources
+            ]
 
         @sources.setter
         def sources(self, value):
@@ -256,9 +267,15 @@ def setup_install_no_extension():
 
 
 try:
-    dependencies = common_dependencies + get_special_build_deps() + get_special_setup_deps()
+    dependencies = (
+        common_dependencies
+        + get_special_build_deps()
+        + get_special_setup_deps()
+    )
 except Exception as e:
-    raise Exception(f"Failed to resolve special dependencies: {e}, using common dependencies only") from e
+    raise Exception(
+        f"Failed to resolve special dependencies: {e}, using common dependencies only"
+    ) from e
 
 if backends.IS_NVIDIA:
     setup_ops_extension()

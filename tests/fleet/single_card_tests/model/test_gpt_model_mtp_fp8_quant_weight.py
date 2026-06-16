@@ -26,7 +26,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import functools
@@ -108,8 +112,12 @@ def _make_config(**overrides):
         "normalization": "RMSNorm",
         "hidden_dropout_prob": 0.0,
         "attention_dropout": 0.0,
-        "init_method": functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-        "output_layer_init_method": functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+        "init_method": functools.partial(
+            paddle.nn.init.xavier_uniform_, gain=1.0
+        ),
+        "output_layer_init_method": functools.partial(
+            paddle.nn.init.xavier_uniform_, gain=1.0
+        ),
         "tie_word_embeddings": True,
         "use_qk_norm": True,
         "num_nextn_predict_layers": 1,
@@ -137,10 +145,18 @@ class TestFp8QuantWeightNonVPP(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def _get_mtp_layers(self):
-        return [layer for layer in self.gpt_model.run_function if isinstance(layer, MultiTokenPredictionLayer)]
+        return [
+            layer
+            for layer in self.gpt_model.run_function
+            if isinstance(layer, MultiTokenPredictionLayer)
+        ]
 
     def _get_transformer_layers(self):
-        return [layer for layer in self.gpt_model.run_function if isinstance(layer, TransformerLayer)]
+        return [
+            layer
+            for layer in self.gpt_model.run_function
+            if isinstance(layer, TransformerLayer)
+        ]
 
     # ------------------------------------------------------------------
     # Structural checks
@@ -345,10 +361,16 @@ class TestFp8QuantWeightVPP(unittest.TestCase):
         trans1 = self._make_mock_transformer()
         chunks = [[trans1, mtp1], [mtp2]]
 
-        self._run_as_vpp(self.gpt_model, chunks, batch_mode=False, quant_transpose=True)
+        self._run_as_vpp(
+            self.gpt_model, chunks, batch_mode=False, quant_transpose=True
+        )
 
-        mtp1.transformer_layer.fp8_quant_weight.assert_called_once_with(batch_mode=False, quant_transpose=True)
-        mtp2.transformer_layer.fp8_quant_weight.assert_called_once_with(batch_mode=False, quant_transpose=True)
+        mtp1.transformer_layer.fp8_quant_weight.assert_called_once_with(
+            batch_mode=False, quant_transpose=True
+        )
+        mtp2.transformer_layer.fp8_quant_weight.assert_called_once_with(
+            batch_mode=False, quant_transpose=True
+        )
 
     def test_vpp_transformer_layers_also_called(self):
         """VPP path: TransformerLayer.fp8_quant_weight must also be forwarded."""
@@ -356,16 +378,22 @@ class TestFp8QuantWeightVPP(unittest.TestCase):
         mtp1 = self._make_mock_mtp()
         chunks = [[trans1, mtp1]]
 
-        self._run_as_vpp(self.gpt_model, chunks, batch_mode=True, quant_transpose=False)
+        self._run_as_vpp(
+            self.gpt_model, chunks, batch_mode=True, quant_transpose=False
+        )
 
-        trans1.fp8_quant_weight.assert_called_once_with(batch_mode=True, quant_transpose=False)
+        trans1.fp8_quant_weight.assert_called_once_with(
+            batch_mode=True, quant_transpose=False
+        )
 
     def test_vpp_custom_args_forwarded(self):
         """VPP path: batch_mode and quant_transpose are forwarded correctly."""
         mtp = self._make_mock_mtp()
         chunks = [[mtp]]
 
-        self._run_as_vpp(self.gpt_model, chunks, batch_mode=True, quant_transpose=False)
+        self._run_as_vpp(
+            self.gpt_model, chunks, batch_mode=True, quant_transpose=False
+        )
 
         mtp.transformer_layer.fp8_quant_weight.assert_called_once_with(
             batch_mode=True,
@@ -419,7 +447,11 @@ class TestFp8QuantWeightNoMTP(unittest.TestCase):
 
     def test_no_mtp_layer_in_model(self):
         """Model with num_nextn_predict_layers=0 should not contain MultiTokenPredictionLayer."""
-        mtp_layers = [layer for layer in self.gpt_model.run_function if isinstance(layer, MultiTokenPredictionLayer)]
+        mtp_layers = [
+            layer
+            for layer in self.gpt_model.run_function
+            if isinstance(layer, MultiTokenPredictionLayer)
+        ]
         self.assertEqual(
             len(mtp_layers),
             0,
@@ -429,9 +461,13 @@ class TestFp8QuantWeightNoMTP(unittest.TestCase):
     def test_fp8_quant_weight_no_mtp_does_not_raise(self):
         """fp8_quant_weight on a model without MTP layers must not raise."""
         try:
-            self.gpt_model.fp8_quant_weight(batch_mode=False, quant_transpose=True)
+            self.gpt_model.fp8_quant_weight(
+                batch_mode=False, quant_transpose=True
+            )
         except Exception as e:
-            self.fail(f"fp8_quant_weight raised unexpectedly on a model without MTP: {e}")
+            self.fail(
+                f"fp8_quant_weight raised unexpectedly on a model without MTP: {e}"
+            )
 
 
 if __name__ == "__main__":

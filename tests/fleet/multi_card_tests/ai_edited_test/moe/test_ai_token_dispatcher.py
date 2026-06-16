@@ -24,11 +24,17 @@ from paddle.distributed import fleet
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 from paddleformers.fleet.process_groups_config import ProcessGroupCollection
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.training.initialize import initialize_fleet
 from paddleformers.fleet.transformer.moe.token_dispatcher import (
     AllToAllTokenDispatcher,
@@ -128,7 +134,9 @@ def _build_moe_config(**overrides):
         hidden_dropout_prob=0.0,
         attention_dropout=0.0,
         init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-        output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+        output_layer_init_method=functools.partial(
+            paddle.nn.init.xavier_uniform_, gain=1.0
+        ),
     )
     defaults.update(overrides)
     return TransformerConfig(**defaults)
@@ -174,7 +182,9 @@ class TestTokenDispatcher(unittest.TestCase):
                 moe_ep_barrier=True,
             )
             self.assertIsNotNone(manager)
-            self.assertEqual(manager.router_topk, self.config.num_experts_per_tok)
+            self.assertEqual(
+                manager.router_topk, self.config.num_experts_per_tok
+            )
         except ImportError:
             self.skipTest("DeepEP runtime not available in this environment")
 
@@ -190,7 +200,9 @@ class TestTokenDispatcher(unittest.TestCase):
                 moe_ep_barrier=True,
             )
             self.assertIsNotNone(manager)
-            self.assertEqual(manager.router_topk, self.config.num_experts_per_tok)
+            self.assertEqual(
+                manager.router_topk, self.config.num_experts_per_tok
+            )
         except ImportError:
             self.skipTest("HybridEP runtime not available in this environment")
 

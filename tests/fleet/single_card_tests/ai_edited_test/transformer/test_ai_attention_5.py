@@ -15,7 +15,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -53,9 +57,15 @@ class TestAttentionForwardRotaryPosEmbDuplication(unittest.TestCase):
     """Tests for Attention.forward rotary_pos_emb duplication logic."""
 
     @patch("paddleformers.fleet.transformer.attention.build_spec_layer")
-    @patch("paddleformers.fleet.transformer.attention.get_pg_size", return_value=1)
-    @patch("paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups")
-    def test_forward_doubles_rotary_pos_emb_tuple(self, mock_pg, mock_size, mock_build):
+    @patch(
+        "paddleformers.fleet.transformer.attention.get_pg_size", return_value=1
+    )
+    @patch(
+        "paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups"
+    )
+    def test_forward_doubles_rotary_pos_emb_tuple(
+        self, mock_pg, mock_size, mock_build
+    ):
         """forward should duplicate rotary_pos_emb into a tuple when not already."""
         mock_pg.return_value = MagicMock(
             tp=MagicMock(world_size=1, rank=0),
@@ -92,8 +102,12 @@ class TestSelfAttentionGetQKVPerHeadNorm(unittest.TestCase):
     """Tests for SelfAttention.get_query_key_value_tensors with per_head qk_norm."""
 
     @patch("paddleformers.fleet.transformer.attention.build_spec_layer")
-    @patch("paddleformers.fleet.transformer.attention.get_pg_size", return_value=1)
-    @patch("paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups")
+    @patch(
+        "paddleformers.fleet.transformer.attention.get_pg_size", return_value=1
+    )
+    @patch(
+        "paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups"
+    )
     def test_per_head_norm_with_q_norm(self, mock_pg, mock_size, mock_build):
         """When q_norm is set, it should be called during get_query_key_value_tensors."""
         mock_pg.return_value = MagicMock(
@@ -139,7 +153,9 @@ class TestSelfAttentionGetQKVPerHeadNorm(unittest.TestCase):
         attn.k_norm = mock_k_norm
         attn.pg_collection = MagicMock(tp=MagicMock(world_size=1, rank=0))
 
-        result = attn.get_query_key_value_tensors(paddle.randn([b, s, h]), split_qkv=True)
+        result = attn.get_query_key_value_tensors(
+            paddle.randn([b, s, h]), split_qkv=True
+        )
         mock_q_norm.assert_called_once()
         mock_k_norm.assert_called_once()
 
@@ -148,9 +164,15 @@ class TestSelfAttentionGetQKVWithGate(unittest.TestCase):
     """Tests for SelfAttention.get_query_key_value_tensors with gated attention."""
 
     @patch("paddleformers.fleet.transformer.attention.build_spec_layer")
-    @patch("paddleformers.fleet.transformer.attention.get_pg_size", return_value=1)
-    @patch("paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups")
-    def test_gated_attention_returns_four_values(self, mock_pg, mock_size, mock_build):
+    @patch(
+        "paddleformers.fleet.transformer.attention.get_pg_size", return_value=1
+    )
+    @patch(
+        "paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups"
+    )
+    def test_gated_attention_returns_four_values(
+        self, mock_pg, mock_size, mock_build
+    ):
         """When gated_attention is True, should return (query, key, value, gate)."""
         mock_pg.return_value = MagicMock(
             tp=MagicMock(world_size=1, rank=0),
@@ -195,7 +217,9 @@ class TestSelfAttentionGetQKVWithGate(unittest.TestCase):
         attn.k_norm = None
         attn.pg_collection = MagicMock(tp=MagicMock(world_size=1, rank=0))
 
-        result = attn.get_query_key_value_tensors(paddle.randn([b, s, h]), split_qkv=True)
+        result = attn.get_query_key_value_tensors(
+            paddle.randn([b, s, h]), split_qkv=True
+        )
         self.assertEqual(len(result), 4)  # query, key, value, gate
 
 

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -24,7 +28,10 @@ from unittest.mock import MagicMock, patch
 
 import paddle
 
-from paddleformers.fleet.models.multimodal.llava_model import LLaVAModel, pixel_shuffle
+from paddleformers.fleet.models.multimodal.llava_model import (
+    LLaVAModel,
+    pixel_shuffle,
+)
 
 
 class TestLLaVAModelSetInputTensor(unittest.TestCase):
@@ -151,8 +158,12 @@ class TestLLaVAModelInitVisionModelType(unittest.TestCase):
     )
     @patch("paddleformers.fleet.models.multimodal.llava_model.GPTModel")
     @patch("paddleformers.fleet.models.multimodal.llava_model.CLIPViTModel")
-    @patch("paddleformers.fleet.models.multimodal.llava_model.MultimodalProjector")
-    def test_unsupported_vision_model_raises(self, mock_proj, mock_clip, mock_gpt, mock_num, mock_log, mock_cfg):
+    @patch(
+        "paddleformers.fleet.models.multimodal.llava_model.MultimodalProjector"
+    )
+    def test_unsupported_vision_model_raises(
+        self, mock_proj, mock_clip, mock_gpt, mock_num, mock_log, mock_cfg
+    ):
         """Test unsupported vision_model_type raises ValueError."""
         mock_lang_config = MagicMock()
         mock_lang_config.hidden_size = 64
@@ -199,8 +210,12 @@ class TestLLaVAModelImgSeqLen(unittest.TestCase):
     )
     @patch("paddleformers.fleet.models.multimodal.llava_model.GPTModel")
     @patch("paddleformers.fleet.models.multimodal.llava_model.CLIPViTModel")
-    @patch("paddleformers.fleet.models.multimodal.llava_model.MultimodalProjector")
-    def test_img_seq_len_stored(self, mock_proj, mock_clip, mock_gpt, mock_num, mock_log, mock_cfg):
+    @patch(
+        "paddleformers.fleet.models.multimodal.llava_model.MultimodalProjector"
+    )
+    def test_img_seq_len_stored(
+        self, mock_proj, mock_clip, mock_gpt, mock_num, mock_log, mock_cfg
+    ):
         """Test img_seq_len is stored from get_num_image_embeddings."""
         mock_lang_config = MagicMock()
         mock_lang_config.hidden_size = 64

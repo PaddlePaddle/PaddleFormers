@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -70,7 +74,9 @@ class TestBuildOverlappedNodesWithLayerNodes(unittest.TestCase):
         forward_chunk = ScheduleChunk([other_node, node1, node2])
         backward_chunk = ScheduleChunk([node2, node1, other_node])
 
-        fwd_pre, bwd_pre, overlap, fwd_post, bwd_post = build_overlapped_nodes(forward_chunk, backward_chunk)
+        fwd_pre, bwd_pre, overlap, fwd_post, bwd_post = build_overlapped_nodes(
+            forward_chunk, backward_chunk
+        )
 
         # other_node goes to forward_pre, both TransformerLayerNodes are overlap
         self.assertEqual(len(fwd_pre.nodes), 1)
@@ -84,7 +90,9 @@ class TestBuildOverlappedNodesWithLayerNodes(unittest.TestCase):
         forward_chunk = ScheduleChunk(fwd_nodes)
         backward_chunk = ScheduleChunk(bwd_nodes)
 
-        fwd_pre, bwd_pre, overlap, fwd_post, bwd_post = build_overlapped_nodes(forward_chunk, backward_chunk)
+        fwd_pre, bwd_pre, overlap, fwd_post, bwd_post = build_overlapped_nodes(
+            forward_chunk, backward_chunk
+        )
 
         # overlap = min(4, 2) = 2, extra 2 go to fwd_post
         self.assertEqual(len(overlap.nodes), 2)
@@ -95,7 +103,9 @@ class TestTransformerEncoderGetLayerDescList(unittest.TestCase):
     """Tests for get_layer_desc_list and get_encoder_layer_desc_list."""
 
     def _make_encoder(self):
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             encoder.config = MagicMock()
             encoder.config.pipeline_model_parallel_size = 1
@@ -120,7 +130,9 @@ class TestTransformerEncoderGetLayerDescList(unittest.TestCase):
 
         spec = DummySpec()
         layers = encoder.get_layer_desc_list(spec)
-        self.assertEqual(len(layers), 3)  # embedding + 1 transformer + layer_norm
+        self.assertEqual(
+            len(layers), 3
+        )  # embedding + 1 transformer + layer_norm
         # Check name_prefixes
         prefixes = [l["name_prefix"] for l in layers]
         self.assertTrue(all(p.startswith("model") for p in prefixes))
@@ -164,11 +176,15 @@ class TestTransformerEncoderGetLayerDescList(unittest.TestCase):
         self.assertEqual(len(layers), 3)
 
 
-class TestTransformerEncoderOverlappedForwardBackwardDetailed(unittest.TestCase):
+class TestTransformerEncoderOverlappedForwardBackwardDetailed(
+    unittest.TestCase
+):
     """Detailed tests for overlapped_forward_backward."""
 
     def _make_encoder(self):
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             encoder.config = MagicMock()
             return encoder
@@ -187,7 +203,9 @@ class TestTransformerEncoderOverlappedForwardBackwardDetailed(unittest.TestCase)
         forward_chunk = ScheduleChunk([])
         backward_chunk = ScheduleChunk([])
 
-        with patch("paddleformers.fleet.transformer.transformer_encoder.build_overlapped_nodes") as mock_build:
+        with patch(
+            "paddleformers.fleet.transformer.transformer_encoder.build_overlapped_nodes"
+        ) as mock_build:
             mock_build.return_value = (
                 mock_pre,
                 mock_pre,
@@ -222,7 +240,9 @@ class TestTransformerEncoderOverlappedForwardBackwardDetailed(unittest.TestCase)
         forward_chunk = ScheduleChunk([])
         backward_chunk = ScheduleChunk([])
 
-        with patch("paddleformers.fleet.transformer.transformer_encoder.build_overlapped_nodes") as mock_build:
+        with patch(
+            "paddleformers.fleet.transformer.transformer_encoder.build_overlapped_nodes"
+        ) as mock_build:
             mock_build.return_value = (
                 mock_pre,
                 mock_pre,
@@ -257,7 +277,9 @@ class TestTransformerEncoderOverlappedForwardBackwardDetailed(unittest.TestCase)
         forward_chunk = ScheduleChunk([])
         backward_chunk = ScheduleChunk([])
 
-        with patch("paddleformers.fleet.transformer.transformer_encoder.build_overlapped_nodes") as mock_build:
+        with patch(
+            "paddleformers.fleet.transformer.transformer_encoder.build_overlapped_nodes"
+        ) as mock_build:
             mock_build.return_value = (
                 mock_pre,
                 mock_pre,
@@ -284,7 +306,9 @@ class TestTransformerEncoderFP8VirtualStages(unittest.TestCase):
 
     def test_fp8_quant_weight_with_virtual_stages(self):
         """Test fp8_quant_weight with _num_virtual_pipeline_stages > 1."""
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             encoder.config = MagicMock()
             encoder._num_virtual_pipeline_stages = 2
@@ -297,7 +321,9 @@ class TestTransformerEncoderFP8VirtualStages(unittest.TestCase):
 
     def test_use_fp8_with_virtual_stages(self):
         """Test use_fp8 with _num_virtual_pipeline_stages > 1."""
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             encoder.config = MagicMock()
             encoder._num_virtual_pipeline_stages = 2
@@ -310,7 +336,9 @@ class TestTransformerEncoderFP8VirtualStages(unittest.TestCase):
     def test_use_fp8_with_transformer_layer_in_run_function(self):
         """Test use_fp8 when run_function contains a TransformerLayer-like object."""
 
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             encoder.config = MagicMock()
             encoder._num_virtual_pipeline_stages = 1

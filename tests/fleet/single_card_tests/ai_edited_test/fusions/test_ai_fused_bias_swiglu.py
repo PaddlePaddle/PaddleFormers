@@ -111,8 +111,12 @@ class TestSwiGLUBackwardNativeGrad(unittest.TestCase):
         expected_wg = paddle.sum(swiglu(y) * g, axis=-1, keepdim=True)
         self.assertEqual(ig.shape, [2, 8])
         self.assertEqual(wg.shape, [2, 1])
-        np.testing.assert_allclose(ig.numpy(), expected_ig.numpy(), rtol=1e-5, atol=1e-5)
-        np.testing.assert_allclose(wg.numpy(), expected_wg.numpy(), rtol=1e-5, atol=1e-5)
+        np.testing.assert_allclose(
+            ig.numpy(), expected_ig.numpy(), rtol=1e-5, atol=1e-5
+        )
+        np.testing.assert_allclose(
+            wg.numpy(), expected_wg.numpy(), rtol=1e-5, atol=1e-5
+        )
 
 
 class TestSwigluBackShapes(unittest.TestCase):
@@ -142,7 +146,9 @@ class TestPyLayerForward(unittest.TestCase):
             return_value=paddle.randn([2, 4]),
         ):
             try:
-                BiasSwiGLUFunction.apply(paddle.randn([2, 8]), paddle.randn([8]), False, False)
+                BiasSwiGLUFunction.apply(
+                    paddle.randn([2, 8]), paddle.randn([8]), False, False
+                )
             except NotImplementedError:
                 pass
 
@@ -164,7 +170,9 @@ class TestPyLayerForward(unittest.TestCase):
             return_value=paddle.randn([2, 4]),
         ):
             try:
-                WeightedSwiGLUFunction.apply(paddle.randn([2, 8]), paddle.randn([2, 1]), False)
+                WeightedSwiGLUFunction.apply(
+                    paddle.randn([2, 8]), paddle.randn([2, 1]), False
+                )
             except NotImplementedError:
                 pass
 
@@ -245,7 +253,9 @@ class TestImplShapes(unittest.TestCase):
         self.assertEqual(out.shape, [2, 4, 8])
 
     def test_weighted_bias_swiglu_impl_no_bias(self):
-        out = weighted_bias_swiglu_impl(paddle.randn([4, 16]), None, paddle.randn([4, 1]))
+        out = weighted_bias_swiglu_impl(
+            paddle.randn([4, 16]), None, paddle.randn([4, 1])
+        )
         self.assertEqual(out.shape, [4, 8])
 
     def test_weighted_bias_swiglu_impl_with_bias_raises(self):
@@ -266,7 +276,9 @@ class TestClampedSwiGLU(unittest.TestCase):
         y = paddle.full([4, 16], fill_value=100.0)
         out = clamped_swiglu(y, clamp_value=clamp_value)
         self.assertEqual(out.shape, [4, 8])
-        max_possible = float(F.silu(paddle.to_tensor(clamp_value)).numpy()) * clamp_value
+        max_possible = (
+            float(F.silu(paddle.to_tensor(clamp_value)).numpy()) * clamp_value
+        )
         self.assertTrue(
             float(out.abs().max().numpy()) <= max_possible + 1e-5,
         )
@@ -286,7 +298,9 @@ class TestClampedSwiGLU(unittest.TestCase):
         g = paddle.ones([2, 4])
         grad = clamped_swiglu_back(g, y, clamp_value=1.0)
         self.assertEqual(grad.shape, [2, 8])
-        np.testing.assert_allclose(grad.numpy(), np.zeros_like(grad.numpy()), atol=1e-6)
+        np.testing.assert_allclose(
+            grad.numpy(), np.zeros_like(grad.numpy()), atol=1e-6
+        )
 
     def test_clamped_weighted_swiglu_fwd_bwd(self):
         """clamped_weighted_swiglu forward + backward shape coverage."""
@@ -294,7 +308,9 @@ class TestClampedSwiGLU(unittest.TestCase):
         w = paddle.randn([4, 1])
         out = clamped_weighted_swiglu(y, w, clamp_value=2.0)
         self.assertEqual(out.shape, [4, 8])
-        grad_y, grad_w = clamped_weighted_swiglu_back(paddle.randn([4, 8]), y, w, clamp_value=2.0)
+        grad_y, grad_w = clamped_weighted_swiglu_back(
+            paddle.randn([4, 8]), y, w, clamp_value=2.0
+        )
         self.assertEqual(grad_y.shape, [4, 16])
         self.assertEqual(grad_w.shape, [4, 1])
 
@@ -333,7 +349,9 @@ class TestClampedSwiGLU(unittest.TestCase):
         x.stop_gradient = False
         w = paddle.ones([4, 1]).astype("float32")
         w.stop_gradient = False
-        mock_back = MagicMock(return_value=(paddle.randn([4, 16]), paddle.randn([4, 1])))
+        mock_back = MagicMock(
+            return_value=(paddle.randn([4, 16]), paddle.randn([4, 1]))
+        )
         with patch(
             "paddleformers.fleet.fusions.fused_bias_swiglu.weighted_swiglu_back",
             mock_back,
@@ -352,7 +370,8 @@ class TestClampedSwiGLU(unittest.TestCase):
     # insufficient total memory.
     # ------------------------------------------------------------------
     @unittest.skipUnless(
-        paddle.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0,
+        paddle.is_compiled_with_cuda()
+        and paddle.device.cuda.device_count() > 0,
         "int32-overflow large-tensor test requires a CUDA device",
     )
     def test_clamped_swiglu_int32_overflow_numel(self):
@@ -366,7 +385,8 @@ class TestClampedSwiGLU(unittest.TestCase):
         props = paddle.device.cuda.get_device_properties(0)
         if props.total_memory < 40 * (1024**3):
             self.skipTest(
-                f"need >=40GB GPU memory for int32-overflow test, " f"have {props.total_memory / 1024**3:.1f}GB"
+                f"need >=40GB GPU memory for int32-overflow test, "
+                f"have {props.total_memory / 1024**3:.1f}GB"
             )
 
         prev_device = paddle.get_device()
@@ -379,21 +399,32 @@ class TestClampedSwiGLU(unittest.TestCase):
             # Spot-check finiteness on a slice to avoid an extra full-tensor
             # reduction allocation; clamp guarantees a bounded range so a
             # NaN/Inf would indicate an indexing/overflow bug, not numerics.
-            self.assertTrue(bool(paddle.isfinite(out[:1024].cast("float32")).all().numpy()))
-            self.assertTrue(bool(paddle.isfinite(out[-1024:].cast("float32")).all().numpy()))
+            self.assertTrue(
+                bool(paddle.isfinite(out[:1024].cast("float32")).all().numpy())
+            )
+            self.assertTrue(
+                bool(paddle.isfinite(out[-1024:].cast("float32")).all().numpy())
+            )
             del out
 
             g = paddle.randn([rows, hidden2 // 2], dtype="bfloat16")
             grad = clamped_swiglu_back(g, y, clamp_value=2.0)
             self.assertEqual(grad.shape, [rows, hidden2])
-            self.assertTrue(bool(paddle.isfinite(grad[:1024].cast("float32")).all().numpy()))
-            self.assertTrue(bool(paddle.isfinite(grad[-1024:].cast("float32")).all().numpy()))
+            self.assertTrue(
+                bool(paddle.isfinite(grad[:1024].cast("float32")).all().numpy())
+            )
+            self.assertTrue(
+                bool(
+                    paddle.isfinite(grad[-1024:].cast("float32")).all().numpy()
+                )
+            )
         finally:
             paddle.device.cuda.empty_cache()
             paddle.set_device(prev_device)
 
     @unittest.skipUnless(
-        paddle.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0,
+        paddle.is_compiled_with_cuda()
+        and paddle.device.cuda.device_count() > 0,
         "int32-overflow large-tensor test requires a CUDA device",
     )
     def test_clamped_weighted_swiglu_int32_overflow_numel(self):
@@ -404,7 +435,8 @@ class TestClampedSwiGLU(unittest.TestCase):
         props = paddle.device.cuda.get_device_properties(0)
         if props.total_memory < 40 * (1024**3):
             self.skipTest(
-                f"need >=40GB GPU memory for int32-overflow test, " f"have {props.total_memory / 1024**3:.1f}GB"
+                f"need >=40GB GPU memory for int32-overflow test, "
+                f"have {props.total_memory / 1024**3:.1f}GB"
             )
 
         prev_device = paddle.get_device()
@@ -424,8 +456,14 @@ class TestClampedSwiGLU(unittest.TestCase):
             )
             self.assertEqual(grad_y.shape, [rows, hidden2])
             self.assertEqual(grad_w.shape, [rows, 1])
-            self.assertTrue(bool(paddle.isfinite(grad_y[:1024].cast("float32")).all().numpy()))
-            self.assertTrue(bool(paddle.isfinite(grad_w.cast("float32")).all().numpy()))
+            self.assertTrue(
+                bool(
+                    paddle.isfinite(grad_y[:1024].cast("float32")).all().numpy()
+                )
+            )
+            self.assertTrue(
+                bool(paddle.isfinite(grad_w.cast("float32")).all().numpy())
+            )
         finally:
             paddle.device.cuda.empty_cache()
             paddle.set_device(prev_device)
@@ -462,7 +500,9 @@ class TestClampedSwiGLU(unittest.TestCase):
         w = paddle.zeros([0, 1])
         out = clamped_weighted_swiglu(y, w, clamp_value=1.0)
         self.assertEqual(out.shape, [0, 8])
-        grad_y, grad_w = clamped_weighted_swiglu_back(paddle.zeros([0, 8]), y, w, clamp_value=1.0)
+        grad_y, grad_w = clamped_weighted_swiglu_back(
+            paddle.zeros([0, 8]), y, w, clamp_value=1.0
+        )
         self.assertEqual(grad_y.shape, [0, 16])
         self.assertEqual(grad_w.shape, [0, 1])
 

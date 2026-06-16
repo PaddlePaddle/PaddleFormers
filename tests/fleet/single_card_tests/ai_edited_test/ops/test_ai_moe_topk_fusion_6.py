@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -40,7 +44,9 @@ class TestMoETopkFusionStructure(unittest.TestCase):
     def test_moe_topk_fusion_import(self):
         """Test MoETopkFusion class can be imported."""
         try:
-            from paddleformers.fleet.triton_ops.moe_topk_fusion import MoETopkFusion
+            from paddleformers.fleet.triton_ops.moe_topk_fusion import (
+                MoETopkFusion,
+            )
 
             self.assertIsNotNone(MoETopkFusion)
         except ImportError:
@@ -49,7 +55,9 @@ class TestMoETopkFusionStructure(unittest.TestCase):
     def test_moe_topk_fusion_is_pylayer(self):
         """Test MoETopkFusion is a PyLayer subclass."""
         try:
-            from paddleformers.fleet.triton_ops.moe_topk_fusion import MoETopkFusion
+            from paddleformers.fleet.triton_ops.moe_topk_fusion import (
+                MoETopkFusion,
+            )
 
             self.assertTrue(issubclass(MoETopkFusion, paddle.autograd.PyLayer))
         except ImportError:
@@ -58,7 +66,9 @@ class TestMoETopkFusionStructure(unittest.TestCase):
     def test_moe_topk_fusion_has_forward(self):
         """Test MoETopkFusion has forward static method."""
         try:
-            from paddleformers.fleet.triton_ops.moe_topk_fusion import MoETopkFusion
+            from paddleformers.fleet.triton_ops.moe_topk_fusion import (
+                MoETopkFusion,
+            )
 
             self.assertTrue(hasattr(MoETopkFusion, "forward"))
             self.assertTrue(callable(MoETopkFusion.forward))
@@ -68,7 +78,9 @@ class TestMoETopkFusionStructure(unittest.TestCase):
     def test_moe_topk_fusion_has_backward(self):
         """Test MoETopkFusion has backward static method."""
         try:
-            from paddleformers.fleet.triton_ops.moe_topk_fusion import MoETopkFusion
+            from paddleformers.fleet.triton_ops.moe_topk_fusion import (
+                MoETopkFusion,
+            )
 
             self.assertTrue(hasattr(MoETopkFusion, "backward"))
             self.assertTrue(callable(MoETopkFusion.backward))
@@ -105,7 +117,9 @@ class TestMoETopkFusionStructure(unittest.TestCase):
     def test_fwd_kernel_exists(self):
         """Test _fwd_kernel is defined in module."""
         try:
-            from paddleformers.fleet.triton_ops.moe_topk_fusion import _fwd_kernel
+            from paddleformers.fleet.triton_ops.moe_topk_fusion import (
+                _fwd_kernel,
+            )
 
             self.assertIsNotNone(_fwd_kernel)
         except ImportError:
@@ -114,7 +128,9 @@ class TestMoETopkFusionStructure(unittest.TestCase):
     def test_bwd_kernel_exists(self):
         """Test _bwd_kernel is defined in module."""
         try:
-            from paddleformers.fleet.triton_ops.moe_topk_fusion import _bwd_kernel
+            from paddleformers.fleet.triton_ops.moe_topk_fusion import (
+                _bwd_kernel,
+            )
 
             self.assertIsNotNone(_bwd_kernel)
         except ImportError:

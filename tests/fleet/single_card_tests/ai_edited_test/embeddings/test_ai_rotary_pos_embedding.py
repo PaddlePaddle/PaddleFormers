@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -29,7 +33,9 @@ import paddle
 class TestRotaryEmbeddingInit(unittest.TestCase):
     """Tests for RotaryEmbedding initialization."""
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_basic_init(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             RotaryEmbedding,
@@ -44,7 +50,9 @@ class TestRotaryEmbeddingInit(unittest.TestCase):
         self.assertIsNone(rope.seq_len_interpolation_factor)
         self.assertIsNotNone(rope.inv_freq)
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_init_with_partial_rotary(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             RotaryEmbedding,
@@ -57,7 +65,9 @@ class TestRotaryEmbeddingInit(unittest.TestCase):
         )
         self.assertIsNotNone(rope.inv_freq)
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_init_with_interleaved(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             RotaryEmbedding,
@@ -71,7 +81,9 @@ class TestRotaryEmbeddingInit(unittest.TestCase):
         )
         self.assertTrue(rope.rotary_interleaved)
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_init_with_interpolation_factor(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             RotaryEmbedding,
@@ -85,7 +97,9 @@ class TestRotaryEmbeddingInit(unittest.TestCase):
         )
         self.assertEqual(rope.seq_len_interpolation_factor, 2.0)
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_init_with_rope_scaling(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             RotaryEmbedding,
@@ -100,7 +114,9 @@ class TestRotaryEmbeddingInit(unittest.TestCase):
         )
         self.assertIsNotNone(rope.inv_freq)
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_init_with_custom_rotary_base(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             RotaryEmbedding,
@@ -118,7 +134,9 @@ class TestRotaryEmbeddingInit(unittest.TestCase):
 class TestRotaryEmbeddingForward(unittest.TestCase):
     """Tests for RotaryEmbedding forward pass."""
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_forward_basic(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             RotaryEmbedding,
@@ -130,7 +148,9 @@ class TestRotaryEmbeddingForward(unittest.TestCase):
         # Expected shape: [1, 128, 1, 64]
         self.assertEqual(result.shape, [1, 128, 1, 64])
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_forward_with_offset(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             RotaryEmbedding,
@@ -141,7 +161,9 @@ class TestRotaryEmbeddingForward(unittest.TestCase):
         result = rope(max_seq_len=128, offset=10)
         self.assertEqual(result.shape, [1, 128, 1, 64])
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_forward_with_interpolation(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             RotaryEmbedding,
@@ -156,7 +178,9 @@ class TestRotaryEmbeddingForward(unittest.TestCase):
         result = rope(max_seq_len=128)
         self.assertEqual(result.shape, [1, 128, 1, 64])
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_forward_interleaved(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             RotaryEmbedding,
@@ -171,7 +195,9 @@ class TestRotaryEmbeddingForward(unittest.TestCase):
         result = rope(max_seq_len=128)
         self.assertEqual(result.shape, [1, 128, 1, 64])
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_forward_small_seq(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             RotaryEmbedding,
@@ -188,7 +214,9 @@ class TestRotaryEmbeddingForward(unittest.TestCase):
 class TestRotaryEmbeddingGetCosSin(unittest.TestCase):
     """Tests for RotaryEmbedding get_cos_sin method."""
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_get_cos_sin_basic(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             RotaryEmbedding,
@@ -200,7 +228,9 @@ class TestRotaryEmbeddingGetCosSin(unittest.TestCase):
         self.assertEqual(cos.shape, [32, 32])
         self.assertEqual(sin.shape, [32, 32])
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_get_cos_sin_with_offset(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             RotaryEmbedding,
@@ -216,7 +246,9 @@ class TestRotaryEmbeddingGetCosSin(unittest.TestCase):
 class TestRotaryEmbeddingGetFreqsNonRepeated(unittest.TestCase):
     """Tests for RotaryEmbedding get_freqs_non_repeated method."""
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_get_freqs_non_repeated(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             RotaryEmbedding,
@@ -227,7 +259,9 @@ class TestRotaryEmbeddingGetFreqsNonRepeated(unittest.TestCase):
         freqs = rope.get_freqs_non_repeated(max_seq_len=32)
         self.assertEqual(freqs.shape, [32, 32])
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_get_freqs_with_offset(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             RotaryEmbedding,
@@ -242,7 +276,9 @@ class TestRotaryEmbeddingGetFreqsNonRepeated(unittest.TestCase):
 class TestRotaryEmbeddingApplyScaling(unittest.TestCase):
     """Tests for RotaryEmbedding._apply_scaling method."""
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_apply_scaling_default_params(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             RotaryEmbedding,
@@ -255,7 +291,9 @@ class TestRotaryEmbeddingApplyScaling(unittest.TestCase):
         # Scaled frequencies should differ from original
         self.assertEqual(scaled.shape, freqs.shape)
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_apply_scaling_custom_factor(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             RotaryEmbedding,
@@ -272,7 +310,9 @@ class TestRotaryEmbeddingGetRotarySeqLen(unittest.TestCase):
     """Tests for RotaryEmbedding.get_rotary_seq_len method."""
 
     def _make_config(self, **overrides):
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         defaults = {
             "hidden_size": 64,
@@ -282,7 +322,9 @@ class TestRotaryEmbeddingGetRotarySeqLen(unittest.TestCase):
         defaults.update(overrides)
         return TransformerConfig(**defaults)
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_get_rotary_seq_len_basic(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             RotaryEmbedding,
@@ -295,7 +337,9 @@ class TestRotaryEmbeddingGetRotarySeqLen(unittest.TestCase):
         seq_len = rope.get_rotary_seq_len(transformer_input, config)
         self.assertEqual(seq_len, 16)
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_get_rotary_seq_len_with_packed_seq(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             RotaryEmbedding,
@@ -310,10 +354,14 @@ class TestRotaryEmbeddingGetRotarySeqLen(unittest.TestCase):
         packed_params.max_seqlen_q = 32
         packed_params.max_seqlen_kv = 24
 
-        seq_len = rope.get_rotary_seq_len(transformer_input, config, packed_seq_params=packed_params)
+        seq_len = rope.get_rotary_seq_len(
+            transformer_input, config, packed_seq_params=packed_params
+        )
         self.assertEqual(seq_len, 32)
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_get_rotary_seq_len_with_cp_group(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             RotaryEmbedding,
@@ -333,7 +381,9 @@ class TestRotaryEmbeddingGetRotarySeqLen(unittest.TestCase):
 class TestMultimodalRotaryEmbedding(unittest.TestCase):
     """Tests for MultimodalRotaryEmbedding."""
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_init(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             MultimodalRotaryEmbedding,
@@ -346,7 +396,9 @@ class TestMultimodalRotaryEmbedding(unittest.TestCase):
         )
         self.assertIsNotNone(mrope.inv_freq)
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_forward(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             MultimodalRotaryEmbedding,
@@ -374,7 +426,9 @@ class TestMultimodalRotaryEmbedding(unittest.TestCase):
         self.assertEqual(result.shape[0], batch_size)
         self.assertEqual(result.shape[1], seq_len)
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_forward_with_interpolation(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             MultimodalRotaryEmbedding,
@@ -401,7 +455,9 @@ class TestMultimodalRotaryEmbedding(unittest.TestCase):
         result = mrope(position_ids, mrope_section)
         self.assertEqual(result.shape[0], batch_size)
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_apply_interleaved_mrope(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             MultimodalRotaryEmbedding,
@@ -414,7 +470,9 @@ class TestMultimodalRotaryEmbedding(unittest.TestCase):
 
         batch_size = 2
         seq_len = 8
-        freqs = paddle.randn([3, batch_size, seq_len, half_dim], dtype="float32")
+        freqs = paddle.randn(
+            [3, batch_size, seq_len, half_dim], dtype="float32"
+        )
         mrope_section = [
             half_dim // 3,
             half_dim // 3,

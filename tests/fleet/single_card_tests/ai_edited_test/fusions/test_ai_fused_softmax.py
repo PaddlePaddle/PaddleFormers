@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -25,7 +29,10 @@ from unittest.mock import MagicMock
 import numpy as np
 import paddle
 
-from paddleformers.fleet.fusions.fused_softmax import FusedScaleMaskSoftmax, SoftmaxOne
+from paddleformers.fleet.fusions.fused_softmax import (
+    FusedScaleMaskSoftmax,
+    SoftmaxOne,
+)
 
 
 class TestSoftmaxOneInit(unittest.TestCase):
@@ -64,7 +71,9 @@ class TestSoftmaxOneForward(unittest.TestCase):
         except TypeError:
             # paddle.softmax(qk, axis=-1) uses compat API which rejects 'axis'
             # in this Paddle version; source code needs paddle.nn.functional.softmax
-            self.skipTest("paddle.softmax compat API does not accept 'axis' in this version")
+            self.skipTest(
+                "paddle.softmax compat API does not accept 'axis' in this version"
+            )
 
     def test_output_sums_approximately_one(self):
         """Test that output rows sum approximately to 1."""
@@ -74,9 +83,13 @@ class TestSoftmaxOneForward(unittest.TestCase):
         try:
             result = layer(x)
             row_sum = result.sum(axis=-1)
-            np.testing.assert_allclose(row_sum.numpy(), np.ones([1, np_dim, 1]), atol=1e-5)
+            np.testing.assert_allclose(
+                row_sum.numpy(), np.ones([1, np_dim, 1]), atol=1e-5
+            )
         except TypeError:
-            self.skipTest("paddle.softmax compat API does not accept 'axis' in this version")
+            self.skipTest(
+                "paddle.softmax compat API does not accept 'axis' in this version"
+            )
 
     def test_output_positive(self):
         """Test that output values are non-negative."""
@@ -87,7 +100,9 @@ class TestSoftmaxOneForward(unittest.TestCase):
             result = layer(x)
             self.assertTrue((result >= 0).all())
         except TypeError:
-            self.skipTest("paddle.softmax compat API does not accept 'axis' in this version")
+            self.skipTest(
+                "paddle.softmax compat API does not accept 'axis' in this version"
+            )
 
 
 class TestFusedScaleMaskSoftmaxInit(unittest.TestCase):
@@ -252,7 +267,9 @@ class TestFusedScaleMaskSoftmaxWithSoftmaxOffset(unittest.TestCase):
             self.assertEqual(result.shape, [2, np_dim, 8, 16])
         except TypeError:
             # paddle.softmax compat API does not accept 'axis' in this version
-            self.skipTest("paddle.softmax compat API does not accept 'axis' in this version")
+            self.skipTest(
+                "paddle.softmax compat API does not accept 'axis' in this version"
+            )
 
 
 if __name__ == "__main__":

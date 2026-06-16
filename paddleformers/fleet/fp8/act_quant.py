@@ -35,7 +35,11 @@ def act_quant(
     orig_shape = x.shape
 
     # reshape to (..., num_blocks, block_size)
-    z = x.contiguous().reshape([-1, N // block_size, block_size]).astype("float32")
+    z = (
+        x.contiguous()
+        .reshape([-1, N // block_size, block_size])
+        .astype("float32")
+    )
 
     # per-block absmax -> scale
     amax = z.abs().max(axis=-1, keepdim=True).clip(min=1e-4)
@@ -51,7 +55,9 @@ def act_quant(
     if inplace:
         # Match tilelang kernel: Cast(bf16, Cast(fp32, Cast(bf16, clamp(x/s))) * s)
         # In inplace mode, out_dtype=in_dtype (bf16), NOT fp8
-        y_bf16 = y_q.astype(x.dtype)  # cast to bf16 (simulates quantization rounding)
+        y_bf16 = y_q.astype(
+            x.dtype
+        )  # cast to bf16 (simulates quantization rounding)
         y_dq = y_bf16.astype("float32") * scale
         x_out = y_dq.reshape(orig_shape).astype(x.dtype)
         paddle.assign(x_out, x)

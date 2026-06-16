@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -33,7 +37,9 @@ class TestGetBatchOnThisCpRank(unittest.TestCase):
         from paddleformers.fleet.utils import get_batch_on_this_cp_rank
 
         # Mock ContextParallelScatterOp
-        with patch("paddleformers.fleet.utils.ContextParallelScatterOp") as mock_cp:
+        with patch(
+            "paddleformers.fleet.utils.ContextParallelScatterOp"
+        ) as mock_cp:
             mock_instance = MagicMock()
             mock_cp.apply = MagicMock(return_value=paddle.randn([2, 4]))
             inp = paddle.randn([2, 8])
@@ -43,7 +49,9 @@ class TestGetBatchOnThisCpRank(unittest.TestCase):
         """Test with dict input processes specified keys."""
         from paddleformers.fleet.utils import get_batch_on_this_cp_rank
 
-        with patch("paddleformers.fleet.utils.ContextParallelScatterOp") as mock_cp:
+        with patch(
+            "paddleformers.fleet.utils.ContextParallelScatterOp"
+        ) as mock_cp:
             mock_cp.apply = MagicMock(return_value=paddle.randn([2, 4]))
             inputs = {
                 "input_ids": paddle.randn([2, 8]),

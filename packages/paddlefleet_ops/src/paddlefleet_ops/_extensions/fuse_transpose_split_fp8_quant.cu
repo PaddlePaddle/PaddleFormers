@@ -12,30 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "paddle/phi/backends/gpu/gpu_context.h"
-#include "paddle/phi/core/kernel_registry.h"
-#include "paddle/phi/core/tensor_utils.h"
-#include "paddle/phi/kernels/funcs/aligned_vector.h"
-#include "paddle/phi/kernels/fusion/gpu/fused_transpose_split_quant_kernel.h"
-#include "paddle/phi/kernels/fusion/gpu/quant_utils.h"
+#include "paddle/phi/backends/gpu/gpu_context.h"     // NOLINT
+#include "paddle/phi/core/kernel_registry.h"         // NOLINT
+#include "paddle/phi/core/tensor_utils.h"            // NOLINT
+#include "paddle/phi/kernels/funcs/aligned_vector.h" // NOLINT
+#include "paddle/phi/kernels/fusion/gpu/fused_transpose_split_quant_kernel.h" // NOLINT
+#include "paddle/phi/kernels/fusion/gpu/quant_utils.h" // NOLINT
 
 // namespace phi {
 
 template <typename T, int VecSize>
 struct __align__(sizeof(T) * VecSize) VecType {
   T val[VecSize];
-  __host__ __device__ inline T& operator[](size_t i) { return val[i]; }
-  __host__ __device__ inline const T& operator[](size_t i) const {
+  __host__ __device__ inline T &operator[](size_t i) { return val[i]; }
+  __host__ __device__ inline const T &operator[](size_t i) const {
     return val[i];
   }
 };
 
 template <typename InT, int VecSize>
-__device__ void BlockLoad(const InT* input,
-                          const float* input_scales,
-                          __nv_bfloat16 x[8][4],
-                          size_t K,
-                          size_t k_scaled) {
+__device__ void BlockLoad(const InT *input, const float *input_scales,
+                          __nv_bfloat16 x[8][4], size_t K, size_t k_scaled) {
   constexpr bool need_dequant = std::is_same_v<InT, phi::float8_e4m3fn>;
 
 #pragma unroll
@@ -58,13 +55,13 @@ __device__ void BlockLoad(const InT* input,
       if (off_k + j * 32 < K) {
         const size_t idx = offset + j * 32;
         using LoadT = VecType<InT, VecSize>;
-        LoadT data = *reinterpret_cast<const LoadT*>(input + idx);
+        LoadT data = *reinterpret_cast<const LoadT *>(input + idx);
 #pragma unroll
         for (uint32_t k = 0; k < VecSize; k++) {
           if constexpr (need_dequant) {
             x[i][j + k] = __float2bfloat16(static_cast<float>(data[k]) * scale);
           } else {
-            x[i][j + k] = (*reinterpret_cast<__nv_bfloat16*>(&data[k]));
+            x[i][j + k] = (*reinterpret_cast<__nv_bfloat16 *>(&data[k]));
           }
         }
       }
@@ -72,9 +69,8 @@ __device__ void BlockLoad(const InT* input,
   }
 }
 template <bool Pow2Scales>
-__device__ void BlockColumnScale(const __nv_bfloat16 x[8][4],
-                                 float scales[128],
-                                 __nv_bfloat16* shm) {
+__device__ void BlockColumnScale(const __nv_bfloat16 x[8][4], float scales[128],
+                                 __nv_bfloat16 *shm) {
   // reduce [(8), 16, 32, 4] => [16, 32, 4]
   __nv_bfloat16 warp_max[4];
 #pragma unroll
@@ -120,9 +116,7 @@ __device__ void BlockColumnScale(const __nv_bfloat16 x[8][4],
 }
 
 template <typename OutT, int VecSize, bool Use_UE8M0>
-__device__ void BlockStoreScale(void* scale,
-                                size_t off_m,
-                                float scales[128],
+__device__ void BlockStoreScale(void *scale, size_t off_m, float scales[128],
                                 size_t K) {
   if (threadIdx.y < 4) {
     uint32_t off = threadIdx.y * 32 + threadIdx.x;
@@ -148,12 +142,12 @@ __device__ void BlockStoreScale(void* scale,
         // threadIdx.x;
         const size_t uint32_idx = byte_idx * K + idx_x;
 
-        uint32_t* scale_u32 = reinterpret_cast<uint32_t*>(scale);
-        const int exp = (reinterpret_cast<const int&>(scale_out) >> 23) & 0xFF;
-        reinterpret_cast<uint8_t*>(&scale_u32[uint32_idx])[pack_idx] =
+        uint32_t *scale_u32 = reinterpret_cast<uint32_t *>(scale);
+        const int exp = (reinterpret_cast<const int &>(scale_out) >> 23) & 0xFF;
+        reinterpret_cast<uint8_t *>(&scale_u32[uint32_idx])[pack_idx] =
             static_cast<const uint8_t>(exp);
       } else {
-        float* scale_f32 = reinterpret_cast<float*>(scale);
+        float *scale_f32 = reinterpret_cast<float *>(scale);
         scale_f32[idx] = scale_out;
       }
     }
@@ -161,11 +155,8 @@ __device__ void BlockStoreScale(void* scale,
 }
 
 template <typename OutT, int VecSize>
-__device__ void BlockStoreOut(OutT* out,
-                              size_t off_m,
-                              size_t cur_tokens,
-                              const OutT shm[128][129],
-                              size_t K) {
+__device__ void BlockStoreOut(OutT *out, size_t off_m, size_t cur_tokens,
+                              const OutT shm[128][129], size_t K) {
 #pragma unroll
   for (uint32_t i = 0; i < 8; i++) {
     const size_t idx_m = blockIdx.x * size_t(128) + threadIdx.x * 4;
@@ -179,30 +170,26 @@ __device__ void BlockStoreOut(OutT* out,
       for (uint32_t j = 0; j < VecSize; j++) {
         data[j] = shm[i * 16 + threadIdx.y][threadIdx.x * 4 + j];
       }
-      *reinterpret_cast<StoreT*>(out + idx) = data;
+      *reinterpret_cast<StoreT *>(out + idx) = data;
     }
   }
 }
 
-template <typename InT,
-          typename OutT,
-          bool Pow2Scales,
-          int VecSize,
+template <typename InT, typename OutT, bool Pow2Scales, int VecSize,
           bool Use_UE8M0>
 __global__ void __launch_bounds__(512)
-    FusedTransposeSplitQuantKernel(const InT* __restrict__ input,
-                                   const float* __restrict__ input_scales,
-                                   int64_t* __restrict__ meta,
-                                   size_t num_experts,
-                                   size_t K,
+    FusedTransposeSplitQuantKernel(const InT *__restrict__ input,
+                                   const float *__restrict__ input_scales,
+                                   int64_t *__restrict__ meta,
+                                   size_t num_experts, size_t K,
                                    size_t k_scaled) {
   __shared__ OutT shm[128][129];
   __shared__ size_t expert_info[2];
-  __shared__ float scales[128];  // May be reused? Is it worthy?
+  __shared__ float scales[128]; // May be reused? Is it worthy?  // NOLINT
 
-  int64_t* tokens_per_expert = meta;
-  OutT** out_ptrs = reinterpret_cast<OutT**>(meta + num_experts);
-  void** scale_ptrs = reinterpret_cast<void**>(meta + num_experts * 2);
+  int64_t *tokens_per_expert = meta;
+  OutT **out_ptrs = reinterpret_cast<OutT **>(meta + num_experts);
+  void **scale_ptrs = reinterpret_cast<void **>(meta + num_experts * 2);
 
   // 1. Load 128x128 elements from input
   __nv_bfloat16 x[8][4];
@@ -225,14 +212,14 @@ __global__ void __launch_bounds__(512)
   }
 
   // 3. Calculate scale along the column
-  BlockColumnScale<Pow2Scales>(
-      x, scales, reinterpret_cast<__nv_bfloat16*>(shm));
+  BlockColumnScale<Pow2Scales>(x, scales,
+                               reinterpret_cast<__nv_bfloat16 *>(shm));
 
   // 4. Store scale
   const size_t expert_idx = expert_info[0];
   const size_t off_m = expert_info[1];
-  BlockStoreScale<OutT, VecSize, Use_UE8M0>(
-      scale_ptrs[expert_idx], off_m, scales, K);
+  BlockStoreScale<OutT, VecSize, Use_UE8M0>(scale_ptrs[expert_idx], off_m,
+                                            scales, K);
 
 // 5. Scale x and save into shared memory with transposed layout
 #pragma unroll
@@ -252,17 +239,15 @@ __global__ void __launch_bounds__(512)
 
   // 6. Store 128x128 elements back
   // Note: out is always 4x vectorizable.
-  BlockStoreOut<OutT, 4>(
-      out_ptrs[expert_idx], off_m, tokens_per_expert[expert_idx], shm, K);
+  BlockStoreOut<OutT, 4>(out_ptrs[expert_idx], off_m,
+                         tokens_per_expert[expert_idx], shm, K);
 }
 
 void fuse_transpose_split_fp8_quant(
-    const paddle::Tensor& x,
-    const paddle::optional<paddle::Tensor>& input_scales,
-    std::vector<paddle::Tensor>& outs,
-    std::vector<paddle::Tensor>& scales,
-    const std::vector<int64_t>& tokens_per_expert,
-    bool pow_2_scales,
+    const paddle::Tensor &x,
+    const paddle::optional<paddle::Tensor> &input_scales,
+    std::vector<paddle::Tensor> &outs, std::vector<paddle::Tensor> &scales,
+    const std::vector<int64_t> &tokens_per_expert, bool pow_2_scales,
     bool use_ue8m0) {
   auto place = x.place();
   auto stream = x.stream();
@@ -302,7 +287,7 @@ void fuse_transpose_split_fp8_quant(
   // Copy meta (tokens_per_expert, out_ptrs, scale_ptrs) to device
   paddle::Tensor meta_cpu = paddle::empty(
       {static_cast<int64_t>(num_experts * 3)}, paddle::DataType::INT64);
-  int64_t* meta_ptr = meta_cpu.data<int64_t>();
+  int64_t *meta_ptr = meta_cpu.data<int64_t>();
   for (size_t i = 0; i < num_experts; i++) {
     meta_ptr[i] = static_cast<int64_t>(tokens_per_expert[i]);
   }
@@ -327,38 +312,33 @@ void fuse_transpose_split_fp8_quant(
   dim3 block(32, 16);
 
 #define DTYPE_CASE(dtype, type) dtype == phi::DataType::type
-#define LAUNCH_KERNEL(T, POW_2_SCALES, VEC_SIZE, USE_UE8M0)              \
-  FusedTransposeSplitQuantKernel<T,                                      \
-                                 phi::float8_e4m3fn,                     \
-                                 POW_2_SCALES,                           \
-                                 VEC_SIZE,                               \
-                                 USE_UE8M0><<<grid, block, 0, stream>>>( \
-      x.data<T>(),                                                       \
-      input_scales ? input_scales.get().data<float>() : nullptr,         \
-      meta_gpu.data<int64_t>(),                                          \
-      num_experts,                                                       \
-      K,                                                                 \
-      k_scaled);
+#define LAUNCH_KERNEL(T, POW_2_SCALES, VEC_SIZE, USE_UE8M0)                    \
+  FusedTransposeSplitQuantKernel<T, phi::float8_e4m3fn, POW_2_SCALES,          \
+                                 VEC_SIZE, USE_UE8M0>                          \
+      <<<grid, block, 0, stream>>>(                                            \
+          x.data<T>(),                                                         \
+          input_scales ? input_scales.get().data<float>() : nullptr,           \
+          meta_gpu.data<int64_t>(), num_experts, K, k_scaled);
 
-#define DISPATCH_UE8M0(T, POW_2_SCALES, VEC_SIZE)    \
-  if (use_ue8m0) {                                   \
-    LAUNCH_KERNEL(T, POW_2_SCALES, VEC_SIZE, true);  \
-  } else {                                           \
-    LAUNCH_KERNEL(T, POW_2_SCALES, VEC_SIZE, false); \
+#define DISPATCH_UE8M0(T, POW_2_SCALES, VEC_SIZE)                              \
+  if (use_ue8m0) {                                                             \
+    LAUNCH_KERNEL(T, POW_2_SCALES, VEC_SIZE, true);                            \
+  } else {                                                                     \
+    LAUNCH_KERNEL(T, POW_2_SCALES, VEC_SIZE, false);                           \
   }
 
-#define DISPATCH_DATATYPE(POW_2_SCALES, VEC_SIZE)               \
-  if (DTYPE_CASE(x.dtype(), BFLOAT16)) {                        \
-    DISPATCH_UE8M0(phi::bfloat16, POW_2_SCALES, VEC_SIZE);      \
-  } else if (DTYPE_CASE(x.dtype(), FLOAT8_E4M3FN)) {            \
-    DISPATCH_UE8M0(phi::float8_e4m3fn, POW_2_SCALES, VEC_SIZE); \
+#define DISPATCH_DATATYPE(POW_2_SCALES, VEC_SIZE)                              \
+  if (DTYPE_CASE(x.dtype(), BFLOAT16)) {                                       \
+    DISPATCH_UE8M0(phi::bfloat16, POW_2_SCALES, VEC_SIZE);                     \
+  } else if (DTYPE_CASE(x.dtype(), FLOAT8_E4M3FN)) {                           \
+    DISPATCH_UE8M0(phi::float8_e4m3fn, POW_2_SCALES, VEC_SIZE);                \
   }
 
-#define LAUNCH_KERNEL_PARTIAL(VEC_SIZE) \
-  if (pow_2_scales) {                   \
-    DISPATCH_DATATYPE(true, VEC_SIZE);  \
-  } else {                              \
-    DISPATCH_DATATYPE(false, VEC_SIZE); \
+#define LAUNCH_KERNEL_PARTIAL(VEC_SIZE)                                        \
+  if (pow_2_scales) {                                                          \
+    DISPATCH_DATATYPE(true, VEC_SIZE);                                         \
+  } else {                                                                     \
+    DISPATCH_DATATYPE(false, VEC_SIZE);                                        \
   }
 
   if (K % 4 == 0) {
@@ -376,11 +356,8 @@ void fuse_transpose_split_fp8_quant(
 // }  // namespace phi
 
 PD_BUILD_OP(fuse_transpose_split_fp8_quant)
-    .Inputs({"x",
-             paddle::Optional("input_scales"),
-             paddle::Vec("outs"),
+    .Inputs({"x", paddle::Optional("input_scales"), paddle::Vec("outs"),
              paddle::Vec("scales")})
-    .Attrs({"tokens_per_expert: std::vector<int64_t>",
-            "pow_2_scales: bool",
+    .Attrs({"tokens_per_expert: std::vector<int64_t>", "pow_2_scales: bool",
             "use_ue8m0: bool"})
     .SetKernelFn(PD_KERNEL(fuse_transpose_split_fp8_quant));

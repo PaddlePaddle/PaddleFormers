@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -79,7 +83,7 @@ class TestParseArgs(unittest.TestCase):
         mock_config = MagicMock()
         mock_config.some_field = "value"
 
-        with patch.object(sys, "argv", ["prog", "--configs", "dummy.yaml"]):  # noqa: SIM117
+        with patch.object(sys, "argv", ["prog", "--configs", "dummy.yaml"]):
             with patch.dict(
                 "sys.modules",
                 {
@@ -139,7 +143,9 @@ class TestCoreTransformerConfigFromArgs(unittest.TestCase):
         args.hidden_size = 64
         args.num_layers = 8
 
-        config = core_transformer_config_from_args(args, config_class=CustomConfig)
+        config = core_transformer_config_from_args(
+            args, config_class=CustomConfig
+        )
         self.assertEqual(config.hidden_size, 64)
         self.assertEqual(config.num_layers, 8)
 

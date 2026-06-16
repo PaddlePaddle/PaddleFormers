@@ -23,11 +23,17 @@ from paddle.distributed import fleet
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 from paddleformers.fleet.process_groups_config import ProcessGroupCollection
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.training.initialize import initialize_fleet
 from paddleformers.fleet.transformer.moe.moe_utils import (
     AddAuxiliaryLoss,
@@ -81,7 +87,9 @@ def _make_routing_map(num_tokens, num_experts, num_experts_per_tok, rng=None):
         rng = np.random.RandomState(42)
     routing_map = np.zeros([num_tokens, num_experts], dtype=np.int64)
     for i in range(num_tokens):
-        chosen = rng.choice(num_experts, size=num_experts_per_tok, replace=False)
+        chosen = rng.choice(
+            num_experts, size=num_experts_per_tok, replace=False
+        )
         routing_map[i, chosen] = 1
     return paddle.to_tensor(routing_map)
 
@@ -94,7 +102,9 @@ class TestPermuteUnpermute(unittest.TestCase):
         num_experts = 4
         num_experts_per_tok = 2
         tokens = paddle.randn([num_tokens, hidden], dtype=paddle.float32)
-        routing_map = _make_routing_map(num_tokens, num_experts, num_experts_per_tok)
+        routing_map = _make_routing_map(
+            num_tokens, num_experts, num_experts_per_tok
+        )
         permuted, sorted_indices = permute(tokens, routing_map)
         expected_out = num_tokens * num_experts_per_tok
         self.assertEqual(permuted.shape[0], expected_out)
@@ -107,7 +117,9 @@ class TestPermuteUnpermute(unittest.TestCase):
         num_experts = 4
         num_experts_per_tok = 2
         tokens = paddle.randn([num_tokens, hidden], dtype=paddle.float32)
-        routing_map = _make_routing_map(num_tokens, num_experts, num_experts_per_tok)
+        routing_map = _make_routing_map(
+            num_tokens, num_experts, num_experts_per_tok
+        )
 
         permuted, sorted_indices = permute(tokens, routing_map)
         restore_shape = paddle.shape(tokens)
@@ -123,7 +135,9 @@ class TestPermuteUnpermute(unittest.TestCase):
         rng = np.random.RandomState(42)
 
         tokens = paddle.randn([num_tokens, hidden], dtype=paddle.float32)
-        routing_map = _make_routing_map(num_tokens, num_experts, num_experts_per_tok, rng=rng)
+        routing_map = _make_routing_map(
+            num_tokens, num_experts, num_experts_per_tok, rng=rng
+        )
 
         permuted, sorted_indices = permute(tokens, routing_map)
         restore_shape = paddle.shape(tokens)

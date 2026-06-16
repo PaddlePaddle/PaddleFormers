@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -35,7 +39,9 @@ except Exception:
     _can_call_get_vit_layer_with_local_spec = False
 
 try:
-    from paddleformers.fleet.transformer.spec_utils import LayerSpec  # noqa: F401
+    from paddleformers.fleet.transformer.spec_utils import (
+        LayerSpec,  # noqa: F401
+    )
 except (ImportError, ModuleNotFoundError):
     _can_import_spec_utils = False
 
@@ -69,7 +75,9 @@ class TestGetViTLayerWithLocalSpec(unittest.TestCase):
         from paddleformers.fleet.models.vision.vit_layer_specs import (
             get_vit_layer_with_local_spec,
         )
-        from paddleformers.fleet.transformer.transformer_layer import TransformerLayer
+        from paddleformers.fleet.transformer.transformer_layer import (
+            TransformerLayer,
+        )
 
         result = get_vit_layer_with_local_spec()
         self.assertEqual(result.module, TransformerLayer)
@@ -116,7 +124,9 @@ class TestGetViTLayerWithLocalSpec(unittest.TestCase):
 
         result = get_vit_layer_with_local_spec()
         attn_spec = result.submodules.self_attention
-        self.assertEqual(attn_spec.params["attn_mask_type"], AttnMaskType.causal)
+        self.assertEqual(
+            attn_spec.params["attn_mask_type"], AttnMaskType.causal
+        )
 
     @unittest.skipUnless(
         _can_call_get_vit_layer_with_local_spec,
@@ -157,7 +167,9 @@ class TestGetViTLayerWithLocalSpec(unittest.TestCase):
         "get_vit_layer_with_local_spec() fails in installed version (MLPSublayersSpec signature changed)",
     )
     def test_spec_has_bias_dropout_add(self):
-        from paddleformers.fleet.fusions.fused_bias_dropout import get_bias_dropout_add
+        from paddleformers.fleet.fusions.fused_bias_dropout import (
+            get_bias_dropout_add,
+        )
         from paddleformers.fleet.models.vision.vit_layer_specs import (
             get_vit_layer_with_local_spec,
         )
@@ -178,7 +190,9 @@ class TestGetViTLayerWithLocalSpec(unittest.TestCase):
 
         result = get_vit_layer_with_local_spec()
         self.assertEqual(result.submodules.input_layernorm, FusedLayerNorm)
-        self.assertEqual(result.submodules.post_attention_layernorm, FusedLayerNorm)
+        self.assertEqual(
+            result.submodules.post_attention_layernorm, FusedLayerNorm
+        )
 
 
 class TestGetMLPModuleSpec(unittest.TestCase):

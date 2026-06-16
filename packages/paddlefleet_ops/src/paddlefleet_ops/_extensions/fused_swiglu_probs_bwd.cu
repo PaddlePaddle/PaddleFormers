@@ -13,12 +13,12 @@
 // limitations under the License.
 
 // swiglu_probs_grad_op.cu
-#include <cuda_bf16.h>
-#include <cuda_runtime.h>
+#include <cuda_bf16.h>    // NOLINT
+#include <cuda_runtime.h> // NOLINT
 
-#include <vector>
+#include <vector> // NOLINT
 
-#include "paddle/extension.h"
+#include "paddle/extension.h" // NOLINT
 
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
 using BFloat16 = __nv_bfloat16;
@@ -29,33 +29,33 @@ struct BFloat16 {
   __host__ __device__ BFloat16() : x(0) {}
 
   __host__ __device__ BFloat16(float val) {
-    uint32_t* val_bits = reinterpret_cast<uint32_t*>(&val);
+    uint32_t *val_bits = reinterpret_cast<uint32_t *>(&val);
     x = static_cast<uint16_t>(*val_bits >> 16);
   }
 
   __host__ __device__ operator float() const {
     uint32_t bits = static_cast<uint32_t>(x) << 16;
-    return *reinterpret_cast<float*>(&bits);
+    return *reinterpret_cast<float *>(&bits);
   }
 };
 #endif
 
 template <int thread_per_block>
 __global__ void SwigluProbsGradKernel(
-    const BFloat16* o1,           // [seq_len*topk, moe_intermediate_size*2]
-    const BFloat16* do2_s,        // [seq_len*topk, moe_intermediate_size]
-    const float* unzipped_probs,  // [seq_len*topk, 1]
-    BFloat16* do1,                // [seq_len*topk, moe_intermediate_size*2]
-    float* probs_grad,            // [seq_len*topk, 1]
-    BFloat16* o2_s,               // [seq_len*topk, moe_intermediate_size]
+    const BFloat16 *o1,    // [seq_len*topk, moe_intermediate_size*2]  // NOLINT
+    const BFloat16 *do2_s, // [seq_len*topk, moe_intermediate_size]  // NOLINT
+    const float *unzipped_probs, // [seq_len*topk, 1]  // NOLINT
+    BFloat16 *do1,     // [seq_len*topk, moe_intermediate_size*2]  // NOLINT
+    float *probs_grad, // [seq_len*topk, 1]  // NOLINT
+    BFloat16 *o2_s,    // [seq_len*topk, moe_intermediate_size]  // NOLINT
     int moe_intermediate_size) {
   const int64_t row_idx = blockIdx.x;
   const int tid = threadIdx.x;
 
-  const BFloat16* o1_row = o1 + row_idx * (int64_t)moe_intermediate_size * 2;
-  const BFloat16* do2_s_row = do2_s + row_idx * (int64_t)moe_intermediate_size;
-  BFloat16* do1_row = do1 + row_idx * (int64_t)moe_intermediate_size * 2;
-  BFloat16* o2s_row = o2_s + row_idx * (int64_t)moe_intermediate_size;
+  const BFloat16 *o1_row = o1 + row_idx * (int64_t)moe_intermediate_size * 2;
+  const BFloat16 *do2_s_row = do2_s + row_idx * (int64_t)moe_intermediate_size;
+  BFloat16 *do1_row = do1 + row_idx * (int64_t)moe_intermediate_size * 2;
+  BFloat16 *o2s_row = o2_s + row_idx * (int64_t)moe_intermediate_size;
 
   float prob = unzipped_probs[row_idx];
 
@@ -106,8 +106,8 @@ typedef struct __align__(8) {
   __nv_bfloat16 w;
 } bfloat16x4_t;
 
-__device__ __forceinline__ float4 fast_swiglu_vec4(const bfloat16x4_t& lhs,
-                                                   const bfloat16x4_t& rhs) {
+__device__ __forceinline__ float4 fast_swiglu_vec4(const bfloat16x4_t &lhs,
+                                                   const bfloat16x4_t &rhs) {
   const float x_f_x = __bfloat162float(lhs.x);
   const float x_f_y = __bfloat162float(lhs.y);
   const float x_f_z = __bfloat162float(lhs.z);
@@ -126,23 +126,23 @@ __device__ __forceinline__ float4 fast_swiglu_vec4(const bfloat16x4_t& lhs,
   return {silu_x * y_f_x, silu_y * y_f_y, silu_z * y_f_z, silu_w * y_f_w};
 }
 
-__device__ __forceinline__ float4 f4_prod(const float4& x_f,
-                                          const float4& y_f) {
+__device__ __forceinline__ float4 f4_prod(const float4 &x_f,
+                                          const float4 &y_f) {
   return {x_f.x * y_f.x, x_f.y * y_f.y, x_f.z * y_f.z, x_f.w * y_f.w};
 }
-__device__ __forceinline__ float4 f4_prod(const float4& x_f, const float& y_f) {
+__device__ __forceinline__ float4 f4_prod(const float4 &x_f, const float &y_f) {
   return {x_f.x * y_f, x_f.y * y_f, x_f.z * y_f, x_f.w * y_f};
 }
-__device__ __forceinline__ float4 f4_add(const float4& x_f, const float& y_f) {
+__device__ __forceinline__ float4 f4_add(const float4 &x_f, const float &y_f) {
   return {x_f.x + y_f, x_f.y + y_f, x_f.z + y_f, x_f.w + y_f};
 }
-__device__ __forceinline__ float4 f4_add(const float4& x_f, const float4& y_f) {
+__device__ __forceinline__ float4 f4_add(const float4 &x_f, const float4 &y_f) {
   return {x_f.x + y_f.x, x_f.y + y_f.y, x_f.z + y_f.z, x_f.w + y_f.w};
 }
-__device__ __forceinline__ float4 f4_sub(const float4& x_f, const float4& y_f) {
+__device__ __forceinline__ float4 f4_sub(const float4 &x_f, const float4 &y_f) {
   return {x_f.x - y_f.x, x_f.y - y_f.y, x_f.z - y_f.z, x_f.w - y_f.w};
 }
-__device__ __forceinline__ float4 fast_sig_vec4(const float4& x_vec4) {
+__device__ __forceinline__ float4 fast_sig_vec4(const float4 &x_vec4) {
   const float sig_x = __frcp_rn(1.0f + __expf(-x_vec4.x));
   const float sig_y = __frcp_rn(1.0f + __expf(-x_vec4.y));
   const float sig_z = __frcp_rn(1.0f + __expf(-x_vec4.z));
@@ -150,7 +150,7 @@ __device__ __forceinline__ float4 fast_sig_vec4(const float4& x_vec4) {
   return {sig_x, sig_y, sig_z, sig_w};
 }
 __device__ __forceinline__ float4
-load_and_cast_float4(const bfloat16x4_t* x_vec4_ptr) {
+load_and_cast_float4(const bfloat16x4_t *x_vec4_ptr) {
   bfloat16x4_t x_vec4 = *x_vec4_ptr;
   return {
       static_cast<float>(x_vec4.x),
@@ -159,15 +159,15 @@ load_and_cast_float4(const bfloat16x4_t* x_vec4_ptr) {
       static_cast<float>(x_vec4.w),
   };
 }
-__device__ __forceinline__ void cast_and_store_bf16x4(bfloat16x4_t* dst_ptr,
-                                                      const float4& x_vec4) {
+__device__ __forceinline__ void cast_and_store_bf16x4(bfloat16x4_t *dst_ptr,
+                                                      const float4 &x_vec4) {
   *dst_ptr = {static_cast<__nv_bfloat16>(x_vec4.x),
               static_cast<__nv_bfloat16>(x_vec4.y),
               static_cast<__nv_bfloat16>(x_vec4.z),
               static_cast<__nv_bfloat16>(x_vec4.w)};
 }
-__device__ __forceinline__ float mreduce_f4(const float4& x_f4,
-                                            const float4& y_f4) {
+__device__ __forceinline__ float mreduce_f4(const float4 &x_f4,
+                                            const float4 &y_f4) {
   float x_m = x_f4.x * y_f4.x;
   float y_m = x_f4.y * y_f4.y;
   float z_m = x_f4.z * y_f4.z;
@@ -177,31 +177,31 @@ __device__ __forceinline__ float mreduce_f4(const float4& x_f4,
 
 template <int thread_per_block>
 __global__ void SwigluProbsGradKernelVec4(
-    const BFloat16* o1,           // [seq_len*topk, moe_intermediate_size*2]
-    const BFloat16* do2_s,        // [seq_len*topk, moe_intermediate_size]
-    const float* unzipped_probs,  // [seq_len*topk, 1]
-    BFloat16* do1,                // [seq_len*topk, moe_intermediate_size*2]
-    float* probs_grad,            // [seq_len*topk, 1]
-    BFloat16* o2_s,               // [seq_len*topk, moe_intermediate_size]
+    const BFloat16 *o1,    // [seq_len*topk, moe_intermediate_size*2]  // NOLINT
+    const BFloat16 *do2_s, // [seq_len*topk, moe_intermediate_size]  // NOLINT
+    const float *unzipped_probs, // [seq_len*topk, 1]  // NOLINT
+    BFloat16 *do1,     // [seq_len*topk, moe_intermediate_size*2]  // NOLINT
+    float *probs_grad, // [seq_len*topk, 1]  // NOLINT
+    BFloat16 *o2_s,    // [seq_len*topk, moe_intermediate_size]  // NOLINT
     int moe_intermediate_size) {
   constexpr int numel_per_thread = 4;
   constexpr int k_warp_size = 32;
   const int64_t row_idx = blockIdx.x;
   const int64_t tid = threadIdx.x;
 
-  const BFloat16* o1_row = o1 + row_idx * (int64_t)moe_intermediate_size * 2;
-  const BFloat16* do2_s_row = do2_s + row_idx * (int64_t)moe_intermediate_size;
-  const bfloat16x4_t* o1_row_left_half_vec4 =
-      reinterpret_cast<const bfloat16x4_t*>(o1_row);
-  const bfloat16x4_t* do2_s_row_vec4 =
-      reinterpret_cast<const bfloat16x4_t*>(do2_s_row);
-  const bfloat16x4_t* o1_row_right_half_vec4 =
-      reinterpret_cast<const bfloat16x4_t*>(o1_row +
-                                            (int64_t)moe_intermediate_size);
-  BFloat16* do1_row = do1 + row_idx * (int64_t)moe_intermediate_size * 2;
-  BFloat16* o2s_row = o2_s + row_idx * (int64_t)moe_intermediate_size;
-  bfloat16x4_t* do1_row_vec4 = reinterpret_cast<bfloat16x4_t*>(do1_row);
-  bfloat16x4_t* o2s_row_vec4 = reinterpret_cast<bfloat16x4_t*>(o2s_row);
+  const BFloat16 *o1_row = o1 + row_idx * (int64_t)moe_intermediate_size * 2;
+  const BFloat16 *do2_s_row = do2_s + row_idx * (int64_t)moe_intermediate_size;
+  const bfloat16x4_t *o1_row_left_half_vec4 =
+      reinterpret_cast<const bfloat16x4_t *>(o1_row);
+  const bfloat16x4_t *do2_s_row_vec4 =
+      reinterpret_cast<const bfloat16x4_t *>(do2_s_row);
+  const bfloat16x4_t *o1_row_right_half_vec4 =
+      reinterpret_cast<const bfloat16x4_t *>(o1_row +
+                                             (int64_t)moe_intermediate_size);
+  BFloat16 *do1_row = do1 + row_idx * (int64_t)moe_intermediate_size * 2;
+  BFloat16 *o2s_row = o2_s + row_idx * (int64_t)moe_intermediate_size;
+  bfloat16x4_t *do1_row_vec4 = reinterpret_cast<bfloat16x4_t *>(do1_row);
+  bfloat16x4_t *o2s_row_vec4 = reinterpret_cast<bfloat16x4_t *>(o2s_row);
 
   float prob = unzipped_probs[row_idx];
   __shared__ float sum_buffer[thread_per_block];
@@ -255,10 +255,8 @@ __global__ void SwigluProbsGradKernelVec4(
 }
 
 std::vector<paddle::Tensor> SwigluProbsGradCUDABackward(
-    const paddle::Tensor& o1,
-    const paddle::Tensor& do2_s,
-    const paddle::Tensor& unzipped_probs,
-    bool inplace) {
+    const paddle::Tensor &o1, const paddle::Tensor &do2_s,
+    const paddle::Tensor &unzipped_probs, bool inplace) {
   auto o1_dims = o1.dims();
   int64_t o1_outer_dim = 1;
   for (int i = 0; i < o1_dims.size() - 1; i++) {
@@ -281,34 +279,26 @@ std::vector<paddle::Tensor> SwigluProbsGradCUDABackward(
     return {do1, probs_grad, o2_s};
   }
 
-  const BFloat16* o1_ptr =
-      reinterpret_cast<const BFloat16*>(o1.data<phi::bfloat16>());
-  const BFloat16* do2_s_ptr =
-      reinterpret_cast<const BFloat16*>(do2_s.data<phi::bfloat16>());
-  const float* unzipped_probs_ptr = unzipped_probs.data<float>();
-  BFloat16* do1_ptr = reinterpret_cast<BFloat16*>(do1.data<phi::bfloat16>());
-  float* probs_grad_ptr = probs_grad.data<float>();
-  BFloat16* o2_s_ptr = reinterpret_cast<BFloat16*>(o2_s.data<phi::bfloat16>());
+  const BFloat16 *o1_ptr =
+      reinterpret_cast<const BFloat16 *>(o1.data<phi::bfloat16>());
+  const BFloat16 *do2_s_ptr =
+      reinterpret_cast<const BFloat16 *>(do2_s.data<phi::bfloat16>());
+  const float *unzipped_probs_ptr = unzipped_probs.data<float>();
+  BFloat16 *do1_ptr = reinterpret_cast<BFloat16 *>(do1.data<phi::bfloat16>());
+  float *probs_grad_ptr = probs_grad.data<float>();
+  BFloat16 *o2_s_ptr = reinterpret_cast<BFloat16 *>(o2_s.data<phi::bfloat16>());
 
   constexpr int block_size = 256;
   if (moe_intermediate_size % 4 != 0) {
     SwigluProbsGradKernel<block_size>
-        <<<o1_outer_dim, block_size, 0, o1.stream()>>>(o1_ptr,
-                                                       do2_s_ptr,
-                                                       unzipped_probs_ptr,
-                                                       do1_ptr,
-                                                       probs_grad_ptr,
-                                                       o2_s_ptr,
-                                                       moe_intermediate_size);
+        <<<o1_outer_dim, block_size, 0, o1.stream()>>>(
+            o1_ptr, do2_s_ptr, unzipped_probs_ptr, do1_ptr, probs_grad_ptr,
+            o2_s_ptr, moe_intermediate_size);
   } else {
     SwigluProbsGradKernelVec4<block_size>
-        <<<o1_outer_dim, block_size, 0, o1.stream()>>>(o1_ptr,
-                                                       do2_s_ptr,
-                                                       unzipped_probs_ptr,
-                                                       do1_ptr,
-                                                       probs_grad_ptr,
-                                                       o2_s_ptr,
-                                                       moe_intermediate_size);
+        <<<o1_outer_dim, block_size, 0, o1.stream()>>>(
+            o1_ptr, do2_s_ptr, unzipped_probs_ptr, do1_ptr, probs_grad_ptr,
+            o2_s_ptr, moe_intermediate_size);
   }
 
   return {do1, probs_grad, o2_s};

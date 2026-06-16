@@ -40,7 +40,9 @@ class TestRecomputeWithoutOutput(unittest.TestCase):
         c.backward()
 
         self.assertIsNotNone(a.grad)
-        self.assertEqual(mem_before_discard - mem_after_discard, b.size * b.itemsize)
+        self.assertEqual(
+            mem_before_discard - mem_after_discard, b.size * b.itemsize
+        )
 
     def test_non_tensor_input(self):
         a = paddle.randn([8, 16, 32])

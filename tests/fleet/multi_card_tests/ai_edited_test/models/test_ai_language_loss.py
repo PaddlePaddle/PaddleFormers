@@ -24,12 +24,20 @@ from paddle.distributed import fleet
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
-from paddleformers.fleet.models.common.language_loss.language_loss import LanguageLoss
+from paddleformers.fleet.models.common.language_loss.language_loss import (
+    LanguageLoss,
+)
 from paddleformers.fleet.process_groups_config import ProcessGroupCollection
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.training.initialize import initialize_fleet
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 
@@ -125,7 +133,9 @@ def _build_config(**overrides):
         attention_dropout=0.0,
         loss_subbatch_sequence_length=0,
         init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-        output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+        output_layer_init_method=functools.partial(
+            paddle.nn.init.xavier_uniform_, gain=1.0
+        ),
     )
     defaults.update(overrides)
     return TransformerConfig(**defaults)
@@ -152,8 +162,12 @@ class TestLanguageLoss(unittest.TestCase):
         seq_len = 8
         vocab_size = 64
 
-        logits = paddle.randn([batch_size, seq_len, vocab_size], dtype="float32")
-        labels = paddle.randint(0, vocab_size, [batch_size, seq_len], dtype="int64")
+        logits = paddle.randn(
+            [batch_size, seq_len, vocab_size], dtype="float32"
+        )
+        labels = paddle.randint(
+            0, vocab_size, [batch_size, seq_len], dtype="int64"
+        )
         loss_fn = LanguageLoss(config=self.config)
         loss = loss_fn(logits, labels)
         self.assertIsNotNone(loss)
@@ -165,9 +179,13 @@ class TestLanguageLoss(unittest.TestCase):
         seq_len = 8
         vocab_size = 64
 
-        logits = paddle.randn([batch_size, seq_len, vocab_size], dtype="float32")
+        logits = paddle.randn(
+            [batch_size, seq_len, vocab_size], dtype="float32"
+        )
         logits.stop_gradient = False
-        labels = paddle.randint(0, vocab_size, [batch_size, seq_len], dtype="int64")
+        labels = paddle.randint(
+            0, vocab_size, [batch_size, seq_len], dtype="int64"
+        )
         loss_fn = LanguageLoss(config=self.config)
         loss = loss_fn(logits, labels)
         loss.sum().backward()

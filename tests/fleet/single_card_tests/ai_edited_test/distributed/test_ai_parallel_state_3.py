@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -44,7 +48,9 @@ class TestSetVirtualPipelineRank(unittest.TestCase):
             warnings.simplefilter("always")
             parallel_state.set_virtual_pipeline_model_parallel_rank(0)
             # Check that deprecation warning was emitted
-            dep_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+            dep_warnings = [
+                x for x in w if issubclass(x.category, DeprecationWarning)
+            ]
             self.assertTrue(len(dep_warnings) > 0)
 
 
@@ -56,7 +62,9 @@ class TestIsPipelineStageVirtual(unittest.TestCase):
         from paddleformers.fleet import parallel_state
 
         # Set virtual world size > 0
-        original_vp = parallel_state.get_virtual_pipeline_model_parallel_world_size()
+        original_vp = (
+            parallel_state.get_virtual_pipeline_model_parallel_world_size()
+        )
         if original_vp is None:
             # Need to set VP world size temporarily - but this requires
             # modifying module globals which is fragile. Just test the basic case.
@@ -91,7 +99,9 @@ class TestExpertTensorAndModelParallelGroup(unittest.TestCase):
         """Test returns 0 when distributed not initialized."""
         from paddleformers.fleet import parallel_state
 
-        result = parallel_state.get_expert_tensor_and_model_parallel_world_size()
+        result = (
+            parallel_state.get_expert_tensor_and_model_parallel_world_size()
+        )
         # Without distributed, should return 0
         self.assertEqual(result, 0)
 

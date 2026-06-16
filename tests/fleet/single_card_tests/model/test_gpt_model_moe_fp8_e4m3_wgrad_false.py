@@ -26,7 +26,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -34,7 +38,9 @@ from unittest.mock import MagicMock
 
 import paddle
 
-from paddleformers.fleet.transformer.moe.fp8_utils import ExpertsGroupGemmContiguousNode
+from paddleformers.fleet.transformer.moe.fp8_utils import (
+    ExpertsGroupGemmContiguousNode,
+)
 
 # All dimensions must be multiples of FP8_ALIGN (128) for fused_linear_param_grad_add
 HIDDEN = 128
@@ -98,7 +104,9 @@ class TestFp8E4m3WgradFalseBf16Backward(unittest.TestCase):
     def setUp(self):
         total = TOKENS_PER_EXPERT * NUM_EXPERTS
         self.total_tokens = total
-        self.node, self.experts = _make_node(use_fp8_mlp=True, use_bf16_gemm_weight_grad=True)
+        self.node, self.experts = _make_node(
+            use_fp8_mlp=True, use_bf16_gemm_weight_grad=True
+        )
         self.node.tokens_per_expert = [TOKENS_PER_EXPERT] * NUM_EXPERTS
         self.node.input = paddle.randn([total, HIDDEN], dtype=paddle.bfloat16)
         self.node.input_fp8 = None
@@ -117,7 +125,9 @@ class TestFp8E4m3WgradFalseBf16Backward(unittest.TestCase):
         """backward_impl_bf16 must not raise AttributeError.
         Pre-fix it crashed accessing grouped_gemm_experts."""
         try:
-            dx, probs_grad = self.node.backward_impl_bf16(self.out_grad, self.unzipped_probs)
+            dx, probs_grad = self.node.backward_impl_bf16(
+                self.out_grad, self.unzipped_probs
+            )
         except AttributeError as exc:
             self.fail(
                 f"backward_impl_bf16 raised AttributeError (bug: accessed "
@@ -126,7 +136,9 @@ class TestFp8E4m3WgradFalseBf16Backward(unittest.TestCase):
 
     def test_backward_impl_bf16_output_shapes(self):
         """dx shape must be [total_tokens, HIDDEN]; probs_grad length must match."""
-        dx, probs_grad = self.node.backward_impl_bf16(self.out_grad, self.unzipped_probs)
+        dx, probs_grad = self.node.backward_impl_bf16(
+            self.out_grad, self.unzipped_probs
+        )
         self.assertEqual(list(dx.shape), [self.total_tokens, HIDDEN])
         self.assertEqual(probs_grad.shape[0], self.total_tokens)
 
@@ -134,7 +146,9 @@ class TestFp8E4m3WgradFalseBf16Backward(unittest.TestCase):
         """bwd_gate_up_input_bf16 with use_fp8_mlp=True + moe_expert_fusion=True
         must not raise (pre-fix: tried to access grouped_gemm_experts weight tensor)."""
         expert_w1 = [e.up_gate_proj.weight for e in self.node.experts]
-        do1 = paddle.randn([self.total_tokens, INTER * 2], dtype=paddle.bfloat16)
+        do1 = paddle.randn(
+            [self.total_tokens, INTER * 2], dtype=paddle.bfloat16
+        )
         try:
             dx = self.node.bwd_gate_up_input_bf16(do1, expert_w1)
         except AttributeError as exc:
@@ -153,7 +167,9 @@ class TestFp8E4m3WgradFalseBf16Backward(unittest.TestCase):
         try:
             dx = self.node.bwd_gate_up_input_bf16(do1, expert_w1)
         except AttributeError as exc:
-            self.fail(f"bwd_gate_up_input_bf16 zero-token branch raised AttributeError: {exc}")
+            self.fail(
+                f"bwd_gate_up_input_bf16 zero-token branch raised AttributeError: {exc}"
+            )
         self.assertEqual(dx.shape[0], 0)
         self.assertEqual(dx.shape[1], HIDDEN)
 

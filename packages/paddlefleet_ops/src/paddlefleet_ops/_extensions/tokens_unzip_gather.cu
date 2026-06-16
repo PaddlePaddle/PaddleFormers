@@ -14,32 +14,27 @@
 
 #include "paddle/common/array.h"
 #include "paddle/phi/kernels/funcs/aligned_vector.h"
-#include "utils.h"  // NOLINT
+#include "utils.h" // NOLINT
 
 template <typename T, typename ScaleT, bool has_scale>
 __global__ void tokens_unzip_gather_kernel(
-    const T* __restrict__ x,
-    const ScaleT* __restrict__ x_scale,
-    const int* __restrict__ zipped_expertwise_rowmap,
-    T* __restrict__ x_unzipped,
-    ScaleT* __restrict__ x_scale_unzipped,
-    int64_t* __restrict__ index_unzipped,
-    int64_t unzipped_rows,
-    int64_t zipped_rows,
-    int token_length,
-    int scale_length,
-    int num_experts,
-    int expert_id,
-    int64_t offset) {
+    const T *__restrict__ x, const ScaleT *__restrict__ x_scale,
+    const int *__restrict__ zipped_expertwise_rowmap,
+    T *__restrict__ x_unzipped, ScaleT *__restrict__ x_scale_unzipped,
+    int64_t *__restrict__ index_unzipped, int64_t unzipped_rows,
+    int64_t zipped_rows, int token_length, int scale_length, int num_experts,
+    int expert_id, int64_t offset) {
   for (int64_t row = blockIdx.x; row < zipped_rows; row += gridDim.x) {
     int64_t unzipped_row_idx =
         zipped_expertwise_rowmap[row * num_experts + expert_id];
-    if (unzipped_row_idx < 0) continue;
+    if (unzipped_row_idx < 0)
+      continue;
 
     unzipped_row_idx -= offset;
     // Guard against out-of-bounds access on index_unzipped and *_unzipped
     // buffers.
-    if (unzipped_row_idx < 0 || unzipped_row_idx >= unzipped_rows) continue;
+    if (unzipped_row_idx < 0 || unzipped_row_idx >= unzipped_rows)
+      continue;
     index_unzipped[unzipped_row_idx] = row;
     if constexpr (has_scale) {
       try_vectorized_memcpy(x_scale + row * scale_length,
@@ -53,11 +48,9 @@ __global__ void tokens_unzip_gather_kernel(
 }
 
 std::vector<paddle::Tensor> tokens_unzip_gather(
-    const paddle::Tensor& x,
-    const paddle::optional<paddle::Tensor>& x_scale,
-    const paddle::Tensor& zipped_expertwise_rowmap,
-    const int expert_id,
-    const std::vector<int64_t>& tokens_per_expert,
+    const paddle::Tensor &x, const paddle::optional<paddle::Tensor> &x_scale,
+    const paddle::Tensor &zipped_expertwise_rowmap, const int expert_id,
+    const std::vector<int64_t> &tokens_per_expert,
     const int padding_multiplex) {
   int num_experts = tokens_per_expert.size();
   PD_CHECK(expert_id >= 0 && expert_id < num_experts);
@@ -97,51 +90,46 @@ std::vector<paddle::Tensor> tokens_unzip_gather(
       paddle::zeros({padded_num_tokens, hidden_size}, dtype, place);
   paddle::Tensor x_scale_unzipped;
   if (has_scale) {
-    x_scale_unzipped = paddle::zeros(
-        {padded_num_tokens, quanted_hidden_size}, x_scale.get().dtype(), place);
+    x_scale_unzipped = paddle::zeros({padded_num_tokens, quanted_hidden_size},
+                                     x_scale.get().dtype(), place);
   } else {
-    x_scale_unzipped = paddle::empty(
-        {0, quanted_hidden_size}, paddle::DataType::FLOAT32, place);
+    x_scale_unzipped = paddle::empty({0, quanted_hidden_size},
+                                     paddle::DataType::FLOAT32, place);
   }
-  auto index_unzipped = paddle::empty(
-      {tokens_per_expert[expert_id]}, paddle::DataType::INT64, place);
+  auto index_unzipped = paddle::empty({tokens_per_expert[expert_id]},
+                                      paddle::DataType::INT64, place);
 
   int block = 1024;
   int grid = LimitGridDim(zipped_rows);
 
-#define LAUNCH_TOKENS_UNZIP_GATHER_KERNEL_IMPL(                             \
-    __cpp_dtype, __scale_dtype, __has_scale)                                \
-  do {                                                                      \
-    tokens_unzip_gather_kernel<__cpp_dtype, __scale_dtype, __has_scale>     \
-        <<<grid, block, 0, stream>>>(                                       \
-            x.data<__cpp_dtype>(),                                          \
-            __has_scale ? x_scale.get().data<__scale_dtype>() : nullptr,    \
-            zipped_expertwise_rowmap.data<int>(),                           \
-            x_unzipped.data<__cpp_dtype>(),                                 \
-            __has_scale ? x_scale_unzipped.data<__scale_dtype>() : nullptr, \
-            index_unzipped.data<int64_t>(),                                 \
-            tokens_per_expert[expert_id],                                   \
-            zipped_rows,                                                    \
-            hidden_size,                                                    \
-            quanted_hidden_size,                                            \
-            num_experts,                                                    \
-            expert_id,                                                      \
-            offset);                                                        \
+#define LAUNCH_TOKENS_UNZIP_GATHER_KERNEL_IMPL(__cpp_dtype, __scale_dtype,     \
+                                               __has_scale)                    \
+  do {                                                                         \
+    tokens_unzip_gather_kernel<__cpp_dtype, __scale_dtype, __has_scale>        \
+        <<<grid, block, 0, stream>>>(                                          \
+            x.data<__cpp_dtype>(),                                             \
+            __has_scale ? x_scale.get().data<__scale_dtype>() : nullptr,       \
+            zipped_expertwise_rowmap.data<int>(),                              \
+            x_unzipped.data<__cpp_dtype>(),                                    \
+            __has_scale ? x_scale_unzipped.data<__scale_dtype>() : nullptr,    \
+            index_unzipped.data<int64_t>(), tokens_per_expert[expert_id],      \
+            zipped_rows, hidden_size, quanted_hidden_size, num_experts,        \
+            expert_id, offset);                                                \
   } while (0)
 
-#define LAUNCH_TOKENS_UNZIP_GATHER_KERNEL(__cpp_dtype)                    \
-  do {                                                                    \
-    if (has_scale) {                                                      \
-      if (x_scale.get().dtype() == paddle::DataType::FLOAT32) {           \
-        LAUNCH_TOKENS_UNZIP_GATHER_KERNEL_IMPL(__cpp_dtype, float, true); \
-      } else if (x_scale.get().dtype() == paddle::DataType::INT32) {      \
-        LAUNCH_TOKENS_UNZIP_GATHER_KERNEL_IMPL(__cpp_dtype, int, true);   \
-      } else {                                                            \
-        PD_CHECK(false, "Unsupported scale dtype");                       \
-      }                                                                   \
-    } else {                                                              \
-      LAUNCH_TOKENS_UNZIP_GATHER_KERNEL_IMPL(__cpp_dtype, float, false);  \
-    }                                                                     \
+#define LAUNCH_TOKENS_UNZIP_GATHER_KERNEL(__cpp_dtype)                         \
+  do {                                                                         \
+    if (has_scale) {                                                           \
+      if (x_scale.get().dtype() == paddle::DataType::FLOAT32) {                \
+        LAUNCH_TOKENS_UNZIP_GATHER_KERNEL_IMPL(__cpp_dtype, float, true);      \
+      } else if (x_scale.get().dtype() == paddle::DataType::INT32) {           \
+        LAUNCH_TOKENS_UNZIP_GATHER_KERNEL_IMPL(__cpp_dtype, int, true);        \
+      } else {                                                                 \
+        PD_CHECK(false, "Unsupported scale dtype");                            \
+      }                                                                        \
+    } else {                                                                   \
+      LAUNCH_TOKENS_UNZIP_GATHER_KERNEL_IMPL(__cpp_dtype, float, false);       \
+    }                                                                          \
   } while (0)
 
   // Skip kernel when expert has no tokens: unzipped_rows=0 causes the kernel to
@@ -159,10 +147,8 @@ std::vector<paddle::Tensor> tokens_unzip_gather(
 
 PD_BUILD_OP(tokens_unzip_gather)
     .Inputs({"x", paddle::Optional("x_scale"), "zipped_expertwise_rowmap"})
-    .Outputs({"x_unzipped",
-              paddle::Optional("x_scale_unzipped"),
+    .Outputs({"x_unzipped", paddle::Optional("x_scale_unzipped"),
               "idx_unzipped"})
-    .Attrs({"expert_id: int",
-            "tokens_per_expert: std::vector<int64_t>",
+    .Attrs({"expert_id: int", "tokens_per_expert: std::vector<int64_t>",
             "padding_multiplex: int"})
     .SetKernelFn(PD_KERNEL(tokens_unzip_gather));

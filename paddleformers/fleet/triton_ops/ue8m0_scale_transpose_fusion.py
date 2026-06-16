@@ -47,8 +47,12 @@ def _fuse_stack_ue8m0_scale_transpose_kernel(
 
     k_block_group = k_block // 4
     k_block_inner = k_block - k_block_group * 4
-    src_offsets = (expert_idx[:, None] * m + m_blocks[None, :] * 128) * (k // 512) + k_block_group[:, None]
-    packed_scale = tl.load(scale_ptr + src_offsets, mask=expert_idx[:, None] < num_experts, other=0)
+    src_offsets = (expert_idx[:, None] * m + m_blocks[None, :] * 128) * (
+        k // 512
+    ) + k_block_group[:, None]
+    packed_scale = tl.load(
+        scale_ptr + src_offsets, mask=expert_idx[:, None] < num_experts, other=0
+    )
     exp = (packed_scale >> (k_block_inner[:, None] * 8)) & 0xFF
     packed = tl.sum(exp << (tl.arange(0, 4)[None, :] * 8), axis=1)
 
@@ -61,17 +65,27 @@ class FuseStackUe8m0ScaleTransposeTriton(paddle.autograd.PyLayer):
 
     @staticmethod
     def forward(ctx, scale, num_experts, m, k):
-        assert scale.dtype == paddle.int32, f"scale must be int32, got {scale.dtype}"
+        assert scale.dtype == paddle.int32, (
+            f"scale must be int32, got {scale.dtype}"
+        )
         assert len(scale.shape) == 2, f"scale must be 2-D, got {scale.shape}"
-        assert num_experts >= 0, f"num_experts must be non-negative, got {num_experts}"
+        assert num_experts >= 0, (
+            f"num_experts must be non-negative, got {num_experts}"
+        )
         assert m >= 0, f"m must be non-negative, got {m}"
         assert k >= 0, f"k must be non-negative, got {k}"
-        assert m % 512 == 0, f"m must be divisible by 512 for packed UE8M0 scale, got {m}"
-        assert k % 512 == 0, f"k must be divisible by 512 for packed UE8M0 scale, got {k}"
+        assert m % 512 == 0, (
+            f"m must be divisible by 512 for packed UE8M0 scale, got {m}"
+        )
+        assert k % 512 == 0, (
+            f"k must be divisible by 512 for packed UE8M0 scale, got {k}"
+        )
         assert scale.shape == [
             num_experts * m,
             k // 512,
-        ], f"scale shape must be {[num_experts * m, k // 512]}, got {scale.shape}"
+        ], (
+            f"scale shape must be {[num_experts * m, k // 512]}, got {scale.shape}"
+        )
 
         out = paddle.empty([num_experts * k, m // 512], dtype=paddle.int32)
         if num_experts == 0 or m == 0 or k == 0:

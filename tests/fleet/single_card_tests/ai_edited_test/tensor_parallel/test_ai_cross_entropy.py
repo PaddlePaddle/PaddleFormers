@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -36,7 +40,9 @@ class TestVocabParallelCrossEntropyCalculateLogitsMax(unittest.TestCase):
         )
 
         logits = paddle.randn([4, 8], dtype=paddle.float32)
-        result_logits, logits_max = VocabParallelCrossEntropy.calculate_logits_max(logits)
+        result_logits, logits_max = (
+            VocabParallelCrossEntropy.calculate_logits_max(logits)
+        )
 
         self.assertEqual(result_logits.shape, [4, 8])
         self.assertEqual(logits_max.shape, [4])
@@ -67,7 +73,9 @@ class TestVocabParallelCrossEntropyCalculatePredictedLogits(unittest.TestCase):
             predicted_logits,
             sum_exp_logits,
             exp_logits,
-        ) = VocabParallelCrossEntropy.calculate_predicted_logits(logits, target, logits_max, vocab_start, vocab_end)
+        ) = VocabParallelCrossEntropy.calculate_predicted_logits(
+            logits, target, logits_max, vocab_start, vocab_end
+        )
 
         # All targets are in range so mask should be all False
         self.assertEqual(target_mask.shape, [batch_size])
@@ -93,7 +101,9 @@ class TestVocabParallelCrossEntropyCalculatePredictedLogits(unittest.TestCase):
             predicted_logits,
             sum_exp_logits,
             exp_logits,
-        ) = VocabParallelCrossEntropy.calculate_predicted_logits(logits, target, logits_max, vocab_start, vocab_end)
+        ) = VocabParallelCrossEntropy.calculate_predicted_logits(
+            logits, target, logits_max, vocab_start, vocab_end
+        )
 
         # Targets 1 and 3 are out of range
         self.assertEqual(target_mask.shape, [batch_size])
@@ -126,7 +136,9 @@ class TestVocabParallelCrossEntropyCalculatePredictedLogits(unittest.TestCase):
             predicted_logits,
             sum_exp_logits,
             exp_logits,
-        ) = VocabParallelCrossEntropy.calculate_predicted_logits(logits, target, logits_max, vocab_start, vocab_end)
+        ) = VocabParallelCrossEntropy.calculate_predicted_logits(
+            logits, target, logits_max, vocab_start, vocab_end
+        )
 
         # Target 0,3 are out of range (< 8)
         self.assertTrue(target_mask[0])
@@ -140,7 +152,9 @@ class TestVocabParallelCrossEntropyCalculateCrossEntropyLoss(unittest.TestCase):
     """Tests for VocabParallelCrossEntropy.calculate_cross_entropy_loss."""
 
 
-class TestVocabParallelCrossEntropyPrepareGradientCalculationOperands(unittest.TestCase):
+class TestVocabParallelCrossEntropyPrepareGradientCalculationOperands(
+    unittest.TestCase
+):
     """Tests for VocabParallelCrossEntropy.prepare_gradient_calculation_operands."""
 
     def test_prepare_gradient_calculation_operands(self):
@@ -159,7 +173,9 @@ class TestVocabParallelCrossEntropyPrepareGradientCalculationOperands(unittest.T
             arange_1d,
             softmax_update,
             grad_input,
-        ) = VocabParallelCrossEntropy.prepare_gradient_calculation_operands(softmax, target_mask)
+        ) = VocabParallelCrossEntropy.prepare_gradient_calculation_operands(
+            softmax, target_mask
+        )
 
         self.assertEqual(grad_2d.shape, [batch_size, vocab_size])
         self.assertEqual(arange_1d.shape, [batch_size])
@@ -260,7 +276,9 @@ class TestVocabParallelCrossEntropyFunction(unittest.TestCase):
             "paddleformers.fleet.tensor_parallel.cross_entropy.get_tensor_model_parallel_group",
             return_value=None,
         ):
-            loss = vocab_parallel_cross_entropy(logits, target, label_smoothing=0.1)
+            loss = vocab_parallel_cross_entropy(
+                logits, target, label_smoothing=0.1
+            )
 
         self.assertEqual(loss.shape, [batch_size])
 
@@ -271,7 +289,9 @@ class TestVocabParallelCrossEntropyFunction(unittest.TestCase):
         )
 
         seq_len, batch_size, vocab_size = 2, 4, 16
-        logits = paddle.randn([seq_len, batch_size, vocab_size], dtype=paddle.float32)
+        logits = paddle.randn(
+            [seq_len, batch_size, vocab_size], dtype=paddle.float32
+        )
         target = paddle.randint(0, vocab_size, shape=[seq_len, batch_size])
 
         with patch(

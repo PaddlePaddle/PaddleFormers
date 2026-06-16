@@ -69,9 +69,9 @@ class FusedLayerNorm(paddle.nn.Layer):
         self.config = config
 
         self.zero_centered_gamma = self.config.layernorm_zero_centered_gamma
-        assert (
-            self.config.normalization == "LayerNorm"
-        ), f"({self.config.normalization}) is not supported in FusedLayerNorm"
+        assert self.config.normalization == "LayerNorm", (
+            f"({self.config.normalization}) is not supported in FusedLayerNorm"
+        )
 
         # List of hiddens sizes supported in the persistent layer norm kernel
         # If the hidden size is not supported, fall back to the non-persistent
@@ -103,7 +103,10 @@ class FusedLayerNorm(paddle.nn.Layer):
             65536,
         ]
         persist_layer_norm = self.config.persist_layer_norm
-        if hidden_size not in persist_ln_hidden_sizes or not HAVE_PERSIST_LAYER_NORM:
+        if (
+            hidden_size not in persist_ln_hidden_sizes
+            or not HAVE_PERSIST_LAYER_NORM
+        ):
             persist_layer_norm = False
 
         if not persist_layer_norm and not HAVE_FUSED_LAYER_NORM:
@@ -143,12 +146,16 @@ class FusedLayerNorm(paddle.nn.Layer):
         elif isinstance(self.hidden_size, tuple):
             self.hidden_size = list(self.hidden_size)
         elif not isinstance(self.hidden_size, list):
-            raise ValueError("`self.hidden_size` should be int, list of ints or tuple of ints.")
+            raise ValueError(
+                "`self.hidden_size` should be int, list of ints or tuple of ints."
+            )
 
         normalized_ndim = len(self.hidden_size)
         begin_norm_axis = input_ndim - normalized_ndim
         if input_ndim < normalized_ndim or (
-            not paddle.utils.is_same_shape(input_shape[begin_norm_axis:], self.hidden_size)
+            not paddle.utils.is_same_shape(
+                input_shape[begin_norm_axis:], self.hidden_size
+            )
         ):
             str_normalized_shape = str(self.hidden_size)
             raise ValueError(

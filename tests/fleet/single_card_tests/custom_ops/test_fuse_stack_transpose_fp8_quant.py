@@ -22,6 +22,7 @@ M, K, N = 4096, 7168, 4096
 DTYPE_PD = paddle.bfloat16
 
 import paddle
+
 from paddlefleet_ops import fuse_stack_fp8_quant, fuse_stack_transpose_fp8_quant
 
 
@@ -80,9 +81,15 @@ def _get_mn_major_tma_aligned_packed_ue8m0_tensor_impl(
     padded = paddle.zeros([b, aligned_mn, aligned_k], dtype=paddle.uint8)
     padded[:, :mn, :k] = ue8m0_tensor
 
-    padded = padded.reshape([-1]).view(paddle.int32).reshape([b, aligned_mn, aligned_k // 4])
+    padded = (
+        padded.reshape([-1])
+        .view(paddle.int32)
+        .reshape([b, aligned_mn, aligned_k // 4])
+    )
 
-    transposed = paddle.zeros([b, aligned_k // 4, aligned_mn], dtype=paddle.int32).transpose([0, 2, 1])
+    transposed = paddle.zeros(
+        [b, aligned_k // 4, aligned_mn], dtype=paddle.int32
+    ).transpose([0, 2, 1])
     transposed[:, :, :] = padded
 
     aligned_x = transposed[:, :mn, :]
@@ -91,7 +98,9 @@ def _get_mn_major_tma_aligned_packed_ue8m0_tensor_impl(
 
 
 def transform_scale_ue8m0(sf, mn, weight_block_size=None):
-    get_mn_major_tma_aligned_packed_ue8m0_tensor = _get_mn_major_tma_aligned_packed_ue8m0_tensor_impl
+    get_mn_major_tma_aligned_packed_ue8m0_tensor = (
+        _get_mn_major_tma_aligned_packed_ue8m0_tensor_impl
+    )
     if weight_block_size:
         assert weight_block_size == [128, 128]
         sf = sf.index_select(paddle.arange(mn) // 128, axis=-2)
@@ -101,7 +110,9 @@ def transform_scale_ue8m0(sf, mn, weight_block_size=None):
 
 def quant_ref(x_scale_fp32, mn, weight_block_size=None):
     # x_scale_fp32_ = ceil_to_ue8m0_paddle(x_scale_fp32)
-    ref_e8m0_scale = transform_scale_ue8m0(x_scale_fp32, mn=mn, weight_block_size=weight_block_size)
+    ref_e8m0_scale = transform_scale_ue8m0(
+        x_scale_fp32, mn=mn, weight_block_size=weight_block_size
+    )
     return ref_e8m0_scale
 
 
@@ -163,9 +174,13 @@ class TestFusedStackTransposeQuant(unittest.TestCase):
         )
 
         # output_scale_transpose should not affect quantized output
-        np.testing.assert_allclose(out_32_false.numpy(), out_32_true.numpy(), atol=0, rtol=0)
+        np.testing.assert_allclose(
+            out_32_false.numpy(), out_32_true.numpy(), atol=0, rtol=0
+        )
         # Transposed scale should match
-        np.testing.assert_allclose(scale_32_false.numpy().T, scale_32_true.numpy(), atol=0, rtol=0)
+        np.testing.assert_allclose(
+            scale_32_false.numpy().T, scale_32_true.numpy(), atol=0, rtol=0
+        )
 
         # UE8M0 cases (only on Blackwell SM >= 10)
         if arch >= 10:
@@ -185,18 +200,28 @@ class TestFusedStackTransposeQuant(unittest.TestCase):
                 output_scale_transpose=True,
             )
 
-            np.testing.assert_allclose(out_false.numpy(), out_true.numpy(), atol=0, rtol=0)
-            np.testing.assert_allclose(out_false.numpy(), out_32_false.numpy(), atol=0, rtol=0)
+            np.testing.assert_allclose(
+                out_false.numpy(), out_true.numpy(), atol=0, rtol=0
+            )
+            np.testing.assert_allclose(
+                out_false.numpy(), out_32_false.numpy(), atol=0, rtol=0
+            )
 
             scale_false_np = scale_false.numpy()
             scale_true_np = scale_true.numpy()
 
             scale_false_T = scale_false_np.T
 
-            scale_32_ref = quant_ref(scale_32_false, out_32_false.shape[-2], [128, 128])
+            scale_32_ref = quant_ref(
+                scale_32_false, out_32_false.shape[-2], [128, 128]
+            )
 
-            np.testing.assert_allclose(scale_32_ref.numpy(), scale_true_np.T, atol=0, rtol=0)
-            np.testing.assert_allclose(scale_false_T, scale_true_np, atol=0, rtol=0)
+            np.testing.assert_allclose(
+                scale_32_ref.numpy(), scale_true_np.T, atol=0, rtol=0
+            )
+            np.testing.assert_allclose(
+                scale_false_T, scale_true_np, atol=0, rtol=0
+            )
 
     def test_output_consistency(self):
         if not core.is_compiled_with_cuda():
@@ -227,8 +252,12 @@ class TestFusedStackTransposeQuant(unittest.TestCase):
             output_scale_transpose=True,
         )
 
-        np.testing.assert_allclose(out_32_false.numpy(), out_32_true.numpy(), atol=0, rtol=0)
-        np.testing.assert_allclose(scale_32_false.numpy().T, scale_32_true.numpy(), atol=0, rtol=0)
+        np.testing.assert_allclose(
+            out_32_false.numpy(), out_32_true.numpy(), atol=0, rtol=0
+        )
+        np.testing.assert_allclose(
+            scale_32_false.numpy().T, scale_32_true.numpy(), atol=0, rtol=0
+        )
 
         # UE8M0 cases (only on Blackwell SM >= 10)
         if arch >= 10:
@@ -248,18 +277,28 @@ class TestFusedStackTransposeQuant(unittest.TestCase):
                 output_scale_transpose=True,
             )
 
-            np.testing.assert_allclose(out_false.numpy(), out_true.numpy(), atol=0, rtol=0)
-            np.testing.assert_allclose(out_false.numpy(), out_32_false.numpy(), atol=0, rtol=0)
+            np.testing.assert_allclose(
+                out_false.numpy(), out_true.numpy(), atol=0, rtol=0
+            )
+            np.testing.assert_allclose(
+                out_false.numpy(), out_32_false.numpy(), atol=0, rtol=0
+            )
 
             scale_false_np = scale_false.numpy()
             scale_true_np = scale_true.numpy()
 
             scale_false_T = scale_false_np.T
 
-            scale_32_ref = quant_ref(scale_32_false, out_32_false.shape[-2], [128, 128])
+            scale_32_ref = quant_ref(
+                scale_32_false, out_32_false.shape[-2], [128, 128]
+            )
 
-            np.testing.assert_allclose(scale_32_ref.numpy(), scale_true_np.T, atol=0, rtol=0)
-            np.testing.assert_allclose(scale_false_T, scale_true_np, atol=0, rtol=0)
+            np.testing.assert_allclose(
+                scale_32_ref.numpy(), scale_true_np.T, atol=0, rtol=0
+            )
+            np.testing.assert_allclose(
+                scale_false_T, scale_true_np, atol=0, rtol=0
+            )
 
     def test_gemm_out(self):
         if not core.is_compiled_with_cuda():
@@ -290,8 +329,12 @@ class TestFusedStackTransposeQuant(unittest.TestCase):
             output_scale_transpose=True,
         )
 
-        np.testing.assert_allclose(out_32_false.numpy(), out_32_true.numpy(), atol=0, rtol=0)
-        np.testing.assert_allclose(scale_32_false.numpy().T, scale_32_true.numpy(), atol=0, rtol=0)
+        np.testing.assert_allclose(
+            out_32_false.numpy(), out_32_true.numpy(), atol=0, rtol=0
+        )
+        np.testing.assert_allclose(
+            scale_32_false.numpy().T, scale_32_true.numpy(), atol=0, rtol=0
+        )
 
         # UE8M0 cases (only on Blackwell SM >= 10)
         if arch >= 10:
@@ -311,18 +354,28 @@ class TestFusedStackTransposeQuant(unittest.TestCase):
                 output_scale_transpose=True,
             )
 
-            np.testing.assert_allclose(out_false.numpy(), out_true.numpy(), atol=0, rtol=0)
-            np.testing.assert_allclose(out_false.numpy(), out_32_false.numpy(), atol=0, rtol=0)
+            np.testing.assert_allclose(
+                out_false.numpy(), out_true.numpy(), atol=0, rtol=0
+            )
+            np.testing.assert_allclose(
+                out_false.numpy(), out_32_false.numpy(), atol=0, rtol=0
+            )
 
             scale_false_np = scale_false.numpy()
             scale_true_np = scale_true.numpy()
 
             scale_false_T = scale_false_np.T
 
-            scale_32_ref = quant_ref(scale_32_false, out_32_false.shape[-2], [128, 128])
+            scale_32_ref = quant_ref(
+                scale_32_false, out_32_false.shape[-2], [128, 128]
+            )
 
-            np.testing.assert_allclose(scale_32_ref.numpy(), scale_true_np.T, atol=0, rtol=0)
-            np.testing.assert_allclose(scale_false_T, scale_true_np, atol=0, rtol=0)
+            np.testing.assert_allclose(
+                scale_32_ref.numpy(), scale_true_np.T, atol=0, rtol=0
+            )
+            np.testing.assert_allclose(
+                scale_false_T, scale_true_np, atol=0, rtol=0
+            )
 
 
 if __name__ == "__main__":

@@ -15,7 +15,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -23,15 +27,21 @@ from unittest.mock import MagicMock, patch
 
 import paddle
 
-from paddleformers.fleet.transformer.dot_product_attention import DotProductAttention
+from paddleformers.fleet.transformer.dot_product_attention import (
+    DotProductAttention,
+)
 from paddleformers.fleet.transformer.enums import AttnMaskType
 
 
 class TestDotProductAttentionInit(unittest.TestCase):
     """Tests for DotProductAttention initialization."""
 
-    @patch("paddleformers.fleet.transformer.dot_product_attention.FusedScaleMaskSoftmax")
-    @patch("paddleformers.fleet.transformer.dot_product_attention.ProcessGroupCollection.use_mpu_process_groups")
+    @patch(
+        "paddleformers.fleet.transformer.dot_product_attention.FusedScaleMaskSoftmax"
+    )
+    @patch(
+        "paddleformers.fleet.transformer.dot_product_attention.ProcessGroupCollection.use_mpu_process_groups"
+    )
     def test_context_parallel_size_must_be_1(self, mock_pg, mock_softmax):
         """DotProductAttention should assert context_parallel_size == 1."""
         mock_pg.return_value = MagicMock(tp=MagicMock(world_size=1, rank=0))
@@ -46,8 +56,12 @@ class TestDotProductAttentionInit(unittest.TestCase):
                 attention_type="self",
             )
 
-    @patch("paddleformers.fleet.transformer.dot_product_attention.FusedScaleMaskSoftmax")
-    @patch("paddleformers.fleet.transformer.dot_product_attention.ProcessGroupCollection.use_mpu_process_groups")
+    @patch(
+        "paddleformers.fleet.transformer.dot_product_attention.FusedScaleMaskSoftmax"
+    )
+    @patch(
+        "paddleformers.fleet.transformer.dot_product_attention.ProcessGroupCollection.use_mpu_process_groups"
+    )
     def test_softmax_scale_default(self, mock_pg, mock_softmax):
         """When softmax_scale is None, it should compute from hidden_size."""
         mock_pg.return_value = MagicMock(tp=MagicMock(world_size=1, rank=0))
@@ -81,8 +95,12 @@ class TestDotProductAttentionInit(unittest.TestCase):
         expected = 1.0 / math.sqrt(64)
         self.assertAlmostEqual(attn.softmax_scale, expected, places=5)
 
-    @patch("paddleformers.fleet.transformer.dot_product_attention.FusedScaleMaskSoftmax")
-    @patch("paddleformers.fleet.transformer.dot_product_attention.ProcessGroupCollection.use_mpu_process_groups")
+    @patch(
+        "paddleformers.fleet.transformer.dot_product_attention.FusedScaleMaskSoftmax"
+    )
+    @patch(
+        "paddleformers.fleet.transformer.dot_product_attention.ProcessGroupCollection.use_mpu_process_groups"
+    )
     def test_layer_number_clamped_to_1(self, mock_pg, mock_softmax):
         """layer_number should be clamped to at least 1."""
         mock_pg.return_value = MagicMock(tp=MagicMock(world_size=1, rank=0))
@@ -116,8 +134,12 @@ class TestDotProductAttentionInit(unittest.TestCase):
 class TestDotProductAttentionSoftmaxOffset(unittest.TestCase):
     """Tests for DotProductAttention softmax_offset initialization."""
 
-    @patch("paddleformers.fleet.transformer.dot_product_attention.FusedScaleMaskSoftmax")
-    @patch("paddleformers.fleet.transformer.dot_product_attention.ProcessGroupCollection.use_mpu_process_groups")
+    @patch(
+        "paddleformers.fleet.transformer.dot_product_attention.FusedScaleMaskSoftmax"
+    )
+    @patch(
+        "paddleformers.fleet.transformer.dot_product_attention.ProcessGroupCollection.use_mpu_process_groups"
+    )
     def test_vanilla_softmax_offset_is_none(self, mock_pg, mock_softmax):
         """When softmax_type is vanilla, softmax_offset should be None."""
         mock_pg.return_value = MagicMock(tp=MagicMock(world_size=1, rank=0))
@@ -153,8 +175,12 @@ class TestDotProductAttentionSoftmaxOffset(unittest.TestCase):
 class TestDotProductAttentionForwardAssertions(unittest.TestCase):
     """Tests for DotProductAttention.forward assertion checks."""
 
-    @patch("paddleformers.fleet.transformer.dot_product_attention.FusedScaleMaskSoftmax")
-    @patch("paddleformers.fleet.transformer.dot_product_attention.ProcessGroupCollection.use_mpu_process_groups")
+    @patch(
+        "paddleformers.fleet.transformer.dot_product_attention.FusedScaleMaskSoftmax"
+    )
+    @patch(
+        "paddleformers.fleet.transformer.dot_product_attention.ProcessGroupCollection.use_mpu_process_groups"
+    )
     def test_forward_rejects_attention_bias(self, mock_pg, mock_softmax):
         """forward should reject attention_bias."""
         mock_pg.return_value = MagicMock(tp=MagicMock(world_size=1, rank=0))

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -48,7 +52,9 @@ class TestFusionLayerUtils(unittest.TestCase):
 
     def test_unzip_node_init(self):
         """Test UnZipNode initialization."""
-        from paddleformers.fleet.transformer.moe.fusion_layer_utils import UnZipNode
+        from paddleformers.fleet.transformer.moe.fusion_layer_utils import (
+            UnZipNode,
+        )
 
         mock_dispatcher = MagicMock()
         node = UnZipNode(mock_dispatcher)
@@ -57,7 +63,9 @@ class TestFusionLayerUtils(unittest.TestCase):
 
     def test_unzip_node_reset_state(self):
         """Test UnZipNode.reset_state."""
-        from paddleformers.fleet.transformer.moe.fusion_layer_utils import UnZipNode
+        from paddleformers.fleet.transformer.moe.fusion_layer_utils import (
+            UnZipNode,
+        )
 
         mock_dispatcher = MagicMock()
         node = UnZipNode(mock_dispatcher)
@@ -69,7 +77,9 @@ class TestFusionLayerUtils(unittest.TestCase):
 
     def test_unzip_node_cached_tensors(self):
         """Test UnZipNode.cached_tensors."""
-        from paddleformers.fleet.transformer.moe.fusion_layer_utils import UnZipNode
+        from paddleformers.fleet.transformer.moe.fusion_layer_utils import (
+            UnZipNode,
+        )
 
         mock_dispatcher = MagicMock()
         node = UnZipNode(mock_dispatcher)
@@ -80,7 +90,9 @@ class TestFusionLayerUtils(unittest.TestCase):
 
     def test_unzip_node_set_cached_tensors(self):
         """Test UnZipNode.set_cached_tensors."""
-        from paddleformers.fleet.transformer.moe.fusion_layer_utils import UnZipNode
+        from paddleformers.fleet.transformer.moe.fusion_layer_utils import (
+            UnZipNode,
+        )
 
         mock_dispatcher = MagicMock()
         node = UnZipNode(mock_dispatcher)
@@ -92,7 +104,9 @@ class TestFusionLayerUtils(unittest.TestCase):
 
     def test_unzip_node_clear_cached_tensors(self):
         """Test UnZipNode.clear_cached_tensors."""
-        from paddleformers.fleet.transformer.moe.fusion_layer_utils import UnZipNode
+        from paddleformers.fleet.transformer.moe.fusion_layer_utils import (
+            UnZipNode,
+        )
 
         mock_dispatcher = MagicMock()
         node = UnZipNode(mock_dispatcher)
@@ -104,7 +118,9 @@ class TestFusionLayerUtils(unittest.TestCase):
 
     def test_zip_node_cached_tensors_empty(self):
         """Test ZipNode.cached_tensors returns empty list."""
-        from paddleformers.fleet.transformer.moe.fusion_layer_utils import ZipNode
+        from paddleformers.fleet.transformer.moe.fusion_layer_utils import (
+            ZipNode,
+        )
 
         mock_dispatcher = MagicMock()
         node = ZipNode(mock_dispatcher)
@@ -112,7 +128,9 @@ class TestFusionLayerUtils(unittest.TestCase):
 
     def test_zip_node_set_cached_tensors_empty(self):
         """Test ZipNode.set_cached_tensors accepts empty list."""
-        from paddleformers.fleet.transformer.moe.fusion_layer_utils import ZipNode
+        from paddleformers.fleet.transformer.moe.fusion_layer_utils import (
+            ZipNode,
+        )
 
         mock_dispatcher = MagicMock()
         node = ZipNode(mock_dispatcher)
@@ -121,7 +139,9 @@ class TestFusionLayerUtils(unittest.TestCase):
 
     def test_zip_node_clear_cached_tensors_noop(self):
         """Test ZipNode.clear_cached_tensors is no-op."""
-        from paddleformers.fleet.transformer.moe.fusion_layer_utils import ZipNode
+        from paddleformers.fleet.transformer.moe.fusion_layer_utils import (
+            ZipNode,
+        )
 
         mock_dispatcher = MagicMock()
         node = ZipNode(mock_dispatcher)
@@ -136,9 +156,13 @@ class TestFusionLayerUtils(unittest.TestCase):
 
         mock_custom_map = _make_mock_custom_map()
 
-        with patch("paddleformers.fleet.transformer.moe.fusion_layer_utils.MlpNode") as MockMlpNode:
+        with patch(
+            "paddleformers.fleet.transformer.moe.fusion_layer_utils.MlpNode"
+        ) as MockMlpNode:
             mock_node = MagicMock()
-            mock_node.forward.return_value = paddle.randn([4, 64], dtype=paddle.bfloat16)
+            mock_node.forward.return_value = paddle.randn(
+                [4, 64], dtype=paddle.bfloat16
+            )
             # Return empty list of tensors for cached_tensors
             mock_node.cached_tensors.return_value = []
             mock_node.clear_cached_tensors.return_value = None
@@ -163,7 +187,9 @@ class TestFusionLayerUtils(unittest.TestCase):
 
     def test_mlp_node_release_mem(self):
         """Test MlpNode.release_mem."""
-        from paddleformers.fleet.transformer.moe.fusion_layer_utils import MlpNode
+        from paddleformers.fleet.transformer.moe.fusion_layer_utils import (
+            MlpNode,
+        )
 
         mock_custom_map = _make_mock_custom_map()
 
@@ -187,7 +213,9 @@ class TestFusionLayerUtils(unittest.TestCase):
 
     def test_mlp_node_init_assertions(self):
         """Test MlpNode init assertions."""
-        from paddleformers.fleet.transformer.moe.fusion_layer_utils import MlpNode
+        from paddleformers.fleet.transformer.moe.fusion_layer_utils import (
+            MlpNode,
+        )
 
         mock_custom_map = _make_mock_custom_map()
 
@@ -206,7 +234,9 @@ class TestFusionLayerUtils(unittest.TestCase):
 
     def test_mlp_node_non_fusion_init(self):
         """Test MlpNode with moe_expert_fusion=False initializes correctly."""
-        from paddleformers.fleet.transformer.moe.fusion_layer_utils import MlpNode
+        from paddleformers.fleet.transformer.moe.fusion_layer_utils import (
+            MlpNode,
+        )
 
         mock_custom_map = _make_mock_custom_map()
 
@@ -226,7 +256,9 @@ class TestFusionLayerUtils(unittest.TestCase):
 
     def test_mlp_node_subbatch_assertions(self):
         """Test MlpNode init with subbatch asserts."""
-        from paddleformers.fleet.transformer.moe.fusion_layer_utils import MlpNode
+        from paddleformers.fleet.transformer.moe.fusion_layer_utils import (
+            MlpNode,
+        )
 
         mock_custom_map = _make_mock_custom_map()
 

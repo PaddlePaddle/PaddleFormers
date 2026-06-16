@@ -18,6 +18,7 @@ import unittest
 import numpy as np
 import paddle
 from paddle.nn.functional import moe_permute
+
 from paddlefleet_ops import tokens_unzip_gather
 
 
@@ -37,7 +38,9 @@ def fabricate_dispatch_result(
     if data_type == "float8_e4m3fn":
         if using_ue8m0_scale:
             scale_cols = (token_length + 127) // 128
-            scale = paddle.randn([seqlen, scale_cols], dtype="float32").astype(paddle.int32)
+            scale = paddle.randn([seqlen, scale_cols], dtype="float32").astype(
+                paddle.int32
+            )
         else:
             scale_cols = (token_length + 127) // 128
             scale = paddle.randn([seqlen, scale_cols], dtype="float32")
@@ -46,7 +49,9 @@ def fabricate_dispatch_result(
     expected_experts = max(1, min(broadcast_ratio * num_experts, topk))
     std_dev = max(1, expected_experts / 6)
     experts_count = paddle.normal(expected_experts, std_dev, [seqlen])
-    experts_count = paddle.clip(paddle.round(experts_count), 1, min(topk, num_experts))
+    experts_count = paddle.clip(
+        paddle.round(experts_count), 1, min(topk, num_experts)
+    )
     experts_count = paddle.cast(experts_count, "int32")
 
     # Preallocate results
@@ -59,13 +64,17 @@ def fabricate_dispatch_result(
         indices = paddle.randperm(num_experts)[:count]
         expert_routemap_topk[i, :count] = indices
         prob_value = 1.0 / count
-        expert_prob_topk[i, :count] = paddle.full([count], prob_value, dtype=data_type)
+        expert_prob_topk[i, :count] = paddle.full(
+            [count], prob_value, dtype=data_type
+        )
 
     # Calculate expert token counts
     valid_indices = expert_routemap_topk.reshape([-1])
     valid_mask = valid_indices >= 0
     valid_experts = valid_indices[valid_mask]
-    tokens_per_expert = paddle.histogram(valid_experts, bins=num_experts, min=0, max=num_experts - 1)
+    tokens_per_expert = paddle.histogram(
+        valid_experts, bins=num_experts, min=0, max=num_experts - 1
+    )
     tokens_per_expert = paddle.cast(tokens_per_expert, "int32")
     tokens_per_expert = list(tokens_per_expert)
 
@@ -86,7 +95,9 @@ class TestTokensUnzipGatherUE8M0Scale(unittest.TestCase):
         EXPERT_NUMS = [16]
         TOPKS = [8]
         # Generate test data
-        for dt, expert_num, topk in itertools.product(DTYPES, EXPERT_NUMS, TOPKS):
+        for dt, expert_num, topk in itertools.product(
+            DTYPES, EXPERT_NUMS, TOPKS
+        ):
             with self.subTest(dtype=dt, expert_num=expert_num, topk=topk):
                 (
                     hidden_states,
@@ -107,7 +118,12 @@ class TestTokensUnzipGatherUE8M0Scale(unittest.TestCase):
                 scale_fp32 = paddle.cast(scale, "float32")
 
                 # Using Permute get rowmap
-                (_, zipped_expertwise_rowmap, _, _,) = moe_permute(
+                (
+                    _,
+                    zipped_expertwise_rowmap,
+                    _,
+                    _,
+                ) = moe_permute(
                     hidden_states,
                     scale_fp32,
                     expert_routemap_topk,
@@ -119,23 +135,27 @@ class TestTokensUnzipGatherUE8M0Scale(unittest.TestCase):
 
                 for expert_id in range(expert_num):
                     # Test tokens_unzip_gather with int32 (four ue8m0) scale
-                    (x_unzipped, x_scale_unzipped, index_unzipped) = tokens_unzip_gather(
-                        hidden_states,
-                        scale,
-                        zipped_expertwise_rowmap,
-                        expert_id,
-                        tokens_per_expert,
-                        128,
+                    (x_unzipped, x_scale_unzipped, index_unzipped) = (
+                        tokens_unzip_gather(
+                            hidden_states,
+                            scale,
+                            zipped_expertwise_rowmap,
+                            expert_id,
+                            tokens_per_expert,
+                            128,
+                        )
                     )
                     x_scale_unzipped_np = x_scale_unzipped.numpy()
                     # Test tokens_unzip_gather with float32 scale
-                    (x_unzipped, x_scale_fp32_unzipped, index_unzipped_fp32) = tokens_unzip_gather(
-                        hidden_states,
-                        scale_fp32,
-                        zipped_expertwise_rowmap,
-                        expert_id,
-                        tokens_per_expert,
-                        128,
+                    (x_unzipped, x_scale_fp32_unzipped, index_unzipped_fp32) = (
+                        tokens_unzip_gather(
+                            hidden_states,
+                            scale_fp32,
+                            zipped_expertwise_rowmap,
+                            expert_id,
+                            tokens_per_expert,
+                            128,
+                        )
                     )
                     # Verify the result of scale is the same
                     self.assertTrue(
@@ -149,7 +169,11 @@ class TestTokensUnzipGatherUE8M0Scale(unittest.TestCase):
                     check_rows = min(len(index_unzipped_np), 5)
                     for i in range(check_rows):
                         index = index_unzipped_np[i]
-                        self.assertTrue(np.allclose(x_unzipped_np[i], hidden_states.numpy()[index]))
+                        self.assertTrue(
+                            np.allclose(
+                                x_unzipped_np[i], hidden_states.numpy()[index]
+                            )
+                        )
 
 
 if __name__ == "__main__":

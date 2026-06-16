@@ -33,10 +33,17 @@ class Utils:
         context_parallel_size=1,
     ):
         strategy = fleet.DistributedStrategy()
-        world_size = tensor_parallel_size * pipeline_parallel_size * data_parallel_size * sharding_parallel_size
+        world_size = (
+            tensor_parallel_size
+            * pipeline_parallel_size
+            * data_parallel_size
+            * sharding_parallel_size
+        )
         moe_sharding_parallel_size = 1
         if expert_parallel_size > 1:
-            moe_sharding_parallel_size = world_size // (pipeline_parallel_size * expert_parallel_size)
+            moe_sharding_parallel_size = world_size // (
+                pipeline_parallel_size * expert_parallel_size
+            )
         strategy.hybrid_configs = {
             "dp_degree": data_parallel_size,
             "mp_degree": tensor_parallel_size,

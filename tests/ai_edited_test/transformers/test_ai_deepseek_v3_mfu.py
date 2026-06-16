@@ -21,7 +21,9 @@ from paddleformers.transformers.deepseek_v3.mfu_utils import DeepSeekProjection
 class TestDeepSeekProjection(unittest.TestCase):
     """Tests for DeepSeekProjection."""
 
-    def _make_model_config(self, q_lora_rank=448, n_routed_experts=64, n_shared_experts=2):
+    def _make_model_config(
+        self, q_lora_rank=448, n_routed_experts=64, n_shared_experts=2
+    ):
         config = MagicMock()
         config.vocab_size = 102400
         config.seq_length = 4096
@@ -63,7 +65,9 @@ class TestDeepSeekProjection(unittest.TestCase):
         self.assertTrue(proj._fused_atten)
 
     def test_get_num_params_with_embedding(self):
-        config = self._make_model_config(q_lora_rank=448, n_routed_experts=64, n_shared_experts=2)
+        config = self._make_model_config(
+            q_lora_rank=448, n_routed_experts=64, n_shared_experts=2
+        )
         proj = DeepSeekProjection(config)
         num_params, num_activated = proj.get_num_params(include_embedding=True)
         self.assertGreater(num_params, 0)

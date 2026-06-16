@@ -83,7 +83,10 @@ class JSONEncoderWithMcoreTypes(json.JSONEncoder):
         if type(o).__name__ in ["list", "ModuleList"]:
             return [self.default(val) for val in o]
         if type(o).__name__ == "UniqueDescriptor":
-            return {attr: self.default(getattr(o, attr)) for attr in filter(lambda x: not x.startswith("__"), dir(o))}
+            return {
+                attr: self.default(getattr(o, attr))
+                for attr in filter(lambda x: not x.startswith("__"), dir(o))
+            }
         if type(o) is paddle.dtype:
             return str(o)
         # if it's a Float16Module, add "Float16Module" to the output dict
@@ -92,7 +95,9 @@ class JSONEncoderWithMcoreTypes(json.JSONEncoder):
         # If it's a nn.Module subchild, either print its children or itself if leaf.
         if issubclass(type(o), nn.Module):
             if len(getattr(o, "_modules", {})) > 0:
-                return {key: self.default(val) for key, val in o._modules.items()}
+                return {
+                    key: self.default(val) for key, val in o._modules.items()
+                }
             else:
                 return str(o)
         if type(o).__name__ in ["ABCMeta", "type", "AttnMaskType"]:
@@ -114,7 +119,9 @@ def log_config_to_disk(config, dict_data, prefix="", rank_str=""):
     and dumps to disk, as specified via path
     """
     path = get_config_logger_path(config)
-    assert path is not None, "Expected config_logger_dir to be non-empty in config."
+    assert path is not None, (
+        "Expected config_logger_dir to be non-empty in config."
+    )
 
     if not os.path.exists(path):
         os.makedirs(path, exist_ok=True)

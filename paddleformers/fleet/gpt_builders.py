@@ -43,15 +43,28 @@ def gpt_builder(config, **kwargs):
         transformer_layer_spec_func = _get_transformer_layer_spec_func(config)
         transformer_layers_spec = []
         for layer_number in range(config.num_hidden_layers):
-            real_layer_number = layer_number + config.num_empty_layers_add_in_head
-            transformer_layers_spec.append(transformer_layer_spec_func(layer_number=real_layer_number))
+            real_layer_number = (
+                layer_number + config.num_empty_layers_add_in_head
+            )
+            transformer_layers_spec.append(
+                transformer_layer_spec_func(layer_number=real_layer_number)
+            )
     mtp_layers_spec = None
     if config.num_nextn_predict_layers is not None:
-        if hasattr(transformer_layers_spec, "layer_specs") and len(transformer_layers_spec.layer_specs) == 0:
-            transformer_layers_spec_for_mtp_func = _get_transformer_layer_spec_func(config)
+        if (
+            hasattr(transformer_layers_spec, "layer_specs")
+            and len(transformer_layers_spec.layer_specs) == 0
+        ):
+            transformer_layers_spec_for_mtp_func = (
+                _get_transformer_layer_spec_func(config)
+            )
             transformer_layers_spec_for_mtp = []
             for layer_number in range(config.num_layers):
-                transformer_layers_spec_for_mtp.append(transformer_layers_spec_for_mtp_func(layer_number=layer_number))
+                transformer_layers_spec_for_mtp.append(
+                    transformer_layers_spec_for_mtp_func(
+                        layer_number=layer_number
+                    )
+                )
         else:
             transformer_layers_spec_for_mtp = transformer_layers_spec
         mtp_layers_spec = get_gpt_mtp_layers_spec(
@@ -61,14 +74,18 @@ def gpt_builder(config, **kwargs):
 
     head_empty_layers_spec = []
     for i in range(config.num_empty_layers_add_in_head):
-        head_empty_layers_spec.append(LayerSpec(layer=EmptyLayer, extra_kwargs={"config": config}))
+        head_empty_layers_spec.append(
+            LayerSpec(layer=EmptyLayer, extra_kwargs={"config": config})
+        )
 
     tail_empty_layers_spec = []
     num_empty_layers_add_in_tail = config.num_empty_layers_add_in_tail
     if config.separate_mtp_headloss:
         num_empty_layers_add_in_tail -= 1
     for i in range(num_empty_layers_add_in_tail):
-        tail_empty_layers_spec.append(LayerSpec(layer=EmptyLayer, extra_kwargs={"config": config}))
+        tail_empty_layers_spec.append(
+            LayerSpec(layer=EmptyLayer, extra_kwargs={"config": config})
+        )
 
     gpt_spec = get_gpt_spec(
         config=config,

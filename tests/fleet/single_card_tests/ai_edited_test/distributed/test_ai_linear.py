@@ -17,7 +17,11 @@ import types
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -93,7 +97,9 @@ class TestGetQuantFunc(unittest.TestCase):
         """Test get_quant_func with input_trans=False."""
         from paddleformers.fleet.fp8.quantization import get_quant_func
 
-        inp_func, weight_func = get_quant_func("blockwise", input_trans=False, out_scale_trans=False)
+        inp_func, weight_func = get_quant_func(
+            "blockwise", input_trans=False, out_scale_trans=False
+        )
         self.assertTrue(callable(inp_func))
 
     def test_pow2_scale_true(self):
@@ -108,7 +114,9 @@ class TestGetQuantFunc(unittest.TestCase):
         """Test get_quant_func with out_scale_trans=True."""
         from paddleformers.fleet.fp8.quantization import get_quant_func
 
-        inp_func, weight_func = get_quant_func("blockwise", out_scale_trans=True, input_trans=True)
+        inp_func, weight_func = get_quant_func(
+            "blockwise", out_scale_trans=True, input_trans=True
+        )
         self.assertTrue(callable(inp_func))
         self.assertTrue(callable(weight_func))
 
@@ -205,11 +213,16 @@ class TestFP8GemmForward(unittest.TestCase):
         mock_weight_func = mock.MagicMock(return_value=fp8_weight)
 
         with (
-            mock.patch("paddleformers.fleet.fp8.linear.is_fp8_tensor", return_value=False),
+            mock.patch(
+                "paddleformers.fleet.fp8.linear.is_fp8_tensor",
+                return_value=False,
+            ),
             mock.patch("paddle.empty") as mock_empty,
         ):
             mock_empty.return_value = paddle.randn([4, 16])
-            _FP8Gemm.forward(mock_ctx, inp, weight, mock_inp_func, mock_weight_func)
+            _FP8Gemm.forward(
+                mock_ctx, inp, weight, mock_inp_func, mock_weight_func
+            )
             mock_inp_func.assert_called_once_with(inp)
 
     def test_forward_skips_input_quant_if_fp8(self):
@@ -229,7 +242,10 @@ class TestFP8GemmForward(unittest.TestCase):
         mock_weight_func = mock.MagicMock(return_value=fp8_weight)
 
         with (
-            mock.patch("paddleformers.fleet.fp8.linear.is_fp8_tensor", return_value=True),
+            mock.patch(
+                "paddleformers.fleet.fp8.linear.is_fp8_tensor",
+                return_value=True,
+            ),
             mock.patch("paddle.empty") as mock_empty,
         ):
             mock_empty.return_value = paddle.randn([4, 16])
@@ -262,11 +278,16 @@ class TestFP8GemmForward(unittest.TestCase):
         mock_weight_func = mock.MagicMock(return_value=fp8_weight)
 
         with (
-            mock.patch("paddleformers.fleet.fp8.linear.is_fp8_tensor", return_value=False),
+            mock.patch(
+                "paddleformers.fleet.fp8.linear.is_fp8_tensor",
+                return_value=False,
+            ),
             mock.patch("paddle.empty") as mock_empty,
         ):
             mock_empty.return_value = paddle.randn([4, 16])
-            _FP8Gemm.forward(mock_ctx, inp, weight, mock_inp_func, mock_weight_func)
+            _FP8Gemm.forward(
+                mock_ctx, inp, weight, mock_inp_func, mock_weight_func
+            )
             mock_ctx.save_for_backward.assert_called_once()
 
     def test_forward_unexpected_quant_result_length(self):
@@ -280,9 +301,13 @@ class TestFP8GemmForward(unittest.TestCase):
         mock_inp_func = mock.MagicMock(return_value=(1, 2, 3, 4, 5))
         mock_weight_func = mock.MagicMock()
 
-        with mock.patch("paddleformers.fleet.fp8.linear.is_fp8_tensor", return_value=False):
+        with mock.patch(
+            "paddleformers.fleet.fp8.linear.is_fp8_tensor", return_value=False
+        ):
             with self.assertRaises(ValueError) as ctx:
-                _FP8Gemm.forward(mock_ctx, inp, weight, mock_inp_func, mock_weight_func)
+                _FP8Gemm.forward(
+                    mock_ctx, inp, weight, mock_inp_func, mock_weight_func
+                )
             self.assertIn("Unexpected length", str(ctx.exception))
 
 
@@ -316,7 +341,9 @@ class TestFP8GemmBackward(unittest.TestCase):
             None,
         )
 
-        with mock.patch("paddleformers.fleet.fp8.linear.is_fp8_tensor", return_value=False):
+        with mock.patch(
+            "paddleformers.fleet.fp8.linear.is_fp8_tensor", return_value=False
+        ):
             with self.assertRaises(AssertionError) as ctx:
                 _FP8Gemm.backward(mock_ctx, paddle.randn([4, 16]))
             self.assertIn("main_grad", str(ctx.exception))
@@ -357,7 +384,9 @@ class TestFP8LinearInit(unittest.TestCase):
         mock_init = mock.MagicMock()
 
         with (
-            mock.patch("paddleformers.fleet.fp8.linear.ColumnParallelLinear.__init__"),
+            mock.patch(
+                "paddleformers.fleet.fp8.linear.ColumnParallelLinear.__init__"
+            ),
             mock.patch(
                 "paddleformers.fleet.fp8.linear.get_quant_func",
                 return_value=(mock.MagicMock(), mock.MagicMock()),
@@ -388,7 +417,9 @@ class TestFP8LinearInit(unittest.TestCase):
         mock_weight_func = mock.MagicMock()
 
         with (
-            mock.patch("paddleformers.fleet.fp8.linear.ColumnParallelLinear.__init__"),
+            mock.patch(
+                "paddleformers.fleet.fp8.linear.ColumnParallelLinear.__init__"
+            ),
             mock.patch(
                 "paddleformers.fleet.fp8.linear.get_quant_func",
                 return_value=(mock_inp_func, mock_weight_func),
@@ -432,7 +463,9 @@ class TestFP8LinearForward(unittest.TestCase):
         mock_result = paddle.randn([4, 16])
 
         with (
-            mock.patch("paddleformers.fleet.fp8.linear.ColumnParallelLinear.__init__"),
+            mock.patch(
+                "paddleformers.fleet.fp8.linear.ColumnParallelLinear.__init__"
+            ),
             mock.patch(
                 "paddleformers.fleet.fp8.linear.get_quant_func",
                 return_value=(mock.MagicMock(), mock.MagicMock()),
@@ -470,7 +503,9 @@ class TestFP8LinearForward(unittest.TestCase):
         mock_bias = paddle.randn([16])
 
         with (
-            mock.patch("paddleformers.fleet.fp8.linear.ColumnParallelLinear.__init__"),
+            mock.patch(
+                "paddleformers.fleet.fp8.linear.ColumnParallelLinear.__init__"
+            ),
             mock.patch(
                 "paddleformers.fleet.fp8.linear.get_quant_func",
                 return_value=(mock.MagicMock(), mock.MagicMock()),

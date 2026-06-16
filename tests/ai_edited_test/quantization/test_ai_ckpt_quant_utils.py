@@ -52,7 +52,9 @@ class TestGroupWiseQuantDequant(unittest.TestCase):
     def test_quant_symmetry(self):
         """Test symmetric quantization."""
         inputs = np.random.randn(64, 8).astype(np.float32)
-        quant_tensor, scales = group_wise_quant_dequant(inputs, quant_bits=4, group_size=32, quant=True, symmetry=True)
+        quant_tensor, scales = group_wise_quant_dequant(
+            inputs, quant_bits=4, group_size=32, quant=True, symmetry=True
+        )
         self.assertEqual(quant_tensor.dtype, np.int8)
         self.assertEqual(scales.shape, (2, 8))
 
@@ -63,16 +65,29 @@ class TestGroupWiseQuantDequant(unittest.TestCase):
             inputs, quant_bits=4, group_size=32, quant=True, symmetry=False
         )
         dequant_tensor = group_wise_quant_dequant(
-            quant_tensor, mins=mins, maxs=maxs, quant_bits=4, group_size=32, quant=False, symmetry=False
+            quant_tensor,
+            mins=mins,
+            maxs=maxs,
+            quant_bits=4,
+            group_size=32,
+            quant=False,
+            symmetry=False,
         )
         self.assertEqual(dequant_tensor.shape, inputs.shape)
 
     def test_dequant_symmetry(self):
         """Test symmetric dequantization roundtrip."""
         inputs = np.random.randn(64, 8).astype(np.float32)
-        quant_tensor, scales = group_wise_quant_dequant(inputs, quant_bits=4, group_size=32, quant=True, symmetry=True)
+        quant_tensor, scales = group_wise_quant_dequant(
+            inputs, quant_bits=4, group_size=32, quant=True, symmetry=True
+        )
         dequant_tensor = group_wise_quant_dequant(
-            quant_tensor, mins=scales, quant_bits=4, group_size=32, quant=False, symmetry=True
+            quant_tensor,
+            mins=scales,
+            quant_bits=4,
+            group_size=32,
+            quant=False,
+            symmetry=True,
         )
         self.assertEqual(dequant_tensor.shape, inputs.shape)
 
@@ -103,7 +118,9 @@ class TestSplitInt8(unittest.TestCase):
 
     def test_split_int8_basic(self):
         """Test splitting int8 into two int4 values."""
-        x = np.array([0x15, 0x2A], dtype=np.int8)  # 0x15 = 0001 0101, 0x2A = 0010 1010
+        x = np.array(
+            [0x15, 0x2A], dtype=np.int8
+        )  # 0x15 = 0001 0101, 0x2A = 0010 1010
         high, low = split_int8(x)
         self.assertIsInstance(high, paddle.Tensor)
         self.assertIsInstance(low, paddle.Tensor)
@@ -164,7 +181,9 @@ class TestQdqWeight(unittest.TestCase):
         """Test basic dequantization roundtrip."""
         x = np.random.randn(4, 8).astype(np.float32)
         quant_x, scales = qdq_weight(x, quant_bit=8)
-        dequant_x, _ = qdq_weight(quant_x, quant_bit=8, scales=scales, dequant=True)
+        dequant_x, _ = qdq_weight(
+            quant_x, quant_bit=8, scales=scales, dequant=True
+        )
         self.assertEqual(dequant_x.shape, x.shape)
         self.assertEqual(dequant_x.dtype, np.float32)
 
@@ -182,7 +201,9 @@ class TestAsymmetryQdqWeight(unittest.TestCase):
         quant_x, mins, maxs = asymmetry_qdq_weight(x, quant_bit=8)
         self.assertEqual(quant_x.dtype, np.uint8)
 
-        dequant_x, _ = asymmetry_qdq_weight(x=quant_x, quant_bit=8, mins=mins, maxs=maxs, dequant=True)
+        dequant_x, _ = asymmetry_qdq_weight(
+            x=quant_x, quant_bit=8, mins=mins, maxs=maxs, dequant=True
+        )
         self.assertEqual(dequant_x.shape, x.shape)
 
 

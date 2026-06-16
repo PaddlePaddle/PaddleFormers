@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -37,7 +41,9 @@ except (ImportError, ModuleNotFoundError, Exception):
 def _setup_triton_mock():
     """Create a mock triton module so we can import without GPU."""
     triton_mock = types.ModuleType("triton")
-    triton_mock.jit = lambda fn=None, **kwargs: ((lambda f: f) if fn is None else fn)
+    triton_mock.jit = lambda fn=None, **kwargs: (
+        (lambda f: f) if fn is None else fn
+    )
     triton_mock.language = types.ModuleType("triton.language")
     triton_mock.language.constexpr = None
     tl = triton_mock.language
@@ -71,7 +77,9 @@ class TestIndexUtilsModule(unittest.TestCase):
 
     def test_prepare_maxmin_is_callable(self):
         """Test that prepare_maxmin is callable."""
-        from paddlefleet_ops._extensions.flashmask.index_utils import prepare_maxmin
+        from paddlefleet_ops._extensions.flashmask.index_utils import (
+            prepare_maxmin,
+        )
 
         self.assertTrue(callable(prepare_maxmin))
 
@@ -98,7 +106,9 @@ class TestPrepareMaxminLogic(unittest.TestCase):
         import paddle
 
         # Simulate what prepare_maxmin does
-        input_tensor = paddle.to_tensor([[[3, 1, 4, 1, 5, 9, 2, 6]]], dtype=paddle.int32)
+        input_tensor = paddle.to_tensor(
+            [[[3, 1, 4, 1, 5, 9, 2, 6]]], dtype=paddle.int32
+        )
         chunk_size = 2
 
         # Compute max/min per chunk manually
@@ -110,7 +120,9 @@ class TestPrepareMaxminLogic(unittest.TestCase):
         bsz, num_heads, seq_len = input_tensor.shape
         num_chunks = (seq_len + chunk_size - 1) // chunk_size
 
-        reshaped = input_tensor.reshape([bsz, num_heads, num_chunks, chunk_size])
+        reshaped = input_tensor.reshape(
+            [bsz, num_heads, num_chunks, chunk_size]
+        )
         actual_max = reshaped.max(axis=-1)
         actual_min = reshaped.min(axis=-1)
 
@@ -152,10 +164,14 @@ class TestPrepareMaxminLogic(unittest.TestCase):
         chunk_size = 8
         num_chunks = (seq_len + chunk_size - 1) // chunk_size
 
-        input_tensor = paddle.randint(0, 100, [bsz, num_heads, seq_len], dtype=paddle.int32)
+        input_tensor = paddle.randint(
+            0, 100, [bsz, num_heads, seq_len], dtype=paddle.int32
+        )
 
         # Manual computation
-        reshaped = input_tensor.reshape([bsz, num_heads, num_chunks, chunk_size])
+        reshaped = input_tensor.reshape(
+            [bsz, num_heads, num_chunks, chunk_size]
+        )
         output_max = reshaped.max(axis=-1)
         output_min = reshaped.min(axis=-1)
 

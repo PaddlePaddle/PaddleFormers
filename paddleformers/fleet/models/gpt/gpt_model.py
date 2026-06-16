@@ -51,7 +51,9 @@ def build_overlapped_nodes(forward_chunk, backward_chunk):
     forward_decoder_layer_num = 0
     backward_decoder_layer_num = 0
 
-    assert isinstance(forward_chunk, ScheduleChunk) and isinstance(backward_chunk, ScheduleChunk)
+    assert isinstance(forward_chunk, ScheduleChunk) and isinstance(
+        backward_chunk, ScheduleChunk
+    )
     for n in forward_chunk.nodes:
         if isinstance(n, overlap_element_class):
             forward_decoder_layer_num += 1
@@ -59,7 +61,9 @@ def build_overlapped_nodes(forward_chunk, backward_chunk):
         if isinstance(n, overlap_element_class):
             backward_decoder_layer_num += 1
 
-    overlap_layers_num = min(forward_decoder_layer_num, backward_decoder_layer_num)
+    overlap_layers_num = min(
+        forward_decoder_layer_num, backward_decoder_layer_num
+    )
 
     # construct forward pre- and post-chunks
     forward_pre_layers = []
@@ -107,7 +111,9 @@ def build_overlapped_nodes(forward_chunk, backward_chunk):
     overlap_node = ScheduleChunk(
         [
             TransformerLayerOverlappedScheduleNode(forward_node, backward_node)
-            for forward_node, backward_node in zip(forward_overlap_layers, backward_overlap_layers)
+            for forward_node, backward_node in zip(
+                forward_overlap_layers, backward_overlap_layers
+            )
         ]
     )
     return (
@@ -153,9 +159,13 @@ class GPTModel(PipelineLayer):
         **kwargs,
     ) -> None:
         self.config = kwargs["config"]
-        tie_word_embeddings = kwargs["tie_word_embeddings"] and self.config.pipeline_model_parallel_size > 1
+        tie_word_embeddings = (
+            kwargs["tie_word_embeddings"]
+            and self.config.pipeline_model_parallel_size > 1
+        )
         skip_weight_param_allocation = (
-            self.config.tie_word_embeddings and self.config.pipeline_model_parallel_size == 1
+            self.config.tie_word_embeddings
+            and self.config.pipeline_model_parallel_size == 1
         )
         self._pipeline_name_mapping = None
         self._pp_to_single_mapping = None
@@ -168,7 +178,9 @@ class GPTModel(PipelineLayer):
         del kwargs["config"]
 
         topology = (
-            None if self.config.pipeline_model_parallel_size == 1 else fleet.get_hybrid_communicate_group().topology()
+            None
+            if self.config.pipeline_model_parallel_size == 1
+            else fleet.get_hybrid_communicate_group().topology()
         )
 
         super().__init__(
@@ -188,7 +200,11 @@ class GPTModel(PipelineLayer):
 
     def _get_weight_only_params(self):
         """Get all parameters marked with is_weight_only_mtp flag."""
-        return [param for param in self.state_dict().values() if getattr(param, "is_weight_only_mtp", False)]
+        return [
+            param
+            for param in self.state_dict().values()
+            if getattr(param, "is_weight_only_mtp", False)
+        ]
 
     # ========================================
     def offload_weight_only_params(self):
@@ -235,14 +251,20 @@ class GPTModel(PipelineLayer):
                 name_prefix,
             )
         else:
-            self.add_sequential_layer(layers, LayerDesc(spec.embedding), name_prefix)
+            self.add_sequential_layer(
+                layers, LayerDesc(spec.embedding), name_prefix
+            )
         i = 0
         for head_empty_layer in spec.head_empty_layers:
-            self.add_sequential_layer(layers, LayerDesc(head_empty_layer), f"{name_prefix}.layers.{i}")
+            self.add_sequential_layer(
+                layers, LayerDesc(head_empty_layer), f"{name_prefix}.layers.{i}"
+            )
             i += 1
 
         if spec.mhc_expand is not None:
-            self.add_sequential_layer(layers, LayerDesc(spec.mhc_expand), f"{name_prefix}.mhc_expand")
+            self.add_sequential_layer(
+                layers, LayerDesc(spec.mhc_expand), f"{name_prefix}.mhc_expand"
+            )
 
         for transformer_layer_spec in spec.transformer_layers:
             self.add_sequential_layer(
@@ -261,8 +283,13 @@ class GPTModel(PipelineLayer):
 
         # Always place layer_norm after transformer_layers and before tail_empty_layers/MTP,
         # so that the model structure is consistent regardless of whether MTP is enabled.
-        if not (self.config.gpt_model_use_experimental_version and self.config.num_nextn_predict_layers >= 1):
-            self.add_sequential_layer(layers, LayerDesc(spec.layer_norm), name_prefix)
+        if not (
+            self.config.gpt_model_use_experimental_version
+            and self.config.num_nextn_predict_layers >= 1
+        ):
+            self.add_sequential_layer(
+                layers, LayerDesc(spec.layer_norm), name_prefix
+            )
 
         if spec.mtp:
             # MTP magic send: MTPEmbeddingLayer shares weight with GPTEmbedding
@@ -278,7 +305,9 @@ class GPTModel(PipelineLayer):
                     f"{name_prefix}.mtp_embedding",
                 )
             for mtp_spec in spec.mtp:
-                self.add_sequential_layer(layers, LayerDesc(mtp_spec), f"{name_prefix}.layers.{i}")
+                self.add_sequential_layer(
+                    layers, LayerDesc(mtp_spec), f"{name_prefix}.layers.{i}"
+                )
                 i += 1
 
         if spec.mtp_lm_head:
@@ -292,14 +321,23 @@ class GPTModel(PipelineLayer):
                 f"{name_prefix}.shared_mtp_lm_head",
             )
         if spec.mtp_loss:
-            self.add_sequential_layer(layers, LayerDesc(spec.mtp_loss), f"{name_prefix}.mtp_loss")
+            self.add_sequential_layer(
+                layers, LayerDesc(spec.mtp_loss), f"{name_prefix}.mtp_loss"
+            )
 
         for tail_empty_layer in spec.tail_empty_layers:
-            self.add_sequential_layer(layers, LayerDesc(tail_empty_layer), f"{name_prefix}.layers.{i}")
+            self.add_sequential_layer(
+                layers, LayerDesc(tail_empty_layer), f"{name_prefix}.layers.{i}"
+            )
             i += 1
 
-        if self.config.gpt_model_use_experimental_version and self.config.num_nextn_predict_layers >= 1:
-            self.add_sequential_layer(layers, LayerDesc(spec.layer_norm), name_prefix)
+        if (
+            self.config.gpt_model_use_experimental_version
+            and self.config.num_nextn_predict_layers >= 1
+        ):
+            self.add_sequential_layer(
+                layers, LayerDesc(spec.layer_norm), name_prefix
+            )
         if tie_word_embeddings or spec.mtp_lm_head:
             self.add_sequential_layer(
                 layers,
@@ -311,7 +349,9 @@ class GPTModel(PipelineLayer):
                 f"{name_prefix}.shared_head",
             )
         else:
-            self.add_sequential_layer(layers, LayerDesc(spec.lm_head), f"{name_prefix}.lm_head")
+            self.add_sequential_layer(
+                layers, LayerDesc(spec.lm_head), f"{name_prefix}.lm_head"
+            )
 
         return layers
 
@@ -328,7 +368,9 @@ class GPTModel(PipelineLayer):
     ):
         if backward_loss_fn_node is not None:
             if scaler:
-                backward_input_grads = backward_loss_fn_node.backward(scaler=scaler)
+                backward_input_grads = backward_loss_fn_node.backward(
+                    scaler=scaler
+                )
             else:
                 backward_input_grads = backward_loss_fn_node.backward()
 
@@ -341,7 +383,10 @@ class GPTModel(PipelineLayer):
         ) = build_overlapped_nodes(forward_chunk, backward_chunk)
 
         if len(overlap_node.nodes) > 0:
-            assert not any(isinstance(node, TransformerLayerNode) for node in overlap_node.nodes)
+            assert not any(
+                isinstance(node, TransformerLayerNode)
+                for node in overlap_node.nodes
+            )
             # origin assert, why ?
             # assert not any(
             #     isinstance(node, TransformerLayerNode)
@@ -428,7 +473,10 @@ class GPTModel(PipelineLayer):
                 corresponding name prefixes. The indices represent the position of
                 each layer in the sequential order.
         """
-        return {str(index): x["name_prefix"] for index, x in enumerate(self._sequential_layers)}
+        return {
+            str(index): x["name_prefix"]
+            for index, x in enumerate(self._sequential_layers)
+        }
 
     def get_shardlayer_prefix(self, name_splited):
         """_summary_
@@ -447,16 +495,25 @@ class GPTModel(PipelineLayer):
         Returns:
             _type_: _description_
         """
-        shared_layer_names = {s.layer_name for s in self.layers if isinstance(s, SharedLayerDesc)}
-        assert name_splited[1] in shared_layer_names, f"The shared layer name {name_splited[1]} must be in prefixes!"
+        shared_layer_names = {
+            s.layer_name for s in self.layers if isinstance(s, SharedLayerDesc)
+        }
+        assert name_splited[1] in shared_layer_names, (
+            f"The shared layer name {name_splited[1]} must be in prefixes!"
+        )
         shared_layer_key = name_splited[1]
         for idx, layer in enumerate(self.layers):
-            if isinstance(layer, SharedLayerDesc) and layer.layer_name == shared_layer_key:
+            if (
+                isinstance(layer, SharedLayerDesc)
+                and layer.layer_name == shared_layer_key
+            ):
                 if self.get_stage_from_index(idx) == self._stage_id:
                     return self.get_sequential_name_prefixes()[str(idx)]
 
         # the prefix must be in the current stage, else raise error
-        raise ValueError(f"The shared layer {shared_layer_key} must be in the current stage!")
+        raise ValueError(
+            f"The shared layer {shared_layer_key} must be in the current stage!"
+        )
 
     def _set_pipeline_name_mapping(self, mappings=None):
         """
@@ -484,7 +541,9 @@ class GPTModel(PipelineLayer):
             first_key = first_key.split(".")
             # if use virtual pp_degree, the prefix is like 0.0.xxx
             # else it will be like 0.xxx
-            use_virtual_pp_degree = first_key[0].isdigit() and first_key[1].isdigit()
+            use_virtual_pp_degree = (
+                first_key[0].isdigit() and first_key[1].isdigit()
+            )
 
             prefixes = self.get_sequential_name_prefixes()
             for k in state_dict_keys:
@@ -492,7 +551,9 @@ class GPTModel(PipelineLayer):
                 if use_virtual_pp_degree:
                     if name_splited[0].isdigit():
                         if name_splited[1].isdigit():
-                            idx = str(int(name_splited[0]) + int(name_splited[1]))
+                            idx = str(
+                                int(name_splited[0]) + int(name_splited[1])
+                            )
                             single_name = [prefixes[idx]]
                             single_name.extend(name_splited[2:])
                         else:
@@ -514,7 +575,9 @@ class GPTModel(PipelineLayer):
                     # for normal pp layer
                     if idx.isdigit():
                         # allow empty prefix
-                        single_name = [] if prefixes[idx] == "" else [prefixes[idx]]
+                        single_name = (
+                            [] if prefixes[idx] == "" else [prefixes[idx]]
+                        )
                         single_name.extend(name_splited[1:])
                     elif idx == "shared_layers":
                         single_name = [self.get_shardlayer_prefix(name_splited)]
@@ -565,7 +628,9 @@ class GPTModel(PipelineLayer):
     def set_state_dict(self, state_dict, *args, **kwargs):
         if self._pipeline_name_mapping is None:
             self._set_pipeline_name_mapping()
-        assert len(self._pipeline_name_mapping) > 0, "The pipeline stage must have parameters!"
+        assert len(self._pipeline_name_mapping) > 0, (
+            "The pipeline stage must have parameters!"
+        )
 
         for k in list(state_dict.keys()):
             v = state_dict.pop(k)
@@ -588,7 +653,9 @@ class GPTModel(PipelineLayer):
                 structure_name_to_tensor[k] = v
             else:
                 old_v = structure_name_to_tensor[k]
-                assert old_v is v, f"Shared tensor with different structure name: {k}"
+                assert old_v is v, (
+                    f"Shared tensor with different structure name: {k}"
+                )
 
         missing_shared_keys = {}
         for k, v in self._pp_to_single_mapping.items():
@@ -636,7 +703,9 @@ class GPTModel(PipelineLayer):
 
         renamed_sharded_state_dict = {}
         for k, v in sharded_state_dict.items():
-            global_expert_id_offset = getattr(v, "global_expert_id_offset", None)
+            global_expert_id_offset = getattr(
+                v, "global_expert_id_offset", None
+            )
             layer_cnt = getattr(v, "layer_cnt", None)
             if global_expert_id_offset is not None:
                 new_key = increment_expert_number(k, global_expert_id_offset)
@@ -670,9 +739,13 @@ class GPTModel(PipelineLayer):
         else:
             for idx, layer in enumerate(self.run_function):
                 if isinstance(layer, TransformerLayer):
-                    layer.fp8_quant_weight(batch_mode=batch_mode, quant_transpose=quant_transpose)
+                    layer.fp8_quant_weight(
+                        batch_mode=batch_mode, quant_transpose=quant_transpose
+                    )
                 elif isinstance(layer, MultiTokenPredictionLayer):
-                    layer.transformer_layer.fp8_quant_weight(batch_mode=batch_mode, quant_transpose=quant_transpose)
+                    layer.transformer_layer.fp8_quant_weight(
+                        batch_mode=batch_mode, quant_transpose=quant_transpose
+                    )
 
     def use_fp8(self):
         if self._num_virtual_pipeline_stages > 1:

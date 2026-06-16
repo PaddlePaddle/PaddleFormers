@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -29,7 +33,9 @@ class TestGetPpFirstRank(unittest.TestCase):
     """Tests for get_pp_first_rank."""
 
     def test_first_rank(self):
-        from paddleformers.fleet.pipeline_parallel.utils import get_pp_first_rank
+        from paddleformers.fleet.pipeline_parallel.utils import (
+            get_pp_first_rank,
+        )
 
         mock_group = MagicMock()
         mock_group.ranks.return_value = [3, 5, 7, 9]
@@ -37,7 +43,9 @@ class TestGetPpFirstRank(unittest.TestCase):
         self.assertEqual(result, 3)
 
     def test_single_rank(self):
-        from paddleformers.fleet.pipeline_parallel.utils import get_pp_first_rank
+        from paddleformers.fleet.pipeline_parallel.utils import (
+            get_pp_first_rank,
+        )
 
         mock_group = MagicMock()
         mock_group.ranks.return_value = [0]
@@ -159,7 +167,9 @@ class TestStreamAcquireContext(unittest.TestCase):
     """Tests for stream_acquire_context."""
 
     def test_context_calls_wait_and_record(self):
-        from paddleformers.fleet.pipeline_parallel.utils import stream_acquire_context
+        from paddleformers.fleet.pipeline_parallel.utils import (
+            stream_acquire_context,
+        )
 
         mock_stream = MagicMock()
         mock_event = MagicMock()

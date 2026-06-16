@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -24,7 +28,9 @@ from unittest.mock import MagicMock, patch
 
 import paddle
 
-from paddleformers.fleet.models.common.language_loss.language_loss import subbatch
+from paddleformers.fleet.models.common.language_loss.language_loss import (
+    subbatch,
+)
 
 
 class TestSubbatchWithKwargs(unittest.TestCase):
@@ -68,7 +74,9 @@ class TestMainLanguageLossForward(unittest.TestCase):
             MainLanguageLoss,
         )
 
-        with patch.object(MainLanguageLoss, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            MainLanguageLoss, "__init__", lambda self, *a, **kw: None
+        ):
             loss = MainLanguageLoss.__new__(MainLanguageLoss)
             loss.config = MagicMock()
             loss.config.num_nextn_predict_layers = 0
@@ -86,7 +94,9 @@ class TestMTPLanguageLossForward(unittest.TestCase):
             MTPLanguageLoss,
         )
 
-        with patch.object(MTPLanguageLoss, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            MTPLanguageLoss, "__init__", lambda self, *a, **kw: None
+        ):
             loss = MTPLanguageLoss.__new__(MTPLanguageLoss)
             loss.config = MagicMock()
             loss.config.num_nextn_predict_layers = 2

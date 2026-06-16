@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -88,27 +92,41 @@ class TestGetFP8WeightAndScale(unittest.TestCase):
 class TestFusedStackQuant(unittest.TestCase):
     """Test fused_stack_quant with cached weights."""
 
-    @patch("paddleformers.fleet.transformer.moe.fp8_utils._get_fp8_weight_and_scale")
+    @patch(
+        "paddleformers.fleet.transformer.moe.fp8_utils._get_fp8_weight_and_scale"
+    )
     def test_uses_cached_non_transpose(self, mock_get):
         mock_get.return_value = (paddle.randn([4, 4]), paddle.randn([4]))
         weight = MagicMock()
         weight.fp8_weight_stacked = True
         result = fused_stack_quant([weight], transpose=False)
-        mock_get.assert_called_once_with(weight, transpose=False, num_expert=None, use_ue8m0=False)
+        mock_get.assert_called_once_with(
+            weight, transpose=False, num_expert=None, use_ue8m0=False
+        )
         self.assertEqual(len(result), 2)
 
-    @patch("paddleformers.fleet.transformer.moe.fp8_utils._get_fp8_weight_and_scale")
+    @patch(
+        "paddleformers.fleet.transformer.moe.fp8_utils._get_fp8_weight_and_scale"
+    )
     def test_uses_cached_transpose(self, mock_get):
         mock_get.return_value = (paddle.randn([4, 4]), paddle.randn([4]))
         weight = MagicMock()
         weight.fp8_weight_stacked_transpose = True
         result = fused_stack_quant([weight], transpose=True)
-        mock_get.assert_called_once_with(weight, transpose=True, num_expert=None, use_ue8m0=False)
+        mock_get.assert_called_once_with(
+            weight, transpose=True, num_expert=None, use_ue8m0=False
+        )
         self.assertEqual(len(result), 2)
 
-    @patch("paddleformers.fleet.transformer.moe.fp8_utils._get_fp8_weight_and_scale")
-    @patch("paddleformers.fleet.transformer.moe.fp8_utils.fused_stack_quant_without_cache")
-    def test_fallback_to_non_transpose_cache(self, mock_without_cache, mock_get):
+    @patch(
+        "paddleformers.fleet.transformer.moe.fp8_utils._get_fp8_weight_and_scale"
+    )
+    @patch(
+        "paddleformers.fleet.transformer.moe.fp8_utils.fused_stack_quant_without_cache"
+    )
+    def test_fallback_to_non_transpose_cache(
+        self, mock_without_cache, mock_get
+    ):
         """Only fp8_weight_stacked_transpose set (no fp8_weight_stacked):
         cache path is NOT entered, falls through to fused_stack_quant_without_cache."""
         mock_without_cache.return_value = (
@@ -122,7 +140,9 @@ class TestFusedStackQuant(unittest.TestCase):
         mock_get.assert_not_called()
         mock_without_cache.assert_called_once()
 
-    @patch("paddleformers.fleet.transformer.moe.fp8_utils._get_fp8_weight_and_scale")
+    @patch(
+        "paddleformers.fleet.transformer.moe.fp8_utils._get_fp8_weight_and_scale"
+    )
     def test_fallback_to_transpose_cache(self, mock_get):
         """fp8_weight_stacked set but no fp8_weight_stacked_transpose,
         transpose=True: enters cache path, _get_fp8_weight_and_scale handles
@@ -131,7 +151,9 @@ class TestFusedStackQuant(unittest.TestCase):
         weight = MagicMock(spec=["fp8_weight_stacked"])
         weight.fp8_weight_stacked = True
         result = fused_stack_quant([weight], transpose=True)
-        mock_get.assert_called_once_with(weight, transpose=True, num_expert=None, use_ue8m0=False)
+        mock_get.assert_called_once_with(
+            weight, transpose=True, num_expert=None, use_ue8m0=False
+        )
 
 
 class TestExpertsGroupGemmContiguousNode(unittest.TestCase):
@@ -240,7 +262,9 @@ class TestExpertsGroupGemmContiguousNodeGenMIndices(unittest.TestCase):
         return_value=None,
     )
     def test_gen_m_indices(self, mock_init):
-        node = ExpertsGroupGemmContiguousNode.__new__(ExpertsGroupGemmContiguousNode)
+        node = ExpertsGroupGemmContiguousNode.__new__(
+            ExpertsGroupGemmContiguousNode
+        )
         tokens_per_expert = [2, 3, 1]
         indices = node.gen_m_indices(tokens_per_expert)
         self.assertEqual(indices.shape[0], 6)
@@ -252,7 +276,9 @@ class TestExpertsGroupGemmContiguousNodeGenMIndices(unittest.TestCase):
         return_value=None,
     )
     def test_gen_m_indices_empty(self, mock_init):
-        node = ExpertsGroupGemmContiguousNode.__new__(ExpertsGroupGemmContiguousNode)
+        node = ExpertsGroupGemmContiguousNode.__new__(
+            ExpertsGroupGemmContiguousNode
+        )
         indices = node.gen_m_indices([0, 0, 0])
         self.assertEqual(indices.shape[0], 0)
 

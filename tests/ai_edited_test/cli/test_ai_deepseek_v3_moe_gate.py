@@ -23,7 +23,14 @@ import paddle
 
 # Direct import to avoid __init__.py triggering workflow.py which requires AutoTokenizer
 _MODULE_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "..", "..", "paddleformers", "cli", "train", "deepseek_v3_pretrain"
+    os.path.dirname(__file__),
+    "..",
+    "..",
+    "..",
+    "paddleformers",
+    "cli",
+    "train",
+    "deepseek_v3_pretrain",
 )
 _MODULE_DIR = os.path.abspath(_MODULE_DIR)
 
@@ -49,7 +56,9 @@ if _pkg_name not in sys.modules:
     sys.modules[_pkg_name] = _pkg_mod
 
 # Load the configuration module first (dependency of moe_gate)
-_config_mod = _load_module("configuration", os.path.join(_MODULE_DIR, "configuration.py"))
+_config_mod = _load_module(
+    "configuration", os.path.join(_MODULE_DIR, "configuration.py")
+)
 
 # Load the moe_gate module directly
 _gate_mod = _load_module("moe_gate", os.path.join(_MODULE_DIR, "moe_gate.py"))
@@ -151,7 +160,9 @@ class TestPretrainedMoEGate(unittest.TestCase):
         gate = self._create_gate()
         # 8 experts divided into 4 groups of 2
         scores = paddle.to_tensor([[0.1, 0.9, 0.2, 0.8, 0.3, 0.7, 0.4, 0.6]])
-        topk_weight, topk_idx = gate._topk_group_limited_greedy(scores, k=2, n_group=4, topk_group=2)
+        topk_weight, topk_idx = gate._topk_group_limited_greedy(
+            scores, k=2, n_group=4, topk_group=2
+        )
         self.assertEqual(topk_weight.shape, [1, 2])
         self.assertEqual(topk_idx.shape, [1, 2])
 
@@ -160,7 +171,9 @@ class TestPretrainedMoEGate(unittest.TestCase):
         gate = self._create_gate()
         scores = paddle.to_tensor([[0.1, 0.5, 0.3]])
         with self.assertRaises(AssertionError):
-            gate._topk_group_limited_greedy(scores, k=2, n_group=2, topk_group=1)
+            gate._topk_group_limited_greedy(
+                scores, k=2, n_group=2, topk_group=1
+            )
 
     def test_topk_noaux_tc_assertion_no_bias(self):
         """Test _topk_noaux_tc raises assertion when e_score_correction_bias is None."""
@@ -175,7 +188,9 @@ class TestPretrainedMoEGate(unittest.TestCase):
         gate = self._create_gate(n_group=2, topk_group=1)
         gate.e_score_correction_bias = paddle.randn([4])
         scores = paddle.to_tensor([[0.1, 0.5, 0.3, 0.8]])
-        topk_weight, topk_idx = gate._topk_noaux_tc(scores, k=2, n_group=2, topk_group=1)
+        topk_weight, topk_idx = gate._topk_noaux_tc(
+            scores, k=2, n_group=2, topk_group=1
+        )
         self.assertEqual(topk_weight.shape, [1, 2])
         self.assertEqual(topk_idx.shape, [1, 2])
 
@@ -235,7 +250,9 @@ class TestTopkgating(unittest.TestCase):
             top_k=2,
         )
         gates = paddle.randn([2, 4, self.num_experts]).abs()
-        capacity, topk_weights, topk_idx, token_priority, l_aux, l_zloss = gate.topkgating(gates)
+        capacity, topk_weights, topk_idx, token_priority, l_aux, l_zloss = (
+            gate.topkgating(gates)
+        )
         self.assertIsNotNone(capacity)
         self.assertEqual(topk_weights.shape, [2 * 4, 2])
         self.assertEqual(topk_idx.shape, [2 * 4, 2])
@@ -252,7 +269,9 @@ class TestTopkgating(unittest.TestCase):
             topk_group=2,
         )
         gates = paddle.randn([2, 4, self.num_experts]).abs()
-        capacity, topk_weights, topk_idx, token_priority, l_aux, l_zloss = gate.topkgating(gates)
+        capacity, topk_weights, topk_idx, token_priority, l_aux, l_zloss = (
+            gate.topkgating(gates)
+        )
         self.assertIsNotNone(capacity)
         self.assertEqual(topk_weights.shape, [2 * 4, 2])
         self.assertEqual(topk_idx.shape, [2 * 4, 2])
@@ -268,7 +287,9 @@ class TestTopkgating(unittest.TestCase):
             norm_topk_prob=True,
         )
         gates = paddle.randn([1, 2, self.num_experts]).abs()
-        capacity, topk_weights, topk_idx, token_priority, l_aux, l_zloss = gate.topkgating(gates)
+        capacity, topk_weights, topk_idx, token_priority, l_aux, l_zloss = (
+            gate.topkgating(gates)
+        )
         self.assertIsNotNone(capacity)
 
     def test_topkgating_with_routed_scaling_factor(self):
@@ -282,7 +303,9 @@ class TestTopkgating(unittest.TestCase):
             routed_scaling_factor=2.5,
         )
         gates = paddle.randn([1, 2, self.num_experts]).abs()
-        capacity, topk_weights, topk_idx, token_priority, l_aux, l_zloss = gate.topkgating(gates)
+        capacity, topk_weights, topk_idx, token_priority, l_aux, l_zloss = (
+            gate.topkgating(gates)
+        )
         self.assertIsNotNone(capacity)
 
 
@@ -312,7 +335,9 @@ class TestTopkgatingNodrop(unittest.TestCase):
             top_k=2,
         )
         gates = paddle.randn([2, 4, self.num_experts]).abs()
-        gates_masked, mask, exp_counts, l_aux, l_zloss = gate.topkgating_nodrop(gates)
+        gates_masked, mask, exp_counts, l_aux, l_zloss = gate.topkgating_nodrop(
+            gates
+        )
         self.assertIsNotNone(gates_masked)
         self.assertIsNotNone(mask)
         self.assertIsNotNone(exp_counts)
@@ -330,7 +355,9 @@ class TestTopkgatingNodrop(unittest.TestCase):
             norm_topk_prob=True,
         )
         gates = paddle.randn([1, 2, self.num_experts]).abs()
-        gates_masked, mask, exp_counts, l_aux, l_zloss = gate.topkgating_nodrop(gates)
+        gates_masked, mask, exp_counts, l_aux, l_zloss = gate.topkgating_nodrop(
+            gates
+        )
         self.assertIsNotNone(gates_masked)
 
 
@@ -360,7 +387,9 @@ class TestGateWithSeqAux(unittest.TestCase):
             top_k=2,
         )
         gates = paddle.randn([2, 4, self.num_experts]).abs()
-        capacity, topk_weights, topk_idx, token_priority, l_aux, l_zloss = gate.topkgating(gates)
+        capacity, topk_weights, topk_idx, token_priority, l_aux, l_zloss = (
+            gate.topkgating(gates)
+        )
         self.assertIsNotNone(capacity)
         self.assertIsNotNone(l_aux)
 
@@ -377,7 +406,9 @@ class TestGateWithSeqAux(unittest.TestCase):
             top_k=2,
         )
         gates = paddle.randn([2, 4, self.num_experts]).abs()
-        gates_masked, mask, exp_counts, l_aux, l_zloss = gate.topkgating_nodrop(gates)
+        gates_masked, mask, exp_counts, l_aux, l_zloss = gate.topkgating_nodrop(
+            gates
+        )
         self.assertIsNotNone(gates_masked)
         self.assertIsNotNone(l_aux)
 
@@ -411,7 +442,9 @@ class TestGateWithTokenDrop(unittest.TestCase):
         # With 16 tokens: capacity = (16 // 8) * 3 = 6
         gates = paddle.randn([4, 8, 8]).abs()
         try:
-            capacity, topk_weights, topk_idx, token_priority, l_aux, l_zloss = gate.topkgating(gates)
+            capacity, topk_weights, topk_idx, token_priority, l_aux, l_zloss = (
+                gate.topkgating(gates)
+            )
             self.assertIsNotNone(capacity)
             self.assertIsNotNone(l_aux)
         except (ValueError, RuntimeError):
@@ -451,7 +484,9 @@ class TestGateWithTokenDrop(unittest.TestCase):
             moe_token_drop_policy="position",
         )
         gates = paddle.randn([2, 4, 8]).abs()
-        capacity, topk_weights, topk_idx, token_priority, l_aux, l_zloss = gate.topkgating(gates)
+        capacity, topk_weights, topk_idx, token_priority, l_aux, l_zloss = (
+            gate.topkgating(gates)
+        )
         self.assertIsNotNone(capacity)
 
 

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -34,7 +38,9 @@ class TestFlashMaskContextParallelForward(unittest.TestCase):
 
     def test_dropout_not_supported(self):
         """Test that dropout > 0 raises NotImplementedError."""
-        from paddleformers.fleet.context_parallel_utils import FlashMaskContextParallel
+        from paddleformers.fleet.context_parallel_utils import (
+            FlashMaskContextParallel,
+        )
 
         mock_ctx = mock.MagicMock()
         mock_config = mock.MagicMock()
@@ -56,7 +62,9 @@ class TestFlashMaskContextParallelForward(unittest.TestCase):
 
     def test_causal_not_supported(self):
         """Test that causal=True raises NotImplementedError."""
-        from paddleformers.fleet.context_parallel_utils import FlashMaskContextParallel
+        from paddleformers.fleet.context_parallel_utils import (
+            FlashMaskContextParallel,
+        )
 
         mock_ctx = mock.MagicMock()
         mock_config = mock.MagicMock()
@@ -78,7 +86,9 @@ class TestFlashMaskContextParallelForward(unittest.TestCase):
 
     def test_fixed_seed_offset_not_supported(self):
         """Test that fixed_seed_offset raises NotImplementedError."""
-        from paddleformers.fleet.context_parallel_utils import FlashMaskContextParallel
+        from paddleformers.fleet.context_parallel_utils import (
+            FlashMaskContextParallel,
+        )
 
         mock_ctx = mock.MagicMock()
         mock_config = mock.MagicMock()
@@ -100,7 +110,9 @@ class TestFlashMaskContextParallelForward(unittest.TestCase):
 
     def test_query_seq_len_must_be_even(self):
         """Test assertion on odd query seq_len."""
-        from paddleformers.fleet.context_parallel_utils import FlashMaskContextParallel
+        from paddleformers.fleet.context_parallel_utils import (
+            FlashMaskContextParallel,
+        )
 
         mock_ctx = mock.MagicMock()
         mock_config = mock.MagicMock()
@@ -131,7 +143,9 @@ class TestFlashMaskContextParallelForward(unittest.TestCase):
 
     def test_forward_saves_context(self):
         """Test forward saves tensors and config to context."""
-        from paddleformers.fleet.context_parallel_utils import FlashMaskContextParallel
+        from paddleformers.fleet.context_parallel_utils import (
+            FlashMaskContextParallel,
+        )
 
         mock_ctx = mock.MagicMock()
         mock_config = mock.MagicMock()
@@ -150,7 +164,7 @@ class TestFlashMaskContextParallelForward(unittest.TestCase):
         mock_lse = paddle.randn([2, 4, 8])
         mock_processed_indices = paddle.randint(0, 100, [100, 2])
 
-        with mock.patch(  # noqa: SIM117
+        with mock.patch(
             "paddle.distributed.fleet.get_hybrid_communicate_group",
             return_value=mock_hcg,
         ):
@@ -180,7 +194,9 @@ class TestFlashMaskContextParallelBackward(unittest.TestCase):
 
     def test_backward_retrieves_saved_tensors(self):
         """Test backward retrieves saved tensors and calls backward function."""
-        from paddleformers.fleet.context_parallel_utils import FlashMaskContextParallel
+        from paddleformers.fleet.context_parallel_utils import (
+            FlashMaskContextParallel,
+        )
 
         mock_ctx = mock.MagicMock()
         query = paddle.randn([2, 8, 4, 16])
@@ -238,7 +254,9 @@ class TestFlashmaskAttentionCP(unittest.TestCase):
             "apply",
             return_value=paddle.randn([2, 8, 4, 16]),
         ) as mock_apply:
-            result = flashmask_attention_cp(mock_config, query, key, value, mask_indices)
+            result = flashmask_attention_cp(
+                mock_config, query, key, value, mask_indices
+            )
             mock_apply.assert_called_once()
 
 
@@ -250,7 +268,9 @@ class TestPreprocessIndex(unittest.TestCase):
         from paddleformers.fleet.context_parallel_utils import preprocess_index
 
         indices = paddle.to_tensor([[10, 20], [30, 40]], dtype="int32")
-        result = preprocess_index(indices, chunk_id=1, seq_blocksize=8, max_seqlen_q=16)
+        result = preprocess_index(
+            indices, chunk_id=1, seq_blocksize=8, max_seqlen_q=16
+        )
         expected = indices - 8  # rows_min = 1 * 8
         # After clip to [0, 16]
         self.assertEqual(result.shape, [2, 2])
@@ -260,7 +280,9 @@ class TestPreprocessIndex(unittest.TestCase):
         from paddleformers.fleet.context_parallel_utils import preprocess_index
 
         indices = paddle.to_tensor([[5, 10]], dtype="int32")
-        result = preprocess_index(indices, chunk_id=0, seq_blocksize=8, max_seqlen_q=16)
+        result = preprocess_index(
+            indices, chunk_id=0, seq_blocksize=8, max_seqlen_q=16
+        )
         # rows_min = 0, so no adjustment
         expected = paddle.clip(indices, min=0, max=16)
         self.assertTrue(paddle.allclose(result, expected))
@@ -270,7 +292,9 @@ class TestPreprocessIndex(unittest.TestCase):
         from paddleformers.fleet.context_parallel_utils import preprocess_index
 
         indices = paddle.to_tensor([[3, 5]], dtype="int32")
-        result = preprocess_index(indices, chunk_id=1, seq_blocksize=8, max_seqlen_q=16)
+        result = preprocess_index(
+            indices, chunk_id=1, seq_blocksize=8, max_seqlen_q=16
+        )
         # 3 - 8 = -5 -> clipped to 0
         # 5 - 8 = -3 -> clipped to 0
         self.assertTrue(paddle.all(result >= 0))
@@ -386,36 +410,50 @@ class TestCpFlashmaskForwardDeterministicOverride(unittest.TestCase):
 
         with (
             mock.patch.object(cpu, "flashmask_attention", fake_flashmask),
-            mock.patch.object(cpu, "all_gather_balance", side_effect=lambda t, axis, group: t),
+            mock.patch.object(
+                cpu, "all_gather_balance", side_effect=lambda t, axis, group: t
+            ),
             mock.patch.object(
                 cpu,
                 "preprocess_index_dual_chunks",
                 side_effect=lambda idx, **kw: idx,
             ),
-            mock.patch.object(paddle.base.framework, "get_flags", return_value=flags_base),
+            mock.patch.object(
+                paddle.base.framework, "get_flags", return_value=flags_base
+            ),
             mock.patch.object(paddle, "get_flags", return_value=flags_det),
         ):
-            out = cpu.cp_flashmask_allgatherkv_balance_forward(query, key, value, indices, group, False, True)
+            out = cpu.cp_flashmask_allgatherkv_balance_forward(
+                query, key, value, indices, group, False, True
+            )
         return out[-1]  # fa_version
 
     def test_branch_a_block_mask_det_hdim_gt_128(self):
         """A) block_mask in sig, deterministic + hdim>128 -> 2."""
-        fa = self._run_forward(has_block_mask=True, deterministic=True, hdim=192, fa_flag=3)
+        fa = self._run_forward(
+            has_block_mask=True, deterministic=True, hdim=192, fa_flag=3
+        )
         self.assertEqual(fa, 2)
 
     def test_branch_b_block_mask_det_hdim_le_128(self):
         """B) block_mask in sig, deterministic but hdim<=128 -> no override."""
-        fa = self._run_forward(has_block_mask=True, deterministic=True, hdim=128, fa_flag=3)
+        fa = self._run_forward(
+            has_block_mask=True, deterministic=True, hdim=128, fa_flag=3
+        )
         self.assertEqual(fa, 3)
 
     def test_branch_c_no_block_mask_deterministic(self):
         """C) block_mask NOT in sig, deterministic -> override to 2."""
-        fa = self._run_forward(has_block_mask=False, deterministic=True, hdim=64, fa_flag=3)
+        fa = self._run_forward(
+            has_block_mask=False, deterministic=True, hdim=64, fa_flag=3
+        )
         self.assertEqual(fa, 2)
 
     def test_branch_d_no_block_mask_no_deterministic(self):
         """D) block_mask NOT in sig, no deterministic -> no override."""
-        fa = self._run_forward(has_block_mask=False, deterministic=False, hdim=64, fa_flag=3)
+        fa = self._run_forward(
+            has_block_mask=False, deterministic=False, hdim=64, fa_flag=3
+        )
         self.assertEqual(fa, 3)
 
 

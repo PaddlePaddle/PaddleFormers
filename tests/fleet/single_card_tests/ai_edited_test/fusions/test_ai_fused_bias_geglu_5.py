@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -151,7 +155,9 @@ class TestBiasGeGLUFunction(unittest.TestCase):
 
     def test_forward_saves_tensors(self):
         """Test forward saves input and bias."""
-        from paddleformers.fleet.fusions.fused_bias_geglu import BiasGeGLUFunction
+        from paddleformers.fleet.fusions.fused_bias_geglu import (
+            BiasGeGLUFunction,
+        )
 
         mock_ctx = mock.MagicMock()
         inp = paddle.randn([4, 8])
@@ -166,7 +172,9 @@ class TestBiasGeGLUFunction(unittest.TestCase):
 
     def test_backward_returns_grads(self):
         """Test backward returns input and bias gradients."""
-        from paddleformers.fleet.fusions.fused_bias_geglu import BiasGeGLUFunction
+        from paddleformers.fleet.fusions.fused_bias_geglu import (
+            BiasGeGLUFunction,
+        )
 
         mock_ctx = mock.MagicMock()
         inp = paddle.randn([4, 8])
@@ -180,7 +188,9 @@ class TestBiasGeGLUFunction(unittest.TestCase):
                 "paddleformers.fleet.fusions.fused_bias_geglu.bias_geglu_back",
                 return_value=mock_grad,
             ),
-            mock.patch.object(mock_grad, "reduce_as", return_value=mock_reduced),
+            mock.patch.object(
+                mock_grad, "reduce_as", return_value=mock_reduced
+            ),
         ):
             result = BiasGeGLUFunction.backward(mock_ctx, paddle.randn([4, 4]))
             self.assertEqual(len(result), 2)
@@ -312,7 +322,9 @@ class TestQuickGeGLU(unittest.TestCase):
 
     def test_weighted_quick_geglu_shape(self):
         """Test weighted_quick_geglu output shape."""
-        from paddleformers.fleet.fusions.fused_bias_geglu import weighted_quick_geglu
+        from paddleformers.fleet.fusions.fused_bias_geglu import (
+            weighted_quick_geglu,
+        )
 
         y = paddle.randn([4, 8])
         weights = paddle.randn([4, 1])
@@ -321,7 +333,9 @@ class TestQuickGeGLU(unittest.TestCase):
 
     def test_quick_geglu_back_shape(self):
         """Test quick_geglu_back output shape."""
-        from paddleformers.fleet.fusions.fused_bias_geglu import quick_geglu_back
+        from paddleformers.fleet.fusions.fused_bias_geglu import (
+            quick_geglu_back,
+        )
 
         g = paddle.randn([4, 4])
         y = paddle.randn([4, 8])

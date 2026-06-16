@@ -25,7 +25,11 @@ from paddle.distributed import fleet
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 from paddleformers.fleet.pipeline_parallel.pp_utils.four_directions_p2p_communication import (
@@ -69,7 +73,9 @@ def _init_pp_mp():
 def setUpModule():
     _init_pp_mp()
     hcg = fleet.get_hybrid_communicate_group()
-    initialize_p2p_groups(hcg, enable_partial_send_recv=True, enable_timer=False)
+    initialize_p2p_groups(
+        hcg, enable_partial_send_recv=True, enable_timer=False
+    )
     np.random.seed(42)
     paddle.seed(42)
 
@@ -126,7 +132,9 @@ class TestPartialSendRecvDistributed(unittest.TestCase):
         elif pp_rank == 1:
             # Receive from prev PP stage
             recv_tensor = paddle.empty([4, 8], dtype="float32")
-            result = recv_partial(recv_tensor, src=0, nranks=MP_DEGREE, rank_id=mp_rank)
+            result = recv_partial(
+                recv_tensor, src=0, nranks=MP_DEGREE, rank_id=mp_rank
+            )
             self.assertIsNotNone(result)
             dist.barrier()
 

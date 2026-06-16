@@ -16,7 +16,7 @@ from collections import OrderedDict
 
 import numpy as np
 import paddle
-import paddle.distributed.fleet as fleet
+from paddle.distributed import fleet
 from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
     DygraphShardingOptimizer,
     DygraphShardingOptimizerV2,
@@ -103,7 +103,9 @@ def convert_opt_name_to_tname(tensor_names, opt_names):
                 _find = True
                 break
             if t.endswith(s):
-                logger.info(f"{t}-{t[:-len(s)]}--{t[:-len(s)] in tensor_names}")
+                logger.info(
+                    f"{t}-{t[: -len(s)]}--{t[: -len(s)] in tensor_names}"
+                )
                 opt_to_t[t] = t[: -len(s)]
                 _find = True
                 break
@@ -135,7 +137,7 @@ class NodeModelState:
         self._add_kv(self._model_weights, k, v)
 
     def add_weights(self, model_state_dict, rank=None):
-        for (k, v) in model_state_dict.items():
+        for k, v in model_state_dict.items():
             if rank is not None:
                 k = (k, rank)
             self.add_weight(k, v)
@@ -167,7 +169,7 @@ class NodeModelState:
             opts.pop("LR_Scheduler")
             self.set_lr_scheduler(lr_scheduler)
 
-        for (k, v) in opts.items():
+        for k, v in opts.items():
             if rank is not None:
                 k = (k, rank)
             self.add_opt(k, v)
@@ -180,7 +182,7 @@ class NodeModelState:
         self._add_kv(self._master_weights, k, v)
 
     def add_master_weights(self, master, rank=None):
-        for (k, v) in master.items():
+        for k, v in master.items():
             if rank is not None:
                 k = (k, rank)
             self.add_master_weight(k, v)
@@ -211,7 +213,11 @@ class NodeModelState:
             packed = isinstance(key[0], tuple)
             structure_name, t_name = key[0] if packed else key
             t_name_new = map_func(structure_name, t_name)
-            key_new = ((structure_name, t_name_new), key[1]) if packed else (structure_name, t_name_new)
+            key_new = (
+                ((structure_name, t_name_new), key[1])
+                if packed
+                else (structure_name, t_name_new)
+            )
             return key_new
 
         def map_opt_key(key):
@@ -292,7 +298,7 @@ class NodeModelState:
             state_keys = list(tmp_state.keys())
             for key in state_keys:
                 assert len(key) == l
-                for (rank, items) in tmp_state[key]:
+                for rank, items in tmp_state[key]:
                     state[(key, rank)] = items
                 del tmp_state[key]
             return state
@@ -310,10 +316,16 @@ class NodeModelState:
         """
         # pack key for pp convert
         if structure_name_mapping is not None:
-            tname_to_structure_name = {v: k for (k, v) in structure_name_mapping.items()}
+            tname_to_structure_name = {
+                v: k for (k, v) in structure_name_mapping.items()
+            }
         else:
-            structure_name_mapping = {k: v.name for (k, v) in self._model_weights.items()}
-            tname_to_structure_name = {v: k for (k, v) in structure_name_mapping.items()}
+            structure_name_mapping = {
+                k: v.name for (k, v) in self._model_weights.items()
+            }
+            tname_to_structure_name = {
+                v: k for (k, v) in structure_name_mapping.items()
+            }
 
         tensor_names = list(tname_to_structure_name.keys())
         opt_names = list(self._opt_state.keys())
@@ -321,10 +333,15 @@ class NodeModelState:
 
         # model state
         model_weights_tmp = OrderedDict()
-        (self._model_weights, model_weights_tmp) = (model_weights_tmp, self._model_weights)
+        (self._model_weights, model_weights_tmp) = (
+            model_weights_tmp,
+            self._model_weights,
+        )
         for k in list(model_weights_tmp.keys()):
             t_name = structure_name_mapping[k]
-            self._model_weights[(k, t_name)] = paddle.to_tensor(model_weights_tmp[k]).cpu()
+            self._model_weights[(k, t_name)] = paddle.to_tensor(
+                model_weights_tmp[k]
+            ).cpu()
             del model_weights_tmp[k]
 
         # opt
@@ -335,17 +352,24 @@ class NodeModelState:
             t_name = opt_name_to_tname[opt_name]
             assert t_name in tname_to_structure_name
             structure_name = tname_to_structure_name[t_name]
-            self._opt_state[(structure_name, t_name, opt_name)] = opt_tmp[opt_name].cpu()
+            self._opt_state[(structure_name, t_name, opt_name)] = opt_tmp[
+                opt_name
+            ].cpu()
             del opt_tmp[opt_name]
 
         # master weights
         master_weights_tmp = OrderedDict()
-        (self._master_weights, master_weights_tmp) = (master_weights_tmp, self._master_weights)
+        (self._master_weights, master_weights_tmp) = (
+            master_weights_tmp,
+            self._master_weights,
+        )
         for t_name in list(master_weights_tmp.keys()):
             assert t_name in tname_to_structure_name
             structure_name = tname_to_structure_name[t_name]
             master_name = getattr(master_weights_tmp[t_name], "name", "")
-            self._master_weights[(structure_name, t_name, master_name)] = master_weights_tmp[t_name].cpu()
+            self._master_weights[(structure_name, t_name, master_name)] = (
+                master_weights_tmp[t_name].cpu()
+            )
             del master_weights_tmp[t_name]
 
         return self
@@ -359,7 +383,10 @@ class NodeModelState:
         """
         # model weights
         model_weights_tmp = OrderedDict()
-        (self._model_weights, model_weights_tmp) = (model_weights_tmp, self._model_weights)
+        (self._model_weights, model_weights_tmp) = (
+            model_weights_tmp,
+            self._model_weights,
+        )
         for key in list(model_weights_tmp.keys()):
             structure_name, t_name = key
             self._model_weights[structure_name] = model_weights_tmp[key]
@@ -378,7 +405,10 @@ class NodeModelState:
 
         # master weights
         master_weights_tmp = OrderedDict()
-        (self._master_weights, master_weights_tmp) = (master_weights_tmp, self._master_weights)
+        (self._master_weights, master_weights_tmp) = (
+            master_weights_tmp,
+            self._master_weights,
+        )
         for key in list(master_weights_tmp.keys()):
             structure_name, t_name, master_name = key
             if structure_name in self._model_weights:
@@ -392,19 +422,19 @@ class NodeModelState:
         split this node state to multiple node state according to the passed in split_func
         """
         node_model_states = {}
-        for (k, v) in self._model_weights.items():
+        for k, v in self._model_weights.items():
             rank = split_func(k)
             if rank not in node_model_states:
                 node_model_states[rank] = NodeModelState()
             node_model_states[rank].add_weight(k, v)
 
-        for (k, v) in self._opt_state.items():
+        for k, v in self._opt_state.items():
             rank = split_func(k)
             if rank not in node_model_states:
                 node_model_states[rank] = NodeModelState()
             node_model_states[rank].add_opt(k, v)
 
-        for (k, v) in self._master_weights.items():
+        for k, v in self._master_weights.items():
             rank = split_func(k)
             if rank not in node_model_states:
                 node_model_states[rank] = NodeModelState()
@@ -424,20 +454,24 @@ class NodeModelState:
             return self
 
         def build_router(state_dict):
-            state_keys_list = all_gather_simple_object([(k, v.shape) for (k, v) in state_dict.items()], group)
+            state_keys_list = all_gather_simple_object(
+                [(k, v.shape) for (k, v) in state_dict.items()], group
+            )
 
             key_to_size = {}
             for l in state_keys_list:
-                for (k, shape) in l:
+                for k, shape in l:
                     key, rank = k
                     if key not in key_to_size:
                         key_to_size[key] = 0
                     key_to_size[key] = key_to_size[key] + np.prod(shape)
 
-            key_to_size = sorted(list(key_to_size.items()), key=lambda x: x[1], reverse=True)
+            key_to_size = sorted(
+                key_to_size.items(), key=lambda x: x[1], reverse=True
+            )
             node_distributed = [0 for _ in range(group.nranks)]
             key_to_rank = {}
-            for (k, v) in key_to_size:
+            for k, v in key_to_size:
                 min_val = min(node_distributed)
                 min_index = node_distributed.index(min_val)
                 key_to_rank[k] = min_index
@@ -446,7 +480,6 @@ class NodeModelState:
             return key_to_rank
 
         def distribute(state_dict):
-
             key_to_rank = build_router(state_dict)
 
             def filter_func(key):
@@ -466,9 +499,15 @@ class NodeModelState:
         reshard according to the passed in filter_func
         """
         group = self.group
-        self._model_weights = _all_gather_state_dict(self._model_weights, filter_func, group)
-        self._opt_state = _all_gather_state_dict(self._opt_state, filter_func, group)
-        self._master_weights = _all_gather_state_dict(self._master_weights, filter_func, group)
+        self._model_weights = _all_gather_state_dict(
+            self._model_weights, filter_func, group
+        )
+        self._opt_state = _all_gather_state_dict(
+            self._opt_state, filter_func, group
+        )
+        self._master_weights = _all_gather_state_dict(
+            self._master_weights, filter_func, group
+        )
         lr_schedulers = all_gather_simple_object(self._lr_scheduler, group)
         self._lr_scheduler = lr_schedulers[0]
         return self
@@ -528,7 +567,7 @@ class NodeModelState:
 
     def get_opt_state_dict(self):
         opt_state_dict = OrderedDict()
-        for (k, v) in self.opt_state.items():
+        for k, v in self.opt_state.items():
             opt_state_dict[k] = v
         if self._lr_scheduler is not None:
             opt_state_dict["LR_Scheduler"] = self._lr_scheduler
@@ -563,13 +602,19 @@ def split_opt_state(opt_state, group_getter):
             for kk, vv in v.items():
                 group = group_getter.get_group(kk)
                 if group.id not in res:
-                    res[group.id] = {"master_weights": OrderedDict(), "LR_Scheduler": lr_scheduler}
+                    res[group.id] = {
+                        "master_weights": OrderedDict(),
+                        "LR_Scheduler": lr_scheduler,
+                    }
                 res[group.id]["master_weights"][kk] = vv
         else:
             assert isinstance(v, paddle.Tensor), type(v)
             group = group_getter.get_group(k)
             if group.id not in res:
-                res[group.id] = {"master_weights": OrderedDict(), "LR_Scheduler": lr_scheduler}
+                res[group.id] = {
+                    "master_weights": OrderedDict(),
+                    "LR_Scheduler": lr_scheduler,
+                }
             res[group.id][k] = v
     return res
 
@@ -614,9 +659,13 @@ def all_gather_state_dict(state_dict, filter_func, group):
     # Convert tensors to numpy upfront to free GPU memory.
     # This bounds peak GPU memory to chunk_size tensors during broadcast.
     meta_dict = {}
-    for (k, v) in state_dict.items():
+    for k, v in state_dict.items():
         if isinstance(v, paddle.Tensor):
-            meta_dict[k] = (str(v.dtype).split(".")[-1], list(v.shape), group_rank)
+            meta_dict[k] = (
+                str(v.dtype).split(".")[-1],
+                list(v.shape),
+                group_rank,
+            )
             state_dict[k] = v.numpy()
         else:
             meta_dict[k] = (str(v.dtype), list(v.shape), group_rank)
@@ -625,7 +674,7 @@ def all_gather_state_dict(state_dict, filter_func, group):
 
     total_meta_dict = {}
     for meta_dict in meta_dict_list:
-        for (k, v) in meta_dict.items():
+        for k, v in meta_dict.items():
             assert k not in total_meta_dict
             total_meta_dict[k] = v
 
@@ -641,7 +690,7 @@ def all_gather_state_dict(state_dict, filter_func, group):
 
         # Phase 1: prepare all tensors on GPU (batch CPU->GPU transfers)
         gpu_tensors = []
-        for (k, meta) in chunk:
+        for k, meta in chunk:
             dtype, shape, rank = meta
             if rank == group_rank:
                 assert k in state_dict
@@ -652,7 +701,7 @@ def all_gather_state_dict(state_dict, filter_func, group):
             gpu_tensors.append((k, meta, tensor))
 
         # Phase 2: broadcast all tensors continuously without interruption
-        for (k, meta, tensor) in gpu_tensors:
+        for k, meta, tensor in gpu_tensors:
             _, _, rank = meta
             logger.info(f"broadcast {k} from {rank}, group {group}")
             if group.nranks > 1:
@@ -664,7 +713,7 @@ def all_gather_state_dict(state_dict, filter_func, group):
                 )
 
         # Phase 3: move to CPU and release GPU memory
-        for (k, _, tensor) in gpu_tensors:
+        for k, _, tensor in gpu_tensors:
             if filter_func(k):
                 res[k] = tensor.cpu()
             del tensor
@@ -673,13 +722,15 @@ def all_gather_state_dict(state_dict, filter_func, group):
 
 
 def _all_gather_state_dict(state_dict, filter_func, group):
-    remote_state_dict_keys = [k for k in state_dict.keys() if not filter_func(k)]
+    remote_state_dict_keys = [
+        k for k in state_dict.keys() if not filter_func(k)
+    ]
     tmp_state_dict = OrderedDict()
     for k in remote_state_dict_keys:
         tmp_state_dict[k] = state_dict[k]
         state_dict.pop(k)
     tmp_state_dict = all_gather_state_dict(tmp_state_dict, filter_func, group)
-    for (k, v) in tmp_state_dict.items():
+    for k, v in tmp_state_dict.items():
         state_dict[k] = v
     return state_dict
 
@@ -701,10 +752,12 @@ def get_param_sharding_group(param, hcg=None):
 
     if not hasattr(param, "color"):
         return default_group
-    color = getattr(param, "color")
+    color = param.color
     if isinstance(color, dict):
         group = color.get("group", default_group)
-        assert group is default_group or group is ep_sharding_group, f"unsupported group: {group}"
+        assert group is default_group or group is ep_sharding_group, (
+            f"unsupported group: {group}"
+        )
         return group
     else:
         return default_group

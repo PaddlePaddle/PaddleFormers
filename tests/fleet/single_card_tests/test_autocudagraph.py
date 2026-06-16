@@ -41,7 +41,9 @@ def assert_tensors_close(self, t1, t2, rtol=0, atol=0, msg=""):
         return
     self.assertIsNotNone(t1, f"{msg}: t1 is None but t2 is not")
     self.assertIsNotNone(t2, f"{msg}: t2 is None but t1 is not")
-    np.testing.assert_allclose(t1.numpy(), t2.numpy(), rtol=rtol, atol=atol, err_msg=msg)
+    np.testing.assert_allclose(
+        t1.numpy(), t2.numpy(), rtol=rtol, atol=atol, err_msg=msg
+    )
 
 
 class BaseTest(unittest.TestCase):
@@ -87,10 +89,16 @@ class TestPureFunctions(BaseTest):
             loss_eager = out_eager.mean()
             loss_eager.backward()
 
-            assert_tensors_close(self, loss_cg, loss_eager, msg=f"Step {step} Loss")
+            assert_tensors_close(
+                self, loss_cg, loss_eager, msg=f"Step {step} Loss"
+            )
 
-            assert_tensors_close(self, x_cg.grad, x_eager.grad, msg=f"Step {step} x.grad")
-            assert_tensors_close(self, w_cg.grad, w_eager.grad, msg=f"Step {step} w.grad")
+            assert_tensors_close(
+                self, x_cg.grad, x_eager.grad, msg=f"Step {step} x.grad"
+            )
+            assert_tensors_close(
+                self, w_cg.grad, w_eager.grad, msg=f"Step {step} w.grad"
+            )
 
             self.assertIsNone(b_cg.grad)
 
@@ -131,8 +139,12 @@ class TestOOPAndSubmodules(BaseTest):
         model_eager = ImplicitLayerEager()
         model_eager.set_state_dict(model_cg.state_dict())
 
-        opt_cg = paddle.optimizer.Adam(learning_rate=0.01, parameters=model_cg.parameters())
-        opt_eager = paddle.optimizer.Adam(learning_rate=0.01, parameters=model_eager.parameters())
+        opt_cg = paddle.optimizer.Adam(
+            learning_rate=0.01, parameters=model_cg.parameters()
+        )
+        opt_eager = paddle.optimizer.Adam(
+            learning_rate=0.01, parameters=model_eager.parameters()
+        )
 
         for step in range(5):
             x = paddle.randn([8, 16])
@@ -147,7 +159,9 @@ class TestOOPAndSubmodules(BaseTest):
             opt_eager.step()
             opt_eager.clear_grad()
 
-            assert_tensors_close(self, loss_cg, loss_eager, msg=f"Step {step} OOP Loss")
+            assert_tensors_close(
+                self, loss_cg, loss_eager, msg=f"Step {step} OOP Loss"
+            )
             assert_tensors_close(
                 self,
                 model_cg.linear1.weight,
@@ -170,10 +184,18 @@ class TestOOPAndSubmodules(BaseTest):
         cg_obj1.set_state_dict(eager_obj1.state_dict())
         cg_obj2.set_state_dict(eager_obj2.state_dict())
 
-        opt_eager1 = paddle.optimizer.Adam(learning_rate=0.01, parameters=eager_obj1.parameters())
-        opt_cg1 = paddle.optimizer.Adam(learning_rate=0.01, parameters=cg_obj1.parameters())
-        opt_eager2 = paddle.optimizer.Adam(learning_rate=0.01, parameters=eager_obj2.parameters())
-        opt_cg2 = paddle.optimizer.Adam(learning_rate=0.01, parameters=cg_obj2.parameters())
+        opt_eager1 = paddle.optimizer.Adam(
+            learning_rate=0.01, parameters=eager_obj1.parameters()
+        )
+        opt_cg1 = paddle.optimizer.Adam(
+            learning_rate=0.01, parameters=cg_obj1.parameters()
+        )
+        opt_eager2 = paddle.optimizer.Adam(
+            learning_rate=0.01, parameters=eager_obj2.parameters()
+        )
+        opt_cg2 = paddle.optimizer.Adam(
+            learning_rate=0.01, parameters=cg_obj2.parameters()
+        )
 
         for step in range(5):
             x1 = paddle.randn([4, 16])
@@ -193,16 +215,24 @@ class TestOOPAndSubmodules(BaseTest):
             out_eager2 = eager_obj2(x_eager2)
             out_cg2 = cg_obj2(x_cg2)
 
-            assert_tensors_close(self, out_cg1, out_eager1, msg=f"Step {step} Obj1 Forward")
-            assert_tensors_close(self, out_cg2, out_eager2, msg=f"Step {step} Obj2 Forward")
+            assert_tensors_close(
+                self, out_cg1, out_eager1, msg=f"Step {step} Obj1 Forward"
+            )
+            assert_tensors_close(
+                self, out_cg2, out_eager2, msg=f"Step {step} Obj2 Forward"
+            )
 
             out_eager1.mean().backward()
             out_cg1.mean().backward()
             out_eager2.mean().backward()
             out_cg2.mean().backward()
 
-            assert_tensors_close(self, x_cg1.grad, x_eager1.grad, msg=f"Step {step} Obj1 x.grad")
-            assert_tensors_close(self, x_cg2.grad, x_eager2.grad, msg=f"Step {step} Obj2 x.grad")
+            assert_tensors_close(
+                self, x_cg1.grad, x_eager1.grad, msg=f"Step {step} Obj1 x.grad"
+            )
+            assert_tensors_close(
+                self, x_cg2.grad, x_eager2.grad, msg=f"Step {step} Obj2 x.grad"
+            )
 
             assert_tensors_close(
                 self,
@@ -274,14 +304,20 @@ class TestConfigurations(BaseTest):
             x_eager = x_base.clone().detach()
             x_eager.stop_gradient = False
 
-            loss_cg = model_cg.forward_dynamic(x=x_cg, apply_relu=apply_relu).sum()
+            loss_cg = model_cg.forward_dynamic(
+                x=x_cg, apply_relu=apply_relu
+            ).sum()
             loss_cg.backward()
 
             loss_eager = model_eager(x_eager, apply_relu=apply_relu).sum()
             loss_eager.backward()
 
-            assert_tensors_close(self, loss_cg, loss_eager, msg=f"Fallback Step {step} Loss")
-            assert_tensors_close(self, x_cg.grad, x_eager.grad, msg=f"Fallback Step {step} Grad")
+            assert_tensors_close(
+                self, loss_cg, loss_eager, msg=f"Fallback Step {step} Loss"
+            )
+            assert_tensors_close(
+                self, x_cg.grad, x_eager.grad, msg=f"Fallback Step {step} Grad"
+            )
 
 
 def complex_io_eager(data_dict, scale):
@@ -367,9 +403,13 @@ def ffn_dispatch(args_dict):
 class HeavyFFNBlock(nn.Layer):
     def __init__(self, hidden_dim=256, intermediate_size=1024):
         super().__init__()
-        self.gate_proj = nn.Linear(hidden_dim, intermediate_size, bias_attr=False)
+        self.gate_proj = nn.Linear(
+            hidden_dim, intermediate_size, bias_attr=False
+        )
         self.up_proj = nn.Linear(hidden_dim, intermediate_size, bias_attr=False)
-        self.down_proj = nn.Linear(intermediate_size, hidden_dim, bias_attr=False)
+        self.down_proj = nn.Linear(
+            intermediate_size, hidden_dim, bias_attr=False
+        )
         self.norm = nn.LayerNorm(hidden_dim)
 
     @autocudagraph(warmup_steps=2, max_graphs=10, dispatch_key_fn=ffn_dispatch)
@@ -390,7 +430,9 @@ class HeavyFFNBlock(nn.Layer):
 class FatModelCG(nn.Layer):
     def __init__(self, num_layers=3, hidden_dim=256):
         super().__init__()
-        self.layers = nn.LayerList([HeavyFFNBlock(hidden_dim) for _ in range(num_layers)])
+        self.layers = nn.LayerList(
+            [HeavyFFNBlock(hidden_dim) for _ in range(num_layers)]
+        )
 
     def forward(self, x, apply_activation=True):
         for layer in self.layers:
@@ -430,8 +472,12 @@ class TestFatModel(BaseTest):
         model_eager = FatModelEager()
         model_cg.set_state_dict(model_eager.state_dict())
 
-        opt_cg = paddle.optimizer.Adam(learning_rate=0.01, parameters=model_cg.parameters())
-        opt_eager = paddle.optimizer.Adam(learning_rate=0.01, parameters=model_eager.parameters())
+        opt_cg = paddle.optimizer.Adam(
+            learning_rate=0.01, parameters=model_cg.parameters()
+        )
+        opt_eager = paddle.optimizer.Adam(
+            learning_rate=0.01, parameters=model_eager.parameters()
+        )
 
         configs = [True, True, False, True, True]
 
@@ -446,16 +492,22 @@ class TestFatModel(BaseTest):
             out_cg = model_cg(x_cg, apply_activation=apply_activation)
             out_eager = model_eager(x_eager, apply_activation=apply_activation)
 
-            assert_tensors_close(self, out_cg, out_eager, msg=f"Step {step} Forward Output")
+            assert_tensors_close(
+                self, out_cg, out_eager, msg=f"Step {step} Forward Output"
+            )
 
             loss_cg = F.mse_loss(out_cg, target)
             loss_eager = F.mse_loss(out_eager, target)
-            assert_tensors_close(self, loss_cg, loss_eager, msg=f"Step {step} Loss")
+            assert_tensors_close(
+                self, loss_cg, loss_eager, msg=f"Step {step} Loss"
+            )
 
             loss_cg.backward()
             loss_eager.backward()
 
-            assert_tensors_close(self, x_cg.grad, x_eager.grad, msg=f"Step {step} Input x.grad")
+            assert_tensors_close(
+                self, x_cg.grad, x_eager.grad, msg=f"Step {step} Input x.grad"
+            )
 
             for i in range(len(model_cg.layers)):
                 cg_layer = model_cg.layers[i]
@@ -510,8 +562,12 @@ class TestAdvancedMechanics(BaseTest):
         model_eager = BasicBlockEager()
         model_cg.set_state_dict(model_eager.state_dict())
 
-        opt_cg = paddle.optimizer.Adam(learning_rate=0.01, parameters=model_cg.parameters())
-        opt_eager = paddle.optimizer.Adam(learning_rate=0.01, parameters=model_eager.parameters())
+        opt_cg = paddle.optimizer.Adam(
+            learning_rate=0.01, parameters=model_cg.parameters()
+        )
+        opt_eager = paddle.optimizer.Adam(
+            learning_rate=0.01, parameters=model_eager.parameters()
+        )
 
         accumulation_steps = 5
 
@@ -532,7 +588,9 @@ class TestAdvancedMechanics(BaseTest):
             loss_cg.backward()
             loss_eager.backward()
 
-            assert_tensors_close(self, x_cg.grad, x_eager.grad, msg=f"Step {step} x.grad")
+            assert_tensors_close(
+                self, x_cg.grad, x_eager.grad, msg=f"Step {step} x.grad"
+            )
             assert_tensors_close(
                 self,
                 model_cg.proj.weight.grad,
@@ -572,11 +630,15 @@ class TestAdvancedMechanics(BaseTest):
 
             loss_cg = out_cg.sum()
             loss_eager = out_eager.sum()
-            assert_tensors_close(self, loss_cg, loss_eager, msg=f"Step {step} AMP x.grad")
+            assert_tensors_close(
+                self, loss_cg, loss_eager, msg=f"Step {step} AMP x.grad"
+            )
 
             loss_cg.backward()
             loss_eager.backward()
-            assert_tensors_close(self, x_cg.grad, x_eager.grad, msg=f"Step {step} AMP x.grad")
+            assert_tensors_close(
+                self, x_cg.grad, x_eager.grad, msg=f"Step {step} AMP x.grad"
+            )
 
             x_cg.clear_gradient()
             x_eager.clear_gradient()
@@ -617,8 +679,12 @@ class TestEdgeMemoryOps(BaseTest):
             loss_cg = out_cg_0[1::2].sum() + out_cg_1[2::3].sum()
             loss_cg.backward()
 
-            assert_tensors_close(self, out_cg_0, out_eager_0, msg=f"Step {step} Slice Out 0")
-            assert_tensors_close(self, out_cg_1, out_eager_1, msg=f"Step {step} Slice Out 1")
+            assert_tensors_close(
+                self, out_cg_0, out_eager_0, msg=f"Step {step} Slice Out 0"
+            )
+            assert_tensors_close(
+                self, out_cg_1, out_eager_1, msg=f"Step {step} Slice Out 1"
+            )
             assert_tensors_close(
                 self,
                 big_tensor_cg.grad,
@@ -669,7 +735,9 @@ def fake_calc_eager(x):
     return x
 
 
-@autocudagraph(warmup_steps=1, max_graphs=3, dispatch_key_fn=lambda kw: kw["x"].shape[0])
+@autocudagraph(
+    warmup_steps=1, max_graphs=3, dispatch_key_fn=lambda kw: kw["x"].shape[0]
+)
 def fake_calc(x):
     x = x * 4
     x = 3 - x
@@ -688,13 +756,17 @@ class TestDispatchNumber(BaseTest):
                     y = fake_calc(x)
 
         registry = fake_calc.state_registry
-        self.assertEqual(len(registry), 3, "Cache size exceeds max_graphs limit!")
+        self.assertEqual(
+            len(registry), 3, "Cache size exceeds max_graphs limit!"
+        )
 
         cached_keys = list(registry.keys())
         self.assertIn(1, cached_keys)
         self.assertIn(2, cached_keys)
         self.assertIn(3, cached_keys)
-        self.assertNotIn(4, cached_keys, "Fallback trigger failed, cached unexpected key!")
+        self.assertNotIn(
+            4, cached_keys, "Fallback trigger failed, cached unexpected key!"
+        )
 
 
 class TestNoGrad(BaseTest):
@@ -759,14 +831,23 @@ class TestEndToEndPerformance(BaseTest):
         model_cg.train()
         model_eager.train()
 
-        opt_cg = paddle.optimizer.Adam(learning_rate=0.001, parameters=model_cg.parameters())
-        opt_eager = paddle.optimizer.Adam(learning_rate=0.001, parameters=model_eager.parameters())
+        opt_cg = paddle.optimizer.Adam(
+            learning_rate=0.001, parameters=model_cg.parameters()
+        )
+        opt_eager = paddle.optimizer.Adam(
+            learning_rate=0.001, parameters=model_eager.parameters()
+        )
 
         total_steps = 1000
         batch_size = 4
 
-        dummy_inputs = [paddle.rand([batch_size, 3, 224, 224]) for _ in range(total_steps)]
-        dummy_targets = [paddle.randint(0, 10, shape=[batch_size]) for _ in range(total_steps)]
+        dummy_inputs = [
+            paddle.rand([batch_size, 3, 224, 224]) for _ in range(total_steps)
+        ]
+        dummy_targets = [
+            paddle.randint(0, 10, shape=[batch_size])
+            for _ in range(total_steps)
+        ]
 
         paddle.device.synchronize()
         start_time_cg = time.perf_counter()

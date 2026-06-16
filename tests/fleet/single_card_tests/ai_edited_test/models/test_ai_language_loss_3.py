@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -87,7 +91,9 @@ class TestLanguageLossExperimentalVersion(unittest.TestCase):
         return_value=1,
     )
     @patch("paddle.distributed.is_initialized", return_value=False)
-    def test_forward_impl_experimental_version(self, mock_dist, mock_tp, mock_cp):
+    def test_forward_impl_experimental_version(
+        self, mock_dist, mock_tp, mock_cp
+    ):
         """Test forward_impl with experimental version line-wise loss."""
         mock_config = MagicMock()
         mock_config.parallel_output = False
@@ -111,7 +117,9 @@ class TestLanguageLossExperimentalVersion(unittest.TestCase):
         return_value=1,
     )
     @patch("paddle.distributed.is_initialized", return_value=False)
-    def test_forward_impl_experimental_all_ignored(self, mock_dist, mock_tp, mock_cp):
+    def test_forward_impl_experimental_all_ignored(
+        self, mock_dist, mock_tp, mock_cp
+    ):
         """Test forward_impl with experimental version and all labels ignored."""
         mock_config = MagicMock()
         mock_config.parallel_output = False
@@ -140,7 +148,9 @@ class TestLanguageLossMD5Probe(unittest.TestCase):
     )
     @patch("paddle.distributed.is_initialized", return_value=False)
     @patch("paddle.distributed.get_rank", return_value=0)
-    def test_forward_impl_with_md5_probe(self, mock_rank, mock_dist, mock_tp, mock_cp):
+    def test_forward_impl_with_md5_probe(
+        self, mock_rank, mock_dist, mock_tp, mock_cp
+    ):
         """Test forward_impl with LOG_LAYER_MD5=1."""
         mock_config = MagicMock()
         mock_config.parallel_output = False
@@ -175,7 +185,9 @@ class TestLanguageLossForwardWithListLogits(unittest.TestCase):
         return_value=1,
     )
     @patch("paddle.distributed.is_initialized", return_value=False)
-    def test_forward_mtp_experimental_version(self, mock_dist, mock_tp, mock_cp, mock_cache):
+    def test_forward_mtp_experimental_version(
+        self, mock_dist, mock_tp, mock_cp, mock_cache
+    ):
         """Test MTP forward with experimental version."""
         mock_config = MagicMock()
         mock_config.parallel_output = False
@@ -211,7 +223,9 @@ class TestLanguageLossForwardWithListLogits(unittest.TestCase):
         return_value=1,
     )
     @patch("paddle.distributed.is_initialized", return_value=False)
-    def test_forward_mtp_train_mtp_only(self, mock_dist, mock_tp, mock_cp, mock_cache):
+    def test_forward_mtp_train_mtp_only(
+        self, mock_dist, mock_tp, mock_cp, mock_cache
+    ):
         """Test MTP forward with train_mtp_only=True."""
         mock_config = MagicMock()
         mock_config.parallel_output = False
@@ -387,7 +401,9 @@ class TestLanguageLossForwardRecompute(unittest.TestCase):
         return_value=1,
     )
     @patch("paddle.distributed.is_initialized", return_value=False)
-    def test_forward_without_loss_fn_recompute(self, mock_dist, mock_tp, mock_cp):
+    def test_forward_without_loss_fn_recompute(
+        self, mock_dist, mock_tp, mock_cp
+    ):
         """Test _forward without recompute for loss_fn."""
         mock_config = MagicMock()
         mock_config.parallel_output = False

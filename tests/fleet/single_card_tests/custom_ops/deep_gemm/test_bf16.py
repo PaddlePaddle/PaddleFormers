@@ -19,6 +19,7 @@ import copy
 import random
 
 import torch
+
 from paddlefleet_ops import deep_gemm
 from paddlefleet_ops.deep_gemm.testing import calc_diff
 
@@ -77,7 +78,8 @@ def test_gemm() -> None:
             getattr(deep_gemm, func_name)(a, b, d, c=c)
             diff = calc_diff(d, ref_d)
             assert diff < 1e-5, (
-                f"{m=}, {n=}, {k=}, {major_opt=}, {accumulate=}, {out_dtype=}, " f"{diff:.5f}, alias={test_alias}"
+                f"{m=}, {n=}, {k=}, {major_opt=}, {accumulate=}, {out_dtype=}, "
+                f"{diff:.5f}, alias={test_alias}"
             )
 
 
@@ -112,9 +114,13 @@ def test_m_grouped_gemm_contiguous() -> None:
                 b = b if major_b.is_k_major() else b.mT
                 assert a[0].is_contiguous() and b[0].is_contiguous()
             getattr(deep_gemm, func_name)(a, b, d, m_indices)
-            d = torch.where((m_indices == -1).unsqueeze(1), torch.zeros_like(d), d)
+            d = torch.where(
+                (m_indices == -1).unsqueeze(1), torch.zeros_like(d), d
+            )
             diff = calc_diff(d, ref_d)
-            assert diff < 1e-5, f"{m=}, {n=}, {k=}, {major_opt}, {diff:.5f}, alias={test_alias}"
+            assert diff < 1e-5, (
+                f"{m=}, {n=}, {k=}, {major_opt}, {diff:.5f}, alias={test_alias}"
+            )
     print()
 
 
@@ -135,10 +141,16 @@ def test_m_grouped_gemm_masked() -> None:
             a, b, masked_m, d, ref_d = generate_m_grouped_masked(
                 num_groups, max_m, expected_m_per_group, n, k, use_bf16=True
             )
-            deep_gemm.m_grouped_bf16_gemm_nt_masked(a, b, d, masked_m, expected_m_per_group)
+            deep_gemm.m_grouped_bf16_gemm_nt_masked(
+                a, b, d, masked_m, expected_m_per_group
+            )
             for j in range(num_groups):
-                diff = calc_diff(d[j, : masked_m[j].item()], ref_d[j, : masked_m[j].item()])
-                assert diff < 1e-5, f"{max_m=}, {n=}, {k=}, {j=}, masked_m={masked_m[j]}, {num_groups=}, {diff:.5f}"
+                diff = calc_diff(
+                    d[j, : masked_m[j].item()], ref_d[j, : masked_m[j].item()]
+                )
+                assert diff < 1e-5, (
+                    f"{max_m=}, {n=}, {k=}, {j=}, masked_m={masked_m[j]}, {num_groups=}, {diff:.5f}"
+                )
 
     print()
 
@@ -163,7 +175,9 @@ def test_k_grouped_gemm_contiguous() -> None:
                 num_groups, m, n, major_a, major_b, new_ks, use_bf16=True
             )
             new_ks_tensor = torch.tensor(new_ks, dtype=torch.int, device="cuda")
-            deep_gemm.k_grouped_bf16_gemm_tn_contiguous(a, b, d, new_ks, new_ks_tensor, c)
+            deep_gemm.k_grouped_bf16_gemm_tn_contiguous(
+                a, b, d, new_ks, new_ks_tensor, c
+            )
 
             diff = calc_diff(d, ref_d)
             assert diff < 1e-5, f"{m=}, {n=}, {k=}, {ks=}, {diff:.7f}"
@@ -201,7 +215,9 @@ def test_cublaslt_gemm() -> None:
         )
         deep_gemm.cublaslt_gemm_nt(a, b, d, c=c)
         diff = calc_diff(d, ref_d)
-        assert diff < 6e-7, f"{diff=}, ({m=}, {n=}, {k=}, {major_opt=}, {accumulate=}, {out_dtype=})"
+        assert diff < 6e-7, (
+            f"{diff=}, ({m=}, {n=}, {k=}, {major_opt=}, {accumulate=}, {out_dtype=})"
+        )
 
     print()
 

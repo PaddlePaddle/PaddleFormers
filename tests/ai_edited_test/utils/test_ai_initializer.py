@@ -17,7 +17,7 @@ import unittest
 
 import numpy as np
 import paddle
-import paddle.nn as nn
+from paddle import nn
 
 from paddleformers.utils.initializer import (
     _calculate_correct_fan,

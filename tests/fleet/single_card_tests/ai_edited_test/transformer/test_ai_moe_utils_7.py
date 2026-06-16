@@ -15,7 +15,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -89,7 +93,9 @@ class TestAllGatherGroupOpForward(unittest.TestCase):
         mock_group.nranks = 1
         paddle.disable_static()
         x = paddle.randn([4, 8])
-        with patch("paddleformers.fleet.transformer.moe.moe_utils.paddle.distributed.barrier"):
+        with patch(
+            "paddleformers.fleet.transformer.moe.moe_utils.paddle.distributed.barrier"
+        ):
             result = AllGatherGroupOp.forward(MagicMock(), x, mock_group)
             self.assertEqual(result.shape, x.shape)
             self.assertTrue(paddle.allclose(result, x))
@@ -105,7 +111,9 @@ class TestAllGatherGroupOpBackward(unittest.TestCase):
         ctx = MagicMock()
         ctx.group = mock_group
         grad = paddle.randn([4, 8])
-        with patch("paddleformers.fleet.transformer.moe.moe_utils.paddle.distributed.barrier"):
+        with patch(
+            "paddleformers.fleet.transformer.moe.moe_utils.paddle.distributed.barrier"
+        ):
             result = AllGatherGroupOp.backward(ctx, grad)
             self.assertEqual(result.shape, grad.shape)
             self.assertTrue(paddle.allclose(result, grad))

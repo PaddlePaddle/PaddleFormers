@@ -15,7 +15,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -43,7 +47,9 @@ def _tensors_equal(a, b):
 class TestHelperFunctionsWithSingleGPU(unittest.TestCase):
     """Tests for high-level helper functions with single GPU."""
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none"
+    )
     def test_copy_to_tensor_model_parallel_region(self, mock_get_group):
         """copy_to_tensor_model_parallel_region should work with single GPU."""
         mock_group = MagicMock()
@@ -53,8 +59,12 @@ class TestHelperFunctionsWithSingleGPU(unittest.TestCase):
         result = copy_to_tensor_model_parallel_region(x)
         self.assertTrue(_tensors_equal(result, x))
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none")
-    def test_reduce_from_tensor_model_parallel_region_single(self, mock_get_group):
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none"
+    )
+    def test_reduce_from_tensor_model_parallel_region_single(
+        self, mock_get_group
+    ):
         """reduce_from_tensor_model_parallel_region should work with single GPU."""
         mock_group = MagicMock()
         mock_group.nranks = 1
@@ -63,8 +73,12 @@ class TestHelperFunctionsWithSingleGPU(unittest.TestCase):
         result = reduce_from_tensor_model_parallel_region(x)
         self.assertTrue(_tensors_equal(result, x))
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none")
-    def test_scatter_to_tensor_model_parallel_region_single(self, mock_get_group):
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none"
+    )
+    def test_scatter_to_tensor_model_parallel_region_single(
+        self, mock_get_group
+    ):
         """scatter_to_tensor_model_parallel_region should work with single GPU."""
         mock_group = MagicMock()
         mock_group.ranks = [0]
@@ -74,8 +88,12 @@ class TestHelperFunctionsWithSingleGPU(unittest.TestCase):
         result = scatter_to_tensor_model_parallel_region(x)
         self.assertTrue(_tensors_equal(result, x))
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none")
-    def test_gather_from_tensor_model_parallel_region_single(self, mock_get_group):
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none"
+    )
+    def test_gather_from_tensor_model_parallel_region_single(
+        self, mock_get_group
+    ):
         """gather_from_tensor_model_parallel_region should work with single GPU."""
         mock_group = MagicMock()
         mock_group.world_size = 1
@@ -84,7 +102,9 @@ class TestHelperFunctionsWithSingleGPU(unittest.TestCase):
         result = gather_from_tensor_model_parallel_region(x)
         self.assertTrue(_tensors_equal(result, x))
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none"
+    )
     def test_scatter_to_sequence_parallel_region_single(self, mock_get_group):
         """scatter_to_sequence_parallel_region should work with single GPU."""
         mock_group = MagicMock()
@@ -94,7 +114,9 @@ class TestHelperFunctionsWithSingleGPU(unittest.TestCase):
         result = scatter_to_sequence_parallel_region(x)
         self.assertTrue(_tensors_equal(result, x))
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none"
+    )
     def test_gather_from_sequence_parallel_region_single(self, mock_get_group):
         """gather_from_sequence_parallel_region should work with single GPU."""
         mock_group = MagicMock()

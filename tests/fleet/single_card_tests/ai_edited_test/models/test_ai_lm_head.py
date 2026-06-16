@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -95,7 +99,9 @@ class TestGPTLMHeadForward(unittest.TestCase):
                 mtp_load_weight_only=False,
             ),
         )
-        head._forward = MagicMock(side_effect=lambda x: paddle.randn([*list(x.shape[:-1]), 100]))
+        head._forward = MagicMock(
+            side_effect=lambda x: paddle.randn([*list(x.shape[:-1]), 100])
+        )
 
         # 3 * 10 = 30 rows (main + 2 MTP)
         dict_args = {"hidden_states": paddle.randn([30, 64])}
@@ -227,7 +233,9 @@ class TestGPTLMHeadShardedStateDict(unittest.TestCase):
         head = _make_head(GPTLMHead, world_size=1)
         object.__setattr__(head, "weight", paddle.randn([100, 64]))
         head.bias = paddle.create_parameter(shape=[100], dtype="float32")
-        head.state_dict = MagicMock(return_value={"weight": MagicMock(), "bias": MagicMock()})
+        head.state_dict = MagicMock(
+            return_value={"weight": MagicMock(), "bias": MagicMock()}
+        )
 
         with patch(
             "paddleformers.fleet.models.gpt.lm_head.build_sharded_state_dict",
@@ -249,7 +257,9 @@ class TestGPTMTPLMHeadForward(unittest.TestCase):
             GPTMTPLMHead,
             config=MagicMock(num_nextn_predict_layers=2),
         )
-        head._forward = MagicMock(side_effect=lambda x: paddle.randn([*list(x.shape[:-1]), 50]))
+        head._forward = MagicMock(
+            side_effect=lambda x: paddle.randn([*list(x.shape[:-1]), 50])
+        )
 
         # 3*10 = 30 rows total (1 main + 2 MTP)
         hidden = paddle.randn([30, 64])

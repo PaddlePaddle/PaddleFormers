@@ -16,8 +16,9 @@ import random
 from collections.abc import Callable
 
 import paddle
-from paddlefleet_ops.sonicmoe import count_cumsum
 from parameterized import parameterized
+
+from paddlefleet_ops.sonicmoe import count_cumsum
 
 from .commons_test import TestCommons
 
@@ -43,7 +44,9 @@ class CountCumsumTest(TestCommons):
             [False, True],  # do_cumsum
             [paddle.CUDAPlace(0)],  # device
             [paddle.long, paddle.int],  # dtype
-            [count_cumsum],  # , torch.compile(count_cumsum, fullgraph=True)],  # function
+            [
+                count_cumsum
+            ],  # , torch.compile(count_cumsum, fullgraph=True)],  # function
         )
     )
     def test_count_cumsum(
@@ -64,7 +67,9 @@ class CountCumsumTest(TestCommons):
         z_kernel_indices = None
 
         if do_cumsum:
-            z_kernel_count, z_kernel_cumsum = function(x=x, E=num_experts, do_cumsum=do_cumsum)
+            z_kernel_count, z_kernel_cumsum = function(
+                x=x, E=num_experts, do_cumsum=do_cumsum
+            )
         else:
             z_kernel_count = function(x=x, E=num_experts, do_cumsum=do_cumsum)
 

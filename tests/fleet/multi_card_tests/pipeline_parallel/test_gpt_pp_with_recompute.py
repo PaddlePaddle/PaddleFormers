@@ -41,15 +41,23 @@ def _set_random_seed(
     """Set random seed for reproducibility."""
     if seed_ is not None and seed_ > 0:
         # Ensure that different pipeline MP stages get different seeds.
-        seed = seed_ + (100 * paddleformers.fleet.parallel_state.get_pipeline_model_parallel_rank())
+        seed = seed_ + (
+            100
+            * paddleformers.fleet.parallel_state.get_pipeline_model_parallel_rank()
+        )
         # Ensure different data parallel ranks get different seeds
         if data_parallel_random_init:
-            seed = seed + (10 * paddleformers.fleet.parallel_state.get_data_parallel_rank())
+            seed = seed + (
+                10 * paddleformers.fleet.parallel_state.get_data_parallel_rank()
+            )
         random.seed(seed)
         np.random.seed(seed)
         paddle.manual_seed(seed)
 
-        if paddle.distributed.is_initialized() and paddle.cuda.device_count() > 0:
+        if (
+            paddle.distributed.is_initialized()
+            and paddle.cuda.device_count() > 0
+        ):
             paddleformers.fleet.tensor_parallel.model_parallel_cuda_manual_seed(
                 seed,
                 te_rng_tracker,
@@ -92,10 +100,16 @@ def single_device_baseline(seed, batch_size, seq_len, vocab_size, config):
     gpt_pipe_model = NoPipelineParallel(gpt_model, strategy)
 
     paddle.manual_seed(seed)
-    data = paddle.randint(low=0, high=vocab_size, shape=(batch_size, seq_len + 1))
+    data = paddle.randint(
+        low=0, high=vocab_size, shape=(batch_size, seq_len + 1)
+    )
     input_ids = data[:, :-1]
     labels = data[:, 1:]
-    position_ids = paddle.arange(seq_len, dtype=paddle.int64).unsqueeze(0).expand([batch_size, -1])
+    position_ids = (
+        paddle.arange(seq_len, dtype=paddle.int64)
+        .unsqueeze(0)
+        .expand([batch_size, -1])
+    )
 
     inputs = (
         {
@@ -152,10 +166,16 @@ def run_pp(
     gpt_pipe_model = distributed_model(gpt_model)
 
     paddle.manual_seed(seed)
-    data = paddle.randint(low=0, high=vocab_size, shape=(batch_size, seq_len + 1))
+    data = paddle.randint(
+        low=0, high=vocab_size, shape=(batch_size, seq_len + 1)
+    )
     input_ids = data[:, :-1]
     labels = data[:, 1:]
-    position_ids = paddle.arange(seq_len, dtype=paddle.int64).unsqueeze(0).expand([batch_size, -1])
+    position_ids = (
+        paddle.arange(seq_len, dtype=paddle.int64)
+        .unsqueeze(0)
+        .expand([batch_size, -1])
+    )
 
     inputs = (
         {
@@ -197,12 +217,18 @@ class TestPPWithRecompute(unittest.TestCase):
             rotary_percent=1.0,
             rotary_base=10000,
             rope_scaling=1.0,
-            init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-            output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+            init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
+            output_layer_init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
             use_qk_norm=True,
         )
 
-        loss, gpt_model = single_device_baseline(self.seed, self.batch_size, self.seq_len, self.vocab_size, config)
+        loss, gpt_model = single_device_baseline(
+            self.seed, self.batch_size, self.seq_len, self.vocab_size, config
+        )
 
         config.pipeline_model_parallel_size = PP_DEGREE
         config.recompute_granularity = "full"

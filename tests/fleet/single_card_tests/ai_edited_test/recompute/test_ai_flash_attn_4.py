@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -39,7 +43,10 @@ except (ImportError, ModuleNotFoundError, Exception):
     _MODULE_AVAILABLE = False
 
 
-@unittest.skipUnless(_MODULE_AVAILABLE, "paddleformers.fleet.refined_recompute.flash_attn not available")
+@unittest.skipUnless(
+    _MODULE_AVAILABLE,
+    "paddleformers.fleet.refined_recompute.flash_attn not available",
+)
 class TestFlashMaskCpAttentionQueryValidation(unittest.TestCase):
     """Tests for FlashMaskCpAttention query sequence length validation."""
 
@@ -67,13 +74,18 @@ class TestFlashMaskCpAttentionQueryValidation(unittest.TestCase):
             )
 
 
-@unittest.skipUnless(_MODULE_AVAILABLE, "paddleformers.fleet.refined_recompute.flash_attn not available")
+@unittest.skipUnless(
+    _MODULE_AVAILABLE,
+    "paddleformers.fleet.refined_recompute.flash_attn not available",
+)
 class TestFlashAttnFunctorForwardVersions(unittest.TestCase):
     """Tests for FlashAttnFunctor forward with different FA versions."""
 
     def test_forward_invalid_version_raises(self):
         """Test that invalid FA version raises ValueError in forward."""
-        from paddleformers.fleet.refined_recompute.flash_attn import FlashAttnFunctor
+        from paddleformers.fleet.refined_recompute.flash_attn import (
+            FlashAttnFunctor,
+        )
 
         ctx = MagicMock()
         q = paddle.randn([1, 4, 8], dtype=paddle.bfloat16)
@@ -95,23 +107,33 @@ class TestFlashAttnFunctorForwardVersions(unittest.TestCase):
             FlashAttnFunctor.forward(ctx, q, k, v, hold_tensors)
 
 
-@unittest.skipUnless(_MODULE_AVAILABLE, "paddleformers.fleet.refined_recompute.flash_attn not available")
+@unittest.skipUnless(
+    _MODULE_AVAILABLE,
+    "paddleformers.fleet.refined_recompute.flash_attn not available",
+)
 class TestFlashAttnFunctorBackwardVersions(unittest.TestCase):
     """Tests for FlashAttnFunctor backward with different FA versions."""
 
     def test_backward_invalid_version_raises(self):
         """Test that invalid FA version raises ValueError in backward."""
-        from paddleformers.fleet.refined_recompute.flash_attn import FlashAttnFunctor
+        from paddleformers.fleet.refined_recompute.flash_attn import (
+            FlashAttnFunctor,
+        )
 
         ctx = MagicMock()
         ctx.fa_version = 99
-        ctx.saved_tensor = MagicMock(return_value=[paddle.randn([1]) for _ in range(8)])
+        ctx.saved_tensor = MagicMock(
+            return_value=[paddle.randn([1]) for _ in range(8)]
+        )
 
         with self.assertRaises(ValueError):
             FlashAttnFunctor.backward(ctx, paddle.randn([1, 4, 8]))
 
 
-@unittest.skipUnless(_MODULE_AVAILABLE, "paddleformers.fleet.refined_recompute.flash_attn not available")
+@unittest.skipUnless(
+    _MODULE_AVAILABLE,
+    "paddleformers.fleet.refined_recompute.flash_attn not available",
+)
 class TestFlashMaskAttnFunctorForwardVersions(unittest.TestCase):
     """Tests for FlashMaskAttnFunctor forward with different FA versions."""
 
@@ -142,7 +164,10 @@ class TestFlashMaskAttnFunctorForwardVersions(unittest.TestCase):
             FlashMaskAttnFunctor.forward(ctx, q, k, v, startend, hold_tensors)
 
 
-@unittest.skipUnless(_MODULE_AVAILABLE, "paddleformers.fleet.refined_recompute.flash_attn not available")
+@unittest.skipUnless(
+    _MODULE_AVAILABLE,
+    "paddleformers.fleet.refined_recompute.flash_attn not available",
+)
 class TestFlashMaskAttnFunctorBackwardVersions(unittest.TestCase):
     """Tests for FlashMaskAttnFunctor backward with different FA versions."""
 
@@ -154,13 +179,18 @@ class TestFlashMaskAttnFunctorBackwardVersions(unittest.TestCase):
 
         ctx = MagicMock()
         ctx.fa_version = 99
-        ctx.saved_tensor = MagicMock(return_value=[paddle.randn([1]) for _ in range(9)])
+        ctx.saved_tensor = MagicMock(
+            return_value=[paddle.randn([1]) for _ in range(9)]
+        )
 
         with self.assertRaises(ValueError):
             FlashMaskAttnFunctor.backward(ctx, paddle.randn([1, 4, 8]))
 
 
-@unittest.skipUnless(_MODULE_AVAILABLE, "paddleformers.fleet.refined_recompute.flash_attn not available")
+@unittest.skipUnless(
+    _MODULE_AVAILABLE,
+    "paddleformers.fleet.refined_recompute.flash_attn not available",
+)
 class TestFlashMaskCpAttentionForwardDispatch(unittest.TestCase):
     """Tests for FlashMaskCpAttention forward dispatching."""
 
@@ -173,7 +203,9 @@ class TestFlashMaskCpAttentionForwardDispatch(unittest.TestCase):
         rr = RefinedRcomputeFlashMaskCpAttention()
         rr._first_fwd = MagicMock(return_value=paddle.randn([1, 4, 8]))
 
-        with patch("paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer") as mock_tracer:
+        with patch(
+            "paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer"
+        ) as mock_tracer:
             mock_tracer.return_value._has_grad = False
             rr.forward(
                 None,

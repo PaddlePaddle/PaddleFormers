@@ -23,7 +23,11 @@ from paddle.distributed import fleet
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 from paddleformers.fleet.pipeline_parallel.pp_utils.p2p_communication import (
@@ -81,7 +85,9 @@ class TestSendRecvMetaSendMetaSingleTensor(unittest.TestCase):
         tensor = paddle.randn([4, 8], dtype="float32")
         meta.set_send_message(tensor)
         self.assertEqual(list(meta.send_shape_message), [4, 8])
-        self.assertEqual(meta.send_dtype_message, paddle_2_number(paddle.float32))
+        self.assertEqual(
+            meta.send_dtype_message, paddle_2_number(paddle.float32)
+        )
         self.assertIsNone(meta.send_key_message)
 
         # check_send_message with matching tensor should pass
@@ -104,8 +110,12 @@ class TestSendRecvMetaSendMetaTupleTensor(unittest.TestCase):
         self.assertEqual(list(meta.send_shape_message[0]), [2, 4])
         self.assertEqual(list(meta.send_shape_message[1]), [2, 4])
         self.assertIsInstance(meta.send_dtype_message, tuple)
-        self.assertEqual(meta.send_dtype_message[0], paddle_2_number(paddle.float32))
-        self.assertEqual(meta.send_dtype_message[1], paddle_2_number(paddle.float16))
+        self.assertEqual(
+            meta.send_dtype_message[0], paddle_2_number(paddle.float32)
+        )
+        self.assertEqual(
+            meta.send_dtype_message[1], paddle_2_number(paddle.float16)
+        )
 
 
 class TestSendRecvMetaSetSendMessage(unittest.TestCase):
@@ -117,7 +127,9 @@ class TestSendRecvMetaSetSendMessage(unittest.TestCase):
         tensor = paddle.randn([3, 6, 9], dtype="float32")
         meta.set_send_message(tensor)
         self.assertEqual(meta.send_shape_message, [3, 6, 9])
-        self.assertEqual(meta.send_dtype_message, paddle_2_number(paddle.float32))
+        self.assertEqual(
+            meta.send_dtype_message, paddle_2_number(paddle.float32)
+        )
         self.assertIsNone(meta.send_key_message)
 
 
@@ -173,12 +185,16 @@ class TestIsValidSendRecvPartial(unittest.TestCase):
 
     def test_is_valid_send_recv_partial_divisible(self):
         """Should return True when tensor numel is divisible by mp_degree > 1."""
-        tensor = paddle.randn([4, 8], dtype="float32")  # numel=32, divisible by 4
+        tensor = paddle.randn(
+            [4, 8], dtype="float32"
+        )  # numel=32, divisible by 4
         self.assertTrue(_is_valid_send_recv_partial(tensor, 4))
 
     def test_is_valid_send_recv_partial_not_divisible(self):
         """Should return False when tensor numel is not divisible by mp_degree."""
-        tensor = paddle.randn([3, 7], dtype="float32")  # numel=21, not divisible by 4
+        tensor = paddle.randn(
+            [3, 7], dtype="float32"
+        )  # numel=21, not divisible by 4
         self.assertFalse(_is_valid_send_recv_partial(tensor, 4))
 
     def test_is_valid_send_recv_partial_mp_degree_one(self):
@@ -188,12 +204,16 @@ class TestIsValidSendRecvPartial(unittest.TestCase):
 
     def test_is_valid_send_recv_partial_large_mp(self):
         """Should return True when tensor is large enough and divisible."""
-        tensor = paddle.randn([16, 16], dtype="float32")  # numel=256, divisible by 8
+        tensor = paddle.randn(
+            [16, 16], dtype="float32"
+        )  # numel=256, divisible by 8
         self.assertTrue(_is_valid_send_recv_partial(tensor, 8))
 
     def test_is_valid_send_recv_partial_odd_numel(self):
         """Should return False for odd numel with even mp_degree."""
-        tensor = paddle.randn([3], dtype="float32")  # numel=3, not divisible by 2
+        tensor = paddle.randn(
+            [3], dtype="float32"
+        )  # numel=3, not divisible by 2
         self.assertFalse(_is_valid_send_recv_partial(tensor, 2))
 
 

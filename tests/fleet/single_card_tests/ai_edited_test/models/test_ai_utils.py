@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -311,31 +315,47 @@ class TestGPUSpecifications(unittest.TestCase):
     """Test GPUSpecifications dataclass."""
 
     def test_a100_specs(self):
-        from paddleformers.fleet.models.gpt.utils import GPU_SPECIFICATIONS_REGISTRATION
+        from paddleformers.fleet.models.gpt.utils import (
+            GPU_SPECIFICATIONS_REGISTRATION,
+        )
 
-        a100 = next(s for s in GPU_SPECIFICATIONS_REGISTRATION if "A100" in s.names)
+        a100 = next(
+            s for s in GPU_SPECIFICATIONS_REGISTRATION if "A100" in s.names
+        )
         self.assertEqual(a100.FP32_TFLOPS, 19.5)
         self.assertEqual(a100.BF16_TFLOPS, 312)
         self.assertIsNone(a100.FP8_TFLOPS)
 
     def test_h100_specs(self):
-        from paddleformers.fleet.models.gpt.utils import GPU_SPECIFICATIONS_REGISTRATION
+        from paddleformers.fleet.models.gpt.utils import (
+            GPU_SPECIFICATIONS_REGISTRATION,
+        )
 
-        h100 = next(s for s in GPU_SPECIFICATIONS_REGISTRATION if "H100" in s.names)
+        h100 = next(
+            s for s in GPU_SPECIFICATIONS_REGISTRATION if "H100" in s.names
+        )
         self.assertEqual(h100.FP32_TFLOPS, 67)
         self.assertEqual(h100.FP8_TFLOPS, 1979)
 
     def test_b200_specs(self):
-        from paddleformers.fleet.models.gpt.utils import GPU_SPECIFICATIONS_REGISTRATION
+        from paddleformers.fleet.models.gpt.utils import (
+            GPU_SPECIFICATIONS_REGISTRATION,
+        )
 
-        b200 = next(s for s in GPU_SPECIFICATIONS_REGISTRATION if "B200" in s.names)
+        b200 = next(
+            s for s in GPU_SPECIFICATIONS_REGISTRATION if "B200" in s.names
+        )
         self.assertEqual(b200.BF16_TFLOPS, 2200)
         self.assertEqual(b200.FP8_TFLOPS, 4500)
 
     def test_gb200_specs(self):
-        from paddleformers.fleet.models.gpt.utils import GPU_SPECIFICATIONS_REGISTRATION
+        from paddleformers.fleet.models.gpt.utils import (
+            GPU_SPECIFICATIONS_REGISTRATION,
+        )
 
-        gb200 = next(s for s in GPU_SPECIFICATIONS_REGISTRATION if "GB200" in s.names)
+        gb200 = next(
+            s for s in GPU_SPECIFICATIONS_REGISTRATION if "GB200" in s.names
+        )
         self.assertEqual(gb200.FP32_TFLOPS, 80)
         self.assertEqual(gb200.BF16_TFLOPS, 2500)
 
@@ -398,7 +418,9 @@ class TestGetDevicePeakTFLOPS(unittest.TestCase):
         est = GPTModelEstimator()
         # Patch logger.warning to avoid issues with corrupted handler state
         # from other tests in the suite
-        with patch.object(logging.getLogger("paddleformers.fleet.models.gpt.utils"), "warning"):
+        with patch.object(
+            logging.getLogger("paddleformers.fleet.models.gpt.utils"), "warning"
+        ):
             result = est._get_device_peak_tflops()
         self.assertIsNone(result)
 

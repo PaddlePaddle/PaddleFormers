@@ -28,20 +28,26 @@ class TestSplitInputsSequenceDimLoadBalance(unittest.TestCase):
 
     def test_degree_1_returns_input_tensor(self):
         tensor = paddle.randn([2, 8])
-        result = split_inputs_sequence_dim_load_balance(tensor, rank=0, degree=1)
+        result = split_inputs_sequence_dim_load_balance(
+            tensor, rank=0, degree=1
+        )
         self.assertTrue(paddle.allclose(result, tensor))
 
     def test_split_tensor_basic(self):
         # With degree=2, rank=0: split into 4 sections, take section[0] and section[3]
         tensor = paddle.arange(8, dtype="float32").reshape([1, 8])
-        result = split_inputs_sequence_dim_load_balance(tensor, rank=0, degree=2)
+        result = split_inputs_sequence_dim_load_balance(
+            tensor, rank=0, degree=2
+        )
         self.assertIsNotNone(result)
         # result should have shape [1, 4]
         self.assertEqual(result.shape, [1, 4])
 
     def test_split_tensor_rank1(self):
         tensor = paddle.arange(8, dtype="float32").reshape([1, 8])
-        result = split_inputs_sequence_dim_load_balance(tensor, rank=1, degree=2)
+        result = split_inputs_sequence_dim_load_balance(
+            tensor, rank=1, degree=2
+        )
         self.assertIsNotNone(result)
         self.assertEqual(result.shape, [1, 4])
 
@@ -49,7 +55,9 @@ class TestSplitInputsSequenceDimLoadBalance(unittest.TestCase):
         tensor1 = paddle.randn([2, 8])
         tensor2 = paddle.randn([2, 8])
         inputs = {"key1": tensor1, "key2": tensor2}
-        result = split_inputs_sequence_dim_load_balance(inputs, rank=0, degree=2)
+        result = split_inputs_sequence_dim_load_balance(
+            inputs, rank=0, degree=2
+        )
         self.assertIsInstance(result, dict)
         self.assertIn("key1", result)
         self.assertIn("key2", result)
@@ -60,7 +68,9 @@ class TestSplitInputsSequenceDimLoadBalance(unittest.TestCase):
         tensor1 = paddle.randn([2, 8])
         tensor2 = paddle.randn([2, 8])
         inputs = [tensor1, tensor2]
-        result = split_inputs_sequence_dim_load_balance(inputs, rank=0, degree=2)
+        result = split_inputs_sequence_dim_load_balance(
+            inputs, rank=0, degree=2
+        )
         self.assertIsInstance(result, list)
         self.assertEqual(len(result), 2)
         self.assertEqual(result[0].shape, [2, 4])
@@ -68,11 +78,15 @@ class TestSplitInputsSequenceDimLoadBalance(unittest.TestCase):
 
     def test_invalid_input_type_raises(self):
         with self.assertRaises(ValueError):
-            split_inputs_sequence_dim_load_balance("not_valid", rank=0, degree=2)
+            split_inputs_sequence_dim_load_balance(
+                "not_valid", rank=0, degree=2
+            )
 
     def test_none_value_in_dict(self):
         inputs = {"key1": None}
-        result = split_inputs_sequence_dim_load_balance(inputs, rank=0, degree=2)
+        result = split_inputs_sequence_dim_load_balance(
+            inputs, rank=0, degree=2
+        )
         self.assertIsNone(result["key1"])
 
     def test_non_2d_tensor_raises(self):
@@ -86,18 +100,24 @@ class TestSplitInputsSequenceDimLoadBalance(unittest.TestCase):
             split_inputs_sequence_dim_load_balance(inputs, rank=0, degree=2)
 
 
-@unittest.skip("shard_seq_load_balance cannot be reliably patched in CI environment")
+@unittest.skip(
+    "shard_seq_load_balance cannot be reliably patched in CI environment"
+)
 class TestAutoSplitSequenceDimLoadBalance(unittest.TestCase):
     """Tests for auto_split_sequence_dim_load_balance function."""
 
-    @patch("paddle.distributed.auto_parallel.ring_attention.shard_seq_load_balance")
+    @patch(
+        "paddle.distributed.auto_parallel.ring_attention.shard_seq_load_balance"
+    )
     def test_tensor_input(self, mock_shard):
         mock_shard.return_value = paddle.randn([2, 4])
         tensor = paddle.randn([2, 8])
         auto_split_sequence_dim_load_balance(tensor)
         mock_shard.assert_called_once_with(tensor, 1)
 
-    @patch("paddle.distributed.auto_parallel.ring_attention.shard_seq_load_balance")
+    @patch(
+        "paddle.distributed.auto_parallel.ring_attention.shard_seq_load_balance"
+    )
     def test_dict_input(self, mock_shard):
         mock_shard.return_value = paddle.randn([2, 4])
         tensor1 = paddle.randn([2, 8])
@@ -107,7 +127,9 @@ class TestAutoSplitSequenceDimLoadBalance(unittest.TestCase):
         self.assertIsInstance(result, dict)
         self.assertEqual(mock_shard.call_count, 2)
 
-    @patch("paddle.distributed.auto_parallel.ring_attention.shard_seq_load_balance")
+    @patch(
+        "paddle.distributed.auto_parallel.ring_attention.shard_seq_load_balance"
+    )
     def test_list_input(self, mock_shard):
         mock_shard.return_value = paddle.randn([2, 4])
         tensor1 = paddle.randn([2, 8])

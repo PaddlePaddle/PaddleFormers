@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -210,7 +214,9 @@ class TestP2PonCalcStream(unittest.TestCase):
 
         mock_tensor = MagicMock()
         mock_group = MagicMock()
-        op = P2PonCalcStream(_send_on_calc_stream, mock_tensor, 1, mock_group, 2, 0)
+        op = P2PonCalcStream(
+            _send_on_calc_stream, mock_tensor, 1, mock_group, 2, 0
+        )
         self.assertEqual(op.op, _send_on_calc_stream)
         self.assertEqual(op.tensor, mock_tensor)
         self.assertEqual(op.peer, 1)

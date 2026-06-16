@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -82,7 +86,9 @@ class TestUnpermute(unittest.TestCase):
         # probs shape [num_tokens, num_experts], routing_map shape [num_tokens, num_experts]
         probs = paddle.ones([4, 2], dtype="float32")
         # Each token goes to exactly one expert so masked_select produces 4 elements
-        routing_map = paddle.to_tensor([[1, 0], [1, 0], [0, 1], [0, 1]], dtype="float32")
+        routing_map = paddle.to_tensor(
+            [[1, 0], [1, 0], [0, 1], [0, 1]], dtype="float32"
+        )
         output = unpermute(
             permuted_tokens,
             sorted_indices,
@@ -98,7 +104,9 @@ class TestUnpermute(unittest.TestCase):
         restore_shape = [4, 8]
         probs = paddle.ones([4, 2], dtype="float32")
         with self.assertRaises(AssertionError):
-            unpermute(permuted_tokens, sorted_indices, restore_shape, probs=probs)
+            unpermute(
+                permuted_tokens, sorted_indices, restore_shape, probs=probs
+            )
 
     def test_unpermute_drop_and_pad_raises(self):
         permuted_tokens = paddle.randn([4, 8], dtype="float32")

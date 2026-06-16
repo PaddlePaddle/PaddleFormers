@@ -101,7 +101,9 @@ class _FakeMTPSpec:
         tl = MagicMock()
         tl.sublayers_spec = MagicMock()
         tl.sublayers_spec.self_attn = MagicMock()
-        tl.sublayers_spec.self_attn.extra_kwargs = {"attn_mask_type": AttnMaskType.causal}
+        tl.sublayers_spec.self_attn.extra_kwargs = {
+            "attn_mask_type": AttnMaskType.causal
+        }
         self.transformer_layer = tl
 
 
@@ -115,7 +117,9 @@ def _build_mtp_layer(config, layer_number=0):
     with (
         patch(
             "paddleformers.fleet.transformer.multi_token_prediction.build_spec_layer",
-            side_effect=lambda s, *a, **kw: _FakeTransformerLayer() if s is spec.transformer_layer else _FakeNorm(),
+            side_effect=lambda s, *a, **kw: _FakeTransformerLayer()
+            if s is spec.transformer_layer
+            else _FakeNorm(),
         ),
         patch(
             "paddleformers.fleet.transformer.multi_token_prediction.ProcessGroupCollection.use_mpu_process_groups",
@@ -152,7 +156,9 @@ def _build_gpt_embedding(config):
         def __init__(self, v, h):
             super().__init__()
             self.embed_tokens = nn.Embedding(v, h)
-            self.reduce_scatter_embeddings = self.scatter_to_sequence_parallel = self.sequence_parallel = False
+            self.reduce_scatter_embeddings = (
+                self.scatter_to_sequence_parallel
+            ) = self.sequence_parallel = False
 
         @property
         def embedding_weight(self):
@@ -165,9 +171,13 @@ def _build_gpt_embedding(config):
     with (
         patch(
             "paddleformers.fleet.models.gpt.gpt_embedding.build_spec_layer",
-            side_effect=lambda s, *a, **kw: emb_layer if s is mock_spec.language_embedding else None,
+            side_effect=lambda s, *a, **kw: emb_layer
+            if s is mock_spec.language_embedding
+            else None,
         ),
-        patch("paddleformers.fleet.models.gpt.gpt_embedding.mark_context_parallel_parameter_disable_scale_grad"),
+        patch(
+            "paddleformers.fleet.models.gpt.gpt_embedding.mark_context_parallel_parameter_disable_scale_grad"
+        ),
     ):
         return GPTEmbedding(
             sublayers_spec=mock_spec,
@@ -195,15 +205,25 @@ def _mtp_forward_ctx(
                 return_value=cp_world_size,
             )
         )
-        tp = stack_ref.enter_context(patch("paddleformers.fleet.transformer.multi_token_prediction.tensor_parallel"))
+        tp = stack_ref.enter_context(
+            patch(
+                "paddleformers.fleet.transformer.multi_token_prediction.tensor_parallel"
+            )
+        )
         tp.get_cuda_rng_tracker.return_value.fork.return_value = nullcontext()
 
         if scatter_fn is not None:
-            so = stack_ref.enter_context(patch("paddleformers.fleet.transformer.multi_token_prediction.ScatterOp"))
+            so = stack_ref.enter_context(
+                patch(
+                    "paddleformers.fleet.transformer.multi_token_prediction.ScatterOp"
+                )
+            )
             so.apply = scatter_fn
         if cp_scatter_fn is not None:
             co = stack_ref.enter_context(
-                patch("paddleformers.fleet.transformer.multi_token_prediction.ContextParallelScatterOp")
+                patch(
+                    "paddleformers.fleet.transformer.multi_token_prediction.ContextParallelScatterOp"
+                )
             )
             co.apply = cp_scatter_fn
         if proj_override is not None and layer is not None:
@@ -326,13 +346,21 @@ class TestMTPEmbeddingLayer(unittest.TestCase):
             layer.forward({"hidden_states": paddle.randn([2, 9, 64])})
 
     def test_fill_feature_with_ep_gt1(self):
-        layer = MTPEmbeddingLayer(config=_cfg(vocab_size=1024, hidden_size=64, expert_model_parallel_size=4))
+        layer = MTPEmbeddingLayer(
+            config=_cfg(
+                vocab_size=1024, hidden_size=64, expert_model_parallel_size=4
+            )
+        )
         ids = paddle.randint(1, 1024, [1, 5])
         ids[0, 2] = 0
         input_ids_for_mtp.clear()
         input_ids_for_mtp.append(ids)
         result = layer.forward({"hidden_states": paddle.randn([1, 4, 64])})
-        self.assertTrue(paddle.allclose(result["mtp_input_embeds"][0, 2, :], paddle.zeros([64])).item())
+        self.assertTrue(
+            paddle.allclose(
+                result["mtp_input_embeds"][0, 2, :], paddle.zeros([64])
+            ).item()
+        )
 
     def test_fill_feature_uses_custom_pad_token_id(self):
         """When pad_token_id != 0, only that id triggers fill_feature zeroing."""
@@ -346,36 +374,58 @@ class TestMTPEmbeddingLayer(unittest.TestCase):
         )
         # Force non-zero weights so fill_feature's effect is observable
         # (perform_initialization=False otherwise leaves weights at zero).
-        layer.embed_tokens.weight.set_value(paddle.ones_like(layer.embed_tokens.weight))
+        layer.embed_tokens.weight.set_value(
+            paddle.ones_like(layer.embed_tokens.weight)
+        )
         # Position 1 holds id 0 (must remain non-zero), position 3 holds id 42 (must be zeroed).
         ids = paddle.to_tensor([[5, 0, 7, 42, 9]])
         input_ids_for_mtp.clear()
         input_ids_for_mtp.append(ids)
         result = layer.forward({"hidden_states": paddle.randn([1, 4, 64])})
         embeds = result["mtp_input_embeds"]
-        self.assertTrue(paddle.allclose(embeds[0, 3, :], paddle.zeros([64])).item())
+        self.assertTrue(
+            paddle.allclose(embeds[0, 3, :], paddle.zeros([64])).item()
+        )
         # id == 0 must NOT be treated as padding when pad_token_id == 42.
-        self.assertFalse(paddle.allclose(embeds[0, 1, :], paddle.zeros([64])).item())
+        self.assertFalse(
+            paddle.allclose(embeds[0, 1, :], paddle.zeros([64])).item()
+        )
 
     def test_fill_feature_handles_none_pad_token_id(self):
         """A runtime-None pad_token_id falls back to 0 instead of erroring."""
-        layer = MTPEmbeddingLayer(config=_cfg(vocab_size=1024, hidden_size=64, expert_model_parallel_size=4))
+        layer = MTPEmbeddingLayer(
+            config=_cfg(
+                vocab_size=1024, hidden_size=64, expert_model_parallel_size=4
+            )
+        )
         # Override after construction to simulate external config injecting None.
         layer.config.pad_token_id = None
-        layer.embed_tokens.weight.set_value(paddle.ones_like(layer.embed_tokens.weight))
+        layer.embed_tokens.weight.set_value(
+            paddle.ones_like(layer.embed_tokens.weight)
+        )
         ids = paddle.to_tensor([[5, 0, 7, 8, 9]])
         input_ids_for_mtp.clear()
         input_ids_for_mtp.append(ids)
         result = layer.forward({"hidden_states": paddle.randn([1, 4, 64])})
         # Fallback treats id 0 as padding.
-        self.assertTrue(paddle.allclose(result["mtp_input_embeds"][0, 1, :], paddle.zeros([64])).item())
+        self.assertTrue(
+            paddle.allclose(
+                result["mtp_input_embeds"][0, 1, :], paddle.zeros([64])
+            ).item()
+        )
         # id != 0 stays non-zero.
-        self.assertFalse(paddle.allclose(result["mtp_input_embeds"][0, 0, :], paddle.zeros([64])).item())
+        self.assertFalse(
+            paddle.allclose(
+                result["mtp_input_embeds"][0, 0, :], paddle.zeros([64])
+            ).item()
+        )
 
 
 class TestWrappedPaddleNormPipe(unittest.TestCase):
     def test_magic_send_vs_non_magic_send(self):
-        from paddleformers.fleet.transformer.paddle_norm import WrappedPaddleNormPipe
+        from paddleformers.fleet.transformer.paddle_norm import (
+            WrappedPaddleNormPipe,
+        )
 
         cfg_on = TransformerConfig(
             enable_mtp_magic_send=True,
@@ -385,8 +435,14 @@ class TestWrappedPaddleNormPipe(unittest.TestCase):
             normalization="RMSNorm",
             tensor_model_parallel_size=1,
         )
-        r = WrappedPaddleNormPipe(cfg_on, hidden_size=64).forward({"hidden_states": paddle.ones([1, 4, 64]) * 2.0})
-        self.assertTrue(paddle.allclose(r["hidden_states"], paddle.ones([1, 4, 64]), atol=1e-5).item())
+        r = WrappedPaddleNormPipe(cfg_on, hidden_size=64).forward(
+            {"hidden_states": paddle.ones([1, 4, 64]) * 2.0}
+        )
+        self.assertTrue(
+            paddle.allclose(
+                r["hidden_states"], paddle.ones([1, 4, 64]), atol=1e-5
+            ).item()
+        )
 
         cfg_off = TransformerConfig(
             enable_mtp_magic_send=False,
@@ -395,7 +451,9 @@ class TestWrappedPaddleNormPipe(unittest.TestCase):
             normalization="RMSNorm",
             tensor_model_parallel_size=1,
         )
-        r = WrappedPaddleNormPipe(cfg_off, hidden_size=64).forward({"hidden_states": paddle.randn([4, 8, 64])})
+        r = WrappedPaddleNormPipe(cfg_off, hidden_size=64).forward(
+            {"hidden_states": paddle.randn([4, 8, 64])}
+        )
         self.assertEqual(r["hidden_states"].shape, [4, 8, 64])
 
 
@@ -414,7 +472,9 @@ class TestMTPLayerForward(unittest.TestCase):
                     "attn_mask_startend_row_indices": paddle.randn([B, S, 4]),
                     "mtp_startend_row_indices_all": paddle.randn([B, 1, S, 4]),
                     "mtp_hidden_inputs_mask_all": paddle.ones([B, 1, S]),
-                    "mtp_input_ids_for_moe_mask": paddle.randint(0, 512, [B, 1, S]),
+                    "mtp_input_ids_for_moe_mask": paddle.randint(
+                        0, 512, [B, 1, S]
+                    ),
                     "input_ids": paddle.randint(0, 512, [B, S]),
                     "rotary_pos_emb": paddle.randn([1, S + 2, 32]),
                     "rotary_pos_cos": paddle.randn([1, S + 2, 32]),
@@ -428,13 +488,17 @@ class TestMTPLayerForward(unittest.TestCase):
     def test_optional_fields_exp_versions(self):
         B, S, H = 2, 8, 64
         for exp_ver in [True, False]:
-            layer = _build_mtp_layer(_cfg(gpt_model_use_experimental_version=exp_ver))
+            layer = _build_mtp_layer(
+                _cfg(gpt_model_use_experimental_version=exp_ver)
+            )
             with _mtp_forward_ctx():
                 result = layer.forward(
                     {
                         "hidden_states": paddle.randn([B, S, H]),
                         "mtp_input_embeds": paddle.randn([B, S + 1, H]),
-                        "mtp_startend_row_indices_all": paddle.randn([B, 1, S, 4]),
+                        "mtp_startend_row_indices_all": paddle.randn(
+                            [B, 1, S, 4]
+                        ),
                         "mtp_hidden_inputs_mask_all": paddle.ones([B, 1, S]),
                         "labels": paddle.randint(0, 100, [B, S]),
                     }
@@ -494,7 +558,9 @@ class TestMTPLayerForward(unittest.TestCase):
             scatter_count[0] += 1
             return x[: x.shape[0] // 2]
 
-        with _mtp_forward_ctx(scatter_fn=scatter_fn, proj_override=proj, layer=layer):
+        with _mtp_forward_ctx(
+            scatter_fn=scatter_fn, proj_override=proj, layer=layer
+        ):
             layer.forward(
                 {
                     "hidden_states": paddle.randn([S_local, B, H]),
@@ -522,7 +588,11 @@ class TestMTPLayerForward(unittest.TestCase):
 
         def cp_fn(x, axis=0, **kwargs):
             cp_count[0] += 1
-            return x[:, : x.shape[1] // 2, :] if axis == 1 else x[: x.shape[0] // 2]
+            return (
+                x[:, : x.shape[1] // 2, :]
+                if axis == 1
+                else x[: x.shape[0] // 2]
+            )
 
         with _mtp_forward_ctx(
             cp_world_size=CP,
@@ -533,7 +603,9 @@ class TestMTPLayerForward(unittest.TestCase):
             layer.forward(
                 {
                     "hidden_states": paddle.randn([B, S_local, H]),  # CP-local
-                    "mtp_input_embeds": paddle.randn([B, S_global + 1, H]),  # full global
+                    "mtp_input_embeds": paddle.randn(
+                        [B, S_global + 1, H]
+                    ),  # full global
                     "labels": paddle.randint(0, 100, [B, S_global]),
                 }
             )
@@ -551,7 +623,9 @@ class TestMTPLayerForward(unittest.TestCase):
         layer = _build_mtp_layer(config)
         CP, TP = 2, 2
         S_global = 16
-        S_sp_cp_local = S_global // (TP * CP)  # = 4, what hidden_states.shape[0] is
+        S_sp_cp_local = S_global // (
+            TP * CP
+        )  # = 4, what hidden_states.shape[0] is
         B, H = 2, 64
         captured = {}
 
@@ -560,7 +634,11 @@ class TestMTPLayerForward(unittest.TestCase):
             return hidden_states
 
         def cp_fn(x, axis=0, **kwargs):
-            return x[:, : x.shape[1] // 2, :] if axis == 1 else x[: x.shape[0] // 2]
+            return (
+                x[:, : x.shape[1] // 2, :]
+                if axis == 1
+                else x[: x.shape[0] // 2]
+            )
 
         def scatter_fn(x):
             return x[: x.shape[0] // 2]
@@ -574,8 +652,12 @@ class TestMTPLayerForward(unittest.TestCase):
         ):
             layer.forward(
                 {
-                    "hidden_states": paddle.randn([S_sp_cp_local, B, H]),  # SP+CP local
-                    "mtp_input_embeds": paddle.randn([B, S_global + 1, H]),  # full global
+                    "hidden_states": paddle.randn(
+                        [S_sp_cp_local, B, H]
+                    ),  # SP+CP local
+                    "mtp_input_embeds": paddle.randn(
+                        [B, S_global + 1, H]
+                    ),  # full global
                     "labels": paddle.randint(0, 100, [B, S_global]),
                 }
             )
@@ -586,7 +668,9 @@ class TestMTPLayerForward(unittest.TestCase):
 
 
 class TestGPTEmbeddingForward(unittest.TestCase):
-    def _run_emb(self, config, cp_world_size=1, mock_scatter=False, mock_cp=False):
+    def _run_emb(
+        self, config, cp_world_size=1, mock_scatter=False, mock_cp=False
+    ):
         emb = _build_gpt_embedding(config)
         B, S = 2, 10
         with ExitStack() as stack:
@@ -597,11 +681,17 @@ class TestGPTEmbeddingForward(unittest.TestCase):
                 )
             )
             if mock_scatter:
-                sc = stack.enter_context(patch("paddleformers.fleet.models.gpt.gpt_embedding.ScatterOp"))
+                sc = stack.enter_context(
+                    patch(
+                        "paddleformers.fleet.models.gpt.gpt_embedding.ScatterOp"
+                    )
+                )
                 sc.apply = lambda x: x
             if mock_cp:
                 cp = stack.enter_context(
-                    patch("paddleformers.fleet.models.gpt.gpt_embedding.ContextParallelScatterOp")
+                    patch(
+                        "paddleformers.fleet.models.gpt.gpt_embedding.ContextParallelScatterOp"
+                    )
                 )
                 cp.apply = lambda x, axis=0, **kwargs: x
             return emb.forward({"input_ids": paddle.randint(0, 512, [B, S])})
@@ -612,7 +702,9 @@ class TestGPTEmbeddingForward(unittest.TestCase):
         r = self._run_emb(_cfg())
         self.assertEqual(r["hidden_states"].shape, [B, S - 1, H])
         # CP path
-        r = self._run_emb(_cfg(experimental_dataflow=True), cp_world_size=2, mock_cp=True)
+        r = self._run_emb(
+            _cfg(experimental_dataflow=True), cp_world_size=2, mock_cp=True
+        )
         self.assertEqual(r["hidden_states"].shape, [B, S - 1, H])
         # SP path
         r = self._run_emb(
@@ -624,14 +716,18 @@ class TestGPTEmbeddingForward(unittest.TestCase):
     def test_non_magic_send_paths(self):
         B, S, H, num_mtp = 2, 10, 64, 1
         r = self._run_emb(_cfg(enable_mtp_magic_send=False))
-        self.assertEqual(r["hidden_states"].shape, [B * (num_mtp + 1), S - 1, H])
+        self.assertEqual(
+            r["hidden_states"].shape, [B * (num_mtp + 1), S - 1, H]
+        )
         # CP
         r = self._run_emb(
             _cfg(enable_mtp_magic_send=False, experimental_dataflow=True),
             cp_world_size=2,
             mock_cp=True,
         )
-        self.assertEqual(r["hidden_states"].shape, [B * (num_mtp + 1), S - 1, H])
+        self.assertEqual(
+            r["hidden_states"].shape, [B * (num_mtp + 1), S - 1, H]
+        )
         # SP
         r = self._run_emb(
             _cfg(
@@ -641,7 +737,9 @@ class TestGPTEmbeddingForward(unittest.TestCase):
             ),
             mock_scatter=True,
         )
-        self.assertEqual(r["hidden_states"].shape, [(num_mtp + 1) * (S - 1), B, H])
+        self.assertEqual(
+            r["hidden_states"].shape, [(num_mtp + 1) * (S - 1), B, H]
+        )
 
     def test_ep_moe_mask(self):
         r = self._run_emb(_cfg(expert_model_parallel_size=4))
@@ -651,14 +749,19 @@ class TestGPTEmbeddingForward(unittest.TestCase):
 class TestPPCommUtils(unittest.TestCase):
     def test_split_group(self):
         self.assertEqual(
-            len(list(split_group([(0, _DtypeSndShape("float32", [10]))], 2**18))),
+            len(
+                list(split_group([(0, _DtypeSndShape("float32", [10]))], 2**18))
+            ),
             1,
         )
         self.assertGreater(
             len(
                 list(
                     split_group(
-                        [(i, _DtypeSndShape("float32", [200000])) for i in range(5)],
+                        [
+                            (i, _DtypeSndShape("float32", [200000]))
+                            for i in range(5)
+                        ],
                         2**18,
                     )
                 )
@@ -696,7 +799,9 @@ class TestPPCommUtils(unittest.TestCase):
                 side_effect=lambda t, s, group: t.set_value(data),
             ),
         ):
-            r = broadcast_data_obj(paddle.zeros([3, 4]), src_rank=0, group=MagicMock())
+            r = broadcast_data_obj(
+                paddle.zeros([3, 4]), src_rank=0, group=MagicMock()
+            )
         self.assertEqual(r.shape, [3, 4])
 
     def test_init_magic_send_comm_group(self):
@@ -744,7 +849,9 @@ class TestTransformerLayerCondition(unittest.TestCase):
 
         self.assertFalse(should_split(_cfg(enable_mtp_magic_send=True)))
         self.assertTrue(should_split(_cfg(enable_mtp_magic_send=False)))
-        self.assertFalse(should_split(_cfg(enable_mtp_magic_send=False), is_mtp=True))
+        self.assertFalse(
+            should_split(_cfg(enable_mtp_magic_send=False), is_mtp=True)
+        )
 
 
 class TestHyperConnectionModuleInitWeights(unittest.TestCase):
@@ -827,7 +934,9 @@ class TestHyperConnectionContractLayerMagicSend(unittest.TestCase):
     def test_non_magic_send_splits_then_contracts(self):
         layer = self._build(magic_send=False)
         B, S, H, n = 2, 8, 64, 4
-        result = layer.forward({"hidden_states": paddle.randn([B * 2, S, H * n])})
+        result = layer.forward(
+            {"hidden_states": paddle.randn([B * 2, S, H * n])}
+        )
         self.assertEqual(result["hidden_states"].shape, [B * 2, S, H])
         self.assertIn("mhc_multistream", result)
         self.assertFalse(layer.magic_send)
@@ -848,7 +957,9 @@ class TestHyperConnectionContractLayerMagicSend(unittest.TestCase):
             layer.config.rms_norm_eps,
         )
         result = layer.forward({"hidden_states": x.clone()})
-        self.assertTrue(paddle.allclose(result["hidden_states"], expected, atol=1e-5).item())
+        self.assertTrue(
+            paddle.allclose(result["hidden_states"], expected, atol=1e-5).item()
+        )
 
 
 class TestMTPLayerMHC(unittest.TestCase):

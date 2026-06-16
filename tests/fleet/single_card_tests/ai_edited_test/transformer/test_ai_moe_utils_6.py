@@ -15,7 +15,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -38,7 +42,9 @@ from paddleformers.fleet.transformer.moe.moe_utils import (
 class TestBarrierEp(unittest.TestCase):
     """Tests for barrier_ep function."""
 
-    @patch("paddleformers.fleet.transformer.moe.moe_utils.paddle.distributed.barrier")
+    @patch(
+        "paddleformers.fleet.transformer.moe.moe_utils.paddle.distributed.barrier"
+    )
     def test_barrier_ep_calls_barrier(self, mock_barrier):
         """barrier_ep should call paddle.distributed.barrier with the group."""
         mock_group = MagicMock()
@@ -57,14 +63,18 @@ class TestGlobalMoeBalanceLogsEnabled(unittest.TestCase):
         """Should return False when global training logs is None."""
         self.assertFalse(global_moe_balance_training_logs_enabled())
 
-    @patch("paddleformers.fleet.transformer.moe.moe_utils.get_global_training_logs")
+    @patch(
+        "paddleformers.fleet.transformer.moe.moe_utils.get_global_training_logs"
+    )
     def test_returns_false_when_no_attribute(self, mock_get):
         """Should return False when logs has no is_moe_balance_logs_enabled."""
         mock_logs = MagicMock(spec=[])
         mock_get.return_value = mock_logs
         self.assertFalse(global_moe_balance_training_logs_enabled())
 
-    @patch("paddleformers.fleet.transformer.moe.moe_utils.get_global_training_logs")
+    @patch(
+        "paddleformers.fleet.transformer.moe.moe_utils.get_global_training_logs"
+    )
     def test_returns_true_when_enabled(self, mock_get):
         """Should return True when is_moe_balance_logs_enabled returns True."""
         mock_logs = MagicMock()
@@ -92,7 +102,9 @@ class TestSortChunksByIdxs(unittest.TestCase):
         input_tensor = paddle.randn([10, 4])
         split_sizes = paddle.to_tensor([3, 4, 3])
         sorted_idxs = paddle.to_tensor([2, 0, 1])
-        output, permuted_probs = sort_chunks_by_idxs(input_tensor, split_sizes, sorted_idxs)
+        output, permuted_probs = sort_chunks_by_idxs(
+            input_tensor, split_sizes, sorted_idxs
+        )
         self.assertEqual(output.shape[0], 10)
         self.assertIsNone(permuted_probs)
 
@@ -109,7 +121,9 @@ class TestLogSummary(unittest.TestCase):
         _log_summary("test_key", 0, paddle.randn([4]))
         # Should not raise any errors
 
-    @patch("paddleformers.fleet.transformer.moe.moe_utils.get_global_training_logs")
+    @patch(
+        "paddleformers.fleet.transformer.moe.moe_utils.get_global_training_logs"
+    )
     def test_logs_summary_stats(self, mock_get):
         """Should log max, min, var, median, mean stats."""
         mock_logs = MagicMock()

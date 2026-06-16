@@ -16,21 +16,30 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import tempfile
 import unittest
 
 try:
-    from paddleformers.fleet.training.yaml_arguments import load_yaml  # noqa: F401
+    from paddleformers.fleet.training.yaml_arguments import (
+        load_yaml,  # noqa: F401
+    )
 
     _MODULE_AVAILABLE = True
 except (ImportError, ModuleNotFoundError, Exception):
     _MODULE_AVAILABLE = False
 
 
-@unittest.skipUnless(_MODULE_AVAILABLE, "paddleformers.fleet.training.yaml_arguments not available")
+@unittest.skipUnless(
+    _MODULE_AVAILABLE,
+    "paddleformers.fleet.training.yaml_arguments not available",
+)
 class TestLoadYaml(unittest.TestCase):
     """Tests for load_yaml function in yaml_arguments.py."""
 
@@ -38,7 +47,9 @@ class TestLoadYaml(unittest.TestCase):
         """Test loading a simple YAML file."""
         from paddleformers.fleet.training.yaml_arguments import load_yaml
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write("batch_size: 32\nlearning_rate: 0.001\n")
             f.flush()
             config = load_yaml(f.name)
@@ -49,7 +60,9 @@ class TestLoadYaml(unittest.TestCase):
         """Test loading a nested YAML file."""
         from paddleformers.fleet.training.yaml_arguments import load_yaml
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write("training:\n  batch_size: 32\n  lr: 0.001\n")
             f.flush()
             config = load_yaml(f.name)
@@ -60,7 +73,9 @@ class TestLoadYaml(unittest.TestCase):
         """Test that nested configs are flattened."""
         from paddleformers.fleet.training.yaml_arguments import load_yaml
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write("training:\n  batch_size: 32\nmodel:\n  hidden: 768\n")
             f.flush()
             config = load_yaml(f.name)
@@ -93,7 +108,9 @@ class TestLoadYaml(unittest.TestCase):
 
         from paddleformers.fleet.training.yaml_arguments import load_yaml
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write("key: value\n")
             f.flush()
             config = load_yaml(f.name)

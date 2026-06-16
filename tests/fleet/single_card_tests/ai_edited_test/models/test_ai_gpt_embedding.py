@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -25,7 +29,10 @@ from unittest.mock import MagicMock
 
 import paddle
 
-from paddleformers.fleet.models.gpt.gpt_embedding import GPTEmbedding, GPTEmbeddingSpec
+from paddleformers.fleet.models.gpt.gpt_embedding import (
+    GPTEmbedding,
+    GPTEmbeddingSpec,
+)
 
 
 class TestGPTEmbeddingSpec(unittest.TestCase):
@@ -196,7 +203,9 @@ class TestGPTEmbeddingForwardPaths(unittest.TestCase):
             decoder_input=mock_decoder_input,
         )
         self.assertIn("hidden_states", result)
-        self.assertTrue(paddle.allclose(result["hidden_states"], mock_decoder_input))
+        self.assertTrue(
+            paddle.allclose(result["hidden_states"], mock_decoder_input)
+        )
 
     def test_forward_removes_none_values(self):
         """Test that forward removes None values from output dict."""
@@ -437,12 +446,16 @@ class TestGPTEmbeddingCPScatterSPAssert(unittest.TestCase):
             emb.forward(dict_args={"input_ids": input_ids})
         self.assertIn("sequence_parallel is not supported", str(ctx.exception))
 
-    @unittest.mock.patch("paddleformers.fleet.models.gpt.gpt_embedding.ContextParallelScatterOp")
+    @unittest.mock.patch(
+        "paddleformers.fleet.models.gpt.gpt_embedding.ContextParallelScatterOp"
+    )
     @unittest.mock.patch(
         "paddleformers.fleet.models.gpt.gpt_embedding.get_context_parallel_world_size",
         return_value=2,
     )
-    def test_no_sp_with_cp_scatter_plain_path_passes(self, mock_cp_ws, mock_cp_op):
+    def test_no_sp_with_cp_scatter_plain_path_passes(
+        self, mock_cp_ws, mock_cp_op
+    ):
         """Without sequence_parallel, CP scatter in plain path should not raise."""
         emb = self._make_embedding()
         emb.sequence_parallel = False

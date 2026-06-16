@@ -19,7 +19,11 @@ import types
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 # Setup comprehensive triton mock before any paddlefleet_ops imports
@@ -38,7 +42,9 @@ _mock_tl.static_range = lambda *a, **kw: range(0)
 _mock_triton = types.ModuleType("triton")
 _mock_triton.jit = lambda fn=None, **kw: fn if fn is not None else lambda f: f
 _mock_triton.cdiv = lambda a, b: (a + b - 1) // b
-_mock_triton.next_power_of_2 = lambda n: (1 << (n - 1).bit_length() if n > 0 else 1)
+_mock_triton.next_power_of_2 = lambda n: (
+    1 << (n - 1).bit_length() if n > 0 else 1
+)
 
 sys.modules.setdefault("triton", _mock_triton)
 sys.modules.setdefault("triton.language", _mock_tl)
@@ -57,7 +63,11 @@ sys.modules.setdefault(
 
 # Import block_mask_utils directly as a file
 _project_root = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    )
 )
 _bmu_path = os.path.join(
     _project_root,
@@ -69,7 +79,9 @@ _bmu_path = os.path.join(
     "flashmask",
     "block_mask_utils.py",
 )
-_bmu_spec = importlib.util.spec_from_file_location("paddlefleet_ops._extensions.flashmask.block_mask_utils", _bmu_path)
+_bmu_spec = importlib.util.spec_from_file_location(
+    "paddlefleet_ops._extensions.flashmask.block_mask_utils", _bmu_path
+)
 _bmu_mod = importlib.util.module_from_spec(_bmu_spec)
 sys.modules["paddlefleet_ops._extensions.flashmask.block_mask_utils"] = _bmu_mod
 _bmu_spec.loader.exec_module(_bmu_mod)
@@ -91,6 +103,7 @@ except (ImportError, ModuleNotFoundError, Exception):
 from unittest import mock
 
 import paddle
+
 from paddlefleet_ops._extensions.flashmask.block_mask_utils import (
     _is_block_fully_masked,
     _is_block_partially_masked,
@@ -105,21 +118,29 @@ from paddlefleet_ops._extensions.flashmask.block_mask_utils import (
 class TestFindBlocksToppReshape(unittest.TestCase):
     """Tests for find_blocks_topp reshape and shape handling."""
 
-    @unittest.skip("Cannot mock triton kernel launch [grid](...) pattern with mock triton")
+    @unittest.skip(
+        "Cannot mock triton kernel launch [grid](...) pattern with mock triton"
+    )
     def test_find_blocks_topp_2d_input(self):
         """Test find_blocks_topp with 2D input [B, N]."""
         x = paddle.randn([4, 16], dtype="float32")
-        with mock.patch("paddlefleet_ops._extensions.flashmask.block_mask_utils.top_p_kernel") as mock_kernel:
+        with mock.patch(
+            "paddlefleet_ops._extensions.flashmask.block_mask_utils.top_p_kernel"
+        ) as mock_kernel:
             find_blocks_topp(x, p=0.5)
             grid = mock_kernel.call_args[0][0]
             self.assertEqual(len(grid), 1)
             self.assertEqual(grid[0], 4)
 
-    @unittest.skip("Cannot mock triton kernel launch [grid](...) pattern with mock triton")
+    @unittest.skip(
+        "Cannot mock triton kernel launch [grid](...) pattern with mock triton"
+    )
     def test_find_blocks_topp_4d_input(self):
         """Test find_blocks_topp with 4D input [B, H, M, N]."""
         x = paddle.randn([2, 3, 5, 16], dtype="float32")
-        with mock.patch("paddlefleet_ops._extensions.flashmask.block_mask_utils.top_p_kernel") as mock_kernel:
+        with mock.patch(
+            "paddlefleet_ops._extensions.flashmask.block_mask_utils.top_p_kernel"
+        ) as mock_kernel:
             result = find_blocks_topp(x, p=0.5)
             grid = mock_kernel.call_args[0][0]
             self.assertEqual(grid[0], 30)

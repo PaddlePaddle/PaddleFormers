@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -67,7 +71,9 @@ class TestKimiK25VisionTransformerLayerForward(unittest.TestCase):
 
     def test_forward_with_full_recompute(self):
         """Test forward with full_recompute=True."""
-        layer = KimiK25VisionTransformerLayer.__new__(KimiK25VisionTransformerLayer)
+        layer = KimiK25VisionTransformerLayer.__new__(
+            KimiK25VisionTransformerLayer
+        )
         layer.full_recompute = True
         layer.modal = "vision"
 
@@ -93,7 +99,9 @@ class TestKimiK25VisionTransformerLayerForward(unittest.TestCase):
 
     def test_forward_without_full_recompute(self):
         """Test forward with full_recompute=False."""
-        layer = KimiK25VisionTransformerLayer.__new__(KimiK25VisionTransformerLayer)
+        layer = KimiK25VisionTransformerLayer.__new__(
+            KimiK25VisionTransformerLayer
+        )
         layer.full_recompute = False
         layer.modal = "vision"
         layer._forward_impl = MagicMock(return_value=paddle.randn([2, 8, 64]))
@@ -108,7 +116,9 @@ class TestKimiK25VisionTransformerLayerForward(unittest.TestCase):
 
     def test_forward_pops_dynamic_inference_decode_only(self):
         """Test forward pops 'dynamic_inference_decode_only' from dict_args."""
-        layer = KimiK25VisionTransformerLayer.__new__(KimiK25VisionTransformerLayer)
+        layer = KimiK25VisionTransformerLayer.__new__(
+            KimiK25VisionTransformerLayer
+        )
         layer.full_recompute = False
         layer.modal = "vision"
         layer._forward_impl = MagicMock(return_value=paddle.randn([2, 8, 64]))
@@ -125,7 +135,9 @@ class TestKimiK25VisionTransformerLayerForward(unittest.TestCase):
 
     def test_forward_with_context_3elem(self):
         """Test forward when _forward_impl returns 3-element tuple (context path)."""
-        layer = KimiK25VisionTransformerLayer.__new__(KimiK25VisionTransformerLayer)
+        layer = KimiK25VisionTransformerLayer.__new__(
+            KimiK25VisionTransformerLayer
+        )
         layer.full_recompute = False
         layer.modal = "vision"
 
@@ -148,10 +160,14 @@ class TestKimiK25VisionTransformerLayerForwardImpl(unittest.TestCase):
 
     def test_forward_impl_2d_hidden_states(self):
         """Test _forward_impl with 2D hidden states (unsqueeze)."""
-        layer = KimiK25VisionTransformerLayer.__new__(KimiK25VisionTransformerLayer)
+        layer = KimiK25VisionTransformerLayer.__new__(
+            KimiK25VisionTransformerLayer
+        )
         layer.modal = "vision"
         layer.full_recompute = False
-        layer._forward_attention = MagicMock(return_value=(paddle.randn([1, 8, 64]), None))
+        layer._forward_attention = MagicMock(
+            return_value=(paddle.randn([1, 8, 64]), None)
+        )
         layer._forward_mlp = MagicMock(return_value=paddle.randn([1, 8, 64]))
 
         hidden_states = paddle.randn([8, 64])  # 2D
@@ -160,10 +176,14 @@ class TestKimiK25VisionTransformerLayerForwardImpl(unittest.TestCase):
 
     def test_forward_impl_3d_hidden_states(self):
         """Test _forward_impl with 3D hidden states."""
-        layer = KimiK25VisionTransformerLayer.__new__(KimiK25VisionTransformerLayer)
+        layer = KimiK25VisionTransformerLayer.__new__(
+            KimiK25VisionTransformerLayer
+        )
         layer.modal = "vision"
         layer.full_recompute = False
-        layer._forward_attention = MagicMock(return_value=(paddle.randn([2, 8, 64]), None))
+        layer._forward_attention = MagicMock(
+            return_value=(paddle.randn([2, 8, 64]), None)
+        )
         layer._forward_mlp = MagicMock(return_value=paddle.randn([2, 8, 64]))
 
         hidden_states = paddle.randn([2, 8, 64])  # 3D
@@ -172,11 +192,15 @@ class TestKimiK25VisionTransformerLayerForwardImpl(unittest.TestCase):
 
     def test_forward_impl_with_context(self):
         """Test _forward_impl returns context when present."""
-        layer = KimiK25VisionTransformerLayer.__new__(KimiK25VisionTransformerLayer)
+        layer = KimiK25VisionTransformerLayer.__new__(
+            KimiK25VisionTransformerLayer
+        )
         layer.modal = "vision"
         layer.full_recompute = False
         context = paddle.randn([2, 8, 64])
-        layer._forward_attention = MagicMock(return_value=(paddle.randn([2, 8, 64]), context))
+        layer._forward_attention = MagicMock(
+            return_value=(paddle.randn([2, 8, 64]), context)
+        )
         layer._forward_mlp = MagicMock(return_value=paddle.randn([2, 8, 64]))
 
         hidden_states = paddle.randn([2, 8, 64])

@@ -53,7 +53,10 @@ sys.path.insert(
         "model",
     ),
 )
-from paddle.distributed.fleet.meta_parallel import NoPipelineParallel, build_spec_layer
+from paddle.distributed.fleet.meta_parallel import (
+    NoPipelineParallel,
+    build_spec_layer,
+)
 from test_qwen3_5_vision_model import (
     Qwen3_5Model,
     Qwen3_5VisionProvider,
@@ -126,14 +129,22 @@ def _set_random_seed(
 ):
     """Set random seed for reproducibility."""
     if seed_ is not None and seed_ > 0:
-        seed = seed_ + (100 * paddleformers.fleet.parallel_state.get_pipeline_model_parallel_rank())
+        seed = seed_ + (
+            100
+            * paddleformers.fleet.parallel_state.get_pipeline_model_parallel_rank()
+        )
         if data_parallel_random_init:
-            seed = seed + (10 * paddleformers.fleet.parallel_state.get_data_parallel_rank())
+            seed = seed + (
+                10 * paddleformers.fleet.parallel_state.get_data_parallel_rank()
+            )
         random.seed(seed)
         np.random.seed(seed)
         paddle.manual_seed(seed)
 
-        if paddle.distributed.is_initialized() and paddle.cuda.device_count() > 0:
+        if (
+            paddle.distributed.is_initialized()
+            and paddle.cuda.device_count() > 0
+        ):
             paddleformers.fleet.tensor_parallel.model_parallel_cuda_manual_seed(
                 seed,
                 te_rng_tracker,
@@ -156,12 +167,17 @@ def check_grads(dist_model, serial_model, tp_group):
     for name, p in dist_model.named_parameters():
         if "qkv_proj.weight" in name or "up_gate_proj.weight" in name:
             grad = _gather_along_last_dim(p.grad, tp_group)
-        elif "o_proj.weight" in name or "down_proj.weight" in name or "embed_tokens.weight" in name:
+        elif (
+            "o_proj.weight" in name
+            or "down_proj.weight" in name
+            or "embed_tokens.weight" in name
+        ):
             grad = _gather_along_first_dim(p.grad, tp_group)
         else:
             grad = p.grad
         assert (
-            paddle.allclose(grad, serial_grads[name], atol=5e-8) and cal_sim(grad, serial_grads[name]) > 0.999
+            paddle.allclose(grad, serial_grads[name], atol=5e-8)
+            and cal_sim(grad, serial_grads[name]) > 0.999
         ), f"Gradient mismatch for {name}"
 
 
@@ -245,8 +261,12 @@ def _make_language_config(
         "use_cpu_initialization": True,
         "tensor_model_parallel_size": tensor_model_parallel_size,
         "sequence_parallel": sequence_parallel,
-        "init_method": functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-        "output_layer_init_method": functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+        "init_method": functools.partial(
+            paddle.nn.init.xavier_uniform_, gain=1.0
+        ),
+        "output_layer_init_method": functools.partial(
+            paddle.nn.init.xavier_uniform_, gain=1.0
+        ),
     }
 
     if use_moe:
@@ -309,7 +329,9 @@ def _make_input_data(batch_size=1):
     mm_token_type_ids[0, TEXT_BEFORE : TEXT_BEFORE + NUM_IMAGE_TOKENS] = 1
 
     image_grid_thw = paddle.to_tensor([[GRID_T, GRID_H, GRID_W]], dtype="int32")
-    pixel_values = paddle.randn([GRID_T, IN_CHANNELS, TEMPORAL_PATCH_SIZE, IMAGE_H, IMAGE_W])
+    pixel_values = paddle.randn(
+        [GRID_T, IN_CHANNELS, TEMPORAL_PATCH_SIZE, IMAGE_H, IMAGE_W]
+    )
 
     return {
         "input_ids": input_ids,

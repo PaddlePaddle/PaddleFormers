@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -67,7 +71,9 @@ class TestReduce(unittest.TestCase):
         with self.assertRaises(AssertionError):
             _reduce(paddle.randn([2, 4]), None)
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings.paddle.distributed.all_reduce")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.paddle.distributed.all_reduce"
+    )
     def test_reduce_single_gpu_bypass(self, mock_all_reduce):
         """Test _reduce bypasses when world_size is 1."""
         group = _make_group(world_size=1, rank=0)
@@ -75,7 +81,9 @@ class TestReduce(unittest.TestCase):
         result = _reduce(x, group)
         mock_all_reduce.assert_not_called()
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings.paddle.distributed.all_reduce")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.paddle.distributed.all_reduce"
+    )
     def test_reduce_calls_all_reduce(self, mock_all_reduce):
         """Test _reduce calls all_reduce for multi-GPU."""
         group = _make_group(world_size=2, rank=0)
@@ -92,7 +100,9 @@ class TestSplitAlongLastDim(unittest.TestCase):
         with self.assertRaises(AssertionError):
             _split_along_last_dim(paddle.randn([2, 4]), None)
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings.split_tensor_along_last_dim")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.split_tensor_along_last_dim"
+    )
     def test_split_single_gpu_bypass(self, mock_split):
         """Test bypass when world_size is 1."""
         group = _make_group(world_size=1, rank=0)
@@ -100,7 +110,9 @@ class TestSplitAlongLastDim(unittest.TestCase):
         result = _split_along_last_dim(x, group)
         mock_split.assert_not_called()
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings.split_tensor_along_last_dim")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.split_tensor_along_last_dim"
+    )
     def test_split_returns_rank_slice(self, mock_split):
         """Test _split_along_last_dim returns the correct rank slice."""
         group = _make_group(world_size=2, rank=1)
@@ -175,11 +187,15 @@ class TestReduceScatterAlongLastDim(unittest.TestCase):
         with self.assertRaises(AssertionError):
             _reduce_scatter_along_last_dim(x, group)
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings._reduce_scatter_along_first_dim")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings._reduce_scatter_along_first_dim"
+    )
     # The source code for _reduce_scatter_along_last_dim uses
     # paddle.split with keyword args (dim, split_size_or_sections) that
     # are not supported in this PaddlePaddle version. Skip.
-    @unittest.skip("Source code uses paddle.split with unsupported keyword arguments")
+    @unittest.skip(
+        "Source code uses paddle.split with unsupported keyword arguments"
+    )
     def test_reduce_scatter_last_dim_delegates(self, mock_rs_first):
         """Test _reduce_scatter_along_last_dim delegates properly."""
         group = _make_group(world_size=2, rank=0)
@@ -227,7 +243,9 @@ class TestReduceScatterAlongFirstDim(unittest.TestCase):
         """Test reduce_scatter uses global buffer when flag is True."""
         group = _make_group(world_size=2, rank=0)
         x = paddle.randn([4, 8])
-        with patch("paddleformers.fleet.tensor_parallel.mappings.get_global_memory_buffer") as mock_buf:
+        with patch(
+            "paddleformers.fleet.tensor_parallel.mappings.get_global_memory_buffer"
+        ) as mock_buf:
             mock_buf.return_value.get_tensor.return_value = paddle.randn([2, 8])
             _reduce_scatter_along_first_dim(x, group, use_global_buffer=True)
             mock_buf.return_value.get_tensor.assert_called_once()
@@ -296,7 +314,9 @@ class TestScatterToModelParallelRegion(unittest.TestCase):
         _ScatterToModelParallelRegion.apply(x, group)
         mock_split.assert_called_once()
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings._gather_along_last_dim")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings._gather_along_last_dim"
+    )
     def test_backward_gathers(self, mock_gather):
         """Test backward calls gather."""
         group = _make_group(world_size=2, rank=0)
@@ -315,7 +335,9 @@ class TestGatherFromModelParallelRegion(unittest.TestCase):
         result = _GatherFromModelParallelRegion.apply(x, None)
         self.assertTrue(result is x)
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings._gather_along_last_dim")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings._gather_along_last_dim"
+    )
     def test_forward_gathers(self, mock_gather):
         """Test forward calls gather."""
         group = _make_group(world_size=2, rank=0)
@@ -334,7 +356,9 @@ class TestScatterToSequenceParallelRegion(unittest.TestCase):
         result = _ScatterToSequenceParallelRegion.apply(x, None)
         self.assertTrue(result is x)
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings._split_along_first_dim")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings._split_along_first_dim"
+    )
     def test_forward_splits_first_dim(self, mock_split):
         """Test forward splits along first dim."""
         group = _make_group(world_size=2, rank=0)
@@ -350,10 +374,14 @@ class TestGatherFromSequenceParallelRegion(unittest.TestCase):
     def test_forward_none_group(self):
         """Test forward when group is None."""
         x = paddle.randn([2, 4])
-        result = _GatherFromSequenceParallelRegion.apply(x, None, True, None, False)
+        result = _GatherFromSequenceParallelRegion.apply(
+            x, None, True, None, False
+        )
         self.assertTrue(result is x)
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings._gather_along_first_dim")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings._gather_along_first_dim"
+    )
     def test_forward_gathers(self, mock_gather):
         """Test forward calls gather along first dim."""
         group = _make_group(world_size=2, rank=0)
@@ -372,7 +400,9 @@ class TestReduceScatterToSequenceParallelRegion(unittest.TestCase):
         result = _ReduceScatterToSequenceParallelRegion.apply(x, None)
         self.assertTrue(result is x)
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings._reduce_scatter_along_first_dim")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings._reduce_scatter_along_first_dim"
+    )
     def test_forward_reduce_scatters(self, mock_rs):
         """Test forward calls reduce_scatter."""
         group = _make_group(world_size=2, rank=0)
@@ -385,7 +415,9 @@ class TestReduceScatterToSequenceParallelRegion(unittest.TestCase):
 class TestWrapperFunctions(unittest.TestCase):
     """Tests for the wrapper functions that call autograd Function.apply."""
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none"
+    )
     def test_copy_to_tp_region(self, mock_get_group):
         """Test copy_to_tensor_model_parallel_region calls apply."""
         group = _make_group(world_size=1, rank=0)
@@ -394,7 +426,9 @@ class TestWrapperFunctions(unittest.TestCase):
         result = copy_to_tensor_model_parallel_region(x)
         self.assertIsNotNone(result)
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none"
+    )
     def test_reduce_from_tp_region(self, mock_get_group):
         """Test reduce_from_tensor_model_parallel_region calls apply."""
         group = _make_group(world_size=1, rank=0)
@@ -403,7 +437,9 @@ class TestWrapperFunctions(unittest.TestCase):
         result = reduce_from_tensor_model_parallel_region(x)
         self.assertIsNotNone(result)
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none"
+    )
     def test_scatter_to_tp_region(self, mock_get_group):
         """Test scatter_to_tensor_model_parallel_region calls apply."""
         group = _make_group(world_size=1, rank=0)
@@ -412,7 +448,9 @@ class TestWrapperFunctions(unittest.TestCase):
         result = scatter_to_tensor_model_parallel_region(x)
         self.assertIsNotNone(result)
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none"
+    )
     def test_gather_from_tp_region(self, mock_get_group):
         """Test gather_from_tensor_model_parallel_region calls apply."""
         group = _make_group(world_size=1, rank=0)
@@ -421,7 +459,9 @@ class TestWrapperFunctions(unittest.TestCase):
         result = gather_from_tensor_model_parallel_region(x)
         self.assertIsNotNone(result)
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none"
+    )
     def test_scatter_to_sp_region(self, mock_get_group):
         """Test scatter_to_sequence_parallel_region calls apply."""
         group = _make_group(world_size=1, rank=0)
@@ -430,7 +470,9 @@ class TestWrapperFunctions(unittest.TestCase):
         result = scatter_to_sequence_parallel_region(x)
         self.assertIsNotNone(result)
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none"
+    )
     def test_gather_from_sp_region(self, mock_get_group):
         """Test gather_from_sequence_parallel_region calls apply."""
         group = _make_group(world_size=1, rank=0)
@@ -439,7 +481,9 @@ class TestWrapperFunctions(unittest.TestCase):
         result = gather_from_sequence_parallel_region(x)
         self.assertIsNotNone(result)
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none"
+    )
     def test_reduce_scatter_to_sp_region(self, mock_get_group):
         """Test reduce_scatter_to_sequence_parallel_region calls apply."""
         group = _make_group(world_size=1, rank=0)

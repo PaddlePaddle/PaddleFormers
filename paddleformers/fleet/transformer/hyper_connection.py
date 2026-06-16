@@ -35,10 +35,14 @@ from paddleformers.fleet.tensor_parallel.random import get_cuda_rng_tracker
 from paddleformers.fleet.transformer.layer import FleetLayer
 
 if TYPE_CHECKING:
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
 
-_ACCURACY_COMPATIBLE_KERNEL: bool = os.environ.get("FLAGS_use_accuracy_compatible_kernel", "0") == "1"
+_ACCURACY_COMPATIBLE_KERNEL: bool = (
+    os.environ.get("FLAGS_use_accuracy_compatible_kernel", "0") == "1"
+)
 
 
 def _use_accuracy_compatible_kernel() -> bool:
@@ -60,7 +64,9 @@ class SinkhornKnopp(paddle.autograd.PyLayer):
     """
 
     @staticmethod
-    def _sinkhorn_normalize(M: Tensor, num_iterations: int, eps: float = 1e-6) -> Tensor:
+    def _sinkhorn_normalize(
+        M: Tensor, num_iterations: int, eps: float = 1e-6
+    ) -> Tensor:
         """
         Apply Sinkhorn-Knopp normalization iterations.
 
@@ -80,7 +86,9 @@ class SinkhornKnopp(paddle.autograd.PyLayer):
         return M
 
     @staticmethod
-    def forward(ctx, H_res_logits: Tensor, num_iterations: int, eps: float = 1e-6) -> Tensor:
+    def forward(
+        ctx, H_res_logits: Tensor, num_iterations: int, eps: float = 1e-6
+    ) -> Tensor:
         """
         Project to doubly stochastic matrix via iterative row/col normalization.
 
@@ -98,10 +106,16 @@ class SinkhornKnopp(paddle.autograd.PyLayer):
         # Megatron's torch implementation.
         if _use_accuracy_compatible_kernel():
             with paddle.amp.auto_cast(enable=False):
-                M_init = paddle.exp(H_res_logits - H_res_logits.max(axis=-1, keepdim=True))
-                M = SinkhornKnopp._sinkhorn_normalize(M_init, num_iterations, eps)
+                M_init = paddle.exp(
+                    H_res_logits - H_res_logits.max(axis=-1, keepdim=True)
+                )
+                M = SinkhornKnopp._sinkhorn_normalize(
+                    M_init, num_iterations, eps
+                )
         else:
-            M_init = paddle.exp(H_res_logits - H_res_logits.max(axis=-1, keepdim=True))
+            M_init = paddle.exp(
+                H_res_logits - H_res_logits.max(axis=-1, keepdim=True)
+            )
             M = SinkhornKnopp._sinkhorn_normalize(M_init, num_iterations, eps)
 
         # Save initial M for backward recomputation
@@ -124,7 +138,9 @@ class SinkhornKnopp(paddle.autograd.PyLayer):
             M_input = M_init.detach()
             M_input.stop_gradient = False
 
-            M_current = SinkhornKnopp._sinkhorn_normalize(M_input, num_iterations, eps)
+            M_current = SinkhornKnopp._sinkhorn_normalize(
+                M_input, num_iterations, eps
+            )
 
             # Compute dL/dM_input via autograd
             grad_M_init = paddle.grad(
@@ -141,12 +157,16 @@ class SinkhornKnopp(paddle.autograd.PyLayer):
         return grad_input
 
 
-def native_sinkhorn(input_logits: Tensor, num_iterations: int, eps: float = 1e-6) -> Tensor:
+def native_sinkhorn(
+    input_logits: Tensor, num_iterations: int, eps: float = 1e-6
+) -> Tensor:
     """Native Sinkhorn-Knopp (PyLayer wrapper)."""
     return SinkhornKnopp.apply(input_logits, num_iterations, eps)
 
 
-def native_proj_rms(x: Tensor, weight: Tensor, eps: float = 1e-6) -> tuple[Tensor, Tensor]:
+def native_proj_rms(
+    x: Tensor, weight: Tensor, eps: float = 1e-6
+) -> tuple[Tensor, Tensor]:
     """Native fused projection + RMS normalization."""
     nC = x.shape[-1]
     r = x.norm(axis=-1, keepdim=True) / math.sqrt(nC)
@@ -185,7 +205,9 @@ def native_h_post_bda(
 
     h_res_batched = h_res.reshape([num_tokens, n, n]).transpose([0, 2, 1])
     residual_batched = original_residual.reshape([num_tokens, n, C])
-    mixed = paddle.bmm(h_res_batched, residual_batched).reshape([*leading_shape, n, C])
+    mixed = paddle.bmm(h_res_batched, residual_batched).reshape(
+        [*leading_shape, n, C]
+    )
 
     x_expanded = h_post.unsqueeze(-1) * x.unsqueeze(-2)  # [..., n, C]
     if bias is not None:
@@ -323,13 +345,17 @@ class HyperConnectionModule(nn.Layer):
             proj = proj_2d.reshape([*x.shape[:-1], weight.shape[-1]])
         else:
             ori_dtype = x.dtype
-            proj, r = self._proj_rms_op(x, self.mapping_proj.weight.astype(ori_dtype), self.norm_eps)
+            proj, r = self._proj_rms_op(
+                x, self.mapping_proj.weight.astype(ori_dtype), self.norm_eps
+            )
             if not self.config.high_precision_mhc:
                 r = r.astype(ori_dtype)
 
         return proj, r
 
-    def _compute_h(self, proj: Tensor, r: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+    def _compute_h(
+        self, proj: Tensor, r: Tensor
+    ) -> tuple[Tensor, Tensor, Tensor]:
         """
         Compute h from projected hidden states and scaling factors.
 
@@ -436,7 +462,11 @@ class HyperConnectionModule(nn.Layer):
             # Megatron clean path applies H_res.T to residual.
             ndim = h_res.ndim
             perm = [*list(range(ndim - 2)), ndim - 1, ndim - 2]
-            h_res_batched = h_res.astype(residual.dtype).transpose(perm).reshape([num_tokens, n, n])
+            h_res_batched = (
+                h_res.astype(residual.dtype)
+                .transpose(perm)
+                .reshape([num_tokens, n, n])
+            )
         else:
             # Reshape for bmm: [..., n, n] -> [batch, n, n]
             ndim = h_res.ndim
@@ -503,7 +533,9 @@ class HyperConnectionModule(nn.Layer):
         """
         x, bias = x_with_bias
         x_out = self._apply_h_post(x, h_post)
-        bias_out = self._apply_h_post(bias, h_post) if bias is not None else None
+        bias_out = (
+            self._apply_h_post(bias, h_post) if bias is not None else None
+        )
         return x_out, bias_out
 
     def forward(self, hidden_states: Tensor) -> tuple[Tensor, Tensor, Tensor]:
@@ -520,7 +552,10 @@ class HyperConnectionModule(nn.Layer):
         """
         with paddle.amp.auto_cast(enable=False):
             # Compute mappings
-            if not _use_accuracy_compatible_kernel() and self.config.high_precision_mhc:
+            if (
+                not _use_accuracy_compatible_kernel()
+                and self.config.high_precision_mhc
+            ):
                 hidden_states = hidden_states.astype("float32")
             h_pre, h_post, h_res = self.compute_mappings(hidden_states)
 
@@ -605,20 +640,25 @@ class HyperConnectionModule(nn.Layer):
         base = base.astype("float32")
         scale = scale.astype("float32")
 
-        rsqrt = paddle.rsqrt(hidden_states.square().mean(-1, keepdim=True) + eps)
+        rsqrt = paddle.rsqrt(
+            hidden_states.square().mean(-1, keepdim=True) + eps
+        )
         if _use_accuracy_compatible_kernel():
             # Match Torch F.linear(x, weight[out,in]) kernel selection. Paddle
             # F.linear(x, weight[in,out]) uses a different cuBLAS path and
             # causes BF16 ulp drift in DSv4 final output contraction.
             head_fn_out_in = head_fn.transpose([1, 0]).contiguous()
             with paddle.amp.auto_cast(False):
-                proj = paddle.matmul(hidden_states, head_fn_out_in, transpose_y=True)
+                proj = paddle.matmul(
+                    hidden_states, head_fn_out_in, transpose_y=True
+                )
             mixes = proj * rsqrt
         else:
             mixes = F.linear(hidden_states, head_fn) * rsqrt
         pre = F.sigmoid(mixes * scale + base) + eps
         y = paddle.sum(
-            pre.unsqueeze(-1) * hidden_states.reshape([*hidden_states.shape[:-1], n, -1]),
+            pre.unsqueeze(-1)
+            * hidden_states.reshape([*hidden_states.shape[:-1], n, -1]),
             axis=-2,
         )
         return y.astype(dtype)
@@ -663,28 +703,38 @@ class HyperConnectionModule(nn.Layer):
             x, bias = layer_output_with_bias
 
             # Fast path: no dropout — use fused/native h_post_bda kernel
-            if not _use_accuracy_compatible_kernel() and (dropout_prob == 0.0 or not training):
+            if not _use_accuracy_compatible_kernel() and (
+                dropout_prob == 0.0 or not training
+            ):
                 leading_shape = original_residual.shape[:-1]
                 n = self.n
                 C = self.hidden_size
-                orig_reshaped = original_residual.reshape([*leading_shape, n, C])
+                orig_reshaped = original_residual.reshape(
+                    [*leading_shape, n, C]
+                )
                 if self.config.high_precision_mhc:
                     orig_reshaped = orig_reshaped.astype("float32")
                     x = x.astype("float32")
                     if bias is not None:
                         bias = bias.astype("float32")
-                output = self._h_post_bda_op(h_res, orig_reshaped, h_post, x, bias)
+                output = self._h_post_bda_op(
+                    h_res, orig_reshaped, h_post, x, bias
+                )
                 return output.reshape([*leading_shape, n * C])
 
             # Sequential path: used when dropout required OR accuracy-compatible kernel is NOT enabled
             mixed = self.apply_h_res(h_res, original_residual)
 
             x_expanded = self._apply_h_post(x, h_post)
-            bias_expanded = self._apply_h_post(bias, h_post) if bias is not None else None
+            bias_expanded = (
+                self._apply_h_post(bias, h_post) if bias is not None else None
+            )
 
             if bias_expanded is not None:
                 x_expanded = x_expanded + bias_expanded
-            out = paddle.nn.functional.dropout(x_expanded, p=dropout_prob, training=training)
+            out = paddle.nn.functional.dropout(
+                x_expanded, p=dropout_prob, training=training
+            )
             output = out + mixed
 
         return output
@@ -705,7 +755,9 @@ class HyperConnectionExpandLayer(FleetLayer):
         self.n = config.num_residual_streams
 
     def forward(self, dict_args: dict) -> dict:
-        dict_args["hidden_states"] = HyperConnectionModule.input_expand(dict_args["hidden_states"], self.n)
+        dict_args["hidden_states"] = HyperConnectionModule.input_expand(
+            dict_args["hidden_states"], self.n
+        )
         return dict_args
 
 
@@ -724,7 +776,8 @@ class HyperConnectionContractLayer(FleetLayer):
         super().__init__(config)
         self.n = config.num_residual_streams
         self.mtp_enabled = (
-            getattr(config, "num_nextn_predict_layers", 0) > 0 or getattr(config, "mtp_num_layers", 0) > 0
+            getattr(config, "num_nextn_predict_layers", 0) > 0
+            or getattr(config, "mtp_num_layers", 0) > 0
         )
 
         self.num_mtp = getattr(config, "num_nextn_predict_layers", 0) or 0
@@ -758,20 +811,26 @@ class HyperConnectionContractLayer(FleetLayer):
         hidden_states = dict_args["hidden_states"]
 
         # When MTP is enabled, preserve multi-stream for MTP input
-        if self.mtp_enabled and self.num_mtp > 0 and not getattr(self.config, "mtp_load_weight_only", False):
+        if (
+            self.mtp_enabled
+            and self.num_mtp > 0
+            and not getattr(self.config, "mtp_load_weight_only", False)
+        ):
             dict_args["mhc_multistream"] = hidden_states
 
             if self.magic_send:
                 # magic_send: hidden_states is pure backbone [B, S, n*H]
                 # Magic send: backbone processes only main sequence, no MTP chunks concatenated.
                 # Simply contract the entire tensor.
-                dict_args["hidden_states"] = HyperConnectionModule.learned_output_contract(
-                    hidden_states,
-                    self.hc_head_fn,
-                    self.hc_head_base,
-                    self.hc_head_scale,
-                    self.n,
-                    self.config.rms_norm_eps,
+                dict_args["hidden_states"] = (
+                    HyperConnectionModule.learned_output_contract(
+                        hidden_states,
+                        self.hc_head_fn,
+                        self.hc_head_base,
+                        self.hc_head_scale,
+                        self.n,
+                        self.config.rms_norm_eps,
+                    )
                 )
             else:
                 # Non-magic_send: backbone output is [backbone_chunk | mtp_chunks...] concatenated.
@@ -789,18 +848,24 @@ class HyperConnectionContractLayer(FleetLayer):
                 )
 
                 # 为了后面MTP slice、取shape的时候兼容,原本也是expand过来的[[s,b,h]...]
-                mtp_contracted = [c[..., : c.shape[-1] // self.n] for c in chunks[1:]]
+                mtp_contracted = [
+                    c[..., : c.shape[-1] // self.n] for c in chunks[1:]
+                ]
 
-                dict_args["hidden_states"] = paddle.concat([main_contracted, *mtp_contracted])
+                dict_args["hidden_states"] = paddle.concat(
+                    [main_contracted, *mtp_contracted]
+                )
 
         else:
             # Learned output contraction: [s, b, n*h] -> [s, b, h]
-            dict_args["hidden_states"] = HyperConnectionModule.learned_output_contract(
-                hidden_states,
-                self.hc_head_fn,
-                self.hc_head_base,
-                self.hc_head_scale,
-                self.n,
-                self.config.rms_norm_eps,
+            dict_args["hidden_states"] = (
+                HyperConnectionModule.learned_output_contract(
+                    hidden_states,
+                    self.hc_head_fn,
+                    self.hc_head_base,
+                    self.hc_head_scale,
+                    self.n,
+                    self.config.rms_norm_eps,
+                )
             )
         return dict_args

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -28,7 +32,9 @@ import paddle
 
 _SKIP_FLASH_ATTN = False
 try:
-    from paddleformers.fleet.recompute.flash_attn import FlashAttnFunctor  # noqa: F401
+    from paddleformers.fleet.recompute.flash_attn import (
+        FlashAttnFunctor,  # noqa: F401
+    )
 
     _SKIP_FLASH_ATTN = True
 except (ImportError, ModuleNotFoundError, AttributeError):
@@ -44,7 +50,9 @@ class TestFlashAttnFunctor(unittest.TestCase):
 
     def test_forward_invalid_version(self):
         """Test that FlashAttnFunctor.forward raises for invalid fa_version."""
-        from paddleformers.fleet.refined_recompute.flash_attn import FlashAttnFunctor
+        from paddleformers.fleet.refined_recompute.flash_attn import (
+            FlashAttnFunctor,
+        )
 
         q = paddle.randn([2, 4, 8], dtype=paddle.bfloat16)
         k = paddle.randn([2, 4, 8], dtype=paddle.bfloat16)
@@ -94,9 +102,15 @@ class TestRefinedRcomputeFlashMaskAttention(unittest.TestCase):
         "paddleformers.fleet.refined_recompute.flash_attn._get_fa_version",
         return_value=2,
     )
-    @patch("paddleformers.fleet.refined_recompute.flash_attn._C_ops.flashmask_attention")
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer")
-    def test_first_fwd_puts_in_queue(self, mock_tracer, mock_flashmask, mock_version):
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn._C_ops.flashmask_attention"
+    )
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer"
+    )
+    def test_first_fwd_puts_in_queue(
+        self, mock_tracer, mock_flashmask, mock_version
+    ):
         """Test _first_fwd stores hold_tensors in the queue."""
         from paddleformers.fleet.refined_recompute.flash_attn import (
             RefinedRcomputeFlashMaskAttention,
@@ -134,9 +148,15 @@ class TestRefinedRcomputeFlashMaskAttention(unittest.TestCase):
         "paddleformers.fleet.refined_recompute.flash_attn._get_fa_version",
         return_value=99,
     )
-    @patch("paddleformers.fleet.refined_recompute.flash_attn._C_ops.flashmask_attention")
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer")
-    def test_first_fwd_invalid_version_raises(self, mock_tracer, mock_flashmask, mock_version):
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn._C_ops.flashmask_attention"
+    )
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer"
+    )
+    def test_first_fwd_invalid_version_raises(
+        self, mock_tracer, mock_flashmask, mock_version
+    ):
         """Test _first_fwd raises for invalid FA version."""
         from paddleformers.fleet.refined_recompute.flash_attn import (
             RefinedRcomputeFlashMaskAttention,
@@ -160,10 +180,16 @@ class TestRefinedRcomputeFlashMaskAttention(unittest.TestCase):
         "paddleformers.fleet.refined_recompute.flash_attn._get_fa_version",
         return_value=3,
     )
-    @patch("paddleformers.fleet.refined_recompute.flash_attn._C_ops.flashmask_attention_v2")
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn._C_ops.flashmask_attention_v2"
+    )
     @patch("paddleformers.fleet.refined_recompute.flash_attn.inspect.signature")
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer")
-    def test_first_fwd_version_3_with_block_mask(self, mock_tracer, mock_sig, mock_flashmask_v2, mock_version):
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer"
+    )
+    def test_first_fwd_version_3_with_block_mask(
+        self, mock_tracer, mock_sig, mock_flashmask_v2, mock_version
+    ):
         """Test _first_fwd v3 with block_mask parameter in signature."""
         from paddleformers.fleet.refined_recompute.flash_attn import (
             RefinedRcomputeFlashMaskAttention,
@@ -195,10 +221,16 @@ class TestRefinedRcomputeFlashMaskAttention(unittest.TestCase):
         "paddleformers.fleet.refined_recompute.flash_attn._get_fa_version",
         return_value=3,
     )
-    @patch("paddleformers.fleet.refined_recompute.flash_attn._C_ops.flashmask_attention_v2")
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn._C_ops.flashmask_attention_v2"
+    )
     @patch("paddleformers.fleet.refined_recompute.flash_attn.inspect.signature")
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer")
-    def test_first_fwd_version_3_without_block_mask(self, mock_tracer, mock_sig, mock_flashmask_v2, mock_version):
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer"
+    )
+    def test_first_fwd_version_3_without_block_mask(
+        self, mock_tracer, mock_sig, mock_flashmask_v2, mock_version
+    ):
         """Test _first_fwd v3 without block_mask parameter in signature."""
         from paddleformers.fleet.refined_recompute.flash_attn import (
             RefinedRcomputeFlashMaskAttention,

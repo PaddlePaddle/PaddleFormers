@@ -46,9 +46,15 @@ class TestVPPSimulator(unittest.TestCase):
         # Initialize simulator with test configuration
         vpp_simulator = VPPSimulator(pp_degree, vpp_degree, num_acc_steps)
         bubble_rate = vpp_simulator.compute_bubble_rate()
-        expected_bubble_rate = 1.0 * (pp_degree - 1) / (vpp_degree * num_acc_steps + (pp_degree - 1))
+        expected_bubble_rate = (
+            1.0
+            * (pp_degree - 1)
+            / (vpp_degree * num_acc_steps + (pp_degree - 1))
+        )
         # print(f"bubble_rate: {bubble_rate}, expected_bubble_rate: {expected_bubble_rate}")
-        assert bubble_rate == expected_bubble_rate, f"Expected bubble rate {expected_bubble_rate}, got {bubble_rate}"
+        assert bubble_rate == expected_bubble_rate, (
+            f"Expected bubble rate {expected_bubble_rate}, got {bubble_rate}"
+        )
         # vpp_simulator.draw_balls()
         # vpp_simulator.draw_chunks()
         assert True
@@ -74,7 +80,11 @@ class TestPPChunkRecorder(unittest.TestCase):
         num_acc_steps = 16  # Gradient accumulation steps
         num_empty_layers_add_in_head = 1  # Number of head layers to skip
         num_empty_layers_add_in_tail = 1  # Number of tail layers to skip
-        num_hidden_layers = pp_degree * vpp_degree - num_empty_layers_add_in_head - num_empty_layers_add_in_tail
+        num_hidden_layers = (
+            pp_degree * vpp_degree
+            - num_empty_layers_add_in_head
+            - num_empty_layers_add_in_tail
+        )
 
         # Initialize recorder with test configuration
         pp_chunk_recorder = PPChunkRecorder(
@@ -89,11 +99,15 @@ class TestPPChunkRecorder(unittest.TestCase):
         # Simulate forward passes for all layers across a global_step
         for i in range(num_acc_steps):
             for j in range(num_hidden_layers):
-                pp_chunk_recorder.record_chunk_forward(j + num_empty_layers_add_in_head)
+                pp_chunk_recorder.record_chunk_forward(
+                    j + num_empty_layers_add_in_head
+                )
 
         # Verify each layer was executed exactly num_acc_steps times
         result = np.array(pp_chunk_recorder.acc_stamp)
-        assert np.all(result == num_acc_steps), f"Expected all layers to be executed {num_acc_steps} times"
+        assert np.all(result == num_acc_steps), (
+            f"Expected all layers to be executed {num_acc_steps} times"
+        )
 
 
 if __name__ == "__main__":

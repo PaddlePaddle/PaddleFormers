@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -58,7 +62,7 @@ class TestXpuCommGroup(unittest.TestCase):
             _xpu_comm_group_start,
         )
 
-        with (  # noqa: SIM117
+        with (
             patch("paddle.is_compiled_with_xpu", return_value=True),
             patch(
                 "paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication._xpu_comm_group_started",
@@ -335,7 +339,7 @@ class TestFourDirectionsIsValidSendRecvPartial(unittest.TestCase):
 
         mock_tensor = MagicMock()
         mock_tensor.shape = [0]
-        with (  # noqa: SIM117
+        with (
             patch(
                 "paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication._enable_partial_send_recv",
                 True,
@@ -396,7 +400,9 @@ class TestFourDirectionsPartialOps(unittest.TestCase):
             "paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication._is_valid_send_recv_partial",
             return_value=True,
         ):
-            result = allgather_partial(mock_tensor, nranks=4, rank_id=0, group=mock_group)
+            result = allgather_partial(
+                mock_tensor, nranks=4, rank_id=0, group=mock_group
+            )
             self.assertIsNone(result)
 
     def test_send_partial_invalid_partial(self):
@@ -422,7 +428,9 @@ class TestFourDirectionsPartialOps(unittest.TestCase):
             ),
             patch("paddle.distributed.isend") as mock_isend,
         ):
-            send_partial(mock_tensor, dst=1, nranks=1, rank_id=0, group=mock_group)
+            send_partial(
+                mock_tensor, dst=1, nranks=1, rank_id=0, group=mock_group
+            )
             mock_isend.assert_called_once()
 
     def test_recv_partial_invalid_partial_calc_stream(self):
@@ -515,7 +523,9 @@ class TestFourDirectionsPartialOps(unittest.TestCase):
             ),
             patch("paddle.distributed.isend") as mock_isend,
         ):
-            send_partial(mock_tensor, dst=0, nranks=1, rank_id=0, group=mock_group)
+            send_partial(
+                mock_tensor, dst=0, nranks=1, rank_id=0, group=mock_group
+            )
             mock_isend.assert_called_once()
 
     def test_recv_partial_src_1(self):
@@ -541,7 +551,9 @@ class TestFourDirectionsPartialOps(unittest.TestCase):
             ),
             patch("paddle.distributed.recv") as mock_recv,
         ):
-            recv_partial(mock_tensor, src=1, nranks=1, rank_id=0, group=mock_group)
+            recv_partial(
+                mock_tensor, src=1, nranks=1, rank_id=0, group=mock_group
+            )
             mock_recv.assert_called_once()
 
 
@@ -560,8 +572,12 @@ class TestFourDirectionsInitializeP2PGroups(unittest.TestCase):
             MagicMock(),
             MagicMock(),
         )
-        with patch("paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication.logger"):
-            initialize_p2p_groups(mock_hcg, enable_partial_send_recv=True, enable_timer=False)
+        with patch(
+            "paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication.logger"
+        ):
+            initialize_p2p_groups(
+                mock_hcg, enable_partial_send_recv=True, enable_timer=False
+            )
 
     def test_init_with_timer(self):
         from paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication import (
@@ -580,7 +596,9 @@ class TestFourDirectionsInitializeP2PGroups(unittest.TestCase):
             patch(
                 "paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication.timer"
             ) as mock_timer_mod,
-            patch("paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication.logger"),
+            patch(
+                "paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication.logger"
+            ),
         ):
             mock_timer_mod.get_timers.return_value = mock_timer
             initialize_p2p_groups(mock_hcg, enable_timer=True)
@@ -650,7 +668,9 @@ class TestFourDirectionsP2pHelper(unittest.TestCase):
 
         helper = P2pHelper()
         mock_tensor = MagicMock()
-        result = helper.send_forward_recv_backward(mock_tensor, pp_last_stage=True)
+        result = helper.send_forward_recv_backward(
+            mock_tensor, pp_last_stage=True
+        )
         self.assertIsNone(result)
 
     def test_send_backward_recv_forward_first_stage(self):
@@ -660,7 +680,9 @@ class TestFourDirectionsP2pHelper(unittest.TestCase):
 
         helper = P2pHelper()
         mock_tensor = MagicMock()
-        result = helper.send_backward_recv_forward(mock_tensor, pp_first_stage=True)
+        result = helper.send_backward_recv_forward(
+            mock_tensor, pp_first_stage=True
+        )
         self.assertIsNone(result)
 
     def test_send_forward_recv_forward(self):
@@ -685,7 +707,9 @@ class TestFourDirectionsP2pHelper(unittest.TestCase):
                 return_value=(None, None),
             ),
         ):
-            result = helper.send_forward_recv_forward(mock_tensor, recv_prev=False)
+            result = helper.send_forward_recv_forward(
+                mock_tensor, recv_prev=False
+            )
 
     def test_send_backward_recv_backward(self):
         from paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication import (
@@ -706,7 +730,9 @@ class TestFourDirectionsP2pHelper(unittest.TestCase):
                 return_value=(None, None),
             ),
         ):
-            result = helper.send_backward_recv_backward(mock_tensor, recv_next=False)
+            result = helper.send_backward_recv_backward(
+                mock_tensor, recv_next=False
+            )
 
     def test_send_forward_backward_recv_forward_backward(self):
         from paddle.distributed.fleet.meta_parallel.pp_utils.four_directions_p2p_communication import (

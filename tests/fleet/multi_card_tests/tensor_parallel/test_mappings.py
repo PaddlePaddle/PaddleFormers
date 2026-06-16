@@ -30,14 +30,20 @@ def test_CopyToModelParallelRegion():
     class Ctx:
         group = tp_group
 
-    output_data = mappings._CopyToModelParallelRegion.backward(Ctx(), input_data)
+    output_data = mappings._CopyToModelParallelRegion.backward(
+        Ctx(), input_data
+    )
     result = paddle.ones([1]).cuda()
     result = result * 22 if Utils.rank >= 4 else result * 6
     assert paddle.equal_all(output_data, result)
-    assert paddle.equal_all(input_data, mappings.copy_to_tensor_model_parallel_region(input_data))
+    assert paddle.equal_all(
+        input_data, mappings.copy_to_tensor_model_parallel_region(input_data)
+    )
     assert paddle.equal_all(
         input_data,
-        mappings._CopyToModelParallelRegion.symbolic(None, input_data, tp_group),
+        mappings._CopyToModelParallelRegion.symbolic(
+            None, input_data, tp_group
+        ),
     )
 
 
@@ -45,19 +51,25 @@ def test_ReduceFromModelParallelRegion():
     input_data = paddle.ones(1).cuda() * Utils.rank
 
     tp_group = get_tensor_model_parallel_group_if_none(tp_group=None)
-    output_data = mappings._ReduceFromModelParallelRegion.symbolic(None, input_data, tp_group)
+    output_data = mappings._ReduceFromModelParallelRegion.symbolic(
+        None, input_data, tp_group
+    )
 
     result = paddle.ones(1).cuda()
     result = result * 22 if Utils.rank >= 4 else result * 6
     assert paddle.equal_all(output_data, result)
 
     input_data = paddle.ones(1).cuda() * Utils.rank
-    assert paddle.equal_all(mappings.reduce_from_tensor_model_parallel_region(input_data), result)
+    assert paddle.equal_all(
+        mappings.reduce_from_tensor_model_parallel_region(input_data), result
+    )
 
     class Ctx:
         group = tp_group
 
-    output_data = mappings._ReduceFromModelParallelRegion.backward(Ctx(), input_data)
+    output_data = mappings._ReduceFromModelParallelRegion.backward(
+        Ctx(), input_data
+    )
     assert paddle.equal_all(input_data, output_data)
 
 
@@ -69,7 +81,9 @@ def test_ScatterToModelParallelRegion():
 
     req_dim = int(Utils.rank)
     assert paddle.equal_all(output_data, input_data[:, req_dim].reshape((8, 1)))
-    output_data = mappings._ScatterToModelParallelRegion.symbolic(None, input_data, tp_group)
+    output_data = mappings._ScatterToModelParallelRegion.symbolic(
+        None, input_data, tp_group
+    )
     assert paddle.equal_all(output_data, input_data[:, req_dim].reshape((8, 1)))
 
     input_data = paddle.ones([8]).cuda() * Utils.rank
@@ -77,7 +91,9 @@ def test_ScatterToModelParallelRegion():
     class Ctx:
         group = tp_group
 
-    actual_output_data = mappings._ScatterToModelParallelRegion.backward(Ctx(), input_data)
+    actual_output_data = mappings._ScatterToModelParallelRegion.backward(
+        Ctx(), input_data
+    )
     expected_output = paddle.cat(
         (
             paddle.ones([8]) * 0,
@@ -100,11 +116,15 @@ def test_GatherFromModelParallelRegion():
     class Ctx:
         group = tp_group
 
-    output_data = mappings._GatherFromModelParallelRegion.backward(Ctx(), input_data)
+    output_data = mappings._GatherFromModelParallelRegion.backward(
+        Ctx(), input_data
+    )
     assert paddle.equal_all(output_data, input_data[:, req_dim].reshape((8, 1)))
 
     input_data = paddle.ones([8]).cuda() * Utils.rank
-    actual_output_data = mappings.gather_from_tensor_model_parallel_region(input_data)
+    actual_output_data = mappings.gather_from_tensor_model_parallel_region(
+        input_data
+    )
     expected_output = paddle.cat(
         (
             paddle.ones([8]) * 0,
@@ -117,7 +137,9 @@ def test_GatherFromModelParallelRegion():
         expected_output = expected_output + 4
     assert paddle.equal_all(actual_output_data, expected_output)
     assert paddle.equal_all(
-        mappings._GatherFromModelParallelRegion.symbolic(None, input_data, tp_group),
+        mappings._GatherFromModelParallelRegion.symbolic(
+            None, input_data, tp_group
+        ),
         expected_output,
     )
 
@@ -127,7 +149,9 @@ def test_ScatterToSequenceParallelRegion():
 
     tp_group = get_tensor_model_parallel_group_if_none(tp_group=None)
     req_dim = Utils.rank * 2
-    output_data = mappings._ScatterToSequenceParallelRegion.symbolic(None, input_data, tp_group)
+    output_data = mappings._ScatterToSequenceParallelRegion.symbolic(
+        None, input_data, tp_group
+    )
     assert paddle.equal_all(output_data, input_data[req_dim : req_dim + 2, :])
     output_data = mappings.scatter_to_sequence_parallel_region(input_data)
     assert paddle.equal_all(output_data, input_data[req_dim : req_dim + 2, :])
@@ -137,7 +161,9 @@ def test_ScatterToSequenceParallelRegion():
     class Ctx:
         group = tp_group
 
-    output_data = mappings._ScatterToModelParallelRegion.backward(Ctx(), input_data)
+    output_data = mappings._ScatterToModelParallelRegion.backward(
+        Ctx(), input_data
+    )
     expected_output = paddle.concat(
         (
             paddle.ones([4]) * 0,
@@ -168,7 +194,9 @@ def test_GatherFromSequenceParallelRegion():
         expected_output = expected_output + 4
     assert paddle.equal_all(output_data, expected_output)
     assert paddle.equal_all(
-        mappings._GatherFromSequenceParallelRegion.symbolic(None, input_data, tp_group),
+        mappings._GatherFromSequenceParallelRegion.symbolic(
+            None, input_data, tp_group
+        ),
         expected_output,
     )
     input_data = paddle.vstack(
@@ -186,7 +214,9 @@ def test_GatherFromSequenceParallelRegion():
         group = tp_group
         use_global_buffer = False
 
-    output_data = mappings._GatherFromSequenceParallelRegion.backward(Ctx(), input_data)
+    output_data = mappings._GatherFromSequenceParallelRegion.backward(
+        Ctx(), input_data
+    )
     expected_output = paddle.ones((1, 4)).cuda() * 4 * int(Utils.rank % 4)
     assert paddle.equal_all(output_data, expected_output)
 
@@ -202,11 +232,15 @@ def test_ReduceScatterToSequenceParallelRegion():
     ).cuda()
 
     tp_group = get_tensor_model_parallel_group_if_none(tp_group=None)
-    output_data = mappings.reduce_scatter_to_sequence_parallel_region(input_data)
+    output_data = mappings.reduce_scatter_to_sequence_parallel_region(
+        input_data
+    )
     expected_output = paddle.ones([1, 4]).cuda() * 4 * int(Utils.rank % 4)
     assert paddle.equal_all(output_data, expected_output)
     assert paddle.equal_all(
-        mappings._ReduceScatterToSequenceParallelRegion.symbolic(None, input_data, tp_group),
+        mappings._ReduceScatterToSequenceParallelRegion.symbolic(
+            None, input_data, tp_group
+        ),
         expected_output.reshape((1, 4)),
     )
     input_data = paddle.ones([4]).cuda() * Utils.rank
@@ -216,7 +250,9 @@ def test_ReduceScatterToSequenceParallelRegion():
         group = tp_group
         use_global_buffer = False
 
-    output_data = mappings._ReduceScatterToSequenceParallelRegion.backward(Ctx(), input_data)
+    output_data = mappings._ReduceScatterToSequenceParallelRegion.backward(
+        Ctx(), input_data
+    )
     expected_output = paddle.concat(
         (
             paddle.ones([4]) * 0,

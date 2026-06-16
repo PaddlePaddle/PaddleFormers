@@ -20,7 +20,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import paddle
@@ -51,7 +55,10 @@ def test_cuda_rng_states_tracker():
     rng_tracker.fork("state2")
     paddle.cuda.manual_seed(seed)
     rng_state = paddle.cuda.get_rng_state()
-    assert rng_tracker.get_states()["state2"].current_seed() == rng_state.current_seed()
+    assert (
+        rng_tracker.get_states()["state2"].current_seed()
+        == rng_state.current_seed()
+    )
 
 
 def test_model_parallel_cuda_manual_seed():

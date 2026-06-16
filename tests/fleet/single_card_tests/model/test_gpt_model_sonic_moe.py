@@ -18,15 +18,20 @@ import unittest
 
 import paddle
 import paddle.nn.functional as F
-import paddlefleet_ops
 from paddle.distributed import fleet
-from paddlefleet_ops.utils import get_cuda_version
+
+import paddlefleet_ops
 
 # from tests.unit_tests.test_utilities import Utils
 import paddleformers.fleet.parallel_state as ps
-from paddleformers.fleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
+from paddlefleet_ops.utils import get_cuda_version
+from paddleformers.fleet.models.gpt.gpt_layer_specs import (
+    get_gpt_layer_local_spec,
+)
 from paddleformers.fleet.process_groups_config import ProcessGroupCollection
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.transformer.moe.moe_layer import MoELayer
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 
@@ -36,7 +41,9 @@ if paddlefleet_ops.is_sonic_moe_available():
 
 def get_gpu_models_via_nvidia_smi():
     try:
-        output = subprocess.check_output("nvidia-smi --query-gpu=name --format=csv,noheader", shell=True)
+        output = subprocess.check_output(
+            "nvidia-smi --query-gpu=name --format=csv,noheader", shell=True
+        )
         models = output.decode().strip().replace("NVIDIA", "")
         return models
     except Exception as e:
@@ -119,7 +126,9 @@ class TestSonicMoELayerPrecision(unittest.TestCase):
         """Small uniform init for precision tests (matches pre-update behavior)."""
         paddle.nn.initializer.Uniform(-0.001, 0.001)(tensor)
 
-    def _build_transformer_config(self, using_sonic_moe=False, fp8=None, moe_deep_gemm=None):
+    def _build_transformer_config(
+        self, using_sonic_moe=False, fp8=None, moe_deep_gemm=None
+    ):
         kwargs = {
             "hidden_size": self.hidden_size,
             "num_attention_heads": 4,
@@ -149,7 +158,9 @@ class TestSonicMoELayerPrecision(unittest.TestCase):
             kwargs["moe_deep_gemm"] = moe_deep_gemm
         return TransformerConfig(**kwargs)
 
-    def _build_moe_layer(self, using_sonic_moe=False, fp8=None, moe_deep_gemm=None):
+    def _build_moe_layer(
+        self, using_sonic_moe=False, fp8=None, moe_deep_gemm=None
+    ):
         paddle.seed(self.seed)
         model_parallel_cuda_manual_seed(self.seed)
         transformer_config = self._build_transformer_config(
@@ -250,21 +261,35 @@ class TestSonicMoELayerPrecision(unittest.TestCase):
           2. FP8 sonic-moe vs BF16 sonic-moe: output and gradients
              should be close (5e-3).
         """
-        moe_layer_baseline = self._build_moe_layer(using_sonic_moe=False, moe_deep_gemm=False)
+        moe_layer_baseline = self._build_moe_layer(
+            using_sonic_moe=False, moe_deep_gemm=False
+        )
         moe_layer_sonic_bf16 = self._build_moe_layer(using_sonic_moe=True)
-        moe_layer_sonic_fp8 = self._build_moe_layer(using_sonic_moe=True, fp8="e4m3")
+        moe_layer_sonic_fp8 = self._build_moe_layer(
+            using_sonic_moe=True, fp8="e4m3"
+        )
 
         input_data_list = []
         for step_idx in range(self.acc_steps):
             paddle.seed(self.seed + step_idx)
-            data = paddle.randn([2, 64, self.hidden_size], dtype=paddle.bfloat16)
+            data = paddle.randn(
+                [2, 64, self.hidden_size], dtype=paddle.bfloat16
+            )
             input_data_list.append(data)
 
-        loss_bl, output_bl, grads_bl = self._run_accumulated_forward_backward(moe_layer_baseline, input_data_list)
-        loss_bf16, output_bf16, grads_bf16 = self._run_accumulated_forward_backward(
-            moe_layer_sonic_bf16, input_data_list
+        loss_bl, output_bl, grads_bl = self._run_accumulated_forward_backward(
+            moe_layer_baseline, input_data_list
         )
-        loss_fp8, output_fp8, grads_fp8 = self._run_accumulated_forward_backward(moe_layer_sonic_fp8, input_data_list)
+        loss_bf16, output_bf16, grads_bf16 = (
+            self._run_accumulated_forward_backward(
+                moe_layer_sonic_bf16, input_data_list
+            )
+        )
+        loss_fp8, output_fp8, grads_fp8 = (
+            self._run_accumulated_forward_backward(
+                moe_layer_sonic_fp8, input_data_list
+            )
+        )
         clear_all_fp8_weight_caches()
 
         # ── BF16 sonic-moe vs baseline ──
@@ -279,29 +304,39 @@ class TestSonicMoELayerPrecision(unittest.TestCase):
 
         adiff = abs(loss_bf16 - loss_bl)
         rdiff = adiff / max(abs(loss_bl), 1e-12)
-        print(f"BF16 sonic vs Baseline: loss rdiff = {rdiff:.6e}, " f"adiff = {adiff:.6e}")
+        print(
+            f"BF16 sonic vs Baseline: loss rdiff = {rdiff:.6e}, "
+            f"adiff = {adiff:.6e}"
+        )
         self.assertTrue(
             adiff < 1e-4 or rdiff < 1e-5,
-            f"BF16 sonic vs Baseline loss diff too large " f"(bl={loss_bl}, bf16={loss_bf16})",
+            f"BF16 sonic vs Baseline loss diff too large "
+            f"(bl={loss_bl}, bf16={loss_bf16})",
         )
 
         # Gradient comparison. Sonic expert params keep GroupedMLP layout.
         gate_key = "gate.weight"
         if gate_key in grads_bl and gate_key in grads_bf16:
             diff = calc_diff(grads_bl[gate_key], grads_bf16[gate_key])
-            print(f"BF16 sonic vs Baseline: grad diff = {diff:.6e} for {gate_key}")
+            print(
+                f"BF16 sonic vs Baseline: grad diff = {diff:.6e} for {gate_key}"
+            )
             self.assertLess(diff, bf16_tol)
 
         w1_key = "grouped_gemm_experts.weight1"
         if w1_key in grads_bl and w1_key in grads_bf16:
             diff = calc_diff(grads_bl[w1_key], grads_bf16[w1_key])
-            print(f"BF16 sonic vs Baseline: grad diff = {diff:.6e} for {w1_key}")
+            print(
+                f"BF16 sonic vs Baseline: grad diff = {diff:.6e} for {w1_key}"
+            )
             self.assertLess(diff, bf16_tol)
 
         w2_key = "grouped_gemm_experts.weight2"
         if w2_key in grads_bl and w2_key in grads_bf16:
             diff = calc_diff(grads_bl[w2_key], grads_bf16[w2_key])
-            print(f"BF16 sonic vs Baseline: grad diff = {diff:.6e} for {w2_key}")
+            print(
+                f"BF16 sonic vs Baseline: grad diff = {diff:.6e} for {w2_key}"
+            )
             self.assertLess(diff, bf16_tol)
 
         # ── FP8 sonic-moe vs BF16 sonic-moe ──
@@ -311,7 +346,8 @@ class TestSonicMoELayerPrecision(unittest.TestCase):
         print(f"FP8 vs BF16: loss rdiff = {rdiff:.6e}, adiff = {adiff:.6e}")
         self.assertTrue(
             adiff < 1e-4 or rdiff < 1e-3,
-            f"FP8 sonic-moe loss deviates too much from BF16 " f"(bf16={loss_bf16}, fp8={loss_fp8})",
+            f"FP8 sonic-moe loss deviates too much from BF16 "
+            f"(bf16={loss_bf16}, fp8={loss_fp8})",
         )
 
         output_diff = calc_diff(output_fp8, output_bf16)

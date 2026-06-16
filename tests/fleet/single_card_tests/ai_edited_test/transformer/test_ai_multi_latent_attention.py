@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -78,14 +82,18 @@ class TestECCompatibleRopeApply(unittest.TestCase):
         q_pe = paddle.randn([batch, seq_len, num_heads, head_dim])
         k_pe = paddle.randn([batch, seq_len, 1, head_dim])
 
-        q_out, k_out = _ec_compatible_rope_apply(q_pe, k_pe, seq_len, rope_base=500000.0)
+        q_out, k_out = _ec_compatible_rope_apply(
+            q_pe, k_pe, seq_len, rope_base=500000.0
+        )
         self.assertEqual(q_out.shape, q_pe.shape)
         self.assertEqual(k_out.shape, k_pe.shape)
 
     def test_output_dtype_matches_input(self):
         """Test output dtype matches input dtype."""
         batch, seq_len, num_heads, head_dim = 1, 4, 2, 8
-        q_pe = paddle.randn([batch, seq_len, num_heads, head_dim]).cast("float32")
+        q_pe = paddle.randn([batch, seq_len, num_heads, head_dim]).cast(
+            "float32"
+        )
         k_pe = paddle.randn([batch, seq_len, 1, head_dim]).cast("float32")
 
         q_out, k_out = _ec_compatible_rope_apply(q_pe, k_pe, seq_len)
@@ -109,7 +117,9 @@ class TestFP8OverlapProj(unittest.TestCase):
         weight = paddle.randn([8, 4])
         out_custom = FP8OverlapProj.apply(x, weight)
         out_linear = paddle.nn.functional.linear(x, weight)
-        self.assertTrue(paddle.allclose(out_custom, out_linear, atol=1e-5).item())
+        self.assertTrue(
+            paddle.allclose(out_custom, out_linear, atol=1e-5).item()
+        )
 
 
 class TestMultiLatentAttentionRopeTypeValidation(unittest.TestCase):
@@ -197,8 +207,12 @@ class TestMultiLatentAttentionForwardAssertions(unittest.TestCase):
             mla.use_rr_flash_attention = False
             mla.training = True
             mla.attn_mask_type = AttnMaskType = MagicMock()
-            mla.core_attention = MagicMock(return_value=paddle.randn([1, 4, 2, 16]))
-            mla.o_proj = MagicMock(return_value=(paddle.randn([1, 4, 64]), None))
+            mla.core_attention = MagicMock(
+                return_value=paddle.randn([1, 4, 2, 16])
+            )
+            mla.o_proj = MagicMock(
+                return_value=(paddle.randn([1, 4, 64]), None)
+            )
             mla.gate_proj = None
             mla.recompute_gated_attn = False
             return mla

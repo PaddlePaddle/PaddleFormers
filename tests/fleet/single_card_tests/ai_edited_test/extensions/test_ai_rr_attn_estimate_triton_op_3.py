@@ -19,7 +19,11 @@ import types
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 # Setup comprehensive triton mock before any paddlefleet_ops imports
@@ -38,7 +42,9 @@ _mock_tl.static_range = lambda *a, **kw: range(0)
 _mock_triton = types.ModuleType("triton")
 _mock_triton.jit = lambda fn=None, **kw: fn if fn is not None else lambda f: f
 _mock_triton.cdiv = lambda a, b: (a + b - 1) // b
-_mock_triton.next_power_of_2 = lambda n: (1 << (n - 1).bit_length() if n > 0 else 1)
+_mock_triton.next_power_of_2 = lambda n: (
+    1 << (n - 1).bit_length() if n > 0 else 1
+)
 
 sys.modules.setdefault("triton", _mock_triton)
 sys.modules.setdefault("triton.language", _mock_tl)
@@ -57,7 +63,11 @@ _flashmask_pkg.__path__ = []
 sys.modules["paddlefleet_ops._extensions.flashmask"] = _flashmask_pkg
 
 _project_root = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    )
 )
 _flashmask_dir = os.path.join(
     _project_root,
@@ -110,6 +120,7 @@ except (ImportError, ModuleNotFoundError, Exception):
     _MODULE_AVAILABLE = False
 
 import paddle
+
 from paddlefleet_ops._extensions.flashmask.rr_attn_estimate_triton_op import (
     RawPtrs,
     StrideMaxMinPtrs,
@@ -296,7 +307,9 @@ class TestRrAttnEstimateTritonFuncValidation(unittest.TestCase):
     def test_ndim_validation(self):
         """Test that startend_row_indices ndim must be 4."""
         with self.assertRaises(ValueError):
-            _require(False, "startend_row_indices must be [B, HIDS, seqlen_q, mode]")
+            _require(
+                False, "startend_row_indices must be [B, HIDS, seqlen_q, mode]"
+            )
 
     def test_batch_size_mismatch(self):
         """Test batch size mismatch between q and k."""

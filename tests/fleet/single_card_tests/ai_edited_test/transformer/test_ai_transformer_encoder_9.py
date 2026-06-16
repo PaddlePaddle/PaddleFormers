@@ -16,18 +16,26 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
 from unittest.mock import MagicMock, patch
 
-from paddleformers.fleet.transformer.transformer_encoder import TransformerEncoder
+from paddleformers.fleet.transformer.transformer_encoder import (
+    TransformerEncoder,
+)
 
 
 def _make_encoder(**attrs):
     """Create a TransformerEncoder with mocked __init__ and direct __dict__ setting."""
-    with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+    with patch.object(
+        TransformerEncoder, "__init__", lambda self, *a, **kw: None
+    ):
         encoder = TransformerEncoder.__new__(TransformerEncoder)
         object.__setattr__(encoder, "_sub_layers", {})
         object.__setattr__(encoder, "_parameters", {})
@@ -54,7 +62,9 @@ class TestTransformerEncoderGetLayerDescListPrefix(unittest.TestCase):
         mock_spec.embedding = type("E", (), {})
         mock_spec.layer_norm = type("L", (), {})
         # Avoid LayerDesc calling issubclass on MagicMock
-        with patch("paddleformers.fleet.transformer.transformer_encoder.LayerDesc"):
+        with patch(
+            "paddleformers.fleet.transformer.transformer_encoder.LayerDesc"
+        ):
             encoder.get_layer_desc_list(mock_spec)
         self.assertTrue(any("language_model" in p for p in recorded_prefixes))
 
@@ -70,7 +80,9 @@ class TestTransformerEncoderGetLayerDescListPrefix(unittest.TestCase):
         mock_spec = MagicMock()
         mock_spec.embedding = type("E", (), {})
         mock_spec.layer_norm = type("L", (), {})
-        with patch("paddleformers.fleet.transformer.transformer_encoder.LayerDesc"):
+        with patch(
+            "paddleformers.fleet.transformer.transformer_encoder.LayerDesc"
+        ):
             encoder.get_layer_desc_list(mock_spec)
         self.assertTrue(any(p.startswith("model") for p in recorded_prefixes))
 
@@ -87,8 +99,12 @@ class TestTransformerEncoderGetEncoderLayerDescList(unittest.TestCase):
         mock_spec.head_empty_layers = [mock_head]
         mock_spec.transformer_layers = []
         mock_spec.tail_empty_layers = []
-        encoder.add_sequential_layer = lambda ls, d, p: ls.append({"layer": d, "name_prefix": p})
-        with patch("paddleformers.fleet.transformer.transformer_encoder.LayerDesc"):
+        encoder.add_sequential_layer = lambda ls, d, p: ls.append(
+            {"layer": d, "name_prefix": p}
+        )
+        with patch(
+            "paddleformers.fleet.transformer.transformer_encoder.LayerDesc"
+        ):
             encoder.get_encoder_layer_desc_list(layers, mock_spec, "model")
         self.assertEqual(len(layers), 1)
 
@@ -101,8 +117,12 @@ class TestTransformerEncoderGetEncoderLayerDescList(unittest.TestCase):
         mock_spec.head_empty_layers = []
         mock_spec.transformer_layers = []
         mock_spec.tail_empty_layers = [mock_tail]
-        encoder.add_sequential_layer = lambda ls, d, p: ls.append({"layer": d, "name_prefix": p})
-        with patch("paddleformers.fleet.transformer.transformer_encoder.LayerDesc"):
+        encoder.add_sequential_layer = lambda ls, d, p: ls.append(
+            {"layer": d, "name_prefix": p}
+        )
+        with patch(
+            "paddleformers.fleet.transformer.transformer_encoder.LayerDesc"
+        ):
             encoder.get_encoder_layer_desc_list(layers, mock_spec, "model")
         self.assertEqual(len(layers), 1)
 
@@ -116,8 +136,12 @@ class TestTransformerEncoderGetEncoderLayerDescList(unittest.TestCase):
         mock_spec.head_empty_layers = []
         mock_spec.transformer_layers = [mock_tf1, mock_tf2]
         mock_spec.tail_empty_layers = []
-        encoder.add_sequential_layer = lambda ls, d, p: ls.append({"layer": d, "name_prefix": p})
-        with patch("paddleformers.fleet.transformer.transformer_encoder.LayerDesc"):
+        encoder.add_sequential_layer = lambda ls, d, p: ls.append(
+            {"layer": d, "name_prefix": p}
+        )
+        with patch(
+            "paddleformers.fleet.transformer.transformer_encoder.LayerDesc"
+        ):
             encoder.get_encoder_layer_desc_list(layers, mock_spec, "model")
         self.assertEqual(len(layers), 2)
 
@@ -125,7 +149,9 @@ class TestTransformerEncoderGetEncoderLayerDescList(unittest.TestCase):
 class TestTransformerEncoderOverlappedForwardBackwardLogic(unittest.TestCase):
     """Tests for TransformerEncoder.overlapped_forward_backward logic."""
 
-    @patch("paddleformers.fleet.transformer.transformer_encoder.build_overlapped_nodes")
+    @patch(
+        "paddleformers.fleet.transformer.transformer_encoder.build_overlapped_nodes"
+    )
     def test_forward_loss_none_when_no_loss_fn(self, mock_build):
         """forward_loss should be None when forward_loss_fn_node is None."""
         mock_forward_pre = MagicMock()
@@ -161,7 +187,9 @@ class TestTransformerEncoderOverlappedForwardBackwardLogic(unittest.TestCase):
         _, forward_loss, _ = result
         self.assertIsNone(forward_loss)
 
-    @patch("paddleformers.fleet.transformer.transformer_encoder.build_overlapped_nodes")
+    @patch(
+        "paddleformers.fleet.transformer.transformer_encoder.build_overlapped_nodes"
+    )
     def test_forward_loss_from_loss_fn_node(self, mock_build):
         """forward_loss should come from forward_loss_fn_node when provided."""
         mock_forward_pre = MagicMock()

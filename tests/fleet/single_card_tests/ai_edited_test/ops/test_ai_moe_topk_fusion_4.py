@@ -15,7 +15,9 @@ import os
 import sys
 import unittest
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+REPO_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 sys.path.insert(0, os.path.join(REPO_ROOT, "src"))
 
 from paddleformers.fleet.triton_ops import moe_topk_fusion

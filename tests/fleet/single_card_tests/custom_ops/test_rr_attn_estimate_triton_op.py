@@ -56,8 +56,12 @@ class TestRRAttnEstimateTritonOP(unittest.TestCase):
         chunk_size: int = 512,
     ):
         assert mask_dense is not None
-        assert chunk_size % stride == 0, "chunk_size must be divisible by stride"
-        assert block_size % stride == 0, "block_size must be divisible by stride"
+        assert chunk_size % stride == 0, (
+            "chunk_size must be divisible by stride"
+        )
+        assert block_size % stride == 0, (
+            "block_size must be divisible by stride"
+        )
 
         query_states = query_states.transpose([0, 2, 1, 3])
         key_states = key_states.transpose([0, 2, 1, 3])
@@ -68,14 +72,18 @@ class TestRRAttnEstimateTritonOP(unittest.TestCase):
         if num_q_head != num_kv_head:
             assert num_q_head % num_kv_head == 0
             num_groups = num_q_head // num_kv_head
-            key_states = paddle.repeat_interleave(key_states, num_groups, axis=1)
+            key_states = paddle.repeat_interleave(
+                key_states, num_groups, axis=1
+            )
 
         nheads_dense_mask = mask_dense.shape[1]
         mask_dense = mask_dense.astype("int32")
         if num_q_head != nheads_dense_mask:
             assert num_q_head % nheads_dense_mask == 0
             num_groups_indices = num_q_head // nheads_dense_mask
-            mask_dense = paddle.repeat_interleave(mask_dense, num_groups_indices, axis=1)
+            mask_dense = paddle.repeat_interleave(
+                mask_dense, num_groups_indices, axis=1
+            )
 
         def get_pad_len(length, align):
             return (align - length % align) % align
@@ -109,17 +117,27 @@ class TestRRAttnEstimateTritonOP(unittest.TestCase):
         num_q_strides = padded_q_len // stride
         stride_starts = (paddle.arange(num_q_strides) * stride)[None, :]
 
-        gather_indices = (head_offsets + stride_starts).unsqueeze(-1).unsqueeze(0)  # [1, H, QC, 1]
-        gather_indices_expanded = paddle.expand(gather_indices, [batch_size, -1, -1, head_dim])
-        sampled_query = paddle.take_along_axis(query_states, gather_indices_expanded, axis=2)
+        gather_indices = (
+            (head_offsets + stride_starts).unsqueeze(-1).unsqueeze(0)
+        )  # [1, H, QC, 1]
+        gather_indices_expanded = paddle.expand(
+            gather_indices, [batch_size, -1, -1, head_dim]
+        )
+        sampled_query = paddle.take_along_axis(
+            query_states, gather_indices_expanded, axis=2
+        )
 
         mask_gather_idx = gather_indices  # [1, H, QC, 1]
         if mask_dense.shape[1] == 1:
             mask_gather_idx = mask_gather_idx[:, 0:1, :, :]  # [1, 1, QC, 1]
 
         # Expand to K len
-        mask_gather_idx = paddle.expand(mask_gather_idx, [batch_size, -1, -1, padded_k_len])
-        sampled_mask_dense = paddle.take_along_axis(mask_dense, mask_gather_idx, axis=2)
+        mask_gather_idx = paddle.expand(
+            mask_gather_idx, [batch_size, -1, -1, padded_k_len]
+        )
+        sampled_mask_dense = paddle.take_along_axis(
+            mask_dense, mask_gather_idx, axis=2
+        )
 
         attn_sums_list = []
         boundary_masks_list = []
@@ -165,14 +183,18 @@ class TestRRAttnEstimateTritonOP(unittest.TestCase):
                 is_causal = (real_row + shift >= real_col).astype(logits.dtype)
                 logical_mask = logical_mask * is_causal
 
-            final_effective_mask = logical_mask * k_is_non_padding.astype(logits.dtype)
+            final_effective_mask = logical_mask * k_is_non_padding.astype(
+                logits.dtype
+            )
             logits = logits * final_effective_mask
 
             passed_counts = final_effective_mask.sum(axis=-1)
             total_valid_counts = stride_valid_length
 
             is_fully_masked = passed_counts == 0
-            is_partially_masked = (passed_counts > 0) & (passed_counts < total_valid_counts)
+            is_partially_masked = (passed_counts > 0) & (
+                passed_counts < total_valid_counts
+            )
 
             logits_stride = logits.sum(axis=-1)
 
@@ -182,10 +204,14 @@ class TestRRAttnEstimateTritonOP(unittest.TestCase):
                     dtype=logits_stride.dtype,
                     place=logits_stride.place,
                 )
-                logits_stride = paddle.where(is_fully_masked, neg_inf, logits_stride)
+                logits_stride = paddle.where(
+                    is_fully_masked, neg_inf, logits_stride
+                )
 
             scores_stride = F.softmax(logits_stride, axis=-1)
-            scores_stride = paddle.nan_to_num(scores_stride, 0.0).astype(query_states.dtype)
+            scores_stride = paddle.nan_to_num(scores_stride, 0.0).astype(
+                query_states.dtype
+            )
 
             ratio = block_size // stride
             B, H, qc, ks = scores_stride.shape
@@ -231,8 +257,12 @@ class TestRRAttnEstimateTritonOP(unittest.TestCase):
     ):
         assert nheads % nheads_kv == 0
 
-        q_ref_t = paddle.randn(shape=[batch_size, seqlen_q, nheads, dim], dtype="float32")
-        k_ref_t = paddle.randn(shape=[batch_size, seqlen_k, nheads_kv, dim], dtype="float32")
+        q_ref_t = paddle.randn(
+            shape=[batch_size, seqlen_q, nheads, dim], dtype="float32"
+        )
+        k_ref_t = paddle.randn(
+            shape=[batch_size, seqlen_k, nheads_kv, dim], dtype="float32"
+        )
 
         q_naive_t = q_ref_t.astype(dtype)
         k_naive_t = k_ref_t.astype(dtype)
@@ -244,7 +274,9 @@ class TestRRAttnEstimateTritonOP(unittest.TestCase):
             batch_size, seqlen_q, seqlen_k, nheads_startend_row_indices
         )
 
-        mask_dense = self._flashmask_to_densemask(startend_row_indices, seqlen_q, nheads_startend_row_indices, causal)
+        mask_dense = self._flashmask_to_densemask(
+            startend_row_indices, seqlen_q, nheads_startend_row_indices, causal
+        )
 
         print(
             f"Testing Config: B={batch_size}, Q={seqlen_q}, K={seqlen_k}, HQ={nheads}, H={nheads_kv}, Stride={stride}, Causal={causal}"
@@ -291,15 +323,17 @@ class TestRRAttnEstimateTritonOP(unittest.TestCase):
         # Test 1: Boundary Check Mask (Exact Match)
         # -----------------------------------------------------------
         print("\n--- Testing Boundary Mask ---")
-        assert (
-            bound_ref.shape == bound_kernel.shape
-        ), f"Shape Mismatch! Ref: {bound_ref.shape}, Kernel: {bound_kernel.shape}"
+        assert bound_ref.shape == bound_kernel.shape, (
+            f"Shape Mismatch! Ref: {bound_ref.shape}, Kernel: {bound_kernel.shape}"
+        )
 
         mask_diff_tensor = paddle.sum(paddle.abs(bound_ref - bound_kernel))
         mask_diff = mask_diff_tensor.item()
         total_elements = bound_ref.size
 
-        print(f"Boundary Mask Mismatches: {mask_diff} / {total_elements} ({(mask_diff / total_elements) * 100:.4f}%)")
+        print(
+            f"Boundary Mask Mismatches: {mask_diff} / {total_elements} ({(mask_diff / total_elements) * 100:.4f}%)"
+        )
 
         if mask_diff > 0:
             mismatch_indices = paddle.nonzero(bound_ref != bound_kernel)
@@ -319,7 +353,9 @@ class TestRRAttnEstimateTritonOP(unittest.TestCase):
         # Test 2: Attention Score Estimation (Dynamic Tolerance)
         # -----------------------------------------------------------
 
-        fwd_atol = 2 * paddle.max(paddle.abs(out_ref + 0.3 - 0.3 - out_ref)).item()
+        fwd_atol = (
+            2 * paddle.max(paddle.abs(out_ref + 0.3 - 0.3 - out_ref)).item()
+        )
         rtol = 2
 
         # Baseline Error
@@ -347,9 +383,13 @@ class TestRRAttnEstimateTritonOP(unittest.TestCase):
 
             ref_val = out_ref[err_indices].item()
             kernel_val = out_kernel[err_indices].item()
-            print(f"Max Error at {err_indices}: Ref={ref_val}, Kernel={kernel_val}")
+            print(
+                f"Max Error at {err_indices}: Ref={ref_val}, Kernel={kernel_val}"
+            )
 
-        assert kernel_err <= allowed_error, f"Output max diff {kernel_err} > Allowed {allowed_error}"
+        assert kernel_err <= allowed_error, (
+            f"Output max diff {kernel_err} > Allowed {allowed_error}"
+        )
 
         # -----------------------------------------------------------
         # Test 3: Top-p block selection
@@ -369,13 +409,17 @@ class TestRRAttnEstimateTritonOP(unittest.TestCase):
         total_sum = x.sum(axis=-1, keepdim=True)
         cutoff = total_sum * float(threshold)
 
-        sorted_values, sorted_idx = paddle.compat.sort(x, dim=-1, descending=True)  # both [B,H,C,N]
+        sorted_values, sorted_idx = paddle.compat.sort(
+            x, dim=-1, descending=True
+        )  # both [B,H,C,N]
 
         prefix = paddle.cumsum(sorted_values, axis=-1)  # [B,H,C,N]
         keep = (prefix - sorted_values) < cutoff  # [B,H,C,N], bool
 
         mask0 = paddle.zeros_like(x, dtype="int32")
-        mask_int = paddle.put_along_axis(mask0, sorted_idx, keep.astype("int32"), axis=-1)
+        mask_int = paddle.put_along_axis(
+            mask0, sorted_idx, keep.astype("int32"), axis=-1
+        )
         mask = mask_int.astype("bool")
 
         mask = paddle.logical_and(mask, total_sum > 0)
@@ -401,7 +445,9 @@ class TestRRAttnEstimateTritonOP(unittest.TestCase):
         count_py = values_py.shape[0]
         # print(f"Selected Block Count - Kernel: {count_ker}, Python: {count_py}")
 
-        assert count_ker == count_py, f"Selection count mismatch! Diff: {abs(count_ker - count_py)}"
+        assert count_ker == count_py, (
+            f"Selection count mismatch! Diff: {abs(count_ker - count_py)}"
+        )
         # if count_ker != count_py:
         #     print(f"Warning: Selection count mismatch! Diff: {abs(count_ker - count_py)}")
         #     assert False
@@ -419,7 +465,9 @@ class TestRRAttnEstimateTritonOP(unittest.TestCase):
         val_k_sorted = paddle.sort(values_kernel, descending=True)
         val_p_sorted = paddle.sort(values_py, descending=True)
 
-        max_val_diff = paddle.max(paddle.abs(val_k_sorted - val_p_sorted)).item()
+        max_val_diff = paddle.max(
+            paddle.abs(val_k_sorted - val_p_sorted)
+        ).item()
         # print(f"Max Diff in Sorted Values: {max_val_diff:.8f}")
 
         assert max_val_diff < 1e-3, f"Values mismatch! Max diff: {max_val_diff}"
@@ -429,13 +477,17 @@ class TestRRAttnEstimateTritonOP(unittest.TestCase):
         #     print("Counts differ, skipping sorted element-wise check.")
         #     assert sum_diff < 1e-2, f"Mass diff too high: {sum_diff}"
 
-    def _flashmask_to_densemask(self, startend_row_indices, seqlen_q, nheads, causal=True):
+    def _flashmask_to_densemask(
+        self, startend_row_indices, seqlen_q, nheads, causal=True
+    ):
         if startend_row_indices is None:
             return None
         bz, num_head, seqlen_k, bound_num = startend_row_indices.shape
         assert nheads % num_head == 0
         m = paddle.ones((bz, num_head, seqlen_q, seqlen_k), dtype=paddle.int32)
-        has_end = (causal and bound_num == 2) or ((not causal) and bound_num == 4)
+        has_end = (causal and bound_num == 2) or (
+            (not causal) and bound_num == 4
+        )
         for bi in range(bz):
             for hi in range(num_head):
                 for j in range(seqlen_k):
@@ -463,27 +515,36 @@ class TestRRAttnEstimateTritonOP(unittest.TestCase):
         m = m.astype(paddle.bool)
         return m
 
-    def _generate_sliding_window_mask(self, batch_size, seqlen_q, seqlen_k, h, window_size=None):
+    def _generate_sliding_window_mask(
+        self, batch_size, seqlen_q, seqlen_k, h, window_size=None
+    ):
         if window_size is None:
             window_size = 1024
             if seqlen_k != 8192:
                 window_size = int(window_size * (seqlen_k / 8192))
                 print(f"{seqlen_k=}, auto setting window_size to {window_size}")
 
-        startend_row_indices = paddle.arange(window_size, seqlen_k + window_size, dtype="int32").reshape(
-            (1, 1, seqlen_k, 1)
-        )
-        startend_row_indices = paddle.clip(startend_row_indices, max=seqlen_q).repeat_interleave(batch_size, 0)
+        startend_row_indices = paddle.arange(
+            window_size, seqlen_k + window_size, dtype="int32"
+        ).reshape((1, 1, seqlen_k, 1))
+        startend_row_indices = paddle.clip(
+            startend_row_indices, max=seqlen_q
+        ).repeat_interleave(batch_size, 0)
 
         causal = True
         return startend_row_indices, causal
 
-    def _generate_causal_document_mask(self, batch_size, seqlen_q, seqlen_k, h, doc_seqlens=None):
+    def _generate_causal_document_mask(
+        self, batch_size, seqlen_q, seqlen_k, h, doc_seqlens=None
+    ):
         # TODO: this seems buggy, to be fixed
         if doc_seqlens is None:
             doc_seqlens = [2538, 1742, 3213]
             if seqlen_k != 8192:
-                doc_seqlens = [int(doc_seqlen * (seqlen_k / 8192)) for doc_seqlen in doc_seqlens]
+                doc_seqlens = [
+                    int(doc_seqlen * (seqlen_k / 8192))
+                    for doc_seqlen in doc_seqlens
+                ]
                 print(f"{seqlen_k=}, auto setting doc_seqlens to {doc_seqlens}")
         total_seqlen = np.sum(doc_seqlens)
         assert total_seqlen <= seqlen_k
@@ -503,12 +564,17 @@ class TestRRAttnEstimateTritonOP(unittest.TestCase):
         causal = True
         return startend_row_indices, causal
 
-    def _generate_document_mask(self, batch_size, seqlen_q, seqlen_k, h, doc_seqlens=None):
+    def _generate_document_mask(
+        self, batch_size, seqlen_q, seqlen_k, h, doc_seqlens=None
+    ):
         # TODO: this seems buggy, to be fixed
         if doc_seqlens is None:
             doc_seqlens = [2538, 1742, 3213]
             if seqlen_k != 8192:
-                doc_seqlens = [int(doc_seqlen * (seqlen_k / 8192)) for doc_seqlen in doc_seqlens]
+                doc_seqlens = [
+                    int(doc_seqlen * (seqlen_k / 8192))
+                    for doc_seqlen in doc_seqlens
+                ]
                 print(f"{seqlen_k=}, auto setting doc_seqlens to {doc_seqlens}")
         total_seqlen = np.sum(doc_seqlens)
         assert total_seqlen <= seqlen_k
@@ -544,7 +610,9 @@ class TestRRAttnEstimateTritonOP(unittest.TestCase):
             .reshape((1, 1, seqlen_k, 1))
             .repeat_interleave(batch_size, 0)
         )
-        startend_row_indices = paddle.concat([down_left_row_indices, up_right_row_indices], axis=-1)
+        startend_row_indices = paddle.concat(
+            [down_left_row_indices, up_right_row_indices], axis=-1
+        )
         startend_row_indices = paddle.clip(startend_row_indices, max=seqlen_q)
 
         causal = False
@@ -559,7 +627,9 @@ class TestRRAttnEstimateTritonOP(unittest.TestCase):
             nheads_kv,
         ) in self.shape_cases:
             nheads_startend_row_indices_values = [1, nheads_kv]
-            for nheads_startend_row_indices in nheads_startend_row_indices_values:
+            for (
+                nheads_startend_row_indices
+            ) in nheads_startend_row_indices_values:
                 yield (
                     batch_size,
                     seqlen_q,

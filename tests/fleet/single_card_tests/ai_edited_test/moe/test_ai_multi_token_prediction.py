@@ -17,7 +17,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -30,7 +34,9 @@ import paddle
 
 def _make_mtp_config(**overrides):
     """Helper to create config for MTP testing."""
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
     defaults = {
         "hidden_size": 64,
@@ -119,7 +125,9 @@ class TestMultiTokenPrediction(unittest.TestCase):
 
         MTPLossLoggingHelper.tracker = {}
         loss = paddle.to_tensor(0.5, dtype=paddle.float32)
-        MTPLossLoggingHelper.save_loss_to_tracker(loss, layer_number=0, num_hidden_layers=2)
+        MTPLossLoggingHelper.save_loss_to_tracker(
+            loss, layer_number=0, num_hidden_layers=2
+        )
         self.assertIn("values", MTPLossLoggingHelper.tracker)
         self.assertEqual(MTPLossLoggingHelper.tracker["values"].shape[0], 2)
 
@@ -131,7 +139,9 @@ class TestMultiTokenPrediction(unittest.TestCase):
 
         MTPLossLoggingHelper.tracker = {}
         loss = paddle.to_tensor(0.5, dtype=paddle.float32)
-        MTPLossLoggingHelper.save_loss_to_tracker(loss, layer_number=None, num_hidden_layers=2)
+        MTPLossLoggingHelper.save_loss_to_tracker(
+            loss, layer_number=None, num_hidden_layers=2
+        )
         self.assertNotIn("values", MTPLossLoggingHelper.tracker)
 
     def test_mtp_loss_logging_helper_clean(self):
@@ -146,7 +156,11 @@ class TestMultiTokenPrediction(unittest.TestCase):
             "avg_group": None,
         }
         MTPLossLoggingHelper.clean_loss_in_tracker()
-        self.assertTrue(paddle.allclose(MTPLossLoggingHelper.tracker["values"], paddle.zeros([2])))
+        self.assertTrue(
+            paddle.allclose(
+                MTPLossLoggingHelper.tracker["values"], paddle.zeros([2])
+            )
+        )
 
     def test_mtp_loss_logging_helper_reduce_no_group(self):
         """Test MTPLossLoggingHelper.reduce_loss_in_tracker without group."""
@@ -201,7 +215,9 @@ class TestMultiTokenPrediction(unittest.TestCase):
 
         scale = paddle.to_tensor(2.0, dtype=paddle.float32)
         MTPLossAutoScaler.set_loss_scale(scale)
-        self.assertAlmostEqual(MTPLossAutoScaler.main_loss_backward_scale.item(), 2.0)
+        self.assertAlmostEqual(
+            MTPLossAutoScaler.main_loss_backward_scale.item(), 2.0
+        )
 
     def test_mtp_sublayers_spec_defaults(self):
         """Test MultiTokenPredictionLayerSublayersSpec defaults."""

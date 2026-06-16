@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -52,7 +56,9 @@ class TestBiasGeluCorrectnessExtra(unittest.TestCase):
         # Gradient with ones should give the gelu derivative values
         x = bias + y
         tanh_out = paddle.tanh(0.79788456 * x * (1 + 0.044715 * x * x))
-        ff = 0.5 * x * ((1 - tanh_out * tanh_out) * (0.79788456 + 0.1070322243 * x * x)) + 0.5 * (1 + tanh_out)
+        ff = 0.5 * x * (
+            (1 - tanh_out * tanh_out) * (0.79788456 + 0.1070322243 * x * x)
+        ) + 0.5 * (1 + tanh_out)
         expected = ff
         np.testing.assert_allclose(out.numpy(), expected.numpy(), rtol=1e-5)
 
@@ -107,7 +113,9 @@ class TestGeLUFunctionAutograd(unittest.TestCase):
         # Manual gradient computation
         grad_output = paddle.ones([4, 8], dtype=paddle.float32)
         manual_grad = bias_gelu_back(grad_output, bias, input_t)
-        np.testing.assert_allclose(input_t.grad.numpy(), manual_grad.numpy(), rtol=1e-5)
+        np.testing.assert_allclose(
+            input_t.grad.numpy(), manual_grad.numpy(), rtol=1e-5
+        )
 
     def test_gelu_function_backward_returns_two(self):
         """Test that backward returns gradients for both input and bias."""

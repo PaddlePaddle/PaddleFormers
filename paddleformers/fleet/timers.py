@@ -107,7 +107,9 @@ class RuntimeTimer:
             self.timer.stop()
         self.timer.reset()
 
-        string = "[timelog] {}: {:.2f}s ({}) ".format(self.timer.name, runtime, time.strftime("%Y-%m-%d %H:%M:%S"))
+        string = "[timelog] {}: {:.2f}s ({}) ".format(
+            self.timer.name, runtime, time.strftime("%Y-%m-%d %H:%M:%S")
+        )
         print(string)
 
 
@@ -117,14 +119,22 @@ class Timers:
     def __init__(self):
         self.timers = {}
 
-    def __call__(self, name: str, use_event: bool = False) -> _Timer | _GPUEventTimer:
-        clazz = _GPUEventTimer if use_event and paddle.is_compiled_with_cuda() else _Timer
+    def __call__(
+        self, name: str, use_event: bool = False
+    ) -> _Timer | _GPUEventTimer:
+        clazz = (
+            _GPUEventTimer
+            if use_event and paddle.is_compiled_with_cuda()
+            else _Timer
+        )
         timer = self.timers.get(name)
         if timer is None:
             timer = clazz(name)
             self.timers[name] = timer
         else:
-            assert type(timer) == clazz, f"Invalid timer type: {clazz} vs {type(timer)}"
+            assert type(timer) == clazz, (
+                f"Invalid timer type: {clazz} vs {type(timer)}"
+            )
         return timer
 
     def write(
@@ -157,7 +167,9 @@ class Timers:
 
         time_dict = {}
         for name in names:
-            time_dict[name] = self.timers[name].elapsed(reset=reset) * 1000.0 / normalizer
+            time_dict[name] = (
+                self.timers[name].elapsed(reset=reset) * 1000.0 / normalizer
+            )
 
         time_dict = sorted(time_dict.items(), key=lambda x: x[1], reverse=True)
 
@@ -166,11 +178,17 @@ class Timers:
             string += f" | {name} : {value:.2f}"
         print(string)
 
-    def info(self, names: list[str], normalizer: float = 1.0, reset: bool = False) -> dict[str, float]:
+    def info(
+        self, names: list[str], normalizer: float = 1.0, reset: bool = False
+    ) -> dict[str, float]:
         """Return a dict of timers."""
         assert normalizer > 0.0
         time_dict = {}
         for name in names:
-            time_dict[name] = self.timers[name].elapsed(reset=reset) * 1000.0 / normalizer
-        time_dict = dict(sorted(time_dict.items(), key=lambda x: x[0], reverse=False))
+            time_dict[name] = (
+                self.timers[name].elapsed(reset=reset) * 1000.0 / normalizer
+            )
+        time_dict = dict(
+            sorted(time_dict.items(), key=lambda x: x[0], reverse=False)
+        )
         return time_dict

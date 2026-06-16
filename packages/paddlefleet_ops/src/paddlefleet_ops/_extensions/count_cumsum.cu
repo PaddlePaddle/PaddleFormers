@@ -13,10 +13,10 @@
 // limitations under the License.
 
 #include <cooperative_groups.h>
+#include <cub/cub.cuh>
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <paddle/extension.h>
-#include <cub/cub.cuh>
 
 #define MAX_ALLOWED_E 50000
 #define BLOCK_SIZE 1024
@@ -28,25 +28,23 @@ namespace cg = cooperative_groups;
 using BlockScan = cub::BlockScan<uint32_t, BLOCK_SIZE>;
 
 template <typename T, typename IdxT>
-inline __device__ void load_128_bits(const T* src, T* dst, IdxT idx) {
+inline __device__ void load_128_bits(const T *src, T *dst, IdxT idx) {
   constexpr int num_elements = 16 / sizeof(T);
-  float4 vec = *reinterpret_cast<const float4*>(src + idx * num_elements);
-  *reinterpret_cast<float4*>(dst) = vec;
+  float4 vec = *reinterpret_cast<const float4 *>(src + idx * num_elements);
+  *reinterpret_cast<float4 *>(dst) = vec;
 }
 
 template <typename T, typename IdxT>
-inline __device__ void store_128_bits(const T* src, T* dst, IdxT idx) {
+inline __device__ void store_128_bits(const T *src, T *dst, IdxT idx) {
   constexpr int num_elements = 16 / sizeof(T);
-  float4 vec = *reinterpret_cast<const float4*>(src);
-  *reinterpret_cast<float4*>(dst + idx * num_elements) = vec;
+  float4 vec = *reinterpret_cast<const float4 *>(src);
+  *reinterpret_cast<float4 *>(dst + idx * num_elements) = vec;
 }
 
 template <typename scalar_t>
-inline __device__ void _update_local_count(const scalar_t* x,
-                                           int32_t* shared_memory,
-                                           const int64_t& N,
-                                           const uint32_t global_thread_id,
-                                           const uint32_t grid_size) {
+inline __device__ void
+_update_local_count(const scalar_t *x, int32_t *shared_memory, const int64_t &N,
+                    const uint32_t global_thread_id, const uint32_t grid_size) {
   constexpr uint32_t N_per_thread = 16 / sizeof(scalar_t);
   const int64_t N_vec = N / N_per_thread;
   const int64_t vec_covered = N_vec * N_per_thread;
@@ -78,10 +76,9 @@ struct BlockPrefixCallbackOp {
   }
 };
 
-inline __device__ void _compute_cumsum(
-    typename BlockScan::TempStorage& temp_storage,
-    int32_t* shared_memory,
-    const uint32_t& E) {
+inline __device__ void
+_compute_cumsum(typename BlockScan::TempStorage &temp_storage,
+                int32_t *shared_memory, const uint32_t &E) {
   const uint32_t num_loops = (E + blockDim.x - 1) / blockDim.x;
   uint32_t i = threadIdx.x;
 
@@ -107,11 +104,10 @@ inline __device__ void _compute_cumsum(
 }
 
 template <typename scalar_t, bool do_cumsum>
-__global__ void count_cumsum_cuda_kernel(const scalar_t* x,
-                                         int32_t* count_output,
-                                         int32_t* cumsum_output,
-                                         const int64_t N,
-                                         const uint32_t E) {
+__global__ void count_cumsum_cuda_kernel(const scalar_t *x,
+                                         int32_t *count_output,
+                                         int32_t *cumsum_output,
+                                         const int64_t N, const uint32_t E) {
   // NOTE: gridDim = num_SMs is small (<256), grid_size and global_thread_id
   // never exceed int range.
   const uint32_t global_thread_id = blockIdx.x * blockDim.x + threadIdx.x;
@@ -132,8 +128,8 @@ __global__ void count_cumsum_cuda_kernel(const scalar_t* x,
 
   cg::this_grid().sync();
 
-  _update_local_count<scalar_t>(
-      x, shared_memory, N, global_thread_id, grid_size);
+  _update_local_count<scalar_t>(x, shared_memory, N, global_thread_id,
+                                grid_size);
 
   __syncthreads();
 
@@ -167,13 +163,10 @@ __global__ void count_cumsum_cuda_kernel(const scalar_t* x,
 }
 
 template <typename scalar_t>
-void count_cumsum_cuda_impl(const paddle::Tensor& x,
-                            paddle::Tensor& count_output,
-                            paddle::Tensor& cumsum_output,
-                            bool do_cumsum,
-                            int64_t N,
-                            uint32_t E,
-                            cudaStream_t stream) {
+void count_cumsum_cuda_impl(const paddle::Tensor &x,
+                            paddle::Tensor &count_output,
+                            paddle::Tensor &cumsum_output, bool do_cumsum,
+                            int64_t N, uint32_t E, cudaStream_t stream) {
   int device_id;
   cudaGetDevice(&device_id);
 
@@ -185,18 +178,17 @@ void count_cumsum_cuda_impl(const paddle::Tensor& x,
           ? std::max(sizeof(uint32_t), sizeof(typename BlockScan::TempStorage))
           : 0;
 
-  void (*kernel)(
-      const scalar_t*, int32_t*, int32_t*, const int64_t, const uint32_t);
+  void (*kernel)(const scalar_t *, int32_t *, int32_t *, const int64_t,
+                 const uint32_t);
   if (do_cumsum) {
     kernel = count_cumsum_cuda_kernel<scalar_t, true>;
   } else {
     kernel = count_cumsum_cuda_kernel<scalar_t, false>;
   }
 
-  cudaFuncSetAttribute(
-      kernel,
-      cudaFuncAttributeMaxDynamicSharedMemorySize,
-      MAX_ALLOWED_E * sizeof(uint32_t) + block_reduce_smem_size);
+  cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize,
+                       MAX_ALLOWED_E * sizeof(uint32_t) +
+                           block_reduce_smem_size);
 
   cudaLaunchConfig_t launch_config = {0};
   launch_config.blockDim = BLOCK_SIZE;
@@ -211,22 +203,16 @@ void count_cumsum_cuda_impl(const paddle::Tensor& x,
   launch_config.attrs = attributes;
   launch_config.numAttrs = 1;
 
-  int32_t* cumsum_ptr = do_cumsum ? cumsum_output.data<int32_t>() : nullptr;
+  int32_t *cumsum_ptr = do_cumsum ? cumsum_output.data<int32_t>() : nullptr;
 
-  cudaLaunchKernelEx(&launch_config,
-                     kernel,
-                     x.data<scalar_t>(),
-                     count_output.data<int32_t>(),
-                     cumsum_ptr,
-                     N,
-                     E);
+  cudaLaunchKernelEx(&launch_config, kernel, x.data<scalar_t>(),
+                     count_output.data<int32_t>(), cumsum_ptr, N, E);
 
   PD_CHECK(cudaGetLastError() == cudaSuccess,
            "count_cumsum_cuda_kernel failed.");
 }
 
-std::vector<paddle::Tensor> CountCumsumCuda(const paddle::Tensor& x,
-                                            int E,
+std::vector<paddle::Tensor> CountCumsumCuda(const paddle::Tensor &x, int E,
                                             bool do_cumsum) {
   PD_CHECK(E <= MAX_ALLOWED_E, "E exceeds MAX_ALLOWED_E.");
   PD_CHECK(E % 4 == 0, "E must be divisible by 4.");
@@ -256,11 +242,11 @@ std::vector<paddle::Tensor> CountCumsumCuda(const paddle::Tensor& x,
   }
 
   if (x.dtype() == paddle::DataType::INT32) {
-    count_cumsum_cuda_impl<int>(
-        x, count_output, cumsum_output, do_cumsum, N, E, stream);
+    count_cumsum_cuda_impl<int>(x, count_output, cumsum_output, do_cumsum, N, E,
+                                stream);
   } else if (x.dtype() == paddle::DataType::INT64) {
-    count_cumsum_cuda_impl<int64_t>(
-        x, count_output, cumsum_output, do_cumsum, N, E, stream);
+    count_cumsum_cuda_impl<int64_t>(x, count_output, cumsum_output, do_cumsum,
+                                    N, E, stream);
   } else {
     PD_THROW("Unsupported dtype for x. Must be int32 or int64.");
   }

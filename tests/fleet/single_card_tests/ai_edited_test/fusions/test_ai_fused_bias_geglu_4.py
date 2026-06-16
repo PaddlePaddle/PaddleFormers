@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -109,7 +113,9 @@ class TestBiasGeGLUBack(unittest.TestCase):
         bias = paddle.zeros([8])
         result_with_zero_bias = bias_geglu_back(g, y, bias)
         result_no_bias = geglu_back(g, y)
-        np.testing.assert_allclose(result_with_zero_bias.numpy(), result_no_bias.numpy(), atol=1e-6)
+        np.testing.assert_allclose(
+            result_with_zero_bias.numpy(), result_no_bias.numpy(), atol=1e-6
+        )
 
 
 class TestBiasGeGLUFunction(unittest.TestCase):
@@ -192,17 +198,23 @@ class TestWeightedQuickGeGLUFunction(unittest.TestCase):
         x = paddle.randn([2, 8])
         weights = paddle.randn([2, 1])
         linear_offset = paddle.to_tensor(0.0)
-        result = WeightedQuickGeGLUFunction.apply(x, weights, False, linear_offset)
+        result = WeightedQuickGeGLUFunction.apply(
+            x, weights, False, linear_offset
+        )
         self.assertEqual(result.shape, [2, 4])
 
     def test_forward_matches_weighted_quick_geglu(self):
         """Test forward matches weighted_quick_geglu function."""
-        from paddleformers.fleet.fusions.fused_bias_geglu import weighted_quick_geglu
+        from paddleformers.fleet.fusions.fused_bias_geglu import (
+            weighted_quick_geglu,
+        )
 
         x = paddle.randn([2, 8])
         weights = paddle.randn([2, 1])
         linear_offset = paddle.to_tensor(0.0)
-        result = WeightedQuickGeGLUFunction.apply(x, weights, False, linear_offset)
+        result = WeightedQuickGeGLUFunction.apply(
+            x, weights, False, linear_offset
+        )
         expected = weighted_quick_geglu(x, weights, linear_offset)
         np.testing.assert_allclose(result.numpy(), expected.numpy(), atol=1e-6)
 

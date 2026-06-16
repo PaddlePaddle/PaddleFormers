@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -233,7 +237,9 @@ class TestCLIPViTModelForwardCUDA(unittest.TestCase):
         from paddleformers.fleet.models.gpt.gpt_layer_specs import (
             get_gpt_layer_local_spec,
         )
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         config = TransformerConfig(
             num_hidden_layers=1,
@@ -262,7 +268,9 @@ class TestCLIPViTModelForwardCUDA(unittest.TestCase):
         from paddleformers.fleet.models.gpt.gpt_layer_specs import (
             get_gpt_layer_local_spec,
         )
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         config = TransformerConfig(
             num_hidden_layers=1,

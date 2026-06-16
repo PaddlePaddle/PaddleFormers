@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -30,7 +34,9 @@ from unittest.mock import MagicMock
 def _setup_triton_mock():
     """Create a mock triton module so we can import without GPU."""
     triton_mock = types.ModuleType("triton")
-    triton_mock.jit = lambda fn=None, **kwargs: ((lambda f: f) if fn is None else fn)
+    triton_mock.jit = lambda fn=None, **kwargs: (
+        (lambda f: f) if fn is None else fn
+    )
     triton_mock.language = types.ModuleType("triton.language")
     triton_mock.language.constexpr = None
     tl = triton_mock.language
@@ -120,7 +126,9 @@ class TestSigmoidGateKernels(unittest.TestCase):
 
     def test_sigmoid_precise_callable(self):
         """Test _sigmoid_precise is callable."""
-        from paddleformers.fleet.triton_ops.sigmoid_gate_fusion import _sigmoid_precise
+        from paddleformers.fleet.triton_ops.sigmoid_gate_fusion import (
+            _sigmoid_precise,
+        )
 
         self.assertTrue(callable(_sigmoid_precise))
 

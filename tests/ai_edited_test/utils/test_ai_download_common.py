@@ -62,11 +62,16 @@ class TestIsTrue(unittest.TestCase):
 class TestRepoFolderName(unittest.TestCase):
     def test_basic(self):
         result = repo_folder_name(repo_id="user/model", repo_type="model")
-        self.assertEqual(result, f"models{REPO_ID_SEPARATOR}user{REPO_ID_SEPARATOR}model")
+        self.assertEqual(
+            result, f"models{REPO_ID_SEPARATOR}user{REPO_ID_SEPARATOR}model"
+        )
 
     def test_nested_repo_id(self):
         result = repo_folder_name(repo_id="org/sub/model", repo_type="model")
-        self.assertEqual(result, f"models{REPO_ID_SEPARATOR}org{REPO_ID_SEPARATOR}sub{REPO_ID_SEPARATOR}model")
+        self.assertEqual(
+            result,
+            f"models{REPO_ID_SEPARATOR}org{REPO_ID_SEPARATOR}sub{REPO_ID_SEPARATOR}model",
+        )
 
 
 class TestCacheCommitHash(unittest.TestCase):
@@ -93,7 +98,11 @@ class TestCheckDiskSpace(unittest.TestCase):
                 warnings.simplefilter("always")
                 _check_disk_space(1, tmpdir)
                 # Should not warn for tiny file
-                disk_warnings = [x for x in w if "Not enough free disk space" in str(x.message)]
+                disk_warnings = [
+                    x
+                    for x in w
+                    if "Not enough free disk space" in str(x.message)
+                ]
                 self.assertEqual(len(disk_warnings), 0)
 
     def test_huge_size_warns(self):
@@ -102,7 +111,11 @@ class TestCheckDiskSpace(unittest.TestCase):
                 warnings.simplefilter("always")
                 _check_disk_space(10**18, tmpdir)
                 # Should warn for impossibly large file
-                disk_warnings = [x for x in w if "Not enough free disk space" in str(x.message)]
+                disk_warnings = [
+                    x
+                    for x in w
+                    if "Not enough free disk space" in str(x.message)
+                ]
                 self.assertTrue(len(disk_warnings) > 0)
 
 
@@ -189,7 +202,9 @@ class TestToLocalDir(unittest.TestCase):
             local_dir = os.path.join(tmpdir, "local")
             os.makedirs(local_dir)
 
-            result = _to_local_dir(src_file, local_dir, "test.txt", use_symlinks=False)
+            result = _to_local_dir(
+                src_file, local_dir, "test.txt", use_symlinks=False
+            )
             self.assertTrue(os.path.exists(result))
             with open(result) as f:
                 self.assertEqual(f.read(), "hello world")
@@ -205,7 +220,9 @@ class TestToLocalDir(unittest.TestCase):
             local_dir = os.path.join(tmpdir, "local")
             os.makedirs(local_dir)
 
-            result = _to_local_dir(src_file, local_dir, "test.txt", use_symlinks=True)
+            result = _to_local_dir(
+                src_file, local_dir, "test.txt", use_symlinks=True
+            )
             self.assertTrue(os.path.exists(result))
 
     def test_path_traversal_raises(self):
@@ -214,7 +231,9 @@ class TestToLocalDir(unittest.TestCase):
             with open(src_file, "w") as f:
                 f.write("hello")
             with self.assertRaises(ValueError):
-                _to_local_dir(src_file, tmpdir, "../../etc/passwd", use_symlinks=False)
+                _to_local_dir(
+                    src_file, tmpdir, "../../etc/passwd", use_symlinks=False
+                )
 
 
 @unittest.skip("huggingface_hub BadRequestError API changed in CI")
@@ -226,7 +245,9 @@ class TestRaiseForStatus(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.status_code = 404
         mock_response.url = "http://example.com/file"
-        mock_response.raise_for_status.side_effect = HTTPError("404 Client Error")
+        mock_response.raise_for_status.side_effect = HTTPError(
+            "404 Client Error"
+        )
         with self.assertRaises(EntryNotFoundError):
             raise_for_status(mock_response)
 
@@ -237,7 +258,9 @@ class TestRaiseForStatus(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.status_code = 400
         mock_response.url = "http://example.com/file"
-        mock_response.raise_for_status.side_effect = HTTPError("400 Client Error")
+        mock_response.raise_for_status.side_effect = HTTPError(
+            "400 Client Error"
+        )
         with self.assertRaises(BadRequestError):
             raise_for_status(mock_response)
 
@@ -248,7 +271,9 @@ class TestRaiseForStatus(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.status_code = 500
         mock_response.url = "http://example.com/file"
-        mock_response.raise_for_status.side_effect = HTTPError("500 Server Error")
+        mock_response.raise_for_status.side_effect = HTTPError(
+            "500 Server Error"
+        )
         with self.assertRaises(HfHubHTTPError):
             raise_for_status(mock_response)
 
@@ -297,7 +322,9 @@ class TestConstants(unittest.TestCase):
         self.assertEqual(REPO_ID_SEPARATOR, "--")
 
     def test_symlink_threshold(self):
-        self.assertEqual(DEFALUT_LOCAL_DIR_AUTO_SYMLINK_THRESHOLD, 5 * 1024 * 1024)
+        self.assertEqual(
+            DEFALUT_LOCAL_DIR_AUTO_SYMLINK_THRESHOLD, 5 * 1024 * 1024
+        )
 
 
 if __name__ == "__main__":

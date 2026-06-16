@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from paddleformers.trainer import TrainingArguments
 from paddleformers.trainer.trainer_utils import IntervalStrategy
@@ -31,7 +31,9 @@ class SFTConfig(TrainingArguments):
     # NOTE(gongenlei): new add autotuner_benchmark
     autotuner_benchmark: bool = field(
         default=False,
-        metadata={"help": "Weather to run benchmark by autotuner. True for from_scratch and pad_max_length."},
+        metadata={
+            "help": "Weather to run benchmark by autotuner. True for from_scratch and pad_max_length."
+        },
     )
     eval_iters: int = field(
         default=-1,
@@ -41,7 +43,7 @@ class SFTConfig(TrainingArguments):
         default=0,
         metadata={"help": "The steps use to control the learing rate."},
     )
-    tensor_parallel_output: Optional[bool] = field(
+    tensor_parallel_output: bool | None = field(
         default=False,
         metadata={"help": "whether to output logits in distributed status"},
     )
@@ -53,7 +55,7 @@ class SFTConfig(TrainingArguments):
         default=False,
         metadata={"help": "Unify hybrid parallel checkpoint."},
     )
-    unified_checkpoint_config: Optional[str] = field(
+    unified_checkpoint_config: str | None = field(
         default="",
         metadata={"help": "Configs to unify hybrid parallel checkpoint.\n"},
     )
@@ -65,11 +67,11 @@ class SFTConfig(TrainingArguments):
             "help": "The maximum length that model input tokens can have. When Zero Padding is set to True, it's also the maximum length for Zero Padding data stream"
         },
     )
-    dataset_num_proc: Optional[int] = None
+    dataset_num_proc: int | None = None
     dataset_batch_size: int = 1000
-    model_init_kwargs: Optional[dict[str, Any]] = None
-    dataset_kwargs: Optional[dict[str, Any]] = None
-    eval_packing: Optional[bool] = None
+    model_init_kwargs: dict[str, Any] | None = None
+    dataset_kwargs: dict[str, Any] | None = None
+    eval_packing: bool | None = None
     use_ssa: bool = field(
         default=False,
         metadata={

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -101,7 +105,9 @@ class TestFp8GemmForward(unittest.TestCase):
         )
 
         with self.assertRaises(ValueError) as ctx:
-            _FP8Gemm.forward(None, inp, weight, mock_inp_quant, mock_weight_quant)
+            _FP8Gemm.forward(
+                None, inp, weight, mock_inp_quant, mock_weight_quant
+            )
         self.assertIn("Unexpected length", str(ctx.exception))
 
 

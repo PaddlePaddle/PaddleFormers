@@ -86,8 +86,12 @@ class TestDenseMTP(unittest.TestCase):
             rotary_percent=1.0,
             rotary_base=10000,
             rope_scaling=1.0,
-            init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-            output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+            init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
+            output_layer_init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
             tie_word_embeddings=True,
             use_qk_norm=True,
             num_nextn_predict_layers=1,
@@ -115,8 +119,12 @@ class TestDenseMTP(unittest.TestCase):
             rotary_percent=1.0,
             rotary_base=10000,
             rope_scaling=1.0,
-            init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-            output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+            init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
+            output_layer_init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
             tie_word_embeddings=True,
             use_qk_norm=True,
             num_nextn_predict_layers=1,
@@ -140,17 +148,25 @@ class TestDenseMTP(unittest.TestCase):
     def test_mtp_layer_uses_dense_mlp(self):
         """When use_dense_mtp=True, MTP layer's internal transformer should use dense MLP."""
         mtp_layer = self._find_mtp_layer(self.model_dense_mtp)
-        assert mtp_layer is not None, "Model should contain a MultiTokenPredictionLayer"
+        assert mtp_layer is not None, (
+            "Model should contain a MultiTokenPredictionLayer"
+        )
         inner_mlp = mtp_layer.transformer_layer.mlp
-        assert isinstance(inner_mlp, MLP), f"MTP layer's MLP should be dense MLP, got {type(inner_mlp).__name__}"
-        assert not isinstance(inner_mlp, MoELayer), "MTP layer's MLP should NOT be MoELayer when use_dense_mtp=True"
+        assert isinstance(inner_mlp, MLP), (
+            f"MTP layer's MLP should be dense MLP, got {type(inner_mlp).__name__}"
+        )
+        assert not isinstance(inner_mlp, MoELayer), (
+            "MTP layer's MLP should NOT be MoELayer when use_dense_mtp=True"
+        )
 
     def test_decoder_layers_still_use_moe(self):
         """Decoder layers should still use MoE even when use_dense_mtp=True."""
         decoder_layers = self._find_decoder_layers(self.model_dense_mtp)
         assert len(decoder_layers) > 0, "Model should have decoder layers"
         for dl in decoder_layers:
-            assert isinstance(dl.mlp, MoELayer), f"Decoder layer's MLP should be MoELayer, got {type(dl.mlp).__name__}"
+            assert isinstance(dl.mlp, MoELayer), (
+                f"Decoder layer's MLP should be MoELayer, got {type(dl.mlp).__name__}"
+            )
 
     def test_forward_backward_with_dense_mtp(self):
         """Forward/backward pass should work correctly with use_dense_mtp=True."""
@@ -163,11 +179,15 @@ class TestDenseMTP(unittest.TestCase):
         micro_batch_size = 1
 
         data = list(range(sequence_length))
-        input_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat((micro_batch_size, 1))
-        position_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat((micro_batch_size, 1))
-        labels = paddle.to_tensor(list(range(1, sequence_length + 1)), dtype=paddle.int64).repeat(
+        input_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat(
             (micro_batch_size, 1)
         )
+        position_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat(
+            (micro_batch_size, 1)
+        )
+        labels = paddle.to_tensor(
+            list(range(1, sequence_length + 1)), dtype=paddle.int64
+        ).repeat((micro_batch_size, 1))
 
         gpt_pipe_model = NoPipelineParallel(self.model_dense_mtp, self.strategy)
         data = (
@@ -187,10 +207,13 @@ class TestDenseMTP(unittest.TestCase):
     def test_default_mtp_uses_moe(self):
         """When use_dense_mtp=False (default), MTP layer should use MoE like the decoder."""
         mtp_layer = self._find_mtp_layer(self.model_moe_mtp)
-        assert mtp_layer is not None, "Model should contain a MultiTokenPredictionLayer"
+        assert mtp_layer is not None, (
+            "Model should contain a MultiTokenPredictionLayer"
+        )
         inner_mlp = mtp_layer.transformer_layer.mlp
         assert isinstance(inner_mlp, MoELayer), (
-            f"MTP layer's MLP should be MoELayer when use_dense_mtp=False, " f"got {type(inner_mlp).__name__}"
+            f"MTP layer's MLP should be MoELayer when use_dense_mtp=False, "
+            f"got {type(inner_mlp).__name__}"
         )
 
 

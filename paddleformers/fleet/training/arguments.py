@@ -20,7 +20,9 @@ from paddleformers.fleet.transformer import TransformerConfig
 
 def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     """Parse all arguments."""
-    parser = argparse.ArgumentParser(description="PaddleFleet Arguments", allow_abbrev=False)
+    parser = argparse.ArgumentParser(
+        description="PaddleFleet Arguments", allow_abbrev=False
+    )
 
     parser.add_argument("--configs", type=str, default=None)
 

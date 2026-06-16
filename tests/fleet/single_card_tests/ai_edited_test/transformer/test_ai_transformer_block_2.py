@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -52,7 +56,9 @@ def _make_config(**overrides):
 class TestTransformerBlockForward(unittest.TestCase):
     """Tests for TransformerBlock forward method."""
 
-    @patch("paddleformers.fleet.transformer.transformer_block.ProcessGroupCollection.use_mpu_process_groups")
+    @patch(
+        "paddleformers.fleet.transformer.transformer_block.ProcessGroupCollection.use_mpu_process_groups"
+    )
     @patch("paddleformers.fleet.transformer.transformer_block.build_spec_layer")
     def test_forward_with_post_layer_norm_true(self, mock_build, mock_pg):
         """Test TransformerBlock construction with post_layer_norm sets norm."""
@@ -73,7 +79,9 @@ class TestTransformerBlockForward(unittest.TestCase):
         )
         self.assertIsNotNone(block.norm)
 
-    @patch("paddleformers.fleet.transformer.transformer_block.ProcessGroupCollection.use_mpu_process_groups")
+    @patch(
+        "paddleformers.fleet.transformer.transformer_block.ProcessGroupCollection.use_mpu_process_groups"
+    )
     @patch("paddleformers.fleet.transformer.transformer_block.build_spec_layer")
     def test_set_input_tensor_stores_tensor(self, mock_build, mock_pg):
         """Test set_input_tensor stores the input tensor."""
@@ -91,7 +99,9 @@ class TestTransformerBlockForward(unittest.TestCase):
         block.set_input_tensor(tensor)
         self.assertEqual(block.input_tensor.shape, [2, 4, 64])
 
-    @patch("paddleformers.fleet.transformer.transformer_block.ProcessGroupCollection.use_mpu_process_groups")
+    @patch(
+        "paddleformers.fleet.transformer.transformer_block.ProcessGroupCollection.use_mpu_process_groups"
+    )
     @patch("paddleformers.fleet.transformer.transformer_block.build_spec_layer")
     def test_num_layers_matches_spec(self, mock_build, mock_pg):
         """Test num_layers_per_pipeline_rank matches spec."""

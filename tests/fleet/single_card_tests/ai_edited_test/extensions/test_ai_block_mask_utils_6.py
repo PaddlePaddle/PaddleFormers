@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -40,9 +44,13 @@ except (ImportError, ModuleNotFoundError):
 if not _triton_available:
     _mock_tl = types.ModuleType("triton.language")
     _mock_triton = types.ModuleType("triton")
-    _mock_triton.jit = lambda fn=None, **kw: (fn if fn is not None else lambda f: f)
+    _mock_triton.jit = lambda fn=None, **kw: (
+        fn if fn is not None else lambda f: f
+    )
     _mock_triton.cdiv = lambda a, b: (a + b - 1) // b
-    _mock_triton.next_power_of_2 = lambda n: (1 << (n - 1).bit_length() if n > 0 else 1)
+    _mock_triton.next_power_of_2 = lambda n: (
+        1 << (n - 1).bit_length() if n > 0 else 1
+    )
     sys.modules.setdefault("triton", _mock_triton)
     sys.modules.setdefault("triton.language", _mock_tl)
 
@@ -82,7 +90,9 @@ class TestBitonicArgsortDevice(unittest.TestCase):
             bitonic_argsort_device,
         )
 
-        self.assertEqual(bitonic_argsort_device.__name__, "bitonic_argsort_device")
+        self.assertEqual(
+            bitonic_argsort_device.__name__, "bitonic_argsort_device"
+        )
 
 
 @unittest.skipUnless(_MODULE_AVAILABLE, "paddlefleet_ops module not available")
@@ -133,19 +143,25 @@ class TestTopPKernel(unittest.TestCase):
 
     def test_is_jit_function(self):
         """Test that top_p_kernel is a triton jit function."""
-        from paddlefleet_ops._extensions.flashmask.block_mask_utils import top_p_kernel
+        from paddlefleet_ops._extensions.flashmask.block_mask_utils import (
+            top_p_kernel,
+        )
 
         self.assertTrue(callable(top_p_kernel))
 
     def test_is_importable(self):
         """Test top_p_kernel can be imported."""
-        from paddlefleet_ops._extensions.flashmask.block_mask_utils import top_p_kernel
+        from paddlefleet_ops._extensions.flashmask.block_mask_utils import (
+            top_p_kernel,
+        )
 
         self.assertIsNotNone(top_p_kernel)
 
     def test_function_name(self):
         """Test that function name is correct."""
-        from paddlefleet_ops._extensions.flashmask.block_mask_utils import top_p_kernel
+        from paddlefleet_ops._extensions.flashmask.block_mask_utils import (
+            top_p_kernel,
+        )
 
         self.assertEqual(top_p_kernel.__name__, "top_p_kernel")
 

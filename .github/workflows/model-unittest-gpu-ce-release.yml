@@ -1,5 +1,4 @@
 name: Model Unittest GPU CE Release
-
 on:
   schedule:
     - cron: "10 21 * * 0-4" # 每周日、一、二、三、四的6点
@@ -42,11 +41,9 @@ on:
           - 'CE_Release_cu130_py311'
           - 'CE_Release_cu129_py313'
           - 'CE_Release_cu129_py312_weekly'
-
 concurrency:
   group: model-unittest-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
-
 env:
   PR_ID: ${{ github.event.pull_request.number || '0' }}
   COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -55,19 +52,15 @@ env:
   CE_JOB_NAME: model-unittest-gpu-ce-release
   TASK: PaddleFormers_CE_model_unittest_release_${{ github.event.pull_request.number || github.run_id }}
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
-
 defaults:
   run:
     shell: bash
-
 jobs:
   check_skip:
     name: Check skip-models-ce label
     runs-on: 'ernie-cpu'
-
     outputs:
       skip: ${{ steps.check_skip.outputs.skip }}
-
     steps:
       - name: Check skip-models-ce label
         id: check_skip
@@ -89,7 +82,6 @@ jobs:
         run: |
           echo "skip-models-ce label found"
           echo "Downstream GPU jobs will be skipped"
-
   model-unittest-gpu-ce-release:
     needs: check_skip
     if: needs.check_skip.outputs.skip == 'false'
@@ -207,7 +199,7 @@ jobs:
           UPDATE_BASELINE_MODELS="false"
           MODE="pr"
           PR_NUMBER="${PR_ID}"
-          
+
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             MODE="manual"
             UPDATE_BASELINE_MODELS="${{ github.event.inputs.update_baseline_models }}"
@@ -224,7 +216,7 @@ jobs:
               echo "Detected baseline update from PR description: $UPDATE_BASELINE_MODELS"
             fi
           fi
-          
+
           echo "mode=$MODE" >> "$GITHUB_OUTPUT"
           echo "update_baseline_models=$UPDATE_BASELINE_MODELS" >> "$GITHUB_OUTPUT"
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
@@ -325,7 +317,7 @@ jobs:
             wget -q --no-proxy -O ${{ env.home_path }}/allure-2.19.0.zip https://xly-devops.bj.bcebos.com/tools/allure-2.19.0.zip --no-check-certificate
             unzip -q ${{ env.home_path }}/allure-2.19.0.zip
           fi
-          
+
           MODE=${{ env.MODE }}
           if [[ "$MODE" == "pr" ]]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
@@ -365,7 +357,6 @@ jobs:
         if: always()
         run: |
           docker rm -f $container_name 2>/dev/null || true
-          
   upload-allure:
     name: upload-allure
     needs: [model-unittest-gpu-ce-release]
@@ -429,7 +420,7 @@ jobs:
             cp -r gh-pages/model_$FLAGS_enable_CE/$PR_NUMBER/history result/ || true
             destination_dir="model_$FLAGS_enable_CE/$PR_NUMBER"
           fi
-          
+
           echo "mode=$MODE" >> "$GITHUB_OUTPUT"
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
           echo "destination_dir=$destination_dir" >> "$GITHUB_OUTPUT"

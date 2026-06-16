@@ -23,6 +23,10 @@ from .utils.lazy_import import _LazyModule
 PADDLEFORMERS_STABLE_VERSION = "PADDLEFORMERS_STABLE_VERSION"
 from paddleformers.utils.log import logger
 
+from . import (
+    version,
+)
+
 try:
     from importlib import metadata
 except ImportError:
@@ -40,13 +44,16 @@ def compare_version(v1, v2):
 
 
 def _check_dependency_versions():
-    for pkg_names, min_version in [(["paddlepaddle-gpu", "paddlepaddle"], "3.3")]:
+    for pkg_names, min_version in [
+        (["paddlepaddle-gpu", "paddlepaddle"], "3.3")
+    ]:
         for pkg_name in pkg_names:
             try:
                 _version = metadata.version(pkg_name)
                 if compare_version(_version, min_version) < 0:
                     logger.warning(
-                        "Version check warning:\n" + f"{pkg_name} version {version}, recommended >= {min_version}"
+                        "Version check warning:\n"
+                        + f"{pkg_name} version {version}, recommended >= {min_version}"
                     )
             except:
                 pass
@@ -69,7 +76,7 @@ if os.getenv(PADDLEFORMERS_STABLE_VERSION):
     __version__ = __version__.replace(".post", "")
 else:
     formatted_date = datetime.now().date().strftime("%Y%m%d")
-    __version__ = __version__.replace(".post", ".post{}".format(formatted_date))
+    __version__ = __version__.replace(".post", f".post{formatted_date}")
 
 # the next line will be replaced by setup.py for release version.
 # [VERSION_INFO]
@@ -77,7 +84,9 @@ else:
 import os
 
 PADDLEFORMERS_TESTING = os.environ.get("PADDLEFORMERS_TESTING", False)
-sys.modules["torchcodec"] = None  # Explicitly disable torchcodec to prevent optional dependency issues
+sys.modules["torchcodec"] = (
+    None  # Explicitly disable torchcodec to prevent optional dependency issues
+)
 if "torch" not in sys.modules and not PADDLEFORMERS_TESTING:
     sys.modules["torch"] = None
     sys.modules["torchvision"] = None
@@ -92,7 +101,6 @@ logger.warning(
 )
 
 if "datasets" in sys.modules.keys():
-
     logger.warning(
         "Detected that datasets module was imported before paddleformers. "
         "This may cause PaddleFormers datasets to be unavailable in intranet. "
@@ -121,11 +129,10 @@ import_structure = {module: [] for module in modules}
 import_structure["transformers.tokenizer_utils"] = ["PreTrainedTokenizer"]
 
 if TYPE_CHECKING:
-    from . import datasets  # noqa
-    from . import transformers  # noqa
     from . import (
         cli,
         data,
+        datasets,
         generation,
         mergekit,
         nn,
@@ -133,9 +140,9 @@ if TYPE_CHECKING:
         peft,
         quantization,
         trainer,
+        transformers,
         trl,
         utils,
-        version,
     )
 else:
     sys.modules[__name__] = _LazyModule(

@@ -42,15 +42,23 @@ def _set_random_seed(
     """Set random seed for reproducibility."""
     if seed_ is not None and seed_ > 0:
         # Ensure that different pipeline MP stages get different seeds.
-        seed = seed_ + (100 * paddleformers.fleet.parallel_state.get_pipeline_model_parallel_rank())
+        seed = seed_ + (
+            100
+            * paddleformers.fleet.parallel_state.get_pipeline_model_parallel_rank()
+        )
         # Ensure different data parallel ranks get different seeds
         if data_parallel_random_init:
-            seed = seed + (10 * paddleformers.fleet.parallel_state.get_data_parallel_rank())
+            seed = seed + (
+                10 * paddleformers.fleet.parallel_state.get_data_parallel_rank()
+            )
         random.seed(seed)
         np.random.seed(seed)
         paddle.manual_seed(seed)
 
-        if paddle.distributed.is_initialized() and paddle.cuda.device_count() > 0:
+        if (
+            paddle.distributed.is_initialized()
+            and paddle.cuda.device_count() > 0
+        ):
             paddleformers.fleet.tensor_parallel.model_parallel_cuda_manual_seed(
                 seed,
                 te_rng_tracker,
@@ -105,10 +113,17 @@ def run_cp(seed, batch_size, seq_len, vocab_size, config):
     gpt_model = gpt_builder(config, num_stages=1)
 
     paddle.manual_seed(seed)
-    data = paddle.randint(low=0, high=vocab_size, shape=(batch_size, seq_len + 1)).cuda()
+    data = paddle.randint(
+        low=0, high=vocab_size, shape=(batch_size, seq_len + 1)
+    ).cuda()
     input_ids = data[:, :-1]
     labels = data[:, 1:]
-    position_ids = paddle.arange(seq_len, dtype=paddle.int64).unsqueeze(0).expand([batch_size, -1]).cuda()
+    position_ids = (
+        paddle.arange(seq_len, dtype=paddle.int64)
+        .unsqueeze(0)
+        .expand([batch_size, -1])
+        .cuda()
+    )
 
     gpt_pipe_model = NoPipelineParallel(gpt_model, strategy)
     inputs = (
@@ -119,19 +134,25 @@ def run_cp(seed, batch_size, seq_len, vocab_size, config):
         [labels],
     )
 
-    gpt_pipe_model = paddle.amp.decorate(models=gpt_pipe_model, level="O2", dtype="bfloat16")
+    gpt_pipe_model = paddle.amp.decorate(
+        models=gpt_pipe_model, level="O2", dtype="bfloat16"
+    )
     with paddle.amp.auto_cast(enable=True, dtype="bfloat16"):
         loss = gpt_pipe_model.forward_backward_pipeline(inputs)
         loss.backward()
 
     print(f"actual loss: {loss.item()}")
     loss_baseline = 7.212946
-    np.testing.assert_allclose(np.array(loss), np.array(loss_baseline), rtol=1e-6, atol=1e-8)
+    np.testing.assert_allclose(
+        np.array(loss), np.array(loss_baseline), rtol=1e-6, atol=1e-8
+    )
 
 
 if __name__ == "__main__":
     if SKIP_TESTS:
-        print(f"Skipping tests: repo_flag={REPO_FLAG} (not 'paddleformers.fleet')")
+        print(
+            f"Skipping tests: repo_flag={REPO_FLAG} (not 'paddleformers.fleet')"
+        )
         sys.exit(0)
     seed = 46
     batch_size = 1
@@ -163,6 +184,8 @@ if __name__ == "__main__":
         autocast_dtype=paddle.bfloat16,
         params_dtype=paddle.bfloat16,
         init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-        output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+        output_layer_init_method=functools.partial(
+            paddle.nn.init.xavier_uniform_, gain=1.0
+        ),
     )
     run_cp(seed, batch_size, seq_len, vocab_size, dist_config)

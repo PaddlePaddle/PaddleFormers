@@ -26,7 +26,12 @@ def _bias_dropout_add_func(x_with_bias, residual, prob, training):
     x, bias = x_with_bias  # unpack
 
     # Run in-place if in eval mode and inputs do not require gradients
-    inplace = not training and x.stop_gradient and not residual.stop_gradient and (bias is None or bias.stop_gradient)
+    inplace = (
+        not training
+        and x.stop_gradient
+        and not residual.stop_gradient
+        and (bias is None or bias.stop_gradient)
+    )
 
     # If we want to train mixed precision, then the output of this function
     # should be half precision. However, in AMP O1, the input (residual) is

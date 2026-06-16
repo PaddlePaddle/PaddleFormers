@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -41,7 +45,9 @@ from paddleformers.fleet.transformer.attention import (
     SelfAttention,
     SelfAttentionSublayersSpec,
 )
-from paddleformers.fleet.transformer.dot_product_attention import DotProductAttention
+from paddleformers.fleet.transformer.dot_product_attention import (
+    DotProductAttention,
+)
 from paddleformers.fleet.transformer.enums import AttnMaskType
 from paddleformers.fleet.transformer.transformer_layer import (
     TransformerLayer,
@@ -172,7 +178,9 @@ class TestLLaVASpecComponents(unittest.TestCase):
             extra_kwargs={"attn_mask_type": AttnMaskType.causal},
         )
         self.assertIsNotNone(sa_spec.sublayers_spec)
-        self.assertIsInstance(sa_spec.sublayers_spec, SelfAttentionSublayersSpec)
+        self.assertIsInstance(
+            sa_spec.sublayers_spec, SelfAttentionSublayersSpec
+        )
 
     def test_column_parallel_linear_for_qkv(self):
         """Test ColumnParallelLinear is used for qkv projection."""

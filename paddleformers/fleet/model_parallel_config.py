@@ -382,7 +382,9 @@ class ModelParallelConfig:
 
         if self.sequence_parallel:
             if self.tensor_model_parallel_size <= 1:
-                raise ValueError("Can not use sequence paralllelism without tensor parallelism")
+                raise ValueError(
+                    "Can not use sequence paralllelism without tensor parallelism"
+                )
 
         if self.expert_tensor_parallel_size is None:
             self.expert_tensor_parallel_size = self.tensor_model_parallel_size
@@ -390,23 +392,41 @@ class ModelParallelConfig:
         if self.autocast_dtype is None:
             self.autocast_dtype = self.params_dtype
 
-        if self.defer_embedding_wgrad_compute and self.pipeline_model_parallel_size == 1:
-            raise ValueError("Cannot defer embedding wgrad compute when pipeline model parallel is not used")
+        if (
+            self.defer_embedding_wgrad_compute
+            and self.pipeline_model_parallel_size == 1
+        ):
+            raise ValueError(
+                "Cannot defer embedding wgrad compute when pipeline model parallel is not used"
+            )
 
-        if self.defer_embedding_wgrad_compute and not self.gradient_accumulation_fusion:
-            raise ValueError("Cannot defer embedding wgrad compute when gradient accumulation fusion is not used")
+        if (
+            self.defer_embedding_wgrad_compute
+            and not self.gradient_accumulation_fusion
+        ):
+            raise ValueError(
+                "Cannot defer embedding wgrad compute when gradient accumulation fusion is not used"
+            )
 
         if self.defer_embedding_wgrad_compute and self.wgrad_deferral_limit < 0:
-            raise ValueError("Wgrad deferral limit should be greater than or equal to 0 when it is enabled!")
+            raise ValueError(
+                "Wgrad deferral limit should be greater than or equal to 0 when it is enabled!"
+            )
 
-        if self.expert_model_parallel_size > 1 and self.tensor_model_parallel_size > 1:
+        if (
+            self.expert_model_parallel_size > 1
+            and self.tensor_model_parallel_size > 1
+        ):
             if self.sequence_parallel is False:
                 raise ValueError(
-                    "When using expert parallelism and tensor parallelism, " "sequence parallelism must be used"
+                    "When using expert parallelism and tensor parallelism, "
+                    "sequence parallelism must be used"
                 )
 
         if self.microbatch_group_size_per_vp_stage is None:
-            self.microbatch_group_size_per_vp_stage = self.pipeline_model_parallel_size
+            self.microbatch_group_size_per_vp_stage = (
+                self.pipeline_model_parallel_size
+            )
 
         if self.overlap_p2p_comm_warmup_flush:
             if not self.overlap_p2p_comm or self.batch_p2p_comm:
@@ -416,5 +436,8 @@ class ModelParallelConfig:
                 )
         # Note(chenzhichao02): To unify the two switches moe_grouped_gemm and moe_expert_fusion, I applied a hack here to pass the CI.
         # Note: remove later
-        if hasattr(self, "moe_grouped_gemm") and self.moe_grouped_gemm is not None:
+        if (
+            hasattr(self, "moe_grouped_gemm")
+            and self.moe_grouped_gemm is not None
+        ):
             self.moe_expert_fusion = self.moe_grouped_gemm

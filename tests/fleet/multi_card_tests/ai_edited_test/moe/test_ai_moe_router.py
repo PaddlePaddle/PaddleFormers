@@ -23,11 +23,17 @@ from paddle.distributed import fleet
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 from paddleformers.fleet.process_groups_config import ProcessGroupCollection
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.training.initialize import initialize_fleet
 from paddleformers.fleet.transformer.moe.moe_router import (
     FusedGateDetachMatmul,
@@ -100,7 +106,9 @@ def _build_router_config(**overrides):
         router_aux_loss_coef=0.01,
         router_z_loss_coef=0.0,
         init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-        output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+        output_layer_init_method=functools.partial(
+            paddle.nn.init.xavier_uniform_, gain=1.0
+        ),
     )
     defaults.update(overrides)
     return TransformerConfig(**defaults)
@@ -148,7 +156,9 @@ class TestTopKRouter(unittest.TestCase):
         router = TopKRouter(self.config, pg_collection=self.pg_collection)
         self.assertIsNotNone(router)
         self.assertEqual(router.num_experts, self.config.n_routed_experts)
-        self.assertEqual(router.num_experts_per_tok, self.config.num_experts_per_tok)
+        self.assertEqual(
+            router.num_experts_per_tok, self.config.num_experts_per_tok
+        )
 
 
 class TestStandardMoERouter(unittest.TestCase):
@@ -163,7 +173,9 @@ class TestStandardMoERouter(unittest.TestCase):
     @_requires_gpu_compute
     def test_standard_moe_router_creation(self):
         """Test StandardMoERouter creation with config."""
-        router = StandardMoERouter(self.config, pg_collection=self.pg_collection)
+        router = StandardMoERouter(
+            self.config, pg_collection=self.pg_collection
+        )
         self.assertIsNotNone(router)
         self.assertEqual(router.num_experts, self.config.n_routed_experts)
 

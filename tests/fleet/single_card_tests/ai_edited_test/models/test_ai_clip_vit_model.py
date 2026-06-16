@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -325,7 +329,9 @@ class TestGetNumImageEmbeddings(unittest.TestCase):
                 get_hf_model_type,
             )
         except (ImportError, ModuleNotFoundError):
-            self.skipTest("paddleformers.fleet.models.huggingface not available")
+            self.skipTest(
+                "paddleformers.fleet.models.huggingface not available"
+            )
 
         with patch(
             "paddleformers.fleet.models.huggingface.module.get_hf_model_type",
@@ -350,7 +356,9 @@ class TestGetNumImageEmbeddings(unittest.TestCase):
                 get_hf_model_type,
             )
         except (ImportError, ModuleNotFoundError):
-            self.skipTest("paddleformers.fleet.models.huggingface not available")
+            self.skipTest(
+                "paddleformers.fleet.models.huggingface not available"
+            )
 
         with (
             patch(
@@ -418,7 +426,9 @@ class TestCLIPViTModelInit(unittest.TestCase):
         return_value=False,
     )
     @patch("paddleformers.fleet.models.vision.clip_vit_model.TransformerBlock")
-    def test_img_h_not_divisible_by_patch_dim_raises(self, mock_block, mock_log):
+    def test_img_h_not_divisible_by_patch_dim_raises(
+        self, mock_block, mock_log
+    ):
         """Test that img_h not divisible by patch_dim raises assertion."""
         mock_config = MagicMock()
         mock_config.hidden_size = 64
@@ -458,7 +468,9 @@ class TestCLIPViTModelForward(unittest.TestCase):
         from paddleformers.fleet.models.gpt.gpt_layer_specs import (
             get_gpt_layer_local_spec,
         )
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         config = TransformerConfig(
             num_hidden_layers=1,

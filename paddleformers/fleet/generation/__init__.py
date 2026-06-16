@@ -17,7 +17,11 @@
 from .config import GenerationConfig
 from .greedy_generator import DynamicKVCache, GreedyGenerator
 from .inference_utils import init_inference_fleet
-from .utils import apply_repetition_penalty, sample_with_top_k, sample_with_top_p
+from .utils import (
+    apply_repetition_penalty,
+    sample_with_top_k,
+    sample_with_top_p,
+)
 
 __all__ = [
     "DynamicKVCache",

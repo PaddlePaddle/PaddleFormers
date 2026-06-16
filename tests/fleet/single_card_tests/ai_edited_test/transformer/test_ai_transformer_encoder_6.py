@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -24,14 +28,18 @@ from unittest.mock import MagicMock, patch
 
 import paddle
 
-from paddleformers.fleet.transformer.transformer_encoder import TransformerEncoder
+from paddleformers.fleet.transformer.transformer_encoder import (
+    TransformerEncoder,
+)
 
 
 class TestTransformerEncoderSetPipelineNameMapping(unittest.TestCase):
     """Tests for _set_pipeline_name_mapping with various key formats."""
 
     def _make_encoder(self):
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             encoder.config = MagicMock()
             encoder.config.pipeline_model_parallel_size = 1
@@ -53,7 +61,9 @@ class TestTransformerEncoderSetStateDict(unittest.TestCase):
     """Tests for set_state_dict method."""
 
     def _make_encoder(self):
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             encoder.config = MagicMock()
             encoder.config.pipeline_model_parallel_size = 1
@@ -79,7 +89,9 @@ class TestTransformerEncoderSetStateDict(unittest.TestCase):
 
         mock_state_dict = {"model.layers.0.weight": paddle.randn([4, 8])}
 
-        with patch.object(type(encoder).__mro__[1], "set_state_dict", return_value=[]):
+        with patch.object(
+            type(encoder).__mro__[1], "set_state_dict", return_value=[]
+        ):
             result = encoder.set_state_dict(mock_state_dict)
             self.assertIsNotNone(result)
 
@@ -88,22 +100,30 @@ class TestTransformerEncoderCheckSharedModelState(unittest.TestCase):
     """Tests for _check_shared_model_state method."""
 
     def _make_encoder(self):
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             encoder.config = MagicMock()
             encoder.config.pipeline_model_parallel_size = 1
             encoder.config.virtual_pipeline_model_parallel_size = 1
             # Make sure _pipeline_name_mapping has the keys that
             # _pp_to_single_mapping values point to
-            encoder._pipeline_name_mapping = {"model.layers.0.weight": "0.weight"}
-            encoder._pp_to_single_mapping = {"0.weight": "model.layers.0.weight"}
+            encoder._pipeline_name_mapping = {
+                "model.layers.0.weight": "0.weight"
+            }
+            encoder._pp_to_single_mapping = {
+                "0.weight": "model.layers.0.weight"
+            }
             return encoder
 
     def test_check_shared_model_state(self):
         """Test _check_shared_model_state with basic state dict."""
         encoder = self._make_encoder()
 
-        with patch.object(type(encoder).__mro__[1], "state_dict", return_value={}):
+        with patch.object(
+            type(encoder).__mro__[1], "state_dict", return_value={}
+        ):
             result = encoder._check_shared_model_state()
             self.assertIsInstance(result, dict)
 
@@ -112,7 +132,9 @@ class TestTransformerEncoderOverlappedWithP2PHandle(unittest.TestCase):
     """Tests for overlapped_forward_backward with p2p_async_handle."""
 
     def _make_encoder(self):
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             encoder.config = MagicMock()
             return encoder
@@ -129,7 +151,9 @@ class TestTransformerEncoderOverlappedWithP2PHandle(unittest.TestCase):
         forward_chunk = MagicMock()
         backward_chunk = MagicMock()
 
-        with patch("paddleformers.fleet.transformer.transformer_encoder.build_overlapped_nodes") as mock_build:
+        with patch(
+            "paddleformers.fleet.transformer.transformer_encoder.build_overlapped_nodes"
+        ) as mock_build:
             mock_build.return_value = (
                 mock_pre,
                 mock_pre,
@@ -156,7 +180,9 @@ class TestTransformerEncoderOverlappedWithOverlapNodes(unittest.TestCase):
     """Tests for overlapped_forward_backward with overlap nodes."""
 
     def _make_encoder(self):
-        with patch.object(TransformerEncoder, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            TransformerEncoder, "__init__", lambda self, *a, **kw: None
+        ):
             encoder = TransformerEncoder.__new__(TransformerEncoder)
             encoder.config = MagicMock()
             return encoder
@@ -180,7 +206,9 @@ class TestTransformerEncoderOverlappedWithOverlapNodes(unittest.TestCase):
         forward_chunk = MagicMock()
         backward_chunk = MagicMock()
 
-        with patch("paddleformers.fleet.transformer.transformer_encoder.build_overlapped_nodes") as mock_build:
+        with patch(
+            "paddleformers.fleet.transformer.transformer_encoder.build_overlapped_nodes"
+        ) as mock_build:
             mock_build.return_value = (
                 mock_pre,
                 mock_pre,

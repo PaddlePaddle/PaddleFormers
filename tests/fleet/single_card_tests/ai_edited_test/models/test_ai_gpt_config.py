@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -146,7 +150,9 @@ class TestGPTConfigInheritance(unittest.TestCase):
 
     def test_inherits_from_transformer_config(self):
         from paddleformers.fleet.models.gpt.gpt_config import GPTConfig
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         self.assertTrue(issubclass(GPTConfig, TransformerConfig))
 

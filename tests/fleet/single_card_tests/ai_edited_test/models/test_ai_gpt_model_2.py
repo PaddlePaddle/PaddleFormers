@@ -15,7 +15,9 @@ import os
 import sys
 import unittest
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+REPO_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 sys.path.insert(0, os.path.join(REPO_ROOT, "src"))
 
 import paddle
@@ -28,7 +30,9 @@ from paddle.distributed.fleet.meta_parallel import (
 
 from paddleformers.fleet.models.gpt import gpt_model
 from paddleformers.fleet.models.gpt.gpt_model import GPTModel
-from paddleformers.fleet.transformer.transformer_layer import TransformerLayerNode
+from paddleformers.fleet.transformer.transformer_layer import (
+    TransformerLayerNode,
+)
 
 
 class Value:
@@ -123,7 +127,11 @@ class LossNode:
 
     def forward(self, inputs):
         self.forward_inputs.append(inputs)
-        return inputs[0].sum() if isinstance(inputs, tuple) else inputs["hidden_states"].sum()
+        return (
+            inputs[0].sum()
+            if isinstance(inputs, tuple)
+            else inputs["hidden_states"].sum()
+        )
 
     def backward(self, scaler=None):
         self.backward_scalers.append(scaler)
@@ -186,7 +194,9 @@ class FakeScheduleNode:
 class TestGPTOverlapAndStateNoMock(unittest.TestCase):
     def setUp(self):
         self.original_super = getattr(gpt_model, "super", None)
-        self.original_schedule_node = gpt_model.TransformerLayerNode.__init__.__globals__["ScheduleNode"]
+        self.original_schedule_node = (
+            gpt_model.TransformerLayerNode.__init__.__globals__["ScheduleNode"]
+        )
 
     def tearDown(self):
         if self.original_super is None:
@@ -194,7 +204,9 @@ class TestGPTOverlapAndStateNoMock(unittest.TestCase):
                 delattr(gpt_model, "super")
         else:
             gpt_model.super = self.original_super
-        gpt_model.TransformerLayerNode.__init__.__globals__["ScheduleNode"] = self.original_schedule_node
+        gpt_model.TransformerLayerNode.__init__.__globals__["ScheduleNode"] = (
+            self.original_schedule_node
+        )
 
     def _install_parent(self, model):
         gpt_model.super = lambda: ParentMethods(
@@ -219,24 +231,32 @@ class TestGPTOverlapAndStateNoMock(unittest.TestCase):
 
     def test_overlapped_forward_backward_drives_loss_and_p2p_handle(self):
         model = LightweightGPT([])
-        gpt_model.TransformerLayerNode.__init__.__globals__["ScheduleNode"] = FakeScheduleNode
-        forward_chunk = ScheduleChunk([TransformerLayerNode(DenseLayer(), TinyConfig())])
-        backward_chunk = ScheduleChunk([TransformerLayerNode(DenseLayer(), TinyConfig())])
+        gpt_model.TransformerLayerNode.__init__.__globals__["ScheduleNode"] = (
+            FakeScheduleNode
+        )
+        forward_chunk = ScheduleChunk(
+            [TransformerLayerNode(DenseLayer(), TinyConfig())]
+        )
+        backward_chunk = ScheduleChunk(
+            [TransformerLayerNode(DenseLayer(), TinyConfig())]
+        )
         forward_loss = LossNode()
         backward_loss = LossNode()
         handle = P2PHandle()
         hidden_states = paddle.ones([1, 2], dtype="float32")
         hidden_states.stop_gradient = False
 
-        forward_inputs, loss, backward_grads = model.overlapped_forward_backward(
-            forward_chunk,
-            {"hidden_states": hidden_states},
-            forward_loss,
-            backward_chunk,
-            backward_loss,
-            None,
-            scaler="scale",
-            p2p_async_handle=handle,
+        forward_inputs, loss, backward_grads = (
+            model.overlapped_forward_backward(
+                forward_chunk,
+                {"hidden_states": hidden_states},
+                forward_loss,
+                backward_chunk,
+                backward_loss,
+                None,
+                scaler="scale",
+                p2p_async_handle=handle,
+            )
         )
 
         self.assertIsNotNone(loss)
@@ -251,9 +271,15 @@ class TestGPTOverlapAndStateNoMock(unittest.TestCase):
         self,
     ):
         model = LightweightGPT([])
-        gpt_model.TransformerLayerNode.__init__.__globals__["ScheduleNode"] = FakeScheduleNode
-        forward_chunk = ScheduleChunk([TransformerLayerNode(DenseLayer(), TinyConfig())])
-        backward_chunk = ScheduleChunk([TransformerLayerNode(DenseLayer(), TinyConfig())])
+        gpt_model.TransformerLayerNode.__init__.__globals__["ScheduleNode"] = (
+            FakeScheduleNode
+        )
+        forward_chunk = ScheduleChunk(
+            [TransformerLayerNode(DenseLayer(), TinyConfig())]
+        )
+        backward_chunk = ScheduleChunk(
+            [TransformerLayerNode(DenseLayer(), TinyConfig())]
+        )
         backward_loss = LossNode()
         hidden_states = paddle.ones([1, 2], dtype="float32")
         hidden_states.stop_gradient = False
@@ -287,17 +313,25 @@ class TestGPTOverlapAndStateNoMock(unittest.TestCase):
 
         state = model.state_dict()
         self.assertIn("model.language_model.layers.0.weight", state)
-        result = model.set_state_dict({"model.language_model.layers.0.weight": Value("single")})
+        result = model.set_state_dict(
+            {"model.language_model.layers.0.weight": Value("single")}
+        )
         sharded = model.sharded_state_dict()
 
         self.assertEqual(result, "loaded")
         self.assertEqual(list(model.loaded_state.keys()), ["0.weight"])
         self.assertIn("model.language_model.layers.2.experts.4.weight", sharded)
-        self.assertIn("model.language_model.layers.2.layer_norm.weight_layer_9", sharded)
+        self.assertIn(
+            "model.language_model.layers.2.layer_norm.weight_layer_9", sharded
+        )
 
     def test_pipeline_mapping_handles_shared_and_virtual_names(self):
-        shared = SharedLayerDesc("embed", DummyEmbedding, shared_weight_attr="embedding_weight")
-        model = LightweightGPT(["0.0.weight", "0.tail.weight", "shared_layers.embed.weight"])
+        shared = SharedLayerDesc(
+            "embed", DummyEmbedding, shared_weight_attr="embedding_weight"
+        )
+        model = LightweightGPT(
+            ["0.0.weight", "0.tail.weight", "shared_layers.embed.weight"]
+        )
         model.layers = [shared]
         model._sequential_layers = [
             {"layer": shared, "name_prefix": "model.embed"},
@@ -307,14 +341,20 @@ class TestGPTOverlapAndStateNoMock(unittest.TestCase):
 
         mapping = model._set_pipeline_name_mapping()
 
-        self.assertEqual(mapping["model.embed.weight"], "shared_layers.embed.weight")
+        self.assertEqual(
+            mapping["model.embed.weight"], "shared_layers.embed.weight"
+        )
         self.assertEqual(mapping["model.layers.1.weight"], "0.tail.weight")
 
     def test_shared_layer_prefix_requires_current_stage(self):
-        shared = SharedLayerDesc("embed", DummyEmbedding, shared_weight_attr="embedding_weight")
+        shared = SharedLayerDesc(
+            "embed", DummyEmbedding, shared_weight_attr="embedding_weight"
+        )
         model = LightweightGPT([])
         model.layers = [shared]
-        model._sequential_layers = [{"layer": shared, "name_prefix": "model.embed"}]
+        model._sequential_layers = [
+            {"layer": shared, "name_prefix": "model.embed"}
+        ]
         model._stage_id = 0
         model._stage_for_index = 1
 
@@ -330,7 +370,9 @@ class TestGPTOverlapAndStateNoMock(unittest.TestCase):
 
         model.fp8_quant_weight(batch_mode=True, quant_transpose=False)
         self.assertEqual(layer.quant_calls, [(True, False)])
-        self.assertEqual(mtp_layer.transformer_layer.quant_calls, [(True, False)])
+        self.assertEqual(
+            mtp_layer.transformer_layer.quant_calls, [(True, False)]
+        )
         self.assertTrue(model.use_fp8())
 
         model._num_virtual_pipeline_stages = 2

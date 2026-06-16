@@ -44,9 +44,15 @@ class KimiK25VisionSd2TpoolMerger(nn.Layer):
             # Reshape along self.merge_kernel_size and concat to the last dimension
             kernel_height, kernel_width = self.merge_kernel_size
             new_height, new_width = h // kernel_height, w // kernel_width
-            reshaped_seq = seq.view(t, new_height, kernel_height, new_width, kernel_width, d_model)
-            reshaped_seq = reshaped_seq.permute(0, 1, 3, 2, 4, 5).contiguous().mean(dim=0)  # temporal pooling
-            padded_seq = reshaped_seq.view(new_height * new_width, kernel_height * kernel_width, -1)
+            reshaped_seq = seq.view(
+                t, new_height, kernel_height, new_width, kernel_width, d_model
+            )
+            reshaped_seq = (
+                reshaped_seq.permute(0, 1, 3, 2, 4, 5).contiguous().mean(dim=0)
+            )  # temporal pooling
+            padded_seq = reshaped_seq.view(
+                new_height * new_width, kernel_height * kernel_width, -1
+            )
             outputs.append(padded_seq)
             pre_sum += t * h * w
 
@@ -69,7 +75,9 @@ class KimiK25VisionPathMerger(nn.Layer):
     ):
         super().__init__()
         eps = config.projector_ln_eps
-        self.hidden_size = config.mm_hidden_size * (config.merge_kernel_size[0] * config.merge_kernel_size[1])
+        self.hidden_size = config.mm_hidden_size * (
+            config.merge_kernel_size[0] * config.merge_kernel_size[1]
+        )
         self.pre_norm = build_spec_layer(
             sublayers_spec.norm,
             config=config,
@@ -98,7 +106,10 @@ class KimiK25VisionPathMerger(nn.Layer):
         x = dict_args["hidden_states"]
         if isinstance(x, (list, tuple)):
             # fleet mlp return two tensor, out, bias
-            x = [self.proj(self.pre_norm(item).view(item.shape[0], -1))[0] for item in x]
+            x = [
+                self.proj(self.pre_norm(item).view(item.shape[0], -1))[0]
+                for item in x
+            ]
         else:
             # B, N, N_k, C = x.shape
             B = x.shape[0]

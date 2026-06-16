@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -29,7 +33,9 @@ class TestBiasGeGLUFunction(unittest.TestCase):
 
     def test_bias_geglu_function_forward(self):
         """Test BiasGeGLUFunction forward."""
-        from paddleformers.fleet.fusions.fused_bias_geglu import BiasGeGLUFunction
+        from paddleformers.fleet.fusions.fused_bias_geglu import (
+            BiasGeGLUFunction,
+        )
 
         inp = paddle.randn([4, 16])
         bias = paddle.randn([16])
@@ -46,7 +52,9 @@ class TestBiasGeGLUFunction(unittest.TestCase):
 
     def test_bias_geglu_function_3d_input(self):
         """Test BiasGeGLUFunction with reshaped 3D input."""
-        from paddleformers.fleet.fusions.fused_bias_geglu import BiasGeGLUFunction
+        from paddleformers.fleet.fusions.fused_bias_geglu import (
+            BiasGeGLUFunction,
+        )
 
         inp = paddle.randn([2, 4, 16]).view(-1, 16)
         bias = paddle.randn([16])
@@ -66,7 +74,9 @@ class TestWeightedQuickGeGLUFunction(unittest.TestCase):
         inp = paddle.randn([4, 16])
         weights = paddle.randn([4, 1])
         linear_offset = paddle.to_tensor(0.0)
-        result = WeightedQuickGeGLUFunction.apply(inp, weights, False, linear_offset)
+        result = WeightedQuickGeGLUFunction.apply(
+            inp, weights, False, linear_offset
+        )
         self.assertEqual(result.shape, [4, 8])
 
     def test_forward_with_offset(self):
@@ -78,7 +88,9 @@ class TestWeightedQuickGeGLUFunction(unittest.TestCase):
         inp = paddle.randn([4, 16])
         weights = paddle.randn([4, 1])
         linear_offset = paddle.to_tensor(0.5)
-        result = WeightedQuickGeGLUFunction.apply(inp, weights, False, linear_offset)
+        result = WeightedQuickGeGLUFunction.apply(
+            inp, weights, False, linear_offset
+        )
         self.assertEqual(result.shape, [4, 8])
 
 
@@ -95,7 +107,9 @@ class TestWeightedBiasQuickGeGLUFunction(unittest.TestCase):
         bias = paddle.randn([16])
         weights = paddle.randn([4, 1])
         linear_offset = paddle.to_tensor(0.0)
-        result = WeightedBiasQuickGeGLUFunction.apply(inp, bias, weights, False, linear_offset)
+        result = WeightedBiasQuickGeGLUFunction.apply(
+            inp, bias, weights, False, linear_offset
+        )
         self.assertEqual(result.shape, [4, 8])
 
 
@@ -109,7 +123,9 @@ class TestQuickGelu(unittest.TestCase):
         y = paddle.zeros([4])
         result = quick_gelu(y)
         # sigmoid(0) = 0.5, so quick_gelu(0) = 0 * 0.5 = 0
-        self.assertTrue(paddle.allclose(result, paddle.zeros_like(result), atol=1e-6))
+        self.assertTrue(
+            paddle.allclose(result, paddle.zeros_like(result), atol=1e-6)
+        )
 
     def test_quick_gelu_positive(self):
         """Test quick_gelu with positive values."""

@@ -46,15 +46,23 @@ def _set_random_seed(
     """Set random seed for reproducibility."""
     if seed_ is not None and seed_ > 0:
         # Ensure that different pipeline MP stages get different seeds.
-        seed = seed_ + (100 * paddleformers.fleet.parallel_state.get_pipeline_model_parallel_rank())
+        seed = seed_ + (
+            100
+            * paddleformers.fleet.parallel_state.get_pipeline_model_parallel_rank()
+        )
         # Ensure different data parallel ranks get different seeds
         if data_parallel_random_init:
-            seed = seed + (10 * paddleformers.fleet.parallel_state.get_data_parallel_rank())
+            seed = seed + (
+                10 * paddleformers.fleet.parallel_state.get_data_parallel_rank()
+            )
         random.seed(seed)
         np.random.seed(seed)
         paddle.manual_seed(seed)
 
-        if paddle.distributed.is_initialized() and paddle.cuda.device_count() > 0:
+        if (
+            paddle.distributed.is_initialized()
+            and paddle.cuda.device_count() > 0
+        ):
             paddleformers.fleet.tensor_parallel.model_parallel_cuda_manual_seed(
                 seed,
                 te_rng_tracker,
@@ -114,7 +122,9 @@ def run_pp(
         num_stages=config.pipeline_model_parallel_size,
         seg_method="layer:TransformerLayer|EmptyLayer",
     )
-    gpt_model = paddle.amp.decorate(models=gpt_model, optimizers=None, level="O2", dtype="bfloat16")
+    gpt_model = paddle.amp.decorate(
+        models=gpt_model, optimizers=None, level="O2", dtype="bfloat16"
+    )
 
     gpt_pipe_model = distributed_model(gpt_model)
 
@@ -125,7 +135,9 @@ def run_pp(
     )
     input_ids = data[:, :-1]
     labels = data[:, 1:]
-    position_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat((micro_batch_size, 1))
+    position_ids = paddle.to_tensor(data, dtype=paddle.int64).repeat(
+        (micro_batch_size, 1)
+    )
 
     inputs = (
         {
@@ -151,7 +163,10 @@ class TestPP(unittest.TestCase):
         self.vocab_size = 1024
 
     def test_pp(self):
-        if not paddle.device.current_device_is_cpu and paddle.device.get_device_capability()[0] < 9:
+        if (
+            not paddle.device.current_device_is_cpu
+            and paddle.device.get_device_capability()[0] < 9
+        ):
             return
         config = GPTConfig(
             moe_expert_fusion=False,
@@ -171,8 +186,12 @@ class TestPP(unittest.TestCase):
             rotary_percent=1.0,
             rotary_base=10000,
             rope_scaling=1.0,
-            init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-            output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+            init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
+            output_layer_init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
             use_qk_norm=True,
             num_empty_layers_add_in_head=2,
             num_empty_layers_add_in_tail=3,

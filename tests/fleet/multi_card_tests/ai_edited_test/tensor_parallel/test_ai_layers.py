@@ -23,7 +23,11 @@ from paddle.distributed import fleet
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 from paddleformers.fleet.tensor_parallel.layers import (
@@ -31,7 +35,9 @@ from paddleformers.fleet.tensor_parallel.layers import (
     RowParallelLinear,
     VocabParallelEmbedding,
 )
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.training.initialize import initialize_fleet
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 
@@ -271,7 +277,9 @@ class TestVocabParallelEmbeddingReduceScatter(unittest.TestCase):
             reduce_scatter_embeddings=True,
         )
 
-        input_ids = paddle.randint(0, num_embeddings, shape=[batch_size, seq_len])
+        input_ids = paddle.randint(
+            0, num_embeddings, shape=[batch_size, seq_len]
+        )
         input_ids.stop_gradient = False
         output = emb(input_ids)
 

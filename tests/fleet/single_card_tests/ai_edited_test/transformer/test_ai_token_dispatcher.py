@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -65,7 +69,10 @@ class TestDispatchManagerInterface(unittest.TestCase):
 class TestDeepepManagerConstruction(unittest.TestCase):
     """Test _DeepEPManager construction."""
 
-    @patch("paddleformers.fleet.transformer.moe.token_dispatcher.fused_dispatch", None)
+    @patch(
+        "paddleformers.fleet.transformer.moe.token_dispatcher.fused_dispatch",
+        None,
+    )
     def test_no_deepep_raises(self):
         group = MagicMock()
         with self.assertRaises(ImportError):
@@ -77,7 +84,9 @@ class TestDeepepManagerConstruction(unittest.TestCase):
     )
     def test_basic_construction(self):
         group = MagicMock()
-        manager = _DeepEPManager(group, router_topk=2, num_experts=8, num_local_experts=4)
+        manager = _DeepEPManager(
+            group, router_topk=2, num_experts=8, num_local_experts=4
+        )
         self.assertEqual(manager.router_topk, 2)
         self.assertEqual(manager.num_experts, 8)
         self.assertEqual(manager.num_local_experts, 4)
@@ -137,8 +146,12 @@ class TestDeepepManagerIndicesToMultihot(unittest.TestCase):
     )
     def test_basic_conversion(self):
         group = MagicMock()
-        manager = _DeepEPManager(group, router_topk=2, num_experts=4, num_local_experts=4)
-        indices = paddle.to_tensor([[0, 1], [2, 3], [0, 2], [1, 3]], dtype="int64")
+        manager = _DeepEPManager(
+            group, router_topk=2, num_experts=4, num_local_experts=4
+        )
+        indices = paddle.to_tensor(
+            [[0, 1], [2, 3], [0, 2], [1, 3]], dtype="int64"
+        )
         probs = paddle.ones([4, 2], dtype="float32") * 0.5
         multihot = manager._indices_to_multihot(indices, probs)
         # Should produce a multihot representation

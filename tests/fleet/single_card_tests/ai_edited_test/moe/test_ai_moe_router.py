@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -29,7 +33,9 @@ import paddle
 
 def _make_router_config(**overrides):
     """Helper to create a TransformerConfig for router testing."""
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
     defaults = {
         "hidden_size": 64,
@@ -66,7 +72,9 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_standard_router_init(self, mock_cp):
         """Test StandardMoERouter initialization."""
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config()
         router = StandardMoERouter(config)
@@ -82,7 +90,9 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_noaux_tc_router_init(self, mock_cp):
         """Test router init with noaux_tc topk_method registers buffers."""
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config(topk_method="noaux_tc")
         router = StandardMoERouter(config)
@@ -95,13 +105,17 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_gate_score_func_softmax(self, mock_cp):
         """Test gate_score_func with softmax."""
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config(scoring_func="softmax")
         router = StandardMoERouter(config)
         logits = paddle.randn([4, 4], dtype=paddle.float32)
         scores = router.gate_score_func(logits)
-        self.assertTrue(paddle.allclose(scores.sum(axis=-1), paddle.ones([4]), atol=1e-5))
+        self.assertTrue(
+            paddle.allclose(scores.sum(axis=-1), paddle.ones([4]), atol=1e-5)
+        )
 
     @patch(
         "paddleformers.fleet.transformer.moe.moe_router.get_context_parallel_world_size",
@@ -109,7 +123,9 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_gate_score_func_sigmoid(self, mock_cp):
         """Test gate_score_func with sigmoid."""
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config(scoring_func="sigmoid")
         router = StandardMoERouter(config)
@@ -123,7 +139,9 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_gate_score_func_tanh(self, mock_cp):
         """Test gate_score_func with tanh."""
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config(scoring_func="tanh")
         router = StandardMoERouter(config)
@@ -137,7 +155,9 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_gate_score_func_relu(self, mock_cp):
         """Test gate_score_func with relu."""
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config(scoring_func="relu")
         router = StandardMoERouter(config)
@@ -151,7 +171,9 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_gate_score_func_gelu(self, mock_cp):
         """Test gate_score_func with gelu."""
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config(scoring_func="gelu")
         router = StandardMoERouter(config)
@@ -165,7 +187,9 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_gate_score_func_leaky_relu(self, mock_cp):
         """Test gate_score_func with leaky_relu."""
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config(scoring_func="leaky_relu")
         router = StandardMoERouter(config)
@@ -179,7 +203,9 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_gate_score_func_not_implemented(self, mock_cp):
         """Test gate_score_func raises for unknown scoring func."""
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config(scoring_func="unknown")
         router = StandardMoERouter(config)
@@ -193,12 +219,16 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_capacity_calculation(self, mock_cp):
         """Test _capacity calculates correct value."""
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config()
         router = StandardMoERouter(config)
         gates = paddle.randn([16, 4], dtype=paddle.float32)
-        capacity = router._capacity(gates, capacity_factor=1.0, max_capacity=10, min_capacity=1)
+        capacity = router._capacity(
+            gates, capacity_factor=1.0, max_capacity=10, min_capacity=1
+        )
         self.assertEqual(capacity, 4)
 
     @patch(
@@ -207,12 +237,16 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_capacity_min_clamp(self, mock_cp):
         """Test _capacity clamps to min_capacity."""
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config()
         router = StandardMoERouter(config)
         gates = paddle.randn([2, 8], dtype=paddle.float32)
-        capacity = router._capacity(gates, capacity_factor=0.01, max_capacity=10, min_capacity=5)
+        capacity = router._capacity(
+            gates, capacity_factor=0.01, max_capacity=10, min_capacity=5
+        )
         self.assertEqual(capacity, 5)
 
     @patch(
@@ -221,12 +255,16 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_capacity_max_clamp(self, mock_cp):
         """Test _capacity clamps to max_capacity."""
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config()
         router = StandardMoERouter(config)
         gates = paddle.randn([100, 4], dtype=paddle.float32)
-        capacity = router._capacity(gates, capacity_factor=10.0, max_capacity=5, min_capacity=1)
+        capacity = router._capacity(
+            gates, capacity_factor=10.0, max_capacity=5, min_capacity=1
+        )
         self.assertEqual(capacity, 5)
 
     @patch(
@@ -235,7 +273,9 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_cal_aux_loss(self, mock_cp):
         """Test _cal_aux_loss computation."""
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config(n_routed_experts=4)
         router = StandardMoERouter(config)
@@ -255,7 +295,9 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_cal_z_loss(self, mock_cp):
         """Test _cal_z_loss computation."""
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config()
         router = StandardMoERouter(config)
@@ -270,7 +312,9 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_topk_greedy(self, mock_cp):
         """Test _topk_greedy returns correct shapes."""
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config(num_experts_per_tok=2)
         router = StandardMoERouter(config)
@@ -285,7 +329,9 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_topk_group_limited_greedy(self, mock_cp):
         """Test _topk_group_limited_greedy."""
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config(
             n_routed_experts=8,
@@ -295,7 +341,9 @@ class TestMoERouter(unittest.TestCase):
         )
         router = StandardMoERouter(config)
         scores = paddle.randn([4, 8], dtype=paddle.float32)
-        topk_weight, topk_idx = router._topk_group_limited_greedy(scores, k=2, n_group=4, topk_group=2)
+        topk_weight, topk_idx = router._topk_group_limited_greedy(
+            scores, k=2, n_group=4, topk_group=2
+        )
         self.assertEqual(topk_weight.shape, [4, 2])
         self.assertEqual(topk_idx.shape, [4, 2])
 
@@ -305,13 +353,17 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_topk_group_limited_greedy_assert(self, mock_cp):
         """Test _topk_group_limited_greedy asserts divisibility."""
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config(n_routed_experts=5, n_group=3)
         router = StandardMoERouter(config)
         scores = paddle.randn([4, 5], dtype=paddle.float32)
         with self.assertRaises(AssertionError):
-            router._topk_group_limited_greedy(scores, k=2, n_group=3, topk_group=1)
+            router._topk_group_limited_greedy(
+                scores, k=2, n_group=3, topk_group=1
+            )
 
     @patch(
         "paddleformers.fleet.transformer.moe.moe_router.get_context_parallel_world_size",
@@ -319,7 +371,9 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_call_topk_method_invalid(self, mock_cp):
         """Test _call_topk_method raises for invalid method."""
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config()
         router = StandardMoERouter(config)
@@ -332,7 +386,9 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_set_layer_number(self, mock_cp):
         """Test set_layer_number."""
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config()
         router = StandardMoERouter(config)
@@ -345,7 +401,9 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_priority(self, mock_cp):
         """Test _priority with capacity constraint."""
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config(n_routed_experts=4, num_experts_per_tok=2)
         router = StandardMoERouter(config)
@@ -359,7 +417,9 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_probs_drop_policy(self, mock_cp):
         """Test _probs_drop_policy."""
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config(n_routed_experts=4)
         router = StandardMoERouter(config)
@@ -377,7 +437,9 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_seq_aux_loss_raises_on_invalid_type(self, mock_cp):
         """Test router raises when seq_aux is True but type != seq_aux_loss."""
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config(
             moe_router_load_balancing_type="aux_loss",
@@ -392,7 +454,9 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_gate_detach_matmul_no_fuse(self, mock_cp):
         """Test gate_detach_matmul without fusion."""
-        from paddleformers.fleet.transformer.moe.moe_router import gate_detach_matmul
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            gate_detach_matmul,
+        )
 
         x = paddle.randn([4, 64], dtype=paddle.float32)
         w = paddle.randn([64, 4], dtype=paddle.float32)
@@ -405,7 +469,9 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_fused_gate_detach_matmul(self, mock_cp):
         """Test FusedGateDetachMatmul PyLayer."""
-        from paddleformers.fleet.transformer.moe.moe_router import FusedGateDetachMatmul
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            FusedGateDetachMatmul,
+        )
 
         x = paddle.randn([4, 64], dtype=paddle.float32)
         # FusedGateDetachMatmul.forward does w = w.T internally, then F.linear(x, w.T).
@@ -422,7 +488,9 @@ class TestMoERouter(unittest.TestCase):
     )
     def test_topk_noaux_tc_n_group_1(self, mock_cp):
         """Test _topk_noaux_tc with n_group=1."""
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config(
             topk_method="noaux_tc",
@@ -433,7 +501,9 @@ class TestMoERouter(unittest.TestCase):
         )
         router = StandardMoERouter(config)
         scores = paddle.randn([4, 4], dtype=paddle.float32)
-        topk_weight, topk_idx = router._topk_noaux_tc(scores, k=2, n_group=1, topk_group=1)
+        topk_weight, topk_idx = router._topk_noaux_tc(
+            scores, k=2, n_group=1, topk_group=1
+        )
         self.assertEqual(topk_weight.shape, [4, 2])
         self.assertEqual(topk_idx.shape, [4, 2])
 
@@ -450,7 +520,9 @@ class TestSftPlusScore(unittest.TestCase):
         for mixed hash/top-k routing where non-hash layers use this path."""
         import paddle.nn.functional as F
 
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config(scoring_func="sqrtsoftplus")
         router = StandardMoERouter(config)
@@ -467,7 +539,9 @@ class TestSftPlusScore(unittest.TestCase):
         """gate_score_func('sftplus') should exactly match F.softplus."""
         import paddle.nn.functional as F
 
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config(scoring_func="sftplus")
         router = StandardMoERouter(config)
@@ -535,7 +609,9 @@ class TestHashRouter(unittest.TestCase):
         """Same input_ids → same expert assignment every call."""
         router, _ = self._make_router(n_routed_experts=4, num_experts_per_tok=2)
         hidden = self._dummy_hidden(2, 4)
-        input_ids = paddle.to_tensor([[3, 7, 1, 5], [2, 6, 4, 8]], dtype="int64")
+        input_ids = paddle.to_tensor(
+            [[3, 7, 1, 5], [2, 6, 4, 8]], dtype="int64"
+        )
 
         _, _, idx1, _, _, _, _, _ = router(hidden, input_ids=input_ids)
         _, _, idx2, _, _, _, _, _ = router(hidden, input_ids=input_ids)
@@ -546,7 +622,9 @@ class TestHashRouter(unittest.TestCase):
         """Expert indices should match the round-robin tid2eid table."""
         num_experts = 4
         k = 2
-        router, _ = self._make_router(n_routed_experts=num_experts, num_experts_per_tok=k)
+        router, _ = self._make_router(
+            n_routed_experts=num_experts, num_experts_per_tok=k
+        )
 
         token_ids = [[3, 7, 1, 5]]
         hidden = self._dummy_hidden(1, 4)
@@ -566,7 +644,9 @@ class TestHashRouter(unittest.TestCase):
         input_ids = paddle.to_tensor([[0, 3, 5, 7]], dtype="int64")
         hidden = self._dummy_hidden(1, 4)
 
-        _, top_gate, top_idx, probs, mask, _, _, _ = router(hidden, input_ids=input_ids)
+        _, top_gate, top_idx, probs, mask, _, _, _ = router(
+            hidden, input_ids=input_ids
+        )
         np.testing.assert_array_equal(top_gate.numpy()[0], [0.0, 0.0])
         np.testing.assert_array_equal(top_idx.numpy()[0], [-1, -1])
         self.assertEqual(probs.numpy()[0].sum(), 0.0)
@@ -583,19 +663,25 @@ class TestHashRouter(unittest.TestCase):
         )
         # Force deterministic gate weights for reproducibility
         with paddle.no_grad():
-            router.weight.set_value(paddle.randn(router.weight.shape, dtype=router.weight.dtype))
+            router.weight.set_value(
+                paddle.randn(router.weight.shape, dtype=router.weight.dtype)
+            )
         B, S, H = 1, 4, 64
         hidden = self._dummy_hidden(B, S, H)
         input_ids = paddle.to_tensor([[3, 5, 7, 9]], dtype="int64")
 
-        _, top_gate, top_idx, _, _, _, _, _ = router(hidden, input_ids=input_ids)
+        _, top_gate, top_idx, _, _, _, _, _ = router(
+            hidden, input_ids=input_ids
+        )
 
         # Recompute expected scores from the gate matmul.
         flat = hidden.reshape([-1, H]).cast(paddle.float32)
         logits = paddle.matmul(flat, router.weight.T.cast(paddle.float32))
         scores = softmax(logits, axis=-1)
         expected = paddle.take_along_axis(scores, top_idx, axis=1).numpy()
-        np.testing.assert_allclose(top_gate.numpy(), expected, atol=1e-5, rtol=1e-4)
+        np.testing.assert_allclose(
+            top_gate.numpy(), expected, atol=1e-5, rtol=1e-4
+        )
 
     def test_sigmoid_score_is_renormalized(self):
         """For non-softmax score functions, top_gate must sum to 1."""
@@ -623,7 +709,9 @@ class TestHashRouter(unittest.TestCase):
         hidden = self._dummy_hidden(B, S, H)
         input_ids = paddle.randint(1, 100, [B, S])
 
-        _, top_gate, top_idx, probs, mask, tp, l_aux, l_zloss = router(hidden, input_ids=input_ids)
+        _, top_gate, top_idx, probs, mask, tp, l_aux, l_zloss = router(
+            hidden, input_ids=input_ids
+        )
         num_tokens = B * S
         self.assertEqual(list(top_gate.shape), [num_tokens, k])
         self.assertEqual(list(top_idx.shape), [num_tokens, k])
@@ -730,7 +818,9 @@ class TestHashRouter(unittest.TestCase):
         router.routed_scaling_factor_param.set_value(scales)
         hidden = self._dummy_hidden(1, 4)
         input_ids = paddle.to_tensor([[1, 2, 3, 4]], dtype="int64")
-        _, top_gate, top_idx, _, _, _, _, _ = router(hidden, input_ids=input_ids)
+        _, top_gate, top_idx, _, _, _, _, _ = router(
+            hidden, input_ids=input_ids
+        )
         # Each gate weight should equal its raw softmax prob * scales[expert_id].
         idx_np = top_idx.numpy()
         gate_np = top_gate.numpy()
@@ -785,7 +875,9 @@ class TestHashRouter(unittest.TestCase):
         B, S = 2, 4
         input_ids = paddle.randint(1, 50, [B, S])
         hidden = self._dummy_hidden(B, S)
-        _, top_gate, top_idx, probs, mask, _, _, _ = router(hidden, input_ids=input_ids)
+        _, top_gate, top_idx, probs, mask, _, _, _ = router(
+            hidden, input_ids=input_ids
+        )
         # top_gate should be non-negative and sum to ~1 per token
         self.assertTrue(bool((top_gate >= 0).all().numpy()))
         sums = top_gate.sum(axis=-1).numpy()
@@ -877,7 +969,9 @@ class TestTopKNoAuxTCGroupLimited(unittest.TestCase):
         return_value=1,
     )
     def test_topk_noaux_tc_group_limited(self, _mock):
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config(
             topk_method="noaux_tc",
@@ -895,7 +989,9 @@ class TestTopKNoAuxTCGroupLimited(unittest.TestCase):
         router.e_score_correction_bias.set_value(bias)
 
         scores = paddle.ones([4, 8], dtype=paddle.float32) * 0.1
-        topk_weight, topk_idx = router._topk_noaux_tc(scores, k=2, n_group=2, topk_group=1)
+        topk_weight, topk_idx = router._topk_noaux_tc(
+            scores, k=2, n_group=2, topk_group=1
+        )
         self.assertEqual(list(topk_weight.shape), [4, 2])
         self.assertEqual(list(topk_idx.shape), [4, 2])
         # All selected indices must lie in the high-bias group (0..3).
@@ -914,7 +1010,9 @@ class TestSeqAuxLoss(unittest.TestCase):
         return_value=1,
     )
     def _make_router(self, _mock, **overrides):
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         cfg = _make_router_config(
             n_routed_experts=4,
@@ -952,7 +1050,9 @@ class TestSeqAuxLoss(unittest.TestCase):
         routing_map[:, 0] = 1.0
         routing_map[:, 1] = 1.0
         # First row has 1 pad, second row has 2 pads.
-        input_ids = paddle.to_tensor([[0, 1, 2, 3], [0, 0, 4, 5]], dtype="int64")
+        input_ids = paddle.to_tensor(
+            [[0, 1, 2, 3], [0, 0, 4, 5]], dtype="int64"
+        )
         loss = router._cal_seq_aux_loss(
             probs,
             top_k=2,
@@ -973,7 +1073,9 @@ class TestSeqAuxLoss(unittest.TestCase):
         routing_map = paddle.zeros([bsz * seq_len, num_experts])
         routing_map[:, 0] = 1.0
         routing_map[:, 1] = 1.0
-        input_ids = paddle.to_tensor([[0, 1, 2, 3], [4, 5, 6, 7]], dtype="int64")
+        input_ids = paddle.to_tensor(
+            [[0, 1, 2, 3], [4, 5, 6, 7]], dtype="int64"
+        )
         loss = router._cal_seq_aux_loss(
             probs,
             top_k=2,
@@ -993,12 +1095,16 @@ class TestZLossWithInputIds(unittest.TestCase):
         return_value=1,
     )
     def test_z_loss_uses_valid_token_count(self, _mock):
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         cfg = _make_router_config(router_z_loss_coef=0.1)
         router = StandardMoERouter(cfg)
         logits = paddle.randn([8, 4])
-        input_ids = paddle.to_tensor([[0, 1, 2, 3], [4, 5, 6, 7]], dtype="int64")
+        input_ids = paddle.to_tensor(
+            [[0, 1, 2, 3], [4, 5, 6, 7]], dtype="int64"
+        )
         loss = router._cal_z_loss(logits, input_ids=input_ids)
         self.assertTrue(np.isfinite(loss.numpy()))
         # Same logits, no padding → also finite.
@@ -1046,11 +1152,17 @@ class TestTopKRouterForward(unittest.TestCase):
         router, _ = self._router()
         hidden = self._hidden(B=1, S=4)
         input_ids = paddle.to_tensor([[0, 1, 2, 3]], dtype="int64")
-        _, top_gate, top_idx, _, mask, _, _, _ = router(hidden, input_ids=input_ids)
+        _, top_gate, top_idx, _, mask, _, _, _ = router(
+            hidden, input_ids=input_ids
+        )
         # Padding row gets idx=-1 and zero weight + zero mask.
         self.assertEqual(int(top_idx[0, 0].numpy()), -1)
-        np.testing.assert_array_equal(top_gate[0].numpy(), np.zeros(2, dtype=np.float32))
-        np.testing.assert_array_equal(mask[0].numpy(), np.zeros(4, dtype=np.float32))
+        np.testing.assert_array_equal(
+            top_gate[0].numpy(), np.zeros(2, dtype=np.float32)
+        )
+        np.testing.assert_array_equal(
+            mask[0].numpy(), np.zeros(4, dtype=np.float32)
+        )
 
     def test_forward_sigmoid_renormalizes_gates_ori(self):
         """The sigmoid branch must run the renorm path without errors."""
@@ -1069,7 +1181,9 @@ class TestTopKRouterForward(unittest.TestCase):
         )
         # forward expects [B, S, H] with B*S consistent with input_ids when set.
         hidden = self._hidden(B=2, S=4)
-        input_ids = paddle.to_tensor([[1, 2, 3, 4], [5, 6, 7, 8]], dtype="int64")
+        input_ids = paddle.to_tensor(
+            [[1, 2, 3, 4], [5, 6, 7, 8]], dtype="int64"
+        )
         out = router(hidden, input_ids=input_ids)
         self.assertIsNotNone(out[6])  # l_aux from seq_aux_loss path
 
@@ -1182,7 +1296,9 @@ class TestHashRoutingExtraBranches(unittest.TestCase):
         router.set_layer_number(0)
         hidden = paddle.randn([1, 4, 64])
         input_ids = paddle.to_tensor([[1, 2, 3, 4]], dtype="int64")
-        _, top_gate, top_idx, _, _, _, _, _ = router(hidden, input_ids=input_ids)
+        _, top_gate, top_idx, _, _, _, _, _ = router(
+            hidden, input_ids=input_ids
+        )
         # sqrt(softplus(x)) is non-negative.
         self.assertTrue(bool((top_gate >= 0).all().numpy()))
         self.assertEqual(list(top_idx.shape), [4, 2])
@@ -1204,14 +1320,18 @@ class TestZLossExperimental(unittest.TestCase):
         return_value=1,
     )
     def test_z_loss_experimental_version(self, _mock):
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         cfg = _make_router_config(router_z_loss_coef=0.1)
         cfg.gpt_model_use_experimental_version = True
         cfg.num_nextn_predict_layers = 1
         router = StandardMoERouter(cfg)
         logits = paddle.randn([8, 4])
-        input_ids = paddle.to_tensor([[1, 2, 3, 4], [5, 6, 7, 8]], dtype="int64")
+        input_ids = paddle.to_tensor(
+            [[1, 2, 3, 4], [5, 6, 7, 8]], dtype="int64"
+        )
         loss = router._cal_z_loss(logits, input_ids=input_ids)
         self.assertTrue(np.isfinite(loss.numpy()))
 
@@ -1226,7 +1346,9 @@ class TestMoeTopkFusionLazyImport(unittest.TestCase):
         mr._MoETopkFusion = None
 
         sentinel = object()
-        fake_module = types_module = __import__("types").ModuleType("paddleformers.fleet.triton_ops.moe_topk_fusion")
+        fake_module = types_module = __import__("types").ModuleType(
+            "paddleformers.fleet.triton_ops.moe_topk_fusion"
+        )
         fake_module.MoETopkFusion = sentinel
         with patch.dict(
             "sys.modules",
@@ -1252,7 +1374,9 @@ class TestLogMoeMd5(unittest.TestCase):
 
     def test_logs_when_flag_on_and_experimental_version(self):
         from paddleformers.fleet.transformer.moe import moe_router as mr
-        from paddleformers.fleet.transformer.transformer_layer import TransformerLayer
+        from paddleformers.fleet.transformer.transformer_layer import (
+            TransformerLayer,
+        )
 
         mr._LOG_LAYER_MD5 = True
         prev_exp = TransformerLayer._gpt_model_use_experimental_version
@@ -1287,7 +1411,9 @@ class TestRoutingMapFusionWrapper(unittest.TestCase):
         pad_token_id=0,
     ):
         # Return a binary mask with selected indices set, matching gates shape.
-        fused_mask = paddle.zeros_like(gates).put_along_axis(top_idx, paddle.to_tensor(1.0, dtype=gates.dtype), axis=1)
+        fused_mask = paddle.zeros_like(gates).put_along_axis(
+            top_idx, paddle.to_tensor(1.0, dtype=gates.dtype), axis=1
+        )
         exp_counts = paddle.zeros([gates.shape[-1]], dtype="int64")
         return fused_mask, top_idx, exp_counts
 
@@ -1297,7 +1423,9 @@ class TestRoutingMapFusionWrapper(unittest.TestCase):
         )
 
         gates = paddle.randn([4, 8]).abs()
-        top_idx = paddle.to_tensor([[0, 1], [2, 3], [4, 5], [6, 7]], dtype="int64")
+        top_idx = paddle.to_tensor(
+            [[0, 1], [2, 3], [4, 5], [6, 7]], dtype="int64"
+        )
         nonzero_mask = paddle.ones([4, 1], dtype="bool")
         input_ids = paddle.to_tensor([[1, 2], [3, 4]], dtype="int64")
         with patch(
@@ -1305,7 +1433,9 @@ class TestRoutingMapFusionWrapper(unittest.TestCase):
             side_effect=self._fake_routing_map_fusion,
             create=True,
         ):
-            mask, ti, exp = _apply_routing_map_fusion(gates, top_idx, nonzero_mask, input_ids)
+            mask, ti, exp = _apply_routing_map_fusion(
+                gates, top_idx, nonzero_mask, input_ids
+            )
         self.assertEqual(list(mask.shape), [4, 8])
         self.assertEqual(list(ti.shape), [4, 2])
 
@@ -1315,13 +1445,17 @@ class TestRoutingMapFusionWrapper(unittest.TestCase):
         )
 
         gates = paddle.randn([4, 8]).abs()
-        top_idx = paddle.to_tensor([[0, 1], [2, 3], [4, 5], [6, 7]], dtype="int64")
+        top_idx = paddle.to_tensor(
+            [[0, 1], [2, 3], [4, 5], [6, 7]], dtype="int64"
+        )
         with patch(
             "paddleformers.fleet.triton_ops.routing_map_fusion_forward",
             side_effect=self._fake_routing_map_fusion,
             create=True,
         ):
-            mask, ti, exp = _apply_routing_map_fusion(gates, top_idx, None, None)
+            mask, ti, exp = _apply_routing_map_fusion(
+                gates, top_idx, None, None
+            )
         self.assertEqual(list(mask.shape), [4, 8])
 
 
@@ -1334,7 +1468,9 @@ class TestSeqAuxLoss1DInputIds(unittest.TestCase):
         return_value=1,
     )
     def test_seq_aux_loss_with_1d_input_ids(self, _mock):
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         cfg = _make_router_config(router_aux_loss_coef=0.1)
         router = StandardMoERouter(cfg)
@@ -1342,7 +1478,9 @@ class TestSeqAuxLoss1DInputIds(unittest.TestCase):
         batch_size = 2
         probs = paddle.randn([batch_size, seq_len, n_experts]).abs()
         probs = probs / probs.sum(axis=-1, keepdim=True)
-        routing_map = paddle.randint(0, 2, [batch_size * seq_len, n_experts]).cast(paddle.float32)
+        routing_map = paddle.randint(
+            0, 2, [batch_size * seq_len, n_experts]
+        ).cast(paddle.float32)
         # 1D input_ids — function should unsqueeze it internally.
         input_ids_1d = paddle.to_tensor([1, 2, 0, 4, 5, 6, 7, 0], dtype="int64")
         loss = router._cal_seq_aux_loss(
@@ -1454,7 +1592,9 @@ class TestForwardRoutingMapFusion(unittest.TestCase):
         is_pure_text_line=None,
         pad_token_id=0,
     ):
-        fused_mask = paddle.zeros_like(gates).put_along_axis(top_idx, paddle.to_tensor(1.0, dtype=gates.dtype), axis=1)
+        fused_mask = paddle.zeros_like(gates).put_along_axis(
+            top_idx, paddle.to_tensor(1.0, dtype=gates.dtype), axis=1
+        )
         exp_counts = paddle.zeros([gates.shape[-1]], dtype="int64")
         return fused_mask, top_idx, exp_counts
 
@@ -1538,7 +1678,13 @@ class TestHashRoutingScoreFuncs(unittest.TestCase):
         top_gate, _ = router._hash_routing(logits, flat_ids)
         # Each row should sum to ~1 (normalized)
         row_sums = top_gate.sum(axis=-1)
-        self.assertTrue(bool(paddle.allclose(row_sums, paddle.ones_like(row_sums), atol=1e-4).item()))
+        self.assertTrue(
+            bool(
+                paddle.allclose(
+                    row_sums, paddle.ones_like(row_sums), atol=1e-4
+                ).item()
+            )
+        )
 
     def test_hash_routing_no_tid2eid_raises(self):
         """_hash_routing raises ValueError when tid2eid is None (line 768)."""
@@ -1580,7 +1726,9 @@ class TestHashRoutingScoreFuncs(unittest.TestCase):
         )
         top_gate_unscaled, _ = unscaled_router._hash_routing(logits, flat_ids)
         # scaled should be ~2x unscaled
-        ratio = top_gate.numpy().mean() / (top_gate_unscaled.numpy().mean() + 1e-10)
+        ratio = top_gate.numpy().mean() / (
+            top_gate_unscaled.numpy().mean() + 1e-10
+        )
         self.assertGreater(ratio, 1.5)
 
     def test_hash_routing_routed_scaling_factor_learnable(self):
@@ -1666,7 +1814,9 @@ class TestHashRoutingScoreFuncs(unittest.TestCase):
         router.set_layer_number(0)
         hidden = paddle.randn([2, 4, config.hidden_size])
         # Include zero token IDs to trigger the padding mask branch
-        input_ids = paddle.to_tensor([[1, 2, 0, 4], [5, 0, 7, 8]], dtype="int64")
+        input_ids = paddle.to_tensor(
+            [[1, 2, 0, 4], [5, 0, 7, 8]], dtype="int64"
+        )
         out = router(hidden, input_ids=input_ids)
         self.assertEqual(out[1].shape, [8, 2])
 
@@ -1695,7 +1845,9 @@ class TestHashRoutingScoreFuncs(unittest.TestCase):
         hidden = paddle.randn([4, 2, config.hidden_size])
         # input_ids shape is [batch_size, seq_len] = [2, 4]
         # Place zeros at specific positions: row 0 col 2, row 1 col 1
-        input_ids = paddle.to_tensor([[1, 2, 0, 4], [5, 0, 7, 8]], dtype="int64")
+        input_ids = paddle.to_tensor(
+            [[1, 2, 0, 4], [5, 0, 7, 8]], dtype="int64"
+        )
         out = router(hidden, input_ids=input_ids)
         top_gate, top_idx = out[1], out[2]
         self.assertEqual(top_gate.shape, [8, 2])
@@ -1718,7 +1870,9 @@ class TestHashRoutingScoreFuncs(unittest.TestCase):
     """Cover sftplus and sqrtsoftplus branches in gate_score_func (lines 304-307)."""
 
     def _make_router(self, scoring_func="softmax"):
-        from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
 
         config = _make_router_config(scoring_func=scoring_func)
         return StandardMoERouter(config)

@@ -53,7 +53,9 @@ except ImportError:
 
 
 if TYPE_CHECKING:
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
 
 @dataclass
@@ -81,7 +83,10 @@ class BlockAttnRes(FleetLayer):
         )
 
         input_is_parallel = (
-            True if self.config.tensor_model_parallel_size > 1 and self.config.sequence_parallel else False
+            True
+            if self.config.tensor_model_parallel_size > 1
+            and self.config.sequence_parallel
+            else False
         )
         if input_is_parallel:
             mark_as_sequence_parallel_parameter(self.proj_weight)

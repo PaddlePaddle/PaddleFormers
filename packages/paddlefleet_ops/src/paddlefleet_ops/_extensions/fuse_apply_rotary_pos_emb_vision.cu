@@ -16,8 +16,8 @@
 //
 // Python reference:
 //   def rotate_half(x):
-//       x1 = x[..., : x.shape[-1] // 2]
-//       x2 = x[..., x.shape[-1] // 2 :]
+//       x1 = x[..., : x.shape[-1]  // 2]
+//       x2 = x[..., x.shape[-1]  // 2 :]
 //       return paddle.concat([-x2, x1], axis=-1)
 //
 //   def apply_rotary_pos_emb_vision(tensor, freqs):
@@ -48,34 +48,34 @@
 // Output:
 //   Out    : same shape + dtype as tensor
 
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
-#include <cmath>
-#include "paddle/extension.h"
-#include "paddle/phi/common/bfloat16.h"
-#include "paddle/phi/common/float16.h"
+#include <cuda_bf16.h> // NOLINT
+#include <cuda_fp16.h> // NOLINT
+
+#include <cmath> // NOLINT
+
+#include "paddle/extension.h"           // NOLINT
+#include "paddle/phi/common/bfloat16.h" // NOLINT
+#include "paddle/phi/common/float16.h"  // NOLINT
 
 // ---------------------------------------------------------------------------
 // Type converters  (element <-> float32)
 // ---------------------------------------------------------------------------
 
-template <typename T>
-__device__ __forceinline__ float elem_to_float(T v) {
+template <typename T> __device__ __forceinline__ float elem_to_float(T v) {
   return static_cast<float>(v);
 }
 template <>
-__device__ __forceinline__ float elem_to_float<phi::dtype::float16>(
-    phi::dtype::float16 v) {
-  return __half2float(*reinterpret_cast<const __half*>(&v));
+__device__ __forceinline__ float
+elem_to_float<phi::dtype::float16>(phi::dtype::float16 v) {
+  return __half2float(*reinterpret_cast<const __half *>(&v));
 }
 template <>
-__device__ __forceinline__ float elem_to_float<phi::dtype::bfloat16>(
-    phi::dtype::bfloat16 v) {
-  return __bfloat162float(*reinterpret_cast<const __nv_bfloat16*>(&v));
+__device__ __forceinline__ float
+elem_to_float<phi::dtype::bfloat16>(phi::dtype::bfloat16 v) {
+  return __bfloat162float(*reinterpret_cast<const __nv_bfloat16 *>(&v));
 }
 
-template <typename T>
-__device__ __forceinline__ T float_to_elem(float v) {
+template <typename T> __device__ __forceinline__ T float_to_elem(float v) {
   return static_cast<T>(v);
 }
 template <>
@@ -83,7 +83,7 @@ __device__ __forceinline__ phi::dtype::float16
 float_to_elem<phi::dtype::float16>(float v) {
   __half h = __float2half(v);
   phi::dtype::float16 r;
-  *reinterpret_cast<__half*>(&r) = h;
+  *reinterpret_cast<__half *>(&r) = h;
   return r;
 }
 template <>
@@ -91,7 +91,7 @@ __device__ __forceinline__ phi::dtype::bfloat16
 float_to_elem<phi::dtype::bfloat16>(float v) {
   __nv_bfloat16 b = __float2bfloat16(v);
   phi::dtype::bfloat16 r;
-  *reinterpret_cast<__nv_bfloat16*>(&r) = b;
+  *reinterpret_cast<__nv_bfloat16 *>(&r) = b;
   return r;
 }
 
@@ -109,27 +109,25 @@ float_to_elem<phi::dtype::bfloat16>(float v) {
 
 template <typename T, bool IS_FWD>
 __global__ void RopeVisionKernel(
-    const T* __restrict__ in,         // [batch, seq, heads, dim]
-    const float* __restrict__ freqs,  // [seq, half_dim]  float32
-    T* __restrict__ out,              // [batch, seq, heads, dim]
-    int heads,
-    int dim,
-    int half_dim) {
-  int s_id = blockIdx.x;  // seq position
-  int b_id = blockIdx.y;  // batch position
+    const T *__restrict__ in,        // [batch, seq, heads, dim]  // NOLINT
+    const float *__restrict__ freqs, // [seq, half_dim]  float32  // NOLINT
+    T *__restrict__ out,             // [batch, seq, heads, dim]  // NOLINT
+    int heads, int dim, int half_dim) {
+  int s_id = blockIdx.x; // seq position  // NOLINT
+  int b_id = blockIdx.y; // batch position  // NOLINT
 
   extern __shared__ float smem[];
-  float* cos_s = smem;        // [dim]
-  float* sin_s = smem + dim;  // [dim]
+  float *cos_s = smem;       // [dim]  // NOLINT
+  float *sin_s = smem + dim; // [dim]  // NOLINT
 
   // ----- Phase 1: populate cos_s / sin_s from freqs -----
   // All threads in the block collaborate; each covers a strided range of d.
   int tx = threadIdx.x;
   int ty = threadIdx.y;
-  int blk_size = blockDim.x * blockDim.y;  // 32 * WPB
+  int blk_size = blockDim.x * blockDim.y; // 32 * WPB  // NOLINT
   int tid = ty * blockDim.x + tx;
 
-  const float* freqs_row = freqs + s_id * half_dim;  // [half_dim]
+  const float *freqs_row = freqs + s_id * half_dim; // [half_dim]  // NOLINT
 
   for (int d = tid; d < dim; d += blk_size) {
     // Tile: freqs covers [0, half_dim); dim = 2*half_dim.
@@ -177,22 +175,17 @@ constexpr int WARP_SIZE = 32;
 constexpr int MAX_WPB = 8;
 
 template <typename T, bool IS_FWD>
-static void LaunchRopeVision(const paddle::Tensor& in,
-                             const paddle::Tensor& freqs,
-                             paddle::Tensor& out,
-                             int batch,
-                             int seq_len,
-                             int heads,
-                             int dim,
-                             int half_dim,
-                             cudaStream_t stream) {
+static void LaunchRopeVision(const paddle::Tensor &in,
+                             const paddle::Tensor &freqs, paddle::Tensor &out,
+                             int batch, int seq_len, int heads, int dim,
+                             int half_dim, cudaStream_t stream) {
   // Choose warps-per-block: enough to keep SMs busy; cap at MAX_WPB.
   // Mirror Paddle: use 4 if heads < 16, else 8.
   int wpb = (heads < 16) ? 4 : MAX_WPB;
 
   dim3 grid(seq_len, batch);
   dim3 block(WARP_SIZE, wpb);
-  size_t smem = 2 * dim * sizeof(float);  // cos_s + sin_s
+  size_t smem = 2 * dim * sizeof(float); // cos_s + sin_s  // NOLINT
 
   RopeVisionKernel<T, IS_FWD><<<grid, block, smem, stream>>>(
       in.data<T>(), freqs.data<float>(), out.data<T>(), heads, dim, half_dim);
@@ -202,8 +195,9 @@ static void LaunchRopeVision(const paddle::Tensor& in,
 // Custom op: forward
 // ---------------------------------------------------------------------------
 
-std::vector<paddle::Tensor> ApplyRopevisionForward(
-    const paddle::Tensor& tensor, const paddle::Tensor& freqs) {
+std::vector<paddle::Tensor>
+ApplyRopevisionForward(const paddle::Tensor &tensor,
+                       const paddle::Tensor &freqs) {
   auto shape = tensor.shape();
   int ndim = static_cast<int>(shape.size());
 
@@ -211,8 +205,7 @@ std::vector<paddle::Tensor> ApplyRopevisionForward(
       ndim == 3 || ndim == 4,
       "fused_apply_rotary_pos_emb_vision: tensor must be 3D [seq, heads, dim] "
       "or 4D [batch, seq, heads, dim], got ",
-      ndim,
-      "D");
+      ndim, "D");
 
   // 0-size: return an empty tensor of the same shape/dtype immediately.
   if (tensor.numel() == 0) {
@@ -253,20 +246,20 @@ std::vector<paddle::Tensor> ApplyRopevisionForward(
   // For 3D input [seq, heads, dim], the memory layout is identical to
   // [1, seq, heads, dim], so we just pass batch=1 to the kernel.
   switch (tensor.dtype()) {
-    case paddle::DataType::FLOAT32:
-      LaunchRopeVision<float, true>(
-          tensor, freqs_f32, out, batch, seq_len, heads, dim, half, stream);
-      break;
-    case paddle::DataType::FLOAT16:
-      LaunchRopeVision<phi::dtype::float16, true>(
-          tensor, freqs_f32, out, batch, seq_len, heads, dim, half, stream);
-      break;
-    case paddle::DataType::BFLOAT16:
-      LaunchRopeVision<phi::dtype::bfloat16, true>(
-          tensor, freqs_f32, out, batch, seq_len, heads, dim, half, stream);
-      break;
-    default:
-      PD_THROW("fused_apply_rotary_pos_emb_vision: unsupported dtype");
+  case paddle::DataType::FLOAT32:
+    LaunchRopeVision<float, true>(tensor, freqs_f32, out, batch, seq_len, heads,
+                                  dim, half, stream);
+    break;
+  case paddle::DataType::FLOAT16:
+    LaunchRopeVision<phi::dtype::float16, true>(
+        tensor, freqs_f32, out, batch, seq_len, heads, dim, half, stream);
+    break;
+  case paddle::DataType::BFLOAT16:
+    LaunchRopeVision<phi::dtype::bfloat16, true>(
+        tensor, freqs_f32, out, batch, seq_len, heads, dim, half, stream);
+    break;
+  default:
+    PD_THROW("fused_apply_rotary_pos_emb_vision: unsupported dtype");
   }
   return {out};
 }
@@ -275,16 +268,16 @@ std::vector<paddle::Tensor> ApplyRopevisionForward(
 // Custom op: backward
 // ---------------------------------------------------------------------------
 
-std::vector<paddle::Tensor> ApplyRopevisionBackward(
-    const paddle::Tensor& d_out, const paddle::Tensor& freqs) {
+std::vector<paddle::Tensor>
+ApplyRopevisionBackward(const paddle::Tensor &d_out,
+                        const paddle::Tensor &freqs) {
   auto shape = d_out.shape();
   int ndim = static_cast<int>(shape.size());
 
   PD_CHECK(ndim == 3 || ndim == 4,
            "fused_apply_rotary_pos_emb_vision backward: tensor must be 3D or "
            "4D, got ",
-           ndim,
-           "D");
+           ndim, "D");
 
   // 0-size: return an empty gradient tensor immediately.
   if (d_out.numel() == 0) {
@@ -322,20 +315,20 @@ std::vector<paddle::Tensor> ApplyRopevisionBackward(
 
   // Same as forward: kernel works on contiguous data with batch=1 for 3D
   switch (d_out.dtype()) {
-    case paddle::DataType::FLOAT32:
-      LaunchRopeVision<float, false>(
-          d_out, freqs_f32, d_tensor, batch, seq_len, heads, dim, half, stream);
-      break;
-    case paddle::DataType::FLOAT16:
-      LaunchRopeVision<phi::dtype::float16, false>(
-          d_out, freqs_f32, d_tensor, batch, seq_len, heads, dim, half, stream);
-      break;
-    case paddle::DataType::BFLOAT16:
-      LaunchRopeVision<phi::dtype::bfloat16, false>(
-          d_out, freqs_f32, d_tensor, batch, seq_len, heads, dim, half, stream);
-      break;
-    default:
-      PD_THROW("fused_apply_rotary_pos_emb_vision backward: unsupported dtype");
+  case paddle::DataType::FLOAT32:
+    LaunchRopeVision<float, false>(d_out, freqs_f32, d_tensor, batch, seq_len,
+                                   heads, dim, half, stream);
+    break;
+  case paddle::DataType::FLOAT16:
+    LaunchRopeVision<phi::dtype::float16, false>(
+        d_out, freqs_f32, d_tensor, batch, seq_len, heads, dim, half, stream);
+    break;
+  case paddle::DataType::BFLOAT16:
+    LaunchRopeVision<phi::dtype::bfloat16, false>(
+        d_out, freqs_f32, d_tensor, batch, seq_len, heads, dim, half, stream);
+    break;
+  default:
+    PD_THROW("fused_apply_rotary_pos_emb_vision backward: unsupported dtype");
   }
   return {d_tensor};
 }
@@ -344,8 +337,9 @@ std::vector<paddle::Tensor> ApplyRopevisionBackward(
 // Shape / dtype inference
 // ---------------------------------------------------------------------------
 
-std::vector<std::vector<int64_t>> FwdInferShape(
-    std::vector<int64_t> tensor_shape, std::vector<int64_t> freqs_shape) {
+std::vector<std::vector<int64_t>>
+FwdInferShape(std::vector<int64_t> tensor_shape,
+              std::vector<int64_t> freqs_shape) {
   return {tensor_shape};
 }
 
@@ -354,8 +348,9 @@ std::vector<paddle::DataType> FwdInferDtype(paddle::DataType tensor_dtype,
   return {tensor_dtype};
 }
 
-std::vector<std::vector<int64_t>> BwdInferShape(
-    std::vector<int64_t> d_out_shape, std::vector<int64_t> freqs_shape) {
+std::vector<std::vector<int64_t>>
+BwdInferShape(std::vector<int64_t> d_out_shape,
+              std::vector<int64_t> freqs_shape) {
   return {d_out_shape};
 }
 

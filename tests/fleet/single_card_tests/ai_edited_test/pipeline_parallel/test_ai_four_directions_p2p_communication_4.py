@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -137,7 +141,9 @@ class TestFourDirectionsP2pHelperCombined(unittest.TestCase):
                 return_value=(None, mock_grad),
             ),
         ):
-            result = helper.send_forward_recv_backward(mock_tensor, pp_last_stage=False)
+            result = helper.send_forward_recv_backward(
+                mock_tensor, pp_last_stage=False
+            )
             self.assertEqual(result, mock_grad)
 
     def test_send_backward_recv_forward_not_first(self):
@@ -160,7 +166,9 @@ class TestFourDirectionsP2pHelperCombined(unittest.TestCase):
                 return_value=(mock_input, None),
             ),
         ):
-            result = helper.send_backward_recv_forward(mock_tensor, pp_first_stage=False)
+            result = helper.send_backward_recv_forward(
+                mock_tensor, pp_first_stage=False
+            )
             self.assertEqual(result, mock_input)
 
 

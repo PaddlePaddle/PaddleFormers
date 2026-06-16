@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -34,7 +38,9 @@ class TestP2pCommInitializeP2PGroups(unittest.TestCase):
         )
 
         mock_hcg = MagicMock()
-        initialize_p2p_groups(mock_hcg, enable_partial_send_recv=True, enable_timer=False)
+        initialize_p2p_groups(
+            mock_hcg, enable_partial_send_recv=True, enable_timer=False
+        )
 
     def test_initialize_groups_with_timer(self):
         from paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication import (
@@ -42,7 +48,9 @@ class TestP2pCommInitializeP2PGroups(unittest.TestCase):
         )
 
         mock_hcg = MagicMock()
-        with patch("paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.timer") as mock_timer_mod:
+        with patch(
+            "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.timer"
+        ) as mock_timer_mod:
             mock_timer_mod.get_timers.return_value = MagicMock()
             initialize_p2p_groups(mock_hcg, enable_timer=True)
             mock_timer_mod.get_timers.assert_called_once()
@@ -118,7 +126,9 @@ class TestP2pCommSendOnCalcStream(unittest.TestCase):
             "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication._is_valid_send_recv_partial",
             return_value=True,
         ):
-            _send_on_calc_stream(mock_tensor, mock_group, dst=3, nranks=2, rank_id=0)
+            _send_on_calc_stream(
+                mock_tensor, mock_group, dst=3, nranks=2, rank_id=0
+            )
             mock_group.process_group.send_partial_on_calc_stream.assert_called_once()
 
     def test_send_full_on_calc_stream(self):
@@ -134,7 +144,9 @@ class TestP2pCommSendOnCalcStream(unittest.TestCase):
             "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication._is_valid_send_recv_partial",
             return_value=False,
         ):
-            _send_on_calc_stream(mock_tensor, mock_group, dst=3, nranks=1, rank_id=0)
+            _send_on_calc_stream(
+                mock_tensor, mock_group, dst=3, nranks=1, rank_id=0
+            )
             mock_group.process_group.send_on_calc_stream.assert_called_once()
 
     def test_send_group_none_raises(self):
@@ -163,7 +175,9 @@ class TestP2pCommRecvOnCalcStream(unittest.TestCase):
             "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication._is_valid_send_recv_partial",
             return_value=True,
         ):
-            _recv_on_calc_stream(mock_tensor, mock_group, src=2, nranks=2, rank_id=0)
+            _recv_on_calc_stream(
+                mock_tensor, mock_group, src=2, nranks=2, rank_id=0
+            )
             mock_group.process_group.recv_partial_on_calc_stream.assert_called_once()
 
     def test_recv_full_on_calc_stream(self):
@@ -179,7 +193,9 @@ class TestP2pCommRecvOnCalcStream(unittest.TestCase):
             "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication._is_valid_send_recv_partial",
             return_value=False,
         ):
-            _recv_on_calc_stream(mock_tensor, mock_group, src=2, nranks=1, rank_id=0)
+            _recv_on_calc_stream(
+                mock_tensor, mock_group, src=2, nranks=1, rank_id=0
+            )
             mock_group.process_group.recv_on_calc_stream.assert_called_once()
 
     def test_recv_group_none_raises(self):

@@ -54,8 +54,12 @@ class SimpleRMSNorm(nn.Layer):
 
     def forward(self, x):
         x_float = x.astype(paddle.float32)
-        rms = paddle.rsqrt(x_float.pow(2).mean(axis=-1, keepdim=True) + self.eps)
-        return (x_float * rms * self.weight.astype(paddle.float32)).astype(x.dtype)
+        rms = paddle.rsqrt(
+            x_float.pow(2).mean(axis=-1, keepdim=True) + self.eps
+        )
+        return (x_float * rms * self.weight.astype(paddle.float32)).astype(
+            x.dtype
+        )
 
 
 class _FakeGroup:
@@ -144,7 +148,9 @@ def _make_gdn_sp():
 
 def _make_startend_indices(batch, seq_len, padding_start=None):
     """Create attn_mask_startend_row_indices [b, 1, s, 1]. padding_start=None means all valid."""
-    indices = paddle.full([batch, 1, seq_len, 1], fill_value=seq_len, dtype="int64")
+    indices = paddle.full(
+        [batch, 1, seq_len, 1], fill_value=seq_len, dtype="int64"
+    )
     if padding_start is not None:
         for pos in range(padding_start, seq_len):
             indices[:, :, pos, :] = pos
@@ -291,8 +297,12 @@ class TestForwardPaddingMask(unittest.TestCase):
     def test_all_valid_mask_equals_no_mask(self):
         x = paddle.randn([B, S, H])
         out_none, _ = self.gdn(x, attention_mask=None)
-        out_valid, _ = self.gdn(x, attention_mask=paddle.ones([B, S], dtype="int64"))
-        np.testing.assert_allclose(out_none.numpy(), out_valid.numpy(), rtol=1e-5, atol=1e-5)
+        out_valid, _ = self.gdn(
+            x, attention_mask=paddle.ones([B, S], dtype="int64")
+        )
+        np.testing.assert_allclose(
+            out_none.numpy(), out_valid.numpy(), rtol=1e-5, atol=1e-5
+        )
 
     def test_padding_changes_output(self):
         x = paddle.randn([B, S, H])
@@ -301,15 +311,23 @@ class TestForwardPaddingMask(unittest.TestCase):
         out_masked, _ = self.gdn(x, attention_mask=mask)
         out_none, _ = self.gdn(x, attention_mask=None)
         # Sample 0 differs, sample 1 same
-        self.assertFalse(np.allclose(out_masked[0].numpy(), out_none[0].numpy(), atol=1e-6))
-        np.testing.assert_allclose(out_masked[1].numpy(), out_none[1].numpy(), rtol=1e-5, atol=1e-5)
+        self.assertFalse(
+            np.allclose(out_masked[0].numpy(), out_none[0].numpy(), atol=1e-6)
+        )
+        np.testing.assert_allclose(
+            out_masked[1].numpy(), out_none[1].numpy(), rtol=1e-5, atol=1e-5
+        )
 
     def test_startend_indices_with_padding(self):
         x = paddle.randn([B, S, H])
         indices = _make_startend_indices(B, S, padding_start=24)
-        out_pad, _ = self.gdn(x, attention_mask=None, attn_mask_startend_row_indices=indices)
+        out_pad, _ = self.gdn(
+            x, attention_mask=None, attn_mask_startend_row_indices=indices
+        )
         out_none, _ = self.gdn(x, attention_mask=None)
-        self.assertFalse(np.allclose(out_pad.numpy(), out_none.numpy(), atol=1e-6))
+        self.assertFalse(
+            np.allclose(out_pad.numpy(), out_none.numpy(), atol=1e-6)
+        )
 
     def test_tokens_before_padding_unaffected(self):
         x = paddle.randn([1, S, H])

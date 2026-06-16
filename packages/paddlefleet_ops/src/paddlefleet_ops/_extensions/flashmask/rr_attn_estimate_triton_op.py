@@ -51,14 +51,24 @@ def flashmask_apply(
     pad_lt = INT_MAX
     pad_ut = INT_MIN
 
-    lts = tl.load(lt_start_ptr + base_offset + k_offsets, mask=load_mask, other=pad_lt)
+    lts = tl.load(
+        lt_start_ptr + base_offset + k_offsets, mask=load_mask, other=pad_lt
+    )
     if mode == 1:
         dense_mask = q_rows[:, None] >= lts[None, :]
     elif mode == 4:
-        lte = tl.load(lt_end_ptr + base_offset + k_offsets, mask=load_mask, other=pad_lt)
-        uts = tl.load(ut_start_ptr + base_offset + k_offsets, mask=load_mask, other=pad_ut)
-        ute = tl.load(ut_end_ptr + base_offset + k_offsets, mask=load_mask, other=pad_ut)
-        dense_mask = ((q_rows[:, None] >= lts[None, :]) & (q_rows[:, None] < lte[None, :])) | (
+        lte = tl.load(
+            lt_end_ptr + base_offset + k_offsets, mask=load_mask, other=pad_lt
+        )
+        uts = tl.load(
+            ut_start_ptr + base_offset + k_offsets, mask=load_mask, other=pad_ut
+        )
+        ute = tl.load(
+            ut_end_ptr + base_offset + k_offsets, mask=load_mask, other=pad_ut
+        )
+        dense_mask = (
+            (q_rows[:, None] >= lts[None, :]) & (q_rows[:, None] < lte[None, :])
+        ) | (
             (q_rows[:, None] >= uts[None, :]) & (q_rows[:, None] < ute[None, :])
         )
     else:
@@ -68,14 +78,18 @@ def flashmask_apply(
                 mask=load_mask,
                 other=pad_lt,
             )
-            dense_mask = (q_rows[:, None] >= lts[None, :]) & (q_rows[:, None] < lte[None, :])
+            dense_mask = (q_rows[:, None] >= lts[None, :]) & (
+                q_rows[:, None] < lte[None, :]
+            )
         else:
             ute = tl.load(
                 ut_end_ptr + base_offset + k_offsets,
                 mask=load_mask,
                 other=pad_ut,
             )
-            dense_mask = (q_rows[:, None] >= lts[None, :]) | (q_rows[:, None] < ute[None, :])
+            dense_mask = (q_rows[:, None] >= lts[None, :]) | (
+                q_rows[:, None] < ute[None, :]
+            )
 
     X = (1.0 - dense_mask) * X  # set 0 for sum reduce
     return X, dense_mask
@@ -94,10 +108,18 @@ def check_dense_contains_partial_stride(
         dense_flashmask.to(tl.int32),
         tl.full([], 0, tl.int32),
     )
-    mask_stride_cnt = dense_flashmask.reshape(BLOCK_SIZE // STRIDE, BLOCK_SIZE // STRIDE, STRIDE).sum(2)
-    mask_stride_valid_cnt = k_token_mask.reshape(1, BLOCK_SIZE // STRIDE, STRIDE).to(tl.int32).sum(2)
+    mask_stride_cnt = dense_flashmask.reshape(
+        BLOCK_SIZE // STRIDE, BLOCK_SIZE // STRIDE, STRIDE
+    ).sum(2)
+    mask_stride_valid_cnt = (
+        k_token_mask.reshape(1, BLOCK_SIZE // STRIDE, STRIDE)
+        .to(tl.int32)
+        .sum(2)
+    )
 
-    mask_stride_is_partial = (mask_stride_cnt > 0) & (mask_stride_cnt < mask_stride_valid_cnt)
+    mask_stride_is_partial = (mask_stride_cnt > 0) & (
+        mask_stride_cnt < mask_stride_valid_cnt
+    )
     # return mask_stride_is_partial
     return tl.sum(mask_stride_is_partial.to(tl.int32)) > 0
 
@@ -152,9 +174,18 @@ def gemm_fuse_softmax_causal(
     mask_ptr_base_bh_tokens = i_b * seqlen_k * HIDS + i_hid * seqlen_k
 
     # Load Q
-    p_q = q + i_b * seqlen_q * HQ * K + (i_block * BLOCK_SIZE) * HQ * K + i_h * K
-    p_q = p_q + tl.arange(0, ratio)[:, None] * (HQ * K * STRIDE) + tl.arange(0, K)[None, :] + HQ * K * (i_h % STRIDE)
-    offs_tokens_q = tl.arange(0, ratio) * STRIDE + i_block * BLOCK_SIZE + (i_h % STRIDE)  # round-robin offset
+    p_q = (
+        q + i_b * seqlen_q * HQ * K + (i_block * BLOCK_SIZE) * HQ * K + i_h * K
+    )
+    p_q = (
+        p_q
+        + tl.arange(0, ratio)[:, None] * (HQ * K * STRIDE)
+        + tl.arange(0, K)[None, :]
+        + HQ * K * (i_h % STRIDE)
+    )
+    offs_tokens_q = (
+        tl.arange(0, ratio) * STRIDE + i_block * BLOCK_SIZE + (i_h % STRIDE)
+    )  # round-robin offset
     mask_q = offs_tokens_q < seqlen_q
     # mask_q = offs_tokens_q[:, None] < seqlen_q
 
@@ -205,7 +236,12 @@ def gemm_fuse_softmax_causal(
 
         if tl.sum(fully_masked_stride_mask.to(tl.int32)) < ratio * ratio:
             # Load K & Compute Dot
-            p_k = p_k_base + iter * BLOCK_SIZE * H * K + tl.arange(0, BLOCK_SIZE)[None, :] * H * K + offs_k_base
+            p_k = (
+                p_k_base
+                + iter * BLOCK_SIZE * H * K
+                + tl.arange(0, BLOCK_SIZE)[None, :] * H * K
+                + offs_k_base
+            )
             b_k = tl.load(p_k)
             # CHANGE: NO REDUCE HERE
             # logits = tl.dot(b_q, b_k) # [ratio, BLOCK_SIZE]
@@ -223,11 +259,15 @@ def gemm_fuse_softmax_causal(
                 mode=mode,
             )
 
-            real_partially_masked_stride_mask = (~fully_masked_stride_mask) & partially_masked_stride_mask
+            real_partially_masked_stride_mask = (
+                ~fully_masked_stride_mask
+            ) & partially_masked_stride_mask
             if tl.sum(real_partially_masked_stride_mask) > 0:
                 logits = tl.dot(b_q, b_k)  # [ratio, BLOCK_SIZE]
                 curr_token_offset = mask_ptr_base_bh_tokens + iter * BLOCK_SIZE
-                curr_token_load_mask = (iter * BLOCK_SIZE + offs_tokens_k) < seqlen_k
+                curr_token_load_mask = (
+                    iter * BLOCK_SIZE + offs_tokens_k
+                ) < seqlen_k
                 X, dense_flashmask = flashmask_apply(
                     logits,
                     offs_tokens_q,
@@ -244,7 +284,9 @@ def gemm_fuse_softmax_causal(
 
                 # Reduce token logits to get stride score
                 X = X.reshape(ratio, ratio, STRIDE).sum(axis=2)
-                fully_masked_by_fm = (dense_flashmask.reshape(ratio, ratio, STRIDE)).min(axis=2) == 1
+                fully_masked_by_fm = (
+                    dense_flashmask.reshape(ratio, ratio, STRIDE)
+                ).min(axis=2) == 1
                 X = tl.where(fully_masked_by_fm, -1.0e6, X)
             else:
                 # Reduce token logits to get stride score
@@ -280,15 +322,24 @@ def gemm_fuse_softmax_causal(
         )
 
         if tl.sum(fully_masked_stride_mask.to(tl.int32)) < ratio * ratio:
-            p_k = p_k_base + iter * BLOCK_SIZE * H * K + tl.arange(0, BLOCK_SIZE)[None, :] * H * K + offs_k_base
-            mask_k = (tl.arange(0, BLOCK_SIZE)[None, :] + iter * BLOCK_SIZE) < seqlen_k
+            p_k = (
+                p_k_base
+                + iter * BLOCK_SIZE * H * K
+                + tl.arange(0, BLOCK_SIZE)[None, :] * H * K
+                + offs_k_base
+            )
+            mask_k = (
+                tl.arange(0, BLOCK_SIZE)[None, :] + iter * BLOCK_SIZE
+            ) < seqlen_k
             b_k = tl.load(p_k, mask=mask_k, other=0.0)
             # b_k = b_k.reshape(K, ratio, STRIDE)
             # b_k = tl.sum(b_k, axis=2)
             logits = tl.dot(b_q, b_k)
 
             curr_token_offset = mask_ptr_base_bh_tokens + iter * BLOCK_SIZE
-            curr_token_load_mask = (iter * BLOCK_SIZE + offs_tokens_k) < seqlen_k
+            curr_token_load_mask = (
+                iter * BLOCK_SIZE + offs_tokens_k
+            ) < seqlen_k
             X, dense_flashmask = flashmask_apply(
                 logits,
                 offs_tokens_q,
@@ -306,14 +357,18 @@ def gemm_fuse_softmax_causal(
 
             # Causal Condition: k_idx > q_idx + shift => Masked
             # Mask value: 0.0 (Identity for sum reduction of logits)
-            causal_mask_token = global_offs_k[None, :] > (offs_tokens_q[:, None] + shift)
+            causal_mask_token = global_offs_k[None, :] > (
+                offs_tokens_q[:, None] + shift
+            )
             X = tl.where(causal_mask_token, 0.0, X)
 
             # Reduce token logits to get stride score
             X = X.reshape(ratio, ratio, STRIDE).sum(axis=2)
             # fully_masked_by_fm = dense_flashmask.reshape(ratio, ratio, STRIDE).min(axis=2) == 1
             causal_fuse_fm = causal_mask_token | dense_flashmask
-            fully_masked_by_fm = causal_fuse_fm.reshape(ratio, ratio, STRIDE).min(axis=2) == 1
+            fully_masked_by_fm = (
+                causal_fuse_fm.reshape(ratio, ratio, STRIDE).min(axis=2) == 1
+            )
             X = tl.where(fully_masked_by_fm, -1.0e6, X)
 
             X = tl.where(fully_masked_stride_mask, -1.0e6, X)
@@ -332,8 +387,18 @@ def gemm_fuse_softmax_causal(
     stride_out_b = (HQ * num_q_blocks * num_k_blocks).to(tl.int64)
     stride_out_head = (num_q_blocks * num_k_blocks).to(tl.int64)
     stride_out_q = num_k_blocks.to(tl.int64)
-    p_out = out + i_b * stride_out_b + i_h * stride_out_head + i_block * stride_out_q
-    p_out_mask = out_boundary_mask + i_b * stride_out_b + i_h * stride_out_head + i_block * stride_out_q
+    p_out = (
+        out
+        + i_b * stride_out_b
+        + i_h * stride_out_head
+        + i_block * stride_out_q
+    )
+    p_out_mask = (
+        out_boundary_mask
+        + i_b * stride_out_b
+        + i_h * stride_out_head
+        + i_block * stride_out_q
+    )
 
     # ================= 4. Loop 2: Output (Exact Mirror) =================
     # 4.1 Non-Causal Blocks
@@ -356,7 +421,12 @@ def gemm_fuse_softmax_causal(
 
         if tl.sum(fully_masked_stride_mask.to(tl.int32)) < ratio * ratio:
             # Load K & Compute Dot
-            p_k = p_k_base + iter * BLOCK_SIZE * H * K + tl.arange(0, BLOCK_SIZE)[None, :] * H * K + offs_k_base
+            p_k = (
+                p_k_base
+                + iter * BLOCK_SIZE * H * K
+                + tl.arange(0, BLOCK_SIZE)[None, :] * H * K
+                + offs_k_base
+            )
             b_k = tl.load(p_k)
 
             partially_masked_stride_mask = check_partially_masked_state(
@@ -372,14 +442,18 @@ def gemm_fuse_softmax_causal(
                 mode=mode,
             )
 
-            real_partially_masked_stride_mask = (~fully_masked_stride_mask) & partially_masked_stride_mask
+            real_partially_masked_stride_mask = (
+                ~fully_masked_stride_mask
+            ) & partially_masked_stride_mask
 
             if tl.sum(real_partially_masked_stride_mask) > 0:
                 logits = tl.dot(b_q, b_k)  # [ratio, BLOCK_SIZE]
 
                 curr_token_offset = mask_ptr_base_bh_tokens + iter * BLOCK_SIZE
 
-                curr_token_load_mask = (iter * BLOCK_SIZE + offs_tokens_k) < seqlen_k
+                curr_token_load_mask = (
+                    iter * BLOCK_SIZE + offs_tokens_k
+                ) < seqlen_k
 
                 X, dense_flashmask = flashmask_apply(
                     logits,
@@ -398,7 +472,10 @@ def gemm_fuse_softmax_causal(
                 # Reduce token logits to get stride score
 
                 X = X.reshape(ratio, ratio, STRIDE).sum(axis=2)
-                fully_masked_by_fm = dense_flashmask.reshape(ratio, ratio, STRIDE).min(axis=2) == 1
+                fully_masked_by_fm = (
+                    dense_flashmask.reshape(ratio, ratio, STRIDE).min(axis=2)
+                    == 1
+                )
                 X = tl.where(fully_masked_by_fm, -1.0e6, X)
 
                 has_partial = check_dense_contains_partial_stride(
@@ -448,9 +525,16 @@ def gemm_fuse_softmax_causal(
         )
 
         if tl.sum(fully_masked_stride_mask.to(tl.int32)) < ratio * ratio:
-            p_k = p_k_base + iter * BLOCK_SIZE * H * K + tl.arange(0, BLOCK_SIZE)[None, :] * H * K + offs_k_base
+            p_k = (
+                p_k_base
+                + iter * BLOCK_SIZE * H * K
+                + tl.arange(0, BLOCK_SIZE)[None, :] * H * K
+                + offs_k_base
+            )
 
-            mask_k = (tl.arange(0, BLOCK_SIZE)[None, :] + iter * BLOCK_SIZE) < seqlen_k
+            mask_k = (
+                tl.arange(0, BLOCK_SIZE)[None, :] + iter * BLOCK_SIZE
+            ) < seqlen_k
 
             b_k = tl.load(p_k, mask=mask_k, other=0.0)
 
@@ -468,11 +552,15 @@ def gemm_fuse_softmax_causal(
                 mode=mode,
             )
 
-            real_partially_masked_stride_mask = (~fully_masked_stride_mask) & partially_masked_stride_mask
+            real_partially_masked_stride_mask = (
+                ~fully_masked_stride_mask
+            ) & partially_masked_stride_mask
 
             curr_token_offset = mask_ptr_base_bh_tokens + iter * BLOCK_SIZE
 
-            curr_token_load_mask = (iter * BLOCK_SIZE + offs_tokens_k) < seqlen_k
+            curr_token_load_mask = (
+                iter * BLOCK_SIZE + offs_tokens_k
+            ) < seqlen_k
 
             X, dense_flashmask = flashmask_apply(
                 logits,
@@ -491,14 +579,18 @@ def gemm_fuse_softmax_causal(
             global_offs_k = iter * BLOCK_SIZE + offs_tokens_k
 
             # Causal Condition: k_idx > q_idx + shift => Masked
-            causal_mask_token = global_offs_k[None, :] > (offs_tokens_q[:, None] + shift)
+            causal_mask_token = global_offs_k[None, :] > (
+                offs_tokens_q[:, None] + shift
+            )
 
             X = tl.where(causal_mask_token, 0.0, X)
 
             # Reduce token logits to get stride score
             X = X.reshape(ratio, ratio, STRIDE).sum(axis=2)
             causal_fuse_fm = causal_mask_token | dense_flashmask
-            fully_masked_by_fm = causal_fuse_fm.reshape(ratio, ratio, STRIDE).min(axis=2) == 1
+            fully_masked_by_fm = (
+                causal_fuse_fm.reshape(ratio, ratio, STRIDE).min(axis=2) == 1
+            )
 
             X = tl.where(fully_masked_by_fm, -1.0e6, X)
             has_partial = check_dense_contains_partial_stride(
@@ -585,11 +677,20 @@ def gemm_fuse_softmax_non_causal(
     mask_ptr_base_bh_tokens = i_b * seqlen_k * HIDS + i_hid * seqlen_k
     # Load Q (Round-Robin Sampling)
 
-    p_q = q + i_b * seqlen_q * HQ * K + (i_block * BLOCK_SIZE) * HQ * K + i_h * K
+    p_q = (
+        q + i_b * seqlen_q * HQ * K + (i_block * BLOCK_SIZE) * HQ * K + i_h * K
+    )
 
-    p_q = p_q + tl.arange(0, ratio)[:, None] * (HQ * K * STRIDE) + tl.arange(0, K)[None, :] + HQ * K * (i_h % STRIDE)
+    p_q = (
+        p_q
+        + tl.arange(0, ratio)[:, None] * (HQ * K * STRIDE)
+        + tl.arange(0, K)[None, :]
+        + HQ * K * (i_h % STRIDE)
+    )
 
-    offs_tokens_q = tl.arange(0, ratio) * STRIDE + i_block * BLOCK_SIZE + (i_h % STRIDE)
+    offs_tokens_q = (
+        tl.arange(0, ratio) * STRIDE + i_block * BLOCK_SIZE + (i_h % STRIDE)
+    )
 
     mask_q = offs_tokens_q < seqlen_q
     b_q = tl.load(p_q, mask=mask_q[:, None], other=0.0)
@@ -628,9 +729,16 @@ def gemm_fuse_softmax_non_causal(
 
         if tl.sum(fully_masked_stride_mask.to(tl.int32)) < ratio * ratio:
             # Load K & Compute Dot
-            p_k = p_k_base + iter * BLOCK_SIZE * H * K + tl.arange(0, BLOCK_SIZE)[None, :] * H * K + offs_k_base
+            p_k = (
+                p_k_base
+                + iter * BLOCK_SIZE * H * K
+                + tl.arange(0, BLOCK_SIZE)[None, :] * H * K
+                + offs_k_base
+            )
 
-            mask_k = (tl.arange(0, BLOCK_SIZE)[None, :] + iter * BLOCK_SIZE) < seqlen_k
+            mask_k = (
+                tl.arange(0, BLOCK_SIZE)[None, :] + iter * BLOCK_SIZE
+            ) < seqlen_k
 
             b_k = tl.load(p_k, mask=mask_k, other=0.0)
             # Compute Scores: [ratio, K] @ [K, BLOCK_SIZE] -> [ratio, BLOCK_SIZE]
@@ -650,12 +758,16 @@ def gemm_fuse_softmax_non_causal(
                 mode=mode,
             )
 
-            real_partially_masked_stride_mask = (~fully_masked_stride_mask) & partially_masked_stride_mask
+            real_partially_masked_stride_mask = (
+                ~fully_masked_stride_mask
+            ) & partially_masked_stride_mask
 
             if tl.sum(real_partially_masked_stride_mask) > 0:
                 logits = tl.dot(b_q, b_k)
                 curr_token_offset = mask_ptr_base_bh_tokens + iter * BLOCK_SIZE
-                curr_token_load_mask = (iter * BLOCK_SIZE + offs_tokens_k) < seqlen_k
+                curr_token_load_mask = (
+                    iter * BLOCK_SIZE + offs_tokens_k
+                ) < seqlen_k
 
                 X, dense_flashmask = flashmask_apply(
                     logits,
@@ -674,7 +786,10 @@ def gemm_fuse_softmax_non_causal(
                 # Reduce token logits to get stride score
                 X = X.reshape(ratio, ratio, STRIDE).sum(axis=2)
 
-                fully_masked_by_fm = dense_flashmask.reshape(ratio, ratio, STRIDE).min(axis=2) == 1
+                fully_masked_by_fm = (
+                    dense_flashmask.reshape(ratio, ratio, STRIDE).min(axis=2)
+                    == 1
+                )
                 X = tl.where(fully_masked_by_fm, -1.0e6, X)
 
             else:
@@ -699,9 +814,19 @@ def gemm_fuse_softmax_non_causal(
     stride_out_head = (num_q_blocks * num_k_blocks).to(tl.int64)
     stride_out_q = num_k_blocks.to(tl.int64)
 
-    p_out = out + i_b * stride_out_b + i_h * stride_out_head + i_block * stride_out_q
+    p_out = (
+        out
+        + i_b * stride_out_b
+        + i_h * stride_out_head
+        + i_block * stride_out_q
+    )
 
-    p_out_mask = out_boundary_mask + i_b * stride_out_b + i_h * stride_out_head + i_block * stride_out_q
+    p_out_mask = (
+        out_boundary_mask
+        + i_b * stride_out_b
+        + i_h * stride_out_head
+        + i_block * stride_out_q
+    )
 
     # ================= 4. Loop 2: Output (Exact Mirror) =================
 
@@ -723,8 +848,15 @@ def gemm_fuse_softmax_non_causal(
         )
 
         if tl.sum(fully_masked_stride_mask.to(tl.int32)) < ratio * ratio:
-            p_k = p_k_base + iter * BLOCK_SIZE * H * K + tl.arange(0, BLOCK_SIZE)[None, :] * H * K + offs_k_base
-            mask_k = (tl.arange(0, BLOCK_SIZE)[None, :] + iter * BLOCK_SIZE) < seqlen_k
+            p_k = (
+                p_k_base
+                + iter * BLOCK_SIZE * H * K
+                + tl.arange(0, BLOCK_SIZE)[None, :] * H * K
+                + offs_k_base
+            )
+            mask_k = (
+                tl.arange(0, BLOCK_SIZE)[None, :] + iter * BLOCK_SIZE
+            ) < seqlen_k
 
             b_k = tl.load(p_k, mask=mask_k, other=0.0)
 
@@ -741,13 +873,17 @@ def gemm_fuse_softmax_non_causal(
                 mode=mode,
             )
 
-            real_partially_masked_stride_mask = (~fully_masked_stride_mask) & partially_masked_stride_mask
+            real_partially_masked_stride_mask = (
+                ~fully_masked_stride_mask
+            ) & partially_masked_stride_mask
 
             if tl.sum(real_partially_masked_stride_mask) > 0:
                 logits = tl.dot(b_q, b_k)
                 curr_token_offset = mask_ptr_base_bh_tokens + iter * BLOCK_SIZE
 
-                curr_token_load_mask = (iter * BLOCK_SIZE + offs_tokens_k) < seqlen_k
+                curr_token_load_mask = (
+                    iter * BLOCK_SIZE + offs_tokens_k
+                ) < seqlen_k
 
                 X, dense_flashmask = flashmask_apply(
                     logits,
@@ -765,7 +901,10 @@ def gemm_fuse_softmax_non_causal(
                 # Reduce token logits to get stride score
                 X = X.reshape(ratio, ratio, STRIDE).sum(axis=2)
 
-                fully_masked_by_fm = dense_flashmask.reshape(ratio, ratio, STRIDE).min(axis=2) == 1
+                fully_masked_by_fm = (
+                    dense_flashmask.reshape(ratio, ratio, STRIDE).min(axis=2)
+                    == 1
+                )
                 X = tl.where(fully_masked_by_fm, -1.0e6, X)
 
                 has_partial = check_dense_contains_partial_stride(
@@ -859,7 +998,9 @@ def _extract_raw_ptrs(
         ut_start = x[..., 2].contiguous()
         ut_end = x[..., 3].contiguous()
 
-    return mode, RawPtrs(lt_start=lt_start, lt_end=lt_end, ut_start=ut_start, ut_end=ut_end)
+    return mode, RawPtrs(
+        lt_start=lt_start, lt_end=lt_end, ut_start=ut_start, ut_end=ut_end
+    )
 
 
 def _prepare_stride_maxmin_ptrs(
@@ -972,7 +1113,9 @@ def rr_attn_estimate_triton_func(
 
     scale = LOG2E / math.sqrt(head_dim) / stride
 
-    kernel = gemm_fuse_softmax_causal if causal else gemm_fuse_softmax_non_causal
+    kernel = (
+        gemm_fuse_softmax_causal if causal else gemm_fuse_softmax_non_causal
+    )
 
     kernel[grid](
         q,

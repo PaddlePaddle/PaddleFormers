@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -35,7 +39,9 @@ class TestScatterWithPadding(unittest.TestCase):
 
     def test_exact_division(self):
         """Test scatter_with_padding when total_num is divisible by cp_degree."""
-        from paddleformers.fleet.context_parallel_utils import scatter_with_padding
+        from paddleformers.fleet.context_parallel_utils import (
+            scatter_with_padding,
+        )
 
         x = paddle.randn([8, 4])
         mock_group = mock.MagicMock()
@@ -47,7 +53,9 @@ class TestScatterWithPadding(unittest.TestCase):
 
     def test_with_padding(self):
         """Test scatter_with_padding with padding."""
-        from paddleformers.fleet.context_parallel_utils import scatter_with_padding
+        from paddleformers.fleet.context_parallel_utils import (
+            scatter_with_padding,
+        )
 
         # total_num=10, num_pad=2, cp_degree=3
         # avg_num = (10+2)//3 = 4
@@ -61,7 +69,9 @@ class TestScatterWithPadding(unittest.TestCase):
 
     def test_higher_rank_no_data(self):
         """Test scatter_with_padding when rank >= rank_idx."""
-        from paddleformers.fleet.context_parallel_utils import scatter_with_padding
+        from paddleformers.fleet.context_parallel_utils import (
+            scatter_with_padding,
+        )
 
         # total_num=5, num_pad=1, cp_degree=3
         # avg_num = (5+1)//3 = 2
@@ -82,7 +92,9 @@ class TestScatterWithPadding(unittest.TestCase):
         treats the second axis as if it were axis 0. The axis parameter only
         affects the output shape indexing and the cp_rank logic.
         """
-        from paddleformers.fleet.context_parallel_utils import scatter_with_padding
+        from paddleformers.fleet.context_parallel_utils import (
+            scatter_with_padding,
+        )
 
         # Use axis=0 with data that splits evenly
         x = paddle.randn([8, 4])
@@ -95,7 +107,9 @@ class TestScatterWithPadding(unittest.TestCase):
 
     def test_zero_padding(self):
         """Test scatter_with_padding with zero padding."""
-        from paddleformers.fleet.context_parallel_utils import scatter_with_padding
+        from paddleformers.fleet.context_parallel_utils import (
+            scatter_with_padding,
+        )
 
         x = paddle.randn([8, 4])
         mock_group = mock.MagicMock()
@@ -125,7 +139,9 @@ class TestAllGatherWithoutPadding(unittest.TestCase):
                 mock_empty.return_value = paddle.randn([8, 8])
                 with mock.patch("paddle.slice") as mock_slice:
                     mock_slice.return_value = paddle.randn([8, 8])
-                    result = all_gather_without_padding(x, num_pad=0, axis=0, group=mock_group)
+                    result = all_gather_without_padding(
+                        x, num_pad=0, axis=0, group=mock_group
+                    )
                     # With num_pad=0, no slicing should happen (pad_start == len)
                     # Actually it still slices, but with full range
 
@@ -139,13 +155,15 @@ class TestAllGatherWithoutPadding(unittest.TestCase):
         mock_group = mock.MagicMock()
         mock_group.nranks = 2
 
-        with mock.patch("paddle.distributed.stream.all_gather"):  # noqa: SIM117
+        with mock.patch("paddle.distributed.stream.all_gather"):
             with mock.patch("paddle.empty") as mock_empty:
                 mock_out = paddle.randn([8, 8])
                 mock_empty.return_value = mock_out
                 with mock.patch("paddle.slice") as mock_slice:
                     mock_slice.return_value = paddle.randn([6, 8])
-                    result = all_gather_without_padding(x, num_pad=2, axis=0, group=mock_group)
+                    result = all_gather_without_padding(
+                        x, num_pad=2, axis=0, group=mock_group
+                    )
                     mock_slice.assert_called_once()
 
 
@@ -168,7 +186,9 @@ class TestContextParallelNormalScatter(unittest.TestCase):
             "paddle.distributed.fleet.get_hybrid_communicate_group",
             return_value=mock_hcg,
         ):
-            result = ContextParallelNormalScatter.forward(mock_ctx, x, num_pad=0, axis=0)
+            result = ContextParallelNormalScatter.forward(
+                mock_ctx, x, num_pad=0, axis=0
+            )
             # Should return clone
 
     def test_multi_rank_calls_scatter_with_padding(self):
@@ -195,7 +215,9 @@ class TestContextParallelNormalScatter(unittest.TestCase):
                 return_value=paddle.randn([4, 16]),
             ) as mock_scatter,
         ):
-            result = ContextParallelNormalScatter.forward(mock_ctx, x, num_pad=0, axis=0)
+            result = ContextParallelNormalScatter.forward(
+                mock_ctx, x, num_pad=0, axis=0
+            )
             mock_scatter.assert_called_once()
             self.assertEqual(mock_ctx.group, mock_group)
             self.assertEqual(mock_ctx.num_pad, 0)
@@ -263,7 +285,9 @@ class TestContextParallelNormalGather(unittest.TestCase):
             "paddle.distributed.fleet.get_hybrid_communicate_group",
             return_value=mock_hcg,
         ):
-            result = ContextParallelNormalGather.forward(mock_ctx, x, num_pad=0, axis=0)
+            result = ContextParallelNormalGather.forward(
+                mock_ctx, x, num_pad=0, axis=0
+            )
             # ctx.group should still be set even for single rank
             self.assertEqual(mock_ctx.group, mock_group)
 
@@ -291,7 +315,9 @@ class TestContextParallelNormalGather(unittest.TestCase):
                 return_value=paddle.randn([8, 16]),
             ) as mock_ag,
         ):
-            result = ContextParallelNormalGather.forward(mock_ctx, x, num_pad=0, axis=0)
+            result = ContextParallelNormalGather.forward(
+                mock_ctx, x, num_pad=0, axis=0
+            )
             mock_ag.assert_called_once()
             self.assertEqual(mock_ctx.group, mock_group)
             self.assertEqual(mock_ctx.num_pad, 0)

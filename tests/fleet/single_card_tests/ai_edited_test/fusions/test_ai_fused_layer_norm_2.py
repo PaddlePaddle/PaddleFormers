@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -28,7 +32,9 @@ import paddle
 def _make_config(**kwargs):
     """Create a mock TransformerConfig."""
     config = MagicMock()
-    config.layernorm_zero_centered_gamma = kwargs.get("layernorm_zero_centered_gamma", False)
+    config.layernorm_zero_centered_gamma = kwargs.get(
+        "layernorm_zero_centered_gamma", False
+    )
     config.normalization = kwargs.get("normalization", "LayerNorm")
     config.persist_layer_norm = kwargs.get("persist_layer_norm", False)
     config.sequence_parallel = kwargs.get("sequence_parallel", False)
@@ -139,8 +145,12 @@ class TestFusedLayerNormResetParameters(unittest.TestCase):
 
         layer = FusedLayerNorm(config, hidden_size=1024)
         # Weight should be ones, bias should be zeros
-        self.assertTrue(paddle.allclose(layer.weight, paddle.ones_like(layer.weight)))
-        self.assertTrue(paddle.allclose(layer.bias, paddle.zeros_like(layer.bias)))
+        self.assertTrue(
+            paddle.allclose(layer.weight, paddle.ones_like(layer.weight))
+        )
+        self.assertTrue(
+            paddle.allclose(layer.bias, paddle.zeros_like(layer.bias))
+        )
 
     @patch(
         "paddleformers.fleet.fusions.fused_layer_norm.HAVE_FUSED_LAYER_NORM",
@@ -157,8 +167,12 @@ class TestFusedLayerNormResetParameters(unittest.TestCase):
 
         layer = FusedLayerNorm(config, hidden_size=1024)
         # Both weight and bias should be zeros
-        self.assertTrue(paddle.allclose(layer.weight, paddle.zeros_like(layer.weight)))
-        self.assertTrue(paddle.allclose(layer.bias, paddle.zeros_like(layer.bias)))
+        self.assertTrue(
+            paddle.allclose(layer.weight, paddle.zeros_like(layer.weight))
+        )
+        self.assertTrue(
+            paddle.allclose(layer.bias, paddle.zeros_like(layer.bias))
+        )
 
 
 class TestFusedLayerNormForward(unittest.TestCase):

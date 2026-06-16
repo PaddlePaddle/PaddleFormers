@@ -27,7 +27,9 @@ from paddleformers.fleet.models.gpt.gpt_layer_specs import (
     get_gpt_layer_local_spec,
     get_gpt_mtp_layers_spec,
 )
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.tilelang_ops import csa_sparse_attn
 from paddleformers.fleet.transformer.csa_attention import (
     CompressedSparseAttention,
@@ -139,7 +141,9 @@ class TestDSv4HybridConfigAndSpec(unittest.TestCase):
         self.assertIs(self_attn_spec.layer, DSv4HybridSelfAttention)
 
     def test_config_validation_errors(self):
-        with self.assertRaisesRegex(ValueError, "csa_compress_ratios to be set"):
+        with self.assertRaisesRegex(
+            ValueError, "csa_compress_ratios to be set"
+        ):
             TransformerConfig(
                 num_hidden_layers=1,
                 hidden_size=256,
@@ -158,25 +162,55 @@ class TestDSv4HybridConfigAndSpec(unittest.TestCase):
 
     def test_csa_tilelang_backend_switches_and_overrides(self):
         paddle_config = _make_config()
-        self.assertFalse(_resolve_csa_tilelang_switch(paddle_config, "csa_tilelang_enable_indexer"))
-        self.assertFalse(_resolve_csa_tilelang_switch(paddle_config, "csa_tilelang_enable_sparse_attn"))
+        self.assertFalse(
+            _resolve_csa_tilelang_switch(
+                paddle_config, "csa_tilelang_enable_indexer"
+            )
+        )
+        self.assertFalse(
+            _resolve_csa_tilelang_switch(
+                paddle_config, "csa_tilelang_enable_sparse_attn"
+            )
+        )
 
-        tilelang_config = _make_config(csa_tilelang_backend="attention_paddle_compat")
-        self.assertTrue(_resolve_csa_tilelang_switch(tilelang_config, "csa_tilelang_enable_indexer"))
-        self.assertTrue(_resolve_csa_tilelang_switch(tilelang_config, "csa_tilelang_enable_sparse_attn"))
+        tilelang_config = _make_config(
+            csa_tilelang_backend="attention_paddle_compat"
+        )
+        self.assertTrue(
+            _resolve_csa_tilelang_switch(
+                tilelang_config, "csa_tilelang_enable_indexer"
+            )
+        )
+        self.assertTrue(
+            _resolve_csa_tilelang_switch(
+                tilelang_config, "csa_tilelang_enable_sparse_attn"
+            )
+        )
 
         override_config = _make_config(
             csa_tilelang_backend="attention_paddle_compat",
             csa_tilelang_enable_indexer=False,
             csa_tilelang_enable_sparse_attn=False,
         )
-        self.assertFalse(_resolve_csa_tilelang_switch(override_config, "csa_tilelang_enable_indexer"))
-        self.assertFalse(_resolve_csa_tilelang_switch(override_config, "csa_tilelang_enable_sparse_attn"))
+        self.assertFalse(
+            _resolve_csa_tilelang_switch(
+                override_config, "csa_tilelang_enable_indexer"
+            )
+        )
+        self.assertFalse(
+            _resolve_csa_tilelang_switch(
+                override_config, "csa_tilelang_enable_sparse_attn"
+            )
+        )
 
-        with self.assertRaisesRegex(ValueError, "csa_tilelang_enable_indexer=True requires"):
+        with self.assertRaisesRegex(
+            ValueError, "csa_tilelang_enable_indexer=True requires"
+        ):
             _make_config(csa_tilelang_enable_indexer=True)
 
-        with self.assertRaisesRegex(ValueError, "csa_tilelang_enable_sparse_attn=True requires"):
+        with self.assertRaisesRegex(
+            ValueError, "csa_tilelang_enable_sparse_attn=True requires"
+        ):
             _make_config(csa_tilelang_enable_sparse_attn=True)
 
     def test_phase2_loss_topk_does_not_expand_attention_topk(self):
@@ -186,17 +220,23 @@ class TestDSv4HybridConfigAndSpec(unittest.TestCase):
         n_compressed = 8
 
         self.assertEqual(
-            _resolve_csa_indexer_loss_topk_effective(config, config.dsa_index_topk, n_compressed),
+            _resolve_csa_indexer_loss_topk_effective(
+                config, config.dsa_index_topk, n_compressed
+            ),
             n_compressed,
         )
         self.assertEqual(
-            _resolve_csa_indexer_attn_topk_effective(config.dsa_index_topk, n_compressed),
+            _resolve_csa_indexer_attn_topk_effective(
+                config.dsa_index_topk, n_compressed
+            ),
             config.dsa_index_topk,
         )
 
         config.dsa_indexer_use_sparse_loss = True
         self.assertEqual(
-            _resolve_csa_indexer_loss_topk_effective(config, config.dsa_index_topk, n_compressed),
+            _resolve_csa_indexer_loss_topk_effective(
+                config, config.dsa_index_topk, n_compressed
+            ),
             config.dsa_index_topk,
         )
 
@@ -239,7 +279,9 @@ class TestCSAIndexHelpers(unittest.TestCase):
         q = paddle.ones([1, 2, 1, 2], dtype="bfloat16")
         k = paddle.to_tensor([[[1.0, 0.0], [0.0, 1.0]]], dtype="bfloat16")
         weights = paddle.ones([1, 2, 1], dtype="float32")
-        mask = paddle.to_tensor([[[0.0, float("-inf")], [0.0, 0.0]]], dtype="float32")
+        mask = paddle.to_tensor(
+            [[[0.0, float("-inf")], [0.0, 0.0]]], dtype="float32"
+        )
 
         index_scores, topk_indices = fused_qk_topk_naive(q, k, weights, 2, mask)
 
@@ -256,7 +298,9 @@ class TestDSv4HybridDocumentRoPE(unittest.TestCase):
             config.qk_pos_emb_head_dim,
             rotary_base=config.csa_compress_rotary_base,
             scaling_factor=getattr(config, "rotary_scaling_factor", 40),
-            original_max_position_embeddings=getattr(config, "original_max_position_embeddings", 4096),
+            original_max_position_embeddings=getattr(
+                config, "original_max_position_embeddings", 4096
+            ),
             beta_fast=getattr(config, "beta_fast", 32),
             beta_slow=getattr(config, "beta_slow", 1),
             mscale=getattr(config, "mscale", 1.0),
@@ -266,8 +310,12 @@ class TestDSv4HybridDocumentRoPE(unittest.TestCase):
         pos_dim = config.qk_rope_head_dim
         ratio = 4
 
-        doc1 = paddle.randn([1, 23 // ratio, 1, config.v_head_dim], dtype="bfloat16")
-        doc2 = paddle.randn([1, 9 // ratio, 1, config.v_head_dim], dtype="bfloat16")
+        doc1 = paddle.randn(
+            [1, 23 // ratio, 1, config.v_head_dim], dtype="bfloat16"
+        )
+        doc2 = paddle.randn(
+            [1, 9 // ratio, 1, config.v_head_dim], dtype="bfloat16"
+        )
         padding = paddle.randn([1, 1, 1, config.v_head_dim], dtype="bfloat16")
         packed = paddle.concat([doc1, doc2, padding], axis=1)
 
@@ -308,7 +356,9 @@ class TestDSv4HybridDocumentRoPE(unittest.TestCase):
         )
         self.assertTrue(
             paddle.equal_all(
-                packed_out[:, doc1.shape[1] : doc1.shape[1] + doc2.shape[1], :, :].cast("float32"),
+                packed_out[
+                    :, doc1.shape[1] : doc1.shape[1] + doc2.shape[1], :, :
+                ].cast("float32"),
                 doc2_out.cast("float32"),
             ).item()
         )
@@ -322,7 +372,9 @@ class TestDSv4HybridDocumentRoPE(unittest.TestCase):
             config.qk_pos_emb_head_dim,
             rotary_base=config.csa_compress_rotary_base,
             scaling_factor=getattr(config, "rotary_scaling_factor", 40),
-            original_max_position_embeddings=getattr(config, "original_max_position_embeddings", 4096),
+            original_max_position_embeddings=getattr(
+                config, "original_max_position_embeddings", 4096
+            ),
             beta_fast=getattr(config, "beta_fast", 32),
             beta_slow=getattr(config, "beta_slow", 1),
             mscale=getattr(config, "mscale", 1.0),
@@ -332,8 +384,12 @@ class TestDSv4HybridDocumentRoPE(unittest.TestCase):
         pos_dim = config.qk_rope_head_dim
         ratio = 4
 
-        doc1 = paddle.randn([1, 23 // ratio, 1, config.v_head_dim], dtype="bfloat16")
-        doc2 = paddle.randn([1, 7 // ratio, 1, config.v_head_dim], dtype="bfloat16")
+        doc1 = paddle.randn(
+            [1, 23 // ratio, 1, config.v_head_dim], dtype="bfloat16"
+        )
+        doc2 = paddle.randn(
+            [1, 7 // ratio, 1, config.v_head_dim], dtype="bfloat16"
+        )
         padding = paddle.randn([1, 2, 1, config.v_head_dim], dtype="bfloat16")
         packed = paddle.concat([doc1, doc2, padding], axis=1)
 
@@ -374,7 +430,9 @@ class TestDSv4HybridDocumentRoPE(unittest.TestCase):
         )
         self.assertTrue(
             paddle.equal_all(
-                packed_out[:, doc1.shape[1] : doc1.shape[1] + doc2.shape[1], :, :].cast("float32"),
+                packed_out[
+                    :, doc1.shape[1] : doc1.shape[1] + doc2.shape[1], :, :
+                ].cast("float32"),
                 doc2_out.cast("float32"),
             ).item()
         )
@@ -382,7 +440,9 @@ class TestDSv4HybridDocumentRoPE(unittest.TestCase):
     def test_attention_module_fused_sparse_matches_dynamic_forward_backward(
         self,
     ):
-        old_flag = paddle.get_flags(["FLAGS_cudnn_deterministic"])["FLAGS_cudnn_deterministic"]
+        old_flag = paddle.get_flags(["FLAGS_cudnn_deterministic"])[
+            "FLAGS_cudnn_deterministic"
+        ]
         paddle.set_flags({"FLAGS_cudnn_deterministic": 0})
         try:
             paddle.seed(_SEED)
@@ -451,7 +511,9 @@ class TestDSv4HybridDocumentRoPE(unittest.TestCase):
                     actual = actual.cast("float32")
                     expected = expected.cast("float32")
                     diff = (actual - expected).abs()
-                    close_mask = paddle.isclose(actual, expected, rtol=5e-1, atol=5e-1)
+                    close_mask = paddle.isclose(
+                        actual, expected, rtol=5e-1, atol=5e-1
+                    )
                     fail_mask = ~close_mask
                     fail_count = int(fail_mask.cast("int64").sum().item())
                     total_count = fail_mask.numel()
@@ -473,7 +535,9 @@ class TestDSv4HybridDocumentRoPE(unittest.TestCase):
                     print(f"[diff] {diff_info}")
                     fail_details = []
                     if fail_count > 0:
-                        fail_indices = paddle.nonzero(fail_mask.flatten()).flatten()[:8]
+                        fail_indices = paddle.nonzero(
+                            fail_mask.flatten()
+                        ).flatten()[:8]
                         for i, fail_idx in enumerate(fail_indices):
                             idx = int(fail_idx.item())
                             detail = (
@@ -485,7 +549,11 @@ class TestDSv4HybridDocumentRoPE(unittest.TestCase):
                             )
                             print(f"[diff] {detail}")
                             fail_details.append(detail)
-                    error_msg = f"{diff_info}\n" + "\n".join(fail_details) if fail_details else diff_info
+                    error_msg = (
+                        f"{diff_info}\n" + "\n".join(fail_details)
+                        if fail_details
+                        else diff_info
+                    )
                     self.assertTrue(close_mask.all().item(), error_msg)
 
                 for doc1_len, doc2_len in doc_len_cases:
@@ -495,9 +563,13 @@ class TestDSv4HybridDocumentRoPE(unittest.TestCase):
                         doc2_len=doc2_len,
                     ):
                         model_parallel_cuda_manual_seed(_SEED)
-                        dynamic_attn = _build_attention(dynamic_config, layer_number=0)
+                        dynamic_attn = _build_attention(
+                            dynamic_config, layer_number=0
+                        )
                         model_parallel_cuda_manual_seed(_SEED)
-                        fused_attn = _build_attention(fused_config, layer_number=0)
+                        fused_attn = _build_attention(
+                            fused_config, layer_number=0
+                        )
                         fused_attn.set_state_dict(dynamic_attn.state_dict())
                         dynamic_attn.train()
                         fused_attn.train()
@@ -509,7 +581,8 @@ class TestDSv4HybridDocumentRoPE(unittest.TestCase):
                             dtype="bfloat16",
                         )
                         startend_row_indices = paddle.to_tensor(
-                            [doc1_len] * doc1_len + [doc1_len + doc2_len] * (doc2_len + padding_len),
+                            [doc1_len] * doc1_len
+                            + [doc1_len + doc2_len] * (doc2_len + padding_len),
                             dtype="int32",
                         ).reshape([1, 1, seq_len, 1])
 
@@ -524,7 +597,9 @@ class TestDSv4HybridDocumentRoPE(unittest.TestCase):
                             attention_mask=None,
                             attn_mask_startend_row_indices=startend_row_indices,
                         )
-                        grad = paddle.randn(dynamic_out.shape, dynamic_out.dtype)
+                        grad = paddle.randn(
+                            dynamic_out.shape, dynamic_out.dtype
+                        )
                         if padding_len > 0:
                             grad[:, valid_len:, :] = 0
                         dynamic_out.backward(grad)
@@ -551,7 +626,9 @@ class TestDSv4HybridDocumentRoPE(unittest.TestCase):
                         for name, dynamic_grad in dynamic_param_grads.items():
                             fused_grad = fused_params[name].grad
                             self.assertIsNotNone(fused_grad, name)
-                            assert_close_with_diff(name, fused_grad, dynamic_grad)
+                            assert_close_with_diff(
+                                name, fused_grad, dynamic_grad
+                            )
                         assert_close_with_diff(
                             "hidden_grad",
                             fused_hidden.grad,
@@ -580,11 +657,17 @@ class TestDSv4HybridDocumentRoPE(unittest.TestCase):
             attn.eval()
             seq_len = 32
             for doc2_len in [9, 7]:
-                doc1 = paddle.randn([1, 23, config.hidden_size], dtype="bfloat16")
-                doc2 = paddle.randn([1, doc2_len, config.hidden_size], dtype="bfloat16")
+                doc1 = paddle.randn(
+                    [1, 23, config.hidden_size], dtype="bfloat16"
+                )
+                doc2 = paddle.randn(
+                    [1, doc2_len, config.hidden_size], dtype="bfloat16"
+                )
                 padding_len = seq_len - 23 - doc2_len
                 if padding_len > 0:
-                    padding = paddle.randn([1, padding_len, config.hidden_size], dtype="bfloat16")
+                    padding = paddle.randn(
+                        [1, padding_len, config.hidden_size], dtype="bfloat16"
+                    )
                     packed = paddle.concat([doc1, doc2, padding], axis=1)
                 else:
                     packed = paddle.concat([doc1, doc2], axis=1)
@@ -593,10 +676,12 @@ class TestDSv4HybridDocumentRoPE(unittest.TestCase):
                     [23] * 23 + [23 + doc2_len] * (doc2_len + padding_len),
                     dtype="int32",
                 ).reshape([1, 1, 32, 1])
-                doc1_startend_row_indices = paddle.to_tensor([23] * 23, dtype="int32").reshape([1, 1, 23, 1])
-                doc2_startend_row_indices = paddle.to_tensor([doc2_len] * doc2_len, dtype="int32").reshape(
-                    [1, 1, doc2_len, 1]
-                )
+                doc1_startend_row_indices = paddle.to_tensor(
+                    [23] * 23, dtype="int32"
+                ).reshape([1, 1, 23, 1])
+                doc2_startend_row_indices = paddle.to_tensor(
+                    [doc2_len] * doc2_len, dtype="int32"
+                ).reshape([1, 1, doc2_len, 1])
 
                 with paddle.no_grad():
                     packed_out, _ = attn(
@@ -659,12 +744,21 @@ class TestDSv4HybridAttentionConstructor(unittest.TestCase):
 
         for layer_number, ratio in enumerate(ratios):
             attn = _build_attention(config, layer_number=layer_number)
-            self.assertIsInstance(attn.core_attention, CompressedSparseAttention)
+            self.assertIsInstance(
+                attn.core_attention, CompressedSparseAttention
+            )
             self.assertEqual(attn.core_attention.compress_ratio, ratio)
 
-            expected_base = config.csa_compress_rotary_base if ratio > 1 else config.rotary_base
+            expected_base = (
+                config.csa_compress_rotary_base
+                if ratio > 1
+                else config.rotary_base
+            )
             dim = config.qk_pos_emb_head_dim
-            expected_inv_freq = 1.0 / (expected_base ** (paddle.arange(0, dim, 2, dtype="float32") / dim))
+            expected_inv_freq = 1.0 / (
+                expected_base
+                ** (paddle.arange(0, dim, 2, dtype="float32") / dim)
+            )
             self.assertTrue(
                 paddle.allclose(
                     attn.rotary_pos_emb.inv_freq.cast("float32"),
@@ -689,8 +783,12 @@ class TestDSv4HybridAttentionConstructor(unittest.TestCase):
         )
         attn = build_spec_layer(spec, config=config, layer_number=0)
 
-        self.assertEqual(attn.core_attention.compress_ratio, ratios[config.num_hidden_layers])
-        self.assertEqual(attn.core_attention.layer_number, config.num_hidden_layers + 1)
+        self.assertEqual(
+            attn.core_attention.compress_ratio, ratios[config.num_hidden_layers]
+        )
+        self.assertEqual(
+            attn.core_attention.layer_number, config.num_hidden_layers + 1
+        )
 
     def test_non_dense_mtp_spec_uses_mtp_attention_ratio(self):
         ratios = [0, 4, 128, 4, 128]
@@ -704,21 +802,27 @@ class TestDSv4HybridAttentionConstructor(unittest.TestCase):
             normalization=config.normalization,
         )
         mtp_specs = get_gpt_mtp_layers_spec(config=config, spec=decoder_specs)
-        mtp_self_attn_spec = mtp_specs[0].sublayers_spec.transformer_layer.sublayers_spec.self_attn
+        mtp_self_attn_spec = mtp_specs[
+            0
+        ].sublayers_spec.transformer_layer.sublayers_spec.self_attn
         attn = build_spec_layer(
             mtp_self_attn_spec,
             config=config,
             layer_number=0,
         )
 
-        self.assertEqual(attn.core_attention.compress_ratio, ratios[config.num_hidden_layers])
+        self.assertEqual(
+            attn.core_attention.compress_ratio, ratios[config.num_hidden_layers]
+        )
 
     def test_yarn_rope_construction(self):
         config = _make_config(rope_type="yarn")
         attn = _build_attention(config, layer_number=1)
         freqs, mscale = attn.rotary_pos_emb(8, packed_seq=False)
 
-        self.assertEqual(list(freqs.shape), [1, 8, 1, config.qk_pos_emb_head_dim])
+        self.assertEqual(
+            list(freqs.shape), [1, 8, 1, config.qk_pos_emb_head_dim]
+        )
         self.assertIsInstance(mscale, float)
 
     def test_o_group_proj_shape(self):
@@ -729,14 +833,20 @@ class TestDSv4HybridAttentionConstructor(unittest.TestCase):
         attn = _build_attention(config, layer_number=1)
 
         expected_out = o_groups * o_lora_rank
-        expected_in = (config.v_head_dim * config.num_attention_heads) // o_groups
-        self.assertEqual(list(attn.linear_o_group_proj.shape), [expected_out, expected_in])
+        expected_in = (
+            config.v_head_dim * config.num_attention_heads
+        ) // o_groups
+        self.assertEqual(
+            list(attn.linear_o_group_proj.shape), [expected_out, expected_in]
+        )
         self.assertFalse(attn.linear_o_group_proj.stop_gradient)
 
 
 class TestDSv4HybridFusedSparseAttention(unittest.TestCase):
     def test_fused_matches_unfused_forward_backward(self):
-        old_flag = paddle.get_flags(["FLAGS_cudnn_deterministic"])["FLAGS_cudnn_deterministic"]
+        old_flag = paddle.get_flags(["FLAGS_cudnn_deterministic"])[
+            "FLAGS_cudnn_deterministic"
+        ]
         paddle.set_flags({"FLAGS_cudnn_deterministic": 0})
         try:
             paddle.seed(_SEED)
@@ -751,14 +861,22 @@ class TestDSv4HybridFusedSparseAttention(unittest.TestCase):
                 [batch_size, seq_len, num_heads, head_dim],
                 dtype=paddle.bfloat16,
             )
-            kv_full = paddle.randn([batch_size, seq_len, head_dim], dtype=paddle.bfloat16)
+            kv_full = paddle.randn(
+                [batch_size, seq_len, head_dim], dtype=paddle.bfloat16
+            )
             attn_sink = paddle.randn([num_heads], dtype=paddle.float32)
-            topk_idxs = paddle.arange(topk, dtype="int32").reshape([1, 1, topk]).expand([batch_size, seq_len, topk])
+            topk_idxs = (
+                paddle.arange(topk, dtype="int32")
+                .reshape([1, 1, topk])
+                .expand([batch_size, seq_len, topk])
+            )
 
             query.stop_gradient = False
             kv_full.stop_gradient = False
             attn_sink.stop_gradient = False
-            fused_out = csa_sparse_attn(query, kv_full, attn_sink, topk_idxs, softmax_scale)
+            fused_out = csa_sparse_attn(
+                query, kv_full, attn_sink, topk_idxs, softmax_scale
+            )
             fused_loss = fused_out.cast("float32").sum()
             fused_loss.backward()
             fused_query_grad = query.grad.clone()
@@ -768,7 +886,9 @@ class TestDSv4HybridFusedSparseAttention(unittest.TestCase):
             query.clear_gradient()
             kv_full.clear_gradient()
             attn_sink.clear_gradient()
-            unfused_out = unfused_compressed_sparse_attn(query, kv_full, attn_sink, topk_idxs, softmax_scale)
+            unfused_out = unfused_compressed_sparse_attn(
+                query, kv_full, attn_sink, topk_idxs, softmax_scale
+            )
             unfused_loss = unfused_out.cast("float32").sum()
             unfused_loss.backward()
 
@@ -831,15 +951,21 @@ class TestDSv4HybridAttentionForwardBackward(unittest.TestCase):
             loss.backward()
 
             self.assertIsNotNone(hidden.grad)
-            self.assertTrue(paddle.isfinite(hidden.grad.cast("float32")).all().item())
+            self.assertTrue(
+                paddle.isfinite(hidden.grad.cast("float32")).all().item()
+            )
             used_params = [
-                name for name, param in attn.named_parameters() if not param.stop_gradient and param.grad is not None
+                name
+                for name, param in attn.named_parameters()
+                if not param.stop_gradient and param.grad is not None
             ]
             self.assertGreater(len(used_params), 0)
             for name, param in attn.named_parameters():
                 if not param.stop_gradient and param.grad is not None:
                     self.assertTrue(
-                        paddle.isfinite(param.grad.cast("float32")).all().item(),
+                        paddle.isfinite(param.grad.cast("float32"))
+                        .all()
+                        .item(),
                         f"Non-finite gradient for parameter {name}",
                     )
 
@@ -856,7 +982,9 @@ class TestDSv4HybridAttentionForwardBackward(unittest.TestCase):
         with paddle.no_grad():
             output, bias = attn(hidden_states=hidden, attention_mask=None)
 
-        self.assertEqual(list(output.shape), [batch_size, seq_len, self.config.hidden_size])
+        self.assertEqual(
+            list(output.shape), [batch_size, seq_len, self.config.hidden_size]
+        )
         self.assertTrue(paddle.isfinite(output.cast("float32")).all().item())
         self.assertIsNone(bias)
 
@@ -874,7 +1002,9 @@ class TestDSv4HybridAttentionForwardBackward(unittest.TestCase):
                 list(output.shape),
                 [batch_size, seq_len, self.config.hidden_size],
             )
-            self.assertTrue(paddle.isfinite(output.cast("float32")).all().item())
+            self.assertTrue(
+                paddle.isfinite(output.cast("float32")).all().item()
+            )
 
 
 class TestDSv4HybridQKV(unittest.TestCase):
@@ -891,7 +1021,9 @@ class TestDSv4HybridQKV(unittest.TestCase):
             dtype=paddle.bfloat16,
         )
 
-        q, k, v, q_compressed, kv_compressed = attn.get_query_key_value_tensors(hidden)
+        q, k, v, q_compressed, kv_compressed = attn.get_query_key_value_tensors(
+            hidden
+        )
 
         self.assertEqual(
             list(q.shape),
@@ -902,8 +1034,12 @@ class TestDSv4HybridQKV(unittest.TestCase):
                 self.config.v_head_dim,
             ],
         )
-        self.assertEqual(list(k.shape), [batch_size, seq_len, 1, self.config.v_head_dim])
-        self.assertEqual(list(v.shape), [batch_size, seq_len, 1, self.config.v_head_dim])
+        self.assertEqual(
+            list(k.shape), [batch_size, seq_len, 1, self.config.v_head_dim]
+        )
+        self.assertEqual(
+            list(v.shape), [batch_size, seq_len, 1, self.config.v_head_dim]
+        )
         self.assertEqual(
             list(q_compressed.shape),
             [batch_size, seq_len, self.config.q_lora_rank],
@@ -920,7 +1056,9 @@ class TestDSv4HybridQKV(unittest.TestCase):
         )
 
         _, key, value, _, _ = attn.get_query_key_value_tensors(hidden)
-        self.assertTrue(paddle.equal_all(key.cast("float32"), value.cast("float32")).item())
+        self.assertTrue(
+            paddle.equal_all(key.cast("float32"), value.cast("float32")).item()
+        )
 
 
 if __name__ == "__main__":

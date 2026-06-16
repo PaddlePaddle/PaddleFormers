@@ -63,8 +63,12 @@ def parse_log_file(file_path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Check loss values in log against ground truth.")
-    parser.add_argument("--log_file", type=str, required=True, help="Path to the log file.")
+    parser = argparse.ArgumentParser(
+        description="Check loss values in log against ground truth."
+    )
+    parser.add_argument(
+        "--log_file", type=str, required=True, help="Path to the log file."
+    )
     parser.add_argument(
         "--gt_file",
         type=str,
@@ -104,10 +108,14 @@ def main():
         target_step = args.compare_step
 
         if target_step not in log_dict:
-            print(f"\033[91mError: Step {target_step} not found in log file.\033[0m")
+            print(
+                f"\033[91mError: Step {target_step} not found in log file.\033[0m"
+            )
             sys.exit(1)
         if target_step not in gt_dict:
-            print(f"\033[91mError: Step {target_step} not found in ground truth file.\033[0m")
+            print(
+                f"\033[91mError: Step {target_step} not found in ground truth file.\033[0m"
+            )
             sys.exit(1)
 
         log_loss = log_dict[target_step]
@@ -129,7 +137,9 @@ def main():
         common_steps = sorted(set(log_dict.keys()) & set(gt_dict.keys()))
 
         if not common_steps:
-            print("\033[91mError: No common steps found between log and ground truth.\033[0m")
+            print(
+                "\033[91mError: No common steps found between log and ground truth.\033[0m"
+            )
             sys.exit(1)
 
         print(f"\nExtracted {len(common_steps)} common steps for comparison.")
@@ -140,11 +150,14 @@ def main():
         if args.log_loss_file is not None:
             log_loss_file = args.log_loss_file
             with open(log_loss_file, "w") as f:
-                for s in common_steps:
-                    f.write(f"{s} {log_dict[s]}\n")
+                f.writelines(f"{s} {log_dict[s]}\n" for s in common_steps)
 
         print("\nLog values (step loss):")
-        print("\n".join([f"{s} {l:.8f}" for s, l in zip(common_steps, actual_losses)]))
+        print(
+            "\n".join(
+                [f"{s} {l:.8f}" for s, l in zip(common_steps, actual_losses)]
+            )
+        )
 
     try:
         np.testing.assert_allclose(

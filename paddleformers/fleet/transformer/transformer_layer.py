@@ -30,8 +30,8 @@ from paddle.distributed.fleet.meta_parallel import (
     build_spec_layer,
 )
 from paddle.distributed.fleet.utils import recompute
-from paddlefleet_ops import is_deep_ep_available
 
+from paddlefleet_ops import is_deep_ep_available
 from paddleformers.fleet.parallel_state import get_context_parallel_world_size
 from paddleformers.fleet.process_groups_config import ProcessGroupCollection
 from paddleformers.fleet.recompute_utils import (
@@ -39,7 +39,10 @@ from paddleformers.fleet.recompute_utils import (
     need_recompute_in_block,
     need_recompute_in_first_n,
 )
-from paddleformers.fleet.transformer.identity_op import IdentityFuncOp, IdentityOp
+from paddleformers.fleet.transformer.identity_op import (
+    IdentityFuncOp,
+    IdentityOp,
+)
 from paddleformers.fleet.transformer.mlp import MLP
 from paddleformers.fleet.transformer.moe.moe_layer import MoELayer
 from paddleformers.fleet.transformer.utils import profile
@@ -53,7 +56,9 @@ if is_deep_ep_available():
 
 if TYPE_CHECKING:
     from paddleformers.fleet.packed_seq_params import PackedSeqParams
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +91,9 @@ def tensors_clone(outputs):
             res[key] = value.clone()
         return res
     else:
-        raise ValueError(f"Unsupported data type:{type(outputs)} in tensors_clone")
+        raise ValueError(
+            f"Unsupported data type:{type(outputs)} in tensors_clone"
+        )
 
 
 @dataclass
@@ -146,17 +153,26 @@ class TransformerLayer(nn.Layer):
 
     _gpt_model_use_experimental_version = False
     _LOG_LAYER_MD5 = os.environ.get("LOG_LAYER_MD5", "0") == "1"
-    _skip_mtp_probes = False  # Set True during MTP forward to suppress MD5 probes
+    _skip_mtp_probes = (
+        False  # Set True during MTP forward to suppress MD5 probes
+    )
 
     @staticmethod
     def _log_md5(tensor, name, layer_idx):
         """Log MD5 of a tensor for precision alignment debugging."""
-        if TransformerLayer._LOG_LAYER_MD5 and TransformerLayer._gpt_model_use_experimental_version:
+        if (
+            TransformerLayer._LOG_LAYER_MD5
+            and TransformerLayer._gpt_model_use_experimental_version
+        ):
             if TransformerLayer._skip_mtp_probes:
                 return  # Skip MTP passes — EC has no MTP
             data = tensor.cast("float32").numpy().tobytes()
             md5 = hashlib.md5(data).hexdigest()
-            rank = paddle.distributed.get_rank() if paddle.distributed.is_initialized() else 0
+            rank = (
+                paddle.distributed.get_rank()
+                if paddle.distributed.is_initialized()
+                else 0
+            )
             print(
                 f"[MD5 Probe] Rank={rank} Layer={layer_idx} {name} MD5={md5} shape={list(tensor.shape)}",
                 flush=True,
@@ -177,13 +193,22 @@ class TransformerLayer(nn.Layer):
             pg_collection = ProcessGroupCollection.use_mpu_process_groups()
         self.pg_collection = pg_collection
         self.config = config
-        TransformerLayer._gpt_model_use_experimental_version = config.gpt_model_use_experimental_version
+        TransformerLayer._gpt_model_use_experimental_version = (
+            config.gpt_model_use_experimental_version
+        )
 
         self.layer_number = layer_number
         self.is_mtp_layer = is_mtp_layer
-        self.hidden_dropout_prob = config.hidden_dropout_prob if hidden_dropout_prob is None else hidden_dropout_prob
+        self.hidden_dropout_prob = (
+            config.hidden_dropout_prob
+            if hidden_dropout_prob is None
+            else hidden_dropout_prob
+        )
 
-        norm_input_parallel = self.config.sequence_parallel and self.config.tensor_model_parallel_size > 1
+        norm_input_parallel = (
+            self.config.sequence_parallel
+            and self.config.tensor_model_parallel_size > 1
+        )
         # [Layer 1: Input Layernorm] Optional Layernorm on the input data
         self.input_layernorm = build_spec_layer(
             sublayers_spec.input_layernorm,
@@ -196,7 +221,9 @@ class TransformerLayer(nn.Layer):
         attention_optional_kwargs = {}
         if config.context_parallel_size > 1 and config.cp_comm_type is not None:
             if isinstance(config.cp_comm_type, list):
-                attention_optional_kwargs["cp_comm_type"] = config.cp_comm_type[self.layer_number]
+                attention_optional_kwargs["cp_comm_type"] = config.cp_comm_type[
+                    self.layer_number
+                ]
             else:
                 attention_optional_kwargs["cp_comm_type"] = config.cp_comm_type
 
@@ -231,7 +258,9 @@ class TransformerLayer(nn.Layer):
         )
 
         # [Layer 6: BiasDropoutFusion]
-        self.cross_attn_bda = build_spec_layer(sublayers_spec.cross_attn_bda, config=self.config)
+        self.cross_attn_bda = build_spec_layer(
+            sublayers_spec.cross_attn_bda, config=self.config
+        )
 
         # [Layer 7: Pre MLP] Optional Layernorm before MLP
         self.post_attention_layernorm = build_spec_layer(
@@ -252,7 +281,9 @@ class TransformerLayer(nn.Layer):
             if sublayers_spec.mlp.layer == MoELayer:
                 additional_mlp_kwargs["pg_collection"] = pg_collection
             elif sublayers_spec.mlp.layer == MLP:
-                assert hasattr(pg_collection, "tp"), "TP process group is required for MLP in TransformerLayer"
+                assert hasattr(pg_collection, "tp"), (
+                    "TP process group is required for MLP in TransformerLayer"
+                )
                 additional_mlp_kwargs["tp_group"] = pg_collection.tp
             else:
                 log_single_rank(
@@ -261,9 +292,13 @@ class TransformerLayer(nn.Layer):
                     f"Unknown MLP type: {type(sublayers_spec.mlp)}. Using default kwargs.",
                 )
 
-        self.mlp = build_spec_layer(sublayers_spec.mlp, config=self.config, **additional_mlp_kwargs)
+        self.mlp = build_spec_layer(
+            sublayers_spec.mlp, config=self.config, **additional_mlp_kwargs
+        )
         if hasattr(self.mlp, "set_layer_number"):
-            self.mlp.set_layer_number(self.layer_number, is_mtp_layer=self.is_mtp_layer)
+            self.mlp.set_layer_number(
+                self.layer_number, is_mtp_layer=self.is_mtp_layer
+            )
 
         # [Layer 9: BiasDropoutFusion]
         self.mlp_bda = build_spec_layer(sublayers_spec.mlp_bda)
@@ -273,7 +308,9 @@ class TransformerLayer(nn.Layer):
         self.recompute_post_attention_layernorm = False
         self.recompute_mlp = False
         if self.config.recompute_granularity == "full":
-            self.full_recompute = need_full_recompute(self.layer_number, self.config)
+            self.full_recompute = need_full_recompute(
+                self.layer_number, self.config
+            )
         elif self.config.recompute_granularity == "selective":
             if isinstance(self.config.recompute_modules, list):
                 if self.config.recompute_num_layers is None:
@@ -282,7 +319,9 @@ class TransformerLayer(nn.Layer):
                         if not isinstance(self.input_layernorm, IdentityOp):
                             self.recompute_input_layernorm = True
 
-                        if not isinstance(self.post_attention_layernorm, IdentityOp):
+                        if not isinstance(
+                            self.post_attention_layernorm, IdentityOp
+                        ):
                             self.recompute_post_attention_layernorm = True
                     if "mlp" in self.config.recompute_modules:
                         self.recompute_mlp = True
@@ -304,7 +343,9 @@ class TransformerLayer(nn.Layer):
                                     self.config.recompute_num_layers,
                                 )
                             )
-                            self.recompute_post_attention_layernorm = self.recompute_input_layernorm
+                            self.recompute_post_attention_layernorm = (
+                                self.recompute_input_layernorm
+                            )
 
                     if "mlp" in self.config.recompute_modules:
                         self.recompute_mlp = (
@@ -337,7 +378,9 @@ class TransformerLayer(nn.Layer):
                                 self.config.recompute_modules["norm"],
                             )
                         )
-                        self.recompute_post_attention_layernorm = self.recompute_input_layernorm
+                        self.recompute_post_attention_layernorm = (
+                            self.recompute_input_layernorm
+                        )
 
                 if "mlp" in self.config.recompute_modules:
                     self.recompute_mlp = (
@@ -359,12 +402,18 @@ class TransformerLayer(nn.Layer):
         # [Layer 10: Block Attention Residuals] Optional
         self.attn_res_block_size = None
         if self.config.block_attention_residuals:
-            assert (
-                self.full_recompute is False
-            ), "block_attention_residuals cannot use full_recompute, set full_recompute to False."
-            assert self.recompute_mlp is False, "block_attention_residuals cannot use selective recompute mlp."
-            self.block_attn_res_before_attention = build_spec_layer(sublayers_spec.block_attn_res, config=self.config)
-            self.block_attn_res_before_mlp = build_spec_layer(sublayers_spec.block_attn_res, config=self.config)
+            assert self.full_recompute is False, (
+                "block_attention_residuals cannot use full_recompute, set full_recompute to False."
+            )
+            assert self.recompute_mlp is False, (
+                "block_attention_residuals cannot use selective recompute mlp."
+            )
+            self.block_attn_res_before_attention = build_spec_layer(
+                sublayers_spec.block_attn_res, config=self.config
+            )
+            self.block_attn_res_before_mlp = build_spec_layer(
+                sublayers_spec.block_attn_res, config=self.config
+            )
             self.attn_res_block_size = self.config.attn_res_block_size
 
         if hasattr(self.mlp, "rr_recompute_update"):
@@ -399,7 +448,9 @@ class TransformerLayer(nn.Layer):
         values = tuple(dict_args.values())
 
         is_mtp = dict_args.pop("is_mtp", False)
-        TransformerLayer._skip_mtp_probes = is_mtp  # Suppress MD5 probes for MTP passes
+        TransformerLayer._skip_mtp_probes = (
+            is_mtp  # Suppress MD5 probes for MTP passes
+        )
         mtp_input = None
         mtp_ids = None
         if (
@@ -411,7 +462,9 @@ class TransformerLayer(nn.Layer):
         ):
             # process hidden_states
             hidden_states_concat = dict_args["hidden_states"]
-            tensor_list = paddle.split(hidden_states_concat, self.config.num_nextn_predict_layers + 1)
+            tensor_list = paddle.split(
+                hidden_states_concat, self.config.num_nextn_predict_layers + 1
+            )
             hidden_states = tensor_list[0]
             mtp_input = tuple(tensor_list[1:])
             dict_args["hidden_states"] = hidden_states
@@ -420,8 +473,12 @@ class TransformerLayer(nn.Layer):
             if not self.config.gpt_model_use_experimental_version:
                 if "position_ids" in dict_args.keys():
                     position_ids = dict_args["position_ids"]
-                    decoder_ids = position_ids[:, : -self.config.num_nextn_predict_layers]
-                    mtp_ids = position_ids[:, -self.config.num_nextn_predict_layers :]
+                    decoder_ids = position_ids[
+                        :, : -self.config.num_nextn_predict_layers
+                    ]
+                    mtp_ids = position_ids[
+                        :, -self.config.num_nextn_predict_layers :
+                    ]
                     dict_args["position_ids"] = decoder_ids
 
             # process rotary_pos_emb: trim to main decoder sequence length
@@ -429,51 +486,91 @@ class TransformerLayer(nn.Layer):
             # Without SP: rotary_pos_emb is [B, S, head_dim] or [1, S, 1, head_dim], seq is dim 1
             # Compute main_seq_len from the split hidden_states (after AllGather for SP)
             if self.config.sequence_parallel:
-                main_seq_len = hidden_states.shape[0] * self.config.tensor_model_parallel_size
+                main_seq_len = (
+                    hidden_states.shape[0]
+                    * self.config.tensor_model_parallel_size
+                )
             else:
                 main_seq_len = hidden_states.shape[1]
             rotary_pos_emb_full = None
-            if "rotary_pos_emb" in dict_args.keys() and dict_args["rotary_pos_emb"] is not None:
+            if (
+                "rotary_pos_emb" in dict_args.keys()
+                and dict_args["rotary_pos_emb"] is not None
+            ):
                 rotary_pos_emb_full = dict_args["rotary_pos_emb"]
                 if self.config.sequence_parallel:
-                    dict_args["rotary_pos_emb"] = rotary_pos_emb_full[:main_seq_len]
+                    dict_args["rotary_pos_emb"] = rotary_pos_emb_full[
+                        :main_seq_len
+                    ]
                 else:
-                    dict_args["rotary_pos_emb"] = rotary_pos_emb_full[:, :main_seq_len]
+                    dict_args["rotary_pos_emb"] = rotary_pos_emb_full[
+                        :, :main_seq_len
+                    ]
             # rotary_pos_cos/sin are [B, S, head_dim] (not transposed)
             rotary_pos_cos_full = None
-            if "rotary_pos_cos" in dict_args.keys() and dict_args["rotary_pos_cos"] is not None:
+            if (
+                "rotary_pos_cos" in dict_args.keys()
+                and dict_args["rotary_pos_cos"] is not None
+            ):
                 rotary_pos_cos_full = dict_args["rotary_pos_cos"]
-                dict_args["rotary_pos_cos"] = rotary_pos_cos_full[:, :main_seq_len]
+                dict_args["rotary_pos_cos"] = rotary_pos_cos_full[
+                    :, :main_seq_len
+                ]
             rotary_pos_sin_full = None
-            if "rotary_pos_sin" in dict_args.keys() and dict_args["rotary_pos_sin"] is not None:
+            if (
+                "rotary_pos_sin" in dict_args.keys()
+                and dict_args["rotary_pos_sin"] is not None
+            ):
                 rotary_pos_sin_full = dict_args["rotary_pos_sin"]
-                dict_args["rotary_pos_sin"] = rotary_pos_sin_full[:, :main_seq_len]
+                dict_args["rotary_pos_sin"] = rotary_pos_sin_full[
+                    :, :main_seq_len
+                ]
 
             # process input_ids (for MoE padding mask): split into main and mtp parts
             mtp_input_ids = None
-            if "input_ids" in dict_args.keys() and dict_args["input_ids"] is not None:
+            if (
+                "input_ids" in dict_args.keys()
+                and dict_args["input_ids"] is not None
+            ):
                 full_input_ids = dict_args["input_ids"]
 
                 # In EB dataflow and CP size > 1，shape of hidden_states is [b, s/cp, h]
                 # but input_ids' shape is [b, s], so we need to get full seq_len here
-                seq_lens = hidden_states.shape[0 if self.config.sequence_parallel else 1]
+                seq_lens = hidden_states.shape[
+                    0 if self.config.sequence_parallel else 1
+                ]
                 if get_context_parallel_world_size() > 1:
                     seq_lens *= get_context_parallel_world_size()
 
                 if full_input_ids.shape[-1] > seq_lens:
-                    decoder_input_ids = full_input_ids[:, : -self.config.num_nextn_predict_layers].contiguous()
-                    mtp_input_ids = full_input_ids[:, -self.config.num_nextn_predict_layers :].contiguous()
+                    decoder_input_ids = full_input_ids[
+                        :, : -self.config.num_nextn_predict_layers
+                    ].contiguous()
+                    mtp_input_ids = full_input_ids[
+                        :, -self.config.num_nextn_predict_layers :
+                    ].contiguous()
                     dict_args["input_ids"] = decoder_input_ids
-            if not self.config.experimental_dataflow and "attn_mask_startend_row_indices" in dict_args.keys():
+            if (
+                not self.config.experimental_dataflow
+                and "attn_mask_startend_row_indices" in dict_args.keys()
+            ):
                 # Old dataflow: main mask contains mtp parts appended along seq dim, need to split
-                attn_mask_startend_row_indices = dict_args["attn_mask_startend_row_indices"]
-                attn_mask_startend_row_indices_decoder = attn_mask_startend_row_indices[
-                    :, :, : -self.config.num_nextn_predict_layers, :
+                attn_mask_startend_row_indices = dict_args[
+                    "attn_mask_startend_row_indices"
                 ]
-                attn_mask_startend_row_indices_mtp = attn_mask_startend_row_indices[
-                    :, :, -self.config.num_nextn_predict_layers :, :
-                ]
-                dict_args["attn_mask_startend_row_indices"] = attn_mask_startend_row_indices_decoder
+                attn_mask_startend_row_indices_decoder = (
+                    attn_mask_startend_row_indices[
+                        :, :, : -self.config.num_nextn_predict_layers, :
+                    ]
+                )
+                attn_mask_startend_row_indices_mtp = (
+                    attn_mask_startend_row_indices[
+                        :, :, -self.config.num_nextn_predict_layers :, :
+                    ]
+                )
+                dict_args["attn_mask_startend_row_indices"] = (
+                    attn_mask_startend_row_indices_decoder
+                )
             else:
                 # New dataflow (experimental_dataflow=True): main mask is already main-seq only,
                 # mtp masks are in mtp_startend_row_indices_all and will be used by MTP layer directly
@@ -485,7 +582,9 @@ class TransformerLayer(nn.Layer):
         if self.full_recompute:
             hidden_states = dict_args["hidden_states"]
             attention_mask = dict_args.get("attention_mask", None)
-            attn_mask_startend_row_indices = dict_args.get("attn_mask_startend_row_indices", None)
+            attn_mask_startend_row_indices = dict_args.get(
+                "attn_mask_startend_row_indices", None
+            )
             context = dict_args.get("context", None)
             context_mask = dict_args.get("context_mask", None)
             rotary_pos_emb = dict_args.get("rotary_pos_emb", None)
@@ -507,9 +606,15 @@ class TransformerLayer(nn.Layer):
                 else None,
                 context=context,
                 context_mask=context_mask,
-                rotary_pos_emb=rotary_pos_emb.clone() if rotary_pos_emb is not None else None,  # Clone is necessary!
-                rotary_pos_cos=rotary_pos_cos.clone() if rotary_pos_cos is not None else None,  # Clone is necessary!
-                rotary_pos_sin=rotary_pos_sin.clone() if rotary_pos_sin is not None else None,  # Clone is necessary!
+                rotary_pos_emb=rotary_pos_emb.clone()
+                if rotary_pos_emb is not None
+                else None,  # Clone is necessary!
+                rotary_pos_cos=rotary_pos_cos.clone()
+                if rotary_pos_cos is not None
+                else None,  # Clone is necessary!
+                rotary_pos_sin=rotary_pos_sin.clone()
+                if rotary_pos_sin is not None
+                else None,  # Clone is necessary!
                 swa_rotary_pos_emb=swa_rotary_pos_emb.clone()  # Clone is necessary!
                 if swa_rotary_pos_emb is not None
                 else None,
@@ -519,7 +624,9 @@ class TransformerLayer(nn.Layer):
                 swa_rotary_pos_sin=swa_rotary_pos_sin.clone()  # Clone is necessary!
                 if swa_rotary_pos_sin is not None
                 else None,
-                position_ids=position_ids.clone() if position_ids is not None else None,  # Clone is necessary!
+                position_ids=position_ids.clone()
+                if position_ids is not None
+                else None,  # Clone is necessary!
                 attention_bias=attention_bias,
                 packed_seq_params=packed_seq_params,
                 input_ids=input_ids,
@@ -545,7 +652,9 @@ class TransformerLayer(nn.Layer):
             rst["hidden_states"] = hidden_states_concat
             if not self.config.gpt_model_use_experimental_version:
                 if "position_ids" in dict_args.keys():
-                    position_ids = paddle.concat([dict_args["position_ids"], mtp_ids], axis=1)
+                    position_ids = paddle.concat(
+                        [dict_args["position_ids"], mtp_ids], axis=1
+                    )
                     dict_args["position_ids"] = position_ids
 
             # Restore rotary_pos_emb/cos/sin to full length for next layer
@@ -558,9 +667,14 @@ class TransformerLayer(nn.Layer):
 
             # Restore input_ids: concatenate main and mtp parts back
             if mtp_input_ids is not None and "input_ids" in dict_args.keys():
-                dict_args["input_ids"] = paddle.concat([dict_args["input_ids"], mtp_input_ids], axis=1)
+                dict_args["input_ids"] = paddle.concat(
+                    [dict_args["input_ids"], mtp_input_ids], axis=1
+                )
 
-            if not self.config.experimental_dataflow and "attn_mask_startend_row_indices" in dict_args.keys():
+            if (
+                not self.config.experimental_dataflow
+                and "attn_mask_startend_row_indices" in dict_args.keys()
+            ):
                 if attn_mask_startend_row_indices_mtp is not None:
                     attn_mask_startend_row_indices = paddle.concat(
                         [
@@ -571,8 +685,12 @@ class TransformerLayer(nn.Layer):
                     )
                 else:
                     # alignment mode: MTP split was skipped
-                    attn_mask_startend_row_indices = dict_args["attn_mask_startend_row_indices"]
-                dict_args["attn_mask_startend_row_indices"] = attn_mask_startend_row_indices
+                    attn_mask_startend_row_indices = dict_args[
+                        "attn_mask_startend_row_indices"
+                    ]
+                dict_args["attn_mask_startend_row_indices"] = (
+                    attn_mask_startend_row_indices
+                )
 
             # New dataflow (experimental_dataflow=True): mtp_startend_row_indices_all passes through
             # dict_args unchanged and will be consumed by MTP layer directly
@@ -605,13 +723,23 @@ class TransformerLayer(nn.Layer):
             # need_do_decode = forward_meta.max_len_tensor_cpu[2] > 0
             # in fastdeploy mode , not need_do_prefill and not need_do_decode,
             # core_attention will return none, so pass self attention
-            if getattr(self, "training", True) or not self.config.multi_latent_attention:
+            if (
+                getattr(self, "training", True)
+                or not self.config.multi_latent_attention
+            ):
                 return True
-            if hasattr(self, "self_attn") and hasattr(self.self_attn, "core_attention"):
+            if hasattr(self, "self_attn") and hasattr(
+                self.self_attn, "core_attention"
+            ):
                 core_attn = self.self_attn.core_attention
-                if hasattr(core_attn, "config") and hasattr(core_attn.config, "forward_meta"):
+                if hasattr(core_attn, "config") and hasattr(
+                    core_attn.config, "forward_meta"
+                ):
                     fm = core_attn.config.forward_meta
-                    return not (fm.max_len_tensor_cpu[1] <= 0 and fm.max_len_tensor_cpu[2] <= 0)
+                    return not (
+                        fm.max_len_tensor_cpu[1] <= 0
+                        and fm.max_len_tensor_cpu[2] <= 0
+                    )
                 return True
             else:
                 return True
@@ -622,7 +750,9 @@ class TransformerLayer(nn.Layer):
             partial_block = hidden_states
 
             # Before attention: block attnres
-            hidden_states = self.block_attn_res_before_attention(partial_block, blocks)
+            hidden_states = self.block_attn_res_before_attention(
+                partial_block, blocks
+            )
 
             # Block boundary check
             if self.layer_number % (self.attn_res_block_size // 2) == 0:
@@ -653,12 +783,21 @@ class TransformerLayer(nn.Layer):
                     )
 
             # Accumulate attn output into partial_block
-            if partial_block is not None and partial_block.dtype != hidden_states.dtype:
+            if (
+                partial_block is not None
+                and partial_block.dtype != hidden_states.dtype
+            ):
                 partial_block = partial_block.to(hidden_states.dtype)
-            partial_block = partial_block + hidden_states if partial_block is not None else hidden_states
+            partial_block = (
+                partial_block + hidden_states
+                if partial_block is not None
+                else hidden_states
+            )
 
             # Before MLP: block attnres
-            hidden_states = self.block_attn_res_before_mlp(partial_block, blocks)
+            hidden_states = self.block_attn_res_before_mlp(
+                partial_block, blocks
+            )
 
             # MLP (skip internal bda residual)
             with profile(timer_name):
@@ -692,7 +831,9 @@ class TransformerLayer(nn.Layer):
                         in_recompute=self.full_recompute,
                         **kwargs,
                     )
-            self._log_md5(hidden_states, "post_attn_residual", self.layer_number)
+            self._log_md5(
+                hidden_states, "post_attn_residual", self.layer_number
+            )
             with profile(timer_name):
                 output = self._forward_mlp(hidden_states, input_ids=input_ids)
             self._log_md5(output, "layer_output", self.layer_number)
@@ -754,11 +895,15 @@ class TransformerLayer(nn.Layer):
 
         # Optional Input Layer norm
         if self.recompute_input_layernorm:
-            input_layernorm_output = recompute(self.input_layernorm, hidden_states)
+            input_layernorm_output = recompute(
+                self.input_layernorm, hidden_states
+            )
         else:
             input_layernorm_output = self.input_layernorm(hidden_states)
 
-        self._log_md5(input_layernorm_output, "input_layernorm_out", self.layer_number)
+        self._log_md5(
+            input_layernorm_output, "input_layernorm_out", self.layer_number
+        )
 
         if rope_freqs_cis is not None:
             attention_output_with_bias = self.self_attn(
@@ -804,7 +949,9 @@ class TransformerLayer(nn.Layer):
                 )
                 # hidden_states = attn_out
             else:
-                hidden_states = self.self_attn_bda(self.training, self.config.bias_dropout_fusion)(
+                hidden_states = self.self_attn_bda(
+                    self.training, self.config.bias_dropout_fusion
+                )(
                     attention_output_with_bias,
                     residual,
                     self.hidden_dropout_prob,
@@ -814,7 +961,9 @@ class TransformerLayer(nn.Layer):
         residual = hidden_states
 
         # Optional Layer norm after self-attention
-        pre_cross_attn_layernorm_output = self.pre_cross_attn_layernorm(hidden_states)
+        pre_cross_attn_layernorm_output = self.pre_cross_attn_layernorm(
+            hidden_states
+        )
 
         # Cross attention.
         attention_output_with_bias = self.cross_attention(
@@ -823,14 +972,17 @@ class TransformerLayer(nn.Layer):
             key_value_states=context,
         )
 
-        if isinstance(attention_output_with_bias, dict) and "context" in attention_output_with_bias:
+        if (
+            isinstance(attention_output_with_bias, dict)
+            and "context" in attention_output_with_bias
+        ):
             context = attention_output_with_bias["context"]
 
         with paddle.enable_grad():
             residual.stop_gradient = False
-            hidden_states = self.cross_attn_bda(self.training, self.config.bias_dropout_fusion)(
-                attention_output_with_bias, residual, self.hidden_dropout_prob
-            )
+            hidden_states = self.cross_attn_bda(
+                self.training, self.config.bias_dropout_fusion
+            )(attention_output_with_bias, residual, self.hidden_dropout_prob)
 
         # manually mark tensors that requires gradient in the first forward
         if is_first_fwd:
@@ -861,9 +1013,13 @@ class TransformerLayer(nn.Layer):
 
         # Optional Layer norm post the cross-attention.
         if self.recompute_post_attention_layernorm:
-            post_attention_layernorm_output = recompute(self.post_attention_layernorm, hidden_states)
+            post_attention_layernorm_output = recompute(
+                self.post_attention_layernorm, hidden_states
+            )
         else:
-            post_attention_layernorm_output = self.post_attention_layernorm(hidden_states)
+            post_attention_layernorm_output = self.post_attention_layernorm(
+                hidden_states
+            )
 
         self._log_md5(
             post_attention_layernorm_output,
@@ -872,9 +1028,13 @@ class TransformerLayer(nn.Layer):
         )
 
         if self.recompute_mlp:
-            _mlp_input_ids = input_ids if isinstance(self.mlp, MoELayer) else None
+            _mlp_input_ids = (
+                input_ids if isinstance(self.mlp, MoELayer) else None
+            )
 
-            def recompute_handler(post_attention_layernorm_output, _mlp_input_ids=None):
+            def recompute_handler(
+                post_attention_layernorm_output, _mlp_input_ids=None
+            ):
                 if _mlp_input_ids is not None:
                     mlp_output, bias = self.mlp(
                         post_attention_layernorm_output,
@@ -898,13 +1058,22 @@ class TransformerLayer(nn.Layer):
                 )  # bias is None
         else:
             if isinstance(self.mlp, MoELayer) and input_ids is not None:
-                mlp_output_with_bias = self.mlp(post_attention_layernorm_output, input_ids=input_ids)
+                mlp_output_with_bias = self.mlp(
+                    post_attention_layernorm_output, input_ids=input_ids
+                )
             else:
                 mlp_output_with_bias = self.mlp(post_attention_layernorm_output)
 
         # Log MLP raw output before BDA
-        if TransformerLayer._LOG_LAYER_MD5 and TransformerLayer._gpt_model_use_experimental_version:
-            _mlp_tensor = mlp_output_with_bias[0] if isinstance(mlp_output_with_bias, tuple) else mlp_output_with_bias
+        if (
+            TransformerLayer._LOG_LAYER_MD5
+            and TransformerLayer._gpt_model_use_experimental_version
+        ):
+            _mlp_tensor = (
+                mlp_output_with_bias[0]
+                if isinstance(mlp_output_with_bias, tuple)
+                else mlp_output_with_bias
+            )
             self._log_md5(_mlp_tensor, "mlp_out", self.layer_number)
 
         with paddle.enable_grad():
@@ -916,7 +1085,10 @@ class TransformerLayer(nn.Layer):
                     mlp_out, p=self.hidden_dropout_prob, training=self.training
                 )
             else:
-                hidden_states = self.mlp_bda(self.training, self.config.bias_dropout_fusion,)(
+                hidden_states = self.mlp_bda(
+                    self.training,
+                    self.config.bias_dropout_fusion,
+                )(
                     mlp_output_with_bias,
                     residual,
                     self.hidden_dropout_prob,
@@ -929,7 +1101,9 @@ class TransformerLayer(nn.Layer):
 
     def fp8_quant_weight(self, batch_mode=False, quant_transpose=True):
         if isinstance(self.mlp, MoELayer):
-            self.mlp.fp8_quant_weight(batch_mode=batch_mode, quant_transpose=quant_transpose)
+            self.mlp.fp8_quant_weight(
+                batch_mode=batch_mode, quant_transpose=quant_transpose
+            )
 
     def use_fp8(self):
         if isinstance(self.mlp, MoELayer):
@@ -964,7 +1138,9 @@ class HyperConnectionTransformerLayer(TransformerLayer):
             is_mtp_layer=is_mtp_layer,
         )
 
-        assert sublayers_spec.self_attention_hyper_connection is not IdentityOp, (
+        assert (
+            sublayers_spec.self_attention_hyper_connection is not IdentityOp
+        ), (
             "HyperConnectionTransformerLayer requires self_attention_hyper_connection. "
             "Use TransformerLayer instead if hyper connections are not needed."
         )
@@ -972,9 +1148,9 @@ class HyperConnectionTransformerLayer(TransformerLayer):
             "HyperConnectionTransformerLayer requires mlp_hyper_connection. "
             "Use TransformerLayer instead if hyper connections are not needed."
         )
-        assert (
-            not config.block_attention_residuals
-        ), "HyperConnectionTransformerLayer does not support block_attention_residuals."
+        assert not config.block_attention_residuals, (
+            "HyperConnectionTransformerLayer does not support block_attention_residuals."
+        )
 
         self.self_attention_hyper_connection = build_spec_layer(
             sublayers_spec.self_attention_hyper_connection,
@@ -1011,7 +1187,9 @@ class HyperConnectionTransformerLayer(TransformerLayer):
         ori_dtype = hidden_states.dtype
 
         # mHC: aggregate n-stream → 1-stream
-        aggregated, h_res, h_post = self.self_attention_hyper_connection(hidden_states)
+        aggregated, h_res, h_post = self.self_attention_hyper_connection(
+            hidden_states
+        )
         aggregated = aggregated.to(ori_dtype)
 
         # LayerNorm on aggregated single stream
@@ -1020,7 +1198,9 @@ class HyperConnectionTransformerLayer(TransformerLayer):
         else:
             input_layernorm_output = self.input_layernorm(aggregated)
 
-        self._log_md5(input_layernorm_output, "input_layernorm_out", self.layer_number)
+        self._log_md5(
+            input_layernorm_output, "input_layernorm_out", self.layer_number
+        )
 
         # Self-attention
         if rope_freqs_cis is not None:
@@ -1049,33 +1229,40 @@ class HyperConnectionTransformerLayer(TransformerLayer):
             )
 
         # mHC: fused H_res + H_post + bias-dropout-add
-        hidden_states = self.self_attention_hyper_connection.fused_h_res_h_post_bda(
-            h_res=h_res,
-            original_residual=original_residual,
-            h_post=h_post,
-            layer_output_with_bias=attention_output_with_bias,
-            dropout_prob=self.hidden_dropout_prob,
-            training=self.training,
-            fused=self.config.bias_dropout_fusion,
+        hidden_states = (
+            self.self_attention_hyper_connection.fused_h_res_h_post_bda(
+                h_res=h_res,
+                original_residual=original_residual,
+                h_post=h_post,
+                layer_output_with_bias=attention_output_with_bias,
+                dropout_prob=self.hidden_dropout_prob,
+                training=self.training,
+                fused=self.config.bias_dropout_fusion,
+            )
         )
         hidden_states = hidden_states.to(ori_dtype)
 
         # Cross attention (unchanged)
         residual = hidden_states
-        pre_cross_attn_layernorm_output = self.pre_cross_attn_layernorm(hidden_states)
+        pre_cross_attn_layernorm_output = self.pre_cross_attn_layernorm(
+            hidden_states
+        )
         attention_output_with_bias = self.cross_attention(
             pre_cross_attn_layernorm_output,
             attention_mask=context_mask,
             key_value_states=context,
         )
-        if isinstance(attention_output_with_bias, dict) and "context" in attention_output_with_bias:
+        if (
+            isinstance(attention_output_with_bias, dict)
+            and "context" in attention_output_with_bias
+        ):
             context = attention_output_with_bias["context"]
 
         with paddle.enable_grad():
             residual.stop_gradient = False
-            hidden_states = self.cross_attn_bda(self.training, self.config.bias_dropout_fusion)(
-                attention_output_with_bias, residual, self.hidden_dropout_prob
-            )
+            hidden_states = self.cross_attn_bda(
+                self.training, self.config.bias_dropout_fusion
+            )(attention_output_with_bias, residual, self.hidden_dropout_prob)
 
         if is_first_fwd:
             hidden_states.stop_gradient = False
@@ -1100,9 +1287,13 @@ class HyperConnectionTransformerLayer(TransformerLayer):
 
         # LayerNorm on aggregated single stream
         if self.recompute_post_attention_layernorm:
-            post_attention_layernorm_output = recompute(self.post_attention_layernorm, aggregated)
+            post_attention_layernorm_output = recompute(
+                self.post_attention_layernorm, aggregated
+            )
         else:
-            post_attention_layernorm_output = self.post_attention_layernorm(aggregated)
+            post_attention_layernorm_output = self.post_attention_layernorm(
+                aggregated
+            )
 
         self._log_md5(
             post_attention_layernorm_output,
@@ -1112,9 +1303,13 @@ class HyperConnectionTransformerLayer(TransformerLayer):
 
         # MLP
         if self.recompute_mlp:
-            _mlp_input_ids = input_ids if isinstance(self.mlp, MoELayer) else None
+            _mlp_input_ids = (
+                input_ids if isinstance(self.mlp, MoELayer) else None
+            )
 
-            def recompute_handler(post_attention_layernorm_output, _mlp_input_ids=None):
+            def recompute_handler(
+                post_attention_layernorm_output, _mlp_input_ids=None
+            ):
                 if _mlp_input_ids is not None:
                     mlp_output, bias = self.mlp(
                         post_attention_layernorm_output,
@@ -1135,7 +1330,9 @@ class HyperConnectionTransformerLayer(TransformerLayer):
                 mlp_output_with_bias = (mlp_output_with_bias, None)
         else:
             if isinstance(self.mlp, MoELayer) and input_ids is not None:
-                mlp_output_with_bias = self.mlp(post_attention_layernorm_output, input_ids=input_ids)
+                mlp_output_with_bias = self.mlp(
+                    post_attention_layernorm_output, input_ids=input_ids
+                )
             else:
                 mlp_output_with_bias = self.mlp(post_attention_layernorm_output)
 
@@ -1164,20 +1361,24 @@ class TransformerLayerWithOverlap(TransformerLayer):
         assert not self.recompute_input_layernorm
         assert not self.recompute_post_attention_layernorm
         if isinstance(self.mlp, MoELayer):
-            assert (
-                not self.mlp.gate.norm_topk_prob
-            ), "By enabling `forward_backward_overlap_scheduler`, you should not use `norm_topk_prob` in TopKRouter."
-            assert (
-                self.mlp.expert_model_parallel_size > 1
-            ), "By enabling `forward_backward_overlap_scheduler`, you should use expert parallel."
+            assert not self.mlp.gate.norm_topk_prob, (
+                "By enabling `forward_backward_overlap_scheduler`, you should not use `norm_topk_prob` in TopKRouter."
+            )
+            assert self.mlp.expert_model_parallel_size > 1, (
+                "By enabling `forward_backward_overlap_scheduler`, you should use expert parallel."
+            )
             assert self.mlp.moe_token_dispatcher_type in (
                 "deepep",
                 "hybridep",
-            ), "By enabling `forward_backward_overlap_scheduler`, you should use deepep or hybridep for dispatching tokens."
+            ), (
+                "By enabling `forward_backward_overlap_scheduler`, you should use deepep or hybridep for dispatching tokens."
+            )
 
     def compute_attention(self, dict_args, is_first_fwd=False):
         with profile("attn"):
-            return self._forward_attention(**dict_args, is_first_fwd=is_first_fwd)
+            return self._forward_attention(
+                **dict_args, is_first_fwd=is_first_fwd
+            )
 
     def compute_mlp(self, hidden_states, is_first_fwd=False):
         timer_name = "moe-mlp" if isinstance(self.mlp, MoELayer) else "mlp"
@@ -1211,17 +1412,19 @@ class TransformerLayerWithOverlap(TransformerLayer):
     def dispatch_preprocess_compute(self, args):
         hidden_states, topk_weights, topk_indices = args
 
-        hidden_states, token_indices, token_weights = self.mlp.dispatch_preprocess(
-            (hidden_states, topk_weights, topk_indices)
+        hidden_states, token_indices, token_weights = (
+            self.mlp.dispatch_preprocess(
+                (hidden_states, topk_weights, topk_indices)
+            )
         )
         return hidden_states, token_indices, token_weights
 
     def post_process_compute(self, args, is_first_fwd=False):
         mlp_output, residual = args
         with paddle.enable_grad():
-            output = self.mlp_bda(self.training, self.config.bias_dropout_fusion)(
-                (mlp_output, None), residual, self.hidden_dropout_prob
-            )
+            output = self.mlp_bda(
+                self.training, self.config.bias_dropout_fusion
+            )((mlp_output, None), residual, self.hidden_dropout_prob)
         if is_first_fwd:
             output.stop_gradient = False
         return output
@@ -1232,21 +1435,37 @@ class TransformerLayerNode(ScheduleNode):
         super().__init__(fwd_func=None, name=name)
         self.config = config
         self.layer_number = layer_number
-        self.attn_node = ScheduleNode(node.compute_attention, name="attn_compute")
+        self.attn_node = ScheduleNode(
+            node.compute_attention, name="attn_compute"
+        )
         self.full_recompute = node.full_recompute
         self._is_sparse = True if isinstance(node.mlp, MoELayer) else False
         if self._is_sparse:
-            self.pre_process_node = ScheduleNode(node.pre_process_compute, name="pre_process_compute")
+            self.pre_process_node = ScheduleNode(
+                node.pre_process_compute, name="pre_process_compute"
+            )
             self.dispatch_preprocess_node = ScheduleNode(
                 node.dispatch_preprocess_compute,
                 name="dispatch_preprocess_compute",
             )
-            self.gate_node = ScheduleNode(node.mlp.compute_gate, name="gate_compute")
-            self.dispatch_node = ScheduleNode(node.mlp.compute_dispatch, name="dispatch_compute")
-            self.mlp_node = ScheduleNode(node.mlp.compute_experts, name="mlp_compute")
-            self.combine_node = ScheduleNode(node.mlp.compute_combine, name="combine_compute")
-            self.aux_loss_node = ScheduleNode(node.mlp.aux_loss_compute, name="aux_loss_compute")
-            self.post_process_node = ScheduleNode(node.post_process_compute, name="post_process_compute")
+            self.gate_node = ScheduleNode(
+                node.mlp.compute_gate, name="gate_compute"
+            )
+            self.dispatch_node = ScheduleNode(
+                node.mlp.compute_dispatch, name="dispatch_compute"
+            )
+            self.mlp_node = ScheduleNode(
+                node.mlp.compute_experts, name="mlp_compute"
+            )
+            self.combine_node = ScheduleNode(
+                node.mlp.compute_combine, name="combine_compute"
+            )
+            self.aux_loss_node = ScheduleNode(
+                node.mlp.aux_loss_compute, name="aux_loss_compute"
+            )
+            self.post_process_node = ScheduleNode(
+                node.post_process_compute, name="post_process_compute"
+            )
             self.group_id = node.mlp.token_dispatcher._comm_manager.group.id
         else:
             self.mlp_node = ScheduleNode(node.compute_mlp, name="mlp_compute")
@@ -1255,8 +1474,11 @@ class TransformerLayerNode(ScheduleNode):
         inputs.pop("dynamic_inference_decode_only", None)
         mtp_tmp_dict = None
         assert (
-            self.config.num_nextn_predict_layers is None or self.config.num_nextn_predict_layers == 0
-        ), f"current support num_nextn_predict_layers == 0, but get {self.config.num_nextn_predict_layers}"
+            self.config.num_nextn_predict_layers is None
+            or self.config.num_nextn_predict_layers == 0
+        ), (
+            f"current support num_nextn_predict_layers == 0, but get {self.config.num_nextn_predict_layers}"
+        )
         if (
             self.config.num_nextn_predict_layers is not None
             and self.config.num_nextn_predict_layers > 0
@@ -1271,7 +1493,9 @@ class TransformerLayerNode(ScheduleNode):
             if self.full_recompute:
                 attn_state = tensors_clone(inputs)
                 self.attn_recompute_args = attn_state
-            hidden_states, context = self.attn_node.forward(inputs, is_first_fwd=self.full_recompute)
+            hidden_states, context = self.attn_node.forward(
+                inputs, is_first_fwd=self.full_recompute
+            )
             (
                 residual,
                 hidden_states,
@@ -1282,40 +1506,56 @@ class TransformerLayerNode(ScheduleNode):
                 z_loss,
             ) = self.pre_process_node.forward(hidden_states)
 
-            hidden_states, token_indices, token_weights = self.dispatch_preprocess_node.forward(
-                (hidden_states, topk_weights, topk_indices)
+            hidden_states, token_indices, token_weights = (
+                self.dispatch_preprocess_node.forward(
+                    (hidden_states, topk_weights, topk_indices)
+                )
             )
 
             hidden_states = self.dispatch_node.forward(
                 (hidden_states, token_indices, token_weights),
                 async_finish=True,
             )
-            dispatch_fw_event = deep_ep.get_event_from_comm_stream(self.group_id)
+            dispatch_fw_event = deep_ep.get_event_from_comm_stream(
+                self.group_id
+            )
             dispatch_fw_event.calc_stream_wait(self.group_id)
 
             if self.full_recompute:
                 mlp_state = tensors_clone(hidden_states)
                 self.mlp_recompute_args = mlp_state
-            hidden_states = self.mlp_node.forward(hidden_states, is_first_fwd=self.full_recompute)
+            hidden_states = self.mlp_node.forward(
+                hidden_states, is_first_fwd=self.full_recompute
+            )
 
-            hidden_states = self.combine_node.forward(hidden_states, async_finish=True)
+            hidden_states = self.combine_node.forward(
+                hidden_states, async_finish=True
+            )
             combine_fw_event = deep_ep.get_event_from_comm_stream(self.group_id)
             combine_fw_event.calc_stream_wait(self.group_id)
 
-            hidden_states = self.aux_loss_node.forward((hidden_states, aux_loss, z_loss, residuals))
+            hidden_states = self.aux_loss_node.forward(
+                (hidden_states, aux_loss, z_loss, residuals)
+            )
 
             self.post_process_recompute_args = (hidden_states, residual)
-            output = self.post_process_node.forward((hidden_states, residual), is_first_fwd=self.full_recompute)
+            output = self.post_process_node.forward(
+                (hidden_states, residual), is_first_fwd=self.full_recompute
+            )
         else:
             if self.full_recompute:
                 attn_state = tensors_clone(inputs)
                 self.attn_recompute_args = attn_state
-            hidden_states, context = self.attn_node.forward(inputs, is_first_fwd=self.full_recompute)
+            hidden_states, context = self.attn_node.forward(
+                inputs, is_first_fwd=self.full_recompute
+            )
 
             if self.full_recompute:
                 mlp_state = tensors_clone(hidden_states)
                 self.mlp_recompute_args = mlp_state
-            output = self.mlp_node.forward(hidden_states, is_first_fwd=self.full_recompute)
+            output = self.mlp_node.forward(
+                hidden_states, is_first_fwd=self.full_recompute
+            )
         rst = {"hidden_states": output}
         if context is not None:
             rst["context"] = context
@@ -1338,24 +1578,34 @@ class TransformerLayerNode(ScheduleNode):
             mtp_tmp_grad = output_grad[1:]
             output_grad = [output_grad[0]]
         if self._is_sparse:
-            output_grad, residual_grad = self.post_process_node.backward(output_grad)
+            output_grad, residual_grad = self.post_process_node.backward(
+                output_grad
+            )
 
-            output_grad, aux_loss_grad, z_loss_grad, residuals_grad = self.aux_loss_node.backward(output_grad)
+            output_grad, aux_loss_grad, z_loss_grad, residuals_grad = (
+                self.aux_loss_node.backward(output_grad)
+            )
 
             output_grad = self.combine_node.backward(output_grad)
             combine_bw_event = deep_ep.get_event_from_comm_stream(self.group_id)
             combine_bw_event.calc_stream_wait(self.group_id)
             output_grad = self.mlp_node.backward(output_grad)
 
-            (output_grad, token_indices_grad, token_weights_grad) = self.dispatch_node.backward(output_grad)
-            dispatch_bw_event = deep_ep.get_event_from_comm_stream(self.group_id)
+            (output_grad, token_indices_grad, token_weights_grad) = (
+                self.dispatch_node.backward(output_grad)
+            )
+            dispatch_bw_event = deep_ep.get_event_from_comm_stream(
+                self.group_id
+            )
             dispatch_bw_event.calc_stream_wait(self.group_id)
 
             (
                 output_grad,
                 topk_weights_grad,
                 topk_indices_grad,
-            ) = self.dispatch_preprocess_node.backward((output_grad, token_indices_grad, token_weights_grad))
+            ) = self.dispatch_preprocess_node.backward(
+                (output_grad, token_indices_grad, token_weights_grad)
+            )
 
             output_grad = self.pre_process_node.backward(
                 (
@@ -1430,14 +1680,18 @@ class TransformerLayerOverlappedScheduleNode(ScheduleNode):
             if self.backward_node.full_recompute:
                 self.backward_node.recompute_forward()
             # 1. POST(B)
-            output_grad, residual_grad = self.backward_node.post_process_node.backward(output_grad)
-            output_grad, aux_loss_grad, z_loss_grad, residuals_grad = self.backward_node.aux_loss_node.backward(
-                output_grad
+            output_grad, residual_grad = (
+                self.backward_node.post_process_node.backward(output_grad)
+            )
+            output_grad, aux_loss_grad, z_loss_grad, residuals_grad = (
+                self.backward_node.aux_loss_node.backward(output_grad)
             )
 
             # 2. COMBINE(B)
             output_grad = self.backward_node.combine_node.backward(output_grad)
-            combine_bw_event = deep_ep.get_event_from_comm_stream(self.backward_node.group_id)
+            combine_bw_event = deep_ep.get_event_from_comm_stream(
+                self.backward_node.group_id
+            )
 
             # 3. ATTN(F)
             if self.forward_node.full_recompute:
@@ -1456,8 +1710,10 @@ class TransformerLayerOverlappedScheduleNode(ScheduleNode):
                 z_loss,
             ) = self.forward_node.pre_process_node.forward(hidden_states)
 
-            hidden_states, token_indices, token_weights = self.forward_node.dispatch_preprocess_node.forward(
-                (hidden_states, topk_weights, topk_indices)
+            hidden_states, token_indices, token_weights = (
+                self.forward_node.dispatch_preprocess_node.forward(
+                    (hidden_states, topk_weights, topk_indices)
+                )
             )
 
             # 4. DISPATCH(F)
@@ -1465,17 +1721,21 @@ class TransformerLayerOverlappedScheduleNode(ScheduleNode):
                 (hidden_states, token_indices, token_weights),
                 async_finish=True,
             )
-            dispatch_fw_event = deep_ep.get_event_from_comm_stream(self.forward_node.group_id)
+            dispatch_fw_event = deep_ep.get_event_from_comm_stream(
+                self.forward_node.group_id
+            )
 
             # 5. MLP(B)
             combine_bw_event.calc_stream_wait(self.backward_node.group_id)
             output_grad = self.backward_node.mlp_node.backward(output_grad)
 
             # 6. DISPATCH(B)
-            output_grad, token_indices_grad, token_weights_grad = self.backward_node.dispatch_node.backward(
-                output_grad
+            output_grad, token_indices_grad, token_weights_grad = (
+                self.backward_node.dispatch_node.backward(output_grad)
             )
-            dispatch_bw_event = deep_ep.get_event_from_comm_stream(self.backward_node.group_id)
+            dispatch_bw_event = deep_ep.get_event_from_comm_stream(
+                self.backward_node.group_id
+            )
 
             # 7. MLP(F)
             dispatch_fw_event.calc_stream_wait(self.forward_node.group_id)
@@ -1487,8 +1747,12 @@ class TransformerLayerOverlappedScheduleNode(ScheduleNode):
             )
 
             # 8. COMBINE(F)
-            hidden_states = self.forward_node.combine_node.forward(hidden_states, async_finish=True)
-            combine_fw_event = deep_ep.get_event_from_comm_stream(self.forward_node.group_id)
+            hidden_states = self.forward_node.combine_node.forward(
+                hidden_states, async_finish=True
+            )
+            combine_fw_event = deep_ep.get_event_from_comm_stream(
+                self.forward_node.group_id
+            )
 
             # 9. ATTN(B)
             dispatch_bw_event.calc_stream_wait(self.backward_node.group_id)
@@ -1515,7 +1779,9 @@ class TransformerLayerOverlappedScheduleNode(ScheduleNode):
 
             # 10. POST(F)
             combine_fw_event.calc_stream_wait(self.forward_node.group_id)
-            hidden_states = self.forward_node.aux_loss_node.forward((hidden_states, aux_loss, z_loss, residuals))
+            hidden_states = self.forward_node.aux_loss_node.forward(
+                (hidden_states, aux_loss, z_loss, residuals)
+            )
             if self.forward_node.full_recompute:
                 self.forward_node.post_process_recompute_args = (
                     hidden_states,

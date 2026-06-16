@@ -10,11 +10,9 @@ packing: false
 mix_strategy: concat
 template_backend: custom
 template: qwen3_vl
-
 ### model
 model_name_or_path: ./model_30B_A3B
 _attn_implementation: flashmask
-
 ### finetuning
 # base
 stage: VL-SFT
@@ -36,14 +34,11 @@ logging_dir: ./vdl_log
 output_dir: ./checkpoints/qwen3-vl-sft-full
 disable_tqdm: true
 eval_accumulation_steps: 16
-
 # train
 warmup_steps: 20
 learning_rate: 1.0e-4
-
 # args
 router_aux_loss_coef: 0.001
-
 # parallel
 tensor_model_parallel_size: 1
 sequence_parallel: False
@@ -56,13 +51,10 @@ pipeline_model_parallel_size: 1
 recompute_granularity: full
 recompute_method: uniform
 recompute_num_layers: 1
-
 # fuse_attention_qkv: true
 # fuse_attention_ffn: true
-
 moe_expert_fusion: true
 moe_deep_gemm: false
-
 apply_rope_fusion: False
 # fuse_rms_norm: true
 # moe_router_force_load_balancing: true
@@ -82,7 +74,6 @@ best_unbalanced_scheduler: true
 # tp
 tp_sync_param: true
 sync_grad: true
-
 amp_master_grad: true
 bf16: true
 fp16_opt_level: O2
@@ -92,10 +83,8 @@ save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint
 continue_training: True
 dataloader_shuffle: false
-
 report_to: none
 dataloader_num_workers: 0
-
 # profile: true
 # profile_step_start: 1
 # profile_step_end: 2

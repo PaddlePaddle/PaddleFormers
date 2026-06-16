@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -69,7 +73,9 @@ class TestPipelineUtilsP2pNumberDtype(unittest.TestCase):
     """Tests for paddle_2_number and number_2_dtype in pipeline_parallel/utils.py via pp_utils."""
 
     def test_paddle_2_number_all_types(self):
-        from paddleformers.fleet.pipeline_parallel.pp_utils.utils import paddle_2_number
+        from paddleformers.fleet.pipeline_parallel.pp_utils.utils import (
+            paddle_2_number,
+        )
 
         self.assertEqual(paddle_2_number(paddle.float16), 0)
         self.assertEqual(paddle_2_number(paddle.float32), 1)
@@ -80,7 +86,9 @@ class TestPipelineUtilsP2pNumberDtype(unittest.TestCase):
         self.assertEqual(paddle_2_number(paddle.bool), 6)
 
     def test_number_2_dtype_all_types(self):
-        from paddleformers.fleet.pipeline_parallel.pp_utils.utils import number_2_dtype
+        from paddleformers.fleet.pipeline_parallel.pp_utils.utils import (
+            number_2_dtype,
+        )
 
         self.assertEqual(number_2_dtype(0), "float16")
         self.assertEqual(number_2_dtype(1), "float32")

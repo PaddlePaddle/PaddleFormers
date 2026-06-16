@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -63,7 +67,9 @@ class TestBuildOverlappedNodes(unittest.TestCase):
         """Test with no TransformerLayerNode in chunks -> no overlap."""
         forward_chunk = ScheduleChunk([])
         backward_chunk = ScheduleChunk([])
-        fwd_pre, bwd_pre, overlap, fwd_post, bwd_post = build_overlapped_nodes(forward_chunk, backward_chunk)
+        fwd_pre, bwd_pre, overlap, fwd_post, bwd_post = build_overlapped_nodes(
+            forward_chunk, backward_chunk
+        )
         self.assertEqual(len(overlap.nodes), 0)
         self.assertEqual(len(fwd_pre.nodes), 0)
         self.assertEqual(len(bwd_pre.nodes), 0)

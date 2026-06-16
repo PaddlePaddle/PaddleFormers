@@ -14,42 +14,36 @@
 
 #pragma once
 #ifdef __CUDACC__
-#include <cuda.h>
-#include <cuda_bf16.h>
-#include <cuda_fp8.h>
-#include <cuda_runtime.h>
+#include <cuda.h>         // NOLINT
+#include <cuda_bf16.h>    // NOLINT
+#include <cuda_fp8.h>     // NOLINT
+#include <cuda_runtime.h> // NOLINT
 #endif
 
-#include <iostream>
-#include <limits>
+#include <iostream> // NOLINT
+#include <limits>   // NOLINT
 
-#include "paddle/extension.h"
-#include "paddle/phi/api/all.h"
-#include "paddle/phi/core/utils/data_type.h"
+#include "paddle/extension.h"                // NOLINT
+#include "paddle/phi/api/all.h"              // NOLINT
+#include "paddle/phi/core/utils/data_type.h" // NOLINT
 #ifdef __CUDACC__
-#include "paddle/phi/kernels/funcs/math_cuda_utils.h"
+#include "paddle/phi/kernels/funcs/math_cuda_utils.h" // NOLINT
 #endif
 
-template <paddle::DataType DType>
-struct TypeMap;
-template <>
-struct TypeMap<paddle::DataType::BFLOAT16> {
+template <paddle::DataType DType> struct TypeMap;
+template <> struct TypeMap<paddle::DataType::BFLOAT16> {
   using type = phi::bfloat16;
 };
-template <>
-struct TypeMap<paddle::DataType::FLOAT16> {
+template <> struct TypeMap<paddle::DataType::FLOAT16> {
   using type = phi::float16;
 };
-template <>
-struct TypeMap<paddle::DataType::FLOAT32> {
+template <> struct TypeMap<paddle::DataType::FLOAT32> {
   using type = float;
 };
-template <>
-struct TypeMap<paddle::DataType::INT32> {
+template <> struct TypeMap<paddle::DataType::INT32> {
   using type = int;
 };
-template <>
-struct TypeMap<paddle::DataType::INT64> {
+template <> struct TypeMap<paddle::DataType::INT64> {
   using type = int64_t;
 };
 
@@ -66,61 +60,53 @@ inline int GetSwiGLURowGridSize(int64_t rows) { return LimitGridDim(rows); }
 
 #ifdef __CUDACC__
 template <typename T>
-T** GetTensorDevicePtrs(const std::vector<paddle::Tensor>& tensors,
-                        paddle::Tensor* ptr_tensor,
-                        cudaStream_t stream,
+T **GetTensorDevicePtrs(const std::vector<paddle::Tensor> &tensors,
+                        paddle::Tensor *ptr_tensor, cudaStream_t stream,
                         phi::Place place) {
-  auto nbytes = tensors.size() * sizeof(T*);
-  std::vector<const T*> cpu_ptrs(tensors.size());
+  auto nbytes = tensors.size() * sizeof(T *);
+  std::vector<const T *> cpu_ptrs(tensors.size());
   for (size_t i = 0; i < tensors.size(); ++i) {
     cpu_ptrs[i] = tensors[i].data<T>();
   }
-  *ptr_tensor = paddle::empty(
-      {static_cast<int64_t>(nbytes)}, paddle::DataType::UINT8, place);
-  auto* device_ptrs = reinterpret_cast<T**>(ptr_tensor->data());
-  auto err = cudaMemcpyAsync(
-      device_ptrs, cpu_ptrs.data(), nbytes, cudaMemcpyHostToDevice, stream);
-  PD_CHECK(
-      err == cudaSuccess, "cudaMemcpyAsync error", cudaGetErrorString(err));
+  *ptr_tensor = paddle::empty({static_cast<int64_t>(nbytes)},
+                              paddle::DataType::UINT8, place);
+  auto *device_ptrs = reinterpret_cast<T **>(ptr_tensor->data());
+  auto err = cudaMemcpyAsync(device_ptrs, cpu_ptrs.data(), nbytes,
+                             cudaMemcpyHostToDevice, stream);
+  PD_CHECK(err == cudaSuccess, "cudaMemcpyAsync error",
+           cudaGetErrorString(err));
   err = cudaStreamSynchronize(stream);
-  PD_CHECK(err == cudaSuccess,
-           "cudaStreamSynchronize error",
+  PD_CHECK(err == cudaSuccess, "cudaStreamSynchronize error",
            cudaGetErrorString(err));
   return device_ptrs;
 }
 #endif
 
-template <typename T, int N>
-struct alignas(16) VectorType {
+template <typename T, int N> struct alignas(16) VectorType {
   T data[N];
 };
 
 #ifdef __CUDACC__
-template <>
-struct alignas(16) VectorType<float, 4> {
-  float4 data;  // Built-in CUDA vector type
+template <> struct alignas(16) VectorType<float, 4> {
+  float4 data; // Built-in CUDA vector type  // NOLINT
 };
 
-template <>
-struct alignas(16) VectorType<__nv_bfloat16, 8> {
+template <> struct alignas(16) VectorType<__nv_bfloat16, 8> {
   __nv_bfloat16 data[8];
 };
 
-template <>
-struct alignas(16) VectorType<__nv_fp8_e4m3, 16> {
+template <> struct alignas(16) VectorType<__nv_fp8_e4m3, 16> {
   __nv_fp8_e4m3 data[16];
 };
 #endif
 
-template <>
-struct alignas(16) VectorType<uint8_t, 16> {
+template <> struct alignas(16) VectorType<uint8_t, 16> {
   uint8_t data[16];
 };
 
 #ifdef __CUDACC__
 template <typename T>
-__device__ __forceinline__ void unrolled_memcpy(const T* src,
-                                                T* dst,
+__device__ __forceinline__ void unrolled_memcpy(const T *src, T *dst,
                                                 const int64_t num_elements) {
 #pragma unroll
   for (int64_t idx = threadIdx.x; idx < num_elements; idx += blockDim.x) {
@@ -130,8 +116,7 @@ __device__ __forceinline__ void unrolled_memcpy(const T* src,
 
 // Helper function to perform vectorized memory copy
 template <typename T>
-__device__ __forceinline__ void vectorized_memcpy(const T* src,
-                                                  T* dst,
+__device__ __forceinline__ void vectorized_memcpy(const T *src, T *dst,
                                                   const int64_t num_elements) {
   constexpr int vector_size_in_bytes = 16;
   const int64_t elements_per_vector = vector_size_in_bytes / sizeof(T);
@@ -140,8 +125,8 @@ __device__ __forceinline__ void vectorized_memcpy(const T* src,
   int64_t remaining_elements = num_elements % elements_per_vector;
 
   using VecType = VectorType<T, elements_per_vector>;
-  const VecType* src_vec = reinterpret_cast<const VecType*>(src);
-  VecType* dst_vec = reinterpret_cast<VecType*>(dst);
+  const VecType *src_vec = reinterpret_cast<const VecType *>(src);
+  VecType *dst_vec = reinterpret_cast<VecType *>(dst);
 
 #pragma unroll
   for (int64_t idx = threadIdx.x; idx < num_vectors; idx += blockDim.x) {
@@ -157,8 +142,8 @@ __device__ __forceinline__ void vectorized_memcpy(const T* src,
 }
 
 template <typename T>
-__device__ __forceinline__ void try_vectorized_memcpy(
-    const T* src, T* dst, const int64_t num_elements) {
+__device__ __forceinline__ void
+try_vectorized_memcpy(const T *src, T *dst, const int64_t num_elements) {
   bool is_aligned_128bit =
       ((uintptr_t)src & 0xF) == 0 && ((uintptr_t)dst & 0xF) == 0;
   if (is_aligned_128bit) {
@@ -169,21 +154,21 @@ __device__ __forceinline__ void try_vectorized_memcpy(
 }
 #endif
 
-#define PD_SWITCH_NUM_EXPERTS_IMPL(__num_expert, __max_num_experts, ...) \
-  if (__num_expert <= __max_num_experts) {                               \
-    constexpr auto MAX_NUM_EXPERTS_C = __max_num_experts;                \
-    do {                                                                 \
-      __VA_ARGS__();                                                     \
-    } while (0);                                                         \
-    break;                                                               \
+#define PD_SWITCH_NUM_EXPERTS_IMPL(__num_expert, __max_num_experts, ...)       \
+  if (__num_expert <= __max_num_experts) {                                     \
+    constexpr auto MAX_NUM_EXPERTS_C = __max_num_experts;                      \
+    do {                                                                       \
+      __VA_ARGS__();                                                           \
+    } while (0);                                                               \
+    break;                                                                     \
   }
 
-#define PD_SWITCH_NUM_EXPERTS(__num_experts_expr, ...)                        \
-  do {                                                                        \
-    auto __num_expert = (__num_experts_expr);                                 \
-    PD_SWITCH_NUM_EXPERTS_IMPL(__num_expert, 8, __VA_ARGS__);                 \
-    PD_SWITCH_NUM_EXPERTS_IMPL(__num_expert, 16, __VA_ARGS__);                \
-    PD_SWITCH_NUM_EXPERTS_IMPL(__num_expert, 32, __VA_ARGS__);                \
-    PD_SWITCH_NUM_EXPERTS_IMPL(__num_expert, 64, __VA_ARGS__);                \
-    PD_THROW("Unsupported expert number %d", static_cast<int>(__num_expert)); \
+#define PD_SWITCH_NUM_EXPERTS(__num_experts_expr, ...)                         \
+  do {                                                                         \
+    auto __num_expert = (__num_experts_expr);                                  \
+    PD_SWITCH_NUM_EXPERTS_IMPL(__num_expert, 8, __VA_ARGS__);                  \
+    PD_SWITCH_NUM_EXPERTS_IMPL(__num_expert, 16, __VA_ARGS__);                 \
+    PD_SWITCH_NUM_EXPERTS_IMPL(__num_expert, 32, __VA_ARGS__);                 \
+    PD_SWITCH_NUM_EXPERTS_IMPL(__num_expert, 64, __VA_ARGS__);                 \
+    PD_THROW("Unsupported expert number %d", static_cast<int>(__num_expert));  \
   } while (0)

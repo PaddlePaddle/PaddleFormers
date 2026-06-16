@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import queue
@@ -145,8 +149,6 @@ class TestGlobalRRQueueLog(unittest.TestCase):
         """Test global_rr_queue_log is the same instance across accesses."""
         from paddleformers.fleet.refined_recompute.queue_check import (
             global_rr_queue_log as g1,
-        )
-        from paddleformers.fleet.refined_recompute.queue_check import (
             global_rr_queue_log as g2,
         )
 

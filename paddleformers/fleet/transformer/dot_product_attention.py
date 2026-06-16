@@ -23,22 +23,25 @@ import numpy as np
 
 if TYPE_CHECKING:
     from paddleformers.fleet.packed_seq_params import PackedSeqParams
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
 logger = logging.getLogger(__name__)
 
 import paddle
 from paddle import Tensor
-from paddlefleet_ops.flash_mask_facade import flash_attention, flashmask_attention
 
+from paddlefleet_ops.flash_mask_facade import (
+    flash_attention,
+    flashmask_attention,
+)
 from paddleformers.fleet.context_parallel_utils import flashmask_attention_cp
 from paddleformers.fleet.fusions.fused_softmax import FusedScaleMaskSoftmax
 from paddleformers.fleet.parallel_state import get_context_parallel_world_size
 from paddleformers.fleet.process_groups_config import ProcessGroupCollection
 from paddleformers.fleet.refined_recompute import (
     RefinedRcomputeFlashMaskAttention as rr_flashmask_attention,
-)
-from paddleformers.fleet.refined_recompute import (
     RefinedRcomputeFlashMaskCpAttention as rr_flashmask_attention_cp,
 )
 from paddleformers.fleet.transformer.enums import AttnMaskType
@@ -98,34 +101,56 @@ class DotProductAttention(FleetLayer):
 
         # k_channels and v_channels may differ from config.head_dim
         # Default to config.head_dim if not provided (standard attention)
-        self.k_channels = k_channels if k_channels is not None else self.config.head_dim
-        self.v_channels = v_channels if v_channels is not None else self.config.head_dim
+        self.k_channels = (
+            k_channels if k_channels is not None else self.config.head_dim
+        )
+        self.v_channels = (
+            v_channels if v_channels is not None else self.config.head_dim
+        )
         self.num_attention_heads = (
-            num_attention_heads if num_attention_heads is not None else self.config.num_attention_heads
+            num_attention_heads
+            if num_attention_heads is not None
+            else self.config.num_attention_heads
         )
         self.num_key_value_heads = (
-            num_key_value_heads if num_key_value_heads is not None else self.config.num_key_value_heads
+            num_key_value_heads
+            if num_key_value_heads is not None
+            else self.config.num_key_value_heads
         )
 
         projection_size = self.k_channels * self.num_attention_heads
 
         # Per attention head and per partition values.
         if pg_collection is None:
-            pg_collection = ProcessGroupCollection.use_mpu_process_groups(required_pgs=["tp"])
+            pg_collection = ProcessGroupCollection.use_mpu_process_groups(
+                required_pgs=["tp"]
+            )
         else:
-            assert hasattr(pg_collection, "tp"), "DotProductAttention pg_collection must have tp process group"
+            assert hasattr(pg_collection, "tp"), (
+                "DotProductAttention pg_collection must have tp process group"
+            )
 
         world_size = (
-            pg_collection.tp.world_size if pg_collection.tp is not None and pg_collection.tp.world_size >= 1 else 1
+            pg_collection.tp.world_size
+            if pg_collection.tp is not None and pg_collection.tp.world_size >= 1
+            else 1
         )
         self.hidden_size_per_partition = divide(projection_size, world_size)
-        self.hidden_size_per_attention_head = divide(projection_size, self.num_attention_heads)
-        self.num_attention_heads_per_partition = divide(self.num_attention_heads, world_size)
-        self.num_query_groups_per_partition = divide(self.num_key_value_heads, world_size)
+        self.hidden_size_per_attention_head = divide(
+            projection_size, self.num_attention_heads
+        )
+        self.num_attention_heads_per_partition = divide(
+            self.num_attention_heads, world_size
+        )
+        self.num_query_groups_per_partition = divide(
+            self.num_key_value_heads, world_size
+        )
 
         coeff = None
         if softmax_scale is None:
-            self.softmax_scale = 1.0 / math.sqrt(self.hidden_size_per_attention_head)
+            self.softmax_scale = 1.0 / math.sqrt(
+                self.hidden_size_per_attention_head
+            )
         else:
             self.softmax_scale = softmax_scale
 
@@ -156,7 +181,9 @@ class DotProductAttention(FleetLayer):
         # different outputs on different number of parallel partitions but
         # on average it should not be partition dependent.
         self.attention_dropout = paddle.nn.Dropout(
-            self.config.attention_dropout if attention_dropout is None else attention_dropout
+            self.config.attention_dropout
+            if attention_dropout is None
+            else attention_dropout
         )
 
         softmax_type = self.config.softmax_type
@@ -168,7 +195,9 @@ class DotProductAttention(FleetLayer):
         if softmax_type == "vanilla":
             self.softmax_offset = None
         elif softmax_type == "off-by-one":
-            self.softmax_offset = paddle.zeros(self.num_attention_heads_per_partition)
+            self.softmax_offset = paddle.zeros(
+                self.num_attention_heads_per_partition
+            )
         elif softmax_type == "learnable":
             self.softmax_offset = self.create_parameter(
                 shape=[self.num_attention_heads_per_partition],
@@ -181,7 +210,9 @@ class DotProductAttention(FleetLayer):
         self.rr_flashmask_attention_func = rr_flashmask_attention()
         self.rr_flashmask_attention_cp_func = rr_flashmask_attention_cp()
 
-    def _ec_compatible_flash_attention(self, query, key, value, attn_mask_startend_row_indices=None):
+    def _ec_compatible_flash_attention(
+        self, query, key, value, attn_mask_startend_row_indices=None
+    ):
         """EC-compatible flash attention path for alignment mode.
 
         When startend_row_indices is provided (multi-doc packing), uses
@@ -193,7 +224,9 @@ class DotProductAttention(FleetLayer):
         if attn_mask_startend_row_indices is not None:
             # flashmask path — matches EC's scaled_dot_product_attention
             if self.config.flashmask_use_varlen:
-                flashmask_attention_func = partial(flashmask_attention, use_varlen=True)
+                flashmask_attention_func = partial(
+                    flashmask_attention, use_varlen=True
+                )
             else:
                 flashmask_attention_func = flashmask_attention
 
@@ -220,7 +253,9 @@ class DotProductAttention(FleetLayer):
         attn_output = attn_output.reshape([bsz, q_len, -1])
         return attn_output
 
-    def expand_attn_mask_startend_row_indices_for_cp(self, attn_mask_startend_row_indices, key):
+    def expand_attn_mask_startend_row_indices_for_cp(
+        self, attn_mask_startend_row_indices, key
+    ):
         """
         expand start_row_indice and end_row_indice
         """
@@ -241,12 +276,17 @@ class DotProductAttention(FleetLayer):
                 dtype=attn_mask_startend_row_indices.dtype,
             ).cuda()
             append_indices = append_indices.reshape(1, 1, seq_len, 1)
-            append_indices_expand = append_indices.expand(b, k_heads, k_seqlen, 1)
+            append_indices_expand = append_indices.expand(
+                b, k_heads, k_seqlen, 1
+            )
             attn_mask_startend_row_indices = paddle.concat(
                 [attn_mask_startend_row_indices, append_indices_expand],
                 axis=-1,
             )
-        elif attn_mask_startend_row_indices.shape[-1] == 2 and self.config.experimental_dataflow:
+        elif (
+            attn_mask_startend_row_indices.shape[-1] == 2
+            and self.config.experimental_dataflow
+        ):
             # In EB dataflow, attn_mask_startend_row_indices.shape[-1] == 2
             # means attn_mask_startend_row_indices is ready, do not need to concat
             pass
@@ -281,7 +321,9 @@ class DotProductAttention(FleetLayer):
     ):
         """Forward."""
 
-        assert attention_bias is None, "Attention bias is not supported for DotProductAttention."
+        assert attention_bias is None, (
+            "Attention bias is not supported for DotProductAttention."
+        )
         assert not (
             use_rr_flash_attention and self.config.flashmask_use_varlen
         ), "flashmask_use_varlen does not support refined recompute now."
@@ -289,22 +331,35 @@ class DotProductAttention(FleetLayer):
         use_eager = self.config._attn_implementation == "eager"
 
         if self.is_swa:
-            assert not use_eager, "SWA doesn't support _attn_implementation is eager"
+            assert not use_eager, (
+                "SWA doesn't support _attn_implementation is eager"
+            )
 
         if self.context_parallel_size > 1:
-            assert packed_seq_params is None, "Packed sequence is not supported by context_parallel_size > 1 now."
-            assert not self.config.flashmask_use_varlen, "flashmask_use_varlen does not support context parallel now."
-            attn_mask_startend_row_indices = self.expand_attn_mask_startend_row_indices_for_cp(
-                attn_mask_startend_row_indices, key
+            assert packed_seq_params is None, (
+                "Packed sequence is not supported by context_parallel_size > 1 now."
+            )
+            assert not self.config.flashmask_use_varlen, (
+                "flashmask_use_varlen does not support context parallel now."
+            )
+            attn_mask_startend_row_indices = (
+                self.expand_attn_mask_startend_row_indices_for_cp(
+                    attn_mask_startend_row_indices, key
+                )
             )
             assert (
-                (query.dtype == paddle.bfloat16 or query.dtype == paddle.float16)
+                (
+                    query.dtype == paddle.bfloat16
+                    or query.dtype == paddle.float16
+                )
                 and attn_mask_startend_row_indices is not None
                 and not use_eager
             )
         elif self.config.gpt_model_use_experimental_version:
             # EC-compatible flash attention path for alignment mode, only support non-cp
-            return self._ec_compatible_flash_attention(query, key, value, attn_mask_startend_row_indices)
+            return self._ec_compatible_flash_attention(
+                query, key, value, attn_mask_startend_row_indices
+            )
 
         bsz, q_len, num_heads, q_head_dim = query.shape
         v_head_dim = value.shape[-1]
@@ -331,20 +386,30 @@ class DotProductAttention(FleetLayer):
                 indices_per_segment = paddle.stack(
                     [
                         cu_seqlens[1:],  # col 0: lower_start = end_i
-                        paddle.full_like(cu_seqlens[1:], seq_length),  # col 1: lower_end   = total_seq
-                        paddle.zeros_like(cu_seqlens[:-1]),  # col 2: upper_start = 0
+                        paddle.full_like(
+                            cu_seqlens[1:], seq_length
+                        ),  # col 1: lower_end   = total_seq
+                        paddle.zeros_like(
+                            cu_seqlens[:-1]
+                        ),  # col 2: upper_start = 0
                         cu_seqlens[:-1],  # col 3: upper_end   = start_i
                     ],
                     axis=1,
                 )  # [num_segments, 4]
                 attn_mask_startend_row_indices = (
-                    paddle.repeat_interleave(indices_per_segment, lengths, axis=0).unsqueeze(0).unsqueeze(0)
+                    paddle.repeat_interleave(
+                        indices_per_segment, lengths, axis=0
+                    )
+                    .unsqueeze(0)
+                    .unsqueeze(0)
                 )  # [1, 1, seq_len, 4]
 
             if use_rr_flash_attention:
                 flashmask_attention_func = self.rr_flashmask_attention_func
             elif self.config.flashmask_use_varlen:
-                flashmask_attention_func = partial(flashmask_attention, use_varlen=True)
+                flashmask_attention_func = partial(
+                    flashmask_attention, use_varlen=True
+                )
             else:
                 flashmask_attention_func = flashmask_attention
 
@@ -363,7 +428,9 @@ class DotProductAttention(FleetLayer):
             and attn_mask_startend_row_indices is None
             and not use_eager
         ):
-            assert self.is_swa is False, "SWA doesn't support scaled_dot_product_attention"
+            assert self.is_swa is False, (
+                "SWA doesn't support scaled_dot_product_attention"
+            )
             # KV cache support for inference
             if use_cache and past_key_values is not None:
                 key, value = past_key_values.update(key, value, layer_idx)
@@ -406,14 +473,20 @@ class DotProductAttention(FleetLayer):
             is_causal = attn_mask_type == AttnMaskType.causal
             if self.context_parallel_size > 1:
                 flashmask_attention_func = (
-                    self.rr_flashmask_attention_cp_func if use_rr_flash_attention else flashmask_attention_cp
+                    self.rr_flashmask_attention_cp_func
+                    if use_rr_flash_attention
+                    else flashmask_attention_cp
                 )
-                is_causal = False  # only support non-causal for flashmask_attention_cp
+                is_causal = (
+                    False  # only support non-causal for flashmask_attention_cp
+                )
                 assert attn_mask_startend_row_indices.shape[-1] == 2
             elif use_rr_flash_attention:
                 flashmask_attention_func = self.rr_flashmask_attention_func
             elif self.config.flashmask_use_varlen:
-                flashmask_attention_func = partial(flashmask_attention, use_varlen=True)
+                flashmask_attention_func = partial(
+                    flashmask_attention, use_varlen=True
+                )
             else:
                 flashmask_attention_func = flashmask_attention
 
@@ -422,7 +495,9 @@ class DotProductAttention(FleetLayer):
             # but it does not wrap the padding for rr now.
             # Handle MLA case where query/key head_dim != value head_dim
             # flashmask_attention requires head_dim_q == head_dim_v for backward pass
-            need_value_padding = use_rr_flash_attention and q_head_dim != v_head_dim
+            need_value_padding = (
+                use_rr_flash_attention and q_head_dim != v_head_dim
+            )
 
             if need_value_padding:
                 # Pad value to match query head_dim
@@ -437,11 +512,13 @@ class DotProductAttention(FleetLayer):
                 value_padded = value
 
             if self.sliding_window is not None:
-                attn_mask_startend_row_indices = startend_row_indices_add_sliding_window(
-                    attn_mask_startend_row_indices,
-                    self.sliding_window,
-                    self.head_wise_swa_ratio,
-                    value.shape[2],
+                attn_mask_startend_row_indices = (
+                    startend_row_indices_add_sliding_window(
+                        attn_mask_startend_row_indices,
+                        self.sliding_window,
+                        self.head_wise_swa_ratio,
+                        value.shape[2],
+                    )
                 )
 
             attn_output = flashmask_attention_func(
@@ -462,7 +539,9 @@ class DotProductAttention(FleetLayer):
 
             return attn_output
 
-        assert self.is_swa is False, "SWA doesn't support scaled_dot_product_attention"
+        assert self.is_swa is False, (
+            "SWA doesn't support scaled_dot_product_attention"
+        )
         # ===================================
         # Raw attention scores. [b, n/p, s, s]
         # ===================================
@@ -475,14 +554,18 @@ class DotProductAttention(FleetLayer):
         # attn_mask_type is not used.
         if (
             query.shape[2] != key.shape[2]
-            and self.num_attention_heads_per_partition // self.num_query_groups_per_partition > 1
+            and self.num_attention_heads_per_partition
+            // self.num_query_groups_per_partition
+            > 1
         ):
             key = key.repeat_interleave(
-                self.num_attention_heads_per_partition // self.num_query_groups_per_partition,
+                self.num_attention_heads_per_partition
+                // self.num_query_groups_per_partition,
                 dim=2,
             )
             value = value.repeat_interleave(
-                self.num_attention_heads_per_partition // self.num_query_groups_per_partition,
+                self.num_attention_heads_per_partition
+                // self.num_query_groups_per_partition,
                 dim=2,
             )
 
@@ -498,9 +581,13 @@ class DotProductAttention(FleetLayer):
         # This will be a simple view when doing normal attention, but in group query attention
         # the key and value tensors are repeated to match the queries so you can't use
         # simple strides to extract the queries.
-        query = query.transpose([0, 2, 1, 3]).reshape(output_size[0] * output_size[1], output_size[2], -1)
+        query = query.transpose([0, 2, 1, 3]).reshape(
+            output_size[0] * output_size[1], output_size[2], -1
+        )
         # [b, sk, np, hn] -> [b * np, hn, sk]
-        key = key.transpose([0, 2, 3, 1]).reshape(output_size[0] * output_size[1], -1, output_size[3])
+        key = key.transpose([0, 2, 3, 1]).reshape(
+            output_size[0] * output_size[1], -1, output_size[3]
+        )
 
         # preallocting input tensor: [b * np, sq, sk]
         matmul_input_buffer = paddle.empty(
@@ -525,7 +612,9 @@ class DotProductAttention(FleetLayer):
         # ===========================
 
         # attention scores and attention mask [b, np, sq, sk]
-        attention_probs: Tensor = self.scale_mask_softmax(attention_scores, attention_mask, self.softmax_offset)
+        attention_probs: Tensor = self.scale_mask_softmax(
+            attention_scores, attention_mask, self.softmax_offset
+        )
 
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
@@ -548,10 +637,14 @@ class DotProductAttention(FleetLayer):
         )
 
         # change view [b * np, sk, hn]
-        value = value.transpose([0, 2, 1, 3]).reshape(output_size[0] * output_size[1], value.shape[1], -1)
+        value = value.transpose([0, 2, 1, 3]).reshape(
+            output_size[0] * output_size[1], value.shape[1], -1
+        )
 
         # change view [b * np, sq, sk]
-        attention_probs = attention_probs.reshape(output_size[0] * output_size[1], output_size[2], -1)
+        attention_probs = attention_probs.reshape(
+            output_size[0] * output_size[1], output_size[2], -1
+        )
 
         # matmul: [b * np, sq, hn]
         context = paddle.bmm(attention_probs, value)

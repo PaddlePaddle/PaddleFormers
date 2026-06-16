@@ -26,6 +26,7 @@ Returns d_index_q / d_weights / d_index_k_comp matching input dtypes/shapes.
 from __future__ import annotations
 
 import paddle
+
 from paddlefleet_ops.cudnn.deepseek_sparse_attention.indexer_backward.api import (
     indexer_backward_wrapper,
 )
@@ -81,8 +82,16 @@ def csa_indexer_bwd(
     # cuDNN overwrites attn_score (target) and index_score (topk_probs)
     # in-place during the score-grad precompute. Clone so the saved
     # forward tensors are untouched, casting to fp32 in one step.
-    target_buf = target.cast(paddle.float32) if target.dtype != paddle.float32 else target.clone()
-    predict_buf = topk_probs.cast(paddle.float32) if topk_probs.dtype != paddle.float32 else topk_probs.clone()
+    target_buf = (
+        target.cast(paddle.float32)
+        if target.dtype != paddle.float32
+        else target.clone()
+    )
+    predict_buf = (
+        topk_probs.cast(paddle.float32)
+        if topk_probs.dtype != paddle.float32
+        else topk_probs.clone()
+    )
     if topk_indices.dtype != paddle.int32:
         topk_indices = topk_indices.cast(paddle.int32)
 

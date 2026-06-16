@@ -134,7 +134,9 @@ class TestFusedSwigluScaleCPUFallback(unittest.TestCase):
         )
 
         with _no_cuda():
-            result = fused_swiglu_scale_forward(paddle.randn([4, 16]), paddle.ones([4]))
+            result = fused_swiglu_scale_forward(
+                paddle.randn([4, 16]), paddle.ones([4])
+            )
             self.assertEqual(result.shape, [4, 8])
 
     def test_backward_no_clamp(self):
@@ -168,7 +170,9 @@ class TestFusedSwigluScaleGPUDispatch(unittest.TestCase):
                 {"paddlefleet_ops": MagicMock(fused_swiglu_scale=mock_op)},
             ),
         ):
-            fused_swiglu_scale_forward(paddle.randn([2, 16]), paddle.ones([2, 1]))
+            fused_swiglu_scale_forward(
+                paddle.randn([2, 16]), paddle.ones([2, 1])
+            )
             mock_op.assert_called_once()
 
     def test_forward_clamp_dispatch(self):
@@ -182,7 +186,11 @@ class TestFusedSwigluScaleGPUDispatch(unittest.TestCase):
             patch.object(paddle, "is_compiled_with_cuda", return_value=True),
             patch.dict(
                 "sys.modules",
-                {"paddlefleet_ops": MagicMock(fused_swiglu_scale_clamp=mock_op)},
+                {
+                    "paddlefleet_ops": MagicMock(
+                        fused_swiglu_scale_clamp=mock_op
+                    )
+                },
             ),
         ):
             fused_swiglu_scale_forward(
@@ -197,7 +205,9 @@ class TestFusedSwigluScaleGPUDispatch(unittest.TestCase):
             fused_swiglu_scale_backward,
         )
 
-        mock_op = MagicMock(return_value=(paddle.randn([2, 16]), paddle.randn([2])))
+        mock_op = MagicMock(
+            return_value=(paddle.randn([2, 16]), paddle.randn([2]))
+        )
         with (
             patch.object(paddle, "is_compiled_with_cuda", return_value=True),
             patch.dict(
@@ -218,12 +228,18 @@ class TestFusedSwigluScaleGPUDispatch(unittest.TestCase):
             fused_swiglu_scale_backward,
         )
 
-        mock_op = MagicMock(return_value=(paddle.randn([2, 16]), paddle.randn([2])))
+        mock_op = MagicMock(
+            return_value=(paddle.randn([2, 16]), paddle.randn([2]))
+        )
         with (
             patch.object(paddle, "is_compiled_with_cuda", return_value=True),
             patch.dict(
                 "sys.modules",
-                {"paddlefleet_ops": MagicMock(fused_swiglu_scale_clamp_bwd=mock_op)},
+                {
+                    "paddlefleet_ops": MagicMock(
+                        fused_swiglu_scale_clamp_bwd=mock_op
+                    )
+                },
             ),
         ):
             fused_swiglu_scale_backward(
@@ -294,7 +310,9 @@ class TestFusedSwigluScaleClampInferShape(unittest.TestCase):
     """Static-graph InferShape regression for the clamp forward op."""
 
     def test_clamp_forward_infer_shape_halves_hidden(self):
-        rc, stdout, stderr = _run_static_infer_shape("fused_swiglu_scale_clamp", hidden2=32, has_clamp=True)
+        rc, stdout, stderr = _run_static_infer_shape(
+            "fused_swiglu_scale_clamp", hidden2=32, has_clamp=True
+        )
         self.assertEqual(
             rc,
             0,

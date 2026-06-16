@@ -17,7 +17,11 @@ import unittest
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import paddle
@@ -63,7 +67,9 @@ class Combiner:
         async_finish=False,
         use_rr_deepep_combine=False,
     ):
-        self.calls.append((hidden_states, handle, async_finish, use_rr_deepep_combine))
+        self.calls.append(
+            (hidden_states, handle, async_finish, use_rr_deepep_combine)
+        )
         return hidden_states + 3
 
 
@@ -85,7 +91,9 @@ class TestMoELayerLightweightMethods(unittest.TestCase):
         model.experts = [Expert(1), Expert(10), Expert(100)]
         dispatched_input = paddle.arange(8, dtype="float32").reshape([4, 2])
 
-        output = MoELayer.expert_forward(model, dispatched_input, paddle.to_tensor([1, 0, 3], dtype="int64"))
+        output = MoELayer.expert_forward(
+            model, dispatched_input, paddle.to_tensor([1, 0, 3], dtype="int64")
+        )
 
         self.assertEqual(
             output.numpy().tolist(),
@@ -134,7 +142,9 @@ class TestMoELayerLightweightMethods(unittest.TestCase):
         model.moe_use_fusion_node = True
         model.token_dispatcher = Dispatcher()
 
-        output = MoELayer.compute_combine(model, hidden_states, async_finish=True)
+        output = MoELayer.compute_combine(
+            model, hidden_states, async_finish=True
+        )
 
         self.assertEqual(output.numpy().tolist(), [4.0, 4.0])
         self.assertEqual(model.token_dispatcher._comm_manager.calls[0][2], True)
@@ -155,7 +165,9 @@ class TestMoELayerLightweightMethods(unittest.TestCase):
         hidden_states = paddle.ones([4, 2], dtype="float32")
         residuals = paddle.zeros([2, 2, 2], dtype="float32")
 
-        output = MoELayer.aux_loss_compute(model, (hidden_states, paddle.to_tensor([1.0]), None, residuals))
+        output = MoELayer.aux_loss_compute(
+            model, (hidden_states, paddle.to_tensor([1.0]), None, residuals)
+        )
 
         self.assertEqual(output.shape, [2, 2, 2])
         self.assertEqual(output.numpy().tolist()[0][0], [6.0, 6.0])

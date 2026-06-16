@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -115,7 +119,9 @@ class TestZipNode(unittest.TestCase):
 class TestMlpNodeConstruction(unittest.TestCase):
     """Test MlpNode construction."""
 
-    @patch("paddleformers.fleet.transformer.moe.fusion_layer_utils.ExpertsGroupGemmContiguousNode")
+    @patch(
+        "paddleformers.fleet.transformer.moe.fusion_layer_utils.ExpertsGroupGemmContiguousNode"
+    )
     def test_basic_construction(self, mock_gemm_node):
         mock_gemm_node.return_value = MagicMock()
         custom_map = MagicMock()
@@ -138,7 +144,9 @@ class TestMlpNodeConstruction(unittest.TestCase):
         self.assertIsNotNone(node.unzip_node)
         self.assertIsNotNone(node.zip_node)
 
-    @patch("paddleformers.fleet.transformer.moe.fusion_layer_utils.ExpertsGroupGemmContiguousNode")
+    @patch(
+        "paddleformers.fleet.transformer.moe.fusion_layer_utils.ExpertsGroupGemmContiguousNode"
+    )
     def test_moe_subbatch_assertion(self, mock_gemm_node):
         mock_gemm_node.return_value = MagicMock()
         custom_map = MagicMock()
@@ -153,7 +161,9 @@ class TestMlpNodeConstruction(unittest.TestCase):
                 moe_subbatch_token_num_after_dispatch=100,
             )
 
-    @patch("paddleformers.fleet.transformer.moe.fusion_layer_utils.ExpertsGroupGemmContiguousNode")
+    @patch(
+        "paddleformers.fleet.transformer.moe.fusion_layer_utils.ExpertsGroupGemmContiguousNode"
+    )
     def test_moe_expert_fusion_false_init(self, mock_gemm_node):
         mock_gemm_node.return_value = MagicMock()
         custom_map = MagicMock()
@@ -161,7 +171,9 @@ class TestMlpNodeConstruction(unittest.TestCase):
         custom_map.token_dispatcher._comm_manager = MagicMock()
         custom_map.token_dispatcher._comm_manager.tokens_per_expert = [2, 2]
 
-        node = MlpNode(custom_map, num_experts_per_tok=2, moe_expert_fusion=False)
+        node = MlpNode(
+            custom_map, num_experts_per_tok=2, moe_expert_fusion=False
+        )
         self.assertIsNotNone(node)
         self.assertFalse(node.moe_expert_fusion)
 
@@ -169,7 +181,9 @@ class TestMlpNodeConstruction(unittest.TestCase):
 class TestMlpNodeCachedTensors(unittest.TestCase):
     """Test MlpNode cached tensors management."""
 
-    @patch("paddleformers.fleet.transformer.moe.fusion_layer_utils.ExpertsGroupGemmContiguousNode")
+    @patch(
+        "paddleformers.fleet.transformer.moe.fusion_layer_utils.ExpertsGroupGemmContiguousNode"
+    )
     def test_cached_tensors_not_empty(self, mock_gemm_node):
         mock_gem = MagicMock()
         mock_gem.cached_tensors.return_value = [None] * 6
@@ -183,7 +197,9 @@ class TestMlpNodeCachedTensors(unittest.TestCase):
         tensors = node.cached_tensors()
         self.assertGreater(len(tensors), 0)
 
-    @patch("paddleformers.fleet.transformer.moe.fusion_layer_utils.ExpertsGroupGemmContiguousNode")
+    @patch(
+        "paddleformers.fleet.transformer.moe.fusion_layer_utils.ExpertsGroupGemmContiguousNode"
+    )
     def test_clear_cached_tensors(self, mock_gemm_node):
         mock_gem = MagicMock()
         mock_gem.cached_tensors.return_value = [None] * 6
@@ -197,7 +213,9 @@ class TestMlpNodeCachedTensors(unittest.TestCase):
         node.clear_cached_tensors()
         self.assertIsNone(node.hs_2d_dispatched_fp8)
 
-    @patch("paddleformers.fleet.transformer.moe.fusion_layer_utils.ExpertsGroupGemmContiguousNode")
+    @patch(
+        "paddleformers.fleet.transformer.moe.fusion_layer_utils.ExpertsGroupGemmContiguousNode"
+    )
     def test_reset_state(self, mock_gemm_node):
         mock_gem = MagicMock()
         mock_gem.cached_tensors.return_value = [None] * 6
@@ -217,7 +235,9 @@ class TestMlpNodeCachedTensors(unittest.TestCase):
 class TestMlpNodeTokenOffsets(unittest.TestCase):
     """Test MlpNode token offset computation."""
 
-    @patch("paddleformers.fleet.transformer.moe.fusion_layer_utils.ExpertsGroupGemmContiguousNode")
+    @patch(
+        "paddleformers.fleet.transformer.moe.fusion_layer_utils.ExpertsGroupGemmContiguousNode"
+    )
     def test_token_offsets_computed(self, mock_gemm_node):
         mock_gem = MagicMock()
         mock_gem.cached_tensors.return_value = [None] * 6

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -66,7 +70,9 @@ class TestGetQuantFunc(unittest.TestCase):
             create=True,
         ):
             try:
-                inp_func, weight_func = get_quant_func("blockwise", input_trans=True)
+                inp_func, weight_func = get_quant_func(
+                    "blockwise", input_trans=True
+                )
                 self.assertTrue(callable(inp_func))
             except (AttributeError, ImportError):
                 pass
@@ -80,7 +86,9 @@ class TestGetQuantFunc(unittest.TestCase):
             create=True,
         ):
             try:
-                inp_func, weight_func = get_quant_func("blockwise", out_scale_trans=True)
+                inp_func, weight_func = get_quant_func(
+                    "blockwise", out_scale_trans=True
+                )
                 self.assertTrue(callable(inp_func))
             except (AttributeError, ImportError):
                 pass
@@ -94,7 +102,9 @@ class TestGetQuantFunc(unittest.TestCase):
             create=True,
         ):
             try:
-                inp_func, weight_func = get_quant_func("blockwise", pow2_scale=True)
+                inp_func, weight_func = get_quant_func(
+                    "blockwise", pow2_scale=True
+                )
                 self.assertTrue(callable(inp_func))
             except (AttributeError, ImportError):
                 pass

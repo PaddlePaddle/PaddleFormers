@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -153,7 +157,9 @@ class TestContextParallelUtils(unittest.TestCase):
         """Test all_gather_balance with single rank."""
         import paddle
 
-        from paddleformers.fleet.context_parallel_utils import all_gather_balance
+        from paddleformers.fleet.context_parallel_utils import (
+            all_gather_balance,
+        )
 
         group = mock.MagicMock()
         group.nranks = 1
@@ -165,7 +171,9 @@ class TestContextParallelUtils(unittest.TestCase):
         """Test all_gather_balance axis=0 path."""
         import paddle
 
-        from paddleformers.fleet.context_parallel_utils import all_gather_balance
+        from paddleformers.fleet.context_parallel_utils import (
+            all_gather_balance,
+        )
 
         group = mock.MagicMock()
         group.nranks = 2
@@ -180,7 +188,9 @@ class TestContextParallelUtils(unittest.TestCase):
         """Test all_gather_balance axis=1 path."""
         import paddle
 
-        from paddleformers.fleet.context_parallel_utils import all_gather_balance
+        from paddleformers.fleet.context_parallel_utils import (
+            all_gather_balance,
+        )
 
         group = mock.MagicMock()
         group.nranks = 2
@@ -194,7 +204,9 @@ class TestContextParallelUtils(unittest.TestCase):
         """Test reduce_scatter_any_axis with single rank."""
         import paddle
 
-        from paddleformers.fleet.context_parallel_utils import reduce_scatter_any_axis
+        from paddleformers.fleet.context_parallel_utils import (
+            reduce_scatter_any_axis,
+        )
 
         group = mock.MagicMock()
         group.nranks = 1
@@ -206,7 +218,9 @@ class TestContextParallelUtils(unittest.TestCase):
         """Test reduce_scatter_any_axis axis=0 path."""
         import paddle
 
-        from paddleformers.fleet.context_parallel_utils import reduce_scatter_any_axis
+        from paddleformers.fleet.context_parallel_utils import (
+            reduce_scatter_any_axis,
+        )
 
         group = mock.MagicMock()
         group.nranks = 2
@@ -223,7 +237,9 @@ class TestContextParallelUtils(unittest.TestCase):
         """Test reduce_scatter_any_axis with invalid size raises."""
         import paddle
 
-        from paddleformers.fleet.context_parallel_utils import reduce_scatter_any_axis
+        from paddleformers.fleet.context_parallel_utils import (
+            reduce_scatter_any_axis,
+        )
 
         group = mock.MagicMock()
         group.nranks = 2
@@ -281,7 +297,9 @@ class TestContextParallelUtils(unittest.TestCase):
         from paddleformers.fleet.context_parallel_utils import preprocess_index
 
         indices = paddle.to_tensor([[0, 10], [5, 15]], dtype="int64")
-        result = preprocess_index(indices, chunk_id=1, seq_blocksize=16, max_seqlen_q=8)
+        result = preprocess_index(
+            indices, chunk_id=1, seq_blocksize=16, max_seqlen_q=8
+        )
         self.assertEqual(result.shape, [2, 2])
 
     def test_preprocess_index_dual_chunks(self):
@@ -306,7 +324,9 @@ class TestContextParallelUtils(unittest.TestCase):
         """Test scatter_with_padding for normal rank."""
         import paddle
 
-        from paddleformers.fleet.context_parallel_utils import scatter_with_padding
+        from paddleformers.fleet.context_parallel_utils import (
+            scatter_with_padding,
+        )
 
         group = mock.MagicMock()
         group.nranks = 2
@@ -319,7 +339,9 @@ class TestContextParallelUtils(unittest.TestCase):
         """Test scatter_with_padding for rank beyond split."""
         import paddle
 
-        from paddleformers.fleet.context_parallel_utils import scatter_with_padding
+        from paddleformers.fleet.context_parallel_utils import (
+            scatter_with_padding,
+        )
 
         group = mock.MagicMock()
         group.nranks = 2
@@ -340,7 +362,9 @@ class TestContextParallelUtils(unittest.TestCase):
         group.nranks = 2
         x = paddle.randn([4, 4], dtype="float32")
         with mock.patch("paddle.distributed.stream.all_gather"):
-            result = all_gather_without_padding(x, num_pad=0, axis=0, group=group)
+            result = all_gather_without_padding(
+                x, num_pad=0, axis=0, group=group
+            )
 
     def test_all_gather_without_padding_with_pad(self):
         """Test all_gather_without_padding with padding."""
@@ -354,11 +378,15 @@ class TestContextParallelUtils(unittest.TestCase):
         group.nranks = 2
         x = paddle.randn([4, 4], dtype="float32")
         with mock.patch("paddle.distributed.stream.all_gather"):
-            result = all_gather_without_padding(x, num_pad=2, axis=0, group=group)
+            result = all_gather_without_padding(
+                x, num_pad=2, axis=0, group=group
+            )
 
     def test_FlashMaskContextParallel_dropout_raises(self):
         """Test FlashMaskContextParallel raises on dropout."""
-        from paddleformers.fleet.context_parallel_utils import FlashMaskContextParallel
+        from paddleformers.fleet.context_parallel_utils import (
+            FlashMaskContextParallel,
+        )
 
         mock_ctx = mock.MagicMock()
         mock_config = mock.MagicMock()
@@ -376,7 +404,9 @@ class TestContextParallelUtils(unittest.TestCase):
 
     def test_FlashMaskContextParallel_causal_raises(self):
         """Test FlashMaskContextParallel raises on causal."""
-        from paddleformers.fleet.context_parallel_utils import FlashMaskContextParallel
+        from paddleformers.fleet.context_parallel_utils import (
+            FlashMaskContextParallel,
+        )
 
         mock_ctx = mock.MagicMock()
         mock_config = mock.MagicMock()
@@ -394,7 +424,9 @@ class TestContextParallelUtils(unittest.TestCase):
 
     def test_FlashMaskContextParallel_fixed_seed_raises(self):
         """Test FlashMaskContextParallel raises on fixed seed offset."""
-        from paddleformers.fleet.context_parallel_utils import FlashMaskContextParallel
+        from paddleformers.fleet.context_parallel_utils import (
+            FlashMaskContextParallel,
+        )
 
         mock_ctx = mock.MagicMock()
         mock_config = mock.MagicMock()
@@ -412,7 +444,9 @@ class TestContextParallelUtils(unittest.TestCase):
 
     def test_FlashMaskContextParallel_odd_seq_len_raises(self):
         """Test FlashMaskContextParallel raises on odd sequence length."""
-        from paddleformers.fleet.context_parallel_utils import FlashMaskContextParallel
+        from paddleformers.fleet.context_parallel_utils import (
+            FlashMaskContextParallel,
+        )
 
         mock_ctx = mock.MagicMock()
         mock_config = mock.MagicMock()

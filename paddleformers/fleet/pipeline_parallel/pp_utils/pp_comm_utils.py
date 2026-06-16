@@ -106,7 +106,9 @@ def broadcast_data_obj(data, src_rank, group):
 
     # 3. Group by dtype and broadcast
     ret_flat = [_UNFILLED for _ in range(len(temp_flat))]
-    for dtype, grouped in groupby(sorted(enumerate(temp_flat), key=keyfn), keyfn):
+    for dtype, grouped in groupby(
+        sorted(enumerate(temp_flat), key=keyfn), keyfn
+    ):
         grouped = list(grouped)
         for grouped_chunk in split_group(grouped, 2**18):
             idxs = [g[0] for g in grouped_chunk]
@@ -116,11 +118,17 @@ def broadcast_data_obj(data, src_rank, group):
                     ret_flat[id] = None
                 continue
 
-            data_buf_shapes = [reduce(lambda x, y: x * y, g[1].shape) for g in grouped_chunk]
+            data_buf_shapes = [
+                reduce(lambda x, y: x * y, g[1].shape) for g in grouped_chunk
+            ]
             if this_rank == src_rank:
-                data_buf = paddle.concat([data_flat[i].reshape([-1]) for i in idxs], 0)
+                data_buf = paddle.concat(
+                    [data_flat[i].reshape([-1]) for i in idxs], 0
+                )
             else:
-                data_buf = paddle.empty([sum(data_buf_shapes)], dtype=grouped_chunk[0][1].dtype)
+                data_buf = paddle.empty(
+                    [sum(data_buf_shapes)], dtype=grouped_chunk[0][1].dtype
+                )
             dist.broadcast(data_buf, src_rank, group)
 
             # 4. Receiver reconstructs tensors
@@ -135,7 +143,9 @@ def broadcast_data_obj(data, src_rank, group):
     if this_rank != src_rank:
         unfilled = [i for i, r in enumerate(ret_flat) if r is _UNFILLED]
         if unfilled:
-            raise RuntimeError(f"broadcast_data_obj: tensor(s) at index {unfilled} were not filled after broadcast.")
+            raise RuntimeError(
+                f"broadcast_data_obj: tensor(s) at index {unfilled} were not filled after broadcast."
+            )
         data = pack_sequence_as(template, ret_flat)
     return data
 

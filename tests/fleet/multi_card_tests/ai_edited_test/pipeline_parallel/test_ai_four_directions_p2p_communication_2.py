@@ -17,7 +17,11 @@ import unittest
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import paddle
@@ -57,8 +61,12 @@ class RecordingProcessGroup:
         self.calls.append(("recv_partial", tensor, rank, nranks, rank_id))
         return "recv-task"
 
-    def all_gather_partial_on_calc_stream(self, out_tensor, in_tensor, nranks, rank_id):
-        self.calls.append(("allgather_calc", out_tensor, in_tensor, nranks, rank_id))
+    def all_gather_partial_on_calc_stream(
+        self, out_tensor, in_tensor, nranks, rank_id
+    ):
+        self.calls.append(
+            ("allgather_calc", out_tensor, in_tensor, nranks, rank_id)
+        )
         return "allgather-calc-task"
 
     def all_gather_partial(self, out_tensor, in_tensor, nranks, rank_id):
@@ -125,7 +133,9 @@ class TestFourDirectionMetaExtra(unittest.TestCase):
         meta.set_send_message([paddle.ones([2], dtype="float32")])
 
         self.assertEqual(meta.send_shape_message, [1])
-        self.assertEqual(meta.send_dtype_message, paddle_2_number(paddle.float32))
+        self.assertEqual(
+            meta.send_dtype_message, paddle_2_number(paddle.float32)
+        )
 
 
 class TestFourDirectionPartialExtra(unittest.TestCase):
@@ -134,10 +144,16 @@ class TestFourDirectionPartialExtra(unittest.TestCase):
         four_directions_p2p_communication._enable_partial_send_recv = False
         try:
             tensor = paddle.empty([0], dtype="float32")
-            self.assertFalse(four_directions_p2p_communication._is_valid_send_recv_partial(tensor, 2))
+            self.assertFalse(
+                four_directions_p2p_communication._is_valid_send_recv_partial(
+                    tensor, 2
+                )
+            )
             self.assertIs(allgather_partial(tensor, nranks=2), tensor)
         finally:
-            four_directions_p2p_communication._enable_partial_send_recv = old_value
+            four_directions_p2p_communication._enable_partial_send_recv = (
+                old_value
+            )
 
     def test_non_member_partial_send_recv_and_allgather_return_none(self):
         group = RecordingGroup(is_member=False)
@@ -145,8 +161,12 @@ class TestFourDirectionPartialExtra(unittest.TestCase):
         old_hcg = four_directions_p2p_communication._hcg
         four_directions_p2p_communication._hcg = DummyHCG()
         try:
-            self.assertIsNone(send_partial(tensor, dst=1, nranks=2, group=group))
-            self.assertIsNone(recv_partial(tensor, src=0, nranks=2, group=group))
+            self.assertIsNone(
+                send_partial(tensor, dst=1, nranks=2, group=group)
+            )
+            self.assertIsNone(
+                recv_partial(tensor, src=0, nranks=2, group=group)
+            )
             self.assertIsNone(allgather_partial(tensor, nranks=2, group=group))
         finally:
             four_directions_p2p_communication._hcg = old_hcg
@@ -187,7 +207,9 @@ class TestFourDirectionPartialExtra(unittest.TestCase):
         four_directions_p2p_communication._xpu_comm_group_started = False
         four_directions_p2p_communication._xpu_comm_group_start()
         four_directions_p2p_communication._xpu_comm_group_end()
-        self.assertFalse(four_directions_p2p_communication._xpu_comm_group_started)
+        self.assertFalse(
+            four_directions_p2p_communication._xpu_comm_group_started
+        )
 
 
 class TestFourDirectionP2pHelperExtra(unittest.TestCase):
@@ -196,7 +218,9 @@ class TestFourDirectionP2pHelperExtra(unittest.TestCase):
         four_directions_p2p_communication._hcg = DummyHCG()
         try:
             with self.assertRaises(AssertionError):
-                four_directions_p2p_communication._p2p_helper(None, None, False, False, send_recv_meta=None)
+                four_directions_p2p_communication._p2p_helper(
+                    None, None, False, False, send_recv_meta=None
+                )
 
             self.assertEqual(
                 four_directions_p2p_communication._p2p_helper(
@@ -216,8 +240,16 @@ class TestFourDirectionP2pHelperExtra(unittest.TestCase):
         self.assertFalse(helper._use_cache)
         self.assertIsNone(helper.recv_forward(pp_first_stage=True))
         self.assertIsNone(helper.recv_backward(pp_last_stage=True))
-        self.assertIsNone(helper.send_forward_recv_backward(paddle.ones([1], dtype="float32"), pp_last_stage=True))
-        self.assertIsNone(helper.send_backward_recv_forward(paddle.ones([1], dtype="float32"), pp_first_stage=True))
+        self.assertIsNone(
+            helper.send_forward_recv_backward(
+                paddle.ones([1], dtype="float32"), pp_last_stage=True
+            )
+        )
+        self.assertIsNone(
+            helper.send_backward_recv_forward(
+                paddle.ones([1], dtype="float32"), pp_first_stage=True
+            )
+        )
 
 
 if __name__ == "__main__":

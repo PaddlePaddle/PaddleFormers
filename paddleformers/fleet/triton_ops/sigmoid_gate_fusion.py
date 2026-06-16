@@ -105,12 +105,12 @@ class SigmoidGateFusionTriton(paddle.autograd.PyLayer):
     @staticmethod
     def forward(ctx, attn_out, gate):
         """forward"""
-        assert (
-            attn_out.shape == gate.shape
-        ), f"attn_out and gate must have the same shape, but got {attn_out.shape} and {gate.shape}"
-        assert (
-            attn_out.dtype == gate.dtype
-        ), f"attn_out and gate must have the same dtype, but got {attn_out.dtype} and {gate.dtype}"
+        assert attn_out.shape == gate.shape, (
+            f"attn_out and gate must have the same shape, but got {attn_out.shape} and {gate.shape}"
+        )
+        assert attn_out.dtype == gate.dtype, (
+            f"attn_out and gate must have the same dtype, but got {attn_out.dtype} and {gate.dtype}"
+        )
         assert attn_out.dtype in (
             paddle.float16,
             paddle.bfloat16,

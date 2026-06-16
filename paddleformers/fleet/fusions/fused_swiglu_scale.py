@@ -41,7 +41,9 @@ def fused_swiglu_scale_forward(x, scale, clamp_value=None):
             hidden = x.shape[-1] // 2
             x_fp32 = x.cast(paddle.float32)
             gate = paddle.clip(x_fp32[..., :hidden], max=clamp_value)
-            val = paddle.clip(x_fp32[..., hidden:], min=-clamp_value, max=clamp_value)
+            val = paddle.clip(
+                x_fp32[..., hidden:], min=-clamp_value, max=clamp_value
+            )
             out = (F.silu(gate) * val).cast(x.dtype)
         else:
             out = swiglu(x)
@@ -61,7 +63,9 @@ def fused_swiglu_scale_backward(x, scale, out_grad, clamp_value=None):
         if clamp_value is not None and clamp_value > 0:
             from paddlefleet_ops import fused_swiglu_scale_clamp_bwd
 
-            return fused_swiglu_scale_clamp_bwd(x, scale, out_grad, float(clamp_value))
+            return fused_swiglu_scale_clamp_bwd(
+                x, scale, out_grad, float(clamp_value)
+            )
         from paddlefleet_ops import fused_swiglu_scale_bwd
 
         return fused_swiglu_scale_bwd(x, scale, out_grad)
@@ -83,21 +87,27 @@ def fused_swiglu_scale_backward(x, scale, out_grad, clamp_value=None):
             gate_fp32 = paddle.clip(gate_raw, max=clamp_value)
             val_fp32 = paddle.clip(val_raw, min=-clamp_value, max=clamp_value)
             g_mask = (gate_raw <= clamp_value).cast(out_grad.dtype)
-            v_mask = ((val_raw <= clamp_value) & (val_raw >= -clamp_value)).cast(out_grad.dtype)
+            v_mask = (
+                (val_raw <= clamp_value) & (val_raw >= -clamp_value)
+            ).cast(out_grad.dtype)
 
             sig = F.sigmoid(gate_fp32)  # float32
             silu = gate_fp32 * sig  # float32
             swiglu_val = silu * val_fp32  # float32
 
             scale_fp32 = scale.cast(paddle.float32)
-            scale_exp = _broadcast_scale(scale_fp32, paddle.float32, out_grad.ndim)
+            scale_exp = _broadcast_scale(
+                scale_fp32, paddle.float32, out_grad.ndim
+            )
             d_u = out_grad * scale_exp
 
             # d_val (gradient w.r.t. value / second half)
             d_val = d_u * silu * v_mask
 
             # d_gate (gradient w.r.t. gate / first half)
-            d_gate = d_u * sig * (1.0 + gate_fp32 * (1.0 - sig)) * val_fp32 * g_mask
+            d_gate = (
+                d_u * sig * (1.0 + gate_fp32 * (1.0 - sig)) * val_fp32 * g_mask
+            )
 
             # Output order must be [d_gate, d_val] matching
             # chunk(x,2)=[gate,value]

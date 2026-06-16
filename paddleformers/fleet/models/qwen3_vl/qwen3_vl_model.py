@@ -59,10 +59,14 @@ class Qwen3VLVisionModel(TransformerEncoder):
         else:
             name_prefix = "model"
 
-        self.add_sequential_layer(layers, LayerDesc(spec.embedding), name_prefix)
+        self.add_sequential_layer(
+            layers, LayerDesc(spec.embedding), name_prefix
+        )
         self.get_encoder_layer_desc_list(layers, spec, name_prefix)
 
-        self.add_sequential_layer(layers, LayerDesc(spec.merger), f"{name_prefix}.merger")
+        self.add_sequential_layer(
+            layers, LayerDesc(spec.merger), f"{name_prefix}.merger"
+        )
 
         return layers
 
@@ -109,7 +113,9 @@ class Qwen3VLVisionTransformerLayer(TransformerLayer):
         if self.full_recompute:
             hidden_states = dict_args["hidden_states"]
             attention_mask = dict_args.get("attention_mask", None)
-            attn_mask_startend_row_indices = dict_args.get("attn_mask_startend_row_indices", None)
+            attn_mask_startend_row_indices = dict_args.get(
+                "attn_mask_startend_row_indices", None
+            )
             context = dict_args.get("context", None)
             context_mask = dict_args.get("context_mask", None)
             rotary_pos_emb = dict_args.get("rotary_pos_emb", None)
@@ -153,7 +159,9 @@ class Qwen3VLVisionTransformerLayer(TransformerLayer):
                 else None,
                 context=context,
                 context_mask=context_mask,
-                rotary_pos_emb=rotary_pos_emb.clone() if rotary_pos_emb is not None else None,  # Clone is necessary!
+                rotary_pos_emb=rotary_pos_emb.clone()
+                if rotary_pos_emb is not None
+                else None,  # Clone is necessary!
                 rotary_pos_cos=rotary_pos_cos,
                 rotary_pos_sin=rotary_pos_sin,
                 attention_bias=attention_bias,

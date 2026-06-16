@@ -16,13 +16,19 @@ import sys
 import unittest
 
 REPO_ROOT = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    )
 )
 sys.path.insert(0, os.path.join(REPO_ROOT, "src"))
 
 import paddle
 
-from paddleformers.fleet.pipeline_parallel.pp_utils import p2p_communication as p2p
+from paddleformers.fleet.pipeline_parallel.pp_utils import (
+    p2p_communication as p2p,
+)
 from paddleformers.fleet.pipeline_parallel.pp_utils.utils import paddle_2_number
 
 
@@ -58,7 +64,9 @@ class ProcessGroup:
         return Request(self.calls, "recv_on_calc_stream")
 
     def all_gather_partial_on_calc_stream(self, out, tensor, nranks, rank_id):
-        self.calls.append(("all_gather_partial_on_calc_stream", nranks, rank_id))
+        self.calls.append(
+            ("all_gather_partial_on_calc_stream", nranks, rank_id)
+        )
         return Request(self.calls, "all_gather_partial_on_calc_stream")
 
     def all_gather_partial(self, out, tensor, nranks, rank_id):
@@ -234,7 +242,9 @@ class TestInitializeP2PGroupsNoMock(P2PStateTest):
     def test_initialize_sets_timer_and_partial_state(self):
         p2p.timer.get_timers = lambda: Timers(self.calls)
 
-        p2p.initialize_p2p_groups(self.hcg, enable_partial_send_recv=False, enable_timer=True)
+        p2p.initialize_p2p_groups(
+            self.hcg, enable_partial_send_recv=False, enable_timer=True
+        )
 
         self.assertIs(p2p._hcg, self.hcg)
         self.assertFalse(p2p._enable_partial_send_recv)
@@ -254,7 +264,9 @@ class TestSendRecvMetaNoMock(P2PStateTest):
         meta = p2p.SendRecvMeta()
         meta.recv_meta(self.hcg.pipe_group)
         self.assertEqual(meta.recv_shape_message, [3, 4])
-        self.assertEqual(meta.recv_dtype_message, paddle_2_number(paddle.float32))
+        self.assertEqual(
+            meta.recv_dtype_message, paddle_2_number(paddle.float32)
+        )
         self.assertTrue(meta.recv_stop_gradient)
 
         tuple_payload = [
@@ -292,7 +304,9 @@ class TestSendRecvMetaNoMock(P2PStateTest):
         sent = []
 
         def send(tensor, dst, group):
-            sent.append((tensor.numpy().tolist(), dst, group is self.hcg.pipe_group))
+            sent.append(
+                (tensor.numpy().tolist(), dst, group is self.hcg.pipe_group)
+            )
 
         paddle.distributed.send = send
         meta = p2p.SendRecvMeta()
@@ -345,14 +359,18 @@ class TestSendRecvMetaNoMock(P2PStateTest):
         broadcasts = []
 
         def broadcast(tensor, src, group):
-            broadcasts.append((tensor.numpy().tolist(), src, group is self.hcg.pipe_group))
+            broadcasts.append(
+                (tensor.numpy().tolist(), src, group is self.hcg.pipe_group)
+            )
 
         paddle.distributed.broadcast = broadcast
         first = self._tensor([2, 2], "float32")
         first.key = "forward_hidden"
         second = self._tensor([1, 4], "float16")
         meta = p2p.SendRecvMeta()
-        meta.send_meta([first, second], self.hcg.pipe_group, reverse=True, broadcast=True)
+        meta.send_meta(
+            [first, second], self.hcg.pipe_group, reverse=True, broadcast=True
+        )
 
         self.assertEqual(len(broadcasts), 2)
         self.assertEqual(broadcasts[0][1], self.hcg.pipe_group.ranks[0])
@@ -391,17 +409,27 @@ class TestSendRecvMetaNoMock(P2PStateTest):
 class TestPartialCommunicationNoMock(P2PStateTest):
     def test_calc_stream_send_recv_and_allgather_paths(self):
         tensor = self._tensor([4], "float32")
-        send_req = p2p._send_on_calc_stream(tensor, self.hcg.send_next_group, dst=3, nranks=2, rank_id=1)
-        recv_req = p2p._recv_on_calc_stream(tensor, self.hcg.recv_prev_group, src=2, nranks=2, rank_id=1)
-        gather_req = p2p.allgather_partial(tensor, nranks=2, rank_id=1, group=self.hcg.model_group)
+        send_req = p2p._send_on_calc_stream(
+            tensor, self.hcg.send_next_group, dst=3, nranks=2, rank_id=1
+        )
+        recv_req = p2p._recv_on_calc_stream(
+            tensor, self.hcg.recv_prev_group, src=2, nranks=2, rank_id=1
+        )
+        gather_req = p2p.allgather_partial(
+            tensor, nranks=2, rank_id=1, group=self.hcg.model_group
+        )
         self.assertEqual(send_req.name, "send_partial_on_calc_stream")
         self.assertEqual(recv_req.name, "recv_partial_on_calc_stream")
         self.assertEqual(gather_req.name, "all_gather_partial_on_calc_stream")
 
         p2p._enable_partial_send_recv = False
         self.assertFalse(p2p._is_valid_send_recv_partial(tensor, 2))
-        send_req = p2p._send_on_calc_stream(tensor, self.hcg.send_next_group, dst=3, nranks=2, rank_id=1)
-        recv_req = p2p._recv_on_calc_stream(tensor, self.hcg.recv_prev_group, src=2, nranks=2, rank_id=1)
+        send_req = p2p._send_on_calc_stream(
+            tensor, self.hcg.send_next_group, dst=3, nranks=2, rank_id=1
+        )
+        recv_req = p2p._recv_on_calc_stream(
+            tensor, self.hcg.recv_prev_group, src=2, nranks=2, rank_id=1
+        )
         self.assertEqual(send_req.name, "send_on_calc_stream")
         self.assertEqual(recv_req.name, "recv_on_calc_stream")
         self.assertIs(p2p.allgather_partial(tensor, nranks=2), tensor)
@@ -413,7 +441,9 @@ class TestPartialCommunicationNoMock(P2PStateTest):
 
         non_member = Group(self.calls, member=False)
         p2p._enable_partial_send_recv = True
-        self.assertIsNone(p2p.allgather_partial(tensor, nranks=2, group=non_member))
+        self.assertIsNone(
+            p2p.allgather_partial(tensor, nranks=2, group=non_member)
+        )
         self.assertEqual(
             p2p._partial_allgather_op(
                 tensor,
@@ -434,10 +464,16 @@ class TestPartialCommunicationNoMock(P2PStateTest):
 class TestP2PHelperCoreNoMock(P2PStateTest):
     def _install_lightweight_ops(self):
         def batch_send_recv(ops):
-            self.calls.append(("batch", [(op.op.__name__, op.peer) for op in ops]))
+            self.calls.append(
+                ("batch", [(op.op.__name__, op.peer) for op in ops])
+            )
 
-        def allgather_partial(tensor, nranks=1, rank_id=0, group=None, use_calc_stream=True):
-            self.calls.append(("allgather_partial", nranks, rank_id, use_calc_stream))
+        def allgather_partial(
+            tensor, nranks=1, rank_id=0, group=None, use_calc_stream=True
+        ):
+            self.calls.append(
+                ("allgather_partial", nranks, rank_id, use_calc_stream)
+            )
             return Request(self.calls, "allgather")
 
         p2p.batch_send_recv_on_calc_stream = batch_send_recv
@@ -462,7 +498,9 @@ class TestP2PHelperCoreNoMock(P2PStateTest):
         self.assertEqual(len(recv_next), 2)
         self.assertIsNone(reqs)
         self.assertEqual(
-            len([call for call in self.calls if call[0] == "allgather_partial"]),
+            len(
+                [call for call in self.calls if call[0] == "allgather_partial"]
+            ),
             4,
         )
 
@@ -481,7 +519,9 @@ class TestP2PHelperCoreNoMock(P2PStateTest):
         self.assertEqual(recv_next.shape, [2, 2])
         self.assertIsNone(reqs)
         self.assertEqual(
-            len([call for call in self.calls if call[0] == "allgather_partial"]),
+            len(
+                [call for call in self.calls if call[0] == "allgather_partial"]
+            ),
             2,
         )
 
@@ -500,26 +540,36 @@ class TestP2PHelperCoreNoMock(P2PStateTest):
             ],
         )
         self.assertEqual(
-            len([call for call in self.calls if call[0] == "allgather_partial"]),
+            len(
+                [call for call in self.calls if call[0] == "allgather_partial"]
+            ),
             2,
         )
 
         self.calls.clear()
-        tuple_tensors = tuple((self._tensor([2, 2]), self._tensor([1, 4])) for _ in range(4))
+        tuple_tensors = tuple(
+            (self._tensor([2, 2]), self._tensor([1, 4])) for _ in range(4)
+        )
         p2p._batched_p2p_ops(*tuple_tensors, self.hcg)
         self.assertEqual(len(self.calls[0][1]), 8)
         self.assertEqual(
-            len([call for call in self.calls if call[0] == "allgather_partial"]),
+            len(
+                [call for call in self.calls if call[0] == "allgather_partial"]
+            ),
             4,
         )
 
     def test_batched_p2p_ops_device_synchronize_flag(self):
         self._install_lightweight_ops()
-        paddle.device.cuda.synchronize = lambda: self.calls.append(("cuda_synchronize",))
+        paddle.device.cuda.synchronize = lambda: self.calls.append(
+            ("cuda_synchronize",)
+        )
         old_flag = os.environ.get("FLAGS_p2p_device_synchronize")
         os.environ["FLAGS_p2p_device_synchronize"] = "1"
         try:
-            p2p._batched_p2p_ops(None, None, self._tensor([2, 2]), None, self.hcg)
+            p2p._batched_p2p_ops(
+                None, None, self._tensor([2, 2]), None, self.hcg
+            )
         finally:
             if old_flag is None:
                 os.environ.pop("FLAGS_p2p_device_synchronize", None)
@@ -570,8 +620,12 @@ class TestP2PHelperCoreNoMock(P2PStateTest):
     def test_batch_send_recv_nan_check_and_coalescing_paths(self):
         tensor = self._tensor([2, 2])
         ops = [
-            p2p.P2PonCalcStream(p2p._send_on_calc_stream, tensor, 3, self.hcg.pipe_group, 2, 1),
-            p2p.P2PonCalcStream(p2p._recv_on_calc_stream, tensor, 2, self.hcg.pipe_group, 2, 1),
+            p2p.P2PonCalcStream(
+                p2p._send_on_calc_stream, tensor, 3, self.hcg.pipe_group, 2, 1
+            ),
+            p2p.P2PonCalcStream(
+                p2p._recv_on_calc_stream, tensor, 2, self.hcg.pipe_group, 2, 1
+            ),
         ]
 
         class Manager:
@@ -589,12 +643,20 @@ class TestP2PHelperCoreNoMock(P2PStateTest):
                 return False
 
         p2p._warn_cur_rank_not_in_group = lambda group: False
-        p2p._coalescing_manager = lambda group, tasks: Manager(self.calls, group, tasks)
+        p2p._coalescing_manager = lambda group, tasks: Manager(
+            self.calls, group, tasks
+        )
         os.environ["FLAGS_pp_check_naninf"] = "0"
         p2p.batch_send_recv_on_calc_stream(ops)
-        self.assertTrue(any(call[0] == "enter_coalescing" for call in self.calls))
-        self.assertTrue(any(call[0] == "send_partial_on_calc_stream" for call in self.calls))
-        self.assertTrue(any(call[0] == "recv_partial_on_calc_stream" for call in self.calls))
+        self.assertTrue(
+            any(call[0] == "enter_coalescing" for call in self.calls)
+        )
+        self.assertTrue(
+            any(call[0] == "send_partial_on_calc_stream" for call in self.calls)
+        )
+        self.assertTrue(
+            any(call[0] == "recv_partial_on_calc_stream" for call in self.calls)
+        )
 
         self.calls.clear()
         p2p._warn_cur_rank_not_in_group = lambda group: True
@@ -645,12 +707,16 @@ class TestP2PHelperCoreNoMock(P2PStateTest):
         tensors = [self._tensor([2, 2]) for _ in range(4)]
         self.hcg.stage_id = 0
         self.assertEqual(len(p2p._p2p_ops(*tensors, self.hcg)), 4)
-        self.assertEqual(records, [("send", 3), ("recv", 2), ("send", 2), ("recv", 3)])
+        self.assertEqual(
+            records, [("send", 3), ("recv", 2), ("send", 2), ("recv", 3)]
+        )
 
         records.clear()
         self.hcg.stage_id = 1
         self.assertEqual(len(p2p._p2p_ops(*tensors, self.hcg)), 4)
-        self.assertEqual(records, [("recv", 2), ("send", 3), ("recv", 3), ("send", 2)])
+        self.assertEqual(
+            records, [("recv", 2), ("send", 3), ("recv", 3), ("send", 2)]
+        )
 
         meta = self._meta(tuple_recv=False, tuple_send=False)
         _, _, reqs = p2p._p2p_helper(
@@ -716,7 +782,9 @@ class TestP2pHelperPublicMethodsNoMock(P2PStateTest):
             return prev, nxt, [Request(self.calls, "overlap")]
 
         p2p._p2p_helper = helper
-        paddle.distributed.send = lambda tensor, dst, group: self.calls.append(("send", dst))
+        paddle.distributed.send = lambda tensor, dst, group: self.calls.append(
+            ("send", dst)
+        )
         self.recv_values = []
 
         def recv(tensor, src, group):
@@ -731,11 +799,15 @@ class TestP2pHelperPublicMethodsNoMock(P2PStateTest):
 
     def _fill_static_meta(self, helper):
         helper._send_recv_meta.recv_shape_message = [1]
-        helper._send_recv_meta.recv_dtype_message = paddle_2_number(paddle.float32)
+        helper._send_recv_meta.recv_dtype_message = paddle_2_number(
+            paddle.float32
+        )
         helper._send_recv_meta.recv_stop_gradient = False
         helper._send_recv_meta.recv_key_message = None
         helper._send_recv_meta.send_shape_message = [1]
-        helper._send_recv_meta.send_dtype_message = paddle_2_number(paddle.float32)
+        helper._send_recv_meta.send_dtype_message = paddle_2_number(
+            paddle.float32
+        )
         helper._send_recv_meta.send_key_message = None
         helper._send_recv_meta.has_recv_meta = True
         helper._send_recv_meta.has_send_meta = True
@@ -749,28 +821,52 @@ class TestP2pHelperPublicMethodsNoMock(P2PStateTest):
         helper = self._prepared_helper()
         tensor = self._tensor([1])
         self.assertIsNone(helper.recv_forward(pp_first_stage=True))
-        self.assertIsNotNone(helper.recv_forward(pp_first_stage=False, sync_recv=False))
+        self.assertIsNotNone(
+            helper.recv_forward(pp_first_stage=False, sync_recv=False)
+        )
         self.assertIsNone(helper.recv_backward(pp_last_stage=True))
         self.assertIsNotNone(helper.recv_backward(pp_last_stage=False))
         helper.send_forward(tensor, pp_last_stage=True)
         helper.send_forward(tensor, pp_last_stage=False)
         helper.send_backward(tensor, pp_first_stage=True)
         helper.send_backward(tensor, pp_first_stage=False)
-        self.assertIsNone(helper.send_forward_recv_backward(tensor, pp_last_stage=True))
-        self.assertIsNotNone(helper.send_forward_recv_backward(tensor, pp_last_stage=False))
-        self.assertIsNone(helper.send_backward_recv_forward(tensor, pp_first_stage=True))
-        self.assertIsNotNone(helper.send_backward_recv_forward(tensor, pp_first_stage=False))
-        prev, nxt = helper.send_forward_backward_recv_forward_backward(tensor, tensor, recv_prev=True, recv_next=True)
+        self.assertIsNone(
+            helper.send_forward_recv_backward(tensor, pp_last_stage=True)
+        )
+        self.assertIsNotNone(
+            helper.send_forward_recv_backward(tensor, pp_last_stage=False)
+        )
+        self.assertIsNone(
+            helper.send_backward_recv_forward(tensor, pp_first_stage=True)
+        )
+        self.assertIsNotNone(
+            helper.send_backward_recv_forward(tensor, pp_first_stage=False)
+        )
+        prev, nxt = helper.send_forward_backward_recv_forward_backward(
+            tensor, tensor, recv_prev=True, recv_next=True
+        )
         self.assertIsNotNone(prev)
         self.assertIsNotNone(nxt)
-        self.assertIsNone(helper.send_forward_recv_forward(None, recv_prev=False))
-        self.assertIsNotNone(helper.send_forward_recv_forward(tensor, recv_prev=True))
-        self.assertIsNone(helper.send_backward_recv_backward(tensor, recv_next=False))
-        self.assertIsNotNone(helper.send_backward_recv_backward(tensor, recv_next=True))
-        result, handles = helper.send_forward_recv_forward(tensor, recv_prev=True, overlap_p2p_comm=True)
+        self.assertIsNone(
+            helper.send_forward_recv_forward(None, recv_prev=False)
+        )
+        self.assertIsNotNone(
+            helper.send_forward_recv_forward(tensor, recv_prev=True)
+        )
+        self.assertIsNone(
+            helper.send_backward_recv_backward(tensor, recv_next=False)
+        )
+        self.assertIsNotNone(
+            helper.send_backward_recv_backward(tensor, recv_next=True)
+        )
+        result, handles = helper.send_forward_recv_forward(
+            tensor, recv_prev=True, overlap_p2p_comm=True
+        )
         self.assertIsNotNone(result)
         self.assertEqual(handles[0].name, "overlap")
-        result, handles = helper.send_backward_recv_backward(tensor, recv_next=True, overlap_p2p_comm=True)
+        result, handles = helper.send_backward_recv_backward(
+            tensor, recv_next=True, overlap_p2p_comm=True
+        )
         self.assertIsNotNone(result)
         self.assertEqual(handles[0].name, "overlap")
         self.assertIn("using cache", repr(helper))
@@ -780,7 +876,9 @@ class TestP2pHelperPublicMethodsNoMock(P2PStateTest):
         sent = []
 
         def send(tensor, dst, group):
-            sent.append((tensor.numpy().tolist(), dst, group is self.hcg.pipe_group))
+            sent.append(
+                (tensor.numpy().tolist(), dst, group is self.hcg.pipe_group)
+            )
 
         paddle.distributed.send = send
         helper = p2p.P2pHelper(use_cache=True)
@@ -803,7 +901,9 @@ class TestP2pHelperPublicMethodsNoMock(P2PStateTest):
         self.assertEqual(helper._send_recv_meta.recv_shape_message, [2])
         recv_count = len([call for call in self.calls if call[0] == "recv"])
         helper._recv_meta()
-        self.assertEqual(len([call for call in self.calls if call[0] == "recv"]), recv_count)
+        self.assertEqual(
+            len([call for call in self.calls if call[0] == "recv"]), recv_count
+        )
         self.assertFalse(helper.clear_meta_cache())
         self.assertIsNone(helper._send_recv_meta.recv_shape_message)
         self.assertFalse(helper._send_recv_meta.has_recv_meta)
@@ -855,7 +955,9 @@ class TestP2pHelperPublicMethodsNoMock(P2PStateTest):
         with self.assertRaises(AssertionError):
             helper.send_backward_recv_forward(tensor, pp_first_stage=False)
         with self.assertRaises(AssertionError):
-            helper.send_forward_backward_recv_forward_backward(tensor, tensor, recv_prev=False, recv_next=False)
+            helper.send_forward_backward_recv_forward_backward(
+                tensor, tensor, recv_prev=False, recv_next=False
+            )
 
 
 if __name__ == "__main__":

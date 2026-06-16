@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -158,7 +162,9 @@ class TestYarnLinearRampMask(unittest.TestCase):
         self.assertAlmostEqual(mask[10].item(), 1.0, places=5)
         self.assertAlmostEqual(mask[19].item(), 1.0, places=5)
         # Last 10 should all be 1.0
-        self.assertTrue(paddle.allclose(mask[10:], paddle.ones([10]), atol=1e-6))
+        self.assertTrue(
+            paddle.allclose(mask[10:], paddle.ones([10]), atol=1e-6)
+        )
 
     def test_equal_min_max(self):
         from paddleformers.fleet.models.common.embeddings.yarn_rotary_pos_embedding import (
@@ -301,7 +307,9 @@ class TestYarnGetConcentrationFactorFromConfig(unittest.TestCase):
 class TestYarnRotaryEmbeddingInit(unittest.TestCase):
     """Tests for YarnRotaryEmbedding initialization."""
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_basic_init(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.yarn_rotary_pos_embedding import (
             YarnRotaryEmbedding,
@@ -313,7 +321,9 @@ class TestYarnRotaryEmbeddingInit(unittest.TestCase):
         self.assertIsNotNone(yarn.inv_freq_extra)
         self.assertIsNotNone(yarn.inv_freq_inter)
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_init_with_custom_params(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.yarn_rotary_pos_embedding import (
             YarnRotaryEmbedding,
@@ -336,7 +346,9 @@ class TestYarnRotaryEmbeddingInit(unittest.TestCase):
         self.assertEqual(yarn.mscale, 0.5)
         self.assertEqual(yarn.mscale_all_dim, 0.1)
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_init_with_interleaved(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.yarn_rotary_pos_embedding import (
             YarnRotaryEmbedding,
@@ -349,7 +361,9 @@ class TestYarnRotaryEmbeddingInit(unittest.TestCase):
         )
         self.assertTrue(yarn.rotary_interleaved)
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_init_with_interpolation(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.yarn_rotary_pos_embedding import (
             YarnRotaryEmbedding,
@@ -362,7 +376,9 @@ class TestYarnRotaryEmbeddingInit(unittest.TestCase):
         )
         self.assertEqual(yarn.seq_len_interpolation_factor, 2.0)
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_correction_range_round_to_int(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.yarn_rotary_pos_embedding import (
             YarnRotaryEmbedding,
@@ -379,7 +395,9 @@ class TestYarnRotaryEmbeddingInit(unittest.TestCase):
 class TestYarnRotaryEmbeddingForward(unittest.TestCase):
     """Tests for YarnRotaryEmbedding forward pass."""
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_forward_basic(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.yarn_rotary_pos_embedding import (
             YarnRotaryEmbedding,
@@ -392,7 +410,9 @@ class TestYarnRotaryEmbeddingForward(unittest.TestCase):
         self.assertEqual(emb.shape, [1, 128, 1, 64])
         self.assertIsInstance(mscale, float)
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_forward_with_offset(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.yarn_rotary_pos_embedding import (
             YarnRotaryEmbedding,
@@ -403,7 +423,9 @@ class TestYarnRotaryEmbeddingForward(unittest.TestCase):
         emb, mscale = yarn(max_seq_len=64, offset=10)
         self.assertEqual(emb.shape, [1, 64, 1, 64])
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_forward_with_scaling(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.yarn_rotary_pos_embedding import (
             YarnRotaryEmbedding,
@@ -417,7 +439,9 @@ class TestYarnRotaryEmbeddingForward(unittest.TestCase):
         emb, mscale = yarn(max_seq_len=128)
         self.assertEqual(emb.shape, [1, 128, 1, 64])
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_forward_interleaved(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.yarn_rotary_pos_embedding import (
             YarnRotaryEmbedding,
@@ -431,7 +455,9 @@ class TestYarnRotaryEmbeddingForward(unittest.TestCase):
         emb, mscale = yarn(max_seq_len=32)
         self.assertEqual(emb.shape, [1, 32, 1, 64])
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_forward_small_dim(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.yarn_rotary_pos_embedding import (
             YarnRotaryEmbedding,
@@ -446,7 +472,9 @@ class TestYarnRotaryEmbeddingForward(unittest.TestCase):
 class TestYarnRotaryEmbeddingCache(unittest.TestCase):
     """Tests for YarnRotaryEmbedding caching mechanism."""
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_set_cos_sin_cache(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.yarn_rotary_pos_embedding import (
             YarnRotaryEmbedding,
@@ -465,7 +493,9 @@ class TestYarnRotaryEmbeddingCache(unittest.TestCase):
 class TestYarnRotaryEmbeddingIsSubclass(unittest.TestCase):
     """Tests to verify YarnRotaryEmbedding is a subclass of RotaryEmbedding."""
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_inheritance(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
             RotaryEmbedding,
@@ -478,7 +508,9 @@ class TestYarnRotaryEmbeddingIsSubclass(unittest.TestCase):
         yarn = YarnRotaryEmbedding(head_dim=64)
         self.assertIsInstance(yarn, RotaryEmbedding)
 
-    @patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state")
+    @patch(
+        "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+    )
     def test_has_parent_methods(self, mock_ps):
         from paddleformers.fleet.models.common.embeddings.yarn_rotary_pos_embedding import (
             YarnRotaryEmbedding,
@@ -512,7 +544,9 @@ class TestYarnRotaryEmbeddingForwardPositionIds(unittest.TestCase):
             YarnRotaryEmbedding,
         )
 
-        with _patch("paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state") as mock_ps:
+        with _patch(
+            "paddleformers.fleet.models.common.embeddings.rotary_pos_embedding.parallel_state"
+        ) as mock_ps:
             mock_ps.get_context_parallel_group.return_value = None
             yarn = YarnRotaryEmbedding(head_dim=64, **kwargs)
         return yarn
@@ -530,10 +564,16 @@ class TestYarnRotaryEmbeddingForwardPositionIds(unittest.TestCase):
     def test_no_position_ids_with_offset(self):
         """offset is applied to the arange sequence when position_ids=None."""
         yarn = self._make_yarn()
-        emb_no_offset, _ = yarn.forward(max_seq_len=8, offset=0, position_ids=None)
-        emb_with_offset, _ = yarn.forward(max_seq_len=8, offset=5, position_ids=None)
+        emb_no_offset, _ = yarn.forward(
+            max_seq_len=8, offset=0, position_ids=None
+        )
+        emb_with_offset, _ = yarn.forward(
+            max_seq_len=8, offset=5, position_ids=None
+        )
         # Different offsets should produce different embeddings
-        self.assertFalse(paddle.allclose(emb_no_offset, emb_with_offset, atol=1e-6))
+        self.assertFalse(
+            paddle.allclose(emb_no_offset, emb_with_offset, atol=1e-6)
+        )
 
     # ------------------------------------------------------------------
     # Branch: position_ids.ndim == 1  (1-D tensor [S])
@@ -559,9 +599,15 @@ class TestYarnRotaryEmbeddingForwardPositionIds(unittest.TestCase):
         yarn = self._make_yarn()
         S = 8
         pos_ids = paddle.arange(S, dtype=paddle.int64)
-        emb_with_ids, _ = yarn.forward(max_seq_len=S, offset=0, position_ids=pos_ids)
-        emb_without_ids, _ = yarn.forward(max_seq_len=S, offset=0, position_ids=None)
-        self.assertTrue(paddle.allclose(emb_with_ids, emb_without_ids, atol=1e-5))
+        emb_with_ids, _ = yarn.forward(
+            max_seq_len=S, offset=0, position_ids=pos_ids
+        )
+        emb_without_ids, _ = yarn.forward(
+            max_seq_len=S, offset=0, position_ids=None
+        )
+        self.assertTrue(
+            paddle.allclose(emb_with_ids, emb_without_ids, atol=1e-5)
+        )
 
     # ------------------------------------------------------------------
     # Branch: position_ids.ndim == 2  (2-D tensor [B, S])
@@ -570,7 +616,9 @@ class TestYarnRotaryEmbeddingForwardPositionIds(unittest.TestCase):
         """2-D position_ids [B, S] — first batch row is used."""
         yarn = self._make_yarn()
         B, S = 4, 12
-        pos_ids = paddle.arange(S, dtype=paddle.int64).unsqueeze(0).expand([B, S])
+        pos_ids = (
+            paddle.arange(S, dtype=paddle.int64).unsqueeze(0).expand([B, S])
+        )
         emb, mscale = yarn.forward(max_seq_len=S, position_ids=pos_ids)
         self.assertEqual(emb.shape, [1, S, 1, 64])
 
@@ -581,7 +629,9 @@ class TestYarnRotaryEmbeddingForwardPositionIds(unittest.TestCase):
         row0 = paddle.arange(S, dtype=paddle.int64)
         row1 = row0 + 100  # different values in second row — should be ignored
         pos_ids_2d = paddle.stack([row0, row1], axis=0)  # [2, S]
-        emb_2d, _ = yarn.forward(max_seq_len=S, offset=0, position_ids=pos_ids_2d)
+        emb_2d, _ = yarn.forward(
+            max_seq_len=S, offset=0, position_ids=pos_ids_2d
+        )
         emb_1d, _ = yarn.forward(max_seq_len=S, offset=0, position_ids=row0)
         self.assertTrue(paddle.allclose(emb_2d, emb_1d, atol=1e-5))
 
@@ -603,10 +653,16 @@ class TestYarnRotaryEmbeddingForwardPositionIds(unittest.TestCase):
         yarn = self._make_yarn()
         max_seq_len = 8
         pos_ids_3d = (
-            paddle.arange(max_seq_len, dtype=paddle.int64).reshape([1, 1, max_seq_len]).expand([3, 2, max_seq_len])
+            paddle.arange(max_seq_len, dtype=paddle.int64)
+            .reshape([1, 1, max_seq_len])
+            .expand([3, 2, max_seq_len])
         )
-        emb_3d, _ = yarn.forward(max_seq_len=max_seq_len, offset=0, position_ids=pos_ids_3d)
-        emb_none, _ = yarn.forward(max_seq_len=max_seq_len, offset=0, position_ids=None)
+        emb_3d, _ = yarn.forward(
+            max_seq_len=max_seq_len, offset=0, position_ids=pos_ids_3d
+        )
+        emb_none, _ = yarn.forward(
+            max_seq_len=max_seq_len, offset=0, position_ids=None
+        )
         self.assertTrue(paddle.allclose(emb_3d, emb_none, atol=1e-5))
         self.assertEqual(emb_3d.shape, [1, max_seq_len, 1, 64])
 
@@ -615,8 +671,12 @@ class TestYarnRotaryEmbeddingForwardPositionIds(unittest.TestCase):
         yarn = self._make_yarn()
         max_seq_len = 6
         pos_ids_3d = paddle.zeros([3, 1, max_seq_len], dtype=paddle.int64)
-        emb_off0, _ = yarn.forward(max_seq_len=max_seq_len, offset=0, position_ids=pos_ids_3d)
-        emb_off3, _ = yarn.forward(max_seq_len=max_seq_len, offset=3, position_ids=pos_ids_3d)
+        emb_off0, _ = yarn.forward(
+            max_seq_len=max_seq_len, offset=0, position_ids=pos_ids_3d
+        )
+        emb_off3, _ = yarn.forward(
+            max_seq_len=max_seq_len, offset=3, position_ids=pos_ids_3d
+        )
         # Different offsets → different embeddings
         self.assertFalse(paddle.allclose(emb_off0, emb_off3, atol=1e-6))
 

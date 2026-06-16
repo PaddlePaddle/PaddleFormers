@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -25,7 +29,9 @@ from unittest.mock import MagicMock, patch
 import paddle
 
 from paddleformers.fleet.models.vision.radio import HAVE_EINOPS, RADIOViTModel
-from paddleformers.fleet.transformer.paddle_norm import LayerNorm as FleetLayerNorm
+from paddleformers.fleet.transformer.paddle_norm import (
+    LayerNorm as FleetLayerNorm,
+)
 
 
 def _make_mock_config():
@@ -70,7 +76,9 @@ class TestRADIOViTModelGetPosEncEval(unittest.TestCase):
         result = model.get_pos_enc(batch_size=2)
         self.assertIsNotNone(result)
 
-    @unittest.skipIf(not paddle.is_compiled_with_cuda(), "Requires CUDA for interpolation")
+    @unittest.skipIf(
+        not paddle.is_compiled_with_cuda(), "Requires CUDA for interpolation"
+    )
     @patch(
         "paddleformers.fleet.models.vision.radio.has_config_logger_enabled",
         return_value=False,
@@ -120,7 +128,9 @@ class TestRADIOViTModelGetPosEncEval(unittest.TestCase):
 class TestRADIOViTModelApplyPosEncTrain(unittest.TestCase):
     """Test RADIOViTModel.apply_pos_enc in training mode."""
 
-    @unittest.skipIf(not paddle.is_compiled_with_cuda(), "Requires CUDA for interpolation")
+    @unittest.skipIf(
+        not paddle.is_compiled_with_cuda(), "Requires CUDA for interpolation"
+    )
     @patch(
         "paddleformers.fleet.models.vision.radio.has_config_logger_enabled",
         return_value=False,
@@ -181,7 +191,9 @@ class TestRADIOViTModelApplyPosEncTrain(unittest.TestCase):
 class TestRADIOViTModelGetPosEncTrain(unittest.TestCase):
     """Test RADIOViTModel.get_pos_enc in training mode."""
 
-    @unittest.skipIf(not paddle.is_compiled_with_cuda(), "Requires CUDA for interpolation")
+    @unittest.skipIf(
+        not paddle.is_compiled_with_cuda(), "Requires CUDA for interpolation"
+    )
     @patch(
         "paddleformers.fleet.models.vision.radio.has_config_logger_enabled",
         return_value=False,
@@ -224,7 +236,9 @@ class TestRADIOViTModelForwardCUDA(unittest.TestCase):
         from paddleformers.fleet.models.gpt.gpt_layer_specs import (
             get_gpt_layer_local_spec,
         )
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         config = TransformerConfig(
             num_hidden_layers=1,
@@ -254,7 +268,9 @@ class TestRADIOViTModelForwardCUDA(unittest.TestCase):
         from paddleformers.fleet.models.gpt.gpt_layer_specs import (
             get_gpt_layer_local_spec,
         )
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         config = TransformerConfig(
             num_hidden_layers=1,

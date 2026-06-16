@@ -15,7 +15,9 @@ import os
 import sys
 import unittest
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+REPO_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 sys.path.insert(0, os.path.join(REPO_ROOT, "src"))
 
 import paddle
@@ -201,14 +203,20 @@ class TestTransformerLayerDenseSchedule(unittest.TestCase):
         result = node.forward({"hidden_states": hidden_states})
         grads = node.backward(paddle.ones([2, 2], dtype="float32"))
 
-        self.assertEqual(result["hidden_states"].numpy().tolist(), [[6.0, 6.0], [6.0, 6.0]])
+        self.assertEqual(
+            result["hidden_states"].numpy().tolist(), [[6.0, 6.0], [6.0, 6.0]]
+        )
         self.assertEqual(grads[0].numpy().tolist(), [[6.0, 6.0], [6.0, 6.0]])
         self.assertEqual(layer.attn_flags, [False])
         self.assertEqual(layer.mlp_flags, [False])
 
     def test_dense_forward_preserves_optional_context(self):
-        node = TransformerLayerNode(RealDenseLayer(with_context=True), TinyConfig())
-        result = node.forward({"hidden_states": paddle.ones([1, 2], dtype="float32")})
+        node = TransformerLayerNode(
+            RealDenseLayer(with_context=True), TinyConfig()
+        )
+        result = node.forward(
+            {"hidden_states": paddle.ones([1, 2], dtype="float32")}
+        )
 
         self.assertIn("context", result)
         self.assertEqual(result["context"].numpy().tolist(), [[3.0, 3.0]])
@@ -220,7 +228,9 @@ class TestTransformerLayerDenseSchedule(unittest.TestCase):
             layer = RealDenseLayer()
             layer.full_recompute = True
             node = TransformerLayerNode(layer, TinyConfig())
-            result = node.forward({"hidden_states": paddle.ones([1, 1], dtype="float32")})
+            result = node.forward(
+                {"hidden_states": paddle.ones([1, 1], dtype="float32")}
+            )
             grads = node.backward(paddle.ones([1, 1], dtype="float32"))
         finally:
             transformer_layer.ScheduleNode = original_schedule_node
@@ -247,7 +257,9 @@ class TestTransformerLayerSparseSchedule(unittest.TestCase):
             transformer_layer.deep_ep = self.original_deep_ep
 
     def test_sparse_forward_backward_waits_for_dispatch_and_combine(self):
-        node = TransformerLayerNode(SparseLayer(full_recompute=True), TinyConfig())
+        node = TransformerLayerNode(
+            SparseLayer(full_recompute=True), TinyConfig()
+        )
         hidden_states = paddle.ones([1, 2], dtype="float32")
 
         result = node.forward({"hidden_states": hidden_states})
@@ -262,14 +274,20 @@ class TestTransformerLayerSparseSchedule(unittest.TestCase):
 
     def test_sparse_overlapped_forward_backward_interleaves_events(self):
         forward_node = TransformerLayerNode(SparseLayer(), TinyConfig())
-        backward_node = TransformerLayerNode(SparseLayer(full_recompute=True), TinyConfig())
-        backward_node.attn_recompute_args = {"hidden_states": paddle.ones([1, 2], dtype="float32")}
+        backward_node = TransformerLayerNode(
+            SparseLayer(full_recompute=True), TinyConfig()
+        )
+        backward_node.attn_recompute_args = {
+            "hidden_states": paddle.ones([1, 2], dtype="float32")
+        }
         backward_node.mlp_recompute_args = paddle.ones([1, 2], dtype="float32")
         backward_node.post_process_recompute_args = (
             paddle.ones([1, 2], dtype="float32"),
             paddle.ones([1, 2], dtype="float32"),
         )
-        overlapped = TransformerLayerOverlappedScheduleNode(forward_node, backward_node)
+        overlapped = TransformerLayerOverlappedScheduleNode(
+            forward_node, backward_node
+        )
 
         result, grads = overlapped.forward_backward(
             {"hidden_states": paddle.ones([1, 2], dtype="float32")},
@@ -278,7 +296,9 @@ class TestTransformerLayerSparseSchedule(unittest.TestCase):
 
         self.assertIn("hidden_states", result)
         self.assertEqual(grads.shape, [1, 2])
-        self.assertGreaterEqual(len([call for call in self.calls if call[0] == "get_event"]), 4)
+        self.assertGreaterEqual(
+            len([call for call in self.calls if call[0] == "get_event"]), 4
+        )
 
     def test_overlapped_fallback_restores_mtp_inputs_and_grads(self):
         forward_node = TransformerLayerNode(RealDenseLayer(), TinyConfig())
@@ -296,7 +316,9 @@ class TestTransformerLayerSparseSchedule(unittest.TestCase):
 
         forward_node.forward = forward_func
         backward_node.backward = backward_func
-        overlapped = TransformerLayerOverlappedScheduleNode(forward_node, backward_node)
+        overlapped = TransformerLayerOverlappedScheduleNode(
+            forward_node, backward_node
+        )
         mtp_grad = paddle.full([1], 5.0, dtype="float32")
 
         result, grads = overlapped.forward_backward(

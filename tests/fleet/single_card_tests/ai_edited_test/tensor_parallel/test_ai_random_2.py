@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -117,7 +121,7 @@ class TestCudaRNGStatesTracker(unittest.TestCase):
 
     def test_fork_nonexistent_name_raises(self):
         """Test forking a non-existent state raises Exception."""
-        with self.assertRaises(Exception):  # noqa: B017
+        with self.assertRaises(Exception):
             tracker = CudaRNGStatesTracker()
             tracker.fork("nonexistent").__enter__()
 
@@ -182,7 +186,9 @@ class TestGetSetCudaRngState(unittest.TestCase):
     @unittest.skipIf(not paddle.is_compiled_with_cuda(), "Requires CUDA")
     def test_get_cuda_rng_state(self):
         """Test _get_cuda_rng_state returns a tensor."""
-        from paddleformers.fleet.tensor_parallel.random import _get_cuda_rng_state
+        from paddleformers.fleet.tensor_parallel.random import (
+            _get_cuda_rng_state,
+        )
 
         state = _get_cuda_rng_state()
         self.assertIsNotNone(state)
@@ -190,7 +196,9 @@ class TestGetSetCudaRngState(unittest.TestCase):
     @unittest.skipIf(not paddle.is_compiled_with_cuda(), "Requires CUDA")
     def test_get_cuda_rng_state_graph_safe_asserts(self):
         """Test _get_cuda_rng_state raises assertion for graph_safe=True."""
-        from paddleformers.fleet.tensor_parallel.random import _get_cuda_rng_state
+        from paddleformers.fleet.tensor_parallel.random import (
+            _get_cuda_rng_state,
+        )
 
         with self.assertRaises(AssertionError):
             _get_cuda_rng_state(graph_safe=True)
@@ -198,7 +206,9 @@ class TestGetSetCudaRngState(unittest.TestCase):
     @unittest.skipIf(not paddle.is_compiled_with_cuda(), "Requires CUDA")
     def test_set_cuda_rng_state_graph_safe_asserts(self):
         """Test _set_cuda_rng_state raises assertion for graph_safe=True."""
-        from paddleformers.fleet.tensor_parallel.random import _set_cuda_rng_state
+        from paddleformers.fleet.tensor_parallel.random import (
+            _set_cuda_rng_state,
+        )
 
         state = paddle.cuda.get_rng_state()
         with self.assertRaises(AssertionError):

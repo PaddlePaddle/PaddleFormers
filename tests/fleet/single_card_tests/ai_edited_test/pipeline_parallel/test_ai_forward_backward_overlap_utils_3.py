@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -47,7 +51,9 @@ class TestOverlapScheduleNodeFirstForward(unittest.TestCase):
             patch(
                 "paddleformers.fleet.pipeline_parallel.pp_utils.forward_backward_overlap_utils.framework"
             ) as mock_fw,
-            patch("paddleformers.fleet.pipeline_parallel.pp_utils.forward_backward_overlap_utils.core") as mock_core,
+            patch(
+                "paddleformers.fleet.pipeline_parallel.pp_utils.forward_backward_overlap_utils.core"
+            ) as mock_core,
         ):
             mock_tracker_inst = MagicMock()
             mock_tracker_inst.get_states_tracker.return_value = {}
@@ -87,7 +93,9 @@ class TestOverlapScheduleNodeFirstForward(unittest.TestCase):
             patch(
                 "paddleformers.fleet.pipeline_parallel.pp_utils.forward_backward_overlap_utils.framework"
             ) as mock_fw,
-            patch("paddleformers.fleet.pipeline_parallel.pp_utils.forward_backward_overlap_utils.core") as mock_core,
+            patch(
+                "paddleformers.fleet.pipeline_parallel.pp_utils.forward_backward_overlap_utils.core"
+            ) as mock_core,
         ):
             mock_tracker_inst = MagicMock()
             mock_tracker_inst.get_states_tracker.return_value = {}
@@ -129,7 +137,9 @@ class TestOverlapScheduleNodeFirstForward(unittest.TestCase):
             patch(
                 "paddleformers.fleet.pipeline_parallel.pp_utils.forward_backward_overlap_utils.framework"
             ) as mock_fw,
-            patch("paddleformers.fleet.pipeline_parallel.pp_utils.forward_backward_overlap_utils.core") as mock_core,
+            patch(
+                "paddleformers.fleet.pipeline_parallel.pp_utils.forward_backward_overlap_utils.core"
+            ) as mock_core,
         ):
             mock_tracker_inst = MagicMock()
             mock_tracker_inst.get_states_tracker.return_value = {}
@@ -170,7 +180,9 @@ class TestOverlapScheduleNodeFirstForward(unittest.TestCase):
             patch(
                 "paddleformers.fleet.pipeline_parallel.pp_utils.forward_backward_overlap_utils.framework"
             ) as mock_fw,
-            patch("paddleformers.fleet.pipeline_parallel.pp_utils.forward_backward_overlap_utils.core") as mock_core,
+            patch(
+                "paddleformers.fleet.pipeline_parallel.pp_utils.forward_backward_overlap_utils.core"
+            ) as mock_core,
         ):
             mock_tracker_inst = MagicMock()
             mock_tracker_inst.get_states_tracker.return_value = {}
@@ -211,7 +223,9 @@ class TestOverlapScheduleNodeFirstForward(unittest.TestCase):
             patch(
                 "paddleformers.fleet.pipeline_parallel.pp_utils.forward_backward_overlap_utils.framework"
             ) as mock_fw,
-            patch("paddleformers.fleet.pipeline_parallel.pp_utils.forward_backward_overlap_utils.core") as mock_core,
+            patch(
+                "paddleformers.fleet.pipeline_parallel.pp_utils.forward_backward_overlap_utils.core"
+            ) as mock_core,
         ):
             mock_tracker_inst = MagicMock()
             mock_tracker_inst.get_states_tracker.return_value = {}

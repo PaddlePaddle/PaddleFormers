@@ -17,7 +17,11 @@ import unittest
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import paddle
@@ -127,7 +131,9 @@ class TestSendRecvMetaExtra(unittest.TestCase):
         last.stop_gradient = False
         last.key = "last"
 
-        shapes, dtypes, keys = SendRecvMeta()._obtain_send_message([first, skipped, last])
+        shapes, dtypes, keys = SendRecvMeta()._obtain_send_message(
+            [first, skipped, last]
+        )
 
         self.assertEqual(shapes, ([2, 3], [4]))
         self.assertEqual(
@@ -191,7 +197,9 @@ class TestP2PCommunicationOpsExtra(unittest.TestCase):
         first = paddle.ones([1], dtype="float32")
         second = paddle.ones([2], dtype="float32")
 
-        single_ops = _batch_p2p_tuple_or_tensor(first, _send_on_calc_stream, 3, group, mp_degree=4, mp_rank=2)
+        single_ops = _batch_p2p_tuple_or_tensor(
+            first, _send_on_calc_stream, 3, group, mp_degree=4, mp_rank=2
+        )
         tuple_ops = _batch_p2p_tuple_or_tensor(
             (first, second),
             _recv_on_calc_stream,
@@ -216,7 +224,9 @@ class TestP2PCommunicationOpsExtra(unittest.TestCase):
 
     def test_invalid_p2p_op_is_rejected(self):
         with self.assertRaises(RuntimeError):
-            P2PonCalcStream(lambda *args: None, paddle.ones([1]), 0, RecordingGroup())
+            P2PonCalcStream(
+                lambda *args: None, paddle.ones([1]), 0, RecordingGroup()
+            )
 
 
 class TestP2pHelperExtra(unittest.TestCase):
@@ -233,7 +243,9 @@ class TestP2pHelperExtra(unittest.TestCase):
         with self.assertRaises(AssertionError):
             helper.send_backward_recv_forward(tensor, pp_first_stage=True)
         with self.assertRaises(AssertionError):
-            helper.send_forward_backward_recv_forward_backward(tensor, tensor, recv_prev=False, recv_next=False)
+            helper.send_forward_backward_recv_forward_backward(
+                tensor, tensor, recv_prev=False, recv_next=False
+            )
 
     def test_clear_meta_cache_and_repr(self):
         helper = P2pHelper(use_cache=True)
@@ -253,7 +265,9 @@ class TestP2pHelperExtra(unittest.TestCase):
         p2p_communication._hcg = DummyHCG()
         try:
             with self.assertRaises(AssertionError):
-                p2p_communication._p2p_helper(None, None, False, False, send_recv_meta=None)
+                p2p_communication._p2p_helper(
+                    None, None, False, False, send_recv_meta=None
+                )
 
             self.assertEqual(
                 p2p_communication._p2p_helper(

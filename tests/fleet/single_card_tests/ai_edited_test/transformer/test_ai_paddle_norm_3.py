@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -65,19 +69,23 @@ class TestWrappedPaddleNormSelection(unittest.TestCase):
     def test_unsupported_normalization_raises(self):
         """Test WrappedPaddleNorm with unsupported normalization raises Exception."""
         config = _make_config(normalization="InvalidNorm")
-        with self.assertRaises(Exception):  # noqa: B017
+        with self.assertRaises(Exception):
             WrappedPaddleNorm(config=config, hidden_size=64)
 
     def test_input_is_parallel_default(self):
         """Test default input_is_parallel value."""
-        config = _make_config(sequence_parallel=False, tensor_model_parallel_size=1)
+        config = _make_config(
+            sequence_parallel=False, tensor_model_parallel_size=1
+        )
         norm = WrappedPaddleNorm(config=config, hidden_size=64)
         self.assertIsInstance(norm, RMSNorm)
 
     def test_input_is_parallel_explicit(self):
         """Test explicit input_is_parallel value."""
         config = _make_config()
-        norm = WrappedPaddleNorm(config=config, hidden_size=64, input_is_parallel=True)
+        norm = WrappedPaddleNorm(
+            config=config, hidden_size=64, input_is_parallel=True
+        )
         self.assertIsInstance(norm, RMSNorm)
 
 
@@ -94,7 +102,9 @@ class TestWrappedPaddleNormPipeMTP(unittest.TestCase):
 
     def test_mtp_load_weight_only(self):
         """Test WrappedPaddleNormPipe with mtp_load_weight_only=True."""
-        config = _make_config(num_nextn_predict_layers=2, mtp_load_weight_only=True)
+        config = _make_config(
+            num_nextn_predict_layers=2, mtp_load_weight_only=True
+        )
         norm_pipe = WrappedPaddleNormPipe(config=config, hidden_size=128)
         dict_args = {"hidden_states": paddle.randn([3, 4, 128])}
         result = norm_pipe(dict_args)
@@ -129,7 +139,9 @@ class TestL2NormEdgeCases(unittest.TestCase):
         out = norm(x)
         # L2Norm normalizes so mean of squared values along last dim is ~1
         mean_sq = out.float().pow(2).mean(-1)
-        self.assertTrue(paddle.allclose(mean_sq, paddle.ones_like(mean_sq), atol=0.1).item())
+        self.assertTrue(
+            paddle.allclose(mean_sq, paddle.ones_like(mean_sq), atol=0.1).item()
+        )
 
     def test_l2norm_preserves_shape(self):
         """Test L2Norm preserves input shape."""

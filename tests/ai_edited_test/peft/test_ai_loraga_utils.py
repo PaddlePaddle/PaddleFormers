@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import MagicMock
 
 import paddle
-import paddle.nn as nn
+from paddle import nn
 
 from paddleformers.peft.lora.loraga_utils import (
     GradientOffloadHookContext,
@@ -55,7 +55,10 @@ class TestGradientOffloadHookContext(unittest.TestCase):
     def test_enter_sets_hook_enable(self):
         """Test that entering the context enables the hook."""
         ctx = GradientOffloadHookContext(
-            model=self.model, gradient_dict=self.gradient_dict, local_rank=0, loraga_init_iters=4
+            model=self.model,
+            gradient_dict=self.gradient_dict,
+            local_rank=0,
+            loraga_init_iters=4,
         )
         self.assertFalse(get_hook_enable())
         ctx.__enter__()
@@ -65,7 +68,10 @@ class TestGradientOffloadHookContext(unittest.TestCase):
     def test_exit_disables_hook_enable(self):
         """Test that exiting the context disables the hook."""
         ctx = GradientOffloadHookContext(
-            model=self.model, gradient_dict=self.gradient_dict, local_rank=0, loraga_init_iters=4
+            model=self.model,
+            gradient_dict=self.gradient_dict,
+            local_rank=0,
+            loraga_init_iters=4,
         )
         ctx.__enter__()
         self.assertTrue(get_hook_enable())
@@ -74,7 +80,9 @@ class TestGradientOffloadHookContext(unittest.TestCase):
 
     def test_init_default_params(self):
         """Test initialization with default parameters."""
-        ctx = GradientOffloadHookContext(model=self.model, gradient_dict=self.gradient_dict)
+        ctx = GradientOffloadHookContext(
+            model=self.model, gradient_dict=self.gradient_dict
+        )
         self.assertEqual(ctx.local_rank, 0)
         self.assertEqual(ctx.loraga_init_iters, 4)
         self.assertFalse(ctx.gradient_offload)

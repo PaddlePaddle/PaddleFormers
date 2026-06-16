@@ -96,13 +96,19 @@ class TestFunctionFormatter(unittest.TestCase):
     """Tests for FunctionFormatter."""
 
     def test_apply_single_function(self):
-        formatter = FunctionFormatter(slots=["{{content}}"], tool_format="default")
-        result = formatter.apply(content='[{"name": "test_func", "arguments": {"a": 1}}]')
+        formatter = FunctionFormatter(
+            slots=["{{content}}"], tool_format="default"
+        )
+        result = formatter.apply(
+            content='[{"name": "test_func", "arguments": {"a": 1}}]'
+        )
         self.assertEqual(len(result), 1)
         self.assertIn("test_func", result[0])
 
     def test_apply_with_type_key(self):
-        formatter = FunctionFormatter(slots=["{{content}}"], tool_format="default")
+        formatter = FunctionFormatter(
+            slots=["{{content}}"], tool_format="default"
+        )
         result = formatter.apply(
             content='[{"type": "function", "function": {"name": "my_func", "arguments": {"x": 1}}}]'
         )
@@ -110,20 +116,30 @@ class TestFunctionFormatter(unittest.TestCase):
 
     def test_apply_with_thought_words_no_match(self):
         """Test with thought_words that do not match content."""
-        formatter = FunctionFormatter(slots=["{{content}}"], tool_format="default")
+        formatter = FunctionFormatter(
+            slots=["{{content}}"], tool_format="default"
+        )
         content = '[{"name": "test_func", "arguments": {"a": 1}}]'
-        result = formatter.apply(content=content, thought_words=("<think\n", "\n</think\n"))
+        result = formatter.apply(
+            content=content, thought_words=("<think\n", "\n</think\n")
+        )
         self.assertIsInstance(result, list)
 
     def test_apply_with_thought_words_match(self):
         """Test with thought_words that match content."""
-        formatter = FunctionFormatter(slots=["{{content}}"], tool_format="default")
+        formatter = FunctionFormatter(
+            slots=["{{content}}"], tool_format="default"
+        )
         content = '<think\nthinking\n</think\n[{"name": "test_func", "arguments": {"a": 1}}]'
-        result = formatter.apply(content=content, thought_words=("<think\n", "\n</think\n"))
+        result = formatter.apply(
+            content=content, thought_words=("<think\n", "\n</think\n")
+        )
         self.assertIsInstance(result, list)
 
     def test_apply_invalid_json_raises(self):
-        formatter = FunctionFormatter(slots=["{{content}}"], tool_format="default")
+        formatter = FunctionFormatter(
+            slots=["{{content}}"], tool_format="default"
+        )
         with self.assertRaises(RuntimeError):
             formatter.apply(content="not valid json")
 
@@ -156,19 +172,25 @@ class TestThinkingFormatter(unittest.TestCase):
     def test_apply_with_thought(self):
         formatter = ThinkingFormatter(slots=["{{content}}"])
         content = "<think\nthinking\n</think\nactual response"
-        result = formatter.apply(content=content, thought_words=("<think\n", "\n</think\n"))
+        result = formatter.apply(
+            content=content, thought_words=("<think\n", "\n</think\n")
+        )
         self.assertIsInstance(result, list)
         # Should have reasoning_content and content
         self.assertTrue(len(result) >= 1)
 
     def test_apply_without_thought(self):
         formatter = ThinkingFormatter(slots=["{{content}}"])
-        result = formatter.apply(content="just content", thought_words=("<think\n", "\n</think\n"))
+        result = formatter.apply(
+            content="just content", thought_words=("<think\n", "\n</think\n")
+        )
         self.assertIsInstance(result, list)
 
     def test_apply_with_empty_content(self):
         formatter = ThinkingFormatter(slots=["{{content}}"])
-        result = formatter.apply(content="", thought_words=("<think\n", "\n</think\n"))
+        result = formatter.apply(
+            content="", thought_words=("<think\n", "\n</think\n")
+        )
         self.assertIsInstance(result, list)
 
 

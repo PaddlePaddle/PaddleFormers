@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -54,9 +58,15 @@ class TestRefinedRcomputeFlashMaskAttentionForward(unittest.TestCase):
         "paddleformers.fleet.refined_recompute.flash_attn._get_fa_version",
         return_value=2,
     )
-    @patch("paddleformers.fleet.refined_recompute.flash_attn._C_ops.flashmask_attention")
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer")
-    def test_first_fwd_dispatches(self, mock_tracer, mock_flashmask, mock_version):
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn._C_ops.flashmask_attention"
+    )
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer"
+    )
+    def test_first_fwd_dispatches(
+        self, mock_tracer, mock_flashmask, mock_version
+    ):
         """Test forward dispatches to _first_fwd when no grad."""
         mock_tracer_obj = MagicMock()
         mock_tracer_obj._has_grad = False
@@ -78,7 +88,9 @@ class TestRefinedRcomputeFlashMaskAttentionForward(unittest.TestCase):
         result = attn.forward(q, k, v, startend)
         self.assertFalse(attn._hold_tensors_queue.empty())
 
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer")
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer"
+    )
     def test_second_fwd_dispatches(self, mock_tracer):
         """Test forward dispatches to _second_fwd when grad is active."""
         mock_tracer_obj = MagicMock()
@@ -106,7 +118,9 @@ class TestRefinedRcomputeFlashMaskAttentionForward(unittest.TestCase):
             result = attn.forward(q, k, v, startend)
             mock_functor.assert_called_once()
 
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer")
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer"
+    )
     def test_second_fwd_empty_queue_raises(self, mock_tracer):
         """Test second_fwd raises when queue is empty."""
         mock_tracer_obj = MagicMock()
@@ -130,7 +144,9 @@ class TestRefinedRcomputeFlashMaskAttentionFirstFwdV4(unittest.TestCase):
         "paddleformers.fleet.refined_recompute.flash_attn._get_fa_version",
         return_value=4,
     )
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer")
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer"
+    )
     def test_first_fwd_v4(self, mock_tracer, mock_version):
         """Test _first_fwd with version 4."""
         # _flash_attn_fwd is conditionally imported (sm_10x only).
@@ -200,7 +216,9 @@ class TestFlashMaskAttnFunctorCpForward(unittest.TestCase):
 class TestFlashMaskAttnCpFunctorBackward(unittest.TestCase):
     """Tests for FlashMaskAttnCpFunctor.backward."""
 
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.cp_flashmask_allgatherkv_balance_backward")
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.cp_flashmask_allgatherkv_balance_backward"
+    )
     def test_backward_calls_cp_backward(self, mock_cp_backward):
         """Test backward calls cp_flashmask_allgatherkv_balance_backward."""
         mock_cp_backward.return_value = (
@@ -234,7 +252,9 @@ class TestFlashMaskAttnCpFunctorBackward(unittest.TestCase):
 class TestRefinedRcomputeFlashMaskAttentionCall(unittest.TestCase):
     """Tests for RefinedRcomputeFlashMaskAttention __call__."""
 
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.RefinedRcomputeFlashMaskAttention.forward")
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.RefinedRcomputeFlashMaskAttention.forward"
+    )
     def test_call_delegates_to_forward(self, mock_forward):
         """Test __call__ delegates to forward."""
         mock_forward.return_value = paddle.randn([2, 4, 8])

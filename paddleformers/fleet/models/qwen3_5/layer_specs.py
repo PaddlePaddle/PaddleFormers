@@ -47,7 +47,9 @@ def get_qwen3_5_vision_spec(config: TransformerConfig) -> LayerSpec:
     backend = LocalSpecProvider()
 
     # --- Empty layers for pipeline parallel padding ---
-    empty_layer_spec = LayerSpec(layer=EmptyLayer, extra_kwargs={"config": config})
+    empty_layer_spec = LayerSpec(
+        layer=EmptyLayer, extra_kwargs={"config": config}
+    )
     head_empty_layers = [empty_layer_spec] * config.num_empty_layers_add_in_head
     tail_empty_layers = [empty_layer_spec] * config.num_empty_layers_add_in_tail
 
@@ -80,11 +82,15 @@ def get_qwen3_5_vision_spec(config: TransformerConfig) -> LayerSpec:
     )
 
     # --- Patch merger ---
-    config.merger_hidden_size = config.hidden_size * (config.spatial_merge_size**2)
+    config.merger_hidden_size = config.hidden_size * (
+        config.spatial_merge_size**2
+    )
     merger_spec = LayerSpec(
         layer=Qwen3VLVisionPathMerger,
         sublayers_spec=Qwen3VLVisionPatchMergerSpec(
-            norm=backend.layer_norm(rms_norm=(config.normalization == "RMSNorm"), for_qk=False),
+            norm=backend.layer_norm(
+                rms_norm=(config.normalization == "RMSNorm"), for_qk=False
+            ),
         ),
         extra_kwargs={
             "config": config,

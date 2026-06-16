@@ -45,7 +45,9 @@ from paddleformers.fleet.fusions.fused_bias_swiglu import (
 from paddleformers.fleet.transformer.layer import FleetLayer
 
 if TYPE_CHECKING:
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 from paddleformers.fleet.utils import (
     get_tensor_model_parallel_group_if_none,
     nvtx_range_pop,
@@ -99,12 +101,18 @@ class MLP(FleetLayer):
 
         self.config: TransformerConfig = config
 
-        self.input_size = input_size if input_size is not None else self.config.hidden_size
+        self.input_size = (
+            input_size if input_size is not None else self.config.hidden_size
+        )
 
-        tp_group = get_tensor_model_parallel_group_if_none(tp_group, is_expert=is_expert)
+        tp_group = get_tensor_model_parallel_group_if_none(
+            tp_group, is_expert=is_expert
+        )
         if intermediate_size is None:
             if is_expert:
-                raise ValueError("MoE MLP requires `intermediate_size`, but it was not provided.")
+                raise ValueError(
+                    "MoE MLP requires `intermediate_size`, but it was not provided."
+                )
             warnings.warn(
                 "MLP requires intermediate_size, but it was not provided. Using \
                     config.intermediate_size by default.",
@@ -112,11 +120,15 @@ class MLP(FleetLayer):
                 stacklevel=2,
             )
             if self.config.intermediate_size is None:
-                raise ValueError("MLP requires `config.intermediate_size` is not None, but it got None.")
+                raise ValueError(
+                    "MLP requires `config.intermediate_size` is not None, but it got None."
+                )
 
             intermediate_size = self.config.intermediate_size
 
-        self.hidden_size = hidden_size if hidden_size is not None else self.config.hidden_size
+        self.hidden_size = (
+            hidden_size if hidden_size is not None else self.config.hidden_size
+        )
 
         # If this is a gated linear unit we double the output width
         # see https://arxiv.org/pdf/2002.05202.pdf
@@ -137,7 +149,9 @@ class MLP(FleetLayer):
 
         # Ensure hidden_act is a callable function, not a bound method
         hidden_act_value = self.config.hidden_act
-        if hasattr(hidden_act_value, "__self__") and hasattr(hidden_act_value, "__func__"):
+        if hasattr(hidden_act_value, "__self__") and hasattr(
+            hidden_act_value, "__func__"
+        ):
             # If it's a bound method, use the unbound function
             self.hidden_act = hidden_act_value.__func__
         else:
@@ -169,7 +183,9 @@ class MLP(FleetLayer):
         nvtx_range_push(suffix="activation")
 
         # Alignment mode: use Paddle native F.swiglu
-        _use_paddle_swiglu = getattr(self.config, "gpt_model_use_experimental_version", False)
+        _use_paddle_swiglu = getattr(
+            self.config, "gpt_model_use_experimental_version", False
+        )
         if (
             self.config.use_bias
             and self.config.gpt_model_use_experimental_version
@@ -184,7 +200,11 @@ class MLP(FleetLayer):
             )
             return output, None
 
-        if _use_paddle_swiglu and self.hidden_act == F.silu and self.config.gated_linear_unit:
+        if (
+            _use_paddle_swiglu
+            and self.hidden_act == F.silu
+            and self.config.gated_linear_unit
+        ):
             if bias_parallel is not None:
                 intermediate_parallel = intermediate_parallel + bias_parallel
             intermediate_parallel = F.swiglu(intermediate_parallel)
@@ -203,7 +223,10 @@ class MLP(FleetLayer):
                         ),
                         self.config.activation_func_clamp_value,
                     )
-                elif self.hidden_act == quick_gelu and self.config.gated_linear_unit:
+                elif (
+                    self.hidden_act == quick_gelu
+                    and self.config.gated_linear_unit
+                ):
                     intermediate_parallel = weighted_bias_quick_geglu_impl(
                         intermediate_parallel,
                         bias_parallel,
@@ -217,15 +240,23 @@ class MLP(FleetLayer):
                         self.config.activation_func_clamp_value,
                     )
                 else:
-                    raise ValueError("Only support fusion of swiglu and quick_gelu with per_token_scale in MLP.")
+                    raise ValueError(
+                        "Only support fusion of swiglu and quick_gelu with per_token_scale in MLP."
+                    )
             else:
                 if self.hidden_act == F.gelu:
                     if self.config.gated_linear_unit:
-                        intermediate_parallel = bias_geglu_impl(intermediate_parallel, bias_parallel)
+                        intermediate_parallel = bias_geglu_impl(
+                            intermediate_parallel, bias_parallel
+                        )
                     else:
                         assert self.config.use_bias is True
-                        intermediate_parallel = bias_gelu_impl(intermediate_parallel, bias_parallel)
-                elif self.hidden_act == F.silu and self.config.gated_linear_unit:
+                        intermediate_parallel = bias_gelu_impl(
+                            intermediate_parallel, bias_parallel
+                        )
+                elif (
+                    self.hidden_act == F.silu and self.config.gated_linear_unit
+                ):
                     intermediate_parallel = bias_swiglu_impl(
                         intermediate_parallel,
                         bias_parallel,
@@ -246,10 +277,14 @@ class MLP(FleetLayer):
 
                 def glu(x):
                     x_glu, x_linear = paddle.chunk(x, 2, axis=-1)
-                    if (val := self.config.activation_func_clamp_value) is not None:
+                    if (
+                        val := self.config.activation_func_clamp_value
+                    ) is not None:
                         x_glu = x_glu.clamp(min=None, max=val)
                         x_linear = x_linear.clamp(min=-val, max=val)
-                    return self.config.hidden_act(x_glu) * (x_linear + self.config.glu_linear_offset)
+                    return self.config.hidden_act(x_glu) * (
+                        x_linear + self.config.glu_linear_offset
+                    )
 
                 intermediate_parallel = glu(intermediate_parallel)
             else:
@@ -257,7 +292,9 @@ class MLP(FleetLayer):
 
             if per_token_scale is not None:
                 original_dtype = intermediate_parallel.dtype
-                intermediate_parallel = intermediate_parallel * per_token_scale.unsqueeze(-1)
+                intermediate_parallel = (
+                    intermediate_parallel * per_token_scale.unsqueeze(-1)
+                )
                 intermediate_parallel = intermediate_parallel.to(original_dtype)
         nvtx_range_pop(suffix="activation")
 

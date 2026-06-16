@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -166,7 +170,9 @@ class TestFourDirsSendPartialDstSrc(unittest.TestCase):
             ),
             patch("paddle.distributed.isend") as mock_isend,
         ):
-            send_partial(mock_tensor, dst=0, nranks=1, rank_id=0, group=mock_group)
+            send_partial(
+                mock_tensor, dst=0, nranks=1, rank_id=0, group=mock_group
+            )
             # dst=0 -> uses _get_p2p_prev_rank
             mock_isend.assert_called_once()
 

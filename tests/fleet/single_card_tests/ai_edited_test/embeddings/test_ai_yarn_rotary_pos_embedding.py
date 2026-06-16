@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -192,7 +196,9 @@ class TestYarnGetConcentrationFactor(unittest.TestCase):
             _yarn_get_concentration_factor,
         )
 
-        result = _yarn_get_concentration_factor(scaling_factor=1.0, mscale=1.0, mscale_all_dim=0.0)
+        result = _yarn_get_concentration_factor(
+            scaling_factor=1.0, mscale=1.0, mscale_all_dim=0.0
+        )
         # scale <= 1: both mscale calls return 1.0, so factor = 1.0/1.0 = 1.0
         self.assertAlmostEqual(result, 1.0)
 
@@ -201,7 +207,9 @@ class TestYarnGetConcentrationFactor(unittest.TestCase):
             _yarn_get_concentration_factor,
         )
 
-        result = _yarn_get_concentration_factor(scaling_factor=2.0, mscale=1.0, mscale_all_dim=0.0)
+        result = _yarn_get_concentration_factor(
+            scaling_factor=2.0, mscale=1.0, mscale_all_dim=0.0
+        )
         self.assertIsInstance(result, float)
         self.assertGreater(result, 0)
 
@@ -245,8 +253,12 @@ class TestYarnGetConcentrationFactorFromConfig(unittest.TestCase):
         type(mock_config).yarn_rotary_scaling_factor = property(
             lambda self: (_ for _ in ()).throw(AttributeError("no attr"))
         )
-        type(mock_config).yarn_mscale = property(lambda self: (_ for _ in ()).throw(AttributeError("no attr")))
-        type(mock_config).yarn_mscale_all_dim = property(lambda self: (_ for _ in ()).throw(AttributeError("no attr")))
+        type(mock_config).yarn_mscale = property(
+            lambda self: (_ for _ in ()).throw(AttributeError("no attr"))
+        )
+        type(mock_config).yarn_mscale_all_dim = property(
+            lambda self: (_ for _ in ()).throw(AttributeError("no attr"))
+        )
 
         result = _yarn_get_concentration_factor_from_config(mock_config)
         self.assertEqual(result, 1.0)

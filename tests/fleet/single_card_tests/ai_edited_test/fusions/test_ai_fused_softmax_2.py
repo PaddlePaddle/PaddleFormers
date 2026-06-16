@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -50,9 +54,13 @@ class TestFusedScaleMaskSoftmaxExtra(unittest.TestCase):
         paddle.seed(42)
         self.x = paddle.randn([2, 4, 8, 16], dtype=paddle.float32)
 
-    @unittest.skipIf(not paddle.is_compiled_with_cuda(), "CUDA required for float16")
+    @unittest.skipIf(
+        not paddle.is_compiled_with_cuda(), "CUDA required for float16"
+    )
     def test_fp16_input_fp32_softmax(self):
-        from paddleformers.fleet.fusions.fused_softmax import FusedScaleMaskSoftmax
+        from paddleformers.fleet.fusions.fused_softmax import (
+            FusedScaleMaskSoftmax,
+        )
         from paddleformers.fleet.transformer.enums import AttnMaskType
 
         layer = FusedScaleMaskSoftmax(
@@ -69,9 +77,13 @@ class TestFusedScaleMaskSoftmaxExtra(unittest.TestCase):
         self.assertEqual(out.shape, [2, 4, 8, 16])
         self.assertEqual(out.dtype, paddle.float16)
 
-    @unittest.skipIf(not paddle.is_compiled_with_cuda(), "CUDA required for bfloat16")
+    @unittest.skipIf(
+        not paddle.is_compiled_with_cuda(), "CUDA required for bfloat16"
+    )
     def test_bf16_input_fp32_softmax(self):
-        from paddleformers.fleet.fusions.fused_softmax import FusedScaleMaskSoftmax
+        from paddleformers.fleet.fusions.fused_softmax import (
+            FusedScaleMaskSoftmax,
+        )
         from paddleformers.fleet.transformer.enums import AttnMaskType
 
         layer = FusedScaleMaskSoftmax(
@@ -89,7 +101,9 @@ class TestFusedScaleMaskSoftmaxExtra(unittest.TestCase):
         self.assertEqual(out.dtype, paddle.bfloat16)
 
     def test_no_scale_no_softmax_fp32(self):
-        from paddleformers.fleet.fusions.fused_softmax import FusedScaleMaskSoftmax
+        from paddleformers.fleet.fusions.fused_softmax import (
+            FusedScaleMaskSoftmax,
+        )
         from paddleformers.fleet.transformer.enums import AttnMaskType
 
         layer = FusedScaleMaskSoftmax(
@@ -106,7 +120,9 @@ class TestFusedScaleMaskSoftmaxExtra(unittest.TestCase):
         np.testing.assert_allclose(out.sum(axis=-1).numpy(), 1.0, atol=1e-5)
 
     def test_scale_assert_no_fp32(self):
-        from paddleformers.fleet.fusions.fused_softmax import FusedScaleMaskSoftmax
+        from paddleformers.fleet.fusions.fused_softmax import (
+            FusedScaleMaskSoftmax,
+        )
         from paddleformers.fleet.transformer.enums import AttnMaskType
 
         with self.assertRaises(AssertionError):
@@ -121,7 +137,9 @@ class TestFusedScaleMaskSoftmaxExtra(unittest.TestCase):
             )
 
     def test_fp16_and_bf16_assert(self):
-        from paddleformers.fleet.fusions.fused_softmax import FusedScaleMaskSoftmax
+        from paddleformers.fleet.fusions.fused_softmax import (
+            FusedScaleMaskSoftmax,
+        )
         from paddleformers.fleet.transformer.enums import AttnMaskType
 
         with self.assertRaises(AssertionError):
@@ -136,7 +154,9 @@ class TestFusedScaleMaskSoftmaxExtra(unittest.TestCase):
             )
 
     def test_input_dim_assert(self):
-        from paddleformers.fleet.fusions.fused_softmax import FusedScaleMaskSoftmax
+        from paddleformers.fleet.fusions.fused_softmax import (
+            FusedScaleMaskSoftmax,
+        )
         from paddleformers.fleet.transformer.enums import AttnMaskType
 
         layer = FusedScaleMaskSoftmax(
@@ -153,7 +173,9 @@ class TestFusedScaleMaskSoftmaxExtra(unittest.TestCase):
             layer(x_3d, mask=None)
 
     def test_causal_mask_auto_gen_sq_eq_sk(self):
-        from paddleformers.fleet.fusions.fused_softmax import FusedScaleMaskSoftmax
+        from paddleformers.fleet.fusions.fused_softmax import (
+            FusedScaleMaskSoftmax,
+        )
         from paddleformers.fleet.transformer.enums import AttnMaskType
 
         layer = FusedScaleMaskSoftmax(
@@ -170,7 +192,9 @@ class TestFusedScaleMaskSoftmaxExtra(unittest.TestCase):
         self.assertEqual(out.shape, [2, 4, 8, 8])
 
     def test_causal_mask_sq_ne_sk_assert(self):
-        from paddleformers.fleet.fusions.fused_softmax import FusedScaleMaskSoftmax
+        from paddleformers.fleet.fusions.fused_softmax import (
+            FusedScaleMaskSoftmax,
+        )
         from paddleformers.fleet.transformer.enums import AttnMaskType
 
         layer = FusedScaleMaskSoftmax(
@@ -188,7 +212,9 @@ class TestFusedScaleMaskSoftmaxExtra(unittest.TestCase):
 
     def test_causal_mask_sq_1_no_mask_gen(self):
         """When sq == 1, causal mask should not be generated."""
-        from paddleformers.fleet.fusions.fused_softmax import FusedScaleMaskSoftmax
+        from paddleformers.fleet.fusions.fused_softmax import (
+            FusedScaleMaskSoftmax,
+        )
         from paddleformers.fleet.transformer.enums import AttnMaskType
 
         layer = FusedScaleMaskSoftmax(
@@ -206,7 +232,9 @@ class TestFusedScaleMaskSoftmaxExtra(unittest.TestCase):
         self.assertEqual(out.shape, [2, 4, 1, 16])
 
     def test_sliding_window_mask(self):
-        from paddleformers.fleet.fusions.fused_softmax import FusedScaleMaskSoftmax
+        from paddleformers.fleet.fusions.fused_softmax import (
+            FusedScaleMaskSoftmax,
+        )
         from paddleformers.fleet.transformer.enums import AttnMaskType
 
         layer = FusedScaleMaskSoftmax(
@@ -224,7 +252,9 @@ class TestFusedScaleMaskSoftmaxExtra(unittest.TestCase):
         self.assertEqual(out.shape, [2, 4, 8, 8])
 
     def test_arbitrary_mask_type(self):
-        from paddleformers.fleet.fusions.fused_softmax import FusedScaleMaskSoftmax
+        from paddleformers.fleet.fusions.fused_softmax import (
+            FusedScaleMaskSoftmax,
+        )
         from paddleformers.fleet.transformer.enums import AttnMaskType
 
         layer = FusedScaleMaskSoftmax(
@@ -241,7 +271,9 @@ class TestFusedScaleMaskSoftmaxExtra(unittest.TestCase):
         self.assertEqual(out.shape, [2, 4, 8, 16])
 
     def test_no_mask_type_with_explicit_mask(self):
-        from paddleformers.fleet.fusions.fused_softmax import FusedScaleMaskSoftmax
+        from paddleformers.fleet.fusions.fused_softmax import (
+            FusedScaleMaskSoftmax,
+        )
         from paddleformers.fleet.transformer.enums import AttnMaskType
 
         layer = FusedScaleMaskSoftmax(
@@ -258,7 +290,9 @@ class TestFusedScaleMaskSoftmaxExtra(unittest.TestCase):
         np.testing.assert_allclose(out.sum(axis=-1).numpy(), 1.0, atol=1e-5)
 
     def test_mask_applied_before_softmax(self):
-        from paddleformers.fleet.fusions.fused_softmax import FusedScaleMaskSoftmax
+        from paddleformers.fleet.fusions.fused_softmax import (
+            FusedScaleMaskSoftmax,
+        )
         from paddleformers.fleet.transformer.enums import AttnMaskType
 
         layer = FusedScaleMaskSoftmax(
@@ -276,7 +310,9 @@ class TestFusedScaleMaskSoftmaxExtra(unittest.TestCase):
 
     def test_causal_mask_with_user_mask_ignored(self):
         """When attn_mask_type is causal and mask is provided, user mask is used."""
-        from paddleformers.fleet.fusions.fused_softmax import FusedScaleMaskSoftmax
+        from paddleformers.fleet.fusions.fused_softmax import (
+            FusedScaleMaskSoftmax,
+        )
         from paddleformers.fleet.transformer.enums import AttnMaskType
 
         layer = FusedScaleMaskSoftmax(

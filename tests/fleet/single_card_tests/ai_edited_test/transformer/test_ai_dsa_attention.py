@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -225,7 +229,9 @@ class TestIndexer(unittest.TestCase):
         indexer = Indexer(config, sublayers_spec=spec, layer_number=1)
         self.assertEqual(indexer.nope_head_dim, 8)
 
-    @patch("paddleformers.fleet.transformer.dsa_attention._apply_rotary_pos_emb_bshd")
+    @patch(
+        "paddleformers.fleet.transformer.dsa_attention._apply_rotary_pos_emb_bshd"
+    )
     def test_apply_rope(self, mock_rope):
         mock_rope.return_value = paddle.randn([2, 4, 8])
         config = _make_config()

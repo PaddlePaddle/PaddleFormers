@@ -60,17 +60,25 @@ class _FP8Gemm(paddle.autograd.Function):
         elif len(inp) == 4:
             inp_fp8, inp_scale, inp_t_fp8, inp_t_scale = inp
         else:
-            raise ValueError(f"Unexpected length of quant_func result: {len(inp)}")
+            raise ValueError(
+                f"Unexpected length of quant_func result: {len(inp)}"
+            )
 
         if is_fp8_tensor(weight) is False:
             weight_fp8, weight_scale = weight_quant_func(weight)
         else:
             weight_fp8, weight_scale = weight
 
-        ctx.save_for_backward(inp_t_fp8, inp_t_scale, weight, weight_fp8, weight_scale)
+        ctx.save_for_backward(
+            inp_t_fp8, inp_t_scale, weight, weight_fp8, weight_scale
+        )
         ctx.use_pow2_scale = use_pow2_scale
-        out = paddle.empty([inp_fp8.shape[0], weight_fp8.shape[0]], dtype=paddle.bfloat16)
-        deep_gemm.fp8_gemm_nt((inp_fp8, inp_scale), (weight_fp8, weight_scale), out)
+        out = paddle.empty(
+            [inp_fp8.shape[0], weight_fp8.shape[0]], dtype=paddle.bfloat16
+        )
+        deep_gemm.fp8_gemm_nt(
+            (inp_fp8, inp_scale), (weight_fp8, weight_scale), out
+        )
 
         return out
 
@@ -88,16 +96,20 @@ class _FP8Gemm(paddle.autograd.Function):
         - grad_weight = grad_output.T @ inp
           grad_output.T: [N, M], inp: [M, K] -> grad_weight: [N, K]
         """
-        inp_t_fp8, inp_t_scale, weight, weight_fp8, weight_scale = ctx.saved_tensor()
+        inp_t_fp8, inp_t_scale, weight, weight_fp8, weight_scale = (
+            ctx.saved_tensor()
+        )
 
-        assert hasattr(weight, "main_grad"), "fp8 gemm backward requires main_grad of weight"
+        assert hasattr(weight, "main_grad"), (
+            "fp8 gemm backward requires main_grad of weight"
+        )
         if weight.main_grad is not None:
-            assert (
-                weight.main_grad.dtype == paddle.float32
-            ), "fp8 gemm backward requires main_grad of weight to be float32"
-        assert (
-            inp_t_fp8 is not None and inp_t_scale is not None
-        ), "fp8 gemm backward requires inp_t_fp8 and inp_t_scale"
+            assert weight.main_grad.dtype == paddle.float32, (
+                "fp8 gemm backward requires main_grad of weight to be float32"
+            )
+        assert inp_t_fp8 is not None and inp_t_scale is not None, (
+            "fp8 gemm backward requires inp_t_fp8 and inp_t_scale"
+        )
 
         # Convert grad_output to FP8 format
         # grad_output is typically in BF16/FP16, need to quantize
@@ -117,7 +129,9 @@ class _FP8Gemm(paddle.autograd.Function):
         # Compute grad_input = grad_output @ weight
         # grad_output: [M, N], weight: [N, K] -> grad_input: [M, K]
         # Using fp8_gemm_nn: A @ B (no transpose)
-        grad_input = paddle.empty([inp_t_fp8.shape[1], inp_t_fp8.shape[0]], dtype=paddle.bfloat16)
+        grad_input = paddle.empty(
+            [inp_t_fp8.shape[1], inp_t_fp8.shape[0]], dtype=paddle.bfloat16
+        )
         deep_gemm.fp8_gemm_nt(
             (grad_out_fp8, grad_out_scale),
             (weight_fp8.T.contiguous(), weight_scale.T),
@@ -128,7 +142,9 @@ class _FP8Gemm(paddle.autograd.Function):
         # grad_output.T: [N, M], inp: [M, K] -> grad_weight: [N, K]
         if hasattr(weight, "main_grad"):
             if weight.main_grad is None:
-                weight.main_grad = paddle.zeros_like(weight, dtype=paddle.float32)
+                weight.main_grad = paddle.zeros_like(
+                    weight, dtype=paddle.float32
+                )
             main_grad = weight.main_grad
 
         deep_gemm.fp8_gemm_nt(
@@ -192,7 +208,9 @@ class FP8Linear(ColumnParallelLinear):
         )
 
         if deep_gemm is None:
-            raise RuntimeError("FP8Linear requires H-series GPU or above (paddlefleet_ops.deep_gemm not available)")
+            raise RuntimeError(
+                "FP8Linear requires H-series GPU or above (paddlefleet_ops.deep_gemm not available)"
+            )
 
         # DeepGEMM requires k-major storage, here to make self.weight k-major
         # and keep its shape consistent with [k, m]
@@ -202,7 +220,9 @@ class FP8Linear(ColumnParallelLinear):
         # print("==== self.weight after ====")
         # print(self.weight.strides)
 
-        self.use_pow2_scale = paddle.device.cuda.get_device_capability()[0] == 10
+        self.use_pow2_scale = (
+            paddle.device.cuda.get_device_capability()[0] == 10
+        )
         self.inp_quant_func, self.weight_quant_func = get_quant_func(
             config.fp8_recipe,
             input_trans=True,

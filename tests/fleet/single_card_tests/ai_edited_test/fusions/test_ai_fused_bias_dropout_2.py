@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -191,13 +195,17 @@ class TestGetBiasDropoutAdd(unittest.TestCase):
     """Tests for get_bias_dropout_add."""
 
     def test_returns_callable(self):
-        from paddleformers.fleet.fusions.fused_bias_dropout import get_bias_dropout_add
+        from paddleformers.fleet.fusions.fused_bias_dropout import (
+            get_bias_dropout_add,
+        )
 
         fn = get_bias_dropout_add(True, fused=True)
         self.assertTrue(callable(fn))
 
     def test_training_mode_usage(self):
-        from paddleformers.fleet.fusions.fused_bias_dropout import get_bias_dropout_add
+        from paddleformers.fleet.fusions.fused_bias_dropout import (
+            get_bias_dropout_add,
+        )
 
         fn = get_bias_dropout_add(True, fused=True)
         x = paddle.randn([4, 8], dtype=paddle.float32)
@@ -210,7 +218,9 @@ class TestGetBiasDropoutAdd(unittest.TestCase):
         self.assertEqual(out.shape, [4, 8])
 
     def test_eval_mode_usage(self):
-        from paddleformers.fleet.fusions.fused_bias_dropout import get_bias_dropout_add
+        from paddleformers.fleet.fusions.fused_bias_dropout import (
+            get_bias_dropout_add,
+        )
 
         fn = get_bias_dropout_add(False, fused=True)
         x = paddle.randn([4, 8], dtype=paddle.float32)

@@ -45,7 +45,9 @@ class TestOpsImport(unittest.TestCase):
 
     def test_ops_submodule_availability(self):
         if self.ops is None:
-            self.skipTest("paddlefleet_ops not available. Skipping op availability tests.")
+            self.skipTest(
+                "paddlefleet_ops not available. Skipping op availability tests."
+            )
         else:
             self.assertIsNotNone(
                 self.ops,
@@ -54,7 +56,9 @@ class TestOpsImport(unittest.TestCase):
 
     def test_tokens_ops_availability(self):
         if self.ops is None:
-            self.skipTest("paddlefleet_ops not available. Skipping tokens_ ops availability tests.")
+            self.skipTest(
+                "paddlefleet_ops not available. Skipping tokens_ ops availability tests."
+            )
             return
 
         missing_ops = []

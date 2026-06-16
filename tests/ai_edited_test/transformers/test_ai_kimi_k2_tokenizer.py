@@ -42,8 +42,9 @@ class TestKimiK2TikTokenTokenizer(unittest.TestCase):
             base64.b64encode(b"ab").decode(): 3,
         }
         with open(cls.vocab_file, "w") as f:
-            for token, rank in bpe_ranks.items():
-                f.write(f"{token} {rank}\n")
+            f.writelines(
+                f"{token} {rank}\n" for token, rank in bpe_ranks.items()
+            )
 
     def _make_tokenizer(self):
         """Create a tokenizer with the test vocab file and proper special tokens."""
@@ -129,12 +130,20 @@ class TestKimiK2TikTokenTokenizer(unittest.TestCase):
         self.assertEqual(result, "hello  world")  # No change for tiktoken
 
     def test_split_whitespaces_or_nonwhitespaces(self):
-        result = list(KimiK2TikTokenTokenizer._split_whitespaces_or_nonwhitespaces("hello world", 3))
+        result = list(
+            KimiK2TikTokenTokenizer._split_whitespaces_or_nonwhitespaces(
+                "hello world", 3
+            )
+        )
         self.assertIsInstance(result, list)
         self.assertTrue(len(result) > 0)
 
     def test_split_whitespaces_edge_cases(self):
-        result = list(KimiK2TikTokenTokenizer._split_whitespaces_or_nonwhitespaces("a   b", 2))
+        result = list(
+            KimiK2TikTokenTokenizer._split_whitespaces_or_nonwhitespaces(
+                "a   b", 2
+            )
+        )
         self.assertIsInstance(result, list)
 
     def test_pre_tokenizer_process(self):

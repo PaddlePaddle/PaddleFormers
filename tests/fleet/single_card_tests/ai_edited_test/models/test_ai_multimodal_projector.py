@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -24,7 +28,9 @@ from unittest.mock import MagicMock, patch
 
 import paddle
 
-from paddleformers.fleet.models.vision.multimodal_projector import MultimodalProjector
+from paddleformers.fleet.models.vision.multimodal_projector import (
+    MultimodalProjector,
+)
 
 
 class TestMultimodalProjectorUnsupportedType(unittest.TestCase):
@@ -32,7 +38,9 @@ class TestMultimodalProjectorUnsupportedType(unittest.TestCase):
 
     def test_unsupported_projector_type_raises(self):
         """Test that unsupported projector_type raises Exception."""
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         config = TransformerConfig(
             num_hidden_layers=1,
@@ -55,7 +63,9 @@ class TestMultimodalProjectorUnsupportedType(unittest.TestCase):
 
     def test_assert_none_sublayers_spec_raises(self):
         """Test that None sublayers_spec raises AssertionError."""
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         config = TransformerConfig(
             num_hidden_layers=1,
@@ -83,7 +93,9 @@ class TestMultimodalProjectorMLPType(unittest.TestCase):
         mock_mlp.return_value = mock_mlp_instance
 
         from paddleformers.fleet.transformer.mlp import MLPSublayersSpec
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         config = TransformerConfig(
             num_hidden_layers=1,
@@ -106,13 +118,17 @@ class TestMultimodalProjectorMLPType(unittest.TestCase):
 class TestMultimodalProjectorAffineType(unittest.TestCase):
     """Test MultimodalProjector with affine projector type."""
 
-    @patch("paddleformers.fleet.models.vision.multimodal_projector.build_spec_layer")
+    @patch(
+        "paddleformers.fleet.models.vision.multimodal_projector.build_spec_layer"
+    )
     def test_affine_type_creates_linear_encoder(self, mock_build):
         """Test affine projector type creates build_spec_layer."""
         mock_build.return_value = MagicMock()
 
         from paddleformers.fleet.transformer.mlp import MLPSublayersSpec
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         config = TransformerConfig(
             num_hidden_layers=1,

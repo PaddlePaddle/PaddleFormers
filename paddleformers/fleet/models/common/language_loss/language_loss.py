@@ -70,7 +70,8 @@ def _print_scalar_loss_md5(prefix: str, name: str, loss: Tensor) -> None:
     rank = paddle.distributed.get_rank()
     loss_tensor = loss.detach().cast("float32").reshape([1])
     print(
-        f"[{prefix}] rank={rank} {name}={loss_tensor.item():.20f} " f"{name}_md5={_tensor_md5(loss_tensor)}",
+        f"[{prefix}] rank={rank} {name}={loss_tensor.item():.20f} "
+        f"{name}_md5={_tensor_md5(loss_tensor)}",
         flush=True,
     )
 
@@ -128,7 +129,9 @@ class DistributedSoftmaxOp(PyLayer):
         return grad_input
 
 
-def subbatch(f, arg_idx, axis, bs, out_idx, use_recompute=False, same_arg_idx={}):
+def subbatch(
+    f, arg_idx, axis, bs, out_idx, use_recompute=False, same_arg_idx={}
+):
     """
     Converts a function to one that applies to subbatch of an input dimension.
     This is useful for processing large tensors in smaller chunks to reduce memory usage.
@@ -149,7 +152,9 @@ def subbatch(f, arg_idx, axis, bs, out_idx, use_recompute=False, same_arg_idx={}
 
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
-        assert len(arg_idx) == len(axis), "Number of batching args and number of batching dims should match."
+        assert len(arg_idx) == len(axis), (
+            "Number of batching args and number of batching dims should match."
+        )
 
         inps = [args[i] for i in arg_idx]
         axis_width = [inp.shape[d] for inp, d in zip(inps, axis)]
@@ -166,9 +171,9 @@ def subbatch(f, arg_idx, axis, bs, out_idx, use_recompute=False, same_arg_idx={}
             _args = []
             for i, inp in enumerate(args):
                 if i in same_arg_idx:
-                    assert (
-                        i > same_arg_idx[i]
-                    ), f"expect i > same_arg_idx[i], but got i: {i} and same_arg_idx[i]: {same_arg_idx[i]}"
+                    assert i > same_arg_idx[i], (
+                        f"expect i > same_arg_idx[i], but got i: {i} and same_arg_idx[i]: {same_arg_idx[i]}"
+                    )
                     _args.append(_args[same_arg_idx[i]])
                 elif i in arg_idx:
                     inp = inp.slice(
@@ -180,7 +185,9 @@ def subbatch(f, arg_idx, axis, bs, out_idx, use_recompute=False, same_arg_idx={}
                 else:
                     _args.append(inp)
             if use_recompute:
-                out = paddle.distributed.fleet.utils.recompute(f, *_args, **kwargs)
+                out = paddle.distributed.fleet.utils.recompute(
+                    f, *_args, **kwargs
+                )
             else:
                 out = f(*_args, **kwargs)
             outs.append(out)
@@ -213,13 +220,17 @@ class LanguageLoss(FleetLayer):
         )
 
         if self.enable_parallel_cross_entropy:
-            self.loss_func = paddle.distributed.fleet.meta_parallel.ParallelCrossEntropy()
+            self.loss_func = (
+                paddle.distributed.fleet.meta_parallel.ParallelCrossEntropy()
+            )
         else:
             self.loss_func = paddle.nn.CrossEntropyLoss(
                 reduction="none",
             )
 
-        self.loss_subbatch_sequence_length = config.loss_subbatch_sequence_length
+        self.loss_subbatch_sequence_length = (
+            config.loss_subbatch_sequence_length
+        )
         self.use_subbatch = self.loss_subbatch_sequence_length > 0
 
     def forward_impl(self, logits: Tensor | tuple, labels: Tensor) -> Tensor:
@@ -249,22 +260,30 @@ class LanguageLoss(FleetLayer):
                 self.ignored_index,
                 "none",
                 self.config.fused_linear_ce_loss_chunk,
-                getattr(self.config, "gpt_model_use_experimental_version", False),
+                getattr(
+                    self.config, "gpt_model_use_experimental_version", False
+                ),
             )
             # Reshape back to [B, S] so downstream CP gather / lossmask
             # handling matches the non-fused path exactly.
             loss = loss_1d.reshape([B, S])
 
             if get_context_parallel_world_size() > 1:
-                loss = ContextParallelGatherOp.apply(loss, axis=1, mode=self.config.cp_balance_mode)
-                labels = ContextParallelGatherOp.apply(labels, axis=1, mode=self.config.cp_balance_mode)
+                loss = ContextParallelGatherOp.apply(
+                    loss, axis=1, mode=self.config.cp_balance_mode
+                )
+                labels = ContextParallelGatherOp.apply(
+                    labels, axis=1, mode=self.config.cp_balance_mode
+                )
 
             lossmask = labels != self.ignored_index
             if (~lossmask).all():
                 return paddle.mean(loss) * 0.0
 
             lossmask = lossmask.reshape([-1]).cast(paddle.float32)
-            loss = paddle.sum(loss.cast(paddle.float32).reshape([-1]) * lossmask)
+            loss = paddle.sum(
+                loss.cast(paddle.float32).reshape([-1]) * lossmask
+            )
             loss = loss / lossmask.sum()
             return loss
 
@@ -273,12 +292,19 @@ class LanguageLoss(FleetLayer):
         # Loss-path MD5 probe: logits and labels before cross-entropy
         import os
 
-        if os.environ.get("LOG_LAYER_MD5", "0") == "1" or os.environ.get("LOG_LOSS_MD5", "0") == "1":
+        if (
+            os.environ.get("LOG_LAYER_MD5", "0") == "1"
+            or os.environ.get("LOG_LOSS_MD5", "0") == "1"
+        ):
             import hashlib
 
             rank = paddle.distributed.get_rank()
-            lg_md5 = hashlib.md5(logits.cast("float32").numpy().tobytes()).hexdigest()
-            lb_md5 = hashlib.md5(labels.cast("int64").numpy().tobytes()).hexdigest()
+            lg_md5 = hashlib.md5(
+                logits.cast("float32").numpy().tobytes()
+            ).hexdigest()
+            lb_md5 = hashlib.md5(
+                labels.cast("int64").numpy().tobytes()
+            ).hexdigest()
             print(
                 f"[LOSS_PATH_MD5] rank={rank} loss_input_logits shape={list(logits.shape)} md5={lg_md5}",
                 flush=True,
@@ -305,8 +331,12 @@ class LanguageLoss(FleetLayer):
             loss = self.loss_func(logits.cast("float32"), labels)
 
         if get_context_parallel_world_size() > 1:
-            loss = ContextParallelGatherOp.apply(loss, axis=1, mode=self.config.cp_balance_mode)
-            labels = ContextParallelGatherOp.apply(labels, axis=1, mode=self.config.cp_balance_mode)
+            loss = ContextParallelGatherOp.apply(
+                loss, axis=1, mode=self.config.cp_balance_mode
+            )
+            labels = ContextParallelGatherOp.apply(
+                labels, axis=1, mode=self.config.cp_balance_mode
+            )
 
         lossmask = labels != self.ignored_index
         if (~lossmask).all():
@@ -315,14 +345,21 @@ class LanguageLoss(FleetLayer):
             lossmask = lossmask.reshape([-1]).cast(paddle.float32)
 
             # Loss-path MD5 probe: per-token loss and lossmask
-            if os.environ.get("LOG_LAYER_MD5", "0") == "1" or os.environ.get("LOG_LOSS_MD5", "0") == "1":
+            if (
+                os.environ.get("LOG_LAYER_MD5", "0") == "1"
+                or os.environ.get("LOG_LOSS_MD5", "0") == "1"
+            ):
                 import hashlib
 
                 rank = paddle.distributed.get_rank()
-                pt_md5 = hashlib.md5(loss.cast("float32").reshape([-1]).numpy().tobytes()).hexdigest()
+                pt_md5 = hashlib.md5(
+                    loss.cast("float32").reshape([-1]).numpy().tobytes()
+                ).hexdigest()
                 lm_md5 = hashlib.md5(lossmask.numpy().tobytes()).hexdigest()
                 valid_count = lossmask.sum().item()
-                loss_sum_val = paddle.sum(loss.cast("float32").reshape([-1]) * lossmask).item()
+                loss_sum_val = paddle.sum(
+                    loss.cast("float32").reshape([-1]) * lossmask
+                ).item()
                 print(
                     f"[LOSS_PATH_MD5] rank={rank} per_token_loss md5={pt_md5}",
                     flush=True,
@@ -337,13 +374,19 @@ class LanguageLoss(FleetLayer):
                 )
                 # Also compute line-wise loss (matches EC's _line_wise_loss) for exact comparison
                 if self.config.gpt_model_use_experimental_version:
-                    _probe_loss_2d = loss.cast(paddle.float32) * lossmask.reshape(labels.shape)
+                    _probe_loss_2d = loss.cast(
+                        paddle.float32
+                    ) * lossmask.reshape(labels.shape)
                     _probe_lm_2d = lossmask.reshape(labels.shape)
                     _probe_tc = _probe_lm_2d.sum(-1)
                     _probe_inv = (_probe_tc == 0).astype(paddle.float32)
-                    _probe_lpl = _probe_loss_2d.sum(-1) / (_probe_tc + 1e-6 * _probe_inv)
+                    _probe_lpl = _probe_loss_2d.sum(-1) / (
+                        _probe_tc + 1e-6 * _probe_inv
+                    )
                     _probe_lpl = _probe_lpl * (1 - _probe_inv)
-                    _probe_lw = _probe_lpl.sum() / ((1 - _probe_inv).sum() + 1e-6)
+                    _probe_lw = _probe_lpl.sum() / (
+                        (1 - _probe_inv).sum() + 1e-6
+                    )
                     print(
                         f"[LOSS_PATH_MD5] rank={rank} line_wise_loss={_probe_lw.item():.20f}",
                         flush=True,
@@ -353,24 +396,42 @@ class LanguageLoss(FleetLayer):
             # EC's ErniemmPretrainingCriterion recomputes loss as line-wise when task_id
             # is present, which changes the value due to division by (count + 1e-6).
             if self.config.gpt_model_use_experimental_version:
-                loss_2d = loss.cast(paddle.float32) * lossmask.reshape(labels.shape)
+                loss_2d = loss.cast(paddle.float32) * lossmask.reshape(
+                    labels.shape
+                )
                 lossmask_2d = lossmask.reshape(labels.shape)
                 token_count_per_line = lossmask_2d.sum(-1)
-                is_invalid_line_float = (token_count_per_line == 0).astype(paddle.float32)
-                loss_per_line = loss_2d.sum(-1) / (token_count_per_line + 1e-6 * is_invalid_line_float)
+                is_invalid_line_float = (token_count_per_line == 0).astype(
+                    paddle.float32
+                )
+                loss_per_line = loss_2d.sum(-1) / (
+                    token_count_per_line + 1e-6 * is_invalid_line_float
+                )
                 loss_per_line = loss_per_line * (1 - is_invalid_line_float)
-                loss = loss_per_line.sum() / ((1 - is_invalid_line_float).sum() + 1e-6)
+                loss = loss_per_line.sum() / (
+                    (1 - is_invalid_line_float).sum() + 1e-6
+                )
             else:
-                loss = paddle.sum(loss.cast(paddle.float32).reshape([-1]) * lossmask)
+                loss = paddle.sum(
+                    loss.cast(paddle.float32).reshape([-1]) * lossmask
+                )
                 loss = loss / lossmask.sum()
 
         return loss
 
     def _forward(self, logits: Tensor | tuple, labels: Tensor):
-        if get_context_parallel_world_size() > 1 and self.config.experimental_dataflow:
+        if (
+            get_context_parallel_world_size() > 1
+            and self.config.experimental_dataflow
+        ):
             # In EB data flow and CP size > 1, scatter labels to cp local
-            labels = ContextParallelScatterOp.apply(labels, axis=1, mode=self.config.cp_balance_mode)
-        if self.config.recompute_modules is not None and "loss_fn" in self.config.recompute_modules:
+            labels = ContextParallelScatterOp.apply(
+                labels, axis=1, mode=self.config.cp_balance_mode
+            )
+        if (
+            self.config.recompute_modules is not None
+            and "loss_fn" in self.config.recompute_modules
+        ):
             return recompute(self.forward_impl, logits, labels)
         return self.forward_impl(logits, labels)
 
@@ -397,7 +458,9 @@ class LanguageLoss(FleetLayer):
 
                 for depth in range(self.config.num_nextn_predict_layers):
                     logits_cur_depth = mtp_logits[depth]
-                    labels_cur_depth = labels_ori[:, (depth + 1) : (depth + 1 + seq_length)]
+                    labels_cur_depth = labels_ori[
+                        :, (depth + 1) : (depth + 1 + seq_length)
+                    ]
                     if self.config.gpt_model_use_experimental_version:
                         # Align with EB: compute per-token loss matrix and reduce
                         # with global sum/count instead of going through forward_impl
@@ -425,10 +488,12 @@ class LanguageLoss(FleetLayer):
 
                         if get_context_parallel_world_size() > 1:
                             # In EB data flow and CP size > 1, loss and labels need to be gathered back.
-                            loss_matrix_cur_depth = ContextParallelGatherOp.apply(
-                                loss_matrix_cur_depth,
-                                axis=1,
-                                mode=self.config.cp_balance_mode,
+                            loss_matrix_cur_depth = (
+                                ContextParallelGatherOp.apply(
+                                    loss_matrix_cur_depth,
+                                    axis=1,
+                                    mode=self.config.cp_balance_mode,
+                                )
                             )
                             labels_cur_depth = ContextParallelGatherOp.apply(
                                 labels_cur_depth,
@@ -436,12 +501,17 @@ class LanguageLoss(FleetLayer):
                                 mode=self.config.cp_balance_mode,
                             )
 
-                        lossmask_cur_depth = (labels_cur_depth != self.ignored_index).cast(paddle.float32)
-                        loss_matrix_cur_depth = loss_matrix_cur_depth.cast(paddle.float32).reshape(
-                            [-1]
-                        ) * lossmask_cur_depth.reshape([-1])
+                        lossmask_cur_depth = (
+                            labels_cur_depth != self.ignored_index
+                        ).cast(paddle.float32)
+                        loss_matrix_cur_depth = loss_matrix_cur_depth.cast(
+                            paddle.float32
+                        ).reshape([-1]) * lossmask_cur_depth.reshape([-1])
                         if lossmask_cur_depth.sum().item() > 0:
-                            loss_cur_depth = loss_matrix_cur_depth.sum() / lossmask_cur_depth.sum()
+                            loss_cur_depth = (
+                                loss_matrix_cur_depth.sum()
+                                / lossmask_cur_depth.sum()
+                            )
                         else:
                             loss_cur_depth = loss_matrix_cur_depth.sum() * 0.0
                     else:
@@ -453,7 +523,9 @@ class LanguageLoss(FleetLayer):
             else:
                 lm_loss = self._forward(logits[0], lm_labels)
                 if get_tensor_model_parallel_world_size() > 1:
-                    target_p_self_op_dist = DistributedSoftmaxOp.apply(logits[0], axis=2)
+                    target_p_self_op_dist = DistributedSoftmaxOp.apply(
+                        logits[0], axis=2
+                    )
                 else:
                     target_p_self_op_dist = nn.Softmax(axis=2)(logits[0])
                 if get_context_parallel_world_size() > 1:
@@ -471,18 +543,35 @@ class LanguageLoss(FleetLayer):
                         tensor = paddle.concat((tensor, zeropadding), axis=1)
                     return tensor
 
-                if self.config.num_nextn_predict_layers > 0 and mtp_logits is not None:
+                if (
+                    self.config.num_nextn_predict_layers > 0
+                    and mtp_logits is not None
+                ):
                     for depth in range(len(mtp_logits)):
                         prediction_scores_cur_depth = mtp_logits[depth]
-                        labels_cur_depth = labels_ori[:, (depth + 1) : (depth + 1 + seq_length)]
-                        lossmask = (labels_cur_depth != self.ignored_index).cast(paddle.float32)
+                        labels_cur_depth = labels_ori[
+                            :, (depth + 1) : (depth + 1 + seq_length)
+                        ]
+                        lossmask = (
+                            labels_cur_depth != self.ignored_index
+                        ).cast(paddle.float32)
                         if get_tensor_model_parallel_world_size() > 1:
-                            out_logp = paddle.log(DistributedSoftmaxOp.apply(prediction_scores_cur_depth, axis=2))
+                            out_logp = paddle.log(
+                                DistributedSoftmaxOp.apply(
+                                    prediction_scores_cur_depth, axis=2
+                                )
+                            )
                         else:
-                            out_logp = nn.LogSoftmax(axis=2)(prediction_scores_cur_depth)
+                            out_logp = nn.LogSoftmax(axis=2)(
+                                prediction_scores_cur_depth
+                            )
 
-                        target_p = target_p_self_op_dist[:, (depth + 1) :, :].clone()
-                        target_p = padding(target_p, left=False, pad_len=depth + 1)
+                        target_p = target_p_self_op_dist[
+                            :, (depth + 1) :, :
+                        ].clone()
+                        target_p = padding(
+                            target_p, left=False, pad_len=depth + 1
+                        )
                         if get_context_parallel_world_size() > 1:
                             target_p = ContextParallelScatterOp.apply(
                                 target_p,
@@ -520,7 +609,9 @@ class LanguageLoss(FleetLayer):
             # Use .detach() instead of .item() to avoid GPU synchronization on every
             # micro-batch. The trainer will call .item() only at logging steps.
             for i, loss_val in enumerate(mtp_loss):
-                LanguageLoss.mtp_loss_tracker[f"mtp_{i + 1}_loss"] = loss_val.detach()
+                LanguageLoss.mtp_loss_tracker[f"mtp_{i + 1}_loss"] = (
+                    loss_val.detach()
+                )
                 _print_scalar_loss_md5(
                     "MTP_LOSS_PATH_MD5",
                     f"mtp{i + 1}.final_loss",
@@ -559,7 +650,11 @@ class LanguageLoss(FleetLayer):
                     if self.config.add_mtp_loss:
                         num_mtp = len(mtp_loss)
                         for mtp_l in mtp_loss:
-                            mtp_val = self.config.mtp_loss_scaling_factor * mtp_l / num_mtp
+                            mtp_val = (
+                                self.config.mtp_loss_scaling_factor
+                                * mtp_l
+                                / num_mtp
+                            )
                             loss = add_loss(loss, mtp_val)
                 else:
                     # Original behavior: always use add_loss
@@ -567,12 +662,16 @@ class LanguageLoss(FleetLayer):
                     for mtp_l in mtp_loss:
                         loss = add_loss(
                             loss,
-                            self.config.mtp_loss_scaling_factor * mtp_l / num_mtp,
+                            self.config.mtp_loss_scaling_factor
+                            * mtp_l
+                            / num_mtp,
                         )
             else:
                 loss = add_loss(
                     lm_loss,
-                    self.config.mtp_loss_scaling_factor * sum(mtp_loss) / len(mtp_loss),
+                    self.config.mtp_loss_scaling_factor
+                    * sum(mtp_loss)
+                    / len(mtp_loss),
                 )
 
             return loss
@@ -607,7 +706,9 @@ class MainLanguageLoss(LanguageLoss):
         mtp_loss = dict_args["mtp_loss"]
         logits = dict_args["logits"]
 
-        assert not self.config.mtp_distillation_loss, "separate mtp head & loss don't support mtp_distillation_loss"
+        assert not self.config.mtp_distillation_loss, (
+            "separate mtp head & loss don't support mtp_distillation_loss"
+        )
 
         if self.config.train_mtp_only:
             lm_loss = 0.0
@@ -618,7 +719,9 @@ class MainLanguageLoss(LanguageLoss):
         # Use .detach() instead of .item() to avoid GPU synchronization on every
         # micro-batch. The trainer will call .item() only at logging steps.
         for i, loss_val in enumerate(mtp_loss):
-            MainLanguageLoss.mtp_loss_tracker[f"mtp_{i + 1}_loss"] = loss_val.detach()
+            MainLanguageLoss.mtp_loss_tracker[f"mtp_{i + 1}_loss"] = (
+                loss_val.detach()
+            )
             _print_scalar_loss_md5(
                 "MTP_LOSS_PATH_MD5",
                 f"mtp{i + 1}.final_loss",
@@ -668,7 +771,9 @@ class MTPLanguageLoss(LanguageLoss):
     def forward(self, dict_args: dict):
         mtp_logits = dict_args.get("mtp_logits")
         labels = dict_args.get("labels")
-        assert mtp_logits is not None, "separate mtp loss must provide mtp_logits"
+        assert mtp_logits is not None, (
+            "separate mtp loss must provide mtp_logits"
+        )
         assert labels is not None, "separate mtp loss must provide labels"
         assert (
             self.config.num_nextn_predict_layers is not None
@@ -681,11 +786,15 @@ class MTPLanguageLoss(LanguageLoss):
 
         mtp_loss = []
 
-        assert not self.config.mtp_distillation_loss, "separate mtp head & loss don't support mtp_distillation_loss"
+        assert not self.config.mtp_distillation_loss, (
+            "separate mtp head & loss don't support mtp_distillation_loss"
+        )
 
         for depth in range(self.config.num_nextn_predict_layers):
             logits_cur_depth = mtp_logits[depth]
-            labels_cur_depth = labels_ori[:, (depth + 1) : (depth + 1 + seq_length)]
+            labels_cur_depth = labels_ori[
+                :, (depth + 1) : (depth + 1 + seq_length)
+            ]
             loss_cur_depth = self._forward(
                 logits_cur_depth,
                 labels_cur_depth,

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -54,7 +58,9 @@ class TestSplitTensorAlongLastDim(unittest.TestCase):
     def test_contiguous_split_chunks(self):
         """Test contiguous_split_chunks flag."""
         tensor = paddle.randn([2, 8])
-        result = split_tensor_along_last_dim(tensor, 2, contiguous_split_chunks=True)
+        result = split_tensor_along_last_dim(
+            tensor, 2, contiguous_split_chunks=True
+        )
         self.assertEqual(len(result), 2)
         for r in result:
             self.assertTrue(r.is_contiguous())
@@ -70,7 +76,9 @@ class TestSplitTensorAlongLastDim(unittest.TestCase):
 class TestSplitTensorInto1DEqualChunks(unittest.TestCase):
     """Tests for split_tensor_into_1d_equal_chunks."""
 
-    @patch("paddleformers.fleet.tensor_parallel.utils.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.utils.get_tensor_model_parallel_group_if_none"
+    )
     def test_split_with_new_buffer(self, mock_get_group):
         """Test splitting with new_buffer=True."""
         group = MagicMock()
@@ -82,7 +90,9 @@ class TestSplitTensorInto1DEqualChunks(unittest.TestCase):
         result = split_tensor_into_1d_equal_chunks(tensor, new_buffer=True)
         self.assertEqual(result.shape, [8])
 
-    @patch("paddleformers.fleet.tensor_parallel.utils.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.utils.get_tensor_model_parallel_group_if_none"
+    )
     def test_split_view(self, mock_get_group):
         """Test splitting returning a view."""
         group = MagicMock()
@@ -104,7 +114,9 @@ class TestGatherSplit1DTensor(unittest.TestCase):
         with self.assertRaises(AssertionError):
             gather_split_1d_tensor(tensor)
 
-    @patch("paddleformers.fleet.tensor_parallel.utils.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.utils.get_tensor_model_parallel_group_if_none"
+    )
     @patch("paddleformers.fleet.tensor_parallel.utils.dist.stream.all_gather")
     def test_gather_returns_correct_size(self, mock_all_gather, mock_get_group):
         """Test gathered tensor has correct total size."""
@@ -123,22 +135,30 @@ class TestVocabUtilityVocabRangeFromPerPartition(unittest.TestCase):
 
     def test_rank_0(self):
         """Test vocab range for rank 0."""
-        result = VocabUtility.vocab_range_from_per_partition_vocab_size(100, 0, 2)
+        result = VocabUtility.vocab_range_from_per_partition_vocab_size(
+            100, 0, 2
+        )
         self.assertEqual(result, (0, 100))
 
     def test_rank_1(self):
         """Test vocab range for rank 1."""
-        result = VocabUtility.vocab_range_from_per_partition_vocab_size(100, 1, 2)
+        result = VocabUtility.vocab_range_from_per_partition_vocab_size(
+            100, 1, 2
+        )
         self.assertEqual(result, (100, 200))
 
     def test_rank_2(self):
         """Test vocab range for rank 2."""
-        result = VocabUtility.vocab_range_from_per_partition_vocab_size(50, 2, 4)
+        result = VocabUtility.vocab_range_from_per_partition_vocab_size(
+            50, 2, 4
+        )
         self.assertEqual(result, (100, 150))
 
     def test_single_rank(self):
         """Test vocab range with single rank."""
-        result = VocabUtility.vocab_range_from_per_partition_vocab_size(1000, 0, 1)
+        result = VocabUtility.vocab_range_from_per_partition_vocab_size(
+            1000, 0, 1
+        )
         self.assertEqual(result, (0, 1000))
 
 

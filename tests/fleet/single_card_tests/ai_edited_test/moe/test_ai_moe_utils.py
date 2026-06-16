@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -71,7 +75,9 @@ class TestMoeUtils(unittest.TestCase):
 
     def test_apply_random_logits(self):
         """Test apply_random_logits returns random values."""
-        from paddleformers.fleet.transformer.moe.moe_utils import apply_random_logits
+        from paddleformers.fleet.transformer.moe.moe_utils import (
+            apply_random_logits,
+        )
 
         logits = paddle.randn([4, 8], dtype=paddle.float32)
         result = apply_random_logits(logits)
@@ -81,7 +87,9 @@ class TestMoeUtils(unittest.TestCase):
 
     def test_apply_random_logits_gradient_zero(self):
         """Test RandomSTE backward returns zero gradient."""
-        from paddleformers.fleet.transformer.moe.moe_utils import apply_random_logits
+        from paddleformers.fleet.transformer.moe.moe_utils import (
+            apply_random_logits,
+        )
 
         logits = paddle.randn([4, 8], dtype=paddle.float32)
         result = apply_random_logits(logits)
@@ -89,7 +97,9 @@ class TestMoeUtils(unittest.TestCase):
 
     def test_add_auxiliary_loss_forward(self):
         """Test AddAuxiliaryLoss forward returns cloned x."""
-        from paddleformers.fleet.transformer.moe.moe_utils import AddAuxiliaryLoss
+        from paddleformers.fleet.transformer.moe.moe_utils import (
+            AddAuxiliaryLoss,
+        )
 
         x = paddle.randn([4, 8], dtype=paddle.float32)
         loss = paddle.to_tensor(0.5, dtype=paddle.float32)
@@ -124,7 +134,10 @@ class TestMoeUtils(unittest.TestCase):
 
     def test_unpermute_basic(self):
         """Test unpermute restores token order."""
-        from paddleformers.fleet.transformer.moe.moe_utils import permute, unpermute
+        from paddleformers.fleet.transformer.moe.moe_utils import (
+            permute,
+            unpermute,
+        )
 
         tokens = paddle.randn([4, 8], dtype=paddle.float32)
         routing_map = paddle.zeros([4, 2], dtype=paddle.float32)
@@ -144,7 +157,10 @@ class TestMoeUtils(unittest.TestCase):
 
     def test_unpermute_with_probs(self):
         """Test unpermute applies probs."""
-        from paddleformers.fleet.transformer.moe.moe_utils import permute, unpermute
+        from paddleformers.fleet.transformer.moe.moe_utils import (
+            permute,
+            unpermute,
+        )
 
         tokens = paddle.randn([4, 8], dtype=paddle.float32)
         routing_map = paddle.zeros([4, 2], dtype=paddle.float32)
@@ -186,7 +202,9 @@ class TestMoeUtils(unittest.TestCase):
 
     def test_sort_chunks_by_idxs(self):
         """Test sort_chunks_by_idxs reorders chunks."""
-        from paddleformers.fleet.transformer.moe.moe_utils import sort_chunks_by_idxs
+        from paddleformers.fleet.transformer.moe.moe_utils import (
+            sort_chunks_by_idxs,
+        )
 
         x = paddle.concat([paddle.ones([2, 4]) * i for i in range(4)], axis=0)
         split_sizes = paddle.to_tensor([2, 2, 2, 2], dtype=paddle.int64)
@@ -205,7 +223,9 @@ class TestMoeUtils(unittest.TestCase):
 
     def test_all_gather_group_op_single_rank(self):
         """Test AllGatherGroupOp with single rank returns cloned input."""
-        from paddleformers.fleet.transformer.moe.moe_utils import AllGatherGroupOp
+        from paddleformers.fleet.transformer.moe.moe_utils import (
+            AllGatherGroupOp,
+        )
 
         mock_group = MagicMock()
         mock_group.nranks = 1
@@ -233,7 +253,9 @@ class TestMoeUtils(unittest.TestCase):
 
     def test_manual_backward_first_fwd(self):
         """Test manual_backward with is_first_fwd=True."""
-        from paddleformers.fleet.transformer.moe.moe_utils import manual_backward
+        from paddleformers.fleet.transformer.moe.moe_utils import (
+            manual_backward,
+        )
 
         def f(x):
             return x * 2.0
@@ -252,7 +274,9 @@ class TestMoeUtils(unittest.TestCase):
 
     def test_all_gather_group_function_single_rank(self):
         """Test all_gather_group with single rank."""
-        from paddleformers.fleet.transformer.moe.moe_utils import all_gather_group
+        from paddleformers.fleet.transformer.moe.moe_utils import (
+            all_gather_group,
+        )
 
         mock_group = MagicMock()
         mock_group.nranks = 1
@@ -262,7 +286,9 @@ class TestMoeUtils(unittest.TestCase):
 
     def test_reduce_scatter_group_single_rank(self):
         """Test reduce_scatter_group with single rank."""
-        from paddleformers.fleet.transformer.moe.moe_utils import reduce_scatter_group
+        from paddleformers.fleet.transformer.moe.moe_utils import (
+            reduce_scatter_group,
+        )
 
         mock_group = MagicMock()
         mock_group.nranks = 1
@@ -272,7 +298,9 @@ class TestMoeUtils(unittest.TestCase):
 
     def test_reduce_scatter_group_assert_divisible(self):
         """Test reduce_scatter_group asserts divisible."""
-        from paddleformers.fleet.transformer.moe.moe_utils import reduce_scatter_group
+        from paddleformers.fleet.transformer.moe.moe_utils import (
+            reduce_scatter_group,
+        )
 
         mock_group = MagicMock()
         mock_group.nranks = 3
@@ -282,7 +310,9 @@ class TestMoeUtils(unittest.TestCase):
 
     def test_all_gather_group_assert_axis(self):
         """Test all_gather_group asserts axis=0."""
-        from paddleformers.fleet.transformer.moe.moe_utils import all_gather_group
+        from paddleformers.fleet.transformer.moe.moe_utils import (
+            all_gather_group,
+        )
 
         mock_group = MagicMock()
         mock_group.nranks = 2

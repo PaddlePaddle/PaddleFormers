@@ -31,7 +31,12 @@ class TestModel(paddle.nn.Layer):
         shared_embedding: bool = False,
     ):
         super().__init__()
-        self.layers = paddle.nn.LayerList([paddle.nn.Linear(input_dim, output_dim, bias) for _ in range(num_layers)])
+        self.layers = paddle.nn.LayerList(
+            [
+                paddle.nn.Linear(input_dim, output_dim, bias)
+                for _ in range(num_layers)
+            ]
+        )
         if shared_embedding:
             self.layers[-1].weight.shared_embedding = True
 
@@ -49,7 +54,9 @@ class TestGlobalMemoryBuffer(unittest.TestCase):
         self.assertEqual(tensor1.shape, shape1)
         self.assertEqual(tensor1.dtype, dtype)
         self.assertIn((name, dtype), gmb.buffer)
-        self.assertEqual(gmb.buffer[(name, dtype)].shape, [100])  # Flattened size
+        self.assertEqual(
+            gmb.buffer[(name, dtype)].shape, [100]
+        )  # Flattened size
 
         # Test 2: Reuse buffer (smaller size)
         shape2 = [5, 5]

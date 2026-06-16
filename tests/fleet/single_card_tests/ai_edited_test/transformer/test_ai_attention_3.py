@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -32,8 +36,12 @@ class TestSelfAttentionGatedAttentionAttribute(unittest.TestCase):
     """Tests for SelfAttention gated_attention attribute."""
 
     @patch("paddleformers.fleet.transformer.attention.build_spec_layer")
-    @patch("paddleformers.fleet.transformer.attention.get_pg_size", return_value=1)
-    @patch("paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups")
+    @patch(
+        "paddleformers.fleet.transformer.attention.get_pg_size", return_value=1
+    )
+    @patch(
+        "paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups"
+    )
     def test_gated_attention_attribute(self, mock_pg, mock_size, mock_build):
         """Test that gated_attention attribute is set from config."""
         mock_pg.return_value = MagicMock()
@@ -74,8 +82,12 @@ class TestSelfAttentionRRFlashAttention(unittest.TestCase):
     """Tests for SelfAttention rr_flash_attention attribute."""
 
     @patch("paddleformers.fleet.transformer.attention.build_spec_layer")
-    @patch("paddleformers.fleet.transformer.attention.get_pg_size", return_value=1)
-    @patch("paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups")
+    @patch(
+        "paddleformers.fleet.transformer.attention.get_pg_size", return_value=1
+    )
+    @patch(
+        "paddleformers.fleet.transformer.attention.ProcessGroupCollection.use_mpu_process_groups"
+    )
     def test_rr_flash_attention_with_list(self, mock_pg, mock_size, mock_build):
         """Test rr_flash_attention is set when config provides list."""
         mock_pg.return_value = MagicMock()

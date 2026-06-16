@@ -16,11 +16,10 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Union
 
 from paddleformers.utils.log import logger
 
-_MULTIMODEL_KEY_REGISTRY: Dict[str, MultiModelKeys] = {}
+_MULTIMODEL_KEY_REGISTRY: dict[str, MultiModelKeys] = {}
 _ALL_MODULES = ["vision", "aligner", "llm"]
 
 
@@ -38,22 +37,22 @@ class MLLMModelMapping:
 class ModelKeys:
     model_dtype: str
 
-    embedding: Optional[str] = None
-    module_list: Optional[str] = None
-    lm_head: Optional[str] = None
+    embedding: str | None = None
+    module_list: str | None = None
+    lm_head: str | None = None
 
-    q_proj: Optional[str] = None
-    k_proj: Optional[str] = None
-    v_proj: Optional[str] = None
-    o_proj: Optional[str] = None
-    mlp: Optional[str] = None
+    q_proj: str | None = None
+    k_proj: str | None = None
+    v_proj: str | None = None
+    o_proj: str | None = None
+    mlp: str | None = None
 
 
 @dataclass
 class MultiModelKeys(ModelKeys):
-    llm: Union[str, List[str]] = field(default_factory=list)
-    aligner: Union[str, List[str]] = field(default_factory=list)
-    vision: Union[str, List[str]] = field(default_factory=list)
+    llm: str | list[str] = field(default_factory=list)
+    aligner: str | list[str] = field(default_factory=list)
+    vision: str | list[str] = field(default_factory=list)
 
     def __post_init__(self):
         for key in ["llm", "aligner", "vision"]:
@@ -64,21 +63,24 @@ class MultiModelKeys(ModelKeys):
                 setattr(self, key, [])
 
 
-def register_multimodel_keys(multimodel_key: ModelKeys, *, exist_ok: bool = False) -> None:
+def register_multimodel_keys(
+    multimodel_key: ModelKeys, *, exist_ok: bool = False
+) -> None:
     model_dtype = multimodel_key.model_dtype
     if not exist_ok and model_dtype in _MULTIMODEL_KEY_REGISTRY:
         raise ValueError(f"The `{model_dtype}` has already been registered.")
     _MULTIMODEL_KEY_REGISTRY[model_dtype] = multimodel_key
 
 
-def get_multimodel_target_modules(model_type: Optional[str]) -> Optional[Union[ModelKeys, MultiModelKeys]]:
+def get_multimodel_target_modules(
+    model_type: str | None,
+) -> ModelKeys | MultiModelKeys | None:
     if not model_type:
         return None
     return _MULTIMODEL_KEY_REGISTRY.get(model_type)
 
 
 def get_multimodel_lora_target_modules(model, target_modules, freeze_config):
-
     model_type = model.config.model_type
 
     multimodel_keys = get_multimodel_target_modules(model_type)
@@ -101,7 +103,9 @@ def get_multimodel_lora_target_modules(model, target_modules, freeze_config):
             prefix_to_module[p] = module
 
     sorted_prefixes = sorted(prefix_to_module.keys(), key=len, reverse=True)
-    active_freeze_config = {m for m in _ALL_MODULES if f"freeze_{m}" in freeze_config}
+    active_freeze_config = {
+        m for m in _ALL_MODULES if f"freeze_{m}" in freeze_config
+    }
 
     multimodel_target_modules = []
     removed_info = defaultdict(list)
@@ -130,7 +134,6 @@ def get_multimodel_lora_target_modules(model, target_modules, freeze_config):
 
 
 def freeze_model_parameters(model, freeze_config):
-
     if not (hasattr(model, "config") and hasattr(model.config, "model_type")):
         logger.warning("Model has no config.model_type, skip freezing.")
         return
@@ -156,8 +159,12 @@ def freeze_model_parameters(model, freeze_config):
             prefix_to_module[p] = module
 
     sorted_prefixes = sorted(prefix_to_module.keys(), key=len, reverse=True)
-    active_freeze_config = {m for m in _ALL_MODULES if f"freeze_{m}" in freeze_config}
-    full_pattern = re.compile("^(" + "|".join(re.escape(p) for p in sorted_prefixes) + ")")
+    active_freeze_config = {
+        m for m in _ALL_MODULES if f"freeze_{m}" in freeze_config
+    }
+    full_pattern = re.compile(
+        "^(" + "|".join(re.escape(p) for p in sorted_prefixes) + ")"
+    )
 
     frozen_keys = defaultdict(list)
 
@@ -176,13 +183,19 @@ def freeze_model_parameters(model, freeze_config):
             param.stop_gradient = False
 
     if frozen_keys:
-        active_modules = ", ".join([f"freeze_{k}" for k in sorted(frozen_keys.keys())])
+        active_modules = ", ".join(
+            [f"freeze_{k}" for k in sorted(frozen_keys.keys())]
+        )
         total_count = sum(len(k) for k in frozen_keys.values())
 
-        log_info = [f"Freeze Config: {active_modules} || Total Frozen Keys: {total_count}"]
+        log_info = [
+            f"Freeze Config: {active_modules} || Total Frozen Keys: {total_count}"
+        ]
 
         for module_name, keys in frozen_keys.items():
-            patterns = sorted({re.sub(r"\.\d+\.", ".$LAYEY_ID.", k) for k in keys})
+            patterns = sorted(
+                {re.sub(r"\.\d+\.", ".$LAYEY_ID.", k) for k in keys}
+            )
             log_info.append(f"+ [{module_name}] ({len(keys)} keys)")
             log_info.extend([f"  - {p}" for p in patterns])
         logger.info("\n".join(log_info))

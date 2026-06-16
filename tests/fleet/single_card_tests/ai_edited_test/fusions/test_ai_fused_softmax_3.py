@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -55,7 +59,9 @@ class TestSoftmaxOne(unittest.TestCase):
             result = sm(x)
             self.assertEqual(result.shape, x.shape)
         except (TypeError, ValueError):
-            self.skipTest("paddle.softmax compat or concat issue in this environment")
+            self.skipTest(
+                "paddle.softmax compat or concat issue in this environment"
+            )
 
     def test_softmax_one_output_sums_less_than_one(self):
         """Test SoftmaxOne output sums to less than 1 per row."""
@@ -71,7 +77,9 @@ class TestSoftmaxOne(unittest.TestCase):
             row_sums = result.sum(axis=-1)
             self.assertTrue(paddle.all(row_sums < 1.0))
         except (TypeError, ValueError):
-            self.skipTest("paddle.softmax compat or concat issue in this environment")
+            self.skipTest(
+                "paddle.softmax compat or concat issue in this environment"
+            )
 
 
 class TestFusedScaleMaskSoftmax(unittest.TestCase):
@@ -79,7 +87,9 @@ class TestFusedScaleMaskSoftmax(unittest.TestCase):
 
     def test_init_default(self):
         """Test FusedScaleMaskSoftmax initialization."""
-        from paddleformers.fleet.fusions.fused_softmax import FusedScaleMaskSoftmax
+        from paddleformers.fleet.fusions.fused_softmax import (
+            FusedScaleMaskSoftmax,
+        )
         from paddleformers.fleet.transformer.enums import AttnMaskType
 
         fsm = FusedScaleMaskSoftmax(
@@ -95,7 +105,9 @@ class TestFusedScaleMaskSoftmax(unittest.TestCase):
 
     def test_init_fp16_bf16_conflict(self):
         """Test both fp16 and bf16 flags cannot be active."""
-        from paddleformers.fleet.fusions.fused_softmax import FusedScaleMaskSoftmax
+        from paddleformers.fleet.fusions.fused_softmax import (
+            FusedScaleMaskSoftmax,
+        )
         from paddleformers.fleet.transformer.enums import AttnMaskType
 
         with self.assertRaises(AssertionError):
@@ -111,7 +123,9 @@ class TestFusedScaleMaskSoftmax(unittest.TestCase):
 
     def test_init_scale_requires_fp32(self):
         """Test scale requires softmax_in_fp32."""
-        from paddleformers.fleet.fusions.fused_softmax import FusedScaleMaskSoftmax
+        from paddleformers.fleet.fusions.fused_softmax import (
+            FusedScaleMaskSoftmax,
+        )
         from paddleformers.fleet.transformer.enums import AttnMaskType
 
         with self.assertRaises(AssertionError):
@@ -127,7 +141,9 @@ class TestFusedScaleMaskSoftmax(unittest.TestCase):
 
     def test_forward_no_mask(self):
         """Test forward pass without mask."""
-        from paddleformers.fleet.fusions.fused_softmax import FusedScaleMaskSoftmax
+        from paddleformers.fleet.fusions.fused_softmax import (
+            FusedScaleMaskSoftmax,
+        )
         from paddleformers.fleet.transformer.enums import AttnMaskType
 
         fsm = FusedScaleMaskSoftmax(

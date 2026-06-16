@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -68,7 +72,9 @@ class TestPipelineParallelMicroStepLocations(unittest.TestCase):
             PipelineParallelMicroStepLocations.FORWARD_BEGIN.value,
             "forward_begin",
         )
-        self.assertEqual(PipelineParallelMicroStepLocations.FORWARD_END.value, "forward_end")
+        self.assertEqual(
+            PipelineParallelMicroStepLocations.FORWARD_END.value, "forward_end"
+        )
         self.assertEqual(
             PipelineParallelMicroStepLocations.BACKWARD_BEGIN.value,
             "backward_begin",
@@ -102,7 +108,9 @@ class TestPipelineParallelMicroStepCallback(unittest.TestCase):
         def my_hook(**kwargs):
             hook_calls.append(kwargs)
 
-        callback.register_hook(PipelineParallelMicroStepLocations.FORWARD_BEGIN, my_hook)
+        callback.register_hook(
+            PipelineParallelMicroStepLocations.FORWARD_BEGIN, my_hook
+        )
         callback.on_location(
             PipelineParallelMicroStepLocations.FORWARD_BEGIN,
             step_id=0,

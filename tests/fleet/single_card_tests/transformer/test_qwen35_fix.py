@@ -30,13 +30,17 @@ class TestLayerNormDtypeCast(unittest.TestCase):
     """LayerNorm.forward() must cast output to weight dtype."""
 
     def test_float16_input_cast_to_weight_dtype(self):
-        config = TransformerConfig(num_hidden_layers=2, hidden_size=16, num_attention_heads=4)
+        config = TransformerConfig(
+            num_hidden_layers=2, hidden_size=16, num_attention_heads=4
+        )
         norm = LayerNorm(config=config)
         out = norm(paddle.randn([2, 16]).astype("float16"))
         self.assertEqual(out.dtype, norm.weight.dtype)
 
     def test_bfloat16_input_cast_to_weight_dtype(self):
-        config = TransformerConfig(num_hidden_layers=2, hidden_size=16, num_attention_heads=4)
+        config = TransformerConfig(
+            num_hidden_layers=2, hidden_size=16, num_attention_heads=4
+        )
         norm = LayerNorm(config=config)
         out = norm(paddle.randn([2, 16]).astype("bfloat16"))
         self.assertEqual(out.dtype, paddle.float32)
@@ -83,9 +87,15 @@ class TestTransformerLayerMTP(unittest.TestCase):
             }
         )
 
-        np.testing.assert_array_equal(result["rotary_pos_emb"].numpy(), rotary.numpy())
-        np.testing.assert_array_equal(result["rotary_pos_cos"].numpy(), cos.numpy())
-        np.testing.assert_array_equal(result["rotary_pos_sin"].numpy(), sin.numpy())
+        np.testing.assert_array_equal(
+            result["rotary_pos_emb"].numpy(), rotary.numpy()
+        )
+        np.testing.assert_array_equal(
+            result["rotary_pos_cos"].numpy(), cos.numpy()
+        )
+        np.testing.assert_array_equal(
+            result["rotary_pos_sin"].numpy(), sin.numpy()
+        )
 
     def test_non_experimental_dataflow_mask_concat(self):
         layer = self._make_layer(experimental_dataflow=False)
@@ -116,7 +126,9 @@ class TestTransformerLayerMTP(unittest.TestCase):
             }
         )
 
-        np.testing.assert_array_equal(result["attn_mask_startend_row_indices"].numpy(), mask.numpy())
+        np.testing.assert_array_equal(
+            result["attn_mask_startend_row_indices"].numpy(), mask.numpy()
+        )
 
 
 class TestMTPLayerForward(unittest.TestCase):
@@ -150,7 +162,9 @@ class TestMTPLayerForward(unittest.TestCase):
         mock.config = config
         mock.layer_number = 0
         mock.training = False
-        mock._proj_and_transformer_layer = lambda **kw: kw.get("hidden_states", kw.get("decoder_input"))
+        mock._proj_and_transformer_layer = lambda **kw: kw.get(
+            "hidden_states", kw.get("decoder_input")
+        )
         return mock, MultiTokenPredictionLayer
 
     def test_rotary_trim_restore_no_sp(self):
@@ -170,9 +184,15 @@ class TestMTPLayerForward(unittest.TestCase):
             },
         )
 
-        np.testing.assert_array_equal(result["rotary_pos_emb"].numpy(), rotary.numpy())
-        np.testing.assert_array_equal(result["rotary_pos_cos"].numpy(), cos.numpy())
-        np.testing.assert_array_equal(result["rotary_pos_sin"].numpy(), sin.numpy())
+        np.testing.assert_array_equal(
+            result["rotary_pos_emb"].numpy(), rotary.numpy()
+        )
+        np.testing.assert_array_equal(
+            result["rotary_pos_cos"].numpy(), cos.numpy()
+        )
+        np.testing.assert_array_equal(
+            result["rotary_pos_sin"].numpy(), sin.numpy()
+        )
 
     def test_rotary_trim_restore_sp(self):
         mock, MTP = self._call_mtp_forward(sequence_parallel=True, tp_size=2)
@@ -189,7 +209,9 @@ class TestMTPLayerForward(unittest.TestCase):
             },
         )
 
-        np.testing.assert_array_equal(result["rotary_pos_emb"].numpy(), rotary.numpy())
+        np.testing.assert_array_equal(
+            result["rotary_pos_emb"].numpy(), rotary.numpy()
+        )
 
     def test_mask_slicing_experimental_vs_non(self):
         B, S, H, n = 2, 8, 16, 2
@@ -219,7 +241,9 @@ class TestMTPLayerForward(unittest.TestCase):
             },
         )
 
-        np.testing.assert_array_equal(result["rotary_pos_emb"].numpy(), rotary.numpy())
+        np.testing.assert_array_equal(
+            result["rotary_pos_emb"].numpy(), rotary.numpy()
+        )
 
 
 if __name__ == "__main__":

@@ -18,12 +18,20 @@ import types
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 # Find the utils.py source file directly
 _project_root = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    )
 )
 _utils_path = os.path.join(
     _project_root,
@@ -40,7 +48,9 @@ _utils_path = os.path.join(
 # Import the utils module directly without triggering package __init__
 def _import_utils():
     """Import triton_ops.utils directly by loading the file."""
-    spec = importlib.util.spec_from_file_location("paddleformers.fleet.triton_ops.utils", _utils_path)
+    spec = importlib.util.spec_from_file_location(
+        "paddleformers.fleet.triton_ops.utils", _utils_path
+    )
     mod = importlib.util.module_from_spec(spec)
     # Register minimal parent packages so relative imports don't fail
     if "paddlefleet_ops" not in sys.modules:
@@ -118,9 +128,13 @@ class TestDispatchTo(unittest.TestCase):
             return "original"
 
         cond = lambda *args, **kwargs: True
-        decorated = _utils_mod.dispatch_to(dummy_dispatch, cond=cond)(original_fn)
+        decorated = _utils_mod.dispatch_to(dummy_dispatch, cond=cond)(
+            original_fn
+        )
 
-        with patch.object(_utils_mod, "is_torch_compat_available", return_value=False):
+        with patch.object(
+            _utils_mod, "is_torch_compat_available", return_value=False
+        ):
             result = decorated()
             self.assertEqual(result, "original")
 
@@ -134,9 +148,13 @@ class TestDispatchTo(unittest.TestCase):
             return "original"
 
         cond = lambda *args, **kwargs: True
-        decorated = _utils_mod.dispatch_to(dummy_dispatch, cond=cond)(original_fn)
+        decorated = _utils_mod.dispatch_to(dummy_dispatch, cond=cond)(
+            original_fn
+        )
 
-        with patch.object(_utils_mod, "is_torch_compat_available", return_value=True):
+        with patch.object(
+            _utils_mod, "is_torch_compat_available", return_value=True
+        ):
             result = decorated()
             self.assertEqual(result, "dispatched")
 
@@ -150,9 +168,13 @@ class TestDispatchTo(unittest.TestCase):
             return "original"
 
         cond = lambda *args, **kwargs: False
-        decorated = _utils_mod.dispatch_to(dummy_dispatch, cond=cond)(original_fn)
+        decorated = _utils_mod.dispatch_to(dummy_dispatch, cond=cond)(
+            original_fn
+        )
 
-        with patch.object(_utils_mod, "is_torch_compat_available", return_value=True):
+        with patch.object(
+            _utils_mod, "is_torch_compat_available", return_value=True
+        ):
             result = decorated()
             self.assertEqual(result, "original")
 
@@ -166,9 +188,13 @@ class TestDispatchTo(unittest.TestCase):
             return "original"
 
         cond = lambda *args, **kwargs: True
-        decorated = _utils_mod.dispatch_to(dummy_dispatch, cond=cond)(original_fn)
+        decorated = _utils_mod.dispatch_to(dummy_dispatch, cond=cond)(
+            original_fn
+        )
 
-        with patch.object(_utils_mod, "is_torch_compat_available", return_value=True):
+        with patch.object(
+            _utils_mod, "is_torch_compat_available", return_value=True
+        ):
             result = decorated()
             self.assertEqual(result, "dispatched")
 
@@ -196,7 +222,9 @@ class TestDispatchTo(unittest.TestCase):
 
         decorated = _utils_mod.dispatch_to(dummy_dispatch)(original_fn)
 
-        with patch.object(_utils_mod, "is_torch_compat_available", return_value=True):
+        with patch.object(
+            _utils_mod, "is_torch_compat_available", return_value=True
+        ):
             result = decorated(1, 2, key="val")
             self.assertEqual(result[0], "dispatched")
             self.assertEqual(result[1], (1, 2))
@@ -215,7 +243,9 @@ class TestIsPackageInstalled(unittest.TestCase):
 
     def test_not_installed_package(self):
         """Test _is_package_installed returns False for non-existent packages."""
-        result = _utils_mod._is_package_installed("this_package_definitely_does_not_exist_67890")
+        result = _utils_mod._is_package_installed(
+            "this_package_definitely_does_not_exist_67890"
+        )
         self.assertFalse(result)
 
 
@@ -230,7 +260,9 @@ class TestSwapDriverGuard(unittest.TestCase):
         mock_driver_obj = MagicMock()
         mock_triton_driver.driver = mock_driver_obj
 
-        with patch.dict(sys.modules, {"triton.runtime.driver": mock_triton_driver}):
+        with patch.dict(
+            sys.modules, {"triton.runtime.driver": mock_triton_driver}
+        ):
             # Reimport the function from the module
             # Since utils is already imported, call swap_driver_guard directly
             def dummy_fn():

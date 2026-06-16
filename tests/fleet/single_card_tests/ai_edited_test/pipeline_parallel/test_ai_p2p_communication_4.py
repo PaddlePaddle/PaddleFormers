@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -40,7 +44,9 @@ class TestP2pCommBatchSendRecvOnCalcStream(unittest.TestCase):
             "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication._warn_cur_rank_not_in_group",
             return_value=True,
         ):
-            op = P2PonCalcStream(_send_on_calc_stream, MagicMock(), 1, mock_group)
+            op = P2PonCalcStream(
+                _send_on_calc_stream, MagicMock(), 1, mock_group
+            )
             # Should return early
             batch_send_recv_on_calc_stream([op])
 
@@ -76,7 +82,9 @@ class TestP2pCommBatchSendRecvOnCalcStream(unittest.TestCase):
             mock_coalesce.return_value.__enter__ = MagicMock()
             mock_coalesce.return_value.__exit__ = MagicMock(return_value=False)
 
-            op = P2PonCalcStream(_send_on_calc_stream, mock_tensor, 1, mock_group)
+            op = P2PonCalcStream(
+                _send_on_calc_stream, mock_tensor, 1, mock_group
+            )
             batch_send_recv_on_calc_stream([op])
 
     def test_batch_send_recv_with_nan_check(self):
@@ -115,7 +123,9 @@ class TestP2pCommBatchSendRecvOnCalcStream(unittest.TestCase):
             mock_coalesce.return_value.__enter__ = MagicMock()
             mock_coalesce.return_value.__exit__ = MagicMock(return_value=False)
 
-            op = P2PonCalcStream(_send_on_calc_stream, mock_tensor, 1, mock_group)
+            op = P2PonCalcStream(
+                _send_on_calc_stream, mock_tensor, 1, mock_group
+            )
             batch_send_recv_on_calc_stream([op])
 
     def test_batch_send_recv_nan_detected(self):
@@ -140,7 +150,9 @@ class TestP2pCommBatchSendRecvOnCalcStream(unittest.TestCase):
             ),
             patch.dict(os.environ, {"FLAGS_pp_check_naninf": "1"}),
         ):
-            op = P2PonCalcStream(_send_on_calc_stream, mock_tensor, 1, mock_group)
+            op = P2PonCalcStream(
+                _send_on_calc_stream, mock_tensor, 1, mock_group
+            )
             with self.assertRaises(ValueError):
                 batch_send_recv_on_calc_stream([op])
 
@@ -184,9 +196,13 @@ class TestP2pCommP2pOps(unittest.TestCase):
 
         with (
             patch("paddle.device.get_device", return_value="cuda:0"),
-            patch("paddle.distributed.isend", return_value=MagicMock()) as mock_isend,
+            patch(
+                "paddle.distributed.isend", return_value=MagicMock()
+            ) as mock_isend,
         ):
-            reqs = _p2p_ops_tuple_or_tensor(mock_tensor, paddle.distributed.isend, 2, mock_group)
+            reqs = _p2p_ops_tuple_or_tensor(
+                mock_tensor, paddle.distributed.isend, 2, mock_group
+            )
             self.assertEqual(len(reqs), 1)
             mock_isend.assert_called_once()
 
@@ -203,9 +219,13 @@ class TestP2pCommP2pOps(unittest.TestCase):
 
         with (
             patch("paddle.device.get_device", return_value="cuda:0"),
-            patch("paddle.distributed.irecv", return_value=MagicMock()) as mock_irecv,
+            patch(
+                "paddle.distributed.irecv", return_value=MagicMock()
+            ) as mock_irecv,
         ):
-            reqs = _p2p_ops_tuple_or_tensor((t1, t2), paddle.distributed.irecv, 0, mock_group)
+            reqs = _p2p_ops_tuple_or_tensor(
+                (t1, t2), paddle.distributed.irecv, 0, mock_group
+            )
             self.assertEqual(len(reqs), 2)
             self.assertEqual(mock_irecv.call_count, 2)
 
@@ -227,7 +247,9 @@ class TestP2pCommP2pOps(unittest.TestCase):
             patch.dict(os.environ, {"FLAGS_pp_check_naninf": "1"}),
             self.assertRaises(ValueError),
         ):
-            _p2p_ops_tuple_or_tensor(mock_tensor, paddle.distributed.isend, 2, mock_group)
+            _p2p_ops_tuple_or_tensor(
+                mock_tensor, paddle.distributed.isend, 2, mock_group
+            )
 
 
 class TestP2pCommP2pHelper(unittest.TestCase):
@@ -255,7 +277,9 @@ class TestP2pCommP2pHelper(unittest.TestCase):
                 return_value=(None, None, None),
             ),
         ):
-            result = helper.send_forward_recv_forward(mock_tensor, recv_prev=False)
+            result = helper.send_forward_recv_forward(
+                mock_tensor, recv_prev=False
+            )
 
     def test_send_backward_recv_backward(self):
         from paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication import (
@@ -276,7 +300,9 @@ class TestP2pCommP2pHelper(unittest.TestCase):
                 return_value=(None, MagicMock(), None),
             ),
         ):
-            result = helper.send_backward_recv_backward(mock_tensor, recv_next=False)
+            result = helper.send_backward_recv_backward(
+                mock_tensor, recv_next=False
+            )
 
     def test_send_forward_backward_recv_forward_backward(self):
         from paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication import (
@@ -381,7 +407,9 @@ class TestP2pCommP2pHelperWithTimers(unittest.TestCase):
             mod._timers = mock_timer
 
             helper = P2pHelper()
-            result = helper.send_forward_recv_backward(MagicMock(), pp_last_stage=True)
+            result = helper.send_forward_recv_backward(
+                MagicMock(), pp_last_stage=True
+            )
             mock_timer.assert_called_with("send_forward_recv_backward")
             self.assertIsNone(result)
         finally:

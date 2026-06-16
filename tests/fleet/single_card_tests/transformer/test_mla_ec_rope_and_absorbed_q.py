@@ -49,7 +49,9 @@ class FakeForwardMeta:
 def _make_mla_gpt_config(**overrides):
     """Build a GPTConfig with MLA enabled."""
     # Extract gpt_model_use_experimental_version if present (needs to be set after creation)
-    use_experimental = overrides.pop("gpt_model_use_experimental_version", False)
+    use_experimental = overrides.pop(
+        "gpt_model_use_experimental_version", False
+    )
 
     defaults = {
         "num_hidden_layers": 2,
@@ -93,8 +95,12 @@ def _make_mla_gpt_config(**overrides):
         # Initialization
         "init_method_std": 0.02,
         "embedding_init_method_std": 0.02,
-        "output_layer_init_method": functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-        "init_method": functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+        "output_layer_init_method": functools.partial(
+            paddle.nn.init.xavier_uniform_, gain=1.0
+        ),
+        "init_method": functools.partial(
+            paddle.nn.init.xavier_uniform_, gain=1.0
+        ),
     }
     defaults.update(overrides)
     config = GPTConfig(**defaults)
@@ -102,9 +108,13 @@ def _make_mla_gpt_config(**overrides):
     return config
 
 
-def _build_gpt_model_with_forward_meta(decode_len=1, gpt_model_use_experimental_version=False):
+def _build_gpt_model_with_forward_meta(
+    decode_len=1, gpt_model_use_experimental_version=False
+):
     """Build a GPT model with MLA and inject fake forward_meta for decode mode."""
-    config = _make_mla_gpt_config(gpt_model_use_experimental_version=gpt_model_use_experimental_version)
+    config = _make_mla_gpt_config(
+        gpt_model_use_experimental_version=gpt_model_use_experimental_version
+    )
 
     # Build transformer layers spec
     transformer_layers_spec = []
@@ -143,8 +153,12 @@ def _build_gpt_model_with_forward_meta(decode_len=1, gpt_model_use_experimental_
     # Inject fake forward_meta into all core_attention configs
     # to simulate decode mode
     def inject_forward_meta(layer):
-        if hasattr(layer, "self_attn") and hasattr(layer.self_attn, "core_attention"):
-            layer.self_attn.core_attention.config.forward_meta = FakeForwardMeta(max_len_tensor_cpu=[0, 0, decode_len])
+        if hasattr(layer, "self_attn") and hasattr(
+            layer.self_attn, "core_attention"
+        ):
+            layer.self_attn.core_attention.config.forward_meta = (
+                FakeForwardMeta(max_len_tensor_cpu=[0, 0, decode_len])
+            )
 
     # Traverse model layers and inject forward_meta
     if hasattr(model, "run_function"):
@@ -159,7 +173,9 @@ def _build_gpt_model_with_forward_meta(decode_len=1, gpt_model_use_experimental_
 
 def _build_gpt_model(gpt_model_use_experimental_version=False):
     """Build a GPT model with MLA."""
-    config = _make_mla_gpt_config(gpt_model_use_experimental_version=gpt_model_use_experimental_version)
+    config = _make_mla_gpt_config(
+        gpt_model_use_experimental_version=gpt_model_use_experimental_version
+    )
 
     # Build transformer layers spec
     transformer_layers_spec = []
@@ -213,17 +229,25 @@ class TestECRopeBranchFullGPT(unittest.TestCase):
 
     def test_forward_ec_rope_full_gpt(self):
         """Full GPT forward with gpt_model_use_experimental_version=True."""
-        model, config = _build_gpt_model(gpt_model_use_experimental_version=True)
+        model, config = _build_gpt_model(
+            gpt_model_use_experimental_version=True
+        )
         model.eval()
 
         sequence_length = 16
         micro_batch_size = 2
 
-        input_ids = paddle.randint(0, config.vocab_size, [micro_batch_size, sequence_length])
-        position_ids = (
-            paddle.arange(sequence_length, dtype=paddle.int64).unsqueeze(0).expand([micro_batch_size, sequence_length])
+        input_ids = paddle.randint(
+            0, config.vocab_size, [micro_batch_size, sequence_length]
         )
-        attention_mask = paddle.ones((micro_batch_size, 1, sequence_length, sequence_length), dtype=bool)
+        position_ids = (
+            paddle.arange(sequence_length, dtype=paddle.int64)
+            .unsqueeze(0)
+            .expand([micro_batch_size, sequence_length])
+        )
+        attention_mask = paddle.ones(
+            (micro_batch_size, 1, sequence_length, sequence_length), dtype=bool
+        )
 
         # Forward pass - GPTModel expects a dict as input
         dict_args = {
@@ -249,18 +273,28 @@ class TestECRopeBranchFullGPT(unittest.TestCase):
 
     def test_forward_ec_rope_backward_full_gpt(self):
         """Backward through EC rope path with full GPT model."""
-        model, config = _build_gpt_model(gpt_model_use_experimental_version=True)
+        model, config = _build_gpt_model(
+            gpt_model_use_experimental_version=True
+        )
         model.train()
 
         sequence_length = 16
         micro_batch_size = 2
 
-        input_ids = paddle.randint(0, config.vocab_size, [micro_batch_size, sequence_length])
-        position_ids = (
-            paddle.arange(sequence_length, dtype=paddle.int64).unsqueeze(0).expand([micro_batch_size, sequence_length])
+        input_ids = paddle.randint(
+            0, config.vocab_size, [micro_batch_size, sequence_length]
         )
-        attention_mask = paddle.ones((micro_batch_size, 1, sequence_length, sequence_length), dtype=bool)
-        labels = paddle.randint(0, config.vocab_size, [micro_batch_size, sequence_length])
+        position_ids = (
+            paddle.arange(sequence_length, dtype=paddle.int64)
+            .unsqueeze(0)
+            .expand([micro_batch_size, sequence_length])
+        )
+        attention_mask = paddle.ones(
+            (micro_batch_size, 1, sequence_length, sequence_length), dtype=bool
+        )
+        labels = paddle.randint(
+            0, config.vocab_size, [micro_batch_size, sequence_length]
+        )
 
         # Forward pass - GPTModel expects a dict as input
         dict_args = {
@@ -294,16 +328,22 @@ class TestECRopeBranchFullGPT(unittest.TestCase):
 
     def test_forward_ec_rope_with_1d_position_ids(self):
         """EC rope path with 1D position_ids [S]."""
-        model, config = _build_gpt_model(gpt_model_use_experimental_version=True)
+        model, config = _build_gpt_model(
+            gpt_model_use_experimental_version=True
+        )
         model.eval()
 
         sequence_length = 16
         micro_batch_size = 2
 
-        input_ids = paddle.randint(0, config.vocab_size, [micro_batch_size, sequence_length])
+        input_ids = paddle.randint(
+            0, config.vocab_size, [micro_batch_size, sequence_length]
+        )
         # 1D position_ids: [S]
         position_ids = paddle.arange(sequence_length, dtype=paddle.int64)
-        attention_mask = paddle.ones((micro_batch_size, 1, sequence_length, sequence_length), dtype=bool)
+        attention_mask = paddle.ones(
+            (micro_batch_size, 1, sequence_length, sequence_length), dtype=bool
+        )
 
         dict_args = {
             "input_ids": input_ids,
@@ -324,17 +364,25 @@ class TestECRopeBranchFullGPT(unittest.TestCase):
 
     def test_backward_ec_rope_with_1d_position_ids(self):
         """Backward through EC rope path with 1D position_ids."""
-        model, config = _build_gpt_model(gpt_model_use_experimental_version=True)
+        model, config = _build_gpt_model(
+            gpt_model_use_experimental_version=True
+        )
         model.train()
 
         sequence_length = 16
         micro_batch_size = 2
 
-        input_ids = paddle.randint(0, config.vocab_size, [micro_batch_size, sequence_length])
+        input_ids = paddle.randint(
+            0, config.vocab_size, [micro_batch_size, sequence_length]
+        )
         # 1D position_ids: [S]
         position_ids = paddle.arange(sequence_length, dtype=paddle.int64)
-        attention_mask = paddle.ones((micro_batch_size, 1, sequence_length, sequence_length), dtype=bool)
-        labels = paddle.randint(0, config.vocab_size, [micro_batch_size, sequence_length])
+        attention_mask = paddle.ones(
+            (micro_batch_size, 1, sequence_length, sequence_length), dtype=bool
+        )
+        labels = paddle.randint(
+            0, config.vocab_size, [micro_batch_size, sequence_length]
+        )
 
         dict_args = {
             "input_ids": input_ids,
@@ -384,11 +432,17 @@ class TestComputeAbsorbedQBranchFullGPT(unittest.TestCase):
         sequence_length = 16
         micro_batch_size = 2
 
-        input_ids = paddle.randint(0, config.vocab_size, [micro_batch_size, sequence_length])
-        position_ids = (
-            paddle.arange(sequence_length, dtype=paddle.int64).unsqueeze(0).expand([micro_batch_size, sequence_length])
+        input_ids = paddle.randint(
+            0, config.vocab_size, [micro_batch_size, sequence_length]
         )
-        attention_mask = paddle.ones((micro_batch_size, 1, sequence_length, sequence_length), dtype=bool)
+        position_ids = (
+            paddle.arange(sequence_length, dtype=paddle.int64)
+            .unsqueeze(0)
+            .expand([micro_batch_size, sequence_length])
+        )
+        attention_mask = paddle.ones(
+            (micro_batch_size, 1, sequence_length, sequence_length), dtype=bool
+        )
 
         # Forward pass - GPTModel expects a dict as input
         dict_args = {
@@ -418,12 +472,20 @@ class TestComputeAbsorbedQBranchFullGPT(unittest.TestCase):
         sequence_length = 16
         micro_batch_size = 2
 
-        input_ids = paddle.randint(0, config.vocab_size, [micro_batch_size, sequence_length])
-        position_ids = (
-            paddle.arange(sequence_length, dtype=paddle.int64).unsqueeze(0).expand([micro_batch_size, sequence_length])
+        input_ids = paddle.randint(
+            0, config.vocab_size, [micro_batch_size, sequence_length]
         )
-        attention_mask = paddle.ones((micro_batch_size, 1, sequence_length, sequence_length), dtype=bool)
-        labels = paddle.randint(0, config.vocab_size, [micro_batch_size, sequence_length])
+        position_ids = (
+            paddle.arange(sequence_length, dtype=paddle.int64)
+            .unsqueeze(0)
+            .expand([micro_batch_size, sequence_length])
+        )
+        attention_mask = paddle.ones(
+            (micro_batch_size, 1, sequence_length, sequence_length), dtype=bool
+        )
+        labels = paddle.randint(
+            0, config.vocab_size, [micro_batch_size, sequence_length]
+        )
 
         # Forward pass - GPTModel expects a dict as input
         dict_args = {
@@ -470,10 +532,14 @@ class TestComputeAbsorbedQBranchFullGPT(unittest.TestCase):
         sequence_length = 16
         micro_batch_size = 2
 
-        input_ids = paddle.randint(0, config.vocab_size, [micro_batch_size, sequence_length])
+        input_ids = paddle.randint(
+            0, config.vocab_size, [micro_batch_size, sequence_length]
+        )
         # 1D position_ids: [S]
         position_ids = paddle.arange(sequence_length, dtype=paddle.int64)
-        attention_mask = paddle.ones((micro_batch_size, 1, sequence_length, sequence_length), dtype=bool)
+        attention_mask = paddle.ones(
+            (micro_batch_size, 1, sequence_length, sequence_length), dtype=bool
+        )
 
         dict_args = {
             "input_ids": input_ids,
@@ -500,11 +566,17 @@ class TestComputeAbsorbedQBranchFullGPT(unittest.TestCase):
         sequence_length = 16
         micro_batch_size = 2
 
-        input_ids = paddle.randint(0, config.vocab_size, [micro_batch_size, sequence_length])
+        input_ids = paddle.randint(
+            0, config.vocab_size, [micro_batch_size, sequence_length]
+        )
         # 1D position_ids: [S]
         position_ids = paddle.arange(sequence_length, dtype=paddle.int64)
-        attention_mask = paddle.ones((micro_batch_size, 1, sequence_length, sequence_length), dtype=bool)
-        labels = paddle.randint(0, config.vocab_size, [micro_batch_size, sequence_length])
+        attention_mask = paddle.ones(
+            (micro_batch_size, 1, sequence_length, sequence_length), dtype=bool
+        )
+        labels = paddle.randint(
+            0, config.vocab_size, [micro_batch_size, sequence_length]
+        )
 
         dict_args = {
             "input_ids": input_ids,
@@ -550,17 +622,25 @@ class TestCombinedECRopeAndAbsorbedQFullGPT(unittest.TestCase):
 
     def test_forward_ec_rope_and_decode_mode_full_gpt(self):
         """Full GPT forward with both EC rope and decode-mode active."""
-        model, config = _build_gpt_model_with_forward_meta(decode_len=1, gpt_model_use_experimental_version=True)
+        model, config = _build_gpt_model_with_forward_meta(
+            decode_len=1, gpt_model_use_experimental_version=True
+        )
         model.eval()
 
         sequence_length = 16
         micro_batch_size = 2
 
-        input_ids = paddle.randint(0, config.vocab_size, [micro_batch_size, sequence_length])
-        position_ids = (
-            paddle.arange(sequence_length, dtype=paddle.int64).unsqueeze(0).expand([micro_batch_size, sequence_length])
+        input_ids = paddle.randint(
+            0, config.vocab_size, [micro_batch_size, sequence_length]
         )
-        attention_mask = paddle.ones((micro_batch_size, 1, sequence_length, sequence_length), dtype=bool)
+        position_ids = (
+            paddle.arange(sequence_length, dtype=paddle.int64)
+            .unsqueeze(0)
+            .expand([micro_batch_size, sequence_length])
+        )
+        attention_mask = paddle.ones(
+            (micro_batch_size, 1, sequence_length, sequence_length), dtype=bool
+        )
 
         # Forward pass - GPTModel expects a dict as input
         dict_args = {
@@ -584,18 +664,28 @@ class TestCombinedECRopeAndAbsorbedQFullGPT(unittest.TestCase):
 
     def test_backward_ec_rope_and_decode_mode_full_gpt(self):
         """Backward with both EC rope and decode mode with full GPT model."""
-        model, config = _build_gpt_model_with_forward_meta(decode_len=3, gpt_model_use_experimental_version=True)
+        model, config = _build_gpt_model_with_forward_meta(
+            decode_len=3, gpt_model_use_experimental_version=True
+        )
         model.train()
 
         sequence_length = 16
         micro_batch_size = 2
 
-        input_ids = paddle.randint(0, config.vocab_size, [micro_batch_size, sequence_length])
-        position_ids = (
-            paddle.arange(sequence_length, dtype=paddle.int64).unsqueeze(0).expand([micro_batch_size, sequence_length])
+        input_ids = paddle.randint(
+            0, config.vocab_size, [micro_batch_size, sequence_length]
         )
-        attention_mask = paddle.ones((micro_batch_size, 1, sequence_length, sequence_length), dtype=bool)
-        labels = paddle.randint(0, config.vocab_size, [micro_batch_size, sequence_length])
+        position_ids = (
+            paddle.arange(sequence_length, dtype=paddle.int64)
+            .unsqueeze(0)
+            .expand([micro_batch_size, sequence_length])
+        )
+        attention_mask = paddle.ones(
+            (micro_batch_size, 1, sequence_length, sequence_length), dtype=bool
+        )
+        labels = paddle.randint(
+            0, config.vocab_size, [micro_batch_size, sequence_length]
+        )
 
         # Forward pass - GPTModel expects a dict as input
         dict_args = {
@@ -636,16 +726,22 @@ class TestCombinedECRopeAndAbsorbedQFullGPT(unittest.TestCase):
 
     def test_forward_ec_rope_and_decode_mode_1d_position_ids(self):
         """EC rope + decode mode with 1D position_ids."""
-        model, config = _build_gpt_model_with_forward_meta(decode_len=1, gpt_model_use_experimental_version=True)
+        model, config = _build_gpt_model_with_forward_meta(
+            decode_len=1, gpt_model_use_experimental_version=True
+        )
         model.eval()
 
         sequence_length = 16
         micro_batch_size = 2
 
-        input_ids = paddle.randint(0, config.vocab_size, [micro_batch_size, sequence_length])
+        input_ids = paddle.randint(
+            0, config.vocab_size, [micro_batch_size, sequence_length]
+        )
         # 1D position_ids: [S]
         position_ids = paddle.arange(sequence_length, dtype=paddle.int64)
-        attention_mask = paddle.ones((micro_batch_size, 1, sequence_length, sequence_length), dtype=bool)
+        attention_mask = paddle.ones(
+            (micro_batch_size, 1, sequence_length, sequence_length), dtype=bool
+        )
 
         dict_args = {
             "input_ids": input_ids,
@@ -666,17 +762,25 @@ class TestCombinedECRopeAndAbsorbedQFullGPT(unittest.TestCase):
 
     def test_backward_ec_rope_and_decode_mode_1d_position_ids(self):
         """EC rope + decode mode backward with 1D position_ids."""
-        model, config = _build_gpt_model_with_forward_meta(decode_len=3, gpt_model_use_experimental_version=True)
+        model, config = _build_gpt_model_with_forward_meta(
+            decode_len=3, gpt_model_use_experimental_version=True
+        )
         model.train()
 
         sequence_length = 16
         micro_batch_size = 2
 
-        input_ids = paddle.randint(0, config.vocab_size, [micro_batch_size, sequence_length])
+        input_ids = paddle.randint(
+            0, config.vocab_size, [micro_batch_size, sequence_length]
+        )
         # 1D position_ids: [S]
         position_ids = paddle.arange(sequence_length, dtype=paddle.int64)
-        attention_mask = paddle.ones((micro_batch_size, 1, sequence_length, sequence_length), dtype=bool)
-        labels = paddle.randint(0, config.vocab_size, [micro_batch_size, sequence_length])
+        attention_mask = paddle.ones(
+            (micro_batch_size, 1, sequence_length, sequence_length), dtype=bool
+        )
+        labels = paddle.randint(
+            0, config.vocab_size, [micro_batch_size, sequence_length]
+        )
 
         dict_args = {
             "input_ids": input_ids,
@@ -722,16 +826,22 @@ class TestNonExperimentalVersionPositionIds(unittest.TestCase):
 
     def test_forward_with_1d_position_ids(self):
         """Forward with 1D position_ids [S], non-experimental version."""
-        model, config = _build_gpt_model(gpt_model_use_experimental_version=False)
+        model, config = _build_gpt_model(
+            gpt_model_use_experimental_version=False
+        )
         model.eval()
 
         sequence_length = 16
         micro_batch_size = 2
 
-        input_ids = paddle.randint(0, config.vocab_size, [micro_batch_size, sequence_length])
+        input_ids = paddle.randint(
+            0, config.vocab_size, [micro_batch_size, sequence_length]
+        )
         # 1D position_ids: [S]
         position_ids = paddle.arange(sequence_length, dtype=paddle.int64)
-        attention_mask = paddle.ones((micro_batch_size, 1, sequence_length, sequence_length), dtype=bool)
+        attention_mask = paddle.ones(
+            (micro_batch_size, 1, sequence_length, sequence_length), dtype=bool
+        )
 
         dict_args = {
             "input_ids": input_ids,
@@ -752,17 +862,25 @@ class TestNonExperimentalVersionPositionIds(unittest.TestCase):
 
     def test_backward_with_1d_position_ids(self):
         """Backward with 1D position_ids, non-experimental version."""
-        model, config = _build_gpt_model(gpt_model_use_experimental_version=False)
+        model, config = _build_gpt_model(
+            gpt_model_use_experimental_version=False
+        )
         model.train()
 
         sequence_length = 16
         micro_batch_size = 2
 
-        input_ids = paddle.randint(0, config.vocab_size, [micro_batch_size, sequence_length])
+        input_ids = paddle.randint(
+            0, config.vocab_size, [micro_batch_size, sequence_length]
+        )
         # 1D position_ids: [S]
         position_ids = paddle.arange(sequence_length, dtype=paddle.int64)
-        attention_mask = paddle.ones((micro_batch_size, 1, sequence_length, sequence_length), dtype=bool)
-        labels = paddle.randint(0, config.vocab_size, [micro_batch_size, sequence_length])
+        attention_mask = paddle.ones(
+            (micro_batch_size, 1, sequence_length, sequence_length), dtype=bool
+        )
+        labels = paddle.randint(
+            0, config.vocab_size, [micro_batch_size, sequence_length]
+        )
 
         dict_args = {
             "input_ids": input_ids,
@@ -795,21 +913,31 @@ class TestApplyRopeFusionNotSupportedInference(unittest.TestCase):
 
     def test_apply_rope_fusion_raises_in_eval(self):
         """apply_rope_fusion=True in eval mode should raise NotImplementedError."""
-        model, config = _build_gpt_model(gpt_model_use_experimental_version=False)
+        model, config = _build_gpt_model(
+            gpt_model_use_experimental_version=False
+        )
         # Enable apply_rope_fusion on all MLA layers
         for sublayer in model.sublayers():
-            if hasattr(sublayer, "config") and hasattr(sublayer.config, "apply_rope_fusion"):
+            if hasattr(sublayer, "config") and hasattr(
+                sublayer.config, "apply_rope_fusion"
+            ):
                 sublayer.config.apply_rope_fusion = True
 
         model.eval()
 
         sequence_length = 16
         micro_batch_size = 2
-        input_ids = paddle.randint(0, config.vocab_size, [micro_batch_size, sequence_length])
-        position_ids = (
-            paddle.arange(sequence_length, dtype=paddle.int64).unsqueeze(0).expand([micro_batch_size, sequence_length])
+        input_ids = paddle.randint(
+            0, config.vocab_size, [micro_batch_size, sequence_length]
         )
-        attention_mask = paddle.ones((micro_batch_size, 1, sequence_length, sequence_length), dtype=bool)
+        position_ids = (
+            paddle.arange(sequence_length, dtype=paddle.int64)
+            .unsqueeze(0)
+            .expand([micro_batch_size, sequence_length])
+        )
+        attention_mask = paddle.ones(
+            (micro_batch_size, 1, sequence_length, sequence_length), dtype=bool
+        )
 
         dict_args = {
             "input_ids": input_ids,
@@ -827,20 +955,30 @@ class TestApplyRopeFusionNotSupportedInference(unittest.TestCase):
 
     def test_apply_rope_fusion_train_mode(self):
         """apply_rope_fusion=True in train mode should succeed and set k_pe=None (L1000)."""
-        model, config = _build_gpt_model(gpt_model_use_experimental_version=False)
+        model, config = _build_gpt_model(
+            gpt_model_use_experimental_version=False
+        )
         for sublayer in model.sublayers():
-            if hasattr(sublayer, "config") and hasattr(sublayer.config, "apply_rope_fusion"):
+            if hasattr(sublayer, "config") and hasattr(
+                sublayer.config, "apply_rope_fusion"
+            ):
                 sublayer.config.apply_rope_fusion = True
 
         model.train()
 
         sequence_length = 16
         micro_batch_size = 2
-        input_ids = paddle.randint(0, config.vocab_size, [micro_batch_size, sequence_length])
-        position_ids = (
-            paddle.arange(sequence_length, dtype=paddle.int64).unsqueeze(0).expand([micro_batch_size, sequence_length])
+        input_ids = paddle.randint(
+            0, config.vocab_size, [micro_batch_size, sequence_length]
         )
-        attention_mask = paddle.ones((micro_batch_size, 1, sequence_length, sequence_length), dtype=bool)
+        position_ids = (
+            paddle.arange(sequence_length, dtype=paddle.int64)
+            .unsqueeze(0)
+            .expand([micro_batch_size, sequence_length])
+        )
+        attention_mask = paddle.ones(
+            (micro_batch_size, 1, sequence_length, sequence_length), dtype=bool
+        )
 
         dict_args = {
             "input_ids": input_ids,

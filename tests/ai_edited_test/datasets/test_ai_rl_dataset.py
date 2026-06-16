@@ -55,17 +55,24 @@ class TestPaddingBatchData(unittest.TestCase):
             {"input_ids": np.array([1, 2, 3])},
             {"input_ids": np.array([4, 5])},
         ]
-        result = padding_batch_data(samples, pad_token_id=0, requires_label=False, max_prompt_len=5)
+        result = padding_batch_data(
+            samples, pad_token_id=0, requires_label=False, max_prompt_len=5
+        )
         self.assertIn("input_ids", result)
         self.assertIn("raw_prompt_len", result)
         self.assertNotIn("label_ids", result)
 
     def test_with_label(self):
         samples = [
-            {"input_ids": np.array([1, 2, 3]), "label_ids": np.array([4, 5, 6])},
+            {
+                "input_ids": np.array([1, 2, 3]),
+                "label_ids": np.array([4, 5, 6]),
+            },
             {"input_ids": np.array([7, 8]), "label_ids": np.array([9, 10])},
         ]
-        result = padding_batch_data(samples, pad_token_id=0, requires_label=True, max_prompt_len=5)
+        result = padding_batch_data(
+            samples, pad_token_id=0, requires_label=True, max_prompt_len=5
+        )
         self.assertIn("input_ids", result)
         self.assertIn("raw_prompt_len", result)
         self.assertIn("label_ids", result)
@@ -80,24 +87,36 @@ class TestCollateFn(unittest.TestCase):
             {"input_ids": np.array([1, 2, 3])},
             {"input_ids": np.array([4, 5])},
         ]
-        result = collate_fn(samples, pad_token_id=0, requires_label=False, max_prompt_len=5)
+        result = collate_fn(
+            samples, pad_token_id=0, requires_label=False, max_prompt_len=5
+        )
         self.assertIn("input_ids", result)
         self.assertIn("raw_prompt_len", result)
 
     def test_collate_with_labels(self):
         samples = [
-            {"input_ids": np.array([1, 2, 3]), "label_ids": np.array([4, 5, 6])},
+            {
+                "input_ids": np.array([1, 2, 3]),
+                "label_ids": np.array([4, 5, 6]),
+            },
             {"input_ids": np.array([7, 8]), "label_ids": np.array([9, 10])},
         ]
-        result = collate_fn(samples, pad_token_id=0, requires_label=True, max_prompt_len=5)
+        result = collate_fn(
+            samples, pad_token_id=0, requires_label=True, max_prompt_len=5
+        )
         self.assertIn("label_ids", result)
 
 
-@unittest.skip("load_dataset from HuggingFace datasets cannot be reliably patched in CI")
+@unittest.skip(
+    "load_dataset from HuggingFace datasets cannot be reliably patched in CI"
+)
 class TestRLHFDataset(unittest.TestCase):
     """Tests for RLHFDataset."""
 
-    @patch("paddleformers.datasets.rlhf_datasets.rl_dataset.os.path.exists", return_value=True)
+    @patch(
+        "paddleformers.datasets.rlhf_datasets.rl_dataset.os.path.exists",
+        return_value=True,
+    )
     @patch("paddleformers.datasets.rlhf_datasets.rl_dataset.load_dataset")
     def test_init(self, mock_load_dataset, mock_exists):
         mock_dataset = MagicMock()
@@ -111,7 +130,10 @@ class TestRLHFDataset(unittest.TestCase):
         )
         self.assertEqual(len(dataset), 10)
 
-    @patch("paddleformers.datasets.rlhf_datasets.rl_dataset.os.path.exists", return_value=True)
+    @patch(
+        "paddleformers.datasets.rlhf_datasets.rl_dataset.os.path.exists",
+        return_value=True,
+    )
     @patch("paddleformers.datasets.rlhf_datasets.rl_dataset.load_dataset")
     def test_getitem(self, mock_load_dataset, mock_exists):
         mock_rawdata = MagicMock()
@@ -130,7 +152,10 @@ class TestRLHFDataset(unittest.TestCase):
         item = dataset[0]
         self.assertIn("input_ids", item)
 
-    @patch("paddleformers.datasets.rlhf_datasets.rl_dataset.os.path.exists", return_value=True)
+    @patch(
+        "paddleformers.datasets.rlhf_datasets.rl_dataset.os.path.exists",
+        return_value=True,
+    )
     @patch("paddleformers.datasets.rlhf_datasets.rl_dataset.load_dataset")
     def test_getitem_cached(self, mock_load_dataset, mock_exists):
         """Test that repeated access returns cached data."""
@@ -152,12 +177,17 @@ class TestRLHFDataset(unittest.TestCase):
         # Second access should use cached data, not call tokenize again
         self.assertEqual(tokenizer.call_count, 1)
 
-    @patch("paddleformers.datasets.rlhf_datasets.rl_dataset.os.path.exists", return_value=True)
+    @patch(
+        "paddleformers.datasets.rlhf_datasets.rl_dataset.os.path.exists",
+        return_value=True,
+    )
     @patch("paddleformers.datasets.rlhf_datasets.rl_dataset.load_dataset")
     def test_getitem_with_labels(self, mock_load_dataset, mock_exists):
         mock_rawdata = MagicMock()
         mock_rawdata.__len__ = MagicMock(return_value=1)
-        mock_rawdata.__getitem__ = MagicMock(return_value={"src": "hello", "response": "world"})
+        mock_rawdata.__getitem__ = MagicMock(
+            return_value={"src": "hello", "response": "world"}
+        )
         mock_load_dataset.return_value = mock_rawdata
 
         tokenizer = MagicMock()
@@ -173,12 +203,17 @@ class TestRLHFDataset(unittest.TestCase):
         item = dataset[0]
         self.assertIn("label_ids", item)
 
-    @patch("paddleformers.datasets.rlhf_datasets.rl_dataset.os.path.exists", return_value=True)
+    @patch(
+        "paddleformers.datasets.rlhf_datasets.rl_dataset.os.path.exists",
+        return_value=True,
+    )
     @patch("paddleformers.datasets.rlhf_datasets.rl_dataset.load_dataset")
     def test_getitem_with_chat_template(self, mock_load_dataset, mock_exists):
         mock_rawdata = MagicMock()
         mock_rawdata.__len__ = MagicMock(return_value=1)
-        mock_rawdata.__getitem__ = MagicMock(return_value={"src": [{"role": "user", "content": "hello"}]})
+        mock_rawdata.__getitem__ = MagicMock(
+            return_value={"src": [{"role": "user", "content": "hello"}]}
+        )
         mock_load_dataset.return_value = mock_rawdata
 
         tokenizer = MagicMock()

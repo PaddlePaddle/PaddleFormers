@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -94,7 +98,9 @@ class TestRMSNorm(unittest.TestCase):
         # Should not raise
         norm.enable_sequence_parallel()
 
-    @patch("paddleformers.fleet.transformer.paddle_norm.mark_as_sequence_parallel_parameter")
+    @patch(
+        "paddleformers.fleet.transformer.paddle_norm.mark_as_sequence_parallel_parameter"
+    )
     def test_enable_sequence_parallel_calls_marker(self, mock_mark):
         config = _make_config()
         norm = RMSNorm(config, input_is_parallel=True)
@@ -167,7 +173,7 @@ class TestWrappedPaddleNorm(unittest.TestCase):
 
     def test_unsupported_norm_raises(self):
         config = _make_config(normalization="UnsupportedNorm")
-        with self.assertRaises(Exception):  # noqa: B017
+        with self.assertRaises(Exception):
             WrappedPaddleNorm(config, hidden_size=64)
 
     def test_input_is_parallel_none_uses_config(self):

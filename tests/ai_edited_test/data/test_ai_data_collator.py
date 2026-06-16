@@ -100,7 +100,10 @@ class TestDefaultDataCollator(unittest.TestCase):
     def test_call_with_dict_features(self):
         """Test that DefaultDataCollator collates dict features."""
         collator = DefaultDataCollator()
-        features = [{"input_ids": [1, 2, 3], "label": 0}, {"input_ids": [4, 5, 6], "label": 1}]
+        features = [
+            {"input_ids": [1, 2, 3], "label": 0},
+            {"input_ids": [4, 5, 6], "label": 1},
+        ]
         batch = collator(features)
         self.assertIn("input_ids", batch)
         self.assertIn("labels", batch)
@@ -110,14 +113,20 @@ class TestDefaultDataCollator(unittest.TestCase):
     def test_call_with_int_labels(self):
         """Test that int labels produce int64 dtype."""
         collator = DefaultDataCollator()
-        features = [{"input_ids": [1, 2], "label": 0}, {"input_ids": [3, 4], "label": 1}]
+        features = [
+            {"input_ids": [1, 2], "label": 0},
+            {"input_ids": [3, 4], "label": 1},
+        ]
         batch = collator(features)
         self.assertEqual(batch["labels"].dtype, paddle.int64)
 
     def test_call_with_float_labels(self):
         """Test that float labels produce float32 dtype."""
         collator = DefaultDataCollator()
-        features = [{"input_ids": [1, 2], "label": 0.5}, {"input_ids": [3, 4], "label": 1.5}]
+        features = [
+            {"input_ids": [1, 2], "label": 0.5},
+            {"input_ids": [3, 4], "label": 1.5},
+        ]
         batch = collator(features)
         self.assertEqual(batch["labels"].dtype, paddle.float32)
 
@@ -170,13 +179,19 @@ class TestPaddleDefaultDataCollator(unittest.TestCase):
 
     def test_with_int_label(self):
         """Test collating features with int label."""
-        features = [{"input_ids": [1, 2], "label": 0}, {"input_ids": [3, 4], "label": 1}]
+        features = [
+            {"input_ids": [1, 2], "label": 0},
+            {"input_ids": [3, 4], "label": 1},
+        ]
         batch = paddle_default_data_collator(features)
         self.assertEqual(batch["labels"].dtype, paddle.int64)
 
     def test_with_float_label(self):
         """Test collating features with float label."""
-        features = [{"input_ids": [1, 2], "label": 0.5}, {"input_ids": [3, 4], "label": 1.5}]
+        features = [
+            {"input_ids": [1, 2], "label": 0.5},
+            {"input_ids": [3, 4], "label": 1.5},
+        ]
         batch = paddle_default_data_collator(features)
         self.assertEqual(batch["labels"].dtype, paddle.float32)
 
@@ -191,7 +206,10 @@ class TestPaddleDefaultDataCollator(unittest.TestCase):
 
     def test_string_values_excluded(self):
         """Test that string values are excluded from batch."""
-        features = [{"a": [1, 2], "text": "hello"}, {"a": [3, 4], "text": "world"}]
+        features = [
+            {"a": [1, 2], "text": "hello"},
+            {"a": [3, 4], "text": "world"},
+        ]
         batch = paddle_default_data_collator(features)
         self.assertNotIn("text", batch)
         self.assertIn("a", batch)
@@ -219,13 +237,19 @@ class TestNumpyDefaultDataCollator(unittest.TestCase):
 
     def test_with_int_label(self):
         """Test collating features with int label using numpy."""
-        features = [{"input_ids": [1, 2], "label": 0}, {"input_ids": [3, 4], "label": 1}]
+        features = [
+            {"input_ids": [1, 2], "label": 0},
+            {"input_ids": [3, 4], "label": 1},
+        ]
         batch = numpy_default_data_collator(features)
         self.assertEqual(batch["labels"].dtype, np.int64)
 
     def test_with_float_label(self):
         """Test collating features with float label using numpy."""
-        features = [{"input_ids": [1, 2], "label": 0.5}, {"input_ids": [3, 4], "label": 1.5}]
+        features = [
+            {"input_ids": [1, 2], "label": 0.5},
+            {"input_ids": [3, 4], "label": 1.5},
+        ]
         batch = numpy_default_data_collator(features)
         self.assertEqual(batch["labels"].dtype, np.float32)
 
@@ -274,7 +298,9 @@ class TestPaddleCollateBatch(unittest.TestCase):
         """Test that different-length examples are padded."""
         examples = [paddle.to_tensor([1, 2, 3]), paddle.to_tensor([4, 5])]
         mock_tokenizer = MagicMock()
-        mock_tokenizer._pad_token = MagicMock()  # Not None, so padding check passes
+        mock_tokenizer._pad_token = (
+            MagicMock()
+        )  # Not None, so padding check passes
         mock_tokenizer.pad_token_id = 0
         mock_tokenizer.padding_side = "right"
         result = _paddle_collate_batch(examples, mock_tokenizer)
@@ -285,9 +311,13 @@ class TestPaddleCollateBatch(unittest.TestCase):
         examples = [paddle.to_tensor([1, 2, 3]), paddle.to_tensor([4, 5, 6])]
         mock_tokenizer = MagicMock()
         mock_tokenizer._pad_token = MagicMock()  # Not None
-        mock_tokenizer.pad_token_id = 0  # Must be int, not MagicMock (used as fill_value)
+        mock_tokenizer.pad_token_id = (
+            0  # Must be int, not MagicMock (used as fill_value)
+        )
         mock_tokenizer.padding_side = "right"
-        result = _paddle_collate_batch(examples, mock_tokenizer, pad_to_multiple_of=4)
+        result = _paddle_collate_batch(
+            examples, mock_tokenizer, pad_to_multiple_of=4
+        )
         self.assertEqual(result.shape[1], 4)
 
 

@@ -539,6 +539,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           bash -x tests/integration_test/preprocess.sh
           preprocess_exit_code=$?
           if [[ "$preprocess_exit_code" != "0" ]]; then
@@ -554,9 +555,10 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           mkdir -p /workspace/PaddleFormers/coveragedata-single
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-single/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/glm45_pt_single_card.sh
           glm45_single_card_exit_code=$?
           if [[ "$glm45_single_card_exit_code" != "0" ]]; then
@@ -572,9 +574,10 @@ jobs:
       #   run: |
       #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
       #     source /root/proxy
+      #     cd /workspace/PaddleFormers
       #     mkdir -p /workspace/PaddleFormers/coveragedata-qwen
       #     export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-single/.coverage
-      #     export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+      #     export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
       #     bash -x tests/integration_test/qwen3_single_card.sh
       #     qwen3_single_card_exit_code=$?
       #     if [[ "$qwen3_single_card_exit_code" != "0" ]]; then
@@ -590,9 +593,10 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           mkdir -p /workspace/PaddleFormers/coveragedata-qwen3vl-single
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-single/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/qwen3vl_sft_single_card.sh single
           exit_code=$?
           if [[ "$exit_code" != "0" ]]; then
@@ -608,7 +612,7 @@ jobs:
           docker exec -t ${{ env.container_name }} /bin/bash -xce '
           ls -a /workspace/PaddleFormers/coveragedata-single
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-single/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           ls -a /workspace/PaddleFormers/coveragedata-single
           coverage combine
           coverage xml -o /workspace/PaddleFormers/coveragedata-single/coverage.xml
@@ -698,9 +702,10 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           mkdir -p /workspace/PaddleFormers/coveragedata-multi
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/glm45_pt.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -716,9 +721,10 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           mkdir -p /workspace/PaddleFormers/coveragedata-multi
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/glm45_sft.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -734,6 +740,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           bash -x tests/integration_test/glm45_sft_cp.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -749,9 +756,10 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           mkdir -p /workspace/PaddleFormers/coveragedata-multi
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/glm45_lora.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -767,9 +775,10 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           mkdir -p /workspace/PaddleFormers/coveragedata-multi
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/glm45_dpo.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -785,9 +794,10 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           mkdir -p /workspace/PaddleFormers/coveragedata-multi
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/glm45_dpo_lora.sh
           '
       - name: Integration test (GLM4.5 multi-card FP8)
@@ -796,9 +806,10 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           mkdir -p /workspace/PaddleFormers/coveragedata-multi
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/glm45_pt_fp8.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -814,9 +825,10 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           mkdir -p /workspace/PaddleFormers/coveragedata-multi
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/glm45_pt_grouped_gemm.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -832,9 +844,10 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           mkdir -p /workspace/PaddleFormers/coveragedata-multi
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/glm45_pt_ep4.sh
           '
       - name: Qwen pre-train
@@ -843,9 +856,10 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           mkdir -p /workspace/PaddleFormers/coveragedata-multi
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/qwen.sh pt
           '
       - name: Qwen sft
@@ -854,9 +868,10 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           mkdir -p /workspace/PaddleFormers/coveragedata-multi
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/qwen.sh sft
           '
       - name: Qwen lora
@@ -865,9 +880,10 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           mkdir -p /workspace/PaddleFormers/coveragedata-multi
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/qwen.sh lora
           '
       - name: Qwen vl sft
@@ -876,9 +892,10 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           mkdir -p /workspace/PaddleFormers/coveragedata-multi
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/qwen3vl_sft.sh tp8 h20
           '
       - name: Qwen vl lora
@@ -887,9 +904,10 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           mkdir -p /workspace/PaddleFormers/coveragedata-multi
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/qwen3vl_lora.sh h20
           '
       - name: Qwen vl moe
@@ -898,9 +916,10 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           mkdir -p /workspace/PaddleFormers/coveragedata-multi
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/qwen3vl_sft.sh moe h20
           '
       - name: Qwen3-vl-8k-fsdp
@@ -909,9 +928,10 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           mkdir -p /workspace/PaddleFormers/coveragedata-multi
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/qwen3vl_sft.sh fsdp h20
           '
       - name: H20 Coverage Upload to BOS
@@ -919,7 +939,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -xce '
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           ls -a /workspace/PaddleFormers/coveragedata-multi
           coverage combine
           coverage xml -o /workspace/PaddleFormers/coveragedata-multi/coverage.xml
@@ -1008,8 +1028,9 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/glm45_a100.sh pt
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -1025,8 +1046,9 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/glm45_a100.sh sft
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -1042,8 +1064,9 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/glm45_a100.sh lora
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -1059,8 +1082,9 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/glm45_a100.sh dpo
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -1076,8 +1100,9 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/glm45_a100.sh dpo_lora
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -1093,8 +1118,9 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/qwen3_a100.sh pt
           '
       - name: Qwen sft
@@ -1103,8 +1129,9 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/qwen3_a100.sh sft
           '
       - name: Qwen lora
@@ -1113,8 +1140,9 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/qwen3_a100.sh lora
           '
       - name: Qwen vl sft
@@ -1123,8 +1151,9 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/qwen3vl_sft.sh tp8 a100
           '
       - name: Qwen vl lora
@@ -1133,8 +1162,9 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/qwen3vl_lora.sh a100
           '
       - name: Qwen vl moe
@@ -1143,8 +1173,9 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          cd /workspace/PaddleFormers
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           bash -x tests/integration_test/qwen3vl_sft.sh moe a100
           '
       - name: A100 Coverage Upload to BOS
@@ -1152,7 +1183,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -xce '
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
-          export COVERAGE_RCFILE=/workspace/scripts/fleet_ci/.coveragerc
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           ls -a /workspace/PaddleFormers/coveragedata
           coverage combine
           coverage xml -o /workspace/PaddleFormers/coveragedata/coverage.xml
@@ -1269,7 +1300,7 @@ jobs:
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
           source /root/proxy
           source ${{ github.workspace }}/../../../AISTUDIO_ACCESS_TOKEN
-          bash -x scripts/unit_test/ci_unittest.sh ${paddle_whl} false ${PYTEST_EXECUTE_FLAG_FILE} ${AGILE_COMPILE_BRANCH}
+          bash -x scripts/unit_test/ci_unittest.sh ${paddle_whl} false ${PYTEST_EXECUTE_FLAG_FILE}
           '
       - name: Display Test Summary
         if: always()

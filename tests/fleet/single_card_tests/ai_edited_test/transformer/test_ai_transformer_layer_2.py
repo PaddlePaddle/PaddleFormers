@@ -17,7 +17,11 @@ import unittest
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import paddle
@@ -74,13 +78,17 @@ class TestTensorsCloneExtra(unittest.TestCase):
 
 class TestTransformerLayerNodeExtra(unittest.TestCase):
     def _layer_node(self, config=None):
-        return TransformerLayerNode(DenseLayer(), config or DenseConfig(), name="dense")
+        return TransformerLayerNode(
+            DenseLayer(), config or DenseConfig(), name="dense"
+        )
 
     def test_forward_rejects_mtp_overlap_configuration(self):
         node = self._layer_node(MTPConfig())
 
         with self.assertRaises(AssertionError):
-            node.forward({"hidden_states": paddle.ones([1, 1], dtype="float32")})
+            node.forward(
+                {"hidden_states": paddle.ones([1, 1], dtype="float32")}
+            )
 
     def test_overlapped_node_rejects_non_transformer_layer_nodes(self):
         schedule_node = ScheduleNode(lambda x: x, name="plain")
@@ -89,7 +97,9 @@ class TestTransformerLayerNodeExtra(unittest.TestCase):
             TransformerLayerOverlappedScheduleNode(schedule_node, schedule_node)
 
     def test_forward_backward_rejects_split_bw(self):
-        node = TransformerLayerOverlappedScheduleNode(self._layer_node(), self._layer_node(), name="overlap")
+        node = TransformerLayerOverlappedScheduleNode(
+            self._layer_node(), self._layer_node(), name="overlap"
+        )
 
         with self.assertRaises(AssertionError):
             node.forward_backward({}, [], split_bw=True)

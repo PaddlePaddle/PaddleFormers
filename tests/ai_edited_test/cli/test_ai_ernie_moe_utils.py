@@ -95,7 +95,9 @@ class TestUnpermute(unittest.TestCase):
         token_indices = paddle.to_tensor([1, 2, 0], dtype=paddle.int64)
         prob_indices = paddle.to_tensor([0, 1, 2], dtype=paddle.int64)
         restore_shape = [3, 2]
-        result = unpermute(permuted_tokens, token_indices, prob_indices, restore_shape)
+        result = unpermute(
+            permuted_tokens, token_indices, prob_indices, restore_shape
+        )
         self.assertEqual(result.shape, [3, 2])
 
     def test_unpermute_with_probs(self):
@@ -105,7 +107,13 @@ class TestUnpermute(unittest.TestCase):
         prob_indices = paddle.to_tensor([0, 1], dtype=paddle.int64)
         probs = paddle.to_tensor([0.5, 0.5, 0.3, 0.7])
         restore_shape = [2, 2]
-        result = unpermute(permuted_tokens, token_indices, prob_indices, restore_shape, probs=probs)
+        result = unpermute(
+            permuted_tokens,
+            token_indices,
+            prob_indices,
+            restore_shape,
+            probs=probs,
+        )
         self.assertEqual(result.shape, [2, 2])
 
     def test_drop_and_pad_raises(self):

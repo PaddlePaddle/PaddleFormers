@@ -3,7 +3,7 @@
 
 import unittest
 
-import paddle.nn as nn
+from paddle import nn
 
 from paddleformers.peft.lora.auto_lora_model import (
     AVAILABLE_LAYERS,
@@ -32,7 +32,9 @@ class TestLoRAAutoLinear(unittest.TestCase):
 
     def test_init_default(self):
         """Test LoRAAutoLinear initialization with default parameters."""
-        layer = LoRAAutoLinear(in_features=16, out_features=8, r=4, lora_alpha=2)
+        layer = LoRAAutoLinear(
+            in_features=16, out_features=8, r=4, lora_alpha=2
+        )
         self.assertEqual(layer.r, 4)
         self.assertEqual(layer.lora_alpha, 2)
         self.assertIsNotNone(layer.lora_A)
@@ -40,7 +42,9 @@ class TestLoRAAutoLinear(unittest.TestCase):
 
     def test_init_with_lora_plus_scale(self):
         """Test LoRAAutoLinear initialization with lora_plus_scale."""
-        layer = LoRAAutoLinear(in_features=16, out_features=8, r=4, lora_plus_scale=2.0)
+        layer = LoRAAutoLinear(
+            in_features=16, out_features=8, r=4, lora_plus_scale=2.0
+        )
         self.assertIsNotNone(layer.lora_A)
         self.assertIsNotNone(layer.lora_B)
 
@@ -84,15 +88,27 @@ class TestLoRAAutoModel(unittest.TestCase):
 
     def test_merge_auto_dist_configs_dict_input(self):
         """Test merge_auto_dist_configs with dict input returns as-is."""
-        config = {"mp_config": {"parallelize_plan": {"a": 1}}, "sp_config": None, "pp_config": None}
+        config = {
+            "mp_config": {"parallelize_plan": {"a": 1}},
+            "sp_config": None,
+            "pp_config": None,
+        }
         result = self.model.merge_auto_dist_configs(config)
         self.assertIs(result, config)
 
     def test_merge_auto_dist_configs_list_mp(self):
         """Test merging mp_config from list of configs."""
         configs = [
-            {"mp_config": {"parallelize_plan": {"a": 1}}, "sp_config": None, "pp_config": None},
-            {"mp_config": {"parallelize_plan": {"b": 2}}, "sp_config": None, "pp_config": None},
+            {
+                "mp_config": {"parallelize_plan": {"a": 1}},
+                "sp_config": None,
+                "pp_config": None,
+            },
+            {
+                "mp_config": {"parallelize_plan": {"b": 2}},
+                "sp_config": None,
+                "pp_config": None,
+            },
         ]
         result = self.model.merge_auto_dist_configs(configs)
         self.assertIn("a", result["mp_config"]["parallelize_plan"])
@@ -101,8 +117,16 @@ class TestLoRAAutoModel(unittest.TestCase):
     def test_merge_auto_dist_configs_conflict_raises(self):
         """Test that conflicting mp_config keys raise assertion."""
         configs = [
-            {"mp_config": {"parallelize_plan": {"a": 1}}, "sp_config": None, "pp_config": None},
-            {"mp_config": {"parallelize_plan": {"a": 2}}, "sp_config": None, "pp_config": None},
+            {
+                "mp_config": {"parallelize_plan": {"a": 1}},
+                "sp_config": None,
+                "pp_config": None,
+            },
+            {
+                "mp_config": {"parallelize_plan": {"a": 2}},
+                "sp_config": None,
+                "pp_config": None,
+            },
         ]
         with self.assertRaises(AssertionError):
             self.model.merge_auto_dist_configs(configs)
@@ -111,7 +135,11 @@ class TestLoRAAutoModel(unittest.TestCase):
         """Test merging when one mp_config is None."""
         configs = [
             {"mp_config": None, "sp_config": None, "pp_config": None},
-            {"mp_config": {"parallelize_plan": {"a": 1}}, "sp_config": None, "pp_config": None},
+            {
+                "mp_config": {"parallelize_plan": {"a": 1}},
+                "sp_config": None,
+                "pp_config": None,
+            },
         ]
         result = self.model.merge_auto_dist_configs(configs)
         self.assertIn("a", result["mp_config"]["parallelize_plan"])
@@ -119,8 +147,16 @@ class TestLoRAAutoModel(unittest.TestCase):
     def test_merge_auto_dist_configs_sp(self):
         """Test merging sp_config from configs."""
         configs = [
-            {"mp_config": None, "sp_config": {"parallelize_plan": {"x": 1}}, "pp_config": None},
-            {"mp_config": None, "sp_config": {"parallelize_plan": {"y": 2}}, "pp_config": None},
+            {
+                "mp_config": None,
+                "sp_config": {"parallelize_plan": {"x": 1}},
+                "pp_config": None,
+            },
+            {
+                "mp_config": None,
+                "sp_config": {"parallelize_plan": {"y": 2}},
+                "pp_config": None,
+            },
         ]
         result = self.model.merge_auto_dist_configs(configs)
         self.assertIn("x", result["sp_config"]["parallelize_plan"])
@@ -129,7 +165,9 @@ class TestLoRAAutoModel(unittest.TestCase):
     def test_restore_layer_map(self):
         """Test that restore_layer_map maps LoRAAutoLinear to nn.Linear."""
         self.assertIn(LoRAAutoLinear, LoRAAutoModel.restore_layer_map)
-        self.assertEqual(LoRAAutoModel.restore_layer_map[LoRAAutoLinear], nn.Linear)
+        self.assertEqual(
+            LoRAAutoModel.restore_layer_map[LoRAAutoLinear], nn.Linear
+        )
 
     def test_generate_auto_dist_config_no_parallel(self):
         """Test _generate_auto_dist_config with no parallelism enabled."""

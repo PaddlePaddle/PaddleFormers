@@ -30,7 +30,9 @@ from paddle import Tensor
 # ===========================================================================
 # Differentiable all-gather — delegates to ContextParallelAllGatherOp
 # ===========================================================================
-from paddleformers.fleet.context_parallel_utils import ContextParallelAllGatherOp
+from paddleformers.fleet.context_parallel_utils import (
+    ContextParallelAllGatherOp,
+)
 
 
 def all_gather_cp(x: Tensor, dim: int, group) -> Tensor:
@@ -69,7 +71,9 @@ def get_window_topk_idxs_cp(
     effective_window = min(window_size, sq_global)
     base = q_positions.unsqueeze(1)  # [sq_local, 1]
     offsets = paddle.arange(effective_window)  # [window_size]
-    k_pos = paddle.clip(base - effective_window + 1, min=0) + offsets  # [sq_local, window_size]
+    k_pos = (
+        paddle.clip(base - effective_window + 1, min=0) + offsets
+    )  # [sq_local, window_size]
     topk_idxs = paddle.where(k_pos > base, paddle.full_like(k_pos, -1), k_pos)
     return topk_idxs.unsqueeze(0).expand([batch_size, -1, -1]).cast("int32")
 
@@ -122,7 +126,10 @@ def map_compressed_topk_to_kv_full_cp(
         [b, sq_local, topk_eff] int32 indices into kv_full, -1 for invalid.
     """
     n_valid = (
-        ((q_positions + 1) // ratio).unsqueeze(0).unsqueeze(2).cast(topk_indices_compressed.dtype)
+        ((q_positions + 1) // ratio)
+        .unsqueeze(0)
+        .unsqueeze(2)
+        .cast(topk_indices_compressed.dtype)
     )  # [1, sq_local, 1], same dtype as input
     valid = (topk_indices_compressed >= 0) & (topk_indices_compressed < n_valid)
     return paddle.where(
@@ -149,7 +156,9 @@ def build_causal_mask_cp(
     Returns:
         [batch_size, sq_local, n_compressed_global] float32, -inf for invalid.
     """
-    compressed_ids = paddle.arange(n_compressed_global).unsqueeze(0)  # [1, n_comp]
+    compressed_ids = paddle.arange(n_compressed_global).unsqueeze(
+        0
+    )  # [1, n_comp]
     q_first_invalid = ((q_positions + 1) // ratio).unsqueeze(1)  # [sq_local, 1]
     mask = paddle.where(
         compressed_ids >= q_first_invalid,

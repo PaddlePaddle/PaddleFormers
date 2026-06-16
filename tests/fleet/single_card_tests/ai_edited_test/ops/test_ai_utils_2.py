@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -39,7 +43,9 @@ class TestTritonUtilsFunctions(unittest.TestCase):
     def test_is_torch_compat_available_returns_bool(self):
         """Test is_torch_compat_available returns a bool."""
         try:
-            from paddleformers.fleet.triton_ops.utils import is_torch_compat_available
+            from paddleformers.fleet.triton_ops.utils import (
+                is_torch_compat_available,
+            )
 
             result = is_torch_compat_available()
             self.assertIsInstance(result, bool)
@@ -49,7 +55,9 @@ class TestTritonUtilsFunctions(unittest.TestCase):
     def test_is_torch_compat_available_type(self):
         """Test is_torch_compat_available returns boolean."""
         try:
-            from paddleformers.fleet.triton_ops.utils import is_torch_compat_available
+            from paddleformers.fleet.triton_ops.utils import (
+                is_torch_compat_available,
+            )
 
             result = is_torch_compat_available()
             self.assertIsInstance(result, bool)
@@ -109,11 +117,15 @@ class TestTritonUtilsFunctions(unittest.TestCase):
     def test_is_package_installed(self):
         """Test _is_package_installed checks package availability."""
         try:
-            from paddleformers.fleet.triton_ops.utils import _is_package_installed
+            from paddleformers.fleet.triton_ops.utils import (
+                _is_package_installed,
+            )
 
             # Only test negative case; positive case depends on
             # distribution name which varies across CI environments
-            self.assertFalse(_is_package_installed("nonexistent_package_xyz_12345"))
+            self.assertFalse(
+                _is_package_installed("nonexistent_package_xyz_12345")
+            )
         except ImportError:
             self.skipTest("paddlefleet_ops not installed")
 

@@ -48,7 +48,9 @@ class BMMFunction(paddle.autograd.PyLayer):
         ctx.save_for_backward(x, y)
         ctx.batch_sizes = batch_sizes
         ctx.trans_y = trans_y
-        return paddle.incubate.nn.functional.batched_gemm(x, y, batch_sizes, trans_rhs=trans_y)
+        return paddle.incubate.nn.functional.batched_gemm(
+            x, y, batch_sizes, trans_rhs=trans_y
+        )
 
     @staticmethod
     def backward(ctx, grad):
@@ -59,12 +61,16 @@ class BMMFunction(paddle.autograd.PyLayer):
         if x.stop_gradient:
             dx = None
         else:
-            dx = paddle.incubate.nn.functional.batched_gemm(grad, y, batch_sizes, trans_rhs=not trans_y)
+            dx = paddle.incubate.nn.functional.batched_gemm(
+                grad, y, batch_sizes, trans_rhs=not trans_y
+            )
         if y.stop_gradient:
             dy = None
         else:
             lhs, rhs = (grad, x) if trans_y else (x, grad)
-            dy = paddle.incubate.nn.functional.batched_gemm(lhs, rhs, batch_sizes, trans_lhs=True, trans_rhs=False)
+            dy = paddle.incubate.nn.functional.batched_gemm(
+                lhs, rhs, batch_sizes, trans_lhs=True, trans_rhs=False
+            )
         return dx, dy
 
 
@@ -75,11 +81,13 @@ class DeepGEMMBMMFunction(paddle.autograd.PyLayer):
         ctx.batch_sizes = batch_sizes
         out = paddle.zeros([x.shape[0], y.shape[2]], dtype="bfloat16")
 
-        tokens_per_expert_indices = paddle.repeat_interleave(paddle.arange(batch_sizes.shape[0]), batch_sizes).cast(
-            "int32"
-        )
+        tokens_per_expert_indices = paddle.repeat_interleave(
+            paddle.arange(batch_sizes.shape[0]), batch_sizes
+        ).cast("int32")
 
-        deep_gemm.m_grouped_bf16_gemm_nn_contiguous(x, y, out, tokens_per_expert_indices)
+        deep_gemm.m_grouped_bf16_gemm_nn_contiguous(
+            x, y, out, tokens_per_expert_indices
+        )
 
         del tokens_per_expert_indices
         return out
@@ -89,9 +97,9 @@ class DeepGEMMBMMFunction(paddle.autograd.PyLayer):
         x, y = ctx.saved_tensor()
         batch_sizes = ctx.batch_sizes
 
-        tokens_per_expert_indices = paddle.repeat_interleave(paddle.arange(batch_sizes.shape[0]), batch_sizes).cast(
-            "int32"
-        )
+        tokens_per_expert_indices = paddle.repeat_interleave(
+            paddle.arange(batch_sizes.shape[0]), batch_sizes
+        ).cast("int32")
 
         dx = paddle.zeros_like(x)
         deep_gemm.m_grouped_bf16_gemm_nt_contiguous(
@@ -134,14 +142,20 @@ class GroupedMLPExpert(FleetLayer):
         self.config.hidden_act = F.silu
         self.num_local_experts = num_local_experts
         self.moe_deep_gemm = moe_deep_gemm
-        assert not config.use_bias, "Bias not supported in Grouped GEMM yet, please set 'use_bias' to False."
+        assert not config.use_bias, (
+            "Bias not supported in Grouped GEMM yet, please set 'use_bias' to False."
+        )
 
         self.ep_group = pg_collection.ep if pg_collection else None
-        self.expert_parallel = utils.get_pg_size(self.ep_group) > 1 if self.ep_group else False
+        self.expert_parallel = (
+            utils.get_pg_size(self.ep_group) > 1 if self.ep_group else False
+        )
 
         if self.config.gated_linear_unit:
             if self.config.hidden_act not in [F.silu, F.gelu]:
-                raise ValueError("Activation function must be silu or gelu when using GroupedMLP.")
+                raise ValueError(
+                    "Activation function must be silu or gelu when using GroupedMLP."
+                )
 
             def glu(x):
                 x = paddle.chunk(x, 2, dim=-1)
@@ -151,10 +165,13 @@ class GroupedMLPExpert(FleetLayer):
         else:
             self.activation_func = self.config.hidden_act
         self.activation_recompute = (
-            self.config.recompute_granularity == "selective" and "moe_act" in self.config.recompute_modules
+            self.config.recompute_granularity == "selective"
+            and "moe_act" in self.config.recompute_modules
         )
         if self.activation_recompute and self.config.fp8:
-            raise ValueError("moe_act recompute for fp8 cannot work with the legacy GroupedMLP.")
+            raise ValueError(
+                "moe_act recompute for fp8 cannot work with the legacy GroupedMLP."
+            )
 
         # No tensor parallel - full sizes
         fc1_output_size = self.config.moe_intermediate_size
@@ -225,7 +242,9 @@ class GroupedMLPExpert(FleetLayer):
                     tokens_per_expert,
                 )
             if self.activation_recompute:
-                raise NotImplementedError("Recompute in GroupedMLPExpert is not implemented")
+                raise NotImplementedError(
+                    "Recompute in GroupedMLPExpert is not implemented"
+                )
             else:
                 intermediate_parallel = self.activation_func(fc1_output)
                 if self.moe_deep_gemm:
@@ -235,7 +254,9 @@ class GroupedMLPExpert(FleetLayer):
                         paddle.to_tensor(tokens_per_expert, dtype="int32"),
                     )
                 else:
-                    fc2_output = BMMFunction.apply(intermediate_parallel, self.weight2, tokens_per_expert)
+                    fc2_output = BMMFunction.apply(
+                        intermediate_parallel, self.weight2, tokens_per_expert
+                    )
         else:
             # No token is allocated for local experts.
             assert paddle.count_nonzero(tokens_per_expert) == 0
@@ -245,7 +266,9 @@ class GroupedMLPExpert(FleetLayer):
             w2 = self.weight2.reshape(-1, self.config.hidden_size)
             h = paddle.matmul(permuted_local_hidden_states, w1)
             if self.activation_recompute:
-                raise NotImplementedError("Recompute in GroupedMLPExpert is not implemented")
+                raise NotImplementedError(
+                    "Recompute in GroupedMLPExpert is not implemented"
+                )
             else:
                 h = self.activation_func(h)
                 fc2_output = paddle.matmul(h, w2)
@@ -276,7 +299,9 @@ class GroupedMLPExpert(FleetLayer):
         full_key1 = f"{structured_name_prefix}weight1"
         full_key2 = f"{structured_name_prefix}weight2"
         if self.ep_group is None:
-            sharded_dict = build_sharded_state_dict(state_dict, None, structured_name_prefix)
+            sharded_dict = build_sharded_state_dict(
+                state_dict, None, structured_name_prefix
+            )
         else:
             sharded_dict[full_key1] = shard_weight(
                 key=full_key1,
@@ -304,7 +329,9 @@ class SonicMoEExpert(GroupedMLPExpert):
         gate, up = paddle.chunk(weight, 2, axis=-1)
         gate = gate.transpose([0, 2, 1])
         up = up.transpose([0, 2, 1])
-        return paddle.stack([gate, up], axis=2).reshape([weight.shape[0], -1, weight.shape[1]])
+        return paddle.stack([gate, up], axis=2).reshape(
+            [weight.shape[0], -1, weight.shape[1]]
+        )
 
     @staticmethod
     def _sonic_w1_to_grouped(weight):
@@ -332,7 +359,9 @@ class SonicMoEExpert(GroupedMLPExpert):
         config: TransformerConfig,
         pg_collection: ProcessGroupCollection | None = None,
     ):
-        assert config.gated_linear_unit is True, "Sonic MoE must use SwiGLU, i.e. set gated_linear_unit=True."
+        assert config.gated_linear_unit is True, (
+            "Sonic MoE must use SwiGLU, i.e. set gated_linear_unit=True."
+        )
         super().__init__(
             num_local_experts=num_local_experts,
             config=config,
@@ -347,10 +376,14 @@ class SonicMoEExpert(GroupedMLPExpert):
         main_grad = getattr(param, "main_grad", None)
         if main_grad is not None:
             self._assign_tensor(main_grad, converter(main_grad))
-        if param.grad is not None and (main_grad is None or param.grad.data_ptr() != main_grad.data_ptr()):
+        if param.grad is not None and (
+            main_grad is None or param.grad.data_ptr() != main_grad.data_ptr()
+        ):
             self._assign_tensor(param.grad, converter(param.grad))
 
-    def _convert_layout(self, target_layout, weight1_converter, weight2_converter):
+    def _convert_layout(
+        self, target_layout, weight1_converter, weight2_converter
+    ):
         if self._weights_layout == target_layout:
             return
         with paddle.no_grad():

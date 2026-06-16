@@ -85,14 +85,14 @@ init_env() {
     else
         echo "No new models found, keeping existing: $update_baseline_models"
     fi
-   
+
 }
 upload_baseline(){
     cp -r /home/models/bos/* ./
     rm -rf upload
-    mkdir upload 
+    mkdir upload
     cp scripts/regression/config.yaml upload/
-    mv scripts/regression/config.yaml config_${PR_NUMBER}.yaml 
+    mv scripts/regression/config.yaml config_${PR_NUMBER}.yaml
     cp config_${PR_NUMBER}.yaml upload/
 
     if echo "${FLAGS_enable_CE}" | grep -q "CE_Release"; then
@@ -182,7 +182,7 @@ if [[ ${FLAGS_enable_CI} == "True" ]] || [[ ${FLAGS_enable_CE} != "False" ]];the
     exit_code=$?
     print_info $exit_code model_unittest
     if [[ $exit_code -eq 0 ]] && [[ "$update_baseline_models" != "false" ]] && [[ "$update_baseline_models" != "False" ]]; then
-        upload_baseline   
+        upload_baseline
     else
         echo " fix error, first"
     fi

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -90,7 +94,9 @@ class TestRotaryEmbeddingGetFreqsNonRepeated(unittest.TestCase):
             RotaryEmbedding,
         )
 
-        emb = RotaryEmbedding(head_dim=64, rotary_percent=1.0, seq_len_interpolation_factor=2.0)
+        emb = RotaryEmbedding(
+            head_dim=64, rotary_percent=1.0, seq_len_interpolation_factor=2.0
+        )
         result = emb.get_freqs_non_repeated(max_seq_len=128)
         self.assertEqual(result.shape, [128, 32])
 
@@ -123,7 +129,9 @@ class TestRotaryEmbeddingGetRotarySeqLen(unittest.TestCase):
         mock_config = MagicMock()
         mock_config.sequence_parallel = False
         tensor = paddle.randn([2, 32, 64])
-        result = emb.get_rotary_seq_len(tensor, mock_config, packed_seq_params=None)
+        result = emb.get_rotary_seq_len(
+            tensor, mock_config, packed_seq_params=None
+        )
         self.assertEqual(result, 32)
 
     def test_sequence_parallel_seq_len(self):
@@ -138,7 +146,9 @@ class TestRotaryEmbeddingGetRotarySeqLen(unittest.TestCase):
         mock_config.sequence_parallel = True
         mock_config.tensor_model_parallel_size = 2
         tensor = paddle.randn([32, 2, 64])
-        result = emb.get_rotary_seq_len(tensor, mock_config, packed_seq_params=None)
+        result = emb.get_rotary_seq_len(
+            tensor, mock_config, packed_seq_params=None
+        )
         self.assertEqual(result, 64)
 
     def test_with_packed_seq_params(self):
@@ -154,7 +164,9 @@ class TestRotaryEmbeddingGetRotarySeqLen(unittest.TestCase):
         mock_packed.max_seqlen_q = 128
         mock_packed.max_seqlen_kv = 128
         tensor = paddle.randn([2, 32, 64])
-        result = emb.get_rotary_seq_len(tensor, mock_config, packed_seq_params=mock_packed)
+        result = emb.get_rotary_seq_len(
+            tensor, mock_config, packed_seq_params=mock_packed
+        )
         self.assertEqual(result, 128)
 
 
@@ -174,7 +186,9 @@ class TestMultimodalRotaryEmbedding(unittest.TestCase):
             MultimodalRotaryEmbedding,
         )
 
-        emb = MultimodalRotaryEmbedding(head_dim=64, rotary_percent=1.0, rotary_interleaved=True)
+        emb = MultimodalRotaryEmbedding(
+            head_dim=64, rotary_percent=1.0, rotary_interleaved=True
+        )
         self.assertTrue(emb.rotary_interleaved)
 
     def test_forward_basic(self):
@@ -294,7 +308,9 @@ class TestRotaryEmbeddingWithRopeScaling(unittest.TestCase):
             RotaryEmbedding,
         )
 
-        emb = RotaryEmbedding(head_dim=64, rotary_percent=1.0, rope_scaling=True)
+        emb = RotaryEmbedding(
+            head_dim=64, rotary_percent=1.0, rope_scaling=True
+        )
         self.assertIsNotNone(emb.inv_freq)
 
     def test_forward_with_rope_scaling(self):
@@ -302,7 +318,9 @@ class TestRotaryEmbeddingWithRopeScaling(unittest.TestCase):
             RotaryEmbedding,
         )
 
-        emb = RotaryEmbedding(head_dim=64, rotary_percent=1.0, rope_scaling=True)
+        emb = RotaryEmbedding(
+            head_dim=64, rotary_percent=1.0, rope_scaling=True
+        )
         result = emb(max_seq_len=128)
         self.assertIsNotNone(result)
 

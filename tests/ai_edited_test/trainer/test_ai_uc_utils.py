@@ -26,15 +26,24 @@ class TestUnifiedCheckpointOption(unittest.TestCase):
 
     def test_skip_save_model_weight(self):
         """Test skip_save_model_weight option."""
-        self.assertEqual(UnifiedCheckpointOption.SKIP_SAVE_MODEL_WEIGHT.value, "skip_save_model_weight")
+        self.assertEqual(
+            UnifiedCheckpointOption.SKIP_SAVE_MODEL_WEIGHT.value,
+            "skip_save_model_weight",
+        )
 
     def test_master_weight_compatible(self):
         """Test master_weight_compatible option."""
-        self.assertEqual(UnifiedCheckpointOption.MASTER_WEIGHT_COMPATIBLE.value, "master_weight_compatible")
+        self.assertEqual(
+            UnifiedCheckpointOption.MASTER_WEIGHT_COMPATIBLE.value,
+            "master_weight_compatible",
+        )
 
     def test_remove_master_weight(self):
         """Test remove_master_weight option."""
-        self.assertEqual(UnifiedCheckpointOption.REMOVE_MASTER_WEIGHT.value, "remove_master_weight")
+        self.assertEqual(
+            UnifiedCheckpointOption.REMOVE_MASTER_WEIGHT.value,
+            "remove_master_weight",
+        )
 
     def test_async_save(self):
         """Test async_save option."""
@@ -42,7 +51,10 @@ class TestUnifiedCheckpointOption(unittest.TestCase):
 
     def test_ignore_merge_optimizer(self):
         """Test ignore_merge_optimizer option."""
-        self.assertEqual(UnifiedCheckpointOption.IGNORE_MERGE_OPTIMIZER.value, "ignore_merge_optimizer")
+        self.assertEqual(
+            UnifiedCheckpointOption.IGNORE_MERGE_OPTIMIZER.value,
+            "ignore_merge_optimizer",
+        )
 
 
 class TestUnwrapOptimizer(unittest.TestCase):
@@ -117,7 +129,9 @@ class TestGenerateBaseStaticName(unittest.TestCase):
 
     def test_fp32_master_name(self):
         """Test generating base name from fp32 master weight."""
-        base, typename = generate_base_static_name("linear.weight_fp32_master_0_moment1_0")
+        base, typename = generate_base_static_name(
+            "linear.weight_fp32_master_0_moment1_0"
+        )
         self.assertEqual(base, "linear.weight")
         self.assertEqual(typename, "moment1_0")
 
@@ -135,13 +149,17 @@ class TestGenerateBaseStaticName(unittest.TestCase):
 
     def test_beta1_name(self):
         """Test generating base name from beta1 pow accumulator."""
-        base, typename = generate_base_static_name("linear.weight_beta1_pow_acc_0")
+        base, typename = generate_base_static_name(
+            "linear.weight_beta1_pow_acc_0"
+        )
         self.assertEqual(base, "linear.weight")
         self.assertEqual(typename, "beta1_pow_acc_0")
 
     def test_beta2_name(self):
         """Test generating base name from beta2 pow accumulator."""
-        base, typename = generate_base_static_name("linear.weight_beta2_pow_acc_0")
+        base, typename = generate_base_static_name(
+            "linear.weight_beta2_pow_acc_0"
+        )
         self.assertEqual(base, "linear.weight")
         self.assertEqual(typename, "beta2_pow_acc_0")
 

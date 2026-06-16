@@ -16,7 +16,9 @@ import sys
 import types
 import unittest
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+REPO_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 sys.path.insert(0, os.path.join(REPO_ROOT, "src"))
 
 import paddle
@@ -93,7 +95,9 @@ class RecordingProjector:
 
 class MinimalLLaVA:
     def _process_embedding_token_parallel(self, *args, **kwargs):
-        return LLaVAModel._process_embedding_token_parallel(self, *args, **kwargs)
+        return LLaVAModel._process_embedding_token_parallel(
+            self, *args, **kwargs
+        )
 
     def _preprocess_data(self, *args, **kwargs):
         return LLaVAModel._preprocess_data(self, *args, **kwargs)
@@ -152,10 +156,14 @@ class TestLLaVAInitAndExtraBranchesNoMock(unittest.TestCase):
         llava_model.CLIPViTModel = RecordingClip
         llava_model.RADIOViTModel = RecordingRadio
         llava_model.MultimodalProjector = RecordingProjector
-        llava_model.ProcessGroupCollection.use_mpu_process_groups = lambda: PGCollection()
+        llava_model.ProcessGroupCollection.use_mpu_process_groups = (
+            lambda: PGCollection()
+        )
         llava_model.has_config_logger_enabled = lambda config: True
         self.logged = []
-        llava_model.log_config_to_disk = lambda *args, **kwargs: self.logged.append((args, kwargs))
+        llava_model.log_config_to_disk = (
+            lambda *args, **kwargs: self.logged.append((args, kwargs))
+        )
         llava_model.get_num_image_embeddings = lambda *args, **kwargs: 4
 
     def tearDown(self):
@@ -201,7 +209,9 @@ class TestLLaVAInitAndExtraBranchesNoMock(unittest.TestCase):
         self.assertIs(radio_plain.vision_model.kwargs["ln_post_impl"], None)
         self.assertFalse(RecordingRadio.calls[-1]["use_mask_token"])
 
-        cradio = self._build_model("cradio-g", allow_missing_vision_projection_checkpoint=True)
+        cradio = self._build_model(
+            "cradio-g", allow_missing_vision_projection_checkpoint=True
+        )
         self.assertEqual(RecordingRadio.calls[-1]["class_token_len"], 8)
         self.assertFalse(RecordingRadio.calls[-1]["embedder_bias"])
         self.assertIs(cradio.vision_model.kwargs["ln_post_impl"], None)
@@ -233,11 +243,15 @@ class TestLLaVAInitAndExtraBranchesNoMock(unittest.TestCase):
         model.tp_comm_overlap_lm = False
         embeddings = paddle.ones([2, 8, 2], dtype="float32")
 
-        result = model._process_embedding_token_parallel(embeddings, None, None, None)
+        result = model._process_embedding_token_parallel(
+            embeddings, None, None, None
+        )
         self.assertIs(result[0], embeddings)
 
         model.sequence_parallel_lm = False
-        result = model._process_embedding_token_parallel(embeddings, None, None, None)
+        result = model._process_embedding_token_parallel(
+            embeddings, None, None, None
+        )
         self.assertIs(result[0], embeddings)
 
         model.sequence_parallel_lm = True
@@ -245,21 +259,31 @@ class TestLLaVAInitAndExtraBranchesNoMock(unittest.TestCase):
         model.tp_comm_overlap_lm = True
         model._language_max_sequence_length = 16
         with self.assertRaises(AssertionError):
-            model._process_embedding_token_parallel(paddle.ones([4, 2, 2], dtype="float32"), None, None, None)
+            model._process_embedding_token_parallel(
+                paddle.ones([4, 2, 2], dtype="float32"), None, None, None
+            )
 
     def test_hf_language_and_vision_model_branches(self):
         calls = []
-        module = types.ModuleType("paddleformers.fleet.models.huggingface.module")
+        module = types.ModuleType(
+            "paddleformers.fleet.models.huggingface.module"
+        )
 
         def build_hf_model(config, model_type=None):
             calls.append((config, model_type))
             return RecordingGPT()
 
         module.build_hf_model = build_hf_model
-        old_module = sys.modules.get("paddleformers.fleet.models.huggingface.module")
-        had_module = "paddleformers.fleet.models.huggingface.module" in sys.modules
+        old_module = sys.modules.get(
+            "paddleformers.fleet.models.huggingface.module"
+        )
+        had_module = (
+            "paddleformers.fleet.models.huggingface.module" in sys.modules
+        )
         try:
-            sys.modules["paddleformers.fleet.models.huggingface.module"] = module
+            sys.modules["paddleformers.fleet.models.huggingface.module"] = (
+                module
+            )
             language_config = Config()
             language_config.language_model_type = "hf://tiny-lm"
             LLaVAModel(
@@ -276,9 +300,13 @@ class TestLLaVAInitAndExtraBranchesNoMock(unittest.TestCase):
             )
         finally:
             if had_module:
-                sys.modules["paddleformers.fleet.models.huggingface.module"] = old_module
+                sys.modules["paddleformers.fleet.models.huggingface.module"] = (
+                    old_module
+                )
             else:
-                sys.modules.pop("paddleformers.fleet.models.huggingface.module", None)
+                sys.modules.pop(
+                    "paddleformers.fleet.models.huggingface.module", None
+                )
 
         self.assertEqual(calls[0][1], "hf://tiny-lm")
         self.assertIsNone(calls[1][1])
@@ -302,7 +330,9 @@ class TestLLaVAInitAndExtraBranchesNoMock(unittest.TestCase):
         model.tensor_model_parallel_size_lm = 1
         model.tp_comm_overlap_lm = False
         model.language_model = RecordingLanguageModel()
-        model.vision_model = RecordingVisionModel(paddle.arange(2, dtype="float32").reshape([1, 1, 2]))
+        model.vision_model = RecordingVisionModel(
+            paddle.arange(2, dtype="float32").reshape([1, 1, 2])
+        )
         model.vision_projection = RecordingProjection()
         context = type("Context", (), {"key_value_memory_dict": {}})()
 
@@ -352,7 +382,9 @@ class TestLLaVAInitAndExtraBranchesNoMock(unittest.TestCase):
         model.context_parallel_lm = 1
         model.sequence_parallel_lm = False
         model.language_model = RecordingLanguageModel()
-        model.vision_model = RecordingVisionModel(paddle.arange(64, dtype="float32").reshape([1, 16, 4]))
+        model.vision_model = RecordingVisionModel(
+            paddle.arange(64, dtype="float32").reshape([1, 16, 4])
+        )
         model.vision_projection = RecordingProjection()
         context = type("Context", (), {"key_value_memory_dict": {}})()
 

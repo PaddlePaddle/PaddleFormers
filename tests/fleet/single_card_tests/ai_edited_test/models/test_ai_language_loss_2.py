@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -235,7 +239,9 @@ class TestSubbatch(unittest.TestCase):
         def simple_fn(x, y):
             return x + y
 
-        sb_fn = subbatch(simple_fn, arg_idx=[0, 1], axis=[0, 0], bs=100, out_idx=0)
+        sb_fn = subbatch(
+            simple_fn, arg_idx=[0, 1], axis=[0, 0], bs=100, out_idx=0
+        )
         x = paddle.randn([5, 10])
         y = paddle.randn([5, 10])
         result = sb_fn(x, y)
@@ -252,7 +258,9 @@ class TestSubbatch(unittest.TestCase):
         def simple_fn(x, y):
             return x + y
 
-        sb_fn = subbatch(simple_fn, arg_idx=[0, 1], axis=[0, 0], bs=5, out_idx=0)
+        sb_fn = subbatch(
+            simple_fn, arg_idx=[0, 1], axis=[0, 0], bs=5, out_idx=0
+        )
         x = paddle.randn([5, 10])
         y = paddle.randn([5, 10])
         result = sb_fn(x, y)

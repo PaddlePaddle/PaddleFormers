@@ -23,7 +23,11 @@ from paddle.distributed import fleet
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 from paddleformers.fleet.tensor_parallel.layers import (
@@ -36,7 +40,9 @@ from paddleformers.fleet.tensor_parallel.mappings import (
     scatter_to_sequence_parallel_region,
     scatter_to_tensor_model_parallel_region,
 )
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.training.initialize import initialize_fleet
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 
@@ -91,7 +97,9 @@ def setUpModule():
     """Initialize fleet once for all tests in this module (TP=4, sharding=2)."""
     global TP_SIZE
     TP_SIZE = dist.get_world_size()
-    _init_fleet_custom(mp=TP_SIZE, pp=1, sharding=TP_SIZE // 4 if TP_SIZE >= 4 else 1)
+    _init_fleet_custom(
+        mp=TP_SIZE, pp=1, sharding=TP_SIZE // 4 if TP_SIZE >= 4 else 1
+    )
     np.random.seed(42)
     paddle.seed(42)
     model_parallel_cuda_manual_seed(42)
@@ -194,7 +202,9 @@ class TestGatherFromSPRegion(unittest.TestCase):
         """Test gather collects input along sequence dimension."""
         seq_len = 8
         hidden = 16
-        input_tensor = paddle.randn([seq_len // TP_SIZE, hidden], dtype="float32")
+        input_tensor = paddle.randn(
+            [seq_len // TP_SIZE, hidden], dtype="float32"
+        )
         input_tensor.stop_gradient = False
         output = gather_from_sequence_parallel_region(input_tensor)
         self.assertEqual(output.shape[0], seq_len)

@@ -64,9 +64,9 @@ class FusedRmsNorm(paddle.nn.Layer):
         self.config = config
 
         self.zero_centered_gamma = self.config.layernorm_zero_centered_gamma
-        assert (
-            self.config.normalization == "RMSNorm"
-        ), f"({self.config.normalization}) is not supported in FusedRmsNorm"
+        assert self.config.normalization == "RMSNorm", (
+            f"({self.config.normalization}) is not supported in FusedRmsNorm"
+        )
 
         if isinstance(hidden_size, numbers.Integral):
             hidden_size = (hidden_size,)
@@ -101,12 +101,16 @@ class FusedRmsNorm(paddle.nn.Layer):
         elif isinstance(self.hidden_size, tuple):
             self.hidden_size = list(self.hidden_size)
         elif not isinstance(self.hidden_size, list):
-            raise ValueError("`self.hidden_size` should be int, list of ints or tuple of ints.")
+            raise ValueError(
+                "`self.hidden_size` should be int, list of ints or tuple of ints."
+            )
 
         normalized_ndim = len(self.hidden_size)
         begin_norm_axis = input_ndim - normalized_ndim
         if input_ndim < normalized_ndim or (
-            not paddle.utils.is_same_shape(input_shape[begin_norm_axis:], self.hidden_size)
+            not paddle.utils.is_same_shape(
+                input_shape[begin_norm_axis:], self.hidden_size
+            )
         ):
             str_normalized_shape = str(self.hidden_size)
             raise ValueError(

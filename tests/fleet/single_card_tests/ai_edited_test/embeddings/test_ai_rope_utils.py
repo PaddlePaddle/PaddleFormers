@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -54,7 +58,9 @@ class TestGetPosEmbOnThisCPRank(unittest.TestCase):
 
         pos_emb = paddle.randn([1, 32, 1, 64])
         cp_group = MagicMock()
-        result = get_pos_emb_on_this_cp_rank(pos_emb, seq_dim=1, cp_group=cp_group)
+        result = get_pos_emb_on_this_cp_rank(
+            pos_emb, seq_dim=1, cp_group=cp_group
+        )
         self.assertIsNotNone(result)
 
 
@@ -62,21 +68,27 @@ class TestRotateHalf(unittest.TestCase):
     """Test _rotate_half function."""
 
     def test_non_interleaved(self):
-        from paddleformers.fleet.models.common.embeddings.rope_utils import _rotate_half
+        from paddleformers.fleet.models.common.embeddings.rope_utils import (
+            _rotate_half,
+        )
 
         x = paddle.randn([2, 8, 12, 64])
         result = _rotate_half(x, rotary_interleaved=False)
         self.assertEqual(result.shape, x.shape)
 
     def test_interleaved(self):
-        from paddleformers.fleet.models.common.embeddings.rope_utils import _rotate_half
+        from paddleformers.fleet.models.common.embeddings.rope_utils import (
+            _rotate_half,
+        )
 
         x = paddle.randn([2, 8, 12, 64])
         result = _rotate_half(x, rotary_interleaved=True)
         self.assertEqual(result.shape, x.shape)
 
     def test_non_interleaved_correct_rotation(self):
-        from paddleformers.fleet.models.common.embeddings.rope_utils import _rotate_half
+        from paddleformers.fleet.models.common.embeddings.rope_utils import (
+            _rotate_half,
+        )
 
         x = paddle.randn([1, 1, 1, 4])
         result = _rotate_half(x, rotary_interleaved=False)
@@ -84,8 +96,12 @@ class TestRotateHalf(unittest.TestCase):
         # result = [-x2, -x3, x0, x1]
         x_np = x.numpy()
         r_np = result.numpy()
-        np.testing.assert_allclose(r_np[0, 0, 0, :2], -x_np[0, 0, 0, 2:], atol=1e-6)
-        np.testing.assert_allclose(r_np[0, 0, 0, 2:], x_np[0, 0, 0, :2], atol=1e-6)
+        np.testing.assert_allclose(
+            r_np[0, 0, 0, :2], -x_np[0, 0, 0, 2:], atol=1e-6
+        )
+        np.testing.assert_allclose(
+            r_np[0, 0, 0, 2:], x_np[0, 0, 0, :2], atol=1e-6
+        )
 
 
 class TestApplyRotaryPosEmbBshdBasic(unittest.TestCase):

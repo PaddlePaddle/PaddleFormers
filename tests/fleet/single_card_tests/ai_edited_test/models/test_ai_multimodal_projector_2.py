@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -24,7 +28,9 @@ from unittest.mock import MagicMock, patch
 
 import paddle
 
-from paddleformers.fleet.models.vision.multimodal_projector import MultimodalProjector
+from paddleformers.fleet.models.vision.multimodal_projector import (
+    MultimodalProjector,
+)
 
 
 class TestMultimodalProjectorIntegration(unittest.TestCase):
@@ -32,7 +38,9 @@ class TestMultimodalProjectorIntegration(unittest.TestCase):
 
     def test_mlp_projector_forward(self):
         """Test MLP projector construction via mocked MLP."""
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         config = TransformerConfig(
             num_hidden_layers=1,
@@ -40,7 +48,9 @@ class TestMultimodalProjectorIntegration(unittest.TestCase):
             num_attention_heads=4,
             use_cpu_initialization=True,
         )
-        with patch("paddleformers.fleet.models.vision.multimodal_projector.MLP") as mock_mlp:
+        with patch(
+            "paddleformers.fleet.models.vision.multimodal_projector.MLP"
+        ) as mock_mlp:
             mock_mlp.return_value = MagicMock()
             from paddleformers.fleet.transformer.mlp import MLPSublayersSpec
 
@@ -110,13 +120,17 @@ class TestMultimodalProjectorForwardPaths(unittest.TestCase):
 class TestMultimodalProjectorAffineWithTPGroup(unittest.TestCase):
     """Test MultimodalProjector affine type with tp_group."""
 
-    @patch("paddleformers.fleet.models.vision.multimodal_projector.build_spec_layer")
+    @patch(
+        "paddleformers.fleet.models.vision.multimodal_projector.build_spec_layer"
+    )
     def test_affine_with_tp_group(self, mock_build):
         """Test affine projector type with tp_group."""
         mock_build.return_value = MagicMock()
 
         from paddleformers.fleet.transformer.mlp import MLPSublayersSpec
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         config = TransformerConfig(
             num_hidden_layers=1,

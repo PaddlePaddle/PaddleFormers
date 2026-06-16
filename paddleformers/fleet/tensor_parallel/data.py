@@ -26,7 +26,8 @@ def _check_data_types(keys, data, target_dtype):
     """Check that all the keys have the same target data type."""
     for key in keys:
         assert data[key].dtype == target_dtype, (
-            f"{key} has data type {data[key].dtype} which " f"is different than {target_dtype}"
+            f"{key} has data type {data[key].dtype} which "
+            f"is different than {target_dtype}"
         )
 
 
@@ -49,7 +50,9 @@ def _build_key_size_numel_dictionaries(keys, data, tp_group=None):
     # Move to GPU and broadcast.
     sizes_cuda = paddle.tensor(sizes, dtype=paddle.int32)
     global_ranks_in_group = tp_group.ranks
-    paddle.distributed.broadcast(sizes_cuda, global_ranks_in_group[0], group=tp_group)
+    paddle.distributed.broadcast(
+        sizes_cuda, global_ranks_in_group[0], group=tp_group
+    )
 
     # Move back to cpu and unpack.
     sizes_cpu = sizes_cuda.cpu()
@@ -87,20 +90,26 @@ def broadcast_data(keys, data, datatype, tp_group=None):
     """
     # Build (key, size) and (key, number of elements) dictionaries along
     # with the total number of elements on all ranks.
-    key_size, key_numel, total_numel = _build_key_size_numel_dictionaries(keys, data)
+    key_size, key_numel, total_numel = _build_key_size_numel_dictionaries(
+        keys, data
+    )
     tp_group = get_tensor_model_parallel_group_if_none(tp_group)
     # Pack on rank zero.
     if tp_group.rank == 0:
         # Check that all keys have the same data type.
         _check_data_types(keys, data, datatype)
         # Flatten the data associated with the keys
-        flatten_data = paddle.concat([data[key].cuda().contiguous().view(-1) for key in keys], dim=0)
+        flatten_data = paddle.concat(
+            [data[key].cuda().contiguous().view(-1) for key in keys], dim=0
+        )
     else:
         flatten_data = paddle.empty([total_numel], dtype=datatype)
 
     # Broadcast
     global_ranks_in_group = tp_group.ranks
-    paddle.distributed.broadcast(flatten_data, global_ranks_in_group[0], group=tp_group)
+    paddle.distributed.broadcast(
+        flatten_data, global_ranks_in_group[0], group=tp_group
+    )
 
     # Unpack
     output = {}

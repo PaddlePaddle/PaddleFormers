@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -95,42 +99,58 @@ class TestNumber2Dtype(unittest.TestCase):
     """Tests for number_2_dtype conversion."""
 
     def test_float16(self):
-        from paddle.distributed.fleet.meta_parallel.pp_utils.utils import number_2_dtype
+        from paddle.distributed.fleet.meta_parallel.pp_utils.utils import (
+            number_2_dtype,
+        )
 
         self.assertEqual(number_2_dtype(0), "float16")
 
     def test_float32(self):
-        from paddle.distributed.fleet.meta_parallel.pp_utils.utils import number_2_dtype
+        from paddle.distributed.fleet.meta_parallel.pp_utils.utils import (
+            number_2_dtype,
+        )
 
         self.assertEqual(number_2_dtype(1), "float32")
 
     def test_float64(self):
-        from paddle.distributed.fleet.meta_parallel.pp_utils.utils import number_2_dtype
+        from paddle.distributed.fleet.meta_parallel.pp_utils.utils import (
+            number_2_dtype,
+        )
 
         self.assertEqual(number_2_dtype(2), "float64")
 
     def test_int32(self):
-        from paddle.distributed.fleet.meta_parallel.pp_utils.utils import number_2_dtype
+        from paddle.distributed.fleet.meta_parallel.pp_utils.utils import (
+            number_2_dtype,
+        )
 
         self.assertEqual(number_2_dtype(3), "int32")
 
     def test_int64(self):
-        from paddle.distributed.fleet.meta_parallel.pp_utils.utils import number_2_dtype
+        from paddle.distributed.fleet.meta_parallel.pp_utils.utils import (
+            number_2_dtype,
+        )
 
         self.assertEqual(number_2_dtype(4), "int64")
 
     def test_bfloat16(self):
-        from paddle.distributed.fleet.meta_parallel.pp_utils.utils import number_2_dtype
+        from paddle.distributed.fleet.meta_parallel.pp_utils.utils import (
+            number_2_dtype,
+        )
 
         self.assertEqual(number_2_dtype(5), "bfloat16")
 
     def test_bool(self):
-        from paddle.distributed.fleet.meta_parallel.pp_utils.utils import number_2_dtype
+        from paddle.distributed.fleet.meta_parallel.pp_utils.utils import (
+            number_2_dtype,
+        )
 
         self.assertEqual(number_2_dtype(6), "bool")
 
     def test_invalid_number(self):
-        from paddle.distributed.fleet.meta_parallel.pp_utils.utils import number_2_dtype
+        from paddle.distributed.fleet.meta_parallel.pp_utils.utils import (
+            number_2_dtype,
+        )
 
         with self.assertRaises(AssertionError):
             number_2_dtype(99)

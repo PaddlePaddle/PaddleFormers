@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -61,7 +65,9 @@ class TestTransformerBlockSublayersSpec(unittest.TestCase):
     def test_custom_values(self):
         layer_specs = [MagicMock(), MagicMock()]
         layer_norm = MagicMock()
-        spec = TransformerBlockSublayersSpec(layer_specs=layer_specs, layer_norm=layer_norm)
+        spec = TransformerBlockSublayersSpec(
+            layer_specs=layer_specs, layer_norm=layer_norm
+        )
         self.assertEqual(spec.layer_specs, layer_specs)
         self.assertEqual(spec.layer_norm, layer_norm)
 
@@ -80,7 +86,9 @@ class TestGetBlockSublayersSpec(unittest.TestCase):
         """When spec is a LayerSpec for TransformerLayer, construct sublayers_spec."""
         from paddle.distributed.fleet.meta_parallel import LayerSpec
 
-        from paddleformers.fleet.transformer.transformer_layer import TransformerLayer
+        from paddleformers.fleet.transformer.transformer_layer import (
+            TransformerLayer,
+        )
 
         config = _make_config(num_hidden_layers=3)
         layer_spec = LayerSpec(TransformerLayer)
@@ -106,14 +114,16 @@ class TestGetBlockSublayersSpec(unittest.TestCase):
     def test_with_unsupported_spec_raises(self):
         """When spec type is unsupported, raise Exception."""
         config = _make_config()
-        with self.assertRaises(Exception):  # noqa: B017
+        with self.assertRaises(Exception):
             _get_block_sublayers_spec(config, "unsupported_type")
 
 
 class TestTransformerBlockConstruction(unittest.TestCase):
     """Tests for TransformerBlock __init__ and _build_layers."""
 
-    @patch("paddleformers.fleet.transformer.transformer_block.ProcessGroupCollection.use_mpu_process_groups")
+    @patch(
+        "paddleformers.fleet.transformer.transformer_block.ProcessGroupCollection.use_mpu_process_groups"
+    )
     @patch("paddleformers.fleet.transformer.transformer_block.build_spec_layer")
     def test_no_post_layer_norm(self, mock_build, mock_pg):
         """Test TransformerBlock with post_layer_norm=False."""
@@ -133,7 +143,9 @@ class TestTransformerBlockConstruction(unittest.TestCase):
         )
         self.assertIsNone(block.norm)
 
-    @patch("paddleformers.fleet.transformer.transformer_block.ProcessGroupCollection.use_mpu_process_groups")
+    @patch(
+        "paddleformers.fleet.transformer.transformer_block.ProcessGroupCollection.use_mpu_process_groups"
+    )
     @patch("paddleformers.fleet.transformer.transformer_block.build_spec_layer")
     def test_no_post_process(self, mock_build, mock_pg):
         """Test TransformerBlock with post_process=False."""
@@ -153,7 +165,9 @@ class TestTransformerBlockConstruction(unittest.TestCase):
         )
         self.assertIsNone(block.norm)
 
-    @patch("paddleformers.fleet.transformer.transformer_block.ProcessGroupCollection.use_mpu_process_groups")
+    @patch(
+        "paddleformers.fleet.transformer.transformer_block.ProcessGroupCollection.use_mpu_process_groups"
+    )
     @patch("paddleformers.fleet.transformer.transformer_block.build_spec_layer")
     def test_with_post_process_and_layer_norm(self, mock_build, mock_pg):
         """Test TransformerBlock with post_process=True and post_layer_norm=True."""
@@ -192,7 +206,9 @@ class TestTransformerBlockMethods(unittest.TestCase):
             patch(
                 "paddleformers.fleet.transformer.transformer_block.ProcessGroupCollection.use_mpu_process_groups"
             ) as mock_pg,
-            patch("paddleformers.fleet.transformer.transformer_block.build_spec_layer") as mock_build,
+            patch(
+                "paddleformers.fleet.transformer.transformer_block.build_spec_layer"
+            ) as mock_build,
         ):
             mock_pg.return_value = MagicMock()
             # build_spec_layer must return paddle.nn.Layer instances for LayerList

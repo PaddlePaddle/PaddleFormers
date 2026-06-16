@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -37,7 +41,9 @@ except ImportError:
 
 def _make_layernorm_config(**overrides):
     """Helper to create a TransformerConfig for FusedLayerNorm testing."""
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
     # Separate fields that are not part of TransformerConfig dataclass
     extra_attrs = {}
@@ -93,7 +99,10 @@ class TestFusedLayerNorm(unittest.TestCase):
             hidden_size=1024,
             persist_layer_norm=True,
         )
-        with patch("paddleformers.fleet.fusions.fused_layer_norm.HAVE_PERSIST_LAYER_NORM", True):
+        with patch(
+            "paddleformers.fleet.fusions.fused_layer_norm.HAVE_PERSIST_LAYER_NORM",
+            True,
+        ):
             layer = FusedLayerNorm(config, hidden_size=1024)
             # persist_layer_norm should be True only if HAVE_PERSIST_LAYER_NORM is True
             self.assertTrue(layer.persist_layer_norm)
@@ -176,21 +185,29 @@ class TestFusedLayerNormErrors(unittest.TestCase):
     """Tests for FusedLayerNorm error cases."""
 
     def test_assertion_wrong_normalization(self):
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         config = TransformerConfig(
             hidden_size=64,
             normalization="RMSNorm",
         )
         with self.assertRaises(AssertionError):
-            from paddleformers.fleet.fusions.fused_layer_norm import FusedLayerNorm
+            from paddleformers.fleet.fusions.fused_layer_norm import (
+                FusedLayerNorm,
+            )
 
             FusedLayerNorm(config, hidden_size=64)
 
-    @unittest.skipIf(not HAVE_FUSED_LAYER_NORM, "fused_layer_norm not available")
+    @unittest.skipIf(
+        not HAVE_FUSED_LAYER_NORM, "fused_layer_norm not available"
+    )
     def test_value_error_no_fused_ln(self):
         """Test that ValueError is raised when fused_ln is not available."""
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         config = TransformerConfig(
             hidden_size=64,
@@ -205,7 +222,9 @@ class TestFusedLayerNormErrors(unittest.TestCase):
             ),
             self.assertRaises(ValueError),
         ):
-            from paddleformers.fleet.fusions.fused_layer_norm import FusedLayerNorm
+            from paddleformers.fleet.fusions.fused_layer_norm import (
+                FusedLayerNorm,
+            )
 
             FusedLayerNorm(config, hidden_size=64)
 

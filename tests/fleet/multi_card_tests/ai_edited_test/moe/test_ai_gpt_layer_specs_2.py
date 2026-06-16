@@ -25,12 +25,20 @@ from paddle.distributed import fleet
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
-from paddleformers.fleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
+from paddleformers.fleet.models.gpt.gpt_layer_specs import (
+    get_gpt_layer_local_spec,
+)
 from paddleformers.fleet.process_groups_config import ProcessGroupCollection
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.training.initialize import initialize_fleet
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 
@@ -133,7 +141,9 @@ def _build_moe_config(**overrides):
         hidden_dropout_prob=0.0,
         attention_dropout=0.0,
         init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-        output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+        output_layer_init_method=functools.partial(
+            paddle.nn.init.xavier_uniform_, gain=1.0
+        ),
     )
     defaults.update(overrides)
     return TransformerConfig(**defaults)
@@ -153,7 +163,9 @@ def _build_dense_config(**overrides):
         hidden_dropout_prob=0.0,
         attention_dropout=0.0,
         init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-        output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+        output_layer_init_method=functools.partial(
+            paddle.nn.init.xavier_uniform_, gain=1.0
+        ),
     )
     defaults.update(overrides)
     return TransformerConfig(**defaults)
@@ -169,7 +181,9 @@ class TestTransformerLayerMoE(unittest.TestCase):
             cls.n_experts = 4
             cls.config = _build_moe_config()
             cls.pg_collection = ProcessGroupCollection.use_mpu_process_groups()
-            layer_spec = get_gpt_layer_local_spec(cls.config, num_experts=cls.n_experts, moe_expert_fusion=False)
+            layer_spec = get_gpt_layer_local_spec(
+                cls.config, num_experts=cls.n_experts, moe_expert_fusion=False
+            )
             cls.transformer_layer = layer_spec.layer(
                 cls.config,
                 layer_spec.sublayers_spec,
@@ -187,9 +201,13 @@ class TestTransformerLayerMoE(unittest.TestCase):
     @_requires_gpu_compute
     def test_transformer_layer_forward_moe(self):
         """Test TransformerLayer forward pass with MoE produces correct shape."""
-        hidden_states = paddle.randn([2, 8, self.hidden_size], dtype=paddle.float32)
+        hidden_states = paddle.randn(
+            [2, 8, self.hidden_size], dtype=paddle.float32
+        )
         result = self.transformer_layer({"hidden_states": hidden_states})
-        self.assertEqual(result["hidden_states"].shape, [2, 8, self.hidden_size])
+        self.assertEqual(
+            result["hidden_states"].shape, [2, 8, self.hidden_size]
+        )
 
 
 class TestTransformerLayerDense(unittest.TestCase):
@@ -217,9 +235,13 @@ class TestTransformerLayerDense(unittest.TestCase):
     @_requires_gpu_compute
     def test_transformer_layer_forward_dense(self):
         """Test TransformerLayer forward pass with dense MLP produces correct shape."""
-        hidden_states = paddle.randn([2, 8, self.hidden_size], dtype=paddle.float32)
+        hidden_states = paddle.randn(
+            [2, 8, self.hidden_size], dtype=paddle.float32
+        )
         result = self.transformer_layer({"hidden_states": hidden_states})
-        self.assertEqual(result["hidden_states"].shape, [2, 8, self.hidden_size])
+        self.assertEqual(
+            result["hidden_states"].shape, [2, 8, self.hidden_size]
+        )
 
 
 if __name__ == "__main__":

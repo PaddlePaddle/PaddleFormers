@@ -19,9 +19,10 @@ import contextlib
 import inspect
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from functools import partial
-from typing import Any, Callable, Literal, Optional, Union
+from typing import Any, Literal
 
 import paddle
 
@@ -38,7 +39,9 @@ if not is_paddleformers_available():
 from paddle.distributed.fleet.meta_parallel import LayerSpec
 
 from paddleformers.fleet.models.gpt import GPTModel as FleetGPTModel
-from paddleformers.fleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
+from paddleformers.fleet.models.gpt.gpt_layer_specs import (
+    get_gpt_layer_local_spec,
+)
 
 try:
     from paddleformers.fleet.models.gpt.gpt_config import GPTConfig
@@ -121,7 +124,7 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
     position_embedding_type: Literal["learned_absolute", "rope"] = "rope"
     rotary_base: int = 10000
     rotary_percent: float = 1.0
-    seq_len_interpolation_factor: Optional[float] = None
+    seq_len_interpolation_factor: float | None = None
     seq_length: int = 1024
 
     max_sequence_length: int = 1024
@@ -130,23 +133,23 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
     deallocate_pipeline_outputs: bool = True
     scatter_embedding_sequence_parallel: bool = True
     tp_only_amax_red: bool = False
-    tp_comm_overlap_cfg: Optional[Union[str, dict[str, Any]]] = None
+    tp_comm_overlap_cfg: str | dict[str, Any] | None = None
     """Config file when tp_comm_overlap is enabled."""
 
-    generation_config: Optional[Any] = None
+    generation_config: Any | None = None
 
     # This represents the unpadded vocab size
     # The padded vocab size is automatically calculated in the provide() method.
-    vocab_size: Optional[int] = None
+    vocab_size: int | None = None
     # Set if the tokenizer provides the vocab size. In this case, the vocab size will be padded
     # Controls whether vocab size should be padded for tensor parallelism
     should_pad_vocab: bool = False
 
     # MoE / FP8
-    n_routed_experts: Optional[int] = None
+    n_routed_experts: int | None = None
     moe_expert_fusion: bool = False
     use_qk_norm: bool = False
-    fp8: Optional[str] = None
+    fp8: str | None = None
     normalization: str = "RMSNorm"
 
     # Multi-token prediction
@@ -155,7 +158,7 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
     # Additional parameters that might be needed
     init_model_with_meta_device: bool = False
     use_te_rng_tracker: bool = False
-    virtual_pipeline_model_parallel_size: Optional[int] = None
+    virtual_pipeline_model_parallel_size: int | None = None
     account_for_embedding_in_pipeline_split: bool = False
     account_for_loss_in_pipeline_split: bool = False
 
@@ -171,7 +174,9 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
 
     quantization_config = None
 
-    def provide(self, pre_process=None, post_process=None, vp_stage=None, loss_fn=None) -> GPTModel:
+    def provide(
+        self, pre_process=None, post_process=None, vp_stage=None, loss_fn=None
+    ) -> GPTModel:
         """Configure and instantiate a PaddleFleet GPT model based on this configuration.
 
         Args:
@@ -184,11 +189,12 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
         """
         pp_size = self.pipeline_model_parallel_size
 
-        is_pipeline_asymmetric = getattr(self, "account_for_embedding_in_pipeline_split", False) or getattr(
-            self, "account_for_loss_in_pipeline_split", False
-        )
+        is_pipeline_asymmetric = getattr(
+            self, "account_for_embedding_in_pipeline_split", False
+        ) or getattr(self, "account_for_loss_in_pipeline_split", False)
         is_pipeline_asymmetric |= (
-            getattr(self, "num_empty_layers_add_in_head", None) or getattr(self, "num_empty_layers_add_in_tail", None)
+            getattr(self, "num_empty_layers_add_in_head", None)
+            or getattr(self, "num_empty_layers_add_in_tail", None)
         ) is not None
 
         # Initialize model as meta data instead of allocating data on a device
@@ -223,7 +229,9 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
             if self.separate_mtp_headloss:
                 seg_method = "layer:TransformerLayer|EmptyLayer|MultiTokenPredictionLayer"
 
-            fleet_model = gpt_builder(self, num_stages=pp_size, seg_method=seg_method, loss_fn=loss_fn)
+            fleet_model = gpt_builder(
+                self, num_stages=pp_size, seg_method=seg_method, loss_fn=loss_fn
+            )
             # Convert original FleetGPTModel to our GPTModel to correctly inherit PretrainedModel methods
             model = GPTModel.__new__(GPTModel)
             # Manually copy all attributes
@@ -242,19 +250,37 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
 
         def make_serializable(obj):
             if isinstance(obj, dict):
-                return {k: make_serializable(v) for k, v in obj.items() if make_serializable(v) is not None}
+                return {
+                    k: make_serializable(v)
+                    for k, v in obj.items()
+                    if make_serializable(v) is not None
+                }
             elif isinstance(obj, (list, tuple)):
-                return [make_serializable(item) for item in obj if make_serializable(item) is not None]
+                return [
+                    make_serializable(item)
+                    for item in obj
+                    if make_serializable(item) is not None
+                ]
             elif isinstance(obj, (str, int, float, bool, type(None))):
                 return obj
             else:
                 return None
 
         serializable_config = make_serializable(config_dict)
-        return json.dumps(serializable_config, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+        return (
+            json.dumps(
+                serializable_config,
+                indent=2,
+                sort_keys=True,
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
 
 
-def mtp_block_spec(config: "GPTModelProvider", vp_stage: Optional[int] = None) -> Optional[LayerSpec]:
+def mtp_block_spec(
+    config: "GPTModelProvider", vp_stage: int | None = None
+) -> LayerSpec | None:
     """Pass in the MTP block spec if model has MTP layers.
 
     Args:
@@ -269,7 +295,10 @@ def mtp_block_spec(config: "GPTModelProvider", vp_stage: Optional[int] = None) -
         )
 
         if isinstance(config.transformer_layer_spec, Callable):
-            if "vp_stage" in inspect.signature(config.transformer_layer_spec).parameters:
+            if (
+                "vp_stage"
+                in inspect.signature(config.transformer_layer_spec).parameters
+            ):
                 spec = config.transformer_layer_spec(config, vp_stage=vp_stage)
             else:
                 spec = config.transformer_layer_spec(config)

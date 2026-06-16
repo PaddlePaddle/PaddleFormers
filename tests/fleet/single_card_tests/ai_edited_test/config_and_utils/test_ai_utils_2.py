@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -251,7 +255,9 @@ class TestGetTensorModelParallelGroupIfNoneExtra(unittest.TestCase):
     """Additional tests for get_tensor_model_parallel_group_if_none."""
 
     def test_single_rank_group(self):
-        from paddleformers.fleet.utils import get_tensor_model_parallel_group_if_none
+        from paddleformers.fleet.utils import (
+            get_tensor_model_parallel_group_if_none,
+        )
 
         mock_group = MagicMock()
         mock_group.ranks = [0]
@@ -265,7 +271,9 @@ class TestPrepareInputTensorsForWgradComputeExtra(unittest.TestCase):
     """Additional tests for prepare_input_tensors_for_wgrad_compute."""
 
     def test_1d_tensors_unchanged(self):
-        from paddleformers.fleet.utils import prepare_input_tensors_for_wgrad_compute
+        from paddleformers.fleet.utils import (
+            prepare_input_tensors_for_wgrad_compute,
+        )
 
         grad = paddle.randn([64])
         inp = paddle.randn([64])
@@ -274,7 +282,9 @@ class TestPrepareInputTensorsForWgradComputeExtra(unittest.TestCase):
         self.assertEqual(a_in.shape, [64])
 
     def test_4d_tensors_unchanged(self):
-        from paddleformers.fleet.utils import prepare_input_tensors_for_wgrad_compute
+        from paddleformers.fleet.utils import (
+            prepare_input_tensors_for_wgrad_compute,
+        )
 
         grad = paddle.randn([2, 3, 4, 5])
         inp = paddle.randn([2, 3, 4, 5])
@@ -308,7 +318,9 @@ class TestGetBatchOnThisCpRankExtra(unittest.TestCase):
             "position_ids": mock_position_ids,
             "attention_mask": "not_scattered",
         }
-        with patch("paddleformers.fleet.utils.ContextParallelScatterOp") as mock_cp_op:
+        with patch(
+            "paddleformers.fleet.utils.ContextParallelScatterOp"
+        ) as mock_cp_op:
             mock_cp_op.apply.side_effect = lambda x, **kw: x
             result = get_batch_on_this_cp_rank(inputs)
         self.assertIn("input_ids", result)
@@ -320,7 +332,9 @@ class TestGetBatchOnThisCpRankExtra(unittest.TestCase):
 
         mock_labels = paddle.randn([2, 4])
         inputs = {"labels": mock_labels}
-        with patch("paddleformers.fleet.utils.ContextParallelScatterOp") as mock_cp_op:
+        with patch(
+            "paddleformers.fleet.utils.ContextParallelScatterOp"
+        ) as mock_cp_op:
             mock_cp_op.apply.side_effect = lambda x, **kw: x
             result = get_batch_on_this_cp_rank(inputs)
         self.assertIn("labels", result)

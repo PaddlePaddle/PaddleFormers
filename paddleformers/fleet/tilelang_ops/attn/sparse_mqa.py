@@ -18,7 +18,9 @@ import paddle.nn.functional as F
 from . import sparse_mqa_fwd
 
 try:
-    from paddlefleet_ops.flash_mla import flash_mla_sparse_fwd as _flash_mla_sparse_fwd
+    from paddlefleet_ops.flash_mla import (
+        flash_mla_sparse_fwd as _flash_mla_sparse_fwd,
+    )
 except (ImportError, RuntimeError):
     _flash_mla_sparse_fwd = None
 
@@ -29,7 +31,9 @@ def _prepare_inputs(q, kv, attn_sink, topk_idxs):
     if len(kv.shape) != 3:
         raise ValueError(f"kv must have shape [B, S_kv, D], got {kv.shape}")
     if len(topk_idxs.shape) != 3:
-        raise ValueError(f"topk_idxs must have shape [B, S, topk], got {topk_idxs.shape}")
+        raise ValueError(
+            f"topk_idxs must have shape [B, S, topk], got {topk_idxs.shape}"
+        )
 
     if topk_idxs.dtype != paddle.int32:
         topk_idxs = topk_idxs.cast("int32")
@@ -42,9 +46,13 @@ def _prepare_inputs(q, kv, attn_sink, topk_idxs):
 def sparse_attn(q, kv, attn_sink, topk_idxs, sm_scale=None, backend="tilelang"):
     q, kv, attn_sink, topk_idxs = _prepare_inputs(q, kv, attn_sink, topk_idxs)
     if backend == "cudnn":
-        out, lse, _ = flash_mla_sparse_attn(q, kv, attn_sink, topk_idxs, sm_scale=sm_scale)
+        out, lse, _ = flash_mla_sparse_attn(
+            q, kv, attn_sink, topk_idxs, sm_scale=sm_scale
+        )
     else:
-        out, lse = sparse_mqa_fwd.sparse_mqa_fwd_interface(q, kv, attn_sink, topk_idxs, sm_scale=sm_scale)
+        out, lse = sparse_mqa_fwd.sparse_mqa_fwd_interface(
+            q, kv, attn_sink, topk_idxs, sm_scale=sm_scale
+        )
     if not isinstance(out, paddle.Tensor) or not isinstance(lse, paddle.Tensor):
         raise RuntimeError(
             f"TileLang must return Paddle tensors, got output={type(out)!r}, lse={type(lse)!r}. "
@@ -85,12 +93,21 @@ def _local_to_global_flat(local_idxs, seqlen_kv: int):
     b, sq, topk = local_idxs.shape
     idxs_flat = local_idxs.reshape([b * sq, topk])
     valid = idxs_flat >= 0
-    batch_ids = paddle.arange(b, dtype=idxs_flat.dtype).unsqueeze(1).expand([b, sq]).reshape([b * sq])
+    batch_ids = (
+        paddle.arange(b, dtype=idxs_flat.dtype)
+        .unsqueeze(1)
+        .expand([b, sq])
+        .reshape([b * sq])
+    )
     batch_offsets = (batch_ids * seqlen_kv).unsqueeze(1)
-    return paddle.where(valid, idxs_flat + batch_offsets, idxs_flat).cast("int32")
+    return paddle.where(valid, idxs_flat + batch_offsets, idxs_flat).cast(
+        "int32"
+    )
 
 
-def flash_mla_sparse_attn(q, kv, attn_sink, topk_idxs, sm_scale=None, indexer_topk: int = 0):
+def flash_mla_sparse_attn(
+    q, kv, attn_sink, topk_idxs, sm_scale=None, indexer_topk: int = 0
+):
     if _flash_mla_sparse_fwd is None:
         raise RuntimeError("flash_mla is not available")
 

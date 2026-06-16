@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -85,7 +89,9 @@ class TestTransformerLayerSublayersSpecCreation(unittest.TestCase):
 
     def test_spec_sharded_keys_map_custom(self):
         """TransformerLayerSublayersSpec should accept custom sharded_state_dict_keys_map."""
-        spec = TransformerLayerSublayersSpec(sharded_state_dict_keys_map={"old": "new"})
+        spec = TransformerLayerSublayersSpec(
+            sharded_state_dict_keys_map={"old": "new"}
+        )
         self.assertEqual(spec.sharded_state_dict_keys_map["old"], "new")
 
 
@@ -97,7 +103,9 @@ class TestTransformerLayerNodeInit(unittest.TestCase):
         mock_node = MagicMock()
         mock_node.full_recompute = False
         mock_config = MagicMock()
-        tln = TransformerLayerNode(mock_node, mock_config, name="test", layer_number=3)
+        tln = TransformerLayerNode(
+            mock_node, mock_config, name="test", layer_number=3
+        )
         self.assertEqual(tln.config, mock_config)
         self.assertEqual(tln.layer_number, 3)
 

@@ -41,7 +41,9 @@ from paddleformers.fleet.utils import (
 from .paddle_norm import get_norm_extra_args
 
 if TYPE_CHECKING:
-    from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+    from paddleformers.fleet.transformer.transformer_config import (
+        TransformerConfig,
+    )
 
 try:
     from fla.ops.gated_delta_rule import chunk_gated_delta_rule
@@ -126,8 +128,12 @@ class GatedDeltaNet(FleetLayer):
         self.use_qk_l2norm = use_qk_l2norm
 
         if pg_collection is None:
-            pg_collection = ProcessGroupCollection.use_mpu_process_groups(required_pgs=["tp"])
-        assert pg_collection is not None, "pg_collection must be provided for GatedDeltaNet"
+            pg_collection = ProcessGroupCollection.use_mpu_process_groups(
+                required_pgs=["tp"]
+            )
+        assert pg_collection is not None, (
+            "pg_collection must be provided for GatedDeltaNet"
+        )
         self.pg_collection = pg_collection
         self.tp_size = get_pg_size(self.pg_collection.tp)
         self.sp_size = self.tp_size if config.sequence_parallel else 1
@@ -145,7 +151,9 @@ class GatedDeltaNet(FleetLayer):
         self.v_dim = self.value_head_dim * self.num_value_heads
 
         # Input projection (hidden_states -> q, k, v, gate, beta, alpha)
-        self.in_proj_dim = self.qk_dim * 2 + self.v_dim * 2 + self.num_value_heads * 2
+        self.in_proj_dim = (
+            self.qk_dim * 2 + self.v_dim * 2 + self.num_value_heads * 2
+        )
 
         self.in_proj = build_spec_layer(
             sublayers_spec.in_proj,
@@ -176,7 +184,9 @@ class GatedDeltaNet(FleetLayer):
         )
         self.conv1d.weight.is_distributed = True if self.tp_size > 1 else False
         if conv_bias and self.conv1d.bias is not None:
-            self.conv1d.bias.is_distributed = True if self.tp_size > 1 else False
+            self.conv1d.bias.is_distributed = (
+                True if self.tp_size > 1 else False
+            )
 
         # Time step projection (discretization)
         self.num_v_heads_local_tp = self.num_value_heads // self.tp_size
@@ -235,14 +245,18 @@ class GatedDeltaNet(FleetLayer):
         if self.config.perform_initialization:
             # conv1d.weight
             if self.conv_init is not None:
-                nn.initializer.Uniform(low=-self.conv_init, high=self.conv_init)(self.conv1d.weight)
+                nn.initializer.Uniform(
+                    low=-self.conv_init, high=self.conv_init
+                )(self.conv1d.weight)
 
             # dt_bias: initialize to ones
             nn.initializer.Constant(1.0)(self.dt_bias)
 
             # A_log: initialize to log(uniform(A_init_range))
             A = paddle.empty([self.num_v_heads_local_tp], dtype="float32")
-            nn.initializer.Uniform(low=self.A_init_range[0], high=self.A_init_range[1])(A)
+            nn.initializer.Uniform(
+                low=self.A_init_range[0], high=self.A_init_range[1]
+            )(A)
             paddle.assign(paddle.log(A), self.A_log)
 
     def _build_padding_mask(
@@ -266,7 +280,9 @@ class GatedDeltaNet(FleetLayer):
                     seq_len_local = seq_len // self.sp_size
                     tp_rank = get_pg_rank(self.pg_collection.tp)
                     offset = tp_rank * seq_len_local
-                    local_mask = attention_mask[:, offset : offset + seq_len_local]
+                    local_mask = attention_mask[
+                        :, offset : offset + seq_len_local
+                    ]
                     if local_mask.astype("bool").all():
                         return None
                     return local_mask.astype(paddle.float32).T.unsqueeze(-1)
@@ -298,18 +314,25 @@ class GatedDeltaNet(FleetLayer):
                         offset + seq_len_local,
                         dtype=local_indices.dtype,
                     )
-                    valid = (local_indices > seq_positions.unsqueeze(0)).astype(paddle.float32)
+                    valid = (local_indices > seq_positions.unsqueeze(0)).astype(
+                        paddle.float32
+                    )
                     if valid.all():
                         return None
                     return valid.T.unsqueeze(-1)
             else:
                 seq_positions = paddle.arange(full_seq, dtype=indices.dtype)
-                valid = (indices > seq_positions.unsqueeze(0)).astype(paddle.float32)
+                valid = (indices > seq_positions.unsqueeze(0)).astype(
+                    paddle.float32
+                )
                 if valid.all():
                     return None
                 return valid.unsqueeze(-1)
 
-        if attention_mask is not None or attn_mask_startend_row_indices is not None:
+        if (
+            attention_mask is not None
+            or attn_mask_startend_row_indices is not None
+        ):
             raise ValueError(
                 f"GatedDeltaNet._build_padding_mask: could not derive a valid "
                 f"padding mask from the provided inputs "
@@ -343,7 +366,9 @@ class GatedDeltaNet(FleetLayer):
             Tuple of (output, output_bias).
         """
         if packed_seq_params is not None:
-            raise NotImplementedError("GDN does not support packed sequence for now.")
+            raise NotImplementedError(
+                "GDN does not support packed sequence for now."
+            )
 
         hidden_states = hidden_states.contiguous()
         # Determine sequence layout
@@ -355,10 +380,16 @@ class GatedDeltaNet(FleetLayer):
             # Input is [b, s, h]
             batch, seq_len, _ = hidden_states.shape
 
-        attn_mask_startend_row_indices = kwargs.get("attn_mask_startend_row_indices", None)
-        padding_mask = self._build_padding_mask(attention_mask, attn_mask_startend_row_indices, batch, seq_len)
+        attn_mask_startend_row_indices = kwargs.get(
+            "attn_mask_startend_row_indices", None
+        )
+        padding_mask = self._build_padding_mask(
+            attention_mask, attn_mask_startend_row_indices, batch, seq_len
+        )
         if padding_mask is not None:
-            hidden_states = hidden_states * padding_mask.astype(hidden_states.dtype)
+            hidden_states = hidden_states * padding_mask.astype(
+                hidden_states.dtype
+            )
 
         # Input projection
         nvtx_range_push(suffix="in_proj")
@@ -414,8 +445,12 @@ class GatedDeltaNet(FleetLayer):
 
         # GQA repeat if num_value_heads > num_key_heads
         if self.num_value_heads // self.num_key_heads > 1:
-            query = paddle.repeat_interleave(query, self.num_value_heads // self.num_key_heads, axis=2)
-            key = paddle.repeat_interleave(key, self.num_value_heads // self.num_key_heads, axis=2)
+            query = paddle.repeat_interleave(
+                query, self.num_value_heads // self.num_key_heads, axis=2
+            )
+            key = paddle.repeat_interleave(
+                key, self.num_value_heads // self.num_key_heads, axis=2
+            )
 
         # Make contiguous
         query = query.contiguous()
@@ -505,7 +540,9 @@ class GatedDeltaNet(FleetLayer):
         # in_proj (ColumnParallelLinear) — delegate to its own sharded_state_dict
         if hasattr(self.in_proj, "sharded_state_dict"):
             sharded_sd.update(
-                self.in_proj.sharded_state_dict(structured_name_prefix=f"{structured_name_prefix}in_proj.")
+                self.in_proj.sharded_state_dict(
+                    structured_name_prefix=f"{structured_name_prefix}in_proj."
+                )
             )
 
         # conv1d — TP-sharded along axis 0
@@ -539,7 +576,9 @@ class GatedDeltaNet(FleetLayer):
         # out_norm — not TP-sharded (per-head norm)
         if hasattr(self.out_norm, "sharded_state_dict"):
             sharded_sd.update(
-                self.out_norm.sharded_state_dict(structured_name_prefix=f"{structured_name_prefix}out_norm.")
+                self.out_norm.sharded_state_dict(
+                    structured_name_prefix=f"{structured_name_prefix}out_norm."
+                )
             )
         else:
             out_norm_sd = self.out_norm.state_dict(structured_name_prefix="")
@@ -554,7 +593,9 @@ class GatedDeltaNet(FleetLayer):
         # out_proj (RowParallelLinear) — delegate to its own sharded_state_dict
         if hasattr(self.out_proj, "sharded_state_dict"):
             sharded_sd.update(
-                self.out_proj.sharded_state_dict(structured_name_prefix=f"{structured_name_prefix}out_proj.")
+                self.out_proj.sharded_state_dict(
+                    structured_name_prefix=f"{structured_name_prefix}out_proj."
+                )
             )
 
         return sharded_sd
@@ -625,18 +666,29 @@ def paddle_chunk_gated_delta_rule(
 
     # Reshape to chunks: [b, h, num_chunks, chunk_size, dim]
     query, key, value, k_beta, v_beta = [
-        x.reshape([x.shape[0], x.shape[1], -1, chunk_size, x.shape[-1]]) for x in (query, key, value, k_beta, v_beta)
+        x.reshape([x.shape[0], x.shape[1], -1, chunk_size, x.shape[-1]])
+        for x in (query, key, value, k_beta, v_beta)
     ]
     g = g.reshape([g.shape[0], g.shape[1], -1, chunk_size])
 
-    mask = paddle.triu(paddle.ones([chunk_size, chunk_size], dtype=paddle.bool), diagonal=0)
+    mask = paddle.triu(
+        paddle.ones([chunk_size, chunk_size], dtype=paddle.bool), diagonal=0
+    )
 
     # Chunk decay
     g = g.cumsum(axis=-1)
-    decay_mask = (g.unsqueeze(-1) - g.unsqueeze(-2)).tril().exp().astype(paddle.float32).tril()
+    decay_mask = (
+        (g.unsqueeze(-1) - g.unsqueeze(-2))
+        .tril()
+        .exp()
+        .astype(paddle.float32)
+        .tril()
+    )
 
     # attn = -((k_beta @ key^T) * decay_mask), masked to lower triangular
-    attn = -((k_beta @ key.transpose([0, 1, 2, 4, 3])) * decay_mask).masked_fill(mask, 0)
+    attn = -(
+        (k_beta @ key.transpose([0, 1, 2, 4, 3])) * decay_mask
+    ).masked_fill(mask, 0)
 
     for i in range(1, chunk_size):
         row = attn[..., i, :i].clone()
@@ -657,20 +709,27 @@ def paddle_chunk_gated_delta_rule(
 
     core_attn_out = paddle.zeros_like(value)
 
-    mask = paddle.triu(paddle.ones([chunk_size, chunk_size], dtype=paddle.bool), diagonal=1)
+    mask = paddle.triu(
+        paddle.ones([chunk_size, chunk_size], dtype=paddle.bool), diagonal=1
+    )
 
     # For each chunk
     num_chunks = total_sequence_length // chunk_size
     for i in range(num_chunks):
         q_i, k_i, v_i = query[:, :, i], key[:, :, i], value[:, :, i]
-        attn = (q_i @ k_i.transpose([0, 1, 3, 2]) * decay_mask[:, :, i]).masked_fill_(mask, 0)
+        attn = (
+            q_i @ k_i.transpose([0, 1, 3, 2]) * decay_mask[:, :, i]
+        ).masked_fill_(mask, 0)
         v_prime = k_cumdecay[:, :, i] @ last_recurrent_state
         v_new = v_i - v_prime
         attn_inter = (q_i * g[:, :, i, :, None].exp()) @ last_recurrent_state
         core_attn_out[:, :, i] = attn_inter + attn @ v_new
         last_recurrent_state = (
             last_recurrent_state * g[:, :, i, -1, None, None].exp()
-            + (k_i * (g[:, :, i, -1, None] - g[:, :, i]).exp()[..., None]).transpose([0, 1, 3, 2]) @ v_new
+            + (
+                k_i * (g[:, :, i, -1, None] - g[:, :, i]).exp()[..., None]
+            ).transpose([0, 1, 3, 2])
+            @ v_new
         )
 
     if not output_final_state:
@@ -685,5 +744,7 @@ def paddle_chunk_gated_delta_rule(
         ]
     )
     core_attn_out = core_attn_out[:, :, :sequence_length]
-    core_attn_out = core_attn_out.transpose([0, 2, 1, 3]).contiguous().astype(initial_dtype)
+    core_attn_out = (
+        core_attn_out.transpose([0, 2, 1, 3]).contiguous().astype(initial_dtype)
+    )
     return core_attn_out, last_recurrent_state

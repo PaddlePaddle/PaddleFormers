@@ -20,10 +20,12 @@ import paddle
 
 try:
     import paddlefleet_ops
-
     from paddleformers.fleet.tilelang_ops.attn import sparse_mqa
 
-    _HAS_FLASH_MLA = paddlefleet_ops.is_flash_mla_available() and sparse_mqa._flash_mla_sparse_fwd is not None
+    _HAS_FLASH_MLA = (
+        paddlefleet_ops.is_flash_mla_available()
+        and sparse_mqa._flash_mla_sparse_fwd is not None
+    )
 except (ImportError, RuntimeError, AttributeError):
     _HAS_FLASH_MLA = False
 
@@ -63,7 +65,11 @@ COS_THRESHOLDS = {
 def cosine_sim(a, b):
     a_f = a.flatten().cast("float32")
     b_f = b.flatten().cast("float32")
-    return float(paddle.nn.functional.cosine_similarity(a_f.unsqueeze(0), b_f.unsqueeze(0)))
+    return float(
+        paddle.nn.functional.cosine_similarity(
+            a_f.unsqueeze(0), b_f.unsqueeze(0)
+        )
+    )
 
 
 def max_abs_diff(a, b):
@@ -71,7 +77,9 @@ def max_abs_diff(a, b):
 
 
 def make_inputs(batch_size, seq_len, kv_seq_len, num_heads, head_dim, topk):
-    q = paddle.randn([batch_size, seq_len, num_heads, head_dim]).cast("bfloat16")
+    q = paddle.randn([batch_size, seq_len, num_heads, head_dim]).cast(
+        "bfloat16"
+    )
     q.stop_gradient = False
 
     kv = paddle.randn([batch_size, kv_seq_len, head_dim]).cast("bfloat16")
@@ -80,7 +88,9 @@ def make_inputs(batch_size, seq_len, kv_seq_len, num_heads, head_dim, topk):
     attn_sink = paddle.randn([num_heads]).cast("float32") * 0.1
     attn_sink.stop_gradient = False
 
-    topk_idxs = paddle.randint(0, kv_seq_len, [batch_size, seq_len, topk]).cast("int32")
+    topk_idxs = paddle.randint(0, kv_seq_len, [batch_size, seq_len, topk]).cast(
+        "int32"
+    )
     softmax_scale = 1.0 / (head_dim**0.5)
     return q, kv, attn_sink, topk_idxs, softmax_scale
 
@@ -95,13 +105,17 @@ def run_forward_backward(q, kv, attn_sink, topk_idxs, softmax_scale, backend):
     attn_sink_c = attn_sink.detach().clone()
     attn_sink_c.stop_gradient = False
 
-    out = csa_sparse_attn(q_c, kv_c, attn_sink_c, topk_idxs, softmax_scale, backend=backend)
+    out = csa_sparse_attn(
+        q_c, kv_c, attn_sink_c, topk_idxs, softmax_scale, backend=backend
+    )
     out.sum().backward()
 
     return out, q_c.grad, kv_c.grad, attn_sink_c.grad
 
 
-def run_single_shape(batch_size, seq_len, kv_seq_len, num_heads, head_dim, topk):
+def run_single_shape(
+    batch_size, seq_len, kv_seq_len, num_heads, head_dim, topk
+):
     q, kv, attn_sink, topk_idxs, softmax_scale = make_inputs(
         batch_size, seq_len, kv_seq_len, num_heads, head_dim, topk
     )
@@ -109,7 +123,9 @@ def run_single_shape(batch_size, seq_len, kv_seq_len, num_heads, head_dim, topk)
     out_tl, dq_tl, dkv_tl, dsink_tl = run_forward_backward(
         q, kv, attn_sink, topk_idxs, softmax_scale, backend="tilelang"
     )
-    out_cu, dq_cu, dkv_cu, dsink_cu = run_forward_backward(q, kv, attn_sink, topk_idxs, softmax_scale, backend="cudnn")
+    out_cu, dq_cu, dkv_cu, dsink_cu = run_forward_backward(
+        q, kv, attn_sink, topk_idxs, softmax_scale, backend="cudnn"
+    )
 
     if dsink_tl is None or dsink_cu is None:
         return False, {"d_sink": None}
@@ -123,7 +139,9 @@ def run_single_shape(batch_size, seq_len, kv_seq_len, num_heads, head_dim, topk)
             max_abs_diff(dsink_tl, dsink_cu),
         ),
     }
-    passed = all(metrics[name][0] > COS_THRESHOLDS[name] for name in COS_THRESHOLDS)
+    passed = all(
+        metrics[name][0] > COS_THRESHOLDS[name] for name in COS_THRESHOLDS
+    )
     return passed, metrics
 
 

@@ -123,7 +123,9 @@ def bwd(
     dtype=T.bfloat16,
     accum_dtype=T.float32,
 ):
-    assert topk % block_size == 0, f"topk ({topk}) must be divisible by block_size ({block_size})"
+    assert topk % block_size == 0, (
+        f"topk ({topk}) must be divisible by block_size ({block_size})"
+    )
     assert dtype == T.bfloat16
     assert accum_dtype == T.float32
 
@@ -178,7 +180,9 @@ def bwd(
             acc_dkv_shared = T.alloc_shared([BS // split_store, D], accum_dtype)
 
             T.copy(Q[by, s_i, bz * block_H : (bz + 1) * block_H, :D], Q_shared)
-            T.copy(dO[by, s_i, bz * block_H : (bz + 1) * block_H, :D], dO_shared)
+            T.copy(
+                dO[by, s_i, bz * block_H : (bz + 1) * block_H, :D], dO_shared
+            )
 
             T.clear(acc_dq)
 
@@ -187,10 +191,14 @@ def bwd(
                     mask[bi_i] = Indices[by, s_i, i_i * BS + bi_i] != -1
 
                 for h_i, bi_i in T.Parallel(block_H, BS):
-                    acc_p[h_i, bi_i] = T.if_then_else(mask[bi_i], 0, -T.infinity(acc_p.dtype))
+                    acc_p[h_i, bi_i] = T.if_then_else(
+                        mask[bi_i], 0, -T.infinity(acc_p.dtype)
+                    )
 
                 for bi_i, d_i in T.Parallel(BS, D):
-                    KV_shared[bi_i, d_i] = KV[by, Indices[by, s_i, i_i * BS + bi_i], d_i]
+                    KV_shared[bi_i, d_i] = KV[
+                        by, Indices[by, s_i, i_i * BS + bi_i], d_i
+                    ]
 
                 T.gemm(
                     Q_shared,
@@ -203,7 +211,8 @@ def bwd(
                 # P = exp2(scores * sm_scale_log2e - LSE)
                 for h_i, bi_i in T.Parallel(block_H, BS):
                     acc_p[h_i, bi_i] = T.exp2(
-                        acc_p[h_i, bi_i] * sm_scale_mul_reciprocal_log2 - Lse[by, s_i, bz * block_H + h_i]
+                        acc_p[h_i, bi_i] * sm_scale_mul_reciprocal_log2
+                        - Lse[by, s_i, bz * block_H + h_i]
                     )
 
                 T.copy(acc_p, P_shared_cast)
@@ -220,7 +229,12 @@ def bwd(
 
                 for h_i, bi_i in T.Parallel(block_H, BS):
                     acc_dp[h_i, bi_i] = (
-                        acc_p[h_i, bi_i] * (acc_dp[h_i, bi_i] - Delta[by, s_i, bz * block_H + h_i]) * sm_scale
+                        acc_p[h_i, bi_i]
+                        * (
+                            acc_dp[h_i, bi_i]
+                            - Delta[by, s_i, bz * block_H + h_i]
+                        )
+                        * sm_scale
                     )
 
                 T.copy(acc_dp, dP_shared_cast)
@@ -254,7 +268,9 @@ def bwd(
                 for s in range(split_store):
                     for bi_i, d_i in T.Parallel(BS, D):
                         if bi_i < BS // split_store:
-                            acc_dkv_shared[bi_i, d_i] = acc_dkv[bi_i + s * (BS // split_store), d_i]
+                            acc_dkv_shared[bi_i, d_i] = acc_dkv[
+                                bi_i + s * (BS // split_store), d_i
+                            ]
 
                     for bi_i, d_i in T.Parallel(BS // split_store, D // 4):
                         T.atomic_addx4(
@@ -272,7 +288,9 @@ def bwd(
 
             # Store dQ
             T.copy(acc_dq, dQ_shared)
-            T.copy(dQ_shared, dQ[by, s_i, bz * block_H : (bz + 1) * block_H, :D])
+            T.copy(
+                dQ_shared, dQ[by, s_i, bz * block_H : (bz + 1) * block_H, :D]
+            )
 
             # dAttnSink[h] = -sum_{b,s}( Delta[b,s,h] * p_sink[b,s,h] )
             # where p_sink = exp(attn_sink[h]) / Z = exp2(attn_sink[h]*log2e - LSE)
@@ -281,7 +299,10 @@ def bwd(
                 T.atomic_add(
                     dAttnSink[bz * block_H + h_i],
                     -Delta[by, s_i, bz * block_H + h_i]
-                    * T.exp2(AttnSink[bz * block_H + h_i] * 1.44269504 - Lse[by, s_i, bz * block_H + h_i]),
+                    * T.exp2(
+                        AttnSink[bz * block_H + h_i] * 1.44269504
+                        - Lse[by, s_i, bz * block_H + h_i]
+                    ),
                 )
 
     return sparse_mqa_bwd_kernel
@@ -364,7 +385,9 @@ def bwd_det(
             acc_dkv = T.alloc_fragment([BS, D], accum_dtype)
 
             T.copy(Q[by, s_i, bz * block_H : (bz + 1) * block_H, :D], Q_shared)
-            T.copy(dO[by, s_i, bz * block_H : (bz + 1) * block_H, :D], dO_shared)
+            T.copy(
+                dO[by, s_i, bz * block_H : (bz + 1) * block_H, :D], dO_shared
+            )
 
             T.clear(acc_dq)
 
@@ -373,10 +396,14 @@ def bwd_det(
                     mask[bi_i] = Indices[by, s_i, i_i * BS + bi_i] != -1
 
                 for h_i, bi_i in T.Parallel(block_H, BS):
-                    acc_p[h_i, bi_i] = T.if_then_else(mask[bi_i], 0, -T.infinity(acc_p.dtype))
+                    acc_p[h_i, bi_i] = T.if_then_else(
+                        mask[bi_i], 0, -T.infinity(acc_p.dtype)
+                    )
 
                 for bi_i, d_i in T.Parallel(BS, D):
-                    KV_shared[bi_i, d_i] = KV[by, Indices[by, s_i, i_i * BS + bi_i], d_i]
+                    KV_shared[bi_i, d_i] = KV[
+                        by, Indices[by, s_i, i_i * BS + bi_i], d_i
+                    ]
 
                 T.gemm(
                     Q_shared,
@@ -388,7 +415,8 @@ def bwd_det(
 
                 for h_i, bi_i in T.Parallel(block_H, BS):
                     acc_p[h_i, bi_i] = T.exp2(
-                        acc_p[h_i, bi_i] * sm_scale_mul_reciprocal_log2 - Lse[by, s_i, bz * block_H + h_i]
+                        acc_p[h_i, bi_i] * sm_scale_mul_reciprocal_log2
+                        - Lse[by, s_i, bz * block_H + h_i]
                     )
 
                 T.copy(acc_p, P_shared_cast)
@@ -404,7 +432,12 @@ def bwd_det(
 
                 for h_i, bi_i in T.Parallel(block_H, BS):
                     acc_dp[h_i, bi_i] = (
-                        acc_p[h_i, bi_i] * (acc_dp[h_i, bi_i] - Delta[by, s_i, bz * block_H + h_i]) * sm_scale
+                        acc_p[h_i, bi_i]
+                        * (
+                            acc_dp[h_i, bi_i]
+                            - Delta[by, s_i, bz * block_H + h_i]
+                        )
+                        * sm_scale
                     )
 
                 T.copy(acc_dp, dP_shared_cast)
@@ -438,12 +471,17 @@ def bwd_det(
 
             # Store dQ
             T.copy(acc_dq, dQ_shared)
-            T.copy(dQ_shared, dQ[by, s_i, bz * block_H : (bz + 1) * block_H, :D])
+            T.copy(
+                dQ_shared, dQ[by, s_i, bz * block_H : (bz + 1) * block_H, :D]
+            )
 
             # Deterministic: write dAttnSink to per-block buffer (no atomics)
             for h_i in T.Parallel(block_H):
-                dAttnSink_buf[s_i, by, bz * block_H + h_i] = -Delta[by, s_i, bz * block_H + h_i] * T.exp2(
-                    AttnSink[bz * block_H + h_i] * 1.44269504 - Lse[by, s_i, bz * block_H + h_i]
+                dAttnSink_buf[s_i, by, bz * block_H + h_i] = -Delta[
+                    by, s_i, bz * block_H + h_i
+                ] * T.exp2(
+                    AttnSink[bz * block_H + h_i] * 1.44269504
+                    - Lse[by, s_i, bz * block_H + h_i]
                 )
 
     return sparse_mqa_bwd_det_kernel
@@ -529,17 +567,25 @@ def _build_csr_index(topk_idxs, S_kv):
     )
 
     # Deterministic stable sort per batch
-    sort_perm = paddle.argsort(flat_idx_shifted, axis=1, stable=True).cast("int32")
-    sorted_idx = paddle.take_along_axis(flat_idx_shifted, sort_perm.cast("int64"), axis=1)
+    sort_perm = paddle.argsort(flat_idx_shifted, axis=1, stable=True).cast(
+        "int32"
+    )
+    sorted_idx = paddle.take_along_axis(
+        flat_idx_shifted, sort_perm.cast("int64"), axis=1
+    )
 
     # Build CSR offsets: seg_offsets[b, k] = first position in sorted_idx where value >= k
-    boundaries = paddle.arange(S_kv + 1, dtype="int64").unsqueeze(0).expand([B, -1])
+    boundaries = (
+        paddle.arange(S_kv + 1, dtype="int64").unsqueeze(0).expand([B, -1])
+    )
     seg_offsets = paddle.searchsorted(sorted_idx, boundaries).cast("int32")
 
     return sort_perm, seg_offsets
 
 
-def sparse_mqa_bwd_interface(q, kv, attn_sink, o, do, topk_idxs, lse, sm_scale=None):
+def sparse_mqa_bwd_interface(
+    q, kv, attn_sink, o, do, topk_idxs, lse, sm_scale=None
+):
     """Backward interface for DSv4 sparse MQA attention.
 
     Args:
@@ -559,7 +605,9 @@ def sparse_mqa_bwd_interface(q, kv, attn_sink, o, do, topk_idxs, lse, sm_scale=N
     """
     assert q.is_contiguous() and kv.is_contiguous()
     assert topk_idxs.is_contiguous() and lse.is_contiguous()
-    deterministic = paddle.get_flags(["FLAGS_cudnn_deterministic"])["FLAGS_cudnn_deterministic"]
+    deterministic = paddle.get_flags(["FLAGS_cudnn_deterministic"])[
+        "FLAGS_cudnn_deterministic"
+    ]
 
     B, S, H, D = q.shape
     _, S_kv, _ = kv.shape
@@ -583,7 +631,9 @@ def sparse_mqa_bwd_interface(q, kv, attn_sink, o, do, topk_idxs, lse, sm_scale=N
 
         dkv = paddle.zeros_like(kv, dtype="float32")
         d_attn_sink = paddle.zeros_like(attn_sink)
-        dq = bwd_kernel(q, kv, do, attn_sink, topk_idxs, lse, delta, dkv, d_attn_sink)
+        dq = bwd_kernel(
+            q, kv, do, attn_sink, topk_idxs, lse, delta, dkv, d_attn_sink
+        )
         dkv = postprocess_kernel(dkv)
 
         return dq, dkv, d_attn_sink

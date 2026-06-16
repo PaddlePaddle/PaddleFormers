@@ -159,7 +159,9 @@ def clamped_swiglu_back(g, y, clamp_value):
     y1_mask = (y_1 <= clamp_value).cast(g.dtype)
     y2_mask = ((y_2 >= -clamp_value) & (y_2 <= clamp_value)).cast(g.dtype)
     sig = F.sigmoid(y_1_clamped)
-    grad_y1 = g * sig * (1.0 + y_1_clamped * (1.0 - sig)) * y_2_clamped * y1_mask
+    grad_y1 = (
+        g * sig * (1.0 + y_1_clamped * (1.0 - sig)) * y_2_clamped * y1_mask
+    )
     grad_y2 = g * (y_1_clamped * sig) * y2_mask  # silu = x * sigmoid(x)
     return paddle.concat([grad_y1, grad_y2], axis=-1).cast(dtype)
 
@@ -258,7 +260,9 @@ class BiasSwiGLUFunction(paddle.autograd.PyLayer):
 
     @staticmethod
     @nvtx_decorator()
-    def forward(ctx, input, bias, fp8_input_store, cpu_offload_input, clamp_value=None):
+    def forward(
+        ctx, input, bias, fp8_input_store, cpu_offload_input, clamp_value=None
+    ):
         """Forward pass of biased SwiGLU activation.
 
         Args:
@@ -274,7 +278,9 @@ class BiasSwiGLUFunction(paddle.autograd.PyLayer):
         Returns:
             paddle.Tensor: Result of applying bias addition followed by SwiGLU activation.
         """
-        input_for_backward = input.to(paddle.float8_e4m3fn) if fp8_input_store else input
+        input_for_backward = (
+            input.to(paddle.float8_e4m3fn) if fp8_input_store else input
+        )
         if cpu_offload_input:
             input_for_backward.activation_offloading = True
             bias.activation_offloading = True
@@ -303,7 +309,9 @@ class BiasSwiGLUFunction(paddle.autograd.PyLayer):
         input, bias = ctx.saved_tensor()
         input = input.to(ctx.ori_input_dtype) if ctx.fp8_input_store else input
         if ctx.clamp_value is not None and ctx.clamp_value > 0:
-            tmp = clamped_bias_swiglu_back(grad_output, input, bias, ctx.clamp_value)
+            tmp = clamped_bias_swiglu_back(
+                grad_output, input, bias, ctx.clamp_value
+            )
         else:
             tmp = bias_swiglu_back(grad_output, input, bias)
         return tmp, tmp
@@ -314,7 +322,9 @@ class SwiGLUFunction(paddle.autograd.PyLayer):
 
     @staticmethod
     @nvtx_decorator()
-    def forward(ctx, input, fp8_input_store, cpu_offload_input, clamp_value=None):
+    def forward(
+        ctx, input, fp8_input_store, cpu_offload_input, clamp_value=None
+    ):
         """Forward pass of SwiGLU activation.
 
         Args:
@@ -329,7 +339,9 @@ class SwiGLUFunction(paddle.autograd.PyLayer):
         Returns:
             paddle.Tensor: Result of applying SwiGLU activation.
         """
-        input_for_backward = input.to(paddle.float8_e4m3fn) if fp8_input_store else input
+        input_for_backward = (
+            input.to(paddle.float8_e4m3fn) if fp8_input_store else input
+        )
         if cpu_offload_input:
             input_for_backward.activation_offloading = True
         ctx.save_for_backward(input_for_backward)
@@ -365,7 +377,9 @@ class WeightedSwiGLUFunction(paddle.autograd.PyLayer):
     @staticmethod
     # bias is an optional argument
     def forward(ctx, input, weights, fp8_input_store, clamp_value=None):
-        input_for_backward = input.to(paddle.float8_e4m3fn) if fp8_input_store else input
+        input_for_backward = (
+            input.to(paddle.float8_e4m3fn) if fp8_input_store else input
+        )
         ctx.save_for_backward(input_for_backward, weights)
         ctx.ori_input_dtype = input.dtype
         ctx.fp8_input_store = fp8_input_store
@@ -381,7 +395,9 @@ class WeightedSwiGLUFunction(paddle.autograd.PyLayer):
         input, weights = ctx.saved_tensor()
         input = input.to(ctx.ori_input_dtype) if ctx.fp8_input_store else input
         if ctx.clamp_value is not None and ctx.clamp_value > 0:
-            tmp, wgrad = clamped_weighted_swiglu_back(grad_output, input, weights, ctx.clamp_value)
+            tmp, wgrad = clamped_weighted_swiglu_back(
+                grad_output, input, weights, ctx.clamp_value
+            )
         else:
             tmp, wgrad = weighted_swiglu_back(grad_output, input, weights)
         return tmp, wgrad
@@ -421,14 +437,24 @@ def bias_swiglu_impl(
     assert len(ori_shape) in [2, 3]
     input = input.view(-1, ori_shape[-1])
     if bias is not None:
-        output = BiasSwiGLUFunction.apply(input, bias, fp8_input_store, cpu_offload_input, clamp_value)
+        output = BiasSwiGLUFunction.apply(
+            input, bias, fp8_input_store, cpu_offload_input, clamp_value
+        )
     else:
-        output = SwiGLUFunction.apply(input, fp8_input_store, cpu_offload_input, clamp_value)
+        output = SwiGLUFunction.apply(
+            input, fp8_input_store, cpu_offload_input, clamp_value
+        )
 
-    return output if len(ori_shape) == 2 else output.view(ori_shape[0], ori_shape[1], -1)
+    return (
+        output
+        if len(ori_shape) == 2
+        else output.view(ori_shape[0], ori_shape[1], -1)
+    )
 
 
-def weighted_bias_swiglu_impl(input, bias, weights, fp8_input_store=False, clamp_value=None):
+def weighted_bias_swiglu_impl(
+    input, bias, weights, fp8_input_store=False, clamp_value=None
+):
     """
     Token-wise-weighted bias swiglu fusion.
 
@@ -447,11 +473,19 @@ def weighted_bias_swiglu_impl(input, bias, weights, fp8_input_store=False, clamp
     if len(ori_shape) == 3:
         weights = weights.view(-1, weights.shape[-1])
     if bias is not None:
-        raise NotImplementedError("Bias is not supported for weighted swiglu fusion")
+        raise NotImplementedError(
+            "Bias is not supported for weighted swiglu fusion"
+        )
     else:
-        output = WeightedSwiGLUFunction.apply(input, weights, fp8_input_store, clamp_value)
+        output = WeightedSwiGLUFunction.apply(
+            input, weights, fp8_input_store, clamp_value
+        )
 
-    return output if len(ori_shape) == 2 else output.view(ori_shape[0], ori_shape[1], -1)
+    return (
+        output
+        if len(ori_shape) == 2
+        else output.view(ori_shape[0], ori_shape[1], -1)
+    )
 
 
 # bias_swiglu_impl = BiasSwiGLUFunction.apply

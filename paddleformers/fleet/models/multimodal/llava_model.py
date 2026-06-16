@@ -28,13 +28,18 @@ from paddleformers.fleet.models.vision.clip_vit_model import (
     CLIPViTModel,
     get_num_image_embeddings,
 )
-from paddleformers.fleet.models.vision.multimodal_projector import MultimodalProjector
+from paddleformers.fleet.models.vision.multimodal_projector import (
+    MultimodalProjector,
+)
 from paddleformers.fleet.models.vision.radio import RADIOViTModel
 from paddleformers.fleet.packed_seq_params import PackedSeqParams
 from paddleformers.fleet.process_groups_config import ProcessGroupCollection
 from paddleformers.fleet.transformer import FleetLayer
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
-from paddleformers.fleet.utils import deprecate_inference_params, log_single_rank
+from paddleformers.fleet.utils import (
+    deprecate_inference_params,
+    log_single_rank,
+)
 
 HAVE_TE = False
 HAVE_TEX = False
@@ -156,28 +161,44 @@ class LLaVAModel(FleetLayer):
             pg_collection = ProcessGroupCollection.use_mpu_process_groups()
         self.pg_collection = pg_collection
 
-        language_model_type = getattr(language_transformer_config, "language_model_type", "")
-        self.sequence_parallel_lm = language_transformer_config.sequence_parallel
+        language_model_type = getattr(
+            language_transformer_config, "language_model_type", ""
+        )
+        self.sequence_parallel_lm = (
+            language_transformer_config.sequence_parallel
+        )
         self.tp_comm_overlap_lm = language_transformer_config.tp_comm_overlap
-        self.context_parallel_lm = language_transformer_config.context_parallel_size
+        self.context_parallel_lm = (
+            language_transformer_config.context_parallel_size
+        )
         if self.sequence_parallel_lm or self.context_parallel_lm > 1:
-            raise AssertionError("llava_model now dont support sequence_parallel or context_parallel")
+            raise AssertionError(
+                "llava_model now dont support sequence_parallel or context_parallel"
+            )
         self.cp_group = None
-        self.tensor_model_parallel_size_lm = language_transformer_config.tensor_model_parallel_size
+        self.tensor_model_parallel_size_lm = (
+            language_transformer_config.tensor_model_parallel_size
+        )
 
         # This attribute is needed to check if an all-reduce is required
         # on the word embeddings inside `finalize_model_grads._allreduce_word_embedding_grads`.
         self.tie_word_embeddings = tie_word_embeddings
 
         if self.add_decoder:
-            if getattr(language_transformer_config, "language_model_type", "").startswith("hf://"):
-                from paddleformers.fleet.models.huggingface.module import build_hf_model
+            if getattr(
+                language_transformer_config, "language_model_type", ""
+            ).startswith("hf://"):
+                from paddleformers.fleet.models.huggingface.module import (
+                    build_hf_model,
+                )
 
                 self.language_model = build_hf_model(
                     language_transformer_config,
                     language_transformer_config.language_model_type,
                 )
-                self.language_model = build_hf_model(language_transformer_config)
+                self.language_model = build_hf_model(
+                    language_transformer_config
+                )
             else:
                 self.language_model = GPTModel(
                     config=language_transformer_config,
@@ -199,7 +220,9 @@ class LLaVAModel(FleetLayer):
                 )
 
             self._language_max_sequence_length = language_max_sequence_length
-            self._language_is_pipeline_parallel = language_transformer_config.pipeline_model_parallel_size > 1
+            self._language_is_pipeline_parallel = (
+                language_transformer_config.pipeline_model_parallel_size > 1
+            )
 
             # Newer Transformer Engine versions add _extra_state keys in state_dict when using FP8.
             # Older models may not have _extra_state and can be ignored.
@@ -208,12 +231,15 @@ class LLaVAModel(FleetLayer):
         if self.add_encoder:
             self._drop_vision_class_token = drop_vision_class_token
             add_class_token = True
-            if vision_transformer_config.vision_model_type.startswith(("clip", "siglip", "internvit")):
+            if vision_transformer_config.vision_model_type.startswith(
+                ("clip", "siglip", "internvit")
+            ):
                 if vision_transformer_config.vision_model_type == "siglip":
                     class_token_len = 0
                     add_class_token = False
                     error_msg = (
-                        "Siglip does not support vision class token, " "set disable-vision-class-token to False."
+                        "Siglip does not support vision class token, "
+                        "set disable-vision-class-token to False."
                     )
                     assert not self._drop_vision_class_token, error_msg
                 self.vision_model = CLIPViTModel(
@@ -279,15 +305,23 @@ class LLaVAModel(FleetLayer):
                     pg_collection=self.pg_collection,
                     vp_stage=self.vp_stage,
                 )
-            elif vision_transformer_config.vision_model_type.startswith("hf://"):
-                from paddleformers.fleet.models.huggingface.module import build_hf_model
+            elif vision_transformer_config.vision_model_type.startswith(
+                "hf://"
+            ):
+                from paddleformers.fleet.models.huggingface.module import (
+                    build_hf_model,
+                )
 
                 self.vision_model = build_hf_model(
                     vision_transformer_config,
                     vision_transformer_config.vision_model_type,
                 )
             else:
-                raise ValueError("Vision model " f"{vision_transformer_config.vision_model_type} is not " "supported.")
+                raise ValueError(
+                    "Vision model "
+                    f"{vision_transformer_config.vision_model_type} is not "
+                    "supported."
+                )
 
             vision_projection_input_size = vision_transformer_config.hidden_size
             vision_projection_input_size *= 4 if pixel_shuffle else 1
@@ -306,7 +340,8 @@ class LLaVAModel(FleetLayer):
             # outputs to language model inputs.
             if allow_missing_vision_projection_checkpoint:
                 vision_projection_param_names = [
-                    f"vision_projection.{name}" for name in self.vision_projection.state_dict().keys()
+                    f"vision_projection.{name}"
+                    for name in self.vision_projection.state_dict().keys()
                 ]
 
         self.img_seq_len = get_num_image_embeddings(
@@ -340,7 +375,9 @@ class LLaVAModel(FleetLayer):
         # gives us non-lists or None
         if not isinstance(input_tensor, list):
             input_tensor = [input_tensor]
-        assert len(input_tensor) == 1, "input_tensor should only be length 1 for llava"
+        assert len(input_tensor) == 1, (
+            "input_tensor should only be length 1 for llava"
+        )
 
         if self.add_encoder and self.add_decoder:
             self.vision_model.set_input_tensor(input_tensor[0])
@@ -371,7 +408,11 @@ class LLaVAModel(FleetLayer):
             modules.append(self.language_model)
         if freeze_vision_model and self.vision_model is not None:
             modules.append(self.vision_model)
-        if freeze_vision_projection and hasattr(self, "vision_projection") and self.vision_projection is not None:
+        if (
+            freeze_vision_projection
+            and hasattr(self, "vision_projection")
+            and self.vision_projection is not None
+        ):
             modules.append(self.vision_projection)
 
         for module in modules:
@@ -428,9 +469,13 @@ class LLaVAModel(FleetLayer):
             final_loss_mask (paddle.Tensor): loss mask [b, combined_seq_len].
         """
 
-        inference_context = deprecate_inference_params(inference_context, inference_params)
+        inference_context = deprecate_inference_params(
+            inference_context, inference_params
+        )
 
-        assert self.add_decoder, "input text preprocessing is only needed for the language model"
+        assert self.add_decoder, (
+            "input text preprocessing is only needed for the language model"
+        )
 
         # No pre- or postprocessing needed.
         # With pipeline parallel > 2, this means a chunk in the middle of the model.
@@ -446,9 +491,9 @@ class LLaVAModel(FleetLayer):
 
         has_labels = labels is not None
         if has_labels:
-            assert (
-                labels.shape == loss_mask.shape
-            ), f"mismatching labels shape {labels.shape} and loss mask shape {loss_mask.shape}"
+            assert labels.shape == loss_mask.shape, (
+                f"mismatching labels shape {labels.shape} and loss mask shape {loss_mask.shape}"
+            )
 
         # Create indices for new text and label positions.
         with paddle.no_grad():
@@ -456,7 +501,9 @@ class LLaVAModel(FleetLayer):
             num_images_per_sample = paddle.sum(image_token_mask, axis=-1)
 
             # Number of tiles per sample.
-            num_image_tiles_batch = num_image_tiles.split(num_images_per_sample.tolist(), axis=0)
+            num_image_tiles_batch = num_image_tiles.split(
+                num_images_per_sample.tolist(), axis=0
+            )
             num_image_tiles_batch = paddle.tensor(
                 [x.sum() for x in num_image_tiles_batch],
             )
@@ -464,7 +511,11 @@ class LLaVAModel(FleetLayer):
             # Sequence length for each sample is the image sequence length multiplied by
             # the number of tiles for that image, minus image token indices,
             # plus text sequence length.
-            seq_lens = num_image_tiles_batch * img_seq_len - num_images_per_sample + text_seq_len
+            seq_lens = (
+                num_image_tiles_batch * img_seq_len
+                - num_images_per_sample
+                + text_seq_len
+            )
 
             max_seq_len = seq_lens.max().item()
 
@@ -483,10 +534,16 @@ class LLaVAModel(FleetLayer):
             # new_position_ids = [576, 577, 578, 579]. text_position_ids are then [577, 578, 579].
             image_token_mask_lens = image_token_mask.int().clone()
             # -1 is for the removed image token index.
-            image_token_mask_lens[image_token_mask] = num_image_tiles * img_seq_len - 1
+            image_token_mask_lens[image_token_mask] = (
+                num_image_tiles * img_seq_len - 1
+            )
             # +1 is needed here for the cumulative sum. -1 is adjusting for zero-based indexing.
-            new_position_ids = paddle.cumsum((image_token_mask_lens + 1), dim=-1) - 1
-            text_position_ids = new_position_ids[batch_indices, non_image_indices]
+            new_position_ids = (
+                paddle.cumsum((image_token_mask_lens + 1), dim=-1) - 1
+            )
+            text_position_ids = new_position_ids[
+                batch_indices, non_image_indices
+            ]
 
             label_batch_indices = None  # dummy value to pass formatting
             # Labels are shifted to left by one.
@@ -495,23 +552,34 @@ class LLaVAModel(FleetLayer):
             if has_labels:
                 label_text_position_ids = text_position_ids - 1
                 valid_label_text_position_ids = label_text_position_ids >= 0
-                label_text_position_ids = label_text_position_ids[valid_label_text_position_ids]
+                label_text_position_ids = label_text_position_ids[
+                    valid_label_text_position_ids
+                ]
 
-                label_batch_indices = batch_indices[valid_label_text_position_ids]
+                label_batch_indices = batch_indices[
+                    valid_label_text_position_ids
+                ]
 
                 label_non_image_indices = non_image_indices - 1
                 valid_label_non_image_indices = label_non_image_indices >= 0
-                label_non_image_indices = label_non_image_indices[valid_label_non_image_indices]
+                label_non_image_indices = label_non_image_indices[
+                    valid_label_non_image_indices
+                ]
 
             # Create a mask for the image embedding positions.
-            images_mask = paddle.full((batch_size, max_seq_len), True, dtype=paddle.bool)
+            images_mask = paddle.full(
+                (batch_size, max_seq_len), True, dtype=paddle.bool
+            )
             # No images in the text positions.
             images_mask[batch_indices, text_position_ids] = False
             # Samples can have different amount of images tokens.
             # new_position_ids[:, -1] gives the last text position id for each sample.
             # Padding is needed when the number of image tokens differs.
             first_padding_idx = new_position_ids[:, -1] + 1
-            images_mask[paddle.arange(max_seq_len).repeat(batch_size, 1) >= first_padding_idx.unsqueeze(1)] = False
+            images_mask[
+                paddle.arange(max_seq_len).repeat(batch_size, 1)
+                >= first_padding_idx.unsqueeze(1)
+            ] = False
 
         # Create the final input embedding (if this is the first language model stage).
         final_embedding = None
@@ -525,7 +593,9 @@ class LLaVAModel(FleetLayer):
             )
 
             # Put text embeddings to the text positions in the result tensor.
-            final_embedding[batch_indices, text_position_ids] = language_embeddings[batch_indices, non_image_indices]
+            final_embedding[batch_indices, text_position_ids] = (
+                language_embeddings[batch_indices, non_image_indices]
+            )
 
             # Put image embeddings to image positions.
             # NOTE: FSDP can hang with text-only samples so we use a workaround to run a dummy image
@@ -536,7 +606,11 @@ class LLaVAModel(FleetLayer):
                 ), "expected FSDP and dummy image"
                 final_embedding[:1, :1, :1] += 0 * image_embeddings[:1, :1, :1]
             else:
-                final_embedding[images_mask] = image_embeddings.permute(1, 0, 2).reshape(-1, embed_dim).contiguous()
+                final_embedding[images_mask] = (
+                    image_embeddings.permute(1, 0, 2)
+                    .reshape(-1, embed_dim)
+                    .contiguous()
+                )
 
         # Create the final labels and loss mask (if this is the last language model stage).
         final_labels, final_loss_mask = None, None
@@ -557,12 +631,16 @@ class LLaVAModel(FleetLayer):
                 label_batch_indices, label_non_image_indices
             ]
 
-            final_loss_mask[batch_indices, text_position_ids] = loss_mask[batch_indices, non_image_indices]
+            final_loss_mask[batch_indices, text_position_ids] = loss_mask[
+                batch_indices, non_image_indices
+            ]
 
             # For labels, pick the last label index that got dropped by the shift to left.
             label_extra_text_position_ids = seq_lens - 1
             batch_range = paddle.arange(len(label_extra_text_position_ids))
-            final_labels[batch_range, label_extra_text_position_ids] = labels[batch_range, -1]
+            final_labels[batch_range, label_extra_text_position_ids] = labels[
+                batch_range, -1
+            ]
 
             # Loss mask the image positions.
             final_loss_mask[images_mask] = 0
@@ -576,31 +654,46 @@ class LLaVAModel(FleetLayer):
             valid_batch_image_indices = batch_image_indices[valid]
             valid_before_image_indices = before_image_indices[valid]
             # Map those indices those position ids.
-            valid_before_image_indices = new_position_ids[valid_batch_image_indices, valid_before_image_indices]
+            valid_before_image_indices = new_position_ids[
+                valid_batch_image_indices, valid_before_image_indices
+            ]
 
-            final_loss_mask[valid_batch_image_indices, valid_before_image_indices] = 0
+            final_loss_mask[
+                valid_batch_image_indices, valid_before_image_indices
+            ] = 0
 
         if final_embedding is not None and final_labels is not None:
             assert (
-                final_embedding.shape[:2] == final_labels.shape == final_loss_mask.shape
+                final_embedding.shape[:2]
+                == final_labels.shape
+                == final_loss_mask.shape
             ), "unexpected shapes after data preprocessing"
 
         if final_embedding is not None:
             # Truncate if exceeding the language model's max sequence length.
             if final_embedding.shape[1] > self._language_max_sequence_length:
-                final_embedding = final_embedding[:, : self._language_max_sequence_length]
+                final_embedding = final_embedding[
+                    :, : self._language_max_sequence_length
+                ]
             # Transpose to [s,b,h] only if not using CP because CP Sharding expects seq in dim=1
             if self.context_parallel_lm == 1:
                 final_embedding = final_embedding.transpose(1, 0).contiguous()
 
-        truncate_labels = final_labels is not None and final_labels.shape[1] > self._language_max_sequence_length
+        truncate_labels = (
+            final_labels is not None
+            and final_labels.shape[1] > self._language_max_sequence_length
+        )
         if truncate_labels:
             final_labels = final_labels[:, : self._language_max_sequence_length]
-            final_loss_mask = final_loss_mask[:, : self._language_max_sequence_length]
+            final_loss_mask = final_loss_mask[
+                :, : self._language_max_sequence_length
+            ]
 
         return final_embedding, final_labels, final_loss_mask
 
-    def _process_embedding_token_parallel(self, combined_embeddings, new_labels, new_loss_mask, packed_seq_params):
+    def _process_embedding_token_parallel(
+        self, combined_embeddings, new_labels, new_loss_mask, packed_seq_params
+    ):
         """Processes the input data for model parallelism support.
 
         When using sequence parallelism (SP) or context parallelism (CP), the sequence is sharded
@@ -635,7 +728,11 @@ class LLaVAModel(FleetLayer):
         shard_factor = seq_dim = None
         if self.pre_process:
             if self.context_parallel_lm > 1 and self.sequence_parallel_lm:
-                shard_factor = self.tensor_model_parallel_size_lm * self.context_parallel_lm * 2
+                shard_factor = (
+                    self.tensor_model_parallel_size_lm
+                    * self.context_parallel_lm
+                    * 2
+                )
                 seq_dim = 1
             elif self.context_parallel_lm > 1:
                 shard_factor = self.context_parallel_lm * 2
@@ -644,15 +741,18 @@ class LLaVAModel(FleetLayer):
                 shard_factor = self.tensor_model_parallel_size_lm
                 seq_dim = 0
 
-            assert (
-                combined_embeddings.shape[seq_dim] % shard_factor == 0
-            ), f"Sequence length should be divisible by {shard_factor} for \
+            assert combined_embeddings.shape[seq_dim] % shard_factor == 0, (
+                f"Sequence length should be divisible by {shard_factor} for \
                 Sequence/Context parallelism"
+            )
             if self.sequence_parallel_lm and self.tp_comm_overlap_lm:
                 assert (
-                    combined_embeddings.shape[seq_dim] == self._language_max_sequence_length
-                ), "TP Comm overlap either requires Vision+Text token length \
+                    combined_embeddings.shape[seq_dim]
+                    == self._language_max_sequence_length
+                ), (
+                    "TP Comm overlap either requires Vision+Text token length \
                 == language_max_sequence_length"
+                )
 
         if self.context_parallel_lm > 1:
             # TODO(zhangweilong):need support context_parallel
@@ -683,9 +783,9 @@ class LLaVAModel(FleetLayer):
             paddle.Tensor: Tile tags prepended to image embeddings.
                 [tile_seq_len (=5) + img_seq_len, num_tiles, h_language]
         """
-        assert (
-            num_image_tiles.shape[0] == 1 and len(num_image_tiles) == 1
-        ), "multiple input images are not supported yet."
+        assert num_image_tiles.shape[0] == 1 and len(num_image_tiles) == 1, (
+            "multiple input images are not supported yet."
+        )
 
         num_tiles = num_image_tiles[0].item()
         tile_tags = [*self._tile_tags[: num_tiles - 1], self._tile_tags[-1]]
@@ -697,7 +797,9 @@ class LLaVAModel(FleetLayer):
         )
 
         # [tile_seq_len, num_tiles, h_language]
-        tile_tag_embeds = self.language_model.embedding(tile_tag_input_ids, position_ids=None)
+        tile_tag_embeds = self.language_model.embedding(
+            tile_tag_input_ids, position_ids=None
+        )
 
         # [num_tiles, dim] should be the same same
         assert tile_tag_embeds.shape[1:] == image_embeddings.shape[1:]
@@ -751,10 +853,13 @@ class LLaVAModel(FleetLayer):
             loss_mask (paddle.Tensor): Loss mask expanded to combined sequence length. Shape [b, s].
         """
 
-        inference_context = deprecate_inference_params(inference_context, inference_params)
+        inference_context = deprecate_inference_params(
+            inference_context, inference_params
+        )
 
         use_inference_kv_cache = (
-            inference_context is not None and "image_tokens_count" in inference_context.key_value_memory_dict
+            inference_context is not None
+            and "image_tokens_count" in inference_context.key_value_memory_dict
         )
         has_images = images is not None and images.shape[0] > 0
 
@@ -764,11 +869,17 @@ class LLaVAModel(FleetLayer):
             image_embeddings = None
         elif self.add_encoder and not has_images:
             # If no images provided, use an empty image embeddings tensor.
-            image_embeddings = paddle.tensor([], dtype=images.dtype).reshape(0, 0, 0)
+            image_embeddings = paddle.tensor([], dtype=images.dtype).reshape(
+                0, 0, 0
+            )
         elif self.add_encoder and has_images:
-            image_embeddings = self.vision_model(images)  # [num_tiles, img_seq_len, h_vision]
+            image_embeddings = self.vision_model(
+                images
+            )  # [num_tiles, img_seq_len, h_vision]
             if self._drop_vision_class_token:
-                image_embeddings = image_embeddings[:, self.vision_model.class_token_len :, :]
+                image_embeddings = image_embeddings[
+                    :, self.vision_model.class_token_len :, :
+                ]
 
             if self._pixel_shuffle:
                 image_embeddings = pixel_shuffle(
@@ -776,22 +887,30 @@ class LLaVAModel(FleetLayer):
                 )  # [num_tiles, img_seq_len_shuffled, h_vision_shuffled]
 
             # contiguous() required as `permute` can sparsify the tensor and this breaks pipelining
-            image_embeddings = image_embeddings.permute(1, 0, 2).contiguous()  # [img_seq_len, num_tiles, h_vision]
+            image_embeddings = image_embeddings.permute(
+                1, 0, 2
+            ).contiguous()  # [img_seq_len, num_tiles, h_vision]
 
             # map vision model output size to language model input size.
-            image_embeddings = self.vision_projection(image_embeddings)  # [img_seq_len, num_tiles, h_language]
+            image_embeddings = self.vision_projection(
+                image_embeddings
+            )  # [img_seq_len, num_tiles, h_language]
 
             # Apply tile tagging if enabled and an image token is present.
-            if self._tile_tags is not None and paddle.any(input_ids == self.image_token_index):
-                image_embeddings = self._apply_tile_tagging(image_embeddings, num_image_tiles)
+            if self._tile_tags is not None and paddle.any(
+                input_ids == self.image_token_index
+            ):
+                image_embeddings = self._apply_tile_tagging(
+                    image_embeddings, num_image_tiles
+                )
 
             # TODO: Support batched inference.
             # In inference, the language model KV cache will be updated for image token positions.
             # Store the image tokens sequence length to be used as an offset to the KV cache later.
             if inference_context is not None:
-                inference_context.key_value_memory_dict["image_tokens_count"] = (
-                    image_embeddings.shape[0] * image_embeddings.shape[1]
-                )
+                inference_context.key_value_memory_dict[
+                    "image_tokens_count"
+                ] = image_embeddings.shape[0] * image_embeddings.shape[1]
         else:
             image_embeddings = self.encoder_hidden_state
 
@@ -809,7 +928,9 @@ class LLaVAModel(FleetLayer):
                 input_ids=input_ids_text, position_ids=position_ids
             )  # [text_seq_len, b, h_language]
 
-            language_embeddings = language_embeddings.transpose(1, 0).contiguous()  # [b, text_seq_len, h_language]
+            language_embeddings = language_embeddings.transpose(
+                1, 0
+            ).contiguous()  # [b, text_seq_len, h_language]
 
         # Assume 1 tile per image if the number of tiles is not provided.
         if num_image_tiles is None and images is not None:
@@ -826,7 +947,9 @@ class LLaVAModel(FleetLayer):
             labels,
             use_inference_kv_cache,
             inference_context,
-            image_token_index if image_token_index is not None else self.image_token_index,
+            image_token_index
+            if image_token_index is not None
+            else self.image_token_index,
             num_image_tiles,
         )  # [combined_seq_len, b, h_language], [b, combined_seq_len], [b, combined_seq_len]
 
@@ -884,7 +1007,9 @@ def _load_state_dict_hook_ignore_param_names(
             incompatible_keys.missing_keys.remove(param_name)
 
 
-def _load_state_dict_hook_ignore_extra_state(module: paddle.nn.Layer, incompatible_keys: namedtuple):
+def _load_state_dict_hook_ignore_extra_state(
+    module: paddle.nn.Layer, incompatible_keys: namedtuple
+):
     """Hook to ignore Transformer Engine _extra_state used for FP8.
 
     This is for backwards-compatibility. Newer TE versions add _extra_state keys to the state dict,
@@ -898,7 +1023,9 @@ def _load_state_dict_hook_ignore_extra_state(module: paddle.nn.Layer, incompatib
     for name, keys in incompatible_keys._asdict().items():
         for key in keys[::-1]:
             if "extra_state" in key:
-                logging.getLogger(__name__).warning(f"_extra_state key {key} being removed from {name}")
+                logging.getLogger(__name__).warning(
+                    f"_extra_state key {key} being removed from {name}"
+                )
                 keys.remove(key)
 
 

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -32,8 +36,12 @@ class TestBackendSpecProviderProtocol(unittest.TestCase):
         # Protocol defines abstract methods - verify they exist
         self.assertTrue(hasattr(BackendSpecProvider, "column_parallel_linear"))
         self.assertTrue(hasattr(BackendSpecProvider, "row_parallel_linear"))
-        self.assertTrue(hasattr(BackendSpecProvider, "fuse_layernorm_and_linear"))
-        self.assertTrue(hasattr(BackendSpecProvider, "column_parallel_layer_norm_linear"))
+        self.assertTrue(
+            hasattr(BackendSpecProvider, "fuse_layernorm_and_linear")
+        )
+        self.assertTrue(
+            hasattr(BackendSpecProvider, "column_parallel_layer_norm_linear")
+        )
         self.assertTrue(hasattr(BackendSpecProvider, "layer_norm"))
         self.assertTrue(hasattr(BackendSpecProvider, "core_attention"))
         self.assertTrue(hasattr(BackendSpecProvider, "grouped_mlp_layers"))
@@ -56,10 +64,14 @@ class TestLocalSpecProviderColumnParallelLinear(unittest.TestCase):
 
     def test_returns_column_parallel_linear(self):
         from paddleformers.fleet.models.backends import LocalSpecProvider
-        from paddleformers.fleet.tensor_parallel.layers import ColumnParallelLinear
+        from paddleformers.fleet.tensor_parallel.layers import (
+            ColumnParallelLinear,
+        )
 
         provider = LocalSpecProvider()
-        self.assertEqual(provider.column_parallel_linear(), ColumnParallelLinear)
+        self.assertEqual(
+            provider.column_parallel_linear(), ColumnParallelLinear
+        )
 
 
 class TestLocalSpecProviderRowParallelLinear(unittest.TestCase):
@@ -98,7 +110,9 @@ class TestLocalSpecProviderLayerNorm(unittest.TestCase):
 
     def test_non_rms_norm_returns_ln_impl(self):
         from paddleformers.fleet.models.backends import LocalSpecProvider
-        from paddleformers.fleet.transformer.paddle_norm import WrappedPaddleNorm
+        from paddleformers.fleet.transformer.paddle_norm import (
+            WrappedPaddleNorm,
+        )
 
         provider = LocalSpecProvider()
         result = provider.layer_norm(rms_norm=False)
@@ -106,7 +120,9 @@ class TestLocalSpecProviderLayerNorm(unittest.TestCase):
 
     def test_rms_norm_returns_wrapped_paddle_norm(self):
         from paddleformers.fleet.models.backends import LocalSpecProvider
-        from paddleformers.fleet.transformer.paddle_norm import WrappedPaddleNorm
+        from paddleformers.fleet.transformer.paddle_norm import (
+            WrappedPaddleNorm,
+        )
 
         provider = LocalSpecProvider()
         result = provider.layer_norm(rms_norm=True)
@@ -131,19 +147,29 @@ class TestLocalSpecProviderGroupedMLPLayers(unittest.TestCase):
     """Test LocalSpecProvider.grouped_mlp_layers method."""
 
     def test_grouped_gemm_returns_grouped_mlp(self):
-        from paddleformers.fleet.models.backends import GroupedMLP, LocalSpecProvider
+        from paddleformers.fleet.models.backends import (
+            GroupedMLP,
+            LocalSpecProvider,
+        )
 
         provider = LocalSpecProvider()
-        layer, spec = provider.grouped_mlp_layers(moe_use_grouped_gemm=True, moe_use_legacy_grouped_gemm=False)
+        layer, spec = provider.grouped_mlp_layers(
+            moe_use_grouped_gemm=True, moe_use_legacy_grouped_gemm=False
+        )
         self.assertEqual(layer, GroupedMLP)
         self.assertIsNone(spec)
 
     def test_non_grouped_gemm_returns_sequential_mlp(self):
-        from paddleformers.fleet.models.backends import LocalSpecProvider, SequentialMLP
+        from paddleformers.fleet.models.backends import (
+            LocalSpecProvider,
+            SequentialMLP,
+        )
         from paddleformers.fleet.transformer.mlp import MLPSublayersSpec
 
         provider = LocalSpecProvider()
-        layer, spec = provider.grouped_mlp_layers(moe_use_grouped_gemm=False, moe_use_legacy_grouped_gemm=False)
+        layer, spec = provider.grouped_mlp_layers(
+            moe_use_grouped_gemm=False, moe_use_legacy_grouped_gemm=False
+        )
         self.assertEqual(layer, SequentialMLP)
         self.assertIsNotNone(spec)
         self.assertIsInstance(spec, MLPSublayersSpec)

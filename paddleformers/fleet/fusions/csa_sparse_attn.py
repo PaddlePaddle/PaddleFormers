@@ -24,7 +24,9 @@ import paddle
 
 class CSASparseAttention(paddle.autograd.PyLayer):
     @staticmethod
-    def forward(ctx, query, kv_full, attn_sink, topk_idxs, softmax_scale, backend):
+    def forward(
+        ctx, query, kv_full, attn_sink, topk_idxs, softmax_scale, backend
+    ):
         from paddleformers.fleet.tilelang_ops.attn.sparse_mqa import (
             _prepare_inputs,
             sparse_attn,
@@ -85,7 +87,9 @@ class CSASparseAttention(paddle.autograd.PyLayer):
             )
             dq = dq_flat.reshape(query.shape)
             dkv = dkv_flat.reshape(kv_full.shape)
-            d_attn_sink = d_sink.reshape(attn_sink.shape).cast(ctx.attn_sink_dtype)
+            d_attn_sink = d_sink.reshape(attn_sink.shape).cast(
+                ctx.attn_sink_dtype
+            )
         else:
             from paddleformers.fleet.tilelang_ops.attn import sparse_mqa_bwd
 
@@ -102,12 +106,16 @@ class CSASparseAttention(paddle.autograd.PyLayer):
             )
             dq = dq.reshape(query.shape)
             dkv = dkv.reshape(kv_full.shape)
-            d_attn_sink = d_attn_sink.reshape(attn_sink.shape).cast(ctx.attn_sink_dtype)
+            d_attn_sink = d_attn_sink.reshape(attn_sink.shape).cast(
+                ctx.attn_sink_dtype
+            )
 
         return (dq, dkv, d_attn_sink, None)
 
 
-def csa_sparse_attn(query, kv_full, attn_sink, topk_idxs, softmax_scale, backend="tilelang"):
+def csa_sparse_attn(
+    query, kv_full, attn_sink, topk_idxs, softmax_scale, backend="tilelang"
+):
     """Unified CSA sparse attention entry point.
 
     Args:

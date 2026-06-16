@@ -37,12 +37,18 @@ def _load_bounds(
     pad_lt = INT_MAX
     pad_ut = INT_MIN
 
-    b_lts = tl.load(ptr_start_lt + base_offset + k_offsets, mask=load_mask, other=pad_lt)
+    b_lts = tl.load(
+        ptr_start_lt + base_offset + k_offsets, mask=load_mask, other=pad_lt
+    )
 
-    need_lte: tl.constexpr = (causal and mode == 2) or (not causal and mode == 4)
+    need_lte: tl.constexpr = (causal and mode == 2) or (
+        not causal and mode == 4
+    )
 
     if need_lte:
-        b_lte = tl.load(ptr_end_lt + base_offset + k_offsets, mask=load_mask, other=pad_lt)
+        b_lte = tl.load(
+            ptr_end_lt + base_offset + k_offsets, mask=load_mask, other=pad_lt
+        )
     else:
         b_lte = tl.full(b_lts.shape, pad_lt, dtype=tl.int32)
 
@@ -61,7 +67,9 @@ def _load_bounds(
     need_ute: tl.constexpr = (not causal) and (mode == 2 or mode == 4)
 
     if need_ute:
-        b_ute = tl.load(ptr_end_ut + base_offset + k_offsets, mask=load_mask, other=pad_ut)
+        b_ute = tl.load(
+            ptr_end_ut + base_offset + k_offsets, mask=load_mask, other=pad_ut
+        )
     else:
         b_ute = tl.full(b_lts.shape, pad_ut, dtype=tl.int32)
 
@@ -77,8 +85,12 @@ def _is_block_fully_masked(
     ute_min,
 ):
     # since we pass exact row indices now, use "<" for end
-    in_lt = (block_rows[:, None] >= lts_max[None, :]) & (block_rows[:, None] < lte_min[None, :])
-    in_ut = (block_rows[:, None] >= uts_max[None, :]) & (block_rows[:, None] < ute_min[None, :])
+    in_lt = (block_rows[:, None] >= lts_max[None, :]) & (
+        block_rows[:, None] < lte_min[None, :]
+    )
+    in_ut = (block_rows[:, None] >= uts_max[None, :]) & (
+        block_rows[:, None] < ute_min[None, :]
+    )
 
     mask = in_lt | in_ut
     return mask
@@ -130,8 +142,12 @@ def _is_block_partially_masked(
     ute_max,
 ):
     # Logic: Overlap exists if Q is potentially inside [min_start, max_end)
-    overlap_lt = (block_rows[:, None] < lte_max[None, :]) & (block_rows[:, None] >= lts_min[None, :])
-    overlap_ut = (block_rows[:, None] < ute_max[None, :]) & (block_rows[:, None] >= uts_min[None, :])
+    overlap_lt = (block_rows[:, None] < lte_max[None, :]) & (
+        block_rows[:, None] >= lts_min[None, :]
+    )
+    overlap_ut = (block_rows[:, None] < ute_max[None, :]) & (
+        block_rows[:, None] >= uts_min[None, :]
+    )
 
     return overlap_lt | overlap_ut
 
@@ -178,8 +194,12 @@ def _compare_and_swap(
 
     # slice left/right with 'stride' 2**(n_dims - i - 1)
     mask = tl.arange(0, 2)[None, :, None]
-    left = tl.broadcast_to(tl.sum(tl.where(mask == 0, y, 0), 1)[:, None, :], shape).to(y.dtype)
-    right = tl.broadcast_to(tl.sum(tl.where(mask == 1, y, 0), 1)[:, None, :], shape).to(y.dtype)
+    left = tl.broadcast_to(
+        tl.sum(tl.where(mask == 0, y, 0), 1)[:, None, :], shape
+    ).to(y.dtype)
+    right = tl.broadcast_to(
+        tl.sum(tl.where(mask == 1, y, 0), 1)[:, None, :], shape
+    ).to(y.dtype)
     left = tl.reshape(left, x.shape)
     right = tl.reshape(right, x.shape)
 
@@ -191,7 +211,9 @@ def _compare_and_swap(
     right_idx = tl.reshape(right_idx, x.shape).to(y_idx.dtype)
 
     # actual compare-and-swap
-    idtype = tl.core.get_int_dtype(bitwidth=x.dtype.primitive_bitwidth, signed=True)
+    idtype = tl.core.get_int_dtype(
+        bitwidth=x.dtype.primitive_bitwidth, signed=True
+    )
     ileft = left.to(idtype, bitcast=True)
     iright = right.to(idtype, bitcast=True)
     ix = x.to(idtype, bitcast=True)
@@ -221,7 +243,9 @@ def _bitonic_merge(
 
     if order == 2:
         shape: tl.constexpr = [n_outer * 2 ** (n_dims - 1 - stage), 2, 2**stage]
-        flip = tl.reshape(tl.broadcast_to(tl.arange(0, 2)[None, :, None], shape), x.shape)
+        flip = tl.reshape(
+            tl.broadcast_to(tl.arange(0, 2)[None, :, None], shape), x.shape
+        )
     else:
         flip = order
 
@@ -232,9 +256,13 @@ def _bitonic_merge(
 
 
 @triton.jit
-def bitonic_argsort_device(x, ids, n_dims: tl.constexpr, descending: tl.constexpr = tl.core.CONSTEXPR_0):
+def bitonic_argsort_device(
+    x, ids, n_dims: tl.constexpr, descending: tl.constexpr = tl.core.CONSTEXPR_0
+):
     for i in tl.static_range(1, n_dims + 1):
-        x, ids = _bitonic_merge(x, ids, i, 2 if i < n_dims else descending, n_dims)
+        x, ids = _bitonic_merge(
+            x, ids, i, 2 if i < n_dims else descending, n_dims
+        )
 
     return x, ids
 
@@ -256,7 +284,9 @@ def top_p_kernel(
     mask_load = offsets < N_COLS
 
     # Load with 0.0 padding to calculate correct sum
-    x_raw = tl.load(row_start_ptr + offsets, mask=mask_load, other=0.0).to(tl.float32)
+    x_raw = tl.load(row_start_ptr + offsets, mask=mask_load, other=0.0).to(
+        tl.float32
+    )
     row_sum = tl.sum(x_raw, axis=0)
 
     out_row_ptr = Out_ptr + pid * stride_row
@@ -273,12 +303,16 @@ def top_p_kernel(
 
     padding_val = float("-inf")
     x_for_sort = tl.where(mask_load, x_raw, padding_val)
-    ids = tl.arange(0, BLOCK_SIZE)  # Initialize indices [0, 1, ... BLOCK_SIZE-1]
+    ids = tl.arange(
+        0, BLOCK_SIZE
+    )  # Initialize indices [0, 1, ... BLOCK_SIZE-1]
 
     # Perform Bitonic Sort (Descending)
     # x_sorted: values from high to low
     # ids_sorted: original indices corresponding to those values
-    x_sorted, ids_sorted = bitonic_argsort_device(x_for_sort, ids, NUM_DIMS, descending=1)
+    x_sorted, ids_sorted = bitonic_argsort_device(
+        x_for_sort, ids, NUM_DIMS, descending=1
+    )
 
     cum_probs = tl.cumsum(x_sorted, axis=0)
     mask_keep = (cum_probs - x_sorted) < actual_cutoff
@@ -311,7 +345,9 @@ def find_blocks_topp(x: paddle.Tensor, p: float):
         block_size = 1
     num_dims = int(math.log2(block_size))
 
-    output_mask = paddle.empty(x_reshaped.shape, dtype=paddle.bool, device=x.device)
+    output_mask = paddle.empty(
+        x_reshaped.shape, dtype=paddle.bool, device=x.device
+    )
 
     grid = (B,)
 

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -84,7 +88,11 @@ class TestBuildKeySizeNumelExtra(unittest.TestCase):
             patch("paddle.distributed.is_initialized", return_value=True),
             patch.object(dist, "broadcast"),
         ):
-            key_size, key_numel, total_numel = _build_key_size_numel_dictionaries(["w"], data, tp_group=mock_group)
+            key_size, key_numel, total_numel = (
+                _build_key_size_numel_dictionaries(
+                    ["w"], data, tp_group=mock_group
+                )
+            )
 
         self.assertEqual(key_size["w"], [4, 8, 16])
         self.assertEqual(key_numel["w"], 512)
@@ -105,7 +113,9 @@ class TestBuildKeySizeNumelExtra(unittest.TestCase):
             patch("paddle.distributed.is_initialized", return_value=True),
             patch.object(dist, "broadcast"),
         ):
-            key_size, key_numel, total_numel = _build_key_size_numel_dictionaries([], {}, tp_group=mock_group)
+            key_size, key_numel, total_numel = (
+                _build_key_size_numel_dictionaries([], {}, tp_group=mock_group)
+            )
 
         self.assertEqual(len(key_size), 0)
         self.assertEqual(total_numel, 0)
@@ -128,7 +138,11 @@ class TestBuildKeySizeNumelExtra(unittest.TestCase):
             patch("paddle.distributed.is_initialized", return_value=True),
             patch.object(dist, "broadcast"),
         ):
-            key_size, key_numel, total_numel = _build_key_size_numel_dictionaries(["t"], data, tp_group=mock_group)
+            key_size, key_numel, total_numel = (
+                _build_key_size_numel_dictionaries(
+                    ["t"], data, tp_group=mock_group
+                )
+            )
 
         self.assertEqual(key_size["t"], [2, 3, 4, 5])
         self.assertEqual(key_numel["t"], 120)
@@ -180,7 +194,9 @@ class TestBroadcastDataExtra(unittest.TestCase):
                 return_value=({"w": [3, 4]}, {"w": 12}, 12),
             ),
         ):
-            output = broadcast_data(["w"], data, paddle.float32, tp_group=mock_group)
+            output = broadcast_data(
+                ["w"], data, paddle.float32, tp_group=mock_group
+            )
 
         self.assertEqual(output["w"].shape, [3, 4])
 
@@ -206,7 +222,9 @@ class TestBroadcastDataExtra(unittest.TestCase):
                 return_value=({"w": [2, 3]}, {"w": 6}, 6),
             ),
         ):
-            output = broadcast_data(["w"], data, paddle.float32, tp_group=mock_group)
+            output = broadcast_data(
+                ["w"], data, paddle.float32, tp_group=mock_group
+            )
 
         self.assertIn("w", output)
         self.assertEqual(output["w"].shape, [2, 3])
@@ -216,14 +234,18 @@ class TestGetTensorModelParallelGroupIfNoneInData(unittest.TestCase):
     """Tests for the tp_group default behavior used in data.py functions."""
 
     def test_get_tensor_model_parallel_group_none_no_dist(self):
-        from paddleformers.fleet.utils import get_tensor_model_parallel_group_if_none
+        from paddleformers.fleet.utils import (
+            get_tensor_model_parallel_group_if_none,
+        )
 
         with patch("paddle.distributed.is_initialized", return_value=False):
             result = get_tensor_model_parallel_group_if_none(None)
             self.assertIsNone(result)
 
     def test_get_tensor_model_parallel_group_single_rank(self):
-        from paddleformers.fleet.utils import get_tensor_model_parallel_group_if_none
+        from paddleformers.fleet.utils import (
+            get_tensor_model_parallel_group_if_none,
+        )
 
         mock_group = MagicMock()
         mock_group.ranks = [0]

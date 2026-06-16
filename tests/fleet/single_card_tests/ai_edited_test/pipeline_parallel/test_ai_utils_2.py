@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -45,7 +49,9 @@ class TestScheduleNodeForward(unittest.TestCase):
         x = paddle.randn([2, 3])
         x.stop_gradient = False
         with (
-            patch("paddleformers.fleet.pipeline_parallel.utils.stream_acquire_context"),
+            patch(
+                "paddleformers.fleet.pipeline_parallel.utils.stream_acquire_context"
+            ),
             patch(
                 "paddleformers.fleet.pipeline_parallel.utils.make_viewless",
                 side_effect=lambda e: e,
@@ -72,7 +78,9 @@ class TestScheduleNodeForward(unittest.TestCase):
 
         # Patch make_viewless and stream_acquire_context
         with (
-            patch("paddleformers.fleet.pipeline_parallel.utils.stream_acquire_context"),
+            patch(
+                "paddleformers.fleet.pipeline_parallel.utils.stream_acquire_context"
+            ),
             patch(
                 "paddleformers.fleet.pipeline_parallel.utils.make_viewless",
                 side_effect=lambda e: e,
@@ -101,7 +109,9 @@ class TestScheduleNodeForward(unittest.TestCase):
         )
 
         with (
-            patch("paddleformers.fleet.pipeline_parallel.utils.stream_acquire_context"),
+            patch(
+                "paddleformers.fleet.pipeline_parallel.utils.stream_acquire_context"
+            ),
             patch(
                 "paddleformers.fleet.pipeline_parallel.utils.make_viewless",
                 side_effect=lambda e: e,
@@ -193,7 +203,9 @@ class TestScheduleNodeBackward(unittest.TestCase):
             if not isinstance(outputs, (tuple, list)):
                 outputs = (outputs,)
             paddle.autograd.backward(list(outputs), list(output_grad))
-            grad = tuple([e.grad if e is not None else None for e in self_node.inputs])
+            grad = tuple(
+                [e.grad if e is not None else None for e in self_node.inputs]
+            )
             if len(grad) == 1:
                 grad = grad[0]
             return grad
@@ -206,7 +218,9 @@ class TestScheduleNodeBackward(unittest.TestCase):
             name="test_cuda_bwd",
         )
         with (
-            patch("paddleformers.fleet.pipeline_parallel.utils.stream_acquire_context"),
+            patch(
+                "paddleformers.fleet.pipeline_parallel.utils.stream_acquire_context"
+            ),
             patch(
                 "paddleformers.fleet.pipeline_parallel.utils.make_viewless",
                 side_effect=lambda e: e,
@@ -240,7 +254,9 @@ class TestScheduleNodeBackward(unittest.TestCase):
 
         # Patch stream context
         with (
-            patch("paddleformers.fleet.pipeline_parallel.utils.stream_acquire_context"),
+            patch(
+                "paddleformers.fleet.pipeline_parallel.utils.stream_acquire_context"
+            ),
             patch("paddle.cuda.nvtx.range_push"),
             patch("paddle.cuda.nvtx.range_pop"),
             patch("paddle.cuda.stream"),

@@ -39,7 +39,9 @@ from paddleformers.fleet.models.gpt.gpt_layer_specs import (
     get_gpt_spec,
 )
 from paddleformers.fleet.models.gpt.lm_head import GPTLMHead
-from paddleformers.fleet.models.qwen3_5.layer_specs import get_qwen3_5_vision_spec
+from paddleformers.fleet.models.qwen3_5.layer_specs import (
+    get_qwen3_5_vision_spec,
+)
 from paddleformers.fleet.tensor_parallel.mappings import (
     scatter_to_sequence_parallel_region,
 )
@@ -111,7 +113,9 @@ def get_qwen3_5_language_spec(config):
     if layer_types is None:
         layer_types = ["full_attention"] * config.num_hidden_layers
 
-    empty_layer_spec = LayerSpec(layer=EmptyLayer, extra_kwargs={"config": config})
+    empty_layer_spec = LayerSpec(
+        layer=EmptyLayer, extra_kwargs={"config": config}
+    )
     head_empty_layers = [empty_layer_spec] * config.num_empty_layers_add_in_head
     tail_empty_layers = [empty_layer_spec] * config.num_empty_layers_add_in_tail
 
@@ -146,9 +150,15 @@ def get_qwen3_5_language_spec(config):
         attn_spec = sub.self_attn
         if hasattr(attn_spec, "sublayers_spec"):
             attn_sub = attn_spec.sublayers_spec
-            if hasattr(attn_sub, "q_norm") and attn_sub.q_norm is WrappedPaddleNorm:
+            if (
+                hasattr(attn_sub, "q_norm")
+                and attn_sub.q_norm is WrappedPaddleNorm
+            ):
                 attn_sub.q_norm = Qwen3_5RMSNorm
-            if hasattr(attn_sub, "k_norm") and attn_sub.k_norm is WrappedPaddleNorm:
+            if (
+                hasattr(attn_sub, "k_norm")
+                and attn_sub.k_norm is WrappedPaddleNorm
+            ):
                 attn_sub.k_norm = Qwen3_5RMSNorm
 
         transformer_layers_spec.append(spec)
@@ -240,8 +250,12 @@ class Qwen3_5Model(FleetLayer):
             return output[0]
         return output
 
-    def get_video_features(self, pixel_values_videos, video_grid_thw=None, **kwargs):
-        return self.get_image_features(pixel_values_videos, video_grid_thw, **kwargs)
+    def get_video_features(
+        self, pixel_values_videos, video_grid_thw=None, **kwargs
+    ):
+        return self.get_image_features(
+            pixel_values_videos, video_grid_thw, **kwargs
+        )
 
     def get_placeholder_mask(
         self,
@@ -252,25 +266,39 @@ class Qwen3_5Model(FleetLayer):
     ):
         if input_ids is None:
             embed_fn = self.get_input_embeddings()
-            special_image_mask = (inputs_embeds == embed_fn(paddle.to_tensor(self.image_token_id, dtype="int64"))).all(
-                -1
-            )
-            special_video_mask = (inputs_embeds == embed_fn(paddle.to_tensor(self.video_token_id, dtype="int64"))).all(
-                -1
-            )
+            special_image_mask = (
+                inputs_embeds
+                == embed_fn(
+                    paddle.to_tensor(self.image_token_id, dtype="int64")
+                )
+            ).all(-1)
+            special_video_mask = (
+                inputs_embeds
+                == embed_fn(
+                    paddle.to_tensor(self.video_token_id, dtype="int64")
+                )
+            ).all(-1)
         else:
             special_image_mask = input_ids == self.image_token_id
             special_video_mask = input_ids == self.video_token_id
 
         n_image_tokens = special_image_mask.sum()
-        special_image_mask = special_image_mask.unsqueeze(-1).expand_as(inputs_embeds)
+        special_image_mask = special_image_mask.unsqueeze(-1).expand_as(
+            inputs_embeds
+        )
         if image_features is not None:
-            assert int(inputs_embeds[special_image_mask].numel()) == int(image_features.numel())
+            assert int(inputs_embeds[special_image_mask].numel()) == int(
+                image_features.numel()
+            )
 
         n_video_tokens = special_video_mask.sum()
-        special_video_mask = special_video_mask.unsqueeze(-1).expand_as(inputs_embeds)
+        special_video_mask = special_video_mask.unsqueeze(-1).expand_as(
+            inputs_embeds
+        )
         if video_features is not None:
-            assert int(inputs_embeds[special_video_mask].numel()) == int(video_features.numel())
+            assert int(inputs_embeds[special_video_mask].numel()) == int(
+                video_features.numel()
+            )
 
         return special_image_mask, special_video_mask
 
@@ -293,8 +321,12 @@ class Qwen3_5Model(FleetLayer):
         llm_w = w // spatial_merge_size
         seq_len = llm_t * llm_h * llm_w
 
-        pos_w = paddle.arange(start_position, start_position + llm_w).tile([llm_h * llm_t])
-        pos_h = paddle.arange(start_position, start_position + llm_h).repeat_interleave(llm_w * llm_t)
+        pos_w = paddle.arange(start_position, start_position + llm_w).tile(
+            [llm_h * llm_t]
+        )
+        pos_h = paddle.arange(
+            start_position, start_position + llm_h
+        ).repeat_interleave(llm_w * llm_t)
         pos_t = paddle.full([seq_len], start_position, dtype="int64")
 
         return paddle.stack([pos_t, pos_h, pos_w], axis=0)
@@ -330,7 +362,9 @@ class Qwen3_5Model(FleetLayer):
                 input_token_type = input_token_type[mask]
 
             input_type_group = []
-            for key, group in itertools.groupby(enumerate(input_token_type.tolist()), lambda x: x[1]):
+            for key, group in itertools.groupby(
+                enumerate(input_token_type.tolist()), lambda x: x[1]
+            ):
                 group = list(group)
                 input_type_group.append((key, group[0][0], group[-1][0] + 1))
 
@@ -339,7 +373,10 @@ class Qwen3_5Model(FleetLayer):
             for modality_type, start_idx, end_idx in input_type_group:
                 if modality_type == 0:
                     text_len = end_idx - start_idx
-                    llm_pos_ids_list.append(paddle.arange(text_len).reshape([1, -1]).expand([3, -1]) + current_pos)
+                    llm_pos_ids_list.append(
+                        paddle.arange(text_len).reshape([1, -1]).expand([3, -1])
+                        + current_pos
+                    )
                     current_pos += text_len
                 else:
                     grid_thw = next(grid_iters[modality_type])
@@ -349,12 +386,26 @@ class Qwen3_5Model(FleetLayer):
                         spatial_merge_size,
                     )
                     llm_pos_ids_list.append(vision_position_ids)
-                    t_val = int(grid_thw[0].item()) if isinstance(grid_thw, Tensor) else int(grid_thw[0])
-                    h_val = int(grid_thw[1].item()) if isinstance(grid_thw, Tensor) else int(grid_thw[1])
-                    w_val = int(grid_thw[2].item()) if isinstance(grid_thw, Tensor) else int(grid_thw[2])
+                    t_val = (
+                        int(grid_thw[0].item())
+                        if isinstance(grid_thw, Tensor)
+                        else int(grid_thw[0])
+                    )
+                    h_val = (
+                        int(grid_thw[1].item())
+                        if isinstance(grid_thw, Tensor)
+                        else int(grid_thw[1])
+                    )
+                    w_val = (
+                        int(grid_thw[2].item())
+                        if isinstance(grid_thw, Tensor)
+                        else int(grid_thw[2])
+                    )
                     current_pos += max(h_val, w_val) // spatial_merge_size
 
-            llm_positions = paddle.concat(llm_pos_ids_list, axis=1).reshape([3, -1])
+            llm_positions = paddle.concat(llm_pos_ids_list, axis=1).reshape(
+                [3, -1]
+            )
 
             if attention_mask is not None:
                 mask = attention_mask[batch_idx].astype("bool")
@@ -362,9 +413,13 @@ class Qwen3_5Model(FleetLayer):
             else:
                 position_ids[:, batch_idx] = llm_positions
 
-            mrope_position_deltas.append(int(llm_positions.max().item()) + 1 - len(current_input_ids))
+            mrope_position_deltas.append(
+                int(llm_positions.max().item()) + 1 - len(current_input_ids)
+            )
 
-        mrope_position_deltas = paddle.to_tensor(mrope_position_deltas, dtype="int64").unsqueeze(1)
+        mrope_position_deltas = paddle.to_tensor(
+            mrope_position_deltas, dtype="int64"
+        ).unsqueeze(1)
 
         return position_ids, mrope_position_deltas
 
@@ -391,7 +446,9 @@ class Qwen3_5Model(FleetLayer):
             and (image_grid_thw is not None or video_grid_thw is not None)
         )
 
-        if can_compute_mrope and (self.rope_deltas is None or past_key_values_length == 0):
+        if can_compute_mrope and (
+            self.rope_deltas is None or past_key_values_length == 0
+        ):
             position_ids, rope_deltas = self.get_rope_index(
                 input_ids,
                 mm_token_type_ids=mm_token_type_ids,
@@ -403,7 +460,9 @@ class Qwen3_5Model(FleetLayer):
             return position_ids
 
         # Handle text-only case: generate 3D position_ids with identical values across all three dimensions
-        if input_ids is not None and (image_grid_thw is None and video_grid_thw is None):
+        if input_ids is not None and (
+            image_grid_thw is None and video_grid_thw is None
+        ):
             batch_size, seq_length = input_ids.shape
             if attention_mask is not None:
                 position_ids = attention_mask.astype("int64").cumsum(-1) - 1
@@ -412,9 +471,15 @@ class Qwen3_5Model(FleetLayer):
                     paddle.zeros_like(position_ids),
                     position_ids,
                 )
-                position_ids = position_ids.reshape([1, batch_size, -1]).tile([3, 1, 1])
+                position_ids = position_ids.reshape([1, batch_size, -1]).tile(
+                    [3, 1, 1]
+                )
             else:
-                position_ids = paddle.arange(seq_length).reshape([1, 1, -1]).expand([3, batch_size, -1])
+                position_ids = (
+                    paddle.arange(seq_length)
+                    .reshape([1, 1, -1])
+                    .expand([3, batch_size, -1])
+                )
             return position_ids
 
         if self.rope_deltas is not None and inputs_embeds is not None:
@@ -426,7 +491,9 @@ class Qwen3_5Model(FleetLayer):
                     paddle.zeros_like(position_ids),
                     position_ids,
                 )
-                position_ids = position_ids.reshape([1, batch_size, -1]).tile([3, 1, 1])
+                position_ids = position_ids.reshape([1, batch_size, -1]).tile(
+                    [3, 1, 1]
+                )
             else:
                 position_ids = (
                     paddle.arange(
@@ -457,28 +524,42 @@ class Qwen3_5Model(FleetLayer):
         mm_token_type_ids = dict_args.get("mm_token_type_ids", None)
         past_key_values = dict_args.get("past_key_values", None)
 
-        if inputs_embeds is None and input_ids is not None and self.language_model is not None:
-            inputs_embeds = self.language_embedding.embedding.embed_tokens(input_ids)
+        if (
+            inputs_embeds is None
+            and input_ids is not None
+            and self.language_model is not None
+        ):
+            inputs_embeds = self.language_embedding.embedding.embed_tokens(
+                input_ids
+            )
 
         if pixel_values is not None and self.visual is not None:
-            image_features = self.get_image_features(pixel_values, image_grid_thw)
+            image_features = self.get_image_features(
+                pixel_values, image_grid_thw
+            )
             image_features = image_features.astype(inputs_embeds.dtype)
             image_mask, _ = self.get_placeholder_mask(
                 input_ids,
                 inputs_embeds,
                 image_features=image_features,
             )
-            inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_features)
+            inputs_embeds = inputs_embeds.masked_scatter(
+                image_mask, image_features
+            )
 
         if pixel_values_videos is not None and self.visual is not None:
-            video_features = self.get_video_features(pixel_values_videos, video_grid_thw)
+            video_features = self.get_video_features(
+                pixel_values_videos, video_grid_thw
+            )
             video_features = video_features.astype(inputs_embeds.dtype)
             _, video_mask = self.get_placeholder_mask(
                 input_ids,
                 inputs_embeds,
                 video_features=video_features,
             )
-            inputs_embeds = inputs_embeds.masked_scatter(video_mask, video_features)
+            inputs_embeds = inputs_embeds.masked_scatter(
+                video_mask, video_features
+            )
 
         if position_ids is None:
             position_ids = self.compute_3d_position_ids(
@@ -493,13 +574,17 @@ class Qwen3_5Model(FleetLayer):
 
         if self.config.sequence_parallel:
             inputs_embeds = inputs_embeds.transpose([1, 0, 2]).contiguous()
-            inputs_embeds = scatter_to_sequence_parallel_region(inputs_embeds, group=self.tp_group)
+            inputs_embeds = scatter_to_sequence_parallel_region(
+                inputs_embeds, group=self.tp_group
+            )
 
         dict_args["position_ids"] = position_ids
         dict_args["input_ids"] = None
         dict_args["decoder_input"] = inputs_embeds
 
-        lm_dict_args = self.language_embedding(dict_args, decoder_input=inputs_embeds)
+        lm_dict_args = self.language_embedding(
+            dict_args, decoder_input=inputs_embeds
+        )
 
         for layer in self.language_backbone:
             lm_dict_args = layer(lm_dict_args)
@@ -679,7 +764,9 @@ class TestQwen3_5Model(unittest.TestCase):
         )
 
         # Convert model to bf16 (attention requires fp16/bf16 with packed_seq_params)
-        self.model = paddle.amp.decorate(models=model, level="O2", dtype="bfloat16")
+        self.model = paddle.amp.decorate(
+            models=model, level="O2", dtype="bfloat16"
+        )
 
     def _clear_gradients(self):
         for param in self.model.parameters():
@@ -704,14 +791,24 @@ class TestQwen3_5Model(unittest.TestCase):
         # ---- Construct multimodal input ----
         # input_ids: [text ... image_tokens ... text]
         input_ids = paddle.randint(0, 100, [batch_size, VL_SEQ_LEN])
-        input_ids[0, VL_TEXT_BEFORE : VL_TEXT_BEFORE + VL_NUM_IMAGE_TOKENS] = VL_IMAGE_TOKEN_ID
+        input_ids[0, VL_TEXT_BEFORE : VL_TEXT_BEFORE + VL_NUM_IMAGE_TOKENS] = (
+            VL_IMAGE_TOKEN_ID
+        )
 
         # mm_token_type_ids: 0=text, 1=image
-        mm_token_type_ids = paddle.zeros([batch_size, VL_SEQ_LEN], dtype="int64")
-        mm_token_type_ids[0, VL_TEXT_BEFORE : VL_TEXT_BEFORE + VL_NUM_IMAGE_TOKENS] = 1
+        mm_token_type_ids = paddle.zeros(
+            [batch_size, VL_SEQ_LEN], dtype="int64"
+        )
+        mm_token_type_ids[
+            0, VL_TEXT_BEFORE : VL_TEXT_BEFORE + VL_NUM_IMAGE_TOKENS
+        ] = 1
 
-        image_grid_thw = paddle.to_tensor([[GRID_T, GRID_H, GRID_W]], dtype="int32")
-        pixel_values = paddle.randn([GRID_T, IN_CHANNELS, TEMPORAL_PATCH_SIZE, IMAGE_H, IMAGE_W])
+        image_grid_thw = paddle.to_tensor(
+            [[GRID_T, GRID_H, GRID_W]], dtype="int32"
+        )
+        pixel_values = paddle.randn(
+            [GRID_T, IN_CHANNELS, TEMPORAL_PATCH_SIZE, IMAGE_H, IMAGE_W]
+        )
 
         dict_args = {
             "input_ids": input_ids,
@@ -737,19 +834,32 @@ class TestQwen3_5Model(unittest.TestCase):
 
             params_with_grad += 1
             assert list(param.shape) == list(param.grad.shape), (
-                f"Gradient shape mismatch for {name}: " f"param={list(param.shape)}, grad={list(param.grad.shape)}"
+                f"Gradient shape mismatch for {name}: "
+                f"param={list(param.shape)}, grad={list(param.grad.shape)}"
             )
-            assert paddle.isfinite(param.grad).all().item(), f"Non-finite gradients for {name}"
+            assert paddle.isfinite(param.grad).all().item(), (
+                f"Non-finite gradients for {name}"
+            )
             grad_norm = param.grad.detach().norm().item()
-            print(f"  {name}: shape={list(param.shape)}, grad_norm={grad_norm:.6f}")
+            print(
+                f"  {name}: shape={list(param.shape)}, grad_norm={grad_norm:.6f}"
+            )
 
         assert params_with_grad > 0, "No parameters received gradients"
 
         # Both vision and language model parameters should receive gradients
-        vision_has_grad = any(p.grad is not None for p in self.model.visual.parameters())
-        lm_has_grad = any(p.grad is not None for p in self.model.language_model.parameters())
-        assert vision_has_grad, "Vision model parameters did not receive gradients"
-        assert lm_has_grad, "Language model parameters did not receive gradients"
+        vision_has_grad = any(
+            p.grad is not None for p in self.model.visual.parameters()
+        )
+        lm_has_grad = any(
+            p.grad is not None for p in self.model.language_model.parameters()
+        )
+        assert vision_has_grad, (
+            "Vision model parameters did not receive gradients"
+        )
+        assert lm_has_grad, (
+            "Language model parameters did not receive gradients"
+        )
 
     def test_forward_backward_text_only(self):
         """Test forward and backward with text-only input (no vision).
@@ -780,12 +890,18 @@ class TestQwen3_5Model(unittest.TestCase):
         for name, param in self.model.language_model.named_parameters():
             if param.grad is not None:
                 lm_params_with_grad += 1
-                assert paddle.isfinite(param.grad).all().item(), f"Non-finite gradients for language_model.{name}"
-        assert lm_params_with_grad > 0, "Language model parameters did not receive gradients"
+                assert paddle.isfinite(param.grad).all().item(), (
+                    f"Non-finite gradients for language_model.{name}"
+                )
+        assert lm_params_with_grad > 0, (
+            "Language model parameters did not receive gradients"
+        )
 
         # Vision model params should NOT have gradients (not used)
         for name, param in self.model.visual.named_parameters():
-            assert param.grad is None, f"Vision param {name} should not have gradient in text-only mode"
+            assert param.grad is None, (
+                f"Vision param {name} should not have gradient in text-only mode"
+            )
 
     def test_get_rope_index(self):
         """Test 3D MRoPE position ID computation for mixed text+image tokens.
@@ -797,12 +913,20 @@ class TestQwen3_5Model(unittest.TestCase):
 
         # Construct input_ids with image placeholders
         input_ids = paddle.randint(0, 100, [batch_size, VL_SEQ_LEN])
-        input_ids[0, VL_TEXT_BEFORE : VL_TEXT_BEFORE + VL_NUM_IMAGE_TOKENS] = VL_IMAGE_TOKEN_ID
+        input_ids[0, VL_TEXT_BEFORE : VL_TEXT_BEFORE + VL_NUM_IMAGE_TOKENS] = (
+            VL_IMAGE_TOKEN_ID
+        )
 
-        mm_token_type_ids = paddle.zeros([batch_size, VL_SEQ_LEN], dtype="int64")
-        mm_token_type_ids[0, VL_TEXT_BEFORE : VL_TEXT_BEFORE + VL_NUM_IMAGE_TOKENS] = 1
+        mm_token_type_ids = paddle.zeros(
+            [batch_size, VL_SEQ_LEN], dtype="int64"
+        )
+        mm_token_type_ids[
+            0, VL_TEXT_BEFORE : VL_TEXT_BEFORE + VL_NUM_IMAGE_TOKENS
+        ] = 1
 
-        image_grid_thw = paddle.to_tensor([[GRID_T, GRID_H, GRID_W]], dtype="int32")
+        image_grid_thw = paddle.to_tensor(
+            [[GRID_T, GRID_H, GRID_W]], dtype="int32"
+        )
 
         # ---- Compute rope index ----
         position_ids, mrope_deltas = self.model.get_rope_index(
@@ -813,14 +937,18 @@ class TestQwen3_5Model(unittest.TestCase):
 
         # position_ids: [3, batch_size, seq_len] for (temporal, height, width)
         assert list(position_ids.shape) == [3, batch_size, VL_SEQ_LEN], (
-            f"Expected position_ids shape [3, {batch_size}, {VL_SEQ_LEN}], " f"got {list(position_ids.shape)}"
+            f"Expected position_ids shape [3, {batch_size}, {VL_SEQ_LEN}], "
+            f"got {list(position_ids.shape)}"
         )
         # mrope_position_deltas: [batch_size, 1]
         assert list(mrope_deltas.shape) == [batch_size, 1], (
-            f"Expected mrope_deltas shape [{batch_size}, 1], " f"got {list(mrope_deltas.shape)}"
+            f"Expected mrope_deltas shape [{batch_size}, 1], "
+            f"got {list(mrope_deltas.shape)}"
         )
         # All position IDs should be non-negative
-        assert (position_ids >= 0).all().item(), "Position IDs contain negative values"
+        assert (position_ids >= 0).all().item(), (
+            "Position IDs contain negative values"
+        )
 
         # Text tokens before image should have monotonically increasing position IDs
         # and the 3 axes should be identical for text tokens
@@ -828,7 +956,8 @@ class TestQwen3_5Model(unittest.TestCase):
         for axis in range(3):
             for j in range(1, VL_TEXT_BEFORE):
                 assert (
-                    text_before_pos[axis, j].item() > text_before_pos[axis, j - 1].item()
+                    text_before_pos[axis, j].item()
+                    > text_before_pos[axis, j - 1].item()
                 ), f"Text positions not monotonically increasing on axis {axis}"
 
     def test_get_placeholder_mask(self):
@@ -836,9 +965,13 @@ class TestQwen3_5Model(unittest.TestCase):
         batch_size = 1
 
         input_ids = paddle.randint(0, 100, [batch_size, VL_SEQ_LEN])
-        input_ids[0, VL_TEXT_BEFORE : VL_TEXT_BEFORE + VL_NUM_IMAGE_TOKENS] = VL_IMAGE_TOKEN_ID
+        input_ids[0, VL_TEXT_BEFORE : VL_TEXT_BEFORE + VL_NUM_IMAGE_TOKENS] = (
+            VL_IMAGE_TOKEN_ID
+        )
 
-        inputs_embeds = paddle.randn([batch_size, VL_SEQ_LEN, VL_LM_HIDDEN_SIZE])
+        inputs_embeds = paddle.randn(
+            [batch_size, VL_SEQ_LEN, VL_LM_HIDDEN_SIZE]
+        )
 
         image_mask, video_mask = self.model.get_placeholder_mask(
             input_ids,
@@ -861,9 +994,13 @@ class TestQwen3_5Model(unittest.TestCase):
         image_mask_1d = image_mask[0, :, 0]  # [seq_len]
         for i in range(VL_SEQ_LEN):
             if VL_TEXT_BEFORE <= i < VL_TEXT_BEFORE + VL_NUM_IMAGE_TOKENS:
-                assert image_mask_1d[i].item(), f"Position {i} should be masked as image"
+                assert image_mask_1d[i].item(), (
+                    f"Position {i} should be masked as image"
+                )
             else:
-                assert not image_mask_1d[i].item(), f"Position {i} should NOT be masked as image"
+                assert not image_mask_1d[i].item(), (
+                    f"Position {i} should NOT be masked as image"
+                )
 
         # No video tokens in this input
         assert not video_mask.any().item(), "No video tokens should be detected"

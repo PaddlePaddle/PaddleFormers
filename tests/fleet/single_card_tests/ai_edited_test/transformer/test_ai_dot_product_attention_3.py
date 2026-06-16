@@ -16,14 +16,20 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
 
 import paddle
 
-from paddleformers.fleet.transformer.dot_product_attention import DotProductAttention
+from paddleformers.fleet.transformer.dot_product_attention import (
+    DotProductAttention,
+)
 from paddleformers.fleet.transformer.enums import AttnMaskType
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 
@@ -160,7 +166,9 @@ class TestDotProductAttentionForwardEager(unittest.TestCase):
         query = paddle.randn([bsz, seq_len, num_heads, head_dim])
         key = paddle.randn([bsz, seq_len, num_heads, head_dim])
         value = paddle.randn([bsz, seq_len, num_heads, head_dim])
-        attention_mask = paddle.triu(paddle.ones([bsz, 1, seq_len, seq_len]) * -1e4, diagonal=1)
+        attention_mask = paddle.triu(
+            paddle.ones([bsz, 1, seq_len, seq_len]) * -1e4, diagonal=1
+        )
 
         # Use eager mode
         config._attn_implementation = "eager"

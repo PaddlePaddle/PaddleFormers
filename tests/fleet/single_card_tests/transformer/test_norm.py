@@ -16,7 +16,10 @@ import unittest
 
 import paddle
 
-from paddleformers.fleet.transformer.paddle_norm import RMSNorm, WrappedPaddleNorm
+from paddleformers.fleet.transformer.paddle_norm import (
+    RMSNorm,
+    WrappedPaddleNorm,
+)
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 
 

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -275,7 +279,9 @@ class TestApplyRotaryPosEmbWithTHD(unittest.TestCase):
     )
     def test_router_with_cu_seqlens(self, mock_rank, mock_size):
         """Test that apply_rotary_pos_emb routes to THD when cu_seqlens is provided."""
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         config = TransformerConfig(
             num_hidden_layers=2,

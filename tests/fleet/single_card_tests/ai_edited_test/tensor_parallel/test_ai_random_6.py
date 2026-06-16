@@ -15,7 +15,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -81,7 +85,9 @@ class TestCudaRNGStatesTrackerInference(unittest.TestCase):
     def test_inference_tracker_add_is_noop(self):
         """Inference tracker add should be a no-op."""
         initialize_rng_tracker(inference_rng_tracker=True)
-        from paddleformers.fleet.tensor_parallel.random import _CUDA_RNG_STATE_TRACKER
+        from paddleformers.fleet.tensor_parallel.random import (
+            _CUDA_RNG_STATE_TRACKER,
+        )
 
         if _CUDA_RNG_STATE_TRACKER is not None:
             # Add should not raise
@@ -93,7 +99,9 @@ class TestCudaRNGStatesTrackerInference(unittest.TestCase):
 
         # Force reset to ensure we get a fresh inference tracker
         initialize_rng_tracker(inference_rng_tracker=True, force_reset=True)
-        from paddleformers.fleet.tensor_parallel.random import _CUDA_RNG_STATE_TRACKER
+        from paddleformers.fleet.tensor_parallel.random import (
+            _CUDA_RNG_STATE_TRACKER,
+        )
 
         if _CUDA_RNG_STATE_TRACKER is not None:
             result = _CUDA_RNG_STATE_TRACKER.fork()

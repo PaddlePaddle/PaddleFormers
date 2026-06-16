@@ -79,7 +79,10 @@ def is_layer_window_attention(
     if isinstance(window_attn_skip_freq, list):
         return bool(window_attn_skip_freq[layer_number])
 
-    raise ValueError(f"Invalid `window_attn_skip_freq`: {type(window_attn_skip_freq)}, " f"{window_attn_skip_freq}")
+    raise ValueError(
+        f"Invalid `window_attn_skip_freq`: {type(window_attn_skip_freq)}, "
+        f"{window_attn_skip_freq}"
+    )
 
 
 def startend_row_indices_add_sliding_window(
@@ -104,11 +107,15 @@ def startend_row_indices_add_sliding_window(
 
     if heads == 1:
         heads = kv_num_heads
-        startend_row_indices = startend_row_indices.repeat([1, kv_num_heads, 1, 1])  # 扩展到多头，方便后续对每个头做不同的操作
+        startend_row_indices = startend_row_indices.repeat(
+            [1, kv_num_heads, 1, 1]
+        )  # 扩展到多头，方便后续对每个头做不同的操作
 
     window_size = sliding_window[0]
     LTS_SWA = (
-        paddle.arange(window_size, seq + window_size, dtype=paddle.int32).unsqueeze([0, 1]).repeat([bsz, heads, 1])
+        paddle.arange(window_size, seq + window_size, dtype=paddle.int32)
+        .unsqueeze([0, 1])
+        .repeat([bsz, heads, 1])
     )  # (bsz, heads, seq)
     startend_row_indices_new_LTS = paddle.where(
         startend_row_indices[..., 0] < LTS_SWA,
@@ -118,7 +125,9 @@ def startend_row_indices_add_sliding_window(
     if 0 < swa_head_num and swa_head_num < heads:
         # 说明有部分head只swa-head，我们把剩余的non-swa-head的mask还原回去
         non_swa_head_num = heads - swa_head_num
-        startend_row_indices_new_LTS[:, :non_swa_head_num, :] = startend_row_indices[:, :non_swa_head_num, :, 0]
+        startend_row_indices_new_LTS[:, :non_swa_head_num, :] = (
+            startend_row_indices[:, :non_swa_head_num, :, 0]
+        )
 
     if num_vec == 1:
         startend_row_indices = startend_row_indices_new_LTS.unsqueeze(-1)

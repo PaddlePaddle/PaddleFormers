@@ -34,7 +34,9 @@ class TestSPAQ(unittest.TestCase):
         np.random.seed(42)
         paddle.seed(42)
 
-    def dequantize_fp8_to_bf16(self, fp8_tensor: paddle.Tensor, scale: paddle.Tensor) -> paddle.Tensor:
+    def dequantize_fp8_to_bf16(
+        self, fp8_tensor: paddle.Tensor, scale: paddle.Tensor
+    ) -> paddle.Tensor:
         """Helper function to dequantize fp8 tensor to bf16"""
         expanded_scale = paddle.repeat_interleave(scale, repeats=128, axis=-1)
         # Handle non-aligned cases by truncating
@@ -42,9 +44,13 @@ class TestSPAQ(unittest.TestCase):
         return fp8_tensor.astype("float32") * expanded_scale
 
     def run_fused_op_test(self, M, N, K):
-        x = paddle.clip(paddle.randn([M, K * 2]).astype("bfloat16"), min=-50, max=50)
+        x = paddle.clip(
+            paddle.randn([M, K * 2]).astype("bfloat16"), min=-50, max=50
+        )
         prob = paddle.randn([M, 1]).astype("float32")
-        weight_x = paddle.clip(paddle.randn([N, K]).astype("bfloat16"), min=-50, max=50)
+        weight_x = paddle.clip(
+            paddle.randn([N, K]).astype("bfloat16"), min=-50, max=50
+        )
 
         x.stop_gradient = False
         prob.stop_gradient = False
@@ -56,7 +62,9 @@ class TestSPAQ(unittest.TestCase):
             x, prob, using_pow2_scaling=False, use_ue8m0=False
         )
 
-        dequantized_res = self.dequantize_fp8_to_bf16(fp8_x_out_ref, fp32_x_scale_ref)
+        dequantized_res = self.dequantize_fp8_to_bf16(
+            fp8_x_out_ref, fp32_x_scale_ref
+        )
 
         golden_np = golden_res.astype("float32").numpy()
         fused_np = dequantized_res.numpy()
@@ -69,17 +77,23 @@ class TestSPAQ(unittest.TestCase):
         )
 
     def run_fused_op_ue8m0_test(self, M, N, K):
-        x = paddle.clip(paddle.randn([M, K * 2]).astype("bfloat16"), min=-50, max=50)
+        x = paddle.clip(
+            paddle.randn([M, K * 2]).astype("bfloat16"), min=-50, max=50
+        )
         prob = paddle.randn([M, 1]).astype("float32")
 
-        weight_x = paddle.clip(paddle.randn([N, K]).astype("bfloat16"), min=-50, max=50)
+        weight_x = paddle.clip(
+            paddle.randn([N, K]).astype("bfloat16"), min=-50, max=50
+        )
 
-        fp8_weight, fp32_weight_scale = paddle.incubate.nn.functional.fp8.fp8_quant_blockwise(
-            weight_x,
-            quant_method="128x128",
-            input_transpose=False,
-            output_scale_transpose=False,
-            using_pow2_scale=True,
+        fp8_weight, fp32_weight_scale = (
+            paddle.incubate.nn.functional.fp8.fp8_quant_blockwise(
+                weight_x,
+                quant_method="128x128",
+                input_transpose=False,
+                output_scale_transpose=False,
+                using_pow2_scale=True,
+            )
         )
 
         x.stop_gradient = False
@@ -98,9 +112,13 @@ class TestSPAQ(unittest.TestCase):
         )
 
         # spaq test with using_pow2_scaling=True, use_ue8m0=True
-        fp8_x_out, ue8m0_x_scale = fuse_weighted_swiglu_fp8_quant(x, prob, using_pow2_scaling=True, use_ue8m0=True)
+        fp8_x_out, ue8m0_x_scale = fuse_weighted_swiglu_fp8_quant(
+            x, prob, using_pow2_scaling=True, use_ue8m0=True
+        )
         out = paddle.empty([M, N], dtype="bfloat16")
-        deep_gemm.fp8_gemm_nt((fp8_x_out, ue8m0_x_scale), (fp8_weight, fp32_weight_scale), out)
+        deep_gemm.fp8_gemm_nt(
+            (fp8_x_out, ue8m0_x_scale), (fp8_weight, fp32_weight_scale), out
+        )
 
         np.testing.assert_allclose(
             out_ref,
@@ -147,7 +165,9 @@ class TestSPAQClamp(unittest.TestCase):
         paddle.seed(42)
 
     @staticmethod
-    def _dequantize_fp8_to_bf16(fp8_tensor: paddle.Tensor, scale: paddle.Tensor) -> paddle.Tensor:
+    def _dequantize_fp8_to_bf16(
+        fp8_tensor: paddle.Tensor, scale: paddle.Tensor
+    ) -> paddle.Tensor:
         expanded_scale = paddle.repeat_interleave(scale, repeats=128, axis=-1)
         expanded_scale = expanded_scale[:, : fp8_tensor.shape[-1]]
         return fp8_tensor.astype("float32") * expanded_scale
@@ -168,7 +188,9 @@ class TestSPAQClamp(unittest.TestCase):
         # in fp32. We avoid the fp32->bf16->fp32 round-trip in the middle
         # (which would introduce bf16 quantization error vs the kernel).
         gate_f32, value_f32 = paddle.chunk(x.astype("float32"), 2, axis=-1)
-        gate_clamped = paddle.minimum(gate_f32, paddle.full_like(gate_f32, clamp_value))
+        gate_clamped = paddle.minimum(
+            gate_f32, paddle.full_like(gate_f32, clamp_value)
+        )
         value_clamped = paddle.clip(value_f32, -clamp_value, clamp_value)
         silu_gate = paddle.nn.functional.silu(gate_clamped)
         golden_res = silu_gate * value_clamped * prob
@@ -220,7 +242,9 @@ class TestSPAQClamp(unittest.TestCase):
             except Exception:
                 self.skipTest("cannot query GPU memory")
         if free_bytes < 30 * (1 << 30):
-            self.skipTest(f"need >=30GB free GPU mem, have {free_bytes / 1e9:.1f}GB")
+            self.skipTest(
+                f"need >=30GB free GPU mem, have {free_bytes / 1e9:.1f}GB"
+            )
         paddle.device.cuda.empty_cache()
         # Use moderate clamp_value that exercises clamp branches without
         # saturating every value.
@@ -254,14 +278,18 @@ class TestSPAQScalarFallback(unittest.TestCase):
         M, cols = 70000, 12
         K = cols // 2  # K = 6, so input shape is [M, 2*K] = [M, 12]
 
-        x = paddle.clip(paddle.randn([M, 2 * K]).astype("bfloat16"), min=-50, max=50)
+        x = paddle.clip(
+            paddle.randn([M, 2 * K]).astype("bfloat16"), min=-50, max=50
+        )
         prob = paddle.randn([M, 1]).astype("float32")
 
         gate_f32, value_f32 = paddle.chunk(x.astype("float32"), 2, axis=-1)
         silu_gate = paddle.nn.functional.silu(gate_f32)
         golden = silu_gate * value_f32 * prob
 
-        fp8_out, fp32_scale = fuse_weighted_swiglu_fp8_quant(x, prob, using_pow2_scaling=False, use_ue8m0=False)
+        fp8_out, fp32_scale = fuse_weighted_swiglu_fp8_quant(
+            x, prob, using_pow2_scaling=False, use_ue8m0=False
+        )
         deq = self._dequantize_fp8_to_bf16(fp8_out, fp32_scale)
 
         # Spot-check rows past the gridDim.y boundary (65535) — these are

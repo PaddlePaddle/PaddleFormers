@@ -53,12 +53,22 @@ class TestSigmoidGateFusionTriton(unittest.TestCase):
     def test_forward_backward_matches_reference(self):
         for shape in self.shape_cases:
             for dtype in self.dtype_cases:
-                tri_out, tri_attn_grad, tri_gate_grad = self._run_triton(shape, dtype)
-                ref_out, ref_attn_grad, ref_gate_grad = self._run_reference(shape, dtype)
+                tri_out, tri_attn_grad, tri_gate_grad = self._run_triton(
+                    shape, dtype
+                )
+                ref_out, ref_attn_grad, ref_gate_grad = self._run_reference(
+                    shape, dtype
+                )
 
-                np.testing.assert_allclose(tri_out.float(), ref_out.float(), atol=0, rtol=0)
-                np.testing.assert_allclose(tri_attn_grad.float(), ref_attn_grad.float(), atol=0, rtol=0)
-                np.testing.assert_allclose(tri_gate_grad.float(), ref_gate_grad.float(), atol=0, rtol=0)
+                np.testing.assert_allclose(
+                    tri_out.float(), ref_out.float(), atol=0, rtol=0
+                )
+                np.testing.assert_allclose(
+                    tri_attn_grad.float(), ref_attn_grad.float(), atol=0, rtol=0
+                )
+                np.testing.assert_allclose(
+                    tri_gate_grad.float(), ref_gate_grad.float(), atol=0, rtol=0
+                )
 
 
 if __name__ == "__main__":

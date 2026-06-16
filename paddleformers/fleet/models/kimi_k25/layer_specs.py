@@ -76,7 +76,9 @@ def get_kimi_k25_vision_layer_local_spec(
         extra_kwargs={
             "config": config,
             "layer_number": layer_number,
-            "hidden_dropout_prob": config.hidden_dropout_prob if config is not None else None,
+            "hidden_dropout_prob": config.hidden_dropout_prob
+            if config is not None
+            else None,
             "modal": "vision_model",
         },
     )
@@ -122,11 +124,15 @@ def get_kimi_k25_vision_spec(
         )
     )
 
-    sdtpool_merger_spec = LayerSpec(layer=KimiK25VisionSd2TpoolMerger, extra_kwargs={"config": config})
+    sdtpool_merger_spec = LayerSpec(
+        layer=KimiK25VisionSd2TpoolMerger, extra_kwargs={"config": config}
+    )
     merger_spec = LayerSpec(
         layer=KimiK25VisionPathMerger,
         sublayers_spec=KimiK25VisionPatchMergerSpec(
-            backend.layer_norm(rms_norm=(config.normalization == "RMSNorm"), for_qk=False)
+            backend.layer_norm(
+                rms_norm=(config.normalization == "RMSNorm"), for_qk=False
+            )
         ),
         extra_kwargs={
             "config": config,

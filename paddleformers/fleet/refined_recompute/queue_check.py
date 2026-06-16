@@ -34,9 +34,13 @@ class RefinedRcomputeQueue:
 
     def check(self):
         """check"""
-        non_empty_queues = [name for name, queue in self.rr_queue.items() if queue.qsize() != 0]
+        non_empty_queues = [
+            name for name, queue in self.rr_queue.items() if queue.qsize() != 0
+        ]
         if non_empty_queues:
-            raise ValueError(f"Queues {', '.join(non_empty_queues)} are not empty.")
+            raise ValueError(
+                f"Queues {', '.join(non_empty_queues)} are not empty."
+            )
 
 
 global_rr_queue_log = RefinedRcomputeQueue()

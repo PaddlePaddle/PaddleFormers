@@ -47,13 +47,17 @@ from paddleformers.fleet.tensor_parallel.mappings import (
     _gather_along_first_dim,
     _gather_along_last_dim,
 )
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.training.initialize import initialize_fleet
 from paddleformers.fleet.transformer.attention import (
     SelfAttention,
     SelfAttentionSublayersSpec,
 )
-from paddleformers.fleet.transformer.dot_product_attention import DotProductAttention
+from paddleformers.fleet.transformer.dot_product_attention import (
+    DotProductAttention,
+)
 from paddleformers.fleet.transformer.enums import AttnMaskType
 from paddleformers.fleet.transformer.paddle_norm import WrappedPaddleNorm
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
@@ -63,7 +67,9 @@ from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 # ---------------------------------------------------------------------------
 HIDDEN_SIZE = 128
 NUM_ATTENTION_HEADS = 4
-NUM_KEY_VALUE_HEADS = 4  # MHA (can change to GQA by setting < NUM_ATTENTION_HEADS)
+NUM_KEY_VALUE_HEADS = (
+    4  # MHA (can change to GQA by setting < NUM_ATTENTION_HEADS)
+)
 HEAD_DIM = HIDDEN_SIZE // NUM_ATTENTION_HEADS
 MICRO_BATCH_SIZE = 2
 SEQ_LENGTH = 64
@@ -90,7 +96,9 @@ def _set_random_seed(seed: int):
     paddle.manual_seed(seed)
 
 
-def _build_config(tp_size: int = 1, sp: bool = False, gated: bool = True) -> TransformerConfig:
+def _build_config(
+    tp_size: int = 1, sp: bool = False, gated: bool = True
+) -> TransformerConfig:
     """Build a TransformerConfig suitable for Gated Attention testing."""
     return TransformerConfig(
         hidden_size=HIDDEN_SIZE,
@@ -142,7 +150,9 @@ def _build_attn(
     )
 
 
-def _gather_attn_params(attn: SelfAttention, tp_group, tp_size) -> dict[str, paddle.Tensor]:
+def _gather_attn_params(
+    attn: SelfAttention, tp_group, tp_size
+) -> dict[str, paddle.Tensor]:
     """Gather all TP-sharded parameter gradients to full shape for comparison."""
     gathered = {}
     for name, param in attn.named_parameters():
@@ -156,7 +166,9 @@ def _gather_attn_params(attn: SelfAttention, tp_group, tp_size) -> dict[str, pad
         if "qkv_proj" in name and "weight" in name:
             grad = _gather_along_last_dim(grad, tp_group)
         elif "qkv_proj" in name and "bias" in name:
-            grad = _gather_along_last_dim(grad.unsqueeze(0), tp_group).squeeze(0)
+            grad = _gather_along_last_dim(grad.unsqueeze(0), tp_group).squeeze(
+                0
+            )
         # RowParallel (o_proj): weight sharded along first dim (input dim)
         elif "o_proj" in name and "weight" in name:
             grad = _gather_along_first_dim(grad, tp_group)
@@ -229,7 +241,9 @@ def _run_distributed(
     tp_rank = ps.get_tensor_model_parallel_rank()
     sp_size = tp_size if sp else 1
 
-    pg_collection = ProcessGroupCollection.use_mpu_process_groups(required_pgs=["tp", "cp"])
+    pg_collection = ProcessGroupCollection.use_mpu_process_groups(
+        required_pgs=["tp", "cp"]
+    )
 
     attn_dist = _build_attn(config, pg_collection=pg_collection)
     register_sequence_parallel_allreduce_hooks(attn_dist, 1, False)
@@ -246,14 +260,26 @@ def _run_distributed(
             # ColumnParallel (qkv_proj): shard along last dim
             if "qkv_proj" in name and "weight" in name:
                 chunk_size = full_param.shape[-1] // tp_size
-                param.set_value(full_param[:, tp_rank * chunk_size : (tp_rank + 1) * chunk_size])
+                param.set_value(
+                    full_param[
+                        :, tp_rank * chunk_size : (tp_rank + 1) * chunk_size
+                    ]
+                )
             elif "qkv_proj" in name and "bias" in name:
                 chunk_size = full_param.shape[0] // tp_size
-                param.set_value(full_param[tp_rank * chunk_size : (tp_rank + 1) * chunk_size])
+                param.set_value(
+                    full_param[
+                        tp_rank * chunk_size : (tp_rank + 1) * chunk_size
+                    ]
+                )
             # RowParallel (o_proj): weight sharded along first dim
             elif "o_proj" in name and "weight" in name:
                 chunk_size = full_param.shape[0] // tp_size
-                param.set_value(full_param[tp_rank * chunk_size : (tp_rank + 1) * chunk_size, :])
+                param.set_value(
+                    full_param[
+                        tp_rank * chunk_size : (tp_rank + 1) * chunk_size, :
+                    ]
+                )
             # o_proj bias, q_norm, k_norm: NOT sharded, copy as-is
             else:
                 param.set_value(full_param.clone())
@@ -278,36 +304,60 @@ def _run_distributed(
     if sp:
         output_gathered = output_gathered.transpose([1, 0, 2])
 
-    assert paddle.all(~paddle.isnan(output_baseline)).item(), "Baseline output has NaN"
-    assert paddle.all(~paddle.isnan(output_gathered)).item(), "Distributed output has NaN"
-    assert paddle.all(~paddle.isinf(output_baseline)).item(), "Baseline output has Inf"
-    assert paddle.all(~paddle.isinf(output_gathered)).item(), "Distributed output has Inf"
+    assert paddle.all(~paddle.isnan(output_baseline)).item(), (
+        "Baseline output has NaN"
+    )
+    assert paddle.all(~paddle.isnan(output_gathered)).item(), (
+        "Distributed output has NaN"
+    )
+    assert paddle.all(~paddle.isinf(output_baseline)).item(), (
+        "Baseline output has Inf"
+    )
+    assert paddle.all(~paddle.isinf(output_gathered)).item(), (
+        "Distributed output has Inf"
+    )
 
     atol, rtol = 5e-4, 5e-4
-    assert paddle.allclose(output_gathered, output_baseline, atol=atol, rtol=rtol).item(), (
-        f"Output mismatch: max_diff=" f"{(output_gathered - output_baseline).abs().max().item():.6e}"
+    assert paddle.allclose(
+        output_gathered, output_baseline, atol=atol, rtol=rtol
+    ).item(), (
+        f"Output mismatch: max_diff="
+        f"{(output_gathered - output_baseline).abs().max().item():.6e}"
     )
 
     # --- Gather and compare input gradient ---
     if sp:
-        input_grad_gathered = _gather_along_first_dim(hidden_states.grad, tp_group)
+        input_grad_gathered = _gather_along_first_dim(
+            hidden_states.grad, tp_group
+        )
         input_grad_gathered = input_grad_gathered.transpose([1, 0, 2])
     else:
         input_grad_gathered = hidden_states.grad
 
-    assert paddle.all(~paddle.isnan(input_grad_baseline)).item(), "Baseline input grad has NaN"
-    assert paddle.all(~paddle.isnan(input_grad_gathered)).item(), "Distributed input grad has NaN"
+    assert paddle.all(~paddle.isnan(input_grad_baseline)).item(), (
+        "Baseline input grad has NaN"
+    )
+    assert paddle.all(~paddle.isnan(input_grad_gathered)).item(), (
+        "Distributed input grad has NaN"
+    )
 
-    assert paddle.allclose(input_grad_gathered, input_grad_baseline, atol=atol, rtol=rtol).item(), (
-        f"Input grad mismatch: max_diff=" f"{(input_grad_gathered - input_grad_baseline).abs().max().item():.6e}"
+    assert paddle.allclose(
+        input_grad_gathered, input_grad_baseline, atol=atol, rtol=rtol
+    ).item(), (
+        f"Input grad mismatch: max_diff="
+        f"{(input_grad_gathered - input_grad_baseline).abs().max().item():.6e}"
     )
 
     # --- Gather and compare parameter gradients ---
     baseline_grads = {}
     for name, param in attn_baseline.named_parameters():
-        baseline_grads[name] = param.grad.detach() if param.grad is not None else None
+        baseline_grads[name] = (
+            param.grad.detach() if param.grad is not None else None
+        )
 
-    dist_grads = _gather_attn_params(attn_dist, tp_group=tp_group, tp_size=tp_size)
+    dist_grads = _gather_attn_params(
+        attn_dist, tp_group=tp_group, tp_size=tp_size
+    )
 
     for name in baseline_grads:
         if baseline_grads[name] is None or dist_grads.get(name) is None:
@@ -317,7 +367,8 @@ def _run_distributed(
         if list(b_grad.shape) != list(d_grad.shape):
             continue
         assert paddle.allclose(d_grad, b_grad, atol=atol, rtol=rtol).item(), (
-            f"Grad mismatch for {name}: max_diff=" f"{(d_grad - b_grad).abs().max().item():.6e}"
+            f"Grad mismatch for {name}: max_diff="
+            f"{(d_grad - b_grad).abs().max().item():.6e}"
         )
 
     print(f"  [PASS] Gated Attention TP={tp_size}, SP={sp}")
@@ -372,19 +423,27 @@ class TestGatedAttentionDistributed(unittest.TestCase):
         model_parallel_cuda_manual_seed(self.seed)
 
         config = _build_config(tp_size=self.tp_size, sp=sp, gated=True)
-        pg_collection = ProcessGroupCollection.use_mpu_process_groups(required_pgs=["tp", "cp"])
+        pg_collection = ProcessGroupCollection.use_mpu_process_groups(
+            required_pgs=["tp", "cp"]
+        )
         attn = _build_attn(config, pg_collection=pg_collection)
 
         sp_size = self.tp_size if sp else 1
 
         if sp:
-            hidden_states = paddle.randn([SEQ_LENGTH // sp_size, MICRO_BATCH_SIZE, HIDDEN_SIZE])
+            hidden_states = paddle.randn(
+                [SEQ_LENGTH // sp_size, MICRO_BATCH_SIZE, HIDDEN_SIZE]
+            )
         else:
-            hidden_states = paddle.randn([MICRO_BATCH_SIZE, SEQ_LENGTH, HIDDEN_SIZE])
+            hidden_states = paddle.randn(
+                [MICRO_BATCH_SIZE, SEQ_LENGTH, HIDDEN_SIZE]
+            )
 
         output, bias = attn(hidden_states, attention_mask=None)
 
-        self.assertEqual(output.ndim, 3, f"Output should be 3D, got {output.ndim}D")
+        self.assertEqual(
+            output.ndim, 3, f"Output should be 3D, got {output.ndim}D"
+        )
 
         if sp:
             self.assertEqual(output.shape[0], SEQ_LENGTH // sp_size)
@@ -413,7 +472,9 @@ class TestGatedAttentionDistributed(unittest.TestCase):
 
     def _check_tp_precision(self, sp: bool):
         """Compare TP output/grads against single-device baseline."""
-        output_baseline, input_grad_baseline, attn_baseline = _run_baseline(self.seed)
+        output_baseline, input_grad_baseline, attn_baseline = _run_baseline(
+            self.seed
+        )
         _run_distributed(
             self.seed,
             self.tp_size,

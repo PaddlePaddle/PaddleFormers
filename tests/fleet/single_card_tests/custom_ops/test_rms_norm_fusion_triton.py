@@ -31,7 +31,9 @@ class TestRMSNormFusionTriton(unittest.TestCase):
             rms_norm_eps=1e-6,
         )
         self.ref_norm = RMSNorm(self.config)
-        self.ref_norm = paddle.amp.decorate(self.ref_norm, level="O2", dtype="bfloat16")
+        self.ref_norm = paddle.amp.decorate(
+            self.ref_norm, level="O2", dtype="bfloat16"
+        )
 
     def test_forward_backward(self):
         x = paddle.randn([1024, 128], dtype="bfloat16")
@@ -51,14 +53,20 @@ class TestRMSNormFusionTriton(unittest.TestCase):
         paddle.enable_compat(scope={"triton"}, silent=True)
         from paddleformers.fleet.triton_ops import RMSNormFusionTriton
 
-        y1 = RMSNormFusionTriton.apply(x, self.ref_norm.weight, self.config.rms_norm_eps)
+        y1 = RMSNormFusionTriton.apply(
+            x, self.ref_norm.weight, self.config.rms_norm_eps
+        )
         y1.backward(dy)
         dx1, dw1 = x.grad, self.ref_norm.weight.grad
         paddle.disable_compat()
 
         np.testing.assert_allclose(y0.float(), y1.float(), rtol=1e-2, atol=1e-3)
-        np.testing.assert_allclose(dx0.float(), dx1.float(), rtol=1e-4, atol=1e-3)
-        np.testing.assert_allclose(dw0.float(), dw1.float(), rtol=1e-4, atol=5e-3)
+        np.testing.assert_allclose(
+            dx0.float(), dx1.float(), rtol=1e-4, atol=1e-3
+        )
+        np.testing.assert_allclose(
+            dw0.float(), dw1.float(), rtol=1e-4, atol=5e-3
+        )
 
 
 if __name__ == "__main__":

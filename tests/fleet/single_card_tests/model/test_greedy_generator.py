@@ -57,8 +57,12 @@ class TestDynamicKVCache(unittest.TestCase):
         self.assertIsNotNone(returned_v)
 
         # Should be the same as input (first update)
-        self.assertTrue(paddle.allclose(returned_k.cast("float32"), k1.cast("float32")))
-        self.assertTrue(paddle.allclose(returned_v.cast("float32"), v1.cast("float32")))
+        self.assertTrue(
+            paddle.allclose(returned_k.cast("float32"), k1.cast("float32"))
+        )
+        self.assertTrue(
+            paddle.allclose(returned_v.cast("float32"), v1.cast("float32"))
+        )
 
     def test_second_update_concat(self):
         """Test that second update concatenates."""

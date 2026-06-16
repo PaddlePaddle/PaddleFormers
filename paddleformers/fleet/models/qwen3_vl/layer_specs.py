@@ -48,7 +48,9 @@ def get_qwen3_vl_vision_layer_local_spec(
     merger_spec = LayerSpec(
         layer=Qwen3VLVisionPathMerger,
         sublayers_spec=Qwen3VLVisionPatchMergerSpec(
-            backend.layer_norm(rms_norm=(config.normalization == "RMSNorm"), for_qk=False)
+            backend.layer_norm(
+                rms_norm=(config.normalization == "RMSNorm"), for_qk=False
+            )
         ),
         extra_kwargs={"config": config, "use_postshuffle_norm": True},
     )
@@ -79,7 +81,9 @@ def get_qwen3_vl_vision_layer_local_spec(
         extra_kwargs={
             "config": config,
             "layer_number": layer_number,
-            "hidden_dropout_prob": config.hidden_dropout_prob if config is not None else None,
+            "hidden_dropout_prob": config.hidden_dropout_prob
+            if config is not None
+            else None,
             "modal": "vision_model",
         },
     )
@@ -132,7 +136,9 @@ def get_qwen3_vl_vision_spec(
             extra_kwargs=rotary_emb_extra_kwargs,
         )
     )
-    merger_norm = backend.layer_norm(rms_norm=(config.normalization == "RMSNorm"), for_qk=False)
+    merger_norm = backend.layer_norm(
+        rms_norm=(config.normalization == "RMSNorm"), for_qk=False
+    )
     merger_spec = LayerSpec(
         layer=Qwen3VLVisionPathMerger,
         sublayers_spec=Qwen3VLVisionPatchMergerSpec(

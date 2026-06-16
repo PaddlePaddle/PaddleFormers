@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -74,31 +78,47 @@ class TestCheckDataTypes(unittest.TestCase):
 class TestBuildKeySizeNumelDictionaries(unittest.TestCase):
     """Tests for _build_key_size_numel_dictionaries function."""
 
-    @patch("paddleformers.fleet.tensor_parallel.data.paddle.distributed.broadcast")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.data.paddle.distributed.broadcast"
+    )
     @patch("paddleformers.fleet.tensor_parallel.data.paddle.tensor")
-    @patch("paddleformers.fleet.tensor_parallel.data.get_tensor_model_parallel_group_if_none")
-    def test_build_on_rank_zero(self, mock_get_group, mock_tensor, mock_broadcast):
+    @patch(
+        "paddleformers.fleet.tensor_parallel.data.get_tensor_model_parallel_group_if_none"
+    )
+    def test_build_on_rank_zero(
+        self, mock_get_group, mock_tensor, mock_broadcast
+    ):
         """Test building dictionaries on rank 0."""
         group = _make_group(world_size=2, rank=0)
         mock_get_group.return_value = group
 
         # Make paddle.tensor return something that supports .cpu()
         mock_sizes = MagicMock()
-        mock_sizes.cpu.return_value = paddle.to_tensor([4, 2, 0, 0, 0, 4, 2, 0, 0, 0], dtype=paddle.int32)
+        mock_sizes.cpu.return_value = paddle.to_tensor(
+            [4, 2, 0, 0, 0, 4, 2, 0, 0, 0], dtype=paddle.int32
+        )
         mock_tensor.return_value = mock_sizes
 
         data = {
             "w": paddle.randn([4, 2]),
         }
-        key_size, key_numel, total_numel = _build_key_size_numel_dictionaries(["w"], data)
+        key_size, key_numel, total_numel = _build_key_size_numel_dictionaries(
+            ["w"], data
+        )
         self.assertIn("w", key_size)
         self.assertEqual(key_numel["w"], 8)
         self.assertEqual(total_numel, 8)
 
-    @patch("paddleformers.fleet.tensor_parallel.data.paddle.distributed.broadcast")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.data.paddle.distributed.broadcast"
+    )
     @patch("paddleformers.fleet.tensor_parallel.data.paddle.tensor")
-    @patch("paddleformers.fleet.tensor_parallel.data.get_tensor_model_parallel_group_if_none")
-    def test_dim_assertion_raises(self, mock_get_group, mock_tensor, mock_broadcast):
+    @patch(
+        "paddleformers.fleet.tensor_parallel.data.get_tensor_model_parallel_group_if_none"
+    )
+    def test_dim_assertion_raises(
+        self, mock_get_group, mock_tensor, mock_broadcast
+    ):
         """Test assertion when tensor dim >= MAX_DATA_DIM."""
         group = _make_group(world_size=2, rank=0)
         mock_get_group.return_value = group
@@ -116,10 +136,16 @@ class TestBuildKeySizeNumelDictionaries(unittest.TestCase):
 class TestBroadcastData(unittest.TestCase):
     """Tests for broadcast_data function."""
 
-    @patch("paddleformers.fleet.tensor_parallel.data.paddle.distributed.broadcast")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.data.paddle.distributed.broadcast"
+    )
     @patch("paddleformers.fleet.tensor_parallel.data.paddle.narrow")
-    @patch("paddleformers.fleet.tensor_parallel.data.get_tensor_model_parallel_group_if_none")
-    @patch("paddleformers.fleet.tensor_parallel.data._build_key_size_numel_dictionaries")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.data.get_tensor_model_parallel_group_if_none"
+    )
+    @patch(
+        "paddleformers.fleet.tensor_parallel.data._build_key_size_numel_dictionaries"
+    )
     @patch("paddleformers.fleet.tensor_parallel.data.paddle.concat")
     @patch("paddleformers.fleet.tensor_parallel.data.paddle.empty")
     def test_broadcast_data_rank_zero(
@@ -146,10 +172,16 @@ class TestBroadcastData(unittest.TestCase):
         result = broadcast_data(["w"], data, paddle.float32)
         self.assertIn("w", result)
 
-    @patch("paddleformers.fleet.tensor_parallel.data.paddle.distributed.broadcast")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.data.paddle.distributed.broadcast"
+    )
     @patch("paddleformers.fleet.tensor_parallel.data.paddle.narrow")
-    @patch("paddleformers.fleet.tensor_parallel.data.get_tensor_model_parallel_group_if_none")
-    @patch("paddleformers.fleet.tensor_parallel.data._build_key_size_numel_dictionaries")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.data.get_tensor_model_parallel_group_if_none"
+    )
+    @patch(
+        "paddleformers.fleet.tensor_parallel.data._build_key_size_numel_dictionaries"
+    )
     @patch("paddleformers.fleet.tensor_parallel.data.paddle.empty")
     def test_broadcast_data_non_zero_rank(
         self,
@@ -178,10 +210,16 @@ class TestBroadcastData(unittest.TestCase):
 class TestBroadcastDataMultipleKeys(unittest.TestCase):
     """Tests for broadcast_data with multiple keys."""
 
-    @patch("paddleformers.fleet.tensor_parallel.data.paddle.distributed.broadcast")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.data.paddle.distributed.broadcast"
+    )
     @patch("paddleformers.fleet.tensor_parallel.data.paddle.narrow")
-    @patch("paddleformers.fleet.tensor_parallel.data.get_tensor_model_parallel_group_if_none")
-    @patch("paddleformers.fleet.tensor_parallel.data._build_key_size_numel_dictionaries")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.data.get_tensor_model_parallel_group_if_none"
+    )
+    @patch(
+        "paddleformers.fleet.tensor_parallel.data._build_key_size_numel_dictionaries"
+    )
     @patch("paddleformers.fleet.tensor_parallel.data.paddle.concat")
     @patch("paddleformers.fleet.tensor_parallel.data.paddle.empty")
     def test_multiple_keys(

@@ -85,7 +85,17 @@ class TestDPOConfig(unittest.TestCase):
         self.assertEqual(len(all_fields), 13)
 
     def test_loss_types(self):
-        for loss_type in ["sigmoid", "hinge", "ipo", "kto_pair", "sppo_hard", "nca_pair", "dpop", "or", "simpo"]:
+        for loss_type in [
+            "sigmoid",
+            "hinge",
+            "ipo",
+            "kto_pair",
+            "sppo_hard",
+            "nca_pair",
+            "dpop",
+            "or",
+            "simpo",
+        ]:
             config = DPOConfig(loss_type=loss_type)
             self.assertEqual(config.loss_type, loss_type)
 
@@ -182,7 +192,10 @@ class TestDPOTrainingArguments(unittest.TestCase):
 
     def test_autotuner_benchmark_mode(self):
         args = DPOTrainingArguments(
-            output_dir="/tmp/test_output", autotuner_benchmark=True, disable_tqdm=False, bf16=True
+            output_dir="/tmp/test_output",
+            autotuner_benchmark=True,
+            disable_tqdm=False,
+            bf16=True,
         )
         self.assertEqual(args.num_train_epochs, 1)
         self.assertEqual(args.max_steps, 5)
@@ -194,7 +207,9 @@ class TestDPOTrainingArguments(unittest.TestCase):
         self.assertFalse(args.load_best_model_at_end)
 
     def test_max_steps_sets_num_train_epochs(self):
-        args = DPOTrainingArguments(output_dir="/tmp/test_output", max_steps=100, bf16=True)
+        args = DPOTrainingArguments(
+            output_dir="/tmp/test_output", max_steps=100, bf16=True
+        )
         self.assertEqual(args.num_train_epochs, 1)
 
 

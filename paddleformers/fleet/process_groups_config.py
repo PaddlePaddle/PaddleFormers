@@ -143,10 +143,10 @@ class ProcessGroupCollection:
             ),
         }
 
-        assert all(
-            pg in pg_to_func for pg in required_pgs
-        ), "Initialization function for process group not defined for all \
+        assert all(pg in pg_to_func for pg in required_pgs), (
+            "Initialization function for process group not defined for all \
         ProcessGroupCollection fields"
+        )
 
         # Build initialization dict by calling appropriate parallel_state get_foo_group
         init_dict = {pg: pg_to_func[pg]() for pg in required_pgs}

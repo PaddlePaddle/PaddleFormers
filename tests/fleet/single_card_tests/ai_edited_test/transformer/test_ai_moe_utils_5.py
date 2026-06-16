@@ -15,7 +15,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -109,7 +113,9 @@ class TestPermuteUnpermute(unittest.TestCase):
         """permute should group tokens by their assigned expert."""
         paddle.disable_static()
         tokens = paddle.randn([4, 8])
-        routing_map = paddle.to_tensor([[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 0, 0]], dtype="float32")
+        routing_map = paddle.to_tensor(
+            [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 0, 0]], dtype="float32"
+        )
         permuted, indices = permute(tokens, routing_map)
         # 4 non-zero entries in routing_map (rows 0 and 3 both select expert 0)
         self.assertEqual(permuted.shape[0], 4)
@@ -119,7 +125,9 @@ class TestPermuteUnpermute(unittest.TestCase):
         """unpermute should restore tokens to original shape."""
         paddle.disable_static()
         tokens = paddle.randn([4, 8])
-        routing_map = paddle.to_tensor([[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 0, 0]], dtype="float32")
+        routing_map = paddle.to_tensor(
+            [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 0, 0]], dtype="float32"
+        )
         permuted, indices = permute(tokens, routing_map)
         restored = unpermute(permuted, indices, tokens.shape)
         self.assertEqual(list(restored.shape), [4, 8])
@@ -127,7 +135,9 @@ class TestPermuteUnpermute(unittest.TestCase):
     def test_permute_rejects_drop_and_pad(self):
         """permute should reject drop_and_pad=True."""
         with self.assertRaises(AssertionError):
-            permute(paddle.randn([4, 8]), paddle.randn([4, 3]), drop_and_pad=True)
+            permute(
+                paddle.randn([4, 8]), paddle.randn([4, 3]), drop_and_pad=True
+            )
 
     def test_unpermute_rejects_drop_and_pad(self):
         """unpermute should reject drop_and_pad=True."""
@@ -156,7 +166,9 @@ class TestLogMoeLosses(unittest.TestCase):
         "paddleformers.fleet.transformer.moe.moe_utils.global_moe_balance_training_logs_enabled",
         return_value=True,
     )
-    @patch("paddleformers.fleet.transformer.moe.moe_utils.get_global_training_logs")
+    @patch(
+        "paddleformers.fleet.transformer.moe.moe_utils.get_global_training_logs"
+    )
     def test_logs_aux_and_z_loss(self, mock_get_logs, mock_enabled):
         """log_moe_losses should log both aux_loss and z_loss when provided."""
         mock_logs = MagicMock()

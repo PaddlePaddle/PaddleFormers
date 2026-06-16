@@ -90,10 +90,13 @@ class YarnRotaryEmbedding(RotaryEmbedding):
         )
 
         self.inv_freq_extra = 1.0 / (
-            self.rotary_base ** (paddle.arange(0, self.dim, 2).astype(paddle.float32) / self.dim)
+            self.rotary_base
+            ** (paddle.arange(0, self.dim, 2).astype(paddle.float32) / self.dim)
         )
         self.inv_freq_inter = 1.0 / (
-            self.scaling_factor * self.rotary_base ** (paddle.arange(0, self.dim, 2).astype(paddle.float32) / self.dim)
+            self.scaling_factor
+            * self.rotary_base
+            ** (paddle.arange(0, self.dim, 2).astype(paddle.float32) / self.dim)
         )
         self._set_cos_sin_cache(
             self.original_max_position_embeddings,
@@ -126,8 +129,13 @@ class YarnRotaryEmbedding(RotaryEmbedding):
             self.original_max_position_embeddings,
             self.correction_range_round_to_int,
         )
-        inv_freq_mask = 1.0 - _yarn_linear_ramp_mask(low, high, self.dim // 2).to(dtype=paddle.float32)
-        inv_freq = self.inv_freq_inter * (1 - inv_freq_mask) + self.inv_freq_extra * inv_freq_mask
+        inv_freq_mask = 1.0 - _yarn_linear_ramp_mask(
+            low, high, self.dim // 2
+        ).to(dtype=paddle.float32)
+        inv_freq = (
+            self.inv_freq_inter * (1 - inv_freq_mask)
+            + self.inv_freq_extra * inv_freq_mask
+        )
 
         if position_ids is not None:
             # Handle different position_ids shapes:
@@ -142,7 +150,10 @@ class YarnRotaryEmbedding(RotaryEmbedding):
             else:
                 # For 3D position_ids (M-RoPE), this function should not be called
                 # Fall back to max_seq_len to avoid cryptic errors
-                seq = paddle.arange(max_seq_len).astype(self.inv_freq.dtype) + offset
+                seq = (
+                    paddle.arange(max_seq_len).astype(self.inv_freq.dtype)
+                    + offset
+                )
         else:
             seq = (
                 paddle.arange(
@@ -153,12 +164,16 @@ class YarnRotaryEmbedding(RotaryEmbedding):
 
         freqs = paddle.outer(seq, inv_freq)
 
-        _mscale = _yarn_get_concentration_factor(self.scaling_factor, self.mscale, self.mscale_all_dim)
+        _mscale = _yarn_get_concentration_factor(
+            self.scaling_factor, self.mscale, self.mscale_all_dim
+        )
 
         if not self.rotary_interleaved:
             emb = paddle.cat((freqs, freqs), axis=-1)
         else:
-            emb = paddle.stack((freqs.view(-1, 1), freqs.view(-1, 1)), axis=-1).view(freqs.shape[0], -1)
+            emb = paddle.stack(
+                (freqs.view(-1, 1), freqs.view(-1, 1)), axis=-1
+            ).view(freqs.shape[0], -1)
         # emb [1, seq_len, 1, dim]
         emb = emb[None, :, None, :]
         return emb, _mscale
@@ -206,7 +221,9 @@ def _yarn_find_correction_dim(
     rotary_base: float = 10000,
     max_position_embeddings: int = 2048,
 ) -> float:
-    return (dim * math.log(max_position_embeddings / (num_rotations * 2 * math.pi))) / (2 * math.log(rotary_base))
+    return (
+        dim * math.log(max_position_embeddings / (num_rotations * 2 * math.pi))
+    ) / (2 * math.log(rotary_base))
 
 
 # Find dim range bounds based on rotations
@@ -218,8 +235,12 @@ def _yarn_find_correction_range(
     max_position_embeddings: int = 2048,
     round_to_int: bool = True,
 ) -> tuple[int, int]:
-    low = _yarn_find_correction_dim(low_rot, dim, rotary_base, max_position_embeddings)
-    high = _yarn_find_correction_dim(high_rot, dim, rotary_base, max_position_embeddings)
+    low = _yarn_find_correction_dim(
+        low_rot, dim, rotary_base, max_position_embeddings
+    )
+    high = _yarn_find_correction_dim(
+        high_rot, dim, rotary_base, max_position_embeddings
+    )
     if round_to_int:
         low = math.floor(low)
         high = math.ceil(high)
@@ -230,7 +251,9 @@ def _yarn_linear_ramp_mask(min: float, max: float, dim: int) -> Tensor:
     if min == max:
         max += 0.001  # Prevent singularity
 
-    linear_func = (paddle.arange(dim).astype(paddle.float32) - min) / (max - min)
+    linear_func = (paddle.arange(dim).astype(paddle.float32) - min) / (
+        max - min
+    )
     ramp_func = paddle.clamp(linear_func, 0, 1)
     return ramp_func
 
@@ -242,13 +265,18 @@ def _yarn_get_mscale(scale: float = 1, mscale: float = 1) -> float:
 
 
 @lru_cache(maxsize=8)
-def _yarn_get_concentration_factor(scaling_factor: float, mscale: float, mscale_all_dim: float) -> float:
+def _yarn_get_concentration_factor(
+    scaling_factor: float, mscale: float, mscale_all_dim: float
+) -> float:
     """
     Get the concentration factor (factor multiplied to the sine and cosine components of the
     embedding). This factor is also known as attention factor, and sometimes homonymously known as
     "mscale"
     """
-    return float(_yarn_get_mscale(scaling_factor, mscale) / _yarn_get_mscale(scaling_factor, mscale_all_dim))
+    return float(
+        _yarn_get_mscale(scaling_factor, mscale)
+        / _yarn_get_mscale(scaling_factor, mscale_all_dim)
+    )
 
 
 def _yarn_get_concentration_factor_from_config(

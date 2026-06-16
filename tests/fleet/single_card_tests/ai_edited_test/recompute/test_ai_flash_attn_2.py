@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -50,7 +54,9 @@ class TestGetFAVersion(unittest.TestCase):
         "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_device",
         return_value="gpu:0",
     )
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.paddle.base.framework.get_flags")
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.paddle.base.framework.get_flags"
+    )
     def test_gpu_returns_flag_value(self, mock_get_flags, mock_device):
         """Test that GPU returns the FLAGS_flash_attn_version value."""
         mock_get_flags.return_value = {"FLAGS_flash_attn_version": 3}
@@ -186,9 +192,15 @@ class TestRefinedRcomputeFlashAttentionFirstFwd(unittest.TestCase):
         "paddleformers.fleet.refined_recompute.flash_attn._get_fa_version",
         return_value=3,
     )
-    @patch("paddleformers.fleet.refined_recompute.flash_attn._C_ops.flash_attn_v3")
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer")
-    def test_first_fwd_version_3(self, mock_tracer, mock_flash_v3, mock_version):
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn._C_ops.flash_attn_v3"
+    )
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer"
+    )
+    def test_first_fwd_version_3(
+        self, mock_tracer, mock_flash_v3, mock_version
+    ):
         """Test _first_fwd with version 3 puts tensors in queue."""
         mock_tracer_obj = MagicMock()
         mock_tracer_obj._has_grad = False
@@ -212,7 +224,9 @@ class TestRefinedRcomputeFlashAttentionFirstFwd(unittest.TestCase):
         return_value=2,
     )
     @patch("paddleformers.fleet.refined_recompute.flash_attn._C_ops.flash_attn")
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer")
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer"
+    )
     def test_first_fwd_version_2(self, mock_tracer, mock_flash, mock_version):
         """Test _first_fwd with version 2 stores additional fields."""
         mock_tracer_obj = MagicMock()
@@ -231,7 +245,9 @@ class TestRefinedRcomputeFlashAttentionFirstFwd(unittest.TestCase):
         k = paddle.randn([2, 4, 8], dtype=paddle.bfloat16)
         v = paddle.randn([2, 4, 8], dtype=paddle.bfloat16)
 
-        result, weights = attn.forward(q, k, v, dropout=0.1, return_softmax=True, training=True)
+        result, weights = attn.forward(
+            q, k, v, dropout=0.1, return_softmax=True, training=True
+        )
         hold_tensors = attn._hold_tensors_queue.get()
         self.assertIn("seed_offset", hold_tensors)
         self.assertIn("dropout", hold_tensors)
@@ -296,10 +312,16 @@ class TestRefinedRcomputeFlashMaskAttentionFirstFwdV3(unittest.TestCase):
         "paddleformers.fleet.refined_recompute.flash_attn._get_fa_version",
         return_value=3,
     )
-    @patch("paddleformers.fleet.refined_recompute.flash_attn._C_ops.flashmask_attention_v2")
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn._C_ops.flashmask_attention_v2"
+    )
     @patch("paddleformers.fleet.refined_recompute.flash_attn.inspect.signature")
-    @patch("paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer")
-    def test_first_fwd_v3_with_block_mask(self, mock_tracer, mock_sig, mock_flash_v2, mock_version):
+    @patch(
+        "paddleformers.fleet.refined_recompute.flash_attn.framework._dygraph_tracer"
+    )
+    def test_first_fwd_v3_with_block_mask(
+        self, mock_tracer, mock_sig, mock_flash_v2, mock_version
+    ):
         """Test _first_fwd with v3 and block_mask parameter."""
         mock_tracer_obj = MagicMock()
         mock_tracer_obj._has_grad = False

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -29,7 +33,9 @@ class TestBiasSwiGLUFunction(unittest.TestCase):
 
     def test_bias_swiglu_function_forward(self):
         """Test BiasSwiGLUFunction forward."""
-        from paddleformers.fleet.fusions.fused_bias_swiglu import BiasSwiGLUFunction
+        from paddleformers.fleet.fusions.fused_bias_swiglu import (
+            BiasSwiGLUFunction,
+        )
 
         inp = paddle.randn([4, 16])
         bias = paddle.randn([16])
@@ -38,7 +44,9 @@ class TestBiasSwiGLUFunction(unittest.TestCase):
 
     def test_bias_swiglu_function_forward_2d(self):
         """Test BiasSwiGLUFunction forward with 2D input."""
-        from paddleformers.fleet.fusions.fused_bias_swiglu import BiasSwiGLUFunction
+        from paddleformers.fleet.fusions.fused_bias_swiglu import (
+            BiasSwiGLUFunction,
+        )
 
         inp = paddle.randn([8, 32])
         bias = paddle.randn([32])
@@ -72,7 +80,9 @@ class TestWeightedSwiGLUFunction(unittest.TestCase):
 
     def test_weighted_swiglu_function_forward(self):
         """Test WeightedSwiGLUFunction forward."""
-        from paddleformers.fleet.fusions.fused_bias_swiglu import WeightedSwiGLUFunction
+        from paddleformers.fleet.fusions.fused_bias_swiglu import (
+            WeightedSwiGLUFunction,
+        )
 
         inp = paddle.randn([4, 16])
         weights = paddle.randn([4, 1])

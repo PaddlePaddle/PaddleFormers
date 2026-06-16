@@ -21,7 +21,9 @@ import paddle.distributed as dist
 from paddle.distributed.communication.reduce_scatter import _reduce_scatter_base
 
 from paddleformers.fleet.parallel_state import get_global_memory_buffer
-from paddleformers.fleet.tensor_parallel.utils import split_tensor_along_last_dim
+from paddleformers.fleet.tensor_parallel.utils import (
+    split_tensor_along_last_dim,
+)
 from paddleformers.fleet.utils import get_tensor_model_parallel_group_if_none
 
 
@@ -70,7 +72,9 @@ def _split_along_first_dim(input_, group):
 
     # Split along first dimension.
     dim_size = input_.shape[0]
-    assert dim_size % world_size == 0, "First dimension of the tensor should be divisible by tensor parallel size"
+    assert dim_size % world_size == 0, (
+        "First dimension of the tensor should be divisible by tensor parallel size"
+    )
     local_dim_size = dim_size // world_size
     rank = group.rank
     dim_offset = rank * local_dim_size
@@ -104,18 +108,24 @@ def _reduce_scatter_along_last_dim(input_, group):
 
     world_size = group.world_size
     target_shape = list(input_.shape)
-    assert (
-        target_shape[-1] % world_size == 0
-    ), f"input_.shape[-1] {target_shape[-1]} should be divisible by world_size {world_size}"
+    assert target_shape[-1] % world_size == 0, (
+        f"input_.shape[-1] {target_shape[-1]} should be divisible by world_size {world_size}"
+    )
     target_shape[-1] = target_shape[-1] // world_size
     input_ = input_.reshape(-1, input_.shape[-1])
-    split_tensors = paddle.split(input_, split_size_or_sections=input_.shape[-1] // world_size, dim=1)
+    split_tensors = paddle.split(
+        input_, split_size_or_sections=input_.shape[-1] // world_size, dim=1
+    )
     concat_tensor = paddle.concat(split_tensors, dim=0)
-    output = _reduce_scatter_along_first_dim(concat_tensor, group=group).reshape(target_shape)
+    output = _reduce_scatter_along_first_dim(
+        concat_tensor, group=group
+    ).reshape(target_shape)
     return output
 
 
-def _gather_along_first_dim(input_, group, output_split_sizes=None, use_global_buffer=False):
+def _gather_along_first_dim(
+    input_, group, output_split_sizes=None, use_global_buffer=False
+):
     """Gather tensors and concatenate along the first dimension.
 
     Args:
@@ -142,7 +152,9 @@ def _gather_along_first_dim(input_, group, output_split_sizes=None, use_global_b
     return output
 
 
-def _reduce_scatter_along_first_dim(input_, group, input_split_sizes=None, use_global_buffer=False):
+def _reduce_scatter_along_first_dim(
+    input_, group, input_split_sizes=None, use_global_buffer=False
+):
     """Reduce-scatter the input tensor across model parallel group.
 
     Args:
@@ -159,14 +171,16 @@ def _reduce_scatter_along_first_dim(input_, group, input_split_sizes=None, use_g
 
     if input_split_sizes is None:
         dim_size = list(input_.shape)
-        assert (
-            dim_size[0] % world_size == 0
-        ), "First dimension of the tensor should be divisible by tensor parallel size"
+        assert dim_size[0] % world_size == 0, (
+            "First dimension of the tensor should be divisible by tensor parallel size"
+        )
 
         dim_size[0] = dim_size[0] // world_size
 
         if use_global_buffer:
-            output = get_global_memory_buffer().get_tensor(dim_size, input_.dtype, "mpu")
+            output = get_global_memory_buffer().get_tensor(
+                dim_size, input_.dtype, "mpu"
+            )
         else:
             output = paddle.empty(dim_size, dtype=input_.dtype)
         _reduce_scatter_base(output, input_.contiguous(), group=group)
@@ -175,10 +189,14 @@ def _reduce_scatter_along_first_dim(input_, group, input_split_sizes=None, use_g
         input_tensor_list = list(paddle.split(input_, input_split_sizes, dim=0))
 
         if use_global_buffer:
-            output = get_global_memory_buffer().get_tensor(input_tensor_list[rank].shape, input_.dtype, "mpu")
+            output = get_global_memory_buffer().get_tensor(
+                input_tensor_list[rank].shape, input_.dtype, "mpu"
+            )
         else:
             output = paddle.empty_like(input_tensor_list[rank])
-        paddle.distributed.reduce_scatter(output, input_tensor_list, group=group)
+        paddle.distributed.reduce_scatter(
+            output, input_tensor_list, group=group
+        )
     return output
 
 
@@ -312,7 +330,9 @@ class _GatherFromSequenceParallelRegion(paddle.autograd.Function):
         use_global_buffer=False,
     ):
         """Symbolic function for tracing."""
-        return _gather_along_first_dim(input_, group, output_split_sizes, use_global_buffer)
+        return _gather_along_first_dim(
+            input_, group, output_split_sizes, use_global_buffer
+        )
 
     @staticmethod
     def forward(
@@ -330,7 +350,9 @@ class _GatherFromSequenceParallelRegion(paddle.autograd.Function):
         ctx.use_global_buffer = use_global_buffer
         if group is None:
             return input_
-        return _gather_along_first_dim(input_, group, output_split_sizes, use_global_buffer)
+        return _gather_along_first_dim(
+            input_, group, output_split_sizes, use_global_buffer
+        )
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -359,19 +381,27 @@ class _ReduceScatterToSequenceParallelRegion(paddle.autograd.Function):
     """Reduce scatter the input from the model parallel region."""
 
     @staticmethod
-    def symbolic(graph, input_, group, input_split_sizes=None, use_global_buffer=False):
+    def symbolic(
+        graph, input_, group, input_split_sizes=None, use_global_buffer=False
+    ):
         """Symbolic function for tracing."""
-        return _reduce_scatter_along_first_dim(input_, group, input_split_sizes, use_global_buffer)
+        return _reduce_scatter_along_first_dim(
+            input_, group, input_split_sizes, use_global_buffer
+        )
 
     @staticmethod
-    def forward(ctx, input_, group, input_split_sizes=None, use_global_buffer=False):
+    def forward(
+        ctx, input_, group, input_split_sizes=None, use_global_buffer=False
+    ):
         """Forward function."""
         ctx.group = group
         if group is None:
             return input_
         ctx.input_split_sizes = input_split_sizes
         ctx.use_global_buffer = use_global_buffer
-        return _reduce_scatter_along_first_dim(input_, group, input_split_sizes, use_global_buffer)
+        return _reduce_scatter_along_first_dim(
+            input_, group, input_split_sizes, use_global_buffer
+        )
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -380,7 +410,9 @@ class _ReduceScatterToSequenceParallelRegion(paddle.autograd.Function):
             return grad_output
         input_split_sizes = ctx.input_split_sizes
         use_global_buffer = ctx.use_global_buffer
-        return _gather_along_first_dim(grad_output, ctx.group, input_split_sizes, use_global_buffer)
+        return _gather_along_first_dim(
+            grad_output, ctx.group, input_split_sizes, use_global_buffer
+        )
 
 
 class _AllGatherFromTensorParallelRegion(paddle.autograd.Function):
@@ -490,7 +522,9 @@ def copy_to_tensor_model_parallel_region(input_, group=None, is_expert=False):
     return _CopyToModelParallelRegion.apply(input_, group)
 
 
-def reduce_from_tensor_model_parallel_region(input_, group=None, is_expert=False):
+def reduce_from_tensor_model_parallel_region(
+    input_, group=None, is_expert=False
+):
     """Wrapper for autograd function: forward: all reduce, backward copy"""
     group = get_tensor_model_parallel_group_if_none(group, is_expert)
     return _ReduceFromModelParallelRegion.apply(input_, group)
@@ -532,10 +566,14 @@ def gather_from_sequence_parallel_region(
     )
 
 
-def reduce_scatter_to_sequence_parallel_region(input_, group=None, input_split_sizes=None, use_global_buffer=False):
+def reduce_scatter_to_sequence_parallel_region(
+    input_, group=None, input_split_sizes=None, use_global_buffer=False
+):
     """Wrapper for autograd function: forward: RS, backward AG <first dim>"""
     group = get_tensor_model_parallel_group_if_none(group)
-    return _ReduceScatterToSequenceParallelRegion.apply(input_, group, input_split_sizes, use_global_buffer)
+    return _ReduceScatterToSequenceParallelRegion.apply(
+        input_, group, input_split_sizes, use_global_buffer
+    )
 
 
 def all_gather_last_dim_from_tensor_parallel_region(input_, group=None):
@@ -553,7 +591,9 @@ def reduce_scatter_last_dim_to_tensor_parallel_region(input_, group=None):
 def all_to_all(group, input_, output_split_sizes_=None, input_split_sizes=None):
     """Wrapper for autograd function"""
     assert group is not None, "group should not be None"
-    return _AllToAll.apply(group, input_, output_split_sizes_, input_split_sizes)
+    return _AllToAll.apply(
+        group, input_, output_split_sizes_, input_split_sizes
+    )
 
 
 def all_to_all_sp2hp(input_, group=None):
@@ -577,9 +617,9 @@ def all_to_all_sp2hp(input_, group=None):
 
     world_size = group.world_size
     input_ = input_.reshape(-1, input_.shape[-1])
-    assert (
-        input_.shape[-1] % world_size
-    ), f"input last dim ({input_.shape[-1]}) must be divisible by world size ({world_size})"
+    assert input_.shape[-1] % world_size, (
+        f"input last dim ({input_.shape[-1]}) must be divisible by world size ({world_size})"
+    )
 
     split_tensors = paddle.split(input_, num_or_sections=world_size, dim=1)
     concat_tensor = paddle.cat(split_tensors, dim=0)
@@ -609,9 +649,11 @@ def all_to_all_hp2sp(input_, group=None):
     input_ = input_.reshape(-1, input_.shape[-1])
     input_exchanged = all_to_all(group, input_)
     input_reshaped = input_exchanged.reshape(-1, input_exchanged.shape[-1])
-    assert (
-        input_reshaped.shape[0] % world_size == 0
-    ), f"input first dim ({input_reshaped.shape[0]}) must be divisible by world size ({world_size})"
-    split_tensors = paddle.split(input_reshaped, num_or_sections=world_size, dim=0)
+    assert input_reshaped.shape[0] % world_size == 0, (
+        f"input first dim ({input_reshaped.shape[0]}) must be divisible by world size ({world_size})"
+    )
+    split_tensors = paddle.split(
+        input_reshaped, num_or_sections=world_size, dim=0
+    )
     output = paddle.concat(split_tensors, dim=-1)
     return output

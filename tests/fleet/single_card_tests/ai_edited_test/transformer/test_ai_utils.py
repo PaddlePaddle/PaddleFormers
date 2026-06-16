@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -84,7 +88,9 @@ class TestGetSlidingWindowCausalMask(unittest.TestCase):
     def test_lru_cache(self):
         mask1 = get_sliding_window_causal_mask(4, 4, (3, 3))
         mask2 = get_sliding_window_causal_mask(4, 4, (3, 3))
-        self.assertTrue(paddle.allclose(mask1.cast(mask1.dtype), mask2.cast(mask2.dtype)))
+        self.assertTrue(
+            paddle.allclose(mask1.cast(mask1.dtype), mask2.cast(mask2.dtype))
+        )
 
     def test_non_square_mask(self):
         mask = get_sliding_window_causal_mask(2, 8, (3, 3))

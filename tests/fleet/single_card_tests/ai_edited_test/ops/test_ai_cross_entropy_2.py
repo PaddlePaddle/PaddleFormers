@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -30,7 +34,9 @@ import unittest
 def _setup_triton_mock():
     """Create a mock triton module so we can import without GPU."""
     triton_mock = types.ModuleType("triton")
-    triton_mock.jit = lambda fn=None, **kwargs: ((lambda f: f) if fn is None else fn)
+    triton_mock.jit = lambda fn=None, **kwargs: (
+        (lambda f: f) if fn is None else fn
+    )
     triton_mock.language = types.ModuleType("triton.language")
     triton_mock.language.constexpr = None
     tl = triton_mock.language
@@ -106,7 +112,10 @@ class TestCrossEntropyKernelLogic(unittest.TestCase):
         # Manual cross entropy: log(sum(exp(logits))) - logits[target]
         max_logit = paddle.max(logits, axis=-1, keepdim=True)
         shifted = logits - max_logit
-        log_sum_exp = paddle.log(paddle.sum(paddle.exp(shifted), axis=-1)) + max_logit.squeeze()
+        log_sum_exp = (
+            paddle.log(paddle.sum(paddle.exp(shifted), axis=-1))
+            + max_logit.squeeze()
+        )
         loss = log_sum_exp - logits[0, target[0]]
         self.assertAlmostEqual(loss.item(), 0.4170, places=3)
 
@@ -120,7 +129,10 @@ class TestCrossEntropyKernelLogic(unittest.TestCase):
         # For target = -100 (ignore), loss should be 0
         max_logit = paddle.max(logits[0:1], axis=-1, keepdim=True)
         shifted = logits[0:1] - max_logit
-        log_sum_exp = paddle.log(paddle.sum(paddle.exp(shifted), axis=-1)) + max_logit.squeeze()
+        log_sum_exp = (
+            paddle.log(paddle.sum(paddle.exp(shifted), axis=-1))
+            + max_logit.squeeze()
+        )
         loss_valid = log_sum_exp - logits[0, targets[0]]
         self.assertTrue(loss_valid.item() > 0)
 

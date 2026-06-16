@@ -57,7 +57,9 @@ def rms_norm_fwd_kernel(
         x_offset = row_idx * stride_x_row
         y_offset = row_idx * actual_n2
 
-        x = tl.load(X_ptr + x_offset + cols, mask=mask, other=0.0).to(tl.float32)
+        x = tl.load(X_ptr + x_offset + cols, mask=mask, other=0.0).to(
+            tl.float32
+        )
 
         var = tl.sum(x * x, axis=0) / actual_n2
         invvar = 1.0 / tl.sqrt(var + eps)
@@ -105,8 +107,12 @@ def rms_norm_bwd_dx_kernel(
         x_offset = row_idx * stride_x_row
         dx_offset = row_idx * actual_n2
 
-        dy = tl.load(DY_ptr + dy_offset + cols, mask=mask, other=0.0).to(tl.float32)
-        x = tl.load(X_ptr + x_offset + cols, mask=mask, other=0.0).to(tl.float32)
+        dy = tl.load(DY_ptr + dy_offset + cols, mask=mask, other=0.0).to(
+            tl.float32
+        )
+        x = tl.load(X_ptr + x_offset + cols, mask=mask, other=0.0).to(
+            tl.float32
+        )
         invvar = tl.load(Invvar_ptr + row_idx)
 
         # dot_i = sum_j(dy_ij * w_j * x_ij)
@@ -195,7 +201,9 @@ class RMSNormFusionTriton(paddle.autograd.PyLayer):
         invvar = paddle.empty([n1], dtype=paddle.float32)
 
         ROWS_PER_PROG = 128
-        num_programs = min(n1, max(1, (n1 + ROWS_PER_PROG - 1) // ROWS_PER_PROG))
+        num_programs = min(
+            n1, max(1, (n1 + ROWS_PER_PROG - 1) // ROWS_PER_PROG)
+        )
 
         rms_norm_fwd_kernel[(num_programs,)](
             x,

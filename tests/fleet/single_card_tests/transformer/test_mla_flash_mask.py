@@ -24,7 +24,9 @@ import unittest
 import numpy as np
 import paddle
 
-from paddleformers.fleet.transformer.dot_product_attention import DotProductAttention
+from paddleformers.fleet.transformer.dot_product_attention import (
+    DotProductAttention,
+)
 from paddleformers.fleet.transformer.enums import AttnMaskType
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 
@@ -78,13 +80,23 @@ class TestMLAFlashMaskWithBackward(unittest.TestCase):
     ):
         """Create attention mask startend row indices for flashmask."""
         if causal:
-            start_indices = np.zeros((batch_size, 1, seq_len, 1), dtype=np.int32)
-            end_indices = np.arange(1, seq_len + 1, dtype=np.int32).reshape(1, 1, seq_len, 1)
-            end_indices = np.broadcast_to(end_indices, (batch_size, 1, seq_len, 1))
+            start_indices = np.zeros(
+                (batch_size, 1, seq_len, 1), dtype=np.int32
+            )
+            end_indices = np.arange(1, seq_len + 1, dtype=np.int32).reshape(
+                1, 1, seq_len, 1
+            )
+            end_indices = np.broadcast_to(
+                end_indices, (batch_size, 1, seq_len, 1)
+            )
             indices = np.concatenate([start_indices, end_indices], axis=-1)
         else:
-            start_indices = np.zeros((batch_size, 1, seq_len, 1), dtype=np.int32)
-            end_indices = np.full((batch_size, 1, seq_len, 1), seq_len, dtype=np.int32)
+            start_indices = np.zeros(
+                (batch_size, 1, seq_len, 1), dtype=np.int32
+            )
+            end_indices = np.full(
+                (batch_size, 1, seq_len, 1), seq_len, dtype=np.int32
+            )
             indices = np.concatenate([start_indices, end_indices], axis=-1)
 
         return paddle.to_tensor(indices)
@@ -111,15 +123,23 @@ class TestMLAFlashMaskWithBackward(unittest.TestCase):
         v_head_dim = 128
 
         # Create tensors with requires_grad=True
-        query = paddle.randn((batch_size, seq_len, num_heads, q_head_dim), dtype=paddle.bfloat16)
+        query = paddle.randn(
+            (batch_size, seq_len, num_heads, q_head_dim), dtype=paddle.bfloat16
+        )
         query.stop_gradient = False
-        key = paddle.randn((batch_size, seq_len, num_heads, q_head_dim), dtype=paddle.bfloat16)
+        key = paddle.randn(
+            (batch_size, seq_len, num_heads, q_head_dim), dtype=paddle.bfloat16
+        )
         key.stop_gradient = False
-        value = paddle.randn((batch_size, seq_len, num_heads, v_head_dim), dtype=paddle.bfloat16)
+        value = paddle.randn(
+            (batch_size, seq_len, num_heads, v_head_dim), dtype=paddle.bfloat16
+        )
         value.stop_gradient = False
 
-        attn_mask_startend_row_indices = self._create_attn_mask_startend_row_indices(
-            batch_size, num_heads, seq_len, causal=True
+        attn_mask_startend_row_indices = (
+            self._create_attn_mask_startend_row_indices(
+                batch_size, num_heads, seq_len, causal=True
+            )
         )
 
         # Forward pass
@@ -165,15 +185,23 @@ class TestMLAFlashMaskWithBackward(unittest.TestCase):
         num_heads = 4
         head_dim = 128
 
-        query = paddle.randn((batch_size, seq_len, num_heads, head_dim), dtype=paddle.bfloat16)
+        query = paddle.randn(
+            (batch_size, seq_len, num_heads, head_dim), dtype=paddle.bfloat16
+        )
         query.stop_gradient = False
-        key = paddle.randn((batch_size, seq_len, num_heads, head_dim), dtype=paddle.bfloat16)
+        key = paddle.randn(
+            (batch_size, seq_len, num_heads, head_dim), dtype=paddle.bfloat16
+        )
         key.stop_gradient = False
-        value = paddle.randn((batch_size, seq_len, num_heads, head_dim), dtype=paddle.bfloat16)
+        value = paddle.randn(
+            (batch_size, seq_len, num_heads, head_dim), dtype=paddle.bfloat16
+        )
         value.stop_gradient = False
 
-        attn_mask_startend_row_indices = self._create_attn_mask_startend_row_indices(
-            batch_size, num_heads, seq_len, causal=True
+        attn_mask_startend_row_indices = (
+            self._create_attn_mask_startend_row_indices(
+                batch_size, num_heads, seq_len, causal=True
+            )
         )
 
         output = attention(

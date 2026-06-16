@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -58,8 +62,12 @@ class TestAllToAllFunction(unittest.TestCase):
 
     # Skip: paddle.distributed does not have all_to_all_single in this
     # PaddlePaddle version; the source code itself uses the wrong attribute name.
-    @unittest.skip("paddle.distributed.all_to_all_single not available in this version")
-    @patch("paddleformers.fleet.tensor_parallel.mappings.dist.all_to_all_single")
+    @unittest.skip(
+        "paddle.distributed.all_to_all_single not available in this version"
+    )
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.dist.all_to_all_single"
+    )
     def test_equal_split(self, mock_a2a):
         """Test _AllToAll with equal splits."""
         group = _make_group(world_size=2, rank=0)
@@ -95,9 +103,13 @@ class TestAllToAllSp2Hp(unittest.TestCase):
     # is inverted: it fires when divisible (remainder=0 evaluates to False),
     # but the code path after assertion does paddle.split which requires
     # divisibility. This is a source code issue. Skip this test.
-    @unittest.skip("Source code assertion condition for sp2hp divisibility check is buggy")
+    @unittest.skip(
+        "Source code assertion condition for sp2hp divisibility check is buggy"
+    )
     @patch("paddleformers.fleet.tensor_parallel.mappings.all_to_all")
-    @patch("paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none"
+    )
     def test_sp2hp_basic(self, mock_get_group, mock_a2a):
         """Test all_to_all_sp2hp reshapes and calls all_to_all."""
         group = _make_group(world_size=2, rank=0)
@@ -110,7 +122,9 @@ class TestAllToAllSp2Hp(unittest.TestCase):
     # The source code assertion condition is inverted: it asserts when
     # input_ is evenly divisible rather than when it is NOT divisible.
     # This is a source code issue. Skip this test.
-    @unittest.skip("Source code assertion condition is inverted for divisibility check")
+    @unittest.skip(
+        "Source code assertion condition is inverted for divisibility check"
+    )
     def test_sp2hp_asserts_divisible(self):
         """Test all_to_all_sp2hp raises when last dim not divisible."""
         group = _make_group(world_size=3, rank=0)
@@ -128,9 +142,13 @@ class TestAllToAllHp2Sp(unittest.TestCase):
 
     # The source code calls all_to_all which internally uses dist.all_to_all_single
     # which does not exist in this PaddlePaddle version. Skip.
-    @unittest.skip("paddle.distributed.all_to_all_single not available in this version")
+    @unittest.skip(
+        "paddle.distributed.all_to_all_single not available in this version"
+    )
     @patch("paddleformers.fleet.tensor_parallel.mappings.all_to_all")
-    @patch("paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none"
+    )
     def test_hp2sp_basic(self, mock_get_group, mock_a2a):
         """Test all_to_all_hp2sp reshapes and calls all_to_all."""
         group = _make_group(world_size=2, rank=0)
@@ -142,7 +160,9 @@ class TestAllToAllHp2Sp(unittest.TestCase):
 
     # The source code calls all_to_all which uses dist.all_to_all_single
     # which does not exist. Skip.
-    @unittest.skip("paddle.distributed.all_to_all_single not available in this version")
+    @unittest.skip(
+        "paddle.distributed.all_to_all_single not available in this version"
+    )
     def test_hp2sp_asserts_divisible(self):
         """Test all_to_all_hp2sp raises when first dim not divisible."""
         group = _make_group(world_size=3, rank=0)
@@ -158,7 +178,9 @@ class TestAllToAllHp2Sp(unittest.TestCase):
 class TestAllGatherLastDimWrapper(unittest.TestCase):
     """Tests for all_gather_last_dim_from_tensor_parallel_region."""
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none"
+    )
     def test_calls_apply(self, mock_get_group):
         """Test wrapper calls _AllGatherFromTensorParallelRegion.apply."""
         group = _make_group(world_size=1, rank=0)
@@ -174,8 +196,12 @@ class TestReduceScatterLastDimWrapper(unittest.TestCase):
     # The source code for _reduce_scatter_along_last_dim uses
     # paddle.split with keyword args (dim, split_size_or_sections) that
     # are not supported in this PaddlePaddle version. Skip.
-    @unittest.skip("Source code uses paddle.split with unsupported keyword arguments")
-    @patch("paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none")
+    @unittest.skip(
+        "Source code uses paddle.split with unsupported keyword arguments"
+    )
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings.get_tensor_model_parallel_group_if_none"
+    )
     def test_calls_apply(self, mock_get_group):
         """Test wrapper calls _ReduceScatterToTensorParallelRegion.apply."""
         group = _make_group(world_size=1, rank=0)
@@ -194,7 +220,9 @@ class TestAllGatherFromTPRegion(unittest.TestCase):
         result = _AllGatherFromTensorParallelRegion.apply(x, None)
         self.assertTrue(result is x)
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings._gather_along_last_dim")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings._gather_along_last_dim"
+    )
     def test_forward_gathers(self, mock_gather):
         """Test forward calls _gather_along_last_dim."""
         group = _make_group(world_size=2, rank=0)
@@ -213,7 +241,9 @@ class TestReduceScatterToTPRegion(unittest.TestCase):
         result = _ReduceScatterToTensorParallelRegion.apply(x, None)
         self.assertTrue(result is x)
 
-    @patch("paddleformers.fleet.tensor_parallel.mappings._reduce_scatter_along_last_dim")
+    @patch(
+        "paddleformers.fleet.tensor_parallel.mappings._reduce_scatter_along_last_dim"
+    )
     def test_forward_reduce_scatters(self, mock_rs):
         """Test forward calls _reduce_scatter_along_last_dim."""
         group = _make_group(world_size=2, rank=0)

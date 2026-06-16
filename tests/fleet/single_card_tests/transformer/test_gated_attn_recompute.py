@@ -22,10 +22,15 @@ from paddleformers.fleet.transformer.attention import (
     SelfAttention,
     SelfAttentionSublayersSpec,
 )
-from paddleformers.fleet.transformer.dot_product_attention import DotProductAttention
+from paddleformers.fleet.transformer.dot_product_attention import (
+    DotProductAttention,
+)
 from paddleformers.fleet.transformer.enums import AttnMaskType
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
-from paddleformers.fleet.utils import init_method_normal, scaled_init_method_normal
+from paddleformers.fleet.utils import (
+    init_method_normal,
+    scaled_init_method_normal,
+)
 
 
 class BiasedLinear(paddle.nn.Layer):
@@ -116,7 +121,9 @@ class TestGatedAttnRecompute(unittest.TestCase):
         """Run forward + backward and return output and input grad."""
         hidden_states = hidden_states.clone()
         hidden_states.stop_gradient = False
-        output, _ = attn(hidden_states, attention_mask=None, rotary_pos_emb=rotary_pos_emb)
+        output, _ = attn(
+            hidden_states, attention_mask=None, rotary_pos_emb=rotary_pos_emb
+        )
         loss = output.sum()
         loss.backward()
         return output.detach(), hidden_states.grad.detach()
@@ -138,8 +145,12 @@ class TestGatedAttnRecompute(unittest.TestCase):
         hidden_states = paddle.randn([batch_size, seq_len, 128])
         rotary_pos_emb = paddle.randn([1, seq_len, 1, 32])
 
-        out_ref, grad_ref = self._run_forward_backward(attn_ref, hidden_states, rotary_pos_emb)
-        out_rc, grad_rc = self._run_forward_backward(attn_rc, hidden_states, rotary_pos_emb)
+        out_ref, grad_ref = self._run_forward_backward(
+            attn_ref, hidden_states, rotary_pos_emb
+        )
+        out_rc, grad_rc = self._run_forward_backward(
+            attn_rc, hidden_states, rotary_pos_emb
+        )
 
         self.assertTrue(
             paddle.equal_all(out_ref, out_rc).item(),

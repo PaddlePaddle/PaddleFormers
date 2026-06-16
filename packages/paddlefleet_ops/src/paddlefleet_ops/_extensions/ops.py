@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from paddle import _C_ops  # noqa: F811
-from paddle.base.layer_helper import LayerHelper  # noqa: F811
-from paddle.framework import in_dynamic_or_pir_mode  # noqa: F811
+from paddle import _C_ops
+from paddle.base.layer_helper import LayerHelper
+from paddle.framework import in_dynamic_or_pir_mode
 from paddle.jit.marker import unified
 
 
@@ -23,7 +23,9 @@ def filter_scores_grad(indices, topkscoresgrad):
     # The output variable's dtype use default value 'float32',
     # and the actual dtype of output variable will be inferred in runtime.
     if in_dynamic_or_pir_mode():
-        outs = _C_ops._run_custom_op("filter_scores_grad", indices, topkscoresgrad)
+        outs = _C_ops._run_custom_op(
+            "filter_scores_grad", indices, topkscoresgrad
+        )
         res = []
         start_idx = 0
         res.append(outs[start_idx])
@@ -41,8 +43,13 @@ def filter_scores_grad(indices, topkscoresgrad):
         helper = LayerHelper("filter_scores_grad", **locals())
 
         outs["ProbsGrad"] = helper.create_variable(dtype="float32")
-        helper.append_op(type="filter_scores_grad", inputs=ins, outputs=outs, attrs={})
-        res = [outs[out_name] if out_name in outs.keys() else None for out_name in outs_list]
+        helper.append_op(
+            type="filter_scores_grad", inputs=ins, outputs=outs, attrs={}
+        )
+        res = [
+            outs[out_name] if out_name in outs.keys() else None
+            for out_name in outs_list
+        ]
         return res[0] if len(res) == 1 else res
 
 
@@ -78,8 +85,13 @@ def fused_swiglu_scale_bwd(x, scale, dout):
 
         outs["DX"] = helper.create_variable(dtype="float32")
         outs["DScale"] = helper.create_variable(dtype="float32")
-        helper.append_op(type="fused_swiglu_scale_bwd", inputs=ins, outputs=outs, attrs={})
-        res = [outs[out_name] if out_name in outs.keys() else None for out_name in outs_list]
+        helper.append_op(
+            type="fused_swiglu_scale_bwd", inputs=ins, outputs=outs, attrs={}
+        )
+        res = [
+            outs[out_name] if out_name in outs.keys() else None
+            for out_name in outs_list
+        ]
         return res[0] if len(res) == 1 else res
 
 
@@ -94,7 +106,9 @@ def router_metadata(topkrouterindices, expertfrequencyoffset, k):
     # The output variable's dtype use default value 'float32',
     # and the actual dtype of output variable will be inferred in runtime.
     if in_dynamic_or_pir_mode():
-        outs = _C_ops._run_custom_op("router_metadata", topkrouterindices, expertfrequencyoffset, k)
+        outs = _C_ops._run_custom_op(
+            "router_metadata", topkrouterindices, expertfrequencyoffset, k
+        )
         res = []
         start_idx = 0
         res.append(outs[start_idx])
@@ -110,7 +124,10 @@ def router_metadata(topkrouterindices, expertfrequencyoffset, k):
         return res[0] if len(res) == 1 else res
     else:
         ins = {}
-        ins_map = {"TopkRouterIndices": topkrouterindices, "ExpertFrequencyOffset": expertfrequencyoffset}
+        ins_map = {
+            "TopkRouterIndices": topkrouterindices,
+            "ExpertFrequencyOffset": expertfrequencyoffset,
+        }
         outs = {}
         outs_list = [
             "PaddedExpertFrequencyOffset",
@@ -125,13 +142,24 @@ def router_metadata(topkrouterindices, expertfrequencyoffset, k):
                 ins[key] = value
         helper = LayerHelper("router_metadata", **locals())
 
-        outs["PaddedExpertFrequencyOffset"] = helper.create_variable(dtype="float32")
+        outs["PaddedExpertFrequencyOffset"] = helper.create_variable(
+            dtype="float32"
+        )
         outs["XGatherIdx"] = helper.create_variable(dtype="float32")
         outs["SScatterIdxValid"] = helper.create_variable(dtype="float32")
-        outs["SReverseScatterIdxValid"] = helper.create_variable(dtype="float32")
-        outs["NumActivatedExpertPerTokenOffset"] = helper.create_variable(dtype="float32")
-        helper.append_op(type="router_metadata", inputs=ins, outputs=outs, attrs={"K": k})
-        res = [outs[out_name] if out_name in outs.keys() else None for out_name in outs_list]
+        outs["SReverseScatterIdxValid"] = helper.create_variable(
+            dtype="float32"
+        )
+        outs["NumActivatedExpertPerTokenOffset"] = helper.create_variable(
+            dtype="float32"
+        )
+        helper.append_op(
+            type="router_metadata", inputs=ins, outputs=outs, attrs={"K": k}
+        )
+        res = [
+            outs[out_name] if out_name in outs.keys() else None
+            for out_name in outs_list
+        ]
         return res[0] if len(res) == 1 else res
 
 
@@ -188,7 +216,12 @@ def tokens_unzip_stable(
             "expert_prob_topk": expert_prob_topk,
         }
         outs = {}
-        outs_list = ["X_unzipped", "zipped_expertwise_rowmap", "token_prob_unzipped", "XScale_unzipped@OPTIONAL"]
+        outs_list = [
+            "X_unzipped",
+            "zipped_expertwise_rowmap",
+            "token_prob_unzipped",
+            "XScale_unzipped@OPTIONAL",
+        ]
         for key, value in ins_map.items():
             # handle optional inputs
             if value is not None:
@@ -196,9 +229,13 @@ def tokens_unzip_stable(
         helper = LayerHelper("tokens_unzip_stable", **locals())
 
         outs["X_unzipped"] = helper.create_variable(dtype="float32")
-        outs["zipped_expertwise_rowmap"] = helper.create_variable(dtype="float32")
+        outs["zipped_expertwise_rowmap"] = helper.create_variable(
+            dtype="float32"
+        )
         outs["token_prob_unzipped"] = helper.create_variable(dtype="float32")
-        outs["XScale_unzipped@OPTIONAL"] = helper.create_variable(dtype="float32")
+        outs["XScale_unzipped@OPTIONAL"] = helper.create_variable(
+            dtype="float32"
+        )
         helper.append_op(
             type="tokens_unzip_stable",
             inputs=ins,
@@ -211,7 +248,10 @@ def tokens_unzip_stable(
                 "fill_output": fill_output,
             },
         )
-        res = [outs[out_name] if out_name in outs.keys() else None for out_name in outs_list]
+        res = [
+            outs[out_name] if out_name in outs.keys() else None
+            for out_name in outs_list
+        ]
         return res[0] if len(res) == 1 else res
 
 
@@ -222,7 +262,14 @@ from paddle.jit.marker import unified
 
 
 @unified
-def tokens_unzip_gather(x, x_scale, zipped_expertwise_rowmap, expert_id, tokens_per_expert, padding_multiplex):
+def tokens_unzip_gather(
+    x,
+    x_scale,
+    zipped_expertwise_rowmap,
+    expert_id,
+    tokens_per_expert,
+    padding_multiplex,
+):
     # The output variable's dtype use default value 'float32',
     # and the actual dtype of output variable will be inferred in runtime.
     if in_dynamic_or_pir_mode():
@@ -246,7 +293,11 @@ def tokens_unzip_gather(x, x_scale, zipped_expertwise_rowmap, expert_id, tokens_
         return res[0] if len(res) == 1 else res
     else:
         ins = {}
-        ins_map = {"x": x, "x_scale@OPTIONAL": x_scale, "zipped_expertwise_rowmap": zipped_expertwise_rowmap}
+        ins_map = {
+            "x": x,
+            "x_scale@OPTIONAL": x_scale,
+            "zipped_expertwise_rowmap": zipped_expertwise_rowmap,
+        }
         outs = {}
         outs_list = ["x_unzipped", "x_scale_unzipped@OPTIONAL", "idx_unzipped"]
         for key, value in ins_map.items():
@@ -256,7 +307,9 @@ def tokens_unzip_gather(x, x_scale, zipped_expertwise_rowmap, expert_id, tokens_
         helper = LayerHelper("tokens_unzip_gather", **locals())
 
         outs["x_unzipped"] = helper.create_variable(dtype="float32")
-        outs["x_scale_unzipped@OPTIONAL"] = helper.create_variable(dtype="float32")
+        outs["x_scale_unzipped@OPTIONAL"] = helper.create_variable(
+            dtype="float32"
+        )
         outs["idx_unzipped"] = helper.create_variable(dtype="float32")
         helper.append_op(
             type="tokens_unzip_gather",
@@ -268,7 +321,10 @@ def tokens_unzip_gather(x, x_scale, zipped_expertwise_rowmap, expert_id, tokens_
                 "padding_multiplex": padding_multiplex,
             },
         )
-        res = [outs[out_name] if out_name in outs.keys() else None for out_name in outs_list]
+        res = [
+            outs[out_name] if out_name in outs.keys() else None
+            for out_name in outs_list
+        ]
         return res[0] if len(res) == 1 else res
 
 
@@ -301,8 +357,13 @@ def filter_scores(probs, indices):
         helper = LayerHelper("filter_scores", **locals())
 
         outs["TopkScores"] = helper.create_variable(dtype="float32")
-        helper.append_op(type="filter_scores", inputs=ins, outputs=outs, attrs={})
-        res = [outs[out_name] if out_name in outs.keys() else None for out_name in outs_list]
+        helper.append_op(
+            type="filter_scores", inputs=ins, outputs=outs, attrs={}
+        )
+        res = [
+            outs[out_name] if out_name in outs.keys() else None
+            for out_name in outs_list
+        ]
         return res[0] if len(res) == 1 else res
 
 
@@ -313,12 +374,18 @@ from paddle.jit.marker import unified
 
 
 @unified
-def tokens_zip_prob_seq_subbatch(unzipped_prob, zipped_expertwise_rowmap, dispatched_indices, subbatch_rows):
+def tokens_zip_prob_seq_subbatch(
+    unzipped_prob, zipped_expertwise_rowmap, dispatched_indices, subbatch_rows
+):
     # The output variable's dtype use default value 'float32',
     # and the actual dtype of output variable will be inferred in runtime.
     if in_dynamic_or_pir_mode():
         outs = _C_ops._run_custom_op(
-            "tokens_zip_prob_seq_subbatch", unzipped_prob, zipped_expertwise_rowmap, dispatched_indices, subbatch_rows
+            "tokens_zip_prob_seq_subbatch",
+            unzipped_prob,
+            zipped_expertwise_rowmap,
+            dispatched_indices,
+            subbatch_rows,
         )
         res = []
         start_idx = 0
@@ -342,9 +409,15 @@ def tokens_zip_prob_seq_subbatch(unzipped_prob, zipped_expertwise_rowmap, dispat
 
         outs["zipped_prob"] = helper.create_variable(dtype="float32")
         helper.append_op(
-            type="tokens_zip_prob_seq_subbatch", inputs=ins, outputs=outs, attrs={"subbatch_rows": subbatch_rows}
+            type="tokens_zip_prob_seq_subbatch",
+            inputs=ins,
+            outputs=outs,
+            attrs={"subbatch_rows": subbatch_rows},
         )
-        res = [outs[out_name] if out_name in outs.keys() else None for out_name in outs_list]
+        res = [
+            outs[out_name] if out_name in outs.keys() else None
+            for out_name in outs_list
+        ]
         return res[0] if len(res) == 1 else res
 
 
@@ -355,12 +428,18 @@ from paddle.jit.marker import unified
 
 
 @unified
-def fuse_weighted_swiglu_fp8_quant(expert_out_list, prob, using_pow2_scaling, use_ue8m0):
+def fuse_weighted_swiglu_fp8_quant(
+    expert_out_list, prob, using_pow2_scaling, use_ue8m0
+):
     # The output variable's dtype use default value 'float32',
     # and the actual dtype of output variable will be inferred in runtime.
     if in_dynamic_or_pir_mode():
         outs = _C_ops._run_custom_op(
-            "fuse_weighted_swiglu_fp8_quant", expert_out_list, prob, using_pow2_scaling, use_ue8m0
+            "fuse_weighted_swiglu_fp8_quant",
+            expert_out_list,
+            prob,
+            using_pow2_scaling,
+            use_ue8m0,
         )
         res = []
         start_idx = 0
@@ -386,9 +465,15 @@ def fuse_weighted_swiglu_fp8_quant(expert_out_list, prob, using_pow2_scaling, us
             type="fuse_weighted_swiglu_fp8_quant",
             inputs=ins,
             outputs=outs,
-            attrs={"using_pow2_scaling": using_pow2_scaling, "use_ue8m0": use_ue8m0},
+            attrs={
+                "using_pow2_scaling": using_pow2_scaling,
+                "use_ue8m0": use_ue8m0,
+            },
         )
-        res = [outs[out_name] if out_name in outs.keys() else None for out_name in outs_list]
+        res = [
+            outs[out_name] if out_name in outs.keys() else None
+            for out_name in outs_list
+        ]
         return res[0] if len(res) == 1 else res
 
 
@@ -399,12 +484,25 @@ from paddle.jit.marker import unified
 
 
 @unified
-def tokens_unzip_slice(x, zipped_expertwise_rowmap, num_experts, total_unzipped_rows, start_idx, end_idx):
+def tokens_unzip_slice(
+    x,
+    zipped_expertwise_rowmap,
+    num_experts,
+    total_unzipped_rows,
+    start_idx,
+    end_idx,
+):
     # The output variable's dtype use default value 'float32',
     # and the actual dtype of output variable will be inferred in runtime.
     if in_dynamic_or_pir_mode():
         outs = _C_ops._run_custom_op(
-            "tokens_unzip_slice", x, zipped_expertwise_rowmap, num_experts, total_unzipped_rows, start_idx, end_idx
+            "tokens_unzip_slice",
+            x,
+            zipped_expertwise_rowmap,
+            num_experts,
+            total_unzipped_rows,
+            start_idx,
+            end_idx,
         )
         res = []
         start_idx = 0
@@ -434,7 +532,10 @@ def tokens_unzip_slice(x, zipped_expertwise_rowmap, num_experts, total_unzipped_
                 "end_idx": end_idx,
             },
         )
-        res = [outs[out_name] if out_name in outs.keys() else None for out_name in outs_list]
+        res = [
+            outs[out_name] if out_name in outs.keys() else None
+            for out_name in outs_list
+        ]
         return res[0] if len(res) == 1 else res
 
 
@@ -449,7 +550,13 @@ def tokens_zip_unique_add(x_zipped, x_unzipped, idx_unzipped, zipped_rows):
     # The output variable's dtype use default value 'float32',
     # and the actual dtype of output variable will be inferred in runtime.
     if in_dynamic_or_pir_mode():
-        outs = _C_ops._run_custom_op("tokens_zip_unique_add", x_zipped, x_unzipped, idx_unzipped, zipped_rows)
+        outs = _C_ops._run_custom_op(
+            "tokens_zip_unique_add",
+            x_zipped,
+            x_unzipped,
+            idx_unzipped,
+            zipped_rows,
+        )
         res = []
         start_idx = 0
         res.append(outs[start_idx])
@@ -457,7 +564,11 @@ def tokens_zip_unique_add(x_zipped, x_unzipped, idx_unzipped, zipped_rows):
         return res[0] if len(res) == 1 else res
     else:
         ins = {}
-        ins_map = {"x_zipped": x_zipped, "x_unzipped": x_unzipped, "idx_unzipped": idx_unzipped}
+        ins_map = {
+            "x_zipped": x_zipped,
+            "x_unzipped": x_unzipped,
+            "idx_unzipped": idx_unzipped,
+        }
         outs = {}
         outs_list = ["y_zipped"]
         for key, value in ins_map.items():
@@ -467,8 +578,16 @@ def tokens_zip_unique_add(x_zipped, x_unzipped, idx_unzipped, zipped_rows):
         helper = LayerHelper("tokens_zip_unique_add", **locals())
 
         outs["y_zipped"] = helper.create_variable(dtype="float32")
-        helper.append_op(type="tokens_zip_unique_add", inputs=ins, outputs=outs, attrs={"zipped_rows": zipped_rows})
-        res = [outs[out_name] if out_name in outs.keys() else None for out_name in outs_list]
+        helper.append_op(
+            type="tokens_zip_unique_add",
+            inputs=ins,
+            outputs=outs,
+            attrs={"zipped_rows": zipped_rows},
+        )
+        res = [
+            outs[out_name] if out_name in outs.keys() else None
+            for out_name in outs_list
+        ]
         return res[0] if len(res) == 1 else res
 
 
@@ -479,11 +598,18 @@ from paddle.jit.marker import unified
 
 
 @unified
-def tokens_zip_prob(unzipped_prob, zipped_expertwise_rowmap, dispatched_indices):
+def tokens_zip_prob(
+    unzipped_prob, zipped_expertwise_rowmap, dispatched_indices
+):
     # The output variable's dtype use default value 'float32',
     # and the actual dtype of output variable will be inferred in runtime.
     if in_dynamic_or_pir_mode():
-        outs = _C_ops._run_custom_op("tokens_zip_prob", unzipped_prob, zipped_expertwise_rowmap, dispatched_indices)
+        outs = _C_ops._run_custom_op(
+            "tokens_zip_prob",
+            unzipped_prob,
+            zipped_expertwise_rowmap,
+            dispatched_indices,
+        )
         res = []
         start_idx = 0
         res.append(outs[start_idx])
@@ -505,8 +631,13 @@ def tokens_zip_prob(unzipped_prob, zipped_expertwise_rowmap, dispatched_indices)
         helper = LayerHelper("tokens_zip_prob", **locals())
 
         outs["zipped_prob"] = helper.create_variable(dtype="float32")
-        helper.append_op(type="tokens_zip_prob", inputs=ins, outputs=outs, attrs={})
-        res = [outs[out_name] if out_name in outs.keys() else None for out_name in outs_list]
+        helper.append_op(
+            type="tokens_zip_prob", inputs=ins, outputs=outs, attrs={}
+        )
+        res = [
+            outs[out_name] if out_name in outs.keys() else None
+            for out_name in outs_list
+        ]
         return res[0] if len(res) == 1 else res
 
 
@@ -539,8 +670,16 @@ def merge_subbatch_cast(x, dtype):
         helper = LayerHelper("merge_subbatch_cast", **locals())
 
         outs["y"] = helper.create_variable(dtype="float32")
-        helper.append_op(type="merge_subbatch_cast", inputs=ins, outputs=outs, attrs={"dtype": dtype})
-        res = [outs[out_name] if out_name in outs.keys() else None for out_name in outs_list]
+        helper.append_op(
+            type="merge_subbatch_cast",
+            inputs=ins,
+            outputs=outs,
+            attrs={"dtype": dtype},
+        )
+        res = [
+            outs[out_name] if out_name in outs.keys() else None
+            for out_name in outs_list
+        ]
         return res[0] if len(res) == 1 else res
 
 
@@ -551,12 +690,19 @@ from paddle.jit.marker import unified
 
 
 @unified
-def tokens_zip_unique_add_subbatch(x_zipped, x_unzipped, idx_unzipped, zipped_rows, subbatch_rows):
+def tokens_zip_unique_add_subbatch(
+    x_zipped, x_unzipped, idx_unzipped, zipped_rows, subbatch_rows
+):
     # The output variable's dtype use default value 'float32',
     # and the actual dtype of output variable will be inferred in runtime.
     if in_dynamic_or_pir_mode():
         outs = _C_ops._run_custom_op(
-            "tokens_zip_unique_add_subbatch", x_zipped, x_unzipped, idx_unzipped, zipped_rows, subbatch_rows
+            "tokens_zip_unique_add_subbatch",
+            x_zipped,
+            x_unzipped,
+            idx_unzipped,
+            zipped_rows,
+            subbatch_rows,
         )
         res = []
         start_idx = 0
@@ -565,7 +711,11 @@ def tokens_zip_unique_add_subbatch(x_zipped, x_unzipped, idx_unzipped, zipped_ro
         return res[0] if len(res) == 1 else res
     else:
         ins = {}
-        ins_map = {"x_zipped@VECTOR": x_zipped, "x_unzipped": x_unzipped, "idx_unzipped": idx_unzipped}
+        ins_map = {
+            "x_zipped@VECTOR": x_zipped,
+            "x_unzipped": x_unzipped,
+            "idx_unzipped": idx_unzipped,
+        }
         outs = {}
         outs_list = ["y_zipped@VECTOR"]
         for key, value in ins_map.items():
@@ -581,7 +731,10 @@ def tokens_zip_unique_add_subbatch(x_zipped, x_unzipped, idx_unzipped, zipped_ro
             outputs=outs,
             attrs={"zipped_rows": zipped_rows, "subbatch_rows": subbatch_rows},
         )
-        res = [outs[out_name] if out_name in outs.keys() else None for out_name in outs_list]
+        res = [
+            outs[out_name] if out_name in outs.keys() else None
+            for out_name in outs_list
+        ]
         return res[0] if len(res) == 1 else res
 
 
@@ -596,7 +749,9 @@ def fused_apply_rotary_pos_emb_vision(tensor, freqs):
     # The output variable's dtype use default value 'float32',
     # and the actual dtype of output variable will be inferred in runtime.
     if in_dynamic_or_pir_mode():
-        outs = _C_ops._run_custom_op("fused_apply_rotary_pos_emb_vision", tensor, freqs)
+        outs = _C_ops._run_custom_op(
+            "fused_apply_rotary_pos_emb_vision", tensor, freqs
+        )
         res = []
         start_idx = 0
         res.append(outs[start_idx])
@@ -614,8 +769,16 @@ def fused_apply_rotary_pos_emb_vision(tensor, freqs):
         helper = LayerHelper("fused_apply_rotary_pos_emb_vision", **locals())
 
         outs["Out"] = helper.create_variable(dtype="float32")
-        helper.append_op(type="fused_apply_rotary_pos_emb_vision", inputs=ins, outputs=outs, attrs={})
-        res = [outs[out_name] if out_name in outs.keys() else None for out_name in outs_list]
+        helper.append_op(
+            type="fused_apply_rotary_pos_emb_vision",
+            inputs=ins,
+            outputs=outs,
+            attrs={},
+        )
+        res = [
+            outs[out_name] if out_name in outs.keys() else None
+            for out_name in outs_list
+        ]
         return res[0] if len(res) == 1 else res
 
 
@@ -648,8 +811,13 @@ def fused_swiglu_bwd(g, y):
         helper = LayerHelper("fused_swiglu_bwd", **locals())
 
         outs["DX"] = helper.create_variable(dtype="float32")
-        helper.append_op(type="fused_swiglu_bwd", inputs=ins, outputs=outs, attrs={})
-        res = [outs[out_name] if out_name in outs.keys() else None for out_name in outs_list]
+        helper.append_op(
+            type="fused_swiglu_bwd", inputs=ins, outputs=outs, attrs={}
+        )
+        res = [
+            outs[out_name] if out_name in outs.keys() else None
+            for out_name in outs_list
+        ]
         return res[0] if len(res) == 1 else res
 
 
@@ -660,19 +828,33 @@ from paddle.jit.marker import unified
 
 
 @unified
-def fuse_transpose_split_fp8_quant(x, input_scales, outs, scales, tokens_per_expert, pow_2_scales, use_ue8m0):
+def fuse_transpose_split_fp8_quant(
+    x, input_scales, outs, scales, tokens_per_expert, pow_2_scales, use_ue8m0
+):
     # The output variable's dtype use default value 'float32',
     # and the actual dtype of output variable will be inferred in runtime.
     if in_dynamic_or_pir_mode():
         outs = _C_ops._run_custom_op(
-            "fuse_transpose_split_fp8_quant", x, input_scales, outs, scales, tokens_per_expert, pow_2_scales, use_ue8m0
+            "fuse_transpose_split_fp8_quant",
+            x,
+            input_scales,
+            outs,
+            scales,
+            tokens_per_expert,
+            pow_2_scales,
+            use_ue8m0,
         )
         res = []
         start_idx = 0
         return res[0] if len(res) == 1 else res
     else:
         ins = {}
-        ins_map = {"x": x, "input_scales@OPTIONAL": input_scales, "outs@VECTOR": outs, "scales@VECTOR": scales}
+        ins_map = {
+            "x": x,
+            "input_scales@OPTIONAL": input_scales,
+            "outs@VECTOR": outs,
+            "scales@VECTOR": scales,
+        }
         outs = {}
         outs_list = []
         for key, value in ins_map.items():
@@ -685,9 +867,16 @@ def fuse_transpose_split_fp8_quant(x, input_scales, outs, scales, tokens_per_exp
             type="fuse_transpose_split_fp8_quant",
             inputs=ins,
             outputs=outs,
-            attrs={"tokens_per_expert": tokens_per_expert, "pow_2_scales": pow_2_scales, "use_ue8m0": use_ue8m0},
+            attrs={
+                "tokens_per_expert": tokens_per_expert,
+                "pow_2_scales": pow_2_scales,
+                "use_ue8m0": use_ue8m0,
+            },
         )
-        res = [outs[out_name] if out_name in outs.keys() else None for out_name in outs_list]
+        res = [
+            outs[out_name] if out_name in outs.keys() else None
+            for out_name in outs_list
+        ]
         return res[0] if len(res) == 1 else res
 
 
@@ -720,8 +909,13 @@ def fused_swiglu_scale(x, scale):
         helper = LayerHelper("fused_swiglu_scale", **locals())
 
         outs["Out"] = helper.create_variable(dtype="float32")
-        helper.append_op(type="fused_swiglu_scale", inputs=ins, outputs=outs, attrs={})
-        res = [outs[out_name] if out_name in outs.keys() else None for out_name in outs_list]
+        helper.append_op(
+            type="fused_swiglu_scale", inputs=ins, outputs=outs, attrs={}
+        )
+        res = [
+            outs[out_name] if out_name in outs.keys() else None
+            for out_name in outs_list
+        ]
         return res[0] if len(res) == 1 else res
 
 
@@ -732,12 +926,18 @@ from paddle.jit.marker import unified
 
 
 @unified
-def fuse_stack_fp8_quant(x, using_pow2_scaling, using_ue8m0_scale, output_scale_transpose):
+def fuse_stack_fp8_quant(
+    x, using_pow2_scaling, using_ue8m0_scale, output_scale_transpose
+):
     # The output variable's dtype use default value 'float32',
     # and the actual dtype of output variable will be inferred in runtime.
     if in_dynamic_or_pir_mode():
         outs = _C_ops._run_custom_op(
-            "fuse_stack_fp8_quant", x, using_pow2_scaling, using_ue8m0_scale, output_scale_transpose
+            "fuse_stack_fp8_quant",
+            x,
+            using_pow2_scaling,
+            using_ue8m0_scale,
+            output_scale_transpose,
         )
         res = []
         start_idx = 0
@@ -769,7 +969,10 @@ def fuse_stack_fp8_quant(x, using_pow2_scaling, using_ue8m0_scale, output_scale_
                 "output_scale_transpose": output_scale_transpose,
             },
         )
-        res = [outs[out_name] if out_name in outs.keys() else None for out_name in outs_list]
+        res = [
+            outs[out_name] if out_name in outs.keys() else None
+            for out_name in outs_list
+        ]
         return res[0] if len(res) == 1 else res
 
 
@@ -805,8 +1008,16 @@ def count_cumsum(x, e, do_cumsum):
 
         outs["CountOutput"] = helper.create_variable(dtype="float32")
         outs["CumsumOutput"] = helper.create_variable(dtype="float32")
-        helper.append_op(type="count_cumsum", inputs=ins, outputs=outs, attrs={"E": e, "do_cumsum": do_cumsum})
-        res = [outs[out_name] if out_name in outs.keys() else None for out_name in outs_list]
+        helper.append_op(
+            type="count_cumsum",
+            inputs=ins,
+            outputs=outs,
+            attrs={"E": e, "do_cumsum": do_cumsum},
+        )
+        res = [
+            outs[out_name] if out_name in outs.keys() else None
+            for out_name in outs_list
+        ]
         return res[0] if len(res) == 1 else res
 
 
@@ -817,12 +1028,18 @@ from paddle.jit.marker import unified
 
 
 @unified
-def fuse_stack_transpose_fp8_quant(x, using_pow2_scaling, using_ue8m0_scale, output_scale_transpose):
+def fuse_stack_transpose_fp8_quant(
+    x, using_pow2_scaling, using_ue8m0_scale, output_scale_transpose
+):
     # The output variable's dtype use default value 'float32',
     # and the actual dtype of output variable will be inferred in runtime.
     if in_dynamic_or_pir_mode():
         outs = _C_ops._run_custom_op(
-            "fuse_stack_transpose_fp8_quant", x, using_pow2_scaling, using_ue8m0_scale, output_scale_transpose
+            "fuse_stack_transpose_fp8_quant",
+            x,
+            using_pow2_scaling,
+            using_ue8m0_scale,
+            output_scale_transpose,
         )
         res = []
         start_idx = 0
@@ -854,7 +1071,10 @@ def fuse_stack_transpose_fp8_quant(x, using_pow2_scaling, using_ue8m0_scale, out
                 "output_scale_transpose": output_scale_transpose,
             },
         )
-        res = [outs[out_name] if out_name in outs.keys() else None for out_name in outs_list]
+        res = [
+            outs[out_name] if out_name in outs.keys() else None
+            for out_name in outs_list
+        ]
         return res[0] if len(res) == 1 else res
 
 
@@ -871,9 +1091,14 @@ so_path = os.path.join(cur_dir, "ops_pd_.so")
 
 
 def __bootstrap__():
-    assert os.path.exists(so_path), f"Compiled extension not found: {so_path}. " "Please build paddlefleet-ops first."
+    assert os.path.exists(so_path), (
+        f"Compiled extension not found: {so_path}. "
+        "Please build paddlefleet-ops first."
+    )
     # load custom op shared library with abs path
-    custom_ops = paddle.utils.cpp_extension.load_op_meta_info_and_register_op(so_path)
+    custom_ops = paddle.utils.cpp_extension.load_op_meta_info_and_register_op(
+        so_path
+    )
 
     if os.name == "nt" or sys.platform.startswith("darwin"):
         # Cpp Extension only support Linux now

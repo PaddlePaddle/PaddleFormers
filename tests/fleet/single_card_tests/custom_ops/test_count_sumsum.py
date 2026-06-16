@@ -16,6 +16,7 @@ import unittest
 
 import numpy as np
 import paddle
+
 from paddlefleet_ops import count_cumsum
 
 
@@ -49,8 +50,12 @@ class TestCountCumsumOp(unittest.TestCase):
         cumsum_out_np = cumsum_out.cpu().numpy()
         ref_counts, ref_cumsum = self.ref_count_cumsum(x_np, E, do_cumsum)
 
-        np.testing.assert_array_equal(count_out_np, ref_counts, err_msg="CountOutput mismatch")
-        np.testing.assert_array_equal(cumsum_out_np, ref_cumsum, err_msg="CumsumOutput mismatch")
+        np.testing.assert_array_equal(
+            count_out_np, ref_counts, err_msg="CountOutput mismatch"
+        )
+        np.testing.assert_array_equal(
+            cumsum_out_np, ref_cumsum, err_msg="CumsumOutput mismatch"
+        )
         self.assertEqual(count_out_np.shape, (E,))
         if do_cumsum:
             self.assertEqual(cumsum_out_np.shape, (E,))

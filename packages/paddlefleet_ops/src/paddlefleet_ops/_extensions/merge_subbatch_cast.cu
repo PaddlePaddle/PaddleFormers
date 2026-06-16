@@ -14,19 +14,18 @@
 
 #include "paddle/common/array.h"
 #include "paddle/phi/kernels/funcs/aligned_vector.h"
-#include "utils.h"  // NOLINT
+#include "utils.h" // NOLINT
 
 template <typename InT, typename OutT, typename InPtrsT, int VecSize>
-__global__ void merge_subbatch_cast_kernel(const InPtrsT in_ptrs,
-                                           OutT* __restrict__ out,
-                                           int64_t total_num,
-                                           int64_t subbatch_num) {
+__global__ void
+merge_subbatch_cast_kernel(const InPtrsT in_ptrs, OutT *__restrict__ out,
+                           int64_t total_num, int64_t subbatch_num) {
   int64_t idx =
       (threadIdx.x + static_cast<int64_t>(blockDim.x) * blockIdx.x) * VecSize;
   int64_t stride = (static_cast<int64_t>(blockDim.x) * gridDim.x) * VecSize;
 
   while (idx < total_num) {
-    const InT* x_ptr = in_ptrs[idx / subbatch_num] + idx % subbatch_num;
+    const InT *x_ptr = in_ptrs[idx / subbatch_num] + idx % subbatch_num;
     phi::AlignedVector<InT, VecSize> in_data;
     phi::Load(x_ptr, &in_data);
     if constexpr (std::is_same<InT, OutT>::value) {
@@ -43,9 +42,10 @@ __global__ void merge_subbatch_cast_kernel(const InPtrsT in_ptrs,
   }
 }
 
-std::vector<paddle::Tensor> merge_subbatch_cast(
-    const std::vector<paddle::Tensor>& x, int64_t int_dtype) {
-  if (x.empty()) return {};
+std::vector<paddle::Tensor>
+merge_subbatch_cast(const std::vector<paddle::Tensor> &x, int64_t int_dtype) {
+  if (x.empty())
+    return {};
 
   auto in_dtype = x[0].dtype();
   auto merged_dtype = TransToDataType(int_dtype);
@@ -87,41 +87,40 @@ std::vector<paddle::Tensor> merge_subbatch_cast(
   int grid = LimitGridDim((total_num / kVecSize + thread - 1) / thread);
   auto num_split = static_cast<int64_t>(x.size());
 
-#define LAUNCH_MERGE_SUBBATCH_CAST_CASE_IMPL(__InT, __OutT, __in_ptrs) \
-  do {                                                                 \
-    merge_subbatch_cast_kernel<                                        \
-        __InT,                                                         \
-        __OutT,                                                        \
-        typename std::remove_reference<decltype(__in_ptrs)>::type,     \
-        kVecSize><<<grid, thread, 0, stream>>>(                        \
-        __in_ptrs, output.data<__OutT>(), total_num, subbatch_num);    \
+#define LAUNCH_MERGE_SUBBATCH_CAST_CASE_IMPL(__InT, __OutT, __in_ptrs)         \
+  do {                                                                         \
+    merge_subbatch_cast_kernel<                                                \
+        __InT, __OutT,                                                         \
+        typename std::remove_reference<decltype(__in_ptrs)>::type, kVecSize>   \
+        <<<grid, thread, 0, stream>>>(__in_ptrs, output.data<__OutT>(),        \
+                                      total_num, subbatch_num);                \
   } while (0)
 
-#define LAUNCH_MERGE_SUBBATCH_CAST_FIX_CASE(__InT, __OutT, __num_split) \
-  if (num_split <= __num_split) {                                       \
-    phi::Array<const __InT*, __num_split> array;                        \
-    for (int64_t i = 0; i < num_split; ++i) {                           \
-      array[i] = x[i].data<__InT>();                                    \
-    }                                                                   \
-    LAUNCH_MERGE_SUBBATCH_CAST_CASE_IMPL(__InT, __OutT, array);         \
-    break;                                                              \
+#define LAUNCH_MERGE_SUBBATCH_CAST_FIX_CASE(__InT, __OutT, __num_split)        \
+  if (num_split <= __num_split) {                                              \
+    phi::Array<const __InT *, __num_split> array;                              \
+    for (int64_t i = 0; i < num_split; ++i) {                                  \
+      array[i] = x[i].data<__InT>();                                           \
+    }                                                                          \
+    LAUNCH_MERGE_SUBBATCH_CAST_CASE_IMPL(__InT, __OutT, array);                \
+    break;                                                                     \
   }
 
-#define LAUNCH_MERGE_SUBBATCH_CAST_DYNAMIC_CASE(__InT, __OutT)      \
-  paddle::Tensor ptr_tensor;                                        \
-  auto device_ptrs =                                                \
-      GetTensorDevicePtrs<__InT>(x, &ptr_tensor, stream, place);    \
-  LAUNCH_MERGE_SUBBATCH_CAST_CASE_IMPL(__InT, __OutT, device_ptrs); \
+#define LAUNCH_MERGE_SUBBATCH_CAST_DYNAMIC_CASE(__InT, __OutT)                 \
+  paddle::Tensor ptr_tensor;                                                   \
+  auto device_ptrs =                                                           \
+      GetTensorDevicePtrs<__InT>(x, &ptr_tensor, stream, place);               \
+  LAUNCH_MERGE_SUBBATCH_CAST_CASE_IMPL(__InT, __OutT, device_ptrs);            \
   break
 
-#define LAUNCH_MERGE_SUBBATCH_CAST(__InT, __OutT)           \
-  do {                                                      \
-    LAUNCH_MERGE_SUBBATCH_CAST_FIX_CASE(__InT, __OutT, 1);  \
-    LAUNCH_MERGE_SUBBATCH_CAST_FIX_CASE(__InT, __OutT, 2);  \
-    LAUNCH_MERGE_SUBBATCH_CAST_FIX_CASE(__InT, __OutT, 4);  \
-    LAUNCH_MERGE_SUBBATCH_CAST_FIX_CASE(__InT, __OutT, 8);  \
-    LAUNCH_MERGE_SUBBATCH_CAST_FIX_CASE(__InT, __OutT, 16); \
-    LAUNCH_MERGE_SUBBATCH_CAST_DYNAMIC_CASE(__InT, __OutT); \
+#define LAUNCH_MERGE_SUBBATCH_CAST(__InT, __OutT)                              \
+  do {                                                                         \
+    LAUNCH_MERGE_SUBBATCH_CAST_FIX_CASE(__InT, __OutT, 1);                     \
+    LAUNCH_MERGE_SUBBATCH_CAST_FIX_CASE(__InT, __OutT, 2);                     \
+    LAUNCH_MERGE_SUBBATCH_CAST_FIX_CASE(__InT, __OutT, 4);                     \
+    LAUNCH_MERGE_SUBBATCH_CAST_FIX_CASE(__InT, __OutT, 8);                     \
+    LAUNCH_MERGE_SUBBATCH_CAST_FIX_CASE(__InT, __OutT, 16);                    \
+    LAUNCH_MERGE_SUBBATCH_CAST_DYNAMIC_CASE(__InT, __OutT);                    \
   } while (0)
 
   if (grid > 0) {

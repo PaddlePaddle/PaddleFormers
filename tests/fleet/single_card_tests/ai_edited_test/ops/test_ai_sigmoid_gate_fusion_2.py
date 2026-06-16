@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -30,7 +34,9 @@ import unittest
 def _setup_triton_mock():
     """Create a mock triton module so we can import without GPU."""
     triton_mock = types.ModuleType("triton")
-    triton_mock.jit = lambda fn=None, **kwargs: ((lambda f: f) if fn is None else fn)
+    triton_mock.jit = lambda fn=None, **kwargs: (
+        (lambda f: f) if fn is None else fn
+    )
     triton_mock.language = types.ModuleType("triton.language")
     triton_mock.language.constexpr = None
     tl = triton_mock.language
@@ -113,7 +119,9 @@ class TestSigmoidGateFusionComprehensive(unittest.TestCase):
 
         # d_attn = sigmoid(gate) * grad_output
         expected_attn_grad = paddle.nn.functional.sigmoid(gate)
-        self.assertTrue(paddle.allclose(attn_out.grad, expected_attn_grad, atol=1e-5))
+        self.assertTrue(
+            paddle.allclose(attn_out.grad, expected_attn_grad, atol=1e-5)
+        )
 
     def test_sigmoid_gate_backward_grad_gate(self):
         """Test sigmoid gate backward gradient for gate."""

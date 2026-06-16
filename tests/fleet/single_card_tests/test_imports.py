@@ -132,7 +132,9 @@ def _test_domain_module_imports(module, subdomains: list):
 def test_domain_core():
     import paddleformers.fleet
 
-    all_passed = _test_domain_module_imports(paddleformers.fleet, subdomains=["transformer"])
+    all_passed = _test_domain_module_imports(
+        paddleformers.fleet, subdomains=["transformer"]
+    )
 
     if not all_passed:
         sys.exit(1)

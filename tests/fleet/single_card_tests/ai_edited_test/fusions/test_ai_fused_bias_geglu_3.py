@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -47,8 +51,12 @@ class TestGeGLUCorrectnessExtra(unittest.TestCase):
         out = geglu_back(self.g, self.y)
         y_1, y_2 = paddle.chunk(self.y, 2, -1)
         tanh_out = paddle.tanh(0.79788456 * y_1 * (1 + 0.044715 * y_1 * y_1))
-        ff = 0.5 * y_1 * ((1 - tanh_out * tanh_out) * (0.79788456 + 0.1070322243 * y_1 * y_1)) + 0.5 * (1 + tanh_out)
-        expected = paddle.concat(((self.g * y_2) * ff, self.g * (y_1 * 0.5 * (1.0 + tanh_out))), -1)
+        ff = 0.5 * y_1 * (
+            (1 - tanh_out * tanh_out) * (0.79788456 + 0.1070322243 * y_1 * y_1)
+        ) + 0.5 * (1 + tanh_out)
+        expected = paddle.concat(
+            ((self.g * y_2) * ff, self.g * (y_1 * 0.5 * (1.0 + tanh_out))), -1
+        )
         np.testing.assert_allclose(out.numpy(), expected.numpy(), rtol=1e-5)
 
     def test_bias_geglu_back_correctness(self):
@@ -59,8 +67,12 @@ class TestGeGLUCorrectnessExtra(unittest.TestCase):
         y_shifted = self.y + bias
         y_1, y_2 = paddle.chunk(y_shifted, 2, -1)
         tanh_out = paddle.tanh(0.79788456 * y_1 * (1 + 0.044715 * y_1 * y_1))
-        ff = 0.5 * y_1 * ((1 - tanh_out * tanh_out) * (0.79788456 + 0.1070322243 * y_1 * y_1)) + 0.5 * (1 + tanh_out)
-        expected = paddle.concat(((self.g * y_2) * ff, self.g * (y_1 * 0.5 * (1.0 + tanh_out))), -1)
+        ff = 0.5 * y_1 * (
+            (1 - tanh_out * tanh_out) * (0.79788456 + 0.1070322243 * y_1 * y_1)
+        ) + 0.5 * (1 + tanh_out)
+        expected = paddle.concat(
+            ((self.g * y_2) * ff, self.g * (y_1 * 0.5 * (1.0 + tanh_out))), -1
+        )
         np.testing.assert_allclose(out.numpy(), expected.numpy(), rtol=1e-5)
 
     def test_geglu_back_zero_grad(self):
@@ -78,7 +90,9 @@ class TestBiasGeGLUFunctionAutograd(unittest.TestCase):
         paddle.seed(42)
 
     def test_bias_geglu_function_forward_backward(self):
-        from paddleformers.fleet.fusions.fused_bias_geglu import BiasGeGLUFunction
+        from paddleformers.fleet.fusions.fused_bias_geglu import (
+            BiasGeGLUFunction,
+        )
 
         input_t = paddle.randn([4, 16], dtype=paddle.float32)
         bias = paddle.randn([16], dtype=paddle.float32)
@@ -145,7 +159,10 @@ class TestQuickGeGLUCorrectnessExtra(unittest.TestCase):
         np.testing.assert_allclose(out.numpy(), 0.0, atol=1e-6)
 
     def test_quick_geglu_negative_offset(self):
-        from paddleformers.fleet.fusions.fused_bias_geglu import quick_geglu, quick_gelu
+        from paddleformers.fleet.fusions.fused_bias_geglu import (
+            quick_geglu,
+            quick_gelu,
+        )
 
         out = quick_geglu(self.y, linear_offset=-0.5)
         y_1, y_2 = paddle.chunk(self.y, 2, -1)
@@ -153,19 +170,28 @@ class TestQuickGeGLUCorrectnessExtra(unittest.TestCase):
         np.testing.assert_allclose(out.numpy(), expected.numpy(), rtol=1e-5)
 
     def test_quick_geglu_back_correctness(self):
-        from paddleformers.fleet.fusions.fused_bias_geglu import quick_geglu_back
+        from paddleformers.fleet.fusions.fused_bias_geglu import (
+            quick_geglu_back,
+        )
 
         g = paddle.randn([4, 8], dtype=paddle.float32)
         out = quick_geglu_back(g, self.y, linear_offset=0.0)
         y_1, y_2 = paddle.chunk(self.y, 2, -1)
         sigmoid_out = paddle.sigmoid(1.702 * y_1)
-        dy_1 = g * sigmoid_out * (1 + 1.702 * y_1 * (1 - sigmoid_out)) * (y_2 + 0.0)
+        dy_1 = (
+            g
+            * sigmoid_out
+            * (1 + 1.702 * y_1 * (1 - sigmoid_out))
+            * (y_2 + 0.0)
+        )
         dy_2 = g * y_1 * sigmoid_out
         expected = paddle.concat((dy_1, dy_2), -1)
         np.testing.assert_allclose(out.numpy(), expected.numpy(), rtol=1e-5)
 
     def test_quick_geglu_back_negative_offset(self):
-        from paddleformers.fleet.fusions.fused_bias_geglu import quick_geglu_back
+        from paddleformers.fleet.fusions.fused_bias_geglu import (
+            quick_geglu_back,
+        )
 
         g = paddle.randn([4, 8], dtype=paddle.float32)
         out = quick_geglu_back(g, self.y, linear_offset=-1.0)
@@ -197,10 +223,14 @@ class TestWeightedQuickGeGLUExtra(unittest.TestCase):
         )
 
         g = paddle.randn([4, 8], dtype=paddle.float32)
-        input_grad, weights_grad = weighted_quick_geglu_back(g, self.y, self.weights, linear_offset=0.0)
+        input_grad, weights_grad = weighted_quick_geglu_back(
+            g, self.y, self.weights, linear_offset=0.0
+        )
         # Check input_grad matches chain rule
         manual_input_grad = quick_geglu_back(g * self.weights, self.y, 0.0)
-        np.testing.assert_allclose(input_grad.numpy(), manual_input_grad.numpy(), rtol=1e-5)
+        np.testing.assert_allclose(
+            input_grad.numpy(), manual_input_grad.numpy(), rtol=1e-5
+        )
 
 
 class TestWeightedBiasQuickGeGLUExtra(unittest.TestCase):
@@ -222,7 +252,9 @@ class TestWeightedBiasQuickGeGLUExtra(unittest.TestCase):
             g, self.y, self.bias, self.weights, linear_offset=0.0
         )
         # bias_grad should equal input_grad
-        np.testing.assert_allclose(input_grad.numpy(), bias_grad.numpy(), rtol=1e-5)
+        np.testing.assert_allclose(
+            input_grad.numpy(), bias_grad.numpy(), rtol=1e-5
+        )
 
     def test_weighted_bias_quick_geglu_impl_assert_invalid_dim(self):
         from paddleformers.fleet.fusions.fused_bias_geglu import (
@@ -237,7 +269,9 @@ class TestWeightedBiasQuickGeGLUExtra(unittest.TestCase):
 _SKIP_GEGLU_AUTOGRAD = not paddle.is_compiled_with_cuda()
 
 
-@unittest.skipIf(_SKIP_GEGLU_AUTOGRAD, "WeightedQuickGeGLU autograd tests require CUDA")
+@unittest.skipIf(
+    _SKIP_GEGLU_AUTOGRAD, "WeightedQuickGeGLU autograd tests require CUDA"
+)
 class TestWeightedQuickGeGLUFunctionAutograd(unittest.TestCase):
     """Tests for WeightedQuickGeGLUFunction and WeightedBiasQuickGeGLUFunction."""
 

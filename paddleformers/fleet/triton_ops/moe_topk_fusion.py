@@ -108,7 +108,9 @@ def _fwd_kernel(
                     for i in range(epg):
                         idx = g_start + i
                         if idx < n_experts:
-                            val = tl.load(row_choice_ptr + idx * stride_choice_e)
+                            val = tl.load(
+                                row_choice_ptr + idx * stride_choice_e
+                            )
                             if val > m1:
                                 m2 = m1
                                 m1 = val
@@ -127,7 +129,9 @@ def _fwd_kernel(
         # Apply mask to choice_vals
         choice_group_idx = off_e // epg
         is_selected = (selected_groups_mask >> choice_group_idx) & 1
-        choice_vals = tl.where((is_selected & mask_e), choice_vals, float("-inf"))
+        choice_vals = tl.where(
+            (is_selected & mask_e), choice_vals, float("-inf")
+        )
 
     # --- Choice TopK Logic ---
     row_out_probs = ptr_out_probs + pid * stride_out_s
@@ -210,13 +214,17 @@ def _bwd_kernel(
     offs_k = tl.arange(0, K_BLOCK_SIZE)
     mask_k = offs_k < moe_k
 
-    grad_out_vals = tl.load(row_grad_out + offs_k * stride_grad_out_k, mask=mask_k)
+    grad_out_vals = tl.load(
+        row_grad_out + offs_k * stride_grad_out_k, mask=mask_k
+    )
     indices = tl.load(row_ind + offs_k * stride_ind_k, mask=mask_k)
 
     # Optimization 2: branch on `norm_gate_logits` to avoid redundant work.
     if norm_gate_logits:
         # norm_gate_logits=True path: normalization is required.
-        normed_vals = tl.load(row_normed + offs_k * stride_normed_k, mask=mask_k)
+        normed_vals = tl.load(
+            row_normed + offs_k * stride_normed_k, mask=mask_k
+        )
         sigma = tl.load(sum_ptr + pid)
 
         # Precompute inv_denom_masked = inv_denom * grad_sigma_mask.
@@ -277,7 +285,11 @@ class MoETopkFusion(paddle.autograd.PyLayer):
 
         topk_indices = paddle.empty((seq_len, moe_k), dtype="int32")
         topk_probs = paddle.empty((seq_len, moe_k), dtype=gate_probs.dtype)
-        topk_sum = paddle.empty((seq_len,), dtype="float32") if norm_gate_logits else None
+        topk_sum = (
+            paddle.empty((seq_len,), dtype="float32")
+            if norm_gate_logits
+            else None
+        )
 
         # Block size must cover n_experts for the single-block reduction logic
         BLOCK_SIZE = triton.next_power_of_2(n_experts)
@@ -322,7 +334,9 @@ class MoETopkFusion(paddle.autograd.PyLayer):
         """
         topk_indices, topk_normed_probs, topk_sum = ctx.saved_tensor()
 
-        grad_gate_probs = paddle.zeros(ctx.input_shape, dtype=grad_output_probs.dtype)
+        grad_gate_probs = paddle.zeros(
+            ctx.input_shape, dtype=grad_output_probs.dtype
+        )
 
         # Dummy ptr for sum if not used
         ptr_sum_arg = topk_sum if ctx.norm_gate_logits else grad_output_probs
@@ -401,15 +415,23 @@ def _routing_map_fwd_kernel(
     # moe_k-dim mask: only process valid k values.
     mask_k = offs_k < moe_k
     # Compute load addresses: base + row offset + column offset.
-    indices_ptrs = topk_indices_ptr + (offs_m[:, None] * stride_topk_s) + (offs_k[None, :] * stride_topk_k)
+    indices_ptrs = (
+        topk_indices_ptr
+        + (offs_m[:, None] * stride_topk_s)
+        + (offs_k[None, :] * stride_topk_k)
+    )
     # Load indices; fill out-of-bounds with -1, honoring the moe_k boundary.
-    indices = tl.load(indices_ptrs, mask=mask_m[:, None] & mask_k[None, :], other=-1)
+    indices = tl.load(
+        indices_ptrs, mask=mask_m[:, None] & mask_k[None, :], other=-1
+    )
 
     # Compute the validity mask (is_valid): [BLOCK_M].
     is_valid = tl.full((BLOCK_M,), 1, dtype=tl.int1)
 
     if has_input_ids:
-        in_ids = tl.load(input_ids_ptr + offs_m, mask=mask_m, other=pad_token_id)
+        in_ids = tl.load(
+            input_ids_ptr + offs_m, mask=mask_m, other=pad_token_id
+        )
         is_valid = is_valid & (in_ids != pad_token_id)
 
     if has_pure_text_mask:
@@ -424,7 +446,11 @@ def _routing_map_fwd_kernel(
     if pid_n == 0:
         # Set indices of invalid rows to -1.
         masked_indices = tl.where(is_valid[:, None], indices, -1)
-        out_indices_ptrs = topk_indices_out_ptr + (offs_m[:, None] * stride_topk_s) + (offs_k[None, :] * stride_topk_k)
+        out_indices_ptrs = (
+            topk_indices_out_ptr
+            + (offs_m[:, None] * stride_topk_s)
+            + (offs_k[None, :] * stride_topk_k)
+        )
         # The store must honor both seq_len and moe_k boundaries.
         tl.store(
             out_indices_ptrs,
@@ -459,7 +485,11 @@ def _routing_map_fwd_kernel(
     # 5. Write the routing map
     # -----------------------------------------------------------
     # Compute write addresses: [BLOCK_M, BLOCK_N].
-    routing_out_ptrs = routing_map_ptr + (offs_m[:, None] * stride_routing_s) + (offs_n[None, :] * stride_routing_e)
+    routing_out_ptrs = (
+        routing_map_ptr
+        + (offs_m[:, None] * stride_routing_s)
+        + (offs_n[None, :] * stride_routing_e)
+    )
 
     # Combined mask: honor both the sequence and expert boundaries.
     full_store_mask = mask_m[:, None] & mask_n[None, :]
@@ -534,8 +564,12 @@ def routing_map_fusion_forward(
     # Prepare pointer args: Paddle tensors can be passed directly to Triton.
     _routing_map_fwd_kernel[grid](
         topk_indices_ptr=topk_indices,
-        input_ids_ptr=input_ids if input_ids is not None else topk_indices,  # placeholder
-        is_pure_text_line_ptr=is_pure_text_line if is_pure_text_line is not None else topk_indices,  # placeholder
+        input_ids_ptr=input_ids
+        if input_ids is not None
+        else topk_indices,  # placeholder
+        is_pure_text_line_ptr=is_pure_text_line
+        if is_pure_text_line is not None
+        else topk_indices,  # placeholder
         routing_map_ptr=routing_map,
         topk_indices_out_ptr=topk_indices_out,
         dispatch_mask_ptr=dispatch_mask,

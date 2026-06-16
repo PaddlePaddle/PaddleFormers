@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -30,7 +34,9 @@ import unittest
 def _setup_triton_mock():
     """Create a mock triton module so we can import without GPU."""
     triton_mock = types.ModuleType("triton")
-    triton_mock.jit = lambda fn=None, **kwargs: ((lambda f: f) if fn is None else fn)
+    triton_mock.jit = lambda fn=None, **kwargs: (
+        (lambda f: f) if fn is None else fn
+    )
     triton_mock.language = types.ModuleType("triton.language")
     triton_mock.language.constexpr = None
     tl = triton_mock.language
@@ -146,7 +152,9 @@ class TestLigerFusedLinearCrossEntropyFunction(unittest.TestCase):
             LigerFusedLinearCrossEntropyFunction,
         )
 
-        self.assertTrue(hasattr(LigerFusedLinearCrossEntropyFunction, "forward"))
+        self.assertTrue(
+            hasattr(LigerFusedLinearCrossEntropyFunction, "forward")
+        )
 
     def test_has_backward(self):
         """Test that the class has backward method."""
@@ -154,7 +162,9 @@ class TestLigerFusedLinearCrossEntropyFunction(unittest.TestCase):
             LigerFusedLinearCrossEntropyFunction,
         )
 
-        self.assertTrue(hasattr(LigerFusedLinearCrossEntropyFunction, "backward"))
+        self.assertTrue(
+            hasattr(LigerFusedLinearCrossEntropyFunction, "backward")
+        )
 
 
 @unittest.skipUnless(_MODULE_AVAILABLE, "paddlefleet_ops module not available")
@@ -199,7 +209,9 @@ class TestFusedLinearCrossEntropyLogic(unittest.TestCase):
         target = paddle.to_tensor([0, -100, 5, 3])
 
         logits = paddle.matmul(_input, weight.T)
-        loss = paddle.nn.functional.cross_entropy(logits, target, ignore_index=-100)
+        loss = paddle.nn.functional.cross_entropy(
+            logits, target, ignore_index=-100
+        )
 
         self.assertIsNotNone(loss)
 
@@ -226,7 +238,9 @@ class TestFusedLinearCrossEntropyLogic(unittest.TestCase):
         target = paddle.randint(0, 16, [4])
 
         logits = paddle.matmul(_input, weight.T)
-        loss = paddle.nn.functional.cross_entropy(logits, target, reduction="none")
+        loss = paddle.nn.functional.cross_entropy(
+            logits, target, reduction="none"
+        )
 
         self.assertEqual(loss.shape, [4])
 
@@ -239,7 +253,9 @@ class TestFusedLinearCrossEntropyLogic(unittest.TestCase):
         target = paddle.randint(0, 16, [4])
 
         logits = paddle.matmul(_input, weight.T)
-        loss = paddle.nn.functional.cross_entropy(logits, target, reduction="mean")
+        loss = paddle.nn.functional.cross_entropy(
+            logits, target, reduction="mean"
+        )
 
         self.assertEqual(loss.shape, [])
 

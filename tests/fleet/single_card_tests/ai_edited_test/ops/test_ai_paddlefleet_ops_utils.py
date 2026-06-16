@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -183,7 +187,9 @@ class TestHardwareIncompatibleBlocker(unittest.TestCase):
         blocker = HardwareIncompatibleBlocker(error_messages)
 
         with self.assertRaises(RuntimeError):
-            blocker.find_spec("paddlefleet_ops.blocked_lib.submodule", None, None)
+            blocker.find_spec(
+                "paddlefleet_ops.blocked_lib.submodule", None, None
+            )
 
     def test_allowed_module_passes(self):
         """Test that non-blocked module returns None (no spec)."""
@@ -216,7 +222,8 @@ class TestGetCudaVersion(unittest.TestCase):
     @patch(
         "subprocess.run",
         return_value=MagicMock(
-            stdout="nvcc: NVIDIA (R) Cuda compiler driver\n" "Cuda compilation tools, release 12.4, V12.4.131"
+            stdout="nvcc: NVIDIA (R) Cuda compiler driver\n"
+            "Cuda compilation tools, release 12.4, V12.4.131"
         ),
     )
     def test_cuda_version_parsed(self, mock_run, mock_which):

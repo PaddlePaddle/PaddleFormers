@@ -44,7 +44,9 @@ from paddle.distributed import fleet
 from paddle.distributed.fleet.utils import recompute
 
 try:
-    from paddleformers.fleet.refined_recompute.queue_check import global_rr_queue_log
+    from paddleformers.fleet.refined_recompute.queue_check import (
+        global_rr_queue_log,
+    )
     from paddleformers.fleet.transformer.moe.fused_a2a import (
         DeepEPCombineAsyncRefinedRecompute,
         fused_combine,
@@ -72,7 +74,9 @@ class SharedExpertSimulator(paddle.nn.Layer):
 
     def __init__(self):
         super().__init__()
-        self.linear = paddle.nn.Linear(hidden_size, hidden_size, bias_attr=False)
+        self.linear = paddle.nn.Linear(
+            hidden_size, hidden_size, bias_attr=False
+        )
 
     def forward(self, x):
         return (self.linear(x),)
@@ -91,8 +95,12 @@ class TestCombineLayer(paddle.nn.Layer):
             self._rr_fusedcombined = DeepEPCombineAsyncRefinedRecompute()
         else:
             self._rr_fusedcombined = None
-        self.group = fleet.get_hybrid_communicate_group().get_model_parallel_group()
-        self.linear = paddle.nn.Linear(hidden_size, hidden_size, bias_attr=False)
+        self.group = (
+            fleet.get_hybrid_communicate_group().get_model_parallel_group()
+        )
+        self.linear = paddle.nn.Linear(
+            hidden_size, hidden_size, bias_attr=False
+        )
         self.shared_expert = SharedExpertSimulator()
         self.deepep_dtype = paddle.bfloat16
 
@@ -143,7 +151,9 @@ class TestRecomputeLayer(paddle.nn.Layer):
         self.combine_layer = TestCombineLayer(use_rr=use_rr)
 
     def forward(self, x, mock_token_indices, mock_token_probs):
-        out = recompute(self.combine_layer, x, mock_token_indices, mock_token_probs)
+        out = recompute(
+            self.combine_layer, x, mock_token_indices, mock_token_probs
+        )
         return out
 
 
@@ -157,7 +167,9 @@ class TestRRDeepEPCombine(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if fused_combine is None or fused_dispatch is None:
-            raise unittest.SkipTest("DeepEP fused_combine/fused_dispatch not available.")
+            raise unittest.SkipTest(
+                "DeepEP fused_combine/fused_dispatch not available."
+            )
 
         cls.original_dtype = paddle.get_default_dtype()
         paddle.set_default_dtype("float32")
@@ -179,10 +191,14 @@ class TestRRDeepEPCombine(unittest.TestCase):
         cls.x = paddle.randn([batch_size, hidden_size], dtype="float32")
 
         num_tokens = paddle.shape(cls.x)[0]
-        cls.mock_token_indices = paddle.randint(0, num_experts, shape=[num_tokens, topk])
+        cls.mock_token_indices = paddle.randint(
+            0, num_experts, shape=[num_tokens, topk]
+        )
         cls.mock_token_indices.stop_gradient = True
 
-        cls.mock_token_probs_raw = paddle.rand([num_tokens, topk], dtype="float32")
+        cls.mock_token_probs_raw = paddle.rand(
+            [num_tokens, topk], dtype="float32"
+        )
         cls.mock_token_probs_raw.stop_gradient = False
 
     @classmethod
@@ -247,7 +263,9 @@ class TestRRDeepEPCombine(unittest.TestCase):
         # Verify all RR queues are fully consumed
         global_rr_queue_log.check()
 
-        print("\nTest passed: All gradients with and without Refined Recompute are consistent.")
+        print(
+            "\nTest passed: All gradients with and without Refined Recompute are consistent."
+        )
 
 
 if __name__ == "__main__":

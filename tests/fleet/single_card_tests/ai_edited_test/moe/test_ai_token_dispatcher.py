@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -189,7 +193,9 @@ class TestTokenDispatcher(unittest.TestCase):
 
         dispatcher.output_shape_tokens = [4, 64]
         dispatcher.output_splits = [4]
-        dispatcher.input_split_sizes = paddle.to_tensor([2, 2], dtype=paddle.int64)
+        dispatcher.input_split_sizes = paddle.to_tensor(
+            [2, 2], dtype=paddle.int64
+        )
         dispatcher.permutated_local_input_tokens_shape = [4, 64]
 
         tokens = paddle.randn([4, 64], dtype=paddle.float32)
@@ -229,14 +235,18 @@ class TestTokenDispatcher(unittest.TestCase):
         dispatcher.routing_map = routing_map
         dispatcher.probs = probs
 
-        _, dispatcher.reversed_local_input_permutation_mapping = permute(hidden, routing_map)
+        _, dispatcher.reversed_local_input_permutation_mapping = permute(
+            hidden, routing_map
+        )
 
         result = dispatcher.combine_postprocess(hidden)
         self.assertIsNotNone(result)
 
     def test_deepep_manager_no_deep_ep_raises(self):
         """Test _DeepEPManager raises ImportError when DeepEP unavailable."""
-        from paddleformers.fleet.transformer.moe.token_dispatcher import _DeepEPManager
+        from paddleformers.fleet.transformer.moe.token_dispatcher import (
+            _DeepEPManager,
+        )
 
         mock_group = MagicMock()
         mock_group.world_size = 2
@@ -261,7 +271,9 @@ class TestTokenDispatcher(unittest.TestCase):
 
     def test_deepep_manager_init(self):
         """Test _DeepEPManager initialization."""
-        from paddleformers.fleet.transformer.moe.token_dispatcher import _DeepEPManager
+        from paddleformers.fleet.transformer.moe.token_dispatcher import (
+            _DeepEPManager,
+        )
 
         mock_group = MagicMock()
         mock_group.world_size = 2
@@ -291,7 +303,9 @@ class TestTokenDispatcher(unittest.TestCase):
 
     def test_deepep_manager_setup_metadata(self):
         """Test _DeepEPManager.setup_metadata."""
-        from paddleformers.fleet.transformer.moe.token_dispatcher import _DeepEPManager
+        from paddleformers.fleet.transformer.moe.token_dispatcher import (
+            _DeepEPManager,
+        )
 
         mock_group = MagicMock()
         mock_group.world_size = 2
@@ -320,7 +334,9 @@ class TestTokenDispatcher(unittest.TestCase):
 
     def test_deepep_manager_indices_to_multihot(self):
         """Test _DeepEPManager._indices_to_multihot."""
-        from paddleformers.fleet.transformer.moe.token_dispatcher import _DeepEPManager
+        from paddleformers.fleet.transformer.moe.token_dispatcher import (
+            _DeepEPManager,
+        )
 
         mock_group = MagicMock()
         mock_group.world_size = 2
@@ -343,7 +359,9 @@ class TestTokenDispatcher(unittest.TestCase):
             )
             indices = paddle.to_tensor([[0, 1], [0, -1]], dtype=paddle.int64)
             probs = paddle.randn([2, 2], dtype=paddle.float32)
-            routing_map, multihot_probs = manager._indices_to_multihot(indices, probs)
+            routing_map, multihot_probs = manager._indices_to_multihot(
+                indices, probs
+            )
             self.assertEqual(routing_map.shape, [2, 2])
             self.assertEqual(multihot_probs.shape, [2, 2])
 

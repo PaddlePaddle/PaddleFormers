@@ -45,7 +45,9 @@ class TestCalculatePaddedVocabSize(unittest.TestCase):
     def test_large_vocab(self):
         multiple = 128 * 8
         expected = math.ceil(50000 / multiple) * multiple
-        result = calculate_padded_vocab_size(50000, 128, 8, logging_enabled=False)
+        result = calculate_padded_vocab_size(
+            50000, 128, 8, logging_enabled=False
+        )
         self.assertEqual(result, expected)
 
     def test_zero_vocab_size_raises(self):

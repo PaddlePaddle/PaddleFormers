@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -34,7 +38,9 @@ class TestSetLogging(unittest.TestCase):
     def tearDown(self):
         # Remove any mock handlers added by set_logging to avoid test pollution.
         logger = logging.getLogger("paddleformers.fleet")
-        logger.handlers = [h for h in logger.handlers if isinstance(h, logging.Handler)]
+        logger.handlers = [
+            h for h in logger.handlers if isinstance(h, logging.Handler)
+        ]
 
     def test_set_logging_default_level(self):
         """Test set_logging with default logging level."""
@@ -44,7 +50,7 @@ class TestSetLogging(unittest.TestCase):
         mock_args.logging_level = logging.INFO
 
         mock_handler = mock.MagicMock()
-        with mock.patch("colorlog.StreamHandler", return_value=mock_handler):  # noqa: SIM117
+        with mock.patch("colorlog.StreamHandler", return_value=mock_handler):
             with mock.patch("colorlog.ColoredFormatter"):
                 set_logging(mock_args)
                 mock_handler.setFormatter.assert_called_once()
@@ -57,7 +63,7 @@ class TestSetLogging(unittest.TestCase):
         mock_args.logging_level = logging.DEBUG
 
         mock_handler = mock.MagicMock()
-        with mock.patch("colorlog.StreamHandler", return_value=mock_handler):  # noqa: SIM117
+        with mock.patch("colorlog.StreamHandler", return_value=mock_handler):
             with mock.patch("colorlog.ColoredFormatter"):
                 set_logging(mock_args)
                 mock_handler.setFormatter.assert_called_once()
@@ -70,7 +76,7 @@ class TestSetLogging(unittest.TestCase):
         mock_args.logging_level = logging.WARNING
 
         mock_handler = mock.MagicMock()
-        with mock.patch("colorlog.StreamHandler", return_value=mock_handler):  # noqa: SIM117
+        with mock.patch("colorlog.StreamHandler", return_value=mock_handler):
             with mock.patch("colorlog.ColoredFormatter"):
                 set_logging(mock_args)
                 mock_handler.setFormatter.assert_called_once()
@@ -84,7 +90,7 @@ class TestSetLogging(unittest.TestCase):
         del mock_args.logging_level
 
         mock_handler = mock.MagicMock()
-        with mock.patch("colorlog.StreamHandler", return_value=mock_handler):  # noqa: SIM117
+        with mock.patch("colorlog.StreamHandler", return_value=mock_handler):
             with mock.patch("colorlog.ColoredFormatter"):
                 set_logging(mock_args)
                 # Should use default logging.INFO
@@ -99,7 +105,7 @@ class TestSetLogging(unittest.TestCase):
         mock_args.logging_level = logging.INFO
 
         mock_handler = mock.MagicMock()
-        with mock.patch("colorlog.StreamHandler", return_value=mock_handler):  # noqa: SIM117
+        with mock.patch("colorlog.StreamHandler", return_value=mock_handler):
             with mock.patch("colorlog.ColoredFormatter"):
                 set_logging(mock_args)
                 logger = logging.getLogger("paddleformers.fleet")
@@ -116,11 +122,19 @@ class TestInitializeFleet(unittest.TestCase):
         mock_args = mock.MagicMock()
         mock_strategy = mock.MagicMock()
 
-        with mock.patch("paddleformers.fleet.training.initialize.set_global_variables") as mock_sg:  # noqa: SIM117
-            with mock.patch("paddleformers.fleet.training.initialize.set_logging") as mock_sl:
+        with mock.patch(
+            "paddleformers.fleet.training.initialize.set_global_variables"
+        ) as mock_sg:
+            with mock.patch(
+                "paddleformers.fleet.training.initialize.set_logging"
+            ) as mock_sl:
                 with mock.patch("paddle.distributed.fleet.init"):
-                    with mock.patch("paddle.distributed.fleet.get_hybrid_communicate_group") as mock_hcg:
-                        with mock.patch("paddle.distributed.get_rank", return_value=0):
+                    with mock.patch(
+                        "paddle.distributed.fleet.get_hybrid_communicate_group"
+                    ) as mock_hcg:
+                        with mock.patch(
+                            "paddle.distributed.get_rank", return_value=0
+                        ):
                             with mock.patch(
                                 "paddle.distributed.get_world_size",
                                 return_value=1,
@@ -128,7 +142,9 @@ class TestInitializeFleet(unittest.TestCase):
                                 with mock.patch(
                                     "paddleformers.fleet.training.initialize.ps.initialize_model_parallel"
                                 ):
-                                    initialize_fleet(mock_strategy, parsed_args=mock_args)
+                                    initialize_fleet(
+                                        mock_strategy, parsed_args=mock_args
+                                    )
                                     mock_sg.assert_called_once_with(mock_args)
                                     mock_sl.assert_called_once_with(mock_args)
 
@@ -139,15 +155,23 @@ class TestInitializeFleet(unittest.TestCase):
         mock_args = mock.MagicMock()
         mock_strategy = mock.MagicMock()
 
-        with mock.patch(  # noqa: SIM117
+        with mock.patch(
             "paddleformers.fleet.training.initialize.parse_args",
             return_value=mock_args,
         ) as mock_parse:
-            with mock.patch("paddleformers.fleet.training.initialize.set_global_variables"):
-                with mock.patch("paddleformers.fleet.training.initialize.set_logging"):
+            with mock.patch(
+                "paddleformers.fleet.training.initialize.set_global_variables"
+            ):
+                with mock.patch(
+                    "paddleformers.fleet.training.initialize.set_logging"
+                ):
                     with mock.patch("paddle.distributed.fleet.init"):
-                        with mock.patch("paddle.distributed.fleet.get_hybrid_communicate_group"):
-                            with mock.patch("paddle.distributed.get_rank", return_value=0):
+                        with mock.patch(
+                            "paddle.distributed.fleet.get_hybrid_communicate_group"
+                        ):
+                            with mock.patch(
+                                "paddle.distributed.get_rank", return_value=0
+                            ):
                                 with mock.patch(
                                     "paddle.distributed.get_world_size",
                                     return_value=1,
@@ -156,7 +180,9 @@ class TestInitializeFleet(unittest.TestCase):
                                         "paddleformers.fleet.training.initialize.ps.initialize_model_parallel"
                                     ):
                                         initialize_fleet(mock_strategy)
-                                        mock_parse.assert_called_once_with(ignore_unknown_args=True)
+                                        mock_parse.assert_called_once_with(
+                                            ignore_unknown_args=True
+                                        )
 
     def test_initialize_fleet_kwargs(self):
         """Test initialize_fleet passes kwargs to parse_args."""
@@ -165,15 +191,23 @@ class TestInitializeFleet(unittest.TestCase):
         mock_args = mock.MagicMock()
         mock_strategy = mock.MagicMock()
 
-        with mock.patch(  # noqa: SIM117
+        with mock.patch(
             "paddleformers.fleet.training.initialize.parse_args",
             return_value=mock_args,
         ) as mock_parse:
-            with mock.patch("paddleformers.fleet.training.initialize.set_global_variables"):
-                with mock.patch("paddleformers.fleet.training.initialize.set_logging"):
+            with mock.patch(
+                "paddleformers.fleet.training.initialize.set_global_variables"
+            ):
+                with mock.patch(
+                    "paddleformers.fleet.training.initialize.set_logging"
+                ):
                     with mock.patch("paddle.distributed.fleet.init"):
-                        with mock.patch("paddle.distributed.fleet.get_hybrid_communicate_group"):
-                            with mock.patch("paddle.distributed.get_rank", return_value=0):
+                        with mock.patch(
+                            "paddle.distributed.fleet.get_hybrid_communicate_group"
+                        ):
+                            with mock.patch(
+                                "paddle.distributed.get_rank", return_value=0
+                            ):
                                 with mock.patch(
                                     "paddle.distributed.get_world_size",
                                     return_value=1,
@@ -181,7 +215,9 @@ class TestInitializeFleet(unittest.TestCase):
                                     with mock.patch(
                                         "paddleformers.fleet.training.initialize.ps.initialize_model_parallel"
                                     ):
-                                        initialize_fleet(mock_strategy, some_arg=42)
+                                        initialize_fleet(
+                                            mock_strategy, some_arg=42
+                                        )
                                         mock_parse.assert_called_once()
                                         _, kwargs = mock_parse.call_args
                                         self.assertEqual(kwargs["some_arg"], 42)
@@ -193,11 +229,19 @@ class TestInitializeFleet(unittest.TestCase):
         mock_args = mock.MagicMock()
         mock_strategy = mock.MagicMock()
 
-        with mock.patch("paddleformers.fleet.training.initialize.set_global_variables"):  # noqa: SIM117
-            with mock.patch("paddleformers.fleet.training.initialize.set_logging"):
+        with mock.patch(
+            "paddleformers.fleet.training.initialize.set_global_variables"
+        ):
+            with mock.patch(
+                "paddleformers.fleet.training.initialize.set_logging"
+            ):
                 with mock.patch("paddle.distributed.fleet.init") as mock_init:
-                    with mock.patch("paddle.distributed.fleet.get_hybrid_communicate_group"):
-                        with mock.patch("paddle.distributed.get_rank", return_value=0):
+                    with mock.patch(
+                        "paddle.distributed.fleet.get_hybrid_communicate_group"
+                    ):
+                        with mock.patch(
+                            "paddle.distributed.get_rank", return_value=0
+                        ):
                             with mock.patch(
                                 "paddle.distributed.get_world_size",
                                 return_value=1,
@@ -205,7 +249,9 @@ class TestInitializeFleet(unittest.TestCase):
                                 with mock.patch(
                                     "paddleformers.fleet.training.initialize.ps.initialize_model_parallel"
                                 ):
-                                    initialize_fleet(mock_strategy, parsed_args=mock_args)
+                                    initialize_fleet(
+                                        mock_strategy, parsed_args=mock_args
+                                    )
                                     mock_init.assert_called_once_with(
                                         is_collective=True,
                                         strategy=mock_strategy,
@@ -223,14 +269,20 @@ class TestInitializeFleetParallelState(unittest.TestCase):
         mock_strategy = mock.MagicMock()
         mock_hcg = mock.MagicMock()
 
-        with mock.patch("paddleformers.fleet.training.initialize.set_global_variables"):  # noqa: SIM117
-            with mock.patch("paddleformers.fleet.training.initialize.set_logging"):
+        with mock.patch(
+            "paddleformers.fleet.training.initialize.set_global_variables"
+        ):
+            with mock.patch(
+                "paddleformers.fleet.training.initialize.set_logging"
+            ):
                 with mock.patch("paddle.distributed.fleet.init"):
                     with mock.patch(
                         "paddle.distributed.fleet.get_hybrid_communicate_group",
                         return_value=mock_hcg,
                     ):
-                        with mock.patch("paddle.distributed.get_rank", return_value=0):
+                        with mock.patch(
+                            "paddle.distributed.get_rank", return_value=0
+                        ):
                             with mock.patch(
                                 "paddle.distributed.get_world_size",
                                 return_value=2,
@@ -238,7 +290,9 @@ class TestInitializeFleetParallelState(unittest.TestCase):
                                 with mock.patch(
                                     "paddleformers.fleet.training.initialize.ps.initialize_model_parallel"
                                 ) as mock_imp:
-                                    initialize_fleet(mock_strategy, parsed_args=mock_args)
+                                    initialize_fleet(
+                                        mock_strategy, parsed_args=mock_args
+                                    )
                                     mock_imp.assert_called_once_with(mock_hcg)
 
 

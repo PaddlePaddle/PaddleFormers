@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -139,11 +143,15 @@ class TestQwen3VLVisionTransformerLayerForward(unittest.TestCase):
 
     def test_forward_pops_dynamic_inference(self):
         """Test forward pops dynamic_inference_decode_only and position_ids."""
-        layer = Qwen3VLVisionTransformerLayer.__new__(Qwen3VLVisionTransformerLayer)
+        layer = Qwen3VLVisionTransformerLayer.__new__(
+            Qwen3VLVisionTransformerLayer
+        )
         layer.full_recompute = False
         layer.modal = "vision"
         layer.deepstack_merger = None
-        layer._forward_impl = MagicMock(return_value=(paddle.randn([2, 8, 64]), None))
+        layer._forward_impl = MagicMock(
+            return_value=(paddle.randn([2, 8, 64]), None)
+        )
 
         dict_args = {
             "hidden_states": paddle.randn([2, 8, 64]),
@@ -156,11 +164,17 @@ class TestQwen3VLVisionTransformerLayerForward(unittest.TestCase):
 
     def test_forward_with_deepstack_feature(self):
         """Test forward with deepstack_merger returns feature."""
-        layer = Qwen3VLVisionTransformerLayer.__new__(Qwen3VLVisionTransformerLayer)
+        layer = Qwen3VLVisionTransformerLayer.__new__(
+            Qwen3VLVisionTransformerLayer
+        )
         layer.full_recompute = False
         layer.modal = "vision"
-        layer.deepstack_merger = MagicMock(return_value=paddle.randn([2, 8, 64]))
-        layer._forward_attention = MagicMock(return_value=(paddle.randn([2, 8, 64]), None))
+        layer.deepstack_merger = MagicMock(
+            return_value=paddle.randn([2, 8, 64])
+        )
+        layer._forward_attention = MagicMock(
+            return_value=(paddle.randn([2, 8, 64]), None)
+        )
         layer._forward_mlp = MagicMock(return_value=paddle.randn([2, 8, 64]))
 
         dict_args = {
@@ -171,11 +185,15 @@ class TestQwen3VLVisionTransformerLayerForward(unittest.TestCase):
 
     def test_forward_without_deepstack_merger(self):
         """Test forward without deepstack_merger."""
-        layer = Qwen3VLVisionTransformerLayer.__new__(Qwen3VLVisionTransformerLayer)
+        layer = Qwen3VLVisionTransformerLayer.__new__(
+            Qwen3VLVisionTransformerLayer
+        )
         layer.full_recompute = False
         layer.modal = "vision"
         layer.deepstack_merger = None
-        layer._forward_impl = MagicMock(return_value=(paddle.randn([2, 8, 64]), None))
+        layer._forward_impl = MagicMock(
+            return_value=(paddle.randn([2, 8, 64]), None)
+        )
 
         dict_args = {
             "hidden_states": paddle.randn([2, 8, 64]),
@@ -188,7 +206,9 @@ class TestQwen3VLVisionTransformerLayerForward(unittest.TestCase):
 
     def test_forward_with_context_3_elem(self):
         """Test forward when _forward_impl returns 3 elements (context path)."""
-        layer = Qwen3VLVisionTransformerLayer.__new__(Qwen3VLVisionTransformerLayer)
+        layer = Qwen3VLVisionTransformerLayer.__new__(
+            Qwen3VLVisionTransformerLayer
+        )
         layer.full_recompute = False
         layer.modal = "vision"
         layer.deepstack_merger = None

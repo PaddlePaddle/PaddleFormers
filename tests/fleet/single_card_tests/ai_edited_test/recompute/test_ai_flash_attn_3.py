@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -34,14 +38,18 @@ class TestGetFaVersion(unittest.TestCase):
 
     def test_returns_int(self):
         """Test that _get_fa_version returns an integer."""
-        from paddleformers.fleet.refined_recompute.flash_attn import _get_fa_version
+        from paddleformers.fleet.refined_recompute.flash_attn import (
+            _get_fa_version,
+        )
 
         result = _get_fa_version(64)
         self.assertIsInstance(result, int)
 
     def test_returns_2_or_3(self):
         """Test that _get_fa_version returns 2 or 3."""
-        from paddleformers.fleet.refined_recompute.flash_attn import _get_fa_version
+        from paddleformers.fleet.refined_recompute.flash_attn import (
+            _get_fa_version,
+        )
 
         result = _get_fa_version(64)
         self.assertIn(result, [2, 3, 4])
@@ -52,26 +60,34 @@ class TestFlashattnAutoCast(unittest.TestCase):
 
     def test_casts_to_bfloat16(self):
         """Test that tensors are cast to bfloat16."""
-        from paddleformers.fleet.refined_recompute.flash_attn import flashattn_auto_cast
+        from paddleformers.fleet.refined_recompute.flash_attn import (
+            flashattn_auto_cast,
+        )
 
         q = paddle.randn([2, 4, 8], dtype=paddle.float32)
         k = paddle.randn([2, 4, 8], dtype=paddle.float32)
         v = paddle.randn([2, 4, 8], dtype=paddle.float32)
 
-        q_out, k_out, v_out = flashattn_auto_cast(q, k, v, dtype=paddle.bfloat16)
+        q_out, k_out, v_out = flashattn_auto_cast(
+            q, k, v, dtype=paddle.bfloat16
+        )
         self.assertEqual(q_out.dtype, paddle.bfloat16)
         self.assertEqual(k_out.dtype, paddle.bfloat16)
         self.assertEqual(v_out.dtype, paddle.bfloat16)
 
     def test_no_cast_when_same_dtype(self):
         """Test no cast when tensor already has target dtype."""
-        from paddleformers.fleet.refined_recompute.flash_attn import flashattn_auto_cast
+        from paddleformers.fleet.refined_recompute.flash_attn import (
+            flashattn_auto_cast,
+        )
 
         q = paddle.randn([2, 4, 8], dtype=paddle.bfloat16)
         k = paddle.randn([2, 4, 8], dtype=paddle.bfloat16)
         v = paddle.randn([2, 4, 8], dtype=paddle.bfloat16)
 
-        q_out, k_out, v_out = flashattn_auto_cast(q, k, v, dtype=paddle.bfloat16)
+        q_out, k_out, v_out = flashattn_auto_cast(
+            q, k, v, dtype=paddle.bfloat16
+        )
         # Should return the same tensors (no copy)
         self.assertTrue(q_out is q)
         self.assertTrue(k_out is k)
@@ -79,20 +95,26 @@ class TestFlashattnAutoCast(unittest.TestCase):
 
     def test_casts_float16_to_bfloat16(self):
         """Test casting float16 to bfloat16."""
-        from paddleformers.fleet.refined_recompute.flash_attn import flashattn_auto_cast
+        from paddleformers.fleet.refined_recompute.flash_attn import (
+            flashattn_auto_cast,
+        )
 
         q = paddle.randn([2, 4, 8], dtype=paddle.float16)
         k = paddle.randn([2, 4, 8], dtype=paddle.float16)
         v = paddle.randn([2, 4, 8], dtype=paddle.float16)
 
-        q_out, k_out, v_out = flashattn_auto_cast(q, k, v, dtype=paddle.bfloat16)
+        q_out, k_out, v_out = flashattn_auto_cast(
+            q, k, v, dtype=paddle.bfloat16
+        )
         self.assertEqual(q_out.dtype, paddle.bfloat16)
         self.assertEqual(k_out.dtype, paddle.bfloat16)
         self.assertEqual(v_out.dtype, paddle.bfloat16)
 
     def test_preserves_shape(self):
         """Test that shape is preserved after casting."""
-        from paddleformers.fleet.refined_recompute.flash_attn import flashattn_auto_cast
+        from paddleformers.fleet.refined_recompute.flash_attn import (
+            flashattn_auto_cast,
+        )
 
         q = paddle.randn([2, 4, 8], dtype=paddle.float32)
         k = paddle.randn([2, 4, 8], dtype=paddle.float32)
@@ -223,7 +245,9 @@ class TestFlashAttnFunctor(unittest.TestCase):
 
     def test_class_exists(self):
         """Test that FlashAttnFunctor can be imported."""
-        from paddleformers.fleet.refined_recompute.flash_attn import FlashAttnFunctor
+        from paddleformers.fleet.refined_recompute.flash_attn import (
+            FlashAttnFunctor,
+        )
 
         self.assertTrue(callable(FlashAttnFunctor))
 

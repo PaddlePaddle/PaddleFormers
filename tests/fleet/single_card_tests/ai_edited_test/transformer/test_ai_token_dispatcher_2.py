@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -66,8 +70,14 @@ class TestDispatchManagerAbstract(unittest.TestCase):
 class TestDeepepManagerConstruction(unittest.TestCase):
     """Tests for _DeepepManager construction."""
 
-    @patch("paddleformers.fleet.transformer.moe.token_dispatcher.fused_dispatch", True)
-    @patch("paddleformers.fleet.transformer.moe.token_dispatcher.fused_combine", True)
+    @patch(
+        "paddleformers.fleet.transformer.moe.token_dispatcher.fused_dispatch",
+        True,
+    )
+    @patch(
+        "paddleformers.fleet.transformer.moe.token_dispatcher.fused_combine",
+        True,
+    )
     def test_basic_construction(self):
         """Test basic _DeepepManager construction."""
         mock_group = MagicMock()
@@ -79,8 +89,14 @@ class TestDeepepManagerConstruction(unittest.TestCase):
         self.assertEqual(manager.router_topk, 2)
         self.assertEqual(manager.num_experts, 8)
 
-    @patch("paddleformers.fleet.transformer.moe.token_dispatcher.fused_dispatch", True)
-    @patch("paddleformers.fleet.transformer.moe.token_dispatcher.fused_combine", True)
+    @patch(
+        "paddleformers.fleet.transformer.moe.token_dispatcher.fused_dispatch",
+        True,
+    )
+    @patch(
+        "paddleformers.fleet.transformer.moe.token_dispatcher.fused_combine",
+        True,
+    )
     def test_construction_with_local_experts(self):
         """Test _DeepepManager with num_local_experts."""
         mock_group = MagicMock()
@@ -91,8 +107,14 @@ class TestDeepepManagerConstruction(unittest.TestCase):
         )
         self.assertEqual(manager.num_local_experts, 4)
 
-    @patch("paddleformers.fleet.transformer.moe.token_dispatcher.fused_dispatch", True)
-    @patch("paddleformers.fleet.transformer.moe.token_dispatcher.fused_combine", True)
+    @patch(
+        "paddleformers.fleet.transformer.moe.token_dispatcher.fused_dispatch",
+        True,
+    )
+    @patch(
+        "paddleformers.fleet.transformer.moe.token_dispatcher.fused_combine",
+        True,
+    )
     def test_default_moe_ep_barrier(self):
         """Test default moe_ep_barrier value."""
         mock_group = MagicMock()
@@ -102,8 +124,14 @@ class TestDeepepManagerConstruction(unittest.TestCase):
         )
         self.assertTrue(manager.moe_ep_barrier)
 
-    @patch("paddleformers.fleet.transformer.moe.token_dispatcher.fused_dispatch", True)
-    @patch("paddleformers.fleet.transformer.moe.token_dispatcher.fused_combine", True)
+    @patch(
+        "paddleformers.fleet.transformer.moe.token_dispatcher.fused_dispatch",
+        True,
+    )
+    @patch(
+        "paddleformers.fleet.transformer.moe.token_dispatcher.fused_combine",
+        True,
+    )
     def test_metadata_initially_none(self):
         """Test that metadata is None initially."""
         mock_group = MagicMock()
@@ -141,7 +169,9 @@ class TestMoETokenDispatcherProperties(unittest.TestCase):
         mock_ep = MagicMock()
         dispatcher = MoETokenDispatcher(mock_ep)
         with self.assertRaises(NotImplementedError):
-            dispatcher.token_permutation(paddle.randn([4, 8]), paddle.randn([4, 2]), paddle.randn([4, 2]))
+            dispatcher.token_permutation(
+                paddle.randn([4, 8]), paddle.randn([4, 2]), paddle.randn([4, 2])
+            )
 
     def test_token_unpermutation_not_implemented(self):
         """Test token_unpermutation raises NotImplementedError."""

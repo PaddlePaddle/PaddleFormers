@@ -53,7 +53,9 @@ def _get_thd_token_idx(cu_seqlens, pid_m, seq_num, cp_rank, cp_size):
         if token_idx < this_seq_len // 2:
             token_idx = token_idx + cp_rank * this_seq_len // 2
         else:
-            token_idx = (token_idx - this_seq_len // 2) + (2 * cp_size - cp_rank - 1) * this_seq_len // 2
+            token_idx = (token_idx - this_seq_len // 2) + (
+                2 * cp_size - cp_rank - 1
+            ) * this_seq_len // 2
     return token_idx
 
 
@@ -94,12 +96,18 @@ def rotary_fwd_q_kernel(
         # bshd: pid_m = b * seq_len + s  →  token_idx = s
         token_idx = pid_m % seq_len
     else:
-        token_idx = _get_thd_token_idx(cu_seqlens_q, pid_m, seq_num, cp_rank, cp_size)
+        token_idx = _get_thd_token_idx(
+            cu_seqlens_q, pid_m, seq_num, cp_rank, cp_size
+        )
 
     cos_left = tl.load(COS + token_idx * emb_dim + tl.arange(0, emb_dim // 2))
     sin_left = tl.load(SIN + token_idx * emb_dim + tl.arange(0, emb_dim // 2))
-    cos_right = tl.load(COS + token_idx * emb_dim + emb_dim // 2 + tl.arange(0, emb_dim // 2))
-    sin_right = tl.load(SIN + token_idx * emb_dim + emb_dim // 2 + tl.arange(0, emb_dim // 2))
+    cos_right = tl.load(
+        COS + token_idx * emb_dim + emb_dim // 2 + tl.arange(0, emb_dim // 2)
+    )
+    sin_right = tl.load(
+        SIN + token_idx * emb_dim + emb_dim // 2 + tl.arange(0, emb_dim // 2)
+    )
     cos_left = cos_left.expand_dims(0).broadcast_to(BLOCK_H, emb_dim // 2)
     sin_left = sin_left.expand_dims(0).broadcast_to(BLOCK_H, emb_dim // 2)
     cos_right = cos_right.expand_dims(0).broadcast_to(BLOCK_H, emb_dim // 2)
@@ -107,7 +115,10 @@ def rotary_fwd_q_kernel(
 
     Q = Q + pid_m * stride_x_seq + pid_head * BLOCK_H * stride_x_nheads
 
-    x_off = tl.arange(0, BLOCK_H)[:, None] * stride_x_nheads.to(tl.int64) + qk_head_dim
+    x_off = (
+        tl.arange(0, BLOCK_H)[:, None] * stride_x_nheads.to(tl.int64)
+        + qk_head_dim
+    )
     mask = (pid_head * BLOCK_H + tl.arange(0, BLOCK_H))[:, None] < head_num
     # x1 = t[..., 0::2], x2 = t[..., 1::2]
     x_1_off = x_off + tl.arange(0, emb_dim // 2)[None, :] * 2
@@ -158,12 +169,28 @@ def rotary_bwd_q_kernel(
     if cu_seqlens_q is None:
         token_idx = pid_m % seq_len
     else:
-        token_idx = _get_thd_token_idx(cu_seqlens_q, pid_m, seq_num, cp_rank, cp_size)
+        token_idx = _get_thd_token_idx(
+            cu_seqlens_q, pid_m, seq_num, cp_rank, cp_size
+        )
 
-    cos_left = tl.load(COS + token_idx.to(tl.int64) * emb_dim + tl.arange(0, emb_dim // 2))
-    sin_left = tl.load(SIN + token_idx.to(tl.int64) * emb_dim + tl.arange(0, emb_dim // 2))
-    cos_right = tl.load(COS + token_idx.to(tl.int64) * emb_dim + emb_dim // 2 + tl.arange(0, emb_dim // 2))
-    sin_right = tl.load(SIN + token_idx.to(tl.int64) * emb_dim + emb_dim // 2 + tl.arange(0, emb_dim // 2))
+    cos_left = tl.load(
+        COS + token_idx.to(tl.int64) * emb_dim + tl.arange(0, emb_dim // 2)
+    )
+    sin_left = tl.load(
+        SIN + token_idx.to(tl.int64) * emb_dim + tl.arange(0, emb_dim // 2)
+    )
+    cos_right = tl.load(
+        COS
+        + token_idx.to(tl.int64) * emb_dim
+        + emb_dim // 2
+        + tl.arange(0, emb_dim // 2)
+    )
+    sin_right = tl.load(
+        SIN
+        + token_idx.to(tl.int64) * emb_dim
+        + emb_dim // 2
+        + tl.arange(0, emb_dim // 2)
+    )
     cos_left = cos_left.expand_dims(0).broadcast_to(BLOCK_H, emb_dim // 2)
     sin_left = sin_left.expand_dims(0).broadcast_to(BLOCK_H, emb_dim // 2)
     cos_right = cos_right.expand_dims(0).broadcast_to(BLOCK_H, emb_dim // 2)
@@ -171,7 +198,10 @@ def rotary_bwd_q_kernel(
 
     DO = DO + pid_m * stride_x_seq + pid_head * BLOCK_H * stride_x_nheads
 
-    x_off = tl.arange(0, BLOCK_H)[:, None] * stride_x_nheads.to(tl.int64) + qk_head_dim
+    x_off = (
+        tl.arange(0, BLOCK_H)[:, None] * stride_x_nheads.to(tl.int64)
+        + qk_head_dim
+    )
     mask = (pid_head * BLOCK_H + tl.arange(0, BLOCK_H))[:, None] < head_num
     x_left_off = x_off + tl.arange(0, emb_dim // 2)[None, :]
     x_right_off = x_left_off + emb_dim // 2
@@ -242,7 +272,9 @@ class ApplyMLARotaryEmbQ(paddle.autograd.PyLayer):
         assert cos.shape[-1] == emb_dim
         assert sin.shape[-1] == emb_dim
         BLOCK_H = _get_block_h(nheads)
-        assert nheads % BLOCK_H == 0, f"head_num must be divisible by BLOCK_H ({BLOCK_H}), but got {nheads}"
+        assert nheads % BLOCK_H == 0, (
+            f"head_num must be divisible by BLOCK_H ({BLOCK_H}), but got {nheads}"
+        )
 
         grid = (total_seqlen, triton.cdiv(nheads, BLOCK_H))
         rotary_fwd_q_kernel[grid](
@@ -426,12 +458,28 @@ def rotary_fwd_kv_kernel(
     if cu_seqlens_kv is None:
         token_idx = pid_m % seq_len
     else:
-        token_idx = _get_thd_token_idx(cu_seqlens_kv, pid_m, seq_num, cp_rank, cp_size)
+        token_idx = _get_thd_token_idx(
+            cu_seqlens_kv, pid_m, seq_num, cp_rank, cp_size
+        )
 
-    cos_left = tl.load(COS + token_idx.to(tl.int64) * emb_dim + tl.arange(0, emb_dim // 2))
-    sin_left = tl.load(SIN + token_idx.to(tl.int64) * emb_dim + tl.arange(0, emb_dim // 2))
-    cos_right = tl.load(COS + token_idx.to(tl.int64) * emb_dim + emb_dim // 2 + tl.arange(0, emb_dim // 2))
-    sin_right = tl.load(SIN + token_idx.to(tl.int64) * emb_dim + emb_dim // 2 + tl.arange(0, emb_dim // 2))
+    cos_left = tl.load(
+        COS + token_idx.to(tl.int64) * emb_dim + tl.arange(0, emb_dim // 2)
+    )
+    sin_left = tl.load(
+        SIN + token_idx.to(tl.int64) * emb_dim + tl.arange(0, emb_dim // 2)
+    )
+    cos_right = tl.load(
+        COS
+        + token_idx.to(tl.int64) * emb_dim
+        + emb_dim // 2
+        + tl.arange(0, emb_dim // 2)
+    )
+    sin_right = tl.load(
+        SIN
+        + token_idx.to(tl.int64) * emb_dim
+        + emb_dim // 2
+        + tl.arange(0, emb_dim // 2)
+    )
 
     KV_ptr = KV + pid_m * stride_kv_seq + pid_head * BLOCK_H * stride_kv_nheads
     kv_off = tl.arange(0, BLOCK_H)[:, None] * stride_kv_nheads.to(tl.int64)
@@ -446,10 +494,16 @@ def rotary_fwd_kv_kernel(
     v = tl.load(KV_ptr + v_in_off, mask=head_mask & v_valid, other=0.0)
 
     K_ptr = O_KEY + pid_m * stride_k_seq + pid_head * BLOCK_H * stride_k_nheads
-    V_ptr = O_VALUE + pid_m * stride_v_seq + pid_head * BLOCK_H * stride_v_nheads
+    V_ptr = (
+        O_VALUE + pid_m * stride_v_seq + pid_head * BLOCK_H * stride_v_nheads
+    )
 
-    k_out_off = tl.arange(0, BLOCK_H)[:, None] * stride_k_nheads.to(tl.int64) + k_range
-    v_out_off = tl.arange(0, BLOCK_H)[:, None] * stride_v_nheads.to(tl.int64) + v_range
+    k_out_off = (
+        tl.arange(0, BLOCK_H)[:, None] * stride_k_nheads.to(tl.int64) + k_range
+    )
+    v_out_off = (
+        tl.arange(0, BLOCK_H)[:, None] * stride_v_nheads.to(tl.int64) + v_range
+    )
     tl.store(K_ptr + k_out_off, k, mask=head_mask & k_valid)
     tl.store(V_ptr + v_out_off, v, mask=head_mask & v_valid)
 
@@ -464,7 +518,9 @@ def rotary_fwd_kv_kernel(
     x_right = x_right.expand_dims(0).broadcast_to(BLOCK_H, emb_dim // 2)
 
     x_left_off = (
-        tl.arange(0, BLOCK_H)[:, None] * stride_k_nheads.to(tl.int64) + k_dim + tl.arange(0, emb_dim // 2)[None, :]
+        tl.arange(0, BLOCK_H)[:, None] * stride_k_nheads.to(tl.int64)
+        + k_dim
+        + tl.arange(0, emb_dim // 2)[None, :]
     )
     x_right_off = x_left_off + emb_dim // 2
     tl.store(K_ptr + x_left_off, x_left, mask=head_mask)
@@ -522,9 +578,13 @@ def rotary_bwd_kv_kernel(
     if cu_seqlens_kv is None:
         token_idx = pid_m % seq_len
     else:
-        token_idx = _get_thd_token_idx(cu_seqlens_kv, pid_m, seq_num, cp_rank, cp_size)
+        token_idx = _get_thd_token_idx(
+            cu_seqlens_kv, pid_m, seq_num, cp_rank, cp_size
+        )
 
-    dKV_ptr = dKV + pid_m * stride_dkv_seq + pid_head * BLOCK_H * stride_dkv_nheads
+    dKV_ptr = (
+        dKV + pid_m * stride_dkv_seq + pid_head * BLOCK_H * stride_dkv_nheads
+    )
     dkv_off = tl.arange(0, BLOCK_H)[:, None] * stride_dkv_nheads.to(tl.int64)
     head_mask = (pid_head * BLOCK_H + tl.arange(0, BLOCK_H))[:, None] < head_num
     k_range = tl.arange(0, BLOCK_K)[None, :]
@@ -536,8 +596,12 @@ def rotary_bwd_kv_kernel(
 
     dK_ptr = dK + pid_m * stride_dk_seq + pid_head * BLOCK_H * stride_dk_nheads
     dV_ptr = dV + pid_m * stride_dv_seq + pid_head * BLOCK_H * stride_dv_nheads
-    dk_in_off = tl.arange(0, BLOCK_H)[:, None] * stride_dk_nheads.to(tl.int64) + k_range
-    dv_in_off = tl.arange(0, BLOCK_H)[:, None] * stride_dv_nheads.to(tl.int64) + v_range
+    dk_in_off = (
+        tl.arange(0, BLOCK_H)[:, None] * stride_dk_nheads.to(tl.int64) + k_range
+    )
+    dv_in_off = (
+        tl.arange(0, BLOCK_H)[:, None] * stride_dv_nheads.to(tl.int64) + v_range
+    )
     dk = tl.load(dK_ptr + dk_in_off, mask=head_mask & k_valid, other=0.0)
     dv = tl.load(dV_ptr + dv_in_off, mask=head_mask & v_valid, other=0.0)
     tl.store(dKV_ptr + dk_out_off, dk, mask=head_mask & k_valid)
@@ -547,8 +611,15 @@ def rotary_bwd_kv_kernel(
         x_left_accum = tl.zeros((BLOCK_H, emb_dim // 2), dtype=tl.float32)
         x_right_accum = tl.zeros((BLOCK_H, emb_dim // 2), dtype=tl.float32)
         for i in tl.static_range(triton.cdiv(head_num, BLOCK_H)):
-            dK_ptr = dK + pid_m * stride_dk_seq.to(tl.int64) + i * BLOCK_H * stride_dk_nheads
-            x_off = tl.arange(0, BLOCK_H)[:, None] * stride_dk_nheads.to(tl.int64) + k_dim
+            dK_ptr = (
+                dK
+                + pid_m * stride_dk_seq.to(tl.int64)
+                + i * BLOCK_H * stride_dk_nheads
+            )
+            x_off = (
+                tl.arange(0, BLOCK_H)[:, None] * stride_dk_nheads.to(tl.int64)
+                + k_dim
+            )
             mask = (i * BLOCK_H + tl.arange(0, BLOCK_H))[:, None] < head_num
             x_left_off = x_off + tl.arange(0, emb_dim // 2)[None, :]
             x_right_off = x_left_off + emb_dim // 2
@@ -561,10 +632,24 @@ def rotary_bwd_kv_kernel(
         # Keep in float32 for the cos/sin multiply to avoid bf16 precision loss;
         # cast to output dtype only at store time.
 
-        cos_left = tl.load(COS + token_idx.to(tl.int64) * emb_dim + tl.arange(0, emb_dim // 2))
-        sin_left = tl.load(SIN + token_idx.to(tl.int64) * emb_dim + tl.arange(0, emb_dim // 2))
-        cos_right = tl.load(COS + token_idx.to(tl.int64) * emb_dim + emb_dim // 2 + tl.arange(0, emb_dim // 2))
-        sin_right = tl.load(SIN + token_idx.to(tl.int64) * emb_dim + emb_dim // 2 + tl.arange(0, emb_dim // 2))
+        cos_left = tl.load(
+            COS + token_idx.to(tl.int64) * emb_dim + tl.arange(0, emb_dim // 2)
+        )
+        sin_left = tl.load(
+            SIN + token_idx.to(tl.int64) * emb_dim + tl.arange(0, emb_dim // 2)
+        )
+        cos_right = tl.load(
+            COS
+            + token_idx.to(tl.int64) * emb_dim
+            + emb_dim // 2
+            + tl.arange(0, emb_dim // 2)
+        )
+        sin_right = tl.load(
+            SIN
+            + token_idx.to(tl.int64) * emb_dim
+            + emb_dim // 2
+            + tl.arange(0, emb_dim // 2)
+        )
 
         x_1 = x_left_accum * cos_left + x_right_accum * sin_right
         x_2 = -x_left_accum * sin_left + x_right_accum * cos_right
@@ -678,7 +763,9 @@ class ApplyMLARotaryEmbKV(paddle.autograd.PyLayer):
         ctx.batch_size = batch_size
         ctx.block_h = BLOCK_H
         if cu_seqlens_kv is None:
-            o_key = o_key.reshape(batch_size, max_seqlen, nheads, emb_dim + k_dim)
+            o_key = o_key.reshape(
+                batch_size, max_seqlen, nheads, emb_dim + k_dim
+            )
             o_value = o_value.reshape(batch_size, max_seqlen, nheads, v_dim)
         return o_key, o_value
 
@@ -745,7 +832,9 @@ class ApplyMLARotaryEmbKV(paddle.autograd.PyLayer):
             BLOCK_V,
         )
         if ctx.cu_seqlens_kv is None:
-            d_kv = d_kv.reshape(batch_size, max_seqlen, nheads, ctx.k_dim + ctx.v_dim)
+            d_kv = d_kv.reshape(
+                batch_size, max_seqlen, nheads, ctx.k_dim + ctx.v_dim
+            )
             d_emb = d_emb.reshape(batch_size, max_seqlen, 1, ctx.emb_dim)
 
         if ctx.cu_seqlens_kv is None:

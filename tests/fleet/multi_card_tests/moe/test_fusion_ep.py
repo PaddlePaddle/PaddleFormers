@@ -20,9 +20,13 @@ import paddle
 import paddle.nn.functional as F
 from paddle.distributed import fleet
 
-from paddleformers.fleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
+from paddleformers.fleet.models.gpt.gpt_layer_specs import (
+    get_gpt_layer_local_spec,
+)
 from paddleformers.fleet.process_groups_config import ProcessGroupCollection
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.training.initialize import initialize_fleet
 from paddleformers.fleet.transformer.moe.moe_layer import MoELayer
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
@@ -101,7 +105,9 @@ class TestFusionBF16ExpertParallel(unittest.TestCase):
 
         input_data = paddle.randn(4, 64, hidden_size, dtype=paddle.bfloat16)
 
-        output_moe_use_fusion_node_true = moe_layer_moe_use_fusion_node(input_data)[0]
+        output_moe_use_fusion_node_true = moe_layer_moe_use_fusion_node(
+            input_data
+        )[0]
 
     def tearDown(self):
         pass

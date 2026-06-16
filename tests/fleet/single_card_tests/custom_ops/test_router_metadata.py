@@ -16,12 +16,17 @@ import unittest
 
 import numpy as np
 import paddle
+
 from paddlefleet_ops import router_metadata
 
 
-def expert_parallel_TC_topk_router_metadata(topk_router_indices: paddle.Tensor, expert_frequency_offset, K: int):
+def expert_parallel_TC_topk_router_metadata(
+    topk_router_indices: paddle.Tensor, expert_frequency_offset, K: int
+):
     invalid_tokens = paddle.sum(topk_router_indices == -1)
-    s_scatter_idx = paddle.argsort(topk_router_indices.reshape([-1])).astype("int64")
+    s_scatter_idx = paddle.argsort(topk_router_indices.reshape([-1])).astype(
+        "int64"
+    )
     expert_frequency_offset = paddle.concat(
         [
             paddle.zeros([1], dtype=expert_frequency_offset.dtype),
@@ -29,19 +34,27 @@ def expert_parallel_TC_topk_router_metadata(topk_router_indices: paddle.Tensor, 
         ]
     )
 
-    num_activated_expert_per_token_offset = (topk_router_indices > -1).sum(axis=-1)
+    num_activated_expert_per_token_offset = (topk_router_indices > -1).sum(
+        axis=-1
+    )
     num_activated_expert_per_token_offset = paddle.concat(
         [
-            paddle.to_tensor([0], dtype=num_activated_expert_per_token_offset.dtype),
+            paddle.to_tensor(
+                [0], dtype=num_activated_expert_per_token_offset.dtype
+            ),
             num_activated_expert_per_token_offset,
         ]
     )
-    num_activated_expert_per_token_offset = num_activated_expert_per_token_offset.cumsum(0).astype("int64")
+    num_activated_expert_per_token_offset = (
+        num_activated_expert_per_token_offset.cumsum(0).astype("int64")
+    )
 
     x_gather_idx = s_scatter_idx // K
 
     topk_router_indices_valid = topk_router_indices[topk_router_indices >= 0]
-    s_scatter_idx_valid = paddle.argsort(topk_router_indices_valid.reshape([-1])).astype("int64")
+    s_scatter_idx_valid = paddle.argsort(
+        topk_router_indices_valid.reshape([-1])
+    ).astype("int64")
     s_reverse_scatter_idx_valid = paddle.empty_like(s_scatter_idx_valid)
     s_reverse_scatter_idx_valid[s_scatter_idx_valid] = paddle.arange(
         s_scatter_idx_valid.shape[0], dtype=s_scatter_idx_valid.dtype
@@ -65,22 +78,38 @@ class TestRouterMetadataOp(unittest.TestCase):
         paddle.seed(2026)
 
     def run_test_case(self, num_tokens, k, n_expert):
-        topk_router_indices_np = np.random.randint(-1, n_expert, size=(num_tokens, k)).astype("int64")
+        topk_router_indices_np = np.random.randint(
+            -1, n_expert, size=(num_tokens, k)
+        ).astype("int64")
 
-        expert_frequency_offset_np = np.random.randint(0, 20, size=(n_expert,)).astype("int64")
+        expert_frequency_offset_np = np.random.randint(
+            0, 20, size=(n_expert,)
+        ).astype("int64")
 
-        topk_router_indices = paddle.to_tensor(topk_router_indices_np, place="gpu")
-        expert_frequency_offset = paddle.to_tensor(expert_frequency_offset_np, place="gpu")
+        topk_router_indices = paddle.to_tensor(
+            topk_router_indices_np, place="gpu"
+        )
+        expert_frequency_offset = paddle.to_tensor(
+            expert_frequency_offset_np, place="gpu"
+        )
 
-        ref_out = expert_parallel_TC_topk_router_metadata(topk_router_indices, expert_frequency_offset, k)
+        ref_out = expert_parallel_TC_topk_router_metadata(
+            topk_router_indices, expert_frequency_offset, k
+        )
 
-        custom_out = router_metadata(topk_router_indices, expert_frequency_offset, k)
+        custom_out = router_metadata(
+            topk_router_indices, expert_frequency_offset, k
+        )
 
-        self.assertEqual(len(ref_out), len(custom_out), "Number of outputs mismatch")
+        self.assertEqual(
+            len(ref_out), len(custom_out), "Number of outputs mismatch"
+        )
         for i in range(len(ref_out)):
             ref = ref_out[i].cpu().numpy()
             custom = custom_out[i].cpu().numpy()
-            self.assertEqual(ref.shape, custom.shape, f"Shape mismatch at output {i}")
+            self.assertEqual(
+                ref.shape, custom.shape, f"Shape mismatch at output {i}"
+            )
             np.testing.assert_allclose(
                 ref,
                 custom,

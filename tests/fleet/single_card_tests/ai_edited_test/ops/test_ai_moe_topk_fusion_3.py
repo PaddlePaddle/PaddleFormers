@@ -17,7 +17,11 @@ import unittest
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import paddle
@@ -133,7 +137,9 @@ class TestMoETopkFusionWrappers(unittest.TestCase):
         ctx.moe_k = 2
         grad_output_probs = paddle.ones([1, 2], dtype="float32")
         try:
-            grad_gate_probs, none_value = MoETopkFusion.backward(ctx, grad_output_probs, None)
+            grad_gate_probs, none_value = MoETopkFusion.backward(
+                ctx, grad_output_probs, None
+            )
         finally:
             moe_topk_fusion._bwd_kernel = old_kernel
 

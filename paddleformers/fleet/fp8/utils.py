@@ -22,5 +22,11 @@ def is_fp8_tensor(x):
     if not isinstance(x, tuple):
         return False
     tensor, scale = x
-    assert tensor.dtype != paddle.float8_e5m2, "FP8 tensor should not be float8_e5m2 dtype, not supported yet."
-    return len(x) == 2 and tensor.dtype == paddle.float8_e4m3fn and scale.dtype == paddle.float32
+    assert tensor.dtype != paddle.float8_e5m2, (
+        "FP8 tensor should not be float8_e5m2 dtype, not supported yet."
+    )
+    return (
+        len(x) == 2
+        and tensor.dtype == paddle.float8_e4m3fn
+        and scale.dtype == paddle.float32
+    )

@@ -36,7 +36,9 @@ class TestDataConfig(unittest.TestCase):
         self.assertIsNone(config.train_dataset_path)
         self.assertIsNone(config.train_dataset_prob)
         self.assertEqual(config.eval_dataset_type, "erniekit")
-        self.assertEqual(config.eval_dataset_path, "examples/data/sft-eval.jsonl")
+        self.assertEqual(
+            config.eval_dataset_path, "examples/data/sft-eval.jsonl"
+        )
         self.assertEqual(config.eval_dataset_prob, "1.0")
         self.assertEqual(config.dataset_type, "iterable")
         self.assertIsNone(config.input_dir)
@@ -107,7 +109,9 @@ class TestDataConfig(unittest.TestCase):
         self.assertGreaterEqual(len(all_fields), 20)
 
     def test_all_in_module(self):
-        self.assertEqual(DataConfig.__module__, "paddleformers.cli.train.dpo.data_config")
+        self.assertEqual(
+            DataConfig.__module__, "paddleformers.cli.train.dpo.data_config"
+        )
 
     def test_multiple_dataset_paths(self):
         config = DataConfig(
@@ -115,7 +119,9 @@ class TestDataConfig(unittest.TestCase):
             train_dataset_prob="0.8,0.2",
             train_dataset_type="erniekit,erniekit",
         )
-        self.assertEqual(config.train_dataset_path, "./sft-1.jsonl,./sft-2.jsonl")
+        self.assertEqual(
+            config.train_dataset_path, "./sft-1.jsonl,./sft-2.jsonl"
+        )
         self.assertEqual(config.train_dataset_prob, "0.8,0.2")
         self.assertEqual(config.train_dataset_type, "erniekit,erniekit")
 

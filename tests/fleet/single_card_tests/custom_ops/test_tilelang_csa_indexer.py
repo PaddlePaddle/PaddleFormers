@@ -52,7 +52,9 @@ def _make_loss_inputs(b, sq, sk, h_i, d_i, np_, hn, seed=2027):
 
 def _build_csa_causal_mask(b, sq, sk, ratio):
     comp_ids = paddle.arange(sk, dtype="int64").reshape([1, 1, 1, sk])
-    valid_end = paddle.arange(1, sq + 1, dtype="int64").reshape([1, 1, sq, 1]) // ratio
+    valid_end = (
+        paddle.arange(1, sq + 1, dtype="int64").reshape([1, 1, sq, 1]) // ratio
+    )
     valid = (comp_ids < valid_end).expand([b, 1, sq, sk])
     neg_inf = paddle.full([b, 1, sq, sk], float("-inf"), dtype="float32")
     return paddle.where(valid, paddle.zeros_like(neg_inf), neg_inf)
@@ -70,7 +72,11 @@ def _sorted_compare_indices(out_indices, ref_indices):
 
 def _assert_close(actual, expected, rtol, atol, msg):
     a = actual.cast("float32") if actual.dtype != paddle.float32 else actual
-    e = expected.cast("float32") if expected.dtype != paddle.float32 else expected
+    e = (
+        expected.cast("float32")
+        if expected.dtype != paddle.float32
+        else expected
+    )
     if not paddle.allclose(a, e, rtol=rtol, atol=atol).item():
         diff = (a - e).abs()
         raise AssertionError(
@@ -84,17 +90,27 @@ def _assert_close(actual, expected, rtol, atol, msg):
 # =========================================================================
 
 
-def _ref_csa_indexer_topk(index_q, index_k_comp, weights, ratio, topk_effective):
-    scores = paddle.einsum("bshd,btd->bsht", index_q.cast("float32"), index_k_comp.cast("float32"))
+def _ref_csa_indexer_topk(
+    index_q, index_k_comp, weights, ratio, topk_effective
+):
+    scores = paddle.einsum(
+        "bshd,btd->bsht", index_q.cast("float32"), index_k_comp.cast("float32")
+    )
     scores = F.relu(scores)
     scores = (scores * weights.cast("float32").unsqueeze(-1)).sum(axis=2)
     scores = scores * (index_q.shape[-1] ** -0.5)
     batch, seq_len, seq_len_comp = scores.shape
-    comp_ids = paddle.arange(seq_len_comp, dtype="int64").reshape([1, 1, seq_len_comp])
-    positions = paddle.arange(1, seq_len + 1, dtype="int64").reshape([1, seq_len, 1])
+    comp_ids = paddle.arange(seq_len_comp, dtype="int64").reshape(
+        [1, 1, seq_len_comp]
+    )
+    positions = paddle.arange(1, seq_len + 1, dtype="int64").reshape(
+        [1, seq_len, 1]
+    )
     valid_end = positions // ratio
     valid_mask = comp_ids < valid_end
-    scores = paddle.where(valid_mask, scores, paddle.full_like(scores, float("-inf")))
+    scores = paddle.where(
+        valid_mask, scores, paddle.full_like(scores, float("-inf"))
+    )
     actual_topk = min(topk_effective, seq_len_comp)
     topk_scores_raw, topk_indices = paddle.topk(scores, k=actual_topk, axis=-1)
     valid_topk = paddle.take_along_axis(
@@ -102,20 +118,26 @@ def _ref_csa_indexer_topk(index_q, index_k_comp, weights, ratio, topk_effective)
         topk_indices,
         axis=-1,
     ).cast("bool")
-    topk_indices = paddle.where(valid_topk, topk_indices, paddle.full_like(topk_indices, -1))
+    topk_indices = paddle.where(
+        valid_topk, topk_indices, paddle.full_like(topk_indices, -1)
+    )
     topk_scores_raw = paddle.where(
         valid_topk,
         topk_scores_raw,
         paddle.full_like(topk_scores_raw, float("-inf")),
     )
     topk_probs = F.softmax(topk_scores_raw, axis=-1)
-    topk_probs = paddle.where(valid_topk, topk_probs, paddle.zeros_like(topk_probs))
+    topk_probs = paddle.where(
+        valid_topk, topk_probs, paddle.zeros_like(topk_probs)
+    )
     if topk_effective > actual_topk:
         pad = topk_effective - actual_topk
         topk_indices = paddle.concat(
             [
                 topk_indices,
-                paddle.full([batch, seq_len, pad], -1, dtype=topk_indices.dtype),
+                paddle.full(
+                    [batch, seq_len, pad], -1, dtype=topk_indices.dtype
+                ),
             ],
             axis=-1,
         )
@@ -130,23 +152,33 @@ def _ref_csa_indexer_topk(index_q, index_k_comp, weights, ratio, topk_effective)
 
 
 def _paddle_ref_csa_indexer_topk(q, k, weights, ratio, topk_effective):
-    from paddleformers.fleet.transformer.dsa_attention import fused_qk_topk_naive
+    from paddleformers.fleet.transformer.dsa_attention import (
+        fused_qk_topk_naive,
+    )
 
     b, sq, h_i, d_i = q.shape
     sk = k.shape[1]
     sm_scale = d_i**-0.5
     comp_ids = paddle.arange(sk, dtype="int64").reshape([1, 1, sk])
-    valid_end = paddle.arange(1, sq + 1, dtype="int64").reshape([1, sq, 1]) // ratio
+    valid_end = (
+        paddle.arange(1, sq + 1, dtype="int64").reshape([1, sq, 1]) // ratio
+    )
     valid_mask = (comp_ids < valid_end).expand([b, sq, sk])
     neg_inf = paddle.full([b, sq, sk], float("-inf"), dtype="float32")
     causal_mask = paddle.where(valid_mask, paddle.zeros_like(neg_inf), neg_inf)
     actual_topk = min(int(topk_effective), int(sk))
-    index_scores, ref_topk_indices = fused_qk_topk_naive(q, k, weights, index_topk=actual_topk, mask=causal_mask)
+    index_scores, ref_topk_indices = fused_qk_topk_naive(
+        q, k, weights, index_topk=actual_topk, mask=causal_mask
+    )
     index_scores_scaled = index_scores * sm_scale
     masked_scaled = index_scores_scaled + causal_mask
-    topk_scores_raw, topk_indices = paddle.topk(masked_scaled, k=actual_topk, axis=-1)
+    topk_scores_raw, topk_indices = paddle.topk(
+        masked_scaled, k=actual_topk, axis=-1
+    )
     topk_indices = paddle.clip(topk_indices, min=0, max=sk - 1)
-    valid_topk = paddle.take_along_axis(valid_mask.cast("int32"), topk_indices, axis=-1).cast("bool")
+    valid_topk = paddle.take_along_axis(
+        valid_mask.cast("int32"), topk_indices, axis=-1
+    ).cast("bool")
     topk_indices = paddle.where(
         valid_topk,
         topk_indices.cast("int32"),
@@ -158,17 +190,25 @@ def _paddle_ref_csa_indexer_topk(q, k, weights, ratio, topk_effective):
         paddle.full_like(topk_scores_raw, float("-inf")),
     )
     row_has_valid = valid_topk.any(axis=-1, keepdim=True)
-    safe_scores = paddle.where(row_has_valid, topk_scores_raw, paddle.zeros_like(topk_scores_raw))
+    safe_scores = paddle.where(
+        row_has_valid, topk_scores_raw, paddle.zeros_like(topk_scores_raw)
+    )
     topk_probs = F.softmax(safe_scores.cast("float32"), axis=-1)
-    topk_probs = paddle.where(row_has_valid, topk_probs, paddle.zeros_like(topk_probs))
-    topk_probs = paddle.where(valid_topk, topk_probs, paddle.zeros_like(topk_probs))
+    topk_probs = paddle.where(
+        row_has_valid, topk_probs, paddle.zeros_like(topk_probs)
+    )
+    topk_probs = paddle.where(
+        valid_topk, topk_probs, paddle.zeros_like(topk_probs)
+    )
     if int(topk_effective) > actual_topk:
         pad = int(topk_effective) - actual_topk
         topk_indices = paddle.concat(
             [topk_indices, paddle.full([b, sq, pad], -1, dtype="int32")],
             axis=-1,
         )
-        topk_probs = paddle.concat([topk_probs, paddle.zeros([b, sq, pad], dtype="float32")], axis=-1)
+        topk_probs = paddle.concat(
+            [topk_probs, paddle.zeros([b, sq, pad], dtype="float32")], axis=-1
+        )
     return topk_indices, topk_probs
 
 
@@ -216,7 +256,9 @@ class TestTileLangCSAIndexerInterfaceValidation(unittest.TestCase):
         topk_indices = paddle.empty([1, 4, 1], dtype="int32")
 
         with self.assertRaisesRegex(ValueError, "power of 2"):
-            csa_attn_target_reducesum_interface(query, key, topk_indices, softmax_scale=1.0)
+            csa_attn_target_reducesum_interface(
+                query, key, topk_indices, softmax_scale=1.0
+            )
 
 
 class TestTileLangCSAIndexerKernel(unittest.TestCase):
@@ -233,7 +275,9 @@ class TestTileLangCSAIndexerKernel(unittest.TestCase):
         )
 
         batch, seq_len, seq_len_comp, heads, dim, ratio = 1, 16, 4, 64, 128, 4
-        q, k, w = _make_indexer_inputs(batch, seq_len, seq_len_comp, heads, dim, seed=2026)
+        q, k, w = _make_indexer_inputs(
+            batch, seq_len, seq_len_comp, heads, dim, seed=2026
+        )
         out_idx, out_scores = csa_indexer_topk_fwd_interface(
             q,
             k,
@@ -243,7 +287,9 @@ class TestTileLangCSAIndexerKernel(unittest.TestCase):
             block_K=32,
             num_threads=128,
         )
-        ref_idx, ref_scores = _ref_csa_indexer_topk(q, k, w, ratio, topk_effective)
+        ref_idx, ref_scores = _ref_csa_indexer_topk(
+            q, k, w, ratio, topk_effective
+        )
         self.assertEqual(tuple(out_idx.shape), (batch, seq_len, topk_effective))
         self.assertTrue(paddle.all(out_idx.cpu() == ref_idx.cpu()).item())
         valid = ref_idx >= 0
@@ -253,7 +299,11 @@ class TestTileLangCSAIndexerKernel(unittest.TestCase):
             rtol=6e-2,
             atol=2e-2,
         )
-        self.assertTrue(paddle.all(out_scores.cpu()[~valid.cpu()] == ref_scores.cpu()[~valid.cpu()]).item())
+        self.assertTrue(
+            paddle.all(
+                out_scores.cpu()[~valid.cpu()] == ref_scores.cpu()[~valid.cpu()]
+            ).item()
+        )
         self.assertTrue(paddle.all(out_idx[:, :3, :] == -1).item())
 
     def test_kernel_fwd_selected_topk(self):
@@ -265,14 +315,18 @@ class TestTileLangCSAIndexerKernel(unittest.TestCase):
     def test_kernel_fwd_output_padding(self):
         self._run_kernel_fwd_case(topk_effective=6)
 
-    def _ref_csa_indexer_bwd(self, index_q, weights, index_k_comp, topk_indices, grad_scores):
+    def _ref_csa_indexer_bwd(
+        self, index_q, weights, index_k_comp, topk_indices, grad_scores
+    ):
         q = index_q.detach().clone()
         q.stop_gradient = False
         w = weights.detach().clone()
         w.stop_gradient = False
         k = index_k_comp.detach().clone()
         k.stop_gradient = False
-        scores = paddle.einsum("bshd,btd->bsht", q.cast("float32"), k.cast("float32"))
+        scores = paddle.einsum(
+            "bshd,btd->bsht", q.cast("float32"), k.cast("float32")
+        )
         scores = F.relu(scores * (q.shape[-1] ** -0.5))
         scores = (scores * w.cast("float32").unsqueeze(-1)).sum(axis=2)
         valid = topk_indices >= 0
@@ -291,7 +345,9 @@ class TestTileLangCSAIndexerKernel(unittest.TestCase):
         )
 
         batch, seq_len, seq_len_comp, heads, dim, ratio = 1, 16, 4, 64, 128, 4
-        q, k, w = _make_indexer_inputs(batch, seq_len, seq_len_comp, heads, dim, seed=2027)
+        q, k, w = _make_indexer_inputs(
+            batch, seq_len, seq_len_comp, heads, dim, seed=2027
+        )
         topk_indices, _ = csa_indexer_topk_fwd_interface(
             q,
             k,
@@ -301,8 +357,12 @@ class TestTileLangCSAIndexerKernel(unittest.TestCase):
             block_K=32,
             num_threads=128,
         )
-        grad_scores = paddle.randn([batch, seq_len, topk_effective], dtype="float32")
-        grad_scores = paddle.where(topk_indices >= 0, grad_scores, paddle.zeros_like(grad_scores)).contiguous()
+        grad_scores = paddle.randn(
+            [batch, seq_len, topk_effective], dtype="float32"
+        )
+        grad_scores = paddle.where(
+            topk_indices >= 0, grad_scores, paddle.zeros_like(grad_scores)
+        ).contiguous()
         out_dq, out_dw, out_dk = csa_indexer_bwd_interface(
             q,
             w,
@@ -312,7 +372,9 @@ class TestTileLangCSAIndexerKernel(unittest.TestCase):
             block_I=32,
             num_threads=128,
         )
-        ref_dq, ref_dw, ref_dk = self._ref_csa_indexer_bwd(q, w, k, topk_indices, grad_scores)
+        ref_dq, ref_dw, ref_dk = self._ref_csa_indexer_bwd(
+            q, w, k, topk_indices, grad_scores
+        )
         self.assertEqual(tuple(out_dq.shape), tuple(q.shape))
         paddle.testing.assert_close(
             out_dq.cast("float32").cpu(),
@@ -320,8 +382,12 @@ class TestTileLangCSAIndexerKernel(unittest.TestCase):
             rtol=6e-2,
             atol=2e-2,
         )
-        paddle.testing.assert_close(out_dw.cpu(), ref_dw.cpu(), rtol=6e-2, atol=3e-2)
-        paddle.testing.assert_close(out_dk.cpu(), ref_dk.cast("float32").cpu(), rtol=6e-2, atol=3e-2)
+        paddle.testing.assert_close(
+            out_dw.cpu(), ref_dw.cpu(), rtol=6e-2, atol=3e-2
+        )
+        paddle.testing.assert_close(
+            out_dk.cpu(), ref_dk.cast("float32").cpu(), rtol=6e-2, atol=3e-2
+        )
 
     def test_kernel_bwd_selected_topk(self):
         self._run_kernel_bwd_case(topk_effective=2)
@@ -339,7 +405,8 @@ class TestTileLangCSAIndexerKernel(unittest.TestCase):
 
 
 @unittest.skipUnless(
-    paddle.device.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0,
+    paddle.device.is_compiled_with_cuda()
+    and paddle.device.cuda.device_count() > 0,
     "TileLang CSA Indexer kernel requires CUDA",
 )
 class TestTileLangCSAIndexerWrapperForward(unittest.TestCase):
@@ -352,8 +419,12 @@ class TestTileLangCSAIndexerWrapperForward(unittest.TestCase):
         b, sq, sk, h_i, d_i, ratio = 1, 16, 4, 64, 128, 4
         topk_effective = 2
         q, k, w = _make_indexer_inputs(b, sq, sk, h_i, d_i)
-        out_idx, out_prob = self._kernel(q, k, w, ratio=ratio, topk_effective=topk_effective)
-        ref_idx, ref_prob = _paddle_ref_csa_indexer_topk(q, k, w, ratio, topk_effective)
+        out_idx, out_prob = self._kernel(
+            q, k, w, ratio=ratio, topk_effective=topk_effective
+        )
+        ref_idx, ref_prob = _paddle_ref_csa_indexer_topk(
+            q, k, w, ratio, topk_effective
+        )
         self.assertEqual(list(out_idx.shape), [b, sq, topk_effective])
         self.assertTrue(_sorted_compare_indices(out_idx, ref_idx))
         valid = ref_idx >= 0
@@ -370,8 +441,12 @@ class TestTileLangCSAIndexerWrapperForward(unittest.TestCase):
         b, sq, sk, h_i, d_i, ratio = 1, 16, 4, 64, 128, 4
         topk_effective = sk
         q, k, w = _make_indexer_inputs(b, sq, sk, h_i, d_i)
-        out_idx, out_prob = self._kernel(q, k, w, ratio=ratio, topk_effective=topk_effective)
-        ref_idx, ref_prob = _paddle_ref_csa_indexer_topk(q, k, w, ratio, topk_effective)
+        out_idx, out_prob = self._kernel(
+            q, k, w, ratio=ratio, topk_effective=topk_effective
+        )
+        ref_idx, ref_prob = _paddle_ref_csa_indexer_topk(
+            q, k, w, ratio, topk_effective
+        )
         self.assertTrue(_sorted_compare_indices(out_idx, ref_idx))
         valid = ref_idx >= 0
         self.assertTrue(
@@ -387,8 +462,12 @@ class TestTileLangCSAIndexerWrapperForward(unittest.TestCase):
         b, sq, sk, h_i, d_i, ratio = 1, 16, 4, 64, 128, 4
         topk_effective = 6
         q, k, w = _make_indexer_inputs(b, sq, sk, h_i, d_i)
-        out_idx, out_prob = self._kernel(q, k, w, ratio=ratio, topk_effective=topk_effective)
-        ref_idx, ref_prob = _paddle_ref_csa_indexer_topk(q, k, w, ratio, topk_effective)
+        out_idx, out_prob = self._kernel(
+            q, k, w, ratio=ratio, topk_effective=topk_effective
+        )
+        ref_idx, ref_prob = _paddle_ref_csa_indexer_topk(
+            q, k, w, ratio, topk_effective
+        )
         self.assertEqual(list(out_idx.shape), [b, sq, topk_effective])
         self.assertTrue(_all_equal(out_idx[:, :, sk:], -1))
         self.assertTrue(_all_equal(out_prob[:, :, sk:], 0))
@@ -421,8 +500,12 @@ class TestTileLangCSAIndexerWrapperForward(unittest.TestCase):
         b, sq, sk, h_i, d_i, ratio = 1, 8, 4, 64, 128, 4
         topk_effective = 4
         q, k, w = _make_indexer_inputs(b, sq, sk, h_i, d_i)
-        out_idx, _ = self._kernel(q, k, w, ratio=ratio, topk_effective=topk_effective)
-        ref_idx, _ = _paddle_ref_csa_indexer_topk(q, k, w, ratio, topk_effective)
+        out_idx, _ = self._kernel(
+            q, k, w, ratio=ratio, topk_effective=topk_effective
+        )
+        ref_idx, _ = _paddle_ref_csa_indexer_topk(
+            q, k, w, ratio, topk_effective
+        )
         for t in range(sq):
             valid_end = (t + 1) // ratio
             row = out_idx[0, t].numpy().tolist()
@@ -437,7 +520,8 @@ class TestTileLangCSAIndexerWrapperForward(unittest.TestCase):
 
 
 @unittest.skipUnless(
-    paddle.device.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0,
+    paddle.device.is_compiled_with_cuda()
+    and paddle.device.cuda.device_count() > 0,
     "TileLang CSA Indexer kernel requires CUDA",
 )
 class TestTileLangCSAIndexerLossGrad(unittest.TestCase):
@@ -459,7 +543,9 @@ class TestTileLangCSAIndexerLossGrad(unittest.TestCase):
     def _assert_grads_close(self, tl_grads, pd_grads, label):
         tl_dq, tl_dw, tl_dk = tl_grads
         pd_dq, pd_dw, pd_dk = pd_grads
-        _assert_close(tl_dq, pd_dq, rtol=8e-2, atol=3e-2, msg=f"{label}: dQ mismatch")
+        _assert_close(
+            tl_dq, pd_dq, rtol=8e-2, atol=3e-2, msg=f"{label}: dQ mismatch"
+        )
         _assert_close(
             tl_dw,
             pd_dw,
@@ -467,7 +553,9 @@ class TestTileLangCSAIndexerLossGrad(unittest.TestCase):
             atol=3e-2,
             msg=f"{label}: dWeights mismatch",
         )
-        _assert_close(tl_dk, pd_dk, rtol=8e-2, atol=3e-2, msg=f"{label}: dKComp mismatch")
+        _assert_close(
+            tl_dk, pd_dk, rtol=8e-2, atol=3e-2, msg=f"{label}: dKComp mismatch"
+        )
 
     def _run_tilelang(
         self,
@@ -481,7 +569,9 @@ class TestTileLangCSAIndexerLossGrad(unittest.TestCase):
         softmax_scale,
         loss_coeff,
     ):
-        from paddleformers.fleet.transformer.csa_attention import TileLangCSAIndexerLoss
+        from paddleformers.fleet.transformer.csa_attention import (
+            TileLangCSAIndexerLoss,
+        )
 
         qd = q.detach().clone()
         qd.stop_gradient = False
@@ -517,7 +607,9 @@ class TestTileLangCSAIndexerLossGrad(unittest.TestCase):
         loss_coeff,
         sparse_loss,
     ):
-        from paddleformers.fleet.transformer.dsa_attention import FusedDSAIndexerLoss
+        from paddleformers.fleet.transformer.dsa_attention import (
+            FusedDSAIndexerLoss,
+        )
 
         d_i = q.shape[-1]
         alpha = d_i**-0.5
@@ -552,7 +644,9 @@ class TestTileLangCSAIndexerLossGrad(unittest.TestCase):
         dw_bf = w_sf.grad.transpose([1, 0, 2]) * alpha
         return loss, dq_bf, dw_bf, dk_bf
 
-    def _assert_attn_target_matches_paddle(self, q, k, w, qm, km, topk_eff, softmax_scale, label):
+    def _assert_attn_target_matches_paddle(
+        self, q, k, w, qm, km, topk_eff, softmax_scale, label
+    ):
         from paddleformers.fleet.tilelang_ops import (
             csa_attn_target_reducesum,
             csa_indexer_topk_fwd,
@@ -561,9 +655,15 @@ class TestTileLangCSAIndexerLossGrad(unittest.TestCase):
             _compute_attn_target_on_selected_set,
         )
 
-        topk_indices, _ = csa_indexer_topk_fwd(q, k, w, ratio=self.RATIO, topk_effective=topk_eff)
-        tl_target = csa_attn_target_reducesum(qm, km, topk_indices, softmax_scale)
-        pd_target = _compute_attn_target_on_selected_set(qm, km, topk_indices, softmax_scale, None)
+        topk_indices, _ = csa_indexer_topk_fwd(
+            q, k, w, ratio=self.RATIO, topk_effective=topk_eff
+        )
+        tl_target = csa_attn_target_reducesum(
+            qm, km, topk_indices, softmax_scale
+        )
+        pd_target = _compute_attn_target_on_selected_set(
+            qm, km, topk_indices, softmax_scale, None
+        )
         _assert_close(
             tl_target,
             pd_target,
@@ -576,7 +676,9 @@ class TestTileLangCSAIndexerLossGrad(unittest.TestCase):
         q, k, w, qm, km = self._common_inputs(seed=2032)
         topk_eff = 2
         softmax_scale = self.HN**-0.5
-        self._assert_attn_target_matches_paddle(q, k, w, qm, km, topk_eff, softmax_scale, "single-head")
+        self._assert_attn_target_matches_paddle(
+            q, k, w, qm, km, topk_eff, softmax_scale, "single-head"
+        )
 
     def test_attn_target_reducesum_multi_head_matches_paddle(self):
         q, k, w, qm, km = _make_loss_inputs(
@@ -591,7 +693,9 @@ class TestTileLangCSAIndexerLossGrad(unittest.TestCase):
         )
         topk_eff = 2
         softmax_scale = self.HN**-0.5
-        self._assert_attn_target_matches_paddle(q, k, w, qm, km, topk_eff, softmax_scale, "multi-head")
+        self._assert_attn_target_matches_paddle(
+            q, k, w, qm, km, topk_eff, softmax_scale, "multi-head"
+        )
 
     def test_phase3_selected_topk_grad(self):
         q, k, w, qm, km = self._common_inputs()
@@ -620,8 +724,12 @@ class TestTileLangCSAIndexerLossGrad(unittest.TestCase):
             self.LOSS_COEFF,
             sparse_loss=True,
         )
-        _assert_close(tl_loss, pd_loss, rtol=5e-2, atol=2e-3, msg="Phase3 loss mismatch")
-        self._assert_grads_close((tl_dq, tl_dw, tl_dk), (pd_dq, pd_dw, pd_dk), "Phase3")
+        _assert_close(
+            tl_loss, pd_loss, rtol=5e-2, atol=2e-3, msg="Phase3 loss mismatch"
+        )
+        self._assert_grads_close(
+            (tl_dq, tl_dw, tl_dk), (pd_dq, pd_dw, pd_dk), "Phase3"
+        )
 
     def test_phase2_full_range_grad(self):
         q, k, w, qm, km = self._common_inputs(seed=2028)
@@ -650,8 +758,12 @@ class TestTileLangCSAIndexerLossGrad(unittest.TestCase):
             self.LOSS_COEFF,
             sparse_loss=False,
         )
-        _assert_close(tl_loss, pd_loss, rtol=5e-2, atol=2e-3, msg="Phase2 loss mismatch")
-        self._assert_grads_close((tl_dq, tl_dw, tl_dk), (pd_dq, pd_dw, pd_dk), "Phase2")
+        _assert_close(
+            tl_loss, pd_loss, rtol=5e-2, atol=2e-3, msg="Phase2 loss mismatch"
+        )
+        self._assert_grads_close(
+            (tl_dq, tl_dw, tl_dk), (pd_dq, pd_dw, pd_dk), "Phase2"
+        )
 
     def test_invalid_padding_rows_have_zero_grad(self):
         q, k, w, qm, km = self._common_inputs(seed=2029)
@@ -733,16 +845,23 @@ class TestTileLangCSAIndexerLossGrad(unittest.TestCase):
             self.LOSS_COEFF,
         )
         loss_fp = loss.cast("float32")
-        self.assertTrue(paddle.isfinite(loss_fp).all().item(), "loss is not finite")
+        self.assertTrue(
+            paddle.isfinite(loss_fp).all().item(), "loss is not finite"
+        )
         self.assertGreater(loss_fp.item(), 0.0, "KL loss must be positive")
         for name, g in (("dQ", dq), ("dWeights", dw), ("dKComp", dk)):
             gf = g.cast("float32")
-            self.assertTrue(paddle.isfinite(gf).all().item(), f"{name} contains NaN/Inf")
-            self.assertGreater(gf.abs().max().item(), 0.0, f"{name} is identically zero")
+            self.assertTrue(
+                paddle.isfinite(gf).all().item(), f"{name} contains NaN/Inf"
+            )
+            self.assertGreater(
+                gf.abs().max().item(), 0.0, f"{name} is identically zero"
+            )
 
 
 @unittest.skipUnless(
-    paddle.device.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0,
+    paddle.device.is_compiled_with_cuda()
+    and paddle.device.cuda.device_count() > 0,
     "TileLang CSA attn_target kernel requires CUDA",
 )
 class TestCSAAttnTargetReducesum(unittest.TestCase):
@@ -764,12 +883,20 @@ class TestCSAAttnTargetReducesum(unittest.TestCase):
         w = paddle.randn([b, sq, h_i]).astype("float32")
         query_mla = paddle.randn([b, sq, np_, hn]).astype("bfloat16").detach()
         # MLA invariant: compressed key is shared across all heads → [B, S_comp, D]
-        key_comp_mla = paddle.randn([b, sk, hn]).astype("bfloat16").contiguous().detach()
+        key_comp_mla = (
+            paddle.randn([b, sk, hn]).astype("bfloat16").contiguous().detach()
+        )
         softmax_scale = hn**-0.5
 
-        topk_indices, _ = csa_indexer_topk_fwd(q, k, w, ratio=ratio, topk_effective=topk_eff)
-        tl_target = csa_attn_target_reducesum(query_mla, key_comp_mla, topk_indices, softmax_scale)
-        pd_target = _compute_attn_target_on_selected_set(query_mla, key_comp_mla, topk_indices, softmax_scale, None)
+        topk_indices, _ = csa_indexer_topk_fwd(
+            q, k, w, ratio=ratio, topk_effective=topk_eff
+        )
+        tl_target = csa_attn_target_reducesum(
+            query_mla, key_comp_mla, topk_indices, softmax_scale
+        )
+        pd_target = _compute_attn_target_on_selected_set(
+            query_mla, key_comp_mla, topk_indices, softmax_scale, None
+        )
         _assert_close(
             tl_target,
             pd_target,
@@ -805,7 +932,9 @@ class TestCSAAttnTargetReducesum(unittest.TestCase):
         head-shared (MLA invariant) so both groups read the same K vector.
         A bug would show as broken partial-sum aggregation.
         """
-        self._run_and_compare(b=1, sq=16, sk=4, np_=128, hn=128, topk_eff=2, ratio=4, seed=2041)
+        self._run_and_compare(
+            b=1, sq=16, sk=4, np_=128, hn=128, topk_eff=2, ratio=4, seed=2041
+        )
 
     def test_multi_block_topk_with_padding(self):
         """topk_eff=48 with block_I=32 → padded to 64 → 2 tile iterations.
@@ -816,7 +945,9 @@ class TestCSAAttnTargetReducesum(unittest.TestCase):
         back to topk_eff=48 in the output; (3) the pad slots with index=-1
         are masked to -inf and contribute zero probability.
         """
-        self._run_and_compare(b=2, sq=32, sk=16, np_=64, hn=128, topk_eff=48, ratio=4, seed=2042)
+        self._run_and_compare(
+            b=2, sq=32, sk=16, np_=64, hn=128, topk_eff=48, ratio=4, seed=2042
+        )
 
     def test_online_softmax_numerical_stability(self):
         """Validate online softmax under adversarial numeric conditions.
@@ -848,7 +979,9 @@ class TestCSAAttnTargetReducesum(unittest.TestCase):
         paddle.seed(7777)
         key_small = paddle.randn([b, 4, hn]).astype("bfloat16") * 0.1
         key_large = paddle.randn([b, 4, hn]).astype("bfloat16") * 1.0
-        key_comp_mla = paddle.concat([key_small, key_large], axis=1).contiguous().detach()
+        key_comp_mla = (
+            paddle.concat([key_small, key_large], axis=1).contiguous().detach()
+        )
 
         # --- Case 1: cross-block max shift ---
         # Place small-key indices (0-3) in block 0 (positions 0-3) and large-key
@@ -858,11 +991,19 @@ class TestCSAAttnTargetReducesum(unittest.TestCase):
         query_mla = paddle.randn([b, sq, np_, hn]).astype("bfloat16").detach()
         topk_indices_case1 = paddle.full([b, sq, topk], -1, dtype="int32")
         for t in range(sq):
-            topk_indices_case1[0, t, 0:4] = paddle.to_tensor([0, 1, 2, 3], dtype="int32")
-            topk_indices_case1[0, t, 32:36] = paddle.to_tensor([4, 5, 6, 7], dtype="int32")
+            topk_indices_case1[0, t, 0:4] = paddle.to_tensor(
+                [0, 1, 2, 3], dtype="int32"
+            )
+            topk_indices_case1[0, t, 32:36] = paddle.to_tensor(
+                [4, 5, 6, 7], dtype="int32"
+            )
         topk_indices_case1 = topk_indices_case1.contiguous()
-        tl_out = csa_attn_target_reducesum(query_mla, key_comp_mla, topk_indices_case1, softmax_scale)
-        pd_out = _compute_attn_target_on_selected_set(query_mla, key_comp_mla, topk_indices_case1, softmax_scale, None)
+        tl_out = csa_attn_target_reducesum(
+            query_mla, key_comp_mla, topk_indices_case1, softmax_scale
+        )
+        pd_out = _compute_attn_target_on_selected_set(
+            query_mla, key_comp_mla, topk_indices_case1, softmax_scale, None
+        )
         _assert_close(
             tl_out,
             pd_out,
@@ -888,7 +1029,9 @@ class TestCSAAttnTargetReducesum(unittest.TestCase):
         topk_indices_case2[0, 1, 0] = 5
         topk_indices_case2[0, 1, 1] = 6
         topk_indices_case2 = topk_indices_case2.contiguous()
-        tl_out2 = csa_attn_target_reducesum(query_mla2, key_comp_mla, topk_indices_case2, softmax_scale)
+        tl_out2 = csa_attn_target_reducesum(
+            query_mla2, key_comp_mla, topk_indices_case2, softmax_scale
+        )
         # Row 0 must be all-zero
         self.assertTrue(
             (tl_out2[0, 0].cast("float32").abs() < 1e-6).all().item(),
@@ -896,7 +1039,9 @@ class TestCSAAttnTargetReducesum(unittest.TestCase):
         )
         # Row 1 must sum to 1
         row1_sum = tl_out2[0, 1].sum().item()
-        self.assertAlmostEqual(row1_sum, 1.0, places=4, msg=f"single-row L1 violated: {row1_sum}")
+        self.assertAlmostEqual(
+            row1_sum, 1.0, places=4, msg=f"single-row L1 violated: {row1_sum}"
+        )
 
         # --- Case 3: single valid entry → must be exactly 1.0 ---
         sq = 2
@@ -905,7 +1050,9 @@ class TestCSAAttnTargetReducesum(unittest.TestCase):
         topk_indices_case3[0, 0, 0] = 3  # only 1 valid per row
         topk_indices_case3[0, 1, 0] = 7
         topk_indices_case3 = topk_indices_case3.contiguous()
-        tl_out3 = csa_attn_target_reducesum(query_mla3, key_comp_mla, topk_indices_case3, softmax_scale)
+        tl_out3 = csa_attn_target_reducesum(
+            query_mla3, key_comp_mla, topk_indices_case3, softmax_scale
+        )
         # The single valid slot must have probability = 1.0
         self.assertAlmostEqual(
             tl_out3[0, 0, 0].item(),
@@ -1104,7 +1251,9 @@ class TestCSAIndexerInputValidation(unittest.TestCase):
         w = paddle.empty([1, 8, 16], dtype="float16")
         topk = paddle.empty([1, 8, 2], dtype="int64")  # not int32
         grad = paddle.empty([1, 8, 2], dtype="float16")  # not fp32
-        _, w_out, _, topk_out, grad_out = _prepare_backward_inputs(q, w, k, topk, grad)
+        _, w_out, _, topk_out, grad_out = _prepare_backward_inputs(
+            q, w, k, topk, grad
+        )
         self.assertEqual(w_out.dtype, paddle.float32)
         self.assertEqual(topk_out.dtype, paddle.int32)
         self.assertEqual(grad_out.dtype, paddle.float32)
@@ -1202,7 +1351,9 @@ class TestCSAIndexerFwdInterfaceValidation(unittest.TestCase):
             _validate_interface_inputs,
         )
 
-        q = paddle.empty([2, 4, 8, 16], dtype="bfloat16").transpose([0, 2, 1, 3])  # non-contiguous
+        q = paddle.empty([2, 4, 8, 16], dtype="bfloat16").transpose(
+            [0, 2, 1, 3]
+        )  # non-contiguous
         k = paddle.empty([2, 2, 16], dtype="bfloat16")
         w = paddle.empty([2, 4, 8], dtype="float32")
         with self.assertRaises(ValueError):
@@ -1289,7 +1440,9 @@ class TestCSAIndexerBwdInterfaceValidation(unittest.TestCase):
             _validate_interface_inputs,
         )
 
-        q = paddle.empty([1, 4, 8, 16], dtype="bfloat16").transpose([0, 2, 1, 3])
+        q = paddle.empty([1, 4, 8, 16], dtype="bfloat16").transpose(
+            [0, 2, 1, 3]
+        )
         w = paddle.empty([1, 4, 8], dtype="float32")
         k = paddle.empty([1, 2, 16], dtype="bfloat16")
         topk = paddle.empty([1, 4, 2], dtype="int32")
@@ -1388,7 +1541,9 @@ class TestCSAAttnTargetInterfaceValidation(unittest.TestCase):
             _validate_interface_inputs,
         )
 
-        q = paddle.empty([1, 4, 8, 32], dtype="bfloat16").transpose([0, 2, 1, 3])
+        q = paddle.empty([1, 4, 8, 32], dtype="bfloat16").transpose(
+            [0, 2, 1, 3]
+        )
         k = paddle.empty([1, 2, 32], dtype="bfloat16")
         topk = paddle.empty([1, 4, 2], dtype="int32")
         with self.assertRaises(ValueError):
@@ -1484,7 +1639,8 @@ class TestCSAAttnTargetInterfaceValidation(unittest.TestCase):
 
 
 @unittest.skipUnless(
-    paddle.device.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0,
+    paddle.device.is_compiled_with_cuda()
+    and paddle.device.cuda.device_count() > 0,
     "TileLang CSA Indexer kernel requires CUDA",
 )
 class TestTileLangCSAIndexerLossAutoScaler(unittest.TestCase):
@@ -1527,8 +1683,12 @@ class TestTileLangCSAIndexerLossAutoScaler(unittest.TestCase):
         # Simulate target (random normalized distribution)
         paddle.seed(5051)
         target_raw = paddle.rand([b, sq, sk])
-        target_raw = paddle.where(topk_indices >= 0, target_raw, paddle.zeros_like(target_raw))
-        target = target_raw / target_raw.sum(axis=-1, keepdim=True).clip(min=1e-10)
+        target_raw = paddle.where(
+            topk_indices >= 0, target_raw, paddle.zeros_like(target_raw)
+        )
+        target = target_raw / target_raw.sum(axis=-1, keepdim=True).clip(
+            min=1e-10
+        )
 
         # Make non-leaf tensors by passing through identity ops.
         # Paddle PyLayer doesn't allow inplace strategy on leaf vars.
@@ -1605,7 +1765,8 @@ class TestTileLangCSAIndexerLossAutoScaler(unittest.TestCase):
 
 
 @unittest.skipUnless(
-    paddle.device.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0,
+    paddle.device.is_compiled_with_cuda()
+    and paddle.device.cuda.device_count() > 0,
     "TileLang CSA kernel requires CUDA",
 )
 class TestCSAForwardTileLangFwdOnlyPath(unittest.TestCase):
@@ -1658,7 +1819,11 @@ class TestCSAForwardTileLangFwdOnlyPath(unittest.TestCase):
                 )
 
             def forward(self, x):
-                return x * paddle.rsqrt(x.square().mean(-1, keepdim=True) + 1e-5) * self.weight.cast(x.dtype)
+                return (
+                    x
+                    * paddle.rsqrt(x.square().mean(-1, keepdim=True) + 1e-5)
+                    * self.weight.cast(x.dtype)
+                )
 
         head_dim, hidden_size, ratio = 64, 256, 4
         config = types.SimpleNamespace(
@@ -1684,12 +1849,18 @@ class TestCSAForwardTileLangFwdOnlyPath(unittest.TestCase):
         )
         rope = RotaryEmbedding(32, rotary_percent=1.0, rotary_base=160000)
 
-        comp_spec = CompressorSublayersSpec(linear_wkv=_Lin, linear_wgate=_Lin, norm=_Norm)
-        idx_comp_spec = CompressorSublayersSpec(linear_wkv=_Lin, linear_wgate=_Lin, norm=_Norm)
+        comp_spec = CompressorSublayersSpec(
+            linear_wkv=_Lin, linear_wgate=_Lin, norm=_Norm
+        )
+        idx_comp_spec = CompressorSublayersSpec(
+            linear_wkv=_Lin, linear_wgate=_Lin, norm=_Norm
+        )
         idx_spec = CSAIndexerSublayersSpec(
             linear_wq_b=_Lin,
             linear_weights_proj=_Lin,
-            compressor=LayerSpec(layer=Compressor, sublayers_spec=idx_comp_spec),
+            compressor=LayerSpec(
+                layer=Compressor, sublayers_spec=idx_comp_spec
+            ),
         )
         attn_spec = CompressedSparseAttentionSublayersSpec(
             compressor=LayerSpec(layer=Compressor, sublayers_spec=comp_spec),
@@ -1740,8 +1911,15 @@ class TestCSAForwardTileLangFwdOnlyPath(unittest.TestCase):
         out_ref = csa_ref(query, key, key, None, x=x, qr=qr)
 
         # They should match (same indexer weights → same topk → same attention)
-        diff = (out_tl.cast("float32") - out_ref.cast("float32")).abs().max().item()
-        self.assertLess(diff, 0.1, f"TileLang fwd-only vs Paddle mismatch: {diff}")
+        diff = (
+            (out_tl.cast("float32") - out_ref.cast("float32"))
+            .abs()
+            .max()
+            .item()
+        )
+        self.assertLess(
+            diff, 0.1, f"TileLang fwd-only vs Paddle mismatch: {diff}"
+        )
 
 
 if __name__ == "__main__":

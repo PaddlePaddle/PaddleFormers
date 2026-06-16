@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -68,7 +72,7 @@ class TestFusedSwigluScaleForward(unittest.TestCase):
         scale = paddle.to_tensor([1.0], dtype="float32")
 
         mock_result = paddle.randn([4, 4], dtype="float32")
-        with mock.patch("paddle.is_compiled_with_cuda", return_value=True):  # noqa: SIM117
+        with mock.patch("paddle.is_compiled_with_cuda", return_value=True):
             with mock.patch(
                 "paddlefleet_ops.fused_swiglu_scale",
                 return_value=mock_result,
@@ -165,7 +169,7 @@ class TestFusedSwigluScaleBackward(unittest.TestCase):
         mock_dx = paddle.randn([4, 8], dtype="float32")
         mock_ds = paddle.randn([1], dtype="float32")
 
-        with mock.patch("paddle.is_compiled_with_cuda", return_value=True):  # noqa: SIM117
+        with mock.patch("paddle.is_compiled_with_cuda", return_value=True):
             with mock.patch(
                 "paddlefleet_ops.fused_swiglu_scale_bwd",
                 return_value=(mock_dx, mock_ds),

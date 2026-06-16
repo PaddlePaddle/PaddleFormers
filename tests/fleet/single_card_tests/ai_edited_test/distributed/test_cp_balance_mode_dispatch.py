@@ -31,7 +31,11 @@ import sys
 
 # Insert local src/ before site-packages so we test the dev version
 _project_root = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    )
 )
 sys.path.insert(0, os.path.join(_project_root, "src"))
 
@@ -73,7 +77,9 @@ class TestScatterContiguous(unittest.TestCase):
 
     def test_nranks_1_returns_clone(self):
         """nranks==1 returns a clone (no-op)."""
-        from paddleformers.fleet.context_parallel_utils import scatter_contiguous
+        from paddleformers.fleet.context_parallel_utils import (
+            scatter_contiguous,
+        )
 
         group = _make_mock_group(nranks=1, rank=0)
         x = paddle.arange(12).reshape([3, 4]).cast("float32")
@@ -85,7 +91,9 @@ class TestScatterContiguous(unittest.TestCase):
 
     def test_axis_0_rank_slicing(self):
         """axis=0: rank r gets rows [r*chunk, (r+1)*chunk]."""
-        from paddleformers.fleet.context_parallel_utils import scatter_contiguous
+        from paddleformers.fleet.context_parallel_utils import (
+            scatter_contiguous,
+        )
 
         nranks = 4
         x = paddle.arange(16).reshape([8, 2]).cast("float32")
@@ -97,7 +105,9 @@ class TestScatterContiguous(unittest.TestCase):
 
     def test_axis_1_rank_slicing(self):
         """axis=1: rank r gets cols [r*chunk, (r+1)*chunk]."""
-        from paddleformers.fleet.context_parallel_utils import scatter_contiguous
+        from paddleformers.fleet.context_parallel_utils import (
+            scatter_contiguous,
+        )
 
         nranks = 2
         x = paddle.arange(12).reshape([3, 4]).cast("float32")
@@ -109,7 +119,9 @@ class TestScatterContiguous(unittest.TestCase):
 
     def test_negative_axis(self):
         """axis=-1 works correctly."""
-        from paddleformers.fleet.context_parallel_utils import scatter_contiguous
+        from paddleformers.fleet.context_parallel_utils import (
+            scatter_contiguous,
+        )
 
         nranks = 2
         x = paddle.arange(24).reshape([2, 3, 4]).cast("float32")
@@ -120,7 +132,9 @@ class TestScatterContiguous(unittest.TestCase):
 
     def test_group_none_uses_fleet(self):
         """group=None fetches group from fleet."""
-        from paddleformers.fleet.context_parallel_utils import scatter_contiguous
+        from paddleformers.fleet.context_parallel_utils import (
+            scatter_contiguous,
+        )
 
         hcg, group = _make_mock_hcg(nranks=2, rank=0)
         x = paddle.arange(8).reshape([4, 2]).cast("float32")
@@ -143,7 +157,9 @@ class TestAllGatherContiguous(unittest.TestCase):
 
     def test_nranks_1_returns_clone(self):
         """nranks==1 returns a clone."""
-        from paddleformers.fleet.context_parallel_utils import all_gather_contiguous
+        from paddleformers.fleet.context_parallel_utils import (
+            all_gather_contiguous,
+        )
 
         group = _make_mock_group(nranks=1, rank=0)
         x = paddle.randn([2, 4])
@@ -152,7 +168,9 @@ class TestAllGatherContiguous(unittest.TestCase):
 
     def test_axis_0_calls_all_gather_flat(self):
         """axis=0: uses flat buffer all_gather."""
-        from paddleformers.fleet.context_parallel_utils import all_gather_contiguous
+        from paddleformers.fleet.context_parallel_utils import (
+            all_gather_contiguous,
+        )
 
         nranks = 2
         group = _make_mock_group(nranks=nranks, rank=0)
@@ -161,13 +179,17 @@ class TestAllGatherContiguous(unittest.TestCase):
         def fake_all_gather(output, input_tensor, group, use_calc_stream):
             output[:] = paddle.concat([input_tensor, input_tensor * 2], axis=0)
 
-        with mock.patch.object(dist.stream, "all_gather", side_effect=fake_all_gather):
+        with mock.patch.object(
+            dist.stream, "all_gather", side_effect=fake_all_gather
+        ):
             out = all_gather_contiguous(x, group=group, axis=0)
         self.assertEqual(list(out.shape), [6, 4])
 
     def test_axis_1_calls_list_all_gather(self):
         """axis=1: uses list-based all_gather + concat."""
-        from paddleformers.fleet.context_parallel_utils import all_gather_contiguous
+        from paddleformers.fleet.context_parallel_utils import (
+            all_gather_contiguous,
+        )
 
         nranks = 2
         group = _make_mock_group(nranks=nranks, rank=0)
@@ -177,13 +199,17 @@ class TestAllGatherContiguous(unittest.TestCase):
             for i, t in enumerate(tensor_list):
                 tensor_list[i][:] = input_tensor * (i + 1)
 
-        with mock.patch.object(dist.stream, "all_gather", side_effect=fake_all_gather):
+        with mock.patch.object(
+            dist.stream, "all_gather", side_effect=fake_all_gather
+        ):
             out = all_gather_contiguous(x, group=group, axis=1)
         self.assertEqual(list(out.shape), [2, 6])
 
     def test_group_none_uses_fleet(self):
         """group=None fetches from fleet."""
-        from paddleformers.fleet.context_parallel_utils import all_gather_contiguous
+        from paddleformers.fleet.context_parallel_utils import (
+            all_gather_contiguous,
+        )
 
         hcg, group = _make_mock_hcg(nranks=1, rank=0)
         x = paddle.randn([2, 4])
@@ -205,7 +231,9 @@ class TestReduceScatterContiguous(unittest.TestCase):
 
     def test_nranks_1_returns_clone(self):
         """nranks==1 returns a clone."""
-        from paddleformers.fleet.context_parallel_utils import reduce_scatter_contiguous
+        from paddleformers.fleet.context_parallel_utils import (
+            reduce_scatter_contiguous,
+        )
 
         group = _make_mock_group(nranks=1, rank=0)
         x = paddle.randn([4, 6])
@@ -214,22 +242,30 @@ class TestReduceScatterContiguous(unittest.TestCase):
 
     def test_axis_0_calls_reduce_scatter(self):
         """axis=0: uses dist.stream.reduce_scatter."""
-        from paddleformers.fleet.context_parallel_utils import reduce_scatter_contiguous
+        from paddleformers.fleet.context_parallel_utils import (
+            reduce_scatter_contiguous,
+        )
 
         nranks = 2
         group = _make_mock_group(nranks=nranks, rank=0)
         x = paddle.ones([4, 6])
 
-        def fake_reduce_scatter(output, input_tensor, op, group, use_calc_stream):
+        def fake_reduce_scatter(
+            output, input_tensor, op, group, use_calc_stream
+        ):
             output[:] = input_tensor[: output.shape[0]]
 
-        with mock.patch.object(dist.stream, "reduce_scatter", side_effect=fake_reduce_scatter):
+        with mock.patch.object(
+            dist.stream, "reduce_scatter", side_effect=fake_reduce_scatter
+        ):
             out = reduce_scatter_contiguous(x, axis=0, group=group)
         self.assertEqual(list(out.shape), [2, 6])
 
     def test_axis_1_calls_alltoall(self):
         """axis=1: uses split + alltoall + fp32 sum."""
-        from paddleformers.fleet.context_parallel_utils import reduce_scatter_contiguous
+        from paddleformers.fleet.context_parallel_utils import (
+            reduce_scatter_contiguous,
+        )
 
         nranks = 2
         group = _make_mock_group(nranks=nranks, rank=0)
@@ -239,7 +275,9 @@ class TestReduceScatterContiguous(unittest.TestCase):
             for i, buf in enumerate(output_list):
                 buf[:] = input_list[i] * (i + 1)
 
-        with mock.patch.object(dist.stream, "alltoall", side_effect=fake_alltoall):
+        with mock.patch.object(
+            dist.stream, "alltoall", side_effect=fake_alltoall
+        ):
             out = reduce_scatter_contiguous(x, axis=1, group=group)
         # output shape: each chunk is [3, 2], sum of 2 chunks
         self.assertEqual(list(out.shape), [3, 2])
@@ -248,7 +286,9 @@ class TestReduceScatterContiguous(unittest.TestCase):
 
     def test_group_none_uses_fleet(self):
         """group=None fetches from fleet."""
-        from paddleformers.fleet.context_parallel_utils import reduce_scatter_contiguous
+        from paddleformers.fleet.context_parallel_utils import (
+            reduce_scatter_contiguous,
+        )
 
         hcg, group = _make_mock_hcg(nranks=1, rank=0)
         x = paddle.randn([4, 6])
@@ -269,7 +309,9 @@ class TestContextParallelScatterOpDispatch(unittest.TestCase):
     """Tests for ContextParallelScatterOp mode dispatch."""
 
     def _call_forward(self, mode, nranks=4, rank=1):
-        from paddleformers.fleet.context_parallel_utils import ContextParallelScatterOp
+        from paddleformers.fleet.context_parallel_utils import (
+            ContextParallelScatterOp,
+        )
 
         hcg, group = _make_mock_hcg(nranks=nranks, rank=rank)
         x = paddle.arange(16).reshape([4, 4]).cast("float32")
@@ -292,7 +334,9 @@ class TestContextParallelScatterOpDispatch(unittest.TestCase):
 
     def test_dualchunk_mode_calls_scatter_balance(self):
         """mode='dualchunk_allgather' dispatches to scatter_balance."""
-        from paddleformers.fleet.context_parallel_utils import ContextParallelScatterOp
+        from paddleformers.fleet.context_parallel_utils import (
+            ContextParallelScatterOp,
+        )
 
         hcg, group = _make_mock_hcg(nranks=2, rank=0)
         x = paddle.arange(8).reshape([4, 2]).cast("float32")
@@ -308,13 +352,17 @@ class TestContextParallelScatterOpDispatch(unittest.TestCase):
             ) as mock_scatter,
         ):
             ctx = mock.MagicMock()
-            out = ContextParallelScatterOp.forward(ctx, x, axis=0, mode="dualchunk_allgather")
+            out = ContextParallelScatterOp.forward(
+                ctx, x, axis=0, mode="dualchunk_allgather"
+            )
             mock_scatter.assert_called_once()
         self.assertEqual(ctx.mode, "dualchunk_allgather")
 
     def test_backward_contiguous_calls_all_gather(self):
         """backward with contiguous mode calls all_gather_contiguous."""
-        from paddleformers.fleet.context_parallel_utils import ContextParallelScatterOp
+        from paddleformers.fleet.context_parallel_utils import (
+            ContextParallelScatterOp,
+        )
 
         ctx = mock.MagicMock()
         ctx.mode = "contiguous_allgather"
@@ -328,7 +376,9 @@ class TestContextParallelScatterOpDispatch(unittest.TestCase):
 
     def test_backward_dualchunk_calls_all_gather_balance(self):
         """backward with dualchunk mode calls all_gather_balance."""
-        from paddleformers.fleet.context_parallel_utils import ContextParallelScatterOp
+        from paddleformers.fleet.context_parallel_utils import (
+            ContextParallelScatterOp,
+        )
 
         ctx = mock.MagicMock()
         ctx.mode = "dualchunk_allgather"
@@ -349,7 +399,9 @@ class TestContextParallelGatherOpDispatch(unittest.TestCase):
 
     def test_contiguous_mode_forward(self):
         """forward with contiguous mode calls all_gather_contiguous."""
-        from paddleformers.fleet.context_parallel_utils import ContextParallelGatherOp
+        from paddleformers.fleet.context_parallel_utils import (
+            ContextParallelGatherOp,
+        )
 
         hcg, group = _make_mock_hcg(nranks=2, rank=0)
         x = paddle.randn([2, 4])
@@ -366,14 +418,18 @@ class TestContextParallelGatherOpDispatch(unittest.TestCase):
             ) as mock_fn,
         ):
             ctx = mock.MagicMock()
-            out = ContextParallelGatherOp.forward(ctx, x, axis=0, mode="contiguous_allgather")
+            out = ContextParallelGatherOp.forward(
+                ctx, x, axis=0, mode="contiguous_allgather"
+            )
             mock_fn.assert_called_once()
         self.assertTrue(paddle.equal_all(out, fake_gathered))
         self.assertEqual(ctx.mode, "contiguous_allgather")
 
     def test_dualchunk_mode_forward(self):
         """forward with dualchunk mode calls all_gather_balance."""
-        from paddleformers.fleet.context_parallel_utils import ContextParallelGatherOp
+        from paddleformers.fleet.context_parallel_utils import (
+            ContextParallelGatherOp,
+        )
 
         hcg, group = _make_mock_hcg(nranks=2, rank=0)
         x = paddle.randn([2, 4])
@@ -389,12 +445,16 @@ class TestContextParallelGatherOpDispatch(unittest.TestCase):
             ) as mock_fn,
         ):
             ctx = mock.MagicMock()
-            out = ContextParallelGatherOp.forward(ctx, x, axis=0, mode="dualchunk_allgather")
+            out = ContextParallelGatherOp.forward(
+                ctx, x, axis=0, mode="dualchunk_allgather"
+            )
             mock_fn.assert_called_once()
 
     def test_backward_contiguous(self):
         """backward with contiguous mode calls scatter_contiguous."""
-        from paddleformers.fleet.context_parallel_utils import ContextParallelGatherOp
+        from paddleformers.fleet.context_parallel_utils import (
+            ContextParallelGatherOp,
+        )
 
         ctx = mock.MagicMock()
         ctx.mode = "contiguous_allgather"
@@ -408,7 +468,9 @@ class TestContextParallelGatherOpDispatch(unittest.TestCase):
 
     def test_backward_dualchunk(self):
         """backward with dualchunk mode calls scatter_balance."""
-        from paddleformers.fleet.context_parallel_utils import ContextParallelGatherOp
+        from paddleformers.fleet.context_parallel_utils import (
+            ContextParallelGatherOp,
+        )
 
         ctx = mock.MagicMock()
         ctx.mode = "dualchunk_allgather"
@@ -448,7 +510,9 @@ class TestContextParallelAllGatherOpDispatch(unittest.TestCase):
             ) as mock_fn,
         ):
             ctx = mock.MagicMock()
-            out = ContextParallelAllGatherOp.forward(ctx, x, axis=0, mode="contiguous_allgather")
+            out = ContextParallelAllGatherOp.forward(
+                ctx, x, axis=0, mode="contiguous_allgather"
+            )
             mock_fn.assert_called_once()
         self.assertTrue(paddle.equal_all(out, fake_gathered))
         self.assertEqual(ctx.mode, "contiguous_allgather")
@@ -473,7 +537,9 @@ class TestContextParallelAllGatherOpDispatch(unittest.TestCase):
             ) as mock_fn,
         ):
             ctx = mock.MagicMock()
-            out = ContextParallelAllGatherOp.forward(ctx, x, axis=0, mode="dualchunk_allgather")
+            out = ContextParallelAllGatherOp.forward(
+                ctx, x, axis=0, mode="dualchunk_allgather"
+            )
             mock_fn.assert_called_once()
 
     def test_backward_contiguous(self):
@@ -547,7 +613,9 @@ class TestGetBatchOnThisCpRank(unittest.TestCase):
 
         x = paddle.arange(16).reshape([4, 4]).cast("float32")
         with self._setup_fleet_mock(nranks=2, rank=0):
-            out = get_batch_on_this_cp_rank(x, cp_balance_mode="contiguous_allgather")
+            out = get_batch_on_this_cp_rank(
+                x, cp_balance_mode="contiguous_allgather"
+            )
         # axis=-1, rank=0, nranks=2 -> first half of cols
         self.assertEqual(list(out.shape), [4, 2])
 
@@ -562,7 +630,9 @@ class TestGetBatchOnThisCpRank(unittest.TestCase):
             "attention_mask": paddle.ones([2, 4]),
         }
         with self._setup_fleet_mock(nranks=2, rank=0):
-            out = get_batch_on_this_cp_rank(inputs, cp_balance_mode="contiguous_allgather")
+            out = get_batch_on_this_cp_rank(
+                inputs, cp_balance_mode="contiguous_allgather"
+            )
         # Split keys should be halved on axis=-1
         self.assertEqual(list(out["input_ids"].shape), [2, 2])
         self.assertEqual(list(out["position_ids"].shape), [2, 2])
@@ -614,7 +684,9 @@ class TestPyLayerAssertionGuards(unittest.TestCase):
 
     def test_scatter_op_asserts_nranks_gt_1(self):
         """ScatterOp raises when context_parallel_world_size <= 1."""
-        from paddleformers.fleet.context_parallel_utils import ContextParallelScatterOp
+        from paddleformers.fleet.context_parallel_utils import (
+            ContextParallelScatterOp,
+        )
 
         hcg, _ = _make_mock_hcg(nranks=1, rank=0)
         x = paddle.randn([4, 4])
@@ -629,7 +701,9 @@ class TestPyLayerAssertionGuards(unittest.TestCase):
 
     def test_gather_op_asserts_nranks_gt_1(self):
         """GatherOp raises when context_parallel_world_size <= 1."""
-        from paddleformers.fleet.context_parallel_utils import ContextParallelGatherOp
+        from paddleformers.fleet.context_parallel_utils import (
+            ContextParallelGatherOp,
+        )
 
         hcg, _ = _make_mock_hcg(nranks=1, rank=0)
         x = paddle.randn([4, 4])
@@ -670,7 +744,9 @@ class TestReduceScatterContiguousDtype(unittest.TestCase):
 
     def test_bf16_input_preserved(self):
         """bf16 input -> fp32 sum -> cast back to bf16."""
-        from paddleformers.fleet.context_parallel_utils import reduce_scatter_contiguous
+        from paddleformers.fleet.context_parallel_utils import (
+            reduce_scatter_contiguous,
+        )
 
         nranks = 2
         group = _make_mock_group(nranks=nranks, rank=0)
@@ -680,13 +756,17 @@ class TestReduceScatterContiguousDtype(unittest.TestCase):
             for i, buf in enumerate(output_list):
                 buf[:] = paddle.ones(buf.shape).cast("bfloat16")
 
-        with mock.patch.object(dist.stream, "alltoall", side_effect=fake_alltoall):
+        with mock.patch.object(
+            dist.stream, "alltoall", side_effect=fake_alltoall
+        ):
             out = reduce_scatter_contiguous(x, axis=1, group=group)
         self.assertEqual(out.dtype, paddle.bfloat16)
 
     def test_float16_input_preserved(self):
         """float16 input -> fp32 sum -> cast back to float16."""
-        from paddleformers.fleet.context_parallel_utils import reduce_scatter_contiguous
+        from paddleformers.fleet.context_parallel_utils import (
+            reduce_scatter_contiguous,
+        )
 
         nranks = 2
         group = _make_mock_group(nranks=nranks, rank=0)
@@ -696,7 +776,9 @@ class TestReduceScatterContiguousDtype(unittest.TestCase):
             for i, buf in enumerate(output_list):
                 buf[:] = paddle.ones(buf.shape).cast("float16")
 
-        with mock.patch.object(dist.stream, "alltoall", side_effect=fake_alltoall):
+        with mock.patch.object(
+            dist.stream, "alltoall", side_effect=fake_alltoall
+        ):
             out = reduce_scatter_contiguous(x, axis=1, group=group)
         self.assertEqual(out.dtype, paddle.float16)
 
@@ -711,7 +793,9 @@ class TestScatterContiguousValueCorrectness(unittest.TestCase):
 
     def test_3d_tensor_axis_1(self):
         """3D tensor [B, S, D] scattered on axis=1."""
-        from paddleformers.fleet.context_parallel_utils import scatter_contiguous
+        from paddleformers.fleet.context_parallel_utils import (
+            scatter_contiguous,
+        )
 
         nranks = 4
         B, S, D = 2, 8, 3
@@ -734,14 +818,18 @@ class TestTransformerConfigCpBalanceMode(unittest.TestCase):
 
     def test_default_value(self):
         """Default is 'dualchunk_allgather'."""
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         config = TransformerConfig()
         self.assertEqual(config.cp_balance_mode, "dualchunk_allgather")
 
     def test_set_contiguous(self):
         """Can be set to 'contiguous_allgather'."""
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         config = TransformerConfig(cp_balance_mode="contiguous_allgather")
         self.assertEqual(config.cp_balance_mode, "contiguous_allgather")

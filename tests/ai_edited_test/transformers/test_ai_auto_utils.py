@@ -58,7 +58,9 @@ class TestEinsum(unittest.TestCase):
         a = paddle.randn([s, e, c])
         b = paddle.randn([s, m])
         result = einsum("sec,sm->ecm", a, b)
-        expected = paddle.matmul(a.reshape([a.shape[0], -1]).t(), b).reshape([e, -1, m])
+        expected = paddle.matmul(a.reshape([a.shape[0], -1]).t(), b).reshape(
+            [e, -1, m]
+        )
         self.assertTrue(paddle.allclose(result, expected, atol=1e-4))
 
     def test_rule_sec_ecm_to_sm(self):
@@ -66,7 +68,9 @@ class TestEinsum(unittest.TestCase):
         a = paddle.randn([s, e, c])
         b = paddle.randn([e, c, m])
         result = einsum("sec,ecm->sm", a, b)
-        expected = paddle.matmul(a.reshape([a.shape[0], -1]), b.reshape([-1, b.shape[-1]]))
+        expected = paddle.matmul(
+            a.reshape([a.shape[0], -1]), b.reshape([-1, b.shape[-1]])
+        )
         self.assertTrue(paddle.allclose(result, expected, atol=1e-4))
 
     def test_rule_ks_ksm_to_sm(self):

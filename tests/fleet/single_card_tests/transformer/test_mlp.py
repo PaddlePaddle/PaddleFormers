@@ -19,7 +19,9 @@ import unittest
 
 import paddle
 
-from paddleformers.fleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
+from paddleformers.fleet.models.gpt.gpt_layer_specs import (
+    get_gpt_layer_local_spec,
+)
 from paddleformers.fleet.transformer.mlp import MLP
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 
@@ -37,7 +39,9 @@ class TestParallelMLP(unittest.TestCase):
     def setUp(self):
         self.mlp = MLP(
             self.transformer_config,
-            get_gpt_layer_local_spec(self.transformer_config).sublayers_spec.mlp.sublayers_spec,
+            get_gpt_layer_local_spec(
+                self.transformer_config
+            ).sublayers_spec.mlp.sublayers_spec,
         )
 
     def test_constructor(self):

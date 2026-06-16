@@ -13,11 +13,10 @@
 # limitations under the License.
 
 import math
-from typing import Optional
 
 import paddle
-import paddle.nn as nn
 import paddle.nn.functional as F
+from paddle import nn
 from paddle.distributed.fleet.layers.mpu import mp_ops
 from paddle.distributed.fleet.meta_parallel import (
     ColumnParallelLinear,
@@ -77,7 +76,7 @@ class LoRALinear(nn.Linear):
         lora_plus_scale: float = 1.0,
         mp_moe: bool = False,
         is_distributed: bool = False,
-        **kwargs
+        **kwargs,
     ):
         nn.Linear.__init__(self, in_features, out_features, **kwargs)
         if not isinstance(r, int) or r <= 0:
@@ -97,7 +96,9 @@ class LoRALinear(nn.Linear):
             shape=[in_features, r],
             dtype=self._dtype,
             is_bias=False,
-            default_initializer=nn.initializer.KaimingUniform(negative_slope=math.sqrt(5), nonlinearity="leaky_relu"),
+            default_initializer=nn.initializer.KaimingUniform(
+                negative_slope=math.sqrt(5), nonlinearity="leaky_relu"
+            ),
         )
         self.lora_B = self.create_parameter(
             shape=[r, out_features],
@@ -123,12 +124,19 @@ class LoRALinear(nn.Linear):
 
     def rope_init(self):
         if self.cos is None or self.sin is None:
-            inv_freq = 1.0 / (10000 ** (paddle.arange(0, self.r, 2, dtype=paddle.float32) / self.r))
+            inv_freq = 1.0 / (
+                10000
+                ** (paddle.arange(0, self.r, 2, dtype=paddle.float32) / self.r)
+            )
             t = paddle.arange(self.rb1, dtype=paddle.float32)
             freqs = t.unsqueeze(1) @ inv_freq.unsqueeze(0)
             emb = paddle.cat([freqs, freqs], axis=-1)
-            self.cos = paddle.unsqueeze(paddle.cos(emb), axis=0).astype(self._dtype)
-            self.sin = paddle.unsqueeze(paddle.sin(emb), axis=0).astype(self._dtype)
+            self.cos = paddle.unsqueeze(paddle.cos(emb), axis=0).astype(
+                self._dtype
+            )
+            self.sin = paddle.unsqueeze(paddle.sin(emb), axis=0).astype(
+                self._dtype
+            )
 
     def get_delta_weight(self, lora_A=None, lora_B=None):
         # compute the delta weight，which is used to merge weights
@@ -154,10 +162,16 @@ class LoRALinear(nn.Linear):
 
     def forward(self, input: paddle.Tensor, *args, **kwargs):
         if self.disable_lora or self.merged:
-            result = F.linear(x=input, weight=self.weight, bias=self.bias, name=self.name)
+            result = F.linear(
+                x=input, weight=self.weight, bias=self.bias, name=self.name
+            )
         else:
-            result = F.linear(x=input, weight=self.weight, bias=self.bias, name=self.name)
-            result += (self.lora_dropout(input) @ self.lora_A @ self.lora_B) * self.scaling
+            result = F.linear(
+                x=input, weight=self.weight, bias=self.bias, name=self.name
+            )
+            result += (
+                self.lora_dropout(input) @ self.lora_A @ self.lora_B
+            ) * self.scaling
         return result
 
     def extra_repr(self):
@@ -188,7 +202,7 @@ class RowParallelLoRALinear(RowParallelLinear):
         lora_dropout: float = 0.0,
         rslora: bool = False,
         lora_plus_scale: float = 1.0,
-        **kwargs
+        **kwargs,
     ):
         RowParallelLinear.__init__(self, in_features, out_features, **kwargs)
         if not isinstance(r, int) or r <= 0:
@@ -214,7 +228,9 @@ class RowParallelLoRALinear(RowParallelLinear):
                 dtype=self._dtype,
                 is_bias=False,
                 attr=paddle.ParamAttr(
-                    initializer=nn.initializer.KaimingUniform(negative_slope=math.sqrt(5), nonlinearity="leaky_relu")
+                    initializer=nn.initializer.KaimingUniform(
+                        negative_slope=math.sqrt(5), nonlinearity="leaky_relu"
+                    )
                 ),
             )
         self.lora_B = self.create_parameter(
@@ -244,7 +260,9 @@ class RowParallelLoRALinear(RowParallelLinear):
         structured_name_prefix: str = "",
     ):
         state_dict = self.state_dict(structured_name_prefix="")
-        return build_sharded_state_dict(state_dict, {"weight": 0, "lora_A": 0}, structured_name_prefix)
+        return build_sharded_state_dict(
+            state_dict, {"weight": 0, "lora_A": 0}, structured_name_prefix
+        )
 
     def get_delta_weight(self, lora_A=None, lora_B=None):
         lora_A = lora_A if lora_A is not None else self.lora_A
@@ -275,7 +293,9 @@ class RowParallelLoRALinear(RowParallelLinear):
         if self.disable_lora or self.merged:
             # x @ W : [bz, in_f / ws] ===> [bz, out_f]
             if MC2RowParallelCoreLinear is None:
-                result_mp = F.linear(x=input_mp, weight=self.weight, name=self.name)
+                result_mp = F.linear(
+                    x=input_mp, weight=self.weight, name=self.name
+                )
                 output = mp_ops._mp_allreduce(
                     result_mp,
                     group=self.model_parallel_group,
@@ -283,12 +303,16 @@ class RowParallelLoRALinear(RowParallelLinear):
                     use_model_parallel=True,
                 )
             else:
-                output = MC2RowParallelCoreLinear.apply(input_mp, self.weight, self.model_parallel_group)
+                output = MC2RowParallelCoreLinear.apply(
+                    input_mp, self.weight, self.model_parallel_group
+                )
             output = output + self.bias if self.bias is not None else output
         else:
             # x @ W : [bz, in_f / ws] ===> [bz, out_f]
             if MC2RowParallelCoreLinear is None:
-                result_mp = F.linear(x=input_mp, weight=self.weight, name=self.name)
+                result_mp = F.linear(
+                    x=input_mp, weight=self.weight, name=self.name
+                )
                 output = mp_ops._mp_allreduce(
                     result_mp,
                     group=self.model_parallel_group,
@@ -296,7 +320,9 @@ class RowParallelLoRALinear(RowParallelLinear):
                     use_model_parallel=True,
                 )
             else:
-                output = MC2RowParallelCoreLinear.apply(input_mp, self.weight, self.model_parallel_group)
+                output = MC2RowParallelCoreLinear.apply(
+                    input_mp, self.weight, self.model_parallel_group
+                )
 
             # x @ A: [bz, in_f/ ws] ===> [bz, r]
             input_mp = self.lora_dropout(input_mp) @ self.lora_A
@@ -341,9 +367,11 @@ class RowSequenceParallelLoRALinear(RowSequenceParallelLinear):
         lora_dropout: float = 0.0,
         rslora: bool = False,
         lora_plus_scale: float = 1.0,
-        **kwargs
+        **kwargs,
     ):
-        RowSequenceParallelLinear.__init__(self, in_features, out_features, **kwargs)
+        RowSequenceParallelLinear.__init__(
+            self, in_features, out_features, **kwargs
+        )
         if not isinstance(r, int) or r <= 0:
             raise ValueError("Lora rank r should be a positive integer")
         self.r = r
@@ -366,7 +394,9 @@ class RowSequenceParallelLoRALinear(RowSequenceParallelLinear):
                 dtype=self._dtype,
                 is_bias=False,
                 attr=paddle.ParamAttr(
-                    initializer=nn.initializer.KaimingUniform(negative_slope=math.sqrt(5), nonlinearity="leaky_relu")
+                    initializer=nn.initializer.KaimingUniform(
+                        negative_slope=math.sqrt(5), nonlinearity="leaky_relu"
+                    )
                 ),
             )
         self.lora_B = self.create_parameter(
@@ -397,7 +427,9 @@ class RowSequenceParallelLoRALinear(RowSequenceParallelLinear):
         structured_name_prefix: str = "",
     ):
         state_dict = self.state_dict(structured_name_prefix="")
-        return build_sharded_state_dict(state_dict, {"weight": 0, "lora_A": 0}, structured_name_prefix)
+        return build_sharded_state_dict(
+            state_dict, {"weight": 0, "lora_A": 0}, structured_name_prefix
+        )
 
     def get_delta_weight(self, lora_A=None, lora_B=None):
         lora_A = lora_A if lora_A is not None else self.lora_A
@@ -427,12 +459,20 @@ class RowSequenceParallelLoRALinear(RowSequenceParallelLinear):
             input_mp = x
 
         if MC2RowSeqParallelCoreLinear is None:
-            output_parallel = self.linear(input_mp, self.weight, name=self._name)
+            output_parallel = self.linear(
+                input_mp, self.weight, name=self._name
+            )
             output_ = ReduceScatterOp.apply(output_parallel)
-            result_mp = output_ + self.bias if self.bias is not None else output_
+            result_mp = (
+                output_ + self.bias if self.bias is not None else output_
+            )
         else:
-            output_ = MC2RowSeqParallelCoreLinear.apply(input_mp, self.weight, self.model_parallel_group)
-            result_mp = output_ + self.bias if self.bias is not None else output_
+            output_ = MC2RowSeqParallelCoreLinear.apply(
+                input_mp, self.weight, self.model_parallel_group
+            )
+            result_mp = (
+                output_ + self.bias if self.bias is not None else output_
+            )
 
         if not self.merged and not self.disable_lora:
             input_mp = self.lora_dropout(input_mp)
@@ -441,7 +481,9 @@ class RowSequenceParallelLoRALinear(RowSequenceParallelLinear):
                 input_mp = input_mp @ self.lora_A
                 input_mp = ReduceScatterOp.apply(input_mp)
             else:
-                input_mp = MC2RowSeqParallelCoreLinear.apply(input_mp, self.lora_A, self.model_parallel_group)
+                input_mp = MC2RowSeqParallelCoreLinear.apply(
+                    input_mp, self.lora_A, self.model_parallel_group
+                )
             delta_mp = (input_mp @ self.lora_B) * self.scaling
             result_mp += delta_mp
         return result_mp
@@ -474,8 +516,8 @@ class ColumnParallelLoRALinear(ColumnParallelLinear):
         lora_dropout: float = 0.0,
         rslora: bool = False,
         lora_plus_scale: float = 1.0,
-        lora_A_weight_attr: Optional[paddle.ParamAttr] = None,
-        **kwargs
+        lora_A_weight_attr: paddle.ParamAttr | None = None,
+        **kwargs,
     ):
         ColumnParallelLinear.__init__(self, in_features, out_features, **kwargs)
         if not isinstance(r, int) or r <= 0:
@@ -529,7 +571,11 @@ class ColumnParallelLoRALinear(ColumnParallelLinear):
         structured_name_prefix: str = "",
     ):
         state_dict = self.state_dict(structured_name_prefix="")
-        return build_sharded_state_dict(state_dict, {"weight": 1, "bias": 0, "lora_B": 1}, structured_name_prefix)
+        return build_sharded_state_dict(
+            state_dict,
+            {"weight": 1, "bias": 0, "lora_B": 1},
+            structured_name_prefix,
+        )
 
     def get_delta_weight(self, lora_A=None, lora_B=None):
         lora_A = lora_A if lora_A is not None else self.lora_A
@@ -557,30 +603,58 @@ class ColumnParallelLoRALinear(ColumnParallelLinear):
     def forward(self, input: paddle.Tensor):
         if self.disable_lora or self.merged:
             if MC2ColumnParallelCoreLinear is None:
-                input_mp = mp_ops._c_identity(input, group=self.model_parallel_group)
-                result_mp = F.linear(x=input_mp, weight=self.weight, bias=self.bias, name=self.name)
+                input_mp = mp_ops._c_identity(
+                    input, group=self.model_parallel_group
+                )
+                result_mp = F.linear(
+                    x=input_mp,
+                    weight=self.weight,
+                    bias=self.bias,
+                    name=self.name,
+                )
             else:
-                res_mp = MC2ColumnParallelCoreLinear.apply(input, self.weight, self.model_parallel_group)
-                result_mp = (res_mp + self.bias) if self.bias is not None else res_mp
+                res_mp = MC2ColumnParallelCoreLinear.apply(
+                    input, self.weight, self.model_parallel_group
+                )
+                result_mp = (
+                    (res_mp + self.bias) if self.bias is not None else res_mp
+                )
         else:
             if MC2ColumnParallelCoreLinear is None:
-                input_mp = mp_ops._c_identity(input, group=self.model_parallel_group)
-                result_mp = F.linear(x=input_mp, weight=self.weight, bias=self.bias, name=self.name)
+                input_mp = mp_ops._c_identity(
+                    input, group=self.model_parallel_group
+                )
+                result_mp = F.linear(
+                    x=input_mp,
+                    weight=self.weight,
+                    bias=self.bias,
+                    name=self.name,
+                )
             else:
-                res_mp = MC2ColumnParallelCoreLinear.apply(input, self.weight, self.model_parallel_group)
-                result_mp = (res_mp + self.bias) if self.bias is not None else res_mp
+                res_mp = MC2ColumnParallelCoreLinear.apply(
+                    input, self.weight, self.model_parallel_group
+                )
+                result_mp = (
+                    (res_mp + self.bias) if self.bias is not None else res_mp
+                )
 
             input_a = self.lora_dropout(input) @ self.lora_A
             if MC2ColumnParallelCoreLinear is None:
-                input_a_mp = mp_ops._c_identity(input_a, group=self.model_parallel_group)
+                input_a_mp = mp_ops._c_identity(
+                    input_a, group=self.model_parallel_group
+                )
                 delta_mp = (input_a_mp @ self.lora_B) * self.scaling
             else:
-                tmp = MC2ColumnParallelCoreLinear.apply(input_a, self.lora_B, self.model_parallel_group)
+                tmp = MC2ColumnParallelCoreLinear.apply(
+                    input_a, self.lora_B, self.model_parallel_group
+                )
                 delta_mp = tmp * self.scaling
             result_mp += delta_mp
 
         if self.gather_output and self.is_mp:
-            result = mp_ops._c_concat(result_mp, group=self.model_parallel_group)
+            result = mp_ops._c_concat(
+                result_mp, group=self.model_parallel_group
+            )
         else:
             result = result_mp
         return result
@@ -613,10 +687,12 @@ class ColumnSequenceParallelLoRALinear(ColumnSequenceParallelLinear):
         lora_dropout: float = 0.0,
         rslora: bool = False,
         lora_plus_scale: float = 1.0,
-        lora_A_weight_attr: Optional[paddle.ParamAttr] = None,
-        **kwargs
+        lora_A_weight_attr: paddle.ParamAttr | None = None,
+        **kwargs,
     ):
-        ColumnSequenceParallelLinear.__init__(self, in_features, out_features, **kwargs)
+        ColumnSequenceParallelLinear.__init__(
+            self, in_features, out_features, **kwargs
+        )
         if not isinstance(r, int) or r <= 0:
             raise ValueError("Lora rank r should be a positive integer")
         self.r = r
@@ -669,7 +745,11 @@ class ColumnSequenceParallelLoRALinear(ColumnSequenceParallelLinear):
         structured_name_prefix: str = "",
     ):
         state_dict = self.state_dict(structured_name_prefix="")
-        return build_sharded_state_dict(state_dict, {"weight": 1, "bias": 0, "lora_B": 1}, structured_name_prefix)
+        return build_sharded_state_dict(
+            state_dict,
+            {"weight": 1, "bias": 0, "lora_B": 1},
+            structured_name_prefix,
+        )
 
     def get_delta_weight(self, lora_A=None, lora_B=None):
         lora_A = lora_A if lora_A is not None else self.lora_A
@@ -698,9 +778,13 @@ class ColumnSequenceParallelLoRALinear(ColumnSequenceParallelLinear):
                 input_parallel = AllGatherOp.apply(x)
             else:
                 input_parallel = x
-            result_mp = self.linear(input_parallel, self.weight, self.bias, name=self._name)
+            result_mp = self.linear(
+                input_parallel, self.weight, self.bias, name=self._name
+            )
         else:
-            result_mp = MC2ColumnSeqParallelCoreLinear.apply(x, self.weight, self.model_parallel_group)
+            result_mp = MC2ColumnSeqParallelCoreLinear.apply(
+                x, self.weight, self.model_parallel_group
+            )
             if self.bias is not None:
                 result_mp += self.bias
 
@@ -711,12 +795,16 @@ class ColumnSequenceParallelLoRALinear(ColumnSequenceParallelLinear):
                 input_a = AllGatherOp.apply(input_a)
                 delta_mp = (input_a @ self.lora_B) * self.scaling
             else:
-                input_a = MC2ColumnSeqParallelCoreLinear.apply(input_a, self.lora_B, self.model_parallel_group)
+                input_a = MC2ColumnSeqParallelCoreLinear.apply(
+                    input_a, self.lora_B, self.model_parallel_group
+                )
                 delta_mp = input_a * self.scaling
             result_mp += delta_mp
 
         if self.gather_output and self.is_mp:
-            result = mp_ops._c_concat(result_mp, group=self.model_parallel_group)
+            result = mp_ops._c_concat(
+                result_mp, group=self.model_parallel_group
+            )
         else:
             result = result_mp
         return result
@@ -749,9 +837,11 @@ class LoRAConv2D(nn.Conv2D):
         r: int = 0,
         lora_alpha: int = 1,
         lora_dropout: float = 0.0,
-        **kwargs
+        **kwargs,
     ):
-        nn.Conv2D.__init__(self, in_channels, out_channels, kernel_size, **kwargs)
+        nn.Conv2D.__init__(
+            self, in_channels, out_channels, kernel_size, **kwargs
+        )
         if not isinstance(r, int) or r <= 0:
             raise ValueError("Lora rank r should be a positive integer")
         self.r = r
@@ -771,7 +861,9 @@ class LoRAConv2D(nn.Conv2D):
             kernel_size=self._kernel_size,
             stride=self._stride,
             padding=self._padding,
-            weight_attr=nn.initializer.KaimingUniform(negative_slope=math.sqrt(5), nonlinearity="leaky_relu"),
+            weight_attr=nn.initializer.KaimingUniform(
+                negative_slope=math.sqrt(5), nonlinearity="leaky_relu"
+            ),
             bias_attr=False,
         )
         self.lora_A = lora_A.weight
@@ -795,14 +887,18 @@ class LoRAConv2D(nn.Conv2D):
         self.disable_lora = False
 
     def get_delta_weight(self, lora_A=None, lora_B=None):
-        weight_A = (lora_A if lora_A else self.lora_A).cast(dtype=self.weight.dtype)
-        weight_B = (lora_B if lora_B else self.lora_B).cast(dtype=self.weight.dtype)
+        weight_A = (lora_A if lora_A else self.lora_A).cast(
+            dtype=self.weight.dtype
+        )
+        weight_B = (lora_B if lora_B else self.lora_B).cast(
+            dtype=self.weight.dtype
+        )
 
         if self.weight.shape[2:4] == [1, 1]:
             # conv2d 1x1
-            delta_weight = (weight_B.squeeze(3).squeeze(2) @ weight_A.squeeze(3).squeeze(2)).unsqueeze(2).unsqueeze(
-                3
-            ) * self.scaling
+            delta_weight = (
+                weight_B.squeeze(3).squeeze(2) @ weight_A.squeeze(3).squeeze(2)
+            ).unsqueeze(2).unsqueeze(3) * self.scaling
         else:
             # conv2d 3x3
             delta_weight = (
@@ -836,7 +932,11 @@ class LoRAConv2D(nn.Conv2D):
         result = super().forward(input)
         if not self.merged and not self.disable_lora:
             result += (
-                self.lora_B_forward(self.lora_A_forward(self.lora_dropout(input.cast(dtype=self.lora_A.dtype))))
+                self.lora_B_forward(
+                    self.lora_A_forward(
+                        self.lora_dropout(input.cast(dtype=self.lora_A.dtype))
+                    )
+                )
                 * self.scaling
             )
         result = result.cast(dtype=previous_dtype)
@@ -869,7 +969,7 @@ class LoRAMoeExperts(MoeExpertsBase):
         lora_dropout: float = 0.0,
         rslora: bool = False,
         lora_plus_scale: float = 1.0,
-        **kwargs
+        **kwargs,
     ):
         super().__init__()
         self.num_experts = base_layer.num_experts
@@ -880,10 +980,14 @@ class LoRAMoeExperts(MoeExpertsBase):
         self.disable_lora = False
         self.lora_plus_scale = lora_plus_scale
 
-        self.gate_up_proj, self.gate_up_proj_lora_A, self.gate_up_proj_lora_B = self._init_lora(
-            base_layer, "gate_up_proj"
+        (
+            self.gate_up_proj,
+            self.gate_up_proj_lora_A,
+            self.gate_up_proj_lora_B,
+        ) = self._init_lora(base_layer, "gate_up_proj")
+        self.down_proj, self.down_proj_lora_A, self.down_proj_lora_B = (
+            self._init_lora(base_layer, "down_proj")
         )
-        self.down_proj, self.down_proj_lora_A, self.down_proj_lora_B = self._init_lora(base_layer, "down_proj")
 
         if not rslora:
             self.scaling = self.lora_alpha / self.r
@@ -892,7 +996,9 @@ class LoRAMoeExperts(MoeExpertsBase):
 
     def _init_lora(self, base_layer, parameter_name: str):
         if not hasattr(base_layer, parameter_name):
-            raise ValueError(f"Parameter '{parameter_name}' does not exist in the base layer.")
+            raise ValueError(
+                f"Parameter '{parameter_name}' does not exist in the base layer."
+            )
 
         parameter = getattr(base_layer, parameter_name)
         parameter.stop_gradient = True
@@ -901,7 +1007,9 @@ class LoRAMoeExperts(MoeExpertsBase):
             shape=[num_experts, in_features, self.r],
             dtype=paddle.get_default_dtype(),
             is_bias=False,
-            default_initializer=nn.initializer.KaimingUniform(negative_slope=math.sqrt(5), nonlinearity="leaky_relu"),
+            default_initializer=nn.initializer.KaimingUniform(
+                negative_slope=math.sqrt(5), nonlinearity="leaky_relu"
+            ),
         )
         lora_B = self.create_parameter(
             shape=[num_experts, self.r, out_features],
@@ -920,20 +1028,28 @@ class LoRAMoeExperts(MoeExpertsBase):
 
     def merge(self):
         if not self.merged:
-            delta_weight = self.get_delta_weight(self.gate_up_proj_lora_A, self.gate_up_proj_lora_B)
+            delta_weight = self.get_delta_weight(
+                self.gate_up_proj_lora_A, self.gate_up_proj_lora_B
+            )
             new_parameter = self.gate_up_proj + delta_weight
             self.gate_up_proj.set_value(new_parameter)
-            delta_weight = self.get_delta_weight(self.down_proj_lora_A, self.down_proj_lora_B)
+            delta_weight = self.get_delta_weight(
+                self.down_proj_lora_A, self.down_proj_lora_B
+            )
             new_parameter = self.down_proj + delta_weight
             self.down_proj.set_value(new_parameter)
             self.merged = True
 
     def unmerge(self):
         if self.merged:
-            delta_weight = self.get_delta_weight(self.gate_up_proj_lora_A, self.gate_up_proj_lora_B)
+            delta_weight = self.get_delta_weight(
+                self.gate_up_proj_lora_A, self.gate_up_proj_lora_B
+            )
             new_parameter = self.gate_up_proj - delta_weight
             self.gate_up_proj.set_value(new_parameter)
-            delta_weight = self.get_delta_weight(self.down_proj_lora_A, self.down_proj_lora_B)
+            delta_weight = self.get_delta_weight(
+                self.down_proj_lora_A, self.down_proj_lora_B
+            )
             new_parameter = self.down_proj - delta_weight
             self.down_proj.set_value(new_parameter)
             self.merged = False
@@ -941,9 +1057,14 @@ class LoRAMoeExperts(MoeExpertsBase):
     def forward(self, hidden_states, top_k_index, top_k_weights):
         final_hidden_states = paddle.zeros_like(hidden_states)
         with paddle.no_grad():
-            expert_mask = paddle.nn.functional.one_hot(top_k_index, num_classes=self.num_experts)
+            expert_mask = paddle.nn.functional.one_hot(
+                top_k_index, num_classes=self.num_experts
+            )
             expert_mask = expert_mask.permute(2, 1, 0)
-            expert_hit = paddle.greater(expert_mask.sum(dim=(-1, -2)), paddle.to_tensor(0, dtype="int32")).nonzero()
+            expert_hit = paddle.greater(
+                expert_mask.sum(dim=(-1, -2)),
+                paddle.to_tensor(0, dtype="int32"),
+            ).nonzero()
 
         for expert_idx in expert_hit:
             expert_idx = expert_idx[0]
@@ -958,9 +1079,16 @@ class LoRAMoeExperts(MoeExpertsBase):
                     @ self.gate_up_proj_lora_B[expert_idx]
                     * self.scaling
                 )
-                current_state = nn.functional.linear(current_state, self.gate_up_proj[expert_idx]) + delta_state
+                current_state = (
+                    nn.functional.linear(
+                        current_state, self.gate_up_proj[expert_idx]
+                    )
+                    + delta_state
+                )
             else:
-                current_state = nn.functional.linear(current_state, self.gate_up_proj[expert_idx])
+                current_state = nn.functional.linear(
+                    current_state, self.gate_up_proj[expert_idx]
+                )
             gate, up = current_state.chunk(2, dim=-1)
             current_hidden_states = self.act_fn(gate) * up
             if not (self.disable_lora or self.merged):
@@ -971,12 +1099,24 @@ class LoRAMoeExperts(MoeExpertsBase):
                     * self.scaling
                 )
                 current_hidden_states = (
-                    nn.functional.linear(current_hidden_states, self.down_proj[expert_idx]) + delta_states
+                    nn.functional.linear(
+                        current_hidden_states, self.down_proj[expert_idx]
+                    )
+                    + delta_states
                 )
             else:
-                current_hidden_states = nn.functional.linear(current_hidden_states, self.down_proj[expert_idx])
-            current_hidden_states = current_hidden_states * top_k_weights[token_idx, top_k_pos, None]
-            final_hidden_states.index_add_(0, token_idx, current_hidden_states.to(final_hidden_states.dtype))
+                current_hidden_states = nn.functional.linear(
+                    current_hidden_states, self.down_proj[expert_idx]
+                )
+            current_hidden_states = (
+                current_hidden_states
+                * top_k_weights[token_idx, top_k_pos, None]
+            )
+            final_hidden_states.index_add_(
+                0,
+                token_idx,
+                current_hidden_states.to(final_hidden_states.dtype),
+            )
 
         return final_hidden_states
 
@@ -990,7 +1130,7 @@ class FleetLoRAMoeExperts(MoeExpertsBase):
         lora_dropout: float = 0.0,
         rslora: bool = False,
         lora_plus_scale: float = 1.0,
-        **kwargs
+        **kwargs,
     ):
         super().__init__()
         self.config = base_layer.config
@@ -1005,8 +1145,12 @@ class FleetLoRAMoeExperts(MoeExpertsBase):
         self.disable_lora = False
         self.lora_plus_scale = lora_plus_scale
 
-        self.weight1, self.weight1_lora_A, self.weight1_lora_B = self._init_lora(base_layer, "weight1")
-        self.weight2, self.weight2_lora_A, self.weight2_lora_B = self._init_lora(base_layer, "weight2")
+        self.weight1, self.weight1_lora_A, self.weight1_lora_B = (
+            self._init_lora(base_layer, "weight1")
+        )
+        self.weight2, self.weight2_lora_A, self.weight2_lora_B = (
+            self._init_lora(base_layer, "weight2")
+        )
 
         if not rslora:
             self.scaling = self.lora_alpha / self.r
@@ -1015,7 +1159,9 @@ class FleetLoRAMoeExperts(MoeExpertsBase):
 
     def _init_lora(self, base_layer, parameter_name: str):
         if not hasattr(base_layer, parameter_name):
-            raise ValueError(f"Parameter '{parameter_name}' does not exist in the base layer.")
+            raise ValueError(
+                f"Parameter '{parameter_name}' does not exist in the base layer."
+            )
 
         parameter = getattr(base_layer, parameter_name)
         parameter.stop_gradient = True
@@ -1024,7 +1170,9 @@ class FleetLoRAMoeExperts(MoeExpertsBase):
             shape=[num_experts, in_features, self.r],
             dtype=parameter.dtype,
             is_bias=False,
-            default_initializer=nn.initializer.KaimingUniform(negative_slope=math.sqrt(5), nonlinearity="leaky_relu"),
+            default_initializer=nn.initializer.KaimingUniform(
+                negative_slope=math.sqrt(5), nonlinearity="leaky_relu"
+            ),
         )
         lora_B = paddle.create_parameter(
             shape=[num_experts, self.r, out_features],
@@ -1045,20 +1193,28 @@ class FleetLoRAMoeExperts(MoeExpertsBase):
 
     def merge(self):
         if not self.merged:
-            delta_weight = self.get_delta_weight(self.weight1_lora_A, self.weight1_lora_B)
+            delta_weight = self.get_delta_weight(
+                self.weight1_lora_A, self.weight1_lora_B
+            )
             new_parameter = self.weight1 + delta_weight
             self.weight1.set_value(new_parameter)
-            delta_weight = self.get_delta_weight(self.weight2_lora_A, self.weight2_lora_B)
+            delta_weight = self.get_delta_weight(
+                self.weight2_lora_A, self.weight2_lora_B
+            )
             new_parameter = self.weight2 + delta_weight
             self.weight2.set_value(new_parameter)
             self.merged = True
 
     def unmerge(self):
         if self.merged:
-            delta_weight = self.get_delta_weight(self.weight1_lora_A, self.weight1_lora_B)
+            delta_weight = self.get_delta_weight(
+                self.weight1_lora_A, self.weight1_lora_B
+            )
             new_parameter = self.weight1 - delta_weight
             self.weight1.set_value(new_parameter)
-            delta_weight = self.get_delta_weight(self.weight2_lora_A, self.weight2_lora_B)
+            delta_weight = self.get_delta_weight(
+                self.weight2_lora_A, self.weight2_lora_B
+            )
             new_parameter = self.weight2 - delta_weight
             self.weight2.set_value(new_parameter)
             self.merged = False
@@ -1066,7 +1222,9 @@ class FleetLoRAMoeExperts(MoeExpertsBase):
     def sharded_state_dict(self, structured_name_prefix: str = ""):
         state_dict = self.state_dict(structured_name_prefix="")
         if self.ep_group is None:
-            return build_sharded_state_dict(state_dict, None, structured_name_prefix)
+            return build_sharded_state_dict(
+                state_dict, None, structured_name_prefix
+            )
 
         sharded_dict = {}
         lora_keys = [
@@ -1090,7 +1248,9 @@ class FleetLoRAMoeExperts(MoeExpertsBase):
                     make_replicated_sharded_weight,
                 )
 
-                sharded_dict[full_key] = make_replicated_sharded_weight(full_key, tensor)
+                sharded_dict[full_key] = make_replicated_sharded_weight(
+                    full_key, tensor
+                )
         return sharded_dict
 
     def forward(
@@ -1113,7 +1273,9 @@ class FleetLoRAMoeExperts(MoeExpertsBase):
             if not isinstance(tokens_per_expert, list):
                 tokens_per_expert = tokens_per_expert.cpu().tolist()
             tokens_per_expert = [int(x) for x in tokens_per_expert]
-            tokens_per_expert_tensor = paddle.to_tensor(tokens_per_expert, dtype="int32")
+            tokens_per_expert_tensor = paddle.to_tensor(
+                tokens_per_expert, dtype="int32"
+            )
 
             if self.moe_deep_gemm:
                 fc1_output = DeepGEMMBMMFunction.apply(
@@ -1129,7 +1291,9 @@ class FleetLoRAMoeExperts(MoeExpertsBase):
                 )
 
             if self.activation_recompute:
-                raise NotImplementedError("Recompute in GroupedMLPExpert is not implemented")
+                raise NotImplementedError(
+                    "Recompute in GroupedMLPExpert is not implemented"
+                )
             else:
                 intermediate_parallel = self.activation_func(fc1_output)
                 if self.moe_deep_gemm:
@@ -1139,7 +1303,9 @@ class FleetLoRAMoeExperts(MoeExpertsBase):
                         tokens_per_expert_tensor,
                     )
                 else:
-                    fc2_output = BMMFunction.apply(intermediate_parallel, w2, tokens_per_expert)
+                    fc2_output = BMMFunction.apply(
+                        intermediate_parallel, w2, tokens_per_expert
+                    )
         else:
             # No token is allocated for local experts.
             assert paddle.count_nonzero(tokens_per_expert) == 0
@@ -1149,7 +1315,9 @@ class FleetLoRAMoeExperts(MoeExpertsBase):
             w2 = w2.reshape(-1, self.config.hidden_size)
             h = paddle.matmul(permuted_local_hidden_states, w1)
             if self.activation_recompute:
-                raise NotImplementedError("Recompute in GroupedMLPExpert is not implemented")
+                raise NotImplementedError(
+                    "Recompute in GroupedMLPExpert is not implemented"
+                )
             else:
                 h = self.activation_func(h)
                 fc2_output = paddle.matmul(h, w2)

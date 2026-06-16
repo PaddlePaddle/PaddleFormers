@@ -29,7 +29,9 @@ def _model_available():
     return os.path.isfile(_TEST_MODEL_FILE)
 
 
-@unittest.skipIf(not _model_available(), "Test sentencepiece model not available")
+@unittest.skipIf(
+    not _model_available(), "Test sentencepiece model not available"
+)
 class TestErnieBotTokenizer(unittest.TestCase):
     """Tests for ErnieBotTokenizer class."""
 

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -100,7 +104,9 @@ class TestPreprocessIndex(unittest.TestCase):
         from paddleformers.fleet.context_parallel_utils import preprocess_index
 
         indices = paddle.to_tensor([10, 20, 30, 40], dtype=paddle.int32)
-        result = preprocess_index(indices, chunk_id=1, seq_blocksize=16, max_seqlen_q=16)
+        result = preprocess_index(
+            indices, chunk_id=1, seq_blocksize=16, max_seqlen_q=16
+        )
         self.assertEqual(result.shape, indices.shape)
 
     def test_preprocess_index_clips_min(self):
@@ -108,7 +114,9 @@ class TestPreprocessIndex(unittest.TestCase):
         from paddleformers.fleet.context_parallel_utils import preprocess_index
 
         indices = paddle.to_tensor([10, 20, 30, 40], dtype=paddle.int32)
-        result = preprocess_index(indices, chunk_id=2, seq_blocksize=16, max_seqlen_q=16)
+        result = preprocess_index(
+            indices, chunk_id=2, seq_blocksize=16, max_seqlen_q=16
+        )
         # After subtracting 32, values become [-22, -12, -2, 8], clipped to [0, 0, 0, 8]
         self.assertTrue(paddle.all(result >= 0))
 
@@ -117,7 +125,9 @@ class TestPreprocessIndex(unittest.TestCase):
         from paddleformers.fleet.context_parallel_utils import preprocess_index
 
         indices = paddle.to_tensor([50, 60, 70, 80], dtype=paddle.int32)
-        result = preprocess_index(indices, chunk_id=0, seq_blocksize=16, max_seqlen_q=16)
+        result = preprocess_index(
+            indices, chunk_id=0, seq_blocksize=16, max_seqlen_q=16
+        )
         # After clipping, values should be <= max_seqlen_q
         self.assertTrue(paddle.all(result <= 16))
 

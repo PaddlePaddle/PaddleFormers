@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -185,13 +189,17 @@ class TestAbstractSchedulePlan(unittest.TestCase):
     """Tests for AbstractSchedulePlan."""
 
     def test_cannot_instantiate(self):
-        from paddleformers.fleet.pipeline_parallel.utils import AbstractSchedulePlan
+        from paddleformers.fleet.pipeline_parallel.utils import (
+            AbstractSchedulePlan,
+        )
 
         with self.assertRaises(TypeError):
             AbstractSchedulePlan()
 
     def test_subclass_must_implement_run(self):
-        from paddleformers.fleet.pipeline_parallel.utils import AbstractSchedulePlan
+        from paddleformers.fleet.pipeline_parallel.utils import (
+            AbstractSchedulePlan,
+        )
 
         class IncompletePlan(AbstractSchedulePlan):
             pass
@@ -200,7 +208,9 @@ class TestAbstractSchedulePlan(unittest.TestCase):
             IncompletePlan()
 
     def test_subclass_with_run(self):
-        from paddleformers.fleet.pipeline_parallel.utils import AbstractSchedulePlan
+        from paddleformers.fleet.pipeline_parallel.utils import (
+            AbstractSchedulePlan,
+        )
 
         class ConcretePlan(AbstractSchedulePlan):
             @staticmethod

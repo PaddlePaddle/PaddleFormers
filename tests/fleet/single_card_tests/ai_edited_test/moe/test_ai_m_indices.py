@@ -30,7 +30,9 @@ class TestMIndicesChanges(unittest.TestCase):
     7. subbatch backward: generates m_indices when (moe_deep_gemm or moe_expert_fusion)
     """
 
-    def _make_node(self, moe_deep_gemm=False, moe_expert_fusion=False, use_fp8_mlp=False):
+    def _make_node(
+        self, moe_deep_gemm=False, moe_expert_fusion=False, use_fp8_mlp=False
+    ):
         """Helper to create an ExpertsGroupGemmContiguousNode."""
         from paddleformers.fleet.transformer.moe.fp8_utils import (
             ExpertsGroupGemmContiguousNode,
@@ -54,9 +56,13 @@ class TestMIndicesChanges(unittest.TestCase):
         x = paddle.randn([3, 8], dtype="bfloat16")
         expert_w1 = paddle.randn([3, 8, 16], dtype="bfloat16")
 
-        with patch("paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm") as mock_dg:
+        with patch(
+            "paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm"
+        ) as mock_dg:
             mock_dg.m_grouped_bf16_gemm_nn_contiguous = MagicMock()
-            node.fwd_gate_up(x, expert_w1, num_expert=3, tokens_per_expert=tokens_per_expert)
+            node.fwd_gate_up(
+                x, expert_w1, num_expert=3, tokens_per_expert=tokens_per_expert
+            )
 
         self.assertIsNotNone(node.m_indices)
         expected = paddle.to_tensor([0, 1, 1], dtype="int32")
@@ -69,7 +75,9 @@ class TestMIndicesChanges(unittest.TestCase):
         x = paddle.randn([3, 8], dtype="bfloat16")
         expert_w1 = paddle.randn([3, 8, 16], dtype="bfloat16")
 
-        node.fwd_gate_up(x, expert_w1, num_expert=3, tokens_per_expert=tokens_per_expert)
+        node.fwd_gate_up(
+            x, expert_w1, num_expert=3, tokens_per_expert=tokens_per_expert
+        )
 
         self.assertIsNotNone(node.m_indices)
         expected = paddle.to_tensor([0, 0, 1], dtype="int32")
@@ -82,7 +90,9 @@ class TestMIndicesChanges(unittest.TestCase):
         x = paddle.randn([6, 8], dtype="float32")
         expert_w1 = [paddle.randn([8, 16], dtype="float32") for _ in range(3)]
 
-        node.fwd_gate_up(x, expert_w1, num_expert=3, tokens_per_expert=tokens_per_expert)
+        node.fwd_gate_up(
+            x, expert_w1, num_expert=3, tokens_per_expert=tokens_per_expert
+        )
 
         self.assertIsNone(node.m_indices)
 
@@ -93,9 +103,13 @@ class TestMIndicesChanges(unittest.TestCase):
         x = paddle.randn([3, 8], dtype="bfloat16")
         expert_w1 = paddle.randn([3, 8, 16], dtype="bfloat16")
 
-        with patch("paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm") as mock_dg:
+        with patch(
+            "paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm"
+        ) as mock_dg:
             mock_dg.m_grouped_bf16_gemm_nn_contiguous = MagicMock()
-            node.fwd_gate_up(x, expert_w1, num_expert=3, tokens_per_expert=tokens_per_expert)
+            node.fwd_gate_up(
+                x, expert_w1, num_expert=3, tokens_per_expert=tokens_per_expert
+            )
 
         mock_dg.m_grouped_bf16_gemm_nn_contiguous.assert_called_once()
 
@@ -119,15 +133,21 @@ class TestMIndicesChanges(unittest.TestCase):
         expert_w1 = paddle.randn([2, 8, 16], dtype="bfloat16")
 
         with (
-            patch("paddleformers.fleet.transformer.moe.fp8_utils.fused_stack_quant") as mock_fsq,
-            patch("paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm") as mock_dg,
+            patch(
+                "paddleformers.fleet.transformer.moe.fp8_utils.fused_stack_quant"
+            ) as mock_fsq,
+            patch(
+                "paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm"
+            ) as mock_dg,
         ):
             mock_fsq.return_value = (
                 paddle.zeros([2, 16, 8], dtype="float8_e4m3fn"),
                 paddle.ones([2, 1, 1], dtype="float32"),
             )
             mock_dg.m_grouped_fp8_gemm_nt_contiguous = MagicMock()
-            node.fwd_gate_up(x, expert_w1, num_expert=2, tokens_per_expert=tokens_per_expert)
+            node.fwd_gate_up(
+                x, expert_w1, num_expert=2, tokens_per_expert=tokens_per_expert
+            )
 
         self.assertIsNotNone(node.m_indices)
         expected = paddle.to_tensor([0, 0, 0, 1, 1], dtype="int32")
@@ -145,8 +165,12 @@ class TestMIndicesChanges(unittest.TestCase):
         expert_w2 = paddle.randn([3, 16, 8], dtype="bfloat16")
 
         with (
-            patch("paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm") as mock_dg,
-            patch("paddleformers.fleet.transformer.moe.fp8_utils.fused_swiglu_scale_forward") as mock_swiglu,
+            patch(
+                "paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm"
+            ) as mock_dg,
+            patch(
+                "paddleformers.fleet.transformer.moe.fp8_utils.fused_swiglu_scale_forward"
+            ) as mock_swiglu,
         ):
             mock_dg.m_grouped_bf16_gemm_nn_contiguous = MagicMock()
             mock_swiglu.return_value = paddle.randn([3, 8], dtype="bfloat16")
@@ -167,9 +191,15 @@ class TestMIndicesChanges(unittest.TestCase):
         unzipped_probs = paddle.ones([3, 1], dtype="bfloat16")
 
         with (
-            patch("paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm") as mock_dg,
-            patch("paddleformers.fleet.transformer.moe.fp8_utils.fused_swiglu_scale_forward") as mock_fwd,
-            patch("paddleformers.fleet.transformer.moe.fp8_utils.fused_swiglu_scale_backward") as mock_bwd,
+            patch(
+                "paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm"
+            ) as mock_dg,
+            patch(
+                "paddleformers.fleet.transformer.moe.fp8_utils.fused_swiglu_scale_forward"
+            ) as mock_fwd,
+            patch(
+                "paddleformers.fleet.transformer.moe.fp8_utils.fused_swiglu_scale_backward"
+            ) as mock_bwd,
         ):
             mock_dg.m_grouped_bf16_gemm_nt_contiguous = MagicMock()
             mock_fwd.return_value = paddle.randn([3, 4], dtype="bfloat16")
@@ -177,7 +207,9 @@ class TestMIndicesChanges(unittest.TestCase):
                 paddle.randn([3, 16], dtype="bfloat16"),
                 paddle.randn([3, 1], dtype="bfloat16"),
             )
-            node.bwd_down_input_bf16(expert_w2, unzipped_grad, o1, unzipped_probs)
+            node.bwd_down_input_bf16(
+                expert_w2, unzipped_grad, o1, unzipped_probs
+            )
 
         mock_dg.m_grouped_bf16_gemm_nt_contiguous.assert_called_once()
 
@@ -191,7 +223,9 @@ class TestMIndicesChanges(unittest.TestCase):
         do1 = paddle.randn([3, 16], dtype="bfloat16")
         expert_w1 = paddle.randn([3, 8, 16], dtype="bfloat16")
 
-        with patch("paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm") as mock_dg:
+        with patch(
+            "paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm"
+        ) as mock_dg:
             mock_dg.m_grouped_bf16_gemm_nt_contiguous = MagicMock()
             node.bwd_gate_up_input_bf16(do1, expert_w1)
 

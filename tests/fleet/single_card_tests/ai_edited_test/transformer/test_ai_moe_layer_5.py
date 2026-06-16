@@ -16,7 +16,9 @@ import os
 import sys
 import unittest
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+REPO_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 sys.path.insert(0, os.path.join(REPO_ROOT, "src"))
 
 import paddle
@@ -58,7 +60,9 @@ class FakeScatter:
 class FakeCommManager:
     def __init__(self):
         self.dispatched_probs = paddle.ones([2, 2], dtype="float32")
-        self.dispatched_indices = paddle.to_tensor([[0, 1], [1, 0]], dtype="int64")
+        self.dispatched_indices = paddle.to_tensor(
+            [[0, 1], [1, 0]], dtype="int64"
+        )
         self.tokens_per_expert = paddle.to_tensor([2, 2], dtype="int64")
         self.combine_calls = []
 
@@ -69,7 +73,9 @@ class FakeCommManager:
         async_finish=False,
         use_rr_deepep_combine=False,
     ):
-        self.combine_calls.append((hidden_states, handle, async_finish, use_rr_deepep_combine))
+        self.combine_calls.append(
+            (hidden_states, handle, async_finish, use_rr_deepep_combine)
+        )
         return hidden_states + 3.0
 
 
@@ -153,7 +159,9 @@ def build_gpt_model_with_moe():
         hidden_dropout_prob=0.0,
         attention_dropout=0.0,
         init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-        output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+        output_layer_init_method=functools.partial(
+            paddle.nn.init.xavier_uniform_, gain=1.0
+        ),
         tie_word_embeddings=False,
         use_qk_norm=True,
     )
@@ -178,7 +186,9 @@ class TestMoELayerExtraExecutableBranchesNoMock(unittest.TestCase):
         self.old_down = getattr(moe_layer, "_DownProjection", None)
         self.old_count_cumsum = moe_layer.count_cumsum
         self.old_filter_scores = moe_layer.filter_scores
-        self.old_metadata = moe_layer.fused_expert_parallel_TC_topk_router_metadata
+        self.old_metadata = (
+            moe_layer.fused_expert_parallel_TC_topk_router_metadata
+        )
         self.old_fusion = moe_layer.FusionMoePyLayer
 
     def tearDown(self):
@@ -202,7 +212,9 @@ class TestMoELayerExtraExecutableBranchesNoMock(unittest.TestCase):
             moe_layer._DownProjection = self.old_down
         moe_layer.count_cumsum = self.old_count_cumsum
         moe_layer.filter_scores = self.old_filter_scores
-        moe_layer.fused_expert_parallel_TC_topk_router_metadata = self.old_metadata
+        moe_layer.fused_expert_parallel_TC_topk_router_metadata = (
+            self.old_metadata
+        )
         moe_layer.FusionMoePyLayer = self.old_fusion
 
     def install_sonic_stubs(self):
@@ -256,8 +268,12 @@ class TestMoELayerExtraExecutableBranchesNoMock(unittest.TestCase):
         result = MoELayer.compute_gate(model, hidden, input_ids=input_ids)
 
         self.assertEqual(result, "gate-result")
-        self.assertEqual(FakeGather.calls[0].numpy().tolist(), hidden.numpy().tolist())
-        self.assertEqual(model.gate.hidden.numpy().tolist(), (hidden + 1.0).numpy().tolist())
+        self.assertEqual(
+            FakeGather.calls[0].numpy().tolist(), hidden.numpy().tolist()
+        )
+        self.assertEqual(
+            model.gate.hidden.numpy().tolist(), (hidden + 1.0).numpy().tolist()
+        )
         self.assertIs(model.gate.input_ids, input_ids)
 
     def test_aux_loss_compute_scatter_shared_and_latent_paths(self):
@@ -301,14 +317,24 @@ class TestMoELayerExtraExecutableBranchesNoMock(unittest.TestCase):
         indices = paddle.to_tensor([[0, 1], [1, 0]], dtype="int64")
         weights = paddle.ones([2, 2], dtype="float32")
 
-        dispatched = MoELayer.compute_dispatch(model, (hidden, indices, weights), async_finish=True)
-        expert_out = MoELayer.compute_experts(model, dispatched, is_first_fwd=True)
-        combined = MoELayer.compute_combine(model, expert_out, async_finish=True)
+        dispatched = MoELayer.compute_dispatch(
+            model, (hidden, indices, weights), async_finish=True
+        )
+        expert_out = MoELayer.compute_experts(
+            model, dispatched, is_first_fwd=True
+        )
+        combined = MoELayer.compute_combine(
+            model, expert_out, async_finish=True
+        )
 
         self.assertEqual(dispatched[1].shape, [2, 2])
-        self.assertEqual(expert_out.numpy().tolist(), (hidden + 41.0).numpy().tolist())
+        self.assertEqual(
+            expert_out.numpy().tolist(), (hidden + 41.0).numpy().tolist()
+        )
         self.assertFalse(expert_out.stop_gradient)
-        self.assertEqual(combined.numpy().tolist(), (expert_out + 3.0).numpy().tolist())
+        self.assertEqual(
+            combined.numpy().tolist(), (expert_out + 3.0).numpy().tolist()
+        )
 
         dense_model = get_gpt_moe_layer()
         dense_model.moe_use_fusion_node = False
@@ -316,7 +342,9 @@ class TestMoELayerExtraExecutableBranchesNoMock(unittest.TestCase):
         dense_model.combine = lambda x, *args, **kwargs: x + 6.0
         dense_expert = MoELayer.compute_experts(dense_model, (hidden, None))
         dense_combined = MoELayer.compute_combine(dense_model, dense_expert)
-        self.assertEqual(dense_combined.numpy().tolist(), (hidden + 11.0).numpy().tolist())
+        self.assertEqual(
+            dense_combined.numpy().tolist(), (hidden + 11.0).numpy().tolist()
+        )
 
     def test_fusion_moe_forward_sonic_branch_uses_projection_stubs(self):
         self.install_sonic_stubs()
@@ -332,15 +360,23 @@ class TestMoELayerExtraExecutableBranchesNoMock(unittest.TestCase):
         model.grouped_gemm_experts = FakeWeightBox()
         model.token_dispatcher = FakeTokenDispatcher()
         model._use_hybrid_ep_fusion = lambda: False
-        model.dispatch = lambda hidden_states, probs, routing_map, topk_weights, topk_indices: (
-            hidden_states + 1.0,
-            "handle",
+        model.dispatch = (
+            lambda hidden_states,
+            probs,
+            routing_map,
+            topk_weights,
+            topk_indices: (
+                hidden_states + 1.0,
+                "handle",
+            )
         )
         hidden = paddle.ones([2, 3], dtype="float32")
         probs = paddle.ones([2, 2], dtype="float32")
         routing = paddle.ones([2, 2], dtype="bool")
 
-        out = MoELayer.fusion_moe_forward(model, hidden, probs, routing, combine_overlap_handle=None)
+        out = MoELayer.fusion_moe_forward(
+            model, hidden, probs, routing, combine_overlap_handle=None
+        )
 
         self.assertEqual(out.numpy().tolist(), (hidden + 47.0).numpy().tolist())
         self.assertEqual(len(FakeUpProjection.calls), 1)
@@ -357,7 +393,9 @@ class TestMoELayerExtraExecutableBranchesNoMock(unittest.TestCase):
         routing = paddle.to_tensor([[1, 1], [1, 1]], dtype="bool")
         probs = paddle.to_tensor([[0.7, 0.3], [0.4, 0.6]], dtype="float32")
 
-        out = MoELayer._forward_single_card_grouped_gemm_moe(model, hidden, routing, probs)
+        out = MoELayer._forward_single_card_grouped_gemm_moe(
+            model, hidden, routing, probs
+        )
 
         self.assertEqual(out.numpy().tolist(), (hidden + 40.0).numpy().tolist())
         self.assertEqual(len(FakeUpProjection.calls), 1)

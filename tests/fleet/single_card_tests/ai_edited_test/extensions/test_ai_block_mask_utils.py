@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -47,9 +51,13 @@ except (ImportError, ModuleNotFoundError):
 if not _triton_available:
     _mock_tl = types.ModuleType("triton.language")
     _mock_triton = types.ModuleType("triton")
-    _mock_triton.jit = lambda fn=None, **kw: (fn if fn is not None else lambda f: f)
+    _mock_triton.jit = lambda fn=None, **kw: (
+        fn if fn is not None else lambda f: f
+    )
     _mock_triton.cdiv = lambda a, b: (a + b - 1) // b
-    _mock_triton.next_power_of_2 = lambda n: (1 << (n - 1).bit_length() if n > 0 else 1)
+    _mock_triton.next_power_of_2 = lambda n: (
+        1 << (n - 1).bit_length() if n > 0 else 1
+    )
     sys.modules.setdefault("triton", _mock_triton)
     sys.modules.setdefault("triton.language", _mock_tl)
 
@@ -61,6 +69,7 @@ class TestFindBlocksTopp(unittest.TestCase):
     def test_find_blocks_topp_basic(self):
         """Test find_blocks_topp basic functionality."""
         import paddle
+
         from paddlefleet_ops._extensions.flashmask.block_mask_utils import (
             find_blocks_topp,
         )
@@ -69,7 +78,9 @@ class TestFindBlocksTopp(unittest.TestCase):
         # Mock the triton kernel
         mock_mask = paddle.ones([1, 1, 2, 4], dtype="bool")
         with (
-            mock.patch("paddlefleet_ops._extensions.flashmask.block_mask_utils.top_p_kernel"),
+            mock.patch(
+                "paddlefleet_ops._extensions.flashmask.block_mask_utils.top_p_kernel"
+            ),
             mock.patch("triton.next_power_of_2", return_value=4),
         ):
             result = find_blocks_topp(x, p=0.9)
@@ -78,13 +89,16 @@ class TestFindBlocksTopp(unittest.TestCase):
     def test_find_blocks_topp_reshape(self):
         """Test find_blocks_topp reshapes correctly."""
         import paddle
+
         from paddlefleet_ops._extensions.flashmask.block_mask_utils import (
             find_blocks_topp,
         )
 
         x = paddle.randn([2, 4, 2, 8], dtype="float32")
         with (
-            mock.patch("paddlefleet_ops._extensions.flashmask.block_mask_utils.top_p_kernel"),
+            mock.patch(
+                "paddlefleet_ops._extensions.flashmask.block_mask_utils.top_p_kernel"
+            ),
             mock.patch("triton.next_power_of_2", return_value=8),
         ):
             result = find_blocks_topp(x, p=0.5)
@@ -93,6 +107,7 @@ class TestFindBlocksTopp(unittest.TestCase):
     def test_find_blocks_topp_small_n(self):
         """Test find_blocks_topp with n < 1."""
         import paddle
+
         from paddlefleet_ops._extensions.flashmask.block_mask_utils import (
             find_blocks_topp,
         )
@@ -100,7 +115,9 @@ class TestFindBlocksTopp(unittest.TestCase):
         x = paddle.randn([1, 1, 2, 1], dtype="float32")
         mock_mask = paddle.ones([1, 1, 2, 1], dtype="bool")
         with (
-            mock.patch("paddlefleet_ops._extensions.flashmask.block_mask_utils.top_p_kernel"),
+            mock.patch(
+                "paddlefleet_ops._extensions.flashmask.block_mask_utils.top_p_kernel"
+            ),
             mock.patch("triton.next_power_of_2", return_value=1),
         ):
             result = find_blocks_topp(x, p=0.9)
@@ -113,7 +130,9 @@ class TestBlockMaskUtilsImports(unittest.TestCase):
 
     def test_load_bounds_exists(self):
         """Test _load_bounds is defined."""
-        from paddlefleet_ops._extensions.flashmask.block_mask_utils import _load_bounds
+        from paddlefleet_ops._extensions.flashmask.block_mask_utils import (
+            _load_bounds,
+        )
 
         self.assertIsNotNone(_load_bounds)
 
@@ -175,7 +194,9 @@ class TestBlockMaskUtilsImports(unittest.TestCase):
 
     def test_top_p_kernel_exists(self):
         """Test top_p_kernel is defined."""
-        from paddlefleet_ops._extensions.flashmask.block_mask_utils import top_p_kernel
+        from paddlefleet_ops._extensions.flashmask.block_mask_utils import (
+            top_p_kernel,
+        )
 
         self.assertIsNotNone(top_p_kernel)
 
@@ -188,11 +209,7 @@ class TestBlockMaskUtilsUsedByTritonOp(unittest.TestCase):
         """Test that triton_op imports from block_mask_utils."""
         from paddlefleet_ops._extensions.flashmask.block_mask_utils import (
             check_fully_masked_state as cfm,
-        )
-        from paddlefleet_ops._extensions.flashmask.block_mask_utils import (
             check_partially_masked_state as cpm,
-        )
-        from paddlefleet_ops._extensions.flashmask.block_mask_utils import (
             find_blocks_topp as fbt,
         )
         from paddlefleet_ops._extensions.flashmask.rr_attn_estimate_triton_op import (

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -44,7 +48,9 @@ class TestBiasGeluFunction(unittest.TestCase):
         y = paddle.zeros([4])
         result = bias_gelu(bias, y)
         # GELU(0) ~ 0
-        self.assertTrue(paddle.allclose(result, paddle.zeros_like(result), atol=1e-5))
+        self.assertTrue(
+            paddle.allclose(result, paddle.zeros_like(result), atol=1e-5)
+        )
 
     def test_bias_gelu_back_exists(self):
         """Test bias_gelu_back function exists."""

@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -59,10 +63,14 @@ class TestFP8Utils(unittest.TestCase):
 
     def test_fused_stack_quant_precomputed_fp8_weight(self):
         """Test fused_stack_quant with precomputed fp8 weight_stacked."""
-        from paddleformers.fleet.transformer.moe.fp8_utils import fused_stack_quant
+        from paddleformers.fleet.transformer.moe.fp8_utils import (
+            fused_stack_quant,
+        )
 
         w1 = paddle.randn([64, 128], dtype=paddle.bfloat16)
-        w1.fp8_weight_stacked = paddle.zeros([128, 64], dtype=paddle.float8_e4m3fn)
+        w1.fp8_weight_stacked = paddle.zeros(
+            [128, 64], dtype=paddle.float8_e4m3fn
+        )
         w1.fp8_scale_stacked = paddle.ones([1, 8], dtype=paddle.float32)
         w2 = paddle.randn([64, 128], dtype=paddle.bfloat16)
         weight_list = [w1, w2]
@@ -76,15 +84,23 @@ class TestFP8Utils(unittest.TestCase):
         then _get_fp8_weight_and_scale checks fp8_weight_stacked_transpose for
         transpose=True. So both attributes must be set.
         """
-        from paddleformers.fleet.transformer.moe.fp8_utils import fused_stack_quant
+        from paddleformers.fleet.transformer.moe.fp8_utils import (
+            fused_stack_quant,
+        )
 
         w1 = paddle.randn([64, 128], dtype=paddle.bfloat16)
         # fp8_weight_stacked is required to enter cache path
-        w1.fp8_weight_stacked = paddle.zeros([128, 64], dtype=paddle.float8_e4m3fn)
+        w1.fp8_weight_stacked = paddle.zeros(
+            [128, 64], dtype=paddle.float8_e4m3fn
+        )
         w1.fp8_scale_stacked = paddle.ones([1, 8], dtype=paddle.float32)
         # fp8_weight_stacked_transpose is the actual transpose cache
-        w1.fp8_weight_stacked_transpose = paddle.zeros([128, 64], dtype=paddle.float8_e4m3fn)
-        w1.fp8_scale_stacked_transpose = paddle.ones([1, 8], dtype=paddle.float32)
+        w1.fp8_weight_stacked_transpose = paddle.zeros(
+            [128, 64], dtype=paddle.float8_e4m3fn
+        )
+        w1.fp8_scale_stacked_transpose = paddle.ones(
+            [1, 8], dtype=paddle.float32
+        )
         w2 = paddle.randn([64, 128], dtype=paddle.bfloat16)
         weight_list = [w1, w2]
         w, scale = fused_stack_quant(weight_list, transpose=True)
@@ -112,7 +128,9 @@ class TestFP8Utils(unittest.TestCase):
         self.assertEqual(w, "wt")
         self.assertEqual(s, "st")
 
-    @patch("paddleformers.fleet.transformer.moe.fp8_utils.paddle.incubate.nn.functional.fp8_gemm_blockwise")
+    @patch(
+        "paddleformers.fleet.transformer.moe.fp8_utils.paddle.incubate.nn.functional.fp8_gemm_blockwise"
+    )
     def test_kitchen_gemm_zero_input(self, mock_gemm):
         """Test kitchen_gemm with zero-sized input."""
         from paddleformers.fleet.transformer.moe.fp8_utils import kitchen_gemm
@@ -147,7 +165,9 @@ class TestFP8Utils(unittest.TestCase):
         experts = [MagicMock() for _ in range(2)]
         for e in experts:
             e.up_gate_proj = MagicMock()
-            e.up_gate_proj.weight = paddle.randn([128, 64], dtype=paddle.bfloat16)
+            e.up_gate_proj.weight = paddle.randn(
+                [128, 64], dtype=paddle.bfloat16
+            )
             e.down_proj = MagicMock()
             e.down_proj.weight = paddle.randn([64, 128], dtype=paddle.bfloat16)
         custom_map.experts = experts
@@ -418,7 +438,9 @@ class TestFP8UtilsClampDispatch(unittest.TestCase):
 
     def test_used_inplace_swiglu_with_clamp(self):
         """Line 1764: when clamp_value is set, used_inplace_swiglu is False."""
-        from paddleformers.fleet.transformer.moe.fp8_utils import USE_INPLACE_SWIGLU_BWD
+        from paddleformers.fleet.transformer.moe.fp8_utils import (
+            USE_INPLACE_SWIGLU_BWD,
+        )
 
         node = self._make_node(clamp_value=5.0)
         result = USE_INPLACE_SWIGLU_BWD and (node.clamp_value is None)
@@ -540,7 +562,9 @@ class TestFP8UtilsClampDispatch(unittest.TestCase):
             unzipped_probs = paddle.ones([4, 1], dtype=paddle.bfloat16)
             expert_w2 = [paddle.randn([64, 128], dtype=paddle.bfloat16)]
             try:
-                node.bwd_down_input_fp8(expert_w2, unzipped_grad, o1, unzipped_probs)
+                node.bwd_down_input_fp8(
+                    expert_w2, unzipped_grad, o1, unzipped_probs
+                )
                 mock_clamp.assert_called()
             except Exception:
                 # The method may fail due to mock shape issues,
@@ -657,7 +681,9 @@ class TestFP8UtilsClampDispatch(unittest.TestCase):
             unzipped_probs = paddle.ones([4, 1], dtype=paddle.bfloat16)
             expert_w2 = [paddle.randn([64, 128], dtype=paddle.bfloat16)]
             try:
-                node.bwd_down_input_fp8(expert_w2, unzipped_grad, o1, unzipped_probs)
+                node.bwd_down_input_fp8(
+                    expert_w2, unzipped_grad, o1, unzipped_probs
+                )
             except Exception:
                 pass
 
@@ -685,7 +711,9 @@ class TestFP8UtilsClampBF16(unittest.TestCase):
         node = self._make_node(clamp_value=5.0)
 
         # Return zero-sized tensor so GEMM is skipped
-        mock_forward = MagicMock(return_value=paddle.empty([0, 64], dtype=paddle.bfloat16))
+        mock_forward = MagicMock(
+            return_value=paddle.empty([0, 64], dtype=paddle.bfloat16)
+        )
         with patch(
             "paddleformers.fleet.transformer.moe.fp8_utils.fused_swiglu_scale_forward",
             mock_forward,
@@ -694,7 +722,9 @@ class TestFP8UtilsClampBF16(unittest.TestCase):
             unzipped_probs = paddle.ones([4, 1], dtype=paddle.bfloat16)
             expert_w2 = [paddle.randn([64, 128], dtype=paddle.bfloat16)]
             result = node.fwd_down_bf16(o1, unzipped_probs, expert_w2)
-            mock_forward.assert_called_once_with(o1, unzipped_probs, node.clamp_value)
+            mock_forward.assert_called_once_with(
+                o1, unzipped_probs, node.clamp_value
+            )
             self.assertEqual(result.shape[0], 0)
 
     def test_bwd_down_input_bf16_clamp_calls_clamp_ops(self):
@@ -719,7 +749,9 @@ class TestFP8UtilsClampBF16(unittest.TestCase):
             unzipped_grad = paddle.empty([0, 64], dtype=paddle.bfloat16)
             unzipped_probs = paddle.ones([0, 1], dtype=paddle.bfloat16)
             expert_w2 = [paddle.randn([64, 128], dtype=paddle.bfloat16)]
-            do1, o2_s, probs_grad = node.bwd_down_input_bf16(expert_w2, unzipped_grad, o1, unzipped_probs)
+            do1, o2_s, probs_grad = node.bwd_down_input_bf16(
+                expert_w2, unzipped_grad, o1, unzipped_probs
+            )
             mock_clamp_bwd.assert_called_once()
 
 
@@ -759,7 +791,9 @@ class TestFP8UtilsBackwardImplClamp(unittest.TestCase):
         )
         node.bwd_gate_up_weight = MagicMock()
         node.bwd_down_weight = MagicMock()
-        node.bwd_gate_up_input_fp8 = MagicMock(return_value=paddle.randn([4, 64]))
+        node.bwd_gate_up_input_fp8 = MagicMock(
+            return_value=paddle.randn([4, 64])
+        )
         node.reset_state = MagicMock()
 
         out_grad = paddle.randn([4, 64])
@@ -767,7 +801,9 @@ class TestFP8UtilsBackwardImplClamp(unittest.TestCase):
 
         # With clamp_value, used_inplace_swiglu=False
         # a2a_async_fn is None -> goes to lines 1725-1752
-        dx, probs_grad = node.backward_impl_fp8(out_grad, unzipped_probs, a2a_async_fn=None)
+        dx, probs_grad = node.backward_impl_fp8(
+            out_grad, unzipped_probs, a2a_async_fn=None
+        )
 
         node.bwd_down_input_fp8.assert_called_once()
         node.bwd_gate_up_weight.assert_called()
@@ -790,7 +826,9 @@ class TestFP8UtilsBackwardImplClamp(unittest.TestCase):
         )
         node.bwd_gate_up_weight = MagicMock()
         node.bwd_down_weight = MagicMock()
-        node.bwd_gate_up_input_fp8 = MagicMock(return_value=paddle.randn([4, 64]))
+        node.bwd_gate_up_input_fp8 = MagicMock(
+            return_value=paddle.randn([4, 64])
+        )
         node.reset_state = MagicMock()
 
         task = MagicMock()
@@ -801,7 +839,9 @@ class TestFP8UtilsBackwardImplClamp(unittest.TestCase):
         out_grad = paddle.randn([4, 64])
         unzipped_probs = paddle.randn([4, 1])
 
-        dx, probs_grad = node.backward_impl_fp8(out_grad, unzipped_probs, a2a_async_fn=a2a_async_fn)
+        dx, probs_grad = node.backward_impl_fp8(
+            out_grad, unzipped_probs, a2a_async_fn=a2a_async_fn
+        )
 
         task.wait.assert_called_once()
         node.reset_state.assert_called_once()
@@ -819,13 +859,17 @@ class TestFP8UtilsBackwardImplClamp(unittest.TestCase):
         )
         node.bwd_gate_up_weight = MagicMock()
         node.bwd_down_weight = MagicMock()
-        node.bwd_gate_up_input_fp8 = MagicMock(return_value=paddle.randn([4, 64]))
+        node.bwd_gate_up_input_fp8 = MagicMock(
+            return_value=paddle.randn([4, 64])
+        )
         node.reset_state = MagicMock()
 
         out_grad = paddle.randn([4, 64])
         unzipped_probs = paddle.randn([4, 1])
 
-        dx, probs_grad = node.backward_impl_fp8(out_grad, unzipped_probs, a2a_async_fn=None)
+        dx, probs_grad = node.backward_impl_fp8(
+            out_grad, unzipped_probs, a2a_async_fn=None
+        )
 
         node.bwd_down_input_fp8.assert_called_once()
         node.reset_state.assert_called_once()

@@ -72,7 +72,9 @@ for _mod in list(sys.modules.keys()):
 
 
 def _no_cuda():
-    return mock.patch.object(paddle, "is_compiled_with_cuda", return_value=False)
+    return mock.patch.object(
+        paddle, "is_compiled_with_cuda", return_value=False
+    )
 
 
 def _ref_clamped_swiglu(x, clamp_value):
@@ -95,7 +97,9 @@ class TestClampedBiasSwiGLU(unittest.TestCase):
         out_ref = bias_swiglu(x, bias)
         out = clamped_bias_swiglu(x, bias, clamp_value=100.0)
         self.assertEqual(out.shape, [4, 8])
-        np.testing.assert_allclose(out_ref.numpy(), out.numpy(), rtol=1e-5, atol=1e-5)
+        np.testing.assert_allclose(
+            out_ref.numpy(), out.numpy(), rtol=1e-5, atol=1e-5
+        )
 
     def test_forward_saturated_different(self):
         """Small clamp_value clips gate/value → output differs from non-clamp."""
@@ -112,10 +116,14 @@ class TestClampedBiasSwiGLU(unittest.TestCase):
         y, bias = paddle.randn([4, 16]), paddle.randn([4, 16])
         grad_large = clamped_bias_swiglu_back(g, y, bias, clamp_value=100.0)
         grad_ref = bias_swiglu_back(g, y, bias)
-        np.testing.assert_allclose(grad_ref.numpy(), grad_large.numpy(), rtol=1e-5, atol=1e-5)
+        np.testing.assert_allclose(
+            grad_ref.numpy(), grad_large.numpy(), rtol=1e-5, atol=1e-5
+        )
         g2 = paddle.randn([2, 4])
         y2 = paddle.full([2, 8], 5.0)
-        grad0 = clamped_bias_swiglu_back(g2, y2, paddle.zeros([2, 8]), clamp_value=0.5)
+        grad0 = clamped_bias_swiglu_back(
+            g2, y2, paddle.zeros([2, 8]), clamp_value=0.5
+        )
         self.assertTrue(bool((grad0.abs().sum() == 0).item()))
 
     def test_e2e_autograd(self):
@@ -196,7 +204,9 @@ class TestFusedSwiGLUScaleBackwardClampCPU(unittest.TestCase):
                 ],
                 axis=-1,
             )
-            dx2, _ = fused_swiglu_scale_backward(x, paddle.ones([2, 1]), paddle.randn([2, 4]), clamp_value=1.0)
+            dx2, _ = fused_swiglu_scale_backward(
+                x, paddle.ones([2, 1]), paddle.randn([2, 4]), clamp_value=1.0
+            )
             self.assertFalse(bool((dx2[..., :2].abs().sum() == 0).item()))
 
     def test_d_scale_numeric(self):
@@ -204,14 +214,20 @@ class TestFusedSwiGLUScaleBackwardClampCPU(unittest.TestCase):
         with _no_cuda():
             paddle.seed(42)
             x, sg = paddle.randn([4, 16]), paddle.randn([4, 8])
-            _, ds = fused_swiglu_scale_backward(x, paddle.ones([4, 1]), sg, clamp_value=3.0)
+            _, ds = fused_swiglu_scale_backward(
+                x, paddle.ones([4, 1]), sg, clamp_value=3.0
+            )
             h = x.shape[-1] // 2
             xf = x.cast(paddle.float32)
             g = paddle.clip(xf[..., :h], max=3.0)
             v = paddle.clip(xf[..., h:], min=-3.0, max=3.0)
             sw = (F.silu(g) * v).cast(x.dtype)
-            ref = paddle.sum(sw * sg.cast(paddle.float32), axis=-1, keepdim=True)
-            np.testing.assert_allclose(ds.numpy(), ref.numpy(), rtol=1e-5, atol=1e-5)
+            ref = paddle.sum(
+                sw * sg.cast(paddle.float32), axis=-1, keepdim=True
+            )
+            np.testing.assert_allclose(
+                ds.numpy(), ref.numpy(), rtol=1e-5, atol=1e-5
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -225,12 +241,18 @@ class TestFusedSwiGLUScaleForwardClampCPU(unittest.TestCase):
         with _no_cuda():
             paddle.seed(42)
             x = paddle.randn([4, 16])
-            out = fused_swiglu_scale_forward(x, paddle.ones([4, 1]), clamp_value=2.0)
+            out = fused_swiglu_scale_forward(
+                x, paddle.ones([4, 1]), clamp_value=2.0
+            )
             ref = _ref_clamped_swiglu(x, 2.0) * paddle.ones([4, 1])
-            np.testing.assert_allclose(out.numpy(), ref.numpy(), rtol=1e-5, atol=1e-5)
+            np.testing.assert_allclose(
+                out.numpy(), ref.numpy(), rtol=1e-5, atol=1e-5
+            )
             self.assertEqual(out.shape, [4, 8])
             self.assertEqual(out.dtype, paddle.float32)
-            out1d = fused_swiglu_scale_forward(x, paddle.ones([4]), clamp_value=2.0)
+            out1d = fused_swiglu_scale_forward(
+                x, paddle.ones([4]), clamp_value=2.0
+            )
             self.assertEqual(out1d.shape, [4, 8])
 
     def test_saturated_differs_from_nonclamp(self):
@@ -238,10 +260,18 @@ class TestFusedSwiGLUScaleForwardClampCPU(unittest.TestCase):
         with _no_cuda():
             x = paddle.full([2, 8], 3.0)
             out_nc = fused_swiglu_scale_forward(x, paddle.ones([2, 1]))
-            out_c = fused_swiglu_scale_forward(x, paddle.ones([2, 1]), clamp_value=0.5)
-            self.assertFalse(bool((out_nc.numpy() == out_c.numpy()).all().item()))
-            out_large = fused_swiglu_scale_forward(x, paddle.ones([2, 1]), clamp_value=20.0)
-            self.assertFalse(bool((out_c.numpy() == out_large.numpy()).all().item()))
+            out_c = fused_swiglu_scale_forward(
+                x, paddle.ones([2, 1]), clamp_value=0.5
+            )
+            self.assertFalse(
+                bool((out_nc.numpy() == out_c.numpy()).all().item())
+            )
+            out_large = fused_swiglu_scale_forward(
+                x, paddle.ones([2, 1]), clamp_value=20.0
+            )
+            self.assertFalse(
+                bool((out_c.numpy() == out_large.numpy()).all().item())
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -255,7 +285,9 @@ class TestBiasSwiGLUFunctionClamp(unittest.TestCase):
         bias = paddle.randn([4, 16]).astype("float32")
         x.stop_gradient = False
         bias.stop_gradient = False
-        out = BiasSwiGLUFunction.apply(x, bias, fp8, False, clamp_value=clamp_value)
+        out = BiasSwiGLUFunction.apply(
+            x, bias, fp8, False, clamp_value=clamp_value
+        )
         out.sum().backward()
         self.assertEqual(out.shape, [4, 8])
         self.assertIsNotNone(x.grad)
@@ -291,7 +323,9 @@ class TestWeightedBiasSwiGLUImplClamp(unittest.TestCase):
     def _fwd_bwd(self, x, w, clamp_value=None, fp8=False):
         x.stop_gradient = False
         w.stop_gradient = False
-        out = weighted_bias_swiglu_impl(x, None, w, fp8_input_store=fp8, clamp_value=clamp_value)
+        out = weighted_bias_swiglu_impl(
+            x, None, w, fp8_input_store=fp8, clamp_value=clamp_value
+        )
         out.sum().backward()
         self.assertEqual(out.shape, (*x.shape[:-1], x.shape[-1] // 2))
         return x.grad, w.grad
@@ -356,14 +390,22 @@ class TestDScaleAlignment(unittest.TestCase):
         else:
             sw = F.swiglu(x)
         keepdim = clamp_value is not None
-        return paddle.sum(sw * out_grad.cast(sd), axis=-1, keepdim=keepdim).cast(sd)
+        return paddle.sum(
+            sw * out_grad.cast(sd), axis=-1, keepdim=keepdim
+        ).cast(sd)
 
     def _check(self, x, scale, out_grad, clamp_value=None):
         with _no_cuda():
-            _, ds = fused_swiglu_scale_backward(x, scale, out_grad, clamp_value=clamp_value)
+            _, ds = fused_swiglu_scale_backward(
+                x, scale, out_grad, clamp_value=clamp_value
+            )
             ref = self._dscale_ref(x, scale, out_grad, clamp_value)
-            np.testing.assert_allclose(ds.numpy(), ref.numpy(), rtol=1e-5, atol=1e-5)
-            expected_shape = [x.shape[0], 1] if clamp_value is not None else [x.shape[0]]
+            np.testing.assert_allclose(
+                ds.numpy(), ref.numpy(), rtol=1e-5, atol=1e-5
+            )
+            expected_shape = (
+                [x.shape[0], 1] if clamp_value is not None else [x.shape[0]]
+            )
             self.assertEqual(ds.shape, expected_shape)
             self.assertEqual(ds.dtype, scale.dtype)
 
@@ -458,7 +500,9 @@ class TestClampEdgeCases(unittest.TestCase):
             s = paddle.ones([4, 1])
             out0 = fused_swiglu_scale_forward(x, s, clamp_value=0.0)
             out_nc = fused_swiglu_scale_forward(x, s)
-            np.testing.assert_allclose(out0.numpy(), out_nc.numpy(), rtol=1e-5, atol=1e-5)
+            np.testing.assert_allclose(
+                out0.numpy(), out_nc.numpy(), rtol=1e-5, atol=1e-5
+            )
         x2 = paddle.randn([4, 16]).astype("float32")
         x2.stop_gradient = False
         out = bias_swiglu_impl(x2, None, clamp_value=-1)
@@ -472,7 +516,9 @@ class TestClampEdgeCases(unittest.TestCase):
     def test_zero_rows(self):
         """All zero-row paths return correct shapes without crash."""
         with _no_cuda():
-            out = fused_swiglu_scale_forward(paddle.empty([0, 16]), paddle.empty([0, 1]), clamp_value=2.0)
+            out = fused_swiglu_scale_forward(
+                paddle.empty([0, 16]), paddle.empty([0, 1]), clamp_value=2.0
+            )
             self.assertEqual(out.shape, [0, 8])
             dx, ds = fused_swiglu_scale_backward(
                 paddle.empty([0, 16]),
@@ -497,7 +543,9 @@ class TestClampEdgeCases(unittest.TestCase):
                 self.assertEqual(bwd(g, y, bias_val, cv).shape, [0, 16])
         # impl layers
         self.assertEqual(
-            bias_swiglu_impl(paddle.empty([0, 16]), None, clamp_value=2.0).shape,
+            bias_swiglu_impl(
+                paddle.empty([0, 16]), None, clamp_value=2.0
+            ).shape,
             [0, 8],
         )
         self.assertEqual(
@@ -514,7 +562,9 @@ class TestClampEdgeCases(unittest.TestCase):
         b0 = paddle.empty([0, 16]).astype("float32")
         w0 = paddle.empty([0, 1]).astype("float32")
         self.assertEqual(
-            BiasSwiGLUFunction.apply(x0, b0, False, False, clamp_value=2.0).shape,
+            BiasSwiGLUFunction.apply(
+                x0, b0, False, False, clamp_value=2.0
+            ).shape,
             [0, 8],
         )
         self.assertEqual(
@@ -539,9 +589,13 @@ class TestClampLargeTensor(unittest.TestCase):
                 paddle.device.synchronize()
                 paddle.device.cuda.empty_cache()
             except Exception:
-                raise unittest.SkipTest(f"GPU OOM for large tensor ({est_gib:.1f} GiB)")
+                raise unittest.SkipTest(
+                    f"GPU OOM for large tensor ({est_gib:.1f} GiB)"
+                )
         elif est_gib > 24:
-            raise unittest.SkipTest(f"Large tensor ({est_gib:.1f} GiB) skipped on CPU")
+            raise unittest.SkipTest(
+                f"Large tensor ({est_gib:.1f} GiB) skipped on CPU"
+            )
 
     def test_clamped_swiglu_fwd_bwd_large(self):
         rows, hidden2 = 2**24, 136  # ~2.28B elements > 2**31

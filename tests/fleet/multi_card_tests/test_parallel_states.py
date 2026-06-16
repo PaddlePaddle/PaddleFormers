@@ -63,14 +63,16 @@ class TestParallelState(unittest.TestCase):
 
         rank = dist.get_rank()
         # check tp_group ranks
-        expected_tp_group_ranks = [rank, rank + 1] if rank % 2 == 0 else [rank - 1, rank]
-        assert (
-            tp_group.ranks == expected_tp_group_ranks
-        ), f"Expected tp group rank: {expected_tp_group_ranks}, got {tp_group.ranks}"
+        expected_tp_group_ranks = (
+            [rank, rank + 1] if rank % 2 == 0 else [rank - 1, rank]
+        )
+        assert tp_group.ranks == expected_tp_group_ranks, (
+            f"Expected tp group rank: {expected_tp_group_ranks}, got {tp_group.ranks}"
+        )
         expected_pp_group = [rank, rank + 4] if rank < 4 else [rank - 4, rank]
-        assert (
-            pp_group.ranks == expected_pp_group
-        ), f"Expected pp group rank: {expected_pp_group}, got {pp_group.ranks}"
+        assert pp_group.ranks == expected_pp_group, (
+            f"Expected pp group rank: {expected_pp_group}, got {pp_group.ranks}"
+        )
 
         expected_dp_group_map = {
             0: [0, 2],
@@ -82,12 +84,12 @@ class TestParallelState(unittest.TestCase):
             6: [4, 6],
             7: [5, 7],
         }
-        assert (
-            dp_group.ranks == expected_dp_group_map[rank]
-        ), f"Expected dp group rank: {expected_dp_group_map[rank]}, got {dp_group.ranks}"
-        assert (
-            cp_group.ranks == expected_dp_group_map[rank]
-        ), f"Expected cp group rank: {expected_dp_group_map[rank]}, got {cp_group.ranks}"
+        assert dp_group.ranks == expected_dp_group_map[rank], (
+            f"Expected dp group rank: {expected_dp_group_map[rank]}, got {dp_group.ranks}"
+        )
+        assert cp_group.ranks == expected_dp_group_map[rank], (
+            f"Expected cp group rank: {expected_dp_group_map[rank]}, got {cp_group.ranks}"
+        )
 
         expected_ep_group_map = {
             0: [0, 1, 2, 3],
@@ -99,12 +101,16 @@ class TestParallelState(unittest.TestCase):
             6: [4, 5, 6, 7],
             7: [4, 5, 6, 7],
         }
-        assert (
-            ep_group.ranks == expected_ep_group_map[rank]
-        ), f"Expected ep group rank: {expected_ep_group_map[rank]}, got {ep_group.ranks}"
+        assert ep_group.ranks == expected_ep_group_map[rank], (
+            f"Expected ep group rank: {expected_ep_group_map[rank]}, got {ep_group.ranks}"
+        )
 
-        assert expt_dp_group.ranks == [rank], f"Expected expt_dp group rank: {[rank]}, got {expt_dp_group.ranks}"
-        assert cp_dp_group.ranks == [rank], f"Expected cp_dp group rank: {[rank]}, got {cp_dp_group.ranks}"
+        assert expt_dp_group.ranks == [rank], (
+            f"Expected expt_dp group rank: {[rank]}, got {expt_dp_group.ranks}"
+        )
+        assert cp_dp_group.ranks == [rank], (
+            f"Expected cp_dp group rank: {[rank]}, got {cp_dp_group.ranks}"
+        )
 
 
 if __name__ == "__main__":

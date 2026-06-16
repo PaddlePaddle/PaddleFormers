@@ -20,7 +20,10 @@
 """Qwen3VL model configuration"""
 
 from ..configuration_utils import PretrainedConfig, layer_type_validation
-from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
+from ..modeling_rope_utils import (
+    rope_config_validation,
+    standardize_rope_params,
+)
 
 
 class Qwen3VLVisionConfig(PretrainedConfig):
@@ -213,14 +216,18 @@ class Qwen3VLTextConfig(PretrainedConfig):
 
         self.layer_types = layer_types
         if self.layer_types is None:
-            self.layer_types = ["full_attention" for i in range(self.num_hidden_layers)]
+            self.layer_types = [
+                "full_attention" for i in range(self.num_hidden_layers)
+            ]
         layer_type_validation(self.layer_types, self.num_hidden_layers)
 
         # Validate the correctness of rotary position embeddings parameters
         standardize_rope_params(self, rope_theta=rope_theta)
         if self.rope_parameters["rope_type"] == "mrope":
             self.rope_parameters["rope_type"] = "default"
-        rope_config_validation(self, ignore_keys={"mrope_section", "mrope_interleaved"})
+        rope_config_validation(
+            self, ignore_keys={"mrope_section", "mrope_interleaved"}
+        )
         super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
 
 
@@ -257,7 +264,10 @@ class Qwen3VLConfig(PretrainedConfig):
     ```"""
 
     model_type = "qwen3_vl"
-    sub_configs = {"vision_config": Qwen3VLVisionConfig, "text_config": Qwen3VLTextConfig}
+    sub_configs = {
+        "vision_config": Qwen3VLVisionConfig,
+        "text_config": Qwen3VLTextConfig,
+    }
     keys_to_ignore_at_inference = ["past_key_values"]
 
     def __init__(
@@ -276,7 +286,9 @@ class Qwen3VLConfig(PretrainedConfig):
         super().__init__(**kwargs)
 
         if isinstance(vision_config, dict):
-            self.vision_config = self.sub_configs["vision_config"](**vision_config)
+            self.vision_config = self.sub_configs["vision_config"](
+                **vision_config
+            )
         elif vision_config is None:
             self.vision_config = self.sub_configs["vision_config"]()
 
@@ -296,7 +308,12 @@ class Qwen3VLConfig(PretrainedConfig):
 
     def __setattr__(self, key, value):
         # Attributes that should not be forwarded to sub-configs
-        _excluded_keys = ["_name_or_path", "model_type", "dtype", "_attn_implementation_internal"]
+        _excluded_keys = [
+            "_name_or_path",
+            "model_type",
+            "dtype",
+            "_attn_implementation_internal",
+        ]
 
         if key in _excluded_keys:
             super().__setattr__(key, value)
@@ -324,7 +341,12 @@ class Qwen3VLConfig(PretrainedConfig):
 
     def __getattribute__(self, key):
         # Attributes that should not be forwarded to sub-configs
-        _excluded_keys = ["_name_or_path", "model_type", "dtype", "_attn_implementation_internal"]
+        _excluded_keys = [
+            "_name_or_path",
+            "model_type",
+            "dtype",
+            "_attn_implementation_internal",
+        ]
 
         if key in _excluded_keys:
             return super().__getattribute__(key)

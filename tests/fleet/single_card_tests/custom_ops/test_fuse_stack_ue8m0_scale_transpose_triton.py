@@ -17,8 +17,8 @@ import unittest
 import numpy as np
 import paddle
 from paddle.base import core
-from paddlefleet_ops import fuse_stack_fp8_quant, fuse_stack_transpose_fp8_quant
 
+from paddlefleet_ops import fuse_stack_fp8_quant, fuse_stack_transpose_fp8_quant
 from paddleformers.fleet.triton_ops import fuse_stack_ue8m0_scale_transpose
 
 
@@ -32,7 +32,10 @@ class TestFuseStackUe8m0ScaleTransposeTriton(unittest.TestCase):
 
     def _assert_matches_fused_transpose(self, num_experts, m, k, seed):
         paddle.seed(seed)
-        inputs = [paddle.randn([m, k], dtype=paddle.bfloat16) for _ in range(num_experts)]
+        inputs = [
+            paddle.randn([m, k], dtype=paddle.bfloat16)
+            for _ in range(num_experts)
+        ]
 
         out, scale = fuse_stack_fp8_quant(
             inputs,
@@ -46,9 +49,15 @@ class TestFuseStackUe8m0ScaleTransposeTriton(unittest.TestCase):
             True,
             False,
         )
-        converted_scale = fuse_stack_ue8m0_scale_transpose(scale, num_experts, m, k)
+        converted_scale = fuse_stack_ue8m0_scale_transpose(
+            scale, num_experts, m, k
+        )
 
-        expected_out = out.reshape([num_experts, m, k]).transpose([0, 2, 1]).reshape([-1, m])
+        expected_out = (
+            out.reshape([num_experts, m, k])
+            .transpose([0, 2, 1])
+            .reshape([-1, m])
+        )
         np.testing.assert_allclose(
             expected_out.numpy(),
             transpose_out.numpy(),
@@ -89,7 +98,9 @@ class TestFuseStackUe8m0ScaleTransposeTriton(unittest.TestCase):
         for num_experts, m, k, scale_shape, expected_shape in test_cases:
             with self.subTest(num_experts=num_experts, m=m, k=k):
                 scale = paddle.empty(scale_shape, dtype=paddle.int32)
-                converted_scale = fuse_stack_ue8m0_scale_transpose(scale, num_experts, m, k)
+                converted_scale = fuse_stack_ue8m0_scale_transpose(
+                    scale, num_experts, m, k
+                )
                 self.assertEqual(list(converted_scale.shape), expected_shape)
 
     def test_large_logical_tensor_exceeds_int32(self):
@@ -98,12 +109,22 @@ class TestFuseStackUe8m0ScaleTransposeTriton(unittest.TestCase):
         self.assertGreater(num_experts * m * k, np.iinfo(np.int32).max)
 
         num_k_groups = k // 512
-        scale = paddle.arange(m * num_k_groups, dtype=paddle.int32).reshape([m, num_k_groups])
-        converted_scale = fuse_stack_ue8m0_scale_transpose(scale, num_experts, m, k)
+        scale = paddle.arange(m * num_k_groups, dtype=paddle.int32).reshape(
+            [m, num_k_groups]
+        )
+        converted_scale = fuse_stack_ue8m0_scale_transpose(
+            scale, num_experts, m, k
+        )
 
         self.assertEqual(list(converted_scale.shape), [k, 1])
-        sample_rows = paddle.to_tensor([0, 1, 127, 128, 511, 512, k - 1], dtype=paddle.int64)
-        actual = paddle.gather(converted_scale, sample_rows, axis=0).numpy().reshape([-1])
+        sample_rows = paddle.to_tensor(
+            [0, 1, 127, 128, 511, 512, k - 1], dtype=paddle.int64
+        )
+        actual = (
+            paddle.gather(converted_scale, sample_rows, axis=0)
+            .numpy()
+            .reshape([-1])
+        )
         packed_scale = scale.numpy()
         expected = []
         for row in sample_rows.numpy():
@@ -116,7 +137,9 @@ class TestFuseStackUe8m0ScaleTransposeTriton(unittest.TestCase):
                 exp = (value >> (k_block_inner * 8)) & 0xFF
                 packed |= exp << (m_block * 8)
             expected.append(packed)
-        np.testing.assert_array_equal(actual, np.array(expected, dtype=np.int32))
+        np.testing.assert_array_equal(
+            actual, np.array(expected, dtype=np.int32)
+        )
 
 
 if __name__ == "__main__":

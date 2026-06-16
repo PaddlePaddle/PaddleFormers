@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -28,7 +32,9 @@ class TestQwen3_5RMSNormInit(unittest.TestCase):
     """Test Qwen3_5RMSNorm initialization."""
 
     def test_init_with_hidden_size(self):
-        from paddleformers.fleet.models.qwen3_5.qwen3_5_model import Qwen3_5RMSNorm
+        from paddleformers.fleet.models.qwen3_5.qwen3_5_model import (
+            Qwen3_5RMSNorm,
+        )
 
         mock_config = MagicMock()
         mock_config.rms_norm_eps = 1e-5
@@ -39,17 +45,23 @@ class TestQwen3_5RMSNormInit(unittest.TestCase):
         self.assertEqual(norm.variance_epsilon, 1e-6)
 
     def test_init_with_normalized_shape(self):
-        from paddleformers.fleet.models.qwen3_5.qwen3_5_model import Qwen3_5RMSNorm
+        from paddleformers.fleet.models.qwen3_5.qwen3_5_model import (
+            Qwen3_5RMSNorm,
+        )
 
         mock_config = MagicMock()
         mock_config.rms_norm_eps = 1e-5
 
-        norm = Qwen3_5RMSNorm(config=mock_config, normalized_shape=256, norm_eps=1e-8)
+        norm = Qwen3_5RMSNorm(
+            config=mock_config, normalized_shape=256, norm_eps=1e-8
+        )
         self.assertEqual(norm.normalized_shape, 256)
         self.assertEqual(norm.variance_epsilon, 1e-8)
 
     def test_init_uses_config_defaults(self):
-        from paddleformers.fleet.models.qwen3_5.qwen3_5_model import Qwen3_5RMSNorm
+        from paddleformers.fleet.models.qwen3_5.qwen3_5_model import (
+            Qwen3_5RMSNorm,
+        )
 
         mock_config = MagicMock()
         mock_config.rms_norm_eps = 1e-6
@@ -62,7 +74,9 @@ class TestQwen3_5RMSNormInit(unittest.TestCase):
     def test_weight_initialized_to_zero(self):
         import paddle
 
-        from paddleformers.fleet.models.qwen3_5.qwen3_5_model import Qwen3_5RMSNorm
+        from paddleformers.fleet.models.qwen3_5.qwen3_5_model import (
+            Qwen3_5RMSNorm,
+        )
 
         mock_config = MagicMock()
         mock_config.rms_norm_eps = 1e-5
@@ -78,7 +92,9 @@ class TestQwen3_5RMSNormForward(unittest.TestCase):
     def test_forward_returns_correct_shape(self):
         import paddle
 
-        from paddleformers.fleet.models.qwen3_5.qwen3_5_model import Qwen3_5RMSNorm
+        from paddleformers.fleet.models.qwen3_5.qwen3_5_model import (
+            Qwen3_5RMSNorm,
+        )
 
         mock_config = MagicMock()
         mock_config.rms_norm_eps = 1e-5
@@ -91,7 +107,9 @@ class TestQwen3_5RMSNormForward(unittest.TestCase):
     def test_forward_preserves_dtype(self):
         import paddle
 
-        from paddleformers.fleet.models.qwen3_5.qwen3_5_model import Qwen3_5RMSNorm
+        from paddleformers.fleet.models.qwen3_5.qwen3_5_model import (
+            Qwen3_5RMSNorm,
+        )
 
         mock_config = MagicMock()
         mock_config.rms_norm_eps = 1e-5
@@ -104,7 +122,9 @@ class TestQwen3_5RMSNormForward(unittest.TestCase):
     def test_forward_with_zero_weight_is_identity_like(self):
         import paddle
 
-        from paddleformers.fleet.models.qwen3_5.qwen3_5_model import Qwen3_5RMSNorm
+        from paddleformers.fleet.models.qwen3_5.qwen3_5_model import (
+            Qwen3_5RMSNorm,
+        )
 
         mock_config = MagicMock()
         mock_config.rms_norm_eps = 1e-5
@@ -119,14 +139,20 @@ class TestQwen3_5RMSNormForward(unittest.TestCase):
 class TestQwen3_5RMSNormEnableSP(unittest.TestCase):
     """Test Qwen3_5RMSNorm.enable_sequence_parallel."""
 
-    @patch("paddleformers.fleet.models.qwen3_5.qwen3_5_model.mark_as_sequence_parallel_parameter")
+    @patch(
+        "paddleformers.fleet.models.qwen3_5.qwen3_5_model.mark_as_sequence_parallel_parameter"
+    )
     def test_enable_sp_calls_mark(self, mock_mark):
-        from paddleformers.fleet.models.qwen3_5.qwen3_5_model import Qwen3_5RMSNorm
+        from paddleformers.fleet.models.qwen3_5.qwen3_5_model import (
+            Qwen3_5RMSNorm,
+        )
 
         mock_config = MagicMock()
         mock_config.rms_norm_eps = 1e-5
 
-        norm = Qwen3_5RMSNorm(config=mock_config, hidden_size=64, input_is_parallel=True)
+        norm = Qwen3_5RMSNorm(
+            config=mock_config, hidden_size=64, input_is_parallel=True
+        )
         mock_mark.assert_called_once_with(norm.weight)
 
 
@@ -134,7 +160,9 @@ class TestQwen3_5RMSNormPipe(unittest.TestCase):
     """Test Qwen3_5RMSNormPipe class."""
 
     def test_init_creates_norm(self):
-        from paddleformers.fleet.models.qwen3_5.qwen3_5_model import Qwen3_5RMSNormPipe
+        from paddleformers.fleet.models.qwen3_5.qwen3_5_model import (
+            Qwen3_5RMSNormPipe,
+        )
 
         mock_config = MagicMock()
         mock_config.num_nextn_predict_layers = None
@@ -144,7 +172,9 @@ class TestQwen3_5RMSNormPipe(unittest.TestCase):
         self.assertIsNotNone(pipe.norm)
 
     def test_build_schedule_node(self):
-        from paddleformers.fleet.models.qwen3_5.qwen3_5_model import Qwen3_5RMSNormPipe
+        from paddleformers.fleet.models.qwen3_5.qwen3_5_model import (
+            Qwen3_5RMSNormPipe,
+        )
 
         mock_config = MagicMock()
         mock_config.num_nextn_predict_layers = None
@@ -157,7 +187,9 @@ class TestQwen3_5RMSNormPipe(unittest.TestCase):
     def test_forward_basic(self):
         import paddle
 
-        from paddleformers.fleet.models.qwen3_5.qwen3_5_model import Qwen3_5RMSNormPipe
+        from paddleformers.fleet.models.qwen3_5.qwen3_5_model import (
+            Qwen3_5RMSNormPipe,
+        )
 
         mock_config = MagicMock()
         mock_config.num_nextn_predict_layers = None
@@ -171,7 +203,9 @@ class TestQwen3_5RMSNormPipe(unittest.TestCase):
     def test_forward_with_mtp(self):
         import paddle
 
-        from paddleformers.fleet.models.qwen3_5.qwen3_5_model import Qwen3_5RMSNormPipe
+        from paddleformers.fleet.models.qwen3_5.qwen3_5_model import (
+            Qwen3_5RMSNormPipe,
+        )
 
         mock_config = MagicMock()
         mock_config.num_nextn_predict_layers = 2
@@ -208,8 +242,12 @@ class TestQwen3_5VisionModel(unittest.TestCase):
         "get_layer_desc_list requires LayerSpec instances, not MagicMock, "
         "and LayerDesc asserts isinstance(layer_spec, LayerSpec)"
     )
-    @patch("paddleformers.fleet.models.qwen3_5.qwen3_5_model.TransformerEncoder.get_encoder_layer_desc_list")
-    @patch("paddleformers.fleet.models.qwen3_5.qwen3_5_model.TransformerEncoder.add_sequential_layer")
+    @patch(
+        "paddleformers.fleet.models.qwen3_5.qwen3_5_model.TransformerEncoder.get_encoder_layer_desc_list"
+    )
+    @patch(
+        "paddleformers.fleet.models.qwen3_5.qwen3_5_model.TransformerEncoder.add_sequential_layer"
+    )
     def test_get_layer_desc_list(self, mock_add, mock_encoder):
         from paddleformers.fleet.models.qwen3_5.qwen3_5_model import (
             Qwen3_5VisionModel,

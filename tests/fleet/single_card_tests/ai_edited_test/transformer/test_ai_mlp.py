@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -25,10 +29,15 @@ import unittest
 import paddle
 import paddle.nn.functional as F
 
-from paddleformers.fleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
+from paddleformers.fleet.models.gpt.gpt_layer_specs import (
+    get_gpt_layer_local_spec,
+)
 from paddleformers.fleet.transformer.mlp import MLP, MLPSublayersSpec
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
-from paddleformers.fleet.utils import init_method_normal, scaled_init_method_normal
+from paddleformers.fleet.utils import (
+    init_method_normal,
+    scaled_init_method_normal,
+)
 
 
 def _make_config(**overrides):
@@ -54,44 +63,58 @@ class TestMLPConstructor(unittest.TestCase):
 
     def test_basic_construction(self):
         config = _make_config()
-        spec = get_gpt_layer_local_spec(config).sublayers_spec.mlp.sublayers_spec
+        spec = get_gpt_layer_local_spec(
+            config
+        ).sublayers_spec.mlp.sublayers_spec
         mlp = MLP(config, spec)
         self.assertIsInstance(mlp, MLP)
 
     def test_construction_with_expert_raises(self):
         config = _make_config()
-        spec = get_gpt_layer_local_spec(config).sublayers_spec.mlp.sublayers_spec
+        spec = get_gpt_layer_local_spec(
+            config
+        ).sublayers_spec.mlp.sublayers_spec
         with self.assertRaises(ValueError):
             MLP(config, spec, is_expert=True, intermediate_size=None)
 
     def test_construction_with_expert_and_intermediate_size(self):
         config = _make_config()
-        spec = get_gpt_layer_local_spec(config).sublayers_spec.mlp.sublayers_spec
+        spec = get_gpt_layer_local_spec(
+            config
+        ).sublayers_spec.mlp.sublayers_spec
         # Should not raise when intermediate_size is provided
         mlp = MLP(config, spec, is_expert=True, intermediate_size=128)
         self.assertIsInstance(mlp, MLP)
 
     def test_custom_input_size(self):
         config = _make_config()
-        spec = get_gpt_layer_local_spec(config).sublayers_spec.mlp.sublayers_spec
+        spec = get_gpt_layer_local_spec(
+            config
+        ).sublayers_spec.mlp.sublayers_spec
         mlp = MLP(config, spec, input_size=32)
         self.assertEqual(mlp.input_size, 32)
 
     def test_custom_hidden_size(self):
         config = _make_config()
-        spec = get_gpt_layer_local_spec(config).sublayers_spec.mlp.sublayers_spec
+        spec = get_gpt_layer_local_spec(
+            config
+        ).sublayers_spec.mlp.sublayers_spec
         mlp = MLP(config, spec, hidden_size=128)
         self.assertEqual(mlp.hidden_size, 128)
 
     def test_gated_linear_unit_construction(self):
         config = _make_config(gated_linear_unit=True)
-        spec = get_gpt_layer_local_spec(config).sublayers_spec.mlp.sublayers_spec
+        spec = get_gpt_layer_local_spec(
+            config
+        ).sublayers_spec.mlp.sublayers_spec
         mlp = MLP(config, spec)
         self.assertIsInstance(mlp, MLP)
 
     def test_no_bias_construction(self):
         config = _make_config(use_bias=False)
-        spec = get_gpt_layer_local_spec(config).sublayers_spec.mlp.sublayers_spec
+        spec = get_gpt_layer_local_spec(
+            config
+        ).sublayers_spec.mlp.sublayers_spec
         mlp = MLP(config, spec)
         self.assertIsInstance(mlp, MLP)
 
@@ -101,7 +124,9 @@ class TestMLPForward(unittest.TestCase):
 
     def setUp(self):
         self.config = _make_config()
-        spec = get_gpt_layer_local_spec(self.config).sublayers_spec.mlp.sublayers_spec
+        spec = get_gpt_layer_local_spec(
+            self.config
+        ).sublayers_spec.mlp.sublayers_spec
         self.mlp = MLP(self.config, spec)
         self.mlp.eval()
 
@@ -137,7 +162,9 @@ class TestMLPGatedLinearUnit(unittest.TestCase):
 
     def setUp(self):
         self.config = _make_config(gated_linear_unit=True)
-        spec = get_gpt_layer_local_spec(self.config).sublayers_spec.mlp.sublayers_spec
+        spec = get_gpt_layer_local_spec(
+            self.config
+        ).sublayers_spec.mlp.sublayers_spec
         self.mlp = MLP(self.config, spec)
         self.mlp.eval()
 
@@ -164,7 +191,9 @@ class TestMLPBiasActivationFusion(unittest.TestCase):
             bias_activation_fusion=True,
             hidden_act=F.silu,
         )
-        spec = get_gpt_layer_local_spec(config).sublayers_spec.mlp.sublayers_spec
+        spec = get_gpt_layer_local_spec(
+            config
+        ).sublayers_spec.mlp.sublayers_spec
         mlp = MLP(config, spec)
         mlp.eval()
         x = paddle.randn([4, 8, 64])
@@ -177,7 +206,9 @@ class TestMLPBiasActivationFusion(unittest.TestCase):
             bias_activation_fusion=True,
             hidden_act=F.gelu,
         )
-        spec = get_gpt_layer_local_spec(config).sublayers_spec.mlp.sublayers_spec
+        spec = get_gpt_layer_local_spec(
+            config
+        ).sublayers_spec.mlp.sublayers_spec
         mlp = MLP(config, spec)
         mlp.eval()
         x = paddle.randn([4, 8, 64])
@@ -191,7 +222,9 @@ class TestMLPBiasActivationFusion(unittest.TestCase):
             use_bias=True,
             hidden_act=F.gelu,
         )
-        spec = get_gpt_layer_local_spec(config).sublayers_spec.mlp.sublayers_spec
+        spec = get_gpt_layer_local_spec(
+            config
+        ).sublayers_spec.mlp.sublayers_spec
         mlp = MLP(config, spec)
         mlp.eval()
         x = paddle.randn([4, 8, 64])
@@ -204,7 +237,9 @@ class TestMLPBiasActivationFusion(unittest.TestCase):
             bias_activation_fusion=True,
             hidden_act=F.relu,
         )
-        spec = get_gpt_layer_local_spec(config).sublayers_spec.mlp.sublayers_spec
+        spec = get_gpt_layer_local_spec(
+            config
+        ).sublayers_spec.mlp.sublayers_spec
         mlp = MLP(config, spec)
         x = paddle.randn([4, 8, 64])
         with self.assertRaises(ValueError):
@@ -215,8 +250,12 @@ class TestMLPPerTokenScale(unittest.TestCase):
     """Tests for MLP forward with per_token_scale."""
 
     def test_per_token_scale_no_fusion(self):
-        config = _make_config(gated_linear_unit=False, bias_activation_fusion=False)
-        spec = get_gpt_layer_local_spec(config).sublayers_spec.mlp.sublayers_spec
+        config = _make_config(
+            gated_linear_unit=False, bias_activation_fusion=False
+        )
+        spec = get_gpt_layer_local_spec(
+            config
+        ).sublayers_spec.mlp.sublayers_spec
         mlp = MLP(config, spec)
         mlp.eval()
         x = paddle.randn([4, 8, 64])
@@ -225,8 +264,12 @@ class TestMLPPerTokenScale(unittest.TestCase):
         self.assertEqual(out.shape, [4, 8, 64])
 
     def test_per_token_scale_gated(self):
-        config = _make_config(gated_linear_unit=True, bias_activation_fusion=False)
-        spec = get_gpt_layer_local_spec(config).sublayers_spec.mlp.sublayers_spec
+        config = _make_config(
+            gated_linear_unit=True, bias_activation_fusion=False
+        )
+        spec = get_gpt_layer_local_spec(
+            config
+        ).sublayers_spec.mlp.sublayers_spec
         mlp = MLP(config, spec)
         mlp.eval()
         x = paddle.randn([4, 8, 64])
@@ -240,7 +283,9 @@ class TestMLPPerTokenScale(unittest.TestCase):
             bias_activation_fusion=False,
             activation_func_clamp_value=1.0,
         )
-        spec = get_gpt_layer_local_spec(config).sublayers_spec.mlp.sublayers_spec
+        spec = get_gpt_layer_local_spec(
+            config
+        ).sublayers_spec.mlp.sublayers_spec
         mlp = MLP(config, spec)
         mlp.eval()
         x = paddle.randn([4, 8, 64])
@@ -258,7 +303,9 @@ class TestMLPGLUOffset(unittest.TestCase):
             bias_activation_fusion=False,
             glu_linear_offset=0.1,
         )
-        spec = get_gpt_layer_local_spec(config).sublayers_spec.mlp.sublayers_spec
+        spec = get_gpt_layer_local_spec(
+            config
+        ).sublayers_spec.mlp.sublayers_spec
         mlp = MLP(config, spec)
         mlp.eval()
         x = paddle.randn([4, 8, 64])

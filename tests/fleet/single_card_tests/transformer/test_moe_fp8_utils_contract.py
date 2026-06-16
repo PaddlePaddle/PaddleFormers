@@ -55,7 +55,9 @@ class TestExpertsGroupGemmContiguousNodeCounts(unittest.TestCase):
             [0, 0, 2],
         )
         self.assertEqual(
-            node.gen_m_indices(paddle.to_tensor([1, 0, 2], dtype="int64")).numpy().tolist(),
+            node.gen_m_indices(paddle.to_tensor([1, 0, 2], dtype="int64"))
+            .numpy()
+            .tolist(),
             [0, 2, 2],
         )
         self.assertEqual(
@@ -65,7 +67,9 @@ class TestExpertsGroupGemmContiguousNodeCounts(unittest.TestCase):
 
     def test_fwd_gate_up_runs_bf16_path_with_tensor_counts(self):
         node = _new_bf16_node(moe_deep_gemm=True)
-        x = paddle.to_tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], dtype="float32")
+        x = paddle.to_tensor(
+            [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], dtype="float32"
+        )
         expert_w1 = [
             paddle.eye(2, dtype="float32"),
             paddle.full([2, 2], 2.0, dtype="float32"),
@@ -89,7 +93,9 @@ class TestExpertsGroupGemmContiguousNodeCounts(unittest.TestCase):
     def test_fwd_gate_up_runs_bf16_path_with_list_counts(self):
         node = _new_bf16_node(moe_deep_gemm=True)
         out = node.fwd_gate_up(
-            paddle.to_tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], dtype="float32"),
+            paddle.to_tensor(
+                [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], dtype="float32"
+            ),
             expert_w1=[
                 paddle.full([2, 2], 1.0, dtype="float32"),
                 paddle.eye(2, dtype="float32"),

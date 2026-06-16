@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -195,7 +199,9 @@ class TestP2PonCalcStream(unittest.TestCase):
 
         mock_tensor = MagicMock()
         mock_group = MagicMock()
-        op = P2PonCalcStream(_send_on_calc_stream, mock_tensor, 1, mock_group, 2, 0)
+        op = P2PonCalcStream(
+            _send_on_calc_stream, mock_tensor, 1, mock_group, 2, 0
+        )
         self.assertEqual(op.tensor, mock_tensor)
         self.assertEqual(op.peer, 1)
 
@@ -207,7 +213,9 @@ class TestP2PonCalcStream(unittest.TestCase):
 
         mock_tensor = MagicMock()
         mock_group = MagicMock()
-        op = P2PonCalcStream(_recv_on_calc_stream, mock_tensor, 0, mock_group, 2, 1)
+        op = P2PonCalcStream(
+            _recv_on_calc_stream, mock_tensor, 0, mock_group, 2, 1
+        )
         self.assertEqual(op.rank_id, 1)
 
     def test_init_invalid_op(self):
@@ -230,7 +238,9 @@ class TestInitializeP2PGroups(unittest.TestCase):
         )
 
         mock_hcg = MagicMock()
-        initialize_p2p_groups(mock_hcg, enable_partial_send_recv=True, enable_timer=False)
+        initialize_p2p_groups(
+            mock_hcg, enable_partial_send_recv=True, enable_timer=False
+        )
 
     def test_init_with_timer(self):
         from paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication import (
@@ -239,7 +249,9 @@ class TestInitializeP2PGroups(unittest.TestCase):
 
         mock_hcg = MagicMock()
         mock_timer = MagicMock()
-        with patch("paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.timer") as mock_timer_mod:
+        with patch(
+            "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication.timer"
+        ) as mock_timer_mod:
             mock_timer_mod.get_timers.return_value = mock_timer
             initialize_p2p_groups(mock_hcg, enable_timer=True)
 
@@ -255,7 +267,9 @@ class TestBatchP2pTupleOrTensor(unittest.TestCase):
 
         mock_tensor = MagicMock()
         mock_group = MagicMock()
-        ops = _batch_p2p_tuple_or_tensor(mock_tensor, _send_on_calc_stream, 1, mock_group)
+        ops = _batch_p2p_tuple_or_tensor(
+            mock_tensor, _send_on_calc_stream, 1, mock_group
+        )
         self.assertEqual(len(ops), 1)
 
     def test_tuple_tensor(self):
@@ -267,7 +281,9 @@ class TestBatchP2pTupleOrTensor(unittest.TestCase):
         t1 = MagicMock()
         t2 = MagicMock()
         mock_group = MagicMock()
-        ops = _batch_p2p_tuple_or_tensor((t1, t2), _send_on_calc_stream, 1, mock_group)
+        ops = _batch_p2p_tuple_or_tensor(
+            (t1, t2), _send_on_calc_stream, 1, mock_group
+        )
         self.assertEqual(len(ops), 2)
 
 
@@ -284,7 +300,7 @@ class TestSendRecvMetaRecvMeta(unittest.TestCase):
         mock_hcg = MagicMock()
         mock_hcg._get_p2p_next_rank.return_value = 5
 
-        with (  # noqa: SIM117
+        with (
             patch(
                 "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication._hcg",
                 mock_hcg,
@@ -366,7 +382,9 @@ class TestAllgatherPartial(unittest.TestCase):
             "paddle.distributed.fleet.meta_parallel.pp_utils.p2p_communication._is_valid_send_recv_partial",
             return_value=True,
         ):
-            result = allgather_partial(mock_tensor, nranks=4, rank_id=0, group=mock_group)
+            result = allgather_partial(
+                mock_tensor, nranks=4, rank_id=0, group=mock_group
+            )
             self.assertIsNone(result)
 
 

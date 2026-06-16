@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -48,7 +52,9 @@ class TestLanguageLossBuildScheduleNode(unittest.TestCase):
 
     def test_main_build_schedule_node(self):
         """MainLanguageLoss.build_schedule_node should return a ScheduleNode."""
-        with patch.object(MainLanguageLoss, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            MainLanguageLoss, "__init__", lambda self, *a, **kw: None
+        ):
             loss = MainLanguageLoss.__new__(MainLanguageLoss)
             loss.forward = MagicMock()
             node = loss.build_schedule_node()
@@ -56,7 +62,9 @@ class TestLanguageLossBuildScheduleNode(unittest.TestCase):
 
     def test_mtp_build_schedule_node(self):
         """MTPLanguageLoss.build_schedule_node should return a ScheduleNode."""
-        with patch.object(MTPLanguageLoss, "__init__", lambda self, *a, **kw: None):
+        with patch.object(
+            MTPLanguageLoss, "__init__", lambda self, *a, **kw: None
+        ):
             loss = MTPLanguageLoss.__new__(MTPLanguageLoss)
             loss.forward = MagicMock()
             node = loss.build_schedule_node()

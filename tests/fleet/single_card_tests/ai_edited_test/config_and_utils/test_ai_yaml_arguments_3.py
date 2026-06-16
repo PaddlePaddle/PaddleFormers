@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -70,7 +74,9 @@ model:
   name: null
   size: 10
 """
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write(yaml_content)
             f.flush()
             result = load_yaml(f.name)
@@ -87,7 +93,9 @@ model:
   name: "my-model-name"
   path: '/path/to/model'
 """
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write(yaml_content)
             f.flush()
             result = load_yaml(f.name)
@@ -106,7 +114,9 @@ model:
     description that spans
     multiple lines.
 """
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write(yaml_content)
             f.flush()
             result = load_yaml(f.name)
@@ -127,7 +137,9 @@ training:
   <<: *defaults
   epochs: 10
 """
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write(yaml_content)
             f.flush()
             result = load_yaml(f.name)
@@ -145,7 +157,9 @@ training:
   lr: 1.0e-4
   weight_decay: 5.0e-2
 """
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
             f.write(yaml_content)
             f.flush()
             result = load_yaml(f.name)

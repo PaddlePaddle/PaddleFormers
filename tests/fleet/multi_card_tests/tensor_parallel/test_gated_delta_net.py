@@ -47,7 +47,9 @@ from paddleformers.fleet.tensor_parallel.mappings import (
     _gather_along_first_dim,
     _gather_along_last_dim,
 )
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.training.initialize import initialize_fleet
 from paddleformers.fleet.transformer.gated_delta_net import (
     GatedDeltaNet,
@@ -131,12 +133,16 @@ def _gather_by_sections(local_tensor, sections, tp_group, tp_size, dim):
 
     # Each rank_tensor has the local sections in order
     local_section_sizes = [s // tp_size for s in sections]
-    per_rank_sections = [paddle.split(rt, local_section_sizes, axis=dim) for rt in rank_tensors]
+    per_rank_sections = [
+        paddle.split(rt, local_section_sizes, axis=dim) for rt in rank_tensors
+    ]
 
     # Reorder: for each section index, gather across ranks
     reordered = []
     for sec_idx in range(len(sections)):
-        reordered.append(paddle.concat([pr[sec_idx] for pr in per_rank_sections], axis=dim))
+        reordered.append(
+            paddle.concat([pr[sec_idx] for pr in per_rank_sections], axis=dim)
+        )
     return paddle.concat(reordered, axis=dim)
 
 
@@ -192,7 +198,9 @@ def _build_gdn(
     )
 
 
-def _gather_gdn_params(gdn: GatedDeltaNet, tp_group, tp_size) -> dict[str, paddle.Tensor]:
+def _gather_gdn_params(
+    gdn: GatedDeltaNet, tp_group, tp_size
+) -> dict[str, paddle.Tensor]:
     """Gather all TP-sharded parameters of a GatedDeltaNet to full shape.
 
     Returns a dict mapping parameter name to the full (gathered) tensor.
@@ -206,16 +214,22 @@ def _gather_gdn_params(gdn: GatedDeltaNet, tp_group, tp_size) -> dict[str, paddl
         grad = param.grad
         # ColumnParallel weights (in_proj): gather by sections along last dim
         if "in_proj" in name and "weight" in name:
-            grad = _gather_by_sections(grad, _IN_PROJ_SECTIONS, tp_group, tp_size, dim=-1)
+            grad = _gather_by_sections(
+                grad, _IN_PROJ_SECTIONS, tp_group, tp_size, dim=-1
+            )
         # RowParallel weights (out_proj): sharded along first dim
         elif "out_proj" in name and "weight" in name:
             grad = _gather_along_first_dim(grad, tp_group)
         # conv1d weight: gather by sections along dim 0
         elif "conv1d" in name and "weight" in name:
-            grad = _gather_by_sections(grad, _CONV_SECTIONS, tp_group, tp_size, dim=0)
+            grad = _gather_by_sections(
+                grad, _CONV_SECTIONS, tp_group, tp_size, dim=0
+            )
         # conv1d bias: gather by sections along dim 0
         elif "conv1d" in name and "bias" in name:
-            grad = _gather_by_sections(grad, _CONV_SECTIONS, tp_group, tp_size, dim=0)
+            grad = _gather_by_sections(
+                grad, _CONV_SECTIONS, tp_group, tp_size, dim=0
+            )
         # dt_bias, A_log: shape [num_v_heads_local] -> gather along dim 0
         elif name.endswith("dt_bias") or name.endswith("A_log"):
             grad = _gather_along_first_dim(grad, tp_group)
@@ -307,7 +321,9 @@ def _run_distributed(
     tp_rank = ps.get_tensor_model_parallel_rank()
     sp_size = tp_size if sp else 1
 
-    pg_collection = ProcessGroupCollection.use_mpu_process_groups(required_pgs=["tp"])
+    pg_collection = ProcessGroupCollection.use_mpu_process_groups(
+        required_pgs=["tp"]
+    )
 
     gdn_dist = _build_gdn(config, pg_collection=pg_collection)
     register_sequence_parallel_allreduce_hooks(gdn_dist, 1, False)
@@ -324,21 +340,41 @@ def _run_distributed(
 
             # ColumnParallel (in_proj): shard by sections along last dim
             if "in_proj" in name and "weight" in name:
-                param.set_value(_shard_by_sections(full_param, _IN_PROJ_SECTIONS, tp_rank, tp_size, dim=-1))
+                param.set_value(
+                    _shard_by_sections(
+                        full_param, _IN_PROJ_SECTIONS, tp_rank, tp_size, dim=-1
+                    )
+                )
             # RowParallel (out_proj): weight sharded along first dim (v_dim → by value heads)
             elif "out_proj" in name and "weight" in name:
                 chunk_size = full_param.shape[0] // tp_size
-                param.set_value(full_param[tp_rank * chunk_size : (tp_rank + 1) * chunk_size, :])
+                param.set_value(
+                    full_param[
+                        tp_rank * chunk_size : (tp_rank + 1) * chunk_size, :
+                    ]
+                )
             # conv1d weight: [conv_dim, 1, kernel] -> shard by sections along dim 0
             elif "conv1d" in name and "weight" in name:
-                param.set_value(_shard_by_sections(full_param, _CONV_SECTIONS, tp_rank, tp_size, dim=0))
+                param.set_value(
+                    _shard_by_sections(
+                        full_param, _CONV_SECTIONS, tp_rank, tp_size, dim=0
+                    )
+                )
             # conv1d bias: [conv_dim] -> shard by sections along dim 0
             elif "conv1d" in name and "bias" in name:
-                param.set_value(_shard_by_sections(full_param, _CONV_SECTIONS, tp_rank, tp_size, dim=0))
+                param.set_value(
+                    _shard_by_sections(
+                        full_param, _CONV_SECTIONS, tp_rank, tp_size, dim=0
+                    )
+                )
             # dt_bias, A_log: [num_v_heads] -> simple contiguous shard
             elif name.endswith("dt_bias") or name.endswith("A_log"):
                 chunk_size = full_param.shape[0] // tp_size
-                param.set_value(full_param[tp_rank * chunk_size : (tp_rank + 1) * chunk_size])
+                param.set_value(
+                    full_param[
+                        tp_rank * chunk_size : (tp_rank + 1) * chunk_size
+                    ]
+                )
             # out_norm weight: per-head (NOT sharded), copy as-is
             else:
                 param.set_value(full_param.clone())
@@ -349,7 +385,9 @@ def _run_distributed(
 
     if sp:
         # For sequence parallel, input is [s, b, h] and sliced per rank
-        hidden_states = hidden_states.transpose([1, 0, 2])  # [b, s, h] -> [s, b, h]
+        hidden_states = hidden_states.transpose(
+            [1, 0, 2]
+        )  # [b, s, h] -> [s, b, h]
         sp_seg = SEQ_LENGTH // sp_size
         hidden_states = hidden_states[tp_rank * sp_seg : (tp_rank + 1) * sp_seg]
 
@@ -367,40 +405,64 @@ def _run_distributed(
         output_gathered = output_gathered.transpose([1, 0, 2])
 
     # Check output for NaN/Inf
-    assert paddle.all(~paddle.isnan(output_baseline)).item(), "output_baseline contains NaN"
-    assert paddle.all(~paddle.isinf(output_baseline)).item(), "output_baseline contains Inf"
-    assert paddle.all(~paddle.isnan(output_gathered)).item(), "output_gathered contains NaN"
-    assert paddle.all(~paddle.isinf(output_gathered)).item(), "output_gathered contains Inf"
+    assert paddle.all(~paddle.isnan(output_baseline)).item(), (
+        "output_baseline contains NaN"
+    )
+    assert paddle.all(~paddle.isinf(output_baseline)).item(), (
+        "output_baseline contains Inf"
+    )
+    assert paddle.all(~paddle.isnan(output_gathered)).item(), (
+        "output_gathered contains NaN"
+    )
+    assert paddle.all(~paddle.isinf(output_gathered)).item(), (
+        "output_gathered contains Inf"
+    )
 
     # Compare output
     atol, rtol = 5e-4, 5e-4
-    assert paddle.allclose(output_gathered, output_baseline, atol=atol, rtol=rtol).item(), (
-        f"Output mismatch: max_diff=" f"{(output_gathered - output_baseline).abs().max().item():.6e}"
+    assert paddle.allclose(
+        output_gathered, output_baseline, atol=atol, rtol=rtol
+    ).item(), (
+        f"Output mismatch: max_diff="
+        f"{(output_gathered - output_baseline).abs().max().item():.6e}"
     )
 
     # --- Gather input gradients and compare ---
     if sp:
-        input_grad_gathered = _gather_along_first_dim(hidden_states.grad, tp_group)
+        input_grad_gathered = _gather_along_first_dim(
+            hidden_states.grad, tp_group
+        )
         # [s, b, h] -> [b, s, h]
         input_grad_gathered = input_grad_gathered.transpose([1, 0, 2])
     else:
         input_grad_gathered = hidden_states.grad
 
-    assert paddle.all(~paddle.isnan(input_grad_baseline)).item(), "input_grad_baseline contains NaN"
-    assert paddle.all(~paddle.isnan(input_grad_gathered)).item(), "input_grad_gathered contains NaN"
+    assert paddle.all(~paddle.isnan(input_grad_baseline)).item(), (
+        "input_grad_baseline contains NaN"
+    )
+    assert paddle.all(~paddle.isnan(input_grad_gathered)).item(), (
+        "input_grad_gathered contains NaN"
+    )
 
-    assert paddle.allclose(input_grad_gathered, input_grad_baseline, atol=atol, rtol=rtol).item(), (
-        f"Input grad mismatch: max_diff=" f"{(input_grad_gathered - input_grad_baseline).abs().max().item():.6e}"
+    assert paddle.allclose(
+        input_grad_gathered, input_grad_baseline, atol=atol, rtol=rtol
+    ).item(), (
+        f"Input grad mismatch: max_diff="
+        f"{(input_grad_gathered - input_grad_baseline).abs().max().item():.6e}"
     )
 
     # --- Gather parameter gradients and compare ---
     # Collect baseline grads (full, no gathering needed)
     baseline_grads = {}
     for name, param in gdn_baseline.named_parameters():
-        baseline_grads[name] = param.grad.detach() if param.grad is not None else None
+        baseline_grads[name] = (
+            param.grad.detach() if param.grad is not None else None
+        )
 
     # Collect distributed grads (need gathering for TP-sharded params)
-    dist_grads = _gather_gdn_params(gdn_dist, tp_group=tp_group, tp_size=tp_size)
+    dist_grads = _gather_gdn_params(
+        gdn_dist, tp_group=tp_group, tp_size=tp_size
+    )
 
     for name in baseline_grads:
         if baseline_grads[name] is None or dist_grads.get(name) is None:
@@ -411,7 +473,8 @@ def _run_distributed(
             # Shape mismatch for non-TP params is expected if they are per-head
             continue
         assert paddle.allclose(d_grad, b_grad, atol=atol, rtol=rtol).item(), (
-            f"Grad mismatch for {name}: max_diff=" f"{(d_grad - b_grad).abs().max().item():.6e}"
+            f"Grad mismatch for {name}: max_diff="
+            f"{(d_grad - b_grad).abs().max().item():.6e}"
         )
 
     print(f"  [PASS] TP={tp_size}, SP={sp}")
@@ -466,19 +529,27 @@ class TestGatedDeltaNetDistributed(unittest.TestCase):
         model_parallel_cuda_manual_seed(self.seed)
 
         config = _build_config(tp_size=self.tp_size, sp=sp)
-        pg_collection = ProcessGroupCollection.use_mpu_process_groups(required_pgs=["tp"])
+        pg_collection = ProcessGroupCollection.use_mpu_process_groups(
+            required_pgs=["tp"]
+        )
         gdn = _build_gdn(config, pg_collection=pg_collection)
 
         sp_size = self.tp_size if sp else 1
 
         if sp:
-            hidden_states = paddle.randn([SEQ_LENGTH // sp_size, MICRO_BATCH_SIZE, HIDDEN_SIZE])
+            hidden_states = paddle.randn(
+                [SEQ_LENGTH // sp_size, MICRO_BATCH_SIZE, HIDDEN_SIZE]
+            )
         else:
-            hidden_states = paddle.randn([MICRO_BATCH_SIZE, SEQ_LENGTH, HIDDEN_SIZE])
+            hidden_states = paddle.randn(
+                [MICRO_BATCH_SIZE, SEQ_LENGTH, HIDDEN_SIZE]
+            )
 
         output, bias = gdn(hidden_states, attention_mask=None)
 
-        self.assertEqual(output.ndim, 3, f"Output should be 3D, got {output.ndim}D")
+        self.assertEqual(
+            output.ndim, 3, f"Output should be 3D, got {output.ndim}D"
+        )
 
         if sp:
             self.assertEqual(output.shape[0], SEQ_LENGTH // sp_size)
@@ -507,7 +578,9 @@ class TestGatedDeltaNetDistributed(unittest.TestCase):
 
     def _check_tp_precision(self, sp: bool):
         """Helper: compare TP output/grads against single-device baseline."""
-        output_baseline, input_grad_baseline, gdn_baseline = _run_baseline(self.seed)
+        output_baseline, input_grad_baseline, gdn_baseline = _run_baseline(
+            self.seed
+        )
         _run_distributed(
             self.seed,
             self.tp_size,

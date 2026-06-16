@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -30,7 +34,9 @@ from paddleformers.fleet.transformer.multi_latent_attention import (
 
 def _make_mla_self_attn(**attrs):
     """Create MLASelfAttention with mocked __init__."""
-    with patch.object(MLASelfAttention, "__init__", lambda self, *a, **kw: None):
+    with patch.object(
+        MLASelfAttention, "__init__", lambda self, *a, **kw: None
+    ):
         attn = MLASelfAttention.__new__(MLASelfAttention)
         object.__setattr__(attn, "_sub_layers", {})
         object.__setattr__(attn, "_parameters", {})

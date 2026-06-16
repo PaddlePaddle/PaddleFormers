@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -65,7 +69,9 @@ class TestFusedA2A(unittest.TestCase):
 
     def test_get_hidden_bytes(self):
         """Test get_hidden_bytes calculation."""
-        from paddleformers.fleet.transformer.moe.fused_a2a import get_hidden_bytes
+        from paddleformers.fleet.transformer.moe.fused_a2a import (
+            get_hidden_bytes,
+        )
 
         x = paddle.randn([4, 64], dtype=paddle.float32)
         # hidden = 64, max(element_size=4, 2) = 4, so 64 * 4 = 256
@@ -74,7 +80,9 @@ class TestFusedA2A(unittest.TestCase):
 
     def test_get_hidden_bytes_fp16(self):
         """Test get_hidden_bytes with fp16 tensor."""
-        from paddleformers.fleet.transformer.moe.fused_a2a import get_hidden_bytes
+        from paddleformers.fleet.transformer.moe.fused_a2a import (
+            get_hidden_bytes,
+        )
 
         x = paddle.randn([4, 64], dtype=paddle.float16)
         result = get_hidden_bytes(x)
@@ -82,7 +90,9 @@ class TestFusedA2A(unittest.TestCase):
 
     def test_get_hidden_bytes_fp8(self):
         """Test get_hidden_bytes with fp8 tensor (element_size=1)."""
-        from paddleformers.fleet.transformer.moe.fused_a2a import get_hidden_bytes
+        from paddleformers.fleet.transformer.moe.fused_a2a import (
+            get_hidden_bytes,
+        )
 
         x = paddle.zeros([4, 64], dtype=paddle.float8_e4m3fn)
         result = get_hidden_bytes(x)
@@ -189,7 +199,9 @@ class TestFusedA2A(unittest.TestCase):
         ):
             x = paddle.randn([4, 64], dtype=paddle.float32)
             states = {"handle": MagicMock()}
-            result = fused_combine_forward_func(x, mock_group, states, moe_ep_barrier=False)
+            result = fused_combine_forward_func(
+                x, mock_group, states, moe_ep_barrier=False
+            )
             self.assertIsNotNone(result)
 
     def test_fused_dispatch_backward_func(self):

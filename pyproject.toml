@@ -68,10 +68,6 @@ members = ["packages/*"]
 
 [tool.uv.sources]
 paddlefleet-ops = { workspace = true }
-paddlepaddle-gpu = { index = "paddlepaddle-gpu" }
-paddlepaddle-xpu = { index = "paddlepaddle-xpu" }
-paddle-nvidia-nvshmem-cu12 = { index = "paddlepaddle-gpu" }
-paddle-nvidia-nvshmem-cu13 = { index = "paddlepaddle-cu13" }
 
 [[tool.uv.index]]
 name = "paddlepaddle-gpu"
@@ -206,6 +202,15 @@ select = [
 unfixable = ["NPY001"]
 ignore = [
     "E203",
+    "B017",
+    "B022",
+    "B025",
+    "B011",
+    "UP008",
+    "UP031",
+    "UP045",
+    "TC001",
+    "TC003",
     "E402",
     "E501",
     "E721",
@@ -225,4 +230,6 @@ combine-as-imports = true
 known-first-party = ["paddleformers", "paddlefleet_ops"]
 
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["PLC0414"]
+"**/__init__.py" = ["F401", "F403", "PLC0414"]
+"tests/**" = ["SIM117"]
+"paddleformers/cli/train/dpo/dpo_trainer.py" = ["SIM117"]

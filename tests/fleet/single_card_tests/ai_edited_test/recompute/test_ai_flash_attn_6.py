@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 import unittest
@@ -89,19 +93,25 @@ class TestFlashAttnFunctorStructure(unittest.TestCase):
 
     def test_is_pylayer(self):
         """Test FlashAttnFunctor is a PyLayer subclass."""
-        from paddleformers.fleet.refined_recompute.flash_attn import FlashAttnFunctor
+        from paddleformers.fleet.refined_recompute.flash_attn import (
+            FlashAttnFunctor,
+        )
 
         self.assertTrue(issubclass(FlashAttnFunctor, paddle.autograd.PyLayer))
 
     def test_has_forward(self):
         """Test FlashAttnFunctor has forward method."""
-        from paddleformers.fleet.refined_recompute.flash_attn import FlashAttnFunctor
+        from paddleformers.fleet.refined_recompute.flash_attn import (
+            FlashAttnFunctor,
+        )
 
         self.assertTrue(hasattr(FlashAttnFunctor, "forward"))
 
     def test_has_backward(self):
         """Test FlashAttnFunctor has backward method."""
-        from paddleformers.fleet.refined_recompute.flash_attn import FlashAttnFunctor
+        from paddleformers.fleet.refined_recompute.flash_attn import (
+            FlashAttnFunctor,
+        )
 
         self.assertTrue(hasattr(FlashAttnFunctor, "backward"))
 
@@ -115,7 +125,9 @@ class TestFlashMaskAttnFunctorStructure(unittest.TestCase):
             FlashMaskAttnFunctor,
         )
 
-        self.assertTrue(issubclass(FlashMaskAttnFunctor, paddle.autograd.PyLayer))
+        self.assertTrue(
+            issubclass(FlashMaskAttnFunctor, paddle.autograd.PyLayer)
+        )
 
     def test_has_forward(self):
         """Test FlashMaskAttnFunctor has forward method."""

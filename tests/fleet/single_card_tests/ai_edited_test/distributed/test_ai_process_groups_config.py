@@ -16,7 +16,11 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+    ),
 )
 
 
@@ -31,7 +35,9 @@ class TestProcessGroupCollection(unittest.TestCase):
 
     def test_init_empty(self):
         """Test creating an empty ProcessGroupCollection."""
-        from paddleformers.fleet.process_groups_config import ProcessGroupCollection
+        from paddleformers.fleet.process_groups_config import (
+            ProcessGroupCollection,
+        )
 
         pgs = ProcessGroupCollection()
         # All fields should be un-initialized (since init=False)
@@ -40,7 +46,9 @@ class TestProcessGroupCollection(unittest.TestCase):
 
     def test_init_with_kwargs(self):
         """Test creating ProcessGroupCollection with kwargs."""
-        from paddleformers.fleet.process_groups_config import ProcessGroupCollection
+        from paddleformers.fleet.process_groups_config import (
+            ProcessGroupCollection,
+        )
 
         mock_group = mock.MagicMock()
         pgs = ProcessGroupCollection(tp=mock_group, dp=mock_group)
@@ -49,7 +57,9 @@ class TestProcessGroupCollection(unittest.TestCase):
 
     def test_init_with_unknown_attribute_raises(self):
         """Test that unknown attribute raises ValueError."""
-        from paddleformers.fleet.process_groups_config import ProcessGroupCollection
+        from paddleformers.fleet.process_groups_config import (
+            ProcessGroupCollection,
+        )
 
         with self.assertRaises(ValueError) as ctx:
             ProcessGroupCollection(unknown_attr=123)
@@ -57,48 +67,78 @@ class TestProcessGroupCollection(unittest.TestCase):
 
     def test_use_mpu_process_groups_all(self):
         """Test use_mpu_process_groups with None (all groups)."""
-        from paddleformers.fleet.process_groups_config import ProcessGroupCollection
+        from paddleformers.fleet.process_groups_config import (
+            ProcessGroupCollection,
+        )
 
-        with mock.patch("paddleformers.fleet.process_groups_config.parallel_state") as mock_ps:
-            mock_ps.get_tensor_model_parallel_group.return_value = mock.MagicMock()
-            mock_ps.get_pipeline_model_parallel_group.return_value = mock.MagicMock()
+        with mock.patch(
+            "paddleformers.fleet.process_groups_config.parallel_state"
+        ) as mock_ps:
+            mock_ps.get_tensor_model_parallel_group.return_value = (
+                mock.MagicMock()
+            )
+            mock_ps.get_pipeline_model_parallel_group.return_value = (
+                mock.MagicMock()
+            )
             mock_ps.get_context_parallel_group.return_value = mock.MagicMock()
-            mock_ps.get_expert_model_parallel_group.return_value = mock.MagicMock()
+            mock_ps.get_expert_model_parallel_group.return_value = (
+                mock.MagicMock()
+            )
             mock_ps.get_data_parallel_group.return_value = mock.MagicMock()
-            mock_ps.get_expert_data_parallel_group.return_value = mock.MagicMock()
+            mock_ps.get_expert_data_parallel_group.return_value = (
+                mock.MagicMock()
+            )
 
-            pgs = ProcessGroupCollection.use_mpu_process_groups(required_pgs=None)
+            pgs = ProcessGroupCollection.use_mpu_process_groups(
+                required_pgs=None
+            )
             self.assertIsInstance(pgs, ProcessGroupCollection)
 
     def test_use_mpu_process_groups_subset(self):
         """Test use_mpu_process_groups with specific groups."""
-        from paddleformers.fleet.process_groups_config import ProcessGroupCollection
+        from paddleformers.fleet.process_groups_config import (
+            ProcessGroupCollection,
+        )
 
         mock_tp = mock.MagicMock()
         mock_dp = mock.MagicMock()
-        with mock.patch("paddleformers.fleet.process_groups_config.parallel_state") as mock_ps:
+        with mock.patch(
+            "paddleformers.fleet.process_groups_config.parallel_state"
+        ) as mock_ps:
             mock_ps.get_tensor_model_parallel_group.return_value = mock_tp
             mock_ps.get_data_parallel_group.return_value = mock_dp
-            pgs = ProcessGroupCollection.use_mpu_process_groups(required_pgs=["tp", "dp"])
+            pgs = ProcessGroupCollection.use_mpu_process_groups(
+                required_pgs=["tp", "dp"]
+            )
             self.assertEqual(pgs.tp, mock_tp)
             self.assertEqual(pgs.dp, mock_dp)
 
     def test_use_mpu_process_groups_invalid_raises(self):
         """Test use_mpu_process_groups with invalid groups raises."""
-        from paddleformers.fleet.process_groups_config import ProcessGroupCollection
+        from paddleformers.fleet.process_groups_config import (
+            ProcessGroupCollection,
+        )
 
         with self.assertRaises(ValueError) as ctx:
-            ProcessGroupCollection.use_mpu_process_groups(required_pgs=["invalid_pg"])
+            ProcessGroupCollection.use_mpu_process_groups(
+                required_pgs=["invalid_pg"]
+            )
         self.assertIn("Invalid process groups", str(ctx.exception))
 
     def test_use_mpu_process_groups_with_cp(self):
         """Test use_mpu_process_groups with cp_dp group."""
-        from paddleformers.fleet.process_groups_config import ProcessGroupCollection
+        from paddleformers.fleet.process_groups_config import (
+            ProcessGroupCollection,
+        )
 
         mock_cp_dp = mock.MagicMock()
-        with mock.patch("paddleformers.fleet.process_groups_config.parallel_state") as mock_ps:
+        with mock.patch(
+            "paddleformers.fleet.process_groups_config.parallel_state"
+        ) as mock_ps:
             mock_ps.get_data_parallel_group.return_value = mock_cp_dp
-            pgs = ProcessGroupCollection.use_mpu_process_groups(required_pgs=["cp_dp"])
+            pgs = ProcessGroupCollection.use_mpu_process_groups(
+                required_pgs=["cp_dp"]
+            )
             self.assertEqual(pgs.cp_dp, mock_cp_dp)
 
 

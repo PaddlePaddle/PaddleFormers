@@ -100,7 +100,9 @@ class TestLoggingCallback(unittest.TestCase):
         logs = {"loss": 0.5}
         metrics_dumper = []
 
-        self.callback.on_log(args, state, control, logs=logs, metrics_dumper=metrics_dumper)
+        self.callback.on_log(
+            args, state, control, logs=logs, metrics_dumper=metrics_dumper
+        )
         self.assertEqual(len(metrics_dumper), 1)
         self.assertEqual(metrics_dumper[0], logs)
 
