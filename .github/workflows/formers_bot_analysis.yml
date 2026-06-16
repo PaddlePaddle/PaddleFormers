@@ -214,92 +214,12 @@ jobs:
             echo "No analysis result generated." >> $GITHUB_STEP_SUMMARY
           fi
 
-      - name: Post or update PR comment
-        # 定时触发时无 PR，跳过评论；schedule 仅写 Summary
-        if: always() && needs.check-and-collect.outputs.is_schedule == 'false'
-        id: post_comment                          # ← 加 id，供下一步读 output
-        env:
-          BOT_TOKEN:   ${{ secrets.BOT_TOKEN }}
-          REPO:        ${{ github.repository }}
-          PR_NUMBER:   ${{ needs.check-and-collect.outputs.pr_number }}
-          RUN_ID:      ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-          RESULT_FILE: /tmp/bot_results/bot_result_paddleformers_${{ env.TASK_ID }}.md
+      - name: Skip GitHub PR comment
+        id: post_comment
+        if: always()
         run: |
-          python3 - <<'PYEOF'
-          import json, os, urllib.request, urllib.error, sys
-
-          token       = os.environ['BOT_TOKEN']
-          repo        = os.environ['REPO']
-          pr_number   = os.environ['PR_NUMBER']
-          run_id      = os.environ['RUN_ID']
-          run_attempt = os.environ['RUN_ATTEMPT']
-          result_file = os.environ['RESULT_FILE']
-          marker      = "<!-- bot-log-analysis -->"
-
-          if not token:
-              print("ERROR: BOT_TOKEN is empty, cannot post comment.", file=sys.stderr)
-              sys.exit(1)
-
-          if os.path.isfile(result_file):
-              body = open(result_file).read()
-          else:
-              body = "⚠️ 未生成分析结果，请手动查看 Action 日志。"
-
-          run_url = f"https://github.com/{repo}/actions/runs/{run_id}"
-          comment_body = (
-              f"{marker}\n"
-              f"## PaddleFormers Log Analysis\n\n"
-              f"> Run [`#{run_id}`]({run_url}) · Attempt `{run_attempt}`\n\n"
-              f"{body}\n\n"
-              f"---\n"       
-              f"> 🔍 **准确性记录**：请点击评论底部 😊 图标，"
-              f"选择 👍（准确）或 👎（有误），将自动记录到 CI 监控系统\n\n"
-              f"<sub>🔄 每次 Re-run 后自动更新</sub>"
-          )
-
-          headers = {
-              "Authorization": f"Bearer {token}",
-              "Accept": "application/vnd.github+json",
-              "Content-Type": "application/json",
-          }
-
-          def gh(method, url, payload=None):
-              req = urllib.request.Request(
-                  url,
-                  data=json.dumps(payload).encode() if payload else None,
-                  headers=headers,
-                  method=method,
-              )
-              try:
-                  with urllib.request.urlopen(req) as r:
-                      return json.loads(r.read())
-              except urllib.error.HTTPError as e:
-                  body_err = e.read().decode()
-                  print(f"HTTP {e.code} {method} {url}: {body_err}", file=sys.stderr)
-                  raise
-
-          base     = f"https://api.github.com/repos/{repo}"
-          comments = gh("GET", f"{base}/issues/{pr_number}/comments?per_page=100")
-          existing = next(
-              (c["id"] for c in comments if marker in c.get("body", "")), None
-          )
-
-          if existing:
-              res = gh("PATCH", f"{base}/issues/comments/{existing}", {"body": comment_body})
-              comment_id = existing
-              print(f"Updated comment: {res.get('html_url')}")
-          else:
-              res = gh("POST", f"{base}/issues/{pr_number}/comments", {"body": comment_body})
-              comment_id = res.get("id", 0)
-              print(f"Created comment: {res.get('html_url')}")
-
-          # ── 写入 GITHUB_OUTPUT，供 report-to-monitor 步骤读取 ──────────
-          gh_output = os.environ.get("GITHUB_OUTPUT", "")
-          if gh_output:
-              with open(gh_output, "a") as f:
-                  f.write(f"comment_id={comment_id}\n")
-          PYEOF
+          echo "comment_id=" >> "$GITHUB_OUTPUT"
+          echo "Skip posting bot analysis to GitHub PR comments."
 
       - name: Report to monitor
         # 无论评论是否成功都上报，comment_id 可能为空（schedule 场景）
