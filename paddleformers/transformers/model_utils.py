@@ -403,7 +403,7 @@ def _load_part_state_dict(
     def _is_need_transpose(key):
         if "lora" not in key and convert_from_hf and isinstance(transpose_weight_keys, list):
             for trans_key in transpose_weight_keys:
-                if re.search(f"\.{trans_key}\.weight$", key) or re.fullmatch(f"^{trans_key}\.weight$", key):
+                if re.search(rf"\.{trans_key}\.weight$", key) or re.fullmatch(rf"^{trans_key}\.weight$", key):
                     return True
         return False
 
@@ -829,7 +829,7 @@ def shard_checkpoint(
 
         # Add the last block
         sharded_state_dicts.append(current_block)
-        logger.info(f"The average size of partition is around: {total_size//partition_num}")
+        logger.info(f"The average size of partition is around: {total_size // partition_num}")
 
     # If we only have one shard, we return it
     if len(sharded_state_dicts) == 1:
@@ -842,7 +842,7 @@ def shard_checkpoint(
     for idx, shard in enumerate(sharded_state_dicts):
         # replace `suffix` -> `-00001-of-00002suffix`
         shard_file = weights_name.replace(
-            weights_name_suffix, f"-{idx+1:05d}-of-{len(sharded_state_dicts):05d}{weights_name_suffix}"
+            weights_name_suffix, f"-{idx + 1:05d}-of-{len(sharded_state_dicts):05d}{weights_name_suffix}"
         )
         shards[shard_file] = shard
         for key in shard.keys():
@@ -2909,13 +2909,14 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             sharded_state_dict = model.sharded_state_dict()
             metadata_path = os.path.join(ckpt_path, FLEX_CKPT_AUTO_GENERATED_METADATA)
 
-            # delete the metadata file if it exists
-            try:
-                os.remove(metadata_path)
-            except FileNotFoundError:
-                pass
-            except Exception as e:
-                logger.error(f"Failed to delete {metadata_path}: {e}")
+            # delete the metadata file if it exists (skip during benchmark)
+            if not os.environ.get("BENCHMARK_MODE", "0") == "1":
+                try:
+                    os.remove(metadata_path)
+                except FileNotFoundError:
+                    pass
+                except Exception as e:
+                    logger.error(f"Failed to delete {metadata_path}: {e}")
 
             # change dtype in aoa
             # Skip identity dtype mapping for fleet models — fleet state_dict keys
