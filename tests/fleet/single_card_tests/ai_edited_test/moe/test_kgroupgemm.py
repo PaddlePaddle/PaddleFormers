@@ -29,7 +29,7 @@ Tests cover the following code changes in the kgroupgemm-debug branch:
   9. moe_layer: fuse_expert_fp8_weight_quant with grouped_gemm_experts
 
 Run with:
-  python tests/single_card_tests/test_kgroupgemm.py
+  python tests/fleet/single_card_tests/test_kgroupgemm.py
 """
 
 import os
@@ -48,9 +48,13 @@ from paddleformers.fleet.tensor_parallel.layers import (
     ColumnParallelLinear,
     RowParallelLinear,
 )
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.transformer.mlp import MLPSublayersSpec
-from paddleformers.fleet.transformer.moe.fusion_layer_utils import FusionMoePyLayer
+from paddleformers.fleet.transformer.moe.fusion_layer_utils import (
+    FusionMoePyLayer,
+)
 from paddleformers.fleet.transformer.moe.moe_expert import (
     GroupedMLPExpert,
     StandardMLPExpert,
@@ -131,16 +135,22 @@ class FakeMOELayer(nn.Layer):
             fused_stack_quant_without_cache,
         )
 
-        def quantize_weights(weight_list, weight_obj=None, quant_transpose=None):
+        def quantize_weights(
+            weight_list, weight_obj=None, quant_transpose=None
+        ):
             if weight_obj is None:
                 weight_obj = weight_list[0]
 
-            fp8_weight, fp8_scale = fused_stack_quant_without_cache(weight_list, transpose=False)
+            fp8_weight, fp8_scale = fused_stack_quant_without_cache(
+                weight_list, transpose=False
+            )
             weight_obj.fp8_weight_stacked = fp8_weight
             weight_obj.fp8_scale_stacked = fp8_scale
 
             if quant_transpose is None or quant_transpose is True:
-                fp8_weight_t, fp8_scale_t = fused_stack_quant_without_cache(weight_list, transpose=True)
+                fp8_weight_t, fp8_scale_t = fused_stack_quant_without_cache(
+                    weight_list, transpose=True
+                )
                 weight_obj.fp8_weight_stacked_transpose = fp8_weight_t
                 weight_obj.fp8_scale_stacked_transpose = fp8_scale_t
             else:
@@ -152,8 +162,12 @@ class FakeMOELayer(nn.Layer):
             expert_w1 = self.grouped_gemm_experts.weight1
             expert_w2 = self.grouped_gemm_experts.weight2
             local_expert_num = expert_w1.shape[0]
-            expert_w1_list = [expert_w1[i, :, :] for i in range(local_expert_num)]
-            expert_w2_list = [expert_w2[i, :, :] for i in range(local_expert_num)]
+            expert_w1_list = [
+                expert_w1[i, :, :] for i in range(local_expert_num)
+            ]
+            expert_w2_list = [
+                expert_w2[i, :, :] for i in range(local_expert_num)
+            ]
 
             if expert_w1_list:
                 quantize_weights(
@@ -216,7 +230,9 @@ class TestKGroupGemm(unittest.TestCase):
         paddle.seed(2026)
         np.random.seed(2026)
 
-        hidden_states = paddle.randn([self.seq_len, self.hidden_size], "bfloat16")
+        hidden_states = paddle.randn(
+            [self.seq_len, self.hidden_size], "bfloat16"
+        )
         hidden_states_out_grad = paddle.randn_like(hidden_states)
         hidden_states, scale = self.tmp_tilewise_quant(hidden_states)
         probs = paddle.randn([self.seq_len, self.topk])
@@ -321,7 +337,9 @@ class TestKGroupGemm(unittest.TestCase):
         )
         self.assertTrue(hasattr(node, "grouped_gemm_experts"))
         self.assertFalse(hasattr(node, "experts"))
-        print("[PASS] test_init_condition: grouped_gemm_experts for fp8+deep_gemm")
+        print(
+            "[PASS] test_init_condition: grouped_gemm_experts for fp8+deep_gemm"
+        )
 
         # Old condition: moe_expert_fusion=True, use_fp8_mlp=True, moe_deep_gemm=False
         # should use experts (backward compat)
@@ -333,7 +351,9 @@ class TestKGroupGemm(unittest.TestCase):
         )
         self.assertTrue(hasattr(node_old, "experts"))
         self.assertFalse(hasattr(node_old, "grouped_gemm_experts"))
-        print("[PASS] test_init_condition: experts for fp8 without deep_gemm (backward compat)")
+        print(
+            "[PASS] test_init_condition: experts for fp8 without deep_gemm (backward compat)"
+        )
 
         # Condition: moe_expert_fusion=True, use_fp8_mlp=False, moe_deep_gemm=True
         # should use grouped_gemm_experts (bf16 deep_gemm path, unchanged)
@@ -345,7 +365,9 @@ class TestKGroupGemm(unittest.TestCase):
         )
         self.assertTrue(hasattr(node_bf16, "grouped_gemm_experts"))
         self.assertFalse(hasattr(node_bf16, "experts"))
-        print("[PASS] test_init_condition: grouped_gemm_experts for bf16+deep_gemm")
+        print(
+            "[PASS] test_init_condition: grouped_gemm_experts for bf16+deep_gemm"
+        )
 
         # Condition: moe_expert_fusion=False -> always use experts
         node_no_grouped = ExpertsGroupGemmContiguousNode(
@@ -387,7 +409,9 @@ class TestKGroupGemm(unittest.TestCase):
         self.assertEqual(len(w2.shape), 3)
         self.assertEqual(w1.shape[0], self.n_routed_experts)
         self.assertEqual(w2.shape[0], self.n_routed_experts)
-        print("[PASS] test_forward_uses_grouped_gemm_experts: weight shapes correct")
+        print(
+            "[PASS] test_forward_uses_grouped_gemm_experts: weight shapes correct"
+        )
 
     # ---------------------------------------------------------------
     # Test 3: backward_impl_fp8 weight source change
@@ -427,7 +451,9 @@ class TestKGroupGemm(unittest.TestCase):
         )
         self.assertTrue(hasattr(node_old, "experts"))
         self.assertFalse(hasattr(node_old, "grouped_gemm_experts"))
-        print("[PASS] test_backward_impl_gets_grouped_weights: both paths verified")
+        print(
+            "[PASS] test_backward_impl_gets_grouped_weights: both paths verified"
+        )
 
     # ---------------------------------------------------------------
     # Test 4: tokens_per_expert_tensor creation in backward
@@ -458,7 +484,9 @@ class TestKGroupGemm(unittest.TestCase):
         #   self.tokens_per_expert_tensor = paddle.to_tensor(
         #       self.tokens_per_expert, dtype="int32"
         #   )
-        node.tokens_per_expert_tensor = paddle.to_tensor(node.tokens_per_expert, dtype="int32")
+        node.tokens_per_expert_tensor = paddle.to_tensor(
+            node.tokens_per_expert, dtype="int32"
+        )
 
         # Verify
         self.assertIsNotNone(node.tokens_per_expert_tensor)
@@ -467,7 +495,9 @@ class TestKGroupGemm(unittest.TestCase):
             node.tokens_per_expert_tensor.shape,
             [self.n_routed_experts],
         )
-        print("[PASS] test_tokens_per_expert_tensor_created: tensor with int32 dtype")
+        print(
+            "[PASS] test_tokens_per_expert_tensor_created: tensor with int32 dtype"
+        )
 
     # ---------------------------------------------------------------
     # Test 5: End-to-end fp8 + deep_gemm forward+backward
@@ -564,7 +594,9 @@ class TestKGroupGemm(unittest.TestCase):
     # Covers: fwd_gate_up_bf16, bwd_down_input_bf16, bf16_weight_grad
     #         with moe_deep_gemm=True, use_fp8_mlp=False
     # ---------------------------------------------------------------
-    @unittest.skip("bf16 deep_gemm path requires bf16 input, skip due to env issue")
+    @unittest.skip(
+        "bf16 deep_gemm path requires bf16 input, skip due to env issue"
+    )
     def test_deep_gemm_bf16(self):
         """Test moe_deep_gemm=True + use_fp8_mlp=False (existing deep_gemm path)."""
         pass
@@ -581,28 +613,46 @@ class TestKGroupGemm(unittest.TestCase):
         moe_layer = self._create_moe_layer(moe_deep_gemm=True)
 
         # Before quantization, no fp8 attributes should exist
-        self.assertFalse(hasattr(moe_layer.grouped_gemm_experts.weight1, "fp8_weight_stacked"))
-        self.assertFalse(hasattr(moe_layer.grouped_gemm_experts.weight2, "fp8_weight_stacked"))
+        self.assertFalse(
+            hasattr(
+                moe_layer.grouped_gemm_experts.weight1, "fp8_weight_stacked"
+            )
+        )
+        self.assertFalse(
+            hasattr(
+                moe_layer.grouped_gemm_experts.weight2, "fp8_weight_stacked"
+            )
+        )
 
         # Run batch mode quantization (the new code path)
         moe_layer.fp8_quant_weight(batch_mode=True, quant_transpose=True)
 
         # After quantization, fp8 attributes should exist
-        self.assertTrue(hasattr(moe_layer.grouped_gemm_experts.weight1, "fp8_weight_stacked"))
+        self.assertTrue(
+            hasattr(
+                moe_layer.grouped_gemm_experts.weight1, "fp8_weight_stacked"
+            )
+        )
         self.assertTrue(
             hasattr(
                 moe_layer.grouped_gemm_experts.weight1,
                 "fp8_weight_stacked_transpose",
             )
         )
-        self.assertTrue(hasattr(moe_layer.grouped_gemm_experts.weight2, "fp8_weight_stacked"))
+        self.assertTrue(
+            hasattr(
+                moe_layer.grouped_gemm_experts.weight2, "fp8_weight_stacked"
+            )
+        )
         self.assertTrue(
             hasattr(
                 moe_layer.grouped_gemm_experts.weight2,
                 "fp8_weight_stacked_transpose",
             )
         )
-        print("[PASS] test_fp8_quant_weight_grouped_experts: fp8 attributes set")
+        print(
+            "[PASS] test_fp8_quant_weight_grouped_experts: fp8 attributes set"
+        )
 
     # ---------------------------------------------------------------
     # Test 11: fp8_quant_weight without transpose
@@ -613,11 +663,25 @@ class TestKGroupGemm(unittest.TestCase):
 
         moe_layer.fp8_quant_weight(batch_mode=True, quant_transpose=False)
 
-        self.assertTrue(hasattr(moe_layer.grouped_gemm_experts.weight1, "fp8_weight_stacked"))
-        self.assertIsNone(moe_layer.grouped_gemm_experts.weight1.fp8_weight_stacked_transpose)
-        self.assertTrue(hasattr(moe_layer.grouped_gemm_experts.weight2, "fp8_weight_stacked"))
-        self.assertIsNone(moe_layer.grouped_gemm_experts.weight2.fp8_weight_stacked_transpose)
-        print("[PASS] test_fp8_quant_weight_no_transpose: no transpose as expected")
+        self.assertTrue(
+            hasattr(
+                moe_layer.grouped_gemm_experts.weight1, "fp8_weight_stacked"
+            )
+        )
+        self.assertIsNone(
+            moe_layer.grouped_gemm_experts.weight1.fp8_weight_stacked_transpose
+        )
+        self.assertTrue(
+            hasattr(
+                moe_layer.grouped_gemm_experts.weight2, "fp8_weight_stacked"
+            )
+        )
+        self.assertIsNone(
+            moe_layer.grouped_gemm_experts.weight2.fp8_weight_stacked_transpose
+        )
+        print(
+            "[PASS] test_fp8_quant_weight_no_transpose: no transpose as expected"
+        )
 
     # ---------------------------------------------------------------
     # Test 12: offline quant handling in forward
@@ -655,7 +719,9 @@ class TestKGroupGemm(unittest.TestCase):
 
         # Both should produce valid outputs
         self.assertEqual(out_no_offline[0].shape, out_with_offline[0].shape)
-        print("[PASS] test_offline_quant_handling: both paths produce valid outputs")
+        print(
+            "[PASS] test_offline_quant_handling: both paths produce valid outputs"
+        )
 
     # ---------------------------------------------------------------
     # Test 13: bf16_weight_grad condition with deep_gemm
@@ -690,7 +756,9 @@ class TestKGroupGemm(unittest.TestCase):
         self.assertTrue(node.moe_expert_fusion)
         self.assertTrue(node.moe_deep_gemm)
         self.assertTrue(node.use_bf16_gemm_weight_grad)
-        print("[PASS] test_bf16_weight_grad_condition: deep_gemm+fp8 enters grouped path")
+        print(
+            "[PASS] test_bf16_weight_grad_condition: deep_gemm+fp8 enters grouped path"
+        )
 
         # Without deep_gemm but with fp8: should NOT use grouped path
         node_no_deep = ExpertsGroupGemmContiguousNode(
@@ -705,7 +773,9 @@ class TestKGroupGemm(unittest.TestCase):
         # -> enters per-expert loop ("enter not k_groupgemm")
         self.assertTrue(node_no_deep.moe_expert_fusion)
         self.assertFalse(node_no_deep.moe_deep_gemm)
-        print("[PASS] test_bf16_weight_grad_condition: fp8 without deep_gemm enters per-expert loop")
+        print(
+            "[PASS] test_bf16_weight_grad_condition: fp8 without deep_gemm enters per-expert loop"
+        )
 
     # ---------------------------------------------------------------
     # Test 14: backward zero-token path with grouped_gemm_experts
@@ -740,7 +810,9 @@ class TestKGroupGemm(unittest.TestCase):
             dx, probs_grad = node.backward(out_grad, unzipped_probs)
 
         self.assertEqual(dx.shape[0], 0)
-        print("[PASS] test_backward_zero_token: grouped_gemm_experts zero-tokens path works")
+        print(
+            "[PASS] test_backward_zero_token: grouped_gemm_experts zero-tokens path works"
+        )
 
     # ---------------------------------------------------------------
     # Test 15: tokens_per_expert_tensor dtype is int32
@@ -767,14 +839,18 @@ class TestKGroupGemm(unittest.TestCase):
         node.tokens_per_expert = self.tokens_per_expert
 
         # Simulate what backward does
-        node.tokens_per_expert_tensor = paddle.to_tensor(node.tokens_per_expert, dtype="int32")
+        node.tokens_per_expert_tensor = paddle.to_tensor(
+            node.tokens_per_expert, dtype="int32"
+        )
 
         self.assertEqual(node.tokens_per_expert_tensor.dtype, paddle.int32)
 
         # Verify the values match
         for i, t in enumerate(self.tokens_per_expert):
             self.assertEqual(node.tokens_per_expert_tensor[i].item(), t)
-        print("[PASS] test_tokens_per_expert_tensor_dtype: uses int32 dtype correctly")
+        print(
+            "[PASS] test_tokens_per_expert_tensor_dtype: uses int32 dtype correctly"
+        )
 
 
 class TestMoELayerFp8QuantWeightBranches(unittest.TestCase):
@@ -853,7 +929,9 @@ class TestMoELayerFp8QuantWeightBranches(unittest.TestCase):
         self.assertTrue(hasattr(w2, "fp8_weight_stacked_transpose"))
         self.assertIsNotNone(w2.fp8_weight_stacked_transpose)
 
-        print("[PASS] test_fp8_quant_weight_not_in_v0_v1_v2: v0/v1/v2 all covered")
+        print(
+            "[PASS] test_fp8_quant_weight_not_in_v0_v1_v2: v0/v1/v2 all covered"
+        )
 
     # ---------------------------------------------------------------
     # Test B: v0 + v1 + v2 with quant_transpose=False
@@ -891,7 +969,9 @@ class TestMoELayerFp8QuantWeightBranches(unittest.TestCase):
             w2.fp8_weight_stacked_transpose,
             "quant_transpose=False: weight2 transpose should be None",
         )
-        print("[PASS] test_fp8_quant_weight_not_in_v0_no_transpose: no-transpose sub-path covered")
+        print(
+            "[PASS] test_fp8_quant_weight_not_in_v0_no_transpose: no-transpose sub-path covered"
+        )
 
 
 if __name__ == "__main__":

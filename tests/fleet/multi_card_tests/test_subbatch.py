@@ -26,7 +26,7 @@ Test scenarios:
 
 Run with:
   python -m paddle.distributed.launch --gpus 0,1,2,3 \
-      tests/multi_card_tests/test_subbatch.py
+      tests/fleet/multi_card_tests/test_subbatch.py
 """
 
 import os
@@ -34,7 +34,9 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    ),
 )
 
 import functools
@@ -57,7 +59,9 @@ from paddleformers.fleet.models.common.language_loss.language_loss import (
     subbatch,
 )
 from paddleformers.fleet.models.gpt import GPTConfig
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from tests.multi_card_tests.tensor_parallel.test_utilities import Utils
 
 # ==================== Module-level initialization (once only) ====================
@@ -103,8 +107,12 @@ def _base_gpt_config(**overrides):
         "use_qk_norm": True,
         "use_cpu_initialization": True,
         "position_embedding_type": "rope",
-        "init_method": functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-        "output_layer_init_method": functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+        "init_method": functools.partial(
+            paddle.nn.init.xavier_uniform_, gain=1.0
+        ),
+        "output_layer_init_method": functools.partial(
+            paddle.nn.init.xavier_uniform_, gain=1.0
+        ),
     }
     defaults.update(overrides)
     return GPTConfig(**defaults)
@@ -113,10 +121,16 @@ def _base_gpt_config(**overrides):
 def _make_inputs(batch_size, seq_len, vocab_size):
     """Build (inputs_dict, labels) for NoPipelineParallel."""
     _set_seed()
-    data = paddle.randint(low=0, high=vocab_size, shape=(batch_size, seq_len + 1))
+    data = paddle.randint(
+        low=0, high=vocab_size, shape=(batch_size, seq_len + 1)
+    )
     input_ids = data[:, :-1]
     labels = data[:, 1:]
-    position_ids = paddle.arange(seq_len, dtype="int64").unsqueeze(0).expand([batch_size, seq_len])
+    position_ids = (
+        paddle.arange(seq_len, dtype="int64")
+        .unsqueeze(0)
+        .expand([batch_size, seq_len])
+    )
     inputs = (
         {
             "input_ids": [input_ids],
@@ -304,7 +318,10 @@ class TestGPTSubbatchTP(unittest.TestCase):
             loss_sb,
             loss_full,
             rtol=1e-5,
-            err_msg=(f"[GPT TP={TP_SIZE}] loss mismatch: subbatch={loss_sb:.6f}, " f"full={loss_full:.6f}"),
+            err_msg=(
+                f"[GPT TP={TP_SIZE}] loss mismatch: subbatch={loss_sb:.6f}, "
+                f"full={loss_full:.6f}"
+            ),
         )
 
         for name in grads_full:
@@ -396,7 +413,10 @@ class TestGPTSubbatchTPSP(unittest.TestCase):
             loss_sb,
             loss_full,
             rtol=1e-5,
-            err_msg=(f"[GPT TP={TP_SIZE}+SP] loss mismatch: subbatch={loss_sb:.6f}, " f"full={loss_full:.6f}"),
+            err_msg=(
+                f"[GPT TP={TP_SIZE}+SP] loss mismatch: subbatch={loss_sb:.6f}, "
+                f"full={loss_full:.6f}"
+            ),
         )
 
 

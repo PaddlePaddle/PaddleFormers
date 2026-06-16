@@ -29,7 +29,7 @@ Tests:
 Note: Ordinary (non-auto) subbatch tests are in test_moe_subbatch.py.
 
 Run with:
-  python tests/single_card_tests/test_moe_auto_subbatch.py
+  python tests/fleet/single_card_tests/test_moe_auto_subbatch.py
 """
 
 import contextlib
@@ -52,10 +52,14 @@ from paddleformers.fleet.tensor_parallel.layers import (
     ColumnParallelLinear,
     RowParallelLinear,
 )
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.transformer.mlp import MLPSublayersSpec
 from paddleformers.fleet.transformer.moe.fp8_utils import tilewise_quant
-from paddleformers.fleet.transformer.moe.fusion_layer_utils import FusionMoePyLayer
+from paddleformers.fleet.transformer.moe.fusion_layer_utils import (
+    FusionMoePyLayer,
+)
 from paddleformers.fleet.transformer.moe.moe_expert import StandardMLPExpert
 from paddleformers.fleet.transformer.moe.moe_layer import MoELayer
 from paddleformers.fleet.transformer.moe.vmm_utils import (
@@ -121,13 +125,17 @@ class FakeMOELayer(nn.Layer):
         self.moe_use_fusion_node = True
         self.fp8 = True
         self.use_ue8m0 = False
-        MoELayer.fp8_quant_weight(self, batch_mode=batch_mode, quant_transpose=quant_transpose)
+        MoELayer.fp8_quant_weight(
+            self, batch_mode=batch_mode, quant_transpose=quant_transpose
+        )
 
 
 @contextlib.contextmanager
 def vmm_no_free_space():
     """占用所有的 free block 并且禁止 growable 空间，假装没有多余显存"""
-    (old_value,) = paddle.framework.get_flags("FLAGS_max_reserved_threshold_in_gb").values()
+    (old_value,) = paddle.framework.get_flags(
+        "FLAGS_max_reserved_threshold_in_gb"
+    ).values()
     paddle.set_flags({"FLAGS_max_reserved_threshold_in_gb": 0})
     buffers = []
     for size, _ in MemoryAnalysisTool.vmm_free_block_info()[-1]:
@@ -155,7 +163,9 @@ class TestAutoSubbatch(unittest.TestCase):
         paddle.seed(2026)
         np.random.seed(2026)
 
-        hidden_states = paddle.randn([self.seq_len, self.hidden_size], "bfloat16")
+        hidden_states = paddle.randn(
+            [self.seq_len, self.hidden_size], "bfloat16"
+        )
         hidden_states_out_grad = paddle.randn_like(hidden_states)
         hidden_states, scale = tilewise_quant(hidden_states)
         probs = paddle.randn([self.seq_len, self.topk])
@@ -198,7 +208,9 @@ class TestAutoSubbatch(unittest.TestCase):
         moe_layer.clear_main_grad()
         self.moe_layer = moe_layer
 
-    def run_moe_layer(self, is_ref=False, tight_forward=False, tight_backward=False, **kwargs):
+    def run_moe_layer(
+        self, is_ref=False, tight_forward=False, tight_backward=False, **kwargs
+    ):
         params = {
             "use_fp8_mlp": True,
             "moe_deep_gemm": False,
@@ -223,7 +235,9 @@ class TestAutoSubbatch(unittest.TestCase):
                 **params,
             )
 
-        with (vmm_no_free_space() if tight_backward else contextlib.nullcontext()):
+        with (
+            vmm_no_free_space() if tight_backward else contextlib.nullcontext()
+        ):
             paddle.autograd.backward(hidden_states, self.hidden_states_out_grad)
 
         hidden_states_grad = self.hidden_states.grad
@@ -238,7 +252,9 @@ class TestAutoSubbatch(unittest.TestCase):
         return hidden_states, hidden_states_grad, probs_grad, weight_grad
 
     def compare_results(self, ref_out, tgt_out, loose_weight=False):
-        for i, name in enumerate(["hidden_states", "hidden_states_grad", "probs_grad"]):
+        for i, name in enumerate(
+            ["hidden_states", "hidden_states_grad", "probs_grad"]
+        ):
             np.testing.assert_equal(
                 ref_out[i].float().numpy(),
                 tgt_out[i].float().numpy(),
@@ -275,13 +291,19 @@ class TestAutoSubbatch(unittest.TestCase):
         cases["case1 (group, plenty)"] = self.run_moe_layer(**kwargs)
         # case2: 前向紧张
         logging.info("case2 (group, tight_fwd)")
-        cases["case2 (group, tight_fwd)"] = self.run_moe_layer(tight_forward=True, **kwargs)
+        cases["case2 (group, tight_fwd)"] = self.run_moe_layer(
+            tight_forward=True, **kwargs
+        )
         # case3: 反向紧张
         logging.info("case3 (group, tight_bwd)")
-        cases["case3 (group, tight_bwd)"] = self.run_moe_layer(tight_backward=True, **kwargs)
+        cases["case3 (group, tight_bwd)"] = self.run_moe_layer(
+            tight_backward=True, **kwargs
+        )
         # case4: 前向+反向都紧张
         logging.info("case4 (group, tight_both)")
-        cases["case4 (group, tight_both)"] = self.run_moe_layer(tight_forward=True, tight_backward=True, **kwargs)
+        cases["case4 (group, tight_both)"] = self.run_moe_layer(
+            tight_forward=True, tight_backward=True, **kwargs
+        )
 
         kwargs = {
             "moe_expert_fusion": True,
@@ -295,13 +317,19 @@ class TestAutoSubbatch(unittest.TestCase):
         cases["case5 (group, plenty)"] = self.run_moe_layer(**kwargs)
         # case6: 前向紧张 → fallback 到逐专家
         logging.info("case6 (recompute_moe_gate_up, group, tight_fwd)")
-        cases["case6 (group, tight_fwd)"] = self.run_moe_layer(tight_forward=True, **kwargs)
+        cases["case6 (group, tight_fwd)"] = self.run_moe_layer(
+            tight_forward=True, **kwargs
+        )
         # case7: 反向紧张 → 前向 3a, 反向 fallback
         logging.info("case7 (recompute_moe_gate_up, group, tight_bwd)")
-        cases["case7 (group, tight_bwd)"] = self.run_moe_layer(tight_backward=True, **kwargs)
+        cases["case7 (group, tight_bwd)"] = self.run_moe_layer(
+            tight_backward=True, **kwargs
+        )
         # case8: 向+反向都紧张, fallback
         logging.info("case8 (recompute_moe_gate_up, group, tight_both)")
-        cases["case8 (group, tight_both)"] = self.run_moe_layer(tight_forward=True, tight_backward=True, **kwargs)
+        cases["case8 (group, tight_both)"] = self.run_moe_layer(
+            tight_forward=True, tight_backward=True, **kwargs
+        )
 
         # --- group_gemm + selective_recompute (recompute_moe_gate_up + recompute_moe_premute) ---
         # when recompute_moe_premute is True. recompute_moe_gate_up must be true
@@ -311,16 +339,28 @@ class TestAutoSubbatch(unittest.TestCase):
             "recompute_moe_gate_up": False,
         }
         # case9: 显存充裕 → 走 3a group_gemm
-        logging.info("case9 (recompute_moe_gate_up,recompute_moe_premute, group, plenty)")
+        logging.info(
+            "case9 (recompute_moe_gate_up,recompute_moe_premute, group, plenty)"
+        )
         cases["case9 (group, plenty)"] = self.run_moe_layer(**kwargs)
         # case10: 前向紧张 → fallback 到逐专家
-        cases["case10 (group, tight_fwd)"] = self.run_moe_layer(tight_forward=True, **kwargs)
+        cases["case10 (group, tight_fwd)"] = self.run_moe_layer(
+            tight_forward=True, **kwargs
+        )
         # case11: 反向紧张 → 前向 3a, 反向 fallback
-        logging.info("case11 (recompute_moe_gate_up,recompute_moe_premute, group, tight_bwd)")
-        cases["case11 (group, tight_bwd)"] = self.run_moe_layer(tight_backward=True, **kwargs)
+        logging.info(
+            "case11 (recompute_moe_gate_up,recompute_moe_premute, group, tight_bwd)"
+        )
+        cases["case11 (group, tight_bwd)"] = self.run_moe_layer(
+            tight_backward=True, **kwargs
+        )
         # case12: 向+反向都紧张, fallback
-        logging.info("case12 (recompute_moe_gate_up,recompute_moe_premute, group, tight_both)")
-        cases["case12 (group, tight_both)"] = self.run_moe_layer(tight_forward=True, tight_backward=True, **kwargs)
+        logging.info(
+            "case12 (recompute_moe_gate_up,recompute_moe_premute, group, tight_both)"
+        )
+        cases["case12 (group, tight_both)"] = self.run_moe_layer(
+            tight_forward=True, tight_backward=True, **kwargs
+        )
 
         # split gemm + no moe_subbatch_token_num_after_dispatch ---
         kwargs = {
@@ -333,13 +373,19 @@ class TestAutoSubbatch(unittest.TestCase):
         cases["case13 (split, plenty)"] = self.run_moe_layer(**kwargs)
         # case14: 前向紧张 → fallback 到逐专家
         logging.info("case14 (split, tight_fwd)")
-        cases["case14 (split, tight_fwd)"] = self.run_moe_layer(tight_forward=True, **kwargs)
+        cases["case14 (split, tight_fwd)"] = self.run_moe_layer(
+            tight_forward=True, **kwargs
+        )
         # case15: 反向紧张 → 前向 3a, 反向 fallback
         logging.info("case15 (split, tight_bwd)")
-        cases["case15 (split, tight_bwd)"] = self.run_moe_layer(tight_backward=True, **kwargs)
+        cases["case15 (split, tight_bwd)"] = self.run_moe_layer(
+            tight_backward=True, **kwargs
+        )
         # case16: 向+反向都紧张, fallback
         logging.info("case16 (split, tight_both)")
-        cases["case16 (split, tight_both)"] = self.run_moe_layer(tight_forward=True, tight_backward=True, **kwargs)
+        cases["case16 (split, tight_both)"] = self.run_moe_layer(
+            tight_forward=True, tight_backward=True, **kwargs
+        )
 
         # split gemm + moe_subbatch_token_num_after_dispatch 512 ---
         kwargs = {
@@ -353,13 +399,19 @@ class TestAutoSubbatch(unittest.TestCase):
         cases["case13 (split, plenty)"] = self.run_moe_layer(**kwargs)
         # case14: 前向紧张 → fallback 到逐专家
         logging.info("case14 (split, tight_fwd)")
-        cases["case14 (split, tight_fwd)"] = self.run_moe_layer(tight_forward=True, **kwargs)
+        cases["case14 (split, tight_fwd)"] = self.run_moe_layer(
+            tight_forward=True, **kwargs
+        )
         # case15: 反向紧张 → 前向 3a, 反向 fallback
         logging.info("case15 (split, tight_bwd)")
-        cases["case15 (split, tight_bwd)"] = self.run_moe_layer(tight_backward=True, **kwargs)
+        cases["case15 (split, tight_bwd)"] = self.run_moe_layer(
+            tight_backward=True, **kwargs
+        )
         # case16: 向+反向都紧张, fallback
         logging.info("case16 (split, tight_both)")
-        cases["case16 (split, tight_both)"] = self.run_moe_layer(tight_forward=True, tight_backward=True, **kwargs)
+        cases["case16 (split, tight_both)"] = self.run_moe_layer(
+            tight_forward=True, tight_backward=True, **kwargs
+        )
 
         # group gemm + 预量化
         kwargs = {
@@ -371,9 +423,13 @@ class TestAutoSubbatch(unittest.TestCase):
         logging.info("case17 (group, plenty) pre_quant")
         cases["case17 (group, plenty) pre_quant"] = self.run_moe_layer(**kwargs)
         logging.info("case18 (group, tight_fwd) pre_quant")
-        cases["case18 (group, tight_fwd) pre_quant"] = self.run_moe_layer(tight_forward=True, **kwargs)
+        cases["case18 (group, tight_fwd) pre_quant"] = self.run_moe_layer(
+            tight_forward=True, **kwargs
+        )
         logging.info("case19 (group, tight_bwd) pre_quant")
-        cases["case19 (group, tight_bwd) pre_quant"] = self.run_moe_layer(tight_backward=True, **kwargs)
+        cases["case19 (group, tight_bwd) pre_quant"] = self.run_moe_layer(
+            tight_backward=True, **kwargs
+        )
         logging.info("case20 (group, tight_both) pre_quant")
         cases["case20 (group, tight_both) pre_quant"] = self.run_moe_layer(
             tight_forward=True, tight_backward=True, **kwargs
@@ -391,13 +447,19 @@ class TestAutoSubbatch(unittest.TestCase):
         cases["case21 (split, plenty)"] = self.run_moe_layer(**kwargs)
         # case22: 前向紧张 → fallback 到逐专家
         logging.info("case22 (split, tight_fwd)")
-        cases["case22 (split, tight_fwd)"] = self.run_moe_layer(tight_forward=True, **kwargs)
+        cases["case22 (split, tight_fwd)"] = self.run_moe_layer(
+            tight_forward=True, **kwargs
+        )
         # case23: 反向紧张 → 前向 3a, 反向 fallback
         logging.info("case23 (split, tight_bwd)")
-        cases["case23 (split, tight_bwd)"] = self.run_moe_layer(tight_backward=True, **kwargs)
+        cases["case23 (split, tight_bwd)"] = self.run_moe_layer(
+            tight_backward=True, **kwargs
+        )
         # case24: 向+反向都紧张, fallback
         logging.info("case24 (split, tight_both)")
-        cases["case24 (split, tight_both)"] = self.run_moe_layer(tight_forward=True, tight_backward=True, **kwargs)
+        cases["case24 (split, tight_both)"] = self.run_moe_layer(
+            tight_forward=True, tight_backward=True, **kwargs
+        )
 
         loose_cases = {}
         # --- 数值对比 ---
@@ -409,7 +471,9 @@ class TestAutoSubbatch(unittest.TestCase):
         }
         for name, result in cases.items():
             with self.subTest(case=name):
-                self.compare_results(ref_out, result, loose_weight=(name in loose_cases))
+                self.compare_results(
+                    ref_out, result, loose_weight=(name in loose_cases)
+                )
 
 
 class TestVMMUtils(unittest.TestCase):
@@ -423,7 +487,9 @@ class TestVMMUtils(unittest.TestCase):
         self.assertEqual(len(info), 1)
 
         # test heap with separate free blocks
-        MemoryAnalysisTool.vmm_all_block_info = lambda: [[(1024, 0, True), (1024, 1024, False)]]
+        MemoryAnalysisTool.vmm_all_block_info = lambda: [
+            [(1024, 0, True), (1024, 1024, False)]
+        ]
         info = vmm_free_and_growable_block_info()
         self.assertEqual(len(info), 2)
 

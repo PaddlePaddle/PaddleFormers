@@ -26,7 +26,7 @@ Covers:
 
 Run with:
     python -m paddle.distributed.launch --gpus 0,1 \
-        tests/multi_card_tests/transformer/test_csa_attention_cp.py
+        tests/fleet/multi_card_tests/transformer/test_csa_attention_cp.py
 """
 
 import os
@@ -42,7 +42,9 @@ from paddle.distributed.fleet.meta_parallel import LayerSpec
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    ),
 )
 
 from paddleformers.fleet.models.common.embeddings.rotary_pos_embedding import (
@@ -187,7 +189,9 @@ def _build_csa(config, compress_ratio=4, head_dim=64):
     indexer_sublayers = CSAIndexerSublayersSpec(
         linear_wq_b=_TestLinear,
         linear_weights_proj=_TestLinear,
-        compressor=LayerSpec(layer=Compressor, sublayers_spec=indexer_comp_spec),
+        compressor=LayerSpec(
+            layer=Compressor, sublayers_spec=indexer_comp_spec
+        ),
     )
     attn_spec = CompressedSparseAttentionSublayersSpec(
         compressor=LayerSpec(layer=Compressor, sublayers_spec=comp_spec),
@@ -438,7 +442,9 @@ class TestDSv4HybridAttentionCP(unittest.TestCase):
     def test_full_layer_fwd_bwd(self):
         """Full DSv4HybridSelfAttention layer: Q/KV proj, RoPE, CSA, inverse RoPE."""
         from paddleformers.fleet.transformer.enums import AttnMaskType
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         head_dim = 64
         hidden_size = 256
@@ -593,7 +599,9 @@ class TestDSv4HybridAttentionCP(unittest.TestCase):
     def test_full_layer_fwd_bwd_fp8_qat(self):
         """DSv4HybridSelfAttention with use_fp8_qat=True: CP vs non-CP."""
         from paddleformers.fleet.transformer.enums import AttnMaskType
-        from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+        from paddleformers.fleet.transformer.transformer_config import (
+            TransformerConfig,
+        )
 
         head_dim = 128
         hidden_size = 256
@@ -784,14 +792,23 @@ class TestTileLangIndexerKernelCP(unittest.TestCase):
         )
 
         self.assertTrue(
-            paddle.equal_all(idx_local, idx_full[:, s : s + sq_local, :]).item(),
-            f"Fwd indices mismatch: sq={sq_global} topk={topk_effective} " f"cp_rank={CP_RANK}",
+            paddle.equal_all(
+                idx_local, idx_full[:, s : s + sq_local, :]
+            ).item(),
+            f"Fwd indices mismatch: sq={sq_global} topk={topk_effective} "
+            f"cp_rank={CP_RANK}",
         )
-        score_diff = (scores_local - scores_full[:, s : s + sq_local, :]).abs().max().item()
+        score_diff = (
+            (scores_local - scores_full[:, s : s + sq_local, :])
+            .abs()
+            .max()
+            .item()
+        )
         self.assertLess(
             score_diff,
             1e-6,
-            f"Fwd scores diff={score_diff:.2e}: sq={sq_global} " f"topk={topk_effective} cp_rank={CP_RANK}",
+            f"Fwd scores diff={score_diff:.2e}: sq={sq_global} "
+            f"topk={topk_effective} cp_rank={CP_RANK}",
         )
 
     def _run_bwd(self, sq_global, topk_effective, h_i=16, d_i=32, ratio=4):
@@ -820,7 +837,9 @@ class TestTileLangIndexerKernelCP(unittest.TestCase):
             seq_offset=0,
         )
         paddle.seed(7777)
-        grad_full = paddle.randn([b, sq_global, topk_effective], dtype="float32") * 0.01
+        grad_full = (
+            paddle.randn([b, sq_global, topk_effective], dtype="float32") * 0.01
+        )
         dq_full, dw_full, dk_full = csa_indexer_bwd(
             q,
             w,
@@ -848,11 +867,31 @@ class TestTileLangIndexerKernelCP(unittest.TestCase):
         )
 
         # dQ/dW slice-exact
-        dq_diff = (dq_local.cast("float32") - dq_full[:, s : s + sq_local, :, :].cast("float32")).abs().max().item()
-        self.assertLess(dq_diff, 1e-4, f"dQ diff={dq_diff:.2e} cp_rank={CP_RANK}")
+        dq_diff = (
+            (
+                dq_local.cast("float32")
+                - dq_full[:, s : s + sq_local, :, :].cast("float32")
+            )
+            .abs()
+            .max()
+            .item()
+        )
+        self.assertLess(
+            dq_diff, 1e-4, f"dQ diff={dq_diff:.2e} cp_rank={CP_RANK}"
+        )
 
-        dw_diff = (dw_local.cast("float32") - dw_full[:, s : s + sq_local, :].cast("float32")).abs().max().item()
-        self.assertLess(dw_diff, 1e-4, f"dW diff={dw_diff:.2e} cp_rank={CP_RANK}")
+        dw_diff = (
+            (
+                dw_local.cast("float32")
+                - dw_full[:, s : s + sq_local, :].cast("float32")
+            )
+            .abs()
+            .max()
+            .item()
+        )
+        self.assertLess(
+            dw_diff, 1e-4, f"dW diff={dw_diff:.2e} cp_rank={CP_RANK}"
+        )
 
         # All-reduce dK and compare to full
         dk_sum = dk_local.cast("float32").contiguous()

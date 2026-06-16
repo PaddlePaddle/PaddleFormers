@@ -1,5 +1,4 @@
-name: Publish xpu wheel nightly
-
+name: Publish paddlefleet_ops xpu wheel nightly
 on:
   workflow_dispatch:
   schedule:
@@ -9,30 +8,23 @@ on:
       - 'release/**'
     tags:
       - 'v*'
-
-
 permissions: read-all
-
 concurrency:
-  group: ${{ github.workflow }}-all-${{ github.sha }}
+  group: ${{ github.workflow }}-${{ github.ref_name }}-${{ github.sha }}
   cancel-in-progress: true
-
 env:
   PR_ID: ${{ github.event.pull_request.number || '0' }}
-  COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
-  BRANCH: ${{ github.event.pull_request.base.ref || github.ref_name }}
-
+  COMMIT_ID: ${{ github.sha }}
+  BRANCH: ${{ github.ref_name }}
 defaults:
   run:
     shell: bash
-
 jobs:
   clone:
     name: Clone PaddleFormers
     uses: ./.github/workflows/_clone_linux.yml
-
   publish-wheel-xpu:
-    name: Publish xpu wheel nightly (${{ matrix.xpu.XPU_VERSION }}, python${{ matrix.python_version }})
+    name: Publish paddlefleet_ops xpu nightly (${{ matrix.xpu.XPU_VERSION }}, python${{ matrix.python_version }})
     needs: clone
     if: github.repository == 'PaddlePaddle/PaddleFormers'
     runs-on:
@@ -44,13 +36,14 @@ jobs:
         xpu:
           - {XPU_VERSION: xpu-p800, IMAGE_TAG: ci, bos_XPU: xpu-p800}
     env:
-      TASK: PaddleFormers-nightly-${{ matrix.xpu.XPU_VERSION }}
+      TASK: PaddleFormers-ops-nightly-${{ matrix.xpu.XPU_VERSION }}
+      REPO_ARCHIVE_URL: ${{ needs.clone.outputs.repo_archive_url }}
       PIP_CACHE_DIR: /home/.cache/pip
       CACHE_DIR: /home/.cache
-      REPO_ARCHIVE_URL: ${{ needs.clone.outputs.repo_archive_url }}
+      UV_HTTP_TIMEOUT: 600
       no_proxy: ".bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
     steps:
-      - name: Check docker image and run container
+      - name: Run container
         run: |
           docker_image="ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/fastdeploy-xpu:${{ matrix.xpu.IMAGE_TAG }}"
           docker pull $docker_image
@@ -62,79 +55,62 @@ jobs:
             -v ${{ github.workspace }}/../../..:/root \
             -v ${{ github.workspace }}/../../../proxy:/root/proxy \
             -v ${{ github.workspace }}:/workspace \
-            -e no_proxy \
-            -e CACHE_DIR \
-            -e PIP_CACHE_DIR \
-            -e PR_ID \
-            -e COMMIT_ID \
-            -e BRANCH \
-            -e REPO_ARCHIVE_URL \
-            -e AK=${{ secrets.BOS_AK }} \
-            -e SK=${{ secrets.BOS_SK }} \
-            -e GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} \
-            -e GITHUB_REPO_NAME=${{ github.repository }} \
+            -e no_proxy -e CACHE_DIR -e PIP_CACHE_DIR -e UV_HTTP_TIMEOUT \
+            -e PR_ID -e COMMIT_ID -e BRANCH -e REPO_ARCHIVE_URL \
+            -e AK=${{ secrets.BOS_AK }} -e SK=${{ secrets.BOS_SK }} \
+            -e GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} -e GITHUB_REPO_NAME=${{ github.repository }} \
             -w /workspace --network=host $docker_image sleep infinity
-
-      - name: Install PaddleFormers
+      - name: Build paddlefleet_ops XPU wheel
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -xc '
           rm -rf * .[^.]*
           source /root/proxy || true
-          echo "Downloading PaddleFormers archive: ${REPO_ARCHIVE_URL}"
           wget -q --tries=5 --no-proxy ${REPO_ARCHIVE_URL} --no-check-certificate
           tar -xf PaddleFormers.tar.gz --strip-components=1
           rm PaddleFormers.tar.gz
           git config --global --add safe.directory /workspace
+          git submodule update --init --recursive
+          sed -i "s#packages/nightly/cu129#packages/nightly/${{ matrix.xpu.bos_XPU }}#g" pyproject.toml
+          sed -i "s/paddlepaddle-gpu==[^"]*/paddlepaddle-xpu>=3.5.0.dev20260501/" pyproject.toml
           python -m pip install --upgrade pip
-          python -m pip install bce-python-sdk==0.8.74
-          python -m pip install setuptools wheel
-          python -m pip uninstall -y paddlepaddle-xpu fastdeploy-xpu paddleformers
+          python -m pip install uv bce-python-sdk==0.8.74
+          python -m pip uninstall -y paddlepaddle-xpu fastdeploy-xpu paddleformers paddlefleet_ops
           python -m pip install --pre paddlepaddle-xpu -i https://www.paddlepaddle.org.cn/packages/nightly/xpu-p800
-          '
-
-      - name: Build wheel
-        run: |
-          docker exec -t ${{ env.container_name }} /bin/bash -xc '
-          source /root/proxy || true
           if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_type }}" == "tag" ]]; then
-            export PADDLEFORMERS_STABLE_VERSION=1
+            TAG_NAME="${{ github.ref_name }}"
+            export PADDLEFLEET_VERSION="${TAG_NAME#v}"
           fi
-          python -m pip wheel . --no-deps --no-build-isolation -w dist/
-          ls -l dist/
+          uv build --wheel --package paddlefleet-ops --out-dir dist
+          python -m pip install dist/paddlefleet_ops-*.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/${{ matrix.xpu.bos_XPU }}/
+          python -c "import paddlefleet_ops"
+          ls -lh dist
           '
-
-      - name: Upload wheel
+      - name: Upload paddlefleet_ops XPU wheel
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -xc '
           wget -q --no-proxy https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
-          mkdir bos
+          mkdir -p bos
           tar -xf bos_new.tar.gz -C bos
           cd dist
           git -C /workspace rev-parse HEAD > commitid || echo ${COMMIT_ID} > commitid
           if [[ "${{ github.event_name }}" != "push" ]]; then
-            python ../bos/BosClient.py paddleformers-*.whl paddle-whl/nightly/${{ matrix.xpu.bos_XPU }}/paddleformers
-            export AK=paddle
-            export SK=paddle
-            python ../bos/BosClient.py paddleformers-*.whl paddle-github-action/PaddleFormers/${BRANCH}/${COMMIT_ID}/${{ matrix.xpu.bos_XPU }}
-            cp paddleformers-*.whl paddleformers-0.0.0-py3-none-any.whl
-            python ../bos/BosClient.py paddleformers-0.0.0-py3-none-any.whl paddle-github-action/PaddleFormers/${BRANCH}/latest/${{ matrix.xpu.bos_XPU }}
+            python ../bos/BosClient.py paddlefleet_ops-*.whl paddle-whl/nightly/${{ matrix.xpu.bos_XPU }}/paddlefleet-ops
+            cp paddlefleet_ops-*.whl paddlefleet_ops-0.0.0-cp310-cp310-linux_x86_64.whl
+            python ../bos/BosClient.py paddlefleet_ops-0.0.0-cp310-cp310-linux_x86_64.whl paddle-github-action/PaddleFormers/${BRANCH}/latest/${{ matrix.xpu.bos_XPU }}
             python ../bos/BosClient.py commitid paddle-github-action/PaddleFormers/${BRANCH}/latest/${{ matrix.xpu.bos_XPU }}
           elif [[ "${{ github.ref_type }}" == "tag" ]]; then
-            python ../bos/BosClient.py paddleformers-*.whl paddle-whl/stable/${{ matrix.xpu.bos_XPU }}/paddleformers
+            python ../bos/BosClient.py paddlefleet_ops-*.whl paddle-whl/stable/${{ matrix.xpu.bos_XPU }}/paddlefleet-ops
           else
-            python ../bos/BosClient.py paddleformers-*.whl paddle-whl/nightly/${{ matrix.xpu.bos_XPU }}/paddleformers
-            export AK=paddle
-            export SK=paddle
-            python ../bos/BosClient.py paddleformers-*.whl paddle-github-action/PaddleFormers/${BRANCH}/${COMMIT_ID}/${{ matrix.xpu.bos_XPU }}
-            cp paddleformers-*.whl paddleformers-0.0.0-py3-none-any.whl
-            python ../bos/BosClient.py paddleformers-0.0.0-py3-none-any.whl paddle-github-action/PaddleFormers/${BRANCH}/latest/${{ matrix.xpu.bos_XPU }}
+            python ../bos/BosClient.py paddlefleet_ops-*.whl paddle-whl/nightly/${{ matrix.xpu.bos_XPU }}/paddlefleet-ops
+            cp paddlefleet_ops-*.whl paddlefleet_ops-0.0.0-cp310-cp310-linux_x86_64.whl
+            python ../bos/BosClient.py paddlefleet_ops-0.0.0-cp310-cp310-linux_x86_64.whl paddle-github-action/PaddleFormers/${BRANCH}/latest/${{ matrix.xpu.bos_XPU }}
             python ../bos/BosClient.py commitid paddle-github-action/PaddleFormers/${BRANCH}/latest/${{ matrix.xpu.bos_XPU }}
           fi
           curl https://www.paddlepaddle.org.cn/inner/whl/update/path/new || true
           '
-
       - name: Cleanup
         if: ${{ always() }}
         run: |
           set +e
+          docker exec -t ${{ env.container_name }} /bin/bash -c 'bash scripts/fleet_ci/clean_uv_cache.sh || true; rm -rf * .[^.]*'
           docker rm -f ${{ env.container_name }}

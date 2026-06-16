@@ -25,7 +25,7 @@ These tests exercise the kernel's `valid_end = (i_t + seq_offset + 1) // ratio`
 logic without requiring multiple GPUs.
 
 Run:
-    python -m pytest tests/single_card_tests/custom_ops/test_tilelang_csa_indexer_cp.py -v
+    python -m pytest tests/fleet/single_card_tests/custom_ops/test_tilelang_csa_indexer_cp.py -v
 """
 
 import unittest
@@ -109,10 +109,17 @@ class TestIndexerFwdCPBitExact(unittest.TestCase):
                 seq_offset=s,
             )
             self.assertTrue(
-                paddle.equal_all(idx_r, idx_full[:, s : s + sq_local, :]).item(),
+                paddle.equal_all(
+                    idx_r, idx_full[:, s : s + sq_local, :]
+                ).item(),
                 f"Indices mismatch: sq={sq_global} cp={cp_size} rank={r}",
             )
-            score_diff = (scores_r - scores_full[:, s : s + sq_local, :]).abs().max().item()
+            score_diff = (
+                (scores_r - scores_full[:, s : s + sq_local, :])
+                .abs()
+                .max()
+                .item()
+            )
             self.assertLess(
                 score_diff,
                 1e-6,
@@ -129,19 +136,27 @@ class TestIndexerFwdCPBitExact(unittest.TestCase):
         self._run(sq_global=64, cp_size=4, h_i=16, d_i=32, ratio=4, topk_eff=4)
 
     def test_phase3_cp2_larger(self):
-        self._run(sq_global=128, cp_size=2, h_i=16, d_i=32, ratio=4, topk_eff=16)
+        self._run(
+            sq_global=128, cp_size=2, h_i=16, d_i=32, ratio=4, topk_eff=16
+        )
 
     def test_phase3_cp4_larger(self):
         self._run(sq_global=128, cp_size=4, h_i=16, d_i=32, ratio=4, topk_eff=8)
 
     def test_phase3_long_seq(self):
-        self._run(sq_global=256, cp_size=2, h_i=16, d_i=32, ratio=4, topk_eff=16)
+        self._run(
+            sq_global=256, cp_size=2, h_i=16, d_i=32, ratio=4, topk_eff=16
+        )
 
     def test_phase3_cp4_long(self):
-        self._run(sq_global=256, cp_size=4, h_i=16, d_i=32, ratio=4, topk_eff=32)
+        self._run(
+            sq_global=256, cp_size=4, h_i=16, d_i=32, ratio=4, topk_eff=32
+        )
 
     def test_phase3_512(self):
-        self._run(sq_global=512, cp_size=2, h_i=16, d_i=32, ratio=4, topk_eff=32)
+        self._run(
+            sq_global=512, cp_size=2, h_i=16, d_i=32, ratio=4, topk_eff=32
+        )
 
     def test_phase2_topk_eq_ncomp(self):
         """Phase 2: topk_eff == n_compressed (full candidate selection)."""
@@ -149,7 +164,9 @@ class TestIndexerFwdCPBitExact(unittest.TestCase):
 
     def test_phase2_cp4(self):
         """Phase 2 with cp_size=4."""
-        self._run(sq_global=128, cp_size=4, h_i=16, d_i=32, ratio=4, topk_eff=32)
+        self._run(
+            sq_global=128, cp_size=4, h_i=16, d_i=32, ratio=4, topk_eff=32
+        )
 
 
 # =========================================================================
@@ -187,8 +204,12 @@ class TestIndexerBwdCPGradients(unittest.TestCase):
             seq_offset=0,
         )
         paddle.seed(4040)
-        grad_full = paddle.randn([b, sq_global, topk_eff], dtype="float32") * 0.01
-        dq_full, dw_full, dk_full = csa_indexer_bwd(q, w, k, idx_full, grad_full)
+        grad_full = (
+            paddle.randn([b, sq_global, topk_eff], dtype="float32") * 0.01
+        )
+        dq_full, dw_full, dk_full = csa_indexer_bwd(
+            q, w, k, idx_full, grad_full
+        )
 
         # Simulate each rank and accumulate dK
         dk_accum = paddle.zeros_like(dk_full).cast("float32")
@@ -210,14 +231,30 @@ class TestIndexerBwdCPGradients(unittest.TestCase):
                 grad_full[:, s : s + sq_local, :],
             )
             # dQ slice-exact
-            dq_diff = (dq_r.cast("float32") - dq_full[:, s : s + sq_local, :, :].cast("float32")).abs().max().item()
+            dq_diff = (
+                (
+                    dq_r.cast("float32")
+                    - dq_full[:, s : s + sq_local, :, :].cast("float32")
+                )
+                .abs()
+                .max()
+                .item()
+            )
             self.assertLess(
                 dq_diff,
                 1e-4,
                 f"dQ mismatch: sq={sq_global} rank={r} diff={dq_diff:.2e}",
             )
             # dW slice-exact
-            dw_diff = (dw_r.cast("float32") - dw_full[:, s : s + sq_local, :].cast("float32")).abs().max().item()
+            dw_diff = (
+                (
+                    dw_r.cast("float32")
+                    - dw_full[:, s : s + sq_local, :].cast("float32")
+                )
+                .abs()
+                .max()
+                .item()
+            )
             self.assertLess(
                 dw_diff,
                 1e-2,
@@ -243,10 +280,14 @@ class TestIndexerBwdCPGradients(unittest.TestCase):
         self._run(sq_global=64, cp_size=4, h_i=16, d_i=32, ratio=4, topk_eff=4)
 
     def test_cp2_larger(self):
-        self._run(sq_global=128, cp_size=2, h_i=16, d_i=32, ratio=4, topk_eff=16)
+        self._run(
+            sq_global=128, cp_size=2, h_i=16, d_i=32, ratio=4, topk_eff=16
+        )
 
     def test_cp2_long(self):
-        self._run(sq_global=256, cp_size=2, h_i=16, d_i=32, ratio=4, topk_eff=16)
+        self._run(
+            sq_global=256, cp_size=2, h_i=16, d_i=32, ratio=4, topk_eff=16
+        )
 
     def test_phase2(self):
         """Phase 2: topk == n_compressed."""
@@ -351,8 +392,12 @@ class TestIndexerCPTileLangVsPaddleRef(unittest.TestCase):
 
     def _run(self, sq_global, cp_size, topk_eff, max_mismatch_rate=0.05):
         from paddleformers.fleet.tilelang_ops import csa_indexer_topk_fwd
-        from paddleformers.fleet.transformer.cp_utils import build_causal_mask_cp
-        from paddleformers.fleet.transformer.csa_attention import fused_qk_topk_naive
+        from paddleformers.fleet.transformer.cp_utils import (
+            build_causal_mask_cp,
+        )
+        from paddleformers.fleet.transformer.csa_attention import (
+            fused_qk_topk_naive,
+        )
 
         b, h_i, d_i, ratio = 2, 16, 32, 4
         sq_local = sq_global // cp_size
@@ -512,7 +557,8 @@ class TestIndexerSeqOffsetEdgeCases(unittest.TestCase):
             self.assertGreaterEqual(
                 min_valid,
                 prev_min_valid,
-                f"Rank {r} first pos has fewer valid ({min_valid}) " f"than rank {r - 1} ({prev_min_valid})",
+                f"Rank {r} first pos has fewer valid ({min_valid}) "
+                f"than rank {r - 1} ({prev_min_valid})",
             )
             prev_min_valid = int((idx_np[-1] >= 0).sum())  # last position
 

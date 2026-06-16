@@ -1,0 +1,13 @@
+[run]
+branch = True
+source = paddleformers.fleet
+concurrency = multiprocessing
+patch = subprocess
+parallel = True
+omit =
+    **/sonicmoe/**
+
+[paths]
+source =
+    paddleformers/fleet
+    */site-packages/paddleformers/fleet

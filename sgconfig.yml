@@ -1,0 +1,6 @@
+ruleDirs:
+  - scripts/fleet_ci/rules
+testConfigs:
+  - testDir: scripts/fleet_ci/rule-tests
+languageGlobs:
+  cpp: ['*.c', '*.cc', '*.cpp', '*.cu', '*.h', '*.cuh']

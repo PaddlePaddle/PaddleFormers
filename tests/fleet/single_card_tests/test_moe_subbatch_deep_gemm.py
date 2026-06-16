@@ -21,7 +21,7 @@ Tests that per-expert static subbatch produces the same results as the
 full group_gemm reference when using GroupedMLPExpert (stacked weights).
 
 Run with:
-  python tests/single_card_tests/test_moe_static_subbatch_deep_gemm.py
+  python tests/fleet/single_card_tests/test_moe_static_subbatch_deep_gemm.py
 """
 
 import logging
@@ -38,12 +38,16 @@ from types import SimpleNamespace
 import paddle
 from paddle import nn
 
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.transformer.moe.fp8_utils import (
     fused_stack_quant_without_cache,
     tilewise_quant,
 )
-from paddleformers.fleet.transformer.moe.fusion_layer_utils import FusionMoePyLayer
+from paddleformers.fleet.transformer.moe.fusion_layer_utils import (
+    FusionMoePyLayer,
+)
 from paddleformers.fleet.transformer.moe.moe_expert import GroupedMLPExpert
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 
@@ -71,10 +75,16 @@ class FakeDeepGemmMOELayer(nn.Layer):
         )
         with paddle.no_grad():
             self.grouped_gemm_experts.weight1.set_value(
-                paddle.randn(self.grouped_gemm_experts.weight1.shape, dtype="bfloat16") * 0.01
+                paddle.randn(
+                    self.grouped_gemm_experts.weight1.shape, dtype="bfloat16"
+                )
+                * 0.01
             )
             self.grouped_gemm_experts.weight2.set_value(
-                paddle.randn(self.grouped_gemm_experts.weight2.shape, dtype="bfloat16") * 0.01
+                paddle.randn(
+                    self.grouped_gemm_experts.weight2.shape, dtype="bfloat16"
+                )
+                * 0.01
             )
         self.token_dispatcher = SimpleNamespace(
             _comm_manager=SimpleNamespace(
@@ -95,20 +105,28 @@ class FakeDeepGemmMOELayer(nn.Layer):
         w1_list = [w1[i, :, :] for i in range(local_expert_num)]
         w2_list = [w2[i, :, :] for i in range(local_expert_num)]
 
-        fp8_w1, fp8_s1 = fused_stack_quant_without_cache(w1_list, transpose=False)
+        fp8_w1, fp8_s1 = fused_stack_quant_without_cache(
+            w1_list, transpose=False
+        )
         w1.fp8_weight_stacked = fp8_w1
         w1.fp8_scale_stacked = fp8_s1
 
-        fp8_w2, fp8_s2 = fused_stack_quant_without_cache(w2_list, transpose=False)
+        fp8_w2, fp8_s2 = fused_stack_quant_without_cache(
+            w2_list, transpose=False
+        )
         w2.fp8_weight_stacked = fp8_w2
         w2.fp8_scale_stacked = fp8_s2
 
         if quant_transpose:
-            fp8_w1_t, fp8_s1_t = fused_stack_quant_without_cache(w1_list, transpose=True)
+            fp8_w1_t, fp8_s1_t = fused_stack_quant_without_cache(
+                w1_list, transpose=True
+            )
             w1.fp8_weight_stacked_transpose = fp8_w1_t
             w1.fp8_scale_stacked_transpose = fp8_s1_t
 
-            fp8_w2_t, fp8_s2_t = fused_stack_quant_without_cache(w2_list, transpose=True)
+            fp8_w2_t, fp8_s2_t = fused_stack_quant_without_cache(
+                w2_list, transpose=True
+            )
             w2.fp8_weight_stacked_transpose = fp8_w2_t
             w2.fp8_scale_stacked_transpose = fp8_s2_t
         else:
@@ -137,7 +155,9 @@ class TestStaticSubbatchDeepGemm(unittest.TestCase):
         paddle.seed(2026)
         np.random.seed(2026)
 
-        hidden_states = paddle.randn([self.seq_len, self.hidden_size], "bfloat16")
+        hidden_states = paddle.randn(
+            [self.seq_len, self.hidden_size], "bfloat16"
+        )
         hidden_states_out_grad = paddle.randn_like(hidden_states)
         hidden_states, scale = tilewise_quant(hidden_states)
         probs = paddle.randn([self.seq_len, self.topk])
@@ -193,7 +213,9 @@ class TestStaticSubbatchDeepGemm(unittest.TestCase):
             "moe_subbatch_diag": True,
         }
         if not is_ref:
-            params["moe_subbatch_token_num_after_dispatch"] = kwargs.pop("moe_subbatch_token_num_after_dispatch", 256)
+            params["moe_subbatch_token_num_after_dispatch"] = kwargs.pop(
+                "moe_subbatch_token_num_after_dispatch", 256
+            )
         params.update(kwargs)
 
         hidden_states = FusionMoePyLayer.apply(
@@ -239,7 +261,9 @@ class TestStaticSubbatchDeepGemm(unittest.TestCase):
                 if max_diff > tol["atol"]:
                     flat = diff.flatten()
                     top_idx = np.argsort(flat)[-10:][::-1]
-                    lines = [f"\n=== {name} FAILED: max_abs_diff={max_diff:.6g} ==="]
+                    lines = [
+                        f"\n=== {name} FAILED: max_abs_diff={max_diff:.6g} ==="
+                    ]
                     for rank, idx in enumerate(top_idx):
                         coords = np.unravel_index(idx, ref_np.shape)
                         lines.append(
@@ -255,9 +279,13 @@ class TestStaticSubbatchDeepGemm(unittest.TestCase):
 
         cases = {}
         logging.info("case1 (subbatch=256)")
-        cases["subbatch=256"] = self.run_moe_layer(moe_subbatch_token_num_after_dispatch=256)
+        cases["subbatch=256"] = self.run_moe_layer(
+            moe_subbatch_token_num_after_dispatch=256
+        )
         logging.info("case2 (subbatch=512)")
-        cases["subbatch=512"] = self.run_moe_layer(moe_subbatch_token_num_after_dispatch=512)
+        cases["subbatch=512"] = self.run_moe_layer(
+            moe_subbatch_token_num_after_dispatch=512
+        )
 
         for name, result in cases.items():
             with self.subTest(case=name):
@@ -292,9 +320,13 @@ class TestStaticSubbatchDeepGemm(unittest.TestCase):
 
         cases = {}
         logging.info("case5 (offline_quant, subbatch=256)")
-        cases["offline_quant, subbatch=256"] = self.run_moe_layer(moe_subbatch_token_num_after_dispatch=256)
+        cases["offline_quant, subbatch=256"] = self.run_moe_layer(
+            moe_subbatch_token_num_after_dispatch=256
+        )
         logging.info("case6 (offline_quant, subbatch=512)")
-        cases["offline_quant, subbatch=512"] = self.run_moe_layer(moe_subbatch_token_num_after_dispatch=512)
+        cases["offline_quant, subbatch=512"] = self.run_moe_layer(
+            moe_subbatch_token_num_after_dispatch=512
+        )
 
         for name, result in cases.items():
             with self.subTest(case=name):
@@ -309,9 +341,13 @@ class TestStaticSubbatchDeepGemm(unittest.TestCase):
 
         cases = {}
         logging.info("case7 (offline_quant_transpose, subbatch=256)")
-        cases["offline_quant_transpose, subbatch=256"] = self.run_moe_layer(moe_subbatch_token_num_after_dispatch=256)
+        cases["offline_quant_transpose, subbatch=256"] = self.run_moe_layer(
+            moe_subbatch_token_num_after_dispatch=256
+        )
         logging.info("case8 (offline_quant_transpose, subbatch=512)")
-        cases["offline_quant_transpose, subbatch=512"] = self.run_moe_layer(moe_subbatch_token_num_after_dispatch=512)
+        cases["offline_quant_transpose, subbatch=512"] = self.run_moe_layer(
+            moe_subbatch_token_num_after_dispatch=512
+        )
 
         for name, result in cases.items():
             with self.subTest(case=name):

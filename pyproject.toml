@@ -19,7 +19,9 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "colorlog",
+    "colorlog>=6.10.1",
+    "paddlepaddle-gpu==3.4.0.post20260612+99af93f9466",
+    "tilelang-paddle",
     "scikit-learn",
     "multiprocess",
     "datasets>=3.0.0",
@@ -66,6 +68,22 @@ members = ["packages/*"]
 
 [tool.uv.sources]
 paddlefleet-ops = { workspace = true }
+paddlepaddle-gpu = { index = "paddlepaddle-gpu" }
+paddlepaddle-xpu = { index = "paddlepaddle-xpu" }
+paddle-nvidia-nvshmem-cu12 = { index = "paddlepaddle-gpu" }
+paddle-nvidia-nvshmem-cu13 = { index = "paddlepaddle-cu13" }
+
+[[tool.uv.index]]
+name = "paddlepaddle-gpu"
+url = "https://www.paddlepaddle.org.cn/packages/nightly/cu129/"
+
+[[tool.uv.index]]
+name = "paddlepaddle-cu13"
+url = "https://www.paddlepaddle.org.cn/packages/nightly/cu130/"
+
+[[tool.uv.index]]
+name = "paddlepaddle-xpu"
+url = "https://www.paddlepaddle.org.cn/packages/nightly/xpu-p800/"
 
 [tool.isort]
 profile = 'black'
@@ -109,3 +127,102 @@ filterwarnings = [
     "ignore::UserWarning",
     'ignore::DeprecationWarning',
 ]
+
+[tool.ruff]
+exclude = [
+    "packages/paddlefleet_ops/third_party",
+    "third_party",
+]
+line-length = 80
+target-version = "py310"
+
+[tool.ruff.format]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "W",
+    "F",
+    "I",
+    "C4",
+    "T100",
+    "UP",
+    "PYI",
+    "NPY001",
+    "NPY003",
+    "NPY201",
+    "B002",
+    "B003",
+    "B004",
+    "B005",
+    "B009",
+    "B010",
+    "B011",
+    "B012",
+    "B013",
+    "B014",
+    "B015",
+    "B016",
+    "B017",
+    "B018",
+    "B019",
+    "B020",
+    "B021",
+    "B022",
+    "B025",
+    "B029",
+    "B032",
+    "PLE",
+    "PLC3002",
+    "PLR0206",
+    "PLR0402",
+    "PLR1711",
+    "PLR1722",
+    "PLW3301",
+    "SIM101",
+    "SIM117",
+    "PGH004",
+    "TC",
+    "RUF005",
+    "RUF008",
+    "RUF009",
+    "RUF010",
+    "RUF013",
+    "RUF015",
+    "RUF016",
+    "RUF017",
+    "RUF018",
+    "RUF019",
+    "RUF020",
+    "RUF024",
+    "RUF026",
+    "RUF100",
+    "RSE",
+    "Q003",
+    "Q004",
+    "FURB",
+    "FA",
+]
+unfixable = ["NPY001"]
+ignore = [
+    "E203",
+    "E402",
+    "E501",
+    "E721",
+    "E722",
+    "E731",
+    "E741",
+    "F405",
+    "F841",
+    "UP015",
+    "PYI024",
+    "PYI056",
+    "RUF005",
+]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+known-first-party = ["paddleformers", "paddlefleet_ops"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["PLC0414"]

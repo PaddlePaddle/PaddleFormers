@@ -20,7 +20,7 @@ the non-SP (batch-first full-sequence) path.
 
 Run with:
     python -m paddle.distributed.launch --gpus 0,1 \
-        tests/multi_card_tests/transformer/test_dsa_attention_sp.py
+        tests/fleet/multi_card_tests/transformer/test_dsa_attention_sp.py
 """
 
 import os
@@ -35,11 +35,15 @@ from paddle.distributed.fleet.meta_parallel import LayerSpec
 
 sys.path.insert(
     0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    ),
 )
 
 from paddleformers.fleet.process_groups_config import ProcessGroupCollection
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.training.initialize import initialize_fleet
 from paddleformers.fleet.transformer.dsa_attention import (
     DSAIndexer,
@@ -106,7 +110,11 @@ class LayerNormStub(paddle.nn.Layer):
     ):
         super().__init__()
         size = hidden_size if hidden_size is not None else normalized_shape
-        self.eps = eps if eps is not None else (epsilon if epsilon is not None else 1e-5)
+        self.eps = (
+            eps
+            if eps is not None
+            else (epsilon if epsilon is not None else 1e-5)
+        )
         self.weight = paddle.nn.Parameter(paddle.ones([size]))
         self.bias = paddle.nn.Parameter(paddle.zeros([size]))
 
@@ -217,17 +225,27 @@ class TestDSAIndexerSequenceParallel(unittest.TestCase):
 
         # Create full-sequence inputs (broadcast from rank 0)
         if dist.get_rank() == 0:
-            full_hidden = paddle.randn([b, s, config_sp.hidden_size]).cast("bfloat16")
-            full_q_latent = paddle.randn([b, s, config_sp.q_lora_rank]).cast("bfloat16")
+            full_hidden = paddle.randn([b, s, config_sp.hidden_size]).cast(
+                "bfloat16"
+            )
+            full_q_latent = paddle.randn([b, s, config_sp.q_lora_rank]).cast(
+                "bfloat16"
+            )
         else:
-            full_hidden = paddle.zeros([b, s, config_sp.hidden_size]).cast("bfloat16")
-            full_q_latent = paddle.zeros([b, s, config_sp.q_lora_rank]).cast("bfloat16")
+            full_hidden = paddle.zeros([b, s, config_sp.hidden_size]).cast(
+                "bfloat16"
+            )
+            full_q_latent = paddle.zeros([b, s, config_sp.q_lora_rank]).cast(
+                "bfloat16"
+            )
 
         dist.broadcast(full_hidden, src=0)
         dist.broadcast(full_q_latent, src=0)
 
         # --- Non-SP reference (batch-first full-sequence) ---
-        q_ref, k_ref, w_ref = indexer_nosp.forward_before_topk(full_hidden, full_q_latent)
+        q_ref, k_ref, w_ref = indexer_nosp.forward_before_topk(
+            full_hidden, full_q_latent
+        )
 
         # --- SP path (seq-first sharded) ---
         # Shard along sequence dim: [b, s, h] -> [s, b, h] -> shard -> [s/TP, b, h]
@@ -236,10 +254,16 @@ class TestDSAIndexerSequenceParallel(unittest.TestCase):
         # Transpose to seq-first then shard
         hidden_sf = full_hidden.transpose([1, 0, 2])  # [s, b, h]
         q_latent_sf = full_q_latent.transpose([1, 0, 2])  # [s, b, h]
-        hidden_shard = hidden_sf[tp_rank * shard_size : (tp_rank + 1) * shard_size].clone()
-        q_latent_shard = q_latent_sf[tp_rank * shard_size : (tp_rank + 1) * shard_size].clone()
+        hidden_shard = hidden_sf[
+            tp_rank * shard_size : (tp_rank + 1) * shard_size
+        ].clone()
+        q_latent_shard = q_latent_sf[
+            tp_rank * shard_size : (tp_rank + 1) * shard_size
+        ].clone()
 
-        q_sp, k_sp, w_sp = indexer_sp.forward_before_topk(hidden_shard, q_latent_shard)
+        q_sp, k_sp, w_sp = indexer_sp.forward_before_topk(
+            hidden_shard, q_latent_shard
+        )
 
         # Compare outputs (should be identical since gather reconstructs full sequence)
         np.testing.assert_allclose(
@@ -274,10 +298,16 @@ class TestDSAIndexerSequenceParallel(unittest.TestCase):
         shard_size = s // TP_SIZE
 
         # seq-first sharded input [s/TP, b, h]
-        hidden_shard = paddle.randn([shard_size, b, config_sp.hidden_size]).cast("bfloat16")
-        q_latent_shard = paddle.randn([shard_size, b, config_sp.q_lora_rank]).cast("bfloat16")
+        hidden_shard = paddle.randn(
+            [shard_size, b, config_sp.hidden_size]
+        ).cast("bfloat16")
+        q_latent_shard = paddle.randn(
+            [shard_size, b, config_sp.q_lora_rank]
+        ).cast("bfloat16")
 
-        q, k, weights = indexer.forward_before_topk(hidden_shard, q_latent_shard)
+        q, k, weights = indexer.forward_before_topk(
+            hidden_shard, q_latent_shard
+        )
 
         # Output should be batch-first with FULL sequence length
         self.assertEqual(
@@ -285,7 +315,9 @@ class TestDSAIndexerSequenceParallel(unittest.TestCase):
             [b, s, config_sp.dsa_index_n_heads, config_sp.dsa_index_head_dim],
         )
         self.assertEqual(list(k.shape), [b, s, config_sp.dsa_index_head_dim])
-        self.assertEqual(list(weights.shape), [b, s, config_sp.dsa_index_n_heads])
+        self.assertEqual(
+            list(weights.shape), [b, s, config_sp.dsa_index_n_heads]
+        )
 
 
 class TestDSAttentionPgCollectionNone(unittest.TestCase):

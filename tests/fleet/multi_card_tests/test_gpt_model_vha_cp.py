@@ -24,7 +24,7 @@ Exercises:
 Run with:
     export repo_flag=paddleformers.fleet
     python -m paddle.distributed.launch --gpus=0,1,2,3,4,5,6,7 \
-        tests/multi_card_tests/test_gpt_model_vha_cp.py
+        tests/fleet/multi_card_tests/test_gpt_model_vha_cp.py
 """
 
 import functools
@@ -48,12 +48,17 @@ SKIP_TESTS = REPO_FLAG != "paddleformers.fleet"
 
 
 def _set_random_seed(seed_):
-    seed = seed_ + (100 * paddleformers.fleet.parallel_state.get_pipeline_model_parallel_rank())
+    seed = seed_ + (
+        100
+        * paddleformers.fleet.parallel_state.get_pipeline_model_parallel_rank()
+    )
     random.seed(seed)
     np.random.seed(seed)
     paddle.manual_seed(seed)
     if paddle.distributed.is_initialized() and paddle.cuda.device_count() > 0:
-        paddleformers.fleet.tensor_parallel.model_parallel_cuda_manual_seed(seed)
+        paddleformers.fleet.tensor_parallel.model_parallel_cuda_manual_seed(
+            seed
+        )
 
 
 def run_vha_cp_e2e():
@@ -144,7 +149,9 @@ def run_vha_cp_e2e():
         autocast_dtype=paddle.bfloat16,
         params_dtype=paddle.bfloat16,
         init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-        output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+        output_layer_init_method=functools.partial(
+            paddle.nn.init.xavier_uniform_, gain=1.0
+        ),
     )
 
     print(f"[Rank {paddle.distributed.get_rank()}] Building VHA+CP model...")
@@ -155,19 +162,29 @@ def run_vha_cp_e2e():
     num_nextn = config.num_nextn_predict_layers
     total_seq = seq_len + num_nextn
     paddle.manual_seed(seed)
-    data = paddle.randint(low=1, high=vocab_size, shape=(batch_size, total_seq + 1)).cuda()
+    data = paddle.randint(
+        low=1, high=vocab_size, shape=(batch_size, total_seq + 1)
+    ).cuda()
     input_ids = data[:, :-1]  # [batch, total_seq]
     labels = data[:, 1:]  # [batch, total_seq]
 
     # attn_mask_startend_row_indices with shape[-1]=2 for experimental_dataflow CP pass-through
-    start_indices = paddle.full([batch_size, 1, seq_len, 1], fill_value=seq_len, dtype=paddle.int32)
-    end_indices = (
-        paddle.arange(seq_len, dtype=paddle.int32).reshape([1, 1, seq_len, 1]).expand([batch_size, 1, seq_len, 1])
+    start_indices = paddle.full(
+        [batch_size, 1, seq_len, 1], fill_value=seq_len, dtype=paddle.int32
     )
-    attn_mask_startend_row_indices = paddle.concat([start_indices, end_indices], axis=-1).cuda()
+    end_indices = (
+        paddle.arange(seq_len, dtype=paddle.int32)
+        .reshape([1, 1, seq_len, 1])
+        .expand([batch_size, 1, seq_len, 1])
+    )
+    attn_mask_startend_row_indices = paddle.concat(
+        [start_indices, end_indices], axis=-1
+    ).cuda()
 
     # MTP masks
-    mtp_hidden_inputs_mask_all = paddle.ones([batch_size, num_nextn, seq_len], dtype=paddle.int32).cuda()
+    mtp_hidden_inputs_mask_all = paddle.ones(
+        [batch_size, num_nextn, seq_len], dtype=paddle.int32
+    ).cuda()
     mtp_startend_row_indices_all = paddle.full(
         [batch_size, num_nextn, seq_len, 1],
         fill_value=seq_len,
@@ -196,22 +213,30 @@ def run_vha_cp_e2e():
 
     print(f"actual loss: {loss.item()}")
     loss_baseline = 8.556518
-    np.testing.assert_allclose(np.array(loss), np.array(loss_baseline), rtol=1e-6, atol=1e-8)
+    np.testing.assert_allclose(
+        np.array(loss), np.array(loss_baseline), rtol=1e-6, atol=1e-8
+    )
 
     # Verify VHA parameter gradients exist and are finite
     vha_param_names = ["premix_weight", "postmix_U", "postmix_V"]
     for name, param in gpt_model.named_parameters():
         if any(vn in name for vn in vha_param_names):
             assert param.grad is not None, f"VHA param {name} has no gradient"
-            assert paddle.all(paddle.isfinite(param.grad)).item(), f"VHA param {name} has non-finite gradient"
-            print(f"[Rank {rank}] VHA param {name}: grad norm = {paddle.norm(param.grad).item():.6f}")
+            assert paddle.all(paddle.isfinite(param.grad)).item(), (
+                f"VHA param {name} has non-finite gradient"
+            )
+            print(
+                f"[Rank {rank}] VHA param {name}: grad norm = {paddle.norm(param.grad).item():.6f}"
+            )
 
     print(f"[Rank {rank}] VHA+CP test PASSED")
 
 
 if __name__ == "__main__":
     if SKIP_TESTS:
-        print(f"Skipping tests: repo_flag={REPO_FLAG} (not 'paddleformers.fleet')")
+        print(
+            f"Skipping tests: repo_flag={REPO_FLAG} (not 'paddleformers.fleet')"
+        )
         sys.exit(0)
     paddle.set_default_dtype("bfloat16")
     run_vha_cp_e2e()

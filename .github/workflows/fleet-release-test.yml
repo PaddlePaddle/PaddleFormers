@@ -1,0 +1,76 @@
+name: Fleet release test
+on:
+  push:
+    branches:
+      - 'release/**'
+  workflow_dispatch:
+permissions: read-all
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}-${{ github.sha }}
+  cancel-in-progress: true
+env:
+  PR_ID: ${{ github.event.pull_request.number || '0' }}
+  COMMIT_ID: ${{ github.sha }}
+  BRANCH: ${{ github.ref_name }}
+  work_dir: /workspace
+  no_proxy: "bcebos.com,.bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
+  docker_image: "ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda129-coverage-test"
+defaults:
+  run:
+    shell: bash
+jobs:
+  clone:
+    name: Clone PaddleFormers
+    uses: ./.github/workflows/_clone_linux.yml
+  release-smoke:
+    name: Fleet release smoke
+    needs: clone
+    runs-on:
+      group: Fleet-H-single-card
+    env:
+      TASK: paddleformers-fleet-release-${{ github.sha }}
+      REPO_ARCHIVE_URL: ${{ needs.clone.outputs.repo_archive_url }}
+      PIP_CACHE_DIR: /home/.cache/pip
+      CACHE_DIR: /home/.cache
+    steps:
+      - name: Determine runner GPU
+        run: |
+          gpu_id=$(( $(echo $PWD | awk -F'/' '{print $3}' | awk -F'-' '{print $2}') + 3 ))
+          echo GPU_DEVICES="$gpu_id" >> $GITHUB_ENV
+      - name: Run container
+        run: |
+          container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
+          echo "container_name=${container_name}" >> ${{ github.env }}
+          docker pull $docker_image
+          docker run -d -t --name ${container_name} --gpus "device=${GPU_DEVICES}" --shm-size=32G \
+            -v "/dev/shm:/dev/shm" \
+            -v ${{ github.workspace }}/../../..:/root \
+            -v /ssd1/paddle-1/action_cache:/home/.cache \
+            -v ${{ github.workspace }}:/workspace \
+            -e no_proxy -e PR_ID -e COMMIT_ID -e BRANCH -e REPO_ARCHIVE_URL -e PIP_CACHE_DIR -e CACHE_DIR -e work_dir \
+            -w /workspace --network host ${docker_image}
+      - name: Build install and smoke
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          rm -rf * .[^.]*
+          source /root/proxy || true
+          wget -q --tries=5 --no-proxy ${REPO_ARCHIVE_URL} --no-check-certificate
+          tar -xf PaddleFormers.tar.gz --strip-components=1
+          rm PaddleFormers.tar.gz
+          git config --global --add safe.directory /workspace
+          git submodule update --init --recursive
+          python -m pip install --upgrade pip
+          python -m pip install uv coverage==7.6.1 bce-python-sdk==0.8.74 wrapt pytest
+          uv build --wheel --package paddlefleet-ops --out-dir dist
+          uv build --wheel --package paddleformers --out-dir dist
+          python -m pip install dist/paddlefleet_ops-*.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          python -m pip install dist/paddleformers-*.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          python -c "import paddleformers; import paddleformers.fleet; import paddlefleet_ops"
+          bash scripts/fleet_ci/single_card_test.sh
+          '
+      - name: Cleanup
+        if: ${{ always() }}
+        run: |
+          set +e
+          docker exec -t ${{ env.container_name }} /bin/bash -c 'bash scripts/fleet_ci/clean_uv_cache.sh || true; rm -rf * .[^.]*'
+          docker rm -f ${{ env.container_name }}

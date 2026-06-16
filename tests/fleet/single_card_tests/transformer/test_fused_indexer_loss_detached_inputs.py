@@ -34,7 +34,7 @@ implementation.
 (The real source of the production "backward should return None at 0
 position" crash for the CSA indexer training path is the TP linear PyLayer
 ``LinearWithGradAccumulationAndAsyncCommunication``; see the dedicated
-reproducer in tests/single_card_tests/tensor_parallel/.)
+reproducer in tests/fleet/single_card_tests/tensor_parallel/.)
 
 Keep this test as a regression guard: if someone later changes
 FusedDSAIndexerLoss in a way that makes its output stop_gradient=False under
@@ -79,11 +79,19 @@ class TestFusedDSAIndexerLossDetachedInputs(unittest.TestCase):
         Returns 6 tensors (q, weights, k, query, key, mask) so PyLayer sees
         the same 6-tensor signature as the 6 returns from ``backward``.
         """
-        q = paddle.randn([self.sq, self.b, self.h, self.d], dtype="float32").detach()
-        weights = paddle.randn([self.sq, self.b, self.h], dtype="float32").detach()
+        q = paddle.randn(
+            [self.sq, self.b, self.h, self.d], dtype="float32"
+        ).detach()
+        weights = paddle.randn(
+            [self.sq, self.b, self.h], dtype="float32"
+        ).detach()
         k = paddle.randn([self.sk, self.b, self.d], dtype="float32").detach()
-        query = paddle.randn([self.sq, self.b, self.np, self.hn], dtype="float32").detach()
-        key = paddle.randn([self.sk, self.b, self.np, self.hn], dtype="float32").detach()
+        query = paddle.randn(
+            [self.sq, self.b, self.np, self.hn], dtype="float32"
+        ).detach()
+        key = paddle.randn(
+            [self.sk, self.b, self.np, self.hn], dtype="float32"
+        ).detach()
 
         # Sanity: every tensor input must be stop_gradient=True for this test
         # to exercise the all-detached topology.
@@ -94,7 +102,9 @@ class TestFusedDSAIndexerLossDetachedInputs(unittest.TestCase):
             ("query", query),
             ("key", key),
         ]:
-            assert t.stop_gradient is True, f"{name} should be stop_gradient=True after detach()"
+            assert t.stop_gradient is True, (
+                f"{name} should be stop_gradient=True after detach()"
+            )
 
         causal = paddle.triu(
             paddle.full([self.sq, self.sk], float("-inf"), dtype="float32"),
@@ -138,12 +148,16 @@ class TestFusedDSAIndexerLossDetachedInputs(unittest.TestCase):
             )
 
         # No .grad should have been written to any input.
-        self.assertIsNone(q.grad, "q.grad must be None for stop_gradient=True input")
+        self.assertIsNone(
+            q.grad, "q.grad must be None for stop_gradient=True input"
+        )
         self.assertIsNone(
             weights.grad,
             "weights.grad must be None for stop_gradient=True input",
         )
-        self.assertIsNone(k.grad, "k.grad must be None for stop_gradient=True input")
+        self.assertIsNone(
+            k.grad, "k.grad must be None for stop_gradient=True input"
+        )
 
 
 if __name__ == "__main__":

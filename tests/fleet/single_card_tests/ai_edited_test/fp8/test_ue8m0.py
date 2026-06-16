@@ -22,7 +22,7 @@ Tests cover the following use_ue8m0 code paths:
   3. MoELayer.fp8_quant_weight with use_ue8m0=True (stub-based, transpose True/False)
 
 Run with:
-  cd /path/to/PaddleFleet && python tests/single_card_tests/ai_edited_test/fp8/test_ue8m0.py
+  cd /path/to/PaddleFormers && python tests/fleet/single_card_tests/ai_edited_test/fp8/test_ue8m0.py
 """
 
 import os
@@ -41,9 +41,13 @@ from paddleformers.fleet.tensor_parallel.layers import (
     ColumnParallelLinear,
     RowParallelLinear,
 )
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.transformer.mlp import MLPSublayersSpec
-from paddleformers.fleet.transformer.moe.fusion_layer_utils import FusionMoePyLayer
+from paddleformers.fleet.transformer.moe.fusion_layer_utils import (
+    FusionMoePyLayer,
+)
 from paddleformers.fleet.transformer.moe.moe_expert import (
     GroupedMLPExpert,
     StandardMLPExpert,
@@ -123,16 +127,22 @@ class FakeMOELayer(nn.Layer):
             fused_stack_quant_without_cache,
         )
 
-        def quantize_weights(weight_list, weight_obj=None, quant_transpose=None):
+        def quantize_weights(
+            weight_list, weight_obj=None, quant_transpose=None
+        ):
             if weight_obj is None:
                 weight_obj = weight_list[0]
 
-            fp8_weight, fp8_scale = fused_stack_quant_without_cache(weight_list, transpose=False, use_ue8m0=False)
+            fp8_weight, fp8_scale = fused_stack_quant_without_cache(
+                weight_list, transpose=False, use_ue8m0=False
+            )
             weight_obj.fp8_weight_stacked = fp8_weight
             weight_obj.fp8_scale_stacked = fp8_scale
 
             if quant_transpose is None or quant_transpose is True:
-                fp8_weight_t, fp8_scale_t = fused_stack_quant_without_cache(weight_list, transpose=True)
+                fp8_weight_t, fp8_scale_t = fused_stack_quant_without_cache(
+                    weight_list, transpose=True
+                )
                 weight_obj.fp8_weight_stacked_transpose = fp8_weight_t
                 weight_obj.fp8_scale_stacked_transpose = fp8_scale_t
             else:
@@ -144,8 +154,12 @@ class FakeMOELayer(nn.Layer):
             expert_w1 = self.grouped_gemm_experts.weight1
             expert_w2 = self.grouped_gemm_experts.weight2
             local_expert_num = expert_w1.shape[0]
-            expert_w1_list = [expert_w1[i, :, :] for i in range(local_expert_num)]
-            expert_w2_list = [expert_w2[i, :, :] for i in range(local_expert_num)]
+            expert_w1_list = [
+                expert_w1[i, :, :] for i in range(local_expert_num)
+            ]
+            expert_w2_list = [
+                expert_w2[i, :, :] for i in range(local_expert_num)
+            ]
 
             if expert_w1_list:
                 quantize_weights(
@@ -208,7 +222,9 @@ class TestUe8m0CodePaths(unittest.TestCase):
         paddle.seed(2026)
         np.random.seed(2026)
 
-        hidden_states = paddle.randn([self.seq_len, self.hidden_size], "bfloat16")
+        hidden_states = paddle.randn(
+            [self.seq_len, self.hidden_size], "bfloat16"
+        )
         hidden_states_out_grad = paddle.randn_like(hidden_states)
         hidden_states, scale = self.tmp_tilewise_quant(hidden_states)
         probs = paddle.randn([self.seq_len, self.topk])
@@ -259,7 +275,9 @@ class TestUe8m0CodePaths(unittest.TestCase):
             use_ue8m0=use_ue8m0,
         )
         node.tokens_per_expert = [self.seq_len]
-        node.tokens_per_expert_indices = paddle.zeros([self.seq_len], dtype="int32")
+        node.tokens_per_expert_indices = paddle.zeros(
+            [self.seq_len], dtype="int32"
+        )
         node.m_indices = node.gen_m_indices(node.tokens_per_expert)
         node.input_fp8 = self.hidden_states
         node.input_scale = self.scale
@@ -287,11 +305,15 @@ class TestUe8m0CodePaths(unittest.TestCase):
     def _fake_fused_weighted_swiglu_fp8_quant(self, o1, probs, **kwargs):
         return self._make_fp8_tensor_and_scale([o1.shape[0], o1.shape[1] // 2])
 
-    def _fake_transpose_split_quant(self, x, scale, tokens_per_expert, pow_2_scales):
+    def _fake_transpose_split_quant(
+        self, x, scale, tokens_per_expert, pow_2_scales
+    ):
         rows = len(tokens_per_expert)
         cols = x.shape[-1]
         x_fp8, x_scale = self._make_fp8_tensor_and_scale([rows * 128, cols])
-        return x_fp8.reshape([rows, 128, cols]), x_scale.reshape([rows, 128, -1])
+        return x_fp8.reshape([rows, 128, cols]), x_scale.reshape(
+            [rows, 128, -1]
+        )
 
     def _create_moe_layer(self, moe_deep_gemm=True):
         """Create a FakeMOELayer with both experts and grouped_gemm_experts."""
@@ -350,17 +372,28 @@ class TestUe8m0CodePaths(unittest.TestCase):
         moe_layer = self._create_moe_layer(moe_deep_gemm=True)
 
         # Test with transpose=False, use_ue8m0=True
-        w1_list = [moe_layer.grouped_gemm_experts.weight1[i, :, :] for i in range(self.n_routed_experts)]
-        w_fp8_not, w_scale_not = fused_stack_quant_without_cache(w1_list, transpose=False, use_ue8m0=True)
+        w1_list = [
+            moe_layer.grouped_gemm_experts.weight1[i, :, :]
+            for i in range(self.n_routed_experts)
+        ]
+        w_fp8_not, w_scale_not = fused_stack_quant_without_cache(
+            w1_list, transpose=False, use_ue8m0=True
+        )
         self.assertIsNotNone(w_fp8_not)
         self.assertIsNotNone(w_scale_not)
-        print("[PASS] test_fused_stack_quant_with_ue8m0: transpose=False, use_ue8m0=True")
+        print(
+            "[PASS] test_fused_stack_quant_with_ue8m0: transpose=False, use_ue8m0=True"
+        )
 
         # Test with transpose=True, use_ue8m0=True
-        w_fp8_t, w_scale_t = fused_stack_quant_without_cache(w1_list, transpose=True, use_ue8m0=True)
+        w_fp8_t, w_scale_t = fused_stack_quant_without_cache(
+            w1_list, transpose=True, use_ue8m0=True
+        )
         self.assertIsNotNone(w_fp8_t)
         self.assertIsNotNone(w_scale_t)
-        print("[PASS] test_fused_stack_quant_with_ue8m0: transpose=True, use_ue8m0=True")
+        print(
+            "[PASS] test_fused_stack_quant_with_ue8m0: transpose=True, use_ue8m0=True"
+        )
 
     # ---------------------------------------------------------------
     # Test 2: FusionMoePyLayer with use_ue8m0=True + grouped_gemm + deep_gemm
@@ -374,7 +407,10 @@ class TestUe8m0CodePaths(unittest.TestCase):
     #   fusion_layer_utils - FusionMoePyLayer.forward with use_ue8m0=True
     # ---------------------------------------------------------------
     def test_moe_fusion_with_ue8m0_grouped_gemm(self):
-        if not paddle.device.is_compiled_with_cuda() or paddle.device.cuda.get_device_capability()[0] != 10:
+        if (
+            not paddle.device.is_compiled_with_cuda()
+            or paddle.device.cuda.get_device_capability()[0] != 10
+        ):
             raise unittest.SkipTest("use_ue8m0 requires Blackwell GPU (SM100)")
         """Test FusionMoePyLayer with use_ue8m0=True, grouped_gemm + deep_gemm."""
         moe_layer = self._create_moe_layer(moe_deep_gemm=True)
@@ -391,7 +427,9 @@ class TestUe8m0CodePaths(unittest.TestCase):
 
         self.assertEqual(out[0].shape, [self.seq_len, self.hidden_size])
         self.assertFalse(paddle.all(out[0] == 0).item())
-        print("[PASS] test_moe_fusion_with_ue8m0_grouped_gemm: forward+backward completed")
+        print(
+            "[PASS] test_moe_fusion_with_ue8m0_grouped_gemm: forward+backward completed"
+        )
 
     # ---------------------------------------------------------------
     # Test 3: MoELayer.fp8_quant_weight with use_ue8m0=True
@@ -412,7 +450,9 @@ class TestUe8m0CodePaths(unittest.TestCase):
         obj.moe_use_fusion_node = True
         obj.fp8 = "e4m3"
         obj.use_ue8m0 = True
-        obj.grouped_gemm_experts = self._create_moe_layer(moe_deep_gemm=True).grouped_gemm_experts
+        obj.grouped_gemm_experts = self._create_moe_layer(
+            moe_deep_gemm=True
+        ).grouped_gemm_experts
 
         # Call the real method as an unbound function on the stub
         MoELayer.fp8_quant_weight(obj, batch_mode=True, quant_transpose=True)
@@ -430,10 +470,14 @@ class TestUe8m0CodePaths(unittest.TestCase):
         self.assertTrue(hasattr(w2, "fp8_weight_stacked_transpose"))
         self.assertIsNotNone(w2.fp8_weight_stacked_transpose)
 
-        print("[PASS] test_moe_layer_fp8_quant_weight_with_ue8m0: fp8_quant_weight with use_ue8m0=True")
+        print(
+            "[PASS] test_moe_layer_fp8_quant_weight_with_ue8m0: fp8_quant_weight with use_ue8m0=True"
+        )
 
     def test_triton_scale_transpose_zero_and_launch_branches(self):
-        from paddleformers.fleet.triton_ops import fuse_stack_ue8m0_scale_transpose
+        from paddleformers.fleet.triton_ops import (
+            fuse_stack_ue8m0_scale_transpose,
+        )
 
         zero_scale = paddle.empty([0, 1], dtype=paddle.int32)
         zero_out = fuse_stack_ue8m0_scale_transpose(zero_scale, 0, 512, 512)
@@ -444,10 +488,16 @@ class TestUe8m0CodePaths(unittest.TestCase):
         self.assertEqual(list(out.shape), [512, 1])
 
     def test_split_group_gemm_ue8m0_branch(self):
-        from paddleformers.fleet.transformer.moe.fp8_utils import split_group_gemm
+        from paddleformers.fleet.transformer.moe.fp8_utils import (
+            split_group_gemm,
+        )
 
-        x_fp8, x_scale = self._make_fp8_tensor_and_scale([128, self.hidden_size])
-        w_fp8, w_scale = self._make_fp8_tensor_and_scale([self.hidden_size, self.hidden_size])
+        x_fp8, x_scale = self._make_fp8_tensor_and_scale(
+            [128, self.hidden_size]
+        )
+        w_fp8, w_scale = self._make_fp8_tensor_and_scale(
+            [self.hidden_size, self.hidden_size]
+        )
         gemm_out = paddle.empty([128, self.hidden_size], dtype=paddle.bfloat16)
         with patch(
             "paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm.fp8_gemm_nt",
@@ -465,14 +515,25 @@ class TestUe8m0CodePaths(unittest.TestCase):
         self.assertEqual(list(gemm_out.shape), [128, self.hidden_size])
 
     def test_fp8_grouped_ue8m0_manual_branches(self):
-        if not paddle.device.is_compiled_with_cuda() or paddle.device.cuda.get_device_capability()[0] != 10:
+        if (
+            not paddle.device.is_compiled_with_cuda()
+            or paddle.device.cuda.get_device_capability()[0] != 10
+        ):
             raise unittest.SkipTest("use_ue8m0 requires Blackwell GPU (SM100)")
 
-        node, moe_layer = self._make_node(use_ue8m0=True, moe_expert_fusion=True)
-        o1 = paddle.randn([self.seq_len, self.intermediate_size * 2], dtype=paddle.bfloat16)
+        node, moe_layer = self._make_node(
+            use_ue8m0=True, moe_expert_fusion=True
+        )
+        o1 = paddle.randn(
+            [self.seq_len, self.intermediate_size * 2], dtype=paddle.bfloat16
+        )
         probs = paddle.randn([self.seq_len, 1], dtype=paddle.float32)
-        do3 = paddle.randn([self.seq_len, self.hidden_size], dtype=paddle.bfloat16)
-        do1 = paddle.randn([self.seq_len, self.intermediate_size * 2], dtype=paddle.bfloat16)
+        do3 = paddle.randn(
+            [self.seq_len, self.hidden_size], dtype=paddle.bfloat16
+        )
+        do1 = paddle.randn(
+            [self.seq_len, self.intermediate_size * 2], dtype=paddle.bfloat16
+        )
 
         with (
             patch(
@@ -527,8 +588,12 @@ class TestUe8m0CodePaths(unittest.TestCase):
             list(o3.shape),
             [self.seq_len, self.hidden_size * self.n_routed_experts],
         )
-        self.assertEqual(list(do1_out.shape), [self.seq_len, self.intermediate_size * 2])
-        self.assertEqual(list(o2_s.shape), [self.seq_len, self.intermediate_size])
+        self.assertEqual(
+            list(do1_out.shape), [self.seq_len, self.intermediate_size * 2]
+        )
+        self.assertEqual(
+            list(o2_s.shape), [self.seq_len, self.intermediate_size]
+        )
         print("probs_grad:", probs_grad)
         print("dx:", dx)
         self.assertEqual(list(probs_grad.shape), [self.seq_len])
@@ -536,10 +601,18 @@ class TestUe8m0CodePaths(unittest.TestCase):
 
     def test_fp8_weight_grad_without_main_grad_branches(self):
         node, _ = self._make_node(use_ue8m0=True, moe_expert_fusion=True)
-        do3 = paddle.randn([self.seq_len, self.hidden_size], dtype=paddle.bfloat16)
-        o2 = paddle.randn([self.seq_len, self.intermediate_size], dtype=paddle.bfloat16)
-        do1 = paddle.randn([self.seq_len, self.intermediate_size * 2], dtype=paddle.bfloat16)
-        input_x = paddle.randn([self.seq_len, self.hidden_size], dtype=paddle.bfloat16)
+        do3 = paddle.randn(
+            [self.seq_len, self.hidden_size], dtype=paddle.bfloat16
+        )
+        o2 = paddle.randn(
+            [self.seq_len, self.intermediate_size], dtype=paddle.bfloat16
+        )
+        do1 = paddle.randn(
+            [self.seq_len, self.intermediate_size * 2], dtype=paddle.bfloat16
+        )
+        input_x = paddle.randn(
+            [self.seq_len, self.hidden_size], dtype=paddle.bfloat16
+        )
         w2 = paddle.create_parameter(
             shape=[self.hidden_size, self.intermediate_size],
             dtype=paddle.bfloat16,
@@ -569,14 +642,20 @@ class TestUe8m0CodePaths(unittest.TestCase):
         self.assertIsNotNone(w1.grad)
 
     def test_moe_layer_init_ue8m0_assert_branch(self):
-        if not paddle.device.is_compiled_with_cuda() or paddle.device.cuda.get_device_capability()[0] != 10:
+        if (
+            not paddle.device.is_compiled_with_cuda()
+            or paddle.device.cuda.get_device_capability()[0] != 10
+        ):
             raise unittest.SkipTest("use_ue8m0 requires Blackwell GPU (SM100)")
         from types import SimpleNamespace
 
         import paddle.nn.functional as F
 
         from paddleformers.fleet.transformer.mlp import MLPSublayersSpec
-        from paddleformers.fleet.transformer.moe.moe_layer import MoELayer, MoESublayers
+        from paddleformers.fleet.transformer.moe.moe_layer import (
+            MoELayer,
+            MoESublayers,
+        )
 
         config = TransformerConfig(
             num_hidden_layers=1,
@@ -630,7 +709,9 @@ class TestUe8m0CodePaths(unittest.TestCase):
         obj.moe_use_fusion_node = True
         obj.fp8 = "e4m3"
         obj.use_ue8m0 = True
-        obj.grouped_gemm_experts = self._create_moe_layer(moe_deep_gemm=True).grouped_gemm_experts
+        obj.grouped_gemm_experts = self._create_moe_layer(
+            moe_deep_gemm=True
+        ).grouped_gemm_experts
 
         MoELayer.fp8_quant_weight(obj, batch_mode=True, quant_transpose=False)
 
@@ -644,7 +725,9 @@ class TestUe8m0CodePaths(unittest.TestCase):
         self.assertIsNotNone(w2.fp8_weight_stacked)
         self.assertIsNone(w2.fp8_weight_stacked_transpose)
 
-        print("[PASS] test_moe_layer_fp8_quant_weight_ue8m0_no_transpose: completed")
+        print(
+            "[PASS] test_moe_layer_fp8_quant_weight_ue8m0_no_transpose: completed"
+        )
 
 
 if __name__ == "__main__":

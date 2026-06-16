@@ -22,7 +22,7 @@ Tests:
        use_auto_subbatch=False).
 
 Run with:
-  python tests/single_card_tests/test_moe_subbatch.py
+  python tests/fleet/single_card_tests/test_moe_subbatch.py
 """
 
 import os
@@ -42,10 +42,14 @@ from paddleformers.fleet.tensor_parallel.layers import (
     ColumnParallelLinear,
     RowParallelLinear,
 )
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.transformer.mlp import MLPSublayersSpec
 from paddleformers.fleet.transformer.moe.fp8_utils import tilewise_quant
-from paddleformers.fleet.transformer.moe.fusion_layer_utils import FusionMoePyLayer
+from paddleformers.fleet.transformer.moe.fusion_layer_utils import (
+    FusionMoePyLayer,
+)
 from paddleformers.fleet.transformer.moe.moe_expert import StandardMLPExpert
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 
@@ -116,7 +120,9 @@ class TestSubbatch(unittest.TestCase):
         paddle.seed(2026)
         np.random.seed(2026)
 
-        hidden_states = paddle.randn([self.seq_len, self.hidden_size], "bfloat16")
+        hidden_states = paddle.randn(
+            [self.seq_len, self.hidden_size], "bfloat16"
+        )
         hidden_states_out_grad = paddle.randn_like(hidden_states)
         hidden_states, scale = tilewise_quant(hidden_states)
         probs = paddle.randn([self.seq_len, self.topk])
@@ -159,7 +165,9 @@ class TestSubbatch(unittest.TestCase):
         moe_layer.clear_main_grad()
         self.moe_layer = moe_layer
 
-    def run_moe_layer(self, is_ref=False, tight_forward=False, tight_backward=False, **kwargs):
+    def run_moe_layer(
+        self, is_ref=False, tight_forward=False, tight_backward=False, **kwargs
+    ):
         params = {
             "use_fp8_mlp": True,
             # "moe_deep_gemm": True,
@@ -196,7 +204,9 @@ class TestSubbatch(unittest.TestCase):
         return hidden_states, hidden_states_grad, probs_grad, weight_grad
 
     def compare_results(self, ref_out, tgt_out, loose_weight=False):
-        for i, name in enumerate(["hidden_states", "hidden_states_grad", "probs_grad"]):
+        for i, name in enumerate(
+            ["hidden_states", "hidden_states_grad", "probs_grad"]
+        ):
             np.testing.assert_equal(
                 ref_out[i].float().numpy(),
                 tgt_out[i].float().numpy(),

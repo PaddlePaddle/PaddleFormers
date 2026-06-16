@@ -19,7 +19,7 @@ handles the mask with scatter_to_sequence_parallel_region when TP > 1.
 
 Run with:
     python -m paddle.distributed.launch --gpus 0,1 \
-        tests/multi_card_tests/transformer/test_mtp_input_mask_tp.py
+        tests/fleet/multi_card_tests/transformer/test_mtp_input_mask_tp.py
 """
 
 import functools
@@ -33,7 +33,9 @@ from paddle.distributed.fleet.meta_parallel import NoPipelineParallel
 import paddleformers.fleet.parallel_state as ps
 from paddleformers.fleet.gpt_builders import gpt_builder
 from paddleformers.fleet.models.gpt import GPTConfig
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.transformer.multi_token_prediction import (
     MultiTokenPredictionLayer,
 )
@@ -98,8 +100,12 @@ class TestMTPInputMaskTP(unittest.TestCase):
             rope_scaling=1.0,
             sequence_parallel=True,
             tensor_model_parallel_size=TP_SIZE,
-            init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-            output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+            init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
+            output_layer_init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
             tie_word_embeddings=True,
             num_nextn_predict_layers=2,
         )
@@ -129,10 +135,16 @@ class TestMTPInputMaskTP(unittest.TestCase):
         decoder_input = paddle.randn([local_seq, B, H])
 
         # mask: [B, 1, S] with position-dependent values
-        mask_data = paddle.arange(S, dtype="float32").reshape([1, 1, S]).expand([B, 1, S])
+        mask_data = (
+            paddle.arange(S, dtype="float32")
+            .reshape([1, 1, S])
+            .expand([B, 1, S])
+        )
         dist.broadcast(mask_data, src=0)
 
-        result = mtp_layer._concat_embeddings(hidden_states, decoder_input, mtp_hidden_inputs_mask=mask_data)
+        result = mtp_layer._concat_embeddings(
+            hidden_states, decoder_input, mtp_hidden_inputs_mask=mask_data
+        )
 
         # Result shape: [local_seq, B, H] after scatter
         self.assertEqual(result.shape[1], B)
@@ -150,7 +162,9 @@ class TestMTPInputMaskTP(unittest.TestCase):
         hidden_states = paddle.randn([local_seq, B, H])
         decoder_input = paddle.randn([local_seq, B, H])
 
-        result = mtp_layer._concat_embeddings(hidden_states, decoder_input, mtp_hidden_inputs_mask=None)
+        result = mtp_layer._concat_embeddings(
+            hidden_states, decoder_input, mtp_hidden_inputs_mask=None
+        )
 
         self.assertEqual(result.shape[1], B)
         self.assertFalse(paddle.isnan(result).any().item())
@@ -163,11 +177,15 @@ class TestMTPInputMaskTP(unittest.TestCase):
         micro_batch_size = 1
 
         data = list(range(sequence_length))
-        input_ids = paddle.to_tensor(data, dtype=paddle.int64).reshape((micro_batch_size, -1))
-        position_ids = paddle.to_tensor(data, dtype=paddle.int64).reshape((micro_batch_size, -1))
-        labels = paddle.to_tensor(list(range(1, sequence_length + 1)), dtype=paddle.int64).reshape(
+        input_ids = paddle.to_tensor(data, dtype=paddle.int64).reshape(
             (micro_batch_size, -1)
         )
+        position_ids = paddle.to_tensor(data, dtype=paddle.int64).reshape(
+            (micro_batch_size, -1)
+        )
+        labels = paddle.to_tensor(
+            list(range(1, sequence_length + 1)), dtype=paddle.int64
+        ).reshape((micro_batch_size, -1))
 
         # mtp_hidden_inputs_mask_all: [B, num_nextn, main_seq_len]
         mask_all = paddle.ones(
@@ -240,8 +258,12 @@ class TestMTPInputMaskTPWithMHC(unittest.TestCase):
             rope_scaling=1.0,
             sequence_parallel=True,
             tensor_model_parallel_size=TP_SIZE,
-            init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-            output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+            init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
+            output_layer_init_method=functools.partial(
+                paddle.nn.init.xavier_uniform_, gain=1.0
+            ),
             tie_word_embeddings=True,
             num_nextn_predict_layers=2,
             enable_hyper_connections=True,
@@ -276,7 +298,9 @@ class TestMTPInputMaskTPWithMHC(unittest.TestCase):
         mask_data[:, :, -2:] = 0.0
         dist.broadcast(mask_data, src=0)
 
-        result = mtp_layer._concat_embeddings(hidden_states, decoder_input, mtp_hidden_inputs_mask=mask_data)
+        result = mtp_layer._concat_embeddings(
+            hidden_states, decoder_input, mtp_hidden_inputs_mask=mask_data
+        )
 
         self.assertEqual(result.shape[1], B)
         self.assertFalse(paddle.isnan(result).any().item())
@@ -294,7 +318,9 @@ class TestMTPInputMaskTPWithMHC(unittest.TestCase):
         hidden_states = paddle.randn([local_seq, B, n * H])
         decoder_input = paddle.randn([local_seq, B, H])
 
-        result = mtp_layer._concat_embeddings(hidden_states, decoder_input, mtp_hidden_inputs_mask=None)
+        result = mtp_layer._concat_embeddings(
+            hidden_states, decoder_input, mtp_hidden_inputs_mask=None
+        )
 
         self.assertEqual(result.shape[1], B)
         self.assertFalse(paddle.isnan(result).any().item())

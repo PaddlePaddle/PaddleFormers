@@ -24,7 +24,7 @@
   - fused_swiglu_probs_bwd:     unzipped_probs=[N],    probs_grad=[N]
 
 运行方式：
-    PYTHONPATH=src:$PYTHONPATH python tests/single_card_tests/test_fused_swiglu_probs_bwd.py
+    PYTHONPATH=src:$PYTHONPATH python tests/fleet/single_card_tests/test_fused_swiglu_probs_bwd.py
 """
 
 import unittest
@@ -32,6 +32,7 @@ import unittest
 import numpy as np
 import paddle
 import paddle.incubate.nn.functional as incubate_F
+
 from paddlefleet_ops import fused_swiglu_probs_bwd
 
 
@@ -45,11 +46,15 @@ class TestFusedSwigluProbsBwd(unittest.TestCase):
         unzipped_probs = paddle.rand([N], dtype="float32")
 
         # reference: paddle 内置实现，probs 需要 [N, 1]
-        do1_ref, pg_ref, o2s_ref = incubate_F.fused_swiglu_weighted_bwd(o1, do2_s, unzipped_probs.unsqueeze(-1))
+        do1_ref, pg_ref, o2s_ref = incubate_F.fused_swiglu_weighted_bwd(
+            o1, do2_s, unzipped_probs.unsqueeze(-1)
+        )
         pg_ref = pg_ref.squeeze(-1)  # [N, 1] -> [N]
 
         # kernel under test
-        do1, probs_grad, o2_s = fused_swiglu_probs_bwd(o1, do2_s, unzipped_probs, inplace)
+        do1, probs_grad, o2_s = fused_swiglu_probs_bwd(
+            o1, do2_s, unzipped_probs, inplace
+        )
         paddle.device.synchronize()
 
         # 两个 kernel 计算路径一致，结果应 bit-identical
@@ -99,7 +104,9 @@ class TestFusedSwigluProbsBwd(unittest.TestCase):
         o1_ptr = o1.data_ptr()
 
         do1, _, _ = fused_swiglu_probs_bwd(o1, do2_s, probs, True)
-        self.assertEqual(do1.data_ptr(), o1_ptr, "inplace=True: do1 应复用 o1 buffer")
+        self.assertEqual(
+            do1.data_ptr(), o1_ptr, "inplace=True: do1 应复用 o1 buffer"
+        )
 
     def test_outofplace_new_buffer(self):
         """inplace=False 时 do1 应该是独立的新 buffer。"""
@@ -109,7 +116,9 @@ class TestFusedSwigluProbsBwd(unittest.TestCase):
         o1_ptr = o1.data_ptr()
 
         do1, _, _ = fused_swiglu_probs_bwd(o1, do2_s, probs, False)
-        self.assertNotEqual(do1.data_ptr(), o1_ptr, "inplace=False: do1 应为独立 buffer")
+        self.assertNotEqual(
+            do1.data_ptr(), o1_ptr, "inplace=False: do1 应为独立 buffer"
+        )
 
     # ---------- 边界 case ----------
     def test_single_token(self):

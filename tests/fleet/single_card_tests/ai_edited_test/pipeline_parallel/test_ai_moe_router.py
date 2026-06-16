@@ -29,8 +29,8 @@ Run with:
   SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])")
   NVSHMEM_LIB="$SITE_PACKAGES/nvidia/nvshmem/lib"
   export LD_LIBRARY_PATH="$NVSHMEM_LIB:$LD_LIBRARY_PATH"
-  export PYTHONPATH=./ernie5:./utils:./third_party/ernie-core/src:./third_party/ernie-core/PaddleFormers:./third_party/ernie-core/PaddleFleet/src/:./third_party/data_processor:$PYTHONPATH
-  python third_party/ernie-core/PaddleFleet/tests/single_card_tests/ai_edited_test/test_ai_dw_overlap.py
+  export PYTHONPATH=./ernie5:./utils:./third_party/ernie-core/src:./third_party/ernie-core/PaddleFormers:./third_party/ernie-core/PaddleFormers/:./third_party/data_processor:$PYTHONPATH
+  python third_party/ernie-core/PaddleFormers/tests/fleet/single_card_tests/ai_edited_test/test_ai_dw_overlap.py
 """
 
 import os
@@ -45,7 +45,9 @@ from paddle import nn
 
 os.environ["FLAGS_cudnn_deterministic"] = "True"
 
-from paddle.distributed.fleet.meta_parallel.zero_bubble_utils import WeightGradStore
+from paddle.distributed.fleet.meta_parallel.zero_bubble_utils import (
+    WeightGradStore,
+)
 
 from paddleformers.fleet.transformer.moe.moe_router import (
     FusedGateDetachMatmul,
@@ -57,7 +59,10 @@ from paddleformers.fleet.transformer.multi_latent_attention import (
     MLASelfAttentionSublayersSpec,
 )
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
-from paddleformers.fleet.utils import init_method_normal, scaled_init_method_normal
+from paddleformers.fleet.utils import (
+    init_method_normal,
+    scaled_init_method_normal,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +128,9 @@ class _SimpleRMSNorm(nn.Layer):
         return x * d * self.weight
 
 
-from paddleformers.fleet.transformer.dot_product_attention import DotProductAttention
+from paddleformers.fleet.transformer.dot_product_attention import (
+    DotProductAttention,
+)
 
 
 def _make_mla_config(**overrides):
@@ -218,7 +225,9 @@ class TestFusedGateDetachMatmulNoOverlap(unittest.TestCase):
             [B, E],
             f"Expected shape [{B},{E}], got {list(out.shape)}",
         )
-        print(f"[FusedGateDetachMatmul no-overlap] forward shape={out.shape} OK")
+        print(
+            f"[FusedGateDetachMatmul no-overlap] forward shape={out.shape} OK"
+        )
 
     def test_backward_returns_both_grads(self):
         """no-overlap backward: both x_grad and w_grad must be non-None."""
@@ -238,7 +247,10 @@ class TestFusedGateDetachMatmulNoOverlap(unittest.TestCase):
         self.assertIsNotNone(w.grad, "w.grad should not be None (no-overlap)")
         self.assertEqual(list(x.grad.shape), [B, D], "x_grad shape mismatch")
         self.assertEqual(list(w.grad.shape), [E, D], "w_grad shape mismatch")
-        print(f"[FusedGateDetachMatmul no-overlap] x_grad shape={x.grad.shape}, " f"w_grad shape={w.grad.shape} OK")
+        print(
+            f"[FusedGateDetachMatmul no-overlap] x_grad shape={x.grad.shape}, "
+            f"w_grad shape={w.grad.shape} OK"
+        )
 
 
 # ============================================================
@@ -261,7 +273,9 @@ class TestFusedGateDetachMatmulOverlap(unittest.TestCase):
         The weight needs main_grad because the overlap path requires it.
         w shape [E, D] matching TopKRouter.weight convention.
         """
-        print("\n[FusedGateDetachMatmul overlap] testing WeightGradStore deferral")
+        print(
+            "\n[FusedGateDetachMatmul overlap] testing WeightGradStore deferral"
+        )
         B, D, E = 8, 16, 4
         paddle.seed(42)
         x = paddle.randn([B, D], dtype="float32")
@@ -299,7 +313,9 @@ class TestFusedGateDetachMatmulOverlap(unittest.TestCase):
             [E, D],
             "main_grad shape must match weight shape [E, D]",
         )
-        print(f"[FusedGateDetachMatmul overlap] main_grad shape={w.main_grad.shape} OK")
+        print(
+            f"[FusedGateDetachMatmul overlap] main_grad shape={w.main_grad.shape} OK"
+        )
         WeightGradStore.clear()
 
     def test_overlap_x_grad_matches_no_overlap(self):
@@ -340,7 +356,9 @@ class TestFusedGateDetachMatmulOverlap(unittest.TestCase):
             rtol=1e-5,
             err_msg="x_grad must match between overlap and no-overlap paths",
         )
-        print("[FusedGateDetachMatmul overlap] x_grad matches no-overlap path OK")
+        print(
+            "[FusedGateDetachMatmul overlap] x_grad matches no-overlap path OK"
+        )
         WeightGradStore.clear()
 
 
@@ -359,13 +377,19 @@ class TestGateDetachMatmul(unittest.TestCase):
         print("\n[gate_detach_matmul] fuse=True, no-overlap")
         B, D, E = 4, 8, 4
         x = paddle.randn([B, D], dtype="float32")
-        w = paddle.randn([E, D], dtype="float32")  # [E, D] like TopKRouter.weight
+        w = paddle.randn(
+            [E, D], dtype="float32"
+        )  # [E, D] like TopKRouter.weight
         x.stop_gradient = False
         w.stop_gradient = False
         out = gate_detach_matmul(x, w, use_fuse=True, dw_p2p_overlap=False)
         out.sum().backward()
-        self.assertIsNotNone(w.grad, "w.grad must exist in no-overlap fused path")
-        print(f"[gate_detach_matmul] fuse=True no-overlap OK, w.grad shape={w.grad.shape}")
+        self.assertIsNotNone(
+            w.grad, "w.grad must exist in no-overlap fused path"
+        )
+        print(
+            f"[gate_detach_matmul] fuse=True no-overlap OK, w.grad shape={w.grad.shape}"
+        )
 
     def test_fuse_true_overlap_defers(self):
         """use_fuse=True, dw_p2p_overlap=True -> WeightGradStore.cache receives dw.
@@ -383,7 +407,9 @@ class TestGateDetachMatmul(unittest.TestCase):
             0,
             "WeightGradStore.cache must receive deferred dw when overlap=True",
         )
-        print("[gate_detach_matmul] fuse=True overlap OK, WeightGradStore.cache non-empty")
+        print(
+            "[gate_detach_matmul] fuse=True overlap OK, WeightGradStore.cache non-empty"
+        )
         WeightGradStore.flush()
         WeightGradStore.pop()
         WeightGradStore.clear()
@@ -393,7 +419,9 @@ class TestGateDetachMatmul(unittest.TestCase):
         print("\n[gate_detach_matmul] fuse=False path")
         B, D, E = 4, 8, 4
         x = paddle.randn([B, D], dtype="float32")
-        w = paddle.randn([D, E], dtype="float32")  # F.linear(x,w)=x@w needs [D,E]
+        w = paddle.randn(
+            [D, E], dtype="float32"
+        )  # F.linear(x,w)=x@w needs [D,E]
         x.stop_gradient = False
         w.stop_gradient = False
         out = gate_detach_matmul(x, w, use_fuse=False, dw_p2p_overlap=False)
@@ -470,7 +498,9 @@ class TestTopKRouterDwP2POverlap(unittest.TestCase):
             router.weight.main_grad = None
 
             def _hook():
-                print("[TopKRouter] _apply_backward_hook called on router.weight")
+                print(
+                    "[TopKRouter] _apply_backward_hook called on router.weight"
+                )
 
             router.weight._apply_backward_hook = _hook
 
@@ -488,7 +518,10 @@ class TestTopKRouterDwP2POverlap(unittest.TestCase):
                 0,
                 "WeightGradStore.cache should be non-empty in overlap mode",
             )
-            print(f"[TopKRouter] dw_p2p_overlap=True WeightGradStore.cache len=" f"{len(WeightGradStore.cache)} OK")
+            print(
+                f"[TopKRouter] dw_p2p_overlap=True WeightGradStore.cache len="
+                f"{len(WeightGradStore.cache)} OK"
+            )
         WeightGradStore.clear()
 
 
@@ -550,7 +583,10 @@ class TestFP8OverlapProjBackward(unittest.TestCase):
             0,
             "FP8OverlapProj backward must push dw into WeightGradStore.cache",
         )
-        print(f"[FP8OverlapProj] dw correctly deferred to WeightGradStore.cache, " f"len={len(WeightGradStore.cache)}")
+        print(
+            f"[FP8OverlapProj] dw correctly deferred to WeightGradStore.cache, "
+            f"len={len(WeightGradStore.cache)}"
+        )
 
         WeightGradStore.flush()
         WeightGradStore.pop()
@@ -604,7 +640,9 @@ class TestFP8OverlapProjBackward(unittest.TestCase):
 
         # Reference: compute dw = x_2d.T @ og_2d manually
         x_2d = x_np.reshape(-1, IN)
-        og = np.ones((B * S, OUT), dtype="float32")  # sum backward => all-ones grad
+        og = np.ones(
+            (B * S, OUT), dtype="float32"
+        )  # sum backward => all-ones grad
         dw_ref = x_2d.T @ og  # [IN, OUT]
 
         # FP8OverlapProj
@@ -652,7 +690,9 @@ class TestMultiLatentAttentionOProj(unittest.TestCase):
         core_attn_out = paddle.randn([B, S, H])
         core_attn_out.stop_gradient = False
 
-        print(f"\n[MLA o_proj] dw_p2p_overlap={dw_p2p_overlap}, use_bias={use_bias}")
+        print(
+            f"\n[MLA o_proj] dw_p2p_overlap={dw_p2p_overlap}, use_bias={use_bias}"
+        )
         print(f"  config.dw_p2p_overlap={config.dw_p2p_overlap}")
         print(f"  config.use_bias={config.use_bias}")
 
@@ -670,7 +710,9 @@ class TestMultiLatentAttentionOProj(unittest.TestCase):
         """dw_p2p_overlap=True and use_bias=False -> FP8OverlapProj branch, bias=None."""
         print("\n[MLA o_proj] overlap branch test")
         WeightGradStore.clear()
-        output, bias, dp, ub = self._exercise_o_proj_branch(dw_p2p_overlap=True, use_bias=False)
+        output, bias, dp, ub = self._exercise_o_proj_branch(
+            dw_p2p_overlap=True, use_bias=False
+        )
         self.assertTrue(dp, "config.dw_p2p_overlap must be True")
         self.assertFalse(ub, "config.use_bias must be False")
         self.assertIsNotNone(output)
@@ -682,7 +724,9 @@ class TestMultiLatentAttentionOProj(unittest.TestCase):
     def test_standard_branch_used_when_dw_false(self):
         """dw_p2p_overlap=False -> standard o_proj branch."""
         print("\n[MLA o_proj] standard branch test (dw_p2p_overlap=False)")
-        output, bias, dp, ub = self._exercise_o_proj_branch(dw_p2p_overlap=False, use_bias=False)
+        output, bias, dp, ub = self._exercise_o_proj_branch(
+            dw_p2p_overlap=False, use_bias=False
+        )
         self.assertFalse(dp, "config.dw_p2p_overlap must be False")
         self.assertIsNotNone(output)
         print("[MLA o_proj] standard branch OK (dw_p2p_overlap=False)")
@@ -690,7 +734,9 @@ class TestMultiLatentAttentionOProj(unittest.TestCase):
     def test_standard_branch_used_when_use_bias_true(self):
         """use_bias=True -> standard o_proj branch even if dw_p2p_overlap=True."""
         print("\n[MLA o_proj] standard branch test (use_bias=True)")
-        output, bias, dp, ub = self._exercise_o_proj_branch(dw_p2p_overlap=True, use_bias=True)
+        output, bias, dp, ub = self._exercise_o_proj_branch(
+            dw_p2p_overlap=True, use_bias=True
+        )
         self.assertTrue(ub, "config.use_bias must be True")
         self.assertIsNotNone(output)
         print("[MLA o_proj] standard branch OK (use_bias=True)")
@@ -709,20 +755,32 @@ class TestMoELayerDwP2POverlapInit(unittest.TestCase):
     def test_default_false_when_attr_missing(self):
         """Without dw_p2p_overlap attribute, getattr(..., False) returns False."""
         print("\n[MoELayer] dw_p2p_overlap defaults to False")
-        config = TransformerConfig(hidden_size=64, num_hidden_layers=1, num_attention_heads=2)
+        config = TransformerConfig(
+            hidden_size=64, num_hidden_layers=1, num_attention_heads=2
+        )
         # Verify config has no dw_p2p_overlap field
         result = getattr(config, "dw_p2p_overlap", False)
-        self.assertFalse(result, "getattr(config, 'dw_p2p_overlap', False) must be False")
-        print(f"[MoELayer] getattr(config, 'dw_p2p_overlap', False) = {result} (default False) OK")
+        self.assertFalse(
+            result, "getattr(config, 'dw_p2p_overlap', False) must be False"
+        )
+        print(
+            f"[MoELayer] getattr(config, 'dw_p2p_overlap', False) = {result} (default False) OK"
+        )
 
     def test_true_when_attr_set(self):
         """With dw_p2p_overlap=True on config, getattr returns True."""
         print("\n[MoELayer] dw_p2p_overlap=True from config")
-        config = TransformerConfig(hidden_size=64, num_hidden_layers=1, num_attention_heads=2)
+        config = TransformerConfig(
+            hidden_size=64, num_hidden_layers=1, num_attention_heads=2
+        )
         config.dw_p2p_overlap = True
         result = getattr(config, "dw_p2p_overlap", False)
-        self.assertTrue(result, "getattr(config, 'dw_p2p_overlap', False) must be True")
-        print(f"[MoELayer] getattr(config, 'dw_p2p_overlap', False) = {result} (True) OK")
+        self.assertTrue(
+            result, "getattr(config, 'dw_p2p_overlap', False) must be True"
+        )
+        print(
+            f"[MoELayer] getattr(config, 'dw_p2p_overlap', False) = {result} (True) OK"
+        )
 
     def test_moe_layer_source_uses_getattr(self):
         """Verify that moe_layer.py actually contains the getattr(config, 'dw_p2p_overlap', False) line."""
@@ -737,7 +795,9 @@ class TestMoELayerDwP2POverlapInit(unittest.TestCase):
             src,
             "MoELayer.__init__ must use getattr(config, 'dw_p2p_overlap', False)",
         )
-        print("[MoELayer] source correctly contains getattr for dw_p2p_overlap OK")
+        print(
+            "[MoELayer] source correctly contains getattr for dw_p2p_overlap OK"
+        )
 
 
 # ============================================================
@@ -773,13 +833,17 @@ class TestFusionMoePyLayerDwP2POverlap(unittest.TestCase):
             RowParallelLinear,
         )
         from paddleformers.fleet.transformer.mlp import MLPSublayersSpec
-        from paddleformers.fleet.transformer.moe.moe_expert import StandardMLPExpert
+        from paddleformers.fleet.transformer.moe.moe_expert import (
+            StandardMLPExpert,
+        )
 
         hidden_size = self.hidden_size
         intermediate_size = self.intermediate_size
         n_routed_experts = self.n_routed_experts
 
-        config = TransformerConfig(hidden_size=hidden_size, gated_linear_unit=True)
+        config = TransformerConfig(
+            hidden_size=hidden_size, gated_linear_unit=True
+        )
         mlp_spec = MLPSublayersSpec(
             up_gate_proj=ColumnParallelLinear,
             down_proj=RowParallelLinear,
@@ -818,8 +882,12 @@ class TestFusionMoePyLayerDwP2POverlap(unittest.TestCase):
     def _make_dispatch_data(self):
         from paddleformers.fleet.transformer.moe.fp8_utils import tilewise_quant
 
-        tokens_per_expert = [self.seq_len * self.topk // self.n_routed_experts] * self.n_routed_experts
-        hidden_states = paddle.randn([self.seq_len, self.hidden_size], "bfloat16")
+        tokens_per_expert = [
+            self.seq_len * self.topk // self.n_routed_experts
+        ] * self.n_routed_experts
+        hidden_states = paddle.randn(
+            [self.seq_len, self.hidden_size], "bfloat16"
+        )
         hidden_states, scale = tilewise_quant(hidden_states)
         probs = paddle.randn([self.seq_len, self.topk])
         hidden_states.stop_gradient = False
@@ -827,7 +895,9 @@ class TestFusionMoePyLayerDwP2POverlap(unittest.TestCase):
 
         indices_np = np.zeros([self.seq_len, self.topk], dtype=np.int64)
         for i in range(self.seq_len):
-            chosen = np.random.choice(self.n_routed_experts, self.topk, replace=False)
+            chosen = np.random.choice(
+                self.n_routed_experts, self.topk, replace=False
+            )
             indices_np[i] = np.sort(chosen)
         indices = paddle.to_tensor(indices_np)
         return hidden_states, scale, probs, indices, tokens_per_expert
@@ -837,10 +907,14 @@ class TestFusionMoePyLayerDwP2POverlap(unittest.TestCase):
             FusionMoePyLayer,
         )
 
-        hidden_states, scale, probs, indices, tokens_per_expert = self._make_dispatch_data()
+        hidden_states, scale, probs, indices, tokens_per_expert = (
+            self._make_dispatch_data()
+        )
         moe_layer = self._make_fake_moe_layer(tokens_per_expert)
 
-        print(f"\n[FusionMoePyLayer] running with dw_p2p_overlap={dw_p2p_overlap}")
+        print(
+            f"\n[FusionMoePyLayer] running with dw_p2p_overlap={dw_p2p_overlap}"
+        )
         out = FusionMoePyLayer.apply(
             hidden_states,
             probs,
@@ -859,7 +933,9 @@ class TestFusionMoePyLayerDwP2POverlap(unittest.TestCase):
         )
         out_grad = paddle.randn_like(out)
         paddle.autograd.backward(out, out_grad)
-        print(f"[FusionMoePyLayer] dw_p2p_overlap={dw_p2p_overlap} forward+backward OK")
+        print(
+            f"[FusionMoePyLayer] dw_p2p_overlap={dw_p2p_overlap} forward+backward OK"
+        )
         return out
 
     def test_no_overlap_forward_backward(self):
@@ -896,7 +972,9 @@ class TestFusedGateDetachMatmulOverlapWStopGrad(unittest.TestCase):
         WeightGradStore.cache stays empty (w_grad skipped entirely).
         Covers moe_router.py lines 129-130.
         """
-        print("\n[FusedGateDetachMatmul overlap w_stop_grad=True] testing w_stop_grad branch")
+        print(
+            "\n[FusedGateDetachMatmul overlap w_stop_grad=True] testing w_stop_grad branch"
+        )
         B, D, E = 4, 8, 4
         paddle.seed(10)
         x = paddle.randn([B, D], dtype="float32")
@@ -907,7 +985,9 @@ class TestFusedGateDetachMatmulOverlapWStopGrad(unittest.TestCase):
         out = FusedGateDetachMatmul.apply(x, w, True)
         out.sum().backward()
 
-        self.assertIsNotNone(x.grad, "x_grad must exist even when w is stop_gradient")
+        self.assertIsNotNone(
+            x.grad, "x_grad must exist even when w is stop_gradient"
+        )
         self.assertEqual(list(x.grad.shape), [B, D])
         # WeightGradStore.cache must be EMPTY because w_stop_grad=True skips the put()
         self.assertEqual(
@@ -957,8 +1037,12 @@ class TestFusedGateDetachMatmulComputeWeightGrad(unittest.TestCase):
         out.sum().backward()
 
         # At this point _compute_weight_grad is in cache but not yet run
-        self.assertIsNone(w.main_grad, "main_grad should still be None before pop()")
-        print(f"[_compute_weight_grad] before pop: main_grad is None, cache len={len(WeightGradStore.cache)}")
+        self.assertIsNone(
+            w.main_grad, "main_grad should still be None before pop()"
+        )
+        print(
+            f"[_compute_weight_grad] before pop: main_grad is None, cache len={len(WeightGradStore.cache)}"
+        )
 
         # Now actually run the deferred computation
         WeightGradStore.flush()
@@ -968,9 +1052,12 @@ class TestFusedGateDetachMatmulComputeWeightGrad(unittest.TestCase):
         self.assertIsNotNone(w.main_grad, "main_grad must be set after pop()")
         self.assertEqual(list(w.main_grad.shape), [E, D])
         # _apply_backward_hook should have been called
-        self.assertGreater(w._hook_call_count, 0, "_apply_backward_hook must have been called")
+        self.assertGreater(
+            w._hook_call_count, 0, "_apply_backward_hook must have been called"
+        )
         print(
-            f"[_compute_weight_grad] main_grad shape={w.main_grad.shape}, " f"hook_call_count={w._hook_call_count} OK"
+            f"[_compute_weight_grad] main_grad shape={w.main_grad.shape}, "
+            f"hook_call_count={w._hook_call_count} OK"
         )
         WeightGradStore.clear()
 
@@ -1015,7 +1102,9 @@ class TestBf16WeightGradMoeDeepGemm(unittest.TestCase):
 
         def _hook():
             _hook_calls[0] += 1
-            print(f"[bf16_weight_grad grouped hook] called, count={_hook_calls[0]}")
+            print(
+                f"[bf16_weight_grad grouped hook] called, count={_hook_calls[0]}"
+            )
 
         stacked_w._apply_backward_hook = _hook
         stacked_w._hook_calls = _hook_calls
@@ -1023,7 +1112,9 @@ class TestBf16WeightGradMoeDeepGemm(unittest.TestCase):
         custom_map = SimpleNamespace(grouped_gemm_experts=stacked_w)
 
         tokens_per_expert = [128, 128, 128, 128]
-        tokens_per_expert_tensor = paddle.to_tensor(tokens_per_expert, dtype="int32")
+        tokens_per_expert_tensor = paddle.to_tensor(
+            tokens_per_expert, dtype="int32"
+        )
 
         node = ExpertsGroupGemmContiguousNode(
             custom_map=custom_map,
@@ -1045,7 +1136,9 @@ class TestBf16WeightGradMoeDeepGemm(unittest.TestCase):
 
     def _patched_k_grouped_gemm(self, x, dy, weight_grad, tpe, tpe_tensor, out):
         """Mock for deep_gemm.k_grouped_bf16_gemm_tn_contiguous - just adds zeros."""
-        print(f"[mock k_grouped_bf16_gemm_tn_contiguous] called, x={x.shape}, dy={dy.shape}")
+        print(
+            f"[mock k_grouped_bf16_gemm_tn_contiguous] called, x={x.shape}, dy={dy.shape}"
+        )
 
     def test_main_grad_no_overlap(self):
         """
@@ -1057,14 +1150,22 @@ class TestBf16WeightGradMoeDeepGemm(unittest.TestCase):
         node, weights, x, dy = self._make_node_and_weight(p2p_overlap=False)
         weights.main_grad = None
 
-        with patch("paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm") as mock_dg:
+        with patch(
+            "paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm"
+        ) as mock_dg:
             mock_dg.set_num_sms = lambda n: print(f"[mock] set_num_sms({n})")
-            mock_dg.k_grouped_bf16_gemm_tn_contiguous = self._patched_k_grouped_gemm
+            mock_dg.k_grouped_bf16_gemm_tn_contiguous = (
+                self._patched_k_grouped_gemm
+            )
             node.bf16_weight_grad(dy, x, weights, p2p_overlap=False)
 
-        self.assertIsNotNone(weights.main_grad, "main_grad must be initialized after direct call")
+        self.assertIsNotNone(
+            weights.main_grad, "main_grad must be initialized after direct call"
+        )
         self.assertEqual(list(weights.main_grad.shape), list(weights.shape))
-        print(f"[bf16_weight_grad] main_grad shape={weights.main_grad.shape}, no_overlap OK")
+        print(
+            f"[bf16_weight_grad] main_grad shape={weights.main_grad.shape}, no_overlap OK"
+        )
 
     def test_main_grad_with_overlap(self):
         """
@@ -1072,13 +1173,19 @@ class TestBf16WeightGradMoeDeepGemm(unittest.TestCase):
         _compute_weight_grad deferred to WeightGradStore.
         Covers fp8_utils.py lines 1636-1641, 1644-1660.
         """
-        print("\n[bf16_weight_grad] moe_deep_gemm=True, main_grad, p2p_overlap=True")
+        print(
+            "\n[bf16_weight_grad] moe_deep_gemm=True, main_grad, p2p_overlap=True"
+        )
         node, weights, x, dy = self._make_node_and_weight(p2p_overlap=True)
         weights.main_grad = None
 
-        with patch("paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm") as mock_dg:
+        with patch(
+            "paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm"
+        ) as mock_dg:
             mock_dg.set_num_sms = lambda n: print(f"[mock] set_num_sms({n})")
-            mock_dg.k_grouped_bf16_gemm_tn_contiguous = self._patched_k_grouped_gemm
+            mock_dg.k_grouped_bf16_gemm_tn_contiguous = (
+                self._patched_k_grouped_gemm
+            )
             node.bf16_weight_grad(dy, x, weights, p2p_overlap=True)
 
         self.assertGreater(
@@ -1086,11 +1193,17 @@ class TestBf16WeightGradMoeDeepGemm(unittest.TestCase):
             0,
             "WeightGradStore must have deferred computation",
         )
-        print(f"[bf16_weight_grad] cache len={len(WeightGradStore.cache)} OK, flushing...")
+        print(
+            f"[bf16_weight_grad] cache len={len(WeightGradStore.cache)} OK, flushing..."
+        )
 
-        with patch("paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm") as mock_dg:
+        with patch(
+            "paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm"
+        ) as mock_dg:
             mock_dg.set_num_sms = lambda n: None
-            mock_dg.k_grouped_bf16_gemm_tn_contiguous = self._patched_k_grouped_gemm
+            mock_dg.k_grouped_bf16_gemm_tn_contiguous = (
+                self._patched_k_grouped_gemm
+            )
             WeightGradStore.flush()
             WeightGradStore.pop()
 
@@ -1107,17 +1220,25 @@ class TestBf16WeightGradMoeDeepGemm(unittest.TestCase):
         _compute_weight_grad runs immediately using weights.grad.
         Covers fp8_utils.py lines 1684-1710.
         """
-        print("\n[bf16_weight_grad] moe_deep_gemm=True, no main_grad, no overlap")
+        print(
+            "\n[bf16_weight_grad] moe_deep_gemm=True, no main_grad, no overlap"
+        )
         node, weights, x, dy = self._make_node_and_weight(p2p_overlap=False)
         if hasattr(weights, "main_grad"):
             del weights.main_grad
 
-        with patch("paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm") as mock_dg:
+        with patch(
+            "paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm"
+        ) as mock_dg:
             mock_dg.set_num_sms = lambda n: None
-            mock_dg.k_grouped_bf16_gemm_tn_contiguous = self._patched_k_grouped_gemm
+            mock_dg.k_grouped_bf16_gemm_tn_contiguous = (
+                self._patched_k_grouped_gemm
+            )
             node.bf16_weight_grad(dy, x, weights, p2p_overlap=False)
 
-        self.assertIsNotNone(weights.grad, "weights.grad must be set after direct computation")
+        self.assertIsNotNone(
+            weights.grad, "weights.grad must be set after direct computation"
+        )
         print("[bf16_weight_grad] weights.grad set, no_main_grad no_overlap OK")
 
     def test_no_main_grad_with_overlap(self):
@@ -1126,14 +1247,20 @@ class TestBf16WeightGradMoeDeepGemm(unittest.TestCase):
         _compute_weight_grad deferred using weights.grad.
         Covers fp8_utils.py lines 1684-1706.
         """
-        print("\n[bf16_weight_grad] moe_deep_gemm=True, no main_grad, p2p_overlap=True")
+        print(
+            "\n[bf16_weight_grad] moe_deep_gemm=True, no main_grad, p2p_overlap=True"
+        )
         node, weights, x, dy = self._make_node_and_weight(p2p_overlap=True)
         if hasattr(weights, "main_grad"):
             del weights.main_grad
 
-        with patch("paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm") as mock_dg:
+        with patch(
+            "paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm"
+        ) as mock_dg:
             mock_dg.set_num_sms = lambda n: None
-            mock_dg.k_grouped_bf16_gemm_tn_contiguous = self._patched_k_grouped_gemm
+            mock_dg.k_grouped_bf16_gemm_tn_contiguous = (
+                self._patched_k_grouped_gemm
+            )
             node.bf16_weight_grad(dy, x, weights, p2p_overlap=True)
 
         self.assertGreater(
@@ -1141,16 +1268,26 @@ class TestBf16WeightGradMoeDeepGemm(unittest.TestCase):
             0,
             "WeightGradStore must have deferred computation",
         )
-        print(f"[bf16_weight_grad] cache len={len(WeightGradStore.cache)} OK, flushing...")
+        print(
+            f"[bf16_weight_grad] cache len={len(WeightGradStore.cache)} OK, flushing..."
+        )
 
-        with patch("paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm") as mock_dg:
+        with patch(
+            "paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm"
+        ) as mock_dg:
             mock_dg.set_num_sms = lambda n: None
-            mock_dg.k_grouped_bf16_gemm_tn_contiguous = self._patched_k_grouped_gemm
+            mock_dg.k_grouped_bf16_gemm_tn_contiguous = (
+                self._patched_k_grouped_gemm
+            )
             WeightGradStore.flush()
             WeightGradStore.pop()
 
-        self.assertIsNotNone(weights.grad, "weights.grad must be set after pop()")
-        print("[bf16_weight_grad] weights.grad set after pop(), no_main_grad overlap OK")
+        self.assertIsNotNone(
+            weights.grad, "weights.grad must be set after pop()"
+        )
+        print(
+            "[bf16_weight_grad] weights.grad set after pop(), no_main_grad overlap OK"
+        )
         WeightGradStore.clear()
 
 
@@ -1216,7 +1353,9 @@ class TestBf16WeightGradPerExpertLoop(unittest.TestCase):
             use_bf16_gemm_weight_grad=True,
         )
         node.tokens_per_expert = tokens_per_expert
-        node.tokens_per_expert_tensor = paddle.to_tensor(tokens_per_expert, dtype="int32")
+        node.tokens_per_expert_tensor = paddle.to_tensor(
+            tokens_per_expert, dtype="int32"
+        )
         node.dequant_input = False
         node.input = None
 
@@ -1236,24 +1375,38 @@ class TestBf16WeightGradPerExpertLoop(unittest.TestCase):
         node.bf16_weight_grad(dy, x, weights, p2p_overlap=False)
 
         for i, w in enumerate(weights):
-            self.assertIsNotNone(w.main_grad, f"expert {i} main_grad must be set after loop")
-            print(f"[bf16_weight_grad per-expert] expert {i} main_grad shape={w.main_grad.shape}")
-        print(f"[bf16_weight_grad per-expert] main_grad path OK for {len(weights)} experts")
+            self.assertIsNotNone(
+                w.main_grad, f"expert {i} main_grad must be set after loop"
+            )
+            print(
+                f"[bf16_weight_grad per-expert] expert {i} main_grad shape={w.main_grad.shape}"
+            )
+        print(
+            f"[bf16_weight_grad per-expert] main_grad path OK for {len(weights)} experts"
+        )
 
     def test_per_expert_loop_without_main_grad(self):
         """
         moe_expert_fusion=False falls into per-expert loop.
         Exercises lines 1741-1759 with weights.grad initialization + fused_linear_param_grad_add.
         """
-        print("\n[bf16_weight_grad per-expert] without main_grad (weights.grad)")
+        print(
+            "\n[bf16_weight_grad per-expert] without main_grad (weights.grad)"
+        )
         node, weights, x, dy = self._make_node_and_weights(use_main_grad=False)
 
         node.bf16_weight_grad(dy, x, weights, p2p_overlap=False)
 
         for i, w in enumerate(weights):
-            self.assertIsNotNone(w.grad, f"expert {i} grad must be set after loop")
-            print(f"[bf16_weight_grad per-expert] expert {i} grad shape={w.grad.shape}")
-        print(f"[bf16_weight_grad per-expert] grad path OK for {len(weights)} experts")
+            self.assertIsNotNone(
+                w.grad, f"expert {i} grad must be set after loop"
+            )
+            print(
+                f"[bf16_weight_grad per-expert] expert {i} grad shape={w.grad.shape}"
+            )
+        print(
+            f"[bf16_weight_grad per-expert] grad path OK for {len(weights)} experts"
+        )
 
 
 if __name__ == "__main__":

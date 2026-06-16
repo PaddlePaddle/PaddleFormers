@@ -28,7 +28,7 @@ and runs a forward + backward pass. This exercises ALL modified code paths:
 
 Run with:
     python -m paddle.distributed.launch --gpus=0,1,2,3,4,5,6,7 \
-        tests/multi_card_tests/test_experimental_dataflow_cp.py
+        tests/fleet/multi_card_tests/test_experimental_dataflow_cp.py
 """
 
 import functools
@@ -58,13 +58,18 @@ SKIP_TESTS = REPO_FLAG != "paddleformers.fleet"
 
 def _set_random_seed(seed_):
     """Set random seed for reproducibility."""
-    seed = seed_ + (100 * paddleformers.fleet.parallel_state.get_pipeline_model_parallel_rank())
+    seed = seed_ + (
+        100
+        * paddleformers.fleet.parallel_state.get_pipeline_model_parallel_rank()
+    )
     random.seed(seed)
     np.random.seed(seed)
     paddle.manual_seed(seed)
 
     if paddle.distributed.is_initialized() and paddle.cuda.device_count() > 0:
-        paddleformers.fleet.tensor_parallel.model_parallel_cuda_manual_seed(seed)
+        paddleformers.fleet.tensor_parallel.model_parallel_cuda_manual_seed(
+            seed
+        )
 
 
 def run_experimental_dataflow_cp_e2e():
@@ -75,7 +80,9 @@ def run_experimental_dataflow_cp_e2e():
     cp_degree = 8
     seed = 42
     batch_size = 1
-    seq_len = 64  # small for testing speed, each rank gets seq_len/cp_degree=8 tokens
+    seq_len = (
+        64  # small for testing speed, each rank gets seq_len/cp_degree=8 tokens
+    )
     vocab_size = 512
 
     os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3,4,5,6,7"
@@ -170,7 +177,9 @@ def run_experimental_dataflow_cp_e2e():
         params_dtype=paddle.bfloat16,
         gpt_model_use_experimental_version=True,
         init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
-        output_layer_init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
+        output_layer_init_method=functools.partial(
+            paddle.nn.init.xavier_uniform_, gain=1.0
+        ),
     )
 
     # Build model
@@ -182,14 +191,18 @@ def run_experimental_dataflow_cp_e2e():
     # For MTP: the model expects input_ids with length = seq_len + num_nextn_predict_layers
     # so that it can split into decoder ids + mtp ids
     total_seq = seq_len + config.num_nextn_predict_layers
-    data = paddle.randint(low=1, high=vocab_size, shape=(batch_size, total_seq + 1)).cuda()
+    data = paddle.randint(
+        low=1, high=vocab_size, shape=(batch_size, total_seq + 1)
+    ).cuda()
     input_ids = data[:, :-1]  # [batch, total_seq]
     labels = data[:, 1:]  # [batch, total_seq]
 
     # Construct attn_mask_startend_row_indices with shape[-1]=2
     # This triggers the experimental_dataflow branch in CPDotProductAttention (line 599-602)
     # Shape: [batch, 1, seq_len, 2] - causal mask boundaries (start=0, end=row_idx)
-    attn_mask_startend_row_indices = paddle.zeros([batch_size, 1, seq_len, 2], dtype=paddle.int32).cuda()
+    attn_mask_startend_row_indices = paddle.zeros(
+        [batch_size, 1, seq_len, 2], dtype=paddle.int32
+    ).cuda()
     # Fill with causal mask: start=0, end=position+1
     for i in range(seq_len):
         attn_mask_startend_row_indices[:, :, i, 0] = seq_len  # start
@@ -198,7 +211,9 @@ def run_experimental_dataflow_cp_e2e():
     # Construct mtp_hidden_inputs_mask_all to trigger MTP CP scatter (line 359-361)
     # Shape: [batch, num_nextn_predict_layers, seq_len]
     num_nextn = config.num_nextn_predict_layers
-    mtp_hidden_inputs_mask_all = paddle.ones([batch_size, num_nextn, seq_len], dtype=paddle.int32).cuda()
+    mtp_hidden_inputs_mask_all = paddle.ones(
+        [batch_size, num_nextn, seq_len], dtype=paddle.int32
+    ).cuda()
 
     # Construct mtp_startend_row_indices_all (must be paired with mtp_hidden_inputs_mask_all)
     # Shape: [batch, num_nextn_predict_layers, seq_len, 1]
@@ -245,12 +260,16 @@ def run_experimental_dataflow_cp_e2e():
 
     print(f"actual loss: {loss.item()}")
     loss_baseline = 8.460711
-    np.testing.assert_allclose(np.array(loss), np.array(loss_baseline), rtol=1e-6, atol=1e-8)
+    np.testing.assert_allclose(
+        np.array(loss), np.array(loss_baseline), rtol=1e-6, atol=1e-8
+    )
 
 
 if __name__ == "__main__":
     if SKIP_TESTS:
-        print(f"Skipping tests: repo_flag={REPO_FLAG} (not 'paddleformers.fleet')")
+        print(
+            f"Skipping tests: repo_flag={REPO_FLAG} (not 'paddleformers.fleet')"
+        )
         sys.exit(0)
     paddle.set_default_dtype("bfloat16")
     run_experimental_dataflow_cp_e2e()

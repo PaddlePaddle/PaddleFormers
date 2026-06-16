@@ -20,7 +20,7 @@ Tests auto_subbatch fallback correctness when using GroupedMLPExpert (stacked we
 instead of per-expert weight lists.
 
 Run with:
-  python tests/single_card_tests/test_moe_auto_subbatch_deep_gemm.py
+  python tests/fleet/single_card_tests/test_moe_auto_subbatch_deep_gemm.py
 """
 
 import contextlib
@@ -39,7 +39,9 @@ import paddle
 from paddle import nn
 from paddle.device.cuda.memory_analyzer import MemoryAnalysisTool
 
-from paddleformers.fleet.tensor_parallel.random import model_parallel_cuda_manual_seed
+from paddleformers.fleet.tensor_parallel.random import (
+    model_parallel_cuda_manual_seed,
+)
 from paddleformers.fleet.transformer.moe.fp8_utils import (
     fused_stack_quant_without_cache,
     tilewise_quant,
@@ -92,10 +94,16 @@ class FakeDeepGemmMOELayer(nn.Layer):
         # Initialize weights with small random values for numerical stability
         with paddle.no_grad():
             self.grouped_gemm_experts.weight1.set_value(
-                paddle.randn(self.grouped_gemm_experts.weight1.shape, dtype="bfloat16") * 0.01
+                paddle.randn(
+                    self.grouped_gemm_experts.weight1.shape, dtype="bfloat16"
+                )
+                * 0.01
             )
             self.grouped_gemm_experts.weight2.set_value(
-                paddle.randn(self.grouped_gemm_experts.weight2.shape, dtype="bfloat16") * 0.01
+                paddle.randn(
+                    self.grouped_gemm_experts.weight2.shape, dtype="bfloat16"
+                )
+                * 0.01
             )
         self.token_dispatcher = SimpleNamespace(
             _comm_manager=SimpleNamespace(
@@ -118,21 +126,29 @@ class FakeDeepGemmMOELayer(nn.Layer):
         w2_list = [w2[i, :, :] for i in range(local_expert_num)]
 
         # Non-transpose version
-        fp8_w1, fp8_s1 = fused_stack_quant_without_cache(w1_list, transpose=False)
+        fp8_w1, fp8_s1 = fused_stack_quant_without_cache(
+            w1_list, transpose=False
+        )
         w1.fp8_weight_stacked = fp8_w1
         w1.fp8_scale_stacked = fp8_s1
 
-        fp8_w2, fp8_s2 = fused_stack_quant_without_cache(w2_list, transpose=False)
+        fp8_w2, fp8_s2 = fused_stack_quant_without_cache(
+            w2_list, transpose=False
+        )
         w2.fp8_weight_stacked = fp8_w2
         w2.fp8_scale_stacked = fp8_s2
 
         # Transpose version
         if quant_transpose:
-            fp8_w1_t, fp8_s1_t = fused_stack_quant_without_cache(w1_list, transpose=True)
+            fp8_w1_t, fp8_s1_t = fused_stack_quant_without_cache(
+                w1_list, transpose=True
+            )
             w1.fp8_weight_stacked_transpose = fp8_w1_t
             w1.fp8_scale_stacked_transpose = fp8_s1_t
 
-            fp8_w2_t, fp8_s2_t = fused_stack_quant_without_cache(w2_list, transpose=True)
+            fp8_w2_t, fp8_s2_t = fused_stack_quant_without_cache(
+                w2_list, transpose=True
+            )
             w2.fp8_weight_stacked_transpose = fp8_w2_t
             w2.fp8_scale_stacked_transpose = fp8_s2_t
         else:
@@ -150,7 +166,9 @@ class FakeDeepGemmMOELayer(nn.Layer):
 @contextlib.contextmanager
 def vmm_no_free_space():
     """Occupy all free blocks and disable growable space to simulate tight memory."""
-    (old_value,) = paddle.framework.get_flags("FLAGS_max_reserved_threshold_in_gb").values()
+    (old_value,) = paddle.framework.get_flags(
+        "FLAGS_max_reserved_threshold_in_gb"
+    ).values()
     paddle.set_flags({"FLAGS_max_reserved_threshold_in_gb": 0})
     buffers = []
     for size, _ in MemoryAnalysisTool.vmm_free_block_info()[-1]:
@@ -176,7 +194,9 @@ class TestAutoSubbatchDeepGemm(unittest.TestCase):
         paddle.seed(2026)
         np.random.seed(2026)
 
-        hidden_states = paddle.randn([self.seq_len, self.hidden_size], "bfloat16")
+        hidden_states = paddle.randn(
+            [self.seq_len, self.hidden_size], "bfloat16"
+        )
         hidden_states_out_grad = paddle.randn_like(hidden_states)
         hidden_states, scale = tilewise_quant(hidden_states)
         probs = paddle.randn([self.seq_len, self.topk])
@@ -219,7 +239,9 @@ class TestAutoSubbatchDeepGemm(unittest.TestCase):
         moe_layer.clear_main_grad()
         self.moe_layer = moe_layer
 
-    def run_moe_layer(self, is_ref=False, tight_forward=False, tight_backward=False, **kwargs):
+    def run_moe_layer(
+        self, is_ref=False, tight_forward=False, tight_backward=False, **kwargs
+    ):
         params = {
             "use_fp8_mlp": True,
             "moe_deep_gemm": True,
@@ -244,7 +266,9 @@ class TestAutoSubbatchDeepGemm(unittest.TestCase):
                 **params,
             )
 
-        with (vmm_no_free_space() if tight_backward else contextlib.nullcontext()):
+        with (
+            vmm_no_free_space() if tight_backward else contextlib.nullcontext()
+        ):
             paddle.autograd.backward(hidden_states, self.hidden_states_out_grad)
 
         hidden_states_grad = self.hidden_states.grad
@@ -281,7 +305,9 @@ class TestAutoSubbatchDeepGemm(unittest.TestCase):
                     # Print top diffs on failure for debugging
                     flat = diff.flatten()
                     top_idx = np.argsort(flat)[-10:][::-1]
-                    lines = [f"\n=== {name} FAILED: max_abs_diff={max_diff:.6g} ==="]
+                    lines = [
+                        f"\n=== {name} FAILED: max_abs_diff={max_diff:.6g} ==="
+                    ]
                     for rank, idx in enumerate(top_idx):
                         coords = np.unravel_index(idx, ref_np.shape)
                         lines.append(
@@ -301,12 +327,18 @@ class TestAutoSubbatchDeepGemm(unittest.TestCase):
         logging.info("case1 (deep_gemm, plenty)")
         cases["case1 (plenty)"] = self.run_moe_layer(**kwargs)
         logging.info("case2 (deep_gemm, tight_fwd)")
-        cases["case2 (tight_fwd)"] = self.run_moe_layer(tight_forward=True, **kwargs)
+        cases["case2 (tight_fwd)"] = self.run_moe_layer(
+            tight_forward=True, **kwargs
+        )
 
         logging.info("case3 (deep_gemm, tight_bwd)")
-        cases["case3 (tight_bwd)"] = self.run_moe_layer(tight_backward=True, **kwargs)
+        cases["case3 (tight_bwd)"] = self.run_moe_layer(
+            tight_backward=True, **kwargs
+        )
         logging.info("case4 (deep_gemm, tight_both)")
-        cases["case4 (tight_both)"] = self.run_moe_layer(tight_forward=True, tight_backward=True, **kwargs)
+        cases["case4 (tight_both)"] = self.run_moe_layer(
+            tight_forward=True, tight_backward=True, **kwargs
+        )
 
         for name, result in cases.items():
             with self.subTest(case=name):
@@ -322,12 +354,18 @@ class TestAutoSubbatchDeepGemm(unittest.TestCase):
         logging.info("case5 (deep_gemm recompute, plenty)")
         cases["case5 (plenty)"] = self.run_moe_layer(**kwargs)
         logging.info("case6 (deep_gemm recompute, tight_fwd)")
-        cases["case6 (tight_fwd)"] = self.run_moe_layer(tight_forward=True, **kwargs)
+        cases["case6 (tight_fwd)"] = self.run_moe_layer(
+            tight_forward=True, **kwargs
+        )
 
         logging.info("case7 (deep_gemm recompute, tight_bwd)")
-        cases["case7 (tight_bwd)"] = self.run_moe_layer(tight_backward=True, **kwargs)
+        cases["case7 (tight_bwd)"] = self.run_moe_layer(
+            tight_backward=True, **kwargs
+        )
         logging.info("case8 (deep_gemm recompute, tight_both)")
-        cases["case8 (tight_both)"] = self.run_moe_layer(tight_forward=True, tight_backward=True, **kwargs)
+        cases["case8 (tight_both)"] = self.run_moe_layer(
+            tight_forward=True, tight_backward=True, **kwargs
+        )
 
         for name, result in cases.items():
             with self.subTest(case=name):
@@ -353,11 +391,17 @@ class TestAutoSubbatchDeepGemm(unittest.TestCase):
         logging.info("case9 (offline_quant, plenty)")
         cases["case9 (plenty)"] = self.run_moe_layer(**kwargs)
         logging.info("case10 (offline_quant, tight_fwd)")
-        cases["case10 (tight_fwd)"] = self.run_moe_layer(tight_forward=True, **kwargs)
+        cases["case10 (tight_fwd)"] = self.run_moe_layer(
+            tight_forward=True, **kwargs
+        )
         logging.info("case11 (offline_quant, tight_bwd)")
-        cases["case11 (tight_bwd)"] = self.run_moe_layer(tight_backward=True, **kwargs)
+        cases["case11 (tight_bwd)"] = self.run_moe_layer(
+            tight_backward=True, **kwargs
+        )
         logging.info("case12 (offline_quant, tight_both)")
-        cases["case12 (tight_both)"] = self.run_moe_layer(tight_forward=True, tight_backward=True, **kwargs)
+        cases["case12 (tight_both)"] = self.run_moe_layer(
+            tight_forward=True, tight_backward=True, **kwargs
+        )
 
         # with recompute
         kwargs_rc = {"recompute_moe_gate_up": True}
@@ -365,11 +409,17 @@ class TestAutoSubbatchDeepGemm(unittest.TestCase):
         logging.info("case9r (offline_quant+recompute, plenty)")
         cases["case9r (plenty)"] = self.run_moe_layer(**kwargs_rc)
         logging.info("case10r (offline_quant+recompute, tight_fwd)")
-        cases["case10r (tight_fwd)"] = self.run_moe_layer(tight_forward=True, **kwargs_rc)
+        cases["case10r (tight_fwd)"] = self.run_moe_layer(
+            tight_forward=True, **kwargs_rc
+        )
         logging.info("case11r (offline_quant+recompute, tight_bwd)")
-        cases["case11r (tight_bwd)"] = self.run_moe_layer(tight_backward=True, **kwargs_rc)
+        cases["case11r (tight_bwd)"] = self.run_moe_layer(
+            tight_backward=True, **kwargs_rc
+        )
         logging.info("case12r (offline_quant+recompute, tight_both)")
-        cases["case12r (tight_both)"] = self.run_moe_layer(tight_forward=True, tight_backward=True, **kwargs_rc)
+        cases["case12r (tight_both)"] = self.run_moe_layer(
+            tight_forward=True, tight_backward=True, **kwargs_rc
+        )
 
         for name, result in cases.items():
             with self.subTest(case=name):
@@ -395,11 +445,17 @@ class TestAutoSubbatchDeepGemm(unittest.TestCase):
         logging.info("case13 (offline_quant_transpose, plenty)")
         cases["case13 (plenty)"] = self.run_moe_layer(**kwargs)
         logging.info("case14 (offline_quant_transpose, tight_fwd)")
-        cases["case14 (tight_fwd)"] = self.run_moe_layer(tight_forward=True, **kwargs)
+        cases["case14 (tight_fwd)"] = self.run_moe_layer(
+            tight_forward=True, **kwargs
+        )
         logging.info("case15 (offline_quant_transpose, tight_bwd)")
-        cases["case15 (tight_bwd)"] = self.run_moe_layer(tight_backward=True, **kwargs)
+        cases["case15 (tight_bwd)"] = self.run_moe_layer(
+            tight_backward=True, **kwargs
+        )
         logging.info("case16 (offline_quant_transpose, tight_both)")
-        cases["case16 (tight_both)"] = self.run_moe_layer(tight_forward=True, tight_backward=True, **kwargs)
+        cases["case16 (tight_both)"] = self.run_moe_layer(
+            tight_forward=True, tight_backward=True, **kwargs
+        )
 
         # with recompute
         kwargs_rc = {"recompute_moe_gate_up": True}
@@ -407,11 +463,17 @@ class TestAutoSubbatchDeepGemm(unittest.TestCase):
         logging.info("case13r (offline_quant_transpose+recompute, plenty)")
         cases["case13r (plenty)"] = self.run_moe_layer(**kwargs_rc)
         logging.info("case14r (offline_quant_transpose+recompute, tight_fwd)")
-        cases["case14r (tight_fwd)"] = self.run_moe_layer(tight_forward=True, **kwargs_rc)
+        cases["case14r (tight_fwd)"] = self.run_moe_layer(
+            tight_forward=True, **kwargs_rc
+        )
         logging.info("case15r (offline_quant_transpose+recompute, tight_bwd)")
-        cases["case15r (tight_bwd)"] = self.run_moe_layer(tight_backward=True, **kwargs_rc)
+        cases["case15r (tight_bwd)"] = self.run_moe_layer(
+            tight_backward=True, **kwargs_rc
+        )
         logging.info("case16r (offline_quant_transpose+recompute, tight_both)")
-        cases["case16r (tight_both)"] = self.run_moe_layer(tight_forward=True, tight_backward=True, **kwargs_rc)
+        cases["case16r (tight_both)"] = self.run_moe_layer(
+            tight_forward=True, tight_backward=True, **kwargs_rc
+        )
 
         for name, result in cases.items():
             with self.subTest(case=name):
