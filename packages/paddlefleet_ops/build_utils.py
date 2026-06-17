@@ -472,6 +472,11 @@ def get_libs():
                 artifacts=[
                     Artifact("cudnn", "cudnn"),
                 ],
+                extra_env={
+                    "FETCHCONTENT_SOURCE_DIR_DLPACK": str(
+                        PKG_ROOT / "third_party" / "dlpack"
+                    ),
+                },
             )
         )
     return LIBRARIES

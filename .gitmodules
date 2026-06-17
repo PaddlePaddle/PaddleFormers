@@ -26,3 +26,6 @@
 [submodule "packages/paddlefleet_ops/third_party/FlashMLA"]
 	path = packages/paddlefleet_ops/third_party/FlashMLA
 	url = https://github.com/PFCCLab/FlashMLA.git
+[submodule "packages/paddlefleet_ops/third_party/dlpack"]
+	path = packages/paddlefleet_ops/third_party/dlpack
+	url = https://github.com/dmlc/dlpack
