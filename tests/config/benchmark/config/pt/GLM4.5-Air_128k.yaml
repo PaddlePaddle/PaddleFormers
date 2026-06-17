@@ -33,11 +33,11 @@ save_steps: 200
 save_strategy: steps
 logging_steps: 1
 global_batch_size: 256
-gradient_accumulation_steps: 16
+gradient_accumulation_steps: 32
 logging_dir: ./vdl_log
 output_dir: ./checkpoints/glm45-air-pt-128k
 disable_tqdm: true
-eval_accumulation_steps: 16
+eval_accumulation_steps: 1
 
 
 # parallel: 8 nodes x 8 GPU = 64 cards
@@ -57,6 +57,7 @@ router_aux_loss_coef: 1.0e-4
 # performance
 recompute_granularity: full
 recompute_method: uniform
+recompute_num_layers: 1
 
 learning_rate: 5.0e-5
 warmup_steps: 50
@@ -99,4 +100,3 @@ tensorwise_offload_optimizer: true
 skip_profile_timer: false
 load_via_cpu: false
 fp32_residual_connection: false
-
