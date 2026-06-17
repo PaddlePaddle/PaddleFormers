@@ -393,6 +393,10 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         HF naming convention: layers.{L}.attn.*, layers.{L}.ffn.*, embed.weight, etc.
         PF naming convention: model.layers.{L}.self_attn.*, model.layers.{L}.mlp.*, etc.
         """
+        from paddleformers.utils.accuracy_compatible_patch import (
+            apply_dsv4_accuracy_compatible_patch,
+        )
+
         num_hidden_layers = config.num_hidden_layers
         num_experts = config.n_routed_experts
         n_shared_experts = getattr(config, "n_shared_experts", 1)
@@ -408,6 +412,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         # Note: num_hidden_layers in PaddleFormers config is the decoder layer count (NOT bumped by MTP).
         # MTP layers are appended AFTER the decoder layers, so MTP layer i is at index num_hidden_layers + i.
         num_decoder_layers = num_hidden_layers
+        use_accuracy_patch = apply_dsv4_accuracy_compatible_patch()
 
         stmts = []
 
@@ -504,7 +509,10 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ]
 
             # --- MoE Gate ---
-            stmts += [f"{src}.ffn.gate.weight -> {tgt}.mlp.gate.weight, dtype='float32'"]
+            gate_weight_stmt = f"{src}.ffn.gate.weight -> {tgt}.mlp.gate.weight"
+            if not use_accuracy_patch:
+                gate_weight_stmt += ", dtype='float32'"
+            stmts += [gate_weight_stmt]
             # Non-hash layers have e_score_correction_bias; hash layers use tid2eid
             if L >= moe_n_hash_layers:
                 stmts += [f"{src}.ffn.gate.bias -> {tgt}.mlp.gate.e_score_correction_bias"]
@@ -636,8 +644,11 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     ]
 
             # --- MoE Gate (MTP layers are always non-hash, so always have bias) ---
+            gate_weight_stmt = f"{mtp_src}.ffn.gate.weight -> {tl}.mlp.gate.weight"
+            if not use_accuracy_patch:
+                gate_weight_stmt += ", dtype='float32'"
             stmts += [
-                f"{mtp_src}.ffn.gate.weight -> {tl}.mlp.gate.weight, dtype='float32'",
+                gate_weight_stmt,
                 f"{mtp_src}.ffn.gate.bias -> {tl}.mlp.gate.e_score_correction_bias",
             ]
 

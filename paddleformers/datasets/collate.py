@@ -495,18 +495,17 @@ def collate_fn(
         batch = [sum(batch, [])]
         max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
     fixed_tokens_path = os.environ.get("LOAD_FIXED_DATA_PATH")
+    fixed_data = None
     fixed_tokens = None
     if fixed_tokens_path:
-        rank = paddle.distributed.get_rank() if paddle.distributed.is_initialized() else 0
-        seq_len = training_args.max_seq_len
-        suffix = f"step0_rank{rank}_seq{seq_len}.npy"
-        tokens_file = os.path.join(fixed_tokens_path, f"tokens_{suffix}")
-        labels_file = os.path.join(fixed_tokens_path, f"labels_{suffix}")
-        fixed_input_ids = np.load(tokens_file).flatten().tolist()
-        fixed_labels = np.load(labels_file).flatten().tolist()
-        fixed_position_ids = list(range(len(fixed_input_ids)))
-        max_seq_len = calc_padding_size(len(fixed_input_ids), training_args)
-        fixed_tokens = True
+        from paddleformers.utils.accuracy_compatible_patch import (
+            load_fixed_training_data,
+        )
+
+        fixed_data = load_fixed_training_data(training_args, mtp_depth, calc_padding_size)
+        if fixed_data is not None:
+            max_seq_len = fixed_data.max_seq_len
+            fixed_tokens = True
     if not max_seq_len:
         max_seq_len = max(sum(len(item.token_ids) for item in sequence) for sequence in batch)
     max_seq_len = calc_padding_size(max_seq_len, training_args)
@@ -516,12 +515,19 @@ def collate_fn(
     # mask_seq_len: when mtp_attention_flexible is enabled, masks use (max_seq_len - mtp_depth)
     mask_seq_len = max_seq_len - mtp_depth if use_mtp_attention_flexible else max_seq_len
 
-    for batch_sequence in batch:
-        if fixed_tokens is not None:
-            original_position_ids = [fixed_position_ids]
-            token_ids = [fixed_input_ids]
-            labels = [fixed_labels]
-            position_ids = [fixed_position_ids]
+    if fixed_data is not None:
+        from paddleformers.utils.accuracy_compatible_patch import (
+            fixed_data_iter,
+            fixed_data_sample,
+        )
+
+        batch_iter = fixed_data_iter(fixed_data, batch)
+    else:
+        batch_iter = batch
+
+    for batch_sequence in batch_iter:
+        if fixed_data is not None:
+            original_position_ids, token_ids, labels, position_ids = fixed_data_sample(fixed_data, len(return_list))
         elif len(batch_sequence) == 1 and isinstance(batch_sequence[0].position_ids[0], List):
             original_position_ids = batch_sequence[0].position_ids
         else:
@@ -605,31 +611,6 @@ def collate_fn(
 
     return_list = [np.concatenate(tensor_list) for tensor_list in zip(*return_list)]
     input_dict = dict(zip(input_keys, return_list))
-    if fixed_tokens is not None and (
-        os.environ.get("LOG_DATA_MD5", "0") == "1" or os.environ.get("LOG_LAYER_MD5", "0") == "1"
-    ):
-        import hashlib
-
-        try:
-            rank = paddle.distributed.get_rank()
-        except Exception:
-            rank = 0
-        main_input = np.asarray([fixed_input_ids], dtype=np.int64)
-        main_labels = np.asarray([fixed_labels], dtype=np.int64)
-        print(
-            f"[LOAD_FIXED_DATA_PATH] loaded from {fixed_tokens_path}",
-            flush=True,
-        )
-        print(
-            f"[DATA_PATH_MD5] rank={rank} input_ids shape={list(main_input.shape)} "
-            f"md5={hashlib.md5(main_input.tobytes()).hexdigest()}",
-            flush=True,
-        )
-        print(
-            f"[DATA_PATH_MD5] rank={rank} labels shape={list(main_labels.shape)} "
-            f"md5={hashlib.md5(main_labels.tobytes()).hexdigest()}",
-            flush=True,
-        )
     return input_dict
 
 

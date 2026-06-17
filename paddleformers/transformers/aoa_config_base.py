@@ -402,7 +402,14 @@ class MoEAOAConfigGenerator:
         statements.append(
             f"{prefix}.mlp.gate.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias"
         )
-        statements.append(f"{prefix}.mlp.gate.weight -> {prefix_offset}.mlp.gate.weight, dtype='float32'")
+        from paddleformers.utils.accuracy_compatible_patch import (
+            apply_dsv4_accuracy_compatible_patch,
+        )
+
+        gate_weight_stmt = f"{prefix}.mlp.gate.weight -> {prefix_offset}.mlp.gate.weight"
+        if not apply_dsv4_accuracy_compatible_patch():
+            gate_weight_stmt += ", dtype='float32'"
+        statements.append(gate_weight_stmt)
 
         # Shared experts (if model has them)
         if params.has_shared_experts:

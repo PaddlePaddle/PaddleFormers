@@ -64,6 +64,11 @@ from paddle.io import IterableDataset
 from paddle.optimizer.lr import LambdaDecay
 from transformers.tokenization_utils_base import BatchEncoding
 
+from paddleformers.utils.accuracy_compatible_patch import (
+    apply_dsv4_accuracy_compatible_patch,
+    has_optimizer_state,
+)
+
 # from ..ops import Topology
 from ..trainer.argparser import strtobool
 from ..utils.import_utils import is_paddlefleet_available
@@ -687,6 +692,8 @@ def get_cosine_schedule_with_warmup(
     def lr_lambda(current_step):
         if current_step < num_warmup_steps:
             return float(current_step) / float(max(1, num_warmup_steps))
+        if apply_dsv4_accuracy_compatible_patch() and current_step >= num_training_steps:
+            return min_lr / learning_rate
         progress = float(current_step - num_warmup_steps) / float(max(1, num_training_steps - num_warmup_steps))
         ratio = max(0.0, 0.5 * (1.0 + math.cos(math.pi * float(num_cycles) * 2.0 * progress)))
         return ratio * (1 - min_lr / learning_rate) + min_lr / learning_rate
@@ -1519,11 +1526,8 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
         for buffer in optimizer._comm_buffer_list:
             for param_name, grad_view in buffer._sharding_param_grad_view.items():
                 struct_name = static_to_struct_mapping[param_name]
-                if os.getenv("HACK_CONVERT_CKPT", "0").lower() not in ["true", "1"]:
-                    if not any(
-                        struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names
-                    ):
-                        continue
+                if not has_optimizer_state(struct_name, state_dict_metadata, optimizer_state_names):
+                    continue
                 param_buffer = grad_view._param_buffer
                 param_begin = grad_view._param_begin
                 param_end = grad_view._param_end
@@ -1545,11 +1549,8 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
                 if param_name not in static_to_struct_mapping:
                     continue
                 struct_name = static_to_struct_mapping[param_name]
-                if os.getenv("HACK_CONVERT_CKPT", "0").lower() not in ["true", "1"]:
-                    if not any(
-                        struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names
-                    ):
-                        continue
+                if not has_optimizer_state(struct_name, state_dict_metadata, optimizer_state_names):
+                    continue
                 param_buffer = grad_view._param_buffer
                 param_begin = grad_view._param_begin
                 param_end = grad_view._param_end
@@ -1574,11 +1575,8 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
                 if param_name not in static_to_struct_mapping:
                     continue
                 struct_name = static_to_struct_mapping[param_name]
-                if os.getenv("HACK_CONVERT_CKPT", "0").lower() not in ["true", "1"]:
-                    if not any(
-                        struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names
-                    ):
-                        continue
+                if not has_optimizer_state(struct_name, state_dict_metadata, optimizer_state_names):
+                    continue
                 parameter_list.append(param)
 
         optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), parameter_list)

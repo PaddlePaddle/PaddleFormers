@@ -20,6 +20,7 @@ from __future__ import annotations
 import collections
 import contextlib
 import gc
+import hashlib
 import inspect
 import json
 import math
@@ -119,6 +120,10 @@ if TYPE_CHECKING:
         from transformers.tokenization_utils import PreTrainedTokenizer
 
 from paddle.framework.recall_error import LOSS_INF_ERROR, LOSS_NAN_ERROR
+
+from paddleformers.utils.accuracy_compatible_patch import (
+    apply_dsv4_accuracy_compatible_patch,
+)
 
 from ..transformers.context_parallel_utils import auto_split_sequence_dim_load_balance
 from ..transformers.image_processing_utils import ImageProcessingMixin
@@ -2366,6 +2371,16 @@ class Trainer:
                     else:
                         tr_loss += tr_loss_step
 
+                    should_flush_sequence_first_wgrad = (step_control + 1) % args.gradient_accumulation_steps == 0 or (
+                        steps_in_epoch <= args.gradient_accumulation_steps and (step + 1) == steps_in_epoch
+                    )
+                    if apply_dsv4_accuracy_compatible_patch() and should_flush_sequence_first_wgrad:
+                        from paddleformers.utils.accuracy_compatible_patch import (
+                            flush_sequence_first_wgrad,
+                        )
+
+                        flush_sequence_first_wgrad(model)
+
                     def fused_allreduce_gradients_no_sync(paramlist, hcg):
                         paramlist = list(paramlist)
                         nonmoe_list = [p for p in paramlist if not getattr(p, "no_sync", False)]
@@ -2459,7 +2474,11 @@ class Trainer:
                             self.timers and self.timers("all-reduce").stop()
                             self.timers and self.timers("optimizer-step").start()
 
-                        if not args.enable_auto_parallel and self.args.gradient_accumulation_steps > 1:
+                        if (
+                            not args.enable_auto_parallel
+                            and self.args.gradient_accumulation_steps > 1
+                            and not apply_dsv4_accuracy_compatible_patch()
+                        ):
                             paddle.device.synchronize()
                             parameters = (
                                 model._layers.parameters() if hasattr(model, "_layers") else model.parameters()
@@ -2747,12 +2766,21 @@ class Trainer:
             # all_gather + mean() to get average loss over all processes
             avg_loss = self._nested_gather(tr_loss).mean()
             tr_loss_scalar = self._get_item_from_loss(avg_loss)
+            raw_lm_loss_scalar = None
+            if apply_dsv4_accuracy_compatible_patch() and num_steps > 0:
+                from paddleformers.utils.accuracy_compatible_patch import (
+                    pop_raw_lm_loss,
+                )
+
+                raw_lm_loss_scalar = pop_raw_lm_loss()
 
             # reset tr_loss to zero
             tr_loss.subtract_(tr_loss)
             # set loss to zero if all steps are skipped since last log
             if num_steps == 0:
                 logs["loss"] = 0.0
+            elif raw_lm_loss_scalar is not None:
+                logs["loss"] = round(raw_lm_loss_scalar, 8)
             else:
                 logs["loss"] = round(tr_loss_scalar / num_steps, 8)
 
@@ -2765,10 +2793,12 @@ class Trainer:
             # Mirrors LOG_LOSS_MD5 hooks in PaddleFleet's loss path so it can be
             # diff'd against Megatron's [LOSS_PATH_MD5] output.
             if os.environ.get("LOG_LOSS_MD5", "0") == "1":
-                import hashlib
-
                 _md5_loss_t = avg_loss.detach().cast("float32").reshape([1])
                 logs["loss_md5"] = hashlib.md5(_md5_loss_t.numpy().tobytes()).hexdigest()
+
+            if os.environ.get("LOG_FINAL_LM_LOSS_MD5", "0") == "1" and raw_lm_loss_scalar is not None:
+                raw_lm_loss_arr = np.array([raw_lm_loss_scalar], dtype=np.float32)
+                logs["loss_md5"] = hashlib.md5(raw_lm_loss_arr.tobytes()).hexdigest()
 
             divisor = 2**30
             # TODO(@gexiao): replace these codes with unified APIs in Paddle
@@ -2904,6 +2934,7 @@ class Trainer:
             except (ImportError, AttributeError):
                 pass
 
+            tr_loss_scalar = raw_lm_loss_scalar * num_steps if raw_lm_loss_scalar is not None else tr_loss_scalar
             self._total_loss_scalar += tr_loss_scalar
             self._globalstep_last_logged = self.state.global_step
             self._globalstep_last_start_time = time.time()
@@ -4089,6 +4120,11 @@ class Trainer:
         Return:
             `paddle.Tensor`: The tensor with training loss on this batch.
         """
+        if apply_dsv4_accuracy_compatible_patch():
+            from paddleformers.utils.accuracy_compatible_patch import set_loss_acc_steps
+
+            set_loss_acc_steps(self.args.gradient_accumulation_steps)
+
         # accumulation data
         if data_buffer_prepared:
             if len(self._pp_data_buffer) < self.args.gradient_accumulation_steps:
@@ -4128,6 +4164,13 @@ class Trainer:
             inputs = _dataset_process_function()
         else:
             inputs = PipelineDatasetPreprocessor(_dataset_process_function)
+
+        if apply_dsv4_accuracy_compatible_patch():
+            from paddleformers.utils.accuracy_compatible_patch import (
+                set_pipeline_loss_scale,
+            )
+
+            set_pipeline_loss_scale(self.args.gradient_accumulation_steps)
 
         with self.autocast_smart_context_manager():
             loss = model.forward_backward_pipeline(inputs, self.scaler if self.do_grad_scaling else None)
