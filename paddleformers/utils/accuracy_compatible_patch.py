@@ -151,21 +151,15 @@ def flush_sequence_first_wgrad(model) -> None:
 
 
 def set_loss_acc_steps(acc_steps: int) -> None:
-    try:
-        from paddlefleet.accuracy_compatible_patch import LossScaleBeforeBackward
+    from paddlefleet.accuracy_compatible_patch import LossScaleBeforeBackward
 
-        LossScaleBeforeBackward.set_acc_steps(acc_steps)
-    except (ImportError, AttributeError):
-        pass
+    LossScaleBeforeBackward.set_acc_steps(acc_steps)
 
 
 def pop_raw_lm_loss():
-    try:
-        from paddlefleet.accuracy_compatible_patch import LossScaleBeforeBackward
+    from paddlefleet.accuracy_compatible_patch import LossScaleBeforeBackward
 
-        raw_lm_loss = LossScaleBeforeBackward.pop()
-    except (ImportError, AttributeError):
-        raw_lm_loss = None
+    raw_lm_loss = LossScaleBeforeBackward.pop()
 
     if raw_lm_loss is not None:
         loss_sum, loss_count = raw_lm_loss
@@ -187,18 +181,11 @@ def set_pipeline_loss_scale(acc_steps: int) -> None:
     if acc_steps <= 1:
         return
     acc_scale = paddle.to_tensor(1.0 / acc_steps, dtype=paddle.float32)
-    try:
-        from paddlefleet.transformer.multi_token_prediction import MTPLossAutoScaler
+    from paddlefleet.transformer.dsa_attention import DSAIndexerLossAutoScaler
+    from paddlefleet.transformer.multi_token_prediction import MTPLossAutoScaler
 
-        MTPLossAutoScaler.set_loss_scale(acc_scale)
-    except (ImportError, AttributeError):
-        pass
-    try:
-        from paddlefleet.transformer.dsa_attention import DSAIndexerLossAutoScaler
-
-        DSAIndexerLossAutoScaler.set_loss_scale(acc_scale)
-    except (ImportError, AttributeError):
-        pass
+    MTPLossAutoScaler.set_loss_scale(acc_scale)
+    DSAIndexerLossAutoScaler.set_loss_scale(acc_scale)
 
 
 def has_optimizer_state(struct_name, state_dict_metadata, optimizer_state_names):
