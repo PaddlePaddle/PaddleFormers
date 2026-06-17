@@ -16,7 +16,6 @@ import os
 import shutil
 import sys
 
-
 BIND_TRAINER_NUMA_EXECED = "BIND_TRAINER_NUMA_EXECED"
 
 
@@ -40,8 +39,7 @@ def _reexec_with_numactl(local_rank, numa_node):
         *sys.argv,
     ]
     print(
-        f"[PaddleFormers] Re-exec trainer with numactl: local_rank={local_rank}, "
-        f"numa_node={numa_node}",
+        f"[PaddleFormers] Re-exec trainer with numactl: local_rank={local_rank}, numa_node={numa_node}",
         flush=True,
     )
     os.execvpe(numactl, args, env)
