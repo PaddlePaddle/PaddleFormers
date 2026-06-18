@@ -481,6 +481,8 @@ else:
     )
 
 logging.getLogger("transformers").addFilter(
-    lambda record: "None of PyTorch, TensorFlow >= 2.0, or Flax have been found."
-    not in str(record.getMessage())
+    lambda record: (
+        "None of PyTorch, TensorFlow >= 2.0, or Flax have been found."
+        not in str(record.getMessage())
+    )
 )

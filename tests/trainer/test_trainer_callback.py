@@ -126,15 +126,15 @@ class TrainerCallbackTest(unittest.TestCase):
         # Order doesn't matter
         cbs1 = sorted(
             cbs1,
-            key=lambda cb: cb.__name__
-            if isinstance(cb, type)
-            else cb.__class__.__name__,
+            key=lambda cb: (
+                cb.__name__ if isinstance(cb, type) else cb.__class__.__name__
+            ),
         )
         cbs2 = sorted(
             cbs2,
-            key=lambda cb: cb.__name__
-            if isinstance(cb, type)
-            else cb.__class__.__name__,
+            key=lambda cb: (
+                cb.__name__ if isinstance(cb, type) else cb.__class__.__name__
+            ),
         )
 
         for cb1, cb2 in zip(cbs1, cbs2):

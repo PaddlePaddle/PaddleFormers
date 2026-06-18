@@ -383,16 +383,16 @@ class TestTransformerLayerConstructorAndHelpers(unittest.TestCase):
         block_model.layer_number = 1
         block_model.attn_res_block_size = 4
         block_model.mlp = paddle.nn.Identity()
-        block_model.block_attn_res_before_attention = (
-            lambda partial, blocks: partial
+        block_model.block_attn_res_before_attention = lambda partial, blocks: (
+            partial
         )
         block_model.block_attn_res_before_mlp = lambda partial, blocks: partial
         block_model._forward_attention = lambda **kwargs: (
             kwargs["hidden_states"].cast("bfloat16"),
             None,
         )
-        block_model._forward_mlp = (
-            lambda hidden_states, **kwargs: hidden_states.cast("float32")
+        block_model._forward_mlp = lambda hidden_states, **kwargs: (
+            hidden_states.cast("float32")
         )
         block_output = TransformerLayer._forward_impl(
             block_model, paddle.ones([1, 2], dtype="float32"), blocks=[]

@@ -156,13 +156,13 @@ class TestLLaVAInitAndExtraBranchesNoMock(unittest.TestCase):
         llava_model.CLIPViTModel = RecordingClip
         llava_model.RADIOViTModel = RecordingRadio
         llava_model.MultimodalProjector = RecordingProjector
-        llava_model.ProcessGroupCollection.use_mpu_process_groups = (
-            lambda: PGCollection()
+        llava_model.ProcessGroupCollection.use_mpu_process_groups = lambda: (
+            PGCollection()
         )
         llava_model.has_config_logger_enabled = lambda config: True
         self.logged = []
-        llava_model.log_config_to_disk = (
-            lambda *args, **kwargs: self.logged.append((args, kwargs))
+        llava_model.log_config_to_disk = lambda *args, **kwargs: (
+            self.logged.append((args, kwargs))
         )
         llava_model.get_num_image_embeddings = lambda *args, **kwargs: 4
 

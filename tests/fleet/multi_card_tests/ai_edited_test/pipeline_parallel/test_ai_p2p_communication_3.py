@@ -266,8 +266,8 @@ class TestP2PHelperAllocationAndOps(unittest.TestCase):
             )
 
         p2p_communication.batch_send_recv_on_calc_stream = fake_batch
-        p2p_communication.allgather_partial = (
-            lambda *args, **kwargs: recorded.append(("allgather", args[0]))
+        p2p_communication.allgather_partial = lambda *args, **kwargs: (
+            recorded.append(("allgather", args[0]))
         )
         hcg = p2p_communication._hcg
         tensors = [paddle.ones([1], dtype="float32") for _ in range(4)]

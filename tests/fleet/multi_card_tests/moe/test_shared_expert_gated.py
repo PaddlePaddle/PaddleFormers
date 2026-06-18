@@ -202,8 +202,8 @@ def run_tp_sp(
 
     loss = gpt_pipe_model.forward_backward_pipeline(inputs)
 
-    is_within_range = (
-        lambda loss, loss_baseline: False
+    is_within_range = lambda loss, loss_baseline: (
+        False
         if loss_baseline == 0
         else abs(loss - loss_baseline) / loss_baseline <= 0.015
     )

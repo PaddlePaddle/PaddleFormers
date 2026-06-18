@@ -86,9 +86,11 @@ def broadcast_data_obj(data, src_rank, group):
     if this_rank == src_rank:
         template = [
             map_structure(
-                lambda x: _DtypeSndShape(dtype=x.dtype, shape=x.shape)
-                if x is not None
-                else _DtypeSndShape(dtype="", shape=[0]),
+                lambda x: (
+                    _DtypeSndShape(dtype=x.dtype, shape=x.shape)
+                    if x is not None
+                    else _DtypeSndShape(dtype="", shape=[0])
+                ),
                 data,
             )
         ]

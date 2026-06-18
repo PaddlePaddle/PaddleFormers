@@ -513,8 +513,8 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
                     paddle.ones([o1.shape[0], 1], dtype="float32"),
                 )
             )
-            fp8_utils.fused_swiglu_scale_forward = (
-                lambda o1, probs: paddle.ones(
+            fp8_utils.fused_swiglu_scale_forward = lambda o1, probs: (
+                paddle.ones(
                     [o1.shape[0], max(1, o1.shape[1] // 2)], dtype=o1.dtype
                 )
             )
@@ -673,8 +673,8 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
         fake_deep = FakeDeepGemm()
         kitchen_calls = []
         try:
-            fp8_utils.fused_swiglu_scale_forward = (
-                lambda o1, probs: paddle.ones(
+            fp8_utils.fused_swiglu_scale_forward = lambda o1, probs: (
+                paddle.ones(
                     [o1.shape[0], max(1, o1.shape[1] // 2)], dtype=o1.dtype
                 )
             )
@@ -700,11 +700,11 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
                 return paddle.ones([1, 2, 4], dtype="float32")
 
             paddle.incubate.nn.functional.batched_gemm = fake_batched_gemm
-            paddle.incubate.nn.functional.fused_act_dequant = (
-                lambda x, scale: paddle.ones(x.shape, dtype="float32")
+            paddle.incubate.nn.functional.fused_act_dequant = lambda x, scale: (
+                paddle.ones(x.shape, dtype="float32")
             )
-            fp8_utils.kitchen_gemm = (
-                lambda *args, **kwargs: kitchen_calls.append((args, kwargs))
+            fp8_utils.kitchen_gemm = lambda *args, **kwargs: (
+                kitchen_calls.append((args, kwargs))
             )
             fp8_utils.deep_gemm = fake_deep
 

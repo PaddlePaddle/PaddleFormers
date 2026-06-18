@@ -36,7 +36,7 @@ from paddle.distributed.fleet.meta_parallel import (
     build_spec_layer,
 )
 
-from tests.multi_card_tests.pipeline_parallel.test_distribute_model import (
+from tests.fleet.multi_card_tests.pipeline_parallel.test_distribute_model import (
     get_simple_spec,
 )
 

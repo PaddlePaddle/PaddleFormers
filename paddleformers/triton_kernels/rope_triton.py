@@ -348,7 +348,6 @@ def _check_triton_available(*args, **kwargs):
         return False
 
 
-apply_rotary_pos_emb_vision.is_available = (
-    lambda *args, **kwargs: _check_triton_available(*args, **kwargs)
-    and IS_TRITON_IN_PADDLE_AVAILABLE
+apply_rotary_pos_emb_vision.is_available = lambda *args, **kwargs: (
+    _check_triton_available(*args, **kwargs) and IS_TRITON_IN_PADDLE_AVAILABLE
 )

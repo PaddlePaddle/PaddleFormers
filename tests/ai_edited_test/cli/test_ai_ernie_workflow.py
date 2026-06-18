@@ -30,10 +30,13 @@ class TestUpdateModelConfigFromArgs(unittest.TestCase):
     def test_update_existing_keys(self, mock_logger):
         """Test updating config with existing keys."""
         mock_config = MagicMock()
-        mock_config.has.side_effect = lambda k: k in [
-            "hidden_size",
-            "num_layers",
-        ]
+        mock_config.has.side_effect = lambda k: (
+            k
+            in [
+                "hidden_size",
+                "num_layers",
+            ]
+        )
         mock_config.hidden_size = 768
         mock_config.num_layers = 2
         model_args = {"hidden_size": 1024, "num_layers": 4}

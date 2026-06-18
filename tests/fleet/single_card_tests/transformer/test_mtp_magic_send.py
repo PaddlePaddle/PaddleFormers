@@ -117,9 +117,11 @@ def _build_mtp_layer(config, layer_number=0):
     with (
         patch(
             "paddleformers.fleet.transformer.multi_token_prediction.build_spec_layer",
-            side_effect=lambda s, *a, **kw: _FakeTransformerLayer()
-            if s is spec.transformer_layer
-            else _FakeNorm(),
+            side_effect=lambda s, *a, **kw: (
+                _FakeTransformerLayer()
+                if s is spec.transformer_layer
+                else _FakeNorm()
+            ),
         ),
         patch(
             "paddleformers.fleet.transformer.multi_token_prediction.ProcessGroupCollection.use_mpu_process_groups",
@@ -171,9 +173,9 @@ def _build_gpt_embedding(config):
     with (
         patch(
             "paddleformers.fleet.models.gpt.gpt_embedding.build_spec_layer",
-            side_effect=lambda s, *a, **kw: emb_layer
-            if s is mock_spec.language_embedding
-            else None,
+            side_effect=lambda s, *a, **kw: (
+                emb_layer if s is mock_spec.language_embedding else None
+            ),
         ),
         patch(
             "paddleformers.fleet.models.gpt.gpt_embedding.mark_context_parallel_parameter_disable_scale_grad"
@@ -985,9 +987,11 @@ class TestMTPLayerMHC(unittest.TestCase):
         with (
             patch(
                 "paddleformers.fleet.transformer.multi_token_prediction.build_spec_layer",
-                side_effect=lambda s, *a, **kw: _FakeTransformerLayer()
-                if s is spec.transformer_layer
-                else _FakeNorm(),
+                side_effect=lambda s, *a, **kw: (
+                    _FakeTransformerLayer()
+                    if s is spec.transformer_layer
+                    else _FakeNorm()
+                ),
             ),
             patch(
                 "paddleformers.fleet.transformer.multi_token_prediction.ProcessGroupCollection.use_mpu_process_groups",
