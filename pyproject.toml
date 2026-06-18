@@ -93,7 +93,6 @@ target_version = ['py35', 'py36', 'py37', 'py38', 'py39', 'py310']
 [tool.pytest.ini_options]
 minversion = "6.0"
 addopts = "-ra -q "
-pythonpath = ["."]
 testpaths = [
     "tests/data",
     "tests/dataset",
