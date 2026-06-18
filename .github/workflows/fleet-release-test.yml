@@ -198,7 +198,7 @@ jobs:
           export UV_PYTHON=3.12
           export IS_NVIDIA=True
           export UV_HTTP_TIMEOUT=300
-          pip install dist/paddleformers-*.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
+          # pip install dist/paddleformers-*.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
           pip install packaging "setuptools>=66.1.0" wheel "ninja==1.11.1.1" "pybind11[global]>=2.13,<3" "paddle-nvidia-nvshmem-cu12>=3.3.9,<3.5" --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
           uv build --wheel --package paddlefleet-ops --out-dir dist --no-build-isolation -v
           OPS_WHL=$(ls dist/paddlefleet_ops-*.whl | head -n1)
@@ -236,9 +236,9 @@ jobs:
           export PATH=/opt/_internal/cpython-3.12.0/bin/:${PATH}
           export UV_PYTHON=3.12
           cd /
-          if [ ! -f "bos/BosClient.py" ]; then
+          if [ ! -f "/bos/BosClient.py" ]; then
             wget -q --no-proxy -O bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
-            mkdir bos
+            mkdir -p bos
             tar xf bos_new.tar.gz -C bos
           fi
           target_path="paddle-github-action/PaddleFormers/PR/${PR_ID}/${COMMIT_ID}/${BRANCH}"
