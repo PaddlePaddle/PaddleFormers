@@ -326,6 +326,7 @@ jobs:
           echo "paddle commit:"
           python -c "import paddle; print(paddle.version.commit)"
           bash scripts/fleet_ci/single_card_test.sh
+          sleep 10h
           single_card_exit_code=$?
           if [[ "$single_card_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mSingle card test failed.\033[0m"
