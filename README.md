@@ -26,7 +26,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
 结合业界主流优化方法与飞桨在业务实践中积累的高效特性，PaddleFormers 致力于打造**高性能、低资源占用**的训练体验，帮助用户高效便捷地完成大模型训练，而无需关注底层复杂的优化细节。
 
 ## 🆕最新更新
-* 2026.03.31 - PaddleFormers v1.1 正式发布！在这个版本中我们支持了 GLM-4.5 系列模型的单步与多步 MTP 训练能力。依托 MTP 架构优势，开发者可显著提升推理效率；同时针对 MTP 模块训练场景，我们新增主干网络冻结开关，灵活满足各类模型精细化调优需求。此外，我们对视觉理解类模型进行了深度优化，Qwen3-VL 30B-A3B 模型性能相比上个版本提升48%，领先Megatron-LM 6%。
+* 2026.03.31 - PaddleFormers v1.1 正式发布！在这个版本中我们支持了 GLM-4.5 系列模型的单步与多步 MTP 训练能力。依托 MTP 架构优势，开发者可显著提升推理效率；同时针对 MTP 模块训练场景，我们新增主干网络冻结开关，灵活满足各类模型精细化调优需求。此外，我们对视觉理解类模型进行了深度优化，Qwen3-VL 30B-A3B 模型性能相比上个版本提升48%，领先 Megatron-LM 6%。
 * 2026.01.21 - PaddleFomers v1.0版本发布啦！我们提供了针对 LLM 和 VLM 等模型的训练能力，针对 DeepSeek-V3模型和 GLM-4.5-Air 等重点模型，我们实现了极致性能优化（训练性能明显超越 Megatron-LM ）。针对 PaddleOCR-VL，我们在昆仑芯 P800、天数天垓150等国产计算芯片上进行了适配，更好的满足国内用户需求。
 
 ## ✨特性
@@ -214,6 +214,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
 * [昆仑芯安装说明文档](./docs/zh/XPU_installation_guide.md)
 * [天数智芯安装说明文档](./docs/zh/ILUVATAR-GPU_installation_guide.md)
 * [沐曦安装说明文档](./docs/zh/Metax-GPU_installation_guide.md)
+* [摩尔线程安装说明文档](./docs/zh/MUSA-GPU_installation_guide.md)
 
 # ⚡快速体验
 
@@ -268,6 +269,7 @@ paddleformers-cli train ./examples/config/sft/full.yaml
 * [昆仑芯使用说明文档](./docs/zh/XPU_usage_guide.md)
 * [天数智芯使用说明文档](./docs/zh/ILUVATAR-GPU_usage_guide.md)
 * [沐曦使用说明文档](./docs/zh/Metax-GPU_usage_guide.md)
+* [摩尔线程使用说明文档](./docs/zh/MUSA-GPU_usage_guide.md)
 
 ## 🔍最佳实践
 * [基于 DeepSeekv3的高效预训练](./examples/best_practices/DeepSeek-V3/)

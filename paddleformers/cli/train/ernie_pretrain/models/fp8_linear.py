@@ -30,15 +30,13 @@ incubate APIs for low-precision training. Key features include:
 
 import numpy
 import paddle
-import warnings
+
+from paddleformers.utils.log import logger
 
 try:
     from paddle.incubate.fp8 import deep_gemm
 except ImportError:
-    warnings.warn(
-        "paddle.incubate.fp8.deep_gemm is not available.",
-        RuntimeWarning,
-    )
+    logger.warning("paddle.incubate.fp8.deep_gemm is not available.")
     deep_gemm = None
 from paddle.nn.functional import swiglu
 
