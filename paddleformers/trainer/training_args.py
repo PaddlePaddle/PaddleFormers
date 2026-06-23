@@ -1489,6 +1489,9 @@ class TrainingArguments:
     clear_every_step_cache: bool = field(
         default=False, metadata={"help": "Clear every step cache for pipeline parallel."}
     )
+    block_atten_res_opt: bool = field(
+        default=False, metadata={"help": "Enable block attention residual communication optimization for VPP."}
+    )
     non_batch_p2p_comm: bool = field(
         default=False, metadata={"help": "Disable batched send/recv in pipeline parallel mode."}
     )
@@ -2017,6 +2020,7 @@ class TrainingArguments:
                         "release_gradients": self.pp_release_grads or self.release_grads,
                         "overlap_p2p_comm": self.overlap_p2p_comm,
                         "clear_every_step_cache": self.clear_every_step_cache,
+                        "block_atten_res_opt": self.block_atten_res_opt,
                         "use_batch_p2p_comm": self.batch_p2p_comm,
                         "best_unbalanced_scheduler": self.best_unbalanced_scheduler,
                         "enable_offload_queue": self.offload_queue,
