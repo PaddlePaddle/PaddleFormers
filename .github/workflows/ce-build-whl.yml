@@ -1,9 +1,6 @@
 name: Build Whl CE
 
 on:
-  pull_request:
-    types: [opened, synchronize]
-    branches: [develop, release/**]
   push:
     branches:
       - develop
@@ -94,12 +91,12 @@ jobs:
           cp /home/models/bos/notify_paddle_link.py ./
           for FILE in /workspace/PaddleFormers/upload/*.whl; do
             file=$(basename "$FILE")
-            if [[ "$file" =~ \.dev[0-9]{8}.*\.whl$ ]]; then
+            if [[ "$file" =~ \.dev[0-9]{8}-.*\.whl$ ]]; then
               echo "Skip dated dev wheel: $file"
               rm -f "$FILE"
               continue
             fi
-            if [[ "$file" =~ \.post.*\.whl$ && ! "$file" =~ -0\.0\.0\.post ]]; then
+            if [[ "$file" =~ \.post[0-9]+-.*\.whl$ && ! "$file" =~ -0\.0\.0\.post ]]; then
               echo "Skip release post wheel: $file"
               rm -f "$FILE"
               continue
