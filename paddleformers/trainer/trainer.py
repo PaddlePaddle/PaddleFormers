@@ -357,6 +357,24 @@ class Trainer:
             args = TrainingArguments(output_dir=output_dir)
 
         self.args = args
+        # === ALIGN: GLM_ALIGN_BIT_EXACT=1 时关闭 grad clip, 避免 global grad_norm reduce
+        # 顺序差异在两侧产生 1~几 ULP 的 clip_coef 偏差进而把 AdamW 输出整体打散。
+        # 关 clip 仅影响对齐验证, 业务训练态请把 GLM_ALIGN_BIT_EXACT 关掉。 ===
+        try:
+            from paddleformers.align_dump_utils import (
+                is_bit_exact as _is_bit_exact_align,
+            )
+
+            if _is_bit_exact_align() and getattr(self.args, "max_grad_norm", 0) > 0:
+                logger.info(
+                    f"[ALIGN] GLM_ALIGN_BIT_EXACT=1: override max_grad_norm "
+                    f"{self.args.max_grad_norm} -> 0.0 to bypass non-deterministic "
+                    f"global grad-norm reduce"
+                )
+                self.args.max_grad_norm = 0.0
+        except Exception:
+            pass
+        # === ALIGN END ===
         self.is_in_train = False
         # self.do_grad_scaling = args.fp16
 
@@ -1870,9 +1888,33 @@ class Trainer:
                     f"optimizer not run, scale_before: {scale_before_value[0]}, scale_after: {scale_after_value[0]}"
                 )
         elif isinstance(self.optimizer, HybridParallelOptimizer):
+            # [GLM 对齐] optimizer.step() 前 dump
+            from paddleformers.align_dump_utils import pf_dump_optim_probe_print
+
+            pf_dump_optim_probe_print("pre", self.optimizer)
             self.optimizer._step(parameters_list)
+            # [GLM 对齐] optimizer.step() 后 mid dump
+            from paddleformers.align_dump_utils import pf_dump_optim_probe_print
+
+            pf_dump_optim_probe_print("mid", self.optimizer)
+            # [GLM 对齐] optimizer.step() 后 dump
+            from paddleformers.align_dump_utils import pf_dump_optim_probe_print
+
+            pf_dump_optim_probe_print("post", self.optimizer)
         else:
+            # [GLM 对齐] optimizer.step() 前 dump
+            from paddleformers.align_dump_utils import pf_dump_optim_probe_print
+
+            pf_dump_optim_probe_print("pre", self.optimizer)
             self.optimizer.step()
+            # [GLM 对齐] optimizer.step() 后 mid dump
+            from paddleformers.align_dump_utils import pf_dump_optim_probe_print
+
+            pf_dump_optim_probe_print("mid", self.optimizer)
+            # [GLM 对齐] optimizer.step() 后 dump
+            from paddleformers.align_dump_utils import pf_dump_optim_probe_print
+
+            pf_dump_optim_probe_print("post", self.optimizer)
 
         if optimizer_was_run:
             self.lr_scheduler.step()
@@ -2322,6 +2364,13 @@ class Trainer:
                         self.callback_handler.on_optimizer_begin(
                             args, self.state, self.control, scaler=self.scaler if self.do_grad_scaling else None
                         )
+
+                        # === ALIGN LOG: weight grad 打印 (与 MG 侧 trainers/base.py 对齐) ===
+                        from paddleformers.align_dump_utils import dump_weight_grads
+
+                        dump_weight_grads(model, only_first_step=True)
+                        # === ALIGN LOG END ===
+
                         self.optimizer_step(args, model=model, parameters_list=parameters_list)
 
                         if not args.enable_auto_parallel:
@@ -3800,6 +3849,23 @@ class Trainer:
         Return:
             `paddle.Tensor`: The tensor with training loss on this batch.
         """
+        # === ALIGN LOG: 训练 step 入口 (pipeline 路径前) 输入数据 + 初始权重打印 ===
+        from paddleformers.align_dump_utils import (
+            dump_initial_weights,
+            dump_inputs_dict_info,
+        )
+
+        if paddle.distributed.get_rank() == 0:
+            dump_inputs_dict_info(
+                inputs,
+                tag="Paddle 输入数据 - pipeline前",
+                only_first_step=False,
+                once_attr_owner=self,
+                once_attr_name="_already_printed_pipeline_inputs",
+            )
+            dump_initial_weights(model, tag="Paddle 初始权重", only_first_step=True)
+        # === ALIGN LOG END ===
+
         if is_paddlefleet_available() and self.using_fleet_model:
             return self.training_pipeline_step(model, inputs)
 
@@ -3811,6 +3877,18 @@ class Trainer:
 
         model.train()
         inputs = self._prepare_inputs(inputs)
+
+        # === ALIGN LOG: 非 pipeline 路径输入数据 + 初始权重打印 ===
+        dump_inputs_dict_info(
+            inputs,
+            tag="Paddle 输入数据",
+            only_first_step=False,
+            once_attr_owner=self,
+            once_attr_name="_already_printed_inputs",
+        )
+        dump_initial_weights(model, tag="Paddle 初始权重", only_first_step=True)
+        # === ALIGN LOG END ===
+
         with self.autocast_smart_context_manager():
             loss = self.compute_loss(model, inputs)
 

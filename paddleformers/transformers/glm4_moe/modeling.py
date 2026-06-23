@@ -88,6 +88,9 @@ class GLMMoEModelProvider(GPTModelProvider):
     bias_dropout_fusion: bool = True
     moe_expert_fusion: bool = False
 
+    attention_softmax_in_fp32: bool = True
+    bf16: bool = True
+
 
 def eager_attention_forward(
     module: nn.Layer,
@@ -821,7 +824,12 @@ class Glm4MoePreTrainedModel(PretrainedModel):
     config: Glm4MoeConfig
     config_class = Glm4MoeConfig
     base_model_prefix = "model"
-    _keep_in_fp32_modules = ["mlp.gate.weight", "e_score_correction_bias"]
+    from paddleformers.align_dump_utils import is_bit_exact as _is_bit_exact_align
+
+    if _is_bit_exact_align():
+        _keep_in_fp32_modules = ["e_score_correction_bias"]
+    else:
+        _keep_in_fp32_modules = ["mlp.gate.weight", "e_score_correction_bias"]
     transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
     @classmethod
@@ -916,11 +924,22 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             if layer_idx >= num_hidden_layers:
                 # for mtp
                 prefix_offset += ".transformer_layer"
-            aoa_config["aoa_statements"] += [
-                f"{prefix}.mlp.gate.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias",
-                f"{prefix}.mlp.gate.weight -> {prefix_offset}.mlp.gate.weight, dtype='float32'",
-                f"{prefix}.mlp.shared_experts.down_proj.weight^T -> {prefix_offset}.mlp.shared_experts.down_proj.weight",
-            ]
+            from paddleformers.align_dump_utils import (  # noqa: F402
+                is_bit_exact as _is_bit_exact_align,
+            )
+
+            if _is_bit_exact_align():
+                aoa_config["aoa_statements"] += [
+                    f"{prefix}.mlp.gate.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias",
+                    f"{prefix}.mlp.gate.weight -> {prefix_offset}.mlp.gate.weight, dtype='bfloat16'",
+                    f"{prefix}.mlp.shared_experts.down_proj.weight^T -> {prefix_offset}.mlp.shared_experts.down_proj.weight",
+                ]
+            else:
+                aoa_config["aoa_statements"] += [
+                    f"{prefix}.mlp.gate.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias",
+                    f"{prefix}.mlp.gate.weight -> {prefix_offset}.mlp.gate.weight, dtype='float32'",
+                    f"{prefix}.mlp.shared_experts.down_proj.weight^T -> {prefix_offset}.mlp.shared_experts.down_proj.weight",
+                ]
             if using_sonic_moe:
                 aoa_config["aoa_statements"] += [
                     f"{prefix}.mlp.experts.$EXPERT_ID.down_proj.weight -> {prefix_offset}.mlp.experts.$EXPERT_ID.down_proj.weight",
