@@ -321,6 +321,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -xce '
           pwd
+          sleep 10h
           export COVERAGE_FILE=/paddle/coveragedata/.coverage
           export COVERAGE_RCFILE=/paddle/scripts/fleet_ci/.coveragerc
           export WITH_COVERAGE=ON
