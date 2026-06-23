@@ -315,7 +315,7 @@ class Qwen3VLMoePretrainedModelFleet(PretrainedModel):
 
         # language moe experts
         for layer_id in range(config.num_hidden_layers):
-            if config.moe_grouped_gemm:
+            if config.moe_expert_fusion:
                 aoa_config["aoa_statements"] += [
                     f"model.language_model.layers.{layer_id}.mlp.experts.gate_up_proj -> {llm_prefix}layers.{layer_id}.mlp.grouped_gemm_experts.weight1",
                     f"model.language_model.layers.{layer_id}.mlp.experts.down_proj -> {llm_prefix}layers.{layer_id}.mlp.grouped_gemm_experts.weight2",
@@ -2477,7 +2477,7 @@ class Qwen3VLMoeModel(Qwen3VLMoePretrainedModelFleet):
         config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
         config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
         config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
-        config.moe_grouped_gemm = True
+        config.moe_expert_fusion = True
         criterion = None
         if have_criterion:
             criterion = CriterionLayer(config.text_config)

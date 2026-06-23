@@ -40,7 +40,6 @@ class FP8MemConfigs:
     recompute_fwd_gate_up: Union[bool, List[int]] = False
     dequant_input: bool = False
     offline_quant_expert_weight: bool = False
-    clear_origin_weight_when_offline_quant: bool = False
 
 
 @dataclass
@@ -112,6 +111,10 @@ class ModelArguments:
     )
     use_global_causal_attn: bool = field(
         default=False, metadata={"help": "Whether to use global causal attention in packing data"}
+    )
+    mtp_attention_flexible: bool = field(
+        default=False,
+        metadata={"help": "Whether to use mask_seq_len (max_seq_len - mtp_depth) for MTP attention masks."},
     )
     rope_3d: Optional[bool] = field(default=True, metadata={"help": "use rope3d"})
     fuse_softmax_mask: bool = field(

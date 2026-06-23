@@ -69,8 +69,8 @@ jobs:
             -e COMMIT_ID \
             -e BRANCH \
             -e REPO_ARCHIVE_URL \
-            -e AK=${{ secrets.AK }} \
-            -e SK=${{ secrets.SK }} \
+            -e AK=${{ secrets.BOS_AK }} \
+            -e SK=${{ secrets.BOS_SK }} \
             -e GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} \
             -e GITHUB_REPO_NAME=${{ github.repository }} \
             -w /workspace --network=host $docker_image sleep infinity

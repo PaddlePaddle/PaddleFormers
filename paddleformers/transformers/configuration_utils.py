@@ -248,6 +248,7 @@ class LlmMetaConfig:
         ("expert_model_parallel_size", int, 1, "expert_model_parallel_size"),
         # context_parallel
         ("context_parallel_size", int, 1, "context_parallel_size"),
+        ("cp_balance_mode", str, "dualchunk_allgather", "CP scatter/gather layout mode"),
         # pp refine recompute
         ("no_recompute_layers", Optional[List[int]], None, "no_recompute_layers"),
         ("num_empty_layers_add_in_tail", int, 0, "Additional layers to append at the end"),
@@ -377,7 +378,7 @@ class LlmMetaConfig:
         (
             "moe_expert_fusion",
             bool,
-            True,
+            False,
             "Whether to fuse experts. Default to True.",
         ),
         (
@@ -393,16 +394,10 @@ class LlmMetaConfig:
             "Number of tokens per sub-batch after MoE expert dispatch. Controls memory usage for expert computations. Defaults to 4096 (balances memory efficiency and parallelism for most GPUs).",
         ),
         (
-            "moe_grouped_gemm",
-            bool,
-            False,
-            "Whether to enable grouped GEMM (General Matrix Multiplication) for MoE experts. Batches computations across multiple experts to improve hardware utilization. Defaults to True.",
-        ),
-        (
             "moe_deep_gemm",
             bool,
-            False,
-            "Whether to enable deep GEMM for MoE experts. Defaults to False. Effective only after the moe_grouped_gemm is set. ",
+            True,
+            "Whether to enable deep GEMM for MoE experts. Defaults to True. Effective only after the moe_expert_fusion is set. ",
         ),
         (
             "moe_ep_barrier",
@@ -415,6 +410,12 @@ class LlmMetaConfig:
             bool,
             False,
             "Whether to use SonicMoE as the computation backend for the moelayer.",
+        ),
+        (
+            "dsa_indexer_loss_coeff",
+            float,
+            0.01,
+            "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term.",
         ),
     ]
 
@@ -464,6 +465,12 @@ class LlmMetaConfig:
             bool,
             False,
             "Whether to enable multi-latent attention mechanism. Defaults to False.",
+        ),
+        (
+            "csa_sparse_attn_backend",
+            str,
+            "tilelang",
+            "CSA sparse attention backend. One of {'unfused', 'tilelang', 'cudnn'}. Defaults to 'tilelang'.",
         ),
         (
             "no_rope_freq",
@@ -528,6 +535,7 @@ class LlmMetaConfig:
             "Standard deviation for embedding layer initialization (only effective if `embedding_init_method='normal'`). Defaults to 0.02 (common choice for transformer embeddings to avoid saturation).",
         ),
         ("fa_version", int, 2, "FlashAttention or FlashMask version. Can be set to 2 or 3. Default is 2."),
+        ("experimental_dataflow", bool, False, "Whether to enable experimental dataflow in Fleet. Default is False."),
     ]
 
     @classmethod
@@ -1269,7 +1277,7 @@ class PretrainedConfig:
             id2label = kwargs["id2label"] if kwargs["id2label"] is not None else []
             if len(id2label) != num_labels:
                 raise ValueError(
-                    f"You passed along `num_labels={num_labels }` with an incompatible id to label map: "
+                    f"You passed along `num_labels={num_labels}` with an incompatible id to label map: "
                     f"{kwargs['id2label']}. Since those arguments are inconsistent with each other, you should remove "
                     "one of them."
                 )
@@ -1379,7 +1387,7 @@ class PretrainedConfig:
     def register_unsavable_keys(self, keys):
         # Save: not save it in any case
         # Print: show it if non default value
-        if type(keys) == list or type(keys) == tuple:
+        if isinstance(keys, (list, tuple)):
             for key in keys:
                 self._unsavable_keys.add(key)
         else:

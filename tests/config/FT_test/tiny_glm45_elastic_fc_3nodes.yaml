@@ -1,0 +1,115 @@
+model_name_or_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/huggingface/GLM-4.5-Air
+train_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/qwen/sft_data_0924v1_qwen_format_2000_reduplicative_converted.jsonl
+train_dataset_prob: '1.0'
+train_dataset_type: messages
+eval_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/qwen/sft_data_0924v1_qwen_format_2000_reduplicative_converted.jsonl
+eval_dataset_prob: '1.0'
+eval_dataset_type: messages
+max_seq_len: 8192
+packing: true
+use_template: false
+random_shuffle: false
+mix_strategy: concat
+_attn_implementation: flashmask
+
+num_hidden_layers: 6
+hidden_size: 1024
+
+stage: SFT
+fine_tuning: full
+seed: 42
+do_train: true
+do_eval: false
+eval_with_do_generation: false
+per_device_eval_batch_size: 1
+per_device_train_batch_size: 1
+num_train_epochs: 1
+max_steps: 100
+save_steps: 10
+save_hf_steps: 10
+logging_steps: 1
+save_total_limit: 5
+gradient_accumulation_steps: 64
+output_dir: output/checkpoints/glm45
+disable_tqdm: true
+eval_accumulation_steps: 2
+
+warmup_ratio: 0.1
+learning_rate: 0.00003
+min_lr: 0.000001
+
+tensor_model_parallel_size: 1
+tp_sync_param: true
+pipeline_model_parallel_size: 3
+sharding_parallel_size: 8
+pp_delay_scale_loss: true
+use_expert_parallel: true
+expert_model_parallel_size: 8
+sequence_parallel: true
+sharding: stage1
+# sharding_parallel_config
+split_param: True
+sd_sharding_comm_overlap: True
+fuse_optimizer_states: True
+
+moe_expert_fusion: false
+moe_shared_expert_overlap: true
+apply_rope_fusion: true
+# fuse_rms_norm: true
+moe_token_dispatcher_type: alltoall
+# aux_loss_alpha: 1e-3
+
+recompute_granularity: "full"
+recompute_method: "uniform"
+recompute_num_layers: 1
+recompute_use_reentrant: true
+
+sync_grad: true
+bf16: true
+fp16_opt_level: O2
+amp_master_grad: true
+
+partial_send_recv: false
+batch_p2p_comm: false
+save_checkpoint_format: flex_checkpoint
+load_checkpoint_format: flex_checkpoint
+tensorwise_offload_optimizer: false
+# offload_optim: false
+
+convert_from_hf: true
+save_to_hf: true
+replicate_saved_into_local: true
+
+
+amp_custom_white_list:
+  - "lookup_table"
+  - "lookup_table_v2"
+  - "flash_attn"
+  - "matmul"
+  - "matmul_v2"
+  - "fused_gemm_epilogue"
+amp_custom_black_list:
+  - "reduce_sum"
+  - "softmax_with_cross_entropy"
+  - "c_softmax_with_cross_entropy"
+  - "elementwise_div"
+  - "sin"
+  - "cos"
+# use_fused_head_and_loss_fn: true
+use_fused_head_and_loss_fn: false
+use_filtered_label_loss: true
+loss_subbatch_sequence_length: 1024
+pre_alloc_memory: 60
+
+save_tokenizer: false
+save_rng_states: false
+# use_step_aware_cache: false
+#first_step_use_cache: true
+#first_step_use_cache: true
+zcc_workers_num: 1
+zcc_pipeline_hooks_capacity_usage: 0.8
+flash_device_save_steps: 5
+zcc_save_ema_coef: 0.9993 # 40=>40000
+zcc_ema_interval: 5
+enable_zero_cost_checkpoint: True
+metrics_output_path: ./output/paddle_distributed_logs/

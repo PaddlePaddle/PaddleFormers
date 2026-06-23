@@ -46,10 +46,6 @@ class DPOTrainingArguments(TrainingArguments):
         default=False,
         metadata={"help": "Whether to run benchmark by autotuner. True for from_scratch."},
     )
-    benchmark: bool = field(
-        default=False,
-        metadata={"help": "Whether to run benchmark by autotuner. True for from_scratch."},
-    )
     use_intermediate_api: bool = field(
         default=False,
         metadata={"help": "Flag indicating whether to use the intermediate API for model."},
@@ -68,18 +64,6 @@ class DPOTrainingArguments(TrainingArguments):
             self.overwrite_output_dir = True
             self.load_best_model_at_end = False
             self.report_to = []
-            self.save_strategy = IntervalStrategy.NO
-            self.evaluation_strategy = IntervalStrategy.NO
-            if not self.disable_tqdm:
-                self.logging_steps = 1
-                self.logging_strategy = IntervalStrategy.STEPS
-        if self.benchmark:
-            self.do_train = True
-            self.do_export = False
-            self.do_predict = False
-            self.do_eval = False
-            self.overwrite_output_dir = True
-            self.load_best_model_at_end = False
             self.save_strategy = IntervalStrategy.NO
             self.evaluation_strategy = IntervalStrategy.NO
             if not self.disable_tqdm:
