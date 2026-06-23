@@ -91,6 +91,16 @@ jobs:
           cp /home/models/bos/notify_paddle_link.py ./
           for FILE in /workspace/PaddleFormers/upload/*.whl; do
             file=$(basename "$FILE")
+            if [[ "$file" =~ \.dev[0-9]{8}-.*\.whl$ ]]; then
+              echo "Skip dated dev wheel: $file"
+              rm -f "$FILE"
+              continue
+            fi
+            if [[ "$file" =~ \.post[0-9]+-.*\.whl$ && ! "$file" =~ -0\.0\.0\.post ]]; then
+              echo "Skip release post wheel: $file"
+              rm -f "$FILE"
+              continue
+            fi
             for cuda in cu126 cu129 cu130; do
               python bos_tools.py $file paddle-whl/nightly/$cuda/paddleformers/
               echo "$file: https://paddle-whl.bj.bcebos.com/nightly/$cuda/paddleformers/$file"
