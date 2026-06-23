@@ -738,10 +738,12 @@ class InternLMForCausalLM(InternLMPretrainedModel):
                 input_ids = input_ids[:, -1:]
 
         position_ids = kwargs.get("position_ids", None)
-        # InternLM's original RoPE path ignores padding-derived position ids.
-        # Let InternLMModel.forward create sequential positions from cache length
-        # unless the caller explicitly provides position_ids.
-        if position_ids is not None and has_cache:
+        if attention_mask is not None and position_ids is None:
+            position_ids = paddle.cumsum(attention_mask.astype("int64"), axis=-1) - 1
+            position_ids = paddle.where(attention_mask.astype("bool"), position_ids, paddle.ones_like(position_ids))
+            if has_cache:
+                position_ids = position_ids[:, -1].unsqueeze(-1)
+        elif position_ids is not None and has_cache:
             position_ids = position_ids[:, -1].unsqueeze(-1)
 
         if inputs_embeds is not None and past_key_values is None:
