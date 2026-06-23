@@ -44,7 +44,7 @@ def __getattr__(name):
         globals().update(exports)
         return exports[name]
     if name == "csa_sparse_attn":
-        from .compressed_sparse_attn import csa_sparse_attn
+        from paddleformers.fleet.fusions.csa_sparse_attn import csa_sparse_attn
 
         globals()[name] = csa_sparse_attn
         return csa_sparse_attn

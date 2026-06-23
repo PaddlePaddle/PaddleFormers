@@ -202,7 +202,7 @@ class GreedyGenerator:
         self,
         input_ids: paddle.Tensor,
         max_new_tokens: int,
-        eos_token_id: int | None = None,
+        eos_token_id: int | list[int] | None = None,
         repetition_penalty: float = 1.0,
     ) -> paddle.Tensor:
         """Run greedy auto-regressive decoding.
@@ -269,7 +269,26 @@ class GreedyGenerator:
                 next_tok = logits[:, -1].argmax(axis=-1, keepdim=True)
                 generated = paddle.concat([generated, next_tok], axis=1)
                 if eos_token_id is not None:
-                    done = done | (next_tok == eos_token_id)
+                    if isinstance(eos_token_id, list):
+                        # eos_token_id may be nested list like [[t1,t2],[t3]]
+                        # extract single-token stop ids for fast eos check
+                        flat_ids = [
+                            ids[0]
+                            if isinstance(ids, list) and len(ids) == 1
+                            else ids
+                            for ids in eos_token_id
+                            if not isinstance(ids, list) or len(ids) == 1
+                        ]
+                        if flat_ids:
+                            eos_tensor = paddle.to_tensor(
+                                flat_ids, dtype=next_tok.dtype
+                            ).reshape([1, 1, -1])
+                            hit = (next_tok.unsqueeze(-1) == eos_tensor).any(
+                                axis=-1
+                            )
+                            done = done | hit
+                    else:
+                        done = done | (next_tok == eos_token_id)
                     if done.all().item():
                         break
 

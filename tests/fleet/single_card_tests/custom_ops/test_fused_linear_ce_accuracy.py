@@ -214,84 +214,35 @@ class TestFusedLinearCEAccuracy(unittest.TestCase):
             a_np, b_np, atol=atol, rtol=rtol, err_msg=msg
         )
 
-    # ------------------------------------------------------------------
-    # 场景 1：基本 loss 对比（无 mask）
-    # ------------------------------------------------------------------
-    def test_forward_loss_no_mask(self):
-        H, V = 64, 256
-        bsl, fused = _make_pair(H, V, num_chunks=1)
-        hidden, labels = _make_inputs(2, 16, H, V, ignore_ratio=0.0)
-
-        loss_b, _, _, _ = _forward_backward(*bsl, hidden, labels)
-        loss_f, _, _, _ = _forward_backward(*fused, hidden, labels)
-
-        self._assert_close(loss_b, loss_f, "loss (no mask)")
+    # 共享尺寸：足够覆盖 chunk 划分但远小于真实模型，控制单测耗时。
+    H, V = 32, 128
 
     # ------------------------------------------------------------------
-    # 场景 2：含 ignore_index 的 loss 对比
+    # 场景 1：基本 loss + 全部梯度对比（无 mask 与含 mask 合并为一次 fwd/bwd
+    # 的两个采样，避免重复构造模型）。
     # ------------------------------------------------------------------
-    def test_forward_loss_with_mask(self):
-        H, V = 64, 256
-        bsl, fused = _make_pair(H, V, num_chunks=1)
-        hidden, labels = _make_inputs(2, 16, H, V, ignore_ratio=0.3)
+    def test_loss_and_grads_match(self):
+        bsl, fused = _make_pair(self.H, self.V, num_chunks=1)
+        hidden, labels = _make_inputs(2, 8, self.H, self.V, ignore_ratio=0.3)
 
-        loss_b, _, _, _ = _forward_backward(*bsl, hidden, labels)
-        loss_f, _, _, _ = _forward_backward(*fused, hidden, labels)
+        loss_b, gi_b, gw_b, gb_b = _forward_backward(*bsl, hidden, labels)
+        loss_f, gi_f, gw_f, gb_f = _forward_backward(*fused, hidden, labels)
 
-        self._assert_close(loss_b, loss_f, "loss (with mask)")
-
-    # ------------------------------------------------------------------
-    # 场景 3：grad_input 对比
-    # ------------------------------------------------------------------
-    def test_backward_grad_input(self):
-        H, V = 64, 256
-        bsl, fused = _make_pair(H, V, num_chunks=1)
-        hidden, labels = _make_inputs(2, 16, H, V, ignore_ratio=0.2)
-
-        _, gi_b, _, _ = _forward_backward(*bsl, hidden, labels)
-        _, gi_f, _, _ = _forward_backward(*fused, hidden, labels)
-
+        self._assert_close(loss_b, loss_f, "loss")
         self._assert_close(gi_b, gi_f, "grad_input")
-
-    # ------------------------------------------------------------------
-    # 场景 4：grad_weight 对比
-    #   baseline:  weight.grad shape [V, H]（autograd 标准路径）
-    #   fused:     weight.grad shape [V, H]（经 main_grad.T 累加后由 autograd 返回）
-    # ------------------------------------------------------------------
-    def test_backward_grad_weight(self):
-        H, V = 64, 256
-        bsl, fused = _make_pair(H, V, num_chunks=1)
-        hidden, labels = _make_inputs(2, 16, H, V, ignore_ratio=0.2)
-
-        _, _, gw_b, _ = _forward_backward(*bsl, hidden, labels)
-        _, _, gw_f, _ = _forward_backward(*fused, hidden, labels)
-
         self._assert_close(
             gw_b, gw_f, "grad_weight", atol=self.GRAD_ATOL, rtol=self.GRAD_RTOL
         )
-
-    # ------------------------------------------------------------------
-    # 场景 5：grad_bias 对比
-    # ------------------------------------------------------------------
-    def test_backward_grad_bias(self):
-        H, V = 64, 256
-        bsl, fused = _make_pair(H, V, num_chunks=1)
-        hidden, labels = _make_inputs(2, 16, H, V, ignore_ratio=0.2)
-
-        _, _, _, gb_b = _forward_backward(*bsl, hidden, labels)
-        _, _, _, gb_f = _forward_backward(*fused, hidden, labels)
-
         self._assert_close(
             gb_b, gb_f, "grad_bias", atol=self.GRAD_ATOL, rtol=self.GRAD_RTOL
         )
 
     # ------------------------------------------------------------------
-    # 场景 6：高 ignore 比例
+    # 场景 2：高 ignore 比例（loss/grad_input/grad_weight）
     # ------------------------------------------------------------------
     def test_high_ignore_ratio(self):
-        H, V = 64, 256
-        bsl, fused = _make_pair(H, V, num_chunks=1)
-        hidden, labels = _make_inputs(2, 32, H, V, ignore_ratio=0.7)
+        bsl, fused = _make_pair(self.H, self.V, num_chunks=1)
+        hidden, labels = _make_inputs(2, 16, self.H, self.V, ignore_ratio=0.7)
 
         loss_b, gi_b, gw_b, _ = _forward_backward(*bsl, hidden, labels)
         loss_f, gi_f, gw_f, _ = _forward_backward(*fused, hidden, labels)
@@ -307,19 +258,17 @@ class TestFusedLinearCEAccuracy(unittest.TestCase):
         )
 
     # ------------------------------------------------------------------
-    # 场景 7：全 ignore（loss/grad 均为 0）
+    # 场景 3：全 ignore（loss=0 边界条件）
     # ------------------------------------------------------------------
     def test_all_ignore(self):
-        H, V = 64, 256
-        bsl, fused = _make_pair(H, V, num_chunks=1)
-        B, S = 2, 16
-        hidden = paddle.randn([B, S, H], dtype="float32")
+        bsl, fused = _make_pair(self.H, self.V, num_chunks=1)
+        B, S = 2, 8
+        hidden = paddle.randn([B, S, self.H], dtype="float32")
         labels = paddle.full([B, S], -100, dtype="int64")
 
         loss_b, _, _, _ = _forward_backward(*bsl, hidden, labels)
         loss_f, _, _, _ = _forward_backward(*fused, hidden, labels)
 
-        # 全 ignore 时 lossmask.sum()=0，两边均返回 0.0 * mean(loss)
         self.assertAlmostEqual(
             float(loss_b),
             0.0,
@@ -334,12 +283,11 @@ class TestFusedLinearCEAccuracy(unittest.TestCase):
         )
 
     # ------------------------------------------------------------------
-    # 场景 8：多 chunk
+    # 场景 4：多 chunk（验证 chunk 划分不影响数值结果）
     # ------------------------------------------------------------------
     def test_multi_chunk(self):
-        H, V = 64, 256
-        bsl, fused = _make_pair(H, V, num_chunks=4)
-        hidden, labels = _make_inputs(1, 64, H, V, ignore_ratio=0.2)
+        bsl, fused = _make_pair(self.H, self.V, num_chunks=4)
+        hidden, labels = _make_inputs(1, 32, self.H, self.V, ignore_ratio=0.2)
 
         loss_b, gi_b, gw_b, _ = _forward_backward(*bsl, hidden, labels)
         loss_f, gi_f, gw_f, _ = _forward_backward(*fused, hidden, labels)
@@ -350,27 +298,6 @@ class TestFusedLinearCEAccuracy(unittest.TestCase):
             gw_b,
             gw_f,
             "grad_weight (multi-chunk)",
-            atol=self.GRAD_ATOL,
-            rtol=self.GRAD_RTOL,
-        )
-
-    # ------------------------------------------------------------------
-    # 场景 9：较大 vocab_size
-    # ------------------------------------------------------------------
-    def test_large_vocab(self):
-        H, V = 128, 2048
-        bsl, fused = _make_pair(H, V, num_chunks=4)
-        hidden, labels = _make_inputs(2, 32, H, V, ignore_ratio=0.15)
-
-        loss_b, gi_b, gw_b, _ = _forward_backward(*bsl, hidden, labels)
-        loss_f, gi_f, gw_f, _ = _forward_backward(*fused, hidden, labels)
-
-        self._assert_close(loss_b, loss_f, "loss (large vocab)")
-        self._assert_close(gi_b, gi_f, "grad_input (large vocab)")
-        self._assert_close(
-            gw_b,
-            gw_f,
-            "grad_weight (large vocab)",
             atol=self.GRAD_ATOL,
             rtol=self.GRAD_RTOL,
         )

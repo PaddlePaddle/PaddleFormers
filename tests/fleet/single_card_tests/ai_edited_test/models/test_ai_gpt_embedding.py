@@ -295,11 +295,14 @@ class TestGPTEmbeddingSWARotaryPosEmb(unittest.TestCase):
         emb.config.sequence_parallel = False
         emb.config.multimodal_embedding = False
         emb.config.expert_model_parallel_size = 1
+        emb.config.gpt_model_use_experimental_version = False
         emb.config.num_nextn_predict_layers = 0
         emb.config.apply_rope_fusion = False
         emb.rotary_pos_emb = None
         emb.mrope_section = None
         emb.sequence_parallel = False
+        emb.config.gpt_model_use_experimental_version = False
+        emb.config.pad_token_id = 0
         return emb
 
     def test_swa_rope_path(self):
@@ -432,6 +435,8 @@ class TestGPTEmbeddingCPScatterSPAssert(unittest.TestCase):
         mock_embedding = MagicMock()
         mock_embedding.return_value = paddle.randn([2, 8, 64])
         emb.embedding = mock_embedding
+        emb.config.gpt_model_use_experimental_version = False
+        emb.config.pad_token_id = 0
         return emb
 
     @unittest.mock.patch(

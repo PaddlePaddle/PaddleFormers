@@ -28,11 +28,16 @@ from paddle.distributed.fleet.meta_parallel import (
     build_spec_layer,
 )
 from paddle.distributed.fleet.utils import recompute
-from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
+from paddle.distributed.fleet.utils.sequence_parallel_utils import (
+    ScatterOp,
+    mark_as_sequence_parallel_parameter,
+)
 
 from paddleformers.fleet import tensor_parallel
 from paddleformers.fleet.context_parallel_utils import ContextParallelScatterOp
-from paddleformers.fleet.parallel_state import get_context_parallel_world_size
+from paddleformers.fleet.parallel_state import (
+    get_context_parallel_world_size,
+)
 from paddleformers.fleet.process_groups_config import ProcessGroupCollection
 from paddleformers.fleet.tensor_parallel.mappings import (
     gather_from_tensor_model_parallel_region,
@@ -388,20 +393,28 @@ class MultiTokenPredictionLayer(FleetLayer):
             # so the input's shape is [s, b, 2*h].
             # The output will be sent to the following transformer layer,
             # so the output's shape should be [s, b, h].
-            use_bias = False
             if self.config.gpt_model_use_experimental_version:
-                use_bias = self.config.use_bias
-            self.eh_proj = build_spec_layer(
-                self.sublayers_spec.eh_proj,
-                self.config.hidden_size * 2,
-                self.config.hidden_size,
-                config=self.config,
-                init_method=self.config.init_method,
-                gather_output=False,
-                bias=use_bias,
-                skip_bias_add=False,
-                is_expert=False,
-            )
+                self.eh_proj = paddle.incubate.nn.FusedLinear(
+                    self.config.hidden_size * 2,
+                    self.config.hidden_size,
+                    bias_attr=self.config.use_bias,
+                )
+                if self.config.tensor_model_parallel_size > 1:
+                    mark_as_sequence_parallel_parameter(self.eh_proj.weight)
+                    if self.config.use_bias:
+                        mark_as_sequence_parallel_parameter(self.eh_proj.bias)
+            else:
+                self.eh_proj = build_spec_layer(
+                    self.sublayers_spec.eh_proj,
+                    self.config.hidden_size * 2,
+                    self.config.hidden_size,
+                    config=self.config,
+                    init_method=self.config.init_method,
+                    gather_output=False,
+                    bias=False,
+                    skip_bias_add=False,
+                    is_expert=False,
+                )
             self.e_proj = None
             self.h_proj = None
 
@@ -525,34 +538,45 @@ class MultiTokenPredictionLayer(FleetLayer):
 
                 # when sp enable
                 if self.sequence_parallel:
-                    # [B, S/CP, 1] -> [S/CP, B, 1]
-                    mtp_hidden_inputs_mask = mtp_hidden_inputs_mask.transpose(
-                        [1, 0, 2]
-                    )
-                    mtp_hidden_inputs_mask = (
-                        scatter_to_sequence_parallel_region(
+                    if self.config.gpt_model_use_experimental_version:
+                        mtp_hidden_inputs_mask = mtp_hidden_inputs_mask.reshape(
+                            [-1, 1]
+                        )
+                        mtp_hidden_inputs_mask = ScatterOp.apply(
                             mtp_hidden_inputs_mask
                         )
-                    )
+                    else:
+                        # [B, S/CP, 1] -> [S/CP, B, 1]
+                        mtp_hidden_inputs_mask = (
+                            mtp_hidden_inputs_mask.transpose([1, 0, 2])
+                        )
+                        mtp_hidden_inputs_mask = (
+                            scatter_to_sequence_parallel_region(
+                                mtp_hidden_inputs_mask
+                            )
+                        )
                 hidden_states = hidden_states * mtp_hidden_inputs_mask
             # At the (k - 1)-th MTP layer, concatenates the i-th token's hidden_states
             # and the (i + K)-th token's embedding, and combine them with linear projection.
             hidden_states = paddle.cat((decoder_input, hidden_states), -1)
-            hidden_states, _ = self.eh_proj(hidden_states)
+            hidden_states = self.eh_proj(hidden_states)
+            if isinstance(hidden_states, tuple):
+                hidden_states, _ = hidden_states
             # For tensor parallel we need to gather the tensor across the model-parallel
             # ranks after the linear projection. This used to call
             # `all_gather_last_dim_from_tensor_parallel_region`, but that utility reduces
             # the gradient in backward pass and was therefore incorrect in this context.
             # It has been replaced with the correct `gather_from_tensor_model_parallel_region`.
-            if self.tensor_parallel > 1:
-                hidden_states = gather_from_tensor_model_parallel_region(
-                    hidden_states
-                )
-            # For sequence parallel, scatter after linear_fc and before transformer layer.
-            if self.sequence_parallel:
-                hidden_states = scatter_to_sequence_parallel_region(
-                    hidden_states
-                )
+            if not self.config.gpt_model_use_experimental_version:
+                if self.tensor_parallel > 1:
+                    hidden_states = gather_from_tensor_model_parallel_region(
+                        hidden_states
+                    )
+                # For sequence parallel, scatter after linear_fc and before transformer layer.
+                if self.sequence_parallel:
+                    hidden_states = scatter_to_sequence_parallel_region(
+                        hidden_states
+                    )
         return hidden_states
 
     def _proj_and_transformer_layer(
@@ -805,11 +829,12 @@ class MultiTokenPredictionLayer(FleetLayer):
                     [-1, decoder_input.shape[-1]]
                 )
                 decoder_input = ScatterOp.apply(decoder_input)
-                decoder_input = (
-                    decoder_input.reshape([batch_size, -1, hidden_size])
-                    .permute(1, 0, 2)
-                    .contiguous()
-                )  # [S/tp, B, H]
+                if not self.config.gpt_model_use_experimental_version:
+                    decoder_input = (
+                        decoder_input.reshape([batch_size, -1, hidden_size])
+                        .permute(1, 0, 2)
+                        .contiguous()
+                    )  # [S/tp, B, H]
 
             # Pop auxiliary data
             origin_start_row_indices = dict_args.pop(

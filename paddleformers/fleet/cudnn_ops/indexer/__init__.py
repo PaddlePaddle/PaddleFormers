@@ -13,5 +13,15 @@
 # limitations under the License.
 
 from .csa_indexer_bwd_cudnn import csa_indexer_bwd
+from .csa_indexer_fwd_cudnn import (
+    cudnn_indexer_forward,
+    cudnn_indexer_topk,
+    cudnn_indexer_topk_fwd,
+)
 
-__all__ = ["csa_indexer_bwd"]
+__all__ = [
+    "csa_indexer_bwd",
+    "cudnn_indexer_forward",
+    "cudnn_indexer_topk",
+    "cudnn_indexer_topk_fwd",
+]

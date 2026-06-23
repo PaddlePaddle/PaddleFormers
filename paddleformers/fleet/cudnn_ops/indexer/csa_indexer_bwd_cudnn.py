@@ -27,9 +27,12 @@ from __future__ import annotations
 
 import paddle
 
-from paddlefleet_ops.cudnn.deepseek_sparse_attention.indexer_backward.api import (
-    indexer_backward_wrapper,
-)
+from paddlefleet_ops import CUDNN_FRONTEND_HINT, is_cudnn_frontend_available
+
+
+def _require_cudnn_frontend():
+    if not is_cudnn_frontend_available():
+        raise ImportError(CUDNN_FRONTEND_HINT)
 
 
 def _to_bf16(t: paddle.Tensor) -> paddle.Tensor:
@@ -102,6 +105,11 @@ def csa_indexer_bwd(
         grad_loss_paddle = grad_loss
         if grad_loss_paddle.dtype != paddle.float32:
             grad_loss_paddle = grad_loss_paddle.cast(paddle.float32)
+
+    _require_cudnn_frontend()
+    from paddlefleet_ops.cudnn.deepseek_sparse_attention.indexer_backward.api import (
+        indexer_backward_wrapper,
+    )
 
     out = indexer_backward_wrapper(
         index_q_bf,

@@ -25,6 +25,7 @@ from paddleformers.fleet.transformer.moe.fp8_utils import (
 
 from .fp8_utils import FP8_ALIGN, USE_INPLACE_SWIGLU_BWD, tilewise_quant
 from .vmm_utils import (
+    auto_subbatch_allocator_backend,
     find_max_concurrent_subbatch_size,
     find_max_sequence_subbatch_size,
     merge_subbatch_cast,
@@ -404,14 +405,6 @@ class MlpNode:
         self.use_fp8_mlp = use_fp8_mlp
         self.use_auto_subbatch = use_auto_subbatch
         self.moe_subbatch_diag = moe_subbatch_diag
-        if self.use_auto_subbatch:
-            (vmm_flag,) = paddle.framework.get_flags(
-                "FLAGS_use_virtual_memory_auto_growth"
-            ).values()
-            assert vmm_flag, (
-                "use_auto_subbatch requires FLAGS_use_virtual_memory_auto_growth=True"
-            )
-
         if self.moe_subbatch_token_num_after_dispatch is not None:
             self.min_auto_subbatch_rows = (
                 self.moe_subbatch_token_num_after_dispatch
@@ -517,6 +510,7 @@ class MlpNode:
         self.tokens_per_expert = None
         self.padding_token_per_experts = None
         self.router_topk = None
+        self.unzip_node.reset_state()
         self.release_mem()
 
     def release_mem(self):
@@ -1114,7 +1108,6 @@ class MlpNode:
             ),
         )
 
-        # 如果能够分配连续的 n2 和 o3，则可以不切 zip/unzip
         num_unzipped_tokens = self.token_offsets[-1]
         hidden_size = zipped_out.shape[1]
         zip_unzip_fusion = (
@@ -1127,6 +1120,7 @@ class MlpNode:
             )
             > 0
         )
+
         if zip_unzip_fusion:
             expert_unzipped_out = paddle.empty(
                 [num_unzipped_tokens, zipped_out.shape[1]], zipped_out.dtype
@@ -1316,14 +1310,14 @@ class MlpNode:
 
         if self.moe_subbatch_diag:
             logger.info(
-                "[AutoSubbatch FWD] path=%s, total_tokens=%d, "
+                "[AutoSubbatch FWD] backend=%s, path=%s, total_tokens=%d, "
                 "subbatch_rows=%d, zip_unzip_fusion=%s",
+                auto_subbatch_allocator_backend(),
                 fwd_path,
                 num_unzipped_tokens,
                 subbatch_rows,
                 zip_unzip_fusion,
             )
-
         return output
 
     # ==================== backward methods ====================
@@ -1378,7 +1372,6 @@ class MlpNode:
         zip_unzip_fusion = (
             find_max_concurrent_subbatch_size(zip_unzip_features, upper=1) > 0
         )
-
         # 1. zip_grad and unzip (recompute)
         unzipped_grad = self.zip_node.backward(
             hidden_states_out_grad,
@@ -1620,10 +1613,13 @@ class MlpNode:
                 self.dispatched_indices,
             )
 
+        self.reset_state()
+
         if self.moe_subbatch_diag:
             logger.info(
-                "[AutoSubbatch BWD] path=%s, total_tokens=%d, "
+                "[AutoSubbatch BWD] backend=%s, path=%s, total_tokens=%d, "
                 "subbatch_rows=%d, zip_unzip_fusion=%s",
+                auto_subbatch_allocator_backend(),
                 bwd_path,
                 num_unzipped_tokens,
                 subbatch_rows,
@@ -1834,8 +1830,10 @@ class MlpNode:
         ):
             # Per-expert backward path (non-fusion)
             bwd_path = "per_expert"
+
             self._ensure_weight_grad()
             self._slice_weight_grad()
+
             output = paddle.empty(
                 [0, hidden_states_out_grad_shape[-1]], dtype=paddle.float32
             )
@@ -2009,8 +2007,9 @@ class FusionMoePyLayer(paddle.autograd.PyLayer):
         # Expose node on moe_layer for diagnostic access
         custom_map._fusion_node = ctx.node
 
-        if not is_first_fwd:
-            # Normal forward with grad: save state for backward.
+        if is_first_fwd:
+            ctx.node.clear_cached_tensors()
+        else:
             cached_tensors = ctx.node.cached_tensors()
             ctx.save_for_backward(cached_tensors)
             ctx.node.clear_cached_tensors()
@@ -2031,6 +2030,9 @@ class FusionMoePyLayer(paddle.autograd.PyLayer):
         """
         (cached_tensors,) = ctx.saved_tensor()
         ctx.node.set_cached_tensors(cached_tensors)
+
+        del cached_tensors
+        ctx.container = None
         hidden_states_grad, dispatched_probs_grad = ctx.node.backward(
             output_grad
         )

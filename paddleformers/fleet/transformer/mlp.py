@@ -129,6 +129,11 @@ class MLP(FleetLayer):
         self.hidden_size = (
             hidden_size if hidden_size is not None else self.config.hidden_size
         )
+        skip_bias_add = (
+            True
+            if not self.config.gpt_model_use_experimental_version
+            else False
+        )
 
         # If this is a gated linear unit we double the output width
         # see https://arxiv.org/pdf/2002.05202.pdf
@@ -142,7 +147,7 @@ class MLP(FleetLayer):
             init_method=self.config.init_method,
             gather_output=False,
             bias=self.config.use_bias,
-            skip_bias_add=True,
+            skip_bias_add=skip_bias_add,
             is_expert=is_expert,
             tp_group=tp_group,
         )
@@ -168,7 +173,7 @@ class MLP(FleetLayer):
             init_method=self.config.output_layer_init_method,
             bias=self.config.use_bias,
             input_is_parallel=True,
-            skip_bias_add=True,
+            skip_bias_add=skip_bias_add,
             is_expert=is_expert,
             tp_group=tp_group,
         )

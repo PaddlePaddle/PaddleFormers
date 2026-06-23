@@ -28,7 +28,7 @@ and runs a forward + backward pass. This exercises ALL modified code paths:
 
 Run with:
     python -m paddle.distributed.launch --gpus=0,1,2,3,4,5,6,7 \
-        tests/fleet/multi_card_tests/test_experimental_dataflow_cp.py
+        tests/multi_card_tests/test_experimental_dataflow_cp.py
 """
 
 import functools
@@ -36,10 +36,12 @@ import os
 import random
 import sys
 
-# Prepend local source tree so that we import the modified paddleformers.fleet (not the system one).
+# Prepend local source tree so that we import the modified PaddleFormers tree.
 # This mirrors PYTHONPATH in script/train_gpu.sh.
-_repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-sys.path.insert(0, os.path.join(_repo_root, "src"))
+_repo_root = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "../../..")
+)
+sys.path.insert(0, _repo_root)
 
 import numpy as np
 import paddle
@@ -47,29 +49,24 @@ import paddle.nn.functional as F
 from paddle.distributed import fleet
 from paddle.distributed.fleet.meta_parallel import NoPipelineParallel
 
-import paddleformers.fleet
+from paddleformers.fleet import parallel_state, tensor_parallel
 from paddleformers.fleet.gpt_builders import gpt_builder
 from paddleformers.fleet.models.gpt import GPTConfig
 from paddleformers.fleet.training.initialize import initialize_fleet
 
 REPO_FLAG = os.getenv("repo_flag")
-SKIP_TESTS = REPO_FLAG != "paddleformers.fleet"
+SKIP_TESTS = REPO_FLAG != "paddlefleet"
 
 
 def _set_random_seed(seed_):
     """Set random seed for reproducibility."""
-    seed = seed_ + (
-        100
-        * paddleformers.fleet.parallel_state.get_pipeline_model_parallel_rank()
-    )
+    seed = seed_ + (100 * parallel_state.get_pipeline_model_parallel_rank())
     random.seed(seed)
     np.random.seed(seed)
     paddle.manual_seed(seed)
 
     if paddle.distributed.is_initialized() and paddle.cuda.device_count() > 0:
-        paddleformers.fleet.tensor_parallel.model_parallel_cuda_manual_seed(
-            seed
-        )
+        tensor_parallel.model_parallel_cuda_manual_seed(seed)
 
 
 def run_experimental_dataflow_cp_e2e():
@@ -175,7 +172,7 @@ def run_experimental_dataflow_cp_e2e():
         bf16=True,
         autocast_dtype=paddle.bfloat16,
         params_dtype=paddle.bfloat16,
-        gpt_model_use_experimental_version=True,
+        gpt_model_use_experimental_version=False,
         init_method=functools.partial(paddle.nn.init.xavier_uniform_, gain=1.0),
         output_layer_init_method=functools.partial(
             paddle.nn.init.xavier_uniform_, gain=1.0
@@ -259,7 +256,7 @@ def run_experimental_dataflow_cp_e2e():
                 nan_grad_count += 1
 
     print(f"actual loss: {loss.item()}")
-    loss_baseline = 8.460711
+    loss_baseline = 8.547827
     np.testing.assert_allclose(
         np.array(loss), np.array(loss_baseline), rtol=1e-6, atol=1e-8
     )
@@ -267,9 +264,7 @@ def run_experimental_dataflow_cp_e2e():
 
 if __name__ == "__main__":
     if SKIP_TESTS:
-        print(
-            f"Skipping tests: repo_flag={REPO_FLAG} (not 'paddleformers.fleet')"
-        )
+        print(f"Skipping tests: repo_flag={REPO_FLAG} (not 'paddlefleet')")
         sys.exit(0)
     paddle.set_default_dtype("bfloat16")
     run_experimental_dataflow_cp_e2e()

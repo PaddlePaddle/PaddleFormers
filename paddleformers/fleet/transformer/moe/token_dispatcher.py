@@ -631,8 +631,12 @@ class _DeepEPManager(_DispatchManager):
             moe_ep_barrier=self.moe_ep_barrier,
             use_rr_deepep_combine=use_rr_deepep_combine,
         )
-        # Release the handle after combine operation
+        # Release the handle and token_indices after combine operation
         self.handle = None
+        self.token_indices = None
+        self.token_probs = None
+        self.dispatched_probs = None
+        self.dispatched_indices = None
         return hidden_states
 
     def get_permuted_hidden_states_by_experts(

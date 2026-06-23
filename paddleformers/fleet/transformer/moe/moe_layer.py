@@ -46,7 +46,10 @@ from paddleformers.fleet.transformer.utils import profile
 
 from .fp8_utils import fused_stack_quant_without_cache
 from .fused_a2a import configure_buffer
-from .fusion_layer_utils import FusionMoePyLayer, HybridEPMoePyLayer
+from .fusion_layer_utils import (
+    FusionMoePyLayer,
+    HybridEPMoePyLayer,
+)
 from .moe_expert import GroupedMLPExpert, SonicMoEExpert, StandardMLPExpert
 from .moe_router import TopKRouter
 from .moe_shared_expert import StandardMLPSharedExpert
@@ -251,7 +254,8 @@ class MoELayer(nn.Layer):
             and self.tensor_model_parallel_size > 1
         ):
             routed_expert_config.sequence_parallel = False
-            shared_expert_config.sequence_parallel = False
+            if not self.config.gpt_model_use_experimental_version:
+                shared_expert_config.sequence_parallel = False
         elif (
             self.expert_model_parallel_size > 1
             and self.tensor_model_parallel_size >= 1
@@ -369,6 +373,9 @@ class MoELayer(nn.Layer):
                     self.experts.append(None)
 
         shared_expert_args = deepcopy(expert_args)
+        if self.config.gpt_model_use_experimental_version:
+            shared_expert_args["is_expert"] = False
+            shared_expert_args["config"] = shared_expert_config
         shared_expert_args["config"].use_bias = shared_expert_config.use_bias
         shared_expert_args["config"].hidden_size = self.config.hidden_size
         shared_expert_args["moe_intermediate_size"] = (
@@ -384,7 +391,8 @@ class MoELayer(nn.Layer):
         # 1. shared_experts only process local tokens which shape is [s/tp,b,h]
         # 2. shared_experts'weight and bias will not be splited across tp ranks
         if (
-            self.sequence_parallel
+            not self.config.gpt_model_use_experimental_version
+            and self.sequence_parallel
             and self.expert_model_parallel_size > 1
             and self.shared_experts is not None
         ):
@@ -728,6 +736,7 @@ class MoELayer(nn.Layer):
             dispatched_hidden_states, fp8_dispatched_handle = self.dispatch(
                 hidden_states, probs, routing_map, topk_weights, topk_indices
             )
+
         if should_log_balance and global_moe_balance_training_logs_enabled():
             log_moe_balance(
                 self.layer_number,
@@ -977,6 +986,7 @@ class MoELayer(nn.Layer):
         """
         if self.expert_model_parallel_size <= 1 and self.sequence_parallel:
             hidden_states = GatherOp.apply(hidden_states)
+
         orig_shape = hidden_states.shape
         residuals = hidden_states
 

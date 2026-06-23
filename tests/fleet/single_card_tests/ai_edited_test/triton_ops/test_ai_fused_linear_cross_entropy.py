@@ -362,6 +362,7 @@ class TestFusedLinearCrossEntropyForwardEdgeCases(unittest.TestCase):
         weight = paddle.randn([V, H], dtype=paddle.float32)
         weight.stop_gradient = False
         bias = paddle.randn([V], dtype=paddle.float32)
+        bias.stop_gradient = False
         target = paddle.randint(0, V, [BT])
 
         loss, grad_input, grad_weight, grad_bias = (
@@ -378,6 +379,38 @@ class TestFusedLinearCrossEntropyForwardEdgeCases(unittest.TestCase):
         )
 
         self.assertIsNotNone(grad_bias)
+
+    def test_forward_with_frozen_bias(self):
+        """Test forward where bias is provided but stop_gradient=True:
+        grad_bias should be None (allocation is gated on bias.stop_gradient,
+        not just `bias is not None`)."""
+        from paddleformers.fleet.triton_ops.fused_linear_cross_entropy.fused_linear_cross_entropy import (
+            fused_linear_cross_entropy_forward,
+        )
+
+        BT, H, V = 4, 8, 16
+        _input = paddle.randn([BT, H], dtype=paddle.float32)
+        _input.stop_gradient = False
+        weight = paddle.randn([V, H], dtype=paddle.float32)
+        weight.stop_gradient = False
+        bias = paddle.randn([V], dtype=paddle.float32)
+        bias.stop_gradient = True  # frozen bias
+        target = paddle.randint(0, V, [BT])
+
+        loss, grad_input, grad_weight, grad_bias = (
+            fused_linear_cross_entropy_forward(
+                _input=_input,
+                weight=weight,
+                target=target,
+                bias=bias,
+                ignore_index=-100,
+                reduction="mean",
+                num_chunks=1,
+                ec_align=False,
+            )
+        )
+
+        self.assertIsNone(grad_bias)
 
     def test_forward_ec_align_mode(self):
         """Test forward with ec_align mode."""

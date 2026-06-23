@@ -16,7 +16,7 @@
 
 Requires cuda.tile (cuTile) for optimal performance on supported GPUs
 (compute capability 10.x+).  Reference (non-fused) implementations live in
-``paddleformers.fleet.transformer.hyper_connection`` and are used when cuTile is
+``paddlefleet.transformer.hyper_connection`` and are used when cuTile is
 unavailable or when the ``use_fused_mhc`` config flag is False.
 
 Four fused operations:

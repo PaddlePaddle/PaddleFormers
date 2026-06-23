@@ -23,14 +23,18 @@ from paddle.distributed.fleet.meta_parallel import (
     ScheduleNode,
     build_spec_layer,
 )
-from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
+from paddle.distributed.fleet.utils.sequence_parallel_utils import (
+    ScatterOp,
+)
 
 from paddleformers.fleet.context_parallel_utils import (
     ContextParallelScatterOp,
     mark_context_parallel_parameter_disable_scale_grad,
 )
 from paddleformers.fleet.models.gpt.utils import fill_feature
-from paddleformers.fleet.parallel_state import get_context_parallel_world_size
+from paddleformers.fleet.parallel_state import (
+    get_context_parallel_world_size,
+)
 from paddleformers.fleet.tensor_parallel.mappings import (
     scatter_to_sequence_parallel_region,
 )
@@ -141,6 +145,16 @@ class GPTEmbedding(FleetLayer):
         decoder_input: Tensor = None,
         packed_seq_params: PackedSeqParams = None,
     ):
+        if self.config.gpt_model_use_experimental_version:
+            assert (
+                getattr(self.config, "max_sequence_length", None) is not None
+            ), (
+                "config.max_sequence_length must be set when gpt_model_use_experimental_version=True"
+            )
+            if self.config.sequence_parallel:
+                assert not self.config.multi_latent_attention, (
+                    "multi_latent_attention is not supported when gpt_model_use_experimental_version=True and sequence_parallel=True"
+                )
         input_ids = dict_args["input_ids"]
         labels = dict_args.get("labels", None)
         if labels is not None:
@@ -189,6 +203,7 @@ class GPTEmbedding(FleetLayer):
             if (
                 self.config.expert_model_parallel_size > 1
                 and self.config.tensor_model_parallel_size < 2
+                or self.config.gpt_model_use_experimental_version
             ):
                 pad_token_id = getattr(self.config, "pad_token_id", 0)
                 if pad_token_id is None:
@@ -247,7 +262,13 @@ class GPTEmbedding(FleetLayer):
                             axis=1,
                             mode=self.config.cp_balance_mode,
                         )
-
+                    if (
+                        self.config.gpt_model_use_experimental_version
+                        and self.config.sequence_parallel
+                    ):
+                        decoder_input = decoder_input.astype(
+                            self.embedding.embed_tokens.weight.dtype
+                        )
                     if self.sequence_parallel:
                         batch_size, seq_length, hidden_size = (
                             decoder_input.shape
@@ -256,11 +277,17 @@ class GPTEmbedding(FleetLayer):
                             [-1, decoder_input.shape[-1]]
                         )
                         decoder_input = ScatterOp.apply(decoder_input)
-                        decoder_input = (
-                            decoder_input.reshape([batch_size, -1, hidden_size])
-                            .permute(1, 0, 2)
-                            .contiguous()
-                        )  # change to [S/tp, B, H]
+                        if not (
+                            self.config.gpt_model_use_experimental_version
+                            and self.config.sequence_parallel
+                        ):
+                            decoder_input = (
+                                decoder_input.reshape(
+                                    [batch_size, -1, hidden_size]
+                                )
+                                .permute(1, 0, 2)
+                                .contiguous()
+                            )  # change to [S/tp, B, H]
                 else:
                     inputs_embeds_extra = decoder_input[
                         :, -self.config.num_nextn_predict_layers :, :
@@ -568,6 +595,15 @@ class GPTEmbedding(FleetLayer):
 
         if paddle.core._has_grad():
             decoder_input.stop_gradient = False  # Prevent errors in recompute_pylayer during LoRA training caused by base_weight lacking gradients.
+
+        # NOTE(Waynezee):  gpt_model_use_experimental_version currently don't need values below
+        if self.config.gpt_model_use_experimental_version:
+            rotary_pos_emb = None
+            rotary_pos_cos = None
+            rotary_pos_sin = None
+            swa_rotary_pos_emb = None
+            swa_rotary_pos_cos = None
+            swa_rotary_pos_sin = None
 
         if (
             get_context_parallel_world_size() > 1

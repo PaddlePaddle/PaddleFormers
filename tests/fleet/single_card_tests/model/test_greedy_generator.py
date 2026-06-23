@@ -14,7 +14,7 @@
 
 """
 Unit tests for generation module components.
-This test file imports only the necessary components without full paddleformers.fleet.
+This test file imports only the necessary components without full paddlefleet.
 """
 
 import os
@@ -147,6 +147,85 @@ class TestDynamicKVCache(unittest.TestCase):
         self.assertEqual(cache.get_seq_len(3), 3)
 
 
+class TestGreedyGeneratorEosStop(unittest.TestCase):
+    """Test eos_token_id handling in GreedyGenerator.generate (mocked model)."""
+
+    def _make_generator(self, token_sequence):
+        """Create a GreedyGenerator with a fake model that yields given tokens."""
+        from unittest.mock import MagicMock
+
+        from paddleformers.fleet.generation.greedy_generator import (
+            DynamicKVCache,
+            GreedyGenerator,
+        )
+
+        # token_sequence: list of int, tokens the model will output in order
+        self._call_idx = 0
+        seq = token_sequence
+
+        def fake_forward(inputs):
+            # Return logits where argmax gives the desired token
+            vocab_size = 100
+            logits = paddle.zeros([1, 1, vocab_size], dtype="float32")
+            tok_id = seq[min(self._call_idx, len(seq) - 1)]
+            logits[0, 0, tok_id] = 10.0
+            self._call_idx += 1
+            return logits
+
+        model = MagicMock()
+        model.side_effect = fake_forward
+        model.config = MagicMock()
+        model.config.num_hidden_layers = 1
+        model.config.sequence_parallel = False
+        model.config.apply_rope_fusion = False
+        model.config.recompute_granularity = None
+        model.config.num_empty_layers_add_in_head = 0
+        model.config.num_empty_layers_add_in_tail = 0
+
+        gen = object.__new__(GreedyGenerator)
+        gen.model = model
+        gen.cache = DynamicKVCache(num_layers=1)
+        return gen
+
+    def test_eos_int_stops_early(self):
+        """eos_token_id as int should stop generation."""
+        # Sequence: 5, 5, 3(eos), 5, 5 — should stop at step 3
+        gen = self._make_generator([5, 5, 3, 5, 5])
+        input_ids = paddle.to_tensor([[1, 2]], dtype="int64")
+        out = gen.generate(input_ids, max_new_tokens=10, eos_token_id=3)
+        generated = out[0, 2:].tolist()
+        # Should contain 5, 5, 3 then stop
+        self.assertEqual(generated, [5, 5, 3])
+
+    def test_eos_list_single_token_stops(self):
+        """eos_token_id as list of single-token lists (e.g. [[3],[7]]) should stop."""
+        gen = self._make_generator([5, 5, 7, 5, 5])
+        input_ids = paddle.to_tensor([[1, 2]], dtype="int64")
+        out = gen.generate(
+            input_ids, max_new_tokens=10, eos_token_id=[[3], [7]]
+        )
+        generated = out[0, 2:].tolist()
+        self.assertEqual(generated, [5, 5, 7])
+
+    def test_eos_list_multi_token_not_early_stop(self):
+        """Multi-token stop sequences in list should not trigger early stop."""
+        # [[10, 20]] is a multi-token stop — should NOT stop generation
+        gen = self._make_generator([10, 5, 5, 5, 5])
+        input_ids = paddle.to_tensor([[1, 2]], dtype="int64")
+        out = gen.generate(input_ids, max_new_tokens=5, eos_token_id=[[10, 20]])
+        generated = out[0, 2:].tolist()
+        # All 5 tokens generated (no early stop)
+        self.assertEqual(len(generated), 5)
+
+    def test_eos_none_generates_max(self):
+        """No eos_token_id should generate max_new_tokens."""
+        gen = self._make_generator([5] * 10)
+        input_ids = paddle.to_tensor([[1, 2]], dtype="int64")
+        out = gen.generate(input_ids, max_new_tokens=5, eos_token_id=None)
+        generated = out[0, 2:].tolist()
+        self.assertEqual(len(generated), 5)
+
+
 if __name__ == "__main__":
-    print("Running DynamicKVCache unit tests...")
+    print("Running greedy generator unit tests...")
     unittest.main(verbosity=2)

@@ -57,11 +57,16 @@ def _q_rms_norm(q: Tensor, eps: float) -> Tensor:
     return q * paddle.rsqrt(q.square().mean(-1, keepdim=True) + eps)
 
 
-from paddleformers.fleet.transformer.utils import get_doc_lens
+from paddleformers.fleet.transformer.utils import (
+    get_doc_lens,
+)
 
 
 def build_document_rope_freqs(
-    rotary_pos_emb: nn.Layer, sq: int, startend_row_indices: Tensor
+    rotary_pos_emb: nn.Layer,
+    sq: int,
+    startend_row_indices: Tensor,
+    position_offset: int = 0,
 ):
     """Build RoPE frequencies that restart from zero for each document."""
     assert (
@@ -79,12 +84,14 @@ def build_document_rope_freqs(
     freqs = freqs.squeeze(0).squeeze(1)
     doc_freqs = [freqs[:doc_len] for doc_len in doc_lens.tolist()]
     freqs = paddle.concat(doc_freqs, axis=0)
-    if freqs.shape[0] < sq:
+    needed_len = position_offset + sq
+    if freqs.shape[0] < needed_len:
         freqs = paddle.concat(
             [
                 freqs,
                 paddle.zeros(
-                    [sq - freqs.shape[0], freqs.shape[-1]], dtype=freqs.dtype
+                    [needed_len - freqs.shape[0], freqs.shape[-1]],
+                    dtype=freqs.dtype,
                 ),
             ],
             axis=0,
@@ -308,7 +315,10 @@ class DSv4HybridAttention(Attention):
             # Get RoPE frequencies for inverse
             if startend_row_indices is not None:
                 freqs, mscale = build_document_rope_freqs(
-                    self.rotary_pos_emb, sq, startend_row_indices
+                    self.rotary_pos_emb,
+                    sq,
+                    startend_row_indices,
+                    position_offset=position_offset,
                 )
             else:
                 # Get RoPE frequencies for inverse; use global positions in CP mode
@@ -322,20 +332,36 @@ class DSv4HybridAttention(Attention):
             mscale = 1.0
             freqs = freqs[:, position_offset : position_offset + sq, :]
 
-            content_part = core_attn_out[..., :nope_dim]
-            rot_part = core_attn_out[..., nope_dim:]
+            if self.config.apply_rope_fusion:
+                from paddleformers.fleet.triton_ops import (
+                    fused_apply_mla_rope_inplace,
+                )
 
-            rot_part = _apply_rotary_pos_emb_bshd(
-                rot_part,
-                freqs,
-                mscale=mscale,
-                rotary_interleaved=False,
-                multi_latent_attention=True,
-                inverse=True,
-                mla_output_remove_interleaving=True,
-            )
-            core_attn_out = paddle.concat([content_part, rot_part], axis=-1)
-            core_attn_out = core_attn_out.reshape([b, sq, -1])
+                # The clone is necessary because sparse attention depends on core_attn_out
+                # for backward. However, it is still 10x faster than the unfused path.
+                core_attn_out = fused_apply_mla_rope_inplace(
+                    core_attn_out,
+                    freqs,
+                    nope_dim,
+                    mscale,
+                    inverse=True,
+                    clone_input=True,
+                )
+            else:
+                content_part = core_attn_out[..., :nope_dim]
+                rot_part = core_attn_out[..., nope_dim:]
+
+                rot_part = _apply_rotary_pos_emb_bshd(
+                    rot_part,
+                    freqs,
+                    mscale=mscale,
+                    rotary_interleaved=False,
+                    multi_latent_attention=True,
+                    inverse=True,
+                    mla_output_remove_interleaving=True,
+                )
+                core_attn_out = paddle.concat([content_part, rot_part], axis=-1)
+                core_attn_out = core_attn_out.reshape([b, sq, -1])
 
         # Grouped output projection
         core_attn_out = core_attn_out.reshape([b, sq, self.o_local_groups, -1])
@@ -498,7 +524,10 @@ class DSv4HybridSelfAttention(DSv4HybridAttention):
             # Get RoPE frequencies
             if startend_row_indices is not None:
                 freqs, mscale = build_document_rope_freqs(
-                    self.rotary_pos_emb, sq, startend_row_indices
+                    self.rotary_pos_emb,
+                    sq,
+                    startend_row_indices,
+                    position_offset=position_offset,
                 )
             else:
                 # Get RoPE frequencies for global positions
@@ -514,17 +543,24 @@ class DSv4HybridSelfAttention(DSv4HybridAttention):
             freqs = freqs[:, position_offset : position_offset + sq, :]
 
             # Q RoPE: split nope/pe, apply RoPE to pe part
-            q_nope = q[..., :nope_dim]
-            q_pe = q[..., nope_dim:]
-            q_pe = _apply_rotary_pos_emb_bshd(
-                q_pe,
-                freqs,
-                mscale=mscale,
-                rotary_interleaved=False,
-                multi_latent_attention=True,
-                mla_output_remove_interleaving=True,
-            )
-            query = paddle.concat([q_nope, q_pe], axis=-1)
+            if self.config.apply_rope_fusion:
+                from paddleformers.fleet.triton_ops import (
+                    fused_apply_mla_rope_inplace,
+                )
+
+                query = fused_apply_mla_rope_inplace(q, freqs, nope_dim, mscale)
+            else:
+                q_nope = q[..., :nope_dim]
+                q_pe = q[..., nope_dim:]
+                q_pe = _apply_rotary_pos_emb_bshd(
+                    q_pe,
+                    freqs,
+                    mscale=mscale,
+                    rotary_interleaved=False,
+                    multi_latent_attention=True,
+                    mla_output_remove_interleaving=True,
+                )
+                query = paddle.concat([q_nope, q_pe], axis=-1)
 
             # KV RoPE: split nope/pe, apply RoPE to pe part
             kv_nope = kv[..., :nope_dim]

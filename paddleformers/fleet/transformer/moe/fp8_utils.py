@@ -26,7 +26,7 @@ from paddleformers.fleet.fusions.fused_swiglu_scale import (
 
 try:
     from paddlefleet_ops import (
-        deep_gemm as deep_gemm,
+        deep_gemm as paddlefleet_deep_gemm,
         fuse_stack_fp8_quant,
         fuse_stack_transpose_fp8_quant,
         fuse_weighted_swiglu_fp8_quant,
@@ -36,7 +36,7 @@ try:
 except (ImportError, RuntimeError):
     pass
 
-# 优先从 paddlefleet_ops 导入（算子已重命名为 paddleformers.fleet_fused_swiglu_probs_bwd 避免冲突），
+# 优先从 paddlefleet_ops 导入（算子已重命名为 paddlefleet_fused_swiglu_probs_bwd 避免冲突），
 # 仅在 paddlefleet_ops 中不存在时回退到旧的 FusedQuantOps。
 try:
     from paddlefleet_ops import (
@@ -79,6 +79,11 @@ except ImportError:
             x, y = paddle.chunk(x, chunks=2, axis=-1)
         return F.silu(x) * y
 
+
+try:
+    from paddlefleet_ops import deep_gemm
+except:
+    pass
 
 try:
     from paddle.incubate.nn.functional import fused_transpose_wlch_split_quant
@@ -172,7 +177,7 @@ def fused_stack_quant_without_cache(
         )
 
     if use_ue8m0:
-        scale = scale.T
+        scale = scale.T.contiguous()
     return w, scale
 
 
@@ -197,6 +202,10 @@ def tilewise_quant(x):
     """
     Tile-wise FP8 quantization: quantize input tensor to FP8 with per-tile (1x128) scaling.
     """
+    pow_2_scales = False
+    if paddle.device.cuda.get_device_capability()[0] == 10:
+        # Blackwell GPUs require the use of pow2_scales quantization.
+        pow_2_scales = True
     if x.shape[0] > 0:
         return paddle.incubate.nn.functional.fp8_quant_blockwise(
             x,
@@ -588,7 +597,7 @@ class ExpertsGroupGemmContiguousNode:
                     o1 = paddle.zeros(
                         [x.shape[0], expert_w1.shape[2]], dtype="bfloat16"
                     )
-                    deep_gemm.m_grouped_bf16_gemm_nn_contiguous(
+                    paddlefleet_deep_gemm.m_grouped_bf16_gemm_nn_contiguous(
                         x,
                         expert_w1,
                         o1,
@@ -722,7 +731,7 @@ class ExpertsGroupGemmContiguousNode:
                         .contiguous()
                         .transpose([0, 2, 1])
                     )
-                deep_gemm.m_grouped_fp8_gemm_nt_contiguous(
+                paddlefleet_deep_gemm.m_grouped_fp8_gemm_nt_contiguous(
                     (x_fp8, x_scale),
                     (w1_t_quant, w1_t_scale),
                     o1,
@@ -762,7 +771,7 @@ class ExpertsGroupGemmContiguousNode:
                     o3 = paddle.zeros(
                         [o2.shape[0], expert_w2.shape[2]], dtype="bfloat16"
                     )
-                    deep_gemm.m_grouped_bf16_gemm_nn_contiguous(
+                    paddlefleet_deep_gemm.m_grouped_bf16_gemm_nn_contiguous(
                         o2,
                         expert_w2,
                         o3,
@@ -888,7 +897,7 @@ class ExpertsGroupGemmContiguousNode:
                         .contiguous()
                         .transpose([0, 2, 1])
                     )
-                deep_gemm.m_grouped_fp8_gemm_nt_contiguous(
+                paddlefleet_deep_gemm.m_grouped_fp8_gemm_nt_contiguous(
                     (o2_fp8, o2_scale),
                     (w2_quant, w2_scale),
                     o3,
@@ -907,7 +916,7 @@ class ExpertsGroupGemmContiguousNode:
                         [unzipped_grad.shape[0], expert_w2.shape[1]],
                         dtype=paddle.bfloat16,
                     )
-                    deep_gemm.m_grouped_bf16_gemm_nt_contiguous(
+                    paddlefleet_deep_gemm.m_grouped_bf16_gemm_nt_contiguous(
                         unzipped_grad,
                         expert_w2,
                         do2_s,
@@ -1054,7 +1063,7 @@ class ExpertsGroupGemmContiguousNode:
                         .contiguous()
                         .transpose([0, 2, 1])
                     )
-                deep_gemm.m_grouped_fp8_gemm_nt_contiguous(
+                paddlefleet_deep_gemm.m_grouped_fp8_gemm_nt_contiguous(
                     (unzipped_grad_fp8, unzipped_grad_scale),
                     (bw_w2_quant, bw_w2_scale),
                     do2_s,
@@ -1106,7 +1115,7 @@ class ExpertsGroupGemmContiguousNode:
                         [do1.shape[0], expert_w1.shape[1]],
                         dtype=paddle.bfloat16,
                     )
-                    deep_gemm.m_grouped_bf16_gemm_nt_contiguous(
+                    paddlefleet_deep_gemm.m_grouped_bf16_gemm_nt_contiguous(
                         do1,
                         expert_w1,
                         dx,
@@ -1224,7 +1233,7 @@ class ExpertsGroupGemmContiguousNode:
                         .contiguous()
                         .transpose([0, 2, 1])
                     )
-                deep_gemm.m_grouped_fp8_gemm_nt_contiguous(
+                paddlefleet_deep_gemm.m_grouped_fp8_gemm_nt_contiguous(
                     (do1_fp8, do1_scale),
                     (bw_w1_quant, bw_w1_scale),
                     dx,

@@ -33,11 +33,15 @@ from paddle.distributed.fleet.utils import recompute
 
 from paddleformers.fleet import tensor_parallel
 from paddleformers.fleet.context_parallel_utils import ContextParallelScatterOp
-from paddleformers.fleet.models.common.embeddings import apply_rotary_pos_emb
+from paddleformers.fleet.models.common.embeddings import (
+    apply_rotary_pos_emb,
+)
 from paddleformers.fleet.models.common.embeddings.yarn_rotary_pos_embedding import (
     _yarn_get_concentration_factor_from_config,
 )
-from paddleformers.fleet.parallel_state import get_context_parallel_world_size
+from paddleformers.fleet.parallel_state import (
+    get_context_parallel_world_size,
+)
 from paddleformers.fleet.process_groups_config import ProcessGroupCollection
 from paddleformers.fleet.recompute_utils import (
     need_recompute_in_block,
@@ -49,7 +53,9 @@ from paddleformers.fleet.tensor_parallel.mappings import (
     scatter_to_tensor_model_parallel_region,
 )
 from paddleformers.fleet.transformer.layer import FleetLayer
-from paddleformers.fleet.transformer.utils import is_layer_window_attention
+from paddleformers.fleet.transformer.utils import (
+    is_layer_window_attention,
+)
 from paddleformers.fleet.utils import divide, get_pg_rank, get_pg_size
 
 from .enums import AttnMaskType
@@ -191,6 +197,7 @@ class SelfAttentionVHASublayersSpec:
     q_proj: LayerSpec | type = None
     k_proj: LayerSpec | type = None
     v_proj: LayerSpec | type = None
+    shared_kv_proj: LayerSpec | type = None
     gate_proj: LayerSpec | type = None
     qkv_proj: LayerSpec | type = None  # used for SWA fallback (fused QKV)
     core_attention: LayerSpec | type = None
@@ -247,7 +254,7 @@ class Attention(FleetLayer, ABC):
                 )
             else:
                 # for non-mtp layer, layer_number add num_empty_layers_add_in_head in
-                # src/paddleformers.fleet/models/gpt/gpt_layer_specs.py#L533
+                # src/paddlefleet/models/gpt/gpt_layer_specs.py#L533
                 # real_layer_number = layer_number + config.num_empty_layers_add_in_head
                 for_swa_layer_number = (
                     self.layer_number - self.config.num_empty_layers_add_in_head
@@ -658,9 +665,10 @@ class Attention(FleetLayer, ABC):
         # transpose back to [b, seq, h] for attention computation
         # TODO: supports [seq, b, h] input in attention computation
         if self.config.sequence_parallel:
-            query = query.transpose([1, 0, 2, 3]).contiguous()
-            key = key.transpose([1, 0, 2, 3]).contiguous()
-            value = value.transpose([1, 0, 2, 3]).contiguous()
+            if not self.config.gpt_model_use_experimental_version:
+                query = query.transpose([1, 0, 2, 3]).contiguous()
+                key = key.transpose([1, 0, 2, 3]).contiguous()
+                value = value.transpose([1, 0, 2, 3]).contiguous()
             # Slice and adjust attn_mask_startend_row_indices for the local SP sequence
             # range. The full mask has shape [B, 1, S, 1] with absolute row indices.
             # Each SP rank processes key/query positions [tp_rank*L : (tp_rank+1)*L],
@@ -719,7 +727,9 @@ class Attention(FleetLayer, ABC):
         # Output. [b, sq, h]
         # =================
 
-        if self.config.sequence_parallel:
+        if (
+            not self.config.gpt_model_use_experimental_version
+        ) and self.config.sequence_parallel:
             core_attn_out = core_attn_out.transpose([1, 0, 2]).contiguous()
 
         core_attn_out = self._post_core_attention_hook(core_attn_out)
@@ -747,6 +757,11 @@ class Attention(FleetLayer, ABC):
             logging.getLogger(__name__).info(
                 f"[MD5 Probe PF] Rank={_rank} Layer={self.layer_number} core_attn_out MD5={_ca_md5} shape={list(core_attn_out.shape)}"
             )
+        if (
+            self.config.gpt_model_use_experimental_version
+            and self.config.sequence_parallel
+        ):
+            core_attn_out = core_attn_out.reshape([-1, core_attn_out.shape[-1]])
         if (
             self.config.gpt_model_use_experimental_version
             and self.o_proj.bias is not None
@@ -927,6 +942,14 @@ class SelfAttention(Attention):
                     if isinstance(gate_output, tuple)
                     else gate_output
                 )
+                gate = gate.reshape(
+                    [
+                        -1,
+                        self.config.max_sequence_length
+                        // max(get_context_parallel_world_size(), 1),
+                        gate.shape[-1],
+                    ]
+                )
             else:
                 gate = None
 
@@ -951,8 +974,20 @@ class SelfAttention(Attention):
             if not split_qkv:
                 split_arg_list = [num_heads, num_kv_heads, num_kv_heads]
                 return mixed_qkv, split_arg_list
+            seq_len_local = self.config.max_sequence_length // max(
+                get_context_parallel_world_size(), 1
+            )
             query, key, value = paddle.split(
-                mixed_qkv, [num_heads, num_kv_heads, num_kv_heads], axis=2
+                mixed_qkv.reshape(
+                    [
+                        -1,
+                        seq_len_local,
+                        num_heads + 2 * num_kv_heads,
+                        self.hidden_size_per_attention_head,
+                    ]
+                ),
+                [num_heads, num_kv_heads, num_kv_heads],
+                axis=2,
             )
         else:
             if self.gated_attention:
@@ -1120,6 +1155,10 @@ class SelfAttentionVHA(Attention):
             is_mtp_layer=is_mtp_layer,
         )
 
+        self.shared_kv = self.config.vha_shared_kv
+        if self.shared_kv:
+            assert self.head_dim == self.v_head_dim
+
         self.gated_attention = getattr(self.config, "gated_attention", False)
 
         # VHA-specific projection sizes
@@ -1155,31 +1194,44 @@ class SelfAttentionVHA(Attention):
             is_expert=False,
             tp_group=self.pg_collection.tp,
         )
-        # PLACEHOLDER_VHA_CLASS_CONTINUE
-        self.k_proj = build_spec_layer(
-            sublayers_spec.k_proj,
-            self.config.hidden_size,
-            self.key_projection_size,
-            config=self.config,
-            init_method=self.config.init_method,
-            gather_output=False,
-            bias=self.config.use_bias or self.config.attention_bias,
-            skip_bias_add=False,
-            is_expert=False,
-            tp_group=self.pg_collection.tp,
-        )
-        self.v_proj = build_spec_layer(
-            sublayers_spec.v_proj,
-            self.config.hidden_size,
-            self.value_projection_size,
-            config=self.config,
-            init_method=self.config.init_method,
-            gather_output=False,
-            bias=self.config.use_bias or self.config.attention_bias,
-            skip_bias_add=False,
-            is_expert=False,
-            tp_group=self.pg_collection.tp,
-        )
+        if self.shared_kv:
+            self.shared_kv_proj = build_spec_layer(
+                sublayers_spec.k_proj,
+                self.config.hidden_size,
+                self.value_projection_size,
+                config=self.config,
+                init_method=self.config.init_method,
+                gather_output=False,
+                bias=self.config.use_bias or self.config.attention_bias,
+                skip_bias_add=False,
+                is_expert=False,
+                tp_group=self.pg_collection.tp,
+            )
+        else:
+            self.k_proj = build_spec_layer(
+                sublayers_spec.k_proj,
+                self.config.hidden_size,
+                self.key_projection_size,
+                config=self.config,
+                init_method=self.config.init_method,
+                gather_output=False,
+                bias=self.config.use_bias or self.config.attention_bias,
+                skip_bias_add=False,
+                is_expert=False,
+                tp_group=self.pg_collection.tp,
+            )
+            self.v_proj = build_spec_layer(
+                sublayers_spec.v_proj,
+                self.config.hidden_size,
+                self.value_projection_size,
+                config=self.config,
+                init_method=self.config.init_method,
+                gather_output=False,
+                bias=self.config.use_bias or self.config.attention_bias,
+                skip_bias_add=False,
+                is_expert=False,
+                tp_group=self.pg_collection.tp,
+            )
 
         if self.gated_attention and sublayers_spec.gate_proj is not None:
             self.gate_proj = build_spec_layer(
@@ -1305,6 +1357,62 @@ class SelfAttentionVHA(Attention):
             ]
         )
 
+    def _apply_shared_kv_inverse_rope(
+        self,
+        core_attn_out: Tensor,
+        k_pos_emb: Tensor | None,
+        cu_seqlens_kv: Tensor | None,
+        total_seqlen_kv: int | None,
+        position_ids: Tensor | None,
+    ) -> Tensor:
+        pos_dim = self.qk_rope_head_dim
+        v_head_dim = self.v_head_dim
+        assert v_head_dim is not None, (
+            "VHA shared-KV inverse RoPE requires v_head_dim"
+        )
+        assert pos_dim <= v_head_dim, (
+            "VHA shared-KV inverse RoPE requires qk_rope_head_dim <= v_head_dim, "
+            f"got qk_rope_head_dim={pos_dim}, v_head_dim={v_head_dim}"
+        )
+
+        b, sq, _ = core_attn_out.shape
+        core_attn_out = core_attn_out.reshape(
+            [b, sq, self.num_attention_heads, v_head_dim]
+        )
+
+        if pos_dim < v_head_dim:
+            rot_part, content_part = core_attn_out.split(
+                [pos_dim, v_head_dim - pos_dim],
+                axis=-1,
+            )
+        else:
+            rot_part = core_attn_out
+            content_part = None
+
+        rot_part = apply_rotary_pos_emb(
+            rot_part,
+            k_pos_emb,  # none
+            None,
+            None,
+            config=self.config,
+            cu_seqlens=cu_seqlens_kv,
+            total_seq_len=total_seqlen_kv,
+            position_ids=position_ids,
+            mscale=_yarn_get_concentration_factor_from_config(self.config),
+            cp_group=self.pg_collection.cp,
+            sp_group=self.pg_collection.tp
+            if self.config.sequence_parallel
+            else None,
+            inverse=True,
+        )
+
+        if content_part is not None:
+            core_attn_out = paddle.concat([rot_part, content_part], axis=-1)
+        else:
+            core_attn_out = rot_part
+
+        return core_attn_out.reshape([b, sq, -1])
+
     def _post_core_attention_hook(self, core_attn_out: Tensor) -> Tensor:
         return self._apply_vha_postmix(core_attn_out)
 
@@ -1316,8 +1424,11 @@ class SelfAttentionVHA(Attention):
 
     def _get_qkv_vha(self, hidden_states):
         query, _ = self.q_proj(hidden_states)  # [b, sq, g*q_head_dim]
-        key, _ = self.k_proj(hidden_states)  # [b, sq, nkv*hd]
-        value, _ = self.v_proj(hidden_states)  # [b, sq, nkv*v_hd]
+        if self.shared_kv:
+            shared_kv, _ = self.shared_kv_proj(hidden_states)
+        else:
+            key, _ = self.k_proj(hidden_states)  # [b, sq, nkv*hd]
+            value, _ = self.v_proj(hidden_states)  # [b, sq, nkv*v_hd]
 
         gate = None
         if self.gated_attention and self.gate_proj is not None:
@@ -1327,9 +1438,17 @@ class SelfAttentionVHA(Attention):
             import logging
 
             layer_type = "SWA" if self.is_swa else "Full"
+
+            if self.shared_kv:
+                shape_msg = (
+                    f"q={list(query.shape)} shared_kv={shared_kv.shape} "
+                )
+            else:
+                shape_msg = f"q={list(query.shape)} k={list(key.shape)} v={list(value.shape)} "
+
             logging.getLogger(__name__).info(
                 f"[VHA-Runtime] layer={self.layer_number} type={layer_type} | "
-                f"q={list(query.shape)} k={list(key.shape)} v={list(value.shape)} "
+                f"{shape_msg}"
                 f"gate={list(gate.shape) if gate is not None else None} | "
                 f"premix_w={list(self.vha_premix_weight.shape)} "
                 f"postmix_U={list(self.vha_postmix_U.shape)} "
@@ -1345,45 +1464,281 @@ class SelfAttentionVHA(Attention):
         )
         query = self._apply_vha_premix(query)  # -> [b, sq, nh, hd]
 
-        if self.v_scale is not None:
-            value = value * self.v_scale
+        if self.shared_kv:
+            norm_key = shared_kv
+        else:
+            norm_key = key
 
         if getattr(self.config, "qk_norm_type", "per_head") == "per_layer" and (
             self.q_norm is not None or self.k_norm is not None
         ):
             query = query.reshape(*query.shape[:2], -1)
-            key = key.reshape(*key.shape[:2], -1)
+            norm_key = norm_key.reshape(*norm_key.shape[:2], -1)
             if self.q_norm is not None:
                 query = self.q_norm(query)
             if self.k_norm is not None:
-                key = self.k_norm(key)
+                norm_key = self.k_norm(norm_key)
             query = query.reshape(
                 query.shape[0], query.shape[1], -1, self.head_dim
             )
-            key = key.reshape(key.shape[0], key.shape[1], -1, self.head_dim)
+            norm_key = norm_key.reshape(
+                norm_key.shape[0], norm_key.shape[1], -1, self.head_dim
+            )
         else:
             # per_head norm
             if self.q_norm is not None:
                 query = self.q_norm(query)
-            key = key.reshape(key.shape[0], key.shape[1], -1, self.head_dim)
+            norm_key = norm_key.reshape(
+                norm_key.shape[0], norm_key.shape[1], -1, self.head_dim
+            )
             if self.k_norm is not None:
-                key = self.k_norm(key)
-
-        value = value.reshape(
-            value.shape[0], value.shape[1], -1, self.v_head_dim
-        )
+                norm_key = self.k_norm(norm_key)
 
         if gate is not None:
             gate = gate.reshape(*gate.shape[:2], -1)
-            return query, key, value, gate
 
-        return query, key, value
+        if self.shared_kv:
+            assert self.v_scale is None
+            shared_kv = norm_key
+            if gate is not None:
+                return query, shared_kv, gate
+
+            return query, shared_kv
+
+        else:
+            if self.v_scale is not None:
+                value = value * self.v_scale
+
+            value = value.reshape(
+                value.shape[0], value.shape[1], -1, self.v_head_dim
+            )
+            key = norm_key
+            if gate is not None:
+                return query, key, value, gate
+
+            return query, key, value
+
+    def forward(
+        self,
+        hidden_states: Tensor,
+        attention_mask: Tensor,
+        attn_mask_startend_row_indices: Tensor | None = None,
+        key_value_states: Tensor | None = None,
+        rotary_pos_emb: Tensor | tuple[Tensor, Tensor] | None = None,
+        rotary_pos_cos: Tensor | None = None,
+        rotary_pos_sin: Tensor | None = None,
+        rope_freqs_cis: Tensor | None = None,
+        swa_rotary_pos_emb: Tensor | tuple[Tensor, Tensor] | None = None,
+        swa_rotary_pos_cos: Tensor | None = None,
+        swa_rotary_pos_sin: Tensor | None = None,
+        position_ids: Tensor | None = None,
+        attention_bias: Tensor | None = None,
+        packed_seq_params: Tensor | None = None,
+        in_recompute: bool = False,
+        past_key_values=None,
+        layer_idx=None,
+        use_cache: bool = False,
+    ) -> tuple[Tensor, Tensor]:
+        """
+        Perform a forward pass through the attention layer.
+
+        Args:
+            hidden_states (Tensor): Hidden states.
+            attention_mask (Tensor): Attention mask.
+            key_value_states (Optional[Tensor]): Key/value states (for cross attention).
+            rotary_pos_emb (Optional[Union[Tensor, tuple[Tensor, Tensor]]]): Rotary
+                embedding tensor(s).
+            attention_bias (Optional[Tensor]): Attention bias.
+            packed_seq_params (Optional[PackedSeqparams]): Parameters used for THD format.
+
+        Return:
+            (tuple[Tensor, Tensor]) Attention output and bias.
+
+        """
+        if not self.shared_kv:
+            return super().forward(
+                hidden_states=hidden_states,
+                attention_mask=attention_mask,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                key_value_states=key_value_states,
+                rotary_pos_emb=rotary_pos_emb,
+                rotary_pos_cos=rotary_pos_cos,
+                rotary_pos_sin=rotary_pos_sin,
+                rope_freqs_cis=rope_freqs_cis,
+                swa_rotary_pos_emb=swa_rotary_pos_emb,
+                swa_rotary_pos_cos=swa_rotary_pos_cos,
+                swa_rotary_pos_sin=swa_rotary_pos_sin,
+                position_ids=position_ids,
+                attention_bias=attention_bias,
+                packed_seq_params=packed_seq_params,
+                in_recompute=in_recompute,
+                past_key_values=past_key_values,
+                layer_idx=layer_idx,
+                use_cache=use_cache,
+            )
+
+        if self.is_swa:
+            if rope_freqs_cis is not None:
+                raise ValueError("Sliding Window Not Support rope_freqs_cis")
+            rotary_pos_emb = swa_rotary_pos_emb
+            rotary_pos_cos = swa_rotary_pos_cos
+            rotary_pos_sin = swa_rotary_pos_sin
+
+        # hidden_states: [b, sq, h]
+
+        # For self attention we just duplicate the rotary_pos_emb if it isn't already
+        if rotary_pos_emb is not None and not isinstance(rotary_pos_emb, tuple):
+            rotary_pos_emb = (rotary_pos_emb,) * 2
+
+        # Get the query, key and value tensors based on the type of attention -
+        # self or cross attn.
+        qkv_output = self.get_query_key_value_tensors(
+            hidden_states, key_value_states, split_qkv=True
+        )
+        attn_mask_type = self.attn_mask_type
+
+        if len(qkv_output) == 3:
+            query, shared_kv, gate = qkv_output
+        else:
+            query, shared_kv = qkv_output
+            gate = None
+
+        # ================================================
+        # relative positional embedding (rotary embedding)
+        # ================================================
+        if self.qk_rope_head_dim > 0 and self.qk_rope_head_dim < self.head_dim:
+            query, query_nope = query.split(
+                [self.qk_rope_head_dim, self.head_dim - self.qk_rope_head_dim],
+                axis=-1,
+            )
+            shared_kv, shared_kv_nope = shared_kv.split(
+                [self.qk_rope_head_dim, self.head_dim - self.qk_rope_head_dim],
+                axis=-1,
+            )
+        assert rope_freqs_cis is None
+        assert rotary_pos_emb is not None
+        assert packed_seq_params is None
+
+        q_pos_emb, k_pos_emb = rotary_pos_emb
+        cu_seqlens_q = cu_seqlens_kv = None
+        total_seqlen_q = total_seqlen_kv = None
+
+        if q_pos_emb is not None:
+            # For sequence parallel, input is [S_sp, B, H, D] (time-major),
+            # so we need to set time_major=True for RoPE
+            query = apply_rotary_pos_emb(
+                query,
+                q_pos_emb,
+                None,
+                None,
+                config=self.config,
+                cu_seqlens=cu_seqlens_q,
+                total_seq_len=total_seqlen_q,
+                position_ids=position_ids,
+                mscale=_yarn_get_concentration_factor_from_config(self.config),
+                cp_group=self.pg_collection.cp,
+                sp_group=self.pg_collection.tp
+                if self.config.sequence_parallel
+                else None,
+            )
+
+        if k_pos_emb is not None:
+            shared_kv = apply_rotary_pos_emb(
+                shared_kv,
+                k_pos_emb,
+                None,
+                None,
+                config=self.config,
+                cu_seqlens=cu_seqlens_kv,
+                total_seq_len=total_seqlen_kv,
+                position_ids=position_ids,
+                mscale=_yarn_get_concentration_factor_from_config(self.config),
+                cp_group=self.pg_collection.cp,
+                sp_group=self.pg_collection.tp
+                if self.config.sequence_parallel
+                else None,
+            )
+        if self.qk_rope_head_dim > 0 and self.qk_rope_head_dim < self.head_dim:
+            query = paddle.concat([query, query_nope], axis=-1)
+            shared_kv = paddle.concat([shared_kv, shared_kv_nope], axis=-1)
+
+        assert not self.config.sequence_parallel
+        key = shared_kv
+        value = shared_kv.clone()
+
+        if self.recompute_core_attention and self.training:
+            core_attn_out = recompute(
+                self.core_attention,
+                query,
+                key,
+                value,
+                attention_mask.clone() if attention_mask is not None else None,
+                attn_mask_startend_row_indices.clone()
+                if attn_mask_startend_row_indices is not None
+                else None,
+                attn_mask_type=attn_mask_type,
+                attention_bias=attention_bias,
+                packed_seq_params=packed_seq_params,
+                use_rr_flash_attention=self.use_rr_flash_attention,
+            )
+        else:
+            # Static batching attention kernel.
+            core_attn_out = self.core_attention(
+                query,
+                key,
+                value,
+                attention_mask,
+                attn_mask_startend_row_indices,
+                attn_mask_type=attn_mask_type,
+                attention_bias=attention_bias,
+                packed_seq_params=packed_seq_params,
+                use_rr_flash_attention=self.use_rr_flash_attention
+                and in_recompute,
+                past_key_values=past_key_values,
+                layer_idx=layer_idx,
+                use_cache=use_cache,
+            )
+
+        # apply reverse rope
+        core_attn_out = self._apply_shared_kv_inverse_rope(
+            core_attn_out,
+            k_pos_emb,
+            cu_seqlens_kv,
+            total_seqlen_kv,
+            position_ids,
+        )
+        core_attn_out = self._post_core_attention_hook(core_attn_out)
+
+        # Apply gated attention: gate the attention output before output projection
+        gate_recompute = None
+        if gate is not None:
+            if self.recompute_gated_attn and self.training:
+                gate_recompute = RecomputeWithoutOutput()
+                core_attn_out = gate_recompute.recompute(
+                    self._gate_apply,
+                    core_attn_out,
+                    gate,
+                    preserve_rng_state=False,
+                    share_grad_holder=True,
+                )
+            else:
+                core_attn_out = self._gate_apply(core_attn_out, gate)
+
+        output, bias = self.o_proj(core_attn_out)
+
+        if gate_recompute is not None:
+            gate_recompute.discard_output_and_register_recompute(output)
+
+        return output, bias
 
     def backward_dw(self) -> NoReturn:
         """Execute weight update operations."""
         self.q_proj.backward_dw()
-        self.k_proj.backward_dw()
-        self.v_proj.backward_dw()
+        if self.shared_kv:
+            self.shared_kv_proj.backward_dw()
+        else:
+            self.k_proj.backward_dw()
+            self.v_proj.backward_dw()
         if self.gate_proj is not None:
             self.gate_proj.backward_dw()
         self.o_proj.backward_dw()

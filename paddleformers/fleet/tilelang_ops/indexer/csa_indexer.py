@@ -219,6 +219,10 @@ def csa_indexer_topk_fwd(
             "TileLang must return Paddle tensors. "
             "Ensure paddle.enable_compat(scope={'tilelang'}) runs before import tilelang."
         )
+    if topk_indices.dtype != paddle.int32:
+        topk_indices = topk_indices.cast("int32")
+    if topk_scores.dtype != paddle.float32:
+        topk_scores = topk_scores.cast("float32")
     return topk_indices, topk_scores
 
 

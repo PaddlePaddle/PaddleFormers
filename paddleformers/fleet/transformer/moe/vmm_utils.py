@@ -12,12 +12,98 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""VMM (Virtual Memory Management) utility functions for auto subbatch."""
+"""Memory block utility functions for auto subbatch."""
 
 import paddle
 from paddle.device.cuda.memory_analyzer import GB, MemoryAnalysisTool
 
 import paddlefleet_ops
+
+
+def _use_virtual_memory_auto_growth() -> bool:
+    """
+    Return whether Paddle VMM auto growth is enabled.
+    """
+    try:
+        (vmm_flag,) = paddle.framework.get_flags(
+            "FLAGS_use_virtual_memory_auto_growth"
+        ).values()
+    except Exception:
+        return False
+    return bool(vmm_flag)
+
+
+def _normalize_block_info(
+    block_info: list[list[tuple[int, int, bool]]] | list[tuple[int, int, bool]],
+) -> list[tuple[int, int, bool]]:
+    """
+    Normalize MemoryAnalysisTool block info to a flat list of (size, addr, free).
+    """
+    if not block_info:
+        return []
+
+    first = block_info[0]
+    if isinstance(first, tuple) and len(first) >= 3:
+        return list(block_info)
+
+    blocks = []
+    for heap in block_info:
+        if not heap:
+            continue
+        for block in heap:
+            if isinstance(block, tuple) and len(block) >= 3:
+                blocks.append(block)
+    return blocks
+
+
+def legacy_free_block_info() -> list[tuple[int, int]]:
+    """
+    获取老 allocator 当前已报告的 free block 信息。
+
+    与 VMM backend 不同，legacy backend 第一版只使用 all_block_info() 返回的
+    free blocks，不额外虚构未 reserved 显存对应的 growable block。
+    返回列表按照 block size 从小到大排序。
+    """
+    try:
+        all_blocks = _normalize_block_info(MemoryAnalysisTool.all_block_info())
+    except Exception:
+        return []
+    free_blocks = []
+    for block in all_blocks:
+        size, addr, free = block[:3]
+        if free and size > 0:
+            free_blocks.append((int(size), int(addr)))
+    free_blocks.sort()
+
+    return free_blocks
+
+
+def auto_subbatch_allocator_backend() -> str:
+    """
+    Return allocator backend name used by auto subbatch memory planning.
+    """
+    return "vmm" if _use_virtual_memory_auto_growth() else "legacy"
+
+
+def is_auto_subbatch_memory_analysis_available() -> bool:
+    """
+    Return whether auto subbatch has a memory block query backend available.
+    """
+    return _use_virtual_memory_auto_growth() or hasattr(
+        MemoryAnalysisTool, "all_block_info"
+    )
+
+
+def allocator_free_block_info() -> list[tuple[int, int]]:
+    """
+    获取当前 allocator 可用 free block 信息。
+
+    VMM 开启时保持原有 growable 语义；不开 VMM 时使用老 allocator 已报告的
+    free blocks，保持 conservative auto subbatch 行为。
+    """
+    if _use_virtual_memory_auto_growth():
+        return vmm_free_and_growable_block_info()
+    return legacy_free_block_info()
 
 
 def vmm_free_and_growable_block_info() -> list[tuple[int, int]]:
@@ -88,7 +174,7 @@ def find_max_concurrent_subbatch_size(
     if not feature_sizes or feature_sizes[0] == 0:
         return 1
 
-    free_blocks = vmm_free_and_growable_block_info()  # smallest first
+    free_blocks = allocator_free_block_info()  # smallest first
     if not free_blocks:
         return 0
 
@@ -152,7 +238,7 @@ def find_max_sequence_subbatch_size(feature_size: int, length: int = 1) -> int:
 
     如果不指定 length，相当于分析大小为 feature_size 的 Tensor 能否分配。
     """
-    free_blocks = vmm_free_and_growable_block_info()  # smallest first
+    free_blocks = allocator_free_block_info()  # smallest first
 
     def can_pack(subbatch_size):
         num_subbatches = (length + subbatch_size - 1) // subbatch_size

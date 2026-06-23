@@ -99,6 +99,50 @@ class TestFusedA2A(unittest.TestCase):
         # max(element_size=1, 2) = 2, so 64 * 2 = 128
         self.assertEqual(result, 128)
 
+    def test_normalize_fp8_scale_for_deepep_transposes_scale(self):
+        """Test FP8 scale layout is transposed to token-major format."""
+        from paddleformers.fleet.transformer.moe.fused_a2a import (
+            _normalize_fp8_scale_for_deepep,
+        )
+
+        x_fp8 = paddle.zeros([4, 256], dtype=paddle.float8_e4m3fn)
+        scale = paddle.ones([2, 4], dtype=paddle.float32)
+        result = _normalize_fp8_scale_for_deepep(x_fp8, scale)
+        self.assertEqual(result.shape, [4, 2])
+
+    def test_normalize_fp8_scale_for_deepep_trims_padded_tokens(self):
+        """Test FP8 scale token padding is trimmed for inference dispatch."""
+        from paddleformers.fleet.transformer.moe.fused_a2a import (
+            _normalize_fp8_scale_for_deepep,
+        )
+
+        x_fp8 = paddle.zeros([3, 256], dtype=paddle.float8_e4m3fn)
+        scale = paddle.ones([4, 2], dtype=paddle.float32)
+        result = _normalize_fp8_scale_for_deepep(x_fp8, scale)
+        self.assertEqual(result.shape, [3, 2])
+
+    def test_normalize_fp8_scale_for_deepep_supports_ue8m0(self):
+        """Test UE8M0 packed scale width is accepted and transposed."""
+        from paddleformers.fleet.transformer.moe.fused_a2a import (
+            _normalize_fp8_scale_for_deepep,
+        )
+
+        x_fp8 = paddle.zeros([4, 512], dtype=paddle.float8_e4m3fn)
+        scale = paddle.ones([1, 4], dtype=paddle.int32)
+        result = _normalize_fp8_scale_for_deepep(x_fp8, scale, use_ue8m0=True)
+        self.assertEqual(result.shape, [4, 1])
+
+    def test_normalize_fp8_scale_for_deepep_rejects_invalid_shape(self):
+        """Test invalid FP8 scale shape fails before DeepEP dispatch."""
+        from paddleformers.fleet.transformer.moe.fused_a2a import (
+            _normalize_fp8_scale_for_deepep,
+        )
+
+        x_fp8 = paddle.zeros([4, 256], dtype=paddle.float8_e4m3fn)
+        scale = paddle.ones([4, 3], dtype=paddle.float32)
+        with self.assertRaisesRegex(RuntimeError, "Invalid FP8 scale shape"):
+            _normalize_fp8_scale_for_deepep(x_fp8, scale)
+
     def test_dispatch_node_reset_statue(self):
         """Test DispatchNode.reset_statue clears handle."""
         from paddleformers.fleet.transformer.moe.fused_a2a import DispatchNode

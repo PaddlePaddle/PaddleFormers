@@ -13,9 +13,12 @@
 # limitations under the License.
 
 
-from paddlefleet_ops.cudnn.deepseek_sparse_attention.sparse_attention_backward.api import (
-    sparse_attention_backward_wrapper,
-)
+from paddlefleet_ops import CUDNN_FRONTEND_HINT, is_cudnn_frontend_available
+
+
+def _require_cudnn_frontend():
+    if not is_cudnn_frontend_available():
+        raise ImportError(CUDNN_FRONTEND_HINT)
 
 
 def csa_sparse_attn_bwd_cudnn(
@@ -29,6 +32,11 @@ def csa_sparse_attn_bwd_cudnn(
     softmax_scale=None,
     topk_length=None,
 ):
+    _require_cudnn_frontend()
+    from paddlefleet_ops.cudnn.deepseek_sparse_attention.sparse_attention_backward.api import (
+        sparse_attention_backward_wrapper,
+    )
+
     # print(f"get here.....")
     result = sparse_attention_backward_wrapper(
         q,

@@ -12,11 +12,62 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# =============================================================================
+# Multimax lm_head support
+# -----------------------------------------------------------------------------
+# When TransformerConfig.multimax_modules is a list containing "lm_head" (e.g.,
+# ``multimax_modules: [lm_head]``), GPTLMHead adds two learnable [4]-shape
+# parameters (multimax_ranges, multimax_ts) and applies a SegLU-style segmented
+# modulation to logits before softmax/cross-entropy:
+#
+#     logits = SegLU(logits, multimax_ranges, multimax_ts)
+#
+# Both params are initialized to zero on cold start, which makes SegLU the
+# identity at step 0 (safe for resume from checkpoints lacking these keys).
+# Resumed training restores the trained values from the checkpoint -- the
+# zero-init only applies to fresh runs.
+#
+# The "multimax" substring in the parameter names is matched by the
+# pretraining trainers' no-weight-decay name filter, so these params are
+# excluded from weight decay (timm-style convention).
+#
+# Sanity-check after a training launch:
+#
+#     grep -E "MULTIMAX-(CONFIG|LMHEAD-CONFIRM|LMHEAD-APPLIED)" <train.log>
+#
+# Expected output (per rank holding the LM head):
+#   [MULTIMAX-CONFIG]            multimax_modules=['lm_head']
+#   [MULTIMAX-LMHEAD-CONFIRM]    cls=... multimax_modules=['lm_head'] ranges.shape=[4] ...
+#   [MULTIMAX-LMHEAD-APPLIED]    cls=... logits.shape=[...] ranges=[...] ts=[...]
+#                                (or path=fused for the fused-CE branch)
+#
+# If [MULTIMAX-LMHEAD-APPLIED] is missing, the SegLU path did not execute
+# (e.g., a different LM head class is used).
+#
+# Paths:
+#   - fused_linear_ce_loss_chunk == 0: SegLU is applied here on the [B, S, V]
+#     logits tensor right before the cross-entropy. Wrapped in `recompute` and
+#     uses an in-place `+=` accumulator to bound peak activation memory.
+#   - fused_linear_ce_loss_chunk  > 0: GPTLMHead emits a 5-tuple
+#     (hidden, weight, bias, multimax_ranges, multimax_ts) and SegLU is
+#     applied inside each CE chunk by LigerFusedLinearCrossEntropyFunction.
+#     This avoids ever materializing the full [B*S, V] logits tensor and is
+#     the recommended path at large vocab.
+#
+# Notes:
+#   - SegLU is element-wise, so vocab-TP sharding is fine without collectives.
+#   - Both paths share the same parameters (multimax_ranges/multimax_ts) and
+#     produce identical math at step 0 (params init to zero -> SegLU = id).
+# =============================================================================
+
+import warnings
+
 import paddle
 from paddle.distributed.fleet.meta_parallel import (
     ScheduleNode,
     build_spec_layer,
 )
+from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
     build_sharded_state_dict,
 )
@@ -27,6 +78,47 @@ from paddleformers.fleet.tensor_parallel.layers import (
     _initialize_affine_weight_gpu,
 )
 from paddleformers.fleet.transformer.identity_op import IdentityOp
+
+
+def SegLU(x, ranges, ts):
+    """Learnable segmented activation applied to logits before softmax.
+
+    Named ``SegLU`` ("segmented learnable unit") to avoid confusion with the
+    framework's built-in ``SELU`` activation.
+
+    Reference: ViT-style modulation provided by user.
+        x: [..., V] logits (last dim may be vocab-parallel sharded; SegLU is
+           element-wise so applying it on the sharded logits is equivalent to
+           applying it on gathered logits).
+        ranges: [4] learnable thresholds.
+        ts:     [4] learnable scales.
+
+    With ranges/ts initialized to zero, SegLU is the identity (logits unchanged),
+    so adding this op is a no-op at start of training and safe for resume.
+
+    Memory-efficient eager form: instead of building one giant expression
+    ``out = x + a + b + c + d`` (which materializes 4 sum-intermediates each
+    the size of logits), we accumulate into a single owned buffer with ``+=``.
+    Combined with ``recompute`` at the call site, peak activation memory for
+    this op drops from ~10x the logits tensor to ~1x.
+
+    NOTE on jit fusion: an earlier version was wrapped with
+    ``@paddle.jit.to_static`` to fuse the element-wise chain. That backend
+    (CINN) was observed to OOM on full-vocab logits because CINN allocates
+    all traced intermediates inside a single ``CinnJitInstruction::Run`` call,
+    which defeats both ``recompute`` and the in-place ``+=`` hints. We use
+    the eager path here.
+    """
+    relu = paddle.nn.functional.relu
+    # Clone once so we own the buffer and in-place += is safe under autograd
+    # (the original `x` -- the linear's output -- must not be mutated, since
+    # it may still be referenced by the autograd graph upstream).
+    out = x.clone()
+    out += ts[0] * relu(ranges[0] - x)
+    out += ts[1] * relu(x - ranges[1])
+    out += ts[2] * relu(ranges[2] - x) ** 2
+    out += ts[3] * relu(x - ranges[3]) ** 2
+    return out
 
 
 class GPTLMHead(ColumnParallelLinear):
@@ -97,6 +189,45 @@ class GPTLMHead(ColumnParallelLinear):
             block_attn_res_spec, config=self.config
         )
 
+        # Multimax: learnable SegLU-style modulation on logits before softmax.
+        # Names contain the "multimax" substring so the trainer's no-decay
+        # filter excludes them from weight decay (mirrors timm's convention
+        # of not decaying scalar/1-D learnable coefficients).
+        multimax_mode = getattr(self.config, "multimax_modules", None) or []
+        self.use_multimax_lmhead = "lm_head" in multimax_mode
+        if self.use_multimax_lmhead:
+            # Cold-start init to zero -> SegLU is identity at step 0, so the
+            # untrained model produces bit-identical logits with/without the
+            # feature flag and resuming from a checkpoint that lacks these
+            # params (loaded non-strictly) is safe. Resumed training restores
+            # the trained values from the checkpoint -- the zero init only
+            # applies on cold start.
+            self.multimax_ranges = self.create_parameter(
+                shape=[4],
+                dtype=self.config.params_dtype,
+                is_bias=False,
+                default_initializer=paddle.nn.initializer.Constant(0.0),
+            )
+            self.multimax_ts = self.create_parameter(
+                shape=[4],
+                dtype=self.config.params_dtype,
+                is_bias=False,
+                default_initializer=paddle.nn.initializer.Constant(0.0),
+            )
+            # Grep-friendly construction banner. See docstring at top of file
+            # for the full sanity-check workflow.
+            warnings.warn(
+                f"[MULTIMAX-LMHEAD-CONFIRM] cls={type(self).__name__} "
+                f"multimax_modules={multimax_mode} "
+                f"ranges.shape={list(self.multimax_ranges.shape)} "
+                f"ts.shape={list(self.multimax_ts.shape)} "
+                f"dtype={self.config.params_dtype} "
+                f"fused_linear_ce_loss_chunk="
+                f"{getattr(self.config, 'fused_linear_ce_loss_chunk', 0)}"
+            )
+        # When the feature is disabled (default None / empty), stay silent --
+        # no banner, no params -- so default training runs are not noisy.
+
     def build_schedule_node(self):
         return ScheduleNode(self.forward, name="GPTLMHead")
 
@@ -108,6 +239,28 @@ class GPTLMHead(ColumnParallelLinear):
             if self.config.sequence_parallel:
                 # [S, B, H] -> [B, S, H] to match the logits layout consumers expect.
                 hidden_states = hidden_states.transpose([1, 0, 2]).contiguous()
+
+            # Multimax lm_head + fused path: thread multimax_ranges/ts into
+            # LanguageLoss so SegLU is applied inside each CE chunk and never
+            # materializes a full [B*S, V] logits tensor. Also fire the same
+            # one-shot [MULTIMAX-LMHEAD-APPLIED] grep banner used by the
+            # unfused path so observability is consistent.
+            if getattr(self, "use_multimax_lmhead", False):
+                if not getattr(self, "_multimax_applied_logged", False):
+                    warnings.warn(
+                        f"[MULTIMAX-LMHEAD-APPLIED] cls={type(self).__name__} "
+                        f"path=fused hidden.shape={list(hidden_states.shape)} "
+                        f"ranges={self.multimax_ranges.detach().cast('float32').numpy().tolist()} "
+                        f"ts={self.multimax_ts.detach().cast('float32').numpy().tolist()}"
+                    )
+                    self._multimax_applied_logged = True
+                return (
+                    hidden_states,
+                    self.weight,
+                    self.bias,
+                    self.multimax_ranges,
+                    self.multimax_ts,
+                )
 
             return (hidden_states, self.weight, self.bias)
 
@@ -124,39 +277,34 @@ class GPTLMHead(ColumnParallelLinear):
             logits = recompute_handler(hidden_states, self.weight.T)
         else:
             logits, _ = super().forward(hidden_states, self.weight.T)
-        if self.config.sequence_parallel:
+        if (
+            not self.config.gpt_model_use_experimental_version
+            and self.config.sequence_parallel
+        ):
             logits = logits.transpose([1, 0, 2]).contiguous()
 
-        # Loss-path MD5 probe: lm_head weight and logits
-        import os
-
-        if (
-            os.environ.get("LOG_LAYER_MD5", "0") == "1"
-            or os.environ.get("LOG_LOSS_MD5", "0") == "1"
-        ):
-            import hashlib
-
-            rank = paddle.distributed.get_rank()
-            w_md5 = hashlib.md5(
-                self.weight.cast("float32").numpy().tobytes()
-            ).hexdigest()
-            h_md5 = hashlib.md5(
-                hidden_states.cast("float32").numpy().tobytes()
-            ).hexdigest()
-            l_md5 = hashlib.md5(
-                logits.cast("float32").numpy().tobytes()
-            ).hexdigest()
-            print(
-                f"[LOSS_PATH_MD5] rank={rank} lm_head_weight shape={list(self.weight.shape)} md5={w_md5}",
-                flush=True,
-            )
-            print(
-                f"[LOSS_PATH_MD5] rank={rank} lm_head_input shape={list(hidden_states.shape)} md5={h_md5}",
-                flush=True,
-            )
-            print(
-                f"[LOSS_PATH_MD5] rank={rank} lm_head_logits shape={list(logits.shape)} md5={l_md5}",
-                flush=True,
+        # Multimax lm_head (unfused path): apply learnable SegLU modulation on
+        # logits before softmax/cross-entropy. SegLU is element-wise so it works
+        # correctly on vocab-parallel sharded logits without extra collectives.
+        # The fused path (fused_linear_ce_loss_chunk > 0) returns early above
+        # with a 5-tuple and applies SegLU inside the chunked CE kernel.
+        if getattr(self, "use_multimax_lmhead", False):
+            # One-shot confirmation (per rank) that the SegLU path actually
+            # executed at runtime. Grep tag: [MULTIMAX-LMHEAD-APPLIED].
+            if not getattr(self, "_multimax_applied_logged", False):
+                warnings.warn(
+                    f"[MULTIMAX-LMHEAD-APPLIED] cls={type(self).__name__} "
+                    f"logits.shape={list(logits.shape)} "
+                    f"ranges={self.multimax_ranges.detach().cast('float32').numpy().tolist()} "
+                    f"ts={self.multimax_ts.detach().cast('float32').numpy().tolist()}"
+                )
+                self._multimax_applied_logged = True
+            # Wrap SegLU in `recompute` to drop saved intermediates: only the
+            # input logits (already kept by upstream autograd) are saved; SegLU
+            # is re-run during backward. Avoids OOM on full-vocab logits when
+            # `fused_linear_ce_loss_chunk=0` (required by multimax).
+            logits = recompute(
+                SegLU, logits, self.multimax_ranges, self.multimax_ts
             )
 
         return logits
@@ -193,9 +341,18 @@ class GPTLMHead(ColumnParallelLinear):
         self,
         structured_name_prefix: str = "",
     ):
-        """Sharding along axis 0, bias sharded"""
+        """Sharding along axis 0, bias sharded.
+
+        Multimax params (multimax_ranges, multimax_ts) are tiny [4]-shape
+        replicated tensors; non-sharded parameters do not need to appear in
+        ``shard_rules``, so we leave them out and let flex-checkpoint pick
+        them up from the state dict directly.
+        """
         state_dict = self.state_dict(structured_name_prefix="")
-        shard_rules = None if self.world_size == 1 else {"weight": 0, "bias": 0}
+        if self.world_size == 1:
+            shard_rules = None
+        else:
+            shard_rules = {"weight": 0, "bias": 0}
         return build_sharded_state_dict(
             state_dict, shard_rules, structured_name_prefix
         )

@@ -100,6 +100,7 @@ class TestSelfAttentionVHA(unittest.TestCase):
         config.output_layer_init_method = scaled_init_method_normal(
             0.02, 1, 2.0
         )
+        config.gpt_model_use_experimental_version = False
         config.rms_norm_eps = 1e-5
         config.context_parallel_size = 1
         config.apply_query_key_layer_scaling = False
@@ -366,6 +367,7 @@ class TestSelfAttentionExperimentalVersion(unittest.TestCase):
         config.rotary_interleaved = False
         config.multi_latent_attention = False
         config.init_method = init_method_normal(0.02)
+        config.max_sequence_length = 16
         config.output_layer_init_method = scaled_init_method_normal(
             0.02, 1, 2.0
         )
@@ -573,6 +575,214 @@ class TestStartendRowIndicesNumVec2(unittest.TestCase):
         )
         self.assertEqual(result.shape[-1], 2)
         self.assertEqual(result.shape[1], kv_num_heads)
+
+
+class TestSelfAttentionVHASharedKV(unittest.TestCase):
+    """Tests for SharedKV feature in SelfAttentionVHA."""
+
+    def _make_config(self, gated=False, rotary_percent=1.0):
+        config = TransformerConfig(
+            num_hidden_layers=4,
+            hidden_size=256,
+            num_attention_heads=8,
+            num_key_value_heads=2,
+            head_dim=32,
+            v_head_dim=32,
+            use_vha_attention=True,
+            vha_q_lora_rank=32,
+            vha_postmix_rank=4,
+            vha_shared_kv=True,
+        )
+        config.softmax_scale = None
+        config.use_bias = False
+        config.attention_bias = False
+        config.no_rope_freq = None
+        config.recompute_granularity = None
+        config.fused_single_qkv_rope = False
+        config.rotary_interleaved = False
+        config.multi_latent_attention = False
+        config.init_method = init_method_normal(0.02)
+        config.output_layer_init_method = scaled_init_method_normal(
+            0.02, 1, 2.0
+        )
+        config.gpt_model_use_experimental_version = False
+        config.rms_norm_eps = 1e-5
+        config.context_parallel_size = 1
+        config.apply_query_key_layer_scaling = False
+        config.fp16 = False
+        config.bf16 = False
+        config.masked_softmax_fusion = False
+        config.attention_softmax_in_fp32 = True
+        config.attention_dropout = 0.0
+        config.softmax_type = "vanilla"
+        config.gated_attention = gated
+        config.attention_value_scale = None
+        config.sliding_window = None
+        config.window_attn_skip_freq = None
+        config.rotary_percent = rotary_percent
+        config.sequence_parallel = False
+        return config
+
+    def _build_vha(self, config, layer_number=0):
+        return SelfAttentionVHA(
+            config,
+            SelfAttentionVHASublayersSpec(
+                q_proj=BiasedLinear,
+                k_proj=BiasedLinear,
+                v_proj=BiasedLinear,
+                gate_proj=BiasedLinear if config.gated_attention else None,
+                core_attention=DotProductAttention,
+                o_proj=BiasedLinear,
+                q_norm=RMSNorm,
+                k_norm=RMSNorm,
+            ),
+            attn_mask_type=AttnMaskType.causal,
+            layer_number=layer_number,
+        )
+
+    def test_shared_kv_init(self):
+        config = self._make_config()
+        attn = self._build_vha(config)
+        self.assertTrue(attn.shared_kv)
+        self.assertTrue(hasattr(attn, "shared_kv_proj"))
+        self.assertFalse(hasattr(attn, "k_proj"))
+        self.assertFalse(hasattr(attn, "v_proj"))
+
+    def test_shared_kv_init_asserts_head_dim_eq_v_head_dim(self):
+        config = self._make_config()
+        config.v_head_dim = 64  # mismatch with head_dim=32
+        with self.assertRaises(AssertionError):
+            self._build_vha(config)
+
+    def test_get_qkv_shared_kv_returns_2(self):
+        config = self._make_config()
+        attn = self._build_vha(config)
+        hidden = paddle.randn([2, 16, 256])
+        result = attn._get_qkv_vha(hidden)
+        self.assertEqual(len(result), 2)
+        query, shared_kv = result
+        self.assertEqual(list(query.shape), [2, 16, 8, 32])
+        self.assertEqual(list(shared_kv.shape), [2, 16, 2, 32])
+
+    def test_get_qkv_shared_kv_gated_returns_3(self):
+        config = self._make_config(gated=True)
+        attn = self._build_vha(config)
+        hidden = paddle.randn([2, 16, 256])
+        result = attn._get_qkv_vha(hidden)
+        self.assertEqual(len(result), 3)
+        query, shared_kv, gate = result
+        self.assertEqual(list(query.shape), [2, 16, 8, 32])
+        self.assertEqual(list(shared_kv.shape), [2, 16, 2, 32])
+
+    def test_forward_shared_kv(self):
+        config = self._make_config()
+        attn = self._build_vha(config)
+        hidden = paddle.randn([2, 16, 256])
+        rotary_pos_emb = paddle.randn([1, 16, 1, 32])
+        output, bias = attn(
+            hidden, attention_mask=None, rotary_pos_emb=rotary_pos_emb
+        )
+        self.assertEqual(list(output.shape), [2, 16, 256])
+
+    def test_forward_shared_kv_partial_rope(self):
+        config = self._make_config(rotary_percent=0.5)
+        attn = self._build_vha(config)
+        hidden = paddle.randn([2, 16, 256])
+        rotary_pos_emb = paddle.randn([1, 16, 1, 16])
+        output, bias = attn(
+            hidden, attention_mask=None, rotary_pos_emb=rotary_pos_emb
+        )
+        self.assertEqual(list(output.shape), [2, 16, 256])
+
+    def test_forward_shared_kv_gated(self):
+        config = self._make_config(gated=True)
+        attn = self._build_vha(config)
+        hidden = paddle.randn([2, 16, 256])
+        rotary_pos_emb = paddle.randn([1, 16, 1, 32])
+        output, bias = attn(
+            hidden, attention_mask=None, rotary_pos_emb=rotary_pos_emb
+        )
+        self.assertEqual(list(output.shape), [2, 16, 256])
+
+    def test_backward_shared_kv(self):
+        config = self._make_config()
+        attn = self._build_vha(config)
+        hidden = paddle.randn([2, 16, 256])
+        hidden.stop_gradient = False
+        rotary_pos_emb = paddle.randn([1, 16, 1, 32])
+        output, bias = attn(
+            hidden, attention_mask=None, rotary_pos_emb=rotary_pos_emb
+        )
+        loss = output.sum()
+        loss.backward()
+        self.assertIsNotNone(hidden.grad)
+
+    def test_backward_dw_shared_kv(self):
+        config = self._make_config()
+        attn = self._build_vha(config)
+        attn.backward_dw()
+
+    def test_backward_dw_shared_kv_gated(self):
+        config = self._make_config(gated=True)
+        attn = self._build_vha(config)
+        attn.backward_dw()
+
+    def test_apply_shared_kv_inverse_rope_full(self):
+        config = self._make_config()
+        attn = self._build_vha(config)
+        core_attn_out = paddle.randn([2, 16, 256])
+        k_pos_emb = paddle.randn([1, 16, 1, 32])
+        result = attn._apply_shared_kv_inverse_rope(
+            core_attn_out, k_pos_emb, None, None, None
+        )
+        self.assertEqual(list(result.shape), [2, 16, 256])
+
+    def test_apply_shared_kv_inverse_rope_partial(self):
+        config = self._make_config(rotary_percent=0.5)
+        attn = self._build_vha(config)
+        core_attn_out = paddle.randn([2, 16, 256])
+        k_pos_emb = paddle.randn([1, 16, 1, 16])
+        result = attn._apply_shared_kv_inverse_rope(
+            core_attn_out, k_pos_emb, None, None, None
+        )
+        self.assertEqual(list(result.shape), [2, 16, 256])
+
+    def test_shared_kv_debug_env(self):
+        import os
+
+        os.environ["VHA_DEBUG"] = "1"
+        try:
+            config = self._make_config()
+            attn = self._build_vha(config)
+            hidden = paddle.randn([2, 8, 256])
+            attn._get_qkv_vha(hidden)
+        finally:
+            del os.environ["VHA_DEBUG"]
+
+    def test_shared_kv_sublayers_spec_field(self):
+        spec = SelfAttentionVHASublayersSpec(shared_kv_proj=BiasedLinear)
+        self.assertEqual(spec.shared_kv_proj, BiasedLinear)
+
+    def test_shared_kv_per_layer_norm(self):
+        config = self._make_config()
+        config.qk_norm_type = "per_layer"
+        attn = self._build_vha(config)
+        hidden = paddle.randn([2, 16, 256])
+        result = attn._get_qkv_vha(hidden)
+        self.assertEqual(len(result), 2)
+        query, shared_kv = result
+        self.assertEqual(list(query.shape), [2, 16, 8, 32])
+
+    def test_forward_shared_kv_with_attention_mask(self):
+        config = self._make_config()
+        attn = self._build_vha(config)
+        hidden = paddle.randn([2, 16, 256])
+        rotary_pos_emb = paddle.randn([1, 16, 1, 32])
+        mask = paddle.zeros([2, 1, 16, 16])
+        output, bias = attn(
+            hidden, attention_mask=mask, rotary_pos_emb=rotary_pos_emb
+        )
+        self.assertEqual(list(output.shape), [2, 16, 256])
 
 
 if __name__ == "__main__":

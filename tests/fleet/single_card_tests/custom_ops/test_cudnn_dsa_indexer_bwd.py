@@ -17,7 +17,7 @@
 Covers:
 - csa_indexer_bwd_cudnn.py (wrapper + _to_bf16 helper)
 - cudnn_ops/__init__.py (lazy __getattr__)
-- csa_attention.py (TileLangCSAIndexerLoss / AutoScaler cudnn backward branches)
+- csa_attention.py (TileLangCSAIndexerLossAutoScaler cudnn backward branch)
 - transformer_config.py (csa_indexer_backend field + validation)
 """
 
@@ -661,20 +661,18 @@ class TestCudnnCsaIndexerBwd(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Tests: cudnn_ops/__init__.py (lazy __getattr__)
+# Tests: cudnn_ops/__init__.py imports
 # ---------------------------------------------------------------------------
 
 
 class TestCudnnOpsInit(unittest.TestCase):
-    """Cover paddleformers.fleet.cudnn_ops.__init__.py lazy import mechanism."""
+    """Cover paddlefleet.cudnn_ops.__init__.py direct imports."""
 
     def test_export_csa_indexer_bwd(self):
         import paddleformers.fleet.cudnn_ops as cudnn_ops_mod
 
         fn = cudnn_ops_mod.csa_indexer_bwd
         self.assertTrue(callable(fn))
-        # Second access should be cached in globals
-        self.assertIs(cudnn_ops_mod.csa_indexer_bwd, fn)
 
     def test_unknown_attribute_raises(self):
         import paddleformers.fleet.cudnn_ops as cudnn_ops_mod
@@ -691,105 +689,6 @@ class TestCudnnOpsInit(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Tests: csa_attention.py PyLayer cudnn branches
 # ---------------------------------------------------------------------------
-
-
-class TestTileLangCSAIndexerLossBackwardCudnn(unittest.TestCase):
-    """Cover TileLangCSAIndexerLoss.backward cudnn branch."""
-
-    def setUp(self):
-        from paddleformers.fleet.transformer.csa_attention import (
-            TileLangCSAIndexerLoss,
-        )
-
-        self.PyLayer = TileLangCSAIndexerLoss
-
-    def test_backward_cudnn_branch(self):
-        """Invoke backward with indexer_backend='cudnn' via fake ctx."""
-        import paddleformers.fleet.cudnn_ops as cudnn_ops_mod
-
-        captured = {}
-
-        def fake_bwd(
-            index_q,
-            weights,
-            index_k_comp,
-            target,
-            topk_probs,
-            topk_indices,
-            loss_coeff,
-            grad_loss=None,
-            block_I=128,
-        ):
-            captured["loss_coeff"] = loss_coeff
-            captured["grad_loss"] = grad_loss
-            return (
-                paddle.zeros_like(index_q),
-                paddle.zeros_like(weights),
-                paddle.zeros_like(index_k_comp),
-            )
-
-        orig = cudnn_ops_mod.__dict__.get("csa_indexer_bwd")
-        cudnn_ops_mod.csa_indexer_bwd = fake_bwd
-        try:
-            b, sq, sk, h, d, topk = 1, 4, 4, 1, 8, 4
-            index_q = paddle.randn([b, sq, h, d]).astype("bfloat16")
-            weights = paddle.randn([b, sq, h]).astype("bfloat16")
-            index_k = paddle.randn([b, sk, d]).astype("bfloat16")
-            topk_indices = paddle.randint(0, sk, [b, sq, topk]).astype("int32")
-            topk_probs = paddle.nn.functional.softmax(
-                paddle.randn([b, sq, topk]).astype("float32"), axis=-1
-            )
-            target = paddle.nn.functional.softmax(
-                paddle.randn([b, sq, topk]).astype("float32"), axis=-1
-            )
-
-            class FakeCtx:
-                pass
-
-            ctx = FakeCtx()
-            ctx.saved_tensor = lambda: (
-                index_q,
-                weights,
-                index_k,
-                topk_indices,
-                topk_probs,
-                target,
-            )
-            ctx.loss_coeff = 0.01
-            ctx.indexer_backend = "cudnn"
-
-            grad_loss = paddle.to_tensor(1.5, dtype="float32")
-            result = self.PyLayer.backward(ctx, grad_loss, None)
-            self.assertEqual(len(result), 5)
-            self.assertEqual(captured["loss_coeff"], 0.01)
-            self.assertIs(captured["grad_loss"], grad_loss)
-        finally:
-            if orig is not None:
-                cudnn_ops_mod.csa_indexer_bwd = orig
-            else:
-                cudnn_ops_mod.__dict__.pop("csa_indexer_bwd", None)
-
-    def test_backward_unknown_backend_raises(self):
-        """Unknown backend should raise NotImplementedError."""
-        b, sq, sk, h, d, topk = 1, 4, 4, 1, 8, 4
-
-        class FakeCtx:
-            pass
-
-        ctx = FakeCtx()
-        ctx.saved_tensor = lambda: (
-            paddle.randn([b, sq, h, d]).astype("bfloat16"),
-            paddle.randn([b, sq, h]).astype("bfloat16"),
-            paddle.randn([b, sk, d]).astype("bfloat16"),
-            paddle.randint(0, sk, [b, sq, topk]).astype("int32"),
-            paddle.randn([b, sq, topk]).astype("float32"),
-            paddle.randn([b, sq, topk]).astype("float32"),
-        )
-        ctx.loss_coeff = 0.01
-        ctx.indexer_backend = "invalid_backend"
-
-        with self.assertRaises(NotImplementedError):
-            self.PyLayer.backward(ctx, paddle.to_tensor(1.0), None)
 
 
 class TestTileLangCSAIndexerLossAutoScalerCudnn(unittest.TestCase):
@@ -992,7 +891,7 @@ class TestTransformerConfigCsaIndexerBackend(unittest.TestCase):
 
 
 class TestIndexerSubpackageInit(unittest.TestCase):
-    """Cover paddleformers.fleet.cudnn_ops.indexer.__init__.py re-export."""
+    """Cover paddlefleet.cudnn_ops.indexer.__init__.py re-export."""
 
     def test_import_from_indexer(self):
         from paddleformers.fleet.cudnn_ops.indexer import csa_indexer_bwd

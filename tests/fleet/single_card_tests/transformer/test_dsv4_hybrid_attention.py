@@ -18,6 +18,10 @@ import unittest
 import paddle
 from paddle.distributed.fleet.meta_parallel import build_spec_layer
 
+from paddleformers.fleet.fusions.csa_sparse_attn import (
+    csa_sparse_attn,
+    unfused_compressed_sparse_attn,
+)
 from paddleformers.fleet.models.common.embeddings.yarn_rotary_pos_embedding import (
     YarnRotaryEmbedding,
 )
@@ -30,7 +34,6 @@ from paddleformers.fleet.models.gpt.gpt_layer_specs import (
 from paddleformers.fleet.tensor_parallel.random import (
     model_parallel_cuda_manual_seed,
 )
-from paddleformers.fleet.tilelang_ops import csa_sparse_attn
 from paddleformers.fleet.transformer.csa_attention import (
     CompressedSparseAttention,
     _apply_rope,
@@ -39,11 +42,13 @@ from paddleformers.fleet.transformer.csa_attention import (
     _resolve_csa_tilelang_switch,
     get_compress_topk_idxs,
     get_window_topk_idxs,
-    unfused_compressed_sparse_attn,
 )
-from paddleformers.fleet.transformer.dsa_attention import fused_qk_topk_naive
+from paddleformers.fleet.transformer.dsa_attention import (
+    fused_qk_topk_naive,
+)
 from paddleformers.fleet.transformer.dsv4_hybrid_attention import (
     DSv4HybridSelfAttention,
+    build_document_rope_freqs,
 )
 from paddleformers.fleet.transformer.enums import AttnMaskType
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
@@ -72,7 +77,7 @@ def _make_config(
     num_nextn_predict_layers=0,
     csa_tilelang_backend=None,
     csa_tilelang_enable_indexer=None,
-    csa_tilelang_enable_sparse_attn=None,
+    csa_sparse_attn_backend="unfused",
 ):
     if csa_compress_ratios is None:
         csa_compress_ratios = [0, 4, 128, 4]
@@ -115,7 +120,7 @@ def _make_config(
         softmax_type="vanilla",
         csa_tilelang_backend=csa_tilelang_backend,
         csa_tilelang_enable_indexer=csa_tilelang_enable_indexer,
-        csa_tilelang_enable_sparse_attn=csa_tilelang_enable_sparse_attn,
+        csa_sparse_attn_backend=csa_sparse_attn_backend,
     )
 
 
@@ -167,11 +172,6 @@ class TestDSv4HybridConfigAndSpec(unittest.TestCase):
                 paddle_config, "csa_tilelang_enable_indexer"
             )
         )
-        self.assertFalse(
-            _resolve_csa_tilelang_switch(
-                paddle_config, "csa_tilelang_enable_sparse_attn"
-            )
-        )
 
         tilelang_config = _make_config(
             csa_tilelang_backend="attention_paddle_compat"
@@ -181,25 +181,14 @@ class TestDSv4HybridConfigAndSpec(unittest.TestCase):
                 tilelang_config, "csa_tilelang_enable_indexer"
             )
         )
-        self.assertTrue(
-            _resolve_csa_tilelang_switch(
-                tilelang_config, "csa_tilelang_enable_sparse_attn"
-            )
-        )
 
         override_config = _make_config(
             csa_tilelang_backend="attention_paddle_compat",
             csa_tilelang_enable_indexer=False,
-            csa_tilelang_enable_sparse_attn=False,
         )
         self.assertFalse(
             _resolve_csa_tilelang_switch(
                 override_config, "csa_tilelang_enable_indexer"
-            )
-        )
-        self.assertFalse(
-            _resolve_csa_tilelang_switch(
-                override_config, "csa_tilelang_enable_sparse_attn"
             )
         )
 
@@ -208,10 +197,23 @@ class TestDSv4HybridConfigAndSpec(unittest.TestCase):
         ):
             _make_config(csa_tilelang_enable_indexer=True)
 
+    def test_csa_sparse_attn_backend_validation(self):
+        for backend in ("unfused", "tilelang", "cudnn"):
+            cfg = _make_config(csa_sparse_attn_backend=backend)
+            self.assertEqual(cfg.csa_sparse_attn_backend, backend)
+
         with self.assertRaisesRegex(
-            ValueError, "csa_tilelang_enable_sparse_attn=True requires"
+            ValueError, "csa_sparse_attn_backend='paddle' is invalid"
         ):
-            _make_config(csa_tilelang_enable_sparse_attn=True)
+            _make_config(csa_sparse_attn_backend="paddle")
+
+    def test_removed_enable_sparse_attn_switch_raises(self):
+        with self.assertRaisesRegex(
+            ValueError, "csa_tilelang_enable_sparse_attn has been removed"
+        ):
+            cfg = _make_config()
+            cfg.csa_tilelang_enable_sparse_attn = True
+            cfg.__post_init__()
 
     def test_phase2_loss_topk_does_not_expand_attention_topk(self):
         config = _make_config(
@@ -291,6 +293,48 @@ class TestCSAIndexHelpers(unittest.TestCase):
 
 
 class TestDSv4HybridDocumentRoPE(unittest.TestCase):
+    def test_document_rope_freqs_with_position_offset_pads_to_local_slice(self):
+        config = _make_config(rope_type="yarn")
+        rotary_pos_emb = YarnRotaryEmbedding(
+            config.qk_pos_emb_head_dim,
+            rotary_base=config.csa_compress_rotary_base,
+            scaling_factor=getattr(config, "rotary_scaling_factor", 40),
+            original_max_position_embeddings=getattr(
+                config, "original_max_position_embeddings", 4096
+            ),
+            beta_fast=getattr(config, "beta_fast", 32),
+            beta_slow=getattr(config, "beta_slow", 1),
+            mscale=getattr(config, "mscale", 1.0),
+            mscale_all_dim=getattr(config, "mscale_all_dim", 0.0),
+        )
+        sq_local = 4
+        position_offset = 4
+        needed_len = position_offset + sq_local
+        startend_row_indices = paddle.to_tensor(
+            [2, 2, 2, 2, 2, 2, 2, 2], dtype="int32"
+        ).reshape([1, 1, 8, 1])
+
+        freqs, _ = build_document_rope_freqs(
+            rotary_pos_emb,
+            sq_local,
+            startend_row_indices,
+            position_offset=position_offset,
+        )
+        local_freqs = freqs[
+            :, position_offset : position_offset + sq_local, :, :
+        ]
+
+        self.assertEqual(
+            list(local_freqs.shape),
+            [1, sq_local, 1, config.qk_pos_emb_head_dim],
+        )
+        self.assertTrue(
+            paddle.equal_all(
+                local_freqs[:, -2:, :, :],
+                paddle.zeros_like(local_freqs[:, -2:, :, :]),
+            ).item()
+        )
+
     def test_compressed_document_rope_matches_separate_documents(self):
         paddle.seed(_SEED)
         config = _make_config(rope_type="yarn")
@@ -462,7 +506,7 @@ class TestDSv4HybridDocumentRoPE(unittest.TestCase):
                     num_layers=1,
                     csa_tilelang_backend=None,
                     csa_tilelang_enable_indexer=False,
-                    csa_tilelang_enable_sparse_attn=False,
+                    csa_sparse_attn_backend="unfused",
                 )
                 fused_config = _make_config(
                     hidden_size=256,
@@ -478,7 +522,7 @@ class TestDSv4HybridDocumentRoPE(unittest.TestCase):
                     num_layers=1,
                     csa_tilelang_backend="attention_paddle_compat",
                     csa_tilelang_enable_indexer=True,
-                    csa_tilelang_enable_sparse_attn=True,
+                    csa_sparse_attn_backend="tilelang",
                 )
                 doc_len_cases = [
                     ##################### 1. pad + //
@@ -875,7 +919,12 @@ class TestDSv4HybridFusedSparseAttention(unittest.TestCase):
             kv_full.stop_gradient = False
             attn_sink.stop_gradient = False
             fused_out = csa_sparse_attn(
-                query, kv_full, attn_sink, topk_idxs, softmax_scale
+                query,
+                kv_full,
+                attn_sink,
+                topk_idxs,
+                softmax_scale,
+                backend="tilelang",
             )
             fused_loss = fused_out.cast("float32").sum()
             fused_loss.backward()
@@ -1005,6 +1054,24 @@ class TestDSv4HybridAttentionForwardBackward(unittest.TestCase):
             self.assertTrue(
                 paddle.isfinite(output.cast("float32")).all().item()
             )
+
+    def test_rope_fusion(self):
+        batch_size = 2
+        seq_len = 128
+        self.config.apply_rope_fusion = True
+        attn = _build_attention(self.config, layer_number=2)
+        hidden = paddle.randn(
+            [batch_size, seq_len, self.config.hidden_size],
+            dtype=paddle.bfloat16,
+        )
+
+        output, _ = attn(hidden_states=hidden, attention_mask=None)
+
+        self.assertEqual(
+            list(output.shape),
+            [batch_size, seq_len, self.config.hidden_size],
+        )
+        self.assertTrue(paddle.isfinite(output.float()).all().item())
 
 
 class TestDSv4HybridQKV(unittest.TestCase):

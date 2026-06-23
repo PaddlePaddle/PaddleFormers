@@ -255,7 +255,10 @@ class WrappedPaddleNormPipe(paddle.nn.Layer):
             self.config.num_nextn_predict_layers is not None
             and self.config.num_nextn_predict_layers > 0
             and not self.config.mtp_load_weight_only
-            and not self.config.enable_mtp_magic_send
+            and not (
+                not self.config.gpt_model_use_experimental_version
+                and self.config.enable_mtp_magic_send
+            )
         ):
             hidden_states_concat = dict_args["hidden_states"]
             tensor_list = paddle.split(
@@ -270,7 +273,10 @@ class WrappedPaddleNormPipe(paddle.nn.Layer):
             self.config.num_nextn_predict_layers is not None
             and self.config.num_nextn_predict_layers > 0
             and not self.config.mtp_load_weight_only
-            and not self.config.enable_mtp_magic_send
+            and not (
+                not self.config.gpt_model_use_experimental_version
+                and self.config.enable_mtp_magic_send
+            )
         ):
             # normalize MTP hidden_states
             if self.config.gpt_model_use_experimental_version:

@@ -26,7 +26,7 @@ Covers:
 
 Run with:
     python -m paddle.distributed.launch --gpus 0,1 \
-        tests/fleet/multi_card_tests/transformer/test_csa_attention_cp.py
+        tests/multi_card_tests/transformer/test_csa_attention_cp.py
 """
 
 import os
@@ -166,7 +166,7 @@ def _build_csa_config(
         dsa_indexer_loss_coeff=dsa_indexer_loss_coeff,
         dsa_indexer_use_sparse_loss=False,
         csa_tilelang_enable_indexer=False,
-        csa_tilelang_enable_sparse_attn=False,
+        csa_sparse_attn_backend="unfused",
         init_method=None,
         init_method_std=0.02,
         layernorm_epsilon=1e-5,
@@ -484,7 +484,7 @@ class TestDSv4HybridAttentionCP(unittest.TestCase):
         config.dsa_indexer_loss_coeff = 0.0
         config.dsa_indexer_use_sparse_loss = False
         config.csa_tilelang_enable_indexer = False
-        config.csa_tilelang_enable_sparse_attn = False
+        config.csa_sparse_attn_backend = "unfused"
         config.init_method = None
         config.init_method_std = 0.02
         config.output_layer_init_method = None
@@ -642,7 +642,6 @@ class TestDSv4HybridAttentionCP(unittest.TestCase):
         config.dsa_indexer_loss_coeff = 0.0
         config.dsa_indexer_use_sparse_loss = False
         config.csa_tilelang_enable_indexer = False
-        config.csa_tilelang_enable_sparse_attn = False
         config.init_method = None
         config.init_method_std = 0.02
         config.output_layer_init_method = None
@@ -654,6 +653,7 @@ class TestDSv4HybridAttentionCP(unittest.TestCase):
         config.tensor_model_parallel_size = 1
         config.cp_balance_mode = "contiguous_allgather"
         config.csa_indexer_backend = "tilelang"
+        config.csa_sparse_attn_backend = "unfused"
 
         sublayers = DSv4HybridSelfAttentionSublayersSpec(
             linear_q_down_proj=_TestLinear,
@@ -960,7 +960,7 @@ class TestTileLangCSALayerCP(unittest.TestCase):
             dsa_indexer_loss_coeff=loss_coeff,
             dsa_indexer_use_sparse_loss=use_sparse_loss,
             csa_tilelang_enable_indexer=True,
-            csa_tilelang_enable_sparse_attn=False,
+            csa_sparse_attn_backend="unfused",
             csa_tilelang_backend="attention_paddle_compat",
             csa_indexer_backend="tilelang",
             init_method=None,
