@@ -86,6 +86,7 @@ class GLMMoEModelProvider(GPTModelProvider):
     rope_scaling: float = 1.0
     bias_dropout_fusion: bool = True
     moe_grouped_gemm: bool = False
+    use_accuracy_compatible: bool = False
 
 
 def eager_attention_forward(

@@ -297,6 +297,11 @@ class FinetuningArguments(
         },
     )
 
+    use_accuracy_compatible: bool = field(
+        default=False,
+        metadata={"help": ("Whether to enable accuracy alignment with the Megatron framework.")},
+    )
+
     def __post_init__(self):
         self.bf16 = True
         if self.compute_type == "bf16":
