@@ -17,6 +17,8 @@ num_samples_each_epoch: 6000000
 packing: true
 mix_strategy: concat
 
+pad_token_id: 151643
+
 truncate_packing: true
 dataloader_shuffle: false
 dataloader_num_workers: 24

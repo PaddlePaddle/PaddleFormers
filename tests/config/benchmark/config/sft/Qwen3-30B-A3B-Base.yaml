@@ -22,6 +22,8 @@ dataloader_shuffle: false
 dataloader_num_workers: 24
 prefetch_factor: 24
 
+pad_token_id: 151643
+
 ### model
 model_name_or_path: /root/efficient_benchmark/huggingface/Qwen/Qwen3-30B-A3B
 _attn_implementation: flashmask

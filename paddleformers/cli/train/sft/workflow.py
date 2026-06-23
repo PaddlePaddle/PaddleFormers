@@ -268,6 +268,8 @@ def run_sft(
         dtype=dtype,
         quantization_config=quantization_config,
     )
+    if getattr(training_args, "pad_token_id", None) is not None:
+        model_config.pad_token_id = training_args.pad_token_id
 
     if (
         model_config.tie_word_embeddings
