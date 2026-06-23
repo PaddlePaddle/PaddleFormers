@@ -46,12 +46,21 @@ def _reexec_with_numactl(local_rank, numa_node):
 
 
 def _maybe_bind_trainer_numa():
-    if os.getenv("BIND_TRAINER_NUMA", "0").lower() not in ("1", "true", "on", "yes"):
+    if os.getenv("BIND_TRAINER_NUMA", "0").lower() not in (
+        "1",
+        "true",
+        "on",
+        "yes",
+    ):
         return
 
-    rank_env = os.getenv("PADDLE_LOCAL_RANK") or os.getenv("FLAGS_selected_gpus")
+    rank_env = os.getenv("PADDLE_LOCAL_RANK") or os.getenv(
+        "FLAGS_selected_gpus"
+    )
     if not rank_env:
-        raise RuntimeError("BIND_TRAINER_NUMA=1 requires PADDLE_LOCAL_RANK or FLAGS_selected_gpus")
+        raise RuntimeError(
+            "BIND_TRAINER_NUMA=1 requires PADDLE_LOCAL_RANK or FLAGS_selected_gpus"
+        )
 
     local_rank = int(rank_env.split(",", 1)[0])
 
@@ -60,7 +69,9 @@ def _maybe_bind_trainer_numa():
     elif local_rank in (2, 3):
         numa_node = 1
     else:
-        raise RuntimeError(f"BIND_TRAINER_NUMA=1 only supports local rank 0-3, got {local_rank}")
+        raise RuntimeError(
+            f"BIND_TRAINER_NUMA=1 only supports local rank 0-3, got {local_rank}"
+        )
 
     _reexec_with_numactl(local_rank, numa_node)
     print(
