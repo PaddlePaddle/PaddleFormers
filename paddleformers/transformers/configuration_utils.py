@@ -562,6 +562,12 @@ class LlmMetaConfig:
             True,
             "Whether to use FP8 for gradient storage during training (only effective if `fp8=True`). Further reduces memory footprint but may introduce minor numerical error. Defaults to False.",
         ),
+        (
+            "use_ue8m0",
+            bool,
+            False,
+            "Whether to use UE8M0 packed scaling factors for FP8 on Blackwell GPUs (SM100+). Enables deep_gemm backend for weight gradient computation. Defaults to False.",
+        ),
     ]
 
     model_conf = [
@@ -627,6 +633,12 @@ class LlmMetaConfig:
             bool,
             False,
             "Whether to enable multi-latent attention mechanism. Defaults to False.",
+        ),
+        (
+            "csa_sparse_attn_backend",
+            str,
+            "tilelang",
+            "CSA sparse attention backend. One of {'unfused', 'tilelang', 'cudnn'}. Defaults to 'tilelang'.",
         ),
         (
             "no_rope_freq",

@@ -89,6 +89,8 @@ def detect_device() -> str:
             return "xpu"
         elif "iluvatar" in place_lower:
             return "iluvatar_gpu"
+        elif "musa" in place_lower:
+            return "musa"
         else:
             return "gpu"
     except Exception as e:

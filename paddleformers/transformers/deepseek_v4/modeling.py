@@ -494,7 +494,6 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         num_experts = config.n_routed_experts
         n_shared_experts = getattr(config, "n_shared_experts", 1)
         moe_n_hash_layers = getattr(config, "moe_n_hash_layers", 3)
-        moe_expert_fusion = getattr(config, "moe_expert_fusion", False)
         csa_compress_ratios = config.csa_compress_ratios
         num_head_empty_layers = (
             config.num_empty_layers_add_in_head
@@ -519,7 +518,24 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         else:
             stmts += ["head.weight -> model.lm_head.weight"]
 
+        use_fused_weight = config.moe_expert_fusion
+        if (
+            config.fp8
+            and (config.moe_expert_fusion is False)
+            and config.moe_deep_gemm
+        ):
+            raise ValueError(
+                "For fp8 deep_gemm (i.e. use k-grouped gemm in backward), moe_expert_fusion must be True."
+            )
+        if (
+            config.fp8
+            and config.moe_expert_fusion
+            and config.moe_deep_gemm is False
+        ):
+            use_fused_weight = False
+
         # === 2. Per-layer mappings (layer 0 to num_decoder_layers-1) ===
+
         for L in range(num_decoder_layers):
             src = f"layers.{L}"
             tgt = f"model.layers.{L + num_head_empty_layers}"
@@ -624,7 +640,8 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ]
 
             # --- GroupGEMM fusion: stack all experts into single tensors ---
-            if moe_expert_fusion:
+
+            if use_fused_weight:
                 ep_weight1 = []
                 ep_weight2 = []
                 for E in range(num_experts):
@@ -763,7 +780,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ]
 
             # --- GroupGEMM fusion for MTP experts ---
-            if moe_expert_fusion:
+            if use_fused_weight:
                 ep_weight1 = []
                 ep_weight2 = []
                 for E in range(num_experts):
@@ -799,7 +816,6 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         num_experts = config.n_routed_experts
         n_shared_experts = getattr(config, "n_shared_experts", 1)
         moe_n_hash_layers = getattr(config, "moe_n_hash_layers", 3)
-        moe_expert_fusion = getattr(config, "moe_expert_fusion", False)
         csa_compress_ratios = config.csa_compress_ratios
         num_head_empty_layers = (
             config.num_empty_layers_add_in_head
@@ -823,6 +839,22 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             stmts += ["model.lm_head.weight -> _"]
         else:
             stmts += ["model.lm_head.weight -> head.weight"]
+
+        use_fused_weight = config.moe_expert_fusion
+        if (
+            config.fp8
+            and (config.moe_expert_fusion is False)
+            and config.moe_deep_gemm
+        ):
+            raise ValueError(
+                "For fp8 deep_gemm (i.e. use k-grouped gemm in backward), moe_expert_fusion must be True."
+            )
+        if (
+            config.fp8
+            and config.moe_expert_fusion
+            and config.moe_deep_gemm is False
+        ):
+            use_fused_weight = False
 
         # === 2. MTP layers (inverse, reversed order) ===
         for i in reversed(range(mtp_num_layers)):
@@ -921,7 +953,8 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             ]
 
             # --- GroupGEMM de-fusion ---
-            if moe_expert_fusion:
+
+            if use_fused_weight:
                 ep_weight1 = []
                 ep_weight2 = []
                 for E in range(num_experts):
@@ -1053,7 +1086,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 stmts += [f"{src}.mlp.gate.tid2eid -> {tgt}.ffn.gate.tid2eid"]
 
             # --- GroupGEMM de-fusion: split stacked tensor back to per-expert ---
-            if moe_expert_fusion:
+            if use_fused_weight:
                 ep_weight1 = []
                 ep_weight2 = []
                 for E in range(num_experts):

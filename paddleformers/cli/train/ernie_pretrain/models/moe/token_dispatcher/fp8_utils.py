@@ -28,9 +28,19 @@ The implementation leverages PaddlePaddle's FP8 incubator operations and provide
 additional optimizations specific to MoE workloads.
 """
 
+import warnings
+
 import numpy
 import paddle
-from paddle.incubate.fp8 import deep_gemm
+
+try:
+    from paddle.incubate.fp8 import deep_gemm
+except ImportError:
+    warnings.warn(
+        "paddle.incubate.fp8.deep_gemm is not available.",
+        RuntimeWarning,
+    )
+    deep_gemm = None
 from paddle.nn.functional import swiglu
 
 from paddleformers.cli.train.ernie_pretrain.models.fp8_linear import fp8_gemm
