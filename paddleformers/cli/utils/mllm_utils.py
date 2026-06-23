@@ -230,6 +230,11 @@ register_multimodel_keys(
         aligner="mlp1",
         llm="language_model",
         vision="vision_model",
+    )
+)
+
+register_multimodel_keys(
+    MultiModelKeys(
         model_dtype=MLLMModelMapping.qwen3_5_moe,
         aligner="model.vision_model.merger",
         llm=["model.language_model", "lm_head"],
