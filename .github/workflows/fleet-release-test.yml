@@ -165,7 +165,7 @@ jobs:
           rm -rf * .[^.]*
           set -x
           source /root/proxy
-          wget -q --tries=5 --no-proxy --no-check-certificate "${{ needs.clone.outputs.repo_archive_url }}" -O PaddleFormers.tar.gz
+          wget --tries=5 --no-proxy --no-check-certificate "${{ needs.clone.outputs.repo_archive_url }}" -O PaddleFormers.tar.gz
           tar -xf PaddleFormers.tar.gz --strip-components=1
           rm PaddleFormers.tar.gz
           git config --global --add safe.directory /paddle
@@ -212,7 +212,7 @@ jobs:
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           set -x
           OPS_DST=paddlefleet_ops-0.0.0-cp312-cp312-linux_x86_64.whl
-          wget -q --no-proxy "https://paddle-whl.bj.bcebos.com/nightly/cu129/paddlefleet-ops/${OPS_DST}" -O dist/${OPS_DST}
+          wget --no-proxy "https://paddle-whl.bj.bcebos.com/nightly/cu129/paddlefleet-ops/${OPS_DST}" -O dist/${OPS_DST}
           echo "OPS_WHL=${OPS_DST}" >> dist/whl_names.txt
           ls -lh dist
           cat dist/whl_names.txt
@@ -237,7 +237,7 @@ jobs:
           export UV_PYTHON=3.12
           cd /
           if [ ! -f "/bos/BosClient.py" ]; then
-            wget -q --no-proxy -O bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
+            wget --no-proxy -O bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
             mkdir -p bos
             tar xf bos_new.tar.gz -C bos
           fi
@@ -305,7 +305,7 @@ jobs:
           rm -rf * .[^.]*
           set -x
           source /root/proxy
-          wget -q --tries=5 --no-proxy --no-check-certificate https://paddle-github-action.bj.bcebos.com/PaddleFormers/PR/${PR_ID}/${COMMIT_ID}/${BRANCH}/paddleformers.tar.gz
+          wget --tries=5 --no-proxy --no-check-certificate https://paddle-github-action.bj.bcebos.com/PaddleFormers/PR/${PR_ID}/${COMMIT_ID}/${BRANCH}/paddleformers.tar.gz
           tar -xf paddleformers.tar.gz --strip-components=1
           git config --global --add safe.directory /paddle
           git checkout ${BRANCH}
@@ -346,7 +346,7 @@ jobs:
           coverage combine
           coverage report -m
           coverage xml -o /paddle/coveragedata/coverage.xml
-          wget -q --no-proxy --no-check-certificate \
+          wget --no-proxy --no-check-certificate \
             https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddlePaddle/PaddleTest/tools/bos_tools.py \
             -O bos_tools.py
           push_file=$(realpath bos_tools.py)
@@ -408,7 +408,7 @@ jobs:
           rm -rf * .[^.]*
           source /root/proxy
           set -x
-          wget -q --tries=5 --no-proxy --no-check-certificate https://paddle-github-action.bj.bcebos.com/PaddleFormers/PR/${PR_ID}/${COMMIT_ID}/${BRANCH}/paddleformers.tar.gz
+          wget --tries=5 --no-proxy --no-check-certificate https://paddle-github-action.bj.bcebos.com/PaddleFormers/PR/${PR_ID}/${COMMIT_ID}/${BRANCH}/paddleformers.tar.gz
           tar -xf paddleformers.tar.gz --strip-components=1
           git config --global --add safe.directory /paddle
           pip install uv coverage==7.13.0 bce-python-sdk==0.8.74 wrapt pytest
@@ -448,7 +448,7 @@ jobs:
           coverage combine
           coverage xml -o /paddle/coveragedata/coverage.xml
           coverage report -m
-          wget -q --no-proxy --no-check-certificate \
+          wget --no-proxy --no-check-certificate \
             https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddlePaddle/PaddleTest/tools/bos_tools.py \
             -O bos_tools.py
           push_file=$(realpath bos_tools.py)
@@ -521,7 +521,7 @@ jobs:
           set -x
           source /root/proxy
           mkdir PaddleFormers && cd PaddleFormers
-          wget -q --tries=5 --no-proxy --no-check-certificate https://paddle-github-action.bj.bcebos.com/PaddleFormers/PR/${PR_ID}/${COMMIT_ID}/${BRANCH}/paddleformers.tar.gz
+          wget --tries=5 --no-proxy --no-check-certificate https://paddle-github-action.bj.bcebos.com/PaddleFormers/PR/${PR_ID}/${COMMIT_ID}/${BRANCH}/paddleformers.tar.gz
           tar -xf paddleformers.tar.gz --strip-components=1
           git config --global --add safe.directory /workspace/PaddleFormers
           git checkout ${BRANCH}
@@ -618,7 +618,7 @@ jobs:
           coverage combine
           coverage xml -o /workspace/PaddleFormers/coveragedata-single/coverage.xml
           coverage report -m
-          wget -q --no-proxy --no-check-certificate \
+          wget --no-proxy --no-check-certificate \
             https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddlePaddle/PaddleTest/tools/bos_tools.py \
             -O bos_tools.py
           push_file=$(realpath bos_tools.py)
@@ -683,7 +683,7 @@ jobs:
           set -x
           source /root/proxy
           mkdir PaddleFormers && cd PaddleFormers
-          wget -q --tries=5 --no-proxy --no-check-certificate https://paddle-github-action.bj.bcebos.com/PaddleFormers/PR/${PR_ID}/${COMMIT_ID}/${BRANCH}/paddleformers.tar.gz
+          wget --tries=5 --no-proxy --no-check-certificate https://paddle-github-action.bj.bcebos.com/PaddleFormers/PR/${PR_ID}/${COMMIT_ID}/${BRANCH}/paddleformers.tar.gz
           tar -xf paddleformers.tar.gz --strip-components=1
           git config --global --add safe.directory /workspace/PaddleFormers
           git checkout ${BRANCH}
@@ -945,7 +945,7 @@ jobs:
           coverage combine
           coverage xml -o /workspace/PaddleFormers/coveragedata-multi/coverage.xml
           coverage report -m
-          wget -q --no-proxy --no-check-certificate \
+          wget --no-proxy --no-check-certificate \
             https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddlePaddle/PaddleTest/tools/bos_tools.py \
             -O bos_tools.py
           push_file=$(realpath bos_tools.py)
@@ -1010,7 +1010,7 @@ jobs:
           source /root/proxy
           set -x
           mkdir PaddleFormers && cd PaddleFormers
-          wget -q --tries=5 --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFormers/PR/${PR_ID}/${COMMIT_ID}/${BRANCH}/paddleformers.tar.gz
+          wget --tries=5 --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFormers/PR/${PR_ID}/${COMMIT_ID}/${BRANCH}/paddleformers.tar.gz
           tar -xf paddleformers.tar.gz --strip-components=1
           git config --global --add safe.directory /workspace/PaddleFormers
           git checkout ${BRANCH}
@@ -1189,7 +1189,7 @@ jobs:
           coverage combine
           coverage xml -o /workspace/PaddleFormers/coveragedata/coverage.xml
           coverage report -m
-          wget -q --no-proxy --no-check-certificate \
+          wget --no-proxy --no-check-certificate \
             https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddlePaddle/PaddleTest/tools/bos_tools.py \
             -O bos_tools.py
           push_file=$(realpath bos_tools.py)
@@ -1265,7 +1265,7 @@ jobs:
           rm -rf * .[^.]*
           set -x
           source /root/proxy
-          wget -q --tries=5 --no-proxy --no-check-certificate https://paddle-github-action.bj.bcebos.com/PaddleFormers/PR/${PR_ID}/${COMMIT_ID}/${BRANCH}/paddleformers.tar.gz
+          wget --tries=5 --no-proxy --no-check-certificate https://paddle-github-action.bj.bcebos.com/PaddleFormers/PR/${PR_ID}/${COMMIT_ID}/${BRANCH}/paddleformers.tar.gz
           mkdir PaddleFormers && cd PaddleFormers
           tar -xf ../paddleformers.tar.gz --strip-components=1
           git config --global --add safe.directory /workspace/PaddleFormers
@@ -1327,7 +1327,7 @@ jobs:
           source /root/proxy_huggingface
           python -m pip install bce-python-sdk==0.8.74 -i https://pypi.org/simple
           if [ ! -f "${{ env.bos_file }}" ]; then
-            wget -q --no-proxy -O ${{ env.home_path }}/bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
+            wget --no-proxy -O ${{ env.home_path }}/bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
             mkdir ${{ env.home_path }}/bos
             tar xf ${{ env.home_path }}/bos_new.tar.gz -C ${{ env.home_path }}/bos
           fi
