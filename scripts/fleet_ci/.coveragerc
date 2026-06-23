@@ -9,5 +9,5 @@ omit =
 
 [paths]
 source =
-    paddleformers/fleet
-    */site-packages/paddleformers/fleet
+    paddleformers
+    */site-packages/paddleformers
