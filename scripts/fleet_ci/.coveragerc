@@ -1,6 +1,6 @@
 [run]
 branch = True
-source = paddleformers.fleet
+source = paddleformers
 concurrency = multiprocessing
 patch = subprocess
 parallel = True
