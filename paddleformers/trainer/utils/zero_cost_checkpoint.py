@@ -20,6 +20,7 @@ import json
 import multiprocessing
 import os
 import random
+import re
 import time
 from abc import ABC, abstractmethod
 from collections import OrderedDict, defaultdict
@@ -124,6 +125,7 @@ class ZCCTaskType(Enum):
     OFFLOAD = 2
     FINISH = 3
     SET_EMA_STATE_DICT = 5
+    LOAD_EMA_FROM_SHARED_MEM = 6
 
 
 class ZCCWorkerStatus(Enum):
@@ -223,27 +225,11 @@ def get_fused_param_mappings(optimizer, manipulated_state_dict):
                 param_mappings[k] = param_meta
         index += 1
 
-    if not is_muon:
-        for k, v in manipulated_state_dict.items():
-            if k not in param_mappings:
-                unshard_buffer_index = f"unshard_{k}"
-                param_meta = {}
-                param_meta["buffer_index"] = unshard_buffer_index
-                param_meta["shape"] = v.shape
-                param_meta["name"] = v.name
-                param_mappings[k] = param_meta
-                ipc_meta_mappings[unshard_buffer_index] = v.get_tensor()._share_cuda()
-
     if is_muon:
-        sharding_rank = optimizer._sharding_rank
-        local_2d_params = list(optimizer._rank2params_2d.get(sharding_rank, []))
-        if optimizer._moe_sharding_world_size > 1:
-            local_2d_moe = list(optimizer._rank2params_2d_moe.get(optimizer._moe_sharding_rank, []))
-        else:
-            local_2d_moe = list(optimizer._rank2params_2d_moe.get(0, []))
-        local_2d_params.extend(local_2d_moe)
+        local_2d_params = []
+        for param in optimizer._local_2d:
+            local_2d_params.extend(param)
 
-        # TODO(xingmingyyj) : handle multi to one
         local_2d_name_to_param = {p.name: p for p in local_2d_params}
 
         for k, v in manipulated_state_dict.items():
@@ -263,11 +249,10 @@ def get_fused_param_mappings(optimizer, manipulated_state_dict):
                 param_mappings[k] = param_meta
                 index += 1
 
-    # Third Muon block: map remaining params (e.g. stop_gradient parameters) via
-    # optimizer._parameter_list. Note that persistable registered buffers are NOT in
-    # _parameter_list and would not be mapped here — see the comment in
-    # _muon_manipulate_state_dict() for details.
-    if is_muon:
+        # Third Muon block: map remaining params (e.g. stop_gradient parameters) via
+        # optimizer._parameter_list. Note that persistable registered buffers are NOT in
+        # _parameter_list and would not be mapped here — see the comment in
+        # _muon_manipulate_state_dict() for details.
         all_param_by_name = {p.name: p for p in optimizer._parameter_list}
         if hasattr(optimizer, "_origin_parameter_list"):
             for p in optimizer._origin_parameter_list:
@@ -290,6 +275,16 @@ def get_fused_param_mappings(optimizer, manipulated_state_dict):
                 }
                 param_mappings[k] = param_meta
                 index += 1
+
+    for k, v in manipulated_state_dict.items():
+        if k not in param_mappings:
+            unshard_buffer_index = f"unshard_{k}"
+            param_meta = {}
+            param_meta["buffer_index"] = unshard_buffer_index
+            param_meta["shape"] = v.shape
+            param_meta["name"] = v.name
+            param_mappings[k] = param_meta
+            ipc_meta_mappings[unshard_buffer_index] = v.get_tensor()._share_cuda()
 
     # If this assertion fails under Muon, it is likely because the model contains persistable
     # registered buffers that are included in manipulated_state_dict but cannot be mapped via
@@ -389,6 +384,8 @@ class ZeroCostCheckpointEMAProcessor:
                 shape = tensor_meta["shape"]
                 name = tensor_meta["name"]
                 buffer_index = tensor_meta["buffer_index"]
+                if buffer_index not in self.ema_buffer_model_params:
+                    continue  # non fp32 has no `self.ema_buffer_model_params`
                 if buffer_index.startswith("unshard_"):
                     # unshard_ type tensors use the entire buffer directly
                     tensor = self.ema_buffer_model_params[buffer_index].clone()
@@ -396,8 +393,6 @@ class ZeroCostCheckpointEMAProcessor:
                     tensor.name = name
                     ema_state_dict[k] = tensor
                     continue
-                if buffer_index not in self.ema_buffer_model_params:
-                    continue  # non fp32 has no `self.ema_buffer_model_params`
                 start = tensor_meta["start"]
                 end = tensor_meta["end"]
                 cpu_buffer = self.ema_buffer_model_params[buffer_index]
@@ -419,6 +414,8 @@ class ZeroCostCheckpointEMAProcessor:
     def load_ema_state_dict(self, state_dict):
         for k, tensor_meta in self.param_fusion_storage_helper.model_weights_metas.items():
             logger.info(f"[ZCC EMA] load model weight key={k}")
+            if tensor_meta["buffer_index"] not in self.ema_buffer_model_params:
+                continue  # non fp32 has no `self.ema_buffer_model_params`
             if tensor_meta["buffer_index"].startswith("unshard_"):
                 # unshard_ type tensors use the entire buffer directly
                 if k in state_dict:
@@ -426,8 +423,6 @@ class ZeroCostCheckpointEMAProcessor:
                 continue
             start = tensor_meta["start"]
             end = tensor_meta["end"]
-            if tensor_meta["buffer_index"] not in self.ema_buffer_model_params:
-                continue  # non fp32 has no `self.ema_buffer_model_params`
             if k in state_dict:
                 cpu_buffer = self.ema_buffer_model_params[tensor_meta["buffer_index"]]
                 tensor = state_dict[k].flatten()
@@ -497,6 +492,17 @@ class ParamFusionStorageHelper:
         return (cuda_buffer, cpu_buffer)
 
     @imperative_base.no_grad()
+    def sync_unshard_buffers(self):
+        synced_buffer_indices = set()
+        for tensor_meta in self.model_weights_metas.values():
+            buffer_index = tensor_meta["buffer_index"]
+            if not buffer_index.startswith("unshard_") or buffer_index in synced_buffer_indices:
+                continue
+            cuda_buffer, cpu_buffer = self.inited_buffers[buffer_index]
+            cpu_buffer.set_value(cuda_buffer.cpu())
+            synced_buffer_indices.add(buffer_index)
+
+    @imperative_base.no_grad()
     def sync_partial_param(self, numel_to_sync):
         assert (
             self.current_offloaded_numel + numel_to_sync <= self.all_param_numel
@@ -540,6 +546,7 @@ class ParamFusionStorageHelper:
 
     def wait_all(self):
         if len(self.tasks) == 0:
+            self.sync_unshard_buffers()
             return
         last_task = self.tasks.pop(-1)
         while len(self.tasks) > 0:
@@ -549,6 +556,7 @@ class ParamFusionStorageHelper:
             else:
                 task.cuda_wait()
         last_task.cpu_wait()
+        self.sync_unshard_buffers()
         self.current_offloaded_numel = 0
 
     def state_dict(self):
@@ -625,7 +633,7 @@ class ZeroCostCheckpointCallback(TrainerCallback):
             non_cached_objects = (lr_scheduler.state_dict(), state, self.get_rng_states(args))
             self.manager.get_idle_worker_for_saving((save_infos, non_cached_objects))
             self.runtime_timer.stop()
-            if not isinstance(model, PipelineLayer):
+            if not (args.pipeline_model_parallel_size > 1 and isinstance(model, PipelineLayer)):
                 self.manager.zcc_pipeline_hook(0)
 
     def get_rng_states(self, args):
@@ -700,11 +708,8 @@ class ZeroCostCheckpointCallback(TrainerCallback):
         sharding_rank = optimizer._sharding_rank
 
         local_2d_names = set()
-        for p in optimizer._rank2params_2d.get(sharding_rank, []):
-            local_2d_names.add(p.name)
-        moe_rank = optimizer._moe_sharding_rank if optimizer._moe_sharding_world_size > 1 else 0
-        for p in optimizer._rank2params_2d_moe.get(moe_rank, []):
-            local_2d_names.add(p.name)
+        for param in optimizer._local_2d:
+            local_2d_names.add(param.name)
 
         all_2d_names = set()
         for color_params in optimizer._params_2d_by_color.values():
@@ -818,6 +823,7 @@ class ZeroCostCheckpointManager:
             worker_status = ctx.Value("i", ZCCWorkerStatus.IDLE.value)
             worker_version = ctx.Value("i", 0)
             worker_step = ctx.Value("i", 0)
+            ema_shm_consumed = ctx.Event()
             worker = zcc_worker_class(
                 i,
                 self.device_id,
@@ -834,12 +840,15 @@ class ZeroCostCheckpointManager:
                 fleet.get_hybrid_communicate_group().get_sharding_parallel_rank(),
                 ema_coef,
                 save_hf_steps,
+                ema_shm_consumed,
             )
             p = ctx.Process(target=worker_loop, args=(worker,))
             p.start()
             self.workers.append(worker)
             self.processes.append(p)
         self.ready_to_save = False
+        self.ema_shared_metas = None
+        self._ema_tensor_refs = None
         atexit.register(self.terminate_workers)
 
     def set_ema_state_dict(self, path):
@@ -848,6 +857,22 @@ class ZeroCostCheckpointManager:
             assert worker.status.value == ZCCWorkerStatus.IDLE.value, "[ZCC manager] worker should be idle, when "
             worker.task_queue.put((ZCCTaskType.SET_EMA_STATE_DICT, path))
         logger.info("[ZCC manager] done setting EMA state dict")
+
+    def set_ema_shared_memory(self, ema_shared_metas, tensor_refs=None, shm_filenames=None):
+        """Store EMA reshard results (shared memory metas) to be sent to workers after first UPDATE.
+        tensor_refs: keep alive until workers consume the shared memory to prevent GC.
+        shm_filenames: list of specific shm file paths for leak detection.
+        """
+        logger.info("[EMA Reshard] Shared memory metas received from main process")
+        self.ema_shared_metas = ema_shared_metas
+        self._ema_tensor_refs = tensor_refs
+        self._ema_shm_filenames = shm_filenames or []
+
+    @staticmethod
+    def _check_shm_files_released(shm_filenames):
+        """Check if specific shm files have been released (deleted from /dev/shm)."""
+        leaked = [f for f in shm_filenames if os.path.exists(f)]
+        return leaked
 
     def update_zcc_workers(self, new_version, dynamic_objecs, static_object, global_step):
         self.report_error_worker()
@@ -873,6 +898,35 @@ class ZeroCostCheckpointManager:
                 f"global_step={worker.global_step.value} "
             )
         logger.info("[ZCC manager] update all zcc workers done")
+
+        # Send EMA shared memory data to workers if pending (from reshard)
+        if self.ema_shared_metas is not None:
+            for worker in self.workers:
+                worker.ema_shm_consumed.clear()
+            for worker in self.workers:
+                worker.task_queue.put((ZCCTaskType.LOAD_EMA_FROM_SHARED_MEM, self.ema_shared_metas))
+            logger.info("[EMA Reshard] Shared memory metas sent to workers, waiting for consumption...")
+            for worker in self.workers:
+                logger.info(f"[EMA Reshard] Waiting worker{worker.worker_id} to consume shared memory...")
+                worker.ema_shm_consumed.wait()
+                logger.info(f"[EMA Reshard] Worker{worker.worker_id} consumed shared memory.")
+            # Now safe to release shared memory tensor references
+            num_refs = len(self._ema_tensor_refs) if self._ema_tensor_refs else 0
+            num_files = len(self._ema_shm_filenames)
+            logger.info(f"[EMA Reshard] Releasing {num_refs} tensor refs ({num_files} tracked shm files)...")
+            self.ema_shared_metas = None
+            self._ema_tensor_refs = None
+            # Verify specific shm files are gone
+            leaked = self._check_shm_files_released(self._ema_shm_filenames)
+            if leaked:
+                logger.warning(
+                    f"[EMA Reshard] LEAK DETECTED: {len(leaked)}/{num_files} shm files still exist! "
+                    f"Examples: {leaked[:5]}"
+                )
+            else:
+                logger.info(f"[EMA Reshard] All {num_files} shm files released successfully, no leak")
+            self._ema_shm_filenames = []
+
         self.ready_to_save = True
 
     def get_idle_worker_for_saving(self, save_infos_and_non_cached_objects=None):
@@ -981,6 +1035,7 @@ class ZeroCostCheckpointWorker:
         sd_rank,
         ema_coef=None,
         save_hf_steps=-1,
+        ema_shm_consumed=None,
     ):
         super().__init__()
         self.worker_id = worker_id
@@ -998,6 +1053,7 @@ class ZeroCostCheckpointWorker:
         self.pp_rank = pp_rank
         self.sd_rank = sd_rank
         self.save_hf_steps = save_hf_steps
+        self.ema_shm_consumed = ema_shm_consumed
 
         # for dynamic objects saving
         self.optimizer_fusion_storage_helper = None
@@ -1284,6 +1340,9 @@ class ZeroCostCheckpointWorker:
                             logger.info(f"[ZCC EMA] load state dict from {ema_ckpt_path}")
                             with device_guard("cpu"):
                                 state_dict = paddle.load(ema_ckpt_path)
+                                # Reverse unified name mapping: saved with unified names, but
+                                # load_ema_state_dict expects original param names
+                                state_dict = self._reverse_unified_name_for_ema(state_dict)
                                 if self.use_expert_parallel and self.dp_rank > 0:
                                     state_dict = self._filter_moe_no_sync_optimizer_params(
                                         self.model_meta_content, state_dict
@@ -1302,6 +1361,10 @@ class ZeroCostCheckpointWorker:
                         logger.info(f"[ZCC Worker{self.worker_id}] used time {used_time:.3f} sec")
                 elif task_type == ZCCTaskType.SET_EMA_STATE_DICT:
                     ema_ckpt_path = task_body  # mark ema state dict path
+                elif task_type == ZCCTaskType.LOAD_EMA_FROM_SHARED_MEM:
+                    with device_guard("cpu"):
+                        self._load_ema_from_shared_memory(task_body)
+                    self.ema_shm_consumed.set()
                 else:
                     raise ValueError(f"[ZCC Worker{self.worker_id}] Unknown task type: {task_type}")
         except Exception as e:
@@ -1346,6 +1409,58 @@ class ZeroCostCheckpointWorker:
         logger.info(
             f"[ZCC Worker{self.worker_id}] All numel: {self.all_numel}, Offload chunks: {self.offload_chunks}, Chunk size: {self.chunk_size_in_numel}]"
         )
+
+    def _load_ema_from_shared_memory(self, ema_shared_metas):
+        """Default no-op. Overridden in ZeroCostCheckpointWorkerFcBased."""
+        logger.warning("[ZCC Worker] _load_ema_from_shared_memory not implemented for this worker type")
+
+    def _reverse_unified_name_for_ema(self, state_dict):
+        """Reverse unified name mapping for EMA state dict loaded from file.
+        FC-based saves use unified names in a flat dict (master_weights use .w_0 suffix,
+        model_params keep their unified name without .w_0). This method reverses the names
+        back to original param names and reconstructs the
+        {"master_weights": {...}, param_key: tensor, ...} structure expected by load_ema_state_dict.
+        For non-FC workers (no unified_name_mapping), returns state_dict unchanged.
+        """
+        if not hasattr(self, "unified_name_mapping") or self.unified_name_mapping is None:
+            return state_dict
+
+        # If state_dict already has "master_weights" key, it's old format - return unchanged
+        if "master_weights" in state_dict:
+            return state_dict
+
+        # New FC format: flat dict with .w_0 suffix keys being master_weights,
+        # other keys are model_params.
+        # Need to: 1) rename unified -> static  2) re-pad master_weights to buffer slot size
+        inv_mapping = {v: k for k, v in self.unified_name_mapping.items()}
+        master_weights = {}
+        model_params = {}
+        for k, v in state_dict.items():
+            if k.endswith(".w_0"):
+                original_key = inv_mapping[k]
+                master_weights[original_key] = v
+            else:
+                model_params[k] = v
+
+        # Re-pad master_weights to match current buffer slot size
+        mw_meta = self.optimizer_fusion_storage_helper.master_weights_meta
+        for k, v in list(master_weights.items()):
+            if k not in mw_meta:
+                continue
+            meta = mw_meta[k]
+            buffer_size = meta["end"] - meta["start"]
+            flat = v.flatten()
+            numel = flat._numel()
+            if numel < buffer_size:
+                padded = paddle.zeros([buffer_size], dtype=v.dtype)
+                padded[:numel] = flat
+                master_weights[k] = padded
+            else:
+                master_weights[k] = flat
+
+        new_state_dict = dict(model_params)
+        new_state_dict["master_weights"] = master_weights
+        return new_state_dict
 
 
 class EMABuffer(ABC):
@@ -1475,6 +1590,9 @@ class EMABufferFcBased(EMABuffer):
     def _ema_path(self, base_path):
         return os.path.join(base_path, "ema_state", f"{dist.get_rank()}_0.distcp")
 
+    def _ema_dir(self, base_path):
+        return os.path.join(base_path, "ema_state")
+
     def _check_consistent_dist_strategy(self, resume_from_checkpoint):
         return self.dist_info_collector_and_validator.check_same_strategy(resume_from_checkpoint)
 
@@ -1486,16 +1604,216 @@ class EMABufferFcBased(EMABuffer):
         assert self.optimizer is not None, "expected optimizer is not None"
         return self.optimizer.state_dict()["master_weights"]
 
+    # ==================== Save ====================
+
     def save(self, global_step):
-        model_meta_content = self._get_model_meta()
         base_path = os.path.join(self.args.output_dir, f"{PREFIX_CHECKPOINT_DIR}-{global_step}")
         os.makedirs(base_path, exist_ok=True)
+
+        # Save model_meta.json (parallelism strategy info for reshard detection)
+        model_meta_content = self._get_model_meta()
         model_meta_path = os.path.join(base_path, MODEL_META_NAME)
         if self.device_id == 0:
             with open(model_meta_path, "w") as f:
                 json.dump(model_meta_content, f)
 
-        super().save(global_step)
+        # Save EMA state in FC distributed format (supports reshard on load)
+        ema_save_dir = self._ema_dir(base_path)
+        os.makedirs(ema_save_dir, exist_ok=True)
+
+        ema_sharded_sd = self._build_ema_save_sharded_state_dict()
+        logger.info(
+            f"[NonZCC EMA] Saving {len(ema_sharded_sd)} EMA tensors via dist.save_state_dict to {ema_save_dir}"
+        )
+        dist.save_state_dict(ema_sharded_sd, ema_save_dir)
+        logger.info(f"[NonZCC EMA] Save EMA state (FC format) to {ema_save_dir} done")
+
+    def _build_ema_save_sharded_state_dict(self):
+        """Build sharded state dict from EMA buffer for dist.save_state_dict.
+
+        Converts:
+          master_weights[static_name] (padded 1D or 2D) -> unified_name.w_0 (unpadded, ShardedWeight)
+          model_params[struct_name] (original shape) -> struct_name (ShardedWeight)
+        """
+        model_sharded_sd = self.model.sharded_state_dict()
+        opt_sharded_sd = self.optimizer.sharded_state_dict(model_sharded_sd)
+
+        # Build static_name -> struct_name mapping
+        struct_to_static = {k: v.name for k, v in self.model.state_dict().items()}
+
+        ema_sharded = {}
+
+        # --- master_weights portion ---
+        for unified_key, sw in opt_sharded_sd.items():
+            if not unified_key.endswith(".w_0"):
+                continue
+            struct_name = unified_key[:-4]  # e.g. "linear_0.w_0" -> "linear_0"
+            static_name = struct_to_static.get(struct_name)
+
+            if static_name is None or static_name not in self.master_weights:
+                continue
+
+            ema_tensor = self.master_weights[static_name]
+
+            # Remove padding: slice out actual data
+            if sw.is_flattened and sw.flattened_range is not None:
+                flat = ema_tensor.flatten()
+                actual_numel = sw.flattened_range.stop - sw.flattened_range.start
+                if actual_numel > 0 and actual_numel <= flat._numel():
+                    local_data = flat[:actual_numel]
+                else:
+                    local_data = flat
+            else:
+                # 2D param (e.g. Muon): reshape to local_shape
+                local_data = ema_tensor.reshape(sw.local_shape)
+
+            # Handle grouped_gemm_experts: 3D -> 2D
+            if getattr(sw, "grouped_gemm_param", False) and local_data.ndim == 3:
+                local_data = local_data.reshape((-1, local_data.shape[-1]))
+
+            ema_sharded[unified_key] = ShardedWeight(
+                key=sw.key,
+                local_tensor=local_data,
+                local_shape=sw.local_shape,
+                global_shape=sw.global_shape,
+                global_offset=sw.global_offset,
+                is_flattened=sw.is_flattened,
+                flattened_range=sw.flattened_range,
+            )
+
+        # --- model_params portion (float32 only) ---
+        for struct_name, sw in model_sharded_sd.items():
+            if sw.local_tensor.dtype != paddle.float32:
+                continue
+
+            ema_tensor = self.model_params[struct_name]
+            local_data = ema_tensor.reshape(sw.local_shape)
+
+            ema_sharded[struct_name] = ShardedWeight(
+                key=sw.key,
+                local_tensor=local_data,
+                local_shape=sw.local_shape,
+                global_shape=sw.global_shape,
+                global_offset=sw.global_offset,
+                is_flattened=getattr(sw, "is_flattened", False),
+                flattened_range=getattr(sw, "flattened_range", None),
+            )
+
+        return ema_sharded
+
+    # ==================== Load ====================
+
+    def _load(self, resume_from_checkpoint):
+        """Override base _load to support FC format with automatic reshard."""
+        ema_dir = self._ema_dir(resume_from_checkpoint)
+
+        if self._is_fc_distributed_format(ema_dir):
+            # New FC format (has .metadata) -> dist.load_state_dict (auto reshard)
+            self._load_fc_format(ema_dir)
+        else:
+            # Old format -> original logic (same strategy only)
+            super()._load(resume_from_checkpoint)
+
+    def _is_fc_distributed_format(self, ema_dir):
+        """Check if ema_state/ directory contains .metadata file (FC distributed format)."""
+        if not os.path.isdir(ema_dir):
+            return False
+        return any(f.endswith(".metadata") for f in os.listdir(ema_dir))
+
+    def _load_fc_format(self, ema_dir):
+        """Load EMA state via dist.load_state_dict (supports automatic reshard)."""
+        model_sharded_sd = self.model.sharded_state_dict()
+        opt_sharded_sd = self.optimizer.sharded_state_dict(model_sharded_sd)
+
+        # Build load target with empty placeholder tensors
+        ema_target = {}
+
+        # master_weights
+        for k, sw in opt_sharded_sd.items():
+            if k.endswith(".w_0"):
+                local_tensor = paddle.zeros(sw.local_tensor.shape, dtype=paddle.float32)
+                ema_target[k] = ShardedWeight(
+                    key=sw.key,
+                    local_tensor=local_tensor,
+                    local_shape=sw.local_shape,
+                    global_shape=sw.global_shape,
+                    global_offset=sw.global_offset,
+                    is_flattened=sw.is_flattened,
+                    flattened_range=sw.flattened_range,
+                )
+
+        # model_params (float32)
+        for k, sw in model_sharded_sd.items():
+            if sw.local_tensor.dtype == paddle.float32:
+                local_tensor = paddle.zeros(sw.local_shape, dtype=paddle.float32)
+                ema_target[k] = ShardedWeight(
+                    key=sw.key,
+                    local_tensor=local_tensor,
+                    local_shape=sw.local_shape,
+                    global_shape=sw.global_shape,
+                    global_offset=sw.global_offset,
+                    is_flattened=getattr(sw, "is_flattened", False),
+                    flattened_range=getattr(sw, "flattened_range", None),
+                )
+
+        logger.info(f"[NonZCC EMA] Loading {len(ema_target)} EMA tensors via dist.load_state_dict from {ema_dir}")
+        dist.load_state_dict(ema_target, ema_dir, aoa_config=self.args.aoa_config)
+        logger.info("[NonZCC EMA] dist.load_state_dict completed")
+
+        # Convert FC format -> buffer format (re-pad + rename)
+        self._fc_to_buffer_format(ema_target)
+
+    def _fc_to_buffer_format(self, ema_target):
+        """Convert dist.load_state_dict results to EMABuffer's master_weights/model_params.
+
+        FC format (unified_name, unpadded) -> buffer format (static_name, padded to optimizer slot).
+        """
+        struct_to_static = {k: v.name for k, v in self.model.state_dict().items()}
+        opt_master_weights = self.optimizer.state_dict()["master_weights"]
+
+        self.master_weights = {}
+        self.model_params = {}
+
+        for unified_key, sw in ema_target.items():
+            loaded_tensor = sw.local_tensor
+
+            if unified_key.endswith(".w_0"):
+                # master_weight: unified_name.w_0 -> static_name, re-pad
+                struct_name = unified_key[:-4]
+                static_name = struct_to_static[struct_name]
+
+                opt_tensor = opt_master_weights[static_name]
+                if opt_tensor.ndim == 1:
+                    # Flattened buffer format: re-pad to buffer slot size
+                    flat = loaded_tensor.flatten()
+                    expected_numel = opt_tensor._numel()
+                    if flat._numel() < expected_numel:
+                        padded = paddle.zeros([expected_numel], dtype=loaded_tensor.dtype)
+                        padded[: flat._numel()] = flat
+                        result_tensor = padded
+                    else:
+                        result_tensor = flat
+                else:
+                    # 2D param (Muon etc.): reshape to optimizer's shape
+                    result_tensor = loaded_tensor.reshape(opt_tensor.shape)
+
+                result_tensor.name = opt_tensor.name
+
+                gpu_tensor = result_tensor
+                result_tensor = result_tensor.cpu()
+                gpu_tensor._clear()
+                self.master_weights[static_name] = result_tensor
+            else:
+                # model_params: struct_name unchanged
+                result_tensor = loaded_tensor.cpu()
+                self.model_params[unified_key] = result_tensor
+
+            loaded_tensor._clear()
+
+        logger.info(
+            f"[NonZCC EMA] Converted to buffer format: "
+            f"{len(self.master_weights)} master_weights, {len(self.model_params)} model_params"
+        )
 
 
 class NonZCCEMACallback(TrainerCallback):
@@ -1735,6 +2053,9 @@ def saved_ckptmeta(state_dict, ckpt_file_name, process_group=None, replicate_sav
             is_flattened = val.is_flattened
             flattened_range = val.flattened_range
 
+            if (flattened_range is not None) and (flattened_range.stop - flattened_range.start <= 0):
+                continue
+
             local_tensor_dtype = str(local_tensor.dtype).split(".")[1]
             if flattened_range is not None:
                 flattened_range = (flattened_range.start, flattened_range.stop)
@@ -1868,13 +2189,9 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
     def _muon_manipulate_sharded_state_dict(self, model, optimizer):
         sharded_state_dict = dict(sorted(model.sharded_state_dict().items()))
         sharding_rank = optimizer._sharding_rank
-
         local_2d_names = set()
-        for p in optimizer._rank2params_2d.get(sharding_rank, []):
-            local_2d_names.add(p.name)
-        moe_rank = optimizer._moe_sharding_rank if optimizer._moe_sharding_world_size > 1 else 0
-        for p in optimizer._rank2params_2d_moe.get(moe_rank, []):
-            local_2d_names.add(p.name)
+        for param in optimizer._local_2d:
+            local_2d_names.add(param.name)
 
         all_2d_names = set()
         for color_params in optimizer._params_2d_by_color.values():
@@ -1892,7 +2209,7 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
             elif static_name in all_1d_names:
                 filtered[k] = sw
             else:
-                if sharding_rank == 0:
+                if sharding_rank == 0 or self.args.replicate_saved_into_local:
                     filtered[k] = sw
 
         inner_opt = optimizer._inner_opt
@@ -1954,8 +2271,16 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
             replicate_saved_into_local=self.args.replicate_saved_into_local,
         )
 
+        grouped_gemm_params = set()
+        model_sharded_state_dict = model.sharded_state_dict()
+        for k, v in model_sharded_state_dict.items():
+            if getattr(v, "grouped_gemm_param", False):
+                grouped_gemm_params.add(k)
+
+        self.grouped_gemm_params = grouped_gemm_params if _is_muon_sharding_optimizer(optimizer) else set()
+
         # opt state dict ckpt meta and filter
-        opt_state_dict_tmp = optimizer.sharded_state_dict(model.sharded_state_dict())
+        opt_state_dict_tmp = optimizer.sharded_state_dict(model_sharded_state_dict)
 
         opt_state_dict = {}
         master_weights = {}
@@ -1971,6 +2296,33 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
         self.master_weight_ckpt_meta, self.master_weights_filter = saved_ckptmeta(
             master_weights, self.ckpt_data_name, replicate_saved_into_local=self.args.replicate_saved_into_local
         )
+
+        # EMA metadata: master_weights portion (same .w_0 suffix as optimizer master_weights)
+        # Distinguished from optimizer by being saved to ema_state/ directory
+        ema_master_weights_sharded = master_weights
+        if ema_master_weights_sharded:
+            self.ema_master_weight_ckpt_meta, self.ema_master_weights_filter = saved_ckptmeta(
+                ema_master_weights_sharded,
+                self.ckpt_data_name,
+                replicate_saved_into_local=True,
+            )
+        else:
+            self.ema_master_weight_ckpt_meta = None
+            self.ema_master_weights_filter = {}
+
+        # EMA metadata: model_params portion (float32 items from manipulated_state_dict)
+        ema_model_params_sharded = {
+            k: v for k, v in self.manipulated_state_dict.items() if v.local_tensor.dtype == paddle.float32
+        }
+        if ema_model_params_sharded:
+            self.ema_model_params_ckpt_meta, self.ema_model_state_filter = saved_ckptmeta(
+                ema_model_params_sharded,
+                self.ckpt_data_name,
+                replicate_saved_into_local=True,
+            )
+        else:
+            self.ema_model_params_ckpt_meta = None
+            self.ema_model_state_filter = {}
 
         # gen unified name mapping for optimzier
         self.unified_name_mapping, self.param_slice_info = self._gen_unified_name(
@@ -2073,6 +2425,12 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
 
         dynamic_objecs["unified_name_mapping"] = self.unified_name_mapping
         dynamic_objecs["param_slice_info"] = self.param_slice_info
+        dynamic_objecs["grouped_gemm_params"] = self.grouped_gemm_params
+
+        dynamic_objecs["ema_master_weight_ckpt_meta"] = self.ema_master_weight_ckpt_meta
+        dynamic_objecs["ema_master_weights_filter"] = self.ema_master_weights_filter
+        dynamic_objecs["ema_model_params_ckpt_meta"] = self.ema_model_params_ckpt_meta
+        dynamic_objecs["ema_model_state_filter"] = self.ema_model_state_filter
 
         return dynamic_objecs
 
@@ -2113,9 +2471,15 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
         self.opt_state_filter = dynamic_objecs["opt_state_filter"]
         self.master_weight_ckpt_meta = dynamic_objecs["master_weight_ckpt_meta"]
         self.master_weights_filter = dynamic_objecs["master_weights_filter"]
+        self.grouped_gemm_params = dynamic_objecs["grouped_gemm_params"]
 
         self.unified_name_mapping = dynamic_objecs["unified_name_mapping"]
         self.param_slice_info = dynamic_objecs["param_slice_info"]
+
+        self.ema_master_weight_ckpt_meta = dynamic_objecs.get("ema_master_weight_ckpt_meta")
+        self.ema_master_weights_filter = dynamic_objecs.get("ema_master_weights_filter", {})
+        self.ema_model_params_ckpt_meta = dynamic_objecs.get("ema_model_params_ckpt_meta")
+        self.ema_model_state_filter = dynamic_objecs.get("ema_model_state_filter", {})
 
         optimizer_states_meta = dynamic_objecs["optimizer_states_meta"]
         model_states_meta = dynamic_objecs["model_states_meta"]
@@ -2157,14 +2521,21 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
     def _slice_padded_tensor(static_dict, param_slice_info):
         new_static_dict = {}
         for k, v in static_dict.items():
-            if k in param_slice_info:
+            if k in param_slice_info and v._numel() > 1:
                 logger.info(f"[ZCC worker] Slice padded tensor of {k}")
                 flattened_range = param_slice_info[k]
+                flattened_end = flattened_range.stop
+                flattened_start = flattened_range.start
+                if flattened_end - flattened_start <= 0:
+                    logger.info(
+                        f"[ZCC worker] Empty padded tensor slice | tensor={k} | range=({flattened_start}, {flattened_end}), will be skipped."
+                    )
+                    continue
                 new_static_dict[k] = paddle.slice(
                     v,
                     axes=[0],
                     starts=[0],
-                    ends=[flattened_range.stop - flattened_range.start],
+                    ends=[flattened_end - flattened_start],
                 )
             else:
                 new_static_dict[k] = v
@@ -2219,6 +2590,28 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
             master_weights = self._filter_state_dict(master_weights, self.master_weights_filter)
             logger.info("[ZCC worker] master weights dict filter by master_weights_filter complete.")
 
+            def _extract_struct_name(key):
+                match = re.match(r"^(.*)\.(moment1_0|moment2_0|w_0)$", key)
+                return match.group(1) if match else None
+
+            if self.grouped_gemm_params and len(self.grouped_gemm_params) > 0:
+                for k, v in opt_state_dict.items():
+                    struct_name = _extract_struct_name(k)
+                    if struct_name is not None and struct_name in self.grouped_gemm_params:
+                        origin_shape = v.shape
+                        opt_state_dict[k] = v.reshape((-1, v.shape[-1]))
+                        logger.info(
+                            f"[ZCC worker] {k} with shape {origin_shape} is reshaped to {opt_state_dict[k].shape}."
+                        )
+                for k, v in master_weights.items():
+                    struct_name = _extract_struct_name(k)
+                    if struct_name is not None and struct_name in self.grouped_gemm_params:
+                        origin_shape = v.shape
+                        master_weights[k] = v.reshape((-1, v.shape[-1]))
+                        logger.info(
+                            f"[ZCC worker] {k} with shape {origin_shape} is reshaped to {master_weights[k].shape}."
+                        )
+
             logger.debug(f"opt states length is {len(opt_state_dict)}")
             logger.debug(f"master weights length is {len(master_weights)}")
             paddle.save(opt_state_dict, self.opt_state_path)
@@ -2232,15 +2625,151 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
         data_file_name, meta_file_name = self.distcp_file_name
         if (self.dp_rank <= 0 or self.use_expert_parallel) and self.ema_coef is not None:
             self.ema_name_path = os.path.join(output_dir, EMA_STATE_DIC, data_file_name)
+            self.ema_meta_path = os.path.join(output_dir, EMA_STATE_DIC, meta_file_name)
             ema_state_dict = self.zcc_ema_processor.ema_state_dict()
 
             if self.dp_rank > 0:
                 ema_state_dict = self._filter_moe_no_sync_optimizer_params(self.model_meta_content, ema_state_dict)
-            logger.debug(f"ema states length is {len(ema_state_dict)}")
-            paddle.save(ema_state_dict, self.ema_name_path)
+
+            # Separate master_weights and model_params
+            master_weights = ema_state_dict.pop("master_weights", {})
+            model_params = ema_state_dict  # remaining items are model_params
+
+            # Separate params not in unified_name_mapping (e.g. routed_scaling_factor_param)
+            # These are saved directly without FC metadata processing
+            unmapped_model_params = {k: v for k, v in model_params.items() if k not in self.unified_name_mapping}
+            model_params = {k: v for k, v in model_params.items() if k in self.unified_name_mapping}
+            unmapped_master_weights = {k: v for k, v in master_weights.items() if k not in self.unified_name_mapping}
+            master_weights = {k: v for k, v in master_weights.items() if k in self.unified_name_mapping}
+            if unmapped_model_params or unmapped_master_weights:
+                logger.info(
+                    f"[ZCC worker] EMA: {len(unmapped_model_params)} model_params and "
+                    f"{len(unmapped_master_weights)} master_weights not in unified_name_mapping, "
+                    f"saving directly without FC metadata."
+                )
+
+            # Apply unified name mapping
+            master_weights = self._replace_pname_with_unified(master_weights)
+            model_params = self._replace_pname_with_unified(model_params)
+
+            # Slice padded tensors for master_weights
+            master_weights = self._slice_padded_tensor(master_weights, self.param_slice_info)
+
+            # Handle grouped_gemm_params reshape for master_weights
+            if self.grouped_gemm_params and len(self.grouped_gemm_params) > 0:
+                for k, v in list(master_weights.items()):
+                    struct_name = re.match(r"^(.*)\.(w_0)$", k)
+                    struct_name = struct_name.group(1) if struct_name else None
+                    if struct_name is not None and struct_name in self.grouped_gemm_params:
+                        origin_shape = v.shape
+                        master_weights[k] = v.reshape((-1, v.shape[-1]))
+                        logger.info(
+                            f"[ZCC worker] EMA master_weight {k} with shape {origin_shape} "
+                            f"is reshaped to {master_weights[k].shape}."
+                        )
+
+            # Apply filters
+            if self.dp_rank > 0:  # ep
+                # For ep, the master_weights filter is already applied via _filter_moe_no_sync_optimizer_params
+                pass
+            else:
+                master_weights = self._filter_state_dict(master_weights, self.ema_master_weights_filter)
+                model_params = self._filter_state_dict(model_params, self.ema_model_state_filter)
+
+            # Merge into a single dict for saving
+            ema_save_dict = {}
+            ema_save_dict.update(master_weights)
+            ema_save_dict.update(model_params)
+            # Add unmapped params (not covered by FC metadata, saved as-is)
+            ema_save_dict.update(unmapped_master_weights)
+            ema_save_dict.update(unmapped_model_params)
+
+            logger.debug(f"ema states length is {len(ema_save_dict)}")
+            paddle.save(ema_save_dict, self.ema_name_path)
+
+            # Save metadata
+            if self.device_id == 0:
+                ema_ckpt_meta = self._merge_ema_ckpt_meta()
+                if ema_ckpt_meta is not None:
+                    paddle.save(ema_ckpt_meta, self.ema_meta_path)
+
         logger.info("[ZCC worker] Finish ema states saved.")
+
+    def _merge_ema_ckpt_meta(self):
+        """Merge EMA master_weight and model_params ckpt metadata."""
+        if self.ema_master_weight_ckpt_meta is None and self.ema_model_params_ckpt_meta is None:
+            return None
+
+        merged = Metadata()
+        merged.state_dict_metadata = {}
+        merged.storage_metadata = {}
+        merged.flat_mapping = {}
+
+        for meta in [self.ema_master_weight_ckpt_meta, self.ema_model_params_ckpt_meta]:
+            if meta is None:
+                continue
+            if hasattr(meta, "state_dict_metadata") and meta.state_dict_metadata:
+                merged.state_dict_metadata.update(meta.state_dict_metadata)
+            if hasattr(meta, "storage_metadata") and meta.storage_metadata:
+                merged.storage_metadata.update(meta.storage_metadata)
+            if hasattr(meta, "flat_mapping") and meta.flat_mapping:
+                merged.flat_mapping.update(meta.flat_mapping)
+
+        return merged
 
     def _dump_states(self, output_dir):
         self._save_model_state(output_dir)
         self._save_opt_state(output_dir)
         self._save_ema_state(output_dir)
+
+    def _load_ema_from_shared_memory(self, ema_shared_metas):
+        """Load EMA state from shared memory after reshard in main process."""
+        assert self.zcc_ema_processor is not None, "zcc_ema_processor not initialized."
+
+        logger.info("[ZCC Worker] Loading EMA state from shared memory...")
+
+        inv_name_mapping = {v: k for k, v in self.unified_name_mapping.items()}
+
+        master_weights = {}
+        model_params = {}
+
+        for unified_key, info in ema_shared_metas.items():
+            meta = info["shared_meta"]
+            shape = info["shape"]
+
+            shared_lod = paddle.base.core.LoDTensor._new_shared_filename(meta)
+            tensor = paddle.to_tensor(shared_lod).reshape(shape)
+
+            if unified_key.endswith(".w_0"):
+                # master_weight key: reverse lookup using .w_0 key directly
+                original_key = inv_name_mapping[unified_key]
+                master_weights[original_key] = tensor
+            else:
+                # model_params key: map back to original param name
+                model_params[unified_key] = tensor
+
+        # Re-pad master_weights to match current buffer slot size
+        # FC reshard produces unpadded tensors, but load_ema_state_dict expects padded buffer slots
+        mw_meta = self.optimizer_fusion_storage_helper.master_weights_meta
+        for k, v in list(master_weights.items()):
+            if k not in mw_meta:
+                continue
+            meta = mw_meta[k]
+            buffer_size = meta["end"] - meta["start"]
+            flat = v.flatten()
+            numel = flat._numel()
+            if numel < buffer_size:
+                padded = paddle.zeros([buffer_size], dtype=v.dtype)
+                padded[:numel] = flat
+                master_weights[k] = padded
+            else:
+                master_weights[k] = flat
+
+        state_dict = dict(model_params)
+        state_dict["master_weights"] = master_weights
+
+        if self.use_expert_parallel and self.dp_rank > 0:
+            state_dict = self._filter_moe_no_sync_optimizer_params(self.model_meta_content, state_dict)
+
+        self.zcc_ema_processor.load_ema_state_dict(state_dict)
+        logger.info("[ZCC Worker] EMA loaded from shared memory successfully")

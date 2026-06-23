@@ -450,7 +450,7 @@ def run_dpo(
     if training_args.do_train:
         train_result = trainer.train(resume_from_checkpoint=last_checkpoint)
 
-        if not training_args.autotuner_benchmark and not training_args.benchmark:
+        if not training_args.autotuner_benchmark:
             trainer.save_model(merge_tensor_parallel=training_args.tensor_model_parallel_size > 1, last_fc_to_hf=True)
             trainer.log_metrics("train", train_result.metrics)
             trainer.save_metrics("train", train_result.metrics)

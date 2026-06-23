@@ -170,15 +170,18 @@ from .plugins.timer import RuntimeTimer, get_timers, set_timers
 from .trainer_callback import (
     CallbackHandler,
     DefaultFlowCallback,
-    InterleaveGateUpCallback,
+    EMAStateAssemblerCallback,
+    InternalMedicineCallback,
     PrinterCallback,
     ProgressCallback,
+    SonicMoELayoutSwitchCallback,
     SPGradSyncCallback,
     TrainerCallback,
     TrainerControl,
     TrainerState,
 )
 from .trainer_utils import (  # set_hyrbid_parallel_seed,
+    EMAStateAssembler,
     EvalLoopOutput,
     EvalPrediction,
     IntervalStrategy,
@@ -492,7 +495,15 @@ class Trainer:
             assert (isinstance(model, LoRAModel) and isinstance(model.model, PipelineLayer)) or isinstance(
                 model, PipelineLayer
             ), f"Only support pipeline parallel mode when model is PipelineLayer or PipelineLayer!!! but get {type(model.model)}"
-        default_callbacks = DEFAULT_CALLBACKS + get_reporting_integration_callbacks(self.args.report_to)
+        default_callbacks = DEFAULT_CALLBACKS.copy()
+        if getattr(self.args, "internal_medicine_monitors", ""):
+            default_callbacks.append(
+                InternalMedicineCallback(
+                    monitors=self.args.internal_medicine_monitors,
+                    monitor_interval=self.args.internal_medicine_monitor_interval,
+                )
+            )
+        default_callbacks += get_reporting_integration_callbacks(self.args.report_to)
         callbacks = default_callbacks if callbacks is None else default_callbacks + callbacks
         self.callback_handler = CallbackHandler(
             callbacks, self.model, self.tokenizer, self.optimizer, self.lr_scheduler
@@ -956,7 +967,7 @@ class Trainer:
             use_expert_parallel=self.args.use_expert_parallel,
             ema_coef=self.args.zcc_save_ema_coef,
             zcc_worker_class=zcc_worker_class,
-            save_hf_steps=self.args.save_hf_steps,
+            save_hf_steps=self.args.save_hf_steps if self.args.online_merge_ema else -1,
         )
 
     def _register_pipeline_hooks(self, unwrapped_model):
@@ -983,6 +994,27 @@ class Trainer:
         if resume_from_checkpoint is None:
             return
 
+        if self.args.zcc_save_ema_coef is None:
+            return
+
+        # Path A: main process completed EMA reshard, pass via shared memory
+        if hasattr(self, "_ema_reshard_result") and self._ema_reshard_result is not None:
+            # Pass tensor_refs to manager so it can keep them alive until workers consume
+            tensor_refs = getattr(self, "_ema_shared_tensor_refs", None)
+            shm_filenames = getattr(self, "_ema_shm_filenames", [])
+            num_refs = len(tensor_refs) if tensor_refs else 0
+            logger.info(f"[EMA Reshard] Transferring {num_refs} shared memory refs to manager")
+            self.zcc_manager.set_ema_shared_memory(
+                self._ema_reshard_result, tensor_refs=tensor_refs, shm_filenames=shm_filenames
+            )
+            # Clear local refs (manager now owns them, refcount NOT zero yet)
+            self._ema_shared_tensor_refs = None
+            self._ema_reshard_result = None
+            self._ema_shm_filenames = None
+            logger.info("[EMA Reshard] Local refs cleared, manager holds ownership until workers consume")
+            return
+
+        # Path B: no reshard needed, subprocess loads from file (existing logic)
         ema_state_path = self._get_ema_state_path(resume_from_checkpoint)
 
         if not os.path.exists(ema_state_path):
@@ -1046,7 +1078,6 @@ class Trainer:
         logger.info("Zero cost checkpoint manager created successfully.")
 
     def add_non_zcc_ema_callback(self, resume_from_checkpoint, ema_state_assembler=None):
-
         non_zcc_ema_callback = NonZCCEMACallback.create_nonzcc_callback(
             args=self.args,
             resume_from_checkpoint=resume_from_checkpoint,
@@ -1056,8 +1087,24 @@ class Trainer:
             hcg=self.hcg,
             ema_state_assembler=ema_state_assembler,
         )
-
         self.add_callback(non_zcc_ema_callback)
+
+    def create_ema_state_assembler(self):
+        global_steps = self.state.global_step
+        memory_growth_threshold_bytes = self.args.save_hf_memory_growth_threshold * (2**30)
+        self.ema_state_assembler = EMAStateAssembler(
+            output_dir=self.args.output_dir,
+            save_checkpoint_format=self.args.save_checkpoint_format,
+            save_hf_steps=self.args.save_hf_steps,
+            save_steps=self.args.save_steps,
+            optimizer_name_suffix=self.args.optimizer_name_suffix,
+            model=self.model,
+            optimizer=self.optimizer,
+            start_step=global_steps,
+            memory_growth_threshold=memory_growth_threshold_bytes,
+        )
+        callback = EMAStateAssemblerCallback(self.ema_state_assembler)
+        self.add_callback(callback)
 
     def _save_flex_model_state(self, output_dir):
         model_sharded_state_dict = self.model.sharded_state_dict()
@@ -1116,7 +1163,11 @@ class Trainer:
         model_states_path = os.path.join(resume_from_checkpoint, MODEL_STATE_DIC)
 
         hcg = dist.fleet.get_hybrid_communicate_group()
-        flex_ckpt_comm_method = select_flex_ckpt_comm_method()
+        flex_ckpt_comm_method = (
+            select_flex_ckpt_comm_method()
+            if self.args.flex_ckpt_comm_method is None
+            else self.args.flex_ckpt_comm_method
+        )
         if flex_ckpt_comm_method == "parallel_broadcast":
             try:
                 pp_group = hcg.get_pipe_parallel_group()
@@ -1137,7 +1188,10 @@ class Trainer:
             except Exception:
                 moe_sharding_group = None
 
-            worker_groups = [moe_group, pp_group, moe_sharding_group]
+            if pp_group.nranks > 1:
+                worker_groups = [moe_group, pp_group, moe_sharding_group]
+            else:
+                worker_groups = [moe_group, moe_sharding_group, pp_group]
         else:
             worker_groups = None
 
@@ -1189,8 +1243,32 @@ class Trainer:
         if not self.args.sharded_model_from_ema:
             init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
 
-            optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
+            # ===== EMA State Resharding for ZCC (right after optimizer init) =====
+            # Non-ZCC handles reshard internally in EMABufferFcBased._load()
+            self._ema_reshard_result = None
+            if self.args.enable_zero_cost_checkpoint:
+                ema_state_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC)
+                if (
+                    os.path.exists(ema_state_path)
+                    and self.args.zcc_save_ema_coef is not None
+                    and self._is_fc_format_ema(ema_state_path)
+                ):
+                    same_strategy, err_msg = DistInfoCollectorValidator(self.args, self.hcg).check_same_strategy(
+                        resume_from_checkpoint
+                    )
 
+                    if not same_strategy:
+                        logger.info(
+                            f"[EMA Reshard] Parallelism strategy changed ({err_msg}), performing EMA reshard..."
+                        )
+                        self._ema_reshard_result = self._load_ema_with_reshard(
+                            ema_state_path, flex_ckpt_comm_method, worker_groups
+                        )
+                        logger.info("[EMA Reshard] EMA reshard completed, results stored for subprocess")
+                    else:
+                        logger.info("[EMA Reshard] Same strategy, subprocess will load EMA directly from file")
+
+            optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
             opt_states = {}
             master_weights = {}
             for k, v in optimizer_sharded_state_dict.items():
@@ -1199,10 +1277,12 @@ class Trainer:
                 else:
                     opt_states[k] = v
 
+            # use filtered AOA for master_weight (excludes FP32-only params)
+            master_weight_aoa = getattr(self.args, "aoa_config_master_weight", None) or self.args.aoa_config
             dist.load_state_dict(
                 master_weights,
                 master_weights_path,
-                aoa_config=self.args.aoa_config,
+                aoa_config=master_weight_aoa,
                 offload=self.args.load_via_cpu,
                 comm_method=flex_ckpt_comm_method,
                 worker_groups=worker_groups,
@@ -1238,13 +1318,34 @@ class Trainer:
         logger.debug(f"enable_bf16_opt: {enable_bf16_opt}")
 
         if self.args.sharded_model_from_ema:
-            ema_states_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC, f"{dist.get_rank()}_0.distcp")
-            ema_state_dict = paddle.load(ema_states_path)
-            ema_master_weights = ema_state_dict.pop("master_weights", None)
-            opt_state_dict = {"master_weights": ema_master_weights}
-            self.optimizer.set_state_dict(opt_state_dict)
+            ema_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC)
+            if self._is_fc_format_ema(ema_path):
+                model_sharded_state_dict = self.model.sharded_state_dict()
+                init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
+                optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
+                ema_state = {}
+                for k, v in model_sharded_state_dict.items():
+                    if v.local_tensor.dtype == paddle.float32:
+                        ema_state[k] = v
+                for k, v in optimizer_sharded_state_dict.items():
+                    if k.endswith(".w_0"):
+                        ema_state[k] = v
+                dist.load_state_dict(
+                    ema_state,
+                    ema_path,
+                    aoa_config=self.args.aoa_config,
+                    offload=self.args.load_via_cpu,
+                    comm_method=flex_ckpt_comm_method,
+                    worker_groups=worker_groups,
+                )
+            else:
+                ema_states_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC, f"{dist.get_rank()}_0.distcp")
+                ema_state_dict = paddle.load(ema_states_path)
+                ema_master_weights = ema_state_dict.pop("master_weights", None)
+                opt_state_dict = {"master_weights": ema_master_weights}
+                self.optimizer.set_state_dict(opt_state_dict)
 
-            self.model.set_state_dict(ema_state_dict)
+                self.model.set_state_dict(ema_state_dict)
         else:
 
             def bf16_filtered_sharded_state_dict(sharded_state_dict):
@@ -1257,7 +1358,13 @@ class Trainer:
 
             # NOTE(xingmingyyj) When saving model states only in float32 format, we assume that users
             # will not use AOA to change the mapping relationships among these float32 weights.
-            if enable_bf16_opt:
+            if os.getenv("HACK_CONVERT_CKPT", "0").lower() in ["true", "1"]:
+                # model_state only loads params not in master_weight
+                # params in master_weight will be cast from master_weight
+                if enable_bf16_opt:
+                    model_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
+                aoa_config = getattr(self.args, "aoa_config_model_state", None)
+            elif enable_bf16_opt:
                 model_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
                 aoa_config = None
             else:
@@ -1291,7 +1398,7 @@ class Trainer:
                         paddle.assign(paddle.cast(to_device(master_weight), paddle.bfloat16), model_state_dict[key])
 
             def recover_params_from_master_weight(opt_state_dict, group):
-                master_weights = opt_state_dict["master_weights"]
+                master_weights = opt_state_dict.get("master_weights", {})
                 tmp = OrderedDict()
                 master_weights, tmp = (tmp, master_weights)
                 # cast to bf16 and move to cpu
@@ -1316,26 +1423,25 @@ class Trainer:
                             mw_1d[k] = v
 
                     all_master_weights = OrderedDict()
-                    if mw_2d:
-                        restored_2d = _restore_master_weights_single(
-                            mw_2d,
-                            self.model,
-                            self.optimizer,
-                            group,
-                            structure_name_map,
-                            reshard_util.sharding_v1.restore,
-                        )
-                        all_master_weights.update(restored_2d)
-                    if mw_1d:
-                        restored_1d = _restore_master_weights_single(
-                            mw_1d,
-                            self.model,
-                            self.optimizer,
-                            group,
-                            structure_name_map,
-                            reshard_util.sharding_v2.restore,
-                        )
-                        all_master_weights.update(restored_1d)
+                    restored_2d = _restore_master_weights_single(
+                        mw_2d,
+                        self.model,
+                        self.optimizer,
+                        group,
+                        structure_name_map,
+                        reshard_util.sharding_v1.restore,
+                    )
+                    all_master_weights.update(restored_2d)
+
+                    restored_1d = _restore_master_weights_single(
+                        mw_1d,
+                        self.model,
+                        self.optimizer,
+                        group,
+                        structure_name_map,
+                        reshard_util.sharding_v2.restore,
+                    )
+                    all_master_weights.update(restored_1d)
 
                     master_weights = all_master_weights
                 else:
@@ -1357,7 +1463,7 @@ class Trainer:
                     group_getter = GroupGetter(self.model)
                     opt_state_dict = split_opt_state(opt_state_dict, group_getter)
                     for gid in group_getter.get_group_ids():
-                        sub_opt_state_dict = opt_state_dict[gid]
+                        sub_opt_state_dict = opt_state_dict.get(gid, {})
                         group = group_getter.get_group_by_id(gid)
                         if self.args.bf16:
                             recover_params_from_master_weight(sub_opt_state_dict, group)
@@ -1376,6 +1482,82 @@ class Trainer:
                             paddle.assign(
                                 paddle.cast(to_device(master_weight), paddle.bfloat16), model_state_dict[key]
                             )
+
+    def _is_fc_format_ema(self, ema_state_path):
+        """Check if EMA state is in FC format by looking for .metadata file."""
+        if not os.path.isdir(ema_state_path):
+            return False
+        return any(f.endswith(".metadata") for f in os.listdir(ema_state_path))
+
+    def _load_ema_with_reshard(self, ema_state_path, comm_method, worker_groups):
+        """Use FlexCheckpoint to reshard EMA state, return shared memory metas for subprocess."""
+        model_sharded_state_dict = self.model.sharded_state_dict()
+        opt_sharded = self.optimizer.sharded_state_dict(model_sharded_state_dict)
+        ema_target = {}
+
+        # master_weights portion: use .w_0 keys directly (same as optimizer master_weights key format)
+        for k, sw in opt_sharded.items():
+            if k.endswith(".w_0"):
+                local_tensor = paddle.zeros(sw.local_tensor.shape, dtype=paddle.float32)
+                ema_target[k] = ShardedWeight(
+                    key=sw.key,
+                    local_tensor=local_tensor,
+                    local_shape=sw.local_shape,
+                    global_shape=sw.global_shape,
+                    global_offset=sw.global_offset,
+                    is_flattened=sw.is_flattened,
+                    flattened_range=sw.flattened_range,
+                )
+
+        # model_params portion: float32 items from model sharded state dict (no suffix change)
+        for k, sw in model_sharded_state_dict.items():
+            if sw.local_tensor.dtype == paddle.float32:
+                local_tensor = paddle.zeros(sw.local_shape, dtype=paddle.float32)
+                ema_target[k] = ShardedWeight(
+                    key=sw.key,
+                    local_tensor=local_tensor,
+                    local_shape=sw.local_shape,
+                    global_shape=sw.global_shape,
+                    global_offset=sw.global_offset,
+                    is_flattened=getattr(sw, "is_flattened", False),
+                    flattened_range=getattr(sw, "flattened_range", None),
+                )
+
+        logger.info(f"[EMA Reshard] Loading {len(ema_target)} EMA tensors via dist.load_state_dict...")
+        dist.load_state_dict(
+            ema_target,
+            ema_state_path,
+            aoa_config=self.args.aoa_config,
+            offload=self.args.load_via_cpu,
+            comm_method=comm_method,
+            worker_groups=worker_groups,
+        )
+        logger.info("[EMA Reshard] dist.load_state_dict completed")
+
+        # Move to CPU shared memory for subprocess consumption
+        ema_shared_result = {}
+        self._ema_shared_tensor_refs = {}
+        self._ema_shm_filenames = []  # Track specific shm files for leak detection
+
+        for k, sw in ema_target.items():
+            cpu_tensor = sw.local_tensor.cpu().flatten()
+            shared_meta = cpu_tensor.value().get_tensor()._share_filename(False)
+            ema_shared_result[k] = {
+                "shared_meta": shared_meta,
+                "shape": list(sw.local_tensor.shape),
+            }
+            # shared_meta[0] is the shm filename (e.g. "/dev/shm/paddle_12345_0_xxx")
+            if shared_meta and len(shared_meta) > 0:
+                self._ema_shm_filenames.append(shared_meta[0])
+            # Keep reference to prevent GC before subprocess reads the data
+            self._ema_shared_tensor_refs[k] = cpu_tensor
+            sw.local_tensor._clear()
+
+        logger.info(
+            f"[EMA Reshard] Created shared memory for {len(ema_shared_result)} EMA tensors, "
+            f"shm files tracked: {len(self._ema_shm_filenames)}"
+        )
+        return ema_shared_result
 
     def prepare_resume_from_checkpoint(self, args, resume_from_checkpoint):
         logger.info(f"Starting training from resume_from_checkpoint : {resume_from_checkpoint}")
@@ -1637,14 +1819,34 @@ class Trainer:
                 self._load_optimizer_and_scheduler(resume_from_checkpoint)
 
         if self.args.enable_zero_cost_checkpoint:
+            if (
+                getattr(self.args, "online_merge_ema", True)
+                and self.args.save_hf_steps is not None
+                and self.args.save_hf_steps > 0
+                and self.args.zcc_save_ema_coef is not None
+            ):
+                self.create_ema_state_assembler()
             self.create_zcc_manager(model, resume_from_checkpoint)
 
         elif self.args.zcc_save_ema_coef is not None:
-            self.add_non_zcc_ema_callback(resume_from_checkpoint)
+            ema_state_assembler = None
+            if self.args.save_hf_steps is not None and self.args.save_hf_steps > 0:
+                memory_growth_threshold_bytes = self.args.save_hf_memory_growth_threshold * (2**30)
+                ema_state_assembler = EMAStateAssembler(
+                    output_dir=self.args.output_dir,
+                    save_checkpoint_format=self.args.save_checkpoint_format,
+                    save_hf_steps=self.args.save_hf_steps,
+                    save_steps=self.args.save_steps,
+                    optimizer_name_suffix=self.args.optimizer_name_suffix,
+                    model=self.model,
+                    optimizer=self.optimizer,
+                    start_step=self.state.global_step,
+                    memory_growth_threshold=memory_growth_threshold_bytes,
+                )
+            self.add_non_zcc_ema_callback(resume_from_checkpoint, ema_state_assembler)
 
         if self.args.using_sonic_moe:
-            callback = InterleaveGateUpCallback(self.model, resume_from_checkpoint, self.args.output_dir)
-            self.add_callback(callback)
+            self.add_callback(SonicMoELayoutSwitchCallback())
 
         self.log_trainable_numel(model)
 
@@ -1905,7 +2107,10 @@ class Trainer:
                 and isinstance(self.model, FleetGPTModel)
                 and get_batch_on_this_cp_rank is not None
             ):
-                inputs = get_batch_on_this_cp_rank(inputs)
+                inputs = get_batch_on_this_cp_rank(
+                    inputs,
+                    cp_balance_mode=getattr(self.args, "cp_balance_mode", "dualchunk_allgather"),
+                )
 
             if self.args.ignore_data_skip:
                 self.timers and self.timers("read-data").stop()
@@ -2540,9 +2745,8 @@ class Trainer:
 
             paddle_pipeline_timers = paddle_get_timers()
             for name, timer in paddle_pipeline_timers.timers.items():
-                elapsed_time = timer.elapsed(reset=False) * 1000.0
+                elapsed_time = timer.elapsed(reset=True) * 1000.0
                 paddle_timer_info += f" | {name}: {elapsed_time:.2f}"
-            paddle_pipeline_timers.log(paddle_pipeline_timers.timers.keys(), reset=True)
         except AssertionError:  # paddle timer not enabled
             pass
 
@@ -2596,6 +2800,15 @@ class Trainer:
             if in_auto_parallel_align_mode():
                 logs["loss_md5"] = avg_loss._md5sum()
 
+            # Log MD5 of the post-DP-allreduce (here all_gather+mean) global loss.
+            # Mirrors LOG_LOSS_MD5 hooks in PaddleFleet's loss path so it can be
+            # diff'd against Megatron's [LOSS_PATH_MD5] output.
+            if os.environ.get("LOG_LOSS_MD5", "0") == "1":
+                import hashlib
+
+                _md5_loss_t = avg_loss.detach().cast("float32").reshape([1])
+                logs["loss_md5"] = hashlib.md5(_md5_loss_t.numpy().tobytes()).hexdigest()
+
             divisor = 2**30
             # TODO(@gexiao): replace these codes with unified APIs in Paddle
             current_device = framework._current_expected_place_()
@@ -2616,9 +2829,7 @@ class Trainer:
 
             seq_length = None
             model_flops_per_token = None
-            if (getattr(self, "is_pretraining", False) or getattr(self.args, "benchmark", False)) and hasattr(
-                self.model, "config"
-            ):
+            if hasattr(self.model, "config"):
                 seq_length = getattr(self.model.config, "seq_length", None)
                 try:
                     model_flops_per_token = self.model.get_hardware_flops()
@@ -2646,9 +2857,89 @@ class Trainer:
                 )
 
                 if LanguageLoss.mtp_loss_tracker:
-                    logs.update(
-                        {k: v.item() if hasattr(v, "item") else v for k, v in LanguageLoss.mtp_loss_tracker.items()}
+                    # By default keep the legacy behavior of logging the local
+                    # (rank-0 / per-rank) mtp loss value.
+                    # When LOG_LOSS_MD5=1, mirror Megatron's
+                    # MTPLossLoggingHelper.reduce_loss_in_tracker by averaging
+                    # across the full data-parallel-equivalent group
+                    # (DP + sharding + CP) so the value is the global mtp loss
+                    # comparable to Megatron's `mtp_{i} loss`, and additionally
+                    # emit a per-key `_md5` field for cross-framework diff.
+                    _log_md5 = os.environ.get("LOG_LOSS_MD5", "0") == "1"
+
+                    _avg_group = None
+                    if _log_md5:
+                        try:
+                            import paddle.distributed as _pf_dist
+                            from paddle.distributed import fleet as _pf_fleet
+
+                            _hcg = _pf_fleet.get_hybrid_communicate_group()
+                            _avg_group = _hcg.get_check_parallel_group()
+                            if _avg_group is None or _avg_group.nranks <= 1:
+                                _avg_group = _hcg.get_sharding_parallel_group()
+                            if _avg_group is None or _avg_group.nranks <= 1:
+                                _avg_group = _hcg.get_data_parallel_group()
+                        except Exception:
+                            _avg_group = None
+
+                    _reduced_mtp = {}
+                    if _log_md5:
+                        import hashlib as _hashlib
+
+                        import numpy as _np
+                    for k, v in LanguageLoss.mtp_loss_tracker.items():
+                        if hasattr(v, "item"):
+                            if _log_md5 and _avg_group is not None and _avg_group.nranks > 1:
+                                v = v.detach().clone()
+                                _pf_dist.all_reduce(v, group=_avg_group)
+                                v = v / _avg_group.nranks
+                            _scalar = v.item()
+                            _reduced_mtp[k] = _scalar
+                            if _log_md5:
+                                # md5 over float32 bytes — same scheme used for
+                                # main loss_md5 and Megatron's mtp_{i} loss_md5,
+                                # so values can be diff'd directly.
+                                _reduced_mtp[f"{k}_md5"] = _hashlib.md5(
+                                    _np.array([_scalar], dtype=_np.float32).tobytes()
+                                ).hexdigest()
+                        else:
+                            _reduced_mtp[k] = v
+                    logs.update(_reduced_mtp)
+            except (ImportError, AttributeError):
+                pass
+
+            # Add DSA indexer loss metrics if available
+            try:
+                from paddlefleet.transformer.dsa_attention import (
+                    DSAIndexerLossLoggingHelper,
+                )
+
+                config = getattr(self.model, "config", None)
+                num_layers = None
+                csa_compress_ratios = None
+                if config is not None:
+                    num_layers = config.num_hidden_layers + (
+                        getattr(config, "mtp_num_layers", 0) or getattr(config, "num_nextn_predict_layers", 0)
                     )
+                    csa_compress_ratios = getattr(config, "csa_compress_ratios", None)
+                loss_scale = 1.0 / self.args.gradient_accumulation_steps
+                try:
+                    DSAIndexerLossLoggingHelper.track_indexer_metrics(
+                        loss_scale=loss_scale,
+                        iteration=self.state.global_step,
+                        total_loss_dict=logs,
+                        num_layers=num_layers,
+                        csa_compress_ratios=csa_compress_ratios,
+                    )
+                except TypeError:
+                    if DSAIndexerLossLoggingHelper.tracker.get("values") is not None:
+                        DSAIndexerLossLoggingHelper.track_indexer_metrics(
+                            loss_scale=loss_scale,
+                            iteration=self.state.global_step,
+                            total_loss_dict=logs,
+                        )
+                if "indexer loss" in logs:
+                    logs["indexer_loss"] = logs.pop("indexer loss").item()
             except (ImportError, AttributeError):
                 pass
 
@@ -3081,11 +3372,9 @@ class Trainer:
         Trainer's init through `optimizers`, or subclass and override this method in a subclass.
         """
         if self.optimizer is None:
-            if self.optimizer_grouped_parameters is not None:
-                params = self.optimizer_grouped_parameters
-                apply_decay_param_fun = None
-            else:
-                params = [p for p in self.model.parameters() if not p.stop_gradient]
+
+            def _build_apply_decay_param_fun():
+                # Keep the default AdamW behavior: apply weight decay to all trainable parameters except bias and norm.
                 decay_parameters = [
                     p.name
                     for n, p in self.model.named_parameters()
@@ -3095,6 +3384,20 @@ class Trainer:
                 def apply_decay_param_fun(x):
                     return x in decay_parameters
 
+                return apply_decay_param_fun
+
+            if self.optimizer_grouped_parameters is not None:
+                params = self.optimizer_grouped_parameters
+                # A plain list only customizes the trainable set, so it should still use the default decay filter.
+                # But dict may define per-group weight_decay explicitly, so do not override.
+                is_param_group_dict = (
+                    isinstance(params, (list, tuple)) and len(params) > 0 and isinstance(params[0], dict)
+                )
+                apply_decay_param_fun = None if is_param_group_dict else _build_apply_decay_param_fun()
+            else:
+                params = [p for p in self.model.parameters() if not p.stop_gradient]
+                apply_decay_param_fun = _build_apply_decay_param_fun()
+
             optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
             if self.args.optim == OptimizerNames.ADAMW_CUSTOM:
                 optimizer_kwargs["quantization_config"] = self.model.config.quantization_config
@@ -3103,6 +3406,17 @@ class Trainer:
 
             if hasattr(optimizer_cls, "_create_master_weight") and self.args.fp16_opt_level == "O2":
                 optimizer_kwargs["multi_precision"] = True
+
+            if self.args.optim == OptimizerNames.MUON and hasattr(self.model, "build_muon_param_info_map"):
+                self.model.config.muon_configs = {
+                    "muon_qkv_update_mode": self.args.muon_qkv_update_mode,
+                    "muon_ffn_split": self.args.muon_ffn_split,
+                    "muon_exclude_patterns": self.args.muon_exclude_patterns,
+                }
+                optimizer_kwargs["muon_param_info_map"] = self.model.build_muon_param_info_map(
+                    self.model, self.model.config
+                )
+                logger.info(f"muon_param_info_map: {optimizer_kwargs['muon_param_info_map']}")
 
             self.optimizer = optimizer_cls(
                 learning_rate=self.lr_scheduler if lr_scheduler is None else lr_scheduler,
@@ -3229,6 +3543,7 @@ class Trainer:
                 "muon_extra_scale_factor": args.muon_extra_scale_factor,
                 "ns_steps": args.muon_ns_steps,
                 "ns_coeff_type": args.muon_ns_coeff_type,
+                "ns_coeffs": args.muon_ns_coeffs,
             }
             optimizer_cls = Muon
             optimizer_kwargs.update(muon_kwargs)

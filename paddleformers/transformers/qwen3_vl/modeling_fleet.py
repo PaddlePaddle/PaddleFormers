@@ -386,7 +386,7 @@ class Qwen3VLTextProvider(GPTModelProvider):
     multimodal_embedding: bool = False
     _save_to_hf: bool = False
     use_fused_linear_cross_entropy: bool = True
-    moe_grouped_gemm: bool = True
+    moe_expert_fusion: bool = True
 
     n_shared_experts: int = 0
     transform_rules = {

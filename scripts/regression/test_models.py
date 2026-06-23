@@ -304,7 +304,7 @@ class TrainTester:
         Returns:
             Tuple of (actual_loss, error_message). Error message is None if valid.
         """
-        loss_pattern = re.compile(r"(?<![A-Za-z_])loss:\s*([0-9]+\.[0-9]+)")
+        loss_pattern = re.compile(r"(?<![A-Za-z_])loss:\s*([0-9]+\.[0-9]+),\s*learning_rate:")
         losses = [float(m.group(1)) for m in loss_pattern.finditer(output)]
 
         avg_loss = round(sum(losses) / len(losses), 10) if losses else 0
@@ -327,7 +327,7 @@ class TrainTester:
         Returns:
             First loss value found, or None if not found.
         """
-        loss_pattern = re.compile(r"(?<![A-Za-z_])loss:\s*([0-9]+\.[0-9]+)")
+        loss_pattern = re.compile(r"(?<![A-Za-z_])loss:\s*([0-9]+\.[0-9]+),\s*learning_rate:")
         match = loss_pattern.search(log_content)
         return float(match.group(1)) if match else None
 
@@ -352,7 +352,7 @@ class TrainTester:
         with open(resume_log_file, "r", encoding="utf-8") as f:
             resume_log_content = f.read()
 
-        loss_pattern = re.compile(r"(?<![A-Za-z_])loss:\s*([0-9]+\.[0-9]+)")
+        loss_pattern = re.compile(r"(?<![A-Za-z_])loss:\s*([0-9]+\.[0-9]+),\s*learning_rate:")
 
         # Extract last loss from training log
         training_losses = loss_pattern.findall(log_content)
@@ -718,6 +718,30 @@ class TestTrain:
             train_type=train_type,
             test_type="full",
             config_subpath=f"{train_type}/full.yaml",
+            model_cfg=model_cfg,
+            should_update=should_update,
+            requires_export=False,
+        )
+
+    @pytest.mark.model_type("text")
+    @pytest.mark.parametrize("train_type", ["sft"])
+    def test_full_map(self, train_type: str, model_key: str, request) -> None:
+        """Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        """
+        model_cfg = self.train_tester.load_model_config(model_key)
+        print(f"\n[INFO] Testing model={model_key}, train_type=sft_full_map")
+        should_update = self._should_update_baseline(request, model_key)
+
+        self.workflow.execute_training_workflow(
+            model_key=model_key,
+            train_type=train_type,
+            test_type="full_map",
+            config_subpath=f"{train_type}/full_map.yaml",
             model_cfg=model_cfg,
             should_update=should_update,
             requires_export=False,

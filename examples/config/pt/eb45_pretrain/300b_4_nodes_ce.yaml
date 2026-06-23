@@ -115,7 +115,6 @@ ernie_model_config:
         recompute_fwd_gate_up: [6, 7, 8, 11, 12, 13, 16, 17, 18]
         dequant_input: true
         offline_quant_expert_weight: true
-        clear_origin_weight_when_offline_quant: true
     fp8_fused_ops_configs:
         stack_quant: true
         swiglu_probs_bwd: true

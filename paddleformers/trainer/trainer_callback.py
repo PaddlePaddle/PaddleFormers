@@ -42,11 +42,15 @@ from ..utils.import_utils import is_paddlefleet_available
 # Conditionally import paddlefleet modules
 if is_paddlefleet_available():
     from paddlefleet.models.gpt import GPTModel
+    from paddlefleet.transformer.moe.moe_expert import SonicMoEExpert
     from paddlefleet.transformer.moe.moe_layer import MoELayer
     from paddlefleet.transformer.moe.moe_router import StandardMoERouter
 else:
 
     class GPTModel:
+        pass
+
+    class SonicMoEExpert:
         pass
 
     class MoELayer:
@@ -80,6 +84,8 @@ __all__ = [
     "MoEGateSpGradSyncCallBack",
     "SPGradSyncCallback",
     "EMAStateAssemblerCallback",
+    "InternalMedicineCallback",
+    "SonicMoELayoutSwitchCallback",
 ]
 
 
@@ -715,6 +721,8 @@ class FP8QuantWeightCallback(TrainerCallback):
         """
         Quantize expert weights to FP8 before each training step
         """
+        if args.using_sonic_moe:
+            return
         model = kwargs["model"]
         optimizer = kwargs["optimizer"]
         global skip_count
@@ -730,7 +738,7 @@ class FP8QuantWeightCallback(TrainerCallback):
                 self.use_fp8 = model.use_fp8()
             if not self.use_fp8:
                 return
-            model.fp8_quant_weight(True, quant_transpose=True)
+            model.fp8_quant_weight(True, quant_transpose=False)
             optimizer.clear_param_storage("moe_expert")
             optimizer.clear_param_storage("rms_linear")
             optimizer.clear_param_storage("memory_attn")
@@ -754,6 +762,8 @@ class FP8QuantWeightCallback(TrainerCallback):
         """
         Reload weights before optimizer step
         """
+        if args.using_sonic_moe:
+            return
         model = kwargs["model"]
         optimizer = kwargs["optimizer"]
         global skip_count
@@ -793,8 +803,9 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
             if (
                 isinstance(layer, PretrainedMoEGate) or isinstance(layer, StandardMoERouter)
             ) and layer.topk_method == "noaux_tc":
-                biases.append(layer.e_score_correction_bias)
-                usages.append(layer.expert_usage)
+                if hasattr(layer, "e_score_correction_bias") and layer.e_score_correction_bias is not None:
+                    biases.append(layer.e_score_correction_bias)
+                    usages.append(layer.expert_usage)
 
         model.apply(get_stat)
 
@@ -830,6 +841,8 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
             if (
                 isinstance(layer, PretrainedMoEGate) or isinstance(layer, StandardMoERouter)
             ) and layer.topk_method == "noaux_tc":
+                if not hasattr(layer, "e_score_correction_bias") or layer.e_score_correction_bias is None:
+                    return
                 with paddle.no_grad():
                     if not layer.weight.stop_gradient:
                         biases.pop(0).add_(update_list.pop(0))
@@ -921,6 +934,70 @@ class SPGradSyncCallback(TrainerCallback):
             logger.info(f"sync gradients takes {another_time - now} time")
 
 
+class InternalMedicineCallback(TrainerCallback):
+    def __init__(self, monitors=None, monitor_interval: int = 1, verbose: bool = True):
+        super().__init__()
+        self.monitors = self._normalize_monitors(monitors)
+        self.monitor_interval = monitor_interval
+        self.verbose = verbose
+        self._monitor_dict = {}
+        self._training_logs = None
+        self._setup_done = False
+
+    @staticmethod
+    def _normalize_monitors(monitors) -> list:
+        if monitors is None:
+            return ["all"]
+        if isinstance(monitors, str):
+            monitors = monitors.split(",")
+        return [str(monitor).strip() for monitor in monitors if str(monitor).strip()]
+
+    def on_train_begin(self, args, state, control, model=None, **kwargs):
+        if model is None or self._setup_done or not self.monitors:
+            return
+
+        try:
+            from internal_medicine.backends.paddlefleet import setup_monitors
+            from internal_medicine.core.training_logs import training_logs
+        except ImportError:
+            logger.exception(
+                "[InternalMedicine/pfleet] internal_medicine_monitors is enabled, but the optional "
+                "internal_medicine package is not importable. Add third_party/llm-internal-medicine/src "
+                "to PYTHONPATH or disable internal_medicine_monitors."
+            )
+            return
+
+        try:
+            setup_monitors(
+                model,
+                monitors=self.monitors,
+                monitor_dict=self._monitor_dict,
+                monitor_interval=self.monitor_interval,
+                verbose=self.verbose,
+            )
+            self._training_logs = training_logs
+            self._setup_done = True
+            logger.info("[InternalMedicine/pfleet] Monitors registered: %s" % list(self._monitor_dict.keys()))
+        except Exception:
+            logger.error("[InternalMedicine/pfleet] Failed to setup monitors")
+
+    def on_step_end(self, args, state, control, **kwargs):
+        if not self._setup_done:
+            return
+
+        for monitor in self._monitor_dict.values():
+            monitor.step()
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if not self._setup_done or logs is None or self._training_logs is None:
+            return
+
+        aggregated = self._training_logs.gather_and_aggregate()
+        if aggregated:
+            logs.update(aggregated)
+            self._training_logs.reset()
+
+
 class EMAStateAssemblerCallback(TrainerCallback):
     def __init__(self, ema_state_assembler):
         self.ema_state_assembler = ema_state_assembler
@@ -930,6 +1007,56 @@ class EMAStateAssemblerCallback(TrainerCallback):
         self.ema_state_assembler.run()
         duration = time.time() - start
         logger.info(f"[EMAStateAssembler] Assembling EMA state took {duration:.3f} seconds.")
+
+
+class SonicMoELayoutSwitchCallback(TrainerCallback):
+    def _apply_to_sonic_moe_experts(self, model, fn_name):
+        def apply_layout_switch(layer):
+            if isinstance(layer, SonicMoEExpert):
+                getattr(layer, fn_name)()
+
+        model.apply(apply_layout_switch)
+
+    def _prepare_sonic_moe_fp8_weights(self, model, ensure_grouped_for_master=False):
+        def prepare_fp8_weights(layer):
+            if isinstance(layer, SonicMoEExpert):
+                layer.convert_weights_to_sonic_layout()
+                layer.quant_weight()
+                if ensure_grouped_for_master:
+                    layer.convert_weights_to_grouped_layout()
+
+        model.apply(prepare_fp8_weights)
+
+    def _optimizer_has_expert_master(self, optimizer):
+        if not hasattr(self, "_cached_expert_param_name"):
+            self._cached_expert_param_name = None
+            for param in optimizer._inner_opt._parameter_list:
+                color = getattr(param, "color", -1)
+                if isinstance(color, dict) and color.get("color") == "moe_expert":
+                    self._cached_expert_param_name = param.name
+                    break
+        return (
+            self._cached_expert_param_name is not None
+            and hasattr(optimizer, "_master_weights")
+            and self._cached_expert_param_name in optimizer._master_weights
+        )
+
+    def on_step_begin(self, args, state, control, **kwargs):
+        if args.using_sonic_moe:
+            model = kwargs["model"]
+            optimizer = kwargs["optimizer"]
+            if args.fp8:
+                need_master = not self._optimizer_has_expert_master(optimizer)
+                self._prepare_sonic_moe_fp8_weights(model, ensure_grouped_for_master=need_master)
+                optimizer.clear_param_storage("moe_expert")
+            else:
+                self._apply_to_sonic_moe_experts(model, "convert_weights_to_sonic_layout")
+
+    def on_optimizer_begin(self, args, state, control, **kwargs):
+        if args.using_sonic_moe:
+            if args.fp8:
+                self._apply_to_sonic_moe_experts(kwargs["model"], "clear_fp8_weights")
+            self._apply_to_sonic_moe_experts(kwargs["model"], "convert_weights_to_grouped_layout")
 
 
 class InterleaveGateUpCallback(TrainerCallback):

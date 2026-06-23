@@ -25,7 +25,7 @@ fine_tuning: full
 seed: 23
 do_train: true
 do_eval: true
-per_device_eval_batch_size: 1
+per_device_eval_batch_size: 4
 per_device_train_batch_size: 4
 num_train_epochs: 1
 max_steps: 10
@@ -68,7 +68,6 @@ load_checkpoint_format: flex_checkpoint
 continue_training: false
 dataloader_shuffle: false
 
-benchmark: false
 moe_router_force_load_balancing: true
 moe_token_dispatcher_type: "deepep"
 gated_linear_unit: true
@@ -78,6 +77,6 @@ fp32_residual_connection: false
 moe_router_fusion: true
 router_aux_loss_coef: 0.001
 
-# grouped gemm
-moe_grouped_gemm: true
-# use_deep_gemm: false
+# expert fusion
+moe_expert_fusion: true
+moe_deep_gemm: false

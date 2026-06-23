@@ -20,6 +20,20 @@ from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding
     DygraphShardingOptimizer,
     DygraphShardingOptimizerV2,
 )
+
+try:
+    from paddle.distributed.fleet.meta_optimizers.muon_sharding_optimizer import (
+        MuonShardingOptimizer,
+    )
+except ImportError:
+    MuonShardingOptimizer = None
+    import logging
+
+    logging.warning(
+        "MuonShardingOptimizer is not available in this PaddlePaddle build. "
+        "This is expected for XPU or older GPU versions that do not include muon_sharding_optimizer. "
+        "Muon sharding features will be disabled."
+    )
 from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.hybrid_parallel_optimizer import (
     HybridParallelOptimizer as HPBase,
 )
@@ -171,10 +185,6 @@ class MoEHybridParallelClipGrad:
                 hasattr(p, "is_firstly_shared") and getattr(p, "is_firstly_shared", True)
             )
 
-            is_moe_param = getattr(p, "is_moe_param", False)
-
-            if is_moe_param:
-                assert 0
             if not_shared_enable:
                 if getattr(p, "no_sync", False):
                     if p.is_distributed:
@@ -352,7 +362,13 @@ class MoEHybridParallelOptimizer(HPBase):
             ), "Hybrid expert parallel only supports ShardingV2 now"
         if hcg.get_sharding_parallel_world_size() > 1:
             split_param = strategy.hybrid_configs["sharding_configs"].split_param
-            ShardingOptimizer = DygraphShardingOptimizerV2 if split_param else DygraphShardingOptimizer
+            use_muon_sharding = getattr(strategy, "use_muon_sharding", False)
+            if use_muon_sharding:
+                ShardingOptimizer = MuonShardingOptimizer
+            elif split_param:
+                ShardingOptimizer = DygraphShardingOptimizerV2
+            else:
+                ShardingOptimizer = DygraphShardingOptimizer
             optimizer = ShardingOptimizer(optimizer, hcg)
 
         self._enable_timer = strategy.hybrid_configs["enable_optimizer_timer"]
@@ -390,6 +406,7 @@ class MoEHybridParallelOptimizer(HPBase):
                     MixPrecisionOptimizer,
                     DygraphShardingOptimizer,
                     DygraphShardingOptimizerV2,
+                    MuonShardingOptimizer,
                 ),
             )
 
