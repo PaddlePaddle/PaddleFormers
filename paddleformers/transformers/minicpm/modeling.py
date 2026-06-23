@@ -899,10 +899,10 @@ class MiniCPMAttention(nn.Layer):
         elif self.config.pretraining_tp > 1:
             key_value_slicing = (self.num_key_value_heads * self.head_dim) // self.config.pretraining_tp
             query_slices = _split_tensor(
-                self.q_proj.weight, (self.num_heads * self.head_dim) // self.config.pretraining_tp, dim=0
+                self.q_proj.weight, (self.num_heads * self.head_dim) // self.config.pretraining_tp, dim=1
             )
-            key_slices = _split_tensor(self.k_proj.weight, key_value_slicing, dim=0)
-            value_slices = _split_tensor(self.v_proj.weight, key_value_slicing, dim=0)
+            key_slices = _split_tensor(self.k_proj.weight, key_value_slicing, dim=1)
+            value_slices = _split_tensor(self.v_proj.weight, key_value_slicing, dim=1)
             query_states = [
                 nn.functional.linear(hidden_states, query_slices[i]) for i in range(self.config.pretraining_tp)
             ]
@@ -1794,7 +1794,8 @@ class MiniCPMForCausalLM(MiniCPMPreTrainedModel):
         if self.config.pretraining_tp > 1:
             lm_head_slices = _split_tensor(self.lm_head.weight, self.vocab_size // self.config.pretraining_tp, dim=0)
             logits = [
-                nn.functional.linear(hidden_states, lm_head_slices[i]) for i in range(self.config.pretraining_tp)
+                nn.functional.linear(hidden_states, lm_head_slices[i].transpose([1, 0]))
+                for i in range(self.config.pretraining_tp)
             ]
             logits = paddle.cat(logits, dim=-1)
         else:
