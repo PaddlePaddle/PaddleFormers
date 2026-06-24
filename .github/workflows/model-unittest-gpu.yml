@@ -198,15 +198,13 @@ jobs:
           docker exec -i -e "work_dir=$work_dir" -e "python_version=$python_version" $container_name /bin/bash <<-DOCKER_EOF
           echo "Change python version to $python_version"
           set -e
-          cp ${work_dir}/../../../Miniconda3-latest-Linux-x86_64.sh /tmp/miniconda.sh
-          bash /tmp/miniconda.sh -b -p /opt/conda
-          export PATH=/opt/conda/bin:$PATH
-          # source ${work_dir}/../../../proxy_huggingface
-          conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
-          conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
-          conda create -n py_$python_version python=$python_version -y
+          cp /home/models/Miniforge3-latest-Linux-x86_64.sh /tmp/miniforge.sh
+          bash /tmp/miniforge.sh -b -p /opt/conda
+          /opt/conda/bin/conda create -n py_\$python_version python=\$python_version -y \
+            --override-channels \
+            -c conda-forge
           . /opt/conda/etc/profile.d/conda.sh
-          conda activate py_$python_version
+          conda activate py_\$python_version
           python --version
           DOCKER_EOF
       - name: Test
