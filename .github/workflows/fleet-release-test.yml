@@ -312,7 +312,7 @@ jobs:
           git checkout ${BRANCH}
           pip install uv coverage==7.13.0 bce-python-sdk==0.8.74 wrapt pytest matplotlib einops
           pip install dist/${{ needs.build_whl.outputs.root_whl_name }} --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
-          pip install dist/${{ needs.build_whl.outputs.ops_whl_name }}
+          pip install dist/${{ needs.build_whl.outputs.ops_whl_name }} --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
           echo "paddleformers commit:"
           python -c "import paddleformers; print(paddleformers.__version__)"
           '
@@ -413,7 +413,7 @@ jobs:
           git config --global --add safe.directory /paddle
           pip install uv coverage==7.13.0 bce-python-sdk==0.8.74 wrapt pytest
           pip install dist/${{ needs.build_whl.outputs.root_whl_name }} --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
-          pip install dist/${{ needs.build_whl.outputs.ops_whl_name }}
+          pip install dist/${{ needs.build_whl.outputs.ops_whl_name }} --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
           echo "paddleformers commit:"
           python -c "import paddleformers; print(paddleformers.__version__)"
           echo "paddle commit:"
@@ -527,7 +527,7 @@ jobs:
           git checkout ${BRANCH}
           pip install uv coverage==7.13.0 bce-python-sdk==0.8.74 wrapt
           pip install dist/${{ needs.build_whl.outputs.root_whl_name }} --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
-          pip install dist/${{ needs.build_whl.outputs.ops_whl_name }}
+          pip install dist/${{ needs.build_whl.outputs.ops_whl_name }} --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
           wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
           chmod +x /usr/local/bin/yq
           echo "paddleformers commit:"
@@ -689,7 +689,7 @@ jobs:
           git checkout ${BRANCH}
           pip install uv coverage==7.13.0 bce-python-sdk==0.8.74 wrapt
           pip install dist/${{ needs.build_whl.outputs.root_whl_name }} --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
-          pip install dist/${{ needs.build_whl.outputs.ops_whl_name }}
+          pip install dist/${{ needs.build_whl.outputs.ops_whl_name }} --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
           wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
           chmod +x /usr/local/bin/yq
           echo "paddleformers commit:"
@@ -1016,7 +1016,7 @@ jobs:
           git checkout ${BRANCH}
           pip install uv coverage==7.13.0 bce-python-sdk==0.8.74 wrapt
           pip install dist/${{ needs.build_whl.outputs.root_whl_name }} --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
-          pip install dist/${{ needs.build_whl.outputs.ops_whl_name }}
+          pip install dist/${{ needs.build_whl.outputs.ops_whl_name }} --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
           wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
           chmod +x /usr/local/bin/yq
           echo "paddleformers commit:"
