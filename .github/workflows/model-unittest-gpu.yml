@@ -200,8 +200,7 @@ jobs:
           set -e
           cp ${work_dir}/../../../Miniforge3-latest-Linux-x86_64.sh /tmp/miniforge.sh
           bash /tmp/miniforge.sh -b -p /opt/conda
-          export PATH=/opt/conda/bin:\$PATH
-          conda create -n py_\$python_version python=\$python_version -y \
+          /opt/conda/bin/conda create -n py_\$python_version python=\$python_version -y \
             --override-channels \
             -c conda-forge
           . /opt/conda/etc/profile.d/conda.sh
