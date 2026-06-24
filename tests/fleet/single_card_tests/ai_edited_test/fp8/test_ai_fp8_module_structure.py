@@ -35,8 +35,9 @@ def _load_fp8_module(mod_name, filename):
         "..",
         "..",
         "..",
-        "src",
-        "paddleformers.fleet",
+        "..",
+        "paddleformers",
+        "fleet",
         "fp8",
         filename,
     )
@@ -74,8 +75,9 @@ class TestFP8ModuleStructure(unittest.TestCase):
             "..",
             "..",
             "..",
-            "src",
-            "paddleformers.fleet",
+            "..",
+            "paddleformers",
+            "fleet",
             "fp8",
             "linear.py",
         )

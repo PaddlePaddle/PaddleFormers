@@ -464,7 +464,7 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
     def test_direct_fp8_bf16_branch_methods_with_stubs(self):
         old_fused_stack = fp8_utils.fused_stack_quant
         old_split_group = fp8_utils.split_group_gemm
-        old_deep = getattr(fp8_utils, "deep_gemm", None)
+        old_deep = getattr(fp8_utils, "paddlefleet_deep_gemm", None)
         old_quant = paddle.incubate.nn.functional.fp8_quant_blockwise
         old_swiglu_quant = getattr(
             fp8_utils, "fuse_weighted_swiglu_fp8_quant", None
@@ -486,7 +486,7 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
         fake_deep = FakeDeepGemm()
         split_calls = []
         try:
-            fp8_utils.deep_gemm = fake_deep
+            fp8_utils.paddlefleet_deep_gemm = fake_deep
             fp8_utils.fused_stack_quant = (
                 lambda weights,
                 transpose=False,
@@ -608,10 +608,10 @@ class TestFP8ImportAndUtilityBranchesNoMock(unittest.TestCase):
             fp8_utils.fused_stack_quant = old_fused_stack
             fp8_utils.split_group_gemm = old_split_group
             if old_deep is None:
-                if hasattr(fp8_utils, "deep_gemm"):
-                    delattr(fp8_utils, "deep_gemm")
+                if hasattr(fp8_utils, "paddlefleet_deep_gemm"):
+                    delattr(fp8_utils, "paddlefleet_deep_gemm")
             else:
-                fp8_utils.deep_gemm = old_deep
+                fp8_utils.paddlefleet_deep_gemm = old_deep
             paddle.incubate.nn.functional.fp8_quant_blockwise = old_quant
             if old_swiglu_quant is None:
                 if hasattr(fp8_utils, "fuse_weighted_swiglu_fp8_quant"):

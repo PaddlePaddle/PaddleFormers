@@ -65,7 +65,9 @@ sys.modules.setdefault(
 _project_root = os.path.dirname(
     os.path.dirname(
         os.path.dirname(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            os.path.dirname(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            )
         )
     )
 )

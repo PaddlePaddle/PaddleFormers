@@ -74,7 +74,7 @@ def _test_domain_module_imports(module, subdomains: list):
     error = None
     if len(subdomains) > 0:
         basepath = module.__path__[0]
-        fleet_index = basepath.rfind("paddleformers.fleet")
+        fleet_index = basepath.rfind("paddleformers" + os.path.sep + "fleet")
         basepath = basepath[fleet_index:].replace(os.path.sep, ".")
         new_path = ".".join([basepath, *subdomains])
 

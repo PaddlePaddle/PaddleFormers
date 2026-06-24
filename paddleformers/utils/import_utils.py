@@ -246,6 +246,16 @@ def is_paddle_available() -> bool:
     return is_package_available("paddle")
 
 
+def is_paddlefleet_available() -> bool:
+    """Check if paddleformers.fleet is available (PaddleFleet was merged into PaddleFormers)."""
+    try:
+        import paddleformers.fleet  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
 def is_tiktoken_available():
     return importlib.util.find_spec("tiktoken") is not None
 

@@ -20,6 +20,7 @@ import dataclasses
 import json
 import os
 import sys
+import types
 from argparse import (
     ArgumentDefaultsHelpFormatter,
     ArgumentParser,
@@ -112,6 +113,15 @@ class PdArgumentParser(ArgumentParser):
             )
 
         origin_type = getattr(field.type, "__origin__", field.type)
+        # Python 3.10+ `str | None` syntax produces types.UnionType, normalize it to typing.Union
+        if isinstance(field.type, types.UnionType):
+            args = field.type.__args__
+            field.type = (
+                Optional[args[0]]
+                if len(args) == 2 and type(None) in args
+                else Union[args]
+            )
+            origin_type = Union
         if origin_type is Union:
             if (
                 len(field.type.__args__) != 2

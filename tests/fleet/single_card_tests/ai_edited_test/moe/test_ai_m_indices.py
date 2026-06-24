@@ -57,7 +57,7 @@ class TestMIndicesChanges(unittest.TestCase):
         expert_w1 = paddle.randn([3, 8, 16], dtype="bfloat16")
 
         with patch(
-            "paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm"
+            "paddleformers.fleet.transformer.moe.fp8_utils.paddlefleet_deep_gemm"
         ) as mock_dg:
             mock_dg.m_grouped_bf16_gemm_nn_contiguous = MagicMock()
             node.fwd_gate_up(
@@ -104,7 +104,7 @@ class TestMIndicesChanges(unittest.TestCase):
         expert_w1 = paddle.randn([3, 8, 16], dtype="bfloat16")
 
         with patch(
-            "paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm"
+            "paddleformers.fleet.transformer.moe.fp8_utils.paddlefleet_deep_gemm"
         ) as mock_dg:
             mock_dg.m_grouped_bf16_gemm_nn_contiguous = MagicMock()
             node.fwd_gate_up(
@@ -137,7 +137,7 @@ class TestMIndicesChanges(unittest.TestCase):
                 "paddleformers.fleet.transformer.moe.fp8_utils.fused_stack_quant"
             ) as mock_fsq,
             patch(
-                "paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm"
+                "paddleformers.fleet.transformer.moe.fp8_utils.paddlefleet_deep_gemm"
             ) as mock_dg,
         ):
             mock_fsq.return_value = (
@@ -166,7 +166,7 @@ class TestMIndicesChanges(unittest.TestCase):
 
         with (
             patch(
-                "paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm"
+                "paddleformers.fleet.transformer.moe.fp8_utils.paddlefleet_deep_gemm"
             ) as mock_dg,
             patch(
                 "paddleformers.fleet.transformer.moe.fp8_utils.fused_swiglu_scale_forward"
@@ -192,7 +192,7 @@ class TestMIndicesChanges(unittest.TestCase):
 
         with (
             patch(
-                "paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm"
+                "paddleformers.fleet.transformer.moe.fp8_utils.paddlefleet_deep_gemm"
             ) as mock_dg,
             patch(
                 "paddleformers.fleet.transformer.moe.fp8_utils.fused_swiglu_scale_forward"
@@ -224,7 +224,7 @@ class TestMIndicesChanges(unittest.TestCase):
         expert_w1 = paddle.randn([3, 8, 16], dtype="bfloat16")
 
         with patch(
-            "paddleformers.fleet.transformer.moe.fp8_utils.deep_gemm"
+            "paddleformers.fleet.transformer.moe.fp8_utils.paddlefleet_deep_gemm"
         ) as mock_dg:
             mock_dg.m_grouped_bf16_gemm_nt_contiguous = MagicMock()
             node.bwd_gate_up_input_bf16(do1, expert_w1)

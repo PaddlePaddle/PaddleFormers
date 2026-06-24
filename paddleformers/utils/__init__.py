@@ -52,6 +52,7 @@ import_structure = {
         "is_datasets_available",
         "is_transformers_available",
         "is_paddleformers_available",
+        "is_paddlefleet_available",
         "dynamic_graph_pybind_context",
         "custom_import",
         "direct_paddleformers_import",
