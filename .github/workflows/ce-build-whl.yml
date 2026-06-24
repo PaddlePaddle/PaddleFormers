@@ -104,7 +104,11 @@ jobs:
             for cuda in cu126 cu129 cu130; do
               python bos_tools.py $file paddle-whl/nightly/$cuda/paddleformers/
               echo "$file: https://paddle-whl.bj.bcebos.com/nightly/$cuda/paddleformers/$file"
-              python3 notify_paddle_link.py $cuda $file
+              if [[ ! "$file" =~ -0\.0\.0\. ]]; then
+                python3 notify_paddle_link.py $cuda $file
+              else
+                echo "Skip notify for 0.0.0 wheel: $file"
+              fi
             done
           done
           '
