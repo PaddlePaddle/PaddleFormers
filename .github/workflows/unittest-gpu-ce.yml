@@ -142,7 +142,7 @@ jobs:
           docker exec -i -e "work_dir=$work_dir" -e "python_version=$python_version" $container_name /bin/bash <<-DOCKER_EOF
           echo "Change python version to $python_version"
           set -e
-          cp ${work_dir}/../../../Miniforge3-latest-Linux-x86_64.sh /tmp/miniforge.sh
+          cp ${work_dir}/../../../../../Miniforge3-latest-Linux-x86_64.sh /tmp/miniforge.sh
           bash /tmp/miniforge.sh -b -p /opt/conda
           /opt/conda/bin/conda create -n py_\$python_version python=\$python_version -y \
             --override-channels \
