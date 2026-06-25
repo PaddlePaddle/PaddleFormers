@@ -237,6 +237,7 @@ jobs:
           echo "Change python version to $python_version"
           set -e
           cp /home/models/Miniforge3-latest-Linux-x86_64.sh /tmp/miniforge.sh
+          source ${work_dir}/../../../proxy_huggingface
           bash /tmp/miniforge.sh -b -p /opt/conda
           /opt/conda/bin/conda create -n py_\$python_version python=\$python_version -y \
             --override-channels \
