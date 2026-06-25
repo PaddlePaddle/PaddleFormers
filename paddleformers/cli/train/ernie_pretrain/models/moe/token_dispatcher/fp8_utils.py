@@ -28,18 +28,15 @@ The implementation leverages PaddlePaddle's FP8 incubator operations and provide
 additional optimizations specific to MoE workloads.
 """
 
-import warnings
-
 import numpy
 import paddle
+
+from paddleformers.utils.log import logger
 
 try:
     from paddle.incubate.fp8 import deep_gemm
 except ImportError:
-    warnings.warn(
-        "paddle.incubate.fp8.deep_gemm is not available.",
-        RuntimeWarning,
-    )
+    logger.warning("paddle.incubate.fp8.deep_gemm is not available.")
     deep_gemm = None
 from paddle.nn.functional import swiglu
 

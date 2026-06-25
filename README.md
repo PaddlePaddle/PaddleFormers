@@ -208,6 +208,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
 * [昆仑芯安装说明文档](./docs/zh/XPU_installation_guide.md)
 * [天数智芯安装说明文档](./docs/zh/ILUVATAR-GPU_installation_guide.md)
 * [沐曦安装说明文档](./docs/zh/Metax-GPU_installation_guide.md)
+* [摩尔线程安装说明文档](./docs/zh/MUSA-GPU_installation_guide.md)
 
 # ⚡快速体验
 
@@ -262,6 +263,7 @@ paddleformers-cli train ./examples/config/sft/full.yaml
 * [昆仑芯使用说明文档](./docs/zh/XPU_usage_guide.md)
 * [天数智芯使用说明文档](./docs/zh/ILUVATAR-GPU_usage_guide.md)
 * [沐曦使用说明文档](./docs/zh/Metax-GPU_usage_guide.md)
+* [摩尔线程使用说明文档](./docs/zh/MUSA-GPU_usage_guide.md)
 
 ## 🔍最佳实践
 * [基于 DeepSeekv3的高效预训练](./examples/best_practices/DeepSeek-V3/)
