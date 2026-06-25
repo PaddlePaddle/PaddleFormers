@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "paddleformers"
-version = "1.2.0.dev20260615"
+version = "1.2.0.dev"
 description = "Easy-to-use and powerful NLP library with Awesome model zoo, supporting wide-range of NLP tasks from research to industrial applications."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -92,7 +92,7 @@ target_version = ['py35', 'py36', 'py37', 'py38', 'py39', 'py310']
 
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "-ra -q "
+addopts = "-ra -q --import-mode=importlib"
 testpaths = [
     "tests/data",
     "tests/dataset",

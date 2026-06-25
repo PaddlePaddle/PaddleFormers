@@ -125,7 +125,7 @@ install_requirements() {
         echo "Install CI ENV: Cuda129+Python312"
         #formers - build wheel first
         uv build --wheel --package paddleformers --out-dir dist --clear -v > /dev/null
-        pip install "$(ls -t dist/*.whl | head -1)" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+        uv pip install "$(ls -t dist/*.whl | head -1)" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
         #paddlefleet_ops
         install_ops_wheel_release
     fi

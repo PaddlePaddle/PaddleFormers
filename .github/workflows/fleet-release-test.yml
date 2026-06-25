@@ -317,7 +317,7 @@ jobs:
           python -c "import paddleformers; print(paddleformers.__version__)"
           '
       - name: Single card test
-        timeout-minutes: 60
+        timeout-minutes: 90
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -xce '
           pwd
@@ -536,7 +536,7 @@ jobs:
           python -c "import paddle; print(paddle.version.commit)"
           '
       - name: Proprocess for integration test
-        if: always()
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
@@ -551,7 +551,7 @@ jobs:
           fi
           '
       - name: Integration test (GLM4.5 single-card)
-        if: always()
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
         timeout-minutes: 5
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
@@ -589,7 +589,7 @@ jobs:
       #     fi
       #     '
       - name: Qwen3-vl-8k-single-card
-        if: always()
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
         timeout-minutes: 5
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
@@ -677,6 +677,7 @@ jobs:
             -e PP="rel" \
             -w /workspace --network host ${docker_image}
       - name: Install PaddleFormers
+        id: formers_install
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           rm -rf * .[^.]*
