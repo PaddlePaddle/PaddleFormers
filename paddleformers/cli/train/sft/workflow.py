@@ -330,6 +330,7 @@ def run_sft(
     model_config.max_sequence_length = data_args.max_seq_len
     model_config._attn_implementation = model_args._attn_implementation
     model_config.is_lora = model_args.lora
+    model_config.moe_logging = model_args.moe_logging
 
     # Sync arguments to MLLM sub_config
     if getattr(model_config, "text_config", None) is not None:
