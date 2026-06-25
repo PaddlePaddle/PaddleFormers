@@ -972,6 +972,19 @@ class InternalMedicineCallback(TrainerCallback):
         except Exception:
             logger.error("[InternalMedicine/pfleet] Failed to setup monitors")
 
+    def on_step_begin(self, args, state, control, **kwargs):
+        # Collect expert weight norms before the FP8 quant callback clears the
+        # bf16 expert weights. Only monitors that expose collect_expert_norms()
+        # have step-begin work; others keep their metrics on forward hooks. This
+        # MUST run before FP8QuantWeightCallback.on_step_begin, which is ensured
+        # by registering this callback ahead of it in the callbacks list.
+        if not self._setup_done:
+            return
+        for monitor in self._monitor_dict.values():
+            collect = getattr(monitor, "collect_expert_norms", None)
+            if collect is not None:
+                collect()
+
     def on_step_end(self, args, state, control, **kwargs):
         if not self._setup_done:
             return
