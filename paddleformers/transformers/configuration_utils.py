@@ -467,6 +467,12 @@ class LlmMetaConfig:
             "Whether to enable multi-latent attention mechanism. Defaults to False.",
         ),
         (
+            "csa_sparse_attn_backend",
+            str,
+            "tilelang",
+            "CSA sparse attention backend. One of {'unfused', 'tilelang', 'cudnn'}. Defaults to 'tilelang'.",
+        ),
+        (
             "no_rope_freq",
             bool,
             False,
