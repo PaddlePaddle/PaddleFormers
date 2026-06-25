@@ -39,6 +39,7 @@ install_requirements() {
     python -m pip config --user set global.trusted-host pypi.org
     python -m pip config --user set global.index-url https://pypi.org/simple
     python -m pip uninstall paddlepaddle paddlepaddle_gpu -y
+    python -m pip uninstall torch -y 2>/dev/null || true
     python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple  > /dev/null
     python -m pip install uv > /dev/null
     cd /home/models/my_packages && dpkg -i *.deb > /dev/null
@@ -162,7 +163,9 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
         --dist no \
         --maxfail=10 \
         --timeout 200 --durations 20 \
+        --import-mode=importlib \
         --alluredir=result \
+        --ignore=tests/fleet \
         --cov=paddleformers \
         --cov-report=xml:coverage.xml > ${log_path}/unittest.log 2>&1
     exit_code=$?

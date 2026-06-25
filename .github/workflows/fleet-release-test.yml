@@ -514,6 +514,7 @@ jobs:
             -e PP="rel" \
             -w /workspace --network host ${docker_image}
       - name: Install PaddleFormers
+        id: formers_install
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           nvidia-smi
@@ -677,7 +678,6 @@ jobs:
             -e PP="rel" \
             -w /workspace --network host ${docker_image}
       - name: Install PaddleFormers
-        id: formers_install
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           rm -rf * .[^.]*
