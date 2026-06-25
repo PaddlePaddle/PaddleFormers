@@ -21,7 +21,7 @@ import paddle
 from paddleformers.fleet.tensor_parallel.cross_entropy import (
     vocab_parallel_cross_entropy,
 )
-from tests.multi_card_tests.tensor_parallel.test_utilities import Utils
+from tests.fleet.multi_card_tests.tensor_parallel.test_utilities import Utils
 
 
 def test_vocab_parallel_cross_entropy():

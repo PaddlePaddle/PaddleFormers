@@ -227,6 +227,7 @@ def get_qwen3_5_language_spec(config):
             num_experts=config.n_routed_experts,
             moe_expert_fusion=config.moe_expert_fusion,
             multi_latent_attention=config.multi_latent_attention,
+            use_qk_norm=config.use_qk_norm,
         )
 
         sub = spec.sublayers_spec

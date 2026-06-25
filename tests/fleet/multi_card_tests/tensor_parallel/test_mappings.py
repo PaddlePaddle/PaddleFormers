@@ -19,7 +19,7 @@ import paddle
 
 from paddleformers.fleet.tensor_parallel import mappings
 from paddleformers.fleet.utils import get_tensor_model_parallel_group_if_none
-from tests.multi_card_tests.tensor_parallel.test_utilities import Utils
+from tests.fleet.multi_card_tests.tensor_parallel.test_utilities import Utils
 
 
 def test_CopyToModelParallelRegion():

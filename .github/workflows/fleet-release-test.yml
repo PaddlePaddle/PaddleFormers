@@ -422,7 +422,7 @@ jobs:
           chmod +x /usr/local/bin/yq
           '
       - name: Multi-card test
-        timeout-minutes: 60
+        timeout-minutes: 90
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           export WITH_COVERAGE=ON

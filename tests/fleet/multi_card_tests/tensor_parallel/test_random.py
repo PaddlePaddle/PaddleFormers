@@ -35,7 +35,7 @@ from paddleformers.fleet.tensor_parallel.random import (
     get_cuda_rng_tracker,
     model_parallel_cuda_manual_seed,
 )
-from tests.multi_card_tests.tensor_parallel.test_utilities import Utils
+from tests.fleet.multi_card_tests.tensor_parallel.test_utilities import Utils
 
 
 def test_cuda_rng_states_tracker():

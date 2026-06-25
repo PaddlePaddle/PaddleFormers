@@ -62,7 +62,7 @@ from paddleformers.fleet.models.gpt import GPTConfig
 from paddleformers.fleet.tensor_parallel.random import (
     model_parallel_cuda_manual_seed,
 )
-from tests.multi_card_tests.tensor_parallel.test_utilities import Utils
+from tests.fleet.multi_card_tests.tensor_parallel.test_utilities import Utils
 
 # ==================== Module-level initialization (once only) ====================
 

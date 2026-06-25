@@ -15,7 +15,7 @@
 import paddle
 
 from paddleformers.fleet.tensor_parallel.data import broadcast_data
-from tests.multi_card_tests.tensor_parallel.test_utilities import Utils
+from tests.fleet.multi_card_tests.tensor_parallel.test_utilities import Utils
 
 
 def test_broadcast_data():

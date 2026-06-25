@@ -18,7 +18,7 @@
 import paddle
 
 import paddleformers.fleet.tensor_parallel.utils as util
-from tests.multi_card_tests.tensor_parallel.test_utilities import Utils
+from tests.fleet.multi_card_tests.tensor_parallel.test_utilities import Utils
 
 
 def test_split_tensor_along_last_dim():

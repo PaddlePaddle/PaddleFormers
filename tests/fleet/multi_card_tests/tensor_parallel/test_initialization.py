@@ -40,7 +40,7 @@ from paddleformers.fleet.tensor_parallel.random import (
     model_parallel_cuda_manual_seed,
 )
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
-from tests.multi_card_tests.tensor_parallel.test_utilities import Utils
+from tests.fleet.multi_card_tests.tensor_parallel.test_utilities import Utils
 
 
 class Test:
