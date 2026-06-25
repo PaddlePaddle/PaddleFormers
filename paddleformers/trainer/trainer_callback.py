@@ -935,11 +935,12 @@ class SPGradSyncCallback(TrainerCallback):
 
 
 class InternalMedicineCallback(TrainerCallback):
-    def __init__(self, monitors=None, monitor_interval: int = 1, verbose: bool = True):
+    def __init__(self, monitors=None, monitor_interval: int = 1, verbose: bool = True, qk_row_stride: int = 1):
         super().__init__()
         self.monitors = self._normalize_monitors(monitors)
         self.monitor_interval = monitor_interval
         self.verbose = verbose
+        self.qk_row_stride = qk_row_stride
         self._monitor_dict = {}
         self._training_logs = None
         self._setup_done = False
@@ -974,6 +975,7 @@ class InternalMedicineCallback(TrainerCallback):
                 monitor_dict=self._monitor_dict,
                 monitor_interval=self.monitor_interval,
                 verbose=self.verbose,
+                qk_stats={"row_stride": self.qk_row_stride},
             )
             self._training_logs = training_logs
             self._setup_done = True

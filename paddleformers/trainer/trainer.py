@@ -501,6 +501,7 @@ class Trainer:
                 InternalMedicineCallback(
                     monitors=self.args.internal_medicine_monitors,
                     monitor_interval=self.args.internal_medicine_monitor_interval,
+                    qk_row_stride=getattr(self.args, "internal_medicine_qk_row_stride", 1),
                 )
             )
         default_callbacks += get_reporting_integration_callbacks(self.args.report_to)

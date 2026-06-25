@@ -81,6 +81,14 @@ class PreTrainingArguments(TrainingArguments):
         default=1,
         metadata={"help": "Step interval for internal medicine monitors."},
     )
+    internal_medicine_qk_row_stride: int = field(
+        default=1,
+        metadata={
+            "help": "qk_stats query-row subsampling stride. 1 = exact full pass. "
+            "Larger values (e.g. 16/32) subsample query rows to cut the O(S^2) cost "
+            "on long sequences; mean/entropy/sink stay unbiased, max is a lower bound."
+        },
+    )
     num_consecutive: int = field(
         default=1,
         metadata={"help": "H5 file consecutive num."},
