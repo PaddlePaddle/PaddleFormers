@@ -415,6 +415,8 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             "embed.weight -> model.embedding.embed_tokens.weight",
             "norm.weight -> model.norm.weight",
         ]
+        if mtp_num_layers > 0:
+            stmts.append("embed.weight -> model.mtp_embedding.embed_tokens.weight")
         if config.tie_word_embeddings:
             stmts += ["embed.weight -> model.lm_head.weight"]
         else:
@@ -711,6 +713,8 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             "model.embedding.embed_tokens.weight -> embed.weight",
             "model.norm.weight -> norm.weight",
         ]
+        if mtp_num_layers > 0:
+            stmts.append("model.mtp_embedding.embed_tokens.weight -> embed.weight")
         if config.tie_word_embeddings:
             stmts += ["model.lm_head.weight -> _"]
         else:
