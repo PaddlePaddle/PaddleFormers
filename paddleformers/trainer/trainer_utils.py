@@ -123,7 +123,8 @@ class FleetTrainingLogs:
             self.trainer.global_training_logs[key] = value
 
     def is_moe_balance_logs_enabled(self):
-        if not self.trainer.model.config.moe_logging:
+        config = getattr(self.trainer.model, "config", None)
+        if not getattr(config, "moe_logging", False):
             return False
 
         interval = self.trainer.args.global_logging_interval
