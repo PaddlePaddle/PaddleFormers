@@ -29,9 +29,9 @@ from paddleformers.transformers import (
     MistralConfig,
     MistralForCausalLM,
     MistralForQuestionAnswering,
-    MistralModel,
     MistralForSequenceClassification,
     MistralForTokenClassification,
+    MistralModel,
 )
 
 

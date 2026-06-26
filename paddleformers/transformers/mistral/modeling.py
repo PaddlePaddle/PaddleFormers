@@ -29,7 +29,10 @@ from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
-from ..masking_utils import create_causal_mask_and_row_indices, create_sliding_window_causal_mask_and_row_indices
+from ..masking_utils import (
+    create_causal_mask_and_row_indices,
+    create_sliding_window_causal_mask_and_row_indices,
+)
 from ..model_outputs import (
     BaseModelOutputWithPast,
     CausalLMOutputWithPast,
@@ -110,9 +113,9 @@ class MistralAttention(nn.Layer):
         )
 
         if config.tensor_model_parallel_size > 1:
-            assert self.num_heads % config.tensor_model_parallel_size == 0, (
-                f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
-            )
+            assert (
+                self.num_heads % config.tensor_model_parallel_size == 0
+            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
             self.num_heads = self.num_heads // config.tensor_model_parallel_size
 
             assert self.num_key_value_heads % config.tensor_model_parallel_size == 0, (
@@ -460,7 +463,9 @@ class MistralModel(MistralPretrainedModel):
 
         if position_ids is None:
             position_ids = (
-                paddle.arange(cache_length, seq_length + cache_length, dtype=paddle.int64).unsqueeze(0).tile((batch_size, 1))
+                paddle.arange(cache_length, seq_length + cache_length, dtype=paddle.int64)
+                .unsqueeze(0)
+                .tile((batch_size, 1))
             )
 
         mask_kwargs = {
