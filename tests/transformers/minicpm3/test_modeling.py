@@ -19,7 +19,12 @@ import unittest
 
 import paddle
 
-from paddleformers.transformers import AutoConfig, AutoModelForCausalLM, MiniCPM3Config, MiniCPM3ForCausalLM
+from paddleformers.transformers import (
+    AutoConfig,
+    AutoModelForCausalLM,
+    MiniCPM3Config,
+    MiniCPM3ForCausalLM,
+)
 
 
 def tiny_minicpm3_config(**kwargs):
