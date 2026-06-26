@@ -1,0 +1,1704 @@
+name: CE Daily Dev
+ 
+on:
+  pull_request:
+  schedule:
+    - cron: '0 19 * * *'
+  workflow_dispatch: # 可选：允许手动点 Run
+    inputs:
+      use_release:
+        description: '是否使用预编译的develop paddle 版本'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+        default: 'true'
+        required: false
+ 
+permissions: read-all
+ 
+concurrency:
+  group: ${{ github.event.pull_request.number }}-${{ github.workflow }}
+  cancel-in-progress: true
+ 
+env:
+  PR_ID: ${{ github.event.pull_request.number || '0' }}
+  COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
+  work_dir: /paddle/PaddleFormers
+  PADDLE_ROOT: /paddle
+  ci_scripts: /paddle/ci
+  BRANCH: ${{ github.event.pull_request.base.ref || github.ref_name }}
+  no_proxy: "bcebos.com,.bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
+  docker_image_cu129: "ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:ubuntu24-cuda129-py312-dev"
+  docker_image_cu130: "ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:ubuntu24-cuda130-py312-dev"
+  paddle_url_cu129: "https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/"
+  paddle_url_cu130: "https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda130-Cudnn913-Trt1013-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl"
+  use_release: ${{ inputs.use_release || 'true' }}
+  MAX_PARALLEL: ${{ github.event.inputs.parallel_jobs || '2' }}
+ 
+defaults:
+  run:
+    shell: bash
+ 
+jobs:
+  single_card_test:
+    name: Unit test (single card)
+    runs-on:
+      group: Fleet-H-single-card
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - cuda: "12.9"
+            python: "3.10"
+          - cuda: "13.0"
+            python: "3.12"
+          - cuda: "12.9"
+            python: "3.11"
+          - cuda: "12.9"
+            python: "3.12"
+          - cuda: "12.9"
+            python: "3.13"
+    env:
+      PIP_CACHE_DIR: /home/.cache/pip
+      CACHE_DIR: /home/.cache
+      TASK: paddleformers-CE-${{ matrix.cuda }}-${{ matrix.python }}-DEV-single-card-test
+    steps:
+      - name: Determine the runner
+        run: |
+          gpu_id=$(( $(echo $PWD | awk -F'/' '{print $3}' | awk -F'-' '{print $2}') - 1 ))
+          cuda=${{ matrix.cuda }}
+          python_version=${{ matrix.python }}
+          echo GPU_DEVICES="$gpu_id" >> $GITHUB_ENV
+          # 使用 workflow 开始时间作为统一日期，避免跨天后路径不一致
+          echo DATE="$(date -d '${{ github.run_started_at }}' +%Y%m%d)" >> $GITHUB_ENV
+          if [ "${cuda}" == "12.9" ]; then
+            docker_image=${docker_image_cu129}
+            cuda_version="cu129"
+            paddle_url=${paddle_url_cu129}
+          elif [ "${cuda}" == "13.0" ]; then
+            docker_image=${docker_image_cu130}
+            cuda_version="cu130"
+            paddle_url=${paddle_url_cu130}
+          else
+            docker_image=${docker_image_cu126}
+            cuda_version="cu126"
+            paddle_url=${paddle_url_cu126}
+            fi
+            echo "DOCKER_IMAGE=${docker_image}" >> $GITHUB_ENV
+            echo "CUDA_VERSION=${cuda_version}" >> $GITHUB_ENV
+            echo "PYTHON_VERSION=${python_version}" >> $GITHUB_ENV
+            echo "PADDLE_URL=${paddle_url}" >> $GITHUB_ENV
+      - name: Check docker image and run container
+        env:
+          GPU_DEVICES: ${{ env.GPU_DEVICES }}
+          DOCKER_IMAGE: ${{ env.DOCKER_IMAGE }}
+          CUDA_VERSION: ${{ env.CUDA_VERSION }}
+          PYTHON_VERSION: ${{ env.PYTHON_VERSION }}
+          PADDLE_URL: ${{ env.PADDLE_URL }}
+        run: |
+          container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
+          echo "container_name=${container_name}" >> ${{ github.env }}
+          docker pull ${DOCKER_IMAGE}
+          docker run -d -t --name ${container_name} --gpus "\"device=${GPU_DEVICES}\"" --shm-size=32G \
+            -v "/dev/shm:/dev/shm"  \
+            -v ${{ github.workspace }}/../../..:${{ github.workspace }}/../../.. \
+            -v ${{ github.workspace }}/../../..:/root \
+            -v /ssd1/paddle-1/action_cache:/home/.cache \
+            -v ${{ github.workspace }}:/paddle \
+            -e BRANCH \
+            -e PR_ID \
+            -e COMMIT_ID \
+            -e PADDLE_ROOT \
+            -e ci_scripts \
+            -e CACHE_DIR \
+            -e no_proxy \
+            -e use_release \
+            -e repo_flag="paddlefleet" \
+            -e PIP_CACHE_DIR \
+            -e work_dir \
+            -e CUDA_VERSION \
+            -e PYTHON_VERSION \
+            -e PADDLE_URL \
+            -e DATE \
+            -e GITHUB_HEAD_REF="${{ github.head_ref }}" \
+            -e GITHUB_REPO_NAME="${{ github.repository }}" \
+            -e GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
+            -e GITHUB_RUN_ID="${{ github.run_id }}" \
+            -w /paddle --network host ${DOCKER_IMAGE}
+ 
+      - name: Single card test
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -xce '
+          pwd
+          find . -maxdepth 1 -name "--*" -delete
+          rm -rf * .[^.]*
+          source /root/proxy
+          mkdir -p /home/.cache/pip
+          pip cache dir
+          wget https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+          bash miniconda.sh -b -p $HOME/miniconda -u
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+          conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+          conda init bash
+          conda create -n python${PYTHON_VERSION} python=${PYTHON_VERSION} -y
+          conda activate python${PYTHON_VERSION}
+          paddle_url=${PADDLE_URL}
+          if [ ${CUDA_VERSION} == "cu129" ]; then
+            paddle_whl=paddlepaddle_gpu-0.0.0-cp${PYTHON_VERSION//./}-cp${PYTHON_VERSION//./}-linux_x86_64.whl
+            paddle_url="${PADDLE_URL}${paddle_whl}"
+          fi
+          echo "Install uv"
+          pip install --upgrade pip
+          git clone https://github.com/PaddlePaddle/PaddleFormers.git
+          git config --global --add safe.directory /paddle/PaddleFormers
+          cd PaddleFormers
+          git fetch origin pull/4670/head:PR_4670 && git checkout PR_4670
+          git config user.name "PaddleCI"
+          git config user.email "paddle_ci@example.com"
+          git config pull.rebase false
+          pip install colorlog>=6.10.1
+          python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          pip install -e . --no-build-isolation --index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          if [ "${use_release}" == "true" ]; then
+            echo "Using pre-built paddle package from develop branch."
+            pip install ${paddle_url} --index-url=https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --force-reinstall --no-cache-dir
+          fi
+          pip install uv coverage==7.13.0 bce-python-sdk==0.8.74 wrapt matplotlib==3.10.8 pytest parameterized
+          echo "Paddle Commit"
+          python -c "import paddle; print(paddle.version.commit)"
+          echo "PaddleFormers Commit"
+          python -c "import paddleformers; print(paddleformers.version.commit)"
+          export PYTHONPATH=PaddleFormers/PaddleFormers:$PYTHONPATH
+          export COVERAGE_FILE=/paddle/PaddleFormers/coveragedata/.coverage
+          export COVERAGE_RCFILE=/paddle/PaddleFormers/scripts/fleet_ci/.coveragerc
+          export WITH_COVERAGE=ON
+          bash scripts/fleet_ci/single_card_test.sh
+          '
+ 
+      - name: Single card sonic moe test
+        if: matrix.python == '3.12' && matrix.cuda == '12.9' && always()
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -xce '
+          pwd
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${{ matrix.python }}
+          echo "Paddle Commit"
+          python -c "import paddle; print(paddle.version.commit)"
+          echo "PaddleFormers Commit"
+          python -c "import paddleformers; print(paddleformers.version.commit)"
+          export COVERAGE_FILE=/paddle/PaddleFormers/coveragedata/.coverage
+          export COVERAGE_RCFILE=/paddle/PaddleFormers/scripts/fleet_ci/.coveragerc
+          export WITH_COVERAGE=ON
+          cd PaddleFormers
+          git fetch origin pull/4670/head:PR_4670 && git checkout PR_4670
+          bash scripts/fleet_ci/single_card_sonic.sh
+          '
+ 
+      - name: Single card Coverage Upload to BOS
+        if: always() && matrix.python == '3.12' && matrix.cuda == '12.9'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -xce '
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${{ matrix.python }}
+          export COVERAGE_FILE=/paddle/PaddleFormers/coveragedata/.coverage
+          export COVERAGE_RCFILE=/paddle/PaddleFormers/scripts/fleet_ci/.coveragerc
+          export WITH_COVERAGE=ON
+          ls -a /paddle/PaddleFormers/coveragedata/
+          coverage combine
+          coverage report -m
+          coverage xml -o /paddle/PaddleFormers/coveragedata/coverage.xml
+          wget -q --no-proxy --no-check-certificate \
+            https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddlePaddle/PaddleTest/tools/bos_tools.py \
+            -O bos_tools.py
+          push_file=$(realpath bos_tools.py)
+          cp /paddle/PaddleFormers/coveragedata/coverage.xml coverage.xml
+          target_path="paddle-github-action/${GITHUB_REPO_NAME}/ce/${DATE}/single-card"
+          python ${push_file} coverage.xml ${target_path}
+          '
+      - name: Terminate and delete the container
+        if: ${{ always() }}
+        run: |
+          set +e
+          docker exec -t ${{ env.container_name }} /bin/bash -c 'bash scripts/fleet_ci/clean_uv_cache.sh; rm -rf * .[^.]*'
+          docker rm -f ${{ env.container_name }}
+ 
+  multi-card_test:
+    name: Unit test (multi-card)
+    runs-on:
+      group: Fleet-H-multi-card
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - cuda: "12.9"
+            python: "3.10"
+          - cuda: "13.0"
+            python: "3.12"
+          - cuda: "12.9"
+            python: "3.11"
+          - cuda: "12.9"
+            python: "3.12"
+          - cuda: "12.9"
+            python: "3.13"
+    env:
+      PIP_CACHE_DIR: /home/.cache/pip
+      TASK: paddleformers-CE-${{ matrix.cuda }}-${{ matrix.python }}-multi-card_test-dev
+    steps:
+      - name: setup cuda and python
+        run: |
+          cuda=${{ matrix.cuda }}
+          python_version=${{ matrix.python }}
+          if [ "${cuda}" == "12.9" ]; then
+            docker_image=${docker_image_cu129}
+            cuda_version="cu129"
+            paddle_url=${paddle_url_cu129}
+          elif [ "${cuda}" == "13.0" ]; then
+            docker_image=${docker_image_cu130}
+            cuda_version="cu130"
+            paddle_url=${paddle_url_cu130}
+          else
+            docker_image=${docker_image_cu126}
+            cuda_version="cu126"
+            paddle_url=${paddle_url_cu126}
+          fi
+          echo "DOCKER_IMAGE=${docker_image}" >> $GITHUB_ENV
+          echo "CUDA_VERSION=${cuda_version}" >> $GITHUB_ENV
+          echo "PYTHON_VERSION=${python_version}" >> $GITHUB_ENV
+          echo "PADDLE_URL=${paddle_url}" >> $GITHUB_ENV
+          # 使用 workflow 开始时间作为统一日期，避免跨天后路径不一致
+          echo "DATE=$(date -d '${{ github.run_started_at }}' +%Y%m%d)" >> $GITHUB_ENV
+      - name: Check docker image and run container
+        env:
+          DOCKER_IMAGE: ${{ env.DOCKER_IMAGE }}
+          CUDA_VERSION: ${{ env.CUDA_VERSION }}
+          PYTHON_VERSION: ${{ env.PYTHON_VERSION }}
+          PADDLE_URL: ${{ env.PADDLE_URL }}
+        run: |
+          container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
+          echo "container_name=${container_name}" >> ${{ github.env }}
+          docker pull ${DOCKER_IMAGE}
+          docker run -d -t --gpus all --name ${container_name} \
+            -v "/dev/shm:/dev/shm"  \
+            -v ${{ github.workspace }}/../../..:${{ github.workspace }}/../../.. \
+            -v ${{ github.workspace }}/../../..:/root \
+            -v /ssd1/paddle-1/action_cache:/home/.cache \
+            -v ${{ github.workspace }}:/paddle \
+            -e BRANCH \
+            -e PR_ID \
+            -e COMMIT_ID \
+            -e PADDLE_ROOT \
+            -e ci_scripts \
+            -e CACHE_DIR \
+            -e no_proxy \
+            -e PIP_CACHE_DIR \
+            -e repo_flag="paddlefleet" \
+            -e use_release \
+            -e work_dir \
+            -e CUDA_VERSION \
+            -e PYTHON_VERSION \
+            -e PADDLE_URL \
+            -e DATE \
+            -e GITHUB_SHA="${{ github.event.pull_request.head.sha }}" \
+            -e GITHUB_HEAD_REF="${{ github.head_ref }}" \
+            -e GITHUB_REPO_NAME="${{ github.repository }}" \
+            -e GITHUB_EVENT_NAME="${{ github.event_name }}" \
+            -e GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
+            -e GITHUB_RUN_ID="${{ github.run_id }}" \
+            -w /paddle --network host ${DOCKER_IMAGE}
+ 
+      - name: Install PaddleFormers
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          find . -maxdepth 1 -name "--*" -delete
+          rm -rf * .[^.]*
+          source /root/proxy
+          pip install --upgrade pip
+          wget https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+          bash miniconda.sh -b -p $HOME/miniconda -u
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+          conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+          conda init bash
+          conda create -n python${PYTHON_VERSION} python=${PYTHON_VERSION} -y
+          conda activate python${PYTHON_VERSION}
+          paddle_url=${PADDLE_URL}
+          if [ ${CUDA_VERSION} == "cu129" ]; then
+            paddle_whl=paddlepaddle_gpu-0.0.0-cp${PYTHON_VERSION//./}-cp${PYTHON_VERSION//./}-linux_x86_64.whl
+            paddle_url="${PADDLE_URL}${paddle_whl}"
+          fi
+          git clone https://github.com/PaddlePaddle/PaddleFormers.git
+          cd PaddleFormers
+          git fetch origin pull/4670/head:PR_4670 && git checkout PR_4670
+          git config --global --add safe.directory /paddle/PaddleFormers
+          git config user.name "PaddleCI"
+          git config user.email "paddle_ci@example.com"
+          git config pull.rebase false
+          git submodule update --init --recursive
+          pip install colorlog>=6.10.1
+          python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          pip install -e . --no-build-isolation --index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          if [ "${use_release}" == "true" ]; then
+            echo "Using pre-built paddle package from develop branch."
+            pip install ${paddle_url} --index-url=https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --force-reinstall --no-cache-dir
+          fi
+          pip install uv coverage==7.13.0 bce-python-sdk==0.8.74 wrapt pytest matplotlib==3.10.8
+          wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
+          '
+ 
+      - name: Multi-card test
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          echo "Paddle Commit"
+          python -c "import paddle; print(paddle.version.commit)"
+          echo "PaddleFormers Commit"
+          python -c "import paddleformers; print(paddleformers.version.commit)"
+          export PYTHONPATH=/paddle/PaddleFormers:$PYTHONPATH
+          export WITH_COVERAGE=ON
+          export COVERAGE_FILE=/paddle/PaddleFormers/coveragedata/.coverage
+          export COVERAGE_RCFILE=/paddle/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash PaddleFormers/scripts/fleet_ci/multi-card_test.sh
+          '
+ 
+      - name: Multi-card Coverage Upload to BOS
+        if: ${{ always() && matrix.python == '3.12' && matrix.cuda == '12.9' }}
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -xce '
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${{ matrix.python }}
+          export COVERAGE_FILE=/paddle/PaddleFormers/coveragedata/.coverage
+          export COVERAGE_RCFILE=/paddle/PaddleFormers/scripts/fleet_ci/.coveragerc
+          export WITH_COVERAGE=ON
+          ls -a /paddle/PaddleFormers/coveragedata/
+          coverage combine
+          coverage report -m
+          coverage xml -o /paddle/PaddleFormers/coveragedata/coverage.xml
+          wget -q --no-proxy --no-check-certificate \
+            https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddlePaddle/PaddleTest/tools/bos_tools.py \
+            -O bos_tools.py
+          push_file=$(realpath bos_tools.py)
+          cp /paddle/PaddleFormers/coveragedata/coverage.xml coverage.xml
+          target_path="paddle-github-action/${GITHUB_REPO_NAME}/ce/${DATE}/multi-card"
+          python ${push_file} coverage.xml ${target_path}
+          '
+ 
+      - name: Terminate and delete the container
+        if: ${{ always() }}
+        run: |
+          set +e
+          docker exec -t ${{ env.container_name }} /bin/bash -c 'bash scripts/fleet_ci/clean_uv_cache.sh; rm -rf * .[^.]*'
+          docker rm -f ${{ env.container_name }}
+ 
+  integration-test-H20-single-card:
+    name: Integration test (H20, single card)
+    runs-on:
+      group: Fleet-H-single-card
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - cuda: "12.9"
+            python: "3.10"
+          - cuda: "13.0"
+            python: "3.12"
+          - cuda: "12.9"
+            python: "3.11"
+          - cuda: "12.9"
+            python: "3.12"
+          - cuda: "12.9"
+            python: "3.13"
+    env:
+      PIP_CACHE_DIR: /home/.cache/pip
+      CACHE_DIR: /home/.cache
+      TASK: paddleformers-CE-${{ matrix.cuda }}-${{ matrix.python }}-DEV-integration-test-single-card-release
+    steps:
+      - name: Determine the runner
+        run: |
+          gpu_id=$(( $(echo $PWD | awk -F'/' '{print $3}' | awk -F'-' '{print $2}') - 1 ))
+          cuda=${{ matrix.cuda }}
+          python_version=${{ matrix.python }}
+          echo GPU_DEVICES="$gpu_id" >> $GITHUB_ENV
+          if [ "${cuda}" == "12.9" ]; then
+            docker_image=${docker_image_cu129}
+            cuda_version="cu129"
+            paddle_url=${paddle_url_cu129}
+          elif [ "${cuda}" == "13.0" ]; then
+            docker_image=${docker_image_cu130}
+            cuda_version="cu130"
+            paddle_url=${paddle_url_cu130}
+          else
+            docker_image=${docker_image_cu126}
+            cuda_version="cu126"
+            paddle_url=${paddle_url_cu126}
+          fi
+          echo "DOCKER_IMAGE=${docker_image}" >> $GITHUB_ENV
+          echo "CUDA_VERSION=${cuda_version}" >> $GITHUB_ENV
+          echo "PYTHON_VERSION=${python_version}" >> $GITHUB_ENV
+          echo "PADDLE_URL=${paddle_url}" >> $GITHUB_ENV
+          echo "BASE_NAME=${cuda_version}-${python_version}-H20" >> $GITHUB_ENV
+          # 使用 workflow 开始时间作为统一日期，避免跨天后路径不一致
+          echo "DATE=$(date -d '${{ github.run_started_at }}' +%Y%m%d)" >> $GITHUB_ENV
+      - name: Check docker image and run container
+        env:
+          GPU_DEVICES: ${{ env.GPU_DEVICES }}
+          DOCKER_IMAGE: ${{ env.DOCKER_IMAGE }}
+          CUDA_VERSION: ${{ env.CUDA_VERSION }}
+          PYTHON_VERSION: ${{ env.PYTHON_VERSION }}
+          PADDLE_URL: ${{ env.PADDLE_URL }}
+          BASE_NAME: ${{ env.BASE_NAME }}
+        run: |
+          container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
+          echo "container_name=${container_name}" >> ${{ github.env }}
+          docker pull ${DOCKER_IMAGE}
+          set -x
+          docker run -d -t --name ${container_name} --gpus "\"device=${GPU_DEVICES}\"" --shm-size=32G \
+            -v "/dev/shm:/dev/shm"  \
+            -v ${{ github.workspace }}/../../..:${{ github.workspace }}/../../.. \
+            -v ${{ github.workspace }}/../../..:/root \
+            -v /ssd1/paddle-1/action_cache:/home/.cache \
+            -v ${{ github.workspace }}:/workspace \
+            -e BRANCH \
+            -e PR_ID \
+            -e COMMIT_ID \
+            -e PADDLE_ROOT \
+            -e ci_scripts \
+            -e CACHE_DIR \
+            -e no_proxy \
+            -e use_release \
+            -e PIP_CACHE_DIR \
+            -e CUDA_VERSION \
+            -e PYTHON_VERSION \
+            -e PADDLE_URL \
+            -e BASE_NAME \
+            -e DATE \
+            -e GITHUB_SHA="${{ github.event.pull_request.head.sha }}" \
+            -e GITHUB_HEAD_REF="${{ github.head_ref }}" \
+            -e GITHUB_REPO_NAME="${{ github.repository }}" \
+            -e GITHUB_EVENT_NAME="${{ github.event_name }}" \
+            -e GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
+            -e GITHUB_RUN_ID="${{ github.run_id }}" \
+            -w /workspace --network host ${DOCKER_IMAGE}
+ 
+      - name: Install PaddleFormers
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          nvidia-smi
+          find . -maxdepth 1 -name "--*" -delete
+          rm -rf * .[^.]*
+          source /root/proxy
+          mkdir -p /home/.cache/pip
+          pip cache dir
+          pip install --upgrade pip
+          wget https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+          bash miniconda.sh -b -p $HOME/miniconda -u
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+          conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+          conda init bash
+          conda create -n python${PYTHON_VERSION} python=${PYTHON_VERSION} -y
+          conda activate python${PYTHON_VERSION}
+          git clone https://github.com/PaddlePaddle/PaddleFormers.git
+          cd PaddleFormers
+          git fetch origin pull/4670/head:PR_4670 && git checkout PR_4670
+          git config --global --add safe.directory /workspace/PaddleFormers
+          git config user.name "PaddleCI"
+          git config user.email "paddle_ci@example.com"
+          git config pull.rebase false
+          pip install colorlog>=6.10.1
+          python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          pip install -e . --no-build-isolation --index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
+          # formers_install
+          paddle_url=${PADDLE_URL}
+          if [ ${CUDA_VERSION} == "cu129" ]; then
+            paddle_whl=paddlepaddle_gpu-0.0.0-cp${PYTHON_VERSION//./}-cp${PYTHON_VERSION//./}-linux_x86_64.whl
+            paddle_url="${PADDLE_URL}${paddle_whl}"
+          fi
+          if [ ${CUDA_VERSION} == "cu130" ]; then
+            pip install blinker==1.9.0 --ignore-installed
+          fi
+          git log -1
+          sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/glm45_provider.py
+          sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/qwen_provider.py
+          if [ "${use_release}" == "true" ]; then
+            echo "Using pre-built paddle package from develop branch."
+            pip install ${paddle_url} --index-url=https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --force-reinstall --no-cache-dir
+          fi
+          pip install uv coverage==7.13.0 bce-python-sdk==0.8.74 wrapt matplotlib==3.10.8 pytest parameterized
+          pip install librosa==0.11.0
+          echo "Paddle Commit"
+          python -c "import paddle; print(paddle.version.commit)"
+          echo "PaddleFormers Commit"
+          python -c "import paddleformers; print(paddleformers.version.commit)"
+          '
+ 
+      - name: Proprocess for integration test
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          bash -x PaddleFormers/tests/integration_test/preprocess.sh
+          preprocess_exit_code=$?
+          if [[ "$preprocess_exit_code" != "0" ]]; then
+            echo -e "::error:: \033[31mPreprocess failed.\033[0m"
+            exit 1
+          else
+            echo -e "\033[32mPreprocess succeeded.\033[0m"
+          fi
+          '
+ 
+      - name: Integration test (GLM4.5 single-card)
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          mkdir -p /workspace/PaddleFormers/coveragedata-single
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-single/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/glm45_pt_single_card.sh
+          glm45_single_card_exit_code=$?
+          if [[ "$glm45_single_card_exit_code" != "0" ]]; then
+            export case_name="glm45_single_card"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 single-card.\033[0m"
+          fi
+          '
+ 
+      - name: Integration test (Qwen3-30B-A3B single-card)
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          mkdir -p /workspace/PaddleFormers/coveragedata-single
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-single/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/qwen3_single_card.sh
+          qwen3_single_card_exit_code=$?
+          if [[ "$qwen3_single_card_exit_code" != "0" ]]; then
+            export case_name="qwen3_single_card"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: Qwen3-30B-A3B single-card.\033[0m"
+          fi
+          '
+ 
+      - name: Qwen3-vl-8k-single-card
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        timeout-minutes: 5
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          mkdir -p /workspace/PaddleFormers/coveragedata-single
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-single/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/qwen3vl_sft_single_card.sh single
+          exit_code=$?
+          if [[ "$exit_code" != "0" ]]; then
+            export case_name="qwen3vl_sft_single_card"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: Qwen3-vl-8k-single-card.\033[0m"
+          fi
+          '
+ 
+      - name: H20 Coverage Upload to BOS
+        if: ${{ always() && matrix.cuda == '12.9' && matrix.python == '3.12' }}
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -xce '
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          ls -a /workspace/PaddleFormers/coveragedata-single
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-single/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          coverage combine
+          coverage xml -o /workspace/PaddleFormers/coveragedata-single/coverage.xml
+          coverage report -m
+          wget -q --no-proxy --no-check-certificate \
+            https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddlePaddle/PaddleTest/tools/bos_tools.py \
+            -O bos_tools.py
+          push_file=$(realpath bos_tools.py)
+          cp /workspace/PaddleFormers/coveragedata-single/coverage.xml coverage.xml
+          target_path_single="paddle-github-action/${GITHUB_REPO_NAME}/ce/${DATE}/h20-single"
+          python ${push_file} coverage.xml ${target_path_single}
+          '
+ 
+ 
+      - name: Terminate and delete the container
+        if: ${{ always() }}
+        run: |
+          set +e
+          docker exec -t ${{ env.container_name }} /bin/bash -c 'bash PaddleFormers/scripts/fleet_ci/clean_uv_cache.sh; rm -rf * .[^.]*'
+          docker rm -f ${{ env.container_name }}
+ 
+  integration-test-H20-multi-card:
+    name: Integration test (H20, multi-card)
+    runs-on:
+      group: Fleet-H-multi-card
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - cuda: "12.9"
+            python: "3.10"
+          - cuda: "13.0"
+            python: "3.12"
+          - cuda: "12.9"
+            python: "3.11"
+          - cuda: "12.9"
+            python: "3.12"
+          - cuda: "12.9"
+            python: "3.13"
+    env:
+      PIP_CACHE_DIR: /home/.cache/pip
+      CACHE_DIR: /home/.cache
+      TASK: paddleformers-CE-${{ matrix.cuda }}-${{ matrix.python }}-DEV-integration-test-multi-card-release
+    steps:
+      - name: setup cuda and python
+        run: |
+          cuda=${{ matrix.cuda }}
+          python_version=${{ matrix.python }}
+          if [ "${cuda}" == "12.9" ]; then
+            docker_image=${docker_image_cu129}
+            cuda_version="cu129"
+            paddle_url=${paddle_url_cu129}
+          elif [ "${cuda}" == "13.0" ]; then
+            docker_image=${docker_image_cu130}
+            cuda_version="cu130"
+            paddle_url=${paddle_url_cu130}
+          else
+            docker_image=${docker_image_cu126}
+            cuda_version="cu126"
+            paddle_url=${paddle_url_cu126}
+          fi
+          echo "DOCKER_IMAGE=${docker_image}" >> $GITHUB_ENV
+          echo "CUDA_VERSION=${cuda_version}" >> $GITHUB_ENV
+          echo "PYTHON_VERSION=${python_version}" >> $GITHUB_ENV
+          echo "PADDLE_URL=${paddle_url}" >> $GITHUB_ENV
+          echo "BASE_NAME=${cuda_version}-${python_version}-H20" >> $GITHUB_ENV
+          # 使用 workflow 开始时间作为统一日期，避免跨天后路径不一致
+          echo "DATE=$(date -d '${{ github.run_started_at }}' +%Y%m%d)" >> $GITHUB_ENV
+      - name: Check docker image and run container
+        env:
+          DOCKER_IMAGE: ${{ env.DOCKER_IMAGE }}
+          CUDA_VERSION: ${{ env.CUDA_VERSION }}
+          PYTHON_VERSION: ${{ env.PYTHON_VERSION }}
+          PADDLE_URL: ${{ env.PADDLE_URL }}
+          BASE_NAME: ${{ env.BASE_NAME }}
+        run: |
+          container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
+          echo "container_name=${container_name}" >> ${{ github.env }}
+          docker pull ${DOCKER_IMAGE}
+          docker run -d -t --name ${container_name} --gpus all --shm-size=32G \
+            -v "/dev/shm:/dev/shm"  \
+            -v ${{ github.workspace }}/../../..:${{ github.workspace }}/../../.. \
+            -v ${{ github.workspace }}/../../..:/root \
+            -v /ssd1/paddle-1/action_cache:/home/.cache \
+            -v ${{ github.workspace }}:/workspace \
+            -e BRANCH \
+            -e PR_ID \
+            -e COMMIT_ID \
+            -e PADDLE_ROOT \
+            -e ci_scripts \
+            -e CACHE_DIR \
+            -e no_proxy \
+            -e use_release \
+            -e PIP_CACHE_DIR \
+            -e CUDA_VERSION \
+            -e PYTHON_VERSION \
+            -e PADDLE_URL \
+            -e BASE_NAME \
+            -e DATE \
+            -e GITHUB_SHA="${{ github.event.pull_request.head.sha }}" \
+            -e GITHUB_HEAD_REF="${{ github.head_ref }}" \
+            -e GITHUB_REPO_NAME="${{ github.repository }}" \
+            -e GITHUB_EVENT_NAME="${{ github.event_name }}" \
+            -e GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
+            -e GITHUB_RUN_ID="${{ github.run_id }}" \
+            -w /workspace --network host ${DOCKER_IMAGE}
+ 
+      - name: Install PaddleFormers
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          find . -maxdepth 1 -name "--*" -delete
+          rm -rf * .[^.]*
+          source /root/proxy
+          mkdir -p /home/.cache/pip
+          pip cache dir
+          pip install --upgrade pip
+          wget https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+          bash miniconda.sh -b -p $HOME/miniconda -u
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+          conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+          conda init bash
+          conda create -n python${PYTHON_VERSION} python=${PYTHON_VERSION} -y
+          conda activate python${PYTHON_VERSION}
+          git clone https://github.com/PaddlePaddle/PaddleFormers.git
+          cd PaddleFormers
+          git fetch origin pull/4670/head:PR_4670 && git checkout PR_4670
+          git config --global --add safe.directory /workspace/PaddleFormers
+          git config user.name "PaddleCI"
+          git config user.email "paddle_ci@example.com"
+          git config pull.rebase false
+          pip install colorlog>=6.10.1
+          python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/$CUDA_VERSION/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          pip install -e . --no-build-isolation --index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
+          # formers_install
+          paddle_url=${PADDLE_URL}
+          if [ ${CUDA_VERSION} == "cu129" ]; then
+            paddle_whl=paddlepaddle_gpu-0.0.0-cp${PYTHON_VERSION//./}-cp${PYTHON_VERSION//./}-linux_x86_64.whl
+            paddle_url="${PADDLE_URL}${paddle_whl}"
+          fi
+          if [ ${CUDA_VERSION} == "cu130" ]; then
+            pip install blinker==1.9.0 --ignore-installed
+          fi
+          git log -1
+          cp examples/experiments/paddlefleet/glm45.json examples/experiments/paddlefleet/glm45_fp8.json
+          if [ "${use_release}" == "true" ]; then
+            echo "Using pre-built paddle package from develop branch."
+            pip install ${paddle_url} --index-url=https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --force-reinstall --no-cache-dir
+          fi
+          pip install uv coverage==7.13.0 bce-python-sdk==0.8.74 wrapt
+          pip install bce-python-sdk==0.8.74
+          pip install coverage==7.13.0
+          pip install librosa==0.11.0
+          echo "Paddle Commit"
+          python -c "import paddle; print(paddle.version.commit)"
+          echo "PaddleFormers Commit"
+          python -c "import paddleformers; print(paddleformers.version.commit)"
+          '
+ 
+      - name: GLM4.5 pre-train
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          mkdir -p /workspace/PaddleFormers/coveragedata-multi
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/glm45_pt.sh
+          glm45_exit_code=$?
+          if [[ "$glm45_exit_code" != "0" ]]; then
+            export case_name="glm45_pt"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5.\033[0m"
+          fi
+          '
+ 
+      - name: GLM4.5 sft
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          mkdir -p /workspace/PaddleFormers/coveragedata-multi
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/glm45_sft.sh
+          glm45_exit_code=$?
+          if [[ "$glm45_exit_code" != "0" ]]; then
+            export case_name="glm45_sft"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5.\033[0m"
+          fi
+          '
+ 
+      - name: GLM4.5 sft cp
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        timeout-minutes: 5
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/glm45_sft_cp.sh
+          glm45_exit_code=$?
+          if [[ "$glm45_exit_code" != "0" ]]; then
+            export case_name="glm45_sft_cp"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 sft cp.\033[0m"
+          fi
+          '
+ 
+      - name: GLM4.5 lora
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          mkdir -p /workspace/PaddleFormers/coveragedata-multi
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/glm45_lora.sh
+          glm45_exit_code=$?
+          if [[ "$glm45_exit_code" != "0" ]]; then
+            export case_name="glm45_lora"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5.\033[0m"
+          fi
+          '
+ 
+      - name: GLM4.5 dpo
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          mkdir -p /workspace/PaddleFormers/coveragedata-multi
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/glm45_dpo.sh
+          glm45_exit_code=$?
+          if [[ "$glm45_exit_code" != "0" ]]; then
+            export case_name="glm45_dpo"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 dpo.\033[0m"
+          fi
+          '
+ 
+      - name: GLM4.5 dpo_lora
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        timeout-minutes: 5
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          mkdir -p /workspace/PaddleFormers/coveragedata-multi
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/glm45_dpo_lora.sh
+          exit_code=$?
+          if [[ "$exit_code" != "0" ]]; then
+            export case_name="glm45_dpo_lora"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 dpo_lora.\033[0m"
+          fi
+          '
+ 
+ 
+      - name: GLM4.5 pre-train (Grouped GEMM)
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          if [ "${CUDA_VERSION}" == "cu126" ]; then
+            exit 0
+          fi
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          mkdir -p /workspace/PaddleFormers/coveragedata-multi
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/glm45_pt_grouped_gemm.sh
+          glm45_exit_code=$?
+          if [[ "$glm45_exit_code" != "0" ]]; then
+            export case_name="glm45_pt_grouped_gemm"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 Grouped GEMM.\033[0m"
+          fi
+          '
+ 
+      - name: Integration test (GLM4.5 multi-card FP8)
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          if [ "${CUDA_VERSION}" == "cu126" ]; then
+            exit 0
+          fi
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          mkdir -p /workspace/PaddleFormers/coveragedata-multi
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/glm45_pt_fp8.sh
+          glm45_exit_code=$?
+          if [[ "$glm45_exit_code" != "0" ]]; then
+            export case_name="glm45_pt_fp8"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 FP8.\033[0m"
+          fi
+          '
+ 
+      - name: GLM4.5 pre-train (EP4)
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          mkdir -p /workspace/PaddleFormers/coveragedata-multi
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/glm45_pt_ep4.sh
+          glm45_exit_code=$?
+          if [[ "$glm45_exit_code" != "0" ]]; then
+            export case_name="glm45_pt_ep4"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 EP4.\033[0m"
+          fi
+          '
+ 
+      - name: Qwen pre-train
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          mkdir -p /workspace/PaddleFormers/coveragedata-multi
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/qwen.sh pt
+          exit_code=$?
+          if [[ "$exit_code" != "0" ]]; then
+            export case_name="qwen_pt"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: Qwen pre-train.\033[0m"
+          fi
+          '
+ 
+      - name: Qwen sft
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          mkdir -p /workspace/PaddleFormers/coveragedata-multi
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/qwen.sh sft
+          exit_code=$?
+          if [[ "$exit_code" != "0" ]]; then
+            export case_name="qwen_sft"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: Qwen sft.\033[0m"
+          fi
+          '
+ 
+      - name: Qwen lora
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          mkdir -p /workspace/PaddleFormers/coveragedata-multi
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/qwen.sh lora
+          exit_code=$?
+          if [[ "$exit_code" != "0" ]]; then
+            export case_name="qwen_lora"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: Qwen lora.\033[0m"
+          fi
+          '
+ 
+      - name: Qwen vl sft
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        timeout-minutes: 5
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          mkdir -p /workspace/PaddleFormers/coveragedata-multi
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh tp8 h20
+          exit_code=$?
+          if [[ "$exit_code" != "0" ]]; then
+            export case_name="qwen3vl_sft_h20_tp8_multi_card"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: Qwen vl sft.\033[0m"
+          fi
+          '
+ 
+      - name: Qwen vl lora
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        timeout-minutes: 5
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          mkdir -p /workspace/PaddleFormers/coveragedata-multi
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/qwen3vl_lora.sh h20
+          exit_code=$?
+          if [[ "$exit_code" != "0" ]]; then
+            export case_name="qwen3vl_lora_h20_multi_card"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: Qwen vl lora.\033[0m"
+          fi
+          '
+ 
+      - name: Qwen vl moe
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        timeout-minutes: 10
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          mkdir -p /workspace/PaddleFormers/coveragedata-multi
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh moe h20
+          exit_code=$?
+          if [[ "$exit_code" != "0" ]]; then
+            export case_name="qwen3vl_sft_h20_moe_multi_card"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: Qwen vl moe.\033[0m"
+          fi
+          '
+ 
+      - name: Qwen3-vl-8k-fsdp
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        timeout-minutes: 10
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          mkdir -p /workspace/PaddleFormers/coveragedata-multi
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh fsdp h20
+          exit_code=$?
+          if [[ "$exit_code" != "0" ]]; then
+            export case_name="qwen3vl_sft_h20_fsdp_multi_card"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: Qwen3-vl-8k-fsdp.\033[0m"
+          fi
+          '
+ 
+      - name: H20 Coverage Upload to BOS
+        if: ${{ always() && matrix.cuda == '12.9' && matrix.python == '3.12' }}
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -xce '
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${{ matrix.python }}
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          ls -a /workspace/PaddleFormers/coveragedata-multi
+          coverage combine
+          coverage xml -o /workspace/PaddleFormers/coveragedata-multi/coverage.xml
+          coverage report -m
+          wget -q --no-proxy --no-check-certificate \
+            https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddlePaddle/PaddleTest/tools/bos_tools.py \
+            -O bos_tools.py
+          push_file=$(realpath bos_tools.py)
+          cp /workspace/PaddleFormers/coveragedata-multi/coverage.xml coverage.xml
+          target_path_multi="paddle-github-action/${GITHUB_REPO_NAME}/ce/${DATE}/h20-multi"
+          python ${push_file} coverage.xml ${target_path_multi}
+          '
+ 
+      - name: Terminate and delete the container
+        if: ${{ always() }}
+        run: |
+          set +e
+          docker exec -t ${{ env.container_name }} /bin/bash -c 'bash PaddleFormers/scripts/fleet_ci/clean_uv_cache.sh; rm -rf * .[^.]*'
+          docker rm -f ${{ env.container_name }}
+ 
+ 
+  integration-test-a100:
+    name: Integration test (A100)
+    runs-on:
+      group: Distribute
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - cuda: "12.9"
+            python: "3.10"
+          - cuda: "13.0"
+            python: "3.12"
+          - cuda: "12.9"
+            python: "3.11"
+          - cuda: "12.9"
+            python: "3.12"
+          - cuda: "12.9"
+            python: "3.13"
+    env:
+      PIP_CACHE_DIR: /home/.cache/pip
+      CACHE_DIR: /home/.cache
+      TASK: paddlePaddleFormers-CE-${{ matrix.cuda }}-${{ matrix.python }}-DEV-integration-test-A100
+    steps:
+      - name: setup cuda and python
+        run: |
+          cuda=${{ matrix.cuda }}
+          python_version=${{ matrix.python }}
+          if [ "${cuda}" == "12.9" ]; then
+            docker_image=${docker_image_cu129}
+            cuda_version="cu129"
+            paddle_url=${paddle_url_cu129}
+          elif [ "${cuda}" == "13.0" ]; then
+            docker_image=${docker_image_cu130}
+            cuda_version="cu130"
+            paddle_url=${paddle_url_cu130}
+          else
+            docker_image=${docker_image_cu126}
+            cuda_version="cu126"
+            paddle_url=${paddle_url_cu126}
+          fi
+          echo "DOCKER_IMAGE=${docker_image}" >> $GITHUB_ENV
+          echo "CUDA_VERSION=${cuda_version}" >> $GITHUB_ENV
+          echo "PYTHON_VERSION=${python_version}" >> $GITHUB_ENV
+          echo "PADDLE_URL=${paddle_url}" >> $GITHUB_ENV
+          echo "BASE_NAME=${cuda_version}-${python_version}-A100" >> $GITHUB_ENV
+          # 使用 workflow 开始时间作为统一日期，避免跨天后路径不一致
+          echo "DATE=$(date -d '${{ github.run_started_at }}' +%Y%m%d)" >> $GITHUB_ENV
+      - name: Check docker image and run container
+        env:
+          DOCKER_IMAGE: ${{ env.DOCKER_IMAGE }}
+          CUDA_VERSION: ${{ env.CUDA_VERSION }}
+          PYTHON_VERSION: ${{ env.PYTHON_VERSION }}
+          PADDLE_URL: ${{ env.PADDLE_URL }}
+          BASE_NAME: ${{ env.BASE_NAME }}
+        run: |
+          container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
+          echo "container_name=${container_name}" >> ${{ github.env }}
+          docker pull ${DOCKER_IMAGE}
+          docker run -d -t --name ${container_name} --gpus all --shm-size=32G \
+            -v "/dev/shm:/dev/shm"  \
+            -v ${{ github.workspace }}/../../..:${{ github.workspace }}/../../.. \
+            -v ${{ github.workspace }}/../../..:/root \
+            -v /ssd1/paddle-1/action_cache:/home/.cache \
+            -v ${{ github.workspace }}:/workspace \
+            -e BRANCH \
+            -e PR_ID \
+            -e COMMIT_ID \
+            -e PADDLE_ROOT \
+            -e ci_scripts \
+            -e CACHE_DIR \
+            -e no_proxy \
+            -e use_release \
+            -e PIP_CACHE_DIR \
+            -e CUDA_VERSION \
+            -e PYTHON_VERSION \
+            -e PADDLE_URL \
+            -e BASE_NAME \
+            -e DATE \
+            -e GITHUB_SHA="${{ github.event.pull_request.head.sha }}" \
+            -e GITHUB_HEAD_REF="${{ github.head_ref }}" \
+            -e GITHUB_REPO_NAME="${{ github.repository }}" \
+            -e GITHUB_EVENT_NAME="${{ github.event_name }}" \
+            -e GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
+            -e GITHUB_RUN_ID="${{ github.run_id }}" \
+            -w /workspace --network host ${DOCKER_IMAGE}
+ 
+      - name: Install PaddleFormers
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          find . -maxdepth 1 -name "--*" -delete
+          rm -rf * .[^.]*
+          source /root/proxy
+          mkdir -p /home/.cache/pip
+          pip cache dir
+          pip install --upgrade pip
+          wget https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+          bash miniconda.sh -b -p $HOME/miniconda -u
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+          conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+          conda init bash
+          conda create -n python${PYTHON_VERSION} python=${PYTHON_VERSION} -y
+          conda activate python${PYTHON_VERSION}
+          git clone https://github.com/PaddlePaddle/PaddleFormers.git
+          cd PaddleFormers
+          git fetch origin pull/4670/head:PR_4670 && git checkout PR_4670
+          git config --global --add safe.directory /workspace/PaddleFormers
+          git config user.name "PaddleCI"
+          git config user.email "paddle_ci@example.com"
+          git config pull.rebase false
+          pip install colorlog>=6.10.1
+          pip uninstall paddleformers -y
+          pip install colorlog>=6.10.1
+          python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          pip install -e . --no-build-isolation --index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
+          # formers_install
+          paddle_url=${PADDLE_URL}
+          if [ ${CUDA_VERSION} == "cu129" ]; then
+            paddle_whl=paddlepaddle_gpu-0.0.0-cp${PYTHON_VERSION//./}-cp${PYTHON_VERSION//./}-linux_x86_64.whl
+            paddle_url="${PADDLE_URL}${paddle_whl}"
+          fi
+          if [ ${CUDA_VERSION} == "cu130" ]; then
+            pip install blinker==1.9.0 --ignore-installed
+          fi
+          git log -1
+          if [ "${use_release}" == "true" ]; then
+            echo "Using pre-built paddle package from develop branch."
+            pip install ${paddle_url} --index-url=https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --force-reinstall --no-cache-dir
+          fi
+          pip install uv coverage==7.13.0 bce-python-sdk==0.8.74 wrapt
+          pip install bce-python-sdk==0.8.74
+          pip install coverage==7.13.0
+          pip install librosa==0.11.0
+          echo "Paddle Commit"
+          python -c "import paddle; print(paddle.version.commit)"
+          echo "PaddleFormers Commit"
+          python -c "import paddleformers; print(paddleformers.version.commit)"
+          '
+ 
+      - name: GLM4.5 pre-train
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/glm45_a100.sh pt
+          exit_code=$?
+          if [ ${exit_code} -ne 0 ]; then
+            export case_name="glm45_pt_multi_card_a100"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 pre-train.\033[0m"
+          fi
+          '
+ 
+      - name: GLM4.5 sft
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        timeout-minutes: 5
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/glm45_a100.sh sft
+          exit_code=$?
+          if [ ${exit_code} -ne 0 ]; then
+            export case_name="glm45_sft_multi_card_a100"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 sft.\033[0m"
+          fi
+          '
+ 
+      - name: GLM4.5 lora
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        timeout-minutes: 5
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/glm45_a100.sh lora
+          exit_code=$?
+          if [ ${exit_code} -ne 0 ]; then
+            export case_name="glm45_lora_multi_card_a100"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 lora.\033[0m"
+          fi
+          '
+ 
+      - name: GLM4.5 dpo
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        timeout-minutes: 5
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/glm45_a100.sh dpo
+          exit_code=$?
+          if [ ${exit_code} -ne 0 ]; then
+            export case_name="glm45_dpo_multi_card_a100"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 dpo.\033[0m"
+          fi
+          '
+ 
+      - name: GLM4.5 dpo_lora
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        timeout-minutes: 5
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/glm45_a100.sh dpo_lora
+          exit_code=$?
+          if [ ${exit_code} -ne 0 ]; then
+            export case_name="glm45_dpo_lora_multi_card_a100"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 dpo_lora.\033[0m"
+          fi
+          '
+ 
+      - name: Qwen pre-train
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        timeout-minutes: 5
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/qwen3_a100.sh pt
+          exit_code=$?
+          if [ ${exit_code} -ne 0 ]; then
+            export case_name="qwen_pt_multi_card_a100"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: Qwen pre-train.\033[0m"
+          fi
+          '
+ 
+      - name: Qwen sft
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        timeout-minutes: 5
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/qwen3_a100.sh sft
+          exit_code=$?
+          if [ ${exit_code} -ne 0 ]; then
+            export case_name="qwen_sft_multi_card_a100"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: Qwen sft.\033[0m"
+          fi
+          '
+ 
+      - name: Qwen lora
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        timeout-minutes: 5
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/qwen3_a100.sh lora
+          exit_code=$?
+          if [ ${exit_code} -ne 0 ]; then
+            export case_name="qwen_lora_multi_card_a100"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: Qwen lora.\033[0m"
+          fi
+          '
+ 
+      - name: Qwen vl sft
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        timeout-minutes: 5
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh tp8 a100
+          exit_code=$?
+          if [ ${exit_code} -ne 0 ]; then
+            export case_name="qwen3vl_sft_a100_tp8_multi_card"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: Qwen vl sft.\033[0m"
+          fi
+          '
+ 
+      - name: Qwen vl lora
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        timeout-minutes: 5
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/qwen3vl_lora.sh a100
+          exit_code=$?
+          if [ ${exit_code} -ne 0 ]; then
+            export case_name="qwen3vl_lora_a100_multi_card"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: Qwen vl lora.\033[0m"
+          fi
+          '
+ 
+      - name: Qwen vl moe
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        timeout-minutes: 10
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh moe a100
+          exit_code=$?
+          if [ ${exit_code} -ne 0 ]; then
+            export case_name="qwen3vl_sft_a100_moe_multi_card"
+            bash PaddleFormers/scripts/fleet_ci/check_ce_precision.sh $case_name $BASE_NAME
+          else
+            echo -e "\033[32mIntegration test succeeded: Qwen vl moe.\033[0m"
+          fi
+          '
+ 
+      - name: A100 Coverage Upload to BOS
+        if: ${{ always() && matrix.python == '3.12' && matrix.cuda == '12.9' }}
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -xce '
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${{ matrix.python }}
+          export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
+          ls -a /workspace/PaddleFormers/coveragedata
+          coverage combine
+          coverage xml -o /workspace/PaddleFormers/coveragedata/coverage.xml
+          coverage report -m
+          wget -q --no-proxy --no-check-certificate \
+            https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddlePaddle/PaddleTest/tools/bos_tools.py \
+            -O bos_tools.py
+          push_file=$(realpath bos_tools.py)
+          cp /workspace/PaddleFormers/coveragedata/coverage.xml coverage.xml
+          target_path="paddle-github-action/${GITHUB_REPO_NAME}/ce/${DATE}/a100"
+          python ${push_file} coverage.xml ${target_path}
+          '
+ 
+      - name: Terminate and delete the container
+        if: ${{ always() }}
+        run: |
+          set +e
+          docker exec -t ${{ env.container_name }} /bin/bash -c 'bash PaddleFormers/scripts/fleet_ci/clean_uv_cache.sh; rm -rf * .[^.]*'
+          docker rm -f ${{ env.container_name }}
+ 
+  coverage_check:
+    name: Coverage Upload And Check
+    needs: [single_card_test, multi-card_test, integration-test-H20-single-card, integration-test-a100, integration-test-H20-multi-card]
+    if: always()
+    runs-on:
+      group: Fleet-H-single-card
+    env:
+      PIP_CACHE_DIR: /home/.cache/pip
+      CACHE_DIR: /home/.cache
+      TASK: paddleformers-CE-coverage_check
+      GITHUB_REPO_NAME: ${{ github.repository }}
+    steps:
+      - name: Determine the runner
+        run: |
+          gpu_id=$(( $(echo $PWD | awk -F'/' '{print $3}' | awk -F'-' '{print $2}') - 1 ))
+          echo GPU_DEVICES="$gpu_id" >> $GITHUB_ENV
+          # 使用 workflow 开始时间作为统一日期，避免跨天后路径不一致
+          echo DATE="$(date -d '${{ github.run_started_at }}' +%Y%m%d)" >> $GITHUB_ENV
+ 
+      - name: Check docker image and run container
+        env:
+          GPU_DEVICES: ${{ env.GPU_DEVICES }}
+        run: |
+          container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
+          echo "container_name=${container_name}" >> $GITHUB_ENV
+          docker pull $docker_image_cu129
+          docker run -d -t --name ${container_name} --gpus "\"device=${GPU_DEVICES}\"" --shm-size=32G \
+            -v "/dev/shm:/dev/shm"  \
+            -v ${{ github.workspace }}/../../..:${{ github.workspace }}/../../.. \
+            -v ${{ github.workspace }}/../../..:/root \
+            -v /ssd1/paddle-1/action_cache:/home/.cache \
+            -v ${{ github.workspace }}:/paddle \
+            -e BRANCH \
+            -e PR_ID \
+            -e COMMIT_ID \
+            -e PADDLE_ROOT \
+            -e ci_scripts \
+            -e CACHE_DIR \
+            -e no_proxy \
+            -e CE_name \
+            -e PIP_CACHE_DIR \
+            -e work_dir \
+            -e DATE \
+            -e GITHUB_SHA="${{ github.event.pull_request.head.sha }}" \
+            -e GITHUB_HEAD_REF="${{ github.head_ref }}" \
+            -e GITHUB_BASE_SHA="${{ github.event.pull_request.base.sha }}" \
+            -e GITHUB_REPO_NAME="${{ github.repository }}" \
+            -e GITHUB_EVENT_PULL_REQUEST_NUMBER="${{ github.event.pull_request.number }}" \
+            -e GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
+            -e GITHUB_RUN_ID="${{ github.run_id }}" \
+            -e repo_flag="paddlefleet" \
+            -w /paddle --network host ${docker_image_cu129}
+ 
+      - name: download code
+        shell: bash
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -xce '
+          set -x
+          source /root/proxy
+          git clone https://github.com/PaddlePaddle/PaddleFormers.git
+          cd PaddleFormers
+          git fetch origin pull/4670/head:PR_4670 && git checkout PR_4670
+          git config --global --add safe.directory /workspace/PaddleFormers
+          git config user.name "PaddleCI"
+          git config user.email "paddle_ci@example.com"
+          git config pull.rebase false
+          # git pull --no-edit origin pull/${PR_ID}/head
+          '
+ 
+      - name: Check full coverage
+        if: always()
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -xce '
+          set -x
+          cd /paddle/PaddleFormers
+          coverage_configs="
+          multi_coverage.xml:multi-card/coverage.xml:multi-card_test
+          single_coverage.xml:single-card/coverage.xml:single_card_test
+          h20_multi_coverage.xml:h20-multi/coverage.xml:integration-test-H20-multi-card
+          h20_single_coverage.xml:h20-single/coverage.xml:integration-test-H20-single-card
+          a100_coverage.xml:a100/coverage.xml:integration-test-a100
+          "
+          base_url="https://paddle-github-action.bj.bcebos.com/${GITHUB_REPO_NAME}/ce/${DATE}"
+          # 记录失败的任务
+          FAILED_TASKS=""
+ 
+          echo "$coverage_configs" | while IFS= read -r config; do
+            if [ -n "$config" ]; then
+                filename="${config%%:*}"
+                rest="${config#*:}"
+                filepath="${rest%%:*}"
+                task_name="${rest##*:}"
+ 
+                if wget "${base_url}/${filepath}" -O "$filename" --no-proxy -q; then
+                    echo "Downloaded: $filename from $task_name"
+                    sed -i "s|<source></source>|<source>paddleformers</source>|" "$filename"
+                    sed -i "s|PaddleFormers/src/|src/|" "$filename"
+                    sed -i "s|PaddleFormers.src|src|" "$filename"
+                else
+                    echo "Warning: Failed to download ${filepath} from ${task_name}"
+                    echo "$task_name" >> failed_tasks.txt
+                fi
+            fi
+          done
+          # 检查是否有失败的任务
+          if [ -f failed_tasks.txt ] && [ -s failed_tasks.txt ]; then
+            echo "=== 以下任务未生成覆盖率文件 ===" > coverage_missing_tasks.txt
+            cat failed_tasks.txt >> coverage_missing_tasks.txt
+            cat coverage_missing_tasks.txt
+          else
+            echo "all_success" > coverage_missing_tasks.txt
+          fi
+          echo "=== 全量覆盖率检查 ==="
+          python -m pip install coverage==7.13.0
+          # 定义所有覆盖率文件
+          COVERAGE_FILES=(
+            "multi_coverage.xml"
+            "single_coverage.xml"
+            "h20_multi_coverage.xml"
+            "h20_single_coverage.xml"
+            "a100_coverage.xml"
+          )
+          # 检查哪些文件存在
+          EXISTING_FILES=()
+          for FILE in "${COVERAGE_FILES[@]}"; do
+            if [ -f "$FILE" ]; then
+              EXISTING_FILES+=("$FILE")
+            fi
+          done
+ 
+          echo "找到 ${#EXISTING_FILES[@]} 个覆盖率文件"
+ 
+          python scripts/fleet_ci/merge_and_check_coverage.py "${EXISTING_FILES[@]}" --report-only --output-xml 2>&1 | tee -a coverage-full.txt
+          # 将失败任务信息追加到覆盖率报告中
+          if [ ! "all_success" = "$(cat coverage_missing_tasks.txt)" ]; then
+            echo "" >> coverage-full.txt
+            echo "" >> coverage-full.txt
+            echo "========================================" >> coverage-full.txt
+            echo "⚠️  以下任务未生成覆盖率文件，已从统计中排除：" >> coverage-full.txt
+            echo "========================================" >> coverage-full.txt
+            cat coverage_missing_tasks.txt >> coverage-full.txt
+            echo "" >> coverage-full.txt
+            echo "注意：覆盖率统计仅包含成功运行的任务。" >> coverage-full.txt
+          fi
+ 
+          cat coverage-full.txt
+          export no_proxy=localhost,bj.bcebos.com,su.bcebos.com,pypi.tuna.tsinghua.edu.cn,paddle-ci.gz.bcebos.com,0.0.0.0,baidu-int.com,aliyun.com,127.0.0.1,.baidu.com,.bcebos.com && export http_proxy=http://agent.baidu.com:8891 && export https_proxy=http://agent.baidu.com:8891
+          pip install bce-python-sdk==0.8.74
+          # 上传文件
+          wget -q --no-proxy --no-check-certificate \
+            https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddlePaddle/PaddleTest/tools/bos_tools.py \
+            -O bos_tools.py
+          push_file=$(realpath bos_tools.py)
+          target_path="paddle-github-action/${GITHUB_REPO_NAME}/ce/${DATE}"
+          python ${push_file} merged_coverage.xml ${target_path}
+          python ${push_file} coverage-full.txt ${target_path}
+          '
+ 
+      - name: Terminate and delete the container
+        if: ${{ always() }}
+        run: |
+          set +e
+          docker exec -t ${{ env.container_name }} /bin/bash -c 'bash PaddleFormers/scripts/fleet_ci/clean_uv_cache.sh; rm -rf * .[^.]*'
+          docker rm -f ${{ env.container_name }}
