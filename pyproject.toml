@@ -1,10 +1,11 @@
 [build-system]
 requires = ["setuptools>=66.1.0", "wheel"]
-build-backend = "setuptools.build_meta"
+build-backend = "build_backend"
+backend-path = ["."]
 
 [project]
 name = "paddleformers"
-version = "1.2.0.dev"
+dynamic = ["version"]
 description = "Easy-to-use and powerful NLP library with Awesome model zoo, supporting wide-range of NLP tasks from research to industrial applications."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -62,6 +63,9 @@ exclude = ["examples*", "tests*", "applications*", "fast_generation*", "model_zo
 
 [tool.setuptools.package-data]
 paddleformers = ["datasets/reader/data_info.json"]
+
+[tool.setuptools.dynamic]
+version = { attr = "paddleformers._version.__version__" }
 
 [tool.uv.workspace]
 members = ["packages/*"]

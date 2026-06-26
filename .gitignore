@@ -10,6 +10,7 @@ __pycache__/
 .Python
 build/
 build*
+!build_backend.py
 !scripts/dependence/build.sh
 develop-eggs/
 dist/
@@ -29,6 +30,7 @@ share/python-wheels/
 MANIFEST
 packages/paddlefleet_ops/src/_third_party_install_temp/
 packages/paddlefleet_ops/src/paddlefleet_ops/version.py
+paddleformers/_version.py
 packages/paddlefleet_ops/src/paddlefleet_ops/cudnn/
 packages/paddlefleet_ops/src/paddlefleet_ops/deep_ep/
 packages/paddlefleet_ops/src/paddlefleet_ops/deep_ep_cpp.so
