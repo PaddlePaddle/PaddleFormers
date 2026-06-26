@@ -23,7 +23,6 @@ install_requirements() {
     python -m pip config --user set global.index-url https://pypi.org/simple
     # Todo: fix later
     # python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple > /dev/null
-    python -m pip install -r requirements.txt -i https://pypi.org/simple
     python -m pip install uv > /dev/null
     if [[ "$ce_branch" == "CE_Develop_cu132_py312" ]]; then # nightly regerssion
         #paddlefleet_ops
@@ -127,7 +126,7 @@ install_requirements() {
         uv build --wheel --package paddleformers --out-dir dist --clear -v > /dev/null
         uv pip install "$(ls -t dist/*.whl | head -1)" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
         #paddlefleet_ops
-        install_ops_wheel_release
+        install_ops_wheel_dev
     fi
     python -m pip install -r tests/requirements.txt -i https://pypi.org/simple
 
@@ -152,16 +151,15 @@ install_requirements() {
 }
 
 install_ops_wheel_dev(){
-    echo "Install paddlefleet_ops from local workspace"
-    git submodule update --init --recursive
-    python -m pip install ./packages/paddlefleet_ops --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+    echo "Install paddlefleet_ops from nightly index"
+    wget --no-proxy "https://paddle-whl.bj.bcebos.com/nightly/cu129/paddlefleet-ops/paddlefleet_ops-0.0.0-cp312-cp312-linux_x86_64.whl" 
+    pip install paddlefleet_ops-0.0.0-cp312-cp312-linux_x86_64.whl
 }
 
 install_ops_wheel_release(){
-    echo "Install paddlefleet_ops from local workspace"
-    git submodule update --init --recursive
-    python -m pip install ./packages/paddlefleet_ops --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+    echo "Install paddlefleet_ops from nightly index"
+    wget -q https://paddle-whl.bj.bcebos.com/nightly/cu129/paddlefleet-ops/paddlefleet_ops-0.0.0.post-cp312-cp312-linux_x86_64.whl
+    pip install paddlefleet_ops-0.0.0.post-cp312-cp312-linux_x86_64.whl
 }
 
-# Call the function with the first argument (ce_branch), default to "false" for CI env: Cuda126+Python310
 install_requirements "${1:-false}"

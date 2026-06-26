@@ -155,6 +155,14 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     set +e
     export PYTHONFAULTHANDLER=1
 
+    TEST_PATHS=(
+        tests/data tests/dataset tests/generation tests/mergekit tests/nn
+        tests/peft tests/trainer tests/transformers tests/utils
+        tests/ai_edited_test/cli tests/ai_edited_test/data tests/ai_edited_test/datasets
+        tests/ai_edited_test/nn tests/ai_edited_test/peft tests/ai_edited_test/quantization
+        tests/ai_edited_test/trainer tests/ai_edited_test/transformers tests/ai_edited_test/utils
+    )
+
     DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True PADDLEFORMERS_TESTING=True \
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
@@ -163,12 +171,11 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
         --dist no \
         --maxfail=10 \
         --timeout 200 --durations 20 \
-        --import-mode=importlib \
         --alluredir=result \
-        --ignore=tests/fleet \
         --cov=paddleformers \
-        --cov-report=xml:coverage.xml > ${log_path}/unittest.log 2>&1
-    exit_code=$?
+        --cov-report=xml:coverage.xml \
+        "${TEST_PATHS[@]}" > ${log_path}/unittest.log 2>&1
+        exit_code=$?
     print_info $exit_code unittest
     echo -e "\033[35m ---- Set PYTEST_EXECUTE_FLAG_FILE  \033[0m"
     touch ${PYTEST_EXECUTE_FLAG_FILE}
