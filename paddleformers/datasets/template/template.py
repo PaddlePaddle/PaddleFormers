@@ -995,3 +995,27 @@ register_template(
     chat_sep="<|assistant|>\n",
     mm_plugin=get_mm_plugin(name="glm_ocr", image_token="<|image|>"),
 )
+
+
+register_template(
+    name="internvl3",
+    format_user=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n<|im_start|>assistant\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|im_start|>system\n{{content}}<|im_end|>\n"]),
+    default_system="你是书生·万象，英文名是InternVL，是由上海人工智能实验室、清华大学及多家合作单位联合开发的多模态大语言模型。",
+    chat_sep="<|im_end|>\n",
+    suffix=["<|im_end|>\n"],
+    mm_plugin=get_mm_plugin(name="internvl3", image_token="<IMG_CONTEXT>"),
+)
+
+
+register_template(
+    name="internvl",
+    format_user=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n<|im_start|>assistant\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|im_start|>system\n{{content}}<|im_end|>\n"]),
+    default_system="你是书生·万象，英文名是InternVL，是由上海人工智能实验室、清华大学及多家合作单位联合开发的多模态大语言模型。",
+    chat_sep="<|im_end|>\n",
+    suffix=["<|im_end|>\n"],
+    mm_plugin=get_mm_plugin(name="internvl3", image_token="<IMG_CONTEXT>"),
+)

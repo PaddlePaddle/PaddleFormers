@@ -53,6 +53,7 @@ __all__ = [
 
 MAPPING_NAMES = OrderedDict(
     [
+        ("InternVLChat", "internvl3"),
         ("DeepseekV3", "deepseek_v3"),
         ("DeepseekV32", "deepseek_v32"),
         ("Ernie4_5", "ernie4_5"),
@@ -80,6 +81,7 @@ MAPPING_NAMES = OrderedDict(
         ("Gemma3", "gemma3_text"),
         ("Glm4vMoe", "glm4v_moe"),
         ("GlmOcr", "glm_ocr"),
+        ("InternVL", "internvl"),
     ]
 )
 
@@ -182,6 +184,14 @@ class _BaseAutoModelClass:
                 if model_flag in init_class:
                     model_name = model_flag + "Model"
                     break
+            # Fallback: some HF checkpoints use architecture aliases (e.g. InternVLChatModel)
+            # that may not be present in MAPPING_NAMES. Try path-based inference before
+            # falling back to MODEL_MAPPING.
+            if model_name is None:
+                for model_flag, name in SORTED_MAPPING_NAMES.items():
+                    if type(pretrained_model_name_or_path) is str and name in pretrained_model_name_or_path.lower():
+                        model_name = model_flag + "Model"
+                        break
         else:
             # From pretrained_model_name_or_path
             for model_flag, name in SORTED_MAPPING_NAMES.items():
@@ -229,7 +239,10 @@ class _BaseAutoModelClass:
     @classmethod
     def from_config(cls, config, **kwargs):
         model_class = cls._get_model_class_from_config(None, None, config, is_lora=config.get("is_lora", False))
-        return model_class._from_config(config, **kwargs)
+        if hasattr(model_class, "_from_config"):
+            return model_class._from_config(config, **kwargs)
+        # Some submodules (e.g. vision towers) are plain nn.Layer and don't implement PretrainedModel APIs.
+        return model_class(config, **kwargs)
 
     @classmethod
     def _from_pretrained(cls, pretrained_model_name_or_path, task=None, *model_args, **kwargs):

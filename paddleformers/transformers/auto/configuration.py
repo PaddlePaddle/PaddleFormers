@@ -25,7 +25,6 @@ from ...utils.download import resolve_file_path
 from ...utils.import_utils import import_module
 from ...utils.log import logger
 from ..configuration_utils import PretrainedConfig
-from ..model_utils import PretrainedModel
 
 __all__ = [
     "AutoConfig",
@@ -61,6 +60,10 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("gemma3_text", "Gemma3TextConfig"),
         ("glm4v_moe", "Glm4vMoeConfig"),
         ("glm_ocr", "GlmOcrConfig"),
+        ("internvl", "InternVLConfig"),
+        ("internvl_vision", "InternVLVisionConfig"),
+        ("intern_vit_6b", "InternVisionConfig"),
+        ("internvl_chat", "InternVLChatConfig"),
         ("qwen3_5", "Qwen3_5Config"),
         ("qwen3_5_moe", "Qwen3_5MoEConfig"),
     ]
@@ -77,7 +80,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("ernie4_5_moe_vl", "Ernie4_5_VLMoeForConditionalGeneration"),
         ("paddleocr_vl", "PaddleOCRVLForConditionalGeneration"),
         ("llama", "Llama"),
-        ("qwen2", "Qwen2"),
+        ("qwen2", "Qwen2Model"),
         ("qwen2_5_vl", "Qwen2_5_VL"),
         ("qwen2_5_vl_text", "Qwen2_5_VL"),
         ("qwen2_moe", "Qwen2Moe"),
@@ -89,6 +92,10 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("qwen3_vl_moe", "Qwen3VLMoe"),
         ("qwen3_vl_moe_text", "Qwen3VLMoeText"),
         ("glm_ocr", "GlmOcrForConditionalGeneration"),
+        ("internvl", "InternVLModel"),
+        ("internvl_vision", "InternVLVisionModel"),
+        ("intern_vit_6b", "InternVisionModel"),
+        ("internvl_chat", "InternVLChatModel"),
         ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
         ("qwen3_5", "Qwen3_5ForConditionalGeneration"),
     ]
@@ -104,6 +111,10 @@ SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
         ("qwen2_5_vl_text", "qwen2_5_vl"),
         ("qwen3_vl_text", "qwen3_vl"),
         ("qwen3_vl_moe_text", "qwen3_vl_moe"),
+        ("internvl", "internvl"),
+        ("internvl_vision", "internvl"),
+        ("intern_vit_6b", "internvl3"),
+        ("internvl_chat", "internvl3"),
     ]
 )
 
@@ -204,7 +215,11 @@ def get_configurations() -> Dict[str, List[Type[PretrainedConfig]]]:
         if not os.path.exists(configuration_path):
             continue
 
-        configuration_module = import_module(f"paddleformers.transformers.{model_name}.configuration")
+        try:
+            configuration_module = import_module(f"paddleformers.transformers.{model_name}.configuration")
+        except Exception as err:
+            logger.warning(f"Skip loading configuration module {model_name} due to import error: {err}")
+            continue
         for key in dir(configuration_module):
             value = getattr(configuration_module, key)
             if inspect.isclass(value) and issubclass(value, PretrainedConfig):
@@ -268,9 +283,9 @@ class AutoConfig(PretrainedConfig):
                     model_config_class = config_class
                     return model_config_class
 
-        assert inspect.isclass(model_class) and issubclass(
-            model_class, PretrainedModel
-        ), f"<{model_class}> should be a PretarinedModel class, but <{type(model_class)}>"
+        assert inspect.isclass(model_class) and hasattr(
+            model_class, "config_class"
+        ), f"<{model_class}> should be a PretarinedModel-like class with `config_class`, but <{type(model_class)}>"
 
         return cls if model_class.config_class is None else model_class.config_class
 
