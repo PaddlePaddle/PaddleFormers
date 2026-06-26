@@ -30,7 +30,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
 > [!IMPORTANT]
 > **PaddleFormers v1.2 发布 — 业界率先实现对 DeepSeek-V4 大规模分布式训练的全面支持！** [查看训练实践 →](./examples/best_practices/DeepSeek-V4/)
 
-* 2026.06.19 - PaddleFormers v1.2 正式发布！这个版本我们实现了对 DeepSeek-V4 系列模型大规模分布式预训练、中训练和 SFT 能力的全面支持。DeepSeek-V4 作为业界领先的开源 MoE 模型，其全新的 CSA+HCA 混合注意力、mHC 残差连接、Muon 优化器等架构创新对训练框架提出了极高要求。我们从训练策略、模型结构到通信算子进行了全栈适配：支持 Document Mask、Packing 数据流 以及 CP（上下文并行）等高效训练策略，新增 FlashMLA 高性能注意力算子、高度融合的高性能 FP8 MoE 模块、DeepEP/HybridEP 专家并行通信库、TileLang 融合算子开发框架以及 MoE Auto-Subbatch 显存动态负载均衡能力，实现了 DeepSeek-V4 的高效训练。此外，本版本也对 DeepSeek-V3.2 和 Qwen3.5 系列模型训练进行了支持。
+* 2026.06.19 - PaddleFormers v1.2 正式发布！这个版本我们支持了 DeepSeek-V4 系列模型128K 以上的长文训练。DeepSeek-V4 作为业界领先的开源 MoE 模型，其全新的 CSA+HCA 混合注意力、mHC 残差连接、Muon 优化器等架构创新对训练框架提出了极高要求。我们从训练策略、模型结构到通信算子进行了全栈适配：支持 Document Mask、Packing 数据流 以及 CP（上下文并行）等高效训练策略，新增 FlashMLA 高性能注意力算子、高度融合的高性能 FP8 MoE 模块、DeepEP/HybridEP 专家并行通信库、TileLang 融合算子以及 MoE Auto-Subbatch 显存动态负载均衡能力，实现了 DeepSeek-V4 模型的高效预训练、中训练和 SFT 训练能力。此外，本版本也对 DeepSeek-V3.2 和 Qwen3.5 系列模型训练进行了支持。
 * 2026.03.31 - PaddleFormers v1.1 正式发布！在这个版本中我们支持了 GLM-4.5 系列模型的单步与多步 MTP 训练能力。依托 MTP 架构优势，开发者可显著提升推理效率；同时针对 MTP 模块训练场景，我们新增主干网络冻结开关，灵活满足各类模型精细化调优需求。此外，我们对视觉理解类模型进行了深度优化，Qwen3-VL 30B-A3B 模型性能相比上个版本提升48%，领先 Megatron-LM 6%。
 * 2026.01.21 - PaddleFomers v1.0版本发布啦！我们提供了针对 LLM 和 VLM 等模型的训练能力，针对 DeepSeek-V3模型和 GLM-4.5-Air 等重点模型，我们实现了极致性能优化（训练性能明显超越 Megatron-LM ）。针对 PaddleOCR-VL，我们在昆仑芯 P800、天数天垓150等国产计算芯片上进行了适配，更好的满足国内用户需求。
 
