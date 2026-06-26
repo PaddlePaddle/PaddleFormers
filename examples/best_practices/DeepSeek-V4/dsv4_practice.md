@@ -18,7 +18,7 @@ DeepSeek-V4 引入了 CSA+HCA 混合注意力、mHC 残差连接、Muon 优化�
 
 | 组件 | 版本或提交 |
 | --- | --- |
-| PaddleFormers | `1.2.0.post0` |
+| PaddleFormers | `1.2.0` |
 | PaddleFleet | `0.3.0` |
 | paddlefleet-ops | `0.3.0` |
 | PaddlePaddle GPU | `3.4.0` |
