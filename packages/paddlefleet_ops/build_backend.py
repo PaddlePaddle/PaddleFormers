@@ -102,6 +102,9 @@ def _generate_version_info():
     Otherwise the version is derived as:
       - develop branch: <base_version>.dev<YYYYMMDD>+<commit_hash_8>
       - release/* branch: <base_version>.post<YYYYMMDD>+<commit_hash_8>
+
+    Both paddleformers and paddlefleet_ops live in the same repo, so the
+    commit and date always reflect HEAD (same as paddleformers build_backend).
     """
     version_py = _pkg_root / "src" / "paddlefleet_ops" / "version.py"
 
@@ -116,11 +119,14 @@ def _generate_version_info():
     else:
         base_version = _version_txt.read_text().strip()
         base_branch = _find_base_branch(_workspace_root)
-        packages_commit = _get_last_packages_commit(
-            _workspace_root, base_branch
+        commit_short = (
+            subprocess.check_output(
+                ["git", "rev-parse", "--short=11", "HEAD"],
+                cwd=_workspace_root,
+            )
+            .strip()
+            .decode("utf-8")
         )
-        commit_short = packages_commit[:8]
-        # Use the commit's committer date (merge time) instead of current build time
         date_str = (
             subprocess.check_output(
                 [
@@ -129,7 +135,7 @@ def _generate_version_info():
                     "-1",
                     "--format=%cd",
                     "--date=format:%Y%m%d",
-                    packages_commit,
+                    "HEAD",
                 ],
                 cwd=_workspace_root,
             )
@@ -141,9 +147,7 @@ def _generate_version_info():
         else:
             final_version = f"{base_version}.dev{date_str}+{commit_short}"
 
-    git_commit_hash = _get_last_packages_commit(
-        _workspace_root, _find_base_branch(_workspace_root)
-    )
+    git_commit_hash = get_git_commit_hash(_workspace_root)
 
     with open(version_py, "w") as f:
         f.write(
