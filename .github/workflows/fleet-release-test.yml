@@ -91,15 +91,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 100
+          fetch-depth: 0
       - name: Check if packages directory changed
         id: check
         run: |
-          git  log
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             echo "packages_changed=true" >> $GITHUB_OUTPUT
           else
-            if git diff --name-only HEAD~1 HEAD -- packages/ | grep -q .; then
+            BRANCH=${{ github.event.pull_request.base.ref || github.ref_name }}
+            PACKAGES_CHANGED=$(git diff --name-only origin/${BRANCH}...HEAD | grep "^packages/" || true)
+            if [ -n "$PACKAGES_CHANGED" ]; then
               echo "packages_changed=true" >> $GITHUB_OUTPUT
             else
               echo "packages_changed=false" >> $GITHUB_OUTPUT

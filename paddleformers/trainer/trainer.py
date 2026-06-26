@@ -193,6 +193,7 @@ from .trainer_utils import (  # set_hyrbid_parallel_seed,
     EMAStateAssembler,
     EvalLoopOutput,
     EvalPrediction,
+    FleetTrainingLogs,
     IntervalStrategy,
     IterableDatasetShard,
     OptimizerNames,
@@ -559,6 +560,9 @@ class Trainer:
                 InternalMedicineCallback(
                     monitors=self.args.internal_medicine_monitors,
                     monitor_interval=self.args.internal_medicine_monitor_interval,
+                    qk_row_stride=getattr(
+                        self.args, "internal_medicine_qk_row_stride", 1
+                    ),
                 )
             )
         default_callbacks += get_reporting_integration_callbacks(
@@ -752,6 +756,16 @@ class Trainer:
             self.trained_tokens = 0
 
         self.global_training_logs = {}
+        self._register_fleet_moe_training_logs()
+
+    def _register_fleet_moe_training_logs(self):
+        try:
+            from paddlefleet.training.global_vars import (
+                set_global_training_logs,
+            )
+        except ImportError:
+            return
+        set_global_training_logs(FleetTrainingLogs(self))
 
     def _wrap_amp_model(self, args, model):
         logger.info("Using half precision")

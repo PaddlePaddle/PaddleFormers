@@ -165,7 +165,7 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
         --timeout 200 --durations 20 \
         --import-mode=importlib \
         --alluredir=result \
-        --ignore=tests/fleet \
+        --ignore-glob='tests/fleet/**' \
         --cov=paddleformers \
         --cov-report=xml:coverage.xml > ${log_path}/unittest.log 2>&1
     exit_code=$?

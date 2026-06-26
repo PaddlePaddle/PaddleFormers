@@ -1191,12 +1191,17 @@ class SPGradSyncCallback(TrainerCallback):
 
 class InternalMedicineCallback(TrainerCallback):
     def __init__(
-        self, monitors=None, monitor_interval: int = 1, verbose: bool = True
+        self,
+        monitors=None,
+        monitor_interval: int = 1,
+        verbose: bool = True,
+        qk_row_stride: int = 1,
     ):
         super().__init__()
         self.monitors = self._normalize_monitors(monitors)
         self.monitor_interval = monitor_interval
         self.verbose = verbose
+        self.qk_row_stride = qk_row_stride
         self._monitor_dict = {}
         self._training_logs = None
         self._setup_done = False
@@ -1251,6 +1256,7 @@ class InternalMedicineCallback(TrainerCallback):
                 monitor_dict=self._monitor_dict,
                 monitor_interval=self.monitor_interval,
                 verbose=self.verbose,
+                qk_stats={"row_stride": self.qk_row_stride},
             )
             self._training_logs = training_logs
             self._setup_done = True
@@ -1260,6 +1266,19 @@ class InternalMedicineCallback(TrainerCallback):
             )
         except Exception:
             logger.error("[InternalMedicine/pfleet] Failed to setup monitors")
+
+    def on_step_begin(self, args, state, control, **kwargs):
+        # Collect expert weight norms before the FP8 quant callback clears the
+        # bf16 expert weights. Only monitors that expose collect_expert_norms()
+        # have step-begin work; others keep their metrics on forward hooks. This
+        # MUST run before FP8QuantWeightCallback.on_step_begin, which is ensured
+        # by registering this callback ahead of it in the callbacks list.
+        if not self._setup_done:
+            return
+        for monitor in self._monitor_dict.values():
+            collect = getattr(monitor, "collect_expert_norms", None)
+            if collect is not None:
+                collect()
 
     def on_step_end(self, args, state, control, **kwargs):
         if not self._setup_done:
