@@ -1,5 +1,5 @@
 colorlog>=6.10.1
-paddlepaddle-gpu==3.4.0.post20260612+99af93f9466
+paddlepaddle-gpu==3.4.0.post20260623+7bd6c765854
 tilelang-paddle
 scikit-learn
 multiprocess
