@@ -46,7 +46,6 @@ sharding_parallel_size: 4
 pp_delay_scale_loss: true
 use_expert_parallel: true
 expert_model_parallel_size: 4
-moe_router_force_load_balancing: true
 sequence_parallel: true
 sharding: stage1
 # sharding_parallel_config
