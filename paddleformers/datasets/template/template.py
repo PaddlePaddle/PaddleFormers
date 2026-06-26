@@ -995,3 +995,5 @@ register_template(
     chat_sep="<|assistant|>\n",
     mm_plugin=get_mm_plugin(name="glm_ocr", image_token="<|image|>"),
 )
+
+# TODO(xingmingyyj) add template for Gemma4

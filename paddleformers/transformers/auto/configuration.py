@@ -63,6 +63,9 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("glm_ocr", "GlmOcrConfig"),
         ("qwen3_5", "Qwen3_5Config"),
         ("qwen3_5_moe", "Qwen3_5MoEConfig"),
+        # TODO(VL): When Gemma4 VL is implemented, "gemma4" should point to Gemma4Config (VL wrapper)
+        ("gemma4_text", "Gemma4MoeConfig"),
+        ("gemma4", "Gemma4MoeConfig"),  # Temporary: no standalone text ckpt, extract text_config in from_dict
     ]
 )
 
@@ -91,6 +94,9 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("glm_ocr", "GlmOcrForConditionalGeneration"),
         ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
         ("qwen3_5", "Qwen3_5ForConditionalGeneration"),
+        ("gemma4_moe", "Gemma4MoeForCausalLM"),
+        ("gemma4_text", "Gemma4MoeForCausalLM"),
+        ("gemma4", "Gemma4MoeForCausalLM"),
     ]
 )
 
@@ -104,6 +110,9 @@ SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
         ("qwen2_5_vl_text", "qwen2_5_vl"),
         ("qwen3_vl_text", "qwen3_vl"),
         ("qwen3_vl_moe_text", "qwen3_vl_moe"),
+        # TODO(VL): Remove these when Gemma4 VL module (gemma4/) is created
+        ("gemma4_text", "gemma4_moe"),
+        ("gemma4", "gemma4_moe"),
     ]
 )
 
