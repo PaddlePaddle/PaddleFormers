@@ -79,9 +79,13 @@ def _find_base_branch(cwd: Path) -> str:
 
 
 def _get_last_packages_commit(cwd: Path, base_branch: str) -> str:
-    """Get the last commit that modified the paddlefleet_ops package."""
+    """Get the last commit that modified the packages/ directory based on current state.
+
+    Always searches from the current branch or HEAD (detached), never uses other branches.
+    base_branch is only used to determine version suffix (dev/post), not for search.
+    """
     result = subprocess.run(
-        ["git", "log", "-1", "--format=%H", "--", _pkg_rel_path],
+        ["git", "log", "-1", "--format=%H", "--", "packages/"],
         cwd=cwd,
         capture_output=True,
     )
