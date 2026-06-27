@@ -38,22 +38,28 @@ install_requirements() {
     start_ts=$(date +%s)
     python -m pip config --user set global.trusted-host pypi.org
     python -m pip config --user set global.index-url https://pypi.org/simple
-    python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
+    python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet paddleformers paddlefleet_ops -y
     python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple  > /dev/null
     cd /home/models/my_packages && dpkg -i *.deb > /dev/null
     cd -
     # python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
     # echo "paddlepaddle-gpu @ https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/cbf3469113cd76b7d5f4cba7b8d7d5f55d9e9911/paddlepaddle_gpu-3.3.0-cp310-cp310-linux_x86_64.whl" >> requirements.txt
-    python -m pip install uv
-    uv build --wheel --out-dir dist --clear -vv
-    python -m pip install "$(ls -t dist/paddleformers-*.whl | head -1)" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+    if [[ "${USE_PREBUILT_WHEELS:-false}" == "true" ]]; then
+        echo "USE_PREBUILT_WHEELS=true, install prebuilt wheels from dist"
+        python -m pip install "$(ls -t dist/paddleformers-*.whl | head -1)" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+        python -m pip install "$(ls -t dist/paddlefleet_ops-*.whl | head -1)" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+    else
+        python -m pip install uv
+        uv build --wheel --out-dir dist --clear -vv
+        python -m pip install "$(ls -t dist/paddleformers-*.whl | head -1)" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+        bash scripts/install_or_build_ops_wheel.sh ${AGILE_COMPILE_BRANCH:-HEAD^} -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+    fi
     if [ $FLAGS_enable_CE == "true" ];then
         #paddle develop
         python -m pip uninstall paddlepaddle-gpu -y
         wget -q $paddle
         python -m pip install paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
     fi
-    bash scripts/install_or_build_ops_wheel.sh ${AGILE_COMPILE_BRANCH:-HEAD^} -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
     pip install -r tests/requirements.txt -i https://pypi.org/simple 
 
     echo "paddle commit:"

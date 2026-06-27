@@ -21,8 +21,11 @@ AGILE_COMPILE_BRANCH=${AGILE_COMPILE_BRANCH:-${2:-HEAD^}}
 install_requirements() {
     local ce_branch=${1:-"false"}
     start_ts=$(date +%s)
-    python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet paddleformers -y
-    rm -rf ./build ./dist ./paddleformers.egg-info/
+    python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet paddleformers paddlefleet_ops -y
+    rm -rf ./build ./paddleformers.egg-info/
+    if [[ "${USE_PREBUILT_WHEELS:-false}" != "true" ]]; then
+        rm -rf ./dist
+    fi
     python -m pip config --user set global.trusted-host pypi.org
     python -m pip config --user set global.index-url https://pypi.org/simple
     # Todo: fix later 
@@ -144,13 +147,19 @@ install_requirements() {
         python -m pip install "$(ls -t dist/paddleformers-*.whl | head -1)"    
     else
         echo "Install CI ENV: Cuda129+Python312"
-        #formers - build wheel first
-        python -m pip install uv
-        uv build --wheel --out-dir dist --clear -vv
-        #fleet paddle locked
-        pip install "$(ls -t dist/*.whl | head -1)" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
-        #paddlefleet_ops
-        install_ops_wheel_release
+        if [[ "${USE_PREBUILT_WHEELS:-false}" == "true" ]]; then
+            echo "USE_PREBUILT_WHEELS=true, install prebuilt wheels from dist"
+            pip install "$(ls -t dist/paddleformers-*.whl | head -1)" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+            pip install "$(ls -t dist/paddlefleet_ops-*.whl | head -1)" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+        else
+            #formers - build wheel first
+            python -m pip install uv
+            uv build --wheel --out-dir dist --clear -vv
+            #fleet paddle locked
+            pip install "$(ls -t dist/*.whl | head -1)" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+            #paddlefleet_ops
+            install_ops_wheel_release
+        fi
     fi
     python -m pip install -r tests/requirements.txt -i https://pypi.org/simple 
 
