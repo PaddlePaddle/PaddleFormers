@@ -201,7 +201,7 @@ jobs:
           export UV_HTTP_TIMEOUT=300
           pip install dist/paddleformers-*.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
           python -c "import paddle; print(paddle.__version__); print(paddle.version.commit)"
-          uv pip install --group paddlefleet-ops-build
+          uv pip install --system --group paddlefleet-ops-build
           pip install "paddle-nvidia-nvshmem-cu12>=3.3.9,<3.5" --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
           uv build --wheel --package paddlefleet-ops --out-dir dist --no-build-isolation -v
           OPS_WHL=$(ls dist/paddlefleet_ops-*.whl | head -n1)
