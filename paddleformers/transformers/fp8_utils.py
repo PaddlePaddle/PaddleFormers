@@ -177,6 +177,22 @@ class FP8LinearFunctionBase:
     def kitchen_gemm(
         x_fp8, x_scale, w_fp8, w_scale, is_a_1d_scaled, is_b_1d_scaled, out=None, rtn_dtype=paddle.bfloat16
     ):
+        if paddle.cuda.is_available() and paddle.cuda.get_device_capability()[0] >= 10:
+            if out is not None:
+                c = out
+            else:
+                c = paddle.empty([x_fp8.shape[0], w_fp8.shape[0]], rtn_dtype)
+            if numpy.prod(x_fp8.shape) != 0 and numpy.prod(w_fp8.shape) != 0:
+                recipe = (1, 1, 128) if (is_a_1d_scaled and is_b_1d_scaled) else None
+                deep_gemm.fp8_gemm_nt(
+                    (x_fp8, x_scale.t()),
+                    (w_fp8, w_scale.t()),
+                    c,
+                    c=out,
+                    recipe=recipe,
+                    compiled_dims="mn",
+                )
+            return c
         if out is not None:
             accumulate = True
             out_dtype = out.dtype

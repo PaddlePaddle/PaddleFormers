@@ -10,6 +10,8 @@ dataloader_num_workers: 8
 prefetch_factor: 32
 ignore_data_skip: 0
 
+pad_token_id: 0
+
 # model
 model_name_or_path: /root/efficient_benchmark/huggingface/ERNIE-4.5-21B-A3B-Base-PT/
 tokenizer_name_or_path: PaddleFormers/examples/experiments/ernie_pretrain/ernie/src/tokenizers/tokenizer_model
