@@ -17,6 +17,7 @@ import copy
 import logging
 
 import paddle
+import paddlefleet_ops
 import paddleformers.fleet as fleet_ops
 
 from paddleformers.fleet.transformer.moe.fp8_utils import ExpertsGroupGemmContiguousNode
