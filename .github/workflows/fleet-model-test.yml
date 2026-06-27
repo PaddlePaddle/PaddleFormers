@@ -165,7 +165,7 @@ jobs:
           pip install uv coverage==7.13.0 bce-python-sdk==0.8.74 wrapt packaging "setuptools>=66.1.0" wheel "ninja==1.11.1.1" "pybind11[global]>=2.13,<3" "paddle-nvidia-nvshmem-cu12>=3.3.9,<3.5" --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
           uv build --wheel --out-dir dist --clear -vv
           uv pip install dist/paddleformers-*.whl --system --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
-          bash scripts/build_or_install_ops_wheel.sh origin/${BRANCH}...HEAD --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          bash scripts/install_or_build_ops_wheel.sh origin/${BRANCH}...HEAD --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
           wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
           chmod +x /usr/local/bin/yq
           echo "paddle commit:"
@@ -317,7 +317,7 @@ jobs:
           pip install uv coverage==7.13.0 bce-python-sdk==0.8.74 wrapt packaging "setuptools>=66.1.0" wheel "ninja==1.11.1.1" "pybind11[global]>=2.13,<3" "paddle-nvidia-nvshmem-cu12>=3.3.9,<3.5" --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
           uv build --wheel --out-dir dist --clear -vv
           uv pip install dist/paddleformers-*.whl --system --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
-          bash scripts/build_or_install_ops_wheel.sh origin/${BRANCH}...HEAD --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          bash scripts/install_or_build_ops_wheel.sh origin/${BRANCH}...HEAD --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
           # wget -q --no-proxy --no-check-certificate https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
           # pip uninstall paddlepaddle-gpu -y
           # pip install paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
@@ -600,7 +600,7 @@ jobs:
           pip install uv coverage==7.13.0 bce-python-sdk==0.8.74 wrapt packaging "setuptools>=66.1.0" wheel "ninja==1.11.1.1" "pybind11[global]>=2.13,<3" "paddle-nvidia-nvshmem-cu12>=3.3.9,<3.5" --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
           uv build --wheel --out-dir dist --clear -vv
           uv pip install dist/paddleformers-*.whl --system --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
-          bash scripts/build_or_install_ops_wheel.sh origin/${BRANCH}...HEAD --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          bash scripts/install_or_build_ops_wheel.sh origin/${BRANCH}...HEAD --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
           # wget -q --no-proxy --no-check-certificate https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
           # pip uninstall paddlepaddle-gpu -y
           # pip install paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/

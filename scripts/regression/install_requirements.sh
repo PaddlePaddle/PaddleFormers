@@ -170,11 +170,11 @@ install_requirements() {
 }
 
 install_ops_wheel_dev(){
-    bash scripts/build_or_install_ops_wheel.sh ${AGILE_COMPILE_BRANCH:-HEAD^} -i https://pypi.org/simple
+    bash scripts/install_or_build_ops_wheel.sh ${AGILE_COMPILE_BRANCH:-HEAD^} -i https://pypi.org/simple
 }
 
 install_ops_wheel_release(){
-    bash scripts/build_or_install_ops_wheel.sh ${AGILE_COMPILE_BRANCH:-HEAD^} -i https://pypi.org/simple
+    bash scripts/install_or_build_ops_wheel.sh ${AGILE_COMPILE_BRANCH:-HEAD^} -i https://pypi.org/simple
 }
 
 # Call the function with the first argument (ce_branch), default to "false" for CI env: Cuda126+Python310

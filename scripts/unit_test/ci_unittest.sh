@@ -53,7 +53,7 @@ install_requirements() {
         wget -q $paddle
         python -m pip install paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
     fi
-    bash scripts/build_or_install_ops_wheel.sh ${AGILE_COMPILE_BRANCH:-HEAD^} -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+    bash scripts/install_or_build_ops_wheel.sh ${AGILE_COMPILE_BRANCH:-HEAD^} -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
     pip install -r tests/requirements.txt -i https://pypi.org/simple 
 
     echo "paddle commit:"
