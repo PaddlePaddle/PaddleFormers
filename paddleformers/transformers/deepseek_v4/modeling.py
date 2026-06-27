@@ -397,7 +397,6 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         num_experts = config.n_routed_experts
         n_shared_experts = getattr(config, "n_shared_experts", 1)
         moe_n_hash_layers = getattr(config, "moe_n_hash_layers", 3)
-        moe_expert_fusion = getattr(config, "moe_expert_fusion", False)
         csa_compress_ratios = config.csa_compress_ratios
         num_head_empty_layers = (
             config.num_empty_layers_add_in_head
@@ -416,12 +415,23 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             "embed.weight -> model.embedding.embed_tokens.weight",
             "norm.weight -> model.norm.weight",
         ]
+        if mtp_num_layers > 0:
+            stmts.append("embed.weight -> model.mtp_embedding.embed_tokens.weight")
         if config.tie_word_embeddings:
             stmts += ["embed.weight -> model.lm_head.weight"]
         else:
             stmts += ["head.weight -> model.lm_head.weight"]
 
+        use_fused_weight = config.moe_expert_fusion
+        if config.fp8 and (config.moe_expert_fusion is False) and config.moe_deep_gemm:
+            raise ValueError(
+                "For fp8 deep_gemm (i.e. use k-grouped gemm in backward), moe_expert_fusion must be True."
+            )
+        if config.fp8 and config.moe_expert_fusion and config.moe_deep_gemm is False:
+            use_fused_weight = False
+
         # === 2. Per-layer mappings (layer 0 to num_decoder_layers-1) ===
+
         for L in range(num_decoder_layers):
             src = f"layers.{L}"
             tgt = f"model.layers.{L + num_head_empty_layers}"
@@ -451,7 +461,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             ]
             # Attention sink (learnable bias per head)
             stmts += [
-                f"{src}.attn.attn_sink -> {tgt}.self_attn.core_attention.attn_sink, dtype='bfloat16'",
+                f"{src}.attn.attn_sink -> {tgt}.self_attn.core_attention.attn_sink, dtype='float32'",
             ]
 
             # --- mHC: Self-Attention HyperConnection ---
@@ -484,7 +494,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 comp_src = f"{src}.attn.compressor"
                 comp_tgt = f"{tgt}.self_attn.core_attention.compressor"
                 stmts += [
-                    f"{comp_src}.ape -> {comp_tgt}.ape, dtype='bfloat16'",
+                    f"{comp_src}.ape -> {comp_tgt}.ape, dtype='float32'",
                     f"{comp_src}.norm.weight -> {comp_tgt}.norm.weight",
                     f"{comp_src}.wgate.weight^T -> {comp_tgt}.linear_wgate.weight",
                     f"{comp_src}.wkv.weight^T -> {comp_tgt}.linear_wkv.weight",
@@ -495,7 +505,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 idx_src = f"{src}.attn.indexer"
                 idx_tgt = f"{tgt}.self_attn.core_attention.indexer"
                 stmts += [
-                    f"{idx_src}.compressor.ape -> {idx_tgt}.compressor.ape, dtype='bfloat16'",
+                    f"{idx_src}.compressor.ape -> {idx_tgt}.compressor.ape, dtype='float32'",
                     f"{idx_src}.compressor.norm.weight -> {idx_tgt}.compressor.norm.weight",
                     f"{idx_src}.compressor.wgate.weight^T -> {idx_tgt}.compressor.linear_wgate.weight",
                     f"{idx_src}.compressor.wkv.weight^T -> {idx_tgt}.compressor.linear_wkv.weight",
@@ -521,7 +531,8 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ]
 
             # --- GroupGEMM fusion: stack all experts into single tensors ---
-            if moe_expert_fusion:
+
+            if use_fused_weight:
                 ep_weight1 = []
                 ep_weight2 = []
                 for E in range(num_experts):
@@ -542,12 +553,11 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ]
 
         # === 3. Top-level mHC head contraction (output head HyperConnection) ===
-        if mtp_num_layers > 0:
-            stmts += [
-                "hc_head_base -> model.mhc_contract.hc_head_base, dtype='bfloat16'",
-                "hc_head_fn^T -> model.mhc_contract.hc_head_fn, dtype='bfloat16'",
-                "hc_head_scale -> model.mhc_contract.hc_head_scale, dtype='bfloat16'",
-            ]
+        stmts += [
+            "hc_head_base -> model.mhc_contract.hc_head_base, dtype='bfloat16'",
+            "hc_head_fn^T -> model.mhc_contract.hc_head_fn, dtype='bfloat16'",
+            "hc_head_scale -> model.mhc_contract.hc_head_scale, dtype='bfloat16'",
+        ]
 
         # === 4. MTP (Multi-Token Prediction) layers ===
         for i in range(mtp_num_layers):
@@ -586,7 +596,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 f"{mtp_src}.attn.kv_norm.weight -> {tl}.self_attn.kv_layernorm.weight",
                 f"{mtp_src}.attn.wo_a.weight -> {tl}.self_attn.linear_o_group_proj",
                 f"{mtp_src}.attn.wo_b.weight^T -> {tl}.self_attn.o_proj.weight",
-                f"{mtp_src}.attn.attn_sink -> {tl}.self_attn.core_attention.attn_sink, dtype='bfloat16'",
+                f"{mtp_src}.attn.attn_sink -> {tl}.self_attn.core_attention.attn_sink, dtype='float32'",
             ]
 
             # --- mHC: Self-Attention HyperConnection (inside transformer_layer) ---
@@ -619,7 +629,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 comp_src = f"{mtp_src}.attn.compressor"
                 comp_tgt = f"{tl}.self_attn.core_attention.compressor"
                 stmts += [
-                    f"{comp_src}.ape -> {comp_tgt}.ape, dtype='bfloat16'",
+                    f"{comp_src}.ape -> {comp_tgt}.ape, dtype='float32'",
                     f"{comp_src}.norm.weight -> {comp_tgt}.norm.weight",
                     f"{comp_src}.wgate.weight^T -> {comp_tgt}.linear_wgate.weight",
                     f"{comp_src}.wkv.weight^T -> {comp_tgt}.linear_wkv.weight",
@@ -628,7 +638,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     idx_src = f"{mtp_src}.attn.indexer"
                     idx_tgt = f"{tl}.self_attn.core_attention.indexer"
                     stmts += [
-                        f"{idx_src}.compressor.ape -> {idx_tgt}.compressor.ape, dtype='bfloat16'",
+                        f"{idx_src}.compressor.ape -> {idx_tgt}.compressor.ape, dtype='float32'",
                         f"{idx_src}.compressor.norm.weight -> {idx_tgt}.compressor.norm.weight",
                         f"{idx_src}.compressor.wgate.weight^T -> {idx_tgt}.compressor.linear_wgate.weight",
                         f"{idx_src}.compressor.wkv.weight^T -> {idx_tgt}.compressor.linear_wkv.weight",
@@ -652,7 +662,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ]
 
             # --- GroupGEMM fusion for MTP experts ---
-            if moe_expert_fusion:
+            if use_fused_weight:
                 ep_weight1 = []
                 ep_weight2 = []
                 for E in range(num_experts):
@@ -685,7 +695,6 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         num_experts = config.n_routed_experts
         n_shared_experts = getattr(config, "n_shared_experts", 1)
         moe_n_hash_layers = getattr(config, "moe_n_hash_layers", 3)
-        moe_expert_fusion = getattr(config, "moe_expert_fusion", False)
         csa_compress_ratios = config.csa_compress_ratios
         num_head_empty_layers = (
             config.num_empty_layers_add_in_head
@@ -704,10 +713,20 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             "model.embedding.embed_tokens.weight -> embed.weight",
             "model.norm.weight -> norm.weight",
         ]
+        if mtp_num_layers > 0:
+            stmts.append("model.mtp_embedding.embed_tokens.weight -> embed.weight")
         if config.tie_word_embeddings:
             stmts += ["model.lm_head.weight -> _"]
         else:
             stmts += ["model.lm_head.weight -> head.weight"]
+
+        use_fused_weight = config.moe_expert_fusion
+        if config.fp8 and (config.moe_expert_fusion is False) and config.moe_deep_gemm:
+            raise ValueError(
+                "For fp8 deep_gemm (i.e. use k-grouped gemm in backward), moe_expert_fusion must be True."
+            )
+        if config.fp8 and config.moe_expert_fusion and config.moe_deep_gemm is False:
+            use_fused_weight = False
 
         # === 2. MTP layers (inverse, reversed order) ===
         for i in reversed(range(mtp_num_layers)):
@@ -796,12 +815,13 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
 
             # --- MoE Gate ---
             stmts += [
-                f"{tl}.mlp.gate.weight -> {mtp_tgt}.ffn.gate.weight, dtype='bfloat16'",
+                f"{tl}.mlp.gate.weight -> {mtp_tgt}.ffn.gate.weight, dtype='float32'",
                 f"{tl}.mlp.gate.e_score_correction_bias -> {mtp_tgt}.ffn.gate.bias",
             ]
 
             # --- GroupGEMM de-fusion ---
-            if moe_expert_fusion:
+
+            if use_fused_weight:
                 ep_weight1 = []
                 ep_weight2 = []
                 for E in range(num_experts):
@@ -837,12 +857,11 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ]
 
         # === 3. Top-level mHC head contraction (inverse) ===
-        if mtp_num_layers > 0:
-            stmts += [
-                "model.mhc_contract.hc_head_base -> hc_head_base, dtype='float32'",
-                "model.mhc_contract.hc_head_fn^T -> hc_head_fn, dtype='float32'",
-                "model.mhc_contract.hc_head_scale -> hc_head_scale, dtype='float32'",
-            ]
+        stmts += [
+            "model.mhc_contract.hc_head_base -> hc_head_base, dtype='float32'",
+            "model.mhc_contract.hc_head_fn^T -> hc_head_fn, dtype='float32'",
+            "model.mhc_contract.hc_head_scale -> hc_head_scale, dtype='float32'",
+        ]
 
         # === 4. Per-layer mappings (reversed to avoid intermediate tensor name collisions) ===
         for L in reversed(range(num_decoder_layers)):
@@ -920,14 +939,14 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ]
 
             # --- MoE Gate ---
-            stmts += [f"{src}.mlp.gate.weight -> {tgt}.ffn.gate.weight,dtype='bfloat16'"]
+            stmts += [f"{src}.mlp.gate.weight -> {tgt}.ffn.gate.weight,dtype='float32'"]
             if L >= moe_n_hash_layers:
                 stmts += [f"{src}.mlp.gate.e_score_correction_bias -> {tgt}.ffn.gate.bias"]
             else:
                 stmts += [f"{src}.mlp.gate.tid2eid -> {tgt}.ffn.gate.tid2eid"]
 
             # --- GroupGEMM de-fusion: split stacked tensor back to per-expert ---
-            if moe_expert_fusion:
+            if use_fused_weight:
                 ep_weight1 = []
                 ep_weight2 = []
                 for E in range(num_experts):

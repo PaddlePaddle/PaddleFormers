@@ -1,0 +1,102 @@
+train_dataset_type: messages
+eval_dataset_type: messages
+train_dataset_path: /root/efficient_benchmark/dataset/data_60to64k/LVEval_60to64k_messages.jsonl
+train_dataset_prob: "1.0"
+eval_dataset_path: /root/efficient_benchmark/dataset/data_60to64k/LVEval_60to64k_messages.jsonl
+eval_dataset_prob: "1.0"
+
+packing: true
+truncate_packing: false
+max_seq_len: 131072
+mix_strategy: concat
+
+random_shuffle: true
+dataloader_shuffle: false
+use_template: false
+
+model_name_or_path: /root/efficient_benchmark/huggingface/GLM-4.5-Air
+
+# base
+stage: PT
+fine_tuning: full
+seed: 23
+do_train: true
+do_eval: false
+per_device_eval_batch_size: 1
+per_device_train_batch_size: 1
+num_train_epochs: 1
+max_steps: 50
+eval_iters: 10000
+eval_steps: 10000
+evaluation_strategy: steps
+save_steps: 200
+save_strategy: steps
+logging_steps: 1
+global_batch_size: 256
+gradient_accumulation_steps: 32
+logging_dir: ./vdl_log
+output_dir: ./checkpoints/glm45-air-pt-128k
+disable_tqdm: true
+eval_accumulation_steps: 1
+
+
+# parallel: 8 nodes x 8 GPU = 64 cards
+# world = TP * PP * sharding_parallel_size = 1 * 1 * 64
+# EP=8 / CP=4 嵌在 sharding 维度内（参考 baseline 已验证拓扑）
+tensor_model_parallel_size: 1
+sequence_parallel: true
+context_parallel_size: 4
+use_expert_parallel: true
+expert_model_parallel_size: 8
+pipeline_model_parallel_size: 1
+
+weight_decay: 0.1
+adam_beta2: 0.95
+router_aux_loss_coef: 1.0e-4
+
+# performance
+recompute_granularity: full
+recompute_method: uniform
+recompute_num_layers: 1
+
+learning_rate: 5.0e-5
+warmup_steps: 50
+min_lr: 1.0e-5
+lr_scheduler_type: cosine
+
+moe_deep_gemm: true
+moe_shared_expert_overlap: true
+apply_rope_fusion: true
+moe_router_force_load_balancing: false
+
+
+# sharding
+sharding: stage1
+split_param: true
+stage1_overlap: false
+sd_release_grads: true
+
+# pp
+pp_delay_scale_loss: true
+overlap_p2p_comm: true
+variable_seq_lengths: true
+best_unbalanced_scheduler: true
+pp_release_grads: true
+
+amp_master_grad: true
+bf16: true
+fp16_opt_level: O2
+fa_version: 3
+
+save_checkpoint_format: flex_checkpoint
+load_checkpoint_format: flex_checkpoint
+save_to_hf: true
+continue_training: true
+
+dataloader_num_workers: 32
+prefetch_factor: 24
+
+tensorwise_offload_optimizer: true
+skip_profile_timer: false
+load_via_cpu: false
+fp32_residual_connection: false

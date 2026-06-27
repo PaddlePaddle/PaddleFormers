@@ -248,6 +248,7 @@ class LlmMetaConfig:
         ("expert_model_parallel_size", int, 1, "expert_model_parallel_size"),
         # context_parallel
         ("context_parallel_size", int, 1, "context_parallel_size"),
+        ("cp_balance_mode", str, "dualchunk_allgather", "CP scatter/gather layout mode"),
         # pp refine recompute
         ("no_recompute_layers", Optional[List[int]], None, "no_recompute_layers"),
         ("num_empty_layers_add_in_tail", int, 0, "Additional layers to append at the end"),
@@ -444,6 +445,12 @@ class LlmMetaConfig:
             True,
             "Whether to use FP8 for gradient storage during training (only effective if `fp8=True`). Further reduces memory footprint but may introduce minor numerical error. Defaults to False.",
         ),
+        (
+            "use_ue8m0",
+            bool,
+            False,
+            "Whether to use UE8M0 packed scaling factors for FP8 on Blackwell GPUs (SM100+). Enables deep_gemm backend for weight gradient computation. Defaults to False.",
+        ),
     ]
 
     model_conf = [
@@ -464,6 +471,18 @@ class LlmMetaConfig:
             bool,
             False,
             "Whether to enable multi-latent attention mechanism. Defaults to False.",
+        ),
+        (
+            "csa_indexer_backend",
+            str,
+            "tilelang",
+            "CSA indexer backend. One of {'unfused', 'tilelang', 'cudnn'}. Defaults to 'tilelang'.",
+        ),
+        (
+            "csa_sparse_attn_backend",
+            str,
+            "tilelang",
+            "CSA sparse attention backend. One of {'unfused', 'tilelang', 'cudnn'}. Defaults to 'tilelang'.",
         ),
         (
             "no_rope_freq",
@@ -528,6 +547,13 @@ class LlmMetaConfig:
             "Standard deviation for embedding layer initialization (only effective if `embedding_init_method='normal'`). Defaults to 0.02 (common choice for transformer embeddings to avoid saturation).",
         ),
         ("fa_version", int, 2, "FlashAttention or FlashMask version. Can be set to 2 or 3. Default is 2."),
+        (
+            "use_accuracy_compatible",
+            bool,
+            False,
+            "Whether to enable accuracy-compatible kernels for cross-framework numerical alignment. Defaults to False.",
+        ),
+        ("experimental_dataflow", bool, False, "Whether to enable experimental dataflow in Fleet. Default is False."),
     ]
 
     @classmethod

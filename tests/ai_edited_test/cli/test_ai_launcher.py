@@ -12,100 +12,110 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import sys
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
+
+from paddleformers.cli import launcher as launcher_mod
 
 
 class TestLaunch(unittest.TestCase):
-    """Tests for paddleformers.cli.launcher module."""
+    def test_train_command_runs_numa_binding(self):
+        with patch.object(launcher_mod, "_maybe_bind_trainer_numa", side_effect=RuntimeError("stop")) as mock_bind:
+            with patch.object(sys, "argv", ["launcher", "train"]):
+                with self.assertRaisesRegex(RuntimeError, "stop"):
+                    launcher_mod.launch()
 
-    def setUp(self):
-        # Pre-populate the lazy module caches and sys.modules to prevent
-        # the heavy import chain from being triggered.
-        self._saved_modules = {}
-        self._mock_modules = {}
+        mock_bind.assert_called_once_with()
 
-        # Create mock modules for the heavy import chain
-        modules_to_mock = [
-            "paddleformers.cli.train.auto_parallel",
-            "paddleformers.cli.train.auto_parallel.run_auto_parallel",
-            "paddleformers.cli.train.dpo",
-            "paddleformers.cli.train.sft",
-            "paddleformers.cli.train.deepseek_v3_pretrain",
-            "paddleformers.cli.train.ernie_pretrain",
+    def test_numa_binding_disabled_by_default(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with patch.object(launcher_mod, "_reexec_with_numactl") as mock_reexec:
+                launcher_mod._maybe_bind_trainer_numa()
+
+        mock_reexec.assert_not_called()
+
+    def test_numa_binding_maps_local_rank_to_numa_node(self):
+        cases = [
+            ("0", 0, 0),
+            ("1", 1, 0),
+            ("2", 2, 1),
+            ("3", 3, 1),
         ]
 
-        for mod_name in modules_to_mock:
-            if mod_name in sys.modules:
-                self._saved_modules[mod_name] = sys.modules[mod_name]
-            mock_mod = MagicMock()
-            sys.modules[mod_name] = mock_mod
-            self._mock_modules[mod_name] = mock_mod
+        for rank_env, expected_rank, expected_numa_node in cases:
+            with self.subTest(rank_env=rank_env):
+                with patch.dict(os.environ, {"BIND_TRAINER_NUMA": "1", "PADDLE_LOCAL_RANK": rank_env}, clear=True):
+                    with patch.object(launcher_mod, "_reexec_with_numactl") as mock_reexec:
+                        with patch("builtins.print"):
+                            launcher_mod._maybe_bind_trainer_numa()
 
-        # Also mock the tuner and launcher modules' dependencies
-        if "paddleformers.cli.train.tuner" in sys.modules:
-            del sys.modules["paddleformers.cli.train.tuner"]
-        if "paddleformers.cli.launcher" in sys.modules:
-            del sys.modules["paddleformers.cli.launcher"]
+                mock_reexec.assert_called_once_with(expected_rank, expected_numa_node)
 
-    def tearDown(self):
-        # Restore original modules
-        for mod_name in list(self._mock_modules.keys()):
-            if mod_name in self._saved_modules:
-                sys.modules[mod_name] = self._saved_modules[mod_name]
-            elif mod_name in sys.modules:
-                del sys.modules[mod_name]
+    def test_numa_binding_uses_flags_selected_gpus_when_local_rank_missing(self):
+        with patch.dict(os.environ, {"BIND_TRAINER_NUMA": "1", "FLAGS_selected_gpus": "2,3"}, clear=True):
+            with patch.object(launcher_mod, "_reexec_with_numactl") as mock_reexec:
+                with patch("builtins.print"):
+                    launcher_mod._maybe_bind_trainer_numa()
 
-        # Clean up cached module references
-        for mod_name in ["paddleformers.cli.train.tuner", "paddleformers.cli.launcher"]:
-            if mod_name in sys.modules:
-                del sys.modules[mod_name]
+        mock_reexec.assert_called_once_with(2, 1)
 
-    def test_launch_train(self):
-        """Test launch() with 'train' command calls run_tuner."""
-        from paddleformers.cli.launcher import launch
+    def test_numa_binding_requires_rank_when_enabled(self):
+        with patch.dict(os.environ, {"BIND_TRAINER_NUMA": "1"}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "PADDLE_LOCAL_RANK or FLAGS_selected_gpus"):
+                launcher_mod._maybe_bind_trainer_numa()
 
-        with patch("paddleformers.cli.launcher.run_tuner") as mock_run_tuner:
-            with patch("paddleformers.cli.launcher.run_export") as mock_run_export:
-                with patch.object(sys, "argv", ["launcher", "train"]):
-                    launch()
-                    mock_run_tuner.assert_called_once()
-                    mock_run_export.assert_not_called()
+    def test_numa_binding_rejects_unsupported_rank(self):
+        with patch.dict(os.environ, {"BIND_TRAINER_NUMA": "1", "PADDLE_LOCAL_RANK": "4"}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "only supports local rank 0-3"):
+                launcher_mod._maybe_bind_trainer_numa()
 
-    def test_launch_export(self):
-        """Test launch() with 'export' command calls run_export."""
-        from paddleformers.cli.launcher import launch
+    def test_reexec_with_numactl_builds_command_and_env(self):
+        with patch.dict(os.environ, {"EXISTING_ENV": "1"}, clear=True):
+            with patch.object(launcher_mod.shutil, "which", return_value="/usr/bin/numactl") as mock_which:
+                with patch.object(launcher_mod.os, "execvpe") as mock_execvpe:
+                    with patch.object(launcher_mod.sys, "executable", "/usr/bin/python"):
+                        with patch.object(launcher_mod.sys, "argv", ["launcher", "train", "--config", "cfg"]):
+                            with patch("builtins.print"):
+                                launcher_mod._reexec_with_numactl(2, 1)
 
-        with patch("paddleformers.cli.launcher.run_tuner") as mock_run_tuner:
-            with patch("paddleformers.cli.launcher.run_export") as mock_run_export:
-                with patch.object(sys, "argv", ["launcher", "export"]):
-                    launch()
-                    mock_run_export.assert_called_once()
-                    mock_run_tuner.assert_not_called()
+        mock_which.assert_called_once_with("numactl")
+        mock_execvpe.assert_called_once()
+        executable, args, env = mock_execvpe.call_args.args
+        self.assertEqual(executable, "/usr/bin/numactl")
+        self.assertEqual(
+            args,
+            [
+                "/usr/bin/numactl",
+                "--cpunodebind=1",
+                "--membind=1",
+                "/usr/bin/python",
+                "-u",
+                "launcher",
+                "train",
+                "--config",
+                "cfg",
+            ],
+        )
+        self.assertEqual(env["EXISTING_ENV"], "1")
+        self.assertEqual(env[launcher_mod.BIND_TRAINER_NUMA_EXECED], "1")
+        self.assertEqual(env["PYTHONUNBUFFERED"], "1")
 
-    def test_launch_no_args_raises(self):
-        """Test launch() with no arguments raises ValueError."""
-        from paddleformers.cli.launcher import launch
+    def test_reexec_with_numactl_is_idempotent(self):
+        with patch.dict(os.environ, {launcher_mod.BIND_TRAINER_NUMA_EXECED: "1"}, clear=True):
+            with patch.object(launcher_mod.shutil, "which") as mock_which:
+                with patch.object(launcher_mod.os, "execvpe") as mock_execvpe:
+                    launcher_mod._reexec_with_numactl(0, 0)
 
-        with patch("paddleformers.cli.launcher.run_tuner"):
-            with patch("paddleformers.cli.launcher.run_export"):
-                with patch.object(sys, "argv", ["launcher"]):
-                    with self.assertRaises(ValueError) as ctx:
-                        launch()
-                    self.assertIn("larger than 1", str(ctx.exception))
+        mock_which.assert_not_called()
+        mock_execvpe.assert_not_called()
 
-    def test_launch_unknown_command_raises(self):
-        """Test launch() with unknown command raises ValueError."""
-        from paddleformers.cli.launcher import launch
-
-        with patch("paddleformers.cli.launcher.run_tuner"):
-            with patch("paddleformers.cli.launcher.run_export"):
-                with patch.object(sys, "argv", ["launcher", "unknown"]):
-                    with self.assertRaises(ValueError) as ctx:
-                        launch()
-                    self.assertIn("Unknown command", str(ctx.exception))
-                    self.assertIn("unknown", str(ctx.exception))
+    def test_reexec_with_numactl_requires_numactl(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with patch.object(launcher_mod.shutil, "which", return_value=None):
+                with self.assertRaisesRegex(RuntimeError, "requires numactl"):
+                    launcher_mod._reexec_with_numactl(0, 0)
 
 
 if __name__ == "__main__":

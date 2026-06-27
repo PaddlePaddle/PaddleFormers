@@ -1,0 +1,112 @@
+### data
+train_dataset_type: erniekit
+eval_dataset_type: erniekit
+train_dataset_path: #dataset_path
+eval_dataset_path: #dataset_path
+eval_dataset_prob: "1.0"
+packing: false
+truncate_packing: false
+max_seq_len: 8192
+mix_strategy: concat
+
+dataset_type: map
+random_shuffle: false
+dataloader_shuffle: false
+use_template: false
+
+### model
+model_name_or_path: #model_path
+
+### finetuning
+stage: PT
+fine_tuning: full
+seed: 23
+do_train: true
+do_eval: false
+per_device_eval_batch_size: 1
+per_device_train_batch_size: 1
+num_train_epochs: 1
+max_steps: 2
+eval_iters: 2000
+eval_steps: 100000
+evaluation_strategy: steps
+save_steps: 9999
+save_strategy: steps
+logging_steps: 1
+gradient_accumulation_steps: 1
+logging_dir: ./dpskv4_dist_log
+output_dir: ./checkpoints/dpskv4-dist
+disable_tqdm: false
+eval_accumulation_steps: 16
+
+
+# parallel
+tensor_model_parallel_size: 1
+sequence_parallel: false
+use_expert_parallel: true
+expert_model_parallel_size: 8
+pipeline_model_parallel_size: 4
+num_hidden_layers: 43
+
+# optimizer
+weight_decay: 0
+adam_beta2: 0.95
+router_aux_loss_coef: 0.0001
+learning_rate: 5.0e-5
+warmup_steps: 0
+min_lr: 1.0e-5
+lr_scheduler_type: cosine
+
+# MoE
+moe_deep_gemm: false
+moe_router_force_load_balancing: false
+
+# pp
+pp_delay_scale_loss: true
+overlap_p2p_comm: true
+variable_seq_lengths: true
+best_unbalanced_scheduler: true
+pp_release_grads: true
+
+# recompute
+recompute_granularity: full
+
+# amp
+amp_master_grad: true
+bf16: true
+fp16_opt_level: O2
+
+# checkpoint
+save_checkpoint_format: flex_checkpoint
+load_checkpoint_format: flex_checkpoint
+save_to_hf: true
+
+# dataloader
+dataloader_num_workers: 4
+prefetch_factor: 4
+
+# misc
+tensorwise_offload_optimizer: false
+skip_profile_timer: false
+load_via_cpu: false
+fp32_residual_connection: false
+
+# template (not used since use_template: false, but keep for reference)
+template_backend: custom
+template: deepseek3
+
+# DSv4-specific flags that get passed through to config
+multi_latent_attention: true
+use_qk_norm: true
+dsa_indexer_loss_coeff: 0.01
+
+num_nextn_predict_layers: 1
+
+num_empty_layers_add_in_tail: 1
+
+continue_training: true
+
+# performance
+recompute_granularity: full
+recompute_method: uniform
+recompute_num_layers: 1

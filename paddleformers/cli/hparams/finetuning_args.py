@@ -71,6 +71,24 @@ class PreTrainingArguments(TrainingArguments):
         default=1,
         metadata={"help": "the logging interval of global_training_logs"},
     )
+    internal_medicine_monitors: Optional[str] = field(
+        default="",
+        metadata={
+            "help": "Comma-separated list of internal medicine monitors. Options: qk_stats,moe_health,massive_act,all"
+        },
+    )
+    internal_medicine_monitor_interval: int = field(
+        default=1,
+        metadata={"help": "Step interval for internal medicine monitors."},
+    )
+    internal_medicine_qk_row_stride: int = field(
+        default=1,
+        metadata={
+            "help": "qk_stats query-row subsampling stride. 1 = exact full pass. "
+            "Larger values (e.g. 16/32) subsample query rows to cut the O(S^2) cost "
+            "on long sequences; mean/entropy/sink stay unbiased, max is a lower bound."
+        },
+    )
     num_consecutive: int = field(
         default=1,
         metadata={"help": "H5 file consecutive num."},
@@ -293,7 +311,15 @@ class FinetuningArguments(
         },
     )
 
+    use_accuracy_compatible: bool = field(
+        default=False,
+        metadata={"help": ("Whether to enable accuracy alignment with the Megatron framework.")},
+    )
+
     def __post_init__(self):
+        if self.internal_medicine_monitors and self.internal_medicine_monitor_interval < 1:
+            raise ValueError("internal_medicine_monitor_interval must be greater than 0 when monitors are enabled")
+
         self.bf16 = True
         if self.compute_type == "bf16":
             self.fp16 = False
