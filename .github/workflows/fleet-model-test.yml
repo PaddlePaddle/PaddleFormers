@@ -120,6 +120,7 @@ jobs:
     outputs:
       root_whl_name: ${{ steps.save_whl_names.outputs.root_whl }}
       ops_whl_name: ${{ steps.save_whl_names.outputs.ops_whl }}
+      package_archive_url: ${{ steps.upload_package.outputs.package_archive_url }}
     env:
       TASK: fleet-ci-paddle-release-build-whl-${{ github.event.pull_request.number }}
       PIP_CACHE_DIR: /home/.cache/pip
@@ -218,9 +219,10 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           set -x
-          OPS_DST=paddlefleet_ops-0.0.0-cp312-cp312-linux_x86_64.whl
-          wget --no-proxy "https://paddle-whl.bj.bcebos.com/nightly/cu129/paddlefleet-ops/${OPS_DST}" -O dist/${OPS_DST}
-          echo "OPS_WHL=${OPS_DST}" >> dist/whl_names.txt
+          export PADDLEFLEET_OPS_DOWNLOAD_DIR=dist
+          bash scripts/install_ops_wheel.sh
+          OPS_WHL=$(ls dist/paddlefleet_ops-*.whl | head -n1)
+          echo "OPS_WHL=$(basename $OPS_WHL)" >> dist/whl_names.txt
           ls -lh dist
           cat dist/whl_names.txt
           '
@@ -235,6 +237,7 @@ jobs:
           echo "root_whl=$ROOT_WHL" >> $GITHUB_OUTPUT
           echo "ops_whl=$OPS_WHL" >> $GITHUB_OUTPUT
       - name: upload whl to BOS
+        id: upload_package
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           export AK=paddle
@@ -252,6 +255,7 @@ jobs:
           tar zcf paddleformers.tar.gz paddle
           python /bos/BosClient.py paddleformers.tar.gz ${target_path}
           '
+          echo "package_archive_url=https://paddle-github-action.bj.bcebos.com/PaddleFormers/PR/${PR_ID}/${COMMIT_ID}/${BRANCH}/paddleformers.tar.gz" >> $GITHUB_OUTPUT
       - name: Terminate and delete the container
         if: ${{ always() }}
         run: |
@@ -312,7 +316,7 @@ jobs:
           rm -rf * .[^.]*
           set -x
           source /root/proxy
-          wget --tries=5 --no-proxy --no-check-certificate https://paddle-github-action.bj.bcebos.com/PaddleFormers/PR/${PR_ID}/${COMMIT_ID}/${BRANCH}/paddleformers.tar.gz
+          wget --tries=5 --no-proxy --no-check-certificate ${{ needs.build_whl.outputs.package_archive_url }}
           tar -xf paddleformers.tar.gz --strip-components=1
           git config --global --add safe.directory /paddle
           git checkout ${BRANCH}
@@ -323,6 +327,14 @@ jobs:
           pip install dist/${{ needs.build_whl.outputs.ops_whl_name }} --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
           echo "paddleformers commit:"
           python -c "import paddleformers; print(paddleformers.__version__)"
+          python - <<'PY'
+          from pathlib import Path
+          import paddleformers
+          path = Path(paddleformers.__file__).parent / "fleet/transformer/moe/fusion_layer_utils.py"
+          print(path)
+          lines = path.read_text().splitlines()
+          print("\n".join(f"{idx}:{line}" for idx, line in enumerate(lines[16:38], 17)))
+          PY
           '
       - name: Single card test
         timeout-minutes: 90
@@ -416,7 +428,7 @@ jobs:
           rm -rf * .[^.]*
           source /root/proxy
           set -x
-          wget --tries=5 --no-proxy --no-check-certificate https://paddle-github-action.bj.bcebos.com/PaddleFormers/PR/${PR_ID}/${COMMIT_ID}/${BRANCH}/paddleformers.tar.gz
+          wget --tries=5 --no-proxy --no-check-certificate ${{ needs.build_whl.outputs.package_archive_url }}
           tar -xf paddleformers.tar.gz --strip-components=1
           git config --global --add safe.directory /paddle
           pip install uv coverage==7.13.0 bce-python-sdk==0.8.74 wrapt pytest
@@ -530,7 +542,7 @@ jobs:
           set -x
           source /root/proxy
           mkdir PaddleFormers && cd PaddleFormers
-          wget --tries=5 --no-proxy --no-check-certificate https://paddle-github-action.bj.bcebos.com/PaddleFormers/PR/${PR_ID}/${COMMIT_ID}/${BRANCH}/paddleformers.tar.gz
+          wget --tries=5 --no-proxy --no-check-certificate ${{ needs.build_whl.outputs.package_archive_url }}
           tar -xf paddleformers.tar.gz --strip-components=1
           git config --global --add safe.directory /workspace/PaddleFormers
           git checkout ${BRANCH}
@@ -673,7 +685,7 @@ jobs:
           set -x
           source /root/proxy
           mkdir PaddleFormers && cd PaddleFormers
-          wget --tries=5 --no-proxy --no-check-certificate https://paddle-github-action.bj.bcebos.com/PaddleFormers/PR/${PR_ID}/${COMMIT_ID}/${BRANCH}/paddleformers.tar.gz
+          wget --tries=5 --no-proxy --no-check-certificate ${{ needs.build_whl.outputs.package_archive_url }}
           tar -xf paddleformers.tar.gz --strip-components=1
           git config --global --add safe.directory /workspace/PaddleFormers
           git checkout ${BRANCH}
@@ -1000,7 +1012,7 @@ jobs:
           source /root/proxy
           set -x
           mkdir PaddleFormers && cd PaddleFormers
-          wget --tries=5 --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFormers/PR/${PR_ID}/${COMMIT_ID}/${BRANCH}/paddleformers.tar.gz
+          wget --tries=5 --no-proxy --no-check-certificate ${{ needs.build_whl.outputs.package_archive_url }}
           tar -xf paddleformers.tar.gz --strip-components=1
           git config --global --add safe.directory /workspace/PaddleFormers
           git checkout ${BRANCH}
@@ -1255,7 +1267,7 @@ jobs:
           rm -rf * .[^.]*
           set -x
           source /root/proxy
-          wget --tries=5 --no-proxy --no-check-certificate https://paddle-github-action.bj.bcebos.com/PaddleFormers/PR/${PR_ID}/${COMMIT_ID}/${BRANCH}/paddleformers.tar.gz
+          wget --tries=5 --no-proxy --no-check-certificate ${{ needs.build_whl.outputs.package_archive_url }}
           mkdir PaddleFormers && cd PaddleFormers
           tar -xf ../paddleformers.tar.gz --strip-components=1
           git config --global --add safe.directory /workspace/PaddleFormers

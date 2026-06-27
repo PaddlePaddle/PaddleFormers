@@ -112,13 +112,42 @@ fi
 
 print_info "Base branch: $BASE_BRANCH"
 
-# Get the last commit that modified packages/ directory based on current state
-# Always search from current branch or HEAD, never uses other branches
-print_info "Searching for packages/ modification in current state"
-PACKAGES_COMMIT=$(git log -1 --format=%H -- packages/ 2>/dev/null || true)
+packages_changed_since_base() {
+    local candidates=()
+    if [[ -n "${GITHUB_BASE_REF:-}" ]]; then
+        candidates+=("${GITHUB_BASE_REF}")
+    fi
+    if [[ -n "${BRANCH:-}" ]]; then
+        candidates+=("${BRANCH}")
+    fi
+    candidates+=("${BASE_BRANCH}")
+
+    local seen=""
+    for branch in "${candidates[@]}"; do
+        if [[ -z "${branch}" || " ${seen} " == *" ${branch} "* ]]; then
+            continue
+        fi
+        seen+=" ${branch}"
+        for ref in "origin/${branch}" "${branch}"; do
+            if changed_files=$(git diff --name-only "${ref}...HEAD" -- packages/ 2>/dev/null); then
+                [[ -n "${changed_files}" ]]
+                return
+            fi
+        done
+    done
+    return 1
+}
+
+if packages_changed_since_base; then
+    print_info "packages/ changed in current checkout, using HEAD commit"
+    PACKAGES_COMMIT=$(git rev-parse HEAD)
+else
+    print_info "packages/ unchanged, searching for last packages/ modification in current state"
+    PACKAGES_COMMIT=$(git log -1 --format=%H -- packages/ 2>/dev/null || true)
+fi
 
 if [[ -z "$PACKAGES_COMMIT" ]]; then
-    print_error "Cannot find any commit that modified packages/"
+    print_error "Cannot find commit for paddlefleet_ops package version"
     exit 1
 fi
 

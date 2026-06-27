@@ -82,8 +82,6 @@ def _get_last_packages_commit(cwd: Path, base_branch: str) -> str:
     Always searches from the current branch or HEAD (detached), never uses other branches.
     base_branch is only used to determine version suffix (dev/post), not for search.
     """
-    current = _get_current_branch(cwd)
-
     result = subprocess.run(
         ["git", "log", "-1", "--format=%H", "--", "packages/"],
         cwd=cwd,
@@ -93,6 +91,42 @@ def _get_last_packages_commit(cwd: Path, base_branch: str) -> str:
         return result.stdout.strip().decode()
 
     raise RuntimeError("Cannot find any commit that modified packages/")
+
+
+def _packages_changed_since_base(cwd: Path, base_branch: str) -> bool:
+    """Return whether packages/ changed in the current PR/checkout.
+
+    CI checks out a PR merge commit. If packages/ changed relative to the base
+    branch, paddlefleet_ops should use the current HEAD commit; otherwise it
+    should keep the sparse-mapped packages commit.
+    """
+    candidates = []
+    if os.environ.get("GITHUB_BASE_REF"):
+        candidates.append(os.environ["GITHUB_BASE_REF"])
+    if os.environ.get("BRANCH"):
+        candidates.append(os.environ["BRANCH"])
+    candidates.append(base_branch)
+
+    seen = set()
+    for branch in candidates:
+        if not branch or branch in seen:
+            continue
+        seen.add(branch)
+        for ref in (f"origin/{branch}", branch):
+            result = subprocess.run(
+                ["git", "diff", "--name-only", f"{ref}...HEAD", "--", "packages/"],
+                cwd=cwd,
+                capture_output=True,
+            )
+            if result.returncode == 0:
+                return bool(result.stdout.strip())
+    return False
+
+
+def _select_packages_version_commit(cwd: Path, base_branch: str) -> str:
+    if _packages_changed_since_base(cwd, base_branch):
+        return get_git_commit_hash(cwd)
+    return _get_last_packages_commit(cwd, base_branch)
 
 
 def _generate_version_info():
@@ -116,11 +150,9 @@ def _generate_version_info():
     else:
         base_version = (_workspace_root / "version.txt").read_text().strip()
         base_branch = _find_base_branch(_workspace_root)
-        packages_commit = _get_last_packages_commit(
-            _workspace_root, base_branch
-        )
-        commit_short = packages_commit[:8]
-        # Use the commit's committer date (merge time) instead of current build time
+        git_commit_hash = _select_packages_version_commit(_workspace_root, base_branch)
+        commit_short = git_commit_hash[:8]
+        # Use the selected version commit's committer date (merge time) instead of current build time
         date_str = (
             subprocess.check_output(
                 [
@@ -129,7 +161,7 @@ def _generate_version_info():
                     "-1",
                     "--format=%cd",
                     "--date=format:%Y%m%d",
-                    packages_commit,
+                    git_commit_hash,
                 ],
                 cwd=_workspace_root,
             )
@@ -141,9 +173,8 @@ def _generate_version_info():
         else:
             final_version = f"{base_version}.dev{date_str}+{commit_short}"
 
-    git_commit_hash = _get_last_packages_commit(
-        _workspace_root, _find_base_branch(_workspace_root)
-    )
+    if os.environ.get("PADDLEFLEET_VERSION") is not None:
+        git_commit_hash = get_git_commit_hash(_workspace_root)
 
     with open(version_py, "w") as f:
         f.write(
