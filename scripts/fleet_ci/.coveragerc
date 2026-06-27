@@ -1,6 +1,7 @@
 [run]
 source = paddleformers
 parallel = true
+branch = false
 omit =
     */tests/*
     */examples/*

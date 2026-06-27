@@ -100,13 +100,19 @@ install_build_deps() {
 }
 
 configure_git_safe_directories() {
-    git config --global --add safe.directory "$(pwd)"
-    if [[ -f .gitmodules ]]; then
-        git config --file .gitmodules --get-regexp 'submodule\..*\.path' |
-            while read -r _ submodule_path; do
-                git config --global --add safe.directory "$(pwd)/${submodule_path}"
-            done
-    fi
+    local workspace_root
+    workspace_root=$(pwd)
+    git config --global --add safe.directory "${workspace_root}"
+
+    find "${workspace_root}" -name .gitmodules -print |
+        while read -r gitmodules_file; do
+            local module_root
+            module_root=$(dirname "${gitmodules_file}")
+            git config --file "${gitmodules_file}" --get-regexp 'submodule\..*\.path' |
+                while read -r _ submodule_path; do
+                    git config --global --add safe.directory "${module_root}/${submodule_path}"
+                done
+        done
 }
 
 install_local_ops_wheel() {
@@ -129,7 +135,7 @@ build_and_install_local_ops() {
 
     install_build_deps
     configure_git_safe_directories
-    git submodule update --init --recursive
+    git -c http.version=HTTP/1.1 submodule update --init --recursive --jobs 1
     rm -f dist/paddlefleet_ops-*.whl
     uv build --package paddlefleet-ops --wheel --out-dir dist --no-build-isolation -vv
     install_local_ops_wheel

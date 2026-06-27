@@ -171,11 +171,12 @@ jobs:
           tar -xf PaddleFormers.tar.gz --strip-components=1
           rm PaddleFormers.tar.gz
           git config --global --add safe.directory /paddle
-          if [ -f .gitmodules ]; then
-            git config --file .gitmodules --get-regexp 'submodule\..*\.path' | while read -r _ submodule_path; do
-              git config --global --add safe.directory "/paddle/${submodule_path}"
+          find /paddle -name .gitmodules -print | while read -r gitmodules_file; do
+            module_root=$(dirname "${gitmodules_file}")
+            git config --file "${gitmodules_file}" --get-regexp 'submodule\..*\.path' | while read -r _ submodule_path; do
+              git config --global --add safe.directory "${module_root}/${submodule_path}"
             done
-          fi
+          done
           git log -1
           export UV_HTTP_TIMEOUT=300
           echo "uv build"
@@ -341,6 +342,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -xce '
           pwd
+          rm -rf /paddle/coveragedata && mkdir -p /paddle/coveragedata
           export COVERAGE_FILE=/paddle/coveragedata/.coverage
           export COVERAGE_RCFILE=/paddle/scripts/fleet_ci/.coveragerc
           export WITH_COVERAGE=ON
@@ -363,7 +365,7 @@ jobs:
           export COVERAGE_RCFILE=/paddle/scripts/fleet_ci/.coveragerc
           export WITH_COVERAGE=ON
           ls -a /paddle/coveragedata/
-          coverage combine
+          coverage combine "$(dirname "$COVERAGE_FILE")"
           coverage report -m
           coverage xml -o /paddle/coveragedata/coverage.xml
           wget --no-proxy --no-check-certificate \
@@ -446,6 +448,7 @@ jobs:
         timeout-minutes: 90
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          rm -rf /paddle/coveragedata && mkdir -p /paddle/coveragedata
           export WITH_COVERAGE=ON
           export COVERAGE_FILE=/paddle/coveragedata/.coverage
           export COVERAGE_RCFILE=/paddle/scripts/fleet_ci/.coveragerc
@@ -466,7 +469,7 @@ jobs:
           export COVERAGE_RCFILE=/paddle/scripts/fleet_ci/.coveragerc
           export WITH_COVERAGE=ON
           ls -a /paddle/coveragedata/
-          coverage combine
+          coverage combine "$(dirname "$COVERAGE_FILE")"
           coverage xml -o /paddle/coveragedata/coverage.xml
           coverage report -m
           wget --no-proxy --no-check-certificate \
@@ -618,7 +621,7 @@ jobs:
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-single/.coverage
           export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           ls -a /workspace/PaddleFormers/coveragedata-single
-          coverage combine
+          coverage combine "$(dirname "$COVERAGE_FILE")"
           coverage xml -o /workspace/PaddleFormers/coveragedata-single/coverage.xml
           coverage report -m
           wget --no-proxy --no-check-certificate \
@@ -945,7 +948,7 @@ jobs:
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata-multi/.coverage
           export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           ls -a /workspace/PaddleFormers/coveragedata-multi
-          coverage combine
+          coverage combine "$(dirname "$COVERAGE_FILE")"
           coverage xml -o /workspace/PaddleFormers/coveragedata-multi/coverage.xml
           coverage report -m
           wget --no-proxy --no-check-certificate \
@@ -1189,7 +1192,7 @@ jobs:
           export COVERAGE_FILE=/workspace/PaddleFormers/coveragedata/.coverage
           export COVERAGE_RCFILE=/workspace/PaddleFormers/scripts/fleet_ci/.coveragerc
           ls -a /workspace/PaddleFormers/coveragedata
-          coverage combine
+          coverage combine "$(dirname "$COVERAGE_FILE")"
           coverage xml -o /workspace/PaddleFormers/coveragedata/coverage.xml
           coverage report -m
           wget --no-proxy --no-check-certificate \
