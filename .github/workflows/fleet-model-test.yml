@@ -12,7 +12,7 @@ env:
   COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
   work_dir: /paddle
   PADDLE_ROOT: /paddle
-  ci_scripts: /paddle/scripts/fleet_ci
+  ci_scripts: scripts/fleet_ci
   BRANCH: ${{ github.event.pull_request.base.ref || github.ref_name }}
   CI_name: test
   no_proxy: "bcebos.com,.bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
@@ -312,6 +312,8 @@ jobs:
           git config --global --add safe.directory /paddle
           git checkout ${BRANCH}
           pip install uv coverage==7.13.0 bce-python-sdk==0.8.74 wrapt pytest matplotlib einops
+          wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
           pip install dist/${{ needs.build_whl.outputs.root_whl_name }} --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
           pip install dist/${{ needs.build_whl.outputs.ops_whl_name }} --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
           echo "paddleformers commit:"
