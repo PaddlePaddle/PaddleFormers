@@ -70,7 +70,7 @@ exclude = ["examples*", "tests*", "applications*", "fast_generation*", "model_zo
 paddleformers = ["datasets/reader/data_info.json"]
 
 [tool.setuptools.dynamic]
-version = { attr = "paddleformers._build_version.__version__" }
+version = { attr = "_paddleformers_build_version.__version__" }
 
 [tool.uv]
 link-mode = "copy"

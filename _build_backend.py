@@ -21,7 +21,7 @@ from typing import Callable, TypeVar
 from setuptools import build_meta as orig
 
 _workspace_root = Path(__file__).parent.resolve()
-_build_version_py = _workspace_root / "paddleformers" / "_build_version.py"
+_build_version_py = _workspace_root / "_paddleformers_build_version.py"
 T = TypeVar("T")
 
 
@@ -99,11 +99,11 @@ def _with_temporary_build_version(func: Callable[..., T], *args, **kwargs) -> T:
 
 
 def get_requires_for_build_sdist(config_settings=None):
-    return orig.get_requires_for_build_sdist(config_settings)
+    return _with_temporary_build_version(orig.get_requires_for_build_sdist, config_settings)
 
 
 def get_requires_for_build_wheel(config_settings=None):
-    return orig.get_requires_for_build_wheel(config_settings)
+    return _with_temporary_build_version(orig.get_requires_for_build_wheel, config_settings)
 
 
 def prepare_metadata_for_build_wheel(metadata_directory, config_settings=None):
