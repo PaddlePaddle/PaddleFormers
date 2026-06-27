@@ -99,6 +99,16 @@ install_build_deps() {
         "${PIP_INSTALL_ARGS[@]}"
 }
 
+configure_git_safe_directories() {
+    git config --global --add safe.directory "$(pwd)"
+    if [[ -f .gitmodules ]]; then
+        git config --file .gitmodules --get-regexp 'submodule\..*\.path' |
+            while read -r _ submodule_path; do
+                git config --global --add safe.directory "$(pwd)/${submodule_path}"
+            done
+    fi
+}
+
 install_local_ops_wheel() {
     local cuda_suffix nvshmem_dep
     read -r cuda_suffix nvshmem_dep < <(cuda_info)
@@ -118,6 +128,7 @@ build_and_install_local_ops() {
     fi
 
     install_build_deps
+    configure_git_safe_directories
     git submodule update --init --recursive
     rm -f dist/paddlefleet_ops-*.whl
     uv build --package paddlefleet-ops --wheel --out-dir dist --no-build-isolation -vv

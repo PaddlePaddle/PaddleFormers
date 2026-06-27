@@ -22,6 +22,7 @@ from setuptools import build_meta as orig
 
 _workspace_root = Path(__file__).parent.resolve()
 _build_version_py = _workspace_root / "_paddleformers_build_version.py"
+_fleet_version_py = _workspace_root / "paddleformers" / "fleet" / "_version.py"
 T = TypeVar("T")
 
 
@@ -62,35 +63,65 @@ def _get_commit_date(commit: str) -> str:
     ).strip().decode("utf-8")
 
 
-def _generate_version() -> str:
+def _generate_version_info() -> tuple[str, str]:
     if os.environ.get("PADDLEFORMERS_VERSION") is not None:
-        return os.environ["PADDLEFORMERS_VERSION"]
+        commit = _get_last_commit() if _is_git_repo() else "unknown"
+        return os.environ["PADDLEFORMERS_VERSION"], commit
 
     base_version = "1.2.0"
     if not _is_git_repo():
-        return base_version
+        return base_version, "unknown"
 
     base_branch = _find_base_branch()
     commit = _get_last_commit()
     commit_short = commit[:8]
     date_str = _get_commit_date(commit)
     if base_branch.startswith("release/"):
-        return f"{base_version}.post{date_str}+{commit_short}"
-    return f"{base_version}.dev{date_str}+{commit_short}"
+        return f"{base_version}.post{date_str}+{commit_short}", commit
+    return f"{base_version}.dev{date_str}+{commit_short}", commit
+
+
+def _render_fleet_version_py(version: str, commit: str) -> str:
+    return (
+        "# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.\n"
+        "#\n"
+        "# Licensed under the Apache License, Version 2.0 (the \"License\");\n"
+        "# you may not use this file except in compliance with the License.\n"
+        "# You may obtain a copy of the License at\n"
+        "#\n"
+        "#     http://www.apache.org/licenses/LICENSE-2.0\n"
+        "#\n"
+        "# Unless required by applicable law or agreed to in writing, software\n"
+        "# distributed under the License is distributed on an \"AS IS\" BASIS,\n"
+        "# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n"
+        "# See the License for the specific language governing permissions and\n"
+        "# limitations under the License.\n"
+        "\n"
+        '"""Generated PaddleFormers Fleet version metadata."""\n'
+        "\n"
+        f'__version__ = "{version}"\n'
+        f'commit = "{commit}"\n'
+    )
 
 
 @contextmanager
 def _temporary_build_version():
-    original = _build_version_py.read_text() if _build_version_py.exists() else None
-    final_version = _generate_version()
+    build_original = _build_version_py.read_text() if _build_version_py.exists() else None
+    fleet_original = _fleet_version_py.read_text() if _fleet_version_py.exists() else None
+    version, commit = _generate_version_info()
     try:
-        _build_version_py.write_text(f'__version__ = "{final_version}"\n')
+        _build_version_py.write_text(f'__version__ = "{version}"\n')
+        _fleet_version_py.write_text(_render_fleet_version_py(version, commit))
         yield
     finally:
-        if original is None:
+        if build_original is None:
             _build_version_py.unlink(missing_ok=True)
         else:
-            _build_version_py.write_text(original)
+            _build_version_py.write_text(build_original)
+        if fleet_original is None:
+            _fleet_version_py.unlink(missing_ok=True)
+        else:
+            _fleet_version_py.write_text(fleet_original)
 
 
 def _with_temporary_build_version(func: Callable[..., T], *args, **kwargs) -> T:

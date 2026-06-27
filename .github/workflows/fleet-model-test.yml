@@ -170,7 +170,11 @@ jobs:
           tar -xf PaddleFormers.tar.gz --strip-components=1
           rm PaddleFormers.tar.gz
           git config --global --add safe.directory /paddle
-          git submodule foreach --recursive "git config --global --add safe.directory \$toplevel/\$sm_path"
+          if [ -f .gitmodules ]; then
+            git config --file .gitmodules --get-regexp 'submodule\..*\.path' | while read -r _ submodule_path; do
+              git config --global --add safe.directory "/paddle/${submodule_path}"
+            done
+          fi
           git log -1
           export UV_HTTP_TIMEOUT=300
           echo "uv build"
