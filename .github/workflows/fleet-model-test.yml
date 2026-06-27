@@ -388,6 +388,7 @@ jobs:
       group: Fleet-H-multi-card
     env:
       PIP_CACHE_DIR: /home/.cache/pip
+      CACHE_DIR: /home/.cache
       TASK: paddlefleet-CI-${{ github.event.pull_request.number }}-multi-card_test-release
     steps:
       - name: Check docker image and run container
