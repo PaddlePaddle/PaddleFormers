@@ -58,6 +58,15 @@ paddleformers-cli = "paddleformers.cli.cli:main"
 [project.urls]
 Homepage = "https://github.com/PaddlePaddle/PaddleFormers"
 
+[dependency-groups]
+paddlefleet-ops-build = [
+    "packaging",
+    "setuptools>=66.1.0",
+    "wheel",
+    "ninja==1.11.1.1",
+    "pybind11[global]>=2.13,<3",
+]
+
 [tool.setuptools]
 include-package-data = true
 license-files = ["LICENSE"]

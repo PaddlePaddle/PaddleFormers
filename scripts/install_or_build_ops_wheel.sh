@@ -91,12 +91,9 @@ install_build_deps() {
     read -r cuda_suffix nvshmem_dep < <(cuda_info)
     local cuda_index="https://www.paddlepaddle.org.cn/packages/nightly/${cuda_suffix}/"
 
+    uv pip install --group paddlefleet-ops-build \
+        "${PIP_INSTALL_ARGS[@]}"
     python -m pip install \
-        packaging \
-        "setuptools>=66.1.0" \
-        wheel \
-        "ninja==1.11.1.1" \
-        "pybind11[global]>=2.13,<3" \
         "${nvshmem_dep}" \
         --extra-index-url "${cuda_index}" \
         "${PIP_INSTALL_ARGS[@]}"
