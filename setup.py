@@ -203,9 +203,6 @@ try:
         setup_requires=["numpy"],
         install_requires=REQUIRED_PACKAGES,
         entry_points={"console_scripts": get_console_scripts()},
-        extras_require={
-            "paddlefleet": ["paddlefleet==0.3.0.post20260624+8a6649c3704"],
-        },
         python_requires=">=3.8",
         classifiers=[
             "Programming Language :: Python :: 3",

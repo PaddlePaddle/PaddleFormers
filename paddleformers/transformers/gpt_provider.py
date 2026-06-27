@@ -36,17 +36,17 @@ if not is_paddlefleet_available():
     )
 
 from paddle.distributed.fleet.meta_parallel import LayerSpec
-from paddlefleet.models.gpt import GPTModel as FleetGPTModel
-from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
+from paddleformers.fleet.models.gpt import GPTModel as FleetGPTModel
+from paddleformers.fleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
 
 try:
-    from paddlefleet.models.gpt.gpt_config import GPTConfig
+    from paddleformers.fleet.models.gpt.gpt_config import GPTConfig
 except ImportError:
-    from paddlefleet.transformer.transformer_config import (
+    from paddleformers.fleet.transformer.transformer_config import (
         TransformerConfig as GPTConfig,
     )
 
-from paddlefleet.gpt_builders import gpt_builder
+from paddleformers.fleet.gpt_builders import gpt_builder
 
 from paddleformers.transformers.model_utils import PretrainedModel
 
@@ -68,7 +68,7 @@ class GPTModel(FleetGPTModel, PretrainedModel):
 
     def get_input_embeddings(self):
         """获取 embedding.embed_tokens 层"""
-        from paddlefleet.models.gpt.gpt_embedding import GPTEmbedding
+        from paddleformers.fleet.models.gpt.gpt_embedding import GPTEmbedding
 
         for layer in self.run_function:
             if isinstance(layer, GPTEmbedding):
@@ -77,7 +77,7 @@ class GPTModel(FleetGPTModel, PretrainedModel):
 
     def get_lm_head(self):
         """获取 lm_head 层"""
-        from paddlefleet.models.gpt.lm_head import GPTLMHead
+        from paddleformers.fleet.models.gpt.lm_head import GPTLMHead
 
         for layer in self.run_function:
             if isinstance(layer, GPTLMHead):
@@ -166,7 +166,7 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
     # gradient_accumulation_fusion: bool = field(default_factory=fusions.can_enable_gradient_accumulation_fusion)
 
     # If True, restore the modelopt_state that contains quantization, sparsity, speculative decoding transformation state.
-    # When resuming modelopt_state, we also change the transformer_layer_spec to `paddlefleet.post_training.modelopt.gpt.model_specs` which is a combination of local spec + TEDotProductAttention.
+    # When resuming modelopt_state, we also change the transformer_layer_spec to `fleet.post_training.modelopt.gpt.model_specs` which is a combination of local spec + TEDotProductAttention.
     restore_modelopt_state: bool = False
 
     quantization_config = None
@@ -264,7 +264,7 @@ def mtp_block_spec(config: "GPTModelProvider", vp_stage: Optional[int] = None) -
         LayerSpec: The MTP module specification
     """
     if getattr(config, "mtp_num_layers", None):
-        from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_mtp_block_spec
+        from paddleformers.fleet.models.gpt.gpt_layer_specs import get_gpt_mtp_block_spec
 
         if isinstance(config.transformer_layer_spec, Callable):
             if "vp_stage" in inspect.signature(config.transformer_layer_spec).parameters:

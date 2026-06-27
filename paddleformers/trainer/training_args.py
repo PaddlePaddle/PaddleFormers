@@ -46,10 +46,10 @@ from .trainer_utils import (
     split_parallel_config,
 )
 
-# Conditionally import paddlefleet modules
+# Conditionally import paddleformers.fleet as fleet modules
 if is_paddlefleet_available():
-    from paddlefleet.parallel_state import get_tensor_model_parallel_group
-    from paddlefleet.training import initialize_fleet
+    from paddleformers.fleet.parallel_state import get_tensor_model_parallel_group
+    from paddleformers.fleet.training import initialize_fleet
 else:
 
     def get_tensor_model_parallel_group(*args, **kwargs):

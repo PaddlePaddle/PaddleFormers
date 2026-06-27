@@ -1,3 +1,33 @@
+[build-system]
+requires = ["setuptools>=66.1.0", "wheel", "numpy"]
+build-backend = "setuptools.build_meta"
+
+[tool.uv]
+link-mode = "copy"
+index-strategy = "unsafe-best-match"
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+paddlefleet-ops = { workspace = true }
+paddlepaddle-gpu = { index = "paddlepaddle-gpu" }
+paddlepaddle-xpu = { index = "paddlepaddle-xpu" }
+paddle-nvidia-nvshmem-cu12 = { index = "paddlepaddle-gpu" }
+paddle-nvidia-nvshmem-cu13 = { index = "paddlepaddle-cu13" }
+
+[[tool.uv.index]]
+name = "paddlepaddle-gpu"
+url = "https://www.paddlepaddle.org.cn/packages/nightly/cu129/"
+
+[[tool.uv.index]]
+name = "paddlepaddle-cu13"
+url = "https://www.paddlepaddle.org.cn/packages/nightly/cu130/"
+
+[[tool.uv.index]]
+name = "paddlepaddle-xpu"
+url = "https://www.paddlepaddle.org.cn/packages/nightly/xpu-p800/"
+
 [tool.isort]
 profile = 'black'
 known_third_party = ["paddle"]

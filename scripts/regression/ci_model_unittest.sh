@@ -39,7 +39,7 @@ init_env() {
 
     if echo "${FLAGS_enable_CE}" | grep -q "CE_Release"; then
         echo "CE_Release: install paddle release + fleet release + formers release"
-        bash ./scripts/regression/install_requirements.sh "${FLAGS_enable_CE}"
+        bash ./scripts/regression/install_requirements.sh "${FLAGS_enable_CE}" "${BRANCH}"
         cd ./scripts/regression
         wget https://paddle-qa.bj.bcebos.com/paddleformers/ce_release_config/config.yaml
         python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml --output config.yaml 2>&1 | tee /tmp/merge_output.txt
@@ -48,7 +48,7 @@ init_env() {
     elif echo "${FLAGS_enable_CE}" | grep -q "CE_Develop"; then
 
         echo "CE_Develop: install paddle develop + fleet develop + formers develop"
-        bash ./scripts/regression/install_requirements.sh "${FLAGS_enable_CE}"
+        bash ./scripts/regression/install_requirements.sh "${FLAGS_enable_CE}" "${BRANCH}"
         # donwload configs
         cd ./scripts/regression
         wget https://paddle-qa.bj.bcebos.com/paddleformers/ce_develop_config/config.yaml
@@ -56,7 +56,7 @@ init_env() {
         cd -
     elif [[ "${FLAGS_enable_CI}" == "True" ]] && [[ "${BRANCH}" == "develop" ]];then
         echo "CI: install paddle stable + fleet stable + develop formers"
-        bash ./scripts/regression/install_requirements.sh ${FLAGS_enable_CI}
+        bash ./scripts/regression/install_requirements.sh ${FLAGS_enable_CI} "${BRANCH}"
         # donwload configs
         cd ./scripts/regression
         wget https://paddle-qa.bj.bcebos.com/paddleformers/ci_develop_config/config.yaml
@@ -65,7 +65,7 @@ init_env() {
     else
         # CI Release
         echo "CI: install paddle stable + fleet stable + release formers"
-        bash ./scripts/regression/install_requirements.sh ${FLAGS_enable_CI}
+        bash ./scripts/regression/install_requirements.sh ${FLAGS_enable_CI} "${BRANCH}"
         cd ./scripts/regression
         wget https://paddle-qa.bj.bcebos.com/paddleformers/ci_release_config/config.yaml
         python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml --output config.yaml 2>&1 | tee /tmp/merge_output.txt
@@ -126,6 +126,12 @@ declare -a model_array=()
 for file_name in `git diff --numstat ${BRANCH} -- |awk '{print $NF}'`;do
     ext="${file_name##*.}"
     echo "file_name: ${file_name}, ext: ${file_name##*.}"
+
+    if [[ "$file_name" == packages/* ]]; then
+        models="all"
+        echo "packages/ changes detected, running all models"
+        return
+    fi
 
     # Check if file is in transformer directories (don't check file existence, rely on git diff)
     if [[ "$file_name" == "paddleformers/transformers/"* ]] || [[ "$file_name" == "tests/transformers/"* ]]; then

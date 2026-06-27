@@ -26,7 +26,7 @@ from paddleformers.utils import infohub
 from paddleformers.utils.import_utils import is_paddlefleet_available
 
 if is_paddlefleet_available():
-    from paddlefleet.models.gpt import GPTModel as FleetGPTModel
+    from paddleformers.fleet.models.gpt import GPTModel as FleetGPTModel
 else:
 
     class FleetGPTModel:

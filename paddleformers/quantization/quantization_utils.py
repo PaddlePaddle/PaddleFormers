@@ -42,16 +42,16 @@ from .quantization_linear import (
     dequant_weight,
 )
 
-# Conditionally import paddlefleet modules
+# Conditionally import paddleformers.fleet as fleet modules
 if is_paddlefleet_available():
-    from paddlefleet.parallel_state import (
+    from paddleformers.fleet.parallel_state import (
         get_tensor_model_parallel_group,
         get_tensor_model_parallel_world_size,
     )
-    from paddlefleet.tensor_parallel import (
+    from paddleformers.fleet.tensor_parallel import (
         ColumnParallelLinear as FleetColumnParallelLinear,
     )
-    from paddlefleet.tensor_parallel import RowParallelLinear as FleetRowParallelLinear
+    from paddleformers.fleet.tensor_parallel import RowParallelLinear as FleetRowParallelLinear
 
     from .quantization_linear import (
         FleetColumnParallelQuantizationLinear,

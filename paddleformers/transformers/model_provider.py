@@ -42,13 +42,13 @@ if not is_paddlefleet_available():
         "You can install it with: pip install paddlefleet"
     )
 
-from paddlefleet import parallel_state, tensor_parallel
-from paddlefleet.transformer.enums import ModelType
-from paddlefleet.transformer.layer import FleetLayer
-from paddlefleet.utils import get_model_config
+from paddleformers.fleet import parallel_state, tensor_parallel
+from paddleformers.fleet.transformer.enums import ModelType
+from paddleformers.fleet.transformer.layer import FleetLayer
+from paddleformers.fleet.utils import get_model_config
 
 try:
-    from paddlefleet.fp8_utils import correct_amax_history_if_needed
+    from paddleformers.fleet.fp8_utils import correct_amax_history_if_needed
 except ImportError:
     correct_amax_history_if_needed = None
 

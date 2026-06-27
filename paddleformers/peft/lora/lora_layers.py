@@ -49,9 +49,9 @@ from ...transformers.mc2_parallel_linear import (
 from ...utils.import_utils import is_paddlefleet_available
 from .utils import rng_ctx
 
-# Conditionally import paddlefleet modules
+# Conditionally import paddleformers.fleet as fleet modules
 if is_paddlefleet_available():
-    from paddlefleet.transformer.moe.moe_expert import BMMFunction, DeepGEMMBMMFunction
+    from paddleformers.fleet.transformer.moe.moe_expert import BMMFunction, DeepGEMMBMMFunction
 else:
     # Define mock objects or alternative implementations when paddlefleet is not available
     class BMMFunction:

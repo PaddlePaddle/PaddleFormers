@@ -40,7 +40,7 @@ def compare_version(v1, v2):
 
 
 def _check_dependency_versions():
-    for pkg_names, min_version in [(["paddlepaddle-gpu", "paddlepaddle"], "3.3"), (["paddlefleet"], "0.2")]:
+    for pkg_names, min_version in [(["paddlepaddle-gpu", "paddlepaddle"], "3.3")]:
         for pkg_name in pkg_names:
             try:
                 _version = metadata.version(pkg_name)

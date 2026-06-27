@@ -25,21 +25,21 @@ from paddle.distributed.fleet.meta_parallel import (
     NoPipelineParallel,
     build_spec_layer,
 )
-from paddlefleet.models.common.empty_layer import EmptyLayer
-from paddlefleet.models.gpt.gpt_embedding import GPTEmbedding
-from paddlefleet.models.gpt.gpt_layer_specs import (
+from paddleformers.fleet.models.common.empty_layer import EmptyLayer
+from paddleformers.fleet.models.gpt.gpt_embedding import GPTEmbedding
+from paddleformers.fleet.models.gpt.gpt_layer_specs import (
     get_gpt_layer_local_spec,
     get_gpt_mtp_layers_spec,
     get_gpt_spec,
 )
-from paddlefleet.models.gpt.lm_head import GPTLMHead
-from paddlefleet.models.qwen3_5.layer_specs import get_qwen3_5_vision_spec
-from paddlefleet.models.qwen3_5.qwen3_5_model import Qwen3_5RMSNorm, Qwen3_5RMSNormPipe
-from paddlefleet.tensor_parallel.mappings import scatter_to_sequence_parallel_region
-from paddlefleet.transformer.layer import FleetLayer
-from paddlefleet.transformer.paddle_norm import WrappedPaddleNorm, WrappedPaddleNormPipe
-from paddlefleet.transformer.transformer_config import TransformerConfig
-from paddlefleet.utils import get_tensor_model_parallel_group_if_none
+from paddleformers.fleet.models.gpt.lm_head import GPTLMHead
+from paddleformers.fleet.models.qwen3_5.layer_specs import get_qwen3_5_vision_spec
+from paddleformers.fleet.models.qwen3_5.qwen3_5_model import Qwen3_5RMSNorm, Qwen3_5RMSNormPipe
+from paddleformers.fleet.tensor_parallel.mappings import scatter_to_sequence_parallel_region
+from paddleformers.fleet.transformer.layer import FleetLayer
+from paddleformers.fleet.transformer.paddle_norm import WrappedPaddleNorm, WrappedPaddleNormPipe
+from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+from paddleformers.fleet.utils import get_tensor_model_parallel_group_if_none
 
 from ..gpt_provider import GPTModelProvider
 from ..model_utils import PretrainedModel
