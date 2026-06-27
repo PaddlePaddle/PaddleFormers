@@ -147,7 +147,20 @@ BASE_URL="https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_SUFFIX}/"
 EXTRA_INDEX_URL="--extra-index-url ${BASE_URL}"
 print_info "Extra index URL: $BASE_URL"
 
-# Install paddlefleet_ops using pip
+# Install or download paddlefleet_ops using pip
+if [[ -n "${PADDLEFLEET_OPS_DOWNLOAD_DIR:-}" ]]; then
+    print_info "Downloading paddlefleet_ops ${PACKAGE_VERSION} to ${PADDLEFLEET_OPS_DOWNLOAD_DIR}..."
+    mkdir -p "${PADDLEFLEET_OPS_DOWNLOAD_DIR}"
+    if ! pip download --no-deps --dest "${PADDLEFLEET_OPS_DOWNLOAD_DIR}" "paddlefleet_ops==${PACKAGE_VERSION}" ${EXTRA_INDEX_URL}; then
+        print_error "Failed to download paddlefleet_ops"
+        print_info "The wheel may not be available yet. Please ensure the build has completed."
+        print_info "You can manually check: ${BASE_URL}"
+        exit 1
+    fi
+    print_info "Successfully downloaded paddlefleet_ops ${PACKAGE_VERSION}"
+    exit 0
+fi
+
 print_info "Installing paddlefleet_ops ${PACKAGE_VERSION}..."
 if ! pip install "paddlefleet_ops==${PACKAGE_VERSION}" ${EXTRA_INDEX_URL}; then
     print_error "Failed to install paddlefleet_ops"

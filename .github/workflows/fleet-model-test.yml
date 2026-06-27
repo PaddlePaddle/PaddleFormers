@@ -25,6 +25,7 @@ env:
   CI_name: fleet-model-test
   no_proxy: "bcebos.com,.bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
   docker_image: "ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:ubuntu24-cuda129-py312-dev"
+  build_image: "ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle_manylinux_devel:cuda12.9-cudnn9.9-trt10.5-gcc11"
 
 defaults:
   run:
@@ -88,6 +89,153 @@ jobs:
             echo "is_md_only=false"
           fi
           echo "is_md_only: $(cat $GITHUB_OUTPUT | grep is_md_only || echo '未找到')"
+
+
+  check-packages-changes:
+    name: Check packages directory changes
+    needs: [check_documents_type, check-bypass]
+    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' && needs.check-bypass.outputs.can-skip == 'false' }}
+    runs-on:
+      group: APPROVAL
+    outputs:
+      packages_changed: ${{ steps.check.outputs.packages_changed }}
+    steps:
+      - name: Cleanup
+        run: |
+          rm -rf * .[^.]*
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check if packages directory changed
+        id: check
+        run: |
+          BRANCH=${{ github.event.pull_request.base.ref || github.ref_name }}
+          PACKAGES_CHANGED=$(git diff --name-only origin/${BRANCH}...HEAD | grep "^packages/" || true)
+          if [ -n "$PACKAGES_CHANGED" ]; then
+            echo "packages_changed=true" >> $GITHUB_OUTPUT
+            echo "packages_changed=true"
+          else
+            echo "packages_changed=false" >> $GITHUB_OUTPUT
+            echo "packages_changed=false"
+          fi
+
+  clone:
+    name: Clone PaddleFormers
+    needs: [check_documents_type, check-bypass]
+    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' && needs.check-bypass.outputs.can-skip == 'false' }}
+    uses: ./.github/workflows/_clone_linux.yml
+
+  build_whl:
+    name: Build PaddleFormers and paddlefleet_ops whl
+    needs: [check_documents_type, check-bypass, check-packages-changes, clone]
+    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' && needs.check-bypass.outputs.can-skip == 'false' }}
+    runs-on:
+      group: GZ_BD-CPU
+    outputs:
+      root_whl_name: ${{ steps.save_whl_names.outputs.root_whl }}
+      ops_whl_name: ${{ steps.save_whl_names.outputs.ops_whl }}
+      package_archive_url: ${{ steps.save_whl_names.outputs.package_archive_url }}
+    env:
+      TASK: formers-fleet-CI-${{ github.event.pull_request.number }}-build-whl
+      PIP_CACHE_DIR: /home/.cache/pip
+      CACHE_DIR: /home/.cache
+      CCACHE_DIR: "/home/data/shared/.ccache/l1"
+      CCACHE_SECONDARY_STORAGE: "file:///home/data/cfs/.ccache/l2"
+      CCACHE_MAXSIZE: 50G
+      CCACHE_LIMIT_MULTIPLE: 0.8
+      UV_HTTP_TIMEOUT: 600
+      no_proxy: ".bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
+    steps:
+      - name: Check docker image and run container
+        run: |
+          container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
+          echo "container_name=${container_name}" >> ${{ github.env }}
+          docker pull $build_image
+          docker run -d -t --name ${container_name} \
+            -v "/home/data/cfs:/home/data/cfs" \
+            -v "/home/data/cfs/.cache:/home/.cache" \
+            -v "/home/data/shared:/home/data/shared" \
+            -v ${{ github.workspace }}/../../..:/root \
+            -v ${{ github.workspace }}:/paddle \
+            -e no_proxy \
+            -e CACHE_DIR \
+            -e PIP_CACHE_DIR \
+            -e CCACHE_DIR \
+            -e CCACHE_SECONDARY_STORAGE \
+            -e CCACHE_MAXSIZE \
+            -e CCACHE_LIMIT_MULTIPLE \
+            -e UV_HTTP_TIMEOUT \
+            -e PR_ID \
+            -e COMMIT_ID \
+            -e PADDLE_CUDA_ARCH_LIST="8.0;9.0" \
+            -e BRANCH \
+            -e GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} \
+            -e GITHUB_REPO_NAME=${{ github.repository }} \
+            -w /paddle --network=host $build_image
+      - name: Build wheels and upload archive
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          rm -rf * .[^.]*
+          set -x
+          source /root/proxy
+          wget --tries=5 --no-proxy --no-check-certificate "${{ needs.clone.outputs.repo_archive_url }}" -O PaddleFormers.tar.gz
+          tar -xf PaddleFormers.tar.gz --strip-components=1
+          rm PaddleFormers.tar.gz
+          git config --global --add safe.directory /paddle
+          git submodule foreach --recursive "git config --global --add safe.directory \$toplevel/\$sm_path"
+          git log -1
+          export LD_LIBRARY_PATH=/opt/_internal/cpython-3.12.0/lib/:${LD_LIBRARY_PATH}
+          export PATH=/opt/_internal/cpython-3.12.0/bin/:${PATH}
+          export UV_PYTHON=3.12
+          export IS_NVIDIA=True
+          export UV_SKIP_WHEEL_FILENAME_CHECK=1
+          mkdir -p /root/.cache/pip
+          pip cache dir
+          pip install --upgrade pip
+          pip install uv coverage==7.13.0 bce-python-sdk==0.8.74 wrapt packaging "setuptools>=66.1.0" wheel "ninja==1.11.1.1" "pybind11[global]>=2.13,<3" "paddle-nvidia-nvshmem-cu12>=3.3.9,<3.5" --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          uv build --wheel --out-dir dist --clear -vv
+          ROOT_WHL=$(ls dist/paddleformers-*.whl | head -n1)
+          echo "ROOT_WHL=$(basename $ROOT_WHL)" > dist/whl_names.txt
+          if [[ "${{ needs.check-packages-changes.outputs.packages_changed }}" == "true" ]]; then
+            pip install dist/paddleformers-*.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
+            uv build --wheel --package paddlefleet-ops --out-dir dist --no-build-isolation -vv
+          else
+            PADDLEFLEET_OPS_DOWNLOAD_DIR=dist bash scripts/install_ops_wheel.sh
+          fi
+          OPS_WHL=$(ls dist/paddlefleet_ops-*.whl | head -n1)
+          echo "OPS_WHL=$(basename $OPS_WHL)" >> dist/whl_names.txt
+          ls -lh dist
+          cat dist/whl_names.txt
+          cd /
+          if [ ! -f "/bos/BosClient.py" ]; then
+            wget --no-proxy -O bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
+            mkdir -p bos
+            tar xf bos_new.tar.gz -C bos
+          fi
+          target_path="paddle-github-action/PaddleFormers/PR/${PR_ID}/${COMMIT_ID}/${BRANCH}"
+          tar zcf paddleformers.tar.gz paddle
+          python /bos/BosClient.py paddleformers.tar.gz ${target_path}
+          '
+      - name: Save wheel file names as outputs
+        id: save_whl_names
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c 'cat /paddle/dist/whl_names.txt'
+          ROOT_WHL=$(docker exec -t ${{ env.container_name }} /bin/bash -c 'grep ROOT_WHL /paddle/dist/whl_names.txt | cut -d= -f2' | tr -d '\r')
+          OPS_WHL=$(docker exec -t ${{ env.container_name }} /bin/bash -c 'grep OPS_WHL /paddle/dist/whl_names.txt | cut -d= -f2' | tr -d '\r')
+          PACKAGE_ARCHIVE_URL="https://paddle-github-action.bj.bcebos.com/PaddleFormers/PR/${PR_ID}/${COMMIT_ID}/${BRANCH}/paddleformers.tar.gz"
+          echo "ROOT_WHL: $ROOT_WHL"
+          echo "OPS_WHL: $OPS_WHL"
+          echo "PACKAGE_ARCHIVE_URL: $PACKAGE_ARCHIVE_URL"
+          echo "root_whl=$ROOT_WHL" >> $GITHUB_OUTPUT
+          echo "ops_whl=$OPS_WHL" >> $GITHUB_OUTPUT
+          echo "package_archive_url=$PACKAGE_ARCHIVE_URL" >> $GITHUB_OUTPUT
+      - name: Terminate and delete the container
+        if: ${{ always() }}
+        run: |
+          set +e
+          docker exec -t ${{ env.container_name }} /bin/bash -c 'rm -rf * .[^.]*'
+          docker rm -f ${{ env.container_name }}
     
   integration-test-H20-single-card:
     needs: [check_documents_type, check-bypass]
