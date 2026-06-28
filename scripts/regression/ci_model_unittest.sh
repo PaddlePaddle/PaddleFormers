@@ -127,12 +127,6 @@ for file_name in `git diff --numstat ${BRANCH} -- |awk '{print $NF}'`;do
     ext="${file_name##*.}"
     echo "file_name: ${file_name}, ext: ${file_name##*.}"
 
-    if [[ "$file_name" == packages/* ]]; then
-        models="all"
-        echo "packages/ changes detected, running all models"
-        return
-    fi
-
     # Check if file is in transformer directories (don't check file existence, rely on git diff)
     if [[ "$file_name" == "paddleformers/transformers/"* ]] || [[ "$file_name" == "tests/transformers/"* ]]; then
         model_name=$(echo "$file_name" | sed -n 's#.*paddleformers/transformers/\([^/]*\)/.*#\1#p')
