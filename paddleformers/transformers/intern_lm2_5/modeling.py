@@ -55,18 +55,20 @@ except:
     flash_attn_func, flash_attn_varlen_func = None, None
     has_flash_attn = False
 
-try:
-    from ..intern.bert_padding_delte import index_first_axis, pad_input, unpad_input
-except ImportError:
+def index_first_axis(tensor, index):
+    return tensor[index]
 
-    def index_first_axis(tensor, index):
-        return tensor[index]
 
-    def pad_input(hidden_states, attention_mask):
-        return hidden_states
+def pad_input(hidden_states, indices, batch, seqlen):
+    output = paddle.zeros([batch * seqlen, *hidden_states.shape[1:]], dtype=hidden_states.dtype)
+    output = paddle.scatter(output, indices, hidden_states)
+    return output.reshape([batch, seqlen, *hidden_states.shape[1:]])
 
-    def unpad_input(hidden_states, attention_mask):
-        return hidden_states, attention_mask
+
+def unpad_input(hidden_states, attention_mask):
+    indices, cu_seqlens, max_seqlen = _get_unpad_data(attention_mask)
+    hidden_states = index_first_axis(hidden_states.reshape([-1, *hidden_states.shape[2:]]), indices)
+    return hidden_states, indices, cu_seqlens, max_seqlen
 
 
 _CONFIG_FOR_DOC = "InternLM25Config"

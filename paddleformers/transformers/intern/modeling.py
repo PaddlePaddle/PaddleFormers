@@ -16,7 +16,7 @@
 InternLM2 Common Modeling
 
 This module provides unified model classes that automatically route to the correct
-implementation (2.0 or 2.5) based on the model configuration.
+implementation (2.5) based on the model configuration. InternLM2 2.0 is not yet supported.
 """
 
 from paddleformers.transformers.model_utils import PretrainedModel
@@ -29,7 +29,8 @@ class InternLM2PretrainedModel(PretrainedModel):
     """
     Base class for all InternLM2 models.
 
-    This is a proxy that routes to the actual implementation (2.0 or 2.5).
+    This is a proxy that routes to the actual implementation (2.5).
+    InternLM2 2.0 is not yet supported.
     """
 
     config_class = InternLM2Config
@@ -44,21 +45,15 @@ class InternLM2PretrainedModel(PretrainedModel):
     _supports_static_cache = True
 
     def __init__(self, config: InternLM2Config):
-        """
-        Initialize the appropriate model implementation based on config.
-
-        Args:
-            config: InternLM2Config with version detection
-        """
         super().__init__(config)
 
-        # Detect version and load appropriate implementation
         if config.is_version_2_5:
             logger.info("Detected InternLM2 2.5, loading 2.5 implementation")
             from ..intern_lm2_5 import modeling as _impl_module
         else:
-            logger.info("Detected InternLM2 2.0, loading 2.0 implementation")
-            from ..intern_lm2 import modeling as _impl_module
+            raise NotImplementedError(
+                "InternLM2 2.0 is not supported by this PaddleFormers implementation yet."
+            )
 
         _cls_name = self.__class__.__name__
         if not hasattr(_impl_module, _cls_name):
@@ -68,21 +63,18 @@ class InternLM2PretrainedModel(PretrainedModel):
             )
         ImplModel = getattr(_impl_module, _cls_name)
 
-        # Store the actual implementation
-        self._impl = ImplModel(config)
-
-        # Copy all attributes from implementation to self
-        # This makes the proxy transparent
-        for key, value in self._impl.__dict__.items():
-            if key not in self.__dict__:
-                self.__dict__[key] = value
+        impl = ImplModel(config)
+        self.add_sublayer("_impl", impl)
+        object.__setattr__(self, "_impl", impl)
 
     @classmethod
     def _gen_aoa_config(cls, config):
         if config.is_version_2_5:
             from ..intern_lm2_5 import modeling as impl_module
         else:
-            from ..intern_lm2 import modeling as impl_module
+            raise NotImplementedError(
+                "InternLM2 2.0 is not supported by this PaddleFormers implementation yet."
+            )
         impl_cls = getattr(impl_module, cls.__name__)
         return impl_cls._gen_aoa_config(config)
 
@@ -91,13 +83,26 @@ class InternLM2PretrainedModel(PretrainedModel):
         if config.is_version_2_5:
             from ..intern_lm2_5 import modeling as impl_module
         else:
-            from ..intern_lm2 import modeling as impl_module
+            raise NotImplementedError(
+                "InternLM2 2.0 is not supported by this PaddleFormers implementation yet."
+            )
         impl_cls = getattr(impl_module, cls.__name__)
         return impl_cls._gen_inv_aoa_config(config)
 
     def forward(self, *args, **kwargs):
-        """Forward to the actual implementation."""
         return self._impl(*args, **kwargs)
+
+    def state_dict(self, *args, **kwargs):
+        return self._impl.state_dict(*args, **kwargs)
+
+    def set_state_dict(self, state_dict, *args, **kwargs):
+        return self._impl.set_state_dict(state_dict, *args, **kwargs)
+
+    def parameters(self, include_sublayers=True):
+        return self._impl.parameters(include_sublayers=include_sublayers)
+
+    def named_parameters(self, prefix="", include_sublayers=True):
+        return self._impl.named_parameters(prefix=prefix, include_sublayers=include_sublayers)
 
     def __getattr__(self, name):
         """Proxy all attribute access to the actual implementation."""
@@ -119,7 +124,7 @@ class InternLM2Model(InternLM2PretrainedModel):
     """
     The bare InternLM2 Model outputting raw hidden-states without any specific head.
 
-    This is a proxy that routes to InternLM2 2.0 or 2.5 implementation.
+    This is a proxy that routes to InternLM2 2.5 implementation.
     """
 
     _auto_class = "AutoModel"
@@ -132,7 +137,7 @@ class InternLM2ForCausalLM(InternLM2PretrainedModel):
     """
     InternLM2 Model with a language modeling head on top.
 
-    This is a proxy that routes to InternLM2 2.0 or 2.5 implementation.
+    This is a proxy that routes to InternLM2 2.5 implementation.
     """
 
     _auto_class = "AutoModelForCausalLM"
@@ -146,7 +151,7 @@ class InternLM2ForSequenceClassification(InternLM2PretrainedModel):
     """
     InternLM2 Model with a sequence classification head on top.
 
-    This is a proxy that routes to InternLM2 2.0 or 2.5 implementation.
+    This is a proxy that routes to InternLM2 2.5 implementation.
     """
 
     _auto_class = "AutoModelForSequenceClassification"
@@ -159,7 +164,7 @@ class InternLM2ForQuestionAnswering(InternLM2PretrainedModel):
     """
     InternLM2 Model with a question answering head on top.
 
-    This is a proxy that routes to InternLM2 2.0 or 2.5 implementation.
+    This is a proxy that routes to InternLM2 2.5 implementation.
     """
 
     _auto_class = "AutoModelForQuestionAnswering"
@@ -172,7 +177,7 @@ class InternLM2ForTokenClassification(InternLM2PretrainedModel):
     """
     InternLM2 Model with a token classification head on top.
 
-    This is a proxy that routes to InternLM2 2.0 or 2.5 implementation.
+    This is a proxy that routes to InternLM2 2.5 implementation.
     """
 
     _auto_class = "AutoModelForTokenClassification"
