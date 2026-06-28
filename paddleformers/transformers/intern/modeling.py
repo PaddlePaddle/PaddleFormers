@@ -104,10 +104,18 @@ class InternLM2PretrainedModel(PretrainedModel):
     def named_parameters(self, prefix="", include_sublayers=True):
         return self._impl.named_parameters(prefix=prefix, include_sublayers=include_sublayers)
 
+    def sharded_state_dict(self, *args, **kwargs):
+        return self._impl.sharded_state_dict(*args, **kwargs)
+
     def __getattr__(self, name):
         """Proxy all attribute access to the actual implementation."""
-        if name.startswith("_") or name in ["_impl", "config"]:
+        if name in ["_impl", "config"]:
             return object.__getattribute__(self, name)
+        if name.startswith("_"):
+            try:
+                return object.__getattribute__(self, name)
+            except AttributeError:
+                return getattr(self._impl, name)
         return getattr(self._impl, name)
 
     def __setattr__(self, name, value):
@@ -145,6 +153,9 @@ class InternLM2ForCausalLM(InternLM2PretrainedModel):
 
     def __init__(self, config: InternLM2Config):
         super().__init__(config)
+
+    def prepare_inputs_for_generation(self, *args, **kwargs):
+        return self._impl.prepare_inputs_for_generation(*args, **kwargs)
 
 
 class InternLM2ForSequenceClassification(InternLM2PretrainedModel):
