@@ -1,4 +1,4 @@
-# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -732,8 +732,6 @@ class InternLM25Model(InternLM25PretrainedModel):
     def set_input_embeddings(self, value):
         self.tok_embeddings = value
 
-    # 原始代码使用 HF 的 self._gradient_checkpointing_func(decoder_layer.__call__, ...)
-    # PaddleFormers 使用 paddle.distributed.fleet.recompute.recompute 替代
     @paddle.jit.not_to_static
     def recompute_training_full(
         self,
@@ -828,8 +826,6 @@ class InternLM25Model(InternLM25PretrainedModel):
                 all_hidden_states += (hidden_states,)
 
             if self.enable_recompute and self.training:
-                # 原始HF代码: self._gradient_checkpointing_func(decoder_layer.__call__, ...)
-                # PaddleFormers使用paddle recompute替代
                 layer_outputs = self.recompute_training_full(
                     decoder_layer,
                     hidden_states,
