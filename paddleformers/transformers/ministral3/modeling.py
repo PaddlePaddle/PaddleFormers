@@ -573,8 +573,6 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
             files = os.listdir(model_path)
             if any(f.endswith(".pdparams") for f in files):
                 return True
-            if any(f.endswith(".safetensors") for f in files):
-                return False
             marker_file = os.path.join(model_path, ".paddleformers_converted")
             if os.path.exists(marker_file):
                 return True
@@ -589,6 +587,8 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
                             return True
                 except Exception:
                     pass
+            if any(f.endswith(".safetensors") for f in files):
+                return False
 
         return False
 
@@ -915,18 +915,19 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
         attention_mask=None,
         cache_position=None,
         logits_to_keep=None,
-        is_first_iteration=False,
         **kwargs,
     ):
-        model_inputs = {
-            "input_ids": input_ids,
-            "past_key_values": past_key_values,
-            "use_cache": kwargs.get("use_cache", True),
-        }
-        if is_first_iteration or not kwargs.get("use_cache", True):
+        model_inputs = super().prepare_inputs_for_generation(
+            input_ids,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            attention_mask=attention_mask,
+            cache_position=cache_position,
+            logits_to_keep=logits_to_keep,
+            **kwargs,
+        )
+        if past_key_values is not None:
+            model_inputs["pixel_values"] = None
+        elif pixel_values is not None:
             model_inputs["pixel_values"] = pixel_values
-        if attention_mask is not None:
-            model_inputs["attention_mask"] = attention_mask
-        if cache_position is not None:
-            model_inputs["cache_position"] = cache_position
         return model_inputs
