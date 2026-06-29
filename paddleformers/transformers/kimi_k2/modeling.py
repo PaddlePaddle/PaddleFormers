@@ -32,6 +32,11 @@ class KimiK2Provider(GPTModelProvider):
 
     def __post_init__(config):
         super().__post_init__()
+        if getattr(config, "use_accuracy_compatible", False):
+            # PaddleFleet still uses this internal flag for several
+            # precision-alignment branches. Keep the public PaddleFormers
+            # knob as the single user-facing gate.
+            config.gpt_model_use_experimental_version = True
 
 
 class KimiK2PretrainedModel(PretrainedModel):
