@@ -49,53 +49,53 @@ jobs:
             fi
           fi
 
-  upload-pr-ops:
-    name: Upload PR ops whl
-    needs: check-packages-changes
-    if: needs.check-packages-changes.outputs.packages_changed == 'true'
-    runs-on:
-      group: APPROVAL
-    env:
-      AK: ${{ secrets.BOS_CREDENTIAL_AK }}
-      SK: ${{ secrets.BOS_CREDENTIAL_SK }}
-    steps:
-      - name: Cleanup
-        run: |
-          rm -rf * .[^.]*
-      - name: Setup Python 3.10
-        uses: actions/setup-python@v3
-        with:
-          python-version: "3.10"
+#   upload-pr-ops:
+#     name: Upload PR ops whl
+#     needs: check-packages-changes
+#     if: needs.check-packages-changes.outputs.packages_changed == 'true'
+#     runs-on:
+#       group: APPROVAL
+#     env:
+#       AK: ${{ secrets.BOS_CREDENTIAL_AK }}
+#       SK: ${{ secrets.BOS_CREDENTIAL_SK }}
+#     steps:
+#       - name: Cleanup
+#         run: |
+#           rm -rf * .[^.]*
+#       - name: Setup Python 3.10
+#         uses: actions/setup-python@v3
+#         with:
+#           python-version: "3.10"
 
-      - name: Upload PR ops whl to paddle
-        run: |
-          set -x
-          wget --no-proxy https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
-          mkdir bos
-          tar -xf bos_new.tar.gz -C bos
-          pip install bce-python-sdk==0.8.74
-          response=$(curl -L \
-          -H "Accept: application/vnd.github+json" \
-          -H "Authorization: Bearer ${{ github.token }}" \
-          -H "X-GitHub-Api-Version: 2022-11-28" \
-          https://api.github.com/repos/PaddlePaddle/PaddleFormers/commits/${{ github.sha }}/pulls)
-          pr_number=$(echo $response | jq -r '.[0].url' | awk -F'/' '{print $NF}')
-          pr_last_commit=$(echo $response | jq -r '.[0].head.sha')
-          mkdir fleet-312 && cd fleet-312
-          wget https://paddle-github-action.cdn.bcebos.com/PaddleFormers/PR/${pr_number}/${pr_last_commit}/${BRANCH}/paddlefleet.tar.gz
-          tar -xf paddlefleet.tar.gz --strip-components=1
-          git config --global --add safe.directory .
-          cd dist
-          if [[ ${{ github.ref_name }} == "develop" ]]; then
-            mv paddlefleet_ops-*.whl paddlefleet_ops-0.0.0-cp312-cp312-linux_x86_64.whl
-            # python ../../bos/BosClient.py paddlefleet_ops-0.0.0-cp312-cp312-linux_x86_64.whl paddle-whl/nightly/cu129/paddlefleet-ops
-            WHEEL_FILE=paddlefleet_ops-0.0.0-cp312-cp312-linux_x86_64.whl
-          else
-            mv paddlefleet_ops-*.whl paddlefleet_ops-0.0.0.post-cp312-cp312-linux_x86_64.whl
-            # python ../../bos/BosClient.py paddlefleet_ops-0.0.0.post-cp312-cp312-linux_x86_64.whl paddle-whl/nightly/cu129/paddlefleet-ops
-            WHEEL_FILE=paddlefleet_ops-0.0.0.post-cp312-cp312-linux_x86_64.whl
-          fi
-          curl https://www.paddlepaddle.org.cn/inner/whl/update/path/new
+#       - name: Upload PR ops whl to paddle
+#         run: |
+#           set -x
+#           wget --no-proxy https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
+#           mkdir bos
+#           tar -xf bos_new.tar.gz -C bos
+#           pip install bce-python-sdk==0.8.74
+#           response=$(curl -L \
+#           -H "Accept: application/vnd.github+json" \
+#           -H "Authorization: Bearer ${{ github.token }}" \
+#           -H "X-GitHub-Api-Version: 2022-11-28" \
+#           https://api.github.com/repos/PaddlePaddle/PaddleFormers/commits/${{ github.sha }}/pulls)
+#           pr_number=$(echo $response | jq -r '.[0].url' | awk -F'/' '{print $NF}')
+#           pr_last_commit=$(echo $response | jq -r '.[0].head.sha')
+#           mkdir fleet-312 && cd fleet-312
+#           wget https://paddle-github-action.cdn.bcebos.com/PaddleFormers/PR/${pr_number}/${pr_last_commit}/${BRANCH}/paddlefleet.tar.gz
+#           tar -xf paddlefleet.tar.gz --strip-components=1
+#           git config --global --add safe.directory .
+#           cd dist
+#           if [[ ${{ github.ref_name }} == "develop" ]]; then
+#             mv paddlefleet_ops-*.whl paddlefleet_ops-0.0.0-cp312-cp312-linux_x86_64.whl
+#             # python ../../bos/BosClient.py paddlefleet_ops-0.0.0-cp312-cp312-linux_x86_64.whl paddle-whl/nightly/cu129/paddlefleet-ops
+#             WHEEL_FILE=paddlefleet_ops-0.0.0-cp312-cp312-linux_x86_64.whl
+#           else
+#             mv paddlefleet_ops-*.whl paddlefleet_ops-0.0.0.post-cp312-cp312-linux_x86_64.whl
+#             # python ../../bos/BosClient.py paddlefleet_ops-0.0.0.post-cp312-cp312-linux_x86_64.whl paddle-whl/nightly/cu129/paddlefleet-ops
+#             WHEEL_FILE=paddlefleet_ops-0.0.0.post-cp312-cp312-linux_x86_64.whl
+#           fi
+#           curl https://www.paddlepaddle.org.cn/inner/whl/update/path/new
 
   clone:
     name: Clone PaddleFormers
