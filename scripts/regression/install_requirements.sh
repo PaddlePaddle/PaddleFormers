@@ -46,7 +46,7 @@ install_requirements() {
         #formers
         python -m pip install uv
         uv build --wheel --out-dir dist --clear -vv
-        python -m pip install "$(ls -t dist/paddleformers-*.whl | head -1)"
+        uv pip install "$(ls -t dist/paddleformers-*.whl | head -1)"
          #paddle
         python -m pip uninstall paddlepaddle-gpu -y
         wget -q https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda130-Cudnn913-Trt1013-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp313-cp313-linux_x86_64.whl
@@ -57,7 +57,7 @@ install_requirements() {
         #formers
         python -m pip install uv
         uv build --wheel --out-dir dist --clear -vv
-        python -m pip install "$(ls -t dist/paddleformers-*.whl | head -1)"
+        uv pip install "$(ls -t dist/paddleformers-*.whl | head -1)"
             #paddle
         python -m pip uninstall paddlepaddle-gpu -y
         wget -q https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda130-Cudnn913-Trt1013-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl
