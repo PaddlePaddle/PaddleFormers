@@ -122,6 +122,7 @@ jobs:
             -e PYTHON_VERSION \
             -e PADDLE_URL \
             -e DATE \
+            -e AGILE_COMPILE_BRANCH \
             -e GITHUB_HEAD_REF="${{ github.head_ref }}" \
             -e GITHUB_REPO_NAME="${{ github.repository }}" \
             -e GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
@@ -303,6 +304,7 @@ jobs:
             -e PYTHON_VERSION \
             -e PADDLE_URL \
             -e DATE \
+            -e AGILE_COMPILE_BRANCH \
             -e GITHUB_SHA="${{ github.event.pull_request.head.sha }}" \
             -e GITHUB_HEAD_REF="${{ github.head_ref }}" \
             -e GITHUB_REPO_NAME="${{ github.repository }}" \
@@ -340,8 +342,11 @@ jobs:
           git config pull.rebase false
           git submodule update --init --recursive
           pip install colorlog>=6.10.1
-          python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
-          pip install -e . --no-build-isolation --index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          python -m pip install uv
+          uv build --wheel --out-dir dist --clear -vv
+          python -m pip install "$(ls -t dist/paddleformers-*.whl | head -1)" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          bash scripts/install_or_build_ops_wheel.sh ${AGILE_COMPILE_BRANCH:-HEAD^} --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+
           if [ "${use_release}" == "true" ]; then
             echo "Using pre-built paddle package from develop branch."
             pip install ${paddle_url} --index-url=https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --force-reinstall --no-cache-dir
@@ -479,6 +484,7 @@ jobs:
             -e PADDLE_URL \
             -e BASE_NAME \
             -e DATE \
+            -e AGILE_COMPILE_BRANCH \
             -e GITHUB_SHA="${{ github.event.pull_request.head.sha }}" \
             -e GITHUB_HEAD_REF="${{ github.head_ref }}" \
             -e GITHUB_REPO_NAME="${{ github.repository }}" \
@@ -513,8 +519,10 @@ jobs:
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
           pip install colorlog>=6.10.1
-          python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
-          pip install -e . --no-build-isolation --index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          python -m pip install uv
+          uv build --wheel --out-dir dist --clear -vv
+          python -m pip install "$(ls -t dist/paddleformers-*.whl | head -1)" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          bash scripts/install_or_build_ops_wheel.sh ${AGILE_COMPILE_BRANCH:-HEAD^} --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
           wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
           chmod +x /usr/local/bin/yq
           # formers_install
@@ -727,6 +735,7 @@ jobs:
             -e PADDLE_URL \
             -e BASE_NAME \
             -e DATE \
+            -e AGILE_COMPILE_BRANCH \
             -e GITHUB_SHA="${{ github.event.pull_request.head.sha }}" \
             -e GITHUB_HEAD_REF="${{ github.head_ref }}" \
             -e GITHUB_REPO_NAME="${{ github.repository }}" \
@@ -760,8 +769,10 @@ jobs:
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
           pip install colorlog>=6.10.1
-          python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/$CUDA_VERSION/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
-          pip install -e . --no-build-isolation --index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          python -m pip install uv
+          uv build --wheel --out-dir dist --clear -vv
+          python -m pip install "$(ls -t dist/paddleformers-*.whl | head -1)" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          bash scripts/install_or_build_ops_wheel.sh ${AGILE_COMPILE_BRANCH:-HEAD^} --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
           wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
           chmod +x /usr/local/bin/yq
           # formers_install
@@ -1229,6 +1240,7 @@ jobs:
             -e PADDLE_URL \
             -e BASE_NAME \
             -e DATE \
+            -e AGILE_COMPILE_BRANCH \
             -e GITHUB_SHA="${{ github.event.pull_request.head.sha }}" \
             -e GITHUB_HEAD_REF="${{ github.head_ref }}" \
             -e GITHUB_REPO_NAME="${{ github.repository }}" \
@@ -1264,8 +1276,10 @@ jobs:
           pip install colorlog>=6.10.1
           pip uninstall paddleformers -y
           pip install colorlog>=6.10.1
-          python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
-          pip install -e . --no-build-isolation --index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          python -m pip install uv
+          uv build --wheel --out-dir dist --clear -vv
+          python -m pip install "$(ls -t dist/paddleformers-*.whl | head -1)" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          bash scripts/install_or_build_ops_wheel.sh ${AGILE_COMPILE_BRANCH:-HEAD^} --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
           wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
           chmod +x /usr/local/bin/yq
           # formers_install

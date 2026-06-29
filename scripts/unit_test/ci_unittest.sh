@@ -111,25 +111,25 @@ print_info() {
     fi
 }
 
-# get_diff_TO_case(){
-# export FLAGS_enable_CI=false
-# if [ -z "${AGILE_COMPILE_BRANCH}" ]; then
-#     # Scheduled Regression Test
-#     FLAGS_enable_CI=true
-# else
-#     for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF}'`;do
-#         ext="${file_name##*.}"
-#         echo "file_name: ${file_name}, ext: ${file_name##*.}"
-#         [[ -f "$file_name" ]] || continue
-#         if [[ "$ext" == "py" ]] || [[ "$ext" == "yml" ]] || [[ "$file_name" == "requirements.txt" ]] || [[ "$file_name" == packages/* ]]; then
-#             FLAGS_enable_CI=true
-#             break
-#         fi
-#     done
-# fi
-# }
+get_diff_TO_case(){
+export FLAGS_enable_CI=false
+if [ -z "${AGILE_COMPILE_BRANCH}" ]; then
+    # Scheduled Regression Test
+    FLAGS_enable_CI=true
+else
+    for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF}'`;do
+        ext="${file_name##*.}"
+        echo "file_name: ${file_name}, ext: ${file_name##*.}"
+        [[ -f "$file_name" ]] || continue
+        if [[ "$ext" == "py" ]] || [[ "$ext" == "yml" ]] || [[ "$file_name" == "requirements.txt" ]] || [[ "$file_name" == packages/* ]]; then
+            FLAGS_enable_CI=true
+            break
+        fi
+    done
+fi
+}
 
-# get_diff_TO_case
+get_diff_TO_case
 set_env
 if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     install_requirements
