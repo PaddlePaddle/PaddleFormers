@@ -171,7 +171,7 @@ jobs:
           export PATH=/opt/_internal/cpython-${{ matrix.python_version }}.0/bin/:${PATH}
           source /root/proxy
           set -e
-          wget --tries=5 --no-proxy https://paddle-github-action.bj.bcebos.com/PaddleFormers/${BRANCH}/${PR_ID}/${COMMIT_ID}/PaddleFormers.tar.gz --no-check-certificate
+          wget --tries=5 --no-proxy https://paddle-github-action.cdn.bcebos.com/PaddleFormers/${BRANCH}/${PR_ID}/${COMMIT_ID}/PaddleFormers.tar.gz --no-check-certificate
           echo "Extracting PaddleFormers.tar.gz"
           tar -xf PaddleFormers.tar.gz --strip-components=1
           rm PaddleFormers.tar.gz
@@ -334,7 +334,7 @@ jobs:
           export PATH=/opt/_internal/cpython-${{ matrix.python_version }}.0/bin/:${PATH}
           source /root/proxy
           set -e
-          wget --tries=5 --no-proxy https://paddle-github-action.bj.bcebos.com/PaddleFormers/${BRANCH}/${PR_ID}/${COMMIT_ID}/PaddleFormers.tar.gz --no-check-certificate
+          wget --tries=5 --no-proxy https://paddle-github-action.cdn.bcebos.com/PaddleFormers/${BRANCH}/${PR_ID}/${COMMIT_ID}/PaddleFormers.tar.gz --no-check-certificate
           echo "Extracting PaddleFormers.tar.gz"
           tar -xf PaddleFormers.tar.gz --strip-components=1
           rm PaddleFormers.tar.gz
@@ -356,6 +356,7 @@ jobs:
           export PATH=/opt/_internal/cpython-${{ matrix.python_version }}.0/bin/:${PATH}
           export UV_PYTHON=${{ matrix.python_version }}
           source /root/proxy
+          export IS_NVIDIA=True
           uv cache clean paddlepaddle-gpu
           pip install packaging "setuptools>=66.1.0" wheel "ninja==1.11.1.1" "pybind11[global]>=2.13,<3" --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/${{ matrix.cuda.bos_CUDA }}/
           if [[ ${{ matrix.cuda.bos_CUDA }} == "cu129" ]]; then
@@ -461,7 +462,7 @@ jobs:
           docker exec -t ${{ env.container_name }} /bin/bash -xc '
           rm -rf * .[^.]*
           source /root/proxy
-          wget --tries=5 --no-proxy https://paddle-github-action.bj.bcebos.com/PaddleFormers/${BRANCH}/${PR_ID}/${COMMIT_ID}/PaddleFormers.tar.gz --no-check-certificate
+          wget --tries=5 --no-proxy https://paddle-github-action.cdn.bcebos.com/PaddleFormers/${BRANCH}/${PR_ID}/${COMMIT_ID}/PaddleFormers.tar.gz --no-check-certificate
           echo "Extracting PaddleFormers.tar.gz"
           tar -xf PaddleFormers.tar.gz --strip-components=1
           rm PaddleFormers.tar.gz
