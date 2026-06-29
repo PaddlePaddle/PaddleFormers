@@ -13,8 +13,8 @@ on:
 permissions: read-all
 
 env:
-  PR_ID: "0"
-  COMMIT_ID: ${{ github.sha }}
+  PR_ID: ${{ github.event.pull_request.number || '0' }}
+  COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
   BRANCH: ${{ github.ref_name }}
 
 defaults:
@@ -103,7 +103,7 @@ jobs:
     if: needs.check-packages-changes.outputs.packages_changed == 'true'
     uses: ./.github/workflows/_clone.yml
     with:
-      clone_dir: $BRANCH
+      clone_dir: ${{ env.BRANCH }}
       ref: ${{ github.event.pull_request.base.ref }}
 
   publish-ops-wheel:
