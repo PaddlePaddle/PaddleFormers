@@ -25,6 +25,14 @@ from paddleformers.transformers import (
     InternLM25ForCausalLM,
     InternLM25Tokenizer,
 )
+from paddleformers.transformers.intern.configuration import InternLM2Config
+from paddleformers.transformers.intern.modeling import (
+    InternLM2ForCausalLM,
+    InternLM2ForQuestionAnswering,
+    InternLM2ForSequenceClassification,
+    InternLM2ForTokenClassification,
+    InternLM2Model,
+)
 from tests.testing_utils import require_package, slow
 
 # https://www.modelscope.cn/models/Shanghai_AI_Laboratory/internlm2_5-1_8b-chat/summary
@@ -304,6 +312,123 @@ class InternLM25CompatibilityTest(unittest.TestCase):
         self.assertTrue(
             np.allclose(paddle_out, torch_out, atol=1e-2, rtol=1e-2), f"Max diff {max_diff} exceeds tolerance"
         )
+
+
+def _make_internlm2_config(**overrides):
+    config = InternLM2Config(
+        vocab_size=1000,
+        hidden_size=128,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=4,
+        intermediate_size=256,
+        max_position_embeddings=64,
+        use_cache=False,
+        **overrides,
+    )
+    config.auto_map = {"AutoModelForSequenceClassification": "intern_lm2_5"}
+    return config
+
+
+class InternLM2ProxyEmbeddingTest(unittest.TestCase):
+    def setUp(self):
+        self.config = _make_internlm2_config()
+
+    def _get_new_embedding(self, vocab_size=2000):
+        return paddle.nn.Embedding(vocab_size, self.config.hidden_size)
+
+    def test_model_get_input_embeddings(self):
+        model = InternLM2Model(self.config)
+        emb = model.get_input_embeddings()
+        self.assertIsNotNone(emb)
+        self.assertEqual(emb.weight.shape, [self.config.vocab_size, self.config.hidden_size])
+
+    def test_model_set_input_embeddings(self):
+        model = InternLM2Model(self.config)
+        new_emb = self._get_new_embedding()
+        model.set_input_embeddings(new_emb)
+        emb = model.get_input_embeddings()
+        self.assertIs(emb, new_emb)
+        self.assertEqual(emb.weight.shape, [2000, self.config.hidden_size])
+
+    def test_for_causal_lm_get_input_embeddings(self):
+        model = InternLM2ForCausalLM(self.config)
+        emb = model.get_input_embeddings()
+        self.assertIsNotNone(emb)
+        self.assertEqual(emb.weight.shape, [self.config.vocab_size, self.config.hidden_size])
+
+    def test_for_causal_lm_set_input_embeddings(self):
+        model = InternLM2ForCausalLM(self.config)
+        new_emb = self._get_new_embedding()
+        model.set_input_embeddings(new_emb)
+        emb = model.get_input_embeddings()
+        self.assertIs(emb, new_emb)
+
+    def test_for_causal_lm_get_output_embeddings(self):
+        model = InternLM2ForCausalLM(self.config)
+        out = model.get_output_embeddings()
+        self.assertIsNotNone(out)
+        self.assertEqual(out.weight.shape, [self.config.hidden_size, self.config.vocab_size])
+
+    def test_for_causal_lm_set_output_embeddings(self):
+        model = InternLM2ForCausalLM(self.config)
+        new_head = paddle.nn.Linear(self.config.hidden_size, 3000, bias_attr=False)
+        model.set_output_embeddings(new_head)
+        out = model.get_output_embeddings()
+        self.assertIs(out, new_head)
+        self.assertEqual(out.weight.shape, [self.config.hidden_size, 3000])
+
+    def test_for_sequence_classification_get_input_embeddings(self):
+        config = _make_internlm2_config(num_labels=2)
+        model = InternLM2ForSequenceClassification(config)
+        emb = model.get_input_embeddings()
+        self.assertIsNotNone(emb)
+        self.assertEqual(emb.weight.shape, [config.vocab_size, config.hidden_size])
+
+    def test_for_sequence_classification_set_input_embeddings(self):
+        config = _make_internlm2_config(num_labels=2)
+        model = InternLM2ForSequenceClassification(config)
+        new_emb = self._get_new_embedding()
+        model.set_input_embeddings(new_emb)
+        emb = model.get_input_embeddings()
+        self.assertIs(emb, new_emb)
+
+    def test_for_question_answering_get_input_embeddings(self):
+        config = _make_internlm2_config(num_labels=2)
+        model = InternLM2ForQuestionAnswering(config)
+        emb = model.get_input_embeddings()
+        self.assertIsNotNone(emb)
+        self.assertEqual(emb.weight.shape, [config.vocab_size, config.hidden_size])
+
+    def test_for_question_answering_set_input_embeddings(self):
+        config = _make_internlm2_config(num_labels=2)
+        model = InternLM2ForQuestionAnswering(config)
+        new_emb = self._get_new_embedding()
+        model.set_input_embeddings(new_emb)
+        emb = model.get_input_embeddings()
+        self.assertIs(emb, new_emb)
+
+    def test_for_token_classification_get_input_embeddings(self):
+        config = _make_internlm2_config(num_labels=5)
+        model = InternLM2ForTokenClassification(config)
+        emb = model.get_input_embeddings()
+        self.assertIsNotNone(emb)
+        self.assertEqual(emb.weight.shape, [config.vocab_size, config.hidden_size])
+
+    def test_for_token_classification_set_input_embeddings(self):
+        config = _make_internlm2_config(num_labels=5)
+        model = InternLM2ForTokenClassification(config)
+        new_emb = self._get_new_embedding()
+        model.set_input_embeddings(new_emb)
+        emb = model.get_input_embeddings()
+        self.assertIs(emb, new_emb)
+
+    def test_resize_token_embeddings_on_proxy(self):
+        model = InternLM2ForCausalLM(self.config)
+        new_vocab = 2000
+        model.resize_token_embeddings(new_vocab)
+        emb = model.get_input_embeddings()
+        self.assertEqual(emb.weight.shape[0], new_vocab)
 
 
 if __name__ == "__main__":

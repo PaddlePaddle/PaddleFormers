@@ -107,6 +107,12 @@ class InternLM2PretrainedModel(PretrainedModel):
     def sharded_state_dict(self, *args, **kwargs):
         return self._impl.sharded_state_dict(*args, **kwargs)
 
+    def get_input_embeddings(self):
+        return self._impl.get_input_embeddings()
+
+    def set_input_embeddings(self, value):
+        return self._impl.set_input_embeddings(value)
+
     def __getattr__(self, name):
         """Proxy all attribute access to the actual implementation."""
         if name in ["_impl", "config"]:
@@ -156,6 +162,12 @@ class InternLM2ForCausalLM(InternLM2PretrainedModel):
 
     def prepare_inputs_for_generation(self, *args, **kwargs):
         return self._impl.prepare_inputs_for_generation(*args, **kwargs)
+
+    def get_output_embeddings(self):
+        return self._impl.get_output_embeddings()
+
+    def set_output_embeddings(self, new_embeddings):
+        return self._impl.set_output_embeddings(new_embeddings)
 
 
 class InternLM2ForSequenceClassification(InternLM2PretrainedModel):
