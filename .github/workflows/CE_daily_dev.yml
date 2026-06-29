@@ -165,7 +165,8 @@ jobs:
           python -m pip install uv
           uv build --wheel --out-dir dist --clear -vv
           python -m pip install "$(ls -t dist/paddleformers-*.whl | head -1)" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
-          bash scripts/install_or_build_ops_wheel.sh ${AGILE_COMPILE_BRANCH:-HEAD^} --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          PY_SHORT=${PYTHON_VERSION//./}
+          pip install "https://paddle-github-action.bj.bcebos.com/PaddleFormers/develop/latest/${CUDA_VERSION}/paddle-develop/paddlefleet_ops-0.0.0-cp${PY_SHORT}-cp${PY_SHORT}-linux_x86_64.whl" --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/
 
           if [ "${use_release}" == "true" ]; then
             echo "Using pre-built paddle package from develop branch."
@@ -349,7 +350,8 @@ jobs:
           python -m pip install uv
           uv build --wheel --out-dir dist --clear -vv
           python -m pip install "$(ls -t dist/paddleformers-*.whl | head -1)" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
-          bash scripts/install_or_build_ops_wheel.sh ${AGILE_COMPILE_BRANCH:-HEAD^} --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          PY_SHORT=${PYTHON_VERSION//./}
+          pip install "https://paddle-github-action.bj.bcebos.com/PaddleFormers/develop/latest/${CUDA_VERSION}/paddle-develop/paddlefleet_ops-0.0.0-cp${PY_SHORT}-cp${PY_SHORT}-linux_x86_64.whl" --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/
 
           if [ "${use_release}" == "true" ]; then
             echo "Using pre-built paddle package from develop branch."
@@ -526,7 +528,8 @@ jobs:
           python -m pip install uv
           uv build --wheel --out-dir dist --clear -vv
           python -m pip install "$(ls -t dist/paddleformers-*.whl | head -1)" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
-          bash scripts/install_or_build_ops_wheel.sh ${AGILE_COMPILE_BRANCH:-HEAD^} --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          PY_SHORT=${PYTHON_VERSION//./}
+          pip install "https://paddle-github-action.bj.bcebos.com/PaddleFormers/develop/latest/${CUDA_VERSION}/paddle-develop/paddlefleet_ops-0.0.0-cp${PY_SHORT}-cp${PY_SHORT}-linux_x86_64.whl" --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/
           wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
           chmod +x /usr/local/bin/yq
           # formers_install
@@ -776,7 +779,8 @@ jobs:
           python -m pip install uv
           uv build --wheel --out-dir dist --clear -vv
           python -m pip install "$(ls -t dist/paddleformers-*.whl | head -1)" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
-          bash scripts/install_or_build_ops_wheel.sh ${AGILE_COMPILE_BRANCH:-HEAD^} --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          PY_SHORT=${PYTHON_VERSION//./}
+          pip install "https://paddle-github-action.bj.bcebos.com/PaddleFormers/develop/latest/${CUDA_VERSION}/paddle-develop/paddlefleet_ops-0.0.0-cp${PY_SHORT}-cp${PY_SHORT}-linux_x86_64.whl" --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/
           wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
           chmod +x /usr/local/bin/yq
           # formers_install
@@ -1283,7 +1287,8 @@ jobs:
           python -m pip install uv
           uv build --wheel --out-dir dist --clear -vv
           python -m pip install "$(ls -t dist/paddleformers-*.whl | head -1)" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
-          bash scripts/install_or_build_ops_wheel.sh ${AGILE_COMPILE_BRANCH:-HEAD^} --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          PY_SHORT=${PYTHON_VERSION//./}
+          pip install "https://paddle-github-action.bj.bcebos.com/PaddleFormers/develop/latest/${CUDA_VERSION}/paddle-develop/paddlefleet_ops-0.0.0-cp${PY_SHORT}-cp${PY_SHORT}-linux_x86_64.whl" --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/
           wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
           chmod +x /usr/local/bin/yq
           # formers_install
