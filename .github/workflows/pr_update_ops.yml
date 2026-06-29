@@ -103,7 +103,7 @@ jobs:
     if: needs.check-packages-changes.outputs.packages_changed == 'true'
     uses: ./.github/workflows/_clone.yml
     with:
-      clone_dir: ${{ env.BRANCH }}
+      clone_dir: ${{ github.event.pull_request.base.ref || github.ref_name }}
       ref: ${{ github.event.pull_request.base.ref }}
 
   publish-ops-wheel:
