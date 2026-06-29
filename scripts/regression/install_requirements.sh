@@ -52,7 +52,7 @@ install_requirements() {
         wget -q https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda130-Cudnn913-Trt1013-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp313-cp313-linux_x86_64.whl
         python -m pip install paddlepaddle_gpu-0.0.0-cp313-cp313-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/
         #paddlefleet_ops
-        install_ops_wheel_dev
+        install_ops_wheel_release
     elif [[ "$ce_branch" == "CE_Develop_cu130_py312" ]]; then # nightly regerssion
         #formers
         python -m pip install uv
