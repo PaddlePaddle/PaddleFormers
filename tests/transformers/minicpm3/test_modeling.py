@@ -103,6 +103,37 @@ class MiniCPM3ModelingTest(unittest.TestCase):
             self.assertEqual(type(auto_config).__name__, "MiniCPM3Config")
             self.assertEqual(auto_config.model_type, "minicpm3")
 
+    def test_chat_uses_paddle_tensors(self):
+        class FakeTokenizer:
+            def __init__(self):
+                self.return_tensors = None
+
+            def apply_chat_template(self, history, tokenize=False, add_generation_prompt=True):
+                return "hello"
+
+            def __call__(self, text, return_tensors=None):
+                self.return_tensors = return_tensors
+                return {"input_ids": paddle.to_tensor([[1, 2, 3]], dtype="int64")}
+
+            def decode(self, outputs):
+                return "ok"
+
+        config = tiny_minicpm3_config()
+        model = MiniCPM3ForCausalLM(config)
+        tokenizer = FakeTokenizer()
+
+        def fake_generate(**kwargs):
+            self.assertIsInstance(kwargs["input_ids"], paddle.Tensor)
+            self.assertEqual(str(kwargs["input_ids"].place), str(paddle.to_tensor([0]).place))
+            return paddle.to_tensor([[1, 2, 3, 4, 2]], dtype="int64")
+
+        model.generate = fake_generate
+        response, history = model.chat(tokenizer, query="hi")
+
+        self.assertEqual(tokenizer.return_tensors, "pd")
+        self.assertEqual(response, "ok")
+        self.assertEqual(history[-1], {"role": "assistant", "content": "ok"})
+
 
 if __name__ == "__main__":
     unittest.main()

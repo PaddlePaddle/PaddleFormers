@@ -1650,7 +1650,7 @@ class MiniCPM3ForCausalLM(MiniCPM3PreTrainedModel):
         >>> tokenizer = AutoTokenizer.from_pretrained(PATH_TO_CONVERTED_TOKENIZER)
 
         >>> prompt = "Hey, are you conscious? Can you talk to me?"
-        >>> inputs = tokenizer(prompt, return_tensors="pt")
+        >>> inputs = tokenizer(prompt, return_tensors="pd")
 
         >>> # Generate
         >>> generate_ids = model.generate(inputs.input_ids, max_length=30)
@@ -1809,7 +1809,9 @@ class MiniCPM3ForCausalLM(MiniCPM3PreTrainedModel):
             }
         history.append({"role": role, "content": query})
         history_str = tokenizer.apply_chat_template(history, tokenize=False, add_generation_prompt=True)
-        inputs = tokenizer(history_str, return_tensors="pt").to(self.device)
+        inputs = tokenizer(history_str, return_tensors="pd")
+        device = paddle.get_device()
+        inputs = {key: value.to(device) for key, value in inputs.items()}
         outputs = self.generate(**inputs, **gen_kwargs)
         outputs = outputs.tolist()[0][len(inputs["input_ids"][0]) : -1]
         response = tokenizer.decode(outputs)
