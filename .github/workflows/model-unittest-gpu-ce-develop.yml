@@ -84,22 +84,8 @@ jobs:
           echo "skip-models-ce label found"
           echo "Downstream GPU jobs will be skipped"
 
-  clone:
-    name: Clone PaddleFormers
-    needs: check_skip
-    if: needs.check_skip.outputs.skip == 'false'
-    uses: ./.github/workflows/_clone_linux.yml
-
-  build_whl:
-    name: Build Formers and paddlefleet_ops whl
-    needs: [check_skip, clone]
-    if: needs.check_skip.outputs.skip == 'false'
-    uses: ./.github/workflows/_build_whl_linux.yml
-    with:
-      repo_archive_url: ${{ needs.clone.outputs.repo_archive_url }}
-
   model-unittest-gpu-ce-develop:
-    needs: [check_skip, clone, build_whl]
+    needs: [check_skip]
     if: needs.check_skip.outputs.skip == 'false'
     name: model-unittest-gpu-ce-develop
     runs-on: 'models'
@@ -197,15 +183,6 @@ jobs:
           fi
           git log --pretty=oneline -10
           DOCKER_EOF
-      - name: Download ops whl
-        run: |
-          OPS_WHL="${{ needs.build_whl.outputs.ops_whl_name }}"
-          OPS_WHL_ENCODED=$(python3 -c "import urllib.parse, sys; n=sys.argv[1]; print(urllib.parse.quote(n, safe='.-_'))" "$OPS_WHL")
-          OPS_WHL_URL="https://www.paddlepaddle.org.cn/packages/nightly/cu129/${OPS_WHL_ENCODED}"
-          docker exec -t $container_name /bin/bash -c "
-            mkdir -p /workspace/PaddleFormers/dist
-            wget --tries=5 --no-check-certificate -O '/workspace/PaddleFormers/dist/${OPS_WHL}' '${OPS_WHL_URL}'
-          "
       - name: Determine trigger mode
         id: trigger_mode
         env:
