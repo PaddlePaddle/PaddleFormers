@@ -1,6 +1,9 @@
 name: PR update ops
 
 on:
+  pull_request:
+    branches:
+        - "develop"
   push:
     branches:
       - "release/**"
