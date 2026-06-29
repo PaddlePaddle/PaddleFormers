@@ -15,7 +15,7 @@ permissions: read-all
 env:
   PR_ID: ${{ github.event.pull_request.number || '0' }}
   COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
-  BRANCH: ${{ github.ref_name }}
+  BRANCH: ${{ github.event.pull_request.base.ref || github.ref_name }}
 
 defaults:
   run:
