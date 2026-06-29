@@ -537,10 +537,7 @@ class MistralModel(MistralPretrainedModel):
         all_hidden_states = tuple(all_hidden_states) if all_hidden_states else None
 
         if not return_dict:
-            outputs = [hidden_states]
-            if output_hidden_states:
-                outputs.append(all_hidden_states)
-            return tuple(outputs)
+            return tuple(v for v in [hidden_states, past_key_values, all_hidden_states] if v is not None)
 
         return BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
@@ -636,7 +633,7 @@ class MistralForCausalLM(MistralPretrainedModel):
 
         loss = None
         if labels is not None:
-            loss, _ = self.criterion(logits, labels)
+            loss, _ = self.criterion(logits, labels, loss_mask)
 
         if not return_dict:
             output = (logits,) + outputs[1:]

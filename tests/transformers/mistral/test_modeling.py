@@ -62,6 +62,39 @@ class MistralModelingTest(unittest.TestCase):
 
         self.assertEqual(list(outputs.logits.shape), [2, 8, config.vocab_size])
 
+    def test_causal_lm_forwards_loss_mask_to_criterion(self):
+        class CaptureCriterion(paddle.nn.Layer):
+            def __init__(self):
+                super().__init__()
+                self.loss_mask = None
+
+            def forward(self, logits, labels, loss_mask=None):
+                self.loss_mask = loss_mask
+                return paddle.to_tensor(0.0), None
+
+        config = tiny_mistral_config()
+        model = MistralForCausalLM(config)
+        criterion = CaptureCriterion()
+        model.criterion = criterion
+        input_ids = paddle.randint(low=0, high=config.vocab_size - 1, shape=[2, 8], dtype="int64")
+        labels = paddle.randint(low=0, high=config.vocab_size - 1, shape=[2, 8], dtype="int64")
+        loss_mask = paddle.ones([2, 8], dtype="float32")
+
+        outputs = model(input_ids=input_ids, labels=labels, loss_mask=loss_mask, return_dict=True)
+
+        self.assertIsNotNone(outputs.loss)
+        self.assertIs(criterion.loss_mask, loss_mask)
+
+    def test_base_model_tuple_output_includes_cache(self):
+        config = tiny_mistral_config()
+        model = MistralModel(config)
+        input_ids = paddle.randint(low=0, high=config.vocab_size - 1, shape=[2, 8], dtype="int64")
+
+        outputs = model(input_ids=input_ids, use_cache=True, return_dict=False)
+
+        self.assertEqual(list(outputs[0].shape), [2, 8, config.hidden_size])
+        self.assertIsNotNone(outputs[1])
+
     def test_sequence_and_token_classification_forward(self):
         config = tiny_mistral_config(num_labels=3, pad_token_id=0)
         input_ids = paddle.randint(low=0, high=config.vocab_size - 1, shape=[2, 8], dtype="int64")
