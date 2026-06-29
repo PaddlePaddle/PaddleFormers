@@ -85,11 +85,11 @@ jobs:
           cd dist
           if [[ ${{ github.ref_name }} == "develop" ]]; then
             mv paddlefleet_ops-*.whl paddlefleet_ops-0.0.0-cp312-cp312-linux_x86_64.whl
-            python ../../bos/BosClient.py paddlefleet_ops-0.0.0-cp312-cp312-linux_x86_64.whl paddle-whl/nightly/cu129/paddlefleet-ops
+            # python ../../bos/BosClient.py paddlefleet_ops-0.0.0-cp312-cp312-linux_x86_64.whl paddle-whl/nightly/cu129/paddlefleet-ops
             WHEEL_FILE=paddlefleet_ops-0.0.0-cp312-cp312-linux_x86_64.whl
           else
             mv paddlefleet_ops-*.whl paddlefleet_ops-0.0.0.post-cp312-cp312-linux_x86_64.whl
-            python ../../bos/BosClient.py paddlefleet_ops-0.0.0.post-cp312-cp312-linux_x86_64.whl paddle-whl/nightly/cu129/paddlefleet-ops
+            # python ../../bos/BosClient.py paddlefleet_ops-0.0.0.post-cp312-cp312-linux_x86_64.whl paddle-whl/nightly/cu129/paddlefleet-ops
             WHEEL_FILE=paddlefleet_ops-0.0.0.post-cp312-cp312-linux_x86_64.whl
           fi
           curl https://www.paddlepaddle.org.cn/inner/whl/update/path/new
@@ -227,18 +227,19 @@ jobs:
           PY_VERSION_SHORT="${PY_VERSION//./}"
           ls paddlefleet_ops-*.whl | head -n1 > paddlefleet_ops-paddle-release-${{ matrix.cuda.bos_CUDA }}-py${PY_VERSION_SHORT}-linux_x86_64.whl.name
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            python ../bos/BosClient.py paddlefleet_ops-*.whl paddle-whl/stable/${{ matrix.cuda.bos_CUDA }}/paddlefleet-ops
+            # python ../bos/BosClient.py paddlefleet_ops-*.whl paddle-whl/stable/${{ matrix.cuda.bos_CUDA }}/paddlefleet-ops
+            echo "Test pr4731"
           else
-            python ../bos/BosClient.py paddlefleet_ops-*.whl paddle-whl/nightly/${{ matrix.cuda.bos_CUDA }}/paddlefleet-ops
+            # python ../bos/BosClient.py paddlefleet_ops-*.whl paddle-whl/nightly/${{ matrix.cuda.bos_CUDA }}/paddlefleet-ops
             if [[ ${{ matrix.cuda.bos_CUDA }} == cu129 ]]; then
               if [[ ${{ matrix.python_version }} == 3.10 || ${{ matrix.python_version }} == 3.12 ]]; then
                 if [[ ${{ github.ref_name }} == "develop" ]]; then
                   cp paddlefleet_ops-*.whl paddlefleet_ops-0.0.0-cp${PY_VERSION_SHORT}-cp${PY_VERSION_SHORT}-linux_x86_64.whl
-                  python ../bos/BosClient.py paddlefleet_ops-0.0.0-cp${PY_VERSION_SHORT}-cp${PY_VERSION_SHORT}-linux_x86_64.whl paddle-whl/nightly/cu129/paddlefleet-ops
+                #   python ../bos/BosClient.py paddlefleet_ops-0.0.0-cp${PY_VERSION_SHORT}-cp${PY_VERSION_SHORT}-linux_x86_64.whl paddle-whl/nightly/cu129/paddlefleet-ops
                   rm paddlefleet_ops-0.0.0-cp${PY_VERSION_SHORT}-cp${PY_VERSION_SHORT}-linux_x86_64.whl
                 else
                   cp paddlefleet_ops-*.whl paddlefleet_ops-0.0.0.post-cp${PY_VERSION_SHORT}-cp${PY_VERSION_SHORT}-linux_x86_64.whl
-                  python ../bos/BosClient.py paddlefleet_ops-0.0.0.post-cp${PY_VERSION_SHORT}-cp${PY_VERSION_SHORT}-linux_x86_64.whl paddle-whl/nightly/cu129/paddlefleet-ops
+                #   python ../bos/BosClient.py paddlefleet_ops-0.0.0.post-cp${PY_VERSION_SHORT}-cp${PY_VERSION_SHORT}-linux_x86_64.whl paddle-whl/nightly/cu129/paddlefleet-ops
                   rm paddlefleet_ops-0.0.0.post-cp${PY_VERSION_SHORT}-cp${PY_VERSION_SHORT}-linux_x86_64.whl
                 fi
               fi
@@ -519,9 +520,10 @@ jobs:
           cd dist
           ls paddlefleet_ops-*.whl | head -n1 > paddlefleet_ops-arm-${{ matrix.cuda.bos_CUDA }}-linux_aarch64.whl.name
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            python ../bos/BosClient.py paddlefleet_ops-*.whl paddle-whl/stable/${{ matrix.cuda.bos_CUDA }}/paddlefleet-ops
+            # python ../bos/BosClient.py paddlefleet_ops-*.whl paddle-whl/stable/${{ matrix.cuda.bos_CUDA }}/paddlefleet-ops
+            echo "Test pr4731"
           else
-            python ../bos/BosClient.py paddlefleet_ops-*.whl paddle-whl/nightly/${{ matrix.cuda.bos_CUDA }}/paddlefleet-ops
+            # python ../bos/BosClient.py paddlefleet_ops-*.whl paddle-whl/nightly/${{ matrix.cuda.bos_CUDA }}/paddlefleet-ops
             export AK=paddle
             export SK=paddle
             python ../bos/BosClient.py paddlefleet_ops-*.whl paddle-github-action/PaddleFormers/${BRANCH}/${COMMIT_ID}/${{ matrix.cuda.bos_CUDA }}
@@ -541,56 +543,56 @@ jobs:
           docker exec -t ${{ env.container_name }} /bin/bash -c 'bash ci/clean_uv_cache.sh; rm -rf * .[^.]*'
           docker rm -f ${{ env.container_name }}
 
-  upload-to-paddletest:
-    name: Upload ops wheel to paddletest (${{ matrix.flavor.label }}, ${{ matrix.flavor.bos_CUDA }}, py${{ matrix.flavor.python_version }})
-    needs: [check-packages-changes, publish-ops-wheel, publish-ops-wheel-paddle-dev, publish-ops-wheel-arm]
-    if: >
-      always() &&
-      needs.check-packages-changes.outputs.packages_changed == 'true' &&
-      github.repository == 'PaddlePaddle/PaddleFormers' &&
-      github.ref_type == 'branch'
-    runs-on: paddle-bot
-    env:
-      PR_ID: "0"
-      COMMIT_ID: ${{ github.sha }}
-      BRANCH: ${{ github.ref_name }}
-    strategy:
-      fail-fast: false
-      matrix:
-        flavor:
-          # paddle-release: x86 wheels published to paddle-whl/nightly/${cuda}/paddlefleet-ops
-          - {label: paddle-release, bos_CUDA: cu129, python_version: "3.10", artifact_name: "whl-name-paddle-release-cu129-py3.10-linux_x86_64", name_key: "paddlefleet_ops-paddle-release-cu129-py310-linux_x86_64.whl.name"}
-          - {label: paddle-release, bos_CUDA: cu129, python_version: "3.11", artifact_name: "whl-name-paddle-release-cu129-py3.11-linux_x86_64", name_key: "paddlefleet_ops-paddle-release-cu129-py311-linux_x86_64.whl.name"}
-          - {label: paddle-release, bos_CUDA: cu129, python_version: "3.12", artifact_name: "whl-name-paddle-release-cu129-py3.12-linux_x86_64", name_key: "paddlefleet_ops-paddle-release-cu129-py312-linux_x86_64.whl.name"}
-          - {label: paddle-release, bos_CUDA: cu129, python_version: "3.13", artifact_name: "whl-name-paddle-release-cu129-py3.13-linux_x86_64", name_key: "paddlefleet_ops-paddle-release-cu129-py313-linux_x86_64.whl.name"}
-          - {label: paddle-release, bos_CUDA: cu130, python_version: "3.10", artifact_name: "whl-name-paddle-release-cu130-py3.10-linux_x86_64", name_key: "paddlefleet_ops-paddle-release-cu130-py310-linux_x86_64.whl.name"}
-          - {label: paddle-release, bos_CUDA: cu130, python_version: "3.11", artifact_name: "whl-name-paddle-release-cu130-py3.11-linux_x86_64", name_key: "paddlefleet_ops-paddle-release-cu130-py311-linux_x86_64.whl.name"}
-          - {label: paddle-release, bos_CUDA: cu130, python_version: "3.12", artifact_name: "whl-name-paddle-release-cu130-py3.12-linux_x86_64", name_key: "paddlefleet_ops-paddle-release-cu130-py312-linux_x86_64.whl.name"}
-          - {label: paddle-release, bos_CUDA: cu130, python_version: "3.13", artifact_name: "whl-name-paddle-release-cu130-py3.13-linux_x86_64", name_key: "paddlefleet_ops-paddle-release-cu130-py313-linux_x86_64.whl.name"}
-          - {label: paddle-release, bos_CUDA: cu132, python_version: "3.10", artifact_name: "whl-name-paddle-release-cu132-py3.10-linux_x86_64", name_key: "paddlefleet_ops-paddle-release-cu132-py310-linux_x86_64.whl.name"}
-          - {label: paddle-release, bos_CUDA: cu132, python_version: "3.11", artifact_name: "whl-name-paddle-release-cu132-py3.11-linux_x86_64", name_key: "paddlefleet_ops-paddle-release-cu132-py311-linux_x86_64.whl.name"}
-          - {label: paddle-release, bos_CUDA: cu132, python_version: "3.12", artifact_name: "whl-name-paddle-release-cu132-py3.12-linux_x86_64", name_key: "paddlefleet_ops-paddle-release-cu132-py312-linux_x86_64.whl.name"}
-          - {label: paddle-release, bos_CUDA: cu132, python_version: "3.13", artifact_name: "whl-name-paddle-release-cu132-py3.13-linux_x86_64", name_key: "paddlefleet_ops-paddle-release-cu132-py313-linux_x86_64.whl.name"}
-          # arm: linux_aarch64 wheels published to paddle-whl/nightly/${cuda}/paddlefleet-ops
-          - {label: arm, bos_CUDA: cu130, python_version: "3.12", artifact_name: "whl-name-arm-cu130-py3.12-linux_aarch64", name_key: "paddlefleet_ops-arm-cu130-linux_aarch64.whl.name"}
-    steps:
-      - name: Download wheel name artifact
-        if: github.ref_type != 'tag' && matrix.flavor.label != 'arm'
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ matrix.flavor.artifact_name }}
+#   upload-to-paddletest:
+#     name: Upload ops wheel to paddletest (${{ matrix.flavor.label }}, ${{ matrix.flavor.bos_CUDA }}, py${{ matrix.flavor.python_version }})
+#     needs: [check-packages-changes, publish-ops-wheel, publish-ops-wheel-paddle-dev, publish-ops-wheel-arm]
+#     if: >
+#       always() &&
+#       needs.check-packages-changes.outputs.packages_changed == 'true' &&
+#       github.repository == 'PaddlePaddle/PaddleFormers' &&
+#       github.ref_type == 'branch'
+#     runs-on: paddle-bot
+#     env:
+#       PR_ID: "0"
+#       COMMIT_ID: ${{ github.sha }}
+#       BRANCH: ${{ github.ref_name }}
+#     strategy:
+#       fail-fast: false
+#       matrix:
+#         flavor:
+#           # paddle-release: x86 wheels published to paddle-whl/nightly/${cuda}/paddlefleet-ops
+#           - {label: paddle-release, bos_CUDA: cu129, python_version: "3.10", artifact_name: "whl-name-paddle-release-cu129-py3.10-linux_x86_64", name_key: "paddlefleet_ops-paddle-release-cu129-py310-linux_x86_64.whl.name"}
+#           - {label: paddle-release, bos_CUDA: cu129, python_version: "3.11", artifact_name: "whl-name-paddle-release-cu129-py3.11-linux_x86_64", name_key: "paddlefleet_ops-paddle-release-cu129-py311-linux_x86_64.whl.name"}
+#           - {label: paddle-release, bos_CUDA: cu129, python_version: "3.12", artifact_name: "whl-name-paddle-release-cu129-py3.12-linux_x86_64", name_key: "paddlefleet_ops-paddle-release-cu129-py312-linux_x86_64.whl.name"}
+#           - {label: paddle-release, bos_CUDA: cu129, python_version: "3.13", artifact_name: "whl-name-paddle-release-cu129-py3.13-linux_x86_64", name_key: "paddlefleet_ops-paddle-release-cu129-py313-linux_x86_64.whl.name"}
+#           - {label: paddle-release, bos_CUDA: cu130, python_version: "3.10", artifact_name: "whl-name-paddle-release-cu130-py3.10-linux_x86_64", name_key: "paddlefleet_ops-paddle-release-cu130-py310-linux_x86_64.whl.name"}
+#           - {label: paddle-release, bos_CUDA: cu130, python_version: "3.11", artifact_name: "whl-name-paddle-release-cu130-py3.11-linux_x86_64", name_key: "paddlefleet_ops-paddle-release-cu130-py311-linux_x86_64.whl.name"}
+#           - {label: paddle-release, bos_CUDA: cu130, python_version: "3.12", artifact_name: "whl-name-paddle-release-cu130-py3.12-linux_x86_64", name_key: "paddlefleet_ops-paddle-release-cu130-py312-linux_x86_64.whl.name"}
+#           - {label: paddle-release, bos_CUDA: cu130, python_version: "3.13", artifact_name: "whl-name-paddle-release-cu130-py3.13-linux_x86_64", name_key: "paddlefleet_ops-paddle-release-cu130-py313-linux_x86_64.whl.name"}
+#           - {label: paddle-release, bos_CUDA: cu132, python_version: "3.10", artifact_name: "whl-name-paddle-release-cu132-py3.10-linux_x86_64", name_key: "paddlefleet_ops-paddle-release-cu132-py310-linux_x86_64.whl.name"}
+#           - {label: paddle-release, bos_CUDA: cu132, python_version: "3.11", artifact_name: "whl-name-paddle-release-cu132-py3.11-linux_x86_64", name_key: "paddlefleet_ops-paddle-release-cu132-py311-linux_x86_64.whl.name"}
+#           - {label: paddle-release, bos_CUDA: cu132, python_version: "3.12", artifact_name: "whl-name-paddle-release-cu132-py3.12-linux_x86_64", name_key: "paddlefleet_ops-paddle-release-cu132-py312-linux_x86_64.whl.name"}
+#           - {label: paddle-release, bos_CUDA: cu132, python_version: "3.13", artifact_name: "whl-name-paddle-release-cu132-py3.13-linux_x86_64", name_key: "paddlefleet_ops-paddle-release-cu132-py313-linux_x86_64.whl.name"}
+#           # arm: linux_aarch64 wheels published to paddle-whl/nightly/${cuda}/paddlefleet-ops
+#           - {label: arm, bos_CUDA: cu130, python_version: "3.12", artifact_name: "whl-name-arm-cu130-py3.12-linux_aarch64", name_key: "paddlefleet_ops-arm-cu130-linux_aarch64.whl.name"}
+#     steps:
+#       - name: Download wheel name artifact
+#         if: github.ref_type != 'tag' && matrix.flavor.label != 'arm'
+#         uses: actions/download-artifact@v4
+#         with:
+#           name: ${{ matrix.flavor.artifact_name }}
 
-      - name: Download arm wheel name from bos
-        if: github.ref_type != 'tag' && matrix.flavor.label == 'arm'
-        run: |
-          wget --tries=5 --no-proxy https://paddle-github-action.bj.bcebos.com/PaddleFormers/${BRANCH}/${COMMIT_ID}/${{ matrix.flavor.name_key }} --no-check-certificate
+#       - name: Download arm wheel name from bos
+#         if: github.ref_type != 'tag' && matrix.flavor.label == 'arm'
+#         run: |
+#           wget --tries=5 --no-proxy https://paddle-github-action.bj.bcebos.com/PaddleFormers/${BRANCH}/${COMMIT_ID}/${{ matrix.flavor.name_key }} --no-check-certificate
 
-      - name: Upload wheel to paddletest
-        if: github.ref_type != 'tag'
-        run: |
-          set -e
-          python -m pip install requests
-          wget https://paddle-qa.bj.bcebos.com/paddleformers/notify_paddle_link.py
-          WHEEL_FILE=$(cat "${{ matrix.flavor.name_key }}")
-          echo "Notify paddletest for ${WHEEL_FILE} (${{ matrix.flavor.bos_CUDA }})"
-          python notify_paddle_link.py ${{ matrix.flavor.bos_CUDA }} ${WHEEL_FILE} paddlefleet-ops
+#       - name: Upload wheel to paddletest
+#         if: github.ref_type != 'tag'
+#         run: |
+#           set -e
+#           python -m pip install requests
+#           wget https://paddle-qa.bj.bcebos.com/paddleformers/notify_paddle_link.py
+#           WHEEL_FILE=$(cat "${{ matrix.flavor.name_key }}")
+#           echo "Notify paddletest for ${WHEEL_FILE} (${{ matrix.flavor.bos_CUDA }})"
+#           python notify_paddle_link.py ${{ matrix.flavor.bos_CUDA }} ${WHEEL_FILE} paddlefleet-ops
