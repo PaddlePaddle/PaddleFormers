@@ -32,36 +32,36 @@ install_requirements() {
     # python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple > /dev/null
     python -m pip install -r requirements.txt -i https://pypi.org/simple 
     if [[ "$ce_branch" == "CE_Develop_cu132_py312" ]]; then # nightly regerssion
+        #formers
+        python -m pip install uv
+        uv build --wheel --out-dir dist --clear -vv
+        python -m pip install "$(ls -t dist/paddleformers-*.whl | head -1)"
         #paddle develop
         python -m pip uninstall paddlepaddle-gpu -y
         wget -q https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda132-Cudnn920-Trt1016-Py312-Compile/latest/paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl
         python -m pip install paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu132
-        #formers
-        python -m pip install uv
-        uv build --wheel --out-dir dist --clear -vv
-        python -m pip install "$(ls -t dist/paddleformers-*.whl | head -1)"
         #paddlefleet_ops
         install_ops_wheel_dev
     elif [[ "$ce_branch" == "CE_Develop_cu130_py313" ]]; then # nightly regerssion
-        #paddle
+        #formers
+        python -m pip install uv
+        uv build --wheel --out-dir dist --clear -vv
+        python -m pip install "$(ls -t dist/paddleformers-*.whl | head -1)"
+         #paddle
         python -m pip uninstall paddlepaddle-gpu -y
         wget -q https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda130-Cudnn913-Trt1013-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp313-cp313-linux_x86_64.whl
         python -m pip install paddlepaddle_gpu-0.0.0-cp313-cp313-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/
-        #formers
-        python -m pip install uv
-        uv build --wheel --out-dir dist --clear -vv
-        python -m pip install "$(ls -t dist/paddleformers-*.whl | head -1)"
         #paddlefleet_ops
         install_ops_wheel_dev
     elif [[ "$ce_branch" == "CE_Develop_cu130_py312" ]]; then # nightly regerssion
-        #paddle
-        python -m pip uninstall paddlepaddle-gpu -y
-        wget -q https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda130-Cudnn913-Trt1013-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl
-        python -m pip install paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/
         #formers
         python -m pip install uv
         uv build --wheel --out-dir dist --clear -vv
         python -m pip install "$(ls -t dist/paddleformers-*.whl | head -1)"
+            #paddle
+        python -m pip uninstall paddlepaddle-gpu -y
+        wget -q https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda130-Cudnn913-Trt1013-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl
+        python -m pip install paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/
         #paddlefleet_ops
         install_ops_wheel_dev
     elif [[ "$ce_branch" == "CE_Release_cu132_py312" ]]; then
