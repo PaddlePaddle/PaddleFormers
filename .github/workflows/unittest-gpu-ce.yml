@@ -1,6 +1,10 @@
 name: Unittest GPU CE
 
 on:
+  pull_request:
+    branches:
+      - develop
+      - release/*
   schedule:
     - cron: "0 16 * * *"     # every day at 00:00 Beijing time (UTC+8)
   workflow_dispatch:        # allow to manually trigger the workflow
