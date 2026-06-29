@@ -150,7 +150,7 @@ install_requirements() {
         if [[ "${USE_PREBUILT_WHEELS:-false}" == "true" ]]; then
             echo "USE_PREBUILT_WHEELS=true, install prebuilt wheels from dist"
             pip install "$(ls -t dist/paddleformers-*.whl | head -1)" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
-            pip install "$(ls -t dist/paddlefleet_ops-*.whl | head -1)" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+            pip install "$(ls -t ops/paddlefleet_ops-*.whl | head -1)" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
         else
             #formers - build wheel first
             python -m pip install uv
