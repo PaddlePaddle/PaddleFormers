@@ -61,6 +61,7 @@ def init_backend_type():
         return
     except Exception:
         # print("Backend is not ILUVATAR-GPU")
+        # print("Test pr4731")
         pass
 
     try:
