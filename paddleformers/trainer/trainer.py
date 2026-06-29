@@ -497,12 +497,20 @@ class Trainer:
                 model, PipelineLayer
             ), f"Only support pipeline parallel mode when model is PipelineLayer or PipelineLayer!!! but get {type(model.model)}"
         default_callbacks = DEFAULT_CALLBACKS.copy()
-        if getattr(self.args, "internal_medicine_monitors", ""):
+
+        _im_monitors = getattr(self.args, "internal_medicine_monitors", "")
+        _im_interval = getattr(self.args, "internal_medicine_monitor_interval", None)
+        if _im_monitors and _im_interval != 0:
+            # Resolve the metrics log directory: explicit -> use as-is; empty -> output_dir.
+            _im_log_dir = (
+                getattr(self.args, "internal_medicine_log_dir", "") or getattr(self.args, "output_dir", "") or "."
+            )
             default_callbacks.append(
                 InternalMedicineCallback(
-                    monitors=self.args.internal_medicine_monitors,
-                    monitor_interval=self.args.internal_medicine_monitor_interval,
+                    monitors=_im_monitors,
+                    monitor_interval=_im_interval,  # None -> callback warns + uses 1
                     qk_row_stride=getattr(self.args, "internal_medicine_qk_row_stride", 1),
+                    log_dir=_im_log_dir,
                 )
             )
         default_callbacks += get_reporting_integration_callbacks(self.args.report_to)

@@ -77,9 +77,14 @@ class PreTrainingArguments(TrainingArguments):
             "help": "Comma-separated list of internal medicine monitors. Options: qk_stats,moe_health,massive_act,all"
         },
     )
-    internal_medicine_monitor_interval: int = field(
-        default=1,
-        metadata={"help": "Step interval for internal medicine monitors."},
+    internal_medicine_monitor_interval: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "Step interval for internal medicine monitors. "
+            "0 disables monitoring (no collection, no viewer). "
+            "Positive integer is the sampling interval. "
+            "Omitted -> defaults to 1 with a warning."
+        },
     )
     internal_medicine_qk_row_stride: int = field(
         default=1,
@@ -87,6 +92,14 @@ class PreTrainingArguments(TrainingArguments):
             "help": "qk_stats query-row subsampling stride. 1 = exact full pass. "
             "Larger values (e.g. 16/32) subsample query rows to cut the O(S^2) cost "
             "on long sequences; mean/entropy/sink stay unbiased, max is a lower bound."
+        },
+    )
+    internal_medicine_log_dir: str = field(
+        default="",
+        metadata={
+            "help": "Directory for the per-step JSONL produced by the internal-medicine "
+            "callback (rank 0 only). File name is fixed to 'internal_medicine.jsonl'. "
+            "Empty -> use output_dir. Consumed by tools/internal_medicine/server.py."
         },
     )
     num_consecutive: int = field(
@@ -317,8 +330,12 @@ class FinetuningArguments(
     )
 
     def __post_init__(self):
-        if self.internal_medicine_monitors and self.internal_medicine_monitor_interval < 1:
-            raise ValueError("internal_medicine_monitor_interval must be greater than 0 when monitors are enabled")
+        if (
+            self.internal_medicine_monitors
+            and self.internal_medicine_monitor_interval is not None
+            and self.internal_medicine_monitor_interval < 0
+        ):
+            raise ValueError("internal_medicine_monitor_interval must be >= 0 (0 disables monitoring)")
 
         self.bf16 = True
         if self.compute_type == "bf16":
