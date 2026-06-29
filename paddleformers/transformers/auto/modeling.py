@@ -78,6 +78,7 @@ MAPPING_NAMES = OrderedDict(
         ("GptOss", "gpt_oss"),
         ("Phi3", "phi3"),
         ("Gemma3", "gemma3_text"),
+        ("MiniCPM", "minicpm"),
         ("Glm4vMoe", "glm4v_moe"),
         ("GlmOcr", "glm_ocr"),
     ]

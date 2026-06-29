@@ -287,6 +287,12 @@ import_structure = {
         "Qwen3NextForCausalLMPipe",
         "Qwen3NextPretrainingCriterion",
     ],
+    "minicpm.configuration": ["MiniCPMConfig"],
+    "minicpm.modeling": [
+        "MiniCPMModel",
+        "MiniCPMForCausalLM",
+        "MiniCPMForCausalLMPipe",
+    ],
     "llama": [],
     "qwen2": [],
     "glm_ocr": [],
@@ -321,6 +327,7 @@ import_structure = {
     "phi3.configuration": ["Phi3Config"],
     "phi3.tokenizer": ["Phi3Tokenizer"],
     "phi3.modeling": ["Phi3Model", "Phi3ForCausalLM", "Phi3ForCausalLMPipe"],
+    "minicpm": ["MiniCPMDecoderLayer", "MiniCPMModel", "MiniCPMForCausalLM"],
     "glm4v_moe.configuration": ["Glm4vMoeConfig", "Glm4vMoeTextConfig", "Glm4vMoeVisionConfig"],
     "glm4v_moe.modeling": [
         "Glm4vMoeForConditionalGeneration",
@@ -417,6 +424,7 @@ if TYPE_CHECKING:
     from .gpt_oss import *
     from .phi3 import *
     from .gemma3_text import *
+    from .minicpm import *
     from .glm_ocr import *
 else:
     sys.modules[__name__] = _LazyModule(
