@@ -2,6 +2,8 @@ name: CE Daily Dev
  
 on:
   pull_request:
+    branches:
+        - develop
   schedule:
     - cron: '0 19 * * *'
   workflow_dispatch: # 可选：允许手动点 Run

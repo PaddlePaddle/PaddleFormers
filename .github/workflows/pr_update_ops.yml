@@ -82,7 +82,7 @@ jobs:
 #           pr_number=$(echo $response | jq -r '.[0].url' | awk -F'/' '{print $NF}')
 #           pr_last_commit=$(echo $response | jq -r '.[0].head.sha')
 #           mkdir fleet-312 && cd fleet-312
-#           wget https://paddle-github-action.cdn.bcebos.com/PaddleFormers/PR/${pr_number}/${pr_last_commit}/${BRANCH}/paddlefleet.tar.gz
+#           wget https://paddle-github-action.bj.bcebos.com/PaddleFormers/PR/${pr_number}/${pr_last_commit}/${BRANCH}/paddlefleet.tar.gz
 #           tar -xf paddlefleet.tar.gz --strip-components=1
 #           git config --global --add safe.directory .
 #           cd dist
@@ -171,7 +171,7 @@ jobs:
           export PATH=/opt/_internal/cpython-${{ matrix.python_version }}.0/bin/:${PATH}
           source /root/proxy
           set -e
-          wget --tries=5 --no-proxy https://paddle-github-action.cdn.bcebos.com/PaddleFormers/${BRANCH}/${PR_ID}/${COMMIT_ID}/PaddleFormers.tar.gz --no-check-certificate
+          wget --tries=5 --no-proxy https://paddle-github-action.bj.bcebos.com/PaddleFormers/${BRANCH}/${PR_ID}/${COMMIT_ID}/PaddleFormers.tar.gz --no-check-certificate
           echo "Extracting PaddleFormers.tar.gz"
           tar -xf PaddleFormers.tar.gz --strip-components=1
           rm PaddleFormers.tar.gz
@@ -334,7 +334,7 @@ jobs:
           export PATH=/opt/_internal/cpython-${{ matrix.python_version }}.0/bin/:${PATH}
           source /root/proxy
           set -e
-          wget --tries=5 --no-proxy https://paddle-github-action.cdn.bcebos.com/PaddleFormers/${BRANCH}/${PR_ID}/${COMMIT_ID}/PaddleFormers.tar.gz --no-check-certificate
+          wget --tries=5 --no-proxy https://paddle-github-action.bj.bcebos.com/PaddleFormers/${BRANCH}/${PR_ID}/${COMMIT_ID}/PaddleFormers.tar.gz --no-check-certificate
           echo "Extracting PaddleFormers.tar.gz"
           tar -xf PaddleFormers.tar.gz --strip-components=1
           rm PaddleFormers.tar.gz
@@ -462,7 +462,7 @@ jobs:
           docker exec -t ${{ env.container_name }} /bin/bash -xc '
           rm -rf * .[^.]*
           source /root/proxy
-          wget --tries=5 --no-proxy https://paddle-github-action.cdn.bcebos.com/PaddleFormers/${BRANCH}/${PR_ID}/${COMMIT_ID}/PaddleFormers.tar.gz --no-check-certificate
+          wget --tries=5 --no-proxy https://paddle-github-action.bj.bcebos.com/PaddleFormers/${BRANCH}/${PR_ID}/${COMMIT_ID}/PaddleFormers.tar.gz --no-check-certificate
           echo "Extracting PaddleFormers.tar.gz"
           tar -xf PaddleFormers.tar.gz --strip-components=1
           rm PaddleFormers.tar.gz
