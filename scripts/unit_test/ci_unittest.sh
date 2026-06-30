@@ -36,8 +36,8 @@ AGILE_COMPILE_BRANCH=$4
 
 install_requirements() {
     start_ts=$(date +%s)
-    python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
-    python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
+    python -m pip config --user set global.trusted-host pypi.org
+    python -m pip config --user set global.index-url https://pypi.org/simple
     python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
     python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple  > /dev/null
     cd /home/models/my_packages && dpkg -i *.deb > /dev/null
@@ -47,23 +47,66 @@ install_requirements() {
     python setup.py bdist_wheel > /dev/null
     if [ $FLAGS_enable_CE == "true" ];then
         python -m pip install dist/*.whl 
-        #fleet
+        #fleet develop
         python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ 
+        #paddlefleet_ops develop
+        echo "Download PaddleFleet form https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFleet.tar"
+        wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFleet.tar --no-check-certificate
+        rm -rf PaddleFleet && tar xf PaddleFleet.tar && rm -rf PaddleFleet.tar
+        local commit=$(python -c "import paddlefleet; print(paddlefleet.version.commit)" 2>/dev/null || echo "")
+        if [[ -z "${commit}" ]]; then
+            echo "Warning: failed to get paddlefleet commit from env, skip git reset"
+        else
+            echo "Reset PaddleFleet to commit: ${commit}"
+        fi
+        cd PaddleFleet
+        if [[ -n "${commit}" ]]; then
+            git reset --hard ${commit}
+        fi
+        bash scripts/install_ops_wheel.sh
+        cd -
+        #paddle develop
         python -m pip uninstall paddlepaddle-gpu -y
-        #paddle
         wget -q $paddle
         python -m pip install paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ 
-
     else
+        # fleet_locked paddle_locked
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+        #paddlefleet_ops for fleet_locked
+        echo "Download PaddleFleet form https://paddle-qa.bj.bcebos.com/CodeSync/release/0.3/PaddleFleet.tar"
+        wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/release/0.3/PaddleFleet.tar --no-check-certificate
+        rm -rf PaddleFleet && tar xf PaddleFleet.tar && rm -rf PaddleFleet.tar
+        local commit=$(python -c "import paddlefleet; print(paddlefleet.version.commit)" 2>/dev/null || echo "")
+        if [[ -z "${commit}" ]]; then
+            echo "Warning: failed to get paddlefleet commit from env, skip git reset"
+        else
+            echo "Reset PaddleFleet to commit: ${commit}"
+        fi
+        cd PaddleFleet
+        if [[ -n "${commit}" ]]; then
+            git reset --hard ${commit}
+        fi
+        bash scripts/install_ops_wheel.sh
+        cd -
     fi
+    pip install -r tests/requirements.txt -i https://pypi.org/simple 
+
+    echo "paddle commit:"
+    python -c "import paddle; print(paddle.version.commit)"
     echo "paddlefleet commit:"
     python -c "import paddlefleet; print(paddlefleet.version.commit)"
+    echo "paddlefleet_ops commit:"
+    python -c "from paddlefleet_ops import __version__; print(__version__)"
+    echo "paddleformers commit:"
+    python -c "import paddleformers; print(paddleformers.version.commit)"
+
+    python -c "import paddle; print('paddle commit:',paddle.version.commit)" >> ${log_path}/commit_info.txt
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
-    pip install -r tests/requirements.txt -i https://pypi.org/simple 
     python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
-    python -m pip list >> ${log_path}/commit_info.txt 
+    python -c "from paddlefleet_ops import __version__; print('paddlefleet_ops version:', __version__)" >> ${log_path}/commit_info.txt
+    python -c "import paddlefleet; print('paddlefleet commit:',paddlefleet.version.commit)" >> ${log_path}/commit_info.txt
+    python -m pip list >> ${log_path}/commit_info.txt
     end_ts=$(date +%s)
     echo -e "\033[32m install requirements cost $((end_ts - start_ts))s \033[0m"
 }
@@ -87,14 +130,10 @@ print_info() {
     if [ $1 -ne 0 ]; then
         cat ${log_path}/unittest.log | grep -v "Fail to fscanf: Success" \
             | grep -v "SKIPPED" | grep -v "warning" > ${log_path}/unittest_FAIL.log
+        cat ${log_path}/unittest_FAIL.log
         tail -n 1 ${log_path}/unittest.log >> ${log_path}/unittest_FAIL.log
         echo -e "\033[31m ${log_path}/unittest_FAIL \033[0m"
-        cat ${log_path}/unittest_FAIL.log
-        if [ -n "${AGILE_JOB_BUILD_ID}" ]; then
-            cp ${log_path}/unittest_FAIL.log ${PPNLP_HOME}/upload/unittest_FAIL.log.${AGILE_PIPELINE_BUILD_ID}.${AGILE_JOB_BUILD_ID}
-            cd ${PPNLP_HOME} && python upload.py ${PPNLP_HOME}/upload 'paddlenlp/PaddleNLP_CI/PaddleNLP-CI-Unittest-GPU'
-            rm -rf upload/* && cd -
-        fi
+        tail -n 1 ${log_path}/unittest_FAIL.log
         if [ $1 -eq 124 ]; then
             echo "\033[32m [failed-timeout] Test case execution was terminated after exceeding the ${running_time} min limit."
         fi
@@ -147,15 +186,6 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     print_info $exit_code unittest
     echo -e "\033[35m ---- Set PYTEST_EXECUTE_FLAG_FILE  \033[0m"
     touch ${PYTEST_EXECUTE_FLAG_FILE}
-    if [ -n "${AGILE_JOB_BUILD_ID}" ]; then
-        cd ${nlp_dir}
-        echo -e "\033[35m ---- Generate Allure Report  \033[0m"
-        cp scripts/unit_test/gen_allure_report.py ./
-        python gen_allure_report.py > /dev/null
-        echo -e "\033[35m ---- Report: https://xly.bce.baidu.com/ipipe/ipipe-report/report/${AGILE_JOB_BUILD_ID}/report/  \033[0m"
-    else
-        echo "AGILE_JOB_BUILD_ID is empty, skip generate allure report"
-    fi
 else
     echo -e "\033[32m Changed Not CI case, Skips \033[0m"
     exit_code=0

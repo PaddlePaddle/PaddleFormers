@@ -57,4 +57,6 @@ fp16_opt_level: O2
 load_checkpoint_format: flex_checkpoint
 save_checkpoint_format: flex_checkpoint
 
+moe_expert_fusion: false
+
 device: xpu

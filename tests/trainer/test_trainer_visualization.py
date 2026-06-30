@@ -39,6 +39,7 @@ class TestWandbCallback(unittest.TestCase):
             logging_steps=20,
             run_name="test_wandbcallback",
             logging_dir=output_dir,
+            bf16=True,
         )
         state = TrainerState(trial_name="PaddleFormers")
         control = TrainerControl()
@@ -76,6 +77,7 @@ class TestSwanlabCallback(unittest.TestCase):
             logging_steps=20,
             run_name="test_swanlabcallback",
             logging_dir=output_dir,
+            bf16=True,
         )
         state = TrainerState(trial_name="PaddleFormers")
         control = TrainerControl()
@@ -92,7 +94,9 @@ class TestSwanlabCallback(unittest.TestCase):
                 log = {"loss": 100 - 0.4 * global_step, "learning_rate": 0.1, "global_step": global_step}
                 swanlabcallback.on_log(args, state, control, logs=log)
         swanlabcallback.on_train_end(args, state, control, model=model)
-        swanlabcallback._swanlab.finish()
+        # In disabled mode, finish() should not be called as there is no active run
+        if not swanlabcallback._disabled:
+            swanlabcallback._swanlab.finish()
         os.environ.pop("SWANLAB_MODE", None)
         shutil.rmtree(output_dir)
 
@@ -101,7 +105,12 @@ class TestTensorboardCallback(unittest.TestCase):
     def test_tbcallback(self):
         output_dir = tempfile.mkdtemp()
         args = TrainingArguments(
-            output_dir=output_dir, max_steps=200, logging_steps=20, run_name="test_tbcallback", logging_dir=output_dir
+            output_dir=output_dir,
+            max_steps=200,
+            logging_steps=20,
+            run_name="test_tbcallback",
+            logging_dir=output_dir,
+            bf16=True,
         )
         state = TrainerState(trial_name="PaddleFormers")
         control = TrainerControl()
@@ -141,7 +150,12 @@ class TestVisualDLCallback(unittest.TestCase):
     def test_vdlcallback(self):
         output_dir = tempfile.mkdtemp()
         args = TrainingArguments(
-            output_dir=output_dir, max_steps=200, logging_steps=20, run_name="test_vdlcallback", logging_dir=output_dir
+            output_dir=output_dir,
+            max_steps=200,
+            logging_steps=20,
+            run_name="test_vdlcallback",
+            logging_dir=output_dir,
+            bf16=True,
         )
         state = TrainerState(trial_name="PaddleFormers")
         control = TrainerControl()
