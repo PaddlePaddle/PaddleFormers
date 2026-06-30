@@ -332,12 +332,12 @@ jobs:
           rm -rf * .[^.]*
           export LD_LIBRARY_PATH=/opt/_internal/cpython-${{ matrix.python_version }}.0/lib/:${LD_LIBRARY_PATH}
           export PATH=/opt/_internal/cpython-${{ matrix.python_version }}.0/bin/:${PATH}
-          source /root/proxy
           set -e
           wget --tries=5 --no-proxy https://paddle-github-action.bj.bcebos.com/PaddleFormers/${BRANCH}/${PR_ID}/${COMMIT_ID}/PaddleFormers.tar.gz --no-check-certificate
           echo "Extracting PaddleFormers.tar.gz"
           tar -xf PaddleFormers.tar.gz --strip-components=1
           rm PaddleFormers.tar.gz
+          source /root/proxy
           git config --global --add safe.directory /workspace
           git submodule foreach --recursive "git config --global --add safe.directory \$toplevel/\$sm_path"
           sed -i "s#packages/nightly/cu129#packages/nightly/${{ matrix.cuda.bos_CUDA }}#g" pyproject.toml
