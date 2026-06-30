@@ -99,7 +99,7 @@ def local_layer_spec(config: "GPTModelProvider") -> LayerSpec:
     """
     return get_gpt_layer_local_spec(
         num_experts=config.num_moe_experts,
-        moe_grouped_gemm=config.moe_grouped_gemm,
+        moe_expert_fusion=config.moe_expert_fusion,
         qk_layernorm=config.qk_layernorm,
         normalization=config.normalization,
     )
@@ -144,7 +144,7 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
 
     # MoE / FP8
     n_routed_experts: Optional[int] = None
-    moe_grouped_gemm: bool = False
+    moe_expert_fusion: bool = False
     use_qk_norm: bool = False
     fp8: Optional[str] = None
     normalization: str = "RMSNorm"
@@ -203,6 +203,9 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
                     self.rope_type = self.rope_parameters["rope_type"]
             if "rope_theta" in self.rope_parameters:
                 self.rope_theta = self.rope_parameters["rope_theta"]
+        if hasattr(self, "rope_scaling") and self.rope_scaling is not None:
+            if "mscale_all_dim" in self.rope_scaling:
+                self.mscale_all_dim = self.rope_scaling["mscale_all_dim"]
 
         # Check if mtp_block_spec parameter is supported
         kwargs = {}

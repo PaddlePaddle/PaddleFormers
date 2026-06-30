@@ -60,8 +60,8 @@ recompute_num_layers: 1
 # fuse_attention_qkv: true
 # fuse_attention_ffn: true
 
-moe_grouped_gemm: true
-# moe_deep_gemm: true
+moe_expert_fusion: true
+moe_deep_gemm: false
 
 apply_rope_fusion: False
 # fuse_rms_norm: true

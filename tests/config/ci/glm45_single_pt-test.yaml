@@ -84,3 +84,4 @@ use_qk_norm: false
 num_nextn_predict_layers: 0
 # routed_scaling_factor: 1.0
 pipeline_model_parallel_size: 1
+moe_deep_gemm: false
