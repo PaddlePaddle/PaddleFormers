@@ -169,10 +169,12 @@ jobs:
           python -m pip install "$(ls -t dist/paddleformers-*.whl | head -1)" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/${CUDA_VERSION}/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
           PY_SHORT=${PYTHON_VERSION//./}
           pip install "https://paddle-github-action.bj.bcebos.com/PaddleFormers/develop/latest/${CUDA_VERSION}/paddle-develop/paddlefleet_ops-0.0.0-cp${PY_SHORT}-cp${PY_SHORT}-linux_x86_64.whl" --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/
+          wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
 
           if [ "${use_release}" == "true" ]; then
             echo "Using pre-built paddle package from develop branch."
-            pip install ${paddle_url} --index-url=https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --force-reinstall --no-cache-dir
+            pip install ${paddle_url} --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --force-reinstall --no-cache-dir
           fi
           pip install uv coverage==7.13.0 bce-python-sdk==0.8.74 wrapt matplotlib==3.10.8 pytest parameterized
           echo "Paddle Commit"
@@ -185,7 +187,7 @@ jobs:
           export WITH_COVERAGE=ON
           bash scripts/fleet_ci/single_card_test.sh
           '
- 
+
       - name: Single card sonic moe test
         if: matrix.python == '3.12' && matrix.cuda == '12.9' && always()
         run: |
@@ -321,6 +323,7 @@ jobs:
             -w /paddle --network host ${DOCKER_IMAGE}
  
       - name: Install PaddleFormers
+        id: formers_install
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           find . -maxdepth 1 -name "--*" -delete
@@ -357,7 +360,7 @@ jobs:
 
           if [ "${use_release}" == "true" ]; then
             echo "Using pre-built paddle package from develop branch."
-            pip install ${paddle_url} --index-url=https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --force-reinstall --no-cache-dir
+            pip install ${paddle_url} --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --force-reinstall --no-cache-dir
           fi
           pip install uv coverage==7.13.0 bce-python-sdk==0.8.74 wrapt pytest matplotlib==3.10.8
           wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
@@ -502,6 +505,7 @@ jobs:
             -w /workspace --network host ${DOCKER_IMAGE}
  
       - name: Install PaddleFormers
+        id: formers_install
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           nvidia-smi
@@ -548,7 +552,7 @@ jobs:
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/qwen_provider.py
           if [ "${use_release}" == "true" ]; then
             echo "Using pre-built paddle package from develop branch."
-            pip install ${paddle_url} --index-url=https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --force-reinstall --no-cache-dir
+            pip install ${paddle_url} --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --force-reinstall --no-cache-dir
           fi
           pip install uv coverage==7.13.0 bce-python-sdk==0.8.74 wrapt matplotlib==3.10.8 pytest parameterized
           pip install librosa==0.11.0
@@ -754,6 +758,7 @@ jobs:
             -w /workspace --network host ${DOCKER_IMAGE}
  
       - name: Install PaddleFormers
+        id: formers_install
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           find . -maxdepth 1 -name "--*" -delete
@@ -798,7 +803,7 @@ jobs:
           cp examples/experiments/paddlefleet/glm45.json examples/experiments/paddlefleet/glm45_fp8.json
           if [ "${use_release}" == "true" ]; then
             echo "Using pre-built paddle package from develop branch."
-            pip install ${paddle_url} --index-url=https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --force-reinstall --no-cache-dir
+            pip install ${paddle_url} --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --force-reinstall --no-cache-dir
           fi
           pip install uv coverage==7.13.0 bce-python-sdk==0.8.74 wrapt
           pip install bce-python-sdk==0.8.74
@@ -1260,6 +1265,7 @@ jobs:
             -w /workspace --network host ${DOCKER_IMAGE}
  
       - name: Install PaddleFormers
+        id: formers_install
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           find . -maxdepth 1 -name "--*" -delete
@@ -1305,7 +1311,7 @@ jobs:
           git log -1
           if [ "${use_release}" == "true" ]; then
             echo "Using pre-built paddle package from develop branch."
-            pip install ${paddle_url} --index-url=https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --force-reinstall --no-cache-dir
+            pip install ${paddle_url} --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_VERSION}/ --force-reinstall --no-cache-dir
           fi
           pip install uv coverage==7.13.0 bce-python-sdk==0.8.74 wrapt
           pip install bce-python-sdk==0.8.74

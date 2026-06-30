@@ -32,7 +32,7 @@ on:
           - 'paddleocr_vl'
       FLAGS_enable_CE:
         required: false
-        default: 'CE_Develop_cu130_py312'
+        default: 'CE_Develop_cu132_py312'
         type: choice
         options:
           - 'CE_Develop_cu132_py312'
