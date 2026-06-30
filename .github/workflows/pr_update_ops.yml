@@ -358,6 +358,7 @@ jobs:
           source /root/proxy
           export IS_NVIDIA=True
           uv cache clean paddlepaddle-gpu
+          python -m pip install --pre paddlepaddle-gpu -i https://www.paddlepaddle.org.cn/packages/nightly/${{ matrix.cuda.bos_CUDA }}/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/${{ matrix.cuda.bos_CUDA }}/
           pip install packaging "setuptools>=66.1.0" wheel "ninja==1.11.1.1" "pybind11[global]>=2.13,<3" --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/${{ matrix.cuda.bos_CUDA }}/
           if [[ ${{ matrix.cuda.bos_CUDA }} == "cu129" ]]; then
             pip install "paddle-nvidia-nvshmem-cu12>=3.3.9,<3.5" --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
