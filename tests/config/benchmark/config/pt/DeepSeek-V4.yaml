@@ -1,9 +1,9 @@
 ### data
 train_dataset_type: erniekit
 eval_dataset_type: erniekit
-train_dataset_path: /root/efficient_benchmark/dataset/DeepSeek-V4/reasoning_decay.jsonl
+train_dataset_path: ./dataset/DeepSeek-V4/reasoning_decay.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: /root/efficient_benchmark/dataset/DeepSeek-V4/reasoning_decay.jsonl
+eval_dataset_path: ./dataset/DeepSeek-V4/reasoning_decay.jsonl
 eval_dataset_prob: "1.0"
 packing: true
 truncate_packing: true
@@ -16,7 +16,7 @@ use_template: false
 dataset_num_proc: 8
 
 ### model
-model_name_or_path: /root/efficient_benchmark/huggingface/DeepSeek-V4-Flash-Base
+model_name_or_path: ./huggingface/DeepSeek-V4-Flash-Base
 
 ### train
 stage: PT
