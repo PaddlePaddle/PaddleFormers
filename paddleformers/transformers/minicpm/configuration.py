@@ -174,7 +174,6 @@ class MiniCPMConfig(PretrainedConfig):
         self.attention_dropout_prob = attention_dropout_prob
         self.hidden_dropout_prob = hidden_dropout_prob
         self.recompute_granularity = None
-        self.recompute_granularity = None
         self.recompute_method = None
         self.recompute_modules = None
         self.recompute_num_layers = None
@@ -210,12 +209,6 @@ class MiniCPMConfig(PretrainedConfig):
             tie_word_embeddings=tie_word_embeddings,
             **kwargs,
         )
-        try:
-            pass
-            # self._attn_implementation = "flash_attention_2"
-            self._attn_implementation = "eager"
-        except:
-            pass
         standardize_rope_params(self, rope_theta=rope_theta)
         rope_config_validation(self)
 
