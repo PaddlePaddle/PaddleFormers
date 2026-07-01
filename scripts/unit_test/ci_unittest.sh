@@ -50,7 +50,7 @@ install_requirements() {
         python -m pip install "$(ls -t dist/paddlefleet_ops-*.whl | head -1)" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
     elif [ $FLAGS_enable_CE == "true" ];then
         wget -q https://paddle-github-action.bj.bcebos.com/PaddleFormers/develop/latest/cu129/paddle-develop/paddlefleet_ops-0.0.0-cp312-cp312-linux_x86_64.whl
-        python -m pip install paddlefleet_ops-0.0.0-cp312-cp312-linux_x86_64.whl 
+        python -m pip install paddlefleet_ops-0.0.0-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
     else
         python -m pip install uv
         uv build --wheel --out-dir dist --clear -vv

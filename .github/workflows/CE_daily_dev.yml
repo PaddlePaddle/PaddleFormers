@@ -52,16 +52,16 @@ jobs:
       max-parallel: 2
       matrix:
         include:
+        #   - cuda: "12.9"
+        #     python: "3.10"
+        #   - cuda: "13.0"
+        #     python: "3.12"
+        #   - cuda: "12.9"
+        #     python: "3.11"
           - cuda: "12.9"
-            python: "3.10"
-          - cuda: "13.0"
             python: "3.12"
-          - cuda: "12.9"
-            python: "3.11"
-          - cuda: "12.9"
-            python: "3.12"
-          - cuda: "12.9"
-            python: "3.13"
+        #   - cuda: "12.9"
+        #     python: "3.13"
     env:
       PIP_CACHE_DIR: /home/.cache/pip
       CACHE_DIR: /home/.cache
@@ -117,7 +117,7 @@ jobs:
             -e CACHE_DIR \
             -e no_proxy \
             -e use_release \
-            -e repo_flag="paddlefleet" \
+            -e repo_flag="paddleformers" \
             -e PIP_CACHE_DIR \
             -e work_dir \
             -e CUDA_VERSION \
@@ -245,16 +245,16 @@ jobs:
       max-parallel: 1
       matrix:
         include:
-          - cuda: "12.9"
-            python: "3.10"
+        #   - cuda: "12.9"
+        #     python: "3.10"
           - cuda: "13.0"
             python: "3.12"
-          - cuda: "12.9"
-            python: "3.11"
-          - cuda: "12.9"
-            python: "3.12"
-          - cuda: "12.9"
-            python: "3.13"
+        #   - cuda: "12.9"
+        #     python: "3.11"
+        #   - cuda: "12.9"
+        #     python: "3.12"
+        #   - cuda: "12.9"
+        #     python: "3.13"
     env:
       PIP_CACHE_DIR: /home/.cache/pip
       TASK: paddleformers-CE-${{ matrix.cuda }}-${{ matrix.python }}-multi-card_test-dev
@@ -306,7 +306,7 @@ jobs:
             -e CACHE_DIR \
             -e no_proxy \
             -e PIP_CACHE_DIR \
-            -e repo_flag="paddlefleet" \
+            -e repo_flag="paddleformers" \
             -e use_release \
             -e work_dir \
             -e CUDA_VERSION \
@@ -423,14 +423,14 @@ jobs:
         include:
           - cuda: "12.9"
             python: "3.10"
-          - cuda: "13.0"
-            python: "3.12"
-          - cuda: "12.9"
-            python: "3.11"
-          - cuda: "12.9"
-            python: "3.12"
-          - cuda: "12.9"
-            python: "3.13"
+        #   - cuda: "13.0"
+        #     python: "3.12"
+        #   - cuda: "12.9"
+        #     python: "3.11"
+        #   - cuda: "12.9"
+        #     python: "3.12"
+        #   - cuda: "12.9"
+        #     python: "3.13"
     env:
       PIP_CACHE_DIR: /home/.cache/pip
       CACHE_DIR: /home/.cache
@@ -678,12 +678,12 @@ jobs:
       max-parallel: 1
       matrix:
         include:
-          - cuda: "12.9"
-            python: "3.10"
-          - cuda: "13.0"
-            python: "3.12"
-          - cuda: "12.9"
-            python: "3.11"
+        #   - cuda: "12.9"
+        #     python: "3.10"
+        #   - cuda: "13.0"
+        #     python: "3.12"
+        #   - cuda: "12.9"
+        #     python: "3.11"
           - cuda: "12.9"
             python: "3.12"
           - cuda: "12.9"
@@ -1619,7 +1619,7 @@ jobs:
             -e GITHUB_EVENT_PULL_REQUEST_NUMBER="${{ github.event.pull_request.number }}" \
             -e GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
             -e GITHUB_RUN_ID="${{ github.run_id }}" \
-            -e repo_flag="paddlefleet" \
+            -e repo_flag="paddleformers" \
             -w /paddle --network host ${docker_image_cu129}
  
       - name: download code
