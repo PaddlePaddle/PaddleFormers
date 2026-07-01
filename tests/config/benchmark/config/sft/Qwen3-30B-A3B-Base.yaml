@@ -1,9 +1,9 @@
 ## data
 train_dataset_type: erniekit
 eval_dataset_type: erniekit
-train_dataset_path: ./data/sft/train.jsonl
+train_dataset_path: ./dataset/data/sft_data/train.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: ./data/sft/eval.jsonl
+eval_dataset_path: ./dataset/data/sft_data/eval.jsonl
 eval_dataset_prob: "1.0"
 
 # dataset_type: "pretrain"
@@ -25,7 +25,7 @@ prefetch_factor: 24
 pad_token_id: 151643
 
 ### model
-model_name_or_path: /root/efficient_benchmark/huggingface/Qwen/Qwen3-30B-A3B
+model_name_or_path: ./huggingface/Qwen/Qwen3-30B-A3B
 _attn_implementation: flashmask
 use_qk_norm: true
 
