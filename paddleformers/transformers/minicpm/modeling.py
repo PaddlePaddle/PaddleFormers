@@ -42,8 +42,6 @@ from ..model_outputs import (
     SequenceClassifierOutputWithPast,
 )
 from ..model_utils import PretrainedModel, register_base_model
-
-""" PyTorch MiniCPM model."""
 import math
 import re
 import warnings
@@ -58,10 +56,10 @@ except:
     pass
 from functools import lru_cache, partial
 
-PT_RETURN_INTRODUCTION = r"""
+PD_RETURN_INTRODUCTION = r"""
     Returns:
-        [`{full_output_type}`] or `tuple(torch.FloatTensor)`: A [`{full_output_type}`] or a tuple of
-        `torch.FloatTensor` (if `return_dict=False` is passed or when `config.return_dict=False`) comprising various
+        [`{full_output_type}`] or `tuple(paddle.Tensor)`: A [`{full_output_type}`] or a tuple of
+        `paddle.Tensor` (if `return_dict=False` is passed or when `config.return_dict=False`) comprising various
         elements depending on the configuration ([`{config_class}`]) and inputs.
 
 """
@@ -109,7 +107,7 @@ def _prepare_output_docstrings(output_type, config_class, min_indent=None):
             )
 
     full_output_type = f"{output_type.__module__}.{output_type.__name__}"
-    result = PT_RETURN_INTRODUCTION.format(full_output_type=full_output_type, config_class=config_class)
+    result = PD_RETURN_INTRODUCTION.format(full_output_type=full_output_type, config_class=config_class)
     if params_docstring is not None:
         result += params_docstring
 
@@ -303,18 +301,6 @@ def compressed_attention(
 
 @lru_cache(maxsize=16)
 def calc_chunks_with_stride(cu_seqlen, chunk_size, kernel_stride):
-    """
-    Compute the chunks that require Sparse attention, with stride support.
-
-    Args:
-        cu_seqlen (torch.Tensor): Cumulative sequence lengths for each sample.
-        chunk_size (int): Chunk size used for Sparse attention.
-        kernel_stride (int): Stride size when sliding over the sequence.
-
-    Returns:
-        filtered_indices (torch.Tensor): Indices used to directly index into the key/value tensors.
-        cu_seqlens_compressed (torch.Tensor): Cumulative sequence lengths after compression.
-    """
     batch_sizes = cu_seqlen[1:] - cu_seqlen[:-1]
     max_seq_len = paddle.compat.max(batch_sizes)
     max_num_chunks_per_seq = (max_seq_len - chunk_size) // kernel_stride + 1
@@ -365,18 +351,6 @@ class CompressK(nn.Layer):
         self.kernel_stride = kernel_stride
 
     def forward(self, k: paddle.Tensor, cu_seqlens):
-        """
-        Forward pass for compressing the key (K) tensor.
-
-        Args:
-            k (torch.Tensor): Input key tensor of shape (total_seq_len, num_heads, head_dim).
-            cu_seqlens (torch.Tensor): Cumulative sequence lengths for each sample in the batch, typically used for handling variable-length sequences.
-
-        Returns:
-            compress_k (torch.Tensor): Compressed key tensor.
-            cu_seqlens_compressed (torch.Tensor): Updated cumulative sequence lengths after compression.
-
-        """
         filtered_k_indices, cu_seqlens_compressed = calc_chunks_with_stride(
             cu_seqlens, self.kernel_size, self.kernel_stride
         )
@@ -695,26 +669,6 @@ def rotate_half(x):
 
 
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):
-    """Applies Rotary Position Embedding to the query and key tensors.
-
-    Args:
-        q (`torch.Tensor`): The query tensor.
-        k (`torch.Tensor`): The key tensor.
-        cos (`torch.Tensor`): The cosine part of the rotary embedding.
-        sin (`torch.Tensor`): The sine part of the rotary embedding.
-        position_ids (`torch.Tensor`):
-            The position indices of the tokens corresponding to the query and key tensors. For example, this can be
-            used to pass offsetted position ids when working with a KV-cache.
-        unsqueeze_dim (`int`, *optional*, defaults to 1):
-            The 'unsqueeze_dim' argument specifies the dimension along which to unsqueeze cos[position_ids] and
-            sin[position_ids] so that they can be properly broadcasted to the dimensions of q and k. For example, note
-            that cos[position_ids] and sin[position_ids] have the shape [batch_size, seq_len, head_dim]. Then, if q and
-            k have the shape [batch_size, heads, seq_len, head_dim], then setting unsqueeze_dim=1 makes
-            cos[position_ids] and sin[position_ids] broadcastable to the shapes of q and k. Similarly, if q and k have
-            the shape [batch_size, seq_len, heads, head_dim], then set unsqueeze_dim=2.
-    Returns:
-        `tuple(torch.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
-    """
     orig_dtype = k.dtype
     cos = cos[position_ids].unsqueeze(unsqueeze_dim)
     sin = sin[position_ids].unsqueeze(unsqueeze_dim)
@@ -736,10 +690,6 @@ def _unpad_one_tensor(hidden_states, attention_mask):
 
 
 def repeat_kv(hidden_states: paddle.Tensor, n_rep: int) -> paddle.Tensor:
-    """
-    This is the equivalent of torch.repeat_interleave(x, dim=1, repeats=n_rep). The hidden states go from (batch,
-    num_key_value_heads, seqlen, head_dim) to (batch, num_attention_heads, seqlen, head_dim)
-    """
     batch, num_key_value_heads, slen, head_dim = hidden_states.shape
     if n_rep == 1:
         return hidden_states
@@ -958,11 +908,6 @@ class MiniCPMAttention(nn.Layer):
 
 
 class MiniCPMSdpaAttention(MiniCPMAttention):
-    """
-    MiniCPM attention module using torch.nn.functional.scaled_dot_product_attention. This module inherits from
-    `MiniCPMAttention` as the weights of the module stays untouched. The only changes are on the forward pass to adapt to
-    SDPA API.
-    """
 
     def forward(
         self,
@@ -975,7 +920,7 @@ class MiniCPMSdpaAttention(MiniCPMAttention):
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
         if output_attentions:
             logger.warning_once(
-                'MiniCPMModel is using MiniCPMSdpaAttention, but `torch.nn.functional.scaled_dot_product_attention` does not support `output_attentions=True`. Falling back to the manual attention implementation, but specifying the manual implementation will be required from Transformers version v5.0.0 onwards. This warning can be removed using the argument `attn_implementation="eager"` when loading the model.'
+                'MiniCPMModel is using MiniCPMSdpaAttention. Falling back to the manual attention implementation, but specifying the manual implementation will be required from Transformers version v5.0.0 onwards. This warning can be removed using the argument `attn_implementation="eager"` when loading the model.'
             )
             return super().forward(
                 hidden_states=hidden_states,
@@ -1096,20 +1041,6 @@ class MiniCPMDecoderLayer(nn.Layer):
         use_cache: Optional[bool] = False,
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
-        """
-        Args:
-            hidden_states (`torch.FloatTensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
-            attention_mask (`torch.FloatTensor`, *optional*):
-                attention mask of size `(batch_size, sequence_length)` if flash attention is used or `(batch_size, 1,
-                query_sequence_length, key_sequence_length)` if default attention is used.
-            output_attentions (`bool`, *optional*):
-                Whether or not to return the attentions tensors of all attention layers. See `attentions` under
-                returned tensors for more detail.
-            use_cache (`bool`, *optional*):
-                If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding
-                (see `past_key_values`).
-            past_key_value (`Tuple(torch.FloatTensor)`, *optional*): cached past key and value projection states
-        """
         if "padding_mask" in kwargs:
             warnings.warn(
                 "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
@@ -1145,10 +1076,6 @@ MINICPM_START_DOCSTRING = """
     This model inherits from [`PreTrainedModel`]. Check the superclass documentation for the generic methods the
     library implements for all its model (such as downloading or saving, resizing the input embeddings, pruning heads
     etc.)
-
-    This model is also a PyTorch [torch.nn.Module](https://pytorch.org/docs/stable/nn.html#torch.nn.Module) subclass.
-    Use it as a regular PyTorch Module and refer to the PyTorch documentation for all matter related to general usage
-    and behavior.
 
     Parameters:
         config ([`MiniCPMConfig`]):
@@ -1188,7 +1115,6 @@ class MiniCPMPreTrainedModel(PretrainedModel):
         super().__init__(config)
 
     def _init_weights(self, module):
-        # std = self.config.initializer_range
         if isinstance(self.config, dict):
             std = self.config.get("initializer_range", 0.02)
         else:
@@ -1382,7 +1308,7 @@ class MiniCPMPreTrainedModel(PretrainedModel):
 
 MINICPM_INPUTS_DOCSTRING = """
     Args:
-        input_ids (`torch.LongTensor` of shape `(batch_size, sequence_length)`):
+        input_ids (`paddle.Tensor` of shape `(batch_size, sequence_length)`):
             Indices of input sequence tokens in the vocabulary. Padding will be ignored by default should you provide
             it.
 
@@ -1390,7 +1316,7 @@ MINICPM_INPUTS_DOCSTRING = """
             [`PreTrainedTokenizer.__call__`] for details.
 
             [What are input IDs?](../glossary#input-ids)
-        attention_mask (`torch.Tensor` of shape `(batch_size, sequence_length)`, *optional*):
+        attention_mask (`paddle.Tensor` of shape `(batch_size, sequence_length)`, *optional*):
             Mask to avoid performing attention on padding token indices. Mask values selected in `[0, 1]`:
 
             - 1 for tokens that are **not masked**,
@@ -1410,29 +1336,23 @@ MINICPM_INPUTS_DOCSTRING = """
 
             - 1 indicates the head is **not masked**,
             - 0 indicates the head is **masked**.
-        position_ids (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
+        position_ids (`paddle.Tensor` of shape `(batch_size, sequence_length)`, *optional*):
             Indices of positions of each input sequence tokens in the position embeddings. Selected in the range `[0,
             config.n_positions - 1]`.
 
             [What are position IDs?](../glossary#position-ids)
-        past_key_values (`Cache` or `tuple(tuple(torch.FloatTensor))`, *optional*):
+        past_key_values (`Cache`, *optional*):
             Pre-computed hidden-states (key and values in the self-attention blocks and in the cross-attention
             blocks) that can be used to speed up sequential decoding. This typically consists in the `past_key_values`
             returned by the model at a previous stage of decoding, when `use_cache=True` or `config.use_cache=True`.
 
-            Two formats are allowed:
-            - a [`~cache_utils.Cache`] instance;
-            - Tuple of `tuple(torch.FloatTensor)` of length `config.n_layers`, with each tuple having 2 tensors of
-            shape `(batch_size, num_heads, sequence_length, embed_size_per_head)`). This is also known as the legacy
-            cache format.
-
-            The model will output the same cache format that is fed as input. If no `past_key_values` are passed, the
-            legacy cache format will be returned.
+            Only the [`~cache_utils.Cache`] format is supported. If `use_cache=True` and no `past_key_values` are
+            passed, a new dynamic cache will be created.
 
             If `past_key_values` are used, the user can optionally input only the last `input_ids` (those that don't
             have their past key value states given to this model) of shape `(batch_size, 1)` instead of all `input_ids`
             of shape `(batch_size, sequence_length)`.
-        inputs_embeds (`torch.FloatTensor` of shape `(batch_size, sequence_length, hidden_size)`, *optional*):
+        inputs_embeds (`paddle.Tensor` of shape `(batch_size, sequence_length, hidden_size)`, *optional*):
             Optionally, instead of passing `input_ids` you can choose to directly pass an embedded representation. This
             is useful if you want more control over how to convert `input_ids` indices into associated vectors than the
             model's internal embedding lookup matrix.
@@ -1599,7 +1519,6 @@ class MiniCPMModel(MiniCPMPreTrainedModel):
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids) * self.config.scale_emb
 
-        # attn_mask_startend_row_indices = None
         mask_kwargs = {
             "config": self.config,
             "inputs_embeds": inputs_embeds,
@@ -1731,31 +1650,7 @@ class MiniCPMForCausalLM(MiniCPMPreTrainedModel):
         logits_to_keep: Union[int, paddle.Tensor] = 0,
         **kwargs,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
-        """
-        Args:
-            labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
-                Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
-                config.vocab_size]` or -100 (see `input_ids` docstring). Tokens with indices set to `-100` are ignored
-                (masked), the loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`.
-
-        Returns:
-
-        Example:
-
-        ```python
-        >>> from transformers import AutoTokenizer, MiniCPMForCausalLM
-
-        >>> model = MiniCPMForCausalLM.from_pretrained(PATH_TO_CONVERTED_WEIGHTS)
-        >>> tokenizer = AutoTokenizer.from_pretrained(PATH_TO_CONVERTED_TOKENIZER)
-
-        >>> prompt = "Hey, are you conscious? Can you talk to me?"
-        >>> inputs = tokenizer(prompt, return_tensors="pt")
-
-        >>> # Generate
-        >>> generate_ids = model.generate(inputs.input_ids, max_length=30)
-        >>> tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
-        "Hey, are you conscious? Can you talk to me?\\nI'm not conscious, but I can talk to you."
-        ```"""
+ 
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
@@ -1966,12 +1861,6 @@ class MiniCPMForSequenceClassification(MiniCPMPreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, SequenceClassifierOutputWithPast]:
-        """
-        labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
-            Labels for computing the sequence classification/regression loss. Indices should be in `[0, ...,
-            config.num_labels - 1]`. If `config.num_labels == 1` a regression loss is computed (Mean-Square loss), If
-            `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
-        """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         transformer_outputs = self.model(
             input_ids,
