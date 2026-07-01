@@ -403,7 +403,10 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             if hasattr(config, "num_empty_layers_add_in_head") and config.num_empty_layers_add_in_head
             else 0
         )
-        mtp_num_layers = getattr(config, "num_nextn_predict_layers", 0)
+        if config.mtp_num_layers > 0:
+            mtp_num_layers = config.mtp_num_layers
+        else:
+            mtp_num_layers = getattr(config, "num_nextn_predict_layers", 0)
         # Note: num_hidden_layers in PaddleFormers config is the decoder layer count (NOT bumped by MTP).
         # MTP layers are appended AFTER the decoder layers, so MTP layer i is at index num_hidden_layers + i.
         num_decoder_layers = num_hidden_layers
@@ -415,7 +418,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             "embed.weight -> model.embedding.embed_tokens.weight",
             "norm.weight -> model.norm.weight",
         ]
-        if mtp_num_layers > 0:
+        if mtp_num_layers > 0 and getattr(config, "enable_mtp_magic_send", False):
             stmts.append("embed.weight -> model.mtp_embedding.embed_tokens.weight")
         if config.tie_word_embeddings:
             stmts += ["embed.weight -> model.lm_head.weight"]
@@ -701,7 +704,10 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             if hasattr(config, "num_empty_layers_add_in_head") and config.num_empty_layers_add_in_head
             else 0
         )
-        mtp_num_layers = getattr(config, "num_nextn_predict_layers", 0)
+        if config.mtp_num_layers > 0:
+            mtp_num_layers = config.mtp_num_layers
+        else:
+            mtp_num_layers = getattr(config, "num_nextn_predict_layers", 0)
         # Note: num_hidden_layers in PaddleFormers config is the decoder layer count (NOT bumped by MTP).
         # MTP layers are appended AFTER the decoder layers, so MTP layer i is at index num_hidden_layers + i.
         num_decoder_layers = num_hidden_layers
@@ -713,7 +719,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             "model.embedding.embed_tokens.weight -> embed.weight",
             "model.norm.weight -> norm.weight",
         ]
-        if mtp_num_layers > 0:
+        if mtp_num_layers > 0 and getattr(config, "enable_mtp_magic_send", False):
             stmts.append("model.mtp_embedding.embed_tokens.weight -> embed.weight")
         if config.tie_word_embeddings:
             stmts += ["model.lm_head.weight -> _"]
