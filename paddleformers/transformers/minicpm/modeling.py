@@ -42,6 +42,8 @@ from ..model_outputs import (
     SequenceClassifierOutputWithPast,
 )
 from ..model_utils import PretrainedModel, register_base_model
+
+"""Paddle MiniCPM model."""
 import math
 import re
 import warnings
@@ -301,6 +303,18 @@ def compressed_attention(
 
 @lru_cache(maxsize=16)
 def calc_chunks_with_stride(cu_seqlen, chunk_size, kernel_stride):
+    """
+    Compute the chunks that require Sparse attention, with stride support.
+
+    Args:
+        cu_seqlen (paddle.Tensor): Cumulative sequence lengths for each sample.
+        chunk_size (int): Chunk size used for Sparse attention.
+        kernel_stride (int): Stride size when sliding over the sequence.
+
+    Returns:
+        filtered_indices (paddle.Tensor): Indices used to directly index into the key/value tensors.
+        cu_seqlens_compressed (paddle.Tensor): Cumulative sequence lengths after compression.
+    """
     batch_sizes = cu_seqlen[1:] - cu_seqlen[:-1]
     max_seq_len = paddle.compat.max(batch_sizes)
     max_num_chunks_per_seq = (max_seq_len - chunk_size) // kernel_stride + 1
@@ -351,6 +365,17 @@ class CompressK(nn.Layer):
         self.kernel_stride = kernel_stride
 
     def forward(self, k: paddle.Tensor, cu_seqlens):
+        """
+        Forward pass for compressing the key (K) tensor.
+
+        Args:
+            k (paddle.Tensor): Input key tensor of shape (total_seq_len, num_heads, head_dim).
+            cu_seqlens (paddle.Tensor): Cumulative sequence lengths for each sample in the batch.
+
+        Returns:
+            compressed_k (paddle.Tensor): Compressed key tensor.
+            cu_seqlens_compressed (paddle.Tensor): Updated cumulative sequence lengths after compression.
+        """
         filtered_k_indices, cu_seqlens_compressed = calc_chunks_with_stride(
             cu_seqlens, self.kernel_size, self.kernel_stride
         )
@@ -669,6 +694,26 @@ def rotate_half(x):
 
 
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):
+    """Applies Rotary Position Embedding to the query and key tensors.
+
+    Args:
+        q (`paddle.Tensor`): The query tensor.
+        k (`paddle.Tensor`): The key tensor.
+        cos (`paddle.Tensor`): The cosine part of the rotary embedding.
+        sin (`paddle.Tensor`): The sine part of the rotary embedding.
+        position_ids (`paddle.Tensor`):
+            The position indices of the tokens corresponding to the query and key tensors. For example, this can be
+            used to pass offsetted position ids when working with a KV-cache.
+        unsqueeze_dim (`int`, *optional*, defaults to 1):
+            The dimension along which to unsqueeze cos[position_ids] and sin[position_ids] so that they can be properly
+            broadcasted to the dimensions of q and k. For example, if q and k have shape
+            [batch_size, heads, seq_len, head_dim], setting unsqueeze_dim=1 makes cos[position_ids] and
+            sin[position_ids] broadcastable to q and k. If q and k have shape
+            [batch_size, seq_len, heads, head_dim], set unsqueeze_dim=2.
+
+    Returns:
+        `tuple(paddle.Tensor)` comprising the query and key tensors rotated using Rotary Position Embedding.
+    """
     orig_dtype = k.dtype
     cos = cos[position_ids].unsqueeze(unsqueeze_dim)
     sin = sin[position_ids].unsqueeze(unsqueeze_dim)
@@ -690,6 +735,10 @@ def _unpad_one_tensor(hidden_states, attention_mask):
 
 
 def repeat_kv(hidden_states: paddle.Tensor, n_rep: int) -> paddle.Tensor:
+    """
+    This is the equivalent of repeat_interleave on the head dimension. The hidden states go from
+    (batch, num_key_value_heads, seqlen, head_dim) to (batch, num_attention_heads, seqlen, head_dim).
+    """
     batch, num_key_value_heads, slen, head_dim = hidden_states.shape
     if n_rep == 1:
         return hidden_states
@@ -908,6 +957,10 @@ class MiniCPMAttention(nn.Layer):
 
 
 class MiniCPMSdpaAttention(MiniCPMAttention):
+    """
+    MiniCPM attention module using scaled dot product attention. This module inherits from `MiniCPMAttention` as the
+    weights of the module stay untouched. The only changes are on the forward pass to adapt to the SDPA API.
+    """
 
     def forward(
         self,
@@ -1041,6 +1094,20 @@ class MiniCPMDecoderLayer(nn.Layer):
         use_cache: Optional[bool] = False,
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
+        """
+        Args:
+            hidden_states (`paddle.Tensor`): Input to the layer of shape `(batch, seq_len, embed_dim)`.
+            attention_mask (`paddle.Tensor`, *optional*):
+                Attention mask of size `(batch_size, sequence_length)` if flash attention is used or
+                `(batch_size, 1, query_sequence_length, key_sequence_length)` if default attention is used.
+            output_attentions (`bool`, *optional*):
+                Whether or not to return the attentions tensors of all attention layers. See `attentions` under
+                returned tensors for more detail.
+            use_cache (`bool`, *optional*):
+                If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding
+                (see `past_key_values`).
+            past_key_value (`Tuple(paddle.Tensor)`, *optional*): Cached past key and value projection states.
+        """
         if "padding_mask" in kwargs:
             warnings.warn(
                 "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
@@ -1076,6 +1143,9 @@ MINICPM_START_DOCSTRING = """
     This model inherits from [`PreTrainedModel`]. Check the superclass documentation for the generic methods the
     library implements for all its model (such as downloading or saving, resizing the input embeddings, pruning heads
     etc.)
+
+    This model is also a Paddle [`paddle.nn.Layer`] subclass. Use it as a regular Paddle Layer and refer to the Paddle
+    documentation for all matters related to general usage and behavior.
 
     Parameters:
         config ([`MiniCPMConfig`]):
@@ -1186,7 +1256,6 @@ class MiniCPMPreTrainedModel(PretrainedModel):
                         for k in LAYER_ROWWISE
                     }
                 )
-                # bias
                 if config.use_bias:
                     actions.update(
                         {f"{cls.base_model_prefix}.layers.0.{b}": partial(fn, is_column=True) for b in BIAS_KEYS}
@@ -1650,7 +1719,16 @@ class MiniCPMForCausalLM(MiniCPMPreTrainedModel):
         logits_to_keep: Union[int, paddle.Tensor] = 0,
         **kwargs,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
- 
+        """
+        Args:
+            labels (`paddle.Tensor` of shape `(batch_size, sequence_length)`, *optional*):
+                Labels for computing the masked language modeling loss. Indices should either be in
+                `[0, ..., config.vocab_size]` or -100 (see `input_ids` docstring). Tokens with indices set to `-100`
+                are ignored (masked), and the loss is only computed for the tokens with labels in
+                `[0, ..., config.vocab_size]`.
+
+        Returns:
+        """
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
@@ -1861,6 +1939,12 @@ class MiniCPMForSequenceClassification(MiniCPMPreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, SequenceClassifierOutputWithPast]:
+        """
+        labels (`paddle.Tensor` of shape `(batch_size,)`, *optional*):
+            Labels for computing the sequence classification/regression loss. Indices should be in
+            `[0, ..., config.num_labels - 1]`. If `config.num_labels == 1` a regression loss is computed
+            (Mean-Square loss), and if `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
+        """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         transformer_outputs = self.model(
             input_ids,
