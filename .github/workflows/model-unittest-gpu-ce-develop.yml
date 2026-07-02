@@ -1,10 +1,6 @@
 name: Model Unittest GPU CE Develop
 
 on:
-  pull_request:
-    branches:
-      - develop
-      - release/*
   schedule:
     - cron: "10 12 * * 0-4" # 每周日、一、二、三、四的20点
     - cron: "10 15 * * 0-4" # 每周日、一、二、三、四的0点
