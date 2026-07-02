@@ -146,7 +146,7 @@ def get_gate(
         moe_num_experts % config.moe_world_size == 0
     ), f"expert moe_num_experts={moe_num_experts} % moe_world_size={config.moe_world_size} == 0"
     moe_num_experts_per_device = moe_num_experts // config.moe_world_size
-    if not config.moe_fuse_experts:
+    if not config.moe_expert_fusion:
         experts = nn.LayerList([])
         for expert_id, (experts_num, fc) in enumerate(expert):
             assert experts_num % config.moe_world_size == 0
@@ -1067,7 +1067,7 @@ class ErnieDecoderLayer(nn.Layer):
 
     def _init_gate_and_experts(self, layer_idx):
         cfg = deepcopy(self.config)
-        fc_cls = ErnieMoeMLPFused if cfg.moe_fuse_experts and not cfg.use_fp8_mlp else ErnieMoeMLP
+        fc_cls = ErnieMoeMLPFused if cfg.moe_expert_fusion and not cfg.use_fp8_mlp else ErnieMoeMLP
         if self.config.expert_mlp_use_bias is not None:
             cfg.use_bias = self.config.expert_mlp_use_bias
 
@@ -1103,7 +1103,7 @@ class ErnieDecoderLayer(nn.Layer):
                         fc.append((num_experts, nn.Identity()))
             else:
                 cfg.intermediate_size = cfg.moe_intermediate_size
-                if cfg.moe_fuse_experts:
+                if cfg.moe_expert_fusion:
                     fc = [(1, fc_cls(cfg))]
                 else:
                     fc = [(cfg.moe_num_experts, fc_cls(cfg))]

@@ -50,6 +50,7 @@ from paddlefleet.gpt_builders import gpt_builder
 
 from paddleformers.transformers.model_utils import PretrainedModel
 
+from .auto.configuration import AutoConfig
 from .model_provider import ModelProviderMixin
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,28 @@ class GPTModel(FleetGPTModel, PretrainedModel):
     GPTModel class that inherits from FleetGPTModel.
     This class requires paddlefleet to be installed.
     """
+
+    # Mark PaddleFleet GPT models as config-backed so VisualDL/TensorBoard can
+    # emit `model_config` text summaries for provider-based pipeline models.
+    config_class = AutoConfig
+
+    def get_input_embeddings(self):
+        """获取 embedding.embed_tokens 层"""
+        from paddlefleet.models.gpt.gpt_embedding import GPTEmbedding
+
+        for layer in self.run_function:
+            if isinstance(layer, GPTEmbedding):
+                return layer.embedding.embed_tokens
+        return None
+
+    def get_lm_head(self):
+        """获取 lm_head 层"""
+        from paddlefleet.models.gpt.lm_head import GPTLMHead
+
+        for layer in self.run_function:
+            if isinstance(layer, GPTLMHead):
+                return layer
+        return None
 
 
 # GPTModel = FleetGPTModel
@@ -76,7 +99,7 @@ def local_layer_spec(config: "GPTModelProvider") -> LayerSpec:
     """
     return get_gpt_layer_local_spec(
         num_experts=config.num_moe_experts,
-        moe_grouped_gemm=config.moe_grouped_gemm,
+        moe_expert_fusion=config.moe_expert_fusion,
         qk_layernorm=config.qk_layernorm,
         normalization=config.normalization,
     )
@@ -121,7 +144,7 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
 
     # MoE / FP8
     n_routed_experts: Optional[int] = None
-    moe_grouped_gemm: bool = False
+    moe_expert_fusion: bool = False
     use_qk_norm: bool = False
     fp8: Optional[str] = None
     normalization: str = "RMSNorm"
@@ -180,6 +203,9 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
                     self.rope_type = self.rope_parameters["rope_type"]
             if "rope_theta" in self.rope_parameters:
                 self.rope_theta = self.rope_parameters["rope_theta"]
+        if hasattr(self, "rope_scaling") and self.rope_scaling is not None:
+            if "mscale_all_dim" in self.rope_scaling:
+                self.mscale_all_dim = self.rope_scaling["mscale_all_dim"]
 
         # Check if mtp_block_spec parameter is supported
         kwargs = {}
@@ -193,9 +219,11 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
         """
 
         with model_init_device_context():
-            fleet_model = gpt_builder(
-                self, num_stages=pp_size, seg_method="layer:TransformerLayer|EmptyLayer", loss_fn=loss_fn
-            )
+            seg_method = "layer:TransformerLayer|EmptyLayer"
+            if self.separate_mtp_headloss:
+                seg_method = "layer:TransformerLayer|EmptyLayer|MultiTokenPredictionLayer"
+
+            fleet_model = gpt_builder(self, num_stages=pp_size, seg_method=seg_method, loss_fn=loss_fn)
             # Convert original FleetGPTModel to our GPTModel to correctly inherit PretrainedModel methods
             model = GPTModel.__new__(GPTModel)
             # Manually copy all attributes

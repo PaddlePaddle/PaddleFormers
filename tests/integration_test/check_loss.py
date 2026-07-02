@@ -43,7 +43,7 @@ def parse_log_file(file_path):
     Parses the log file to extract global_step and loss.
     Returns a dict: {step: loss}
     """
-    loss_pattern = re.compile(r"loss:\s*([0-9\.]+)")
+    loss_pattern = re.compile(r"(?:^|-\s*)loss:\s*([0-9\.]+)")
     step_pattern = re.compile(r"global_step:\s*(\d+)")
 
     loss_dict = {}

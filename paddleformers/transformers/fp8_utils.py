@@ -32,7 +32,7 @@ except ImportError:
 from paddle.distributed.fleet.meta_parallel.zero_bubble_utils import WeightGradStore
 
 try:
-    from paddlefleet.ops import deep_gemm
+    from paddlefleet_ops import deep_gemm
 except:
     try:
         from paddle.incubate.fp8 import deep_gemm
@@ -55,10 +55,8 @@ def get_sm_num():
     return 112
 
 
-def set_parameter_color(
-    parameters, color, group=None, offline_quant_expert_weight=True, clear_origin_weight_when_offline_quant=True
-):
-    if offline_quant_expert_weight and clear_origin_weight_when_offline_quant:
+def set_parameter_color(parameters, color, group=None, offline_quant_expert_weight=True):
+    if offline_quant_expert_weight:
         if group is None:
             for p in parameters:
                 if hasattr(p, "color") and p.color is not None:
@@ -179,6 +177,22 @@ class FP8LinearFunctionBase:
     def kitchen_gemm(
         x_fp8, x_scale, w_fp8, w_scale, is_a_1d_scaled, is_b_1d_scaled, out=None, rtn_dtype=paddle.bfloat16
     ):
+        if paddle.cuda.is_available() and paddle.cuda.get_device_capability()[0] >= 10:
+            if out is not None:
+                c = out
+            else:
+                c = paddle.empty([x_fp8.shape[0], w_fp8.shape[0]], rtn_dtype)
+            if numpy.prod(x_fp8.shape) != 0 and numpy.prod(w_fp8.shape) != 0:
+                recipe = (1, 1, 128) if (is_a_1d_scaled and is_b_1d_scaled) else None
+                deep_gemm.fp8_gemm_nt(
+                    (x_fp8, x_scale.t()),
+                    (w_fp8, w_scale.t()),
+                    c,
+                    c=out,
+                    recipe=recipe,
+                    compiled_dims="mn",
+                )
+            return c
         if out is not None:
             accumulate = True
             out_dtype = out.dtype
