@@ -165,7 +165,7 @@ jobs:
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
-          git checkout release/0.3
+          # git checkout release/0.3
           git reset --hard $fleet_commit
           CUDA_VERSION=CUDA129 scripts/install_ops_wheel.sh
           cd ..
@@ -324,7 +324,7 @@ jobs:
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
-          git checkout release/0.3
+          # git checkout release/0.3
           git reset --hard $fleet_commit
           CUDA_VERSION=CUDA129 scripts/install_ops_wheel.sh
           cd ..
@@ -617,7 +617,7 @@ jobs:
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
-          git checkout release/0.3
+          # git checkout release/0.3
           git reset --hard $fleet_commit
           CUDA_VERSION=CUDA129 scripts/install_ops_wheel.sh
           cd ..
