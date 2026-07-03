@@ -268,6 +268,8 @@ def run_sft(
         dtype=dtype,
         quantization_config=quantization_config,
     )
+    if getattr(training_args, "pad_token_id", None) is not None:
+        model_config.pad_token_id = training_args.pad_token_id
 
     if (
         model_config.tie_word_embeddings
@@ -328,6 +330,7 @@ def run_sft(
     model_config.max_sequence_length = data_args.max_seq_len
     model_config._attn_implementation = model_args._attn_implementation
     model_config.is_lora = model_args.lora
+    model_config.moe_logging = model_args.moe_logging
 
     # Sync arguments to MLLM sub_config
     if getattr(model_config, "text_config", None) is not None:
