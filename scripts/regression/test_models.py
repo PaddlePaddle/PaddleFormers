@@ -304,7 +304,7 @@ class TrainTester:
         Returns:
             Tuple of (actual_loss, error_message). Error message is None if valid.
         """
-        loss_pattern = re.compile(r"(?<![A-Za-z_])loss:\s*([0-9]+\.[0-9]+)")
+        loss_pattern = re.compile(r"(?<![A-Za-z_])loss:\s*([0-9]+\.[0-9]+),\s*learning_rate:")
         losses = [float(m.group(1)) for m in loss_pattern.finditer(output)]
 
         avg_loss = round(sum(losses) / len(losses), 10) if losses else 0
@@ -327,7 +327,7 @@ class TrainTester:
         Returns:
             First loss value found, or None if not found.
         """
-        loss_pattern = re.compile(r"(?<![A-Za-z_])loss:\s*([0-9]+\.[0-9]+)")
+        loss_pattern = re.compile(r"(?<![A-Za-z_])loss:\s*([0-9]+\.[0-9]+),\s*learning_rate:")
         match = loss_pattern.search(log_content)
         return float(match.group(1)) if match else None
 
@@ -352,7 +352,7 @@ class TrainTester:
         with open(resume_log_file, "r", encoding="utf-8") as f:
             resume_log_content = f.read()
 
-        loss_pattern = re.compile(r"(?<![A-Za-z_])loss:\s*([0-9]+\.[0-9]+)")
+        loss_pattern = re.compile(r"(?<![A-Za-z_])loss:\s*([0-9]+\.[0-9]+),\s*learning_rate:")
 
         # Extract last loss from training log
         training_losses = loss_pattern.findall(log_content)
