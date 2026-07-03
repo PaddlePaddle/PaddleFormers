@@ -55,6 +55,20 @@ except:
 
 from paddle import _C_ops
 
+_flash_mask_available = False
+try:
+    if paddle.cuda.is_available() and paddle.cuda.get_device_capability()[0] == 10:
+        from paddlefleet_ops.flash_mask.cute.interface import (
+            _flash_attn_bwd as _flash_attn_v4_bwd,
+        )
+        from paddlefleet_ops.flash_mask.cute.interface import (
+            _flash_attn_fwd as _flash_attn_v4_fwd,
+        )
+
+        _flash_mask_available = True
+except (ImportError, AttributeError):
+    _flash_mask_available = False
+
 try:
     from paddle.nn.functional.flash_attention import flash_attention
 except:
@@ -2418,6 +2432,17 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
                 False,  # pack_gqa_
                 0,  # sm_margin
             )
+        elif fa_version == 4:
+            attn_out, softmax_lse = _flash_attn_v4_fwd(
+                query_states,
+                key_states,
+                value_states,
+                softmax_scale=softmax_scale,
+                causal=True,
+                return_lse=True,
+                startend_row_indices=None,
+                pack_gqa=False,
+            )
         else:
             assert False, f"invalid {fa_version=}"
 
@@ -2444,6 +2469,55 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
                 softmax_scale,
             )
         elif fa_version == 3:
+            if recompute_fa3:
+                ctx.save_for_backward(
+                    q_init,
+                    kv_init,
+                    None,
+                    None,
+                    q_ln_weight,
+                    kv_ln_weight,
+                    q_up_weight,
+                    kv_up_weight,
+                    rotary_emb,
+                    num_heads,
+                    q_head_dim,
+                    qk_nope_head_dim,
+                    v_head_dim,
+                    qk_rope_head_dim,
+                    position_ids,
+                    eps,
+                    custom_map.q_lens,
+                    custom_map.out_proj_weight,
+                    kv_lora_rank,
+                    softmax_scale,
+                    recompute_fa3,
+                )
+            else:
+                ctx.save_for_backward(
+                    q_init,
+                    kv_init,
+                    attn_out,
+                    softmax_lse,
+                    q_ln_weight,
+                    kv_ln_weight,
+                    q_up_weight,
+                    kv_up_weight,
+                    rotary_emb,
+                    num_heads,
+                    q_head_dim,
+                    qk_nope_head_dim,
+                    v_head_dim,
+                    qk_rope_head_dim,
+                    position_ids,
+                    eps,
+                    custom_map.q_lens,
+                    custom_map.out_proj_weight,
+                    kv_lora_rank,
+                    softmax_scale,
+                    recompute_fa3,
+                )
+        elif fa_version == 4:
             if recompute_fa3:
                 ctx.save_for_backward(
                     q_init,
@@ -2561,6 +2635,30 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
                 softmax_scale,
                 recompute_fa3,
             ) = ctx.saved_tensor()
+        elif fa_version == 4:
+            (
+                q_init,
+                kv_init,
+                attn_out,
+                softmax_lse,
+                q_ln_weight,
+                kv_ln_weight,
+                q_up_weight,
+                kv_up_weight,
+                rotary_emb,
+                num_heads,
+                q_head_dim,
+                qk_nope_head_dim,
+                v_head_dim,
+                qk_rope_head_dim,
+                position_ids,
+                eps,
+                q_lens,
+                out_proj_weight,
+                kv_lora_rank,
+                softmax_scale,
+                recompute_fa3,
+            ) = ctx.saved_tensor()
         else:
             assert False, f"invalid {fa_version=}"
 
@@ -2568,6 +2666,8 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
             assert "recompute_fa3" not in locals()
             assert attn_out is not None and softmax_lse is not None
         if fa_version == 3 and not recompute_fa3:
+            assert attn_out is not None and softmax_lse is not None
+        if fa_version == 4 and not recompute_fa3:
             assert attn_out is not None and softmax_lse is not None
 
         q_ln_t, q_ln_invar = paddle.incubate.nn.functional.fused_rms_norm_ext(q_init, q_ln_weight, eps)
@@ -2722,6 +2822,71 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
                     0.0,
                     0,
                 )
+        elif fa_version == 4:
+            # recompute fa4
+            if recompute_fa3:
+                with paddle.no_grad():
+                    attn_out, softmax_lse = _flash_attn_v4_fwd(
+                        query_states,
+                        key_states,
+                        value_states,
+                        softmax_scale=softmax_scale,
+                        causal=True,
+                        return_lse=True,
+                        startend_row_indices=None,
+                        pack_gqa=False,
+                    )
+
+                    # padding x and quant
+                    bsz = value_states.shape[0]
+                    attn_out_reshape = attn_out.reshape([bsz * q_lens, -1]).contiguous()
+                    d_attn_out_reshape_shape = attn_out_reshape.shape
+                    attn_out_reshape = FP8LinearFunctionBase.padding(attn_out_reshape, 0)
+                    (
+                        attn_out_reshape_t_fp8,
+                        attn_out_reshape_t_scale,
+                    ) = paddle.incubate.nn.functional.fp8_quant_blockwise(
+                        attn_out_reshape,
+                        output_scale_transpose=True,
+                        quant_method="1x128",
+                        input_transpose=True,
+                        return_transpose_only=True,
+                    )
+                    dout_2d = dout.reshape([-1, dout.shape[-1]])
+
+                    # ===== dx = deep_gemm(dout_fp8, w_fp8)
+                    d_attn_out, dout_t_fp8, dout_t_scale = FP8LinearFunctionBase.compute_fp8_linear(
+                        dout_2d, out_proj_weight, weight_transpose=False, return_mode="with_input_transpose_quant"
+                    )
+                    d_attn_out = d_attn_out.reshape(d_attn_out_reshape_shape)
+                    FP8LinearFunctionBase.compute_expert_w_grad(
+                        attn_out_reshape_t_fp8,
+                        attn_out_reshape_t_scale,
+                        dout_t_fp8,
+                        dout_t_scale,
+                        True,
+                        True,
+                        out_proj_weight,
+                        paddle.float32,
+                    )
+
+                    dout = d_attn_out
+                    dout = dout.reshape(attn_out.shape)
+
+            with paddle.no_grad():
+                flashmask_info = None
+                q_grad, k_grad, v_grad = _flash_attn_v4_bwd(
+                    query_states,
+                    key_states,
+                    value_states,
+                    attn_out,
+                    dout,
+                    softmax_lse,
+                    flashmask_info,
+                    softmax_scale=softmax_scale,
+                    causal=True,
+                    deterministic=bool(paddle.get_flags(["FLAGS_cudnn_deterministic"])["FLAGS_cudnn_deterministic"]),
+                )
         else:
             assert False, f"invalid {fa_version=}"
 
@@ -2851,6 +3016,9 @@ class MemroyRecomputeAttn(paddle.nn.Layer):
     ) -> None:
         super().__init__()
         self._dtype = self._helper.get_default_dtype()
+
+        if paddle.cuda.is_available() and paddle.cuda.get_device_capability()[0] >= 10 and _flash_mask_available:
+            fa_version = 4
 
         self.q_ln_weight = paddle.create_parameter(
             shape=[q_norm_hidden_size],

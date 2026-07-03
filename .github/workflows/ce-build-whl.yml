@@ -88,12 +88,28 @@ jobs:
           docker exec -t $container_name /bin/bash -c '
           cd /workspace/PaddleFormers/upload
           cp /home/models/bos/bos_tools.py ./
-          for FILE in /workspace/PaddleFormers/upload/*; do
+          cp /home/models/bos/notify_paddle_link.py ./
+          for FILE in /workspace/PaddleFormers/upload/*.whl; do
             file=$(basename "$FILE")
-            python bos_tools.py $file paddle-whl/nightly/cu126/paddleformers/
-            python bos_tools.py $file paddle-whl/nightly/cu129/paddleformers/
-            python bos_tools.py $file paddle-whl/nightly/cu130/paddleformers/
-            echo "$file: https://paddle-whl.bj.bcebos.com/nightly/cu126/paddleformers/$file"
+            if [[ "$file" =~ \.dev[0-9]{8}-.*\.whl$ ]]; then
+              echo "Skip dated dev wheel: $file"
+              rm -f "$FILE"
+              continue
+            fi
+            if [[ "$file" =~ \.post[0-9]+-.*\.whl$ && ! "$file" =~ -0\.0\.0\.post ]]; then
+              echo "Skip release post wheel: $file"
+              rm -f "$FILE"
+              continue
+            fi
+            for cuda in cu126 cu129 cu130; do
+              python bos_tools.py $file paddle-whl/nightly/$cuda/paddleformers/
+              echo "$file: https://paddle-whl.bj.bcebos.com/nightly/$cuda/paddleformers/$file"
+              if [[ ! "$file" =~ -0\.0\.0\. ]]; then
+                python3 notify_paddle_link.py $cuda $file
+              else
+                echo "Skip notify for 0.0.0 wheel: $file"
+              fi
+            done
           done
           '
 

@@ -15,6 +15,8 @@ greedy_intokens: false
 truncate_packing: false
 padding_free: true
 
+pad_token_id: 151643
+
 dataloader_shuffle: false
 # random_shuffle: false
 dataloader_num_workers: 24
