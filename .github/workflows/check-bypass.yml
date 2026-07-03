@@ -15,7 +15,8 @@ on:
 jobs:
   check-bypass:
     name: Check bypass
-    runs-on: 'ernie-cpu'
+    runs-on:
+      group: APPROVAL
     permissions:
       contents: read
     env:

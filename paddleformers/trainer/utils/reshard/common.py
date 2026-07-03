@@ -609,18 +609,17 @@ def all_gather_simple_object(obj, group):
 def all_gather_state_dict(state_dict, filter_func, group):
     res = OrderedDict()
 
-    def map_func(weight):
-        if isinstance(weight, paddle.Tensor):
-            weight = weight.numpy()
-        return weight
-
     group_rank = max(group.rank, 0)
-    state_dict = {k: map_func(v) for (k, v) in state_dict.items()}
 
+    # Convert tensors to numpy upfront to free GPU memory.
+    # This bounds peak GPU memory to chunk_size tensors during broadcast.
     meta_dict = {}
     for (k, v) in state_dict.items():
-        # src rank
-        meta_dict[k] = (v.dtype, v.shape, group_rank)
+        if isinstance(v, paddle.Tensor):
+            meta_dict[k] = (str(v.dtype).split(".")[-1], list(v.shape), group_rank)
+            state_dict[k] = v.numpy()
+        else:
+            meta_dict[k] = (str(v.dtype), list(v.shape), group_rank)
 
     meta_dict_list = all_gather_simple_object(meta_dict, group)
 
@@ -631,27 +630,45 @@ def all_gather_state_dict(state_dict, filter_func, group):
             total_meta_dict[k] = v
 
     meta_list = list(total_meta_dict.items())
-    meta_list = sorted(meta_list, key=lambda x: x[0])
-    for (k, meta) in meta_list:
-        dtype, shape, rank = meta
-        if rank == group_rank:
-            assert k in state_dict
-            tensor = paddle.to_tensor(state_dict[k])
-            del state_dict[k]
-        else:
-            tensor = paddle.to_tensor(np.empty(shape, dtype))
-        logger.info(f"broadcast {k} from {rank}, group {group}")
-        # broadcast the tensor
-        if group.nranks > 1:
-            paddle.distributed.broadcast(
-                tensor,
-                src=group.ranks[rank],
-                group=group,
-                sync_op=True,
-            )
-        if filter_func(k):
-            res[k] = tensor.cpu()
-        del tensor
+    meta_list = sorted(meta_list, key=lambda x: (x[1][2], x[0]))
+
+    # Process in chunks to balance broadcast throughput and GPU memory usage.
+    # Within a chunk, all broadcasts are done first (no CPU sync in between),
+    # then results are moved to CPU together.
+    chunk_size = 8
+    for chunk_start in range(0, len(meta_list), chunk_size):
+        chunk = meta_list[chunk_start : chunk_start + chunk_size]
+
+        # Phase 1: prepare all tensors on GPU (batch CPU->GPU transfers)
+        gpu_tensors = []
+        for (k, meta) in chunk:
+            dtype, shape, rank = meta
+            if rank == group_rank:
+                assert k in state_dict
+                tensor = paddle.to_tensor(state_dict[k])
+                del state_dict[k]
+            else:
+                tensor = paddle.empty(shape=shape, dtype=dtype)
+            gpu_tensors.append((k, meta, tensor))
+
+        # Phase 2: broadcast all tensors continuously without interruption
+        for (k, meta, tensor) in gpu_tensors:
+            _, _, rank = meta
+            logger.info(f"broadcast {k} from {rank}, group {group}")
+            if group.nranks > 1:
+                paddle.distributed.broadcast(
+                    tensor,
+                    src=group.ranks[rank],
+                    group=group,
+                    sync_op=True,
+                )
+
+        # Phase 3: move to CPU and release GPU memory
+        for (k, _, tensor) in gpu_tensors:
+            if filter_func(k):
+                res[k] = tensor.cpu()
+            del tensor
+
     return res
 
 
