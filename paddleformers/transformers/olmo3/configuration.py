@@ -59,4 +59,4 @@ class Olmo3Config(Olmo2Config):
             self.layer_types = [
                 "sliding_attention" if (i + 1) % 4 != 0 else "full_attention" for i in range(self.num_hidden_layers)
             ]
-        layer_type_validation(self.layer_types)
+        layer_type_validation(self.layer_types, self.num_hidden_layers)

@@ -73,12 +73,20 @@ class Olmo2Attention(nn.Layer):
         self.config = config
         self.layer_idx = layer_idx
         self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
+        self.num_heads = config.num_attention_heads
+        self.num_key_value_heads = config.num_key_value_heads
         self.num_key_value_groups = config.num_attention_heads // config.num_key_value_heads
         self.scaling = self.head_dim**-0.5
         self.attention_dropout = config.attention_dropout
 
         q_hidden_size = self.head_dim * config.num_attention_heads
         kv_hidden_size = self.head_dim * config.num_key_value_heads
+
+        if config.tensor_model_parallel_size > 1:
+            assert self.num_heads % config.tensor_model_parallel_size == 0
+            self.num_heads = self.num_heads // config.tensor_model_parallel_size
+            assert self.num_key_value_heads % config.tensor_model_parallel_size == 0
+            self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
 
         self.q_proj = GeneralLinear.create(
             config.hidden_size,
@@ -109,18 +117,19 @@ class Olmo2Attention(nn.Layer):
             tp_plan="rowwise",
         )
 
-        # QK-norm: RMSNorm applied to query and key after projection
+        # QK-norm: RMSNorm applied to query and key after projection.
+        # Uses local head count to match column-parallel projection output dimension.
         self.q_norm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
-            hidden_size=q_hidden_size,
+            hidden_size=self.head_dim * self.num_heads,
             has_bias=False,
             norm_eps=config.rms_norm_eps,
         )
         self.k_norm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
-            hidden_size=kv_hidden_size,
+            hidden_size=self.head_dim * self.num_key_value_heads,
             has_bias=False,
             norm_eps=config.rms_norm_eps,
         )
@@ -442,6 +451,42 @@ class Olmo2PretrainedModel(PretrainedModel):
                 aoa_statements.append("lm_head.weight -> lm_head.weight")
 
         return {"aoa_statements": aoa_statements}
+
+    @classmethod
+    def _get_tensor_parallel_mappings(cls, config, is_split=True):
+        from functools import partial
+
+        from ..conversion_utils import split_or_merge_func
+
+        fn = split_or_merge_func(
+            is_split=is_split,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
+            tensor_parallel_rank=config.tensor_parallel_rank,
+            num_attention_heads=config.num_attention_heads,
+        )
+
+        actions = {
+            "embed_tokens.weight": partial(fn, is_column=False),
+            "lm_head.weight": partial(fn, is_column=True),
+        }
+
+        for layer_idx in range(config.num_hidden_layers):
+            prefix = f"{cls.base_model_prefix}.layers.{layer_idx}"
+            actions.update(
+                {
+                    f"{prefix}.self_attn.q_proj.weight": partial(fn, is_column=True),
+                    f"{prefix}.self_attn.k_proj.weight": partial(fn, is_column=True),
+                    f"{prefix}.self_attn.v_proj.weight": partial(fn, is_column=True),
+                    f"{prefix}.self_attn.o_proj.weight": partial(fn, is_column=False),
+                    f"{prefix}.self_attn.q_norm.weight": partial(fn, is_column=True),
+                    f"{prefix}.self_attn.k_norm.weight": partial(fn, is_column=True),
+                    f"{prefix}.mlp.gate_proj.weight": partial(fn, is_column=True),
+                    f"{prefix}.mlp.up_proj.weight": partial(fn, is_column=True),
+                    f"{prefix}.mlp.down_proj.weight": partial(fn, is_column=False),
+                }
+            )
+
+        return actions
 
 
 @register_base_model

@@ -355,6 +355,7 @@ import_structure = {
         "Olmo2ForCausalLM",
         "Olmo2ForCausalLMPipe",
     ],
+    "olmo3.tokenizer": ["Olmo3Tokenizer"],
     "olmo3.configuration": ["Olmo3Config"],
     "olmo3.modeling": [
         "Olmo3Model",

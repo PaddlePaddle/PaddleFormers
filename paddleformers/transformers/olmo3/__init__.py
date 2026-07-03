@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
+    "tokenizer": ["Olmo3Tokenizer"],
     "configuration": ["Olmo3Config"],
     "modeling": [
         "Olmo3PretrainedModel",
@@ -28,6 +29,7 @@ import_structure = {
 }
 
 if TYPE_CHECKING:
+    from .tokenizer import *
     from .configuration import *
     from .modeling import *
 else:
