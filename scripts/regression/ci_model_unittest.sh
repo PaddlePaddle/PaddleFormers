@@ -65,6 +65,7 @@ init_env() {
     else
         # CI Release
         echo "CI: install paddle stable + fleet stable + release formers"
+        bash ./scripts/regression/install_requirements.sh ${FLAGS_enable_CI}
         cd ./scripts/regression
         wget https://paddle-qa.bj.bcebos.com/paddleformers/ci_release_config/config.yaml
         python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml --output config.yaml 2>&1 | tee /tmp/merge_output.txt
@@ -111,11 +112,6 @@ print_info() {
         tail -n 1 ${log_path}/model_unittest.log >> ${log_path}/model_unittest_FAIL.log
         echo -e "\033[31m ${log_path}/model_unittest_FAIL \033[0m"
         cat ${log_path}/model_unittest_FAIL.log
-        if [ -n "${AGILE_JOB_BUILD_ID}" ]; then
-            cp ${log_path}/model_unittest_FAIL.log ${PPNLP_HOME}/upload/model_unittest_FAIL.log.${AGILE_PIPELINE_BUILD_ID}.${AGILE_JOB_BUILD_ID}
-            cd ${PPNLP_HOME} && python upload.py ${PPNLP_HOME}/upload 'paddlenlp/PaddleNLP_CI/PaddleNLP-CI-Model-Unittest-GPU'
-            rm -rf upload/* && cd -
-        fi
         if [ $1 -eq 124 ]; then
             echo "\033[32m [failed-timeout] Test case execution was terminated after exceeding the ${running_time} min limit."
         fi

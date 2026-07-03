@@ -162,6 +162,8 @@ def run_dpo(
     model_config.max_sequence_length = data_args.max_seq_len
     model_config.seq_length = data_args.max_seq_len
     model_config.is_lora = model_args.lora
+    if getattr(training_args, "pad_token_id", None) is not None:
+        model_config.pad_token_id = training_args.pad_token_id
     if "qwen3_vl" in model_config.model_type and not model_args.lora:
         if training_args.sequence_parallel:
             logger.warning("Qwen3VL model do not support `sequence_parallel` yet, temporarily set to False")
@@ -187,6 +189,8 @@ def run_dpo(
         ref_model_config.max_sequence_length = data_args.max_seq_len
         ref_model_config.seq_length = data_args.max_seq_len
         ref_model_config._attn_implementation = model_args._attn_implementation
+        if getattr(training_args, "pad_token_id", None) is not None:
+            ref_model_config.pad_token_id = training_args.pad_token_id
 
         LlmMetaConfig.set_llm_config(ref_model_config, training_args)
 

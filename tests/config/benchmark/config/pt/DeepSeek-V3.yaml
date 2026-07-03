@@ -7,6 +7,8 @@ max_seq_len: 8192
 dataloader_num_workers: 8
 ignore_data_skip: 0
 
+pad_token_id: 1
+
 ### model
 model_name_or_path: ./config/
 tokenizer_name_or_path: /root/efficient_benchmark/huggingface/DeepSeek-V3
