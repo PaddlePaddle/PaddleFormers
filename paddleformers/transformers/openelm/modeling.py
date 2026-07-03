@@ -617,7 +617,7 @@ class OpenELMModel(OpenELMPreTrainedModel):
         if position_ids is None:
             position_ids = cache_position.unsqueeze(0)
 
-        causal_mask = self._update_causal_mask(attention_mask, inputs_embeds)
+        causal_mask = self._update_causal_mask(attention_mask, inputs_embeds, cache_position)
 
         # embed positions
         hidden_states = inputs_embeds
@@ -680,17 +680,18 @@ class OpenELMModel(OpenELMPreTrainedModel):
             attentions=all_self_attns,
         )
 
-    def _update_causal_mask(self, attention_mask, input_tensor):
+    def _update_causal_mask(self, attention_mask, input_tensor, cache_position=None):
         """Update the causal mask for the attention."""
-        batch_size, seq_length = input_tensor.shape[:2]
+        batch_size = input_tensor.shape[0]
         dtype = input_tensor.dtype
 
-        # support going beyond cached `max_position_embedding`
-        if seq_length > self.causal_mask.shape[-1]:
-            causal_mask = paddle.full(
-                [2 * self.causal_mask.shape[-1], 2 * self.causal_mask.shape[-1]],
-                fill_value=1,
-            )
+        target_length = attention_mask.shape[-1] if attention_mask is not None else input_tensor.shape[1]
+        if cache_position is not None:
+            target_length = max(target_length, int(cache_position[-1]) + 1)
+
+        while target_length > self.causal_mask.shape[-1]:
+            new_length = max(target_length, 2 * self.causal_mask.shape[-1])
+            causal_mask = paddle.full([new_length, new_length], fill_value=True, dtype="bool")
             self.register_buffer("causal_mask", paddle.triu(causal_mask, diagonal=1), persistable=False)
 
         min_dtype = paddle.finfo(dtype).min
@@ -921,11 +922,8 @@ class OpenELMForCausalLM(OpenELMPreTrainedModel):
         )
 
         # LM head or tied embeddings
-        if cls != cls.base_model_class:
-            if config.share_input_output_layers:
-                aoa_statements.append("transformer.token_embeddings.weight -> lm_head.weight")
-            else:
-                aoa_statements.append("lm_head.weight -> lm_head.weight")
+        if cls != cls.base_model_class and not config.share_input_output_layers:
+            aoa_statements.append("lm_head.weight -> lm_head.weight")
 
         return {"aoa_statements": aoa_statements}
 
