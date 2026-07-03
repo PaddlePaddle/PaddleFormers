@@ -935,15 +935,34 @@ class SPGradSyncCallback(TrainerCallback):
 
 
 class InternalMedicineCallback(TrainerCallback):
-    def __init__(self, monitors=None, monitor_interval: int = 1, verbose: bool = True, qk_row_stride: int = 1):
+    def __init__(
+        self,
+        monitors=None,
+        monitor_interval=None,
+        verbose: bool = True,
+        qk_row_stride: int = 1,
+        log_dir: str = "",
+    ):
         super().__init__()
         self.monitors = self._normalize_monitors(monitors)
-        self.monitor_interval = monitor_interval
+        if monitor_interval is None:
+            logger.warning(
+                "[InternalMedicine] internal_medicine_monitor_interval not set; defaulting to 1. "
+                "Set it to 0 in your yaml to disable internal-medicine monitoring entirely."
+            )
+            monitor_interval = 1
+        self.monitor_interval = int(monitor_interval)
         self.verbose = verbose
         self.qk_row_stride = qk_row_stride
+        self.log_dir = log_dir or ""
+        self.log_path = os.path.join(self.log_dir, "internal_medicine.jsonl") if self.log_dir else ""
         self._monitor_dict = {}
         self._training_logs = None
         self._setup_done = False
+        # Lazy-resolved flags: only rank 0 writes; init on first on_log call so
+        # the distributed env is fully up by then.
+        self._is_writer = None
+        self._log_path_ready = False
 
     @staticmethod
     def _normalize_monitors(monitors) -> list:
@@ -1004,13 +1023,56 @@ class InternalMedicineCallback(TrainerCallback):
             monitor.step()
 
     def on_log(self, args, state, control, logs=None, **kwargs):
-        if not self._setup_done or logs is None or self._training_logs is None:
+        if not self._setup_done or self._training_logs is None:
             return
 
         aggregated = self._training_logs.gather_and_aggregate()
         if aggregated:
-            logs.update(aggregated)
             self._training_logs.reset()
+            self._maybe_write_jsonl(state, aggregated)
+
+    def _resolve_writer(self):
+        """Decide once whether this process should write the jsonl file.
+
+        Only the global rank-0 process writes. Resolved lazily because the
+        distributed env may not be ready at callback construction time.
+        """
+        if self._is_writer is not None:
+            return self._is_writer
+        rank = 0
+        try:
+            import paddle.distributed as dist  # type: ignore
+
+            if dist.is_initialized():
+                rank = dist.get_rank()
+        except Exception:
+            rank = 0
+        self._is_writer = (rank == 0) and bool(self.log_path)
+        return self._is_writer
+
+    def _maybe_write_jsonl(self, state, aggregated):
+        if not self._resolve_writer():
+            return
+        try:
+            if not self._log_path_ready:
+                d = os.path.dirname(self.log_path)
+                if d:
+                    os.makedirs(d, exist_ok=True)
+                self._log_path_ready = True
+            record = {"global_step": int(getattr(state, "global_step", 0))}
+            for k, v in aggregated.items():
+                # Only JSON-serializable scalars; cast tensors/numpy to float.
+                try:
+                    record[k] = float(v)
+                except (TypeError, ValueError):
+                    # Skip non-scalar entries silently — the viewer only
+                    # plots scalar series anyway.
+                    continue
+            with open(self.log_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except Exception:
+            # Never let logging IO crash training.
+            logger.exception("[InternalMedicine] failed to append jsonl record")
 
 
 class EMAStateAssemblerCallback(TrainerCallback):
