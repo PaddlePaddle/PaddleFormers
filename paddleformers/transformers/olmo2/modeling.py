@@ -467,7 +467,7 @@ class Olmo2PretrainedModel(PretrainedModel):
 
         actions = {
             "embed_tokens.weight": partial(fn, is_column=False),
-            "lm_head.weight": partial(fn, is_column=True),
+            "lm_head.weight": partial(fn, is_column=False),
         }
 
         for layer_idx in range(config.num_hidden_layers):
