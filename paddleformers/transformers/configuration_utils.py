@@ -503,6 +503,12 @@ class LlmMetaConfig:
             "Whether to use high precision ROPEs.",
         ),
         (
+            "swa_high_precision_norm",
+            bool,
+            False,
+            "Whether to use high precision NORMS in DSV4 SWA. ONLY support for dsv4_hybrid_attention.",
+        ),
+        (
             "gated_linear_unit",
             bool,
             True,
