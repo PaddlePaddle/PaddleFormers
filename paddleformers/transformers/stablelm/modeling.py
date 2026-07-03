@@ -15,6 +15,7 @@ from typing import Optional
 
 import paddle
 from paddle import nn
+from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
@@ -126,12 +127,22 @@ class StableLmAttention(nn.Layer):
         self.num_key_value_groups = config.num_attention_heads // config.num_key_value_heads
         self.head_dim = config.hidden_size // config.num_attention_heads
 
+        q_hidden_size = config.num_attention_heads * self.head_dim
+        kv_hidden_size = config.num_key_value_heads * self.head_dim
+
+        if config.tensor_model_parallel_size > 1:
+            assert self.num_heads % config.tensor_model_parallel_size == 0, (
+                f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            )
+            assert self.num_key_value_heads % config.tensor_model_parallel_size == 0, (
+                f"num_key_value_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            )
+            self.num_heads = self.num_heads // config.tensor_model_parallel_size
+            self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
+
         self.rotary_ndims = int(self.head_dim * config.rope_parameters["partial_rotary_factor"])
         self.scaling = self.head_dim**-0.5
         self.attention_dropout = config.attention_dropout
-
-        q_hidden_size = self.num_heads * self.head_dim
-        kv_hidden_size = self.num_key_value_heads * self.head_dim
 
         self.q_proj = GeneralLinear.create(
             config.hidden_size,
@@ -179,7 +190,11 @@ class StableLmAttention(nn.Layer):
         past_key_values: Cache | None = None,
         use_cache: bool = False,
     ) -> tuple[paddle.Tensor, paddle.Tensor | None]:
-        bsz, q_len, _ = hidden_states.shape
+        if self.config.sequence_parallel:
+            q_len = self.config.max_sequence_length
+            bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // q_len
+        else:
+            bsz, q_len = hidden_states.shape[:2]
 
         query_states = self.q_proj(hidden_states).reshape([bsz, q_len, self.num_heads, self.head_dim]).transpose(1, 2)
         key_states = (
@@ -226,6 +241,8 @@ class StableLmAttention(nn.Layer):
         )
 
         attn_output = attn_output.reshape([bsz, q_len, -1])
+        if self.config.sequence_parallel:
+            attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
         attn_output = self.o_proj(attn_output)
 
         return attn_output, attn_weights
@@ -493,6 +510,10 @@ class StableLmModel(StableLmPretrainedModel):
             inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
 
         bsz, seq_length, _ = inputs_embeds.shape
+
+        if self.config.sequence_parallel:
+            inputs_embeds = inputs_embeds.reshape([-1, inputs_embeds.shape[-1]])
+            inputs_embeds = ScatterOp.apply(inputs_embeds)
 
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache(config=self.config)
