@@ -32,13 +32,13 @@ class InternLM3Config(PretrainedConfig):
             `inputs_ids` passed when calling [`InternLM3Model`]
         hidden_size (`int`, *optional*, defaults to 4096):
             Dimension of the hidden representations.
-        intermediate_size (`int`, *optional*, defaults to 11008):
+        intermediate_size (`int`, *optional*, defaults to 10240):
             Dimension of the MLP representations.
-        num_hidden_layers (`int`, *optional*, defaults to 32):
+        num_hidden_layers (`int`, *optional*, defaults to 48):
             Number of hidden layers in the Transformer encoder.
         num_attention_heads (`int`, *optional*, defaults to 32):
             Number of attention heads for each attention layer in the Transformer encoder.
-        num_key_value_heads (`int`, *optional*, defaults to 32):
+        num_key_value_heads (`int`, *optional*, defaults to 2):
             This is the number of key_value heads that should be used to implement Grouped Query Attention. If
             `num_key_value_heads=num_attention_heads`, the model will use Multi Head Attention (MHA), if
             `num_key_value_heads=1` the model will use Multi Query Attention (MQA) otherwise GQA is used. When
@@ -51,14 +51,14 @@ class InternLM3Config(PretrainedConfig):
             The maximum sequence length that this model might ever be used with.
         initializer_range (`float`, *optional*, defaults to 0.02):
             The standard deviation of the truncated_normal_initializer for initializing all weight matrices.
-        rms_norm_eps (`float`, *optional*, defaults to 1e-06):
+        rms_norm_eps (`float`, *optional*, defaults to 1e-05):
             The epsilon used by the rms normalization layers.
         use_cache (`bool`, *optional*, defaults to `True`):
             Whether or not the model should return the last key/values attentions (not used by all models). Only
             relevant if `config.is_decoder=True`.
         tie_word_embeddings (`bool`, *optional*, defaults to `False`):
             Whether the model's input and output word embeddings should be tied.
-        rope_theta (`float`, *optional*, defaults to 10000.0):
+        rope_theta (`float`, *optional*, defaults to 50000000.0):
             The base period of the RoPE embeddings.
         rope_scaling (`Dict`, *optional*):
             Dictionary containing the scaling configuration for the RoPE embeddings. NOTE: if you apply new rope type
@@ -103,7 +103,7 @@ class InternLM3Config(PretrainedConfig):
             The dropout ratio for the attention probabilities.
         bias (`bool`, *optional*, defaults to `False`):
             Whether to use a bias in o_proj, up_proj, down_proj and gate_proj layers.
-        head_dim (`int`, *optional*):
+        head_dim (`int`, *optional*, defaults to 128):
             The attention head dimension. If None, it will default to hidden_size // num_heads
 
     Example:
@@ -137,22 +137,22 @@ class InternLM3Config(PretrainedConfig):
         self,
         vocab_size=128512,
         hidden_size=4096,
-        intermediate_size=11008,
-        num_hidden_layers=32,
+        intermediate_size=10240,
+        num_hidden_layers=48,
         num_attention_heads=32,
-        num_key_value_heads=32,
+        num_key_value_heads=2,
         hidden_act="silu",
         max_position_embeddings=32768,
         initializer_range=0.02,
-        rms_norm_eps=1e-6,
+        rms_norm_eps=1e-5,
         use_cache=True,
         tie_word_embeddings=False,
-        rope_theta=10000.0,
+        rope_theta=50000000.0,
         rope_scaling=None,
         qkv_bias=False,
         attention_dropout=0.0,
         bias=False,
-        head_dim=None,
+        head_dim=128,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -172,6 +172,8 @@ class InternLM3Config(PretrainedConfig):
         self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache
         self.rope_theta = rope_theta
+        if rope_scaling is None:
+            rope_scaling = {"factor": 6.0, "rope_type": "dynamic"}
         self.rope_scaling = rope_scaling
         self.qkv_bias = qkv_bias
         self.attention_dropout = attention_dropout
