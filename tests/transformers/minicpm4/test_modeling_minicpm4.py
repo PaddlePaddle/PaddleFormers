@@ -99,7 +99,6 @@ class MiniCPMModelTester:
         self.use_labels = use_labels
         self.return_dict = return_dict
 
-
     def prepare_config_and_inputs(self):
         input_ids = ids_tensor([self.batch_size, self.seq_length], self.vocab_size, dtype=paddle.int64)
 
