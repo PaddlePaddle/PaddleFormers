@@ -35,6 +35,7 @@ class MiniCPMModelTester:
         parent,
         vocab_size=256,
         hidden_size=64,
+        intermediate_size=128,
         num_hidden_layers=2,
         num_attention_heads=4,
         num_key_value_heads=2,
@@ -84,7 +85,7 @@ class MiniCPMModelTester:
         self.pretraining_tp = pretraining_tp
         self.dtype = dtype
         self.slow_but_exact = slow_but_exact
-
+        self.intermediate_size = intermediate_size
         self.batch_size = batch_size
         self.seq_length = seq_length
         self.type_sequence_label_size = type_sequence_label_size
@@ -97,6 +98,7 @@ class MiniCPMModelTester:
         self.use_input_mask = use_input_mask
         self.use_labels = use_labels
         self.return_dict = return_dict
+
 
     def prepare_config_and_inputs(self):
         input_ids = ids_tensor([self.batch_size, self.seq_length], self.vocab_size, dtype=paddle.int64)
@@ -120,6 +122,7 @@ class MiniCPMModelTester:
         return MiniCPMConfig(
             vocab_size=self.vocab_size,
             hidden_size=self.hidden_size,
+            intermediate_size=self.intermediate_size,
             num_hidden_layers=self.num_hidden_layers,
             num_attention_heads=self.num_attention_heads,
             num_key_value_heads=self.num_key_value_heads,
@@ -268,7 +271,7 @@ class MiniCPMModelTester:
             self.parent.assertTrue((result_position_id[0] == result_no_position_id[0]).all())
 
     def create_and_check_gqa_model(self, config, input_ids, input_mask, *args):
-        config.num_key_value_heads = 8  # gqa
+        config.num_key_value_heads = 2  # gqa
         config.apply_rope_fusion = True
         model = MiniCPMForCausalLM(config)
         model.eval()
