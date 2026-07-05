@@ -33,10 +33,10 @@ class MiniCPMModelTester:
     def __init__(
         self,
         parent,
-        vocab_size=32000,
-        hidden_size=1024,
-        num_hidden_layers=32,
-        num_attention_heads=32,
+        vocab_size=256,
+        hidden_size=64,
+        num_hidden_layers=2,
+        num_attention_heads=4,
         num_key_value_heads=2,
         masked_softmax_fusion=True,
         layer_norm_epsilon=1e-5,
@@ -268,9 +268,9 @@ class MiniCPMModelTester:
             self.parent.assertTrue((result_position_id[0] == result_no_position_id[0]).all())
 
     def create_and_check_gqa_model(self, config, input_ids, input_mask, *args):
-        model = MiniCPMForCausalLM(config)
         config.num_key_value_heads = 8  # gqa
         config.apply_rope_fusion = True
+        model = MiniCPMForCausalLM(config)
         model.eval()
 
         result = model(
@@ -339,11 +339,11 @@ class MiniCPMModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
 
     def test_torch_to_paddle_aoa_mapping_unfused(self):
         config = MiniCPMConfig(
-            vocab_size=73448,
-            hidden_size=1024,
-            intermediate_size=4096,
-            num_hidden_layers=24,
-            num_attention_heads=16,
+            vocab_size=256,
+            hidden_size=64,
+            intermediate_size=128,
+            num_hidden_layers=2,
+            num_attention_heads=4,
             num_key_value_heads=2,
             max_position_embeddings=32768,
             rope_scaling={

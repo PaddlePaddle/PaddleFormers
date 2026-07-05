@@ -21,8 +21,6 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import (
     mark_as_sequence_parallel_parameter,
 )
 
-import paddleformers
-
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.linear import Linear as GeneralLinear
@@ -186,47 +184,6 @@ def _split_tensor(tensor, split_size_or_sections, dim=0):
             sections.append(dim_size % split_size_or_sections)
         split_size_or_sections = sections
     return paddle.split(tensor, split_size_or_sections, axis=dim)
-
-
-def _convert_head_mask_to_5d(head_mask, num_hidden_layers):
-    if head_mask.dim() == 1:
-        head_mask = head_mask.unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
-        head_mask = head_mask.expand(num_hidden_layers, -1, -1, -1, -1)
-    elif head_mask.dim() == 2:
-        head_mask = head_mask.unsqueeze(1).unsqueeze(-1).unsqueeze(-1)  # We can specify head_mask for each layer
-    assert head_mask.dim() == 5, f"head_mask.dim != 5, instead {head_mask.dim()}"
-    head_mask = head_mask.to(dtype=paddle.get_default_dtype())  # switch to float if need + fp16 compatibility
-    return head_mask
-
-
-def _get_head_mask(
-    self,
-    head_mask: Optional[paddle.Tensor],
-    num_hidden_layers: int,
-    is_attention_chunked: bool = False,
-):
-    if head_mask is not None:
-        head_mask = _convert_head_mask_to_5d(head_mask, num_hidden_layers)
-        if is_attention_chunked is True:
-            head_mask = head_mask.unsqueeze(-1)
-    else:
-        head_mask = [None] * num_hidden_layers
-    return head_mask
-
-
-setattr(paddleformers.transformers.model_utils.PretrainedModel, "get_head_mask", _get_head_mask)
-
-setattr(paddleformers.transformers.model_utils.PretrainedModel, "device", None)
-
-
-def _post_init(self):
-    if hasattr(self, "init_weights"):
-        self.init_weights()
-    elif hasattr(self, "_init_weights"):
-        self._init_weights()
-
-
-setattr(paddleformers.transformers.model_utils.PretrainedModel, "post_init", _post_init)
 
 
 def compressed_attention(
@@ -1492,7 +1449,6 @@ class MiniCPMModel(MiniCPMPreTrainedModel):
             max_position_embeddings=config.max_position_embeddings,
             base=config.rope_theta,
         )
-        # self.post_init()
 
     @paddle.jit.not_to_static
     def recompute_training(
@@ -1702,7 +1658,6 @@ class MiniCPMForCausalLM(MiniCPMPreTrainedModel):
         self.vocab_size = config.vocab_size
         self.lm_head = GeneralLMHead(config)
         self.criterion = CriterionLayer(config)
-        # self.post_init()
         self.tie_weights()
 
     def get_input_embeddings(self):
@@ -1965,7 +1920,6 @@ class MiniCPMForSequenceClassification(MiniCPMPreTrainedModel):
         self.num_labels = config.num_labels
         self.model = MiniCPMModel(config)
         self.score = nn.Linear(config.hidden_size, self.num_labels, bias_attr=False)
-        self.post_init()
 
     def get_input_embeddings(self):
         return self.model.embed_tokens
