@@ -16,7 +16,7 @@
 InternLM2 Common Modeling
 
 This module provides unified model classes that automatically route to the correct
-implementation (2.5) based on the model configuration. InternLM2 2.0 is not yet supported.
+implementation (2.0 or 2.5) based on the model configuration.
 """
 
 from paddleformers.transformers.model_utils import PretrainedModel
@@ -29,8 +29,7 @@ class InternLM2PretrainedModel(PretrainedModel):
     """
     Base class for all InternLM2 models.
 
-    This is a proxy that routes to the actual implementation (2.5).
-    InternLM2 2.0 is not yet supported.
+    This is a proxy that routes to the actual implementation (2.0 or 2.5).
     """
 
     config_class = InternLM2Config
@@ -38,6 +37,7 @@ class InternLM2PretrainedModel(PretrainedModel):
     supports_gradient_checkpointing = True
     _no_split_modules = ["InternLM2DecoderLayer"]
     _skip_keys_device_placement = ["past_key_values"]
+    transpose_weight_keys = ["wqkv", "wo", "w1", "w2", "w3", "output"]
     _supports_flash_attn_2 = True
     _supports_sdpa = True
     _supports_cache_class = True
@@ -51,9 +51,8 @@ class InternLM2PretrainedModel(PretrainedModel):
             logger.info("Detected InternLM2 2.5, loading 2.5 implementation")
             from ..intern_lm2_5 import modeling as _impl_module
         else:
-            raise NotImplementedError(
-                "InternLM2 2.0 is not supported by this PaddleFormers implementation yet."
-            )
+            logger.info("Detected InternLM2 2.0, loading 2.0 implementation")
+            from ..intern_lm2 import modeling as _impl_module
 
         _cls_name = self.__class__.__name__
         if not hasattr(_impl_module, _cls_name):
@@ -72,9 +71,7 @@ class InternLM2PretrainedModel(PretrainedModel):
         if config.is_version_2_5:
             from ..intern_lm2_5 import modeling as impl_module
         else:
-            raise NotImplementedError(
-                "InternLM2 2.0 is not supported by this PaddleFormers implementation yet."
-            )
+            from ..intern_lm2 import modeling as impl_module
         impl_cls = getattr(impl_module, cls.__name__)
         return impl_cls._gen_aoa_config(config)
 
@@ -83,9 +80,7 @@ class InternLM2PretrainedModel(PretrainedModel):
         if config.is_version_2_5:
             from ..intern_lm2_5 import modeling as impl_module
         else:
-            raise NotImplementedError(
-                "InternLM2 2.0 is not supported by this PaddleFormers implementation yet."
-            )
+            from ..intern_lm2 import modeling as impl_module
         impl_cls = getattr(impl_module, cls.__name__)
         return impl_cls._gen_inv_aoa_config(config)
 
@@ -138,7 +133,7 @@ class InternLM2Model(InternLM2PretrainedModel):
     """
     The bare InternLM2 Model outputting raw hidden-states without any specific head.
 
-    This is a proxy that routes to InternLM2 2.5 implementation.
+    This is a proxy that routes to InternLM2 2.0 or 2.5 implementation.
     """
 
     _auto_class = "AutoModel"
@@ -151,7 +146,7 @@ class InternLM2ForCausalLM(InternLM2PretrainedModel):
     """
     InternLM2 Model with a language modeling head on top.
 
-    This is a proxy that routes to InternLM2 2.5 implementation.
+    This is a proxy that routes to InternLM2 2.0 or 2.5 implementation.
     """
 
     _auto_class = "AutoModelForCausalLM"
@@ -174,7 +169,7 @@ class InternLM2ForSequenceClassification(InternLM2PretrainedModel):
     """
     InternLM2 Model with a sequence classification head on top.
 
-    This is a proxy that routes to InternLM2 2.5 implementation.
+    This is a proxy that routes to InternLM2 2.0 or 2.5 implementation.
     """
 
     _auto_class = "AutoModelForSequenceClassification"
@@ -187,7 +182,7 @@ class InternLM2ForQuestionAnswering(InternLM2PretrainedModel):
     """
     InternLM2 Model with a question answering head on top.
 
-    This is a proxy that routes to InternLM2 2.5 implementation.
+    This is a proxy that routes to InternLM2 2.0 or 2.5 implementation.
     """
 
     _auto_class = "AutoModelForQuestionAnswering"
@@ -200,7 +195,7 @@ class InternLM2ForTokenClassification(InternLM2PretrainedModel):
     """
     InternLM2 Model with a token classification head on top.
 
-    This is a proxy that routes to InternLM2 2.5 implementation.
+    This is a proxy that routes to InternLM2 2.0 or 2.5 implementation.
     """
 
     _auto_class = "AutoModelForTokenClassification"

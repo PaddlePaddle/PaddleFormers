@@ -359,6 +359,16 @@ import_structure = {
         "InternLM25ForTokenClassification",
     ],
     "intern_lm2_5.tokenizer": ["InternLM25Tokenizer"],
+    "intern.configuration": ["InternLM2Config"],
+    "intern.modeling": [
+        "InternLM2PretrainedModel",
+        "InternLM2Model",
+        "InternLM2ForCausalLM",
+        "InternLM2ForSequenceClassification",
+        "InternLM2ForQuestionAnswering",
+        "InternLM2ForTokenClassification",
+    ],
+    "intern_lm2.tokenizer": ["InternLM2Tokenizer"],
 }
 
 if TYPE_CHECKING:
@@ -439,6 +449,8 @@ if TYPE_CHECKING:
     from .gemma3_text import *
     from .glm_ocr import *
     from .intern_lm2_5 import *
+    from .intern import *
+    from .intern_lm2 import InternLM2Tokenizer
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
