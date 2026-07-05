@@ -341,18 +341,18 @@ class InternVisionModel(PretrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
-        last_hidden_state = encoder_outputs.last_hidden_state
+        if return_dict:
+            last_hidden_state = encoder_outputs.last_hidden_state
+            pooled_output = last_hidden_state[:, 0, :]
+            return BaseModelOutputWithPooling(
+                last_hidden_state=last_hidden_state,
+                pooler_output=pooled_output,
+                hidden_states=encoder_outputs.hidden_states,
+                attentions=encoder_outputs.attentions,
+            )
+        last_hidden_state = encoder_outputs[0]
         pooled_output = last_hidden_state[:, 0, :]
-
-        if not return_dict:
-            return (last_hidden_state, pooled_output) + encoder_outputs[1:]
-
-        return BaseModelOutputWithPooling(
-            last_hidden_state=last_hidden_state,
-            pooler_output=pooled_output,
-            hidden_states=encoder_outputs.hidden_states,
-            attentions=encoder_outputs.attentions,
-        )
+        return (last_hidden_state, pooled_output) + encoder_outputs[1:]
 
 
 __all__ = ["InternVisionModel"]

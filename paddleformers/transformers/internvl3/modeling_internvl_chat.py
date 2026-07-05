@@ -497,8 +497,11 @@ class InternVLChatModel(PretrainedModel):
             generate_kwargs["decode_strategy"] = "sampling"
 
         num_beams = generate_kwargs.get("num_beams", getattr(generation_config, "num_beams", None))
-        if num_beams is not None and int(num_beams) > 1 and "decode_strategy" not in generate_kwargs:
-            generate_kwargs["decode_strategy"] = "beam_search"
+        decode_strategy = generate_kwargs.get("decode_strategy", getattr(generation_config, "decode_strategy", None))
+        if decode_strategy == "beam_search" or (num_beams is not None and int(num_beams) > 1):
+            raise NotImplementedError(
+                "InternVLChatModel.generate currently does not support beam search with inputs_embeds."
+            )
 
         if pixel_values is not None:
             self._ensure_img_context_token_id(input_ids)
