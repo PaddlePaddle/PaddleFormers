@@ -22,7 +22,6 @@ import paddle.nn.functional as F
 from paddle import nn
 from paddle.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
-from ..model_utils import PretrainedModel, register_base_model
 from paddleformers.transformers.activations import ACT2FN
 from paddleformers.transformers.model_outputs import (
     BaseModelOutputWithPast,
@@ -32,6 +31,7 @@ from paddleformers.transformers.model_outputs import (
     TokenClassifierOutput,
 )
 
+from ..model_utils import PretrainedModel, register_base_model
 from .configuration import InternLM2Config
 
 logger = logging.getLogger(__name__)

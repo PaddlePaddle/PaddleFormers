@@ -55,6 +55,7 @@ except:
     flash_attn_func, flash_attn_varlen_func = None, None
     has_flash_attn = False
 
+
 def index_first_axis(tensor, index):
     return tensor[index]
 
@@ -678,7 +679,6 @@ class InternLM25PretrainedModel(PretrainedModel):
             else:
                 aoa_statements.append("output.weight^T -> output.weight")
         return {"aoa_statements": aoa_statements}
-
 
     @classmethod
     def _gen_inv_aoa_config(cls, config: InternLM25Config):

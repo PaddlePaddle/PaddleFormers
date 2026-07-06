@@ -80,16 +80,13 @@ class InternLM2ModelTest(unittest.TestCase):
 
     def test_flash_attn_helpers_roundtrip(self):
         from paddleformers.transformers.intern_lm2.modeling import (
-            index_first_axis,
             pad_input,
             unpad_input,
         )
 
         batch, seqlen, hidden = 2, 6, 8
         # mask out the last 2 tokens of sequence 0 -> padding present
-        attention_mask = paddle.to_tensor(
-            [[1, 1, 1, 1, 0, 0], [1, 1, 1, 1, 1, 1]], dtype="int32"
-        )
+        attention_mask = paddle.to_tensor([[1, 1, 1, 1, 0, 0], [1, 1, 1, 1, 1, 1]], dtype="int32")
         hidden_states = paddle.randn([batch, seqlen, hidden])
 
         unpadded, indices, cu_seqlens, max_seqlen = unpad_input(hidden_states, attention_mask)
@@ -102,7 +99,9 @@ class InternLM2ModelTest(unittest.TestCase):
         self.assertEqual(repadded.shape, [batch, seqlen, hidden])
         # padded positions should be zero; non-padded positions should match the input
         valid = attention_mask.astype("bool").unsqueeze(-1)
-        self.assertTrue(paddle.all(paddle.where(valid, repadded == hidden_states, paddle.ones_like(valid, dtype="bool"))))
+        self.assertTrue(
+            paddle.all(paddle.where(valid, repadded == hidden_states, paddle.ones_like(valid, dtype="bool")))
+        )
         self.assertTrue(paddle.all(paddle.where(~valid, repadded == 0, paddle.ones_like(valid, dtype="bool"))))
 
     @require_gpu(min_gpus=1)
@@ -127,12 +126,8 @@ class InternLM2ModelTest(unittest.TestCase):
         model.eval()
 
         # batch with padding: seq 0 shorter than seq 1
-        input_ids = paddle.to_tensor(
-            [[1, 2, 3, 4, 0, 0], [1, 2, 3, 4, 5, 6]], dtype="int64"
-        )
-        attention_mask = paddle.to_tensor(
-            [[1, 1, 1, 1, 0, 0], [1, 1, 1, 1, 1, 1]], dtype="int64"
-        )
+        input_ids = paddle.to_tensor([[1, 2, 3, 4, 0, 0], [1, 2, 3, 4, 5, 6]], dtype="int64")
+        attention_mask = paddle.to_tensor([[1, 1, 1, 1, 0, 0], [1, 1, 1, 1, 1, 1]], dtype="int64")
 
         with paddle.no_grad():
             outputs = model(input_ids=input_ids, attention_mask=attention_mask, return_dict=True)
@@ -198,10 +193,10 @@ class InternLM2ModelTest(unittest.TestCase):
 
     @slow
     def test_paddle_hello(self):
-        model = InternLM2ForCausalLM.from_pretrained(
+        model = InternLM2ForCausalLM.from_pretrained(MODEL_PATH, load_checkpoint_format="", download_hub="modelscope")
+        tokenizer = InternLM2Tokenizer.from_pretrained(
             MODEL_PATH, load_checkpoint_format="", download_hub="modelscope"
         )
-        tokenizer = InternLM2Tokenizer.from_pretrained(MODEL_PATH, load_checkpoint_format="", download_hub="modelscope")
 
         model.eval()
 
@@ -231,9 +226,7 @@ class InternLM2ModelTest(unittest.TestCase):
 
     @slow
     def test_inference_with_paddle_model(self):
-        model = InternLM2ForCausalLM.from_pretrained(
-            MODEL_PATH, load_checkpoint_format="", download_hub="modelscope"
-        )
+        model = InternLM2ForCausalLM.from_pretrained(MODEL_PATH, load_checkpoint_format="", download_hub="modelscope")
         model.eval()
 
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
