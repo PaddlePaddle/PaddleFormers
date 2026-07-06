@@ -561,6 +561,15 @@ class Phi4Cache:
                 self.key_cache[layer_idx] = None
                 self.value_cache[layer_idx] = None
 
+    def reorder_cache(self, beam_idx):
+        if not isinstance(beam_idx, paddle.Tensor):
+            beam_idx = paddle.to_tensor(beam_idx)
+        for layer_idx in range(len(self.key_cache)):
+            if self.key_cache[layer_idx] is not None:
+                self.key_cache[layer_idx] = paddle.index_select(self.key_cache[layer_idx], beam_idx, axis=0)
+            if self.value_cache[layer_idx] is not None:
+                self.value_cache[layer_idx] = paddle.index_select(self.value_cache[layer_idx], beam_idx, axis=0)
+
 
 class Phi4DecoderLayer(nn.Layer):
     def __init__(self, config: Phi4Config, layer_idx: int):
@@ -627,10 +636,11 @@ class Phi4DecoderLayer(nn.Layer):
         )
 
         if self.use_mamba:
+            mamba_mask = attention_mask if attention_mask is not None and attention_mask.ndim == 2 else None
             attn_outputs, ssm_output = self.attn(
                 hidden_states=hidden_states,
                 inference_params=past_key_value,
-                mask=attention_mask,
+                mask=mamba_mask,
                 yoco_key_values=ssm_output,
                 cache_position=cache_position,
             )

@@ -44,6 +44,7 @@ class TestPhi4Modeling(unittest.TestCase):
             num_attention_heads=8,
             num_key_value_heads=4,
             max_position_embeddings=128,
+            pad_token_id=0,
         )
         model = Phi4ForCausalLM(config)
         model.eval()
@@ -70,6 +71,7 @@ class TestPhi4Modeling(unittest.TestCase):
             num_attention_heads=8,
             num_key_value_heads=4,
             max_position_embeddings=128,
+            pad_token_id=0,
         )
 
         model = Phi4ForCausalLM(config)
@@ -88,6 +90,35 @@ class TestPhi4Modeling(unittest.TestCase):
         logits = outputs[0] if isinstance(outputs, (tuple, list)) else outputs.logits
         self.assertEqual(logits.shape[-1], config.vocab_size)
         print(f"Model save and load OK, logits shape={tuple(logits.shape)}")
+
+    def test_beam_search_with_cache(self):
+        from paddleformers.transformers import Phi4Config
+
+        config = Phi4Config(
+            vocab_size=1000,
+            hidden_size=128,
+            intermediate_size=512,
+            num_hidden_layers=4,
+            num_attention_heads=8,
+            num_key_value_heads=4,
+            max_position_embeddings=128,
+            pad_token_id=0,
+        )
+        model = Phi4ForCausalLM(config)
+        model.eval()
+        input_ids = paddle.randint(1, config.vocab_size, [1, 3], dtype="int64")
+        with paddle.no_grad():
+            output_ids = model.generate(
+                input_ids=input_ids,
+                max_new_tokens=2,
+                decode_strategy="beam_search",
+                num_beams=2,
+                use_cache=True,
+                eos_token_id=config.eos_token_id,
+                pad_token_id=config.pad_token_id,
+            )[0]
+        self.assertEqual(output_ids.shape[0], 1)
+        print(f"Beam search with cache OK, output shape: {output_ids.shape}")
 
 
 @slow
