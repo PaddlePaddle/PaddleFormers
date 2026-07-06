@@ -145,6 +145,7 @@ import_structure = {
         "Ernie4_5ForCausalLM",
         "Ernie4_5ForCausalLMPipe",
     ],
+    "ernie4_5.tokenizer": ["Ernie4_5Tokenizer"],
     "internlm.configuration": ["InternLMConfig"],
     "internlm.modeling": [
         "InternLMModel",
