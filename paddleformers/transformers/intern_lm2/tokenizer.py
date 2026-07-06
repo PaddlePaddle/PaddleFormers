@@ -207,9 +207,12 @@ class InternLM2Tokenizer(PretrainedTokenizer):
                 token_ids_0=token_ids_0, token_ids_1=token_ids_1, already_has_special_tokens=True
             )
 
+        prefix_len = 1 if self.add_bos_token else 0
+        suffix_len = 1 if self.add_eos_token else 0
+
         if token_ids_1 is None:
-            return [1] + ([0] * len(token_ids_0)) + [1]
-        return [1] + ([0] * len(token_ids_0)) + [1, 1] + ([0] * len(token_ids_1)) + [1]
+            return ([1] * prefix_len) + ([0] * len(token_ids_0)) + ([1] * suffix_len)
+        return ([1] * prefix_len) + ([0] * len(token_ids_0)) + ([0] * len(token_ids_1)) + ([1] * suffix_len)
 
     def create_token_type_ids_from_sequences(
         self, token_ids_0: List[int], token_ids_1: Optional[List[int]] = None
@@ -227,11 +230,7 @@ class InternLM2Tokenizer(PretrainedTokenizer):
         Returns:
             `List[int]`: List of zeros.
         """
-        eos = [self.eos_token_id]
-
-        if token_ids_1 is None:
-            return len(token_ids_0 + eos) * [0]
-        return len(token_ids_0 + eos + token_ids_1 + eos) * [0]
+        return [0] * len(self.build_inputs_with_special_tokens(token_ids_0, token_ids_1))
 
     def tokenize(self, text: TextInput, **kwargs) -> List[str]:
         """

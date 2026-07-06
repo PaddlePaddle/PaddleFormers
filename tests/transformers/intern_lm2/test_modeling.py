@@ -25,7 +25,7 @@ from paddleformers.transformers import (
     InternLM2ForCausalLM,
     InternLM2Tokenizer,
 )
-from tests.testing_utils import require_package, slow
+from tests.testing_utils import require_gpu, require_package, slow
 
 MODEL_PATH = "Shanghai_AI_Laboratory/internlm2-chat-7b"
 
@@ -77,6 +77,69 @@ class InternLM2ModelTest(unittest.TestCase):
         self.assertIsNotNone(model)
         self.assertEqual(model.config.vocab_size, 1000)
         self.assertEqual(model.config.hidden_size, 256)
+
+    def test_flash_attn_helpers_roundtrip(self):
+        from paddleformers.transformers.intern_lm2.modeling import (
+            index_first_axis,
+            pad_input,
+            unpad_input,
+        )
+
+        batch, seqlen, hidden = 2, 6, 8
+        # mask out the last 2 tokens of sequence 0 -> padding present
+        attention_mask = paddle.to_tensor(
+            [[1, 1, 1, 1, 0, 0], [1, 1, 1, 1, 1, 1]], dtype="int32"
+        )
+        hidden_states = paddle.randn([batch, seqlen, hidden])
+
+        unpadded, indices, cu_seqlens, max_seqlen = unpad_input(hidden_states, attention_mask)
+        # total non-padding tokens = 4 + 6 = 10
+        self.assertEqual(unpadded.shape[0], 10)
+        self.assertEqual(unpadded.shape[1], hidden)
+        self.assertEqual(max_seqlen, 6)
+
+        repadded = pad_input(unpadded, indices, batch, seqlen)
+        self.assertEqual(repadded.shape, [batch, seqlen, hidden])
+        # padded positions should be zero; non-padded positions should match the input
+        valid = attention_mask.astype("bool").unsqueeze(-1)
+        self.assertTrue(paddle.all(paddle.where(valid, repadded == hidden_states, paddle.ones_like(valid, dtype="bool"))))
+        self.assertTrue(paddle.all(paddle.where(~valid, repadded == 0, paddle.ones_like(valid, dtype="bool"))))
+
+    @require_gpu(min_gpus=1)
+    def test_flash_attention_2_with_padding_mask(self):
+        from paddleformers.transformers.intern_lm2.modeling import has_flash_attn
+
+        if not has_flash_attn:
+            self.skipTest("flash_attention is not available")
+
+        config = InternLM2Config(
+            vocab_size=1000,
+            hidden_size=256,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            intermediate_size=512,
+            max_position_embeddings=128,
+            use_cache=False,
+            attn_implementation="flash_attention_2",
+        )
+        model = InternLM2ForCausalLM(config)
+        model.eval()
+
+        # batch with padding: seq 0 shorter than seq 1
+        input_ids = paddle.to_tensor(
+            [[1, 2, 3, 4, 0, 0], [1, 2, 3, 4, 5, 6]], dtype="int64"
+        )
+        attention_mask = paddle.to_tensor(
+            [[1, 1, 1, 1, 0, 0], [1, 1, 1, 1, 1, 1]], dtype="int64"
+        )
+
+        with paddle.no_grad():
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, return_dict=True)
+
+        logits = outputs.logits
+        self.assertEqual(logits.shape, [2, 6, config.vocab_size])
+        self.assertTrue(paddle.isfinite(logits).all().item())
 
     def test_model_forward(self):
         model = InternLM2ForCausalLM(self.config)

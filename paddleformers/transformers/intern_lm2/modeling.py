@@ -36,11 +36,6 @@ from .configuration import InternLM2Config
 
 logger = logging.getLogger(__name__)
 try:
-    from ..intern.bert_padding_delete import index_first_axis, pad_input, unpad_input
-except ImportError:
-    index_first_axis = pad_input = unpad_input = None
-
-try:
     from paddle.nn.functional.flash_attention import flash_attention as flash_attn_func
     from paddle.nn.functional.flash_attention import (
         flash_attn_unpadded as flash_attn_varlen_func,
@@ -62,6 +57,22 @@ def _get_unpad_data(attention_mask):
         cu_seqlens,
         max_seqlen_in_batch,
     )
+
+
+def index_first_axis(tensor, index):
+    return tensor[index]
+
+
+def pad_input(hidden_states, indices, batch, seqlen):
+    output = paddle.zeros([batch * seqlen, *hidden_states.shape[1:]], dtype=hidden_states.dtype)
+    output = paddle.scatter(output, indices, hidden_states)
+    return output.reshape([batch, seqlen, *hidden_states.shape[1:]])
+
+
+def unpad_input(hidden_states, attention_mask):
+    indices, cu_seqlens, max_seqlen = _get_unpad_data(attention_mask)
+    hidden_states = index_first_axis(hidden_states.reshape([-1, *hidden_states.shape[2:]]), indices)
+    return hidden_states, indices, cu_seqlens, max_seqlen
 
 
 def masked_fill(x, mask, value):
@@ -439,7 +450,7 @@ class InternLM2FlashAttention2(InternLM2Attention):
         # [1, 1847, 8, 4, 128]
 
         query_states = qkv_states[..., : self.num_key_value_groups, :]
-        query_states = query_states.reshape([bsz, q_len, self.num_heads * self.num_key_value_groups, self.head_dim])
+        query_states = query_states.reshape([bsz, q_len, -1, self.head_dim])
         key_states = qkv_states[..., -2, :]
         value_states = qkv_states[..., -1, :]
 
