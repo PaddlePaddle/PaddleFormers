@@ -976,6 +976,8 @@ class InternalMedicineCallback(TrainerCallback):
         if model is None or self._setup_done or not self.monitors:
             return
 
+        self._maybe_truncate_on_resume(state)
+
         try:
             from internal_medicine.backends.paddlefleet import setup_monitors
             from internal_medicine.core.training_logs import training_logs
@@ -1050,6 +1052,42 @@ class InternalMedicineCallback(TrainerCallback):
         self._is_writer = (rank == 0) and bool(self.log_path)
         return self._is_writer
 
+    def _maybe_truncate_on_resume(self, state):
+        """Drop rows with global_step > resume_step from the jsonl on resume."""
+        if not self._resolve_writer():
+            return
+        resume_step = int(getattr(state, "global_step", 0) or 0)
+        if resume_step <= 0:
+            return
+        if not self.log_path or not os.path.exists(self.log_path):
+            return
+        try:
+            kept = []
+            with open(self.log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.rstrip("\n")
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except json.JSONDecodeError:
+                        # Preserve unparseable lines rather than silently dropping.
+                        kept.append(line)
+                        continue
+                    if int(rec.get("global_step", 0)) <= resume_step:
+                        kept.append(line)
+            tmp = self.log_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                if kept:
+                    f.write("\n".join(kept) + "\n")
+            os.replace(tmp, self.log_path)
+            logger.info(
+                "[InternalMedicine] truncated jsonl on resume: kept %d rows with global_step<=%d"
+                % (len(kept), resume_step)
+            )
+        except Exception:
+            logger.error("[InternalMedicine] failed to truncate jsonl on resume")
+
     def _maybe_write_jsonl(self, state, aggregated):
         if not self._resolve_writer():
             return
@@ -1060,7 +1098,8 @@ class InternalMedicineCallback(TrainerCallback):
                     os.makedirs(d, exist_ok=True)
                 self._log_path_ready = True
             record = {"global_step": int(getattr(state, "global_step", 0))}
-            for k, v in aggregated.items():
+            for k in sorted(aggregated.keys()):
+                v = aggregated[k]
                 # Only JSON-serializable scalars; cast tensors/numpy to float.
                 try:
                     record[k] = float(v)
