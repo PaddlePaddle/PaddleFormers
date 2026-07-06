@@ -36,7 +36,7 @@ from .configuration import InternLM2Config
 
 logger = logging.getLogger(__name__)
 try:
-    from ..intern.bert_padding_delte import index_first_axis, pad_input, unpad_input
+    from ..intern.bert_padding_delete import index_first_axis, pad_input, unpad_input
 except ImportError:
     index_first_axis = pad_input = unpad_input = None
 
@@ -50,7 +50,6 @@ try:
 except Exception:
     flash_attn_func, flash_attn_varlen_func = None, None
     has_flash_attn = False
-has_flash_attn = False
 
 
 def _get_unpad_data(attention_mask):
@@ -326,7 +325,7 @@ class InternLM2Attention(nn.Layer):
 
         try:
             qkv_states = self.wqkv(hidden_states)
-        except:
+        except Exception:
             qkv_states = self.wqkv(hidden_states.cast("bfloat16"))
         # [1, 1847, 4096]
 
@@ -591,6 +590,7 @@ class InternLM2FlashAttention2(InternLM2Attention):
 INTERNLM2_ATTENTION_CLASSES = {
     "eager": InternLM2Attention,
     "flash_attention_2": InternLM2FlashAttention2,
+    "sdpa": InternLM2Attention,
 }
 
 
@@ -660,7 +660,7 @@ class InternLM2DecoderLayer(nn.Layer):
         hidden_states = self.ffn_norm(hidden_states)
         try:
             hidden_states = self.feed_forward(hidden_states)
-        except:
+        except Exception:
             hidden_states = self.feed_forward(hidden_states.cast("bfloat16"))
         hidden_states = residual + hidden_states
 
@@ -679,7 +679,7 @@ class InternLM2PretrainedModel(PretrainedModel):
     config_class = InternLM2Config
     base_model_prefix = "model"
     _no_split_modules = ["InternLM2DecoderLayer"]
-    _skip_keys_device_placement = "past_key_values"
+    _skip_keys_device_placement = ["past_key_values"]
     transpose_weight_keys = ["wqkv", "wo", "w1", "w2", "w3", "output"]
     _supports_flash_attn_2 = True
 
@@ -1015,7 +1015,7 @@ class InternLM2ForCausalLM(InternLM2PretrainedModel):
         hidden_states = outputs[0]
         try:
             logits = self.output(hidden_states)
-        except:
+        except Exception:
             logits = self.output(hidden_states.cast("bfloat16"))
 
         logits = logits.cast("float32")
@@ -1090,7 +1090,9 @@ class InternLM2ForCausalLM(InternLM2PretrainedModel):
             )
         return reordered_past
 
-    def build_inputs(self, tokenizer, query: str, history: List[Tuple[str, str]] = [], meta_instruction=""):
+    def build_inputs(self, tokenizer, query: str, history: List[Tuple[str, str]] = None, meta_instruction=""):
+        if history is None:
+            history = []
         if tokenizer.add_bos_token:
             prompt = ""
         else:
@@ -1107,7 +1109,7 @@ class InternLM2ForCausalLM(InternLM2PretrainedModel):
         self,
         tokenizer,
         query,
-        history=[],
+        history=None,
         streamer=None,
         max_new_tokens: int = 1024,
         do_sample: bool = True,
@@ -1137,46 +1139,6 @@ class InternLM2ForCausalLM(InternLM2PretrainedModel):
         response = response.split("<|im_end|>")[0]
         history = history + [(query, response)]
         return response, history
-
-    def tie_weights(self):
-        """
-        Tie the weights between the input embeddings and the output embeddings.
-        """
-        if self.config.tie_word_embeddings:
-            output_embeddings = self.get_output_embeddings()
-            input_embeddings = self.get_input_embeddings()
-            if output_embeddings is not None and input_embeddings is not None:
-                if input_embeddings.weight.T.shape != output_embeddings.weight.shape:
-                    logger.warning(
-                        f"The shape of input embeddings is {input_embeddings.weight.shape} and the shape of output embeddings is {output_embeddings.weight.shape}. "
-                        "This is only expected if you are calling the `resize_token_embeddings` method"
-                    )
-                output_embeddings.weight.data = input_embeddings.weight.T
-                if getattr(output_embeddings, "bias", None) is not None:
-                    # need to pad
-                    if output_embeddings.weight.shape[0] > output_embeddings.bias.shape[0]:
-                        old_bias = output_embeddings.bias
-                        pad_length = output_embeddings.weight.shape[0] - old_bias.shape[0]
-                        output_embeddings.bias = output_embeddings.create_parameter(
-                            shape=[output_embeddings.weight.shape[0]],
-                            attr=output_embeddings._bias_attr,
-                            dtype=output_embeddings._dtype,
-                            is_bias=True,
-                        )
-                        new_bias = paddle.concat(
-                            [old_bias, paddle.zeros([pad_length], dtype=output_embeddings.bias.dtype)]
-                        )
-                        output_embeddings.bias.set_value(new_bias)
-                    # need to trim
-                    elif output_embeddings.weight.shape[0] < output_embeddings.bias.shape[0]:
-                        new_bias = output_embeddings.bias[: output_embeddings.weight.shape[0]]
-                        output_embeddings.bias = output_embeddings.create_parameter(
-                            shape=[output_embeddings.weight.shape[0]],
-                            attr=output_embeddings._bias_attr,
-                            dtype=output_embeddings._dtype,
-                            is_bias=True,
-                        )
-                        output_embeddings.bias.set_value(new_bias)
 
     def resize_token_embeddings(self, new_num_tokens):
         old_embeddings = self.get_input_embeddings()

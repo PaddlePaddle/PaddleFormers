@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,14 @@ from paddleformers.transformers.configuration_utils import PretrainedConfig
 
 
 class InternLM25Config(PretrainedConfig):
-    model_type = "internlm2_5"
+    # NOTE: Real InternLM2.5 checkpoints on the Hub carry `model_type = "internlm2"`
+    # (same as 2.0), and rely on `auto_map` + the `intern/` proxy's `is_version_2_5`
+    # for version detection. We keep `model_type = "internlm2"` here to match the
+    # upstream config.json and avoid the spurious "model type mismatch" warning
+    # during `from_pretrained`. Auto registration for `internlm2` still resolves to
+    # `InternLM2Config` (see auto/configuration.py); this class is only consumed as
+    # `InternLM25PretrainedModel.config_class` by the direct implementation classes.
+    model_type = "internlm2"
     _auto_class = "AutoConfig"
     keys_to_ignore_at_inference = ["past_key_values"]
 
@@ -93,11 +100,8 @@ class InternLM25Config(PretrainedConfig):
         if self.rope_scaling is None:
             return
 
-        if not isinstance(self.rope_scaling, dict) or len(self.rope_scaling) != 2:
-            raise ValueError(
-                "`rope_scaling` must be a dictionary with with two fields, `type` and `factor`, "
-                f"got {self.rope_scaling}"
-            )
+        if not isinstance(self.rope_scaling, dict):
+            raise ValueError(f"`rope_scaling` must be a dictionary, got {self.rope_scaling}")
         rope_scaling_type = self.rope_scaling.get("type", None)
         rope_scaling_factor = self.rope_scaling.get("factor", None)
         if rope_scaling_type is None or rope_scaling_type not in ["linear", "dynamic"]:

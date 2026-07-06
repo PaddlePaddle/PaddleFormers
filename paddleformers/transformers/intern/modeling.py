@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ class InternLM2PretrainedModel(PretrainedModel):
     config_class = InternLM2Config
     base_model_prefix = "model"
     supports_gradient_checkpointing = True
-    _no_split_modules = ["InternLM2DecoderLayer"]
+    _no_split_modules = ["InternLM2DecoderLayer", "InternLM25DecoderLayer"]
     _skip_keys_device_placement = ["past_key_values"]
     transpose_weight_keys = ["wqkv", "wo", "w1", "w2", "w3", "output"]
     _supports_flash_attn_2 = True
