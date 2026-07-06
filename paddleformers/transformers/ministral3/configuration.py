@@ -41,7 +41,7 @@ class Ministral3TextConfig:
         self.rope_parameters = cfg_dict.get("rope_parameters", cfg_dict.get("rope_scaling"))
         rope_theta = cfg_dict.get("rope_theta", 1000000.0)
         if self.rope_parameters is None:
-            self.rope_parameters = {"rope_type": "yarn", "rope_theta": rope_theta}
+            self.rope_parameters = {"rope_type": "default", "rope_theta": rope_theta}
         else:
             self.rope_parameters = dict(self.rope_parameters)
             self.rope_parameters["rope_type"] = self.rope_parameters.get(
@@ -229,7 +229,7 @@ class Mistral3TextConfig(PretrainedConfig):
             self.rope_scaling.pop("type", None)
             self.rope_parameters = self.rope_scaling
         else:
-            self.rope_parameters = {"rope_type": "yarn", "rope_theta": rope_theta}
+            self.rope_parameters = {"rope_type": "default", "rope_theta": rope_theta}
         self.sliding_window = sliding_window
         self.use_cache = use_cache
         self.vocab_size = vocab_size

@@ -388,6 +388,70 @@ class TestMinistral3GQAPadding(unittest.TestCase):
         )
 
 
+class TestMinistral3DefaultRoPEInit(unittest.TestCase):
+    """Default config (no rope_scaling/rope_parameters) must initialize without crash.
+
+    Guards against the yarn-fallback-without-factor AssertionError: when no scaling
+    is provided the fallback must use rope_type="default", since yarn requires factor.
+    """
+
+    BASE = {
+        "attention_dropout": 0.0,
+        "head_dim": 16,
+        "hidden_act": "silu",
+        "hidden_size": 64,
+        "initializer_range": 0.02,
+        "intermediate_size": 128,
+        "max_position_embeddings": 128,
+        "model_type": "ministral3",
+        "num_attention_heads": 4,
+        "num_hidden_layers": 2,
+        "num_key_value_heads": 2,
+        "rms_norm_eps": 1e-5,
+        "sliding_window": None,
+        "use_cache": True,
+        "vocab_size": 1000,
+    }
+
+    def test_wrapper_no_rope_scaling(self):
+        from paddleformers.transformers import (
+            Ministral3TextConfig,
+            Ministral3TextDecoder,
+        )
+
+        cfg = Ministral3TextConfig(self.BASE)  # no rope_scaling/rope_parameters
+        self.assertEqual(cfg.rope_parameters["rope_type"], "default")
+        m = Ministral3TextDecoder(cfg)
+        m.eval()
+        ids = paddle.randint(0, 1000, [1, 8])
+        with paddle.no_grad():
+            out = m(input_ids=ids)
+        self.assertEqual(list(out.last_hidden_state.shape), [1, 8, 64])
+        self.assertTrue(paddle.isfinite(out.last_hidden_state).all())
+
+    def test_pretrainedconfig_no_rope_scaling(self):
+        from paddleformers.transformers import Mistral3TextConfig
+
+        tcfg = Mistral3TextConfig()  # no rope_scaling kwarg
+        self.assertEqual(tcfg.rope_parameters["rope_type"], "default")
+
+    def test_default_rope_cache_consistency(self):
+        """Default-RoPE model must also keep use_cache consistent."""
+        from paddleformers.transformers import (
+            Ministral3TextConfig,
+            Ministral3TextDecoder,
+        )
+
+        cfg = Ministral3TextConfig(self.BASE)
+        m = Ministral3TextDecoder(cfg)
+        m.eval()
+        ids = paddle.randint(0, 1000, [1, 8])
+        with paddle.no_grad():
+            out_no = m(input_ids=ids, use_cache=False).last_hidden_state
+            out_cache = m(input_ids=ids, use_cache=True).last_hidden_state
+        self.assertTrue(paddle.allclose(out_no, out_cache, atol=1e-5))
+
+
 def _load_paddle_model_3b(dtype="float32"):
     import paddle
 
@@ -430,7 +494,7 @@ def _run_torch_inference(result_path):
     from paddleformers.transformers import Mistral3Tokenizer
 
     hf_model_id = _MODEL_3B_HF_ID
-    tokenizer = Mistral3Tokenizer.from_pretrained(hf_model_id)
+    tokenizer = Mistral3Tokenizer.from_pretrained(hf_model_id, download_hub="modelscope")
     inputs = tokenizer(_PROMPT_DIFF, return_tensors="pt")
     input_ids_pt = inputs["input_ids"]
     input_ids_list = input_ids_pt[0].tolist()
@@ -487,7 +551,7 @@ def _run_paddle_inference(result_path):
     os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
     hf_model_id = _MODEL_3B_HF_ID
-    tokenizer = Mistral3Tokenizer.from_pretrained(hf_model_id)
+    tokenizer = Mistral3Tokenizer.from_pretrained(hf_model_id, download_hub="modelscope")
     inputs = tokenizer(_PROMPT_DIFF, return_tensors=None)
     input_ids_list = inputs["input_ids"]
     print(f"\n[Diff-Paddle] prompt: {repr(_PROMPT_DIFF)}")
@@ -680,10 +744,11 @@ class TestMistral3PaddleInference(unittest.TestCase):
         paddle.set_device("gpu")
         paddle.seed(_SEED)
 
-        tokenizer = Mistral3Tokenizer.from_pretrained(_MODEL_3B_HF_ID)
+        tokenizer = Mistral3Tokenizer.from_pretrained(_MODEL_3B_HF_ID, download_hub="modelscope")
 
         model = Mistral3ForConditionalGeneration.from_pretrained(
             _MODEL_3B_HF_ID,
+            download_hub="modelscope",
             use_converted_weights=False,
         )
         model.eval()
