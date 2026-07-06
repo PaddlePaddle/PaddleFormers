@@ -145,6 +145,249 @@ class TestMistral3Model(unittest.TestCase):
         self.assertTrue(output.last_hidden_state.dtype in [paddle.float32, paddle.float16, paddle.bfloat16])
 
 
+# Small config with GQA (num_attention_heads != num_key_value_heads, groups > 1)
+SMALL_GQA_CFG = dict(SMALL_TEXT_CFG)
+SMALL_GQA_CFG = {
+    "attention_dropout": 0.0,
+    "head_dim": 16,
+    "hidden_act": "silu",
+    "hidden_size": 64,
+    "initializer_range": 0.02,
+    "intermediate_size": 128,
+    "max_position_embeddings": 128,
+    "model_type": "ministral3",
+    "num_attention_heads": 4,
+    "num_hidden_layers": 2,
+    "num_key_value_heads": 2,  # GQA: groups = 4 // 2 = 2
+    "rms_norm_eps": 1e-5,
+    "rope_parameters": {
+        "rope_type": "default",
+        "rope_theta": 10000.0,
+    },
+    "sliding_window": None,
+    "use_cache": True,
+    "vocab_size": 1000,
+}
+
+# Small config with yarn RoPE (the real Ministral-3 scaling type)
+SMALL_YARN_CFG = {
+    "attention_dropout": 0.0,
+    "head_dim": 16,
+    "hidden_act": "silu",
+    "hidden_size": 64,
+    "initializer_range": 0.02,
+    "intermediate_size": 128,
+    "max_position_embeddings": 128,
+    "model_type": "ministral3",
+    "num_attention_heads": 4,
+    "num_hidden_layers": 2,
+    "num_key_value_heads": 2,
+    "rms_norm_eps": 1e-5,
+    "rope_scaling": {
+        "rope_type": "yarn",
+        "rope_theta": 10000.0,
+        "factor": 2.0,
+        "original_max_position_embeddings": 64,
+        "beta_fast": 32.0,
+        "beta_slow": 1.0,
+    },
+    "sliding_window": None,
+    "use_cache": True,
+    "vocab_size": 1000,
+}
+
+
+class TestMinistral3KVCache(unittest.TestCase):
+    """R3: use_cache=True path must match use_cache=False numerically.
+
+    Exercises the past_key_values.update branch (modeling.py:179-185) and the
+    prepare_inputs_for_generation input_ids[:, -1:] slicing (modeling.py via
+    GenerationMixin base), which were previously uncovered.
+    """
+
+    BATCH = 2
+    SEQ = 12
+
+    def setUp(self):
+        from paddleformers.transformers import (
+            Ministral3TextConfig,
+            Ministral3TextDecoder,
+        )
+
+        self.text_cfg = Ministral3TextConfig(SMALL_GQA_CFG)
+        self.model = Ministral3TextDecoder(self.text_cfg)
+        self.model.eval()
+
+    def test_cache_matches_no_cache(self):
+        """One-shot forward with use_cache=True must equal use_cache=False."""
+        input_ids = paddle.randint(0, SMALL_GQA_CFG["vocab_size"], [self.BATCH, self.SEQ])
+        with paddle.no_grad():
+            out_no_cache = self.model(input_ids=input_ids, use_cache=False).last_hidden_state
+            out_cache = self.model(input_ids=input_ids, use_cache=True).last_hidden_state
+        self.assertEqual(out_cache.shape, out_no_cache.shape)
+        self.assertTrue(
+            paddle.allclose(out_cache, out_no_cache, atol=1e-5),
+            "use_cache=True output diverges from use_cache=False",
+        )
+
+    def test_incremental_cache_stepwise(self):
+        """Step-by-step decode with KV cache must equal full-sequence forward.
+
+        This mirrors the generate loop: feed first token, then append one token
+        at a time reusing past_key_values, and compare against a single forward
+        over the whole sequence.
+        """
+        from paddleformers.transformers.cache_utils import DynamicCache
+
+        seq_len = self.SEQ
+        input_ids = paddle.randint(0, SMALL_GQA_CFG["vocab_size"], [1, seq_len])
+
+        with paddle.no_grad():
+            full_out = self.model(input_ids=input_ids, use_cache=False).last_hidden_state
+
+            cache = DynamicCache()
+            step_outs = []
+            for i in range(seq_len):
+                token = input_ids[:, i : i + 1]
+                out = self.model(input_ids=token, past_key_values=cache, use_cache=True)
+                step_outs.append(out.last_hidden_state)
+                cache = out.past_key_values
+            step_out = paddle.concat(step_outs, axis=1)
+
+        self.assertEqual(list(step_out.shape), list(full_out.shape))
+        self.assertTrue(
+            paddle.allclose(step_out, full_out, atol=1e-5),
+            "incremental cache decode diverges from full-sequence forward",
+        )
+
+    def test_cache_grows_correctly(self):
+        """past_key_values length must equal the number of tokens processed."""
+        from paddleformers.transformers.cache_utils import DynamicCache
+
+        input_ids = paddle.randint(0, SMALL_GQA_CFG["vocab_size"], [1, 6])
+        with paddle.no_grad():
+            cache = DynamicCache()
+            for i in range(6):
+                out = self.model(
+                    input_ids=input_ids[:, i : i + 1],
+                    past_key_values=cache,
+                    use_cache=True,
+                )
+                cache = out.past_key_values
+                self.assertEqual(cache.get_seq_length(), i + 1)
+
+
+class TestMinistral3YarnRoPE(unittest.TestCase):
+    """R3: yarn RoPE path (the real Ministral-3 scaling) must be covered.
+
+    Exercises ROPE_INIT_FUNCTIONS['yarn'] + dynamic_rope_update +
+    _get_llama4_attn_scale, which the default-rope SMALL_TEXT_CFG does not.
+    """
+
+    def setUp(self):
+        from paddleformers.transformers import (
+            Ministral3TextConfig,
+            Ministral3TextDecoder,
+        )
+
+        self.text_cfg = Ministral3TextConfig(SMALL_YARN_CFG)
+        self.model = Ministral3TextDecoder(self.text_cfg)
+        self.model.eval()
+
+    def test_yarn_rope_type(self):
+        self.assertEqual(self.text_cfg.rope_parameters["rope_type"], "yarn")
+        self.assertEqual(self.model.rotary_emb.rope_type, "yarn")
+
+    def test_yarn_forward_finite(self):
+        input_ids = paddle.randint(0, SMALL_YARN_CFG["vocab_size"], [2, 10])
+        with paddle.no_grad():
+            output = self.model(input_ids=input_ids)
+        self.assertEqual(
+            list(output.last_hidden_state.shape),
+            [2, 10, SMALL_YARN_CFG["hidden_size"]],
+        )
+        self.assertTrue(paddle.isfinite(output.last_hidden_state).all())
+
+    def test_yarn_longer_than_original_max(self):
+        """yarn must handle seq_len > original_max_position_embeddings (scaling)."""
+        seq_len = 80  # > original_max_position_embeddings=64 in SMALL_YARN_CFG
+        input_ids = paddle.randint(0, SMALL_YARN_CFG["vocab_size"], [1, seq_len])
+        with paddle.no_grad():
+            output = self.model(input_ids=input_ids)
+        self.assertEqual(
+            list(output.last_hidden_state.shape),
+            [1, seq_len, SMALL_YARN_CFG["hidden_size"]],
+        )
+        self.assertTrue(paddle.isfinite(output.last_hidden_state).all())
+
+    def test_yarn_cache_matches_no_cache(self):
+        """yarn path must also keep use_cache consistent."""
+        input_ids = paddle.randint(0, SMALL_YARN_CFG["vocab_size"], [1, 8])
+        with paddle.no_grad():
+            out_no_cache = self.model(input_ids=input_ids, use_cache=False).last_hidden_state
+            out_cache = self.model(input_ids=input_ids, use_cache=True).last_hidden_state
+        self.assertTrue(paddle.allclose(out_cache, out_no_cache, atol=1e-5))
+
+
+class TestMinistral3GQAPadding(unittest.TestCase):
+    """R3: GQA + padding mask (attention_mask with 0s) must be covered.
+
+    Exercises repeat_kv (groups=2) and the causal_mask + pad_mask branch
+    (modeling.py:299-301), previously only hit with all-ones mask.
+    """
+
+    BATCH = 3
+    SEQ = 10
+
+    def setUp(self):
+        from paddleformers.transformers import (
+            Ministral3TextConfig,
+            Ministral3TextDecoder,
+        )
+
+        self.text_cfg = Ministral3TextConfig(SMALL_GQA_CFG)
+        self.model = Ministral3TextDecoder(self.text_cfg)
+        self.model.eval()
+
+    def test_gqa_groups(self):
+        self.assertEqual(self.text_cfg.num_attention_heads, 4)
+        self.assertEqual(self.text_cfg.num_key_value_heads, 2)
+        self.assertEqual(self.model.layers[0].self_attn.num_kv_groups, 2)
+
+    def test_padding_mask_different_lengths(self):
+        """Batch with different sequence lengths; padded positions masked with 0."""
+        input_ids = paddle.randint(0, SMALL_GQA_CFG["vocab_size"], [self.BATCH, self.SEQ])
+        # row 0: full length, row 1: last 3 padded, row 2: last 6 padded
+        attn_mask = paddle.ones([self.BATCH, self.SEQ], dtype="int64")
+        attn_mask[1, 7:] = 0
+        attn_mask[2, 4:] = 0
+        with paddle.no_grad():
+            output = self.model(input_ids=input_ids, attention_mask=attn_mask)
+        self.assertEqual(
+            list(output.last_hidden_state.shape),
+            [self.BATCH, self.SEQ, SMALL_GQA_CFG["hidden_size"]],
+        )
+        self.assertTrue(paddle.isfinite(output.last_hidden_state).all())
+
+    def test_padding_does_not_affect_valid_positions(self):
+        """Output at non-padded positions must not depend on padded input tokens."""
+        input_ids = paddle.randint(0, SMALL_GQA_CFG["vocab_size"], [1, 8])
+        attn_mask = paddle.ones([1, 8], dtype="int64")
+        attn_mask[0, 5:] = 0  # last 3 are padding
+
+        input_ids_padded = input_ids.clone()
+        input_ids_padded[0, 5:] = paddle.randint(0, SMALL_GQA_CFG["vocab_size"], [3])
+
+        with paddle.no_grad():
+            out_clean = self.model(input_ids=input_ids, attention_mask=attn_mask).last_hidden_state
+            out_padded = self.model(input_ids=input_ids_padded, attention_mask=attn_mask).last_hidden_state
+        # valid positions (0..4) must match despite different padding token ids
+        self.assertTrue(
+            paddle.allclose(out_clean[:, :5], out_padded[:, :5], atol=1e-5),
+            "padded token values leaked into valid positions",
+        )
+
+
 def _load_paddle_model_3b(dtype="float32"):
     import paddle
 
@@ -178,7 +421,9 @@ def _dequant_fp8_torch_model(model, torch_dtype):
 
 def _run_torch_inference(result_path):
     import torch
-    from transformers import Mistral3ForConditionalGeneration as TorchMistral3ForConditionalGeneration
+    from transformers import (
+        Mistral3ForConditionalGeneration as TorchMistral3ForConditionalGeneration,
+    )
 
     os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
@@ -284,7 +529,6 @@ class TestMistral3DiffAlignment(unittest.TestCase):
     @require_package("transformers", "torch")
     def test_diff_alignment(self):
         import subprocess
-        import tempfile
 
         project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
         tmp_dir = os.path.join(project_root, "tmp")

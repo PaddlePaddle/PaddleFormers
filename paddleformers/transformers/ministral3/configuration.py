@@ -38,20 +38,16 @@ class Ministral3TextConfig:
         self.num_hidden_layers = cfg_dict.get("num_hidden_layers", 34)
         self.num_key_value_heads = cfg_dict.get("num_key_value_heads", 8)
         self.rms_norm_eps = cfg_dict.get("rms_norm_eps", 1e-5)
-        self.rope_parameters = cfg_dict.get(
-            "rope_parameters",
-            {
-                "rope_type": "yarn",
-                "rope_theta": 1000000.0,
-                "factor": 16.0,
-                "original_max_position_embeddings": 16384,
-                "beta_fast": 32.0,
-                "beta_slow": 1.0,
-                "llama_4_scaling_beta": 0.1,
-                "mscale": 1.0,
-                "mscale_all_dim": 1.0,
-            },
-        )
+        self.rope_parameters = cfg_dict.get("rope_parameters", cfg_dict.get("rope_scaling"))
+        rope_theta = cfg_dict.get("rope_theta", 1000000.0)
+        if self.rope_parameters is None:
+            self.rope_parameters = {"rope_type": "yarn", "rope_theta": rope_theta}
+        else:
+            self.rope_parameters = dict(self.rope_parameters)
+            self.rope_parameters["rope_type"] = self.rope_parameters.get(
+                "rope_type", self.rope_parameters.get("type", "yarn")
+            )
+            self.rope_parameters["rope_theta"] = self.rope_parameters.get("rope_theta", rope_theta)
         self.sliding_window = cfg_dict.get("sliding_window", None)
         self.use_cache = cfg_dict.get("use_cache", True)
         self.vocab_size = cfg_dict.get("vocab_size", 131072)
@@ -208,6 +204,7 @@ class Mistral3TextConfig(PretrainedConfig):
         num_key_value_heads=8,
         rms_norm_eps=1e-05,
         rope_theta=1000000000.0,
+        rope_scaling=None,
         sliding_window=None,
         use_cache=True,
         vocab_size=131072,
@@ -225,6 +222,14 @@ class Mistral3TextConfig(PretrainedConfig):
         self.num_key_value_heads = num_key_value_heads
         self.rms_norm_eps = rms_norm_eps
         self.rope_theta = rope_theta
+        self.rope_scaling = rope_scaling
+        if rope_scaling is not None:
+            self.rope_scaling = dict(rope_scaling)
+            self.rope_scaling["rope_type"] = self.rope_scaling.get("rope_type", self.rope_scaling.get("type", "yarn"))
+            self.rope_scaling.pop("type", None)
+            self.rope_parameters = self.rope_scaling
+        else:
+            self.rope_parameters = {"rope_type": "yarn", "rope_theta": rope_theta}
         self.sliding_window = sliding_window
         self.use_cache = use_cache
         self.vocab_size = vocab_size
