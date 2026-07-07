@@ -173,6 +173,7 @@ jobs:
           fleet_commit=$(python scripts/ci_utils/get_fleet_commit.py)
           wget -q --no-proxy https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFleet.tar
           tar xf PaddleFleet.tar
+          source /root/proxy
           cd PaddleFleet
           git config --global --add safe.directory /workspace/PaddleFormers
           git config user.name "PaddleCI"
@@ -346,13 +347,13 @@ jobs:
           wget -q --no-proxy https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFleet.tar
           tar xf PaddleFleet.tar
           cd PaddleFleet
+          source /root/proxy
           git config --global --add safe.directory /workspace/PaddleFormers
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
           # git checkout release/0.3
           git fetch origin
-          git reset --hard $fleet_commit
           git reset --hard $fleet_commit
           CUDA_VERSION=CUDA129 scripts/install_ops_wheel.sh
           cd ..
@@ -652,6 +653,7 @@ jobs:
           fleet_commit=$(python scripts/ci_utils/get_fleet_commit.py)
           wget -q --no-proxy https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFleet.tar
           tar xf PaddleFleet.tar
+          source /root/proxy
           cd PaddleFleet
           git config --global --add safe.directory /workspace/PaddleFormers
           git config user.name "PaddleCI"
