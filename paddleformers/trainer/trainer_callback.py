@@ -938,20 +938,14 @@ class InternalMedicineCallback(TrainerCallback):
     def __init__(
         self,
         monitors=None,
-        monitor_interval=None,
+        monitor_interval=0,
         verbose: bool = True,
         qk_row_stride: int = 1,
         log_dir: str = "",
     ):
         super().__init__()
         self.monitors = self._normalize_monitors(monitors)
-        if monitor_interval is None:
-            logger.warning(
-                "[InternalMedicine] internal_medicine_monitor_interval not set; defaulting to 1. "
-                "Set it to 0 in your yaml to disable internal-medicine monitoring entirely."
-            )
-            monitor_interval = 1
-        self.monitor_interval = int(monitor_interval)
+        self.monitor_interval = int(monitor_interval) if monitor_interval else 0
         self.verbose = verbose
         self.qk_row_stride = qk_row_stride
         self.log_dir = log_dir or ""
@@ -974,6 +968,12 @@ class InternalMedicineCallback(TrainerCallback):
 
     def on_train_begin(self, args, state, control, model=None, **kwargs):
         if model is None or self._setup_done or not self.monitors:
+            return
+        if self.monitor_interval <= 0:
+            logger.warning(
+                "[InternalMedicine] monitor_interval=%s is non-positive; skipping monitor setup.",
+                self.monitor_interval,
+            )
             return
 
         self._maybe_truncate_on_resume(state)
