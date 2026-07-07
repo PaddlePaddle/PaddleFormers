@@ -145,7 +145,6 @@ jobs:
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           rm -rf * .[^.]*
           echo $PR_USER
-          source /root/proxy
           mkdir -p /home/.cache/pip
           pip cache dir
           pip install --upgrade pip
@@ -320,11 +319,10 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           rm -rf * .[^.]*
-          source /root/proxy
           mkdir -p /home/.cache/pip
           pip cache dir
           pip install --upgrade pip
-           wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
+          wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
           echo "Extracting PaddleFormers.tar"
           tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
           cd PaddleFormers
@@ -628,11 +626,10 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           rm -rf * .[^.]*
-          source /root/proxy
           mkdir -p /home/.cache/pip
           pip cache dir
           pip install --upgrade pip
-           wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
+          wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
           echo "Extracting PaddleFormers.tar"
           rm -rf PaddleFormers
           tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
