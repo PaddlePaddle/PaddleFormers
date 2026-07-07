@@ -153,6 +153,9 @@ jobs:
           rm -rf PaddleFormers
           tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
           cd PaddleFormers
+          wget -q --no-proxy https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFleet.tar
+          tar xf PaddleFleet.tar
+          source /root/proxy
           git config --global user.name "PaddleCI"
           git config --global user.email "paddle_ci@example.com"
           base_commit=$(git rev-parse HEAD)
@@ -171,9 +174,6 @@ jobs:
           git log --pretty=oneline -10
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
           fleet_commit=$(python scripts/ci_utils/get_fleet_commit.py)
-          wget -q --no-proxy https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFleet.tar
-          tar xf PaddleFleet.tar
-          source /root/proxy
           cd PaddleFleet
           git config --global --add safe.directory /workspace/PaddleFormers
           git config user.name "PaddleCI"
@@ -327,8 +327,12 @@ jobs:
           echo "Extracting PaddleFormers.tar"
           tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
           cd PaddleFormers
+          wget -q --no-proxy https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFleet.tar
+          tar xf PaddleFleet.tar
+          source /root/proxy
           git config --global user.name "PaddleCI"
           git config --global user.email "paddle_ci@example.com"
+          base_commit=$(git rev-parse HEAD)
           echo "base_commit(来自 BOS 快照)=$base_commit"
           git submodule update --init --recursive --force
           if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
@@ -344,10 +348,7 @@ jobs:
           git log --pretty=oneline -10
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
           fleet_commit=$(python scripts/ci_utils/get_fleet_commit.py)
-          wget -q --no-proxy https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFleet.tar
-          tar xf PaddleFleet.tar
           cd PaddleFleet
-          source /root/proxy
           git config --global --add safe.directory /workspace/PaddleFormers
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
@@ -634,8 +635,12 @@ jobs:
           rm -rf PaddleFormers
           tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
           cd PaddleFormers
+          wget -q --no-proxy https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFleet.tar
+          tar xf PaddleFleet.tar
+          source /root/proxy
           git config --global user.name "PaddleCI"
           git config --global user.email "paddle_ci@example.com"
+          base_commit=$(git rev-parse HEAD)
           echo "base_commit(来自 BOS 快照)=$base_commit"
           git submodule update --init --recursive --force
           if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
@@ -651,9 +656,6 @@ jobs:
           git log --pretty=oneline -10
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
           fleet_commit=$(python scripts/ci_utils/get_fleet_commit.py)
-          wget -q --no-proxy https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFleet.tar
-          tar xf PaddleFleet.tar
-          source /root/proxy
           cd PaddleFleet
           git config --global --add safe.directory /workspace/PaddleFormers
           git config user.name "PaddleCI"
