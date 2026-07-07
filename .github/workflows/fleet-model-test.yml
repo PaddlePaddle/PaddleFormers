@@ -159,7 +159,7 @@ jobs:
           echo "base_commit(来自 BOS 快照)=$base_commit"
           git submodule update --init --recursive --force
           if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
-            retry git fetch origin pull/${PR_ID}/head
+            git fetch origin pull/${PR_ID}/head
             git checkout -b PR_${PR_ID} FETCH_HEAD
 
             echo "Merging local base ${base_commit} into PR_${PR_ID}..."
@@ -331,7 +331,7 @@ jobs:
           echo "base_commit(来自 BOS 快照)=$base_commit"
           git submodule update --init --recursive --force
           if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
-            retry git fetch origin pull/${PR_ID}/head
+            git fetch origin pull/${PR_ID}/head
             git checkout -b PR_${PR_ID} FETCH_HEAD
 
             echo "Merging local base ${base_commit} into PR_${PR_ID}..."
@@ -638,7 +638,7 @@ jobs:
           echo "base_commit(来自 BOS 快照)=$base_commit"
           git submodule update --init --recursive --force
           if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
-            retry git fetch origin pull/${PR_ID}/head
+            git fetch origin pull/${PR_ID}/head
             git checkout -b PR_${PR_ID} FETCH_HEAD
 
             echo "Merging local base ${base_commit} into PR_${PR_ID}..."
