@@ -155,16 +155,16 @@ jobs:
           cd PaddleFormers
           git config --global user.name "PaddleCI"
           git config --global user.email "paddle_ci@example.com"
-          git pull
+          base_commit=$(git rev-parse HEAD)
+          echo "base_commit(来自 BOS 快照)=$base_commit"
           git submodule update --init --recursive --force
           if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
-            git fetch origin pull/${PR_ID}/head
+            retry git fetch origin pull/${PR_ID}/head
             git checkout -b PR_${PR_ID} FETCH_HEAD
-            git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
-            echo "Checking out ${BRANCH}..."
-            git fetch upstream ${BRANCH}:${BRANCH}
-            git merge ${BRANCH} --no-edit
-            git diff --numstat ${BRANCH} -- | awk "{print \$NF}"
+
+            echo "Merging local base ${base_commit} into PR_${PR_ID}..."
+            git merge "$base_commit" --no-edit
+            git diff --numstat "$base_commit" -- | awk "{print \$NF}"
           else
             echo "Not in a pull_request event. Skipping PR-specific operations."
           fi
@@ -179,7 +179,7 @@ jobs:
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
           # git checkout release/0.3
-          git fetch origin "$fleet_commit"
+          git fetch origin
           git reset --hard $fleet_commit
           git reset --hard $fleet_commit
           CUDA_VERSION=CUDA129 scripts/install_ops_wheel.sh
@@ -328,16 +328,15 @@ jobs:
           cd PaddleFormers
           git config --global user.name "PaddleCI"
           git config --global user.email "paddle_ci@example.com"
-          git pull
+          echo "base_commit(来自 BOS 快照)=$base_commit"
           git submodule update --init --recursive --force
           if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
-            git fetch origin pull/${PR_ID}/head
+            retry git fetch origin pull/${PR_ID}/head
             git checkout -b PR_${PR_ID} FETCH_HEAD
-            git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
-            echo "Checking out ${BRANCH}..."
-            git fetch upstream ${BRANCH}:${BRANCH}
-            git merge ${BRANCH} --no-edit
-            git diff --numstat ${BRANCH} -- | awk "{print \$NF}"
+
+            echo "Merging local base ${base_commit} into PR_${PR_ID}..."
+            git merge "$base_commit" --no-edit
+            git diff --numstat "$base_commit" -- | awk "{print \$NF}"
           else
             echo "Not in a pull_request event. Skipping PR-specific operations."
           fi
@@ -352,7 +351,7 @@ jobs:
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
           # git checkout release/0.3
-          git fetch origin "$fleet_commit"
+          git fetch origin
           git reset --hard $fleet_commit
           git reset --hard $fleet_commit
           CUDA_VERSION=CUDA129 scripts/install_ops_wheel.sh
@@ -636,16 +635,15 @@ jobs:
           cd PaddleFormers
           git config --global user.name "PaddleCI"
           git config --global user.email "paddle_ci@example.com"
-          git pull
+          echo "base_commit(来自 BOS 快照)=$base_commit"
           git submodule update --init --recursive --force
           if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
-            git fetch origin pull/${PR_ID}/head
+            retry git fetch origin pull/${PR_ID}/head
             git checkout -b PR_${PR_ID} FETCH_HEAD
-            git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
-            echo "Checking out ${BRANCH}..."
-            git fetch upstream ${BRANCH}:${BRANCH}
-            git merge ${BRANCH} --no-edit
-            git diff --numstat ${BRANCH} -- | awk "{print \$NF}"
+
+            echo "Merging local base ${base_commit} into PR_${PR_ID}..."
+            git merge "$base_commit" --no-edit
+            git diff --numstat "$base_commit" -- | awk "{print \$NF}"
           else
             echo "Not in a pull_request event. Skipping PR-specific operations."
           fi
@@ -660,7 +658,7 @@ jobs:
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
           # git checkout release/0.3
-          git fetch origin "$fleet_commit"
+          git fetch origin
           git reset --hard $fleet_commit
           CUDA_VERSION=CUDA129 scripts/install_ops_wheel.sh
           cd ..
