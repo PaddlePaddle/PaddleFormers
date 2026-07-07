@@ -72,6 +72,8 @@ class DeepseekV4ModelProvider(GPTModelProvider):
         "index_n_heads": "dsa_index_n_heads",
         "index_head_dim": "dsa_index_head_dim",
         "index_topk": "dsa_index_topk",
+        "index_topk_pattern": "index_topk_pattern",
+        "indexcache_multi_layer_distill": "indexcache_multi_layer_distill",
     }
 
 
