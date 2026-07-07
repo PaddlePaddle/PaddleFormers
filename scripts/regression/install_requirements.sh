@@ -186,8 +186,8 @@ install_ops_wheel_dev(){
 }
 
 install_ops_wheel_release(){
-    echo "Download PaddleFleet form https://paddle-qa.bj.bcebos.com/CodeSync/release/0.3/PaddleFleet.tar"
-    wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/release/0.3/PaddleFleet.tar --no-check-certificate
+    echo "Download PaddleFleet form https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFleet.tar"
+    wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFleet.tar --no-check-certificate
     rm -rf PaddleFleet && tar xf PaddleFleet.tar && rm -rf PaddleFleet.tar
     local commit=$(python -c "import paddlefleet; print(paddlefleet.version.commit)" 2>/dev/null || echo "")
     if [[ -z "${commit}" ]]; then
