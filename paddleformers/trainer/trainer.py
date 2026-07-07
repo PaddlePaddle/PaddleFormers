@@ -4189,6 +4189,17 @@ class Trainer:
         with self.autocast_smart_context_manager():
             loss = model.forward_backward_pipeline(inputs, self.scaler if self.do_grad_scaling else None)
 
+        # MTP magic send: reset per-depth counters after each optimizer step
+        if getattr(self.args, "enable_mtp_magic_send", False):
+            try:
+                from paddlefleet.models.gpt.mtp_embedding_layer import (
+                    mtp_magic_instance,
+                )
+
+                mtp_magic_instance.clear_count_dict()
+            except (ImportError, ModuleNotFoundError):
+                pass
+
         return loss.detach()
 
     def save_model(
@@ -5391,6 +5402,16 @@ class Trainer:
         if need_clear:
             if hasattr(model, "_p2p_helper"):
                 model._p2p_helper.clear_meta_cache()
+            # MTP magic send: reset counters after eval step (shared singleton with train)
+            if getattr(self.args, "enable_mtp_magic_send", False):
+                try:
+                    from paddlefleet.models.gpt.mtp_embedding_layer import (
+                        mtp_magic_instance,
+                    )
+
+                    mtp_magic_instance.clear_count_dict()
+                except (ImportError, ModuleNotFoundError):
+                    pass
 
         return (loss, None, labels)
 
