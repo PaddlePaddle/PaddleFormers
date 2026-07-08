@@ -1053,13 +1053,31 @@ class InternalMedicineCallback(TrainerCallback):
         return self._is_writer
 
     def _maybe_truncate_on_resume(self, state):
-        """Drop rows with global_step > resume_step from the jsonl on resume."""
+        """Handle a pre-existing jsonl at setup time.
+
+        - Fresh start (resume_step == 0) with a leftover jsonl from a previous
+          run: rotate it aside to <log_path>.bak.<YYYYMMDD_HHMMSS> so the new
+          run starts with a clean file and the viewer isn't confused by a
+          non-monotonic global_step axis.
+        - Real resume from checkpoint (resume_step > 0): keep rows with
+          global_step <= resume_step, drop the tail (any "future" rows past
+          the checkpoint), same behavior as before.
+        """
         if not self._resolve_writer():
+            return
+        if not self.log_path or not os.path.exists(self.log_path):
             return
         resume_step = int(getattr(state, "global_step", 0) or 0)
         if resume_step <= 0:
-            return
-        if not self.log_path or not os.path.exists(self.log_path):
+            try:
+                bak = f"{self.log_path}.bak.{time.strftime('%Y%m%d_%H%M%S')}"
+                os.replace(self.log_path, bak)
+                logger.info(
+                    "[InternalMedicine] rotated pre-existing jsonl to %s (fresh start)",
+                    bak,
+                )
+            except Exception:
+                logger.error("[InternalMedicine] failed to rotate pre-existing jsonl")
             return
         try:
             kept = []
