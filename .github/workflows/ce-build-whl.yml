@@ -101,7 +101,7 @@ jobs:
               rm -f "$FILE"
               continue
             fi
-            for cuda in cu126 cu129 cu130; do
+            for cuda in cu126 cu129 cu130 cuda132; do
               python bos_tools.py $file paddle-whl/nightly/$cuda/paddleformers/
               echo "$file: https://paddle-whl.bj.bcebos.com/nightly/$cuda/paddleformers/$file"
               if [[ ! "$file" =~ -0\.0\.0\. ]]; then
