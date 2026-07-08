@@ -1070,7 +1070,12 @@ class InternalMedicineCallback(TrainerCallback):
         resume_step = int(getattr(state, "global_step", 0) or 0)
         if resume_step <= 0:
             try:
-                bak = f"{self.log_path}.bak.{time.strftime('%Y%m%d_%H%M%S')}"
+                ts = time.strftime("%Y%m%d_%H%M%S")
+                bak = f"{self.log_path}.bak.{ts}"
+                suffix = 1
+                while os.path.exists(bak):
+                    bak = f"{self.log_path}.bak.{ts}.{suffix}"
+                    suffix += 1
                 os.replace(self.log_path, bak)
                 logger.info(
                     "[InternalMedicine] rotated pre-existing jsonl to %s (fresh start)",
