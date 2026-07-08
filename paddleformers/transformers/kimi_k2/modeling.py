@@ -33,6 +33,12 @@ class KimiK2Provider(GPTModelProvider):
     def __post_init__(config):
         super().__post_init__()
         if getattr(config, "use_accuracy_compatible", False):
+            if getattr(config, "sequence_parallel", False) and getattr(config, "multi_latent_attention", False):
+                raise ValueError(
+                    "use_accuracy_compatible=True maps to PaddleFleet "
+                    "gpt_model_use_experimental_version, which does not "
+                    "support Kimi-K2 MLA with sequence_parallel=True."
+                )
             # PaddleFleet still uses this internal flag for several
             # precision-alignment branches. Keep the public PaddleFormers
             # knob as the single user-facing gate.
