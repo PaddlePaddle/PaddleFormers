@@ -27,7 +27,7 @@ from paddleformers.transformers.model_utils import PretrainedModel
 
 logger = logging.getLogger(__name__)
 
-from paddlefleet.models.gpt.gemma4_layer_specs import Gemma4DualRotaryEmbedding
+from paddlefleet.models.common.embeddings import Gemma4DualRotaryEmbedding
 from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
 from paddlefleet.transformer.transformer_layer import Gemma4TransformerLayer
 
