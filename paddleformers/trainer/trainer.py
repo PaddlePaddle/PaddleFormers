@@ -1290,6 +1290,14 @@ class Trainer:
                 worker_groups=worker_groups,
             )
 
+            if self.args.tensorwise_offload_optimizer:
+                logger.info("Offloading master weights before loading optimizer state for FC...")
+                for v in master_weights.values():
+                    offload(v.local_tensor)
+                gc.collect()
+                if paddle.is_compiled_with_cuda():
+                    paddle.device.cuda.empty_cache()
+
             if not self.args.ignore_load_lr_and_optim:
                 dist.load_state_dict(
                     opt_states,
