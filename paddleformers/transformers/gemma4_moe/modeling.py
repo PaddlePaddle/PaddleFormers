@@ -155,7 +155,7 @@ class Gemma4MoeModelProvider(GPTModelProvider):
                 num_experts=None,
                 use_qk_norm=True,
                 normalization=getattr(config, "normalization", "RMSNorm"),
-                layer_number=i + 1,
+                layer_number=i,
                 attention_layer_type="gemma4",
             )
             for i in range(num_layers)
@@ -380,7 +380,7 @@ class Gemma4MoeForCausalLM(Gemma4MoePreTrainedModel):
                 f"{hf}.pre_feedforward_layernorm_2.weight -> {pf}.mlp.pre_feedforward_layernorm_2.weight",
                 f"{hf}.post_feedforward_layernorm_2.weight -> {pf}.mlp.post_moe_layernorm.weight",
                 f"{hf}.router.proj.weight -> {pf}.mlp.gate.weight, dtype='float32'",
-                f"{hf}.router.per_expert_scale -> {pf}.mlp.gate.per_expert_scale, dtype='float32'",
+                f"{hf}.router.per_expert_scale -> {pf}.mlp.gate.routed_scaling_factor_param, dtype='float32'",
                 f"{hf}.router.scale -> {pf}.mlp.gate.router_input_scale, dtype='float32'",
             ]
             # Routed experts
@@ -432,7 +432,7 @@ class Gemma4MoeForCausalLM(Gemma4MoePreTrainedModel):
             ]
 
             # layer_scalar
-            aoa_statements.append(f"{pf}.layer_scalar -> {hf}.layer_scalar")
+            aoa_statements.append(f"{pf}.layer_scalar -> {hf}.layer_scalar, dtype='bfloat16'")
 
             # Attention: qkv_proj -> split q/k/v + transpose
             # Global layers (K=V tying): HF has no v_proj, skip v output
@@ -469,8 +469,8 @@ class Gemma4MoeForCausalLM(Gemma4MoePreTrainedModel):
             # Router
             aoa_statements += [
                 f"{pf}.mlp.gate.weight -> {hf}.router.proj.weight, dtype='bfloat16'",
-                f"{pf}.mlp.gate.per_expert_scale -> {hf}.router.per_expert_scale",
-                f"{pf}.mlp.gate.router_input_scale -> {hf}.router.scale",
+                f"{pf}.mlp.gate.routed_scaling_factor_param -> {hf}.router.per_expert_scale, dtype='bfloat16'",
+                f"{pf}.mlp.gate.router_input_scale -> {hf}.router.scale, dtype='bfloat16'",
             ]
 
             # Routed experts (inverse)

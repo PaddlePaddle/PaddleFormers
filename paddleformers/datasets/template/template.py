@@ -996,4 +996,17 @@ register_template(
     mm_plugin=get_mm_plugin(name="glm_ocr", image_token="<|image|>"),
 )
 
-# TODO(xingmingyyj) add template for Gemma4
+
+register_template(
+    name="gemma4",
+    format_user=StringFormatter(slots=["<|turn>user\n{{content}}<turn|>\n<|turn>model\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|turn>system\n{{content}}<turn|>\n"]),
+    format_observation=StringFormatter(slots=["<|turn>tool\n{{content}}<turn|>\n<|turn>model\n"]),
+    format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
+    chat_sep="<turn|>\n",
+    suffix=["<turn|>"],
+    stop_words=["<turn|>"],
+    thought_words=("<|channel>thought\n", "\n<channel|>"),
+    template_class=Llama2Template,
+)
