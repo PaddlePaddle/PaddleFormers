@@ -171,10 +171,10 @@ from .trainer_callback import (
     CallbackHandler,
     DefaultFlowCallback,
     EMAStateAssemblerCallback,
-    InterleaveGateUpCallback,
     InternalMedicineCallback,
     PrinterCallback,
     ProgressCallback,
+    SonicMoELayoutSwitchCallback,
     SPGradSyncCallback,
     TrainerCallback,
     TrainerControl,
@@ -184,6 +184,7 @@ from .trainer_utils import (  # set_hyrbid_parallel_seed,
     EMAStateAssembler,
     EvalLoopOutput,
     EvalPrediction,
+    FleetTrainingLogs,
     IntervalStrategy,
     IterableDatasetShard,
     OptimizerNames,
@@ -496,11 +497,28 @@ class Trainer:
                 model, PipelineLayer
             ), f"Only support pipeline parallel mode when model is PipelineLayer or PipelineLayer!!! but get {type(model.model)}"
         default_callbacks = DEFAULT_CALLBACKS.copy()
-        if getattr(self.args, "internal_medicine_monitors", ""):
+
+        _im_monitors = getattr(self.args, "internal_medicine_monitors", "")
+        _im_interval = getattr(self.args, "internal_medicine_monitor_interval", 0)
+        if _im_monitors:
+            if _im_interval is None:
+                raise ValueError(
+                    "internal_medicine_monitor_interval is None. Expected int "
+                    "(0 to disable monitoring, positive int for sampling interval). "
+                )
+            _im_interval = int(_im_interval)
+        else:
+            _im_interval = 0
+        if _im_monitors and _im_interval > 0:
+            _im_log_dir = (
+                getattr(self.args, "internal_medicine_log_dir", "") or getattr(self.args, "output_dir", "") or "."
+            )
             default_callbacks.append(
                 InternalMedicineCallback(
-                    monitors=self.args.internal_medicine_monitors,
-                    monitor_interval=self.args.internal_medicine_monitor_interval,
+                    monitors=_im_monitors,
+                    monitor_interval=_im_interval,
+                    qk_row_stride=getattr(self.args, "internal_medicine_qk_row_stride", 1),
+                    log_dir=_im_log_dir,
                 )
             )
         default_callbacks += get_reporting_integration_callbacks(self.args.report_to)
@@ -629,6 +647,14 @@ class Trainer:
             self.trained_tokens = 0
 
         self.global_training_logs = {}
+        self._register_fleet_moe_training_logs()
+
+    def _register_fleet_moe_training_logs(self):
+        try:
+            from paddlefleet.training.global_vars import set_global_training_logs
+        except ImportError:
+            return
+        set_global_training_logs(FleetTrainingLogs(self))
 
     def _wrap_amp_model(self, args, model):
         logger.info("Using half precision")
@@ -1846,8 +1872,7 @@ class Trainer:
             self.add_non_zcc_ema_callback(resume_from_checkpoint, ema_state_assembler)
 
         if self.args.using_sonic_moe:
-            callback = InterleaveGateUpCallback(self.model, resume_from_checkpoint, self.args.output_dir)
-            self.add_callback(callback)
+            self.add_callback(SonicMoELayoutSwitchCallback())
 
         self.log_trainable_numel(model)
 
@@ -4172,6 +4197,17 @@ class Trainer:
         with self.autocast_smart_context_manager():
             loss = model.forward_backward_pipeline(inputs, self.scaler if self.do_grad_scaling else None)
 
+        # MTP magic send: reset per-depth counters after each optimizer step
+        if getattr(self.args, "enable_mtp_magic_send", False):
+            try:
+                from paddlefleet.models.gpt.mtp_embedding_layer import (
+                    mtp_magic_instance,
+                )
+
+                mtp_magic_instance.clear_count_dict()
+            except (ImportError, ModuleNotFoundError):
+                pass
+
         return loss.detach()
 
     def save_model(
@@ -5374,6 +5410,16 @@ class Trainer:
         if need_clear:
             if hasattr(model, "_p2p_helper"):
                 model._p2p_helper.clear_meta_cache()
+            # MTP magic send: reset counters after eval step (shared singleton with train)
+            if getattr(self.args, "enable_mtp_magic_send", False):
+                try:
+                    from paddlefleet.models.gpt.mtp_embedding_layer import (
+                        mtp_magic_instance,
+                    )
+
+                    mtp_magic_instance.clear_count_dict()
+                except (ImportError, ModuleNotFoundError):
+                    pass
 
         return (loss, None, labels)
 

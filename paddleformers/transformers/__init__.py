@@ -311,6 +311,14 @@ import_structure = {
     "glm_moe_dsa": ["GlmMoeDsaForCausalLMPipe", "GlmMoeDsaForCausalLM"],
     "minimax_m2.configuration": ["MiniMaxM2Config"],
     "minimax_m2": ["MiniMaxM2ForCausalLMPipe", "MiniMaxM2ForCausalLM"],
+    "minicpm.configuration": ["MiniCPMConfig"],
+    "minicpm.modeling": [
+        "MiniCPMModel",
+        "MiniCPMForCausalLM",
+        "MiniCPMForCausalLMPipe",
+        "MiniCPMForSequenceClassification",
+    ],
+    "minicpm": [],
     "deepseek_v4.configuration": ["DeepseekV4Config"],
     "deepseek_v4": ["DeepseekV4ForCausalLMPipe", "DeepseekV4ForCausalLM"],
     "glm4v_moe.image_processor": ["Glm4vImageProcessor"],
@@ -340,6 +348,9 @@ import_structure = {
     ],
     "glm_ocr.processor": ["Glm46VProcessor"],
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
+    "phi4.configuration": ["Phi4Config"],
+    "phi4.modeling": ["Phi4Model", "Phi4ForCausalLM"],
+    "phi4.tokenizer": ["Phi4Tokenizer"],
 }
 
 if TYPE_CHECKING:
@@ -413,11 +424,13 @@ if TYPE_CHECKING:
     from .glm4v_moe import *
     from .glm_moe_dsa import *
     from .minimax_m2 import *
+    from .minicpm import *
     from .deepseek_v4 import *
     from .gpt_oss import *
     from .phi3 import *
     from .gemma3_text import *
     from .glm_ocr import *
+    from .phi4 import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

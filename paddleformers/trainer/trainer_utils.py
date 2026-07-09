@@ -96,6 +96,7 @@ from .utils.reshard import SHARDING_STRATEGY_V1, split_opt_state
 from .utils.sharding_io import GroupGetter, to_device
 
 __all__ = [
+    "FleetTrainingLogs",
     "TrainOutput",
     "PredictionOutput",
     "EvalPrediction",
@@ -109,6 +110,26 @@ __all__ = [
     "set_hyrbid_parallel_seed",
     "log_trainer_start",
 ]
+
+
+class FleetTrainingLogs:
+    def __init__(self, trainer):
+        self.trainer = trainer
+
+    def update(self, **kwargs):
+        for key, value in kwargs.items():
+            if hasattr(value, "item"):
+                value = value.item()
+            self.trainer.global_training_logs[key] = value
+
+    def is_moe_balance_logs_enabled(self):
+        config = getattr(self.trainer.model, "config", None)
+        if not getattr(config, "moe_logging", False):
+            return False
+
+        interval = self.trainer.args.global_logging_interval
+        remainder = (self.trainer.state.global_step + 1) % (interval * interval)
+        return 0 <= remainder < interval
 
 
 def mock_offload_optimizer():

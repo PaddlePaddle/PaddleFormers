@@ -968,13 +968,22 @@ register_template(
 
 register_template(
     name="phi4",
-    format_user=StringFormatter(
-        slots=["<|im_start|>user<|im_sep|>{{content}}<|im_end|><|im_start|>assistant<|im_sep|>"]
-    ),
+    format_user=StringFormatter(slots=["<|user|>{{content}}<|end|><|assistant|>"]),
     format_assistant=StringFormatter(slots=["{{content}}"]),
-    format_system=StringFormatter(slots=["<|im_start|>system<|im_sep|>{{content}}<|im_end|>"]),
-    suffix=["<|im_end|>"],
-    chat_sep="<|im_end|>",
+    format_system=StringFormatter(slots=["<|system|>{{content}}<|end|>"]),
+    chat_sep="<|end|>",
+    suffix=["<|end|>"],
+    template_class=ReasoningTemplate,
+)
+
+register_template(
+    name="phi4_nothink",
+    format_user=StringFormatter(slots=["<|user|>{{content}}<|end|><|assistant|>"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|system|>{{content}}<|end|>"]),
+    chat_sep="<|end|>",
+    suffix=["<|end|>"],
+    enable_thinking=None,
 )
 
 # copied from deepseekv3 template
