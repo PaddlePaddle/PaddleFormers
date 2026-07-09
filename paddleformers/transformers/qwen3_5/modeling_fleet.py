@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import itertools
 from dataclasses import dataclass
 
@@ -19,17 +20,21 @@ import paddle
 import paddle.nn.functional as F
 from paddle import Tensor
 from paddle.distributed import fleet
+from paddle.distributed.fleet.meta_parallel import (
+    LayerSpec,
+    NoPipelineParallel,
+    build_spec_layer,
+)
 from paddlefleet.models.common.empty_layer import EmptyLayer
 from paddlefleet.models.gpt.gpt_embedding import GPTEmbedding
 from paddlefleet.models.gpt.gpt_layer_specs import (
     get_gpt_layer_local_spec,
+    get_gpt_mtp_layers_spec,
     get_gpt_spec,
 )
 from paddlefleet.models.gpt.lm_head import GPTLMHead
 from paddlefleet.models.qwen3_5.layer_specs import get_qwen3_5_vision_spec
 from paddlefleet.models.qwen3_5.qwen3_5_model import Qwen3_5RMSNorm, Qwen3_5RMSNormPipe
-from paddlefleet.pipeline_parallel import NoPipelineParallel
-from paddlefleet.spec_utils import LayerSpec, build_layer
 from paddlefleet.tensor_parallel.mappings import scatter_to_sequence_parallel_region
 from paddlefleet.transformer.layer import FleetLayer
 from paddlefleet.transformer.paddle_norm import WrappedPaddleNorm, WrappedPaddleNormPipe
@@ -37,12 +42,14 @@ from paddlefleet.transformer.transformer_config import TransformerConfig
 from paddlefleet.utils import get_tensor_model_parallel_group_if_none
 
 from ..gpt_provider import GPTModelProvider
+from ..model_utils import PretrainedModel
 
 
 @dataclass
 class Qwen3_5VisionProvider(TransformerConfig):
     transform_rules = {
         "num_heads": "num_attention_heads",
+        "depth": "num_hidden_layers",
     }
     patch_size: int = 16
     use_bias: bool = True
@@ -74,7 +81,7 @@ class Qwen3_5VisionProvider(TransformerConfig):
 
     def provide(self):
         spec = get_qwen3_5_vision_spec(self)
-        return build_layer(
+        return build_spec_layer(
             spec,
             seg_method="layer:TransformerLayer|EmptyLayer",
             num_stages=self.pipeline_model_parallel_size,
@@ -98,6 +105,7 @@ class Qwen3_5TextModelProvider(GPTModelProvider):
         "dtype": "params_dtype",
         "num_experts": "n_routed_experts",
         "num_local_experts": "n_routed_experts",
+        "attn_output_gate": "gated_attention",
     }
 
     gated_linear_unit: bool = True
@@ -117,8 +125,32 @@ class Qwen3_5TextModelProvider(GPTModelProvider):
             self.mrope_section = rope_params.get("mrope_section", [11, 11, 10])
         # Fused rope kernel does not support 3D position_ids required by mrope
         self.apply_rope_fusion = False
+        # Qwen3_5TextConfig has num_experts=60 as class default even for dense models.
+        # For dense models (model_type without "moe"), clear MoE config
+        # so fleet creates dense MLP layers instead of MoE layers.
+        model_type = getattr(self, "model_type", "")
+        if "moe" not in model_type:
+            self.n_routed_experts = None
+            self.n_shared_experts = 0
+            self.moe_shared_expert_gate = False
+        # Unify MTP layer configuration
+        # "config" source: mtp_num_hidden_layers (from model's config.json)
+        # "yaml" source: num_nextn_predict_layers (from training yaml)
+        # Priority: yaml > config > default (0 = no MTP)
+        config_mtp = getattr(self, "mtp_num_hidden_layers", 0) or 0
+        yaml_mtp = self.num_nextn_predict_layers or 0
 
-    moe_grouped_gemm: bool = True
+        if yaml_mtp > 0:
+            self.mtp_num_layers = yaml_mtp
+            self.num_nextn_predict_layers = yaml_mtp
+        elif config_mtp > 0:
+            self.mtp_num_layers = config_mtp
+            self.num_nextn_predict_layers = config_mtp
+        else:
+            self.mtp_num_layers = 0
+            self.num_nextn_predict_layers = 0
+
+    moe_expert_fusion: bool = True
     moe_router_load_balancing_type: str = "aux_loss"
     moe_router_pre_softmax: bool = False
     moe_permute_fusion: bool = True
@@ -129,8 +161,28 @@ class Qwen3_5TextModelProvider(GPTModelProvider):
     bias_dropout_fusion: bool = True
     use_qk_norm: bool = True
     moe_router_force_load_balancing: bool = False
-    n_shared_experts: int = 0
+    n_shared_experts: int = 1
+    moe_shared_expert_gate: bool = True
     multimodal_embedding: bool = False
+
+
+def _build_mtp_layers_spec(config, transformer_layers_spec):
+    """Build MTP layer specs with moe_expert_fusion disabled for qwen3.5.
+
+    The AOA engine cannot handle concat+reshape with EP sharding for per-expert
+    2D HF keys, so MTP layers use per-expert storage instead of expert fusion.
+    """
+    mtp_cfg = copy.copy(config)
+    mtp_cfg.moe_expert_fusion = False
+    # Create a new spec identical to the last decoder layer but with mtp_cfg
+    # embedded, so MoELayer inside TransformerLayer uses per-expert weights.
+    base_spec = transformer_layers_spec[-1]
+    mtp_transformer_spec = LayerSpec(
+        layer=base_spec.layer,
+        sublayers_spec=base_spec.sublayers_spec,
+        extra_kwargs={**base_spec.extra_kwargs, "config": mtp_cfg},
+    )
+    return get_gpt_mtp_layers_spec(mtp_cfg, [mtp_transformer_spec])
 
 
 def get_qwen3_5_language_spec(config):
@@ -160,7 +212,7 @@ def get_qwen3_5_language_spec(config):
             layer_number=i + head_offset,
             attention_layer_type=attn_type,
             num_experts=config.n_routed_experts,
-            moe_grouped_gemm=config.moe_grouped_gemm,
+            moe_expert_fusion=config.moe_expert_fusion,
             multi_latent_attention=config.multi_latent_attention,
         )
 
@@ -183,7 +235,7 @@ def get_qwen3_5_language_spec(config):
     full_spec = get_gpt_spec(
         config=config,
         transformer_layers_spec=transformer_layers_spec,
-        mtp_layers_spec=None,
+        mtp_layers_spec=_build_mtp_layers_spec(config, transformer_layers_spec) if config.mtp_num_layers > 0 else None,
         vocab_size=config.vocab_size,
         max_sequence_length=config.max_sequence_length,
         head_empty_layers_spec=head_empty_layers,
@@ -241,7 +293,7 @@ def build_qwen3_5_model(config, criterion):
     language_config.video_token_id = config.video_token_id
 
     language_spec = get_qwen3_5_language_spec(language_config)
-    language_model = build_layer(
+    language_model = build_spec_layer(
         language_spec,
         seg_method="layer:TransformerLayer|EmptyLayer",
         num_stages=1,
@@ -560,7 +612,29 @@ class Qwen3_5Model(FleetLayer):
                 mm_token_type_ids=mm_token_type_ids,
             )
 
-        if self.config.sequence_parallel:
+        num_nextn = getattr(self.config, "num_nextn_predict_layers", 0) or 0
+
+        if num_nextn > 0 and not getattr(self.config, "mtp_load_weight_only", False):
+            seq_len = inputs_embeds.shape[1]
+            base_len = seq_len - num_nextn
+            main_embeds = inputs_embeds[:, :base_len, :]
+            mtp_parts = []
+            for depth in range(num_nextn):
+                shifted = inputs_embeds[:, (depth + 1) : (depth + 1 + base_len), :]
+                mtp_parts.append(shifted)
+
+            if self.config.sequence_parallel:
+                main_embeds = main_embeds.transpose([1, 0, 2]).contiguous()
+                main_embeds = scatter_to_sequence_parallel_region(main_embeds, group=self.tp_group)
+                mtp_scattered = []
+                for mtp in mtp_parts:
+                    mtp = mtp.transpose([1, 0, 2]).contiguous()
+                    mtp = scatter_to_sequence_parallel_region(mtp, group=self.tp_group)
+                    mtp_scattered.append(mtp)
+                inputs_embeds = paddle.concat([main_embeds] + mtp_scattered, axis=0)
+            else:
+                inputs_embeds = paddle.concat([main_embeds] + mtp_parts, axis=0)
+        elif self.config.sequence_parallel:
             inputs_embeds = inputs_embeds.transpose([1, 0, 2]).contiguous()
             inputs_embeds = scatter_to_sequence_parallel_region(inputs_embeds, group=self.tp_group)
 
@@ -580,7 +654,12 @@ class Qwen3_5Model(FleetLayer):
         return lm_dict_args
 
 
-class FleetQwen3_5ForConditionalGeneration(FleetLayer):
+class FleetQwen3_5ForConditionalGeneration(FleetLayer, PretrainedModel):
+    config_class = None
+
+    def _post_init(self, original_init, *args, **kwargs):
+        pass
+
     def __init__(self, config, model, criterion):
         super().__init__(config)
         self.model = model
@@ -591,7 +670,12 @@ class FleetQwen3_5ForConditionalGeneration(FleetLayer):
             dict_args = kwargs
         labels = dict_args.get("labels", None)
         logits = self.model(dict_args)
-        loss = self.criterion(logits, labels)
+        if isinstance(logits, list):
+            mtp_logits = logits[1:]
+            logits = logits[0]
+            loss = self.criterion(logits, labels, mtp_logits=mtp_logits)
+        else:
+            loss = self.criterion(logits, labels)
         return loss
 
     def sharded_state_dict(self, structured_name_prefix: str = ""):
@@ -616,8 +700,6 @@ class FleetQwen3_5ForConditionalGeneration(FleetLayer):
 
         # Get sharded state dict from language model (GPTModel wrapped in NoPipelineParallel)
         if self.model.language_model is not None:
-            # Access the underlying PipelineLayer (GPTModel) directly
-            # GPTModel.sharded_state_dict handles the model.language_model. prefix internally
             language_model = self.model.language_model._layers
             if hasattr(language_model, "sharded_state_dict"):
                 lm_sharded = language_model.sharded_state_dict(structured_name_prefix="")
@@ -625,9 +707,6 @@ class FleetQwen3_5ForConditionalGeneration(FleetLayer):
 
         # Get sharded state dict from vision model (Qwen3_5VisionModel wrapped in NoPipelineParallel)
         if self.model.visual is not None:
-            # Access the underlying Qwen3_5VisionModel (TransformerEncoder) directly
-            # TransformerEncoder.sharded_state_dict handles the model.vision_model. prefix
-            # via _pp_to_single_mapping (since modal="vision_model")
             vision_model = self.model.visual._layers
             if hasattr(vision_model, "sharded_state_dict"):
                 vm_sharded = vision_model.sharded_state_dict(structured_name_prefix="")

@@ -80,6 +80,8 @@ import_structure = {
         "MoECorrectionBiasAdjustCallback",
         "MoeExpertsGradScaleCallback",
         "MoEGateSpGradSyncCallBack",
+        "GlobalRNGCallback",
+        "InternalMedicineCallback",
     ],
     "trainer_utils": [
         "get_last_checkpoint",

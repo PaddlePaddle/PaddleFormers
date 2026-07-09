@@ -5,7 +5,11 @@ on:
     types: [opened, synchronize]
     branches: [develop, release/**]
 
-permissions: read-all
+permissions: 
+    pull-requests: read
+    contents: read
+    actions: read
+    checks: read
 
 concurrency:
   group: ${{ github.event.pull_request.number }}-${{ github.workflow }}
@@ -20,59 +24,42 @@ env:
   BRANCH: ${{ github.event.pull_request.base.ref || github.ref_name }}
   CI_name: fleet-model-test
   no_proxy: "bcebos.com,.bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
-  docker_image: "ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda129-coverage-test"
+  docker_image: "ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:ubuntu24-cuda129-py312-dev"
 
 defaults:
   run:
     shell: bash
 
 jobs:
-  check_skip:
-    name: Check skip-fleet-models-ci label
-    runs-on: ubuntu-latest
-
-    outputs:
-      skip: ${{ steps.check_skip.outputs.skip }}
-
-    steps:
-      - name: Check skip-fleet-models-ci label
-        id: check_skip
-        shell: bash
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            labels='${{ toJson(github.event.pull_request.labels.*.name) }}'
-            echo "PR labels: $labels"
-
-            if echo "$labels" | grep -q "skip-fleet-models-ci"; then
-              echo "skip=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "skip=false" >> "$GITHUB_OUTPUT"
-            fi
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Skip CI but mark success
-        if: steps.check_skip.outputs.skip == 'true'
-        run: |
-          echo "skip-fleet-models-ci label found"
-          echo "Downstream GPU jobs will be skipped"
+  check-bypass:
+    name: Check bypass
+    if: ${{ inputs.can-skip != 'true' }}
+    uses: ./.github/workflows/check-bypass.yml
+    with:
+      workflow-name: 'fleet-model-test'
+    secrets:
+      github-token: ${{ secrets.GITHUB_TOKEN }}
+      
   
   check_documents_type:
-    needs: check_skip
-    if: ${{ needs.check_skip.outputs.skip == 'false' }}
+    needs: check-bypass
+    if: ${{ needs.check-bypass.outputs.can-skip == 'false' }}
     name: check documents type for pull request
-    runs-on: ubuntu-latest
+    runs-on:
+      group: APPROVAL
     env:
       GITHUB_REPO_NAME: ${{ github.repository }}
     outputs:
       is_md_only: ${{ steps.check_files.outputs.is_md_only }}
     steps:
+      - name: Cleanup
+        run: |
+          rm -rf * .[^.]*
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
       - name: git diff and check 
@@ -103,8 +90,8 @@ jobs:
           echo "is_md_only: $(cat $GITHUB_OUTPUT | grep is_md_only || echo '未找到')"
     
   integration-test-H20-single-card:
-    needs: [check_documents_type, check_skip]
-    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' && needs.check_skip.outputs.skip == 'false' }}
+    needs: [check_documents_type, check-bypass]
+    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' && needs.check-bypass.outputs.can-skip == 'false' }}
     name: Integration test (H20, single card)
     runs-on:
       group: Fleet-H-single-card
@@ -115,7 +102,7 @@ jobs:
     steps:
       - name: Determine the runner
         run: |
-          gpu_id=$(( $(echo $PWD | awk -F'/' '{print $3}' | awk -F'-' '{print $2}') + 3 ))
+          gpu_id=$(( $(echo $PWD | awk -F'/' '{print $3}' | awk -F'-' '{print $2}') - 1 ))
           echo GPU_DEVICES="$gpu_id" >> $GITHUB_ENV
 
       - name: Check docker image and run container
@@ -171,15 +158,21 @@ jobs:
           git config pull.rebase false
           git pull --no-edit origin pull/${PR_ID}/head
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
-          sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/glm45_provider.py
-          sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/qwen_provider.py
+          fleet_commit=$(python scripts/ci_utils/get_fleet_commit.py)
+          git clone https://github.com/PaddlePaddle/PaddleFleet.git
+          cd PaddleFleet
+          git config --global --add safe.directory /workspace/PaddleFormers
+          git config user.name "PaddleCI"
+          git config user.email "paddle_ci@example.com"
+          git config pull.rebase false
+          # git checkout release/0.3
+          git reset --hard $fleet_commit
+          CUDA_VERSION=CUDA129 scripts/install_ops_wheel.sh
+          cd ..
+          # python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
           pip install -e ".[paddlefleet]" --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
-          # wget -q --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.2/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
-          # pip uninstall paddlefleet -y
-          # pip install paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
-          # wget -q --no-proxy --no-check-certificate https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
-          # pip uninstall paddlepaddle-gpu -y
-          # pip install paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          wget -q --no-proxy https://paddle-qa.bj.bcebos.com/paddleformers/yq_linux_amd64 -O /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
           echo "paddle commit:"
           python -c "import paddle; print(paddle.version.commit)"
           echo "paddlefleet commit:"
@@ -264,8 +257,8 @@ jobs:
 
 
   integration-test-H20-multi-card:
-    needs: [check_documents_type, check_skip]
-    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' && needs.check_skip.outputs.skip == 'false' }}
+    needs: [check_documents_type, check-bypass]
+    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' && needs.check-bypass.outputs.can-skip == 'false' }}
     name: Integration test (H20, multi-card)
     runs-on:
       group: Fleet-H-multi-card
@@ -324,6 +317,18 @@ jobs:
           git config pull.rebase false
           git pull --no-edit origin pull/${PR_ID}/head
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
+          fleet_commit=$(python scripts/ci_utils/get_fleet_commit.py)
+          git clone https://github.com/PaddlePaddle/PaddleFleet.git
+          cd PaddleFleet
+          git config --global --add safe.directory /workspace/PaddleFormers
+          git config user.name "PaddleCI"
+          git config user.email "paddle_ci@example.com"
+          git config pull.rebase false
+          # git checkout release/0.3
+          git reset --hard $fleet_commit
+          CUDA_VERSION=CUDA129 scripts/install_ops_wheel.sh
+          cd ..
+          # python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
           pip install -e ".[paddlefleet]" --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
           # wget -q --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.2/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
           # pip uninstall paddlefleet -y
@@ -331,6 +336,8 @@ jobs:
           # wget -q --no-proxy --no-check-certificate https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
           # pip uninstall paddlepaddle-gpu -y
           # pip install paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          wget -q --no-proxy https://paddle-qa.bj.bcebos.com/paddleformers/yq_linux_amd64 -O /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
           echo "paddle commit:"
           python -c "import paddle; print(paddle.version.commit)"
           echo "paddlefleet commit:"
@@ -371,6 +378,21 @@ jobs:
             exit 1
           else
             echo -e "\033[32mIntegration test succeeded: GLM4.5 sft.\033[0m"
+          fi
+          '
+      
+      - name: GLM4.5 sft cp
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_sft_cp.sh
+          glm45_exit_code=$?
+          if [[ "$glm45_exit_code" != "0" ]]; then
+            echo -e "::error:: \033[31mIntegration test failed: GLM4.5 sft cp.\033[0m"
+            exit 1
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 sft cp.\033[0m"
           fi
           '
       
@@ -529,8 +551,8 @@ jobs:
       
 
   integration-test-a100:
-    needs: [check_documents_type, check_skip]
-    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' && needs.check_skip.outputs.skip == 'false' }}
+    needs: [check_documents_type, check-bypass]
+    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' && needs.check-bypass.outputs.can-skip == 'false' }}
     name: Integration test (A100)
     runs-on:
       group: Distribute
@@ -588,8 +610,18 @@ jobs:
           git config pull.rebase false
           git pull --no-edit origin pull/${PR_ID}/head
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
-          sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/glm45_provider.py
-          sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/qwen_provider.py
+          fleet_commit=$(python scripts/ci_utils/get_fleet_commit.py)
+          git clone https://github.com/PaddlePaddle/PaddleFleet.git
+          cd PaddleFleet
+          git config --global --add safe.directory /workspace/PaddleFormers
+          git config user.name "PaddleCI"
+          git config user.email "paddle_ci@example.com"
+          git config pull.rebase false
+          # git checkout release/0.3
+          git reset --hard $fleet_commit
+          CUDA_VERSION=CUDA129 scripts/install_ops_wheel.sh
+          cd ..
+          # python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
           pip install -e ".[paddlefleet]" --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
           # wget -q --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.2/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
           # pip uninstall paddlefleet -y
@@ -608,7 +640,10 @@ jobs:
           pip install bce-python-sdk==0.8.74
           pip install coverage==7.6.1
           pip install librosa==0.11.0
+          wget -q --no-proxy https://paddle-qa.bj.bcebos.com/paddleformers/yq_linux_amd64 -O /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
           '
+          
 
       - name: GLM4.5 pre-train
         run: |

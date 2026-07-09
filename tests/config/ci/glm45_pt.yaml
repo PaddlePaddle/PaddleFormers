@@ -25,7 +25,7 @@ fine_tuning: full
 seed: 23
 do_train: true
 do_eval: true
-per_device_eval_batch_size: 1
+per_device_eval_batch_size: 4
 per_device_train_batch_size: 4
 num_train_epochs: 1
 max_steps: 10
@@ -79,10 +79,10 @@ continue_training: false
 # args
 router_aux_loss_coef: 0.001
 
-benchmark: false
 moe_router_force_load_balancing: true
 moe_token_dispatcher_type: "deepep"
 gated_linear_unit: true
 num_hidden_layers: 3
 apply_rope_fusion: true
 moe_router_fusion: true
+moe_deep_gemm: false

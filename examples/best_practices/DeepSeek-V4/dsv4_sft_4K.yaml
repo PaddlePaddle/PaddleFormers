@@ -1,0 +1,130 @@
+### data
+train_dataset_type: erniekit
+eval_dataset_type: erniekit
+train_dataset_path: ./data/sft/train.jsonl
+train_dataset_prob: "1.0"
+eval_dataset_path: ./data/sft/dev.jsonl
+eval_dataset_prob: "1.0"
+packing: true
+truncate_packing: true
+max_seq_len: 4096
+mix_strategy: concat
+
+random_shuffle: true
+dataloader_shuffle: true
+use_template: false
+dataset_num_proc: 24
+
+### model
+model_name_or_path: ./DeepSeek-V4-Flash-Base
+
+### finetuning
+stage: SFT
+fine_tuning: full
+seed: 1234
+do_train: true
+do_eval: false
+per_device_eval_batch_size: 1
+per_device_train_batch_size: 1
+num_train_epochs: 1
+max_steps: 10
+eval_iters: 2000
+eval_steps: 100000
+evaluation_strategy: steps
+save_steps: 9999
+save_strategy: steps
+logging_steps: 1
+gradient_accumulation_steps: 4
+logging_dir: ./outputs/dpskv4-pp4ep8
+output_dir: ./checkpoints/dpskv4-pp4ep8
+disable_tqdm: true
+eval_accumulation_steps: 16
+
+### parallel
+tensor_model_parallel_size: 1
+sequence_parallel: false
+use_expert_parallel: true
+expert_model_parallel_size: 8
+pipeline_model_parallel_size: 4
+virtual_pipeline_model_parallel_size: 6
+num_nextn_predict_layers: 0
+num_empty_layers_add_in_tail: 5
+
+### optimizer
+weight_decay: 0.1
+adam_beta1: 0.9
+adam_beta2: 0.95
+adam_epsilon: 1.0e-8
+router_aux_loss_coef: 0.0001
+learning_rate: 2.7e-5
+warmup_steps: 0
+min_lr: 2.0e-6
+lr_scheduler_type: cosine
+
+optim: muon
+muon_momentum: 0.95
+muon_version: 3
+muon_extra_scale_factor: 0.2
+muon_ns_steps: 10
+muon_ns_coeff_type: "deepseekv4"
+muon_exclude_patterns:
+- "embed"
+- "bias"
+- "lm_head"
+- "mlp.gate"
+- "ape"
+muon_qkv_update_mode: "split_head"
+muon_ffn_split: true
+
+### MoE
+moe_token_dispatcher_type: deepep
+moe_router_load_balancing_type: seq_aux_loss
+moe_expert_fusion: true
+moe_router_fusion: false
+moe_deep_gemm: false
+moe_router_bias_update_rate: 0.001
+moe_router_force_load_balancing: false
+
+### pp
+pp_delay_scale_loss: true
+overlap_p2p_comm: false
+variable_seq_lengths: true
+best_unbalanced_scheduler: false
+pp_release_grads: true
+
+### recompute
+recompute_granularity: full
+recompute_method: uniform
+recompute_num_layers: 1
+
+### amp
+amp_master_grad: true
+bf16: true
+fp16_opt_level: O2
+
+### checkpoint
+save_checkpoint_format: flex_checkpoint
+load_checkpoint_format: flex_checkpoint
+save_to_hf: false
+continue_training: true
+
+### dataloader
+dataloader_num_workers: 0
+
+### misc
+tensorwise_offload_optimizer: false
+skip_profile_timer: false
+load_via_cpu: false
+fp32_residual_connection: false
+
+### template
+template_backend: custom
+template: deepseek3
+
+### performance
+apply_rope_fusion: true
+
+### DSv4-specific flags
+multi_latent_attention: true
+use_qk_norm: true
+dsa_indexer_loss_coeff: 0.01

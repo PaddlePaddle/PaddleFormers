@@ -34,6 +34,7 @@ if [[ ${step} == "pt" ]]; then
   export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/pt
   yq eval '.expert_model_parallel_size = 1
     | .num_hidden_layers = 2
+    | .per_device_eval_batch_size = 1
     | .per_device_train_batch_size = 1
     | .use_expert_parallel = false
     | .stage1_overlap = false
@@ -150,7 +151,7 @@ export REPO_NAME=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
 # if [[ "${PF}" == rel* ]]; then
 #   export pfpatch="rel"
 # fi
-wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}_latest/${gt_loss_file}
+wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/${REPO_NAME}${pfpatch}${pppatch}_latest/${gt_loss_file}
 if [ $? -ne 0 ]; then
   echo "To request precision checks for new models, please contact swgu98."
   exit 1

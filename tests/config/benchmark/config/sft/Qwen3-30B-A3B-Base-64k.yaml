@@ -1,9 +1,9 @@
 ### data
 train_dataset_type: messages
 eval_dataset_type: messages
-train_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/data_sft_10w/sft_data_10w.jsonl
+train_dataset_path: ./dataset/data_sft_10w/sft_data_10w.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/data_sft_10w/sft_data_10w.jsonl
+eval_dataset_path: ./dataset/data_sft_10w/sft_data_10w.jsonl
 eval_dataset_prob: "1.0"
 
 eval_iters: 10
@@ -20,8 +20,10 @@ dataloader_shuffle: false
 dataloader_num_workers: 24
 prefetch_factor: 24
 
+pad_token_id: 151643
+
 ### model
-model_name_or_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/huggingface/Qwen/Qwen3-30B-A3B
+model_name_or_path: ./huggingface/Qwen/Qwen3-30B-A3B
 _attn_implementation: flashmask
 use_qk_norm: true
 
@@ -76,7 +78,7 @@ stage1_overlap: true
 
 apply_rope_fusion: true
 moe_deep_gemm: true
-moe_grouped_gemm: true
+moe_expert_fusion: true
 moe_router_fusion: true
 moe_router_force_load_balancing: false
 router_aux_loss_coef: 1e-3
@@ -97,7 +99,5 @@ fp16_opt_level: O2
 
 save_checkpoint_format: "flex_checkpoint"
 load_checkpoint_format: "flex_checkpoint"
-
-benchmark: true
 
 tensorwise_offload_optimizer: false
