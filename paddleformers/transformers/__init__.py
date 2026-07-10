@@ -369,6 +369,12 @@ import_structure = {
         "InternLM2ForTokenClassification",
     ],
     "intern_lm2.tokenizer": ["InternLM2Tokenizer"],
+    "gemma4_moe.configuration": ["Gemma4MoeConfig"],
+    "gemma4_moe.modeling": ["Gemma4MoeForCausalLM"],
+    "gemma4_moe": [],
+    "phi4.configuration": ["Phi4Config"],
+    "phi4.modeling": ["Phi4Model", "Phi4ForCausalLM"],
+    "phi4.tokenizer": ["Phi4Tokenizer"],
 }
 
 if TYPE_CHECKING:
@@ -451,6 +457,8 @@ if TYPE_CHECKING:
     from .intern_lm2_5 import *
     from .intern import *
     from .intern_lm2 import InternLM2Tokenizer
+    from .gemma4_moe import *
+    from .phi4 import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
