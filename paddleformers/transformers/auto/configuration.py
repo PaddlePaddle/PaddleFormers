@@ -65,6 +65,11 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("qwen3_5", "Qwen3_5Config"),
         ("qwen3_5_moe", "Qwen3_5MoEConfig"),
         ("mistral3", "Mistral3Config"),
+        # TODO(VL): When Gemma4 VL is implemented, "gemma4" should point to Gemma4Config (VL wrapper)
+        ("gemma4_text", "Gemma4MoeConfig"),
+        ("gemma4", "Gemma4MoeConfig"),  # Temporary: no standalone text ckpt, extract text_config in from_dict
+        ("phi4", "Phi4Config"),
+        ("phi4flash", "Phi4Config"),
     ]
 )
 
@@ -95,6 +100,11 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
         ("qwen3_5", "Qwen3_5ForConditionalGeneration"),
         ("mistral3", "Mistral3ForConditionalGeneration"),
+        ("gemma4_moe", "Gemma4MoeForCausalLM"),
+        ("gemma4_text", "Gemma4MoeForCausalLM"),
+        ("gemma4", "Gemma4MoeForCausalLM"),
+        ("phi4", "Phi4ForCausalLM"),
+        ("phi4flash", "Phi4ForCausalLM"),
     ]
 )
 
@@ -109,6 +119,10 @@ SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
         ("qwen3_vl_text", "qwen3_vl"),
         ("qwen3_vl_moe_text", "qwen3_vl_moe"),
         ("mistral3", "ministral3"),
+        # TODO(VL): Remove these when Gemma4 VL module (gemma4/) is created
+        ("gemma4_text", "gemma4_moe"),
+        ("gemma4", "gemma4_moe"),
+        ("phi4flash", "phi4"),
     ]
 )
 
