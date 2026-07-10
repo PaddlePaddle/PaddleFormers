@@ -166,7 +166,6 @@ class InternLM3ModelTest(unittest.TestCase):
         self.assertIsNotNone(outputs.past_key_values)
 
 
-
 class InternLM3ConvertedWeightTest(unittest.TestCase):
     def setUp(self):
         self._original_dtype: str = paddle.get_default_dtype()
@@ -234,6 +233,7 @@ class InternLM3ConvertedWeightTest(unittest.TestCase):
         self.assertIsNotNone(out)
         self.assertGreater(out.shape[1], 0, "Output should not be empty")
         self.assertGreater(len(output_text.strip()), 10, "Generated output should have meaningful content")
+
 
 if __name__ == "__main__":
     unittest.main()
