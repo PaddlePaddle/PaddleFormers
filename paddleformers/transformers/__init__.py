@@ -355,6 +355,12 @@ import_structure = {
         "InternLM3ForCausalLMPipe",
     ],
     "intern_lm3.tokenizer": ["InternLM3Tokenizer"],
+    "gemma4_moe.configuration": ["Gemma4MoeConfig"],
+    "gemma4_moe.modeling": ["Gemma4MoeForCausalLM"],
+    "gemma4_moe": [],
+    "phi4.configuration": ["Phi4Config"],
+    "phi4.modeling": ["Phi4Model", "Phi4ForCausalLM"],
+    "phi4.tokenizer": ["Phi4Tokenizer"],
 }
 
 if TYPE_CHECKING:
@@ -435,6 +441,8 @@ if TYPE_CHECKING:
     from .gemma3_text import *
     from .glm_ocr import *
     from .intern_lm3 import *
+    from .gemma4_moe import *
+    from .phi4 import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

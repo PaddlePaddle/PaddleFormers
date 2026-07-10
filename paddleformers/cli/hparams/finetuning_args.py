@@ -77,13 +77,12 @@ class PreTrainingArguments(TrainingArguments):
             "help": "Comma-separated list of internal medicine monitors. Options: qk_stats,moe_health,massive_act,all"
         },
     )
-    internal_medicine_monitor_interval: Optional[int] = field(
-        default=None,
+    internal_medicine_monitor_interval: int = field(
+        default=0,
         metadata={
             "help": "Step interval for internal medicine monitors. "
-            "0 disables monitoring (no collection, no viewer). "
-            "Positive integer is the sampling interval. "
-            "Omitted -> defaults to 1 with a warning."
+            "0 (default) disables monitoring (no collection, no viewer). "
+            "Positive integer is the sampling interval."
         },
     )
     internal_medicine_qk_row_stride: int = field(

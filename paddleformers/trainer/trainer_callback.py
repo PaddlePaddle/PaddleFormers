@@ -938,20 +938,14 @@ class InternalMedicineCallback(TrainerCallback):
     def __init__(
         self,
         monitors=None,
-        monitor_interval=None,
+        monitor_interval=0,
         verbose: bool = True,
         qk_row_stride: int = 1,
         log_dir: str = "",
     ):
         super().__init__()
         self.monitors = self._normalize_monitors(monitors)
-        if monitor_interval is None:
-            logger.warning(
-                "[InternalMedicine] internal_medicine_monitor_interval not set; defaulting to 1. "
-                "Set it to 0 in your yaml to disable internal-medicine monitoring entirely."
-            )
-            monitor_interval = 1
-        self.monitor_interval = int(monitor_interval)
+        self.monitor_interval = int(monitor_interval) if monitor_interval else 0
         self.verbose = verbose
         self.qk_row_stride = qk_row_stride
         self.log_dir = log_dir or ""
@@ -975,6 +969,14 @@ class InternalMedicineCallback(TrainerCallback):
     def on_train_begin(self, args, state, control, model=None, **kwargs):
         if model is None or self._setup_done or not self.monitors:
             return
+        if self.monitor_interval <= 0:
+            logger.warning(
+                "[InternalMedicine] monitor_interval=%s is non-positive; skipping monitor setup.",
+                self.monitor_interval,
+            )
+            return
+
+        self._maybe_truncate_on_resume(state)
 
         try:
             from internal_medicine.backends.paddlefleet import setup_monitors
@@ -1050,6 +1052,65 @@ class InternalMedicineCallback(TrainerCallback):
         self._is_writer = (rank == 0) and bool(self.log_path)
         return self._is_writer
 
+    def _maybe_truncate_on_resume(self, state):
+        """Handle a pre-existing jsonl at setup time.
+
+        - Fresh start (resume_step == 0) with a leftover jsonl from a previous
+          run: rotate it aside to <log_path>.bak.<YYYYMMDD_HHMMSS> so the new
+          run starts with a clean file and the viewer isn't confused by a
+          non-monotonic global_step axis.
+        - Real resume from checkpoint (resume_step > 0): keep rows with
+          global_step <= resume_step, drop the tail (any "future" rows past
+          the checkpoint), same behavior as before.
+        """
+        if not self._resolve_writer():
+            return
+        if not self.log_path or not os.path.exists(self.log_path):
+            return
+        resume_step = int(getattr(state, "global_step", 0) or 0)
+        if resume_step <= 0:
+            try:
+                ts = time.strftime("%Y%m%d_%H%M%S")
+                bak = f"{self.log_path}.bak.{ts}"
+                suffix = 1
+                while os.path.exists(bak):
+                    bak = f"{self.log_path}.bak.{ts}.{suffix}"
+                    suffix += 1
+                os.replace(self.log_path, bak)
+                logger.info(
+                    "[InternalMedicine] rotated pre-existing jsonl to %s (fresh start)",
+                    bak,
+                )
+            except Exception:
+                logger.error("[InternalMedicine] failed to rotate pre-existing jsonl")
+            return
+        try:
+            kept = []
+            with open(self.log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.rstrip("\n")
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except json.JSONDecodeError:
+                        # Preserve unparseable lines rather than silently dropping.
+                        kept.append(line)
+                        continue
+                    if int(rec.get("global_step", 0)) <= resume_step:
+                        kept.append(line)
+            tmp = self.log_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                if kept:
+                    f.write("\n".join(kept) + "\n")
+            os.replace(tmp, self.log_path)
+            logger.info(
+                "[InternalMedicine] truncated jsonl on resume: kept %d rows with global_step<=%d"
+                % (len(kept), resume_step)
+            )
+        except Exception:
+            logger.error("[InternalMedicine] failed to truncate jsonl on resume")
+
     def _maybe_write_jsonl(self, state, aggregated):
         if not self._resolve_writer():
             return
@@ -1060,7 +1121,8 @@ class InternalMedicineCallback(TrainerCallback):
                     os.makedirs(d, exist_ok=True)
                 self._log_path_ready = True
             record = {"global_step": int(getattr(state, "global_step", 0))}
-            for k, v in aggregated.items():
+            for k in sorted(aggregated.keys()):
+                v = aggregated[k]
                 # Only JSON-serializable scalars; cast tensors/numpy to float.
                 try:
                     record[k] = float(v)

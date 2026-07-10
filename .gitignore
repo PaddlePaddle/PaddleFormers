@@ -170,3 +170,19 @@ ops/csrc/fp8/deep_gemm/include/cute
 # logs and running results
 paddleformers_dist_log
 checkpoints
+.claude
+/test/
+/tmp/
+.roo/
+.flake8
+AGENTS.md
+ms-swift-4.0.2
+paconvert-lm3
+phi4-code-convert
+phi4-code-raw
+raw-internlm2
+raw-internlm2_5
+raw-internlm3
+log/
+.agents/
+.infcode
