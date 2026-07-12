@@ -348,6 +348,21 @@ import_structure = {
     ],
     "glm_ocr.processor": ["Glm46VProcessor"],
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
+    "olmo2.configuration": ["Olmo2Config"],
+    "olmo2.modeling": [
+        "Olmo2Model",
+        "Olmo2PretrainedModel",
+        "Olmo2ForCausalLM",
+        "Olmo2ForCausalLMPipe",
+    ],
+    "olmo3.tokenizer": ["Olmo3Tokenizer"],
+    "olmo3.configuration": ["Olmo3Config"],
+    "olmo3.modeling": [
+        "Olmo3Model",
+        "Olmo3PretrainedModel",
+        "Olmo3ForCausalLM",
+        "Olmo3ForCausalLMPipe",
+    ],
     "gemma4_moe.configuration": ["Gemma4MoeConfig"],
     "gemma4_moe.modeling": ["Gemma4MoeForCausalLM"],
     "gemma4_moe": [],
@@ -433,6 +448,8 @@ if TYPE_CHECKING:
     from .phi3 import *
     from .gemma3_text import *
     from .glm_ocr import *
+    from .olmo2 import *
+    from .olmo3 import *
     from .gemma4_moe import *
     from .phi4 import *
 else:
