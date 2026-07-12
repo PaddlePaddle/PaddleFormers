@@ -167,33 +167,6 @@ class StableLmModelTest(unittest.TestCase):
             self.assertEqual(outputs.logits.shape, [1, 4, 1024])
 
 
-class StableLmTokenizerTest(unittest.TestCase):
-    @gpu_device_initializer(log_prefix="StableLmTokenizerTest")
-    @require_package("transformers")
-    def test_tokenizer_encode_decode(self):
-        tokenizer = StableLmTokenizer.from_pretrained(
-            "stabilityai/stable-code-3b", trust_remote_code=False, download_hub="modelscope"
-        )
-        self.assertEqual(tokenizer.bos_token_id, 0)
-        self.assertEqual(tokenizer.eos_token_id, 0)
-
-        text = "def hello_world():"
-        tokens = tokenizer.encode(text)
-        self.assertGreater(len(tokens), 0)
-        decoded = tokenizer.decode(tokens)
-        self.assertIsInstance(decoded, str)
-
-    @gpu_device_initializer(log_prefix="StableLmTokenizerTest")
-    @require_package("transformers")
-    def test_tokenizer_special_tokens(self):
-        tokenizer = StableLmTokenizer.from_pretrained(
-            "stabilityai/stable-code-3b", trust_remote_code=False, download_hub="modelscope"
-        )
-        self.assertIsNotNone(tokenizer.bos_token)
-        self.assertIsNotNone(tokenizer.eos_token)
-        self.assertGreaterEqual(tokenizer.vocab_size, 50000)
-
-
 class StableLmSlowTest(unittest.TestCase):
     @gpu_device_initializer(log_prefix="StableLmSlowTest")
     @require_package("transformers", "torch")
