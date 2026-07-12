@@ -64,6 +64,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("glm_ocr", "GlmOcrConfig"),
         ("qwen3_5", "Qwen3_5Config"),
         ("qwen3_5_moe", "Qwen3_5MoEConfig"),
+        ("stablelm", "StableLmConfig"),
         # TODO(VL): When Gemma4 VL is implemented, "gemma4" should point to Gemma4Config (VL wrapper)
         ("gemma4_text", "Gemma4MoeConfig"),
         ("gemma4", "Gemma4MoeConfig"),  # Temporary: no standalone text ckpt, extract text_config in from_dict

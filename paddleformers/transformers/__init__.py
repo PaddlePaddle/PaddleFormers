@@ -348,6 +348,16 @@ import_structure = {
     ],
     "glm_ocr.processor": ["Glm46VProcessor"],
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
+    "stablelm.configuration": ["StableLmConfig"],
+    "stablelm.tokenizer": ["StableLmTokenizer"],
+    "stablelm.modeling": [
+        "StableLmModel",
+        "StableLmForCausalLM",
+        "StableLmPretrainedModel",
+        "StableLmRotaryEmbedding",
+        "StableLmDecoderLayer",
+        "StableLmAttention",
+    ],
     "gemma4_moe.configuration": ["Gemma4MoeConfig"],
     "gemma4_moe.modeling": ["Gemma4MoeForCausalLM"],
     "gemma4_moe": [],
@@ -433,6 +443,7 @@ if TYPE_CHECKING:
     from .phi3 import *
     from .gemma3_text import *
     from .glm_ocr import *
+    from .stablelm import *
     from .gemma4_moe import *
     from .phi4 import *
 else:
