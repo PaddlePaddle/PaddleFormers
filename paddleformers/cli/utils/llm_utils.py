@@ -393,6 +393,14 @@ def get_lora_target_modules(model):
             ".*gate_up_proj.*",
             ".*down_proj.*",
         ]
+    elif model.config.model_type in ("phi4", "phi4flash"):
+        # phi4flash: hybrid decoder (Mamba SSM + Attention), only attention layers have Wqkv/out_proj
+        target_modules = [
+            ".*attn.Wqkv.*",
+            ".*attn.out_proj.*",
+            ".*mlp.fc1.*",
+            ".*mlp.fc2.*",
+        ]
     elif model.config.model_type == "glm4v_moe":
         target_modules = [
             # language_model
