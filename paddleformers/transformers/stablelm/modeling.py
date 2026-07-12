@@ -131,12 +131,12 @@ class StableLmAttention(nn.Layer):
         kv_hidden_size = config.num_key_value_heads * self.head_dim
 
         if config.tensor_model_parallel_size > 1:
-            assert self.num_heads % config.tensor_model_parallel_size == 0, (
-                f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
-            )
-            assert self.num_key_value_heads % config.tensor_model_parallel_size == 0, (
-                f"num_key_value_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
-            )
+            assert (
+                self.num_heads % config.tensor_model_parallel_size == 0
+            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            assert (
+                self.num_key_value_heads % config.tensor_model_parallel_size == 0
+            ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
             self.num_heads = self.num_heads // config.tensor_model_parallel_size
             self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
 
