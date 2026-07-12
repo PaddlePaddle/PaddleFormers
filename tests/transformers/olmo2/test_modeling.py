@@ -59,9 +59,7 @@ class Olmo2LmHeadTPSplitTest(unittest.TestCase):
         vocab_size = 64
         hidden_size = 32
 
-        full_weight = np.arange(vocab_size * hidden_size, dtype=np.float32).reshape(
-            vocab_size, hidden_size
-        )
+        full_weight = np.arange(vocab_size * hidden_size, dtype=np.float32).reshape(vocab_size, hidden_size)
 
         shards = []
         for rank in range(tp_size):
@@ -94,9 +92,7 @@ class Olmo2LmHeadTPSplitTest(unittest.TestCase):
         vocab_size = 64
         hidden_size = 32
 
-        full_weight = np.arange(vocab_size * hidden_size, dtype=np.float32).reshape(
-            vocab_size, hidden_size
-        )
+        full_weight = np.arange(vocab_size * hidden_size, dtype=np.float32).reshape(vocab_size, hidden_size)
 
         for rank in range(tp_size):
             tp_config = _make_tp_config(tp_size, rank)

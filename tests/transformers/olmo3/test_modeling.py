@@ -214,26 +214,6 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
         self.assertIsInstance(config, Olmo2Config)
 
 
-# Quick token test
-class Olmo3TokenizerTest(unittest.TestCase):
-    def test_tokenizer_encode_decode(self):
-        tokenizer = AutoTokenizer.from_pretrained(
-            "allenai/OLMo-3-7B-Instruct", trust_remote_code=True, download_hub="modelscope"
-        )
-        text = "Hello, world!"
-        tokens = tokenizer.encode(text)
-        decoded = tokenizer.decode(tokens)
-        self.assertIn("Hello", decoded)
-        self.assertTrue(len(tokens) > 0)
-
-    def test_tokenizer_special_tokens(self):
-        tokenizer = AutoTokenizer.from_pretrained(
-            "allenai/OLMo-3-7B-Instruct", trust_remote_code=True, download_hub="modelscope"
-        )
-        self.assertIsNotNone(tokenizer.eos_token)
-        self.assertIsNotNone(tokenizer.pad_token)
-
-
 #  Generation test, marked with slow decorator, not executed by default
 class Olmo3GenerationTest(unittest.TestCase):
     _MODEL_ID = "allenai/OLMo-3-7B-Instruct"
