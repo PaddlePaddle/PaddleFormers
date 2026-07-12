@@ -95,6 +95,14 @@ import_structure = {
     "auto.tokenizer": ["AutoTokenizer", "TOKENIZER_MAPPING"],
     "auto.video_processing": ["AutoVideoProcessor", "VIDEO_PROCESSOR_MAPPING"],
     "auto.feature_extraction": ["AutoFeatureExtractor"],
+    "diff_transformer.configuration": ["DiffTransformerConfig"],
+    "diff_transformer.modeling": [
+        "DiffTransformerModel",
+        "DiffTransformerForCausalLM",
+        "DiffTransformerPreTrainedModel",
+    ],
+    "diff_transformer.tokenizer": ["DiffTransformerTokenizer"],
+    "diff_transformer": [],
     "deepseek_v3.configuration": ["DeepseekV3Config"],
     "deepseek_v32.configuration": ["DeepseekV32Config"],
     "deepseek_v32.modeling": [
@@ -400,6 +408,7 @@ if TYPE_CHECKING:
     from .auto.processing import *
     from .auto.tokenizer import *
     from .auto.video_processing import *
+    from .diff_transformer import *
     from .deepseek_v3 import *
     from .ernie4_5 import *
     from .ernie4_5_moe import *

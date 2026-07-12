@@ -53,22 +53,10 @@ import_structure = {
     "image_processing": ["get_image_processor_config", "AutoImageProcessor", "IMAGE_PROCESSOR_MAPPING"],
     "processing": ["AutoProcessor", "PROCESSOR_MAPPING"],
     "video_processing": ["AutoVideoProcessor", "VIDEO_PROCESSOR_MAPPING"],
-    "diff_transformer": [
-        "DiffTransformerConfig",
-        "DiffTransformerModel",
-        "DiffTransformerForCausalLM",
-        "DiffTransformerPreTrainedModel",
-    ],
 }
 
 if TYPE_CHECKING:
     from .configuration import *
-    from .diff_transformer import (
-        DiffTransformerConfig,
-        DiffTransformerForCausalLM,
-        DiffTransformerModel,
-        DiffTransformerPreTrainedModel,
-    )
     from .image_processing import *
     from .modeling import *
     from .tokenizer import *

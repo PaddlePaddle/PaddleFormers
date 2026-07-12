@@ -16,6 +16,7 @@ import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
 
+from paddleformers.generation.utils import GenerationMixin
 from paddleformers.transformers.model_utils import PretrainedModel
 
 from .configuration import DiffTransformerConfig
@@ -40,7 +41,7 @@ class DiffAttn(nn.Layer):
         super().__init__()
         self.hidden_size = config.hidden_size
         self.num_heads = config.num_attention_heads
-        self.head_dim = self.hidden_size // self.num_heads
+        self.head_dim = config.head_dim
         self.scaling = self.head_dim**-0.5
 
         self.q_proj = nn.Linear(self.hidden_size, 2 * self.hidden_size, bias_attr=False)
@@ -56,6 +57,18 @@ class DiffAttn(nn.Layer):
 
         self.subln = RMSNorm(self.hidden_size)
 
+    def _scaled_dot_product_attention(self, query, key, value, attention_mask):
+        if query.dtype in (paddle.float16, paddle.bfloat16):
+            return F.scaled_dot_product_attention(query, key, value, attn_mask=attention_mask, is_causal=False)
+
+        query = query.transpose([0, 2, 1, 3])
+        key = key.transpose([0, 2, 1, 3])
+        value = value.transpose([0, 2, 1, 3])
+        scores = paddle.matmul(query, key.transpose([0, 1, 3, 2])) * self.scaling
+        if attention_mask is not None:
+            scores = scores + attention_mask
+        return paddle.matmul(F.softmax(scores, axis=-1), value).transpose([0, 2, 1, 3])
+
     def forward(self, hidden_states, attention_mask=None, **kwargs):
         bsz, seq_len, _ = hidden_states.shape
 
@@ -66,8 +79,8 @@ class DiffAttn(nn.Layer):
         q1, q2 = q[:, :, 0], q[:, :, 1]
         k1, k2 = k[:, :, 0], k[:, :, 1]
 
-        attn1 = F.scaled_dot_product_attention(q1, k1, v, attn_mask=attention_mask)
-        attn2 = F.scaled_dot_product_attention(q2, k2, v, attn_mask=attention_mask)
+        attn1 = self._scaled_dot_product_attention(q1, k1, v, attention_mask)
+        attn2 = self._scaled_dot_product_attention(q2, k2, v, attention_mask)
 
         lambda_1 = paddle.exp(paddle.sum(self.lambda_q1 * self.lambda_k1, axis=-1))
         lambda_2 = paddle.exp(paddle.sum(self.lambda_q2 * self.lambda_k2, axis=-1))
@@ -115,8 +128,14 @@ class DiffTransformerModel(DiffTransformerPreTrainedModel):
 
     def forward(self, input_ids, attention_mask=None, **kwargs):
         x = self.embed_tokens(input_ids)
+        causal_mask = GenerationMixin._prepare_decoder_attention_mask(
+            attention_mask=attention_mask,
+            input_shape=input_ids.shape,
+            past_key_values_length=0,
+            dtype=x.dtype,
+        )
         for layer in self.layers:
-            x = layer(x, attention_mask=attention_mask)
+            x = layer(x, attention_mask=causal_mask)
         return self.norm(x)
 
 

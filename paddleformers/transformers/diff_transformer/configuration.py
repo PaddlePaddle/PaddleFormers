@@ -56,3 +56,5 @@ class DiffTransformerConfig(PretrainedConfig):
         self.use_cache = use_cache
         self.lambda_init = lambda_init
         self.head_dim = head_dim or hidden_size // num_attention_heads
+        if self.head_dim * self.num_attention_heads != self.hidden_size:
+            raise ValueError("head_dim * num_attention_heads must equal hidden_size for DiffTransformer")

@@ -12,18 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .configuration import DiffTransformerConfig
-from .modeling import (
-    DiffTransformerForCausalLM,
-    DiffTransformerModel,
-    DiffTransformerPreTrainedModel,
-)
-from .tokenizer import DiffTransformerTokenizer
+import sys
+from typing import TYPE_CHECKING
 
-__all__ = [
-    "DiffTransformerConfig",
-    "DiffTransformerForCausalLM",
-    "DiffTransformerModel",
-    "DiffTransformerPreTrainedModel",
-    "DiffTransformerTokenizer",
-]
+from ...utils.lazy_import import _LazyModule
+
+import_structure = {
+    "configuration": ["DiffTransformerConfig"],
+    "modeling": [
+        "DiffTransformerForCausalLM",
+        "DiffTransformerModel",
+        "DiffTransformerPreTrainedModel",
+    ],
+    "tokenizer": ["DiffTransformerTokenizer"],
+}
+
+if TYPE_CHECKING:
+    from .configuration import *
+    from .modeling import *
+    from .tokenizer import *
+else:
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )

@@ -103,6 +103,38 @@ class DiffTransformerTest(unittest.TestCase):
     def test_backward_pass(self):
         self.tester.check_backward()
 
+    def test_public_imports(self):
+        from paddleformers.transformers import DiffTransformerConfig, DiffTransformerForCausalLM
+
+        self.assertIsNotNone(DiffTransformerConfig)
+        self.assertIsNotNone(DiffTransformerForCausalLM)
+
+    def test_auto_module_does_not_export_diff_transformer(self):
+        import paddleformers.transformers.auto as auto
+
+        self.assertNotIn("DiffTransformerConfig", auto.__all__)
+        with self.assertRaises(AttributeError):
+            auto.DiffTransformerConfig
+
+    def test_head_dim_must_match_hidden_size(self):
+        with self.assertRaisesRegex(ValueError, "head_dim \* num_attention_heads"):
+            DiffTransformerConfig(hidden_size=32, num_attention_heads=2, head_dim=8)
+
+    def test_causal_lm_does_not_attend_to_future_tokens(self):
+        config = self.tester.get_config()
+        model = DiffTransformerForCausalLM(config)
+        model.eval()
+        input_ids = self.tester.prepare_inputs()
+        modified_input_ids = input_ids.clone()
+        modified_input_ids[:, -1] = (modified_input_ids[:, -1] + 1) % config.vocab_size
+        attention_mask = paddle.ones_like(input_ids)
+
+        with paddle.no_grad():
+            logits = model(input_ids, attention_mask=attention_mask)
+            modified_logits = model(modified_input_ids, attention_mask=attention_mask)
+
+        paddle.testing.assert_allclose(logits[:, :-1], modified_logits[:, :-1])
+
 
 if __name__ == "__main__":
     unittest.main()
