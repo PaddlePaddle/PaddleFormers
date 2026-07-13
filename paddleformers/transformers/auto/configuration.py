@@ -40,6 +40,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("ernie4_5_moe_vl", "Ernie4_5_VLConfig"),
         ("paddleocr_vl", "PaddleOCRVLConfig"),
         ("llama", "LlamaConfig"),
+        ("granitemoehybrid", "GraniteConfig"),
         ("kimi_k2", "KimiK2Config"),
         ("qwen2", "Qwen2Config"),
         ("qwen2_5_vl", "Qwen2_5_VLConfig"),
@@ -84,6 +85,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("ernie4_5_moe_vl", "Ernie4_5_VLMoeForConditionalGeneration"),
         ("paddleocr_vl", "PaddleOCRVLForConditionalGeneration"),
         ("llama", "Llama"),
+        ("granitemoehybrid", "Granite"),
         ("qwen2", "Qwen2"),
         ("qwen2_5_vl", "Qwen2_5_VL"),
         ("qwen2_5_vl_text", "Qwen2_5_VL"),
@@ -122,6 +124,7 @@ SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
         # TODO(VL): Remove these when Gemma4 VL module (gemma4/) is created
         ("gemma4_text", "gemma4_moe"),
         ("gemma4", "gemma4_moe"),
+        ("granitemoehybrid", "granite"),
         ("phi4flash", "phi4"),
     ]
 )

@@ -163,6 +163,9 @@ import_structure = {
     "paddleocr_vl.processor": ["PaddleOCRVLProcessor"],
     "gpt_oss.configuration": ["GptOssConfig"],
     "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM", "GptOssForCausalLMPipe"],
+    "granite.configuration": ["GraniteConfig"],
+    "granite.modeling": ["GraniteModel", "GraniteForCausalLM"],
+    "granite.tokenizer": ["GraniteTokenizer"],
     "kimi_k25.vision_processor": ["KimiK25VisionProcessor"],
     "kimi_k25.processor": ["KimiK25Processor"],
     "kimi_k25.tokenizer": ["TikTokenTokenizer"],
@@ -288,6 +291,7 @@ import_structure = {
         "Qwen3NextPretrainingCriterion",
     ],
     "llama": [],
+    "granite": [],
     "qwen2": [],
     "glm_ocr": [],
     "qwen3": [],
@@ -432,6 +436,7 @@ if TYPE_CHECKING:
     from .kimi_k2 import *
     from .paddleocr_vl import *
     from .llama import *
+    from .granite import *
     from .optimization import *
     from .qwen2 import *
     from .qwen2_5_vl import *
