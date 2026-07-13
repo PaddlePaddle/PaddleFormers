@@ -111,6 +111,8 @@ class DeepseekV4Config(PretrainedConfig):
         "index_n_heads": "dsa_index_n_heads",
         "index_head_dim": "dsa_index_head_dim",
         "index_topk": "dsa_index_topk",
+        "index_topk_pattern": "index_topk_pattern",
+        "indexcache_multi_layer_distill": "indexcache_multi_layer_distill",
     }
 
     def __init__(
@@ -150,6 +152,8 @@ class DeepseekV4Config(PretrainedConfig):
         dsa_index_n_heads=64,
         dsa_index_head_dim=128,
         dsa_index_topk=512,
+        index_topk_pattern=None,
+        indexcache_multi_layer_distill=False,
         dsa_indexer_loss_coeff=0.01,
         dsa_indexer_use_sparse_loss=True,
         # === mHC (Hyper-Connection) ===
@@ -250,6 +254,8 @@ class DeepseekV4Config(PretrainedConfig):
         self.dsa_index_n_heads = dsa_index_n_heads
         self.dsa_index_head_dim = dsa_index_head_dim
         self.dsa_index_topk = dsa_index_topk
+        self.index_topk_pattern = index_topk_pattern
+        self.indexcache_multi_layer_distill = indexcache_multi_layer_distill
         self.dsa_indexer_loss_coeff = dsa_indexer_loss_coeff
         self.dsa_indexer_use_sparse_loss = dsa_indexer_use_sparse_loss
 
