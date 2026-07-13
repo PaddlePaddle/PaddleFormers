@@ -348,6 +348,13 @@ import_structure = {
     ],
     "glm_ocr.processor": ["Glm46VProcessor"],
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
+    "openelm.configuration": ["OpenELMConfig"],
+    "openelm.modeling": [
+        "OpenELMModel",
+        "OpenELMForCausalLM",
+    ],
+    "openelm.tokenizer": ["OpenELMTokenizer"],
+    "openelm": [],
     "gemma4_moe.configuration": ["Gemma4MoeConfig"],
     "gemma4_moe.modeling": ["Gemma4MoeForCausalLM"],
     "gemma4_moe": [],
@@ -433,6 +440,7 @@ if TYPE_CHECKING:
     from .phi3 import *
     from .gemma3_text import *
     from .glm_ocr import *
+    from .openelm import *
     from .gemma4_moe import *
     from .phi4 import *
 else:

@@ -1005,6 +1005,15 @@ register_template(
     mm_plugin=get_mm_plugin(name="glm_ocr", image_token="<|image|>"),
 )
 
+register_template(
+    name="openelm",
+    format_user=StringFormatter(slots=["[INST] {{content}} [/INST]"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<<SYS>>\n{{content}}\n<</SYS>>\n\n"]),
+    format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
+    suffix=["</s>"],
+    efficient_eos=True,
+)
 
 register_template(
     name="gemma4",

@@ -1,0 +1,51 @@
+### OpenELM-1_1B-Instruct 全参微调 SFT 训练配置
+### 与 ms-swift 训练参数对齐
+
+### data
+train_dataset_type: erniekit
+eval_dataset_type: erniekit
+train_dataset_path: ./tmp/gsm8k/train.jsonl
+train_dataset_prob: "1.0"
+max_seq_len: 2048
+packing: false
+mix_strategy: concat
+template_backend: custom
+template: openelm
+
+### model
+model_name_or_path: apple/OpenELM-1_1B-Instruct
+_attn_implementation: eager
+
+### finetuning
+stage: SFT
+fine_tuning: full
+seed: 23
+do_train: true
+do_eval: false
+per_device_train_batch_size: 1
+per_device_eval_batch_size: 1
+num_train_epochs: 1
+max_steps: 200
+eval_steps: 10000
+evaluation_strategy: "no"
+save_steps: 10000
+save_strategy: steps
+logging_steps: 1
+gradient_accumulation_steps: 16
+disable_tqdm: true
+output_dir: ./tmp/openelm_1b_sft_ckpts
+
+# train
+warmup_steps: 2
+learning_rate: 1.0e-4
+
+# performance
+tensor_model_parallel_size: 1
+pipeline_model_parallel_size: 1
+sharding: stage1
+recompute_granularity: ""
+bf16: true
+fp16_opt_level: O2
+amp_master_grad: false
+save_checkpoint_format: "sharding_io"
+load_checkpoint_format: "sharding_io"
