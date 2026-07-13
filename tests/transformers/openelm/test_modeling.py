@@ -508,15 +508,19 @@ class TestOpenELMDiffAlignment(unittest.TestCase):
 
         # Workaround: HF __post_init__ misses super() call and has a broken assert on int
         _o = TorchOpenELMConfig.__post_init__
-        _p = getattr(TorchOpenELMConfig.__bases__[0], '__post_init__', None)
+        _p = getattr(TorchOpenELMConfig.__bases__[0], "__post_init__", None)
 
         def _fix(self, **kw):
             if _p:
-                try: _p(self, **kw)
-                except Exception: pass
-            try: _o(self, **kw)
+                try:
+                    _p(self, **kw)
+                except Exception:
+                    pass
+            try:
+                _o(self, **kw)
             except TypeError as e:
-                if "not subscriptable" not in str(e): raise
+                if "not subscriptable" not in str(e):
+                    raise
 
         TorchOpenELMConfig.__post_init__ = _fix
         torch_config = TorchOpenELMConfig(**config_dict)
