@@ -197,6 +197,34 @@ class GraniteModelTester:
         ).sum()
         self.parent.assertTrue(paddle.allclose(result.loss, expected_loss, rtol=1e-5, atol=1e-5))
 
+    def create_and_check_loss_mask(self, config, input_ids):
+        model = GraniteForCausalLM(config)
+        model.eval()
+        labels = input_ids.clone()
+        loss_mask = paddle.ones_like(input_ids)
+        loss_mask[:, 2:4] = 0
+        result = model(input_ids, labels=labels, loss_mask=loss_mask, return_dict=True)
+
+        shift_logits = result.logits[:, :-1].reshape([-1, config.vocab_size])
+        shift_labels = labels[:, 1:].reshape([-1])
+        valid = (shift_labels != -100) & paddle.cast(loss_mask[:, 1:].reshape([-1]), paddle.bool)
+        safe_labels = paddle.where(valid, shift_labels, paddle.zeros_like(shift_labels))
+        selected_log_probs = paddle.take_along_axis(
+            paddle.nn.functional.log_softmax(shift_logits, axis=-1), safe_labels.unsqueeze(-1), axis=-1
+        ).squeeze(-1)
+        valid_float = paddle.cast(valid, selected_log_probs.dtype)
+        expected_loss = -(selected_log_probs * valid_float).sum() / paddle.clip(valid_float.sum(), min=1.0)
+        self.parent.assertTrue(paddle.allclose(result.loss, expected_loss, rtol=1e-5, atol=1e-5))
+
+        empty_loss = model(
+            input_ids,
+            labels=labels,
+            loss_mask=paddle.zeros_like(input_ids),
+            return_dict=True,
+        ).loss
+        self.parent.assertTrue(paddle.isfinite(empty_loss).item())
+        self.parent.assertEqual(empty_loss.item(), 0.0)
+
     def create_and_check_generate(self, config, input_ids, input_mask):
         model = GraniteForCausalLM(config)
         model.eval()
@@ -267,6 +295,10 @@ class GraniteModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     def test_loss(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_loss(*config_and_inputs)
+
+    def test_loss_mask(self):
+        config_and_inputs = self.model_tester.prepare_config_and_inputs()
+        self.model_tester.create_and_check_loss_mask(*config_and_inputs[:2])
 
     def test_generate(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
