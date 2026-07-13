@@ -626,8 +626,11 @@ def run_sft(
             max_seq_len = data_args.max_seq_len
             logger.warning(f"Setting max_seq_len to {max_seq_len} for mbs > 1 using PaddleFleet model.")
         else:
-            max_seq_len = None
-            logger.warning("Setting max_seq_len to None for mbs = 1 using PaddleFleet Model.")
+            max_seq_len = None if data_args.padding_free else data_args.max_seq_len
+            logger.warning(
+                f"Setting max_seq_len to {max_seq_len} for mbs = 1 using PaddleFleet model "
+                f"with padding_free={data_args.padding_free}."
+            )
     else:
         max_seq_len = (
             data_args.max_seq_len
