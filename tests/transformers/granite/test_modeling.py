@@ -17,7 +17,11 @@ import unittest
 
 import paddle
 
-from paddleformers.transformers import GraniteConfig, GraniteForCausalLM, GraniteModel
+from paddleformers.transformers import (
+    GraniteConfig,
+    GraniteForCausalLM,
+    GraniteModel,
+)
 from tests.testing_utils import gpu_device_initializer
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
@@ -178,14 +182,28 @@ class GraniteModelTester:
     def create_and_check_loss(self, config, input_ids, input_mask, sequence_labels, token_labels, choice_labels):
         model = GraniteForCausalLM(config)
         model.eval()
-        result = model(input_ids, labels=input_ids)
-        self.parent.assertEqual(result[0].ndim, 0)
+        labels = input_ids.clone()
+        labels[:, :2] = -100
+        result = model(input_ids, labels=labels, return_dict=True)
+        shift_logits = result.logits[:, :-1].reshape([-1, config.vocab_size])
+        shift_labels = labels[:, 1:].reshape([-1])
+        valid = shift_labels != -100
+        safe_labels = paddle.where(valid, shift_labels, paddle.zeros_like(shift_labels))
+        selected_log_probs = paddle.take_along_axis(
+            paddle.nn.functional.log_softmax(shift_logits, axis=-1), safe_labels.unsqueeze(-1), axis=-1
+        ).squeeze(-1)
+        expected_loss = -(selected_log_probs * paddle.cast(valid, selected_log_probs.dtype)).sum() / paddle.cast(
+            valid, selected_log_probs.dtype
+        ).sum()
+        self.parent.assertTrue(paddle.allclose(result.loss, expected_loss, rtol=1e-5, atol=1e-5))
 
     def create_and_check_generate(self, config, input_ids, input_mask):
         model = GraniteForCausalLM(config)
         model.eval()
-        result = model.generate(input_ids, max_new_tokens=5, decode_strategy="greedy_search")
-        self.parent.assertIsNotNone(result)
+        generated = model.generate(input_ids, max_new_tokens=5, decode_strategy="greedy_search")
+        if isinstance(generated, tuple):
+            generated = generated[0]
+        self.parent.assertEqual(generated.shape, [input_ids.shape[0], 5])
 
     def prepare_config_and_inputs_for_common(self):
         config_and_inputs = self.prepare_config_and_inputs()

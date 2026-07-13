@@ -548,12 +548,12 @@ class GraniteForCausalLM(GranitePretrainedModel):
 
         loss = None
         if labels is not None:
-            flat_logits = logits.reshape([-1, logits.shape[-1]])
-            flat_labels = labels.reshape([-1])
-            valid = flat_labels != -100
-            safe_labels = paddle.where(valid, flat_labels, paddle.zeros_like(flat_labels))
+            shift_logits = logits[:, :-1].reshape([-1, logits.shape[-1]])
+            shift_labels = labels[:, 1:].reshape([-1])
+            valid = shift_labels != -100
+            safe_labels = paddle.where(valid, shift_labels, paddle.zeros_like(shift_labels))
             selected_log_probs = paddle.take_along_axis(
-                F.log_softmax(flat_logits, axis=-1), safe_labels.unsqueeze(-1), axis=-1
+                F.log_softmax(shift_logits, axis=-1), safe_labels.unsqueeze(-1), axis=-1
             ).squeeze(-1)
             valid_count = paddle.cast(valid, selected_log_probs.dtype).sum()
             loss = -(selected_log_probs * paddle.cast(valid, selected_log_probs.dtype)).sum() / valid_count
