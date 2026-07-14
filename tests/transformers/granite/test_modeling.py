@@ -308,4 +308,3 @@ class GraniteModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
 class GraniteGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
     internal_testing_model = None
 
-
