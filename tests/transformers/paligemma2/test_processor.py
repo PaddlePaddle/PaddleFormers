@@ -74,8 +74,8 @@ class PaliGemmaProcessorTest(unittest.TestCase):
         self.assertEqual(inputs["input_ids"].shape, inputs["attention_mask"].shape)
         self.assertTrue(np.all(inputs["token_type_ids"] == 0))
 
-    def test_processor_rejects_mismatched_image_placeholders(self):
-        with self.assertRaisesRegex(ValueError, "number of `<image>` tokens"):
+    def test_processor_rejects_nested_multi_image_input(self):
+        with self.assertRaisesRegex(ValueError, "exactly one image per prompt"):
             self.processor(images=[[self.image, self.image]], text="<image> describe", return_tensors="np")
 
     def test_auto_processor_resolves_paligemma_processor_from_preprocessor_config(self):

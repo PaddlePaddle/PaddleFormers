@@ -66,6 +66,7 @@ class PaliGemmaProcessor(ProcessorMixin):
             suffix = [value + self.tokenizer.eos_token for value in suffix]
 
         image_batches = self._normalize_images(images, len(text))
+        images = [image for image_batch in image_batches for image in image_batch]
         input_strings = []
         for prompt, sample_images in zip(text, image_batches):
             if IMAGE_TOKEN in prompt:
@@ -97,16 +98,16 @@ class PaliGemmaProcessor(ProcessorMixin):
     @staticmethod
     def _normalize_images(images, batch_size):
         if is_valid_image(images):
+            if batch_size != 1:
+                raise ValueError("The number of images must match the number of prompts.")
             return [[images]]
         if not isinstance(images, (list, tuple)) or not images:
-            raise ValueError("`images` must be an image, a list of images, or a nested image batch.")
-        if is_valid_image(images[0]):
-            if len(images) != batch_size:
-                raise ValueError("The number of images must match the number of prompts.")
-            return [[image] for image in images]
-        if len(images) != batch_size or not all(isinstance(item, (list, tuple)) for item in images):
-            raise ValueError("The number of image batches must match the number of prompts.")
-        return images
+            raise ValueError("`images` must be an image or a list containing one image per prompt.")
+        if not is_valid_image(images[0]):
+            raise ValueError("PaliGemma2 supports exactly one image per prompt; nested image batches are not supported.")
+        if len(images) != batch_size:
+            raise ValueError("The number of images must match the number of prompts.")
+        return [[image] for image in images]
 
     def _get_num_multimodal_tokens(self, image_sizes=None, **kwargs):
         if image_sizes is None:

@@ -199,7 +199,7 @@ class Gemma2RMSNorm(nn.Layer):
         self.weight = paddle.create_parameter(
             shape=[dim],
             dtype="float32",
-            default_initializer=nn.initializer.Constant(1.0),
+            default_initializer=nn.initializer.Constant(0.0),
         )
 
     def forward(self, x: paddle.Tensor) -> paddle.Tensor:
@@ -393,15 +393,20 @@ class Gemma2Model(nn.Layer):
         if position_ids is None:
             position_ids = paddle.arange(seq_len).unsqueeze(0).expand([bsz, seq_len])
 
-        # Create causal mask
-        if attention_mask is None:
-            attention_mask = paddle.triu(
-                paddle.full((seq_len, seq_len), float("-inf")),
-                diagonal=1,
+        causal_mask = paddle.triu(
+            paddle.full([seq_len, seq_len], float("-inf"), dtype="float32"),
+            diagonal=1,
+        ).unsqueeze([0, 1]).expand([bsz, 1, seq_len, seq_len])
+        if attention_mask is not None:
+            padding_mask = paddle.where(
+                attention_mask.unsqueeze([1, 2]).astype("bool"),
+                paddle.zeros([bsz, 1, 1, seq_len], dtype="float32"),
+                paddle.full([bsz, 1, 1, seq_len], float("-inf"), dtype="float32"),
             )
+            causal_mask = causal_mask + padding_mask
 
         for layer in self.layers:
-            hidden_states = layer(hidden_states, position_ids, attention_mask)
+            hidden_states = layer(hidden_states, position_ids, causal_mask)
 
         return self.norm(hidden_states)
 
@@ -412,6 +417,18 @@ class PaliGemma2PreTrainedModel(PretrainedModel):
     config_class = PaliGemma2Config
     base_model_prefix = "model"
     _keys_to_ignore_on_load_missing = [r"position_ids"]
+
+
+class PaliGemma2LMHead(nn.Layer):
+    def __init__(self, config: Gemma2TextConfig):
+        super().__init__()
+        self.weight = self.create_parameter(
+            shape=[config.vocab_size, config.hidden_size],
+            dtype=paddle.get_default_dtype(),
+        )
+
+    def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
+        return paddle.matmul(hidden_states, self.weight, transpose_y=True)
 
 
 class PaliGemma2ForConditionalGeneration(PaliGemma2PreTrainedModel):
@@ -431,17 +448,25 @@ class PaliGemma2ForConditionalGeneration(PaliGemma2PreTrainedModel):
         ```
     """
 
+    _tied_weights_keys = {"lm_head.weight": "language_model.embed_tokens.weight"}
+
     def __init__(self, config: PaliGemma2Config):
         super().__init__(config)
         self.config = config
         self.vision_tower = SiglipVisionTransformer(config.vision_config)
         self.multi_modal_projector = PaliGemma2MultiModalProjector(config)
         self.language_model = Gemma2Model(config.text_config)
-        self.lm_head = nn.Linear(
-            config.text_config.hidden_size,
-            config.text_config.vocab_size,
-            bias_attr=False,
-        )
+        self.lm_head = PaliGemma2LMHead(config.text_config)
+        self.tie_weights()
+
+    def get_input_embeddings(self):
+        return self.language_model.embed_tokens
+
+    def set_input_embeddings(self, value):
+        self.language_model.embed_tokens = value
+
+    def get_output_embeddings(self):
+        return self.lm_head
 
     def forward(
         self,
@@ -530,6 +555,9 @@ class PaliGemma2ForConditionalGeneration(PaliGemma2PreTrainedModel):
 
         # Compute logits
         logits = self.lm_head(hidden_states)
+        if self.config.text_config.final_logit_softcapping is not None:
+            logits = logits / self.config.text_config.final_logit_softcapping
+            logits = paddle.tanh(logits) * self.config.text_config.final_logit_softcapping
 
         loss = None
         if labels is not None:
@@ -565,12 +593,12 @@ class PaliGemma2ForConditionalGeneration(PaliGemma2PreTrainedModel):
         """AOA checkpoint conversion config.
 
         Linear weights need transpose (PyTorch [out,in] -> Paddle [in,out]).
-        Embedding and norm weights do not need transpose.
+        Embedding, LM head, and norm weights do not need transpose.
         """
         aoa_statements = [
             "language_model.embed_tokens.weight -> language_model.embed_tokens.weight",
             "language_model.norm.weight -> language_model.norm.weight",
-            "lm_head.weight^T -> lm_head.weight",
+            "lm_head.weight -> lm_head.weight",
             # Vision tower
             "vision_tower.embeddings.patch_embedding.weight -> vision_tower.embeddings.patch_embedding.weight",
             "vision_tower.embeddings.position_embedding.weight -> vision_tower.embeddings.position_embedding.weight",
@@ -606,15 +634,23 @@ class PaliGemma2ForConditionalGeneration(PaliGemma2PreTrainedModel):
 class PaliGemma2ForCausalLM(PaliGemma2PreTrainedModel):
     """PaliGemma2 model for causal language modeling (text-only)."""
 
+    _tied_weights_keys = {"lm_head.weight": "model.embed_tokens.weight"}
+
     def __init__(self, config: PaliGemma2Config):
         super().__init__(config)
         self.config = config
         self.model = Gemma2Model(config.text_config)
-        self.lm_head = nn.Linear(
-            config.text_config.hidden_size,
-            config.text_config.vocab_size,
-            bias_attr=False,
-        )
+        self.lm_head = PaliGemma2LMHead(config.text_config)
+        self.tie_weights()
+
+    def get_input_embeddings(self):
+        return self.model.embed_tokens
+
+    def set_input_embeddings(self, value):
+        self.model.embed_tokens = value
+
+    def get_output_embeddings(self):
+        return self.lm_head
 
     def forward(
         self,

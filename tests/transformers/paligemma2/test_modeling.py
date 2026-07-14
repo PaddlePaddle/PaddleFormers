@@ -29,6 +29,7 @@ from paddleformers.transformers.paligemma2.configuration import (
     Gemma2TextConfig,
 )
 from paddleformers.transformers.paligemma2.modeling import (
+    Gemma2RMSNorm,
     PaliGemma2ForCausalLM,
     PaliGemma2ForConditionalGeneration,
     PaliGemma2PreTrainedModel,
@@ -213,6 +214,40 @@ class PaliGemma2Test(unittest.TestCase):
     def test_backward_pass(self):
         """Test backward pass for gradient computation."""
         self.tester.check_backward()
+
+    def test_rms_norm_default_is_unit_scaling(self):
+        norm = Gemma2RMSNorm(4)
+        inputs = paddle.to_tensor([[1.0, 2.0, 3.0, 4.0]])
+        expected = inputs * paddle.rsqrt(paddle.mean(inputs * inputs, axis=-1, keepdim=True) + norm.eps)
+        self.assertTrue(paddle.allclose(norm(inputs), expected).item())
+        self.assertTrue(paddle.allclose(norm.weight, paddle.zeros_like(norm.weight)).item())
+
+    def test_causal_lm_accepts_batched_padding_mask(self):
+        config = self.tester.get_config()
+        model = PaliGemma2ForCausalLM(config)
+        input_ids = paddle.randint(0, self.tester.text_vocab_size, [2, self.tester.seq_length])
+        attention_mask = paddle.to_tensor(
+            [[1] * self.tester.seq_length, [1] * (self.tester.seq_length - 3) + [0] * 3], dtype="int64"
+        )
+        output = model(input_ids=input_ids, attention_mask=attention_mask)
+        self.assertEqual(output.logits.shape, [2, self.tester.seq_length, self.tester.text_vocab_size])
+
+    def test_embedding_and_lm_head_weights_are_tied(self):
+        config = self.tester.get_config()
+        conditional_model = PaliGemma2ForConditionalGeneration(config)
+        causal_model = PaliGemma2ForCausalLM(config)
+        self.assertIs(conditional_model.get_input_embeddings().weight, conditional_model.get_output_embeddings().weight)
+        self.assertIs(causal_model.get_input_embeddings().weight, causal_model.get_output_embeddings().weight)
+
+    def test_conditional_generation_applies_final_logit_softcapping(self):
+        config = self.tester.get_config()
+        config.text_config.final_logit_softcapping = 1.0
+        model = PaliGemma2ForConditionalGeneration(config)
+        model.lm_head.weight.set_value(paddle.full_like(model.lm_head.weight, 100.0))
+        input_ids = paddle.randint(0, self.tester.text_vocab_size, [1, self.tester.seq_length])
+        logits = model(input_ids=input_ids).logits
+        self.assertLessEqual(float(paddle.abs(logits).max()), 1.0)
+        self.assertGreater(float(paddle.abs(logits).max()), 0.9)
 
     def test_hf_paligemma_auto_loading_alias(self):
         config_dict = self.tester.get_config().to_dict()
