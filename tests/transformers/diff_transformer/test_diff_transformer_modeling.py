@@ -104,7 +104,10 @@ class DiffTransformerTest(unittest.TestCase):
         self.tester.check_backward()
 
     def test_public_imports(self):
-        from paddleformers.transformers import DiffTransformerConfig, DiffTransformerForCausalLM
+        from paddleformers.transformers import (
+            DiffTransformerConfig,
+            DiffTransformerForCausalLM,
+        )
 
         self.assertIsNotNone(DiffTransformerConfig)
         self.assertIsNotNone(DiffTransformerForCausalLM)
