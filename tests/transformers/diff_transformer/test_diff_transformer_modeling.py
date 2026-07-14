@@ -133,7 +133,7 @@ class DiffTransformerTest(unittest.TestCase):
             logits = model(input_ids, attention_mask=attention_mask)
             modified_logits = model(modified_input_ids, attention_mask=attention_mask)
 
-        paddle.testing.assert_allclose(logits[:, :-1], modified_logits[:, :-1])
+        paddle.testing.assert_close(logits[:, :-1], modified_logits[:, :-1])
 
 
 if __name__ == "__main__":
