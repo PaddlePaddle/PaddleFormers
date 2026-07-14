@@ -101,7 +101,6 @@ class DiffTransformerBlock(nn.Layer):
         self.norm1 = RMSNorm(config.hidden_size)
         self.attn = DiffAttn(config, layer_idx)
         self.norm2 = RMSNorm(config.hidden_size)
-        # 修改：添加 bias_attr=False
         self.mlp = nn.Sequential(
             nn.Linear(config.hidden_size, config.intermediate_size, bias_attr=False),
             nn.Silu(),
