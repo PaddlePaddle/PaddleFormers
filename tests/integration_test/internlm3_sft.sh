@@ -22,7 +22,7 @@ if [ -f 'PaddleFleet/.venv/bin/activate' ]; then
    source PaddleFleet/.venv/bin/activate
 fi
 
-config_sft_yaml=$root_dir/PaddleFormers/tests/config/ci/interlm3_sft.yaml
+config_sft_yaml=$root_dir/PaddleFormers/tests/config/ci/internlm3_sft.yaml
 
 if [[ ! -f "$config_sft_yaml" ]]; then
   echo "Config file not found: $config_sft_yaml"
@@ -41,8 +41,8 @@ export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 
 unset http_proxy https_proxy
 
-log_file=interlm_sft.txt
-gt_loss_file=interlm_sft_multi_card_gt_loss.txt
+log_file=internlm3_sft.txt
+gt_loss_file=internlm3_sft_multi_card_gt_loss.txt
 
 set +e
 NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_sft_yaml 2>&1 | tee ./${log_file}
