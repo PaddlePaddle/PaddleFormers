@@ -92,6 +92,8 @@ import_structure = {
         "TruncationStrategy",
     ],
     "auto.processing": ["AutoProcessor"],
+    "paligemma2.image_processor": ["PaliGemmaImageProcessor"],
+    "paligemma2.processor": ["PaliGemmaProcessor"],
     "auto.tokenizer": ["AutoTokenizer", "TOKENIZER_MAPPING"],
     "auto.video_processing": ["AutoVideoProcessor", "VIDEO_PROCESSOR_MAPPING"],
     "auto.feature_extraction": ["AutoFeatureExtractor"],
