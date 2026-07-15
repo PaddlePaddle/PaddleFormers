@@ -13,7 +13,6 @@ from ..processing_utils import MultiModalData, ProcessingKwargs, ProcessorMixin,
 from ..tokenizer_utils import AddedToken
 from ..tokenizer_utils_base import PreTokenizedInput, TextInput
 
-
 IMAGE_TOKEN = "<image>"
 EXTRA_TOKENS = [f"<loc{i:0>4}>" for i in range(1024)] + [f"<seg{i:0>3}>" for i in range(128)]
 
@@ -74,7 +73,11 @@ class PaliGemmaProcessor(ProcessorMixin):
                     raise ValueError("The number of `<image>` tokens must match the number of images for each prompt.")
                 expanded = prompt.replace(IMAGE_TOKEN, IMAGE_TOKEN * self.image_seq_length)
                 last_image = expanded.rfind(IMAGE_TOKEN)
-                prompt = expanded[: last_image + len(IMAGE_TOKEN)] + self.tokenizer.bos_token + expanded[last_image + len(IMAGE_TOKEN) :]
+                prompt = (
+                    expanded[: last_image + len(IMAGE_TOKEN)]
+                    + self.tokenizer.bos_token
+                    + expanded[last_image + len(IMAGE_TOKEN) :]
+                )
             else:
                 prompt = IMAGE_TOKEN * (self.image_seq_length * len(sample_images)) + self.tokenizer.bos_token + prompt
             input_strings.append(prompt + "\n")
@@ -104,7 +107,9 @@ class PaliGemmaProcessor(ProcessorMixin):
         if not isinstance(images, (list, tuple)) or not images:
             raise ValueError("`images` must be an image or a list containing one image per prompt.")
         if not is_valid_image(images[0]):
-            raise ValueError("PaliGemma2 supports exactly one image per prompt; nested image batches are not supported.")
+            raise ValueError(
+                "PaliGemma2 supports exactly one image per prompt; nested image batches are not supported."
+            )
         if len(images) != batch_size:
             raise ValueError("The number of images must match the number of prompts.")
         return [[image] for image in images]
@@ -118,7 +123,9 @@ class PaliGemmaProcessor(ProcessorMixin):
 
     @property
     def model_input_names(self):
-        return list(self.tokenizer.model_input_names + ["token_type_ids", "labels"] + self.image_processor.model_input_names)
+        return list(
+            self.tokenizer.model_input_names + ["token_type_ids", "labels"] + self.image_processor.model_input_names
+        )
 
 
 __all__ = ["PaliGemmaProcessor"]

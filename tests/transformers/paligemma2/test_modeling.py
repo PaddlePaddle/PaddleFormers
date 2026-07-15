@@ -24,15 +24,14 @@ import paddle
 
 from paddleformers.transformers import AutoConfig, AutoModelForConditionalGeneration
 from paddleformers.transformers.paligemma2.configuration import (
+    Gemma2TextConfig,
     PaliGemma2Config,
     SiglipVisionConfig,
-    Gemma2TextConfig,
 )
 from paddleformers.transformers.paligemma2.modeling import (
     Gemma2RMSNorm,
     PaliGemma2ForCausalLM,
     PaliGemma2ForConditionalGeneration,
-    PaliGemma2PreTrainedModel,
 )
 
 
@@ -165,7 +164,9 @@ class PaliGemma2ModelTester:
             safe_labels.reshape([-1]),
             reduction="none",
         )
-        expected_loss = (token_loss * valid.reshape([-1]).astype(token_loss.dtype)).sum() / valid.astype("float32").sum()
+        expected_loss = (token_loss * valid.reshape([-1]).astype(token_loss.dtype)).sum() / valid.astype(
+            "float32"
+        ).sum()
         self.parent.assertAlmostEqual(output.loss.item(), expected_loss.item(), places=6)
 
     def check_backward(self):
@@ -236,7 +237,9 @@ class PaliGemma2Test(unittest.TestCase):
         config = self.tester.get_config()
         conditional_model = PaliGemma2ForConditionalGeneration(config)
         causal_model = PaliGemma2ForCausalLM(config)
-        self.assertIs(conditional_model.get_input_embeddings().weight, conditional_model.get_output_embeddings().weight)
+        self.assertIs(
+            conditional_model.get_input_embeddings().weight, conditional_model.get_output_embeddings().weight
+        )
         self.assertIs(causal_model.get_input_embeddings().weight, causal_model.get_output_embeddings().weight)
 
     def test_conditional_generation_applies_final_logit_softcapping(self):

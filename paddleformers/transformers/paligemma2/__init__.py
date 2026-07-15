@@ -31,12 +31,12 @@ import_structure = {
 if TYPE_CHECKING:
     from .configuration import Gemma2TextConfig, PaliGemma2Config, SiglipVisionConfig
     from .image_processor import PaliGemmaImageProcessor
-    from .processor import PaliGemmaProcessor
     from .modeling import (
         PaliGemma2ForCausalLM,
         PaliGemma2ForConditionalGeneration,
         PaliGemma2PreTrainedModel,
     )
+    from .processor import PaliGemmaProcessor
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
