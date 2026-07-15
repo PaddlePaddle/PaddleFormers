@@ -97,7 +97,7 @@ class PaliGemmaProcessorTest(unittest.TestCase):
                 json.dump({"processor_class": "PaliGemmaProcessor"}, config_file)
 
             with patch.object(PaliGemmaProcessor, "from_pretrained", return_value=self.processor) as from_pretrained:
-                processor = AutoProcessor.from_pretrained(tempdir, local_files_only=True)
+                processor = AutoProcessor.from_pretrained(tempdir, download_hub="huggingface", local_files_only=True)
 
         self.assertIs(processor, self.processor)
         from_pretrained.assert_called_once_with(
