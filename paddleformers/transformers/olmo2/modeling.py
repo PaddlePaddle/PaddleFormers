@@ -138,7 +138,6 @@ class Olmo2Attention(nn.Layer):
             tp_plan="rowwise",
             input_is_parallel=False,
         )
-        )
 
         self.q_norm = Olmo2RMSNorm(
             q_hidden_size,
