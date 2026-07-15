@@ -415,6 +415,7 @@ class SwanLabCallback(TrainerCallback):
 
         self._swanlab = swanlab
         self._initialized = False
+        self._disabled = False
         self._log_model = os.getenv("SWANLAB_LOG_MODEL", None)
 
     def setup(self, args, state, model, **kwargs):
@@ -449,7 +450,14 @@ class SwanLabCallback(TrainerCallback):
         - **SWANLAB_API_HOST** (`str`, *optional*, defaults to `None`):
             API address for the SwanLab cloud environment for private version (its free)
         """
+        # Check if SwanLab is disabled via environment variable
+        if os.getenv("SWANLAB_MODE", "").lower() == "disabled":
+            self._initialized = True
+            self._disabled = True
+            return
+
         self._initialized = True
+        self._disabled = False
 
         if state.is_world_process_zero:
             logger.info('Automatic SwanLab logging enabled, to disable set os.environ["SWANLAB_MODE"] = "disabled"')
@@ -510,6 +518,8 @@ class SwanLabCallback(TrainerCallback):
 
         if not self._initialized:
             self.setup(args, state, model)
+        if self._disabled:
+            return
         if state.is_world_process_zero:
             for k, v in logs.items():
                 if k in single_value_scalars:
@@ -528,6 +538,8 @@ class SwanLabCallback(TrainerCallback):
     def on_predict(self, args, state, control, metrics, **kwargs):
         if not self._initialized:
             self.setup(args, state, **kwargs)
+        if self._disabled:
+            return
         if state.is_world_process_zero:
             metrics = rewrite_logs(metrics)
             self._swanlab.log(metrics)

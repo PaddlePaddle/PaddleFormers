@@ -96,6 +96,11 @@ import_structure = {
     "auto.video_processing": ["AutoVideoProcessor", "VIDEO_PROCESSOR_MAPPING"],
     "auto.feature_extraction": ["AutoFeatureExtractor"],
     "deepseek_v3.configuration": ["DeepseekV3Config"],
+    "deepseek_v32.configuration": ["DeepseekV32Config"],
+    "deepseek_v32.modeling": [
+        "DeepseekV32ForCausalLM",
+        "DeepseekV32ForCausalLMPipe",
+    ],
     "deepseek_v3.modeling": [
         "masked_fill",
         "DeepseekV3Attention",
@@ -306,6 +311,16 @@ import_structure = {
     "glm_moe_dsa": ["GlmMoeDsaForCausalLMPipe", "GlmMoeDsaForCausalLM"],
     "minimax_m2.configuration": ["MiniMaxM2Config"],
     "minimax_m2": ["MiniMaxM2ForCausalLMPipe", "MiniMaxM2ForCausalLM"],
+    "minicpm.configuration": ["MiniCPMConfig"],
+    "minicpm.modeling": [
+        "MiniCPMModel",
+        "MiniCPMForCausalLM",
+        "MiniCPMForCausalLMPipe",
+        "MiniCPMForSequenceClassification",
+    ],
+    "minicpm": [],
+    "deepseek_v4.configuration": ["DeepseekV4Config"],
+    "deepseek_v4": ["DeepseekV4ForCausalLMPipe", "DeepseekV4ForCausalLM"],
     "glm4v_moe.image_processor": ["Glm4vImageProcessor"],
     "glm4v_moe.image_processor_fast": ["Glm4vImageProcessorFast"],
     "auto": ["AutoModelForCausalLM"],
@@ -354,6 +369,40 @@ import_structure = {
     ],
     "glm_ocr.processor": ["Glm46VProcessor"],
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
+    "intern_lm3.configuration": ["InternLM3Config"],
+    "intern_lm3.modeling": [
+        "InternLM3Model",
+        "InternLM3ForCausalLM",
+        "InternLM3ForCausalLMPipe",
+    ],
+    "intern_lm3.tokenizer": ["InternLM3Tokenizer"],
+    "intern_lm2_5.configuration": ["InternLM25Config"],
+    "intern_lm2_5.modeling": [
+        "InternLM25DecoderLayer",
+        "InternLM25Model",
+        "InternLM25ForCausalLM",
+        "InternLM25PretrainedModel",
+        "InternLM25ForSequenceClassification",
+        "InternLM25ForQuestionAnswering",
+        "InternLM25ForTokenClassification",
+    ],
+    "intern_lm2_5.tokenizer": ["InternLM25Tokenizer"],
+    "intern.configuration": ["InternLM2Config"],
+    "intern.modeling": [
+        "InternLM2PretrainedModel",
+        "InternLM2Model",
+        "InternLM2ForCausalLM",
+        "InternLM2ForSequenceClassification",
+        "InternLM2ForQuestionAnswering",
+        "InternLM2ForTokenClassification",
+    ],
+    "intern_lm2.tokenizer": ["InternLM2Tokenizer"],
+    "gemma4_moe.configuration": ["Gemma4MoeConfig"],
+    "gemma4_moe.modeling": ["Gemma4MoeForCausalLM"],
+    "gemma4_moe": [],
+    "phi4.configuration": ["Phi4Config"],
+    "phi4.modeling": ["Phi4Model", "Phi4ForCausalLM"],
+    "phi4.tokenizer": ["Phi4Tokenizer"],
 }
 
 if TYPE_CHECKING:
@@ -427,11 +476,19 @@ if TYPE_CHECKING:
     from .glm4v_moe import *
     from .glm_moe_dsa import *
     from .minimax_m2 import *
+    from .minicpm import *
+    from .deepseek_v4 import *
     from .gpt_oss import *
     from .phi3 import *
     from .phi4_multimodal import *
     from .gemma3_text import *
     from .glm_ocr import *
+    from .intern_lm3 import *
+    from .intern_lm2_5 import *
+    from .intern import *
+    from .intern_lm2 import InternLM2Tokenizer
+    from .gemma4_moe import *
+    from .phi4 import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

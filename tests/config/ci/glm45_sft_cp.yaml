@@ -77,3 +77,5 @@ best_unbalanced_scheduler: true
 pp_release_grads: true
 # tp
 num_empty_layers_add_in_head: 1
+
+moe_deep_gemm: false

@@ -1,9 +1,9 @@
 ### data
 train_dataset_type: erniekit
 eval_dataset_type: erniekit
-train_dataset_path: ./data/pt/train.jsonl
+train_dataset_path: ./dataset/data/pt_data/train.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: ./data/pt/eval.jsonl
+eval_dataset_path: ./dataset/data/pt_data/eval.jsonl
 eval_dataset_prob: "1.0"
 packing: true
 truncate_packing: true
@@ -13,8 +13,10 @@ dataloader_shuffle: false
 dataloader_num_workers: 24
 prefetch_factor: 24
 
+pad_token_id: 151329
+
 ### model
-model_name_or_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/huggingface/GLM-4.5-Air
+model_name_or_path: ./huggingface/GLM-4.5-Air
 _attn_implementation: flashmask
 
 ### finetuning
@@ -24,7 +26,7 @@ fine_tuning: full
 seed: 23
 do_train: true
 do_eval: true
-per_device_eval_batch_size: 1
+per_device_eval_batch_size: 2
 per_device_train_batch_size: 2
 num_train_epochs: 1
 max_steps: 100
@@ -62,10 +64,9 @@ recompute_granularity: full
 recompute_method: block
 recompute_num_layers: 11
 
-using_sonic_moe: true
-
-moe_grouped_gemm: true
+moe_expert_fusion: true
 apply_rope_fusion: true
+moe_deep_gemm: false
 fp32_residual_connection: false
 # moe_router_force_load_balancing: true
 
@@ -93,5 +94,4 @@ continue_training: true
 
 tensorwise_offload_optimizer: true
 
-benchmark: true
 skip_profile_timer: false
