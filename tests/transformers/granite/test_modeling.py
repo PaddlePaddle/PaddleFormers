@@ -288,6 +288,25 @@ class GraniteModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_model_attention_mask(*config_and_inputs)
 
+    def test_model_cache_with_return_dict_false(self):
+        config, input_ids, *_ = self.model_tester.prepare_config_and_inputs()
+        model = GraniteModel(config)
+        model.eval()
+
+        outputs = model(input_ids, use_cache=True, return_dict=False)
+        past_key_values = outputs[1]
+        self.assertEqual(past_key_values.get_seq_length(), input_ids.shape[-1])
+
+        next_input_ids = ids_tensor([input_ids.shape[0], 1], config.vocab_size, dtype=paddle.int64)
+        next_outputs = model(
+            next_input_ids,
+            past_key_values=past_key_values,
+            use_cache=True,
+            return_dict=False,
+        )
+        self.assertEqual(next_outputs[0].shape, [input_ids.shape[0], 1, config.hidden_size])
+        self.assertIs(next_outputs[1], past_key_values)
+
     def test_lm_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_lm_model(*config_and_inputs)

@@ -471,11 +471,7 @@ class GraniteModel(GranitePretrainedModel):
         all_hidden_states = tuple(all_hidden_states) if all_hidden_states else None
 
         if not return_dict:
-            outputs = []
-            outputs.append(hidden_states)
-            if output_hidden_states:
-                outputs.append(all_hidden_states)
-            return tuple(outputs)
+            return tuple(output for output in (hidden_states, past_key_values, all_hidden_states) if output is not None)
 
         return BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
