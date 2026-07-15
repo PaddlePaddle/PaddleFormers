@@ -142,6 +142,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         moe_grouped_gemm = getattr(config, "moe_grouped_gemm", False)
         use_gated_attn = getattr(config, "use_gated_attn", False)
         csa_compress_ratios = getattr(config, "csa_compress_ratios", None)
+        num_empty_layers_add_in_head = getattr(config, "num_empty_layers_add_in_head", 0)
 
         # Get Muon configuration from muon_configs
         muon_qkv_update_mode = muon_configs.get("muon_qkv_update_mode", "split_head")
@@ -293,7 +294,10 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
 
         # Main layers
         for layer_idx in range(num_hidden_layers):
-            _add_layer_slice_config(f"model.layers.{layer_idx}", layer_idx)
+            _add_layer_slice_config(
+                f"model.layers.{layer_idx + num_empty_layers_add_in_head}",
+                layer_idx,
+            )
 
         # MTP layers
         if config.mtp_num_layers > 0:
@@ -301,10 +305,14 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         else:
             num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
         for layer_idx in range(num_nextn_predict_layers):
-            _add_layer_slice_config(f"model.layers.{num_hidden_layers + layer_idx}", num_hidden_layers + layer_idx)
+            _add_layer_slice_config(
+                f"model.layers.{num_hidden_layers + num_empty_layers_add_in_head + layer_idx}",
+                num_hidden_layers + layer_idx,
+            )
         for layer_idx in range(num_nextn_predict_layers):
             _add_layer_slice_config(
-                f"model.layers.{num_hidden_layers + layer_idx}.transformer_layer", num_hidden_layers + layer_idx
+                f"model.layers.{num_hidden_layers + num_empty_layers_add_in_head + layer_idx}.transformer_layer",
+                num_hidden_layers + layer_idx,
             )
 
         return slice_config

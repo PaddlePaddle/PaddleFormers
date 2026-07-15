@@ -1,9 +1,9 @@
 ### data
 train_dataset_type: erniekit
 eval_dataset_type: erniekit
-train_dataset_path: ./data/sft/train.jsonl
+train_dataset_path: ./dataset/data/sft_data/train.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: ./data/sft/eval.jsonl
+eval_dataset_path: ./dataset/data/sft_data/eval.jsonl
 eval_dataset_prob: "1.0"
 packing: true
 truncate_packing: true
@@ -16,7 +16,7 @@ prefetch_factor: 24
 pad_token_id: 151329
 
 ### model
-model_name_or_path: /root/efficient_benchmark/huggingface/GLM-4.5-Air
+model_name_or_path: ./huggingface/GLM-4.5-Air
 _attn_implementation: flashmask
 
 ### finetuning

@@ -1,9 +1,9 @@
 ### data
 train_dataset_type: messages
 eval_dataset_type: messages
-train_dataset_path: /root/efficient_benchmark/dataset/data_sft_10w/sft_data_10w.jsonl
+train_dataset_path: ./dataset/data_sft_10w/sft_data_10w.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: /root/efficient_benchmark/dataset/data_sft_10w/sft_data_10w.jsonl
+eval_dataset_path: ./dataset/data_sft_10w/sft_data_10w.jsonl
 eval_dataset_prob: "1.0"
 
 eval_iters: 10
@@ -23,7 +23,7 @@ prefetch_factor: 24
 pad_token_id: 151643
 
 ### model
-model_name_or_path: /root/efficient_benchmark/huggingface/Qwen/Qwen3-30B-A3B
+model_name_or_path: ./huggingface/Qwen/Qwen3-30B-A3B
 _attn_implementation: flashmask
 use_qk_norm: true
 
