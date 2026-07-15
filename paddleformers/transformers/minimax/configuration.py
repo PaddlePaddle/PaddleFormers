@@ -71,15 +71,18 @@ class MiniMaxConfig(PretrainedConfig):
         num_local_experts (`int`, *optional*, defaults to 32):
             Number of routed experts.
         output_router_logits (`bool`, *optional*, defaults to `False`):
-            Whether the router logits should be returned by the model.
+            Reserved for checkpoint compatibility. MiniMax does not currently return router logits;
+            enabling this option raises `NotImplementedError` during the forward pass.
         router_aux_loss_coef (`float`, *optional*, defaults to 0.001):
-            Coefficient for the auxiliary load-balancing loss.
+            Reserved for checkpoint compatibility and not applied while router-logit output is unsupported.
         router_jitter_noise (`float`, *optional*, defaults to 0.0):
             Jitter noise for the router.
         layer_types (`list[str]`, *optional*):
             A list that maps each layer index to its attention type. Can be `"full_attention"` or `"linear_attention"`.
         block_size (`int`, *optional*, defaults to 256):
             The length of each attention block for the lightning attention.
+            Lightning attention does not currently support packed sequences. Disable packing and
+            `use_attn_mask_startend_row_indices` when `layer_types` contains `"linear_attention"`.
         full_attn_alpha_factor (`float`, *optional*, defaults to 1):
             Weight for residual value in residual connection after full attention.
         full_attn_beta_factor (`float`, *optional*, defaults to 1):

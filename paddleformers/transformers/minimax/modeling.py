@@ -333,41 +333,6 @@ class MiniMaxRotaryEmbedding(nn.Layer):
         return cos.astype(x.dtype), sin.astype(x.dtype)
 
 
-def repeat_kv(hidden_states: paddle.Tensor, n_rep: int) -> paddle.Tensor:
-    """Repeat KV heads n_rep times to match the number of query heads."""
-    batch, num_key_value_heads, slen, head_dim = hidden_states.shape
-    if n_rep == 1:
-        return hidden_states
-    hidden_states = hidden_states[:, :, None, :, :].expand([batch, num_key_value_heads, n_rep, slen, head_dim])
-    return hidden_states.reshape([batch, num_key_value_heads * n_rep, slen, head_dim])
-
-
-def eager_attention_forward(
-    module: nn.Layer,
-    query: paddle.Tensor,
-    key: paddle.Tensor,
-    value: paddle.Tensor,
-    attention_mask: paddle.Tensor | None,
-    scaling: float,
-    dropout: float = 0.0,
-    **kwargs,
-):
-    """Standard (eager) attention forward implementation."""
-    key_states = repeat_kv(key, module.num_key_value_groups)
-    value_states = repeat_kv(value, module.num_key_value_groups)
-
-    attn_weights = paddle.matmul(query, key_states.transpose([0, 1, 3, 2])) * scaling
-    if attention_mask is not None:
-        attn_weights = attn_weights + attention_mask
-
-    attn_weights = F.softmax(attn_weights, axis=-1, dtype="float32").astype(query.dtype)
-    attn_weights = attn_weights * (1.0 - dropout) if dropout > 0 else attn_weights
-
-    attn_output = paddle.matmul(attn_weights, value_states)
-    attn_output = attn_output.transpose([0, 2, 1, 3]).contiguous()
-    return attn_output, attn_weights
-
-
 class MiniMaxAttention(nn.Layer):
     """Multi-headed attention (full attention) from MiniMax.
 
@@ -438,9 +403,7 @@ class MiniMaxAttention(nn.Layer):
         if past_key_values is not None:
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 
-        attention_interface: Callable = eager_attention_forward
-        if getattr(self.config, "_attn_implementation", "eager") != "eager":
-            attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        attention_interface: Callable = ALL_ATTENTION_FUNCTIONS[getattr(self.config, "_attn_implementation", "eager")]
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -636,49 +599,6 @@ class MiniMaxDecoderLayer(nn.Layer):
         hidden_states = residual * self.mlp_alpha_factor + hidden_states * self.mlp_beta_factor
 
         return hidden_states
-
-
-def load_balancing_loss_func(
-    gate_logits: tuple[paddle.Tensor] | list[paddle.Tensor] | None,
-    num_experts: int | None = None,
-    top_k: int = 2,
-    attention_mask: paddle.Tensor | None = None,
-) -> paddle.Tensor | int:
-    """Auxiliary load-balancing loss for MoE."""
-    if gate_logits is None or not isinstance(gate_logits, (tuple, list)):
-        return 0
-
-    concatenated_gate_logits = paddle.cat([layer_gate for layer_gate in gate_logits], axis=0)
-
-    routing_weights = F.softmax(concatenated_gate_logits, axis=-1)
-    _, selected_experts = paddle.topk(routing_weights, top_k, axis=-1)
-    expert_mask = F.one_hot(selected_experts, num_experts)
-
-    if attention_mask is None:
-        tokens_per_expert = paddle.mean(expert_mask.astype("float32"), axis=0)
-        router_prob_per_expert = paddle.mean(routing_weights, axis=0)
-    else:
-        batch_size, sequence_length = attention_mask.shape
-        num_hidden_layers = concatenated_gate_logits.shape[0] // (batch_size * sequence_length)
-        expert_attention_mask = (
-            attention_mask[None, :, :, None, None]
-            .expand([num_hidden_layers, batch_size, sequence_length, top_k, num_experts])
-            .reshape([-1, top_k, num_experts])
-        )
-        tokens_per_expert = paddle.sum(expert_mask.astype("float32") * expert_attention_mask, axis=0) / paddle.sum(
-            expert_attention_mask, axis=0
-        )
-        router_per_expert_attention_mask = (
-            attention_mask[None, :, :, None]
-            .expand([num_hidden_layers, batch_size, sequence_length, num_experts])
-            .reshape([-1, num_experts])
-        )
-        router_prob_per_expert = paddle.sum(routing_weights * router_per_expert_attention_mask, axis=0) / paddle.sum(
-            router_per_expert_attention_mask, axis=0
-        )
-
-    overall_loss = paddle.sum(tokens_per_expert * router_prob_per_expert.unsqueeze(0))
-    return overall_loss * num_experts
 
 
 class MiniMaxPretrainedModel(PretrainedModel):
@@ -882,6 +802,17 @@ class MiniMaxModel(MiniMaxPretrainedModel):
         if (input_ids is not None) and (inputs_embeds is not None):
             raise ValueError("You must specify exactly one of input_ids or inputs_embeds (not both)")
 
+        if "linear_attention" in self.config.layer_types:
+            if attn_mask_startend_row_indices is not None:
+                raise ValueError(
+                    "MiniMax linear_attention does not support packed attn_mask_startend_row_indices yet; "
+                    "disable packing/use_attn_mask_startend_row_indices or implement segment-reset support."
+                )
+            if attention_mask is not None and attention_mask.ndim == 4:
+                raise ValueError(
+                    "MiniMax linear_attention does not support 4D packing attention masks yet; disable packing."
+                )
+
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
 
@@ -968,7 +899,6 @@ class MiniMaxForCausalLM(MiniMaxPretrainedModel):
         self.model = MiniMaxModel(config)
         self.lm_head = GeneralLMHead(config)
         self.criterion = CriterionLayer(config)
-        self.router_weights: list[paddle.Tensor] = []
         self.tie_weights()
 
     def forward(
@@ -994,6 +924,8 @@ class MiniMaxForCausalLM(MiniMaxPretrainedModel):
         output_router_logits = (
             output_router_logits if output_router_logits is not None else self.config.output_router_logits
         )
+        if output_router_logits:
+            raise NotImplementedError("MiniMax does not support output_router_logits or router auxiliary loss yet.")
 
         if attention_mask is not None and attention_mask.dtype != paddle.bool:
             attention_mask = paddle.cast(attention_mask, paddle.bool)
@@ -1022,11 +954,7 @@ class MiniMaxForCausalLM(MiniMaxPretrainedModel):
 
         loss = None
         if labels is not None:
-            loss, _ = self.criterion(logits, labels)
-
-        aux_loss = None
-        if output_router_logits:
-            aux_loss = None
+            loss, _ = self.criterion(logits, labels, loss_mask)
 
         if not return_dict:
             output = (logits,) + outputs[1:]
@@ -1034,7 +962,7 @@ class MiniMaxForCausalLM(MiniMaxPretrainedModel):
 
         return MoECausalLMOutputWithPast(
             loss=loss,
-            aux_loss=aux_loss,
+            aux_loss=None,
             logits=logits,
             past_key_values=outputs.past_key_values,
             hidden_states=outputs.hidden_states,

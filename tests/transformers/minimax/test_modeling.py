@@ -168,3 +168,51 @@ class MiniMaxModelTest(ModelTesterMixin, unittest.TestCase):
     def test_auto_model_for_causal_lm(self):
         config = self.model_tester.get_config()
         self.model_tester.create_and_check_auto_model(config)
+
+    def test_linear_attention_rejects_packing_masks(self):
+        config, input_ids, _ = self.model_tester.prepare_config_and_inputs()
+        model = MiniMaxModel(config)
+
+        packed_row_indices = paddle.zeros(
+            [self.model_tester.batch_size, self.model_tester.seq_length, 4], dtype=paddle.int32
+        )
+        with self.assertRaisesRegex(ValueError, "linear_attention does not support packed"):
+            model(input_ids, attn_mask_startend_row_indices=packed_row_indices)
+
+        packed_4d_mask = paddle.ones(
+            [
+                self.model_tester.batch_size,
+                1,
+                self.model_tester.seq_length,
+                self.model_tester.seq_length,
+            ],
+            dtype=paddle.bool,
+        )
+        with self.assertRaisesRegex(ValueError, "linear_attention does not support 4D packing"):
+            model(input_ids, attention_mask=packed_4d_mask)
+
+    def test_causal_lm_passes_loss_mask_to_criterion(self):
+        class RecordingCriterion(paddle.nn.Layer):
+            def __init__(self):
+                super().__init__()
+                self.received_loss_mask = None
+
+            def forward(self, logits, labels, loss_mask=None):
+                self.received_loss_mask = loss_mask
+                return paddle.zeros([], dtype=logits.dtype), None
+
+        config, input_ids, input_mask = self.model_tester.prepare_config_and_inputs()
+        model = MiniMaxForCausalLM(config)
+        model.criterion = RecordingCriterion()
+        loss_mask = paddle.ones_like(input_ids, dtype=paddle.float32)
+
+        model(input_ids, attention_mask=input_mask, labels=input_ids, loss_mask=loss_mask)
+
+        self.assertIs(model.criterion.received_loss_mask, loss_mask)
+
+    def test_causal_lm_rejects_router_logits_output(self):
+        config, input_ids, _ = self.model_tester.prepare_config_and_inputs()
+        model = MiniMaxForCausalLM(config)
+
+        with self.assertRaisesRegex(NotImplementedError, "does not support output_router_logits"):
+            model(input_ids, output_router_logits=True)
