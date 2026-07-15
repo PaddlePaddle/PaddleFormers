@@ -470,6 +470,7 @@ if TYPE_CHECKING:
     from .intern import *
     from .intern_lm2 import InternLM2Tokenizer
     from .intern_lm2_5 import *
+    from .intern_lm3 import *
     from .kimi_k2 import *
     from .kimi_k25 import *
     from .llama import *
@@ -490,24 +491,7 @@ if TYPE_CHECKING:
     from .qwen3_omni_moe import *
     from .qwen3_vl import *
     from .qwen3_vl_moe import *
-    from .qwen3_omni_moe import *
-    from .glm4_moe import *
-    from .glm4v_moe import *
-    from .glm_moe_dsa import *
-    from .minimax_m2 import *
-    from .minicpm import *
-    from .deepseek_v4 import *
-    from .gpt_oss import *
-    from .phi3 import *
-    from .gemma3_text import *
-    from .glm_ocr import *
     from .olmo2 import *
-    from .intern_lm3 import *
-    from .intern_lm2_5 import *
-    from .intern import *
-    from .intern_lm2 import InternLM2Tokenizer
-    from .gemma4_moe import *
-    from .phi4 import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
