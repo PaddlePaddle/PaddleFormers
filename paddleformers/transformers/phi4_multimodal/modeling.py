@@ -756,24 +756,19 @@ def unfold_tensor(tensor: paddle.Tensor, max_seq_len: int) -> paddle.Tensor:
 
 
 def adaptive_enc_mask(x_len, chunk_start_idx, left_window=0, right_window=0):
-    import torch
+    chunk_start_idx_t = paddle.to_tensor(chunk_start_idx, dtype="int64")
+    start_pad = paddle.concat([paddle.zeros([1], dtype="int64"), chunk_start_idx_t])
+    end_pad = paddle.concat([chunk_start_idx_t, paddle.full([1], x_len, dtype="int64")])
 
-    chunk_start_idx_t = torch.tensor(chunk_start_idx, dtype=torch.long)
-    start_pad = torch.nn.functional.pad(chunk_start_idx_t, (1, 0))
-    end_pad = torch.nn.functional.pad(chunk_start_idx_t, (0, 1), value=x_len)
-    seq_range = torch.arange(0, x_len).unsqueeze(-1)
-    idx = ((seq_range < end_pad) & (seq_range >= start_pad)).nonzero()[:, 1]
-    seq_range_expand = torch.arange(0, x_len).unsqueeze(0).expand(x_len, -1)
-    idx_left = idx - left_window
-    idx_left[idx_left < 0] = 0
-    boundary_left = start_pad[idx_left]
-    mask_left = seq_range_expand >= boundary_left.unsqueeze(-1)
-    idx_right = idx + right_window
-    idx_right[idx_right > len(chunk_start_idx)] = len(chunk_start_idx)
-    boundary_right = end_pad[idx_right]
-    mask_right = seq_range_expand < boundary_right.unsqueeze(-1)
-    result = (mask_left & mask_right).numpy()
-    return paddle.to_tensor(result)
+    seq_range = paddle.arange(x_len, dtype="int64").unsqueeze(-1)
+    idx = paddle.nonzero((seq_range < end_pad) & (seq_range >= start_pad))[:, 1]
+    seq_range_expand = paddle.arange(x_len, dtype="int64").unsqueeze(0).expand([x_len, x_len])
+
+    idx_left = paddle.clip(idx - left_window, min=0)
+    idx_right = paddle.clip(idx + right_window, max=len(chunk_start_idx))
+    boundary_left = paddle.gather(start_pad, idx_left)
+    boundary_right = paddle.gather(end_pad, idx_right)
+    return (seq_range_expand >= boundary_left.unsqueeze(-1)) & (seq_range_expand < boundary_right.unsqueeze(-1))
 
 
 class Phi4MultimodalAudioModel(nn.Layer):
@@ -1363,7 +1358,10 @@ class Phi4MultimodalPreTrainedModel(PretrainedModel):
         stmts.append(f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight")
         stmts.append(f"model.norm.weight -> {model_prefix}norm.weight")
         if cls != cls.base_model_class:
-            stmts.append("model.embed_tokens.weight -> lm_head.weight")
+            if config.tie_word_embeddings:
+                stmts.append("model.embed_tokens.weight -> lm_head.weight")
+            else:
+                stmts.append("lm_head.weight -> lm_head.weight")
 
         # Decoder layers
         for layer_id in range(config.num_hidden_layers):
