@@ -112,6 +112,7 @@ class Olmo2Attention(nn.Layer):
             has_bias=config.attention_bias,
             config=config,
             tp_plan="colwise",
+            gather_output=True,
         )
         self.k_proj = GeneralLinear.create(
             config.hidden_size,
@@ -119,6 +120,7 @@ class Olmo2Attention(nn.Layer):
             has_bias=config.attention_bias,
             config=config,
             tp_plan="colwise",
+            gather_output=True,
         )
         self.v_proj = GeneralLinear.create(
             config.hidden_size,
@@ -126,6 +128,7 @@ class Olmo2Attention(nn.Layer):
             has_bias=config.attention_bias,
             config=config,
             tp_plan="colwise",
+            gather_output=True,
         )
         self.o_proj = GeneralLinear.create(
             q_hidden_size,
@@ -133,6 +136,8 @@ class Olmo2Attention(nn.Layer):
             has_bias=config.attention_bias,
             config=config,
             tp_plan="rowwise",
+            input_is_parallel=False,
+        )
         )
 
         self.q_norm = Olmo2RMSNorm(
