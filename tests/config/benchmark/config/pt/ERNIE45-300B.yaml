@@ -3,7 +3,7 @@ stage: ernie_pretrain
 
 # data
 dataset_type: pretrain
-input_dir: "1.0 /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/eb45_industrycorpus2_94k/eb45_industrycorpus2_94k"
+input_dir: "1.0 ./dataset/eb45_industrycorpus2_94k/eb45_industrycorpus2_94k"
 split: "998,1,1"
 data_load_process_num: 40
 max_seq_len: 8192
@@ -12,8 +12,10 @@ dataloader_num_workers: 8
 prefetch_factor: 32
 ignore_data_skip: 0
 
+pad_token_id: 0
+
 # model
-model_name_or_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/huggingface/ERNIE-4.5-300B-A47B/
+model_name_or_path: ./huggingface/ERNIE-4.5-300B-A47B/
 tokenizer_name_or_path: PaddleFormers/examples/experiments/ernie_pretrain/ernie/src/tokenizers/tokenizer_model
 moe_router_bias_update_rate: 0.001
 moe_with_send_router_loss: False
@@ -117,7 +119,5 @@ ernie_model_config:
 
     moe_gate: top2_fused
 
+moe_deep_gemm: false
 
-
-# benchmark
-benchmark: true

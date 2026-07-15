@@ -66,6 +66,7 @@ class ErnieMoEConfig(PretrainedConfig):
         "n_head": "num_attention_heads",
         "n_inner": "intermediate_size",
         "activation_function": "hidden_act",
+        "moe_fuse_experts": "moe_expert_fusion",
     }
     pretrained_init_configuration = ERNIE_PRETRAINED_INIT_CONFIGURATION
 
@@ -158,7 +159,7 @@ class ErnieMoEConfig(PretrainedConfig):
         moe_reverse_token_drop: bool = False,
         scoring_func: str = "softmax",
         moe_norm_gate_logits=True,
-        moe_fuse_experts: bool = False,
+        moe_expert_fusion: bool = False,
         moe_all_to_all_dropout: float = 0.0,
         moe_k=2,
         moe_use_aux_free: bool = False,
@@ -314,7 +315,6 @@ class ErnieMoEConfig(PretrainedConfig):
             "recompute_fwd_gate_up": False,
             "dequant_input": False,
             "offline_quant_expert_weight": False,
-            "clear_origin_weight_when_offline_quant": False,
         }
         update_nested_dict(default_fp8_mem_configs, fp8_mem_configs)
         self.fp8_mem_configs = default_fp8_mem_configs
@@ -354,7 +354,7 @@ class ErnieMoEConfig(PretrainedConfig):
         self.moe_dense_experts_token_type_id = moe_dense_experts_token_type_id
         self.moe_intermediate_size = moe_intermediate_size
         self.moe_reverse_token_drop = moe_reverse_token_drop
-        self.moe_fuse_experts = moe_fuse_experts
+        self.moe_expert_fusion = moe_expert_fusion
         self.moe_k = moe_k
         self.moe_all_to_all_dropout = moe_all_to_all_dropout
         self.moe_group_experts = moe_group_experts

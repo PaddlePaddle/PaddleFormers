@@ -60,8 +60,8 @@ recompute_num_layers: 1
 # fuse_attention_qkv: true
 # fuse_attention_ffn: true
 
-moe_grouped_gemm: true
-# moe_deep_gemm: true
+moe_expert_fusion: true
+moe_deep_gemm: false
 
 apply_rope_fusion: False
 # fuse_rms_norm: true
@@ -93,7 +93,6 @@ load_checkpoint_format: flex_checkpoint
 continue_training: True
 dataloader_shuffle: false
 
-benchmark: false
 report_to: none
 dataloader_num_workers: 0
 
@@ -104,3 +103,4 @@ dataloader_num_workers: 0
 freeze_config: freeze_vision freeze_aligner
 tensorwise_offload_optimizer: true
 processor_use_fast: false
+high_precision_rope: true
