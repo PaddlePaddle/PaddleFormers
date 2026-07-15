@@ -95,6 +95,14 @@ import_structure = {
     "auto.tokenizer": ["AutoTokenizer", "TOKENIZER_MAPPING"],
     "auto.video_processing": ["AutoVideoProcessor", "VIDEO_PROCESSOR_MAPPING"],
     "auto.feature_extraction": ["AutoFeatureExtractor"],
+    "diff_transformer.configuration": ["DiffTransformerConfig"],
+    "diff_transformer.modeling": [
+        "DiffTransformerModel",
+        "DiffTransformerForCausalLM",
+        "DiffTransformerPreTrainedModel",
+    ],
+    "diff_transformer.tokenizer": ["DiffTransformerTokenizer"],
+    "diff_transformer": [],
     "deepseek_v3.configuration": ["DeepseekV3Config"],
     "deepseek_v32.configuration": ["DeepseekV32Config"],
     "deepseek_v32.modeling": [
@@ -368,6 +376,37 @@ import_structure = {
     ],
     "ministral3.tokenizer": ["Mistral3Tokenizer"],
     "ministral3": [],
+    "olmo2.configuration": ["Olmo2Config"],
+    "olmo2.modeling": ["Olmo2DecoderLayer", "Olmo2Model", "Olmo2ForCausalLM", "Olmo2ForCausalLMPipe"],
+    "olmo2": [],
+    "intern_lm3.configuration": ["InternLM3Config"],
+    "intern_lm3.modeling": [
+        "InternLM3Model",
+        "InternLM3ForCausalLM",
+        "InternLM3ForCausalLMPipe",
+    ],
+    "intern_lm3.tokenizer": ["InternLM3Tokenizer"],
+    "intern_lm2_5.configuration": ["InternLM25Config"],
+    "intern_lm2_5.modeling": [
+        "InternLM25DecoderLayer",
+        "InternLM25Model",
+        "InternLM25ForCausalLM",
+        "InternLM25PretrainedModel",
+        "InternLM25ForSequenceClassification",
+        "InternLM25ForQuestionAnswering",
+        "InternLM25ForTokenClassification",
+    ],
+    "intern_lm2_5.tokenizer": ["InternLM25Tokenizer"],
+    "intern.configuration": ["InternLM2Config"],
+    "intern.modeling": [
+        "InternLM2PretrainedModel",
+        "InternLM2Model",
+        "InternLM2ForCausalLM",
+        "InternLM2ForSequenceClassification",
+        "InternLM2ForQuestionAnswering",
+        "InternLM2ForTokenClassification",
+    ],
+    "intern_lm2.tokenizer": ["InternLM2Tokenizer"],
     "gemma4_moe.configuration": ["Gemma4MoeConfig"],
     "gemma4_moe.modeling": ["Gemma4MoeForCausalLM"],
     "gemma4_moe": [],
@@ -423,6 +462,7 @@ if TYPE_CHECKING:
     from .auto.processing import *
     from .auto.tokenizer import *
     from .auto.video_processing import *
+    from .diff_transformer import *
     from .deepseek_v3 import *
     from .ernie4_5 import *
     from .ernie4_5_moe import *
@@ -454,6 +494,11 @@ if TYPE_CHECKING:
     from .gemma3_text import *
     from .glm_ocr import *
     from .ministral3 import *
+    from .olmo2 import *
+    from .intern_lm3 import *
+    from .intern_lm2_5 import *
+    from .intern import *
+    from .intern_lm2 import InternLM2Tokenizer
     from .gemma4_moe import *
     from .phi4 import *
 else:

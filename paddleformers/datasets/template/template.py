@@ -1004,6 +1004,16 @@ register_template(
     chat_sep="<|assistant|>\n",
     mm_plugin=get_mm_plugin(name="glm_ocr", image_token="<|image|>"),
 )
+register_template(
+    name="internlm2_5",
+    format_user=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n<|im_start|>assistant\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}<|im_end|>\n"]),
+    format_system=StringFormatter(slots=["<|im_start|>system\n{{content}}<|im_end|>\n"]),
+    format_prefix=EmptyFormatter(slots=["<s>"]),
+    chat_sep="<|im_end|>\n",
+    suffix=["<|im_end|>\n"],
+    enable_thinking=None,
+)
 
 register_template(
     name="mistral3",
@@ -1013,6 +1023,16 @@ register_template(
     format_prefix=EmptyFormatter(slots=["<s>"]),
     chat_sep="</s>",
     suffix=["</s>"],
+)
+
+register_template(
+    name="internlm3",
+    format_user=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n<|im_start|>assistant\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|im_start|>system\n{{content}}<|im_end|>\n"]),
+    format_prefix=EmptyFormatter(slots=["<s>"]),
+    chat_sep="<|im_end|>\n",
+    suffix=["<|im_end|>\n"],
 )
 
 register_template(

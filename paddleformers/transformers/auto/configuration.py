@@ -35,6 +35,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
     [
         ("deepseek_v3", "DeepseekV3Config"),
         ("deepseek_v32", "DeepseekV32Config"),
+        ("diff_transformer", "DiffTransformerConfig"),
         ("ernie4_5", "Ernie4_5Config"),
         ("ernie4_5_moe", "Ernie4_5_MoeConfig"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLConfig"),
@@ -65,6 +66,9 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("qwen3_5", "Qwen3_5Config"),
         ("qwen3_5_moe", "Qwen3_5MoEConfig"),
         ("mistral3", "Mistral3Config"),
+        ("olmo2", "Olmo2Config"),
+        ("internlm3", "InternLM3Config"),
+        ("internlm2", "InternLM2Config"),
         # TODO(VL): When Gemma4 VL is implemented, "gemma4" should point to Gemma4Config (VL wrapper)
         ("gemma4_text", "Gemma4MoeConfig"),
         ("gemma4", "Gemma4MoeConfig"),  # Temporary: no standalone text ckpt, extract text_config in from_dict
@@ -79,6 +83,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
     [
         ("deepseek_v2", "DeepseekV2"),
         ("deepseek_v3", "DeepseekV3"),
+        ("diff_transformer", "DiffTransformer"),
         ("ernie4_5", "Ernie4_5"),
         ("ernie4_5_moe", "Ernie4_5_Moe"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLMoeForConditionalGeneration"),
@@ -100,6 +105,9 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
         ("qwen3_5", "Qwen3_5ForConditionalGeneration"),
         ("mistral3", "Mistral3ForConditionalGeneration"),
+        ("olmo2", "Olmo2ForCausalLM"),
+        ("internlm3", "InternLM3ForCausalLM"),
+        ("internlm2", "InternLM2"),
         ("gemma4_moe", "Gemma4MoeForCausalLM"),
         ("gemma4_text", "Gemma4MoeForCausalLM"),
         ("gemma4", "Gemma4MoeForCausalLM"),
@@ -119,6 +127,8 @@ SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
         ("qwen3_vl_text", "qwen3_vl"),
         ("qwen3_vl_moe_text", "qwen3_vl_moe"),
         ("mistral3", "ministral3"),
+        ("internlm3", "intern_lm3"),
+        ("internlm2", "intern"),
         # TODO(VL): Remove these when Gemma4 VL module (gemma4/) is created
         ("gemma4_text", "gemma4_moe"),
         ("gemma4", "gemma4_moe"),
