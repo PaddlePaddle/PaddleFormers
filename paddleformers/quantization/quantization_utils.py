@@ -42,24 +42,9 @@ from .quantization_linear import (
     dequant_weight,
 )
 
-# Conditionally import paddlefleet modules
-if is_paddlefleet_available():
-    from paddlefleet.parallel_state import (
-        get_tensor_model_parallel_group,
-        get_tensor_model_parallel_world_size,
-    )
-    from paddlefleet.tensor_parallel import (
-        ColumnParallelLinear as FleetColumnParallelLinear,
-    )
-    from paddlefleet.tensor_parallel import RowParallelLinear as FleetRowParallelLinear
 
-    from .quantization_linear import (
-        FleetColumnParallelQuantizationLinear,
-        FleetQuantizationLinear,
-        FleetRowParallelQuantizationLinear,
-    )
-else:
-    # Define mock objects or alternative implementations when paddlefleet is not available
+def _define_fleet_fallbacks():
+    # Define mock objects or alternative implementations when paddlefleet is not available.
     def get_tensor_model_parallel_group():
         return None
 
@@ -80,6 +65,47 @@ else:
 
     class FleetRowParallelQuantizationLinear:
         pass
+
+    return (
+        get_tensor_model_parallel_group,
+        get_tensor_model_parallel_world_size,
+        FleetColumnParallelLinear,
+        FleetRowParallelLinear,
+        FleetColumnParallelQuantizationLinear,
+        FleetQuantizationLinear,
+        FleetRowParallelQuantizationLinear,
+    )
+
+
+# Conditionally import paddlefleet modules. A partial paddlefleet installation
+# can exist without paddlefleet_ops, so guard the actual imports as well.
+try:
+    if not is_paddlefleet_available():
+        raise ImportError("paddlefleet is not installed.")
+    from paddlefleet.parallel_state import (
+        get_tensor_model_parallel_group,
+        get_tensor_model_parallel_world_size,
+    )
+    from paddlefleet.tensor_parallel import (
+        ColumnParallelLinear as FleetColumnParallelLinear,
+    )
+    from paddlefleet.tensor_parallel import RowParallelLinear as FleetRowParallelLinear
+
+    from .quantization_linear import (
+        FleetColumnParallelQuantizationLinear,
+        FleetQuantizationLinear,
+        FleetRowParallelQuantizationLinear,
+    )
+except ImportError:
+    (
+        get_tensor_model_parallel_group,
+        get_tensor_model_parallel_world_size,
+        FleetColumnParallelLinear,
+        FleetRowParallelLinear,
+        FleetColumnParallelQuantizationLinear,
+        FleetQuantizationLinear,
+        FleetRowParallelQuantizationLinear,
+    ) = _define_fleet_fallbacks()
 
 
 LINEAR_CLASSES = [

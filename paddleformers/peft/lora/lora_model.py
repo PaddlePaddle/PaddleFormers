@@ -38,8 +38,11 @@ from ...nn.experts import MoeExpertsBase
 from ...transformers.model_utils import VLMS
 from ...utils.import_utils import is_paddlefleet_available
 
-# Conditionally import paddlefleet modules
-if is_paddlefleet_available():
+# Conditionally import paddlefleet modules. A partial paddlefleet installation
+# can exist without paddlefleet_ops, so guard the actual imports as well.
+try:
+    if not is_paddlefleet_available():
+        raise ImportError("paddlefleet is not installed.")
     from paddlefleet.models.gpt import GPTModel as FleetGPTModel
     from paddlefleet.parallel_state import (
         get_tensor_model_parallel_group,
@@ -50,7 +53,7 @@ if is_paddlefleet_available():
     )
     from paddlefleet.tensor_parallel import RowParallelLinear as FleetRowParallelLinear
     from paddlefleet.transformer.moe.moe_expert import GroupedMLPExpert
-else:
+except ImportError:
     # Define mock objects or alternative implementations when paddlefleet is not available
     def get_tensor_model_parallel_group():
         return None

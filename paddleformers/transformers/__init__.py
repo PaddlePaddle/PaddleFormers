@@ -177,6 +177,15 @@ import_structure = {
     "llama.modeling": ["LlamaForCausalLM", "LlamaModel", "LlamaForCausalLMPipe", "LlamaRotaryEmbedding"],
     "llama.tokenizer": ["LlamaTokenizer", "Llama3Tokenizer"],
     "llama.tokenizer_fast": ["LlamaTokenizerFast"],
+    "mimo.configuration": ["MiMoConfig"],
+    "mimo.modeling": [
+        "MiMoModel",
+        "MiMoPretrainedModel",
+        "MiMoMTPLayer",
+        "MiMoForCausalLM",
+        "MiMoForCausalLMPipe",
+        "MiMoForCausalLMDeprecated",
+    ],
     "optimization": [
         "LinearDecayWithWarmup",
         "ConstScheduleWithWarmup",
@@ -439,6 +448,7 @@ if TYPE_CHECKING:
     from .kimi_k2 import *
     from .paddleocr_vl import *
     from .llama import *
+    from .mimo import *
     from .optimization import *
     from .qwen2 import *
     from .qwen2_5_vl import *
