@@ -42,11 +42,15 @@ from ..utils.import_utils import is_paddlefleet_available
 # Conditionally import paddlefleet modules
 if is_paddlefleet_available():
     from paddlefleet.models.gpt import GPTModel
+    from paddlefleet.transformer.moe.moe_expert import SonicMoEExpert
     from paddlefleet.transformer.moe.moe_layer import MoELayer
     from paddlefleet.transformer.moe.moe_router import StandardMoERouter
 else:
 
     class GPTModel:
+        pass
+
+    class SonicMoEExpert:
         pass
 
     class MoELayer:
@@ -81,6 +85,7 @@ __all__ = [
     "SPGradSyncCallback",
     "EMAStateAssemblerCallback",
     "InternalMedicineCallback",
+    "SonicMoELayoutSwitchCallback",
 ]
 
 
@@ -716,6 +721,8 @@ class FP8QuantWeightCallback(TrainerCallback):
         """
         Quantize expert weights to FP8 before each training step
         """
+        if args.using_sonic_moe:
+            return
         model = kwargs["model"]
         optimizer = kwargs["optimizer"]
         global skip_count
@@ -755,6 +762,8 @@ class FP8QuantWeightCallback(TrainerCallback):
         """
         Reload weights before optimizer step
         """
+        if args.using_sonic_moe:
+            return
         model = kwargs["model"]
         optimizer = kwargs["optimizer"]
         global skip_count
@@ -926,14 +935,28 @@ class SPGradSyncCallback(TrainerCallback):
 
 
 class InternalMedicineCallback(TrainerCallback):
-    def __init__(self, monitors=None, monitor_interval: int = 1, verbose: bool = True):
+    def __init__(
+        self,
+        monitors=None,
+        monitor_interval=0,
+        verbose: bool = True,
+        qk_row_stride: int = 1,
+        log_dir: str = "",
+    ):
         super().__init__()
         self.monitors = self._normalize_monitors(monitors)
-        self.monitor_interval = monitor_interval
+        self.monitor_interval = int(monitor_interval) if monitor_interval else 0
         self.verbose = verbose
+        self.qk_row_stride = qk_row_stride
+        self.log_dir = log_dir or ""
+        self.log_path = os.path.join(self.log_dir, "internal_medicine.jsonl") if self.log_dir else ""
         self._monitor_dict = {}
         self._training_logs = None
         self._setup_done = False
+        # Lazy-resolved flags: only rank 0 writes; init on first on_log call so
+        # the distributed env is fully up by then.
+        self._is_writer = None
+        self._log_path_ready = False
 
     @staticmethod
     def _normalize_monitors(monitors) -> list:
@@ -946,6 +969,14 @@ class InternalMedicineCallback(TrainerCallback):
     def on_train_begin(self, args, state, control, model=None, **kwargs):
         if model is None or self._setup_done or not self.monitors:
             return
+        if self.monitor_interval <= 0:
+            logger.warning(
+                "[InternalMedicine] monitor_interval=%s is non-positive; skipping monitor setup.",
+                self.monitor_interval,
+            )
+            return
+
+        self._maybe_truncate_on_resume(state)
 
         try:
             from internal_medicine.backends.paddlefleet import setup_monitors
@@ -965,12 +996,26 @@ class InternalMedicineCallback(TrainerCallback):
                 monitor_dict=self._monitor_dict,
                 monitor_interval=self.monitor_interval,
                 verbose=self.verbose,
+                qk_stats={"row_stride": self.qk_row_stride},
             )
             self._training_logs = training_logs
             self._setup_done = True
             logger.info("[InternalMedicine/pfleet] Monitors registered: %s" % list(self._monitor_dict.keys()))
         except Exception:
             logger.error("[InternalMedicine/pfleet] Failed to setup monitors")
+
+    def on_step_begin(self, args, state, control, **kwargs):
+        # Collect expert weight norms before the FP8 quant callback clears the
+        # bf16 expert weights. Only monitors that expose collect_expert_norms()
+        # have step-begin work; others keep their metrics on forward hooks. This
+        # MUST run before FP8QuantWeightCallback.on_step_begin, which is ensured
+        # by registering this callback ahead of it in the callbacks list.
+        if not self._setup_done:
+            return
+        for monitor in self._monitor_dict.values():
+            collect = getattr(monitor, "collect_expert_norms", None)
+            if collect is not None:
+                collect()
 
     def on_step_end(self, args, state, control, **kwargs):
         if not self._setup_done:
@@ -980,13 +1025,116 @@ class InternalMedicineCallback(TrainerCallback):
             monitor.step()
 
     def on_log(self, args, state, control, logs=None, **kwargs):
-        if not self._setup_done or logs is None or self._training_logs is None:
+        if not self._setup_done or self._training_logs is None:
             return
 
         aggregated = self._training_logs.gather_and_aggregate()
         if aggregated:
-            logs.update(aggregated)
             self._training_logs.reset()
+            self._maybe_write_jsonl(state, aggregated)
+
+    def _resolve_writer(self):
+        """Decide once whether this process should write the jsonl file.
+
+        Only the global rank-0 process writes. Resolved lazily because the
+        distributed env may not be ready at callback construction time.
+        """
+        if self._is_writer is not None:
+            return self._is_writer
+        rank = 0
+        try:
+            import paddle.distributed as dist  # type: ignore
+
+            if dist.is_initialized():
+                rank = dist.get_rank()
+        except Exception:
+            rank = 0
+        self._is_writer = (rank == 0) and bool(self.log_path)
+        return self._is_writer
+
+    def _maybe_truncate_on_resume(self, state):
+        """Handle a pre-existing jsonl at setup time.
+
+        - Fresh start (resume_step == 0) with a leftover jsonl from a previous
+          run: rotate it aside to <log_path>.bak.<YYYYMMDD_HHMMSS> so the new
+          run starts with a clean file and the viewer isn't confused by a
+          non-monotonic global_step axis.
+        - Real resume from checkpoint (resume_step > 0): keep rows with
+          global_step <= resume_step, drop the tail (any "future" rows past
+          the checkpoint), same behavior as before.
+        """
+        if not self._resolve_writer():
+            return
+        if not self.log_path or not os.path.exists(self.log_path):
+            return
+        resume_step = int(getattr(state, "global_step", 0) or 0)
+        if resume_step <= 0:
+            try:
+                ts = time.strftime("%Y%m%d_%H%M%S")
+                bak = f"{self.log_path}.bak.{ts}"
+                suffix = 1
+                while os.path.exists(bak):
+                    bak = f"{self.log_path}.bak.{ts}.{suffix}"
+                    suffix += 1
+                os.replace(self.log_path, bak)
+                logger.info(
+                    "[InternalMedicine] rotated pre-existing jsonl to %s (fresh start)",
+                    bak,
+                )
+            except Exception:
+                logger.error("[InternalMedicine] failed to rotate pre-existing jsonl")
+            return
+        try:
+            kept = []
+            with open(self.log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.rstrip("\n")
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except json.JSONDecodeError:
+                        # Preserve unparseable lines rather than silently dropping.
+                        kept.append(line)
+                        continue
+                    if int(rec.get("global_step", 0)) <= resume_step:
+                        kept.append(line)
+            tmp = self.log_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                if kept:
+                    f.write("\n".join(kept) + "\n")
+            os.replace(tmp, self.log_path)
+            logger.info(
+                "[InternalMedicine] truncated jsonl on resume: kept %d rows with global_step<=%d"
+                % (len(kept), resume_step)
+            )
+        except Exception:
+            logger.error("[InternalMedicine] failed to truncate jsonl on resume")
+
+    def _maybe_write_jsonl(self, state, aggregated):
+        if not self._resolve_writer():
+            return
+        try:
+            if not self._log_path_ready:
+                d = os.path.dirname(self.log_path)
+                if d:
+                    os.makedirs(d, exist_ok=True)
+                self._log_path_ready = True
+            record = {"global_step": int(getattr(state, "global_step", 0))}
+            for k in sorted(aggregated.keys()):
+                v = aggregated[k]
+                # Only JSON-serializable scalars; cast tensors/numpy to float.
+                try:
+                    record[k] = float(v)
+                except (TypeError, ValueError):
+                    # Skip non-scalar entries silently — the viewer only
+                    # plots scalar series anyway.
+                    continue
+            with open(self.log_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except Exception:
+            # Never let logging IO crash training.
+            logger.exception("[InternalMedicine] failed to append jsonl record")
 
 
 class EMAStateAssemblerCallback(TrainerCallback):
@@ -998,6 +1146,56 @@ class EMAStateAssemblerCallback(TrainerCallback):
         self.ema_state_assembler.run()
         duration = time.time() - start
         logger.info(f"[EMAStateAssembler] Assembling EMA state took {duration:.3f} seconds.")
+
+
+class SonicMoELayoutSwitchCallback(TrainerCallback):
+    def _apply_to_sonic_moe_experts(self, model, fn_name):
+        def apply_layout_switch(layer):
+            if isinstance(layer, SonicMoEExpert):
+                getattr(layer, fn_name)()
+
+        model.apply(apply_layout_switch)
+
+    def _prepare_sonic_moe_fp8_weights(self, model, ensure_grouped_for_master=False):
+        def prepare_fp8_weights(layer):
+            if isinstance(layer, SonicMoEExpert):
+                layer.convert_weights_to_sonic_layout()
+                layer.quant_weight()
+                if ensure_grouped_for_master:
+                    layer.convert_weights_to_grouped_layout()
+
+        model.apply(prepare_fp8_weights)
+
+    def _optimizer_has_expert_master(self, optimizer):
+        if not hasattr(self, "_cached_expert_param_name"):
+            self._cached_expert_param_name = None
+            for param in optimizer._inner_opt._parameter_list:
+                color = getattr(param, "color", -1)
+                if isinstance(color, dict) and color.get("color") == "moe_expert":
+                    self._cached_expert_param_name = param.name
+                    break
+        return (
+            self._cached_expert_param_name is not None
+            and hasattr(optimizer, "_master_weights")
+            and self._cached_expert_param_name in optimizer._master_weights
+        )
+
+    def on_step_begin(self, args, state, control, **kwargs):
+        if args.using_sonic_moe:
+            model = kwargs["model"]
+            optimizer = kwargs["optimizer"]
+            if args.fp8:
+                need_master = not self._optimizer_has_expert_master(optimizer)
+                self._prepare_sonic_moe_fp8_weights(model, ensure_grouped_for_master=need_master)
+                optimizer.clear_param_storage("moe_expert")
+            else:
+                self._apply_to_sonic_moe_experts(model, "convert_weights_to_sonic_layout")
+
+    def on_optimizer_begin(self, args, state, control, **kwargs):
+        if args.using_sonic_moe:
+            if args.fp8:
+                self._apply_to_sonic_moe_experts(kwargs["model"], "clear_fp8_weights")
+            self._apply_to_sonic_moe_experts(kwargs["model"], "convert_weights_to_grouped_layout")
 
 
 class InterleaveGateUpCallback(TrainerCallback):

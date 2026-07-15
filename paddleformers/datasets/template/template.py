@@ -984,13 +984,22 @@ register_template(
 
 register_template(
     name="phi4",
-    format_user=StringFormatter(
-        slots=["<|im_start|>user<|im_sep|>{{content}}<|im_end|><|im_start|>assistant<|im_sep|>"]
-    ),
+    format_user=StringFormatter(slots=["<|user|>{{content}}<|end|><|assistant|>"]),
     format_assistant=StringFormatter(slots=["{{content}}"]),
-    format_system=StringFormatter(slots=["<|im_start|>system<|im_sep|>{{content}}<|im_end|>"]),
-    suffix=["<|im_end|>"],
-    chat_sep="<|im_end|>",
+    format_system=StringFormatter(slots=["<|system|>{{content}}<|end|>"]),
+    chat_sep="<|end|>",
+    suffix=["<|end|>"],
+    template_class=ReasoningTemplate,
+)
+
+register_template(
+    name="phi4_nothink",
+    format_user=StringFormatter(slots=["<|user|>{{content}}<|end|><|assistant|>"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|system|>{{content}}<|end|>"]),
+    chat_sep="<|end|>",
+    suffix=["<|end|>"],
+    enable_thinking=None,
 )
 
 # copied from deepseekv3 template
@@ -1010,4 +1019,38 @@ register_template(
     format_prefix=EmptyFormatter(slots=["[gMASK]<sop>"]),
     chat_sep="<|assistant|>\n",
     mm_plugin=get_mm_plugin(name="glm_ocr", image_token="<|image|>"),
+)
+register_template(
+    name="internlm2_5",
+    format_user=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n<|im_start|>assistant\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}<|im_end|>\n"]),
+    format_system=StringFormatter(slots=["<|im_start|>system\n{{content}}<|im_end|>\n"]),
+    format_prefix=EmptyFormatter(slots=["<s>"]),
+    chat_sep="<|im_end|>\n",
+    suffix=["<|im_end|>\n"],
+    enable_thinking=None,
+)
+
+register_template(
+    name="internlm3",
+    format_user=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n<|im_start|>assistant\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|im_start|>system\n{{content}}<|im_end|>\n"]),
+    format_prefix=EmptyFormatter(slots=["<s>"]),
+    chat_sep="<|im_end|>\n",
+    suffix=["<|im_end|>\n"],
+)
+
+register_template(
+    name="gemma4",
+    format_user=StringFormatter(slots=["<|turn>user\n{{content}}<turn|>\n<|turn>model\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|turn>system\n{{content}}<turn|>\n"]),
+    format_observation=StringFormatter(slots=["<|turn>tool\n{{content}}<turn|>\n<|turn>model\n"]),
+    format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
+    chat_sep="<turn|>\n",
+    suffix=["<turn|>"],
+    stop_words=["<turn|>"],
+    thought_words=("<|channel>thought\n", "\n<channel|>"),
+    template_class=Llama2Template,
 )

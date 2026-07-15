@@ -1529,7 +1529,8 @@ class EMABuffer(ABC):
                 del ema_tensor
 
             if self.offload:
-                v_pin = v.pin_memory()
+                src = v.detach() if isinstance(v, paddle.base.framework.EagerParamBase) else v
+                v_pin = src.pin_memory()
                 v_pin.name = v.name
                 v = v_pin
             ema_state_dict[k] = v

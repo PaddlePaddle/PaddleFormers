@@ -142,6 +142,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         moe_grouped_gemm = getattr(config, "moe_grouped_gemm", False)
         use_gated_attn = getattr(config, "use_gated_attn", False)
         csa_compress_ratios = getattr(config, "csa_compress_ratios", None)
+        num_empty_layers_add_in_head = getattr(config, "num_empty_layers_add_in_head", 0)
 
         # Get Muon configuration from muon_configs
         muon_qkv_update_mode = muon_configs.get("muon_qkv_update_mode", "split_head")
@@ -293,7 +294,10 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
 
         # Main layers
         for layer_idx in range(num_hidden_layers):
-            _add_layer_slice_config(f"model.layers.{layer_idx}", layer_idx)
+            _add_layer_slice_config(
+                f"model.layers.{layer_idx + num_empty_layers_add_in_head}",
+                layer_idx,
+            )
 
         # MTP layers
         if config.mtp_num_layers > 0:
@@ -301,10 +305,14 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         else:
             num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
         for layer_idx in range(num_nextn_predict_layers):
-            _add_layer_slice_config(f"model.layers.{num_hidden_layers + layer_idx}", num_hidden_layers + layer_idx)
+            _add_layer_slice_config(
+                f"model.layers.{num_hidden_layers + num_empty_layers_add_in_head + layer_idx}",
+                num_hidden_layers + layer_idx,
+            )
         for layer_idx in range(num_nextn_predict_layers):
             _add_layer_slice_config(
-                f"model.layers.{num_hidden_layers + layer_idx}.transformer_layer", num_hidden_layers + layer_idx
+                f"model.layers.{num_hidden_layers + num_empty_layers_add_in_head + layer_idx}.transformer_layer",
+                num_hidden_layers + layer_idx,
             )
 
         return slice_config
@@ -397,14 +405,16 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         num_experts = config.n_routed_experts
         n_shared_experts = getattr(config, "n_shared_experts", 1)
         moe_n_hash_layers = getattr(config, "moe_n_hash_layers", 3)
-        moe_expert_fusion = getattr(config, "moe_expert_fusion", False)
         csa_compress_ratios = config.csa_compress_ratios
         num_head_empty_layers = (
             config.num_empty_layers_add_in_head
             if hasattr(config, "num_empty_layers_add_in_head") and config.num_empty_layers_add_in_head
             else 0
         )
-        mtp_num_layers = getattr(config, "num_nextn_predict_layers", 0)
+        if config.mtp_num_layers > 0:
+            mtp_num_layers = config.mtp_num_layers
+        else:
+            mtp_num_layers = getattr(config, "num_nextn_predict_layers", 0)
         # Note: num_hidden_layers in PaddleFormers config is the decoder layer count (NOT bumped by MTP).
         # MTP layers are appended AFTER the decoder layers, so MTP layer i is at index num_hidden_layers + i.
         num_decoder_layers = num_hidden_layers
@@ -416,12 +426,23 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             "embed.weight -> model.embedding.embed_tokens.weight",
             "norm.weight -> model.norm.weight",
         ]
+        if mtp_num_layers > 0 and getattr(config, "enable_mtp_magic_send", False):
+            stmts.append("embed.weight -> model.mtp_embedding.embed_tokens.weight")
         if config.tie_word_embeddings:
             stmts += ["embed.weight -> model.lm_head.weight"]
         else:
             stmts += ["head.weight -> model.lm_head.weight"]
 
+        use_fused_weight = config.moe_expert_fusion
+        if config.fp8 and (config.moe_expert_fusion is False) and config.moe_deep_gemm:
+            raise ValueError(
+                "For fp8 deep_gemm (i.e. use k-grouped gemm in backward), moe_expert_fusion must be True."
+            )
+        if config.fp8 and config.moe_expert_fusion and config.moe_deep_gemm is False:
+            use_fused_weight = False
+
         # === 2. Per-layer mappings (layer 0 to num_decoder_layers-1) ===
+
         for L in range(num_decoder_layers):
             src = f"layers.{L}"
             tgt = f"model.layers.{L + num_head_empty_layers}"
@@ -521,7 +542,8 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ]
 
             # --- GroupGEMM fusion: stack all experts into single tensors ---
-            if moe_expert_fusion:
+
+            if use_fused_weight:
                 ep_weight1 = []
                 ep_weight2 = []
                 for E in range(num_experts):
@@ -651,7 +673,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ]
 
             # --- GroupGEMM fusion for MTP experts ---
-            if moe_expert_fusion:
+            if use_fused_weight:
                 ep_weight1 = []
                 ep_weight2 = []
                 for E in range(num_experts):
@@ -684,14 +706,16 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         num_experts = config.n_routed_experts
         n_shared_experts = getattr(config, "n_shared_experts", 1)
         moe_n_hash_layers = getattr(config, "moe_n_hash_layers", 3)
-        moe_expert_fusion = getattr(config, "moe_expert_fusion", False)
         csa_compress_ratios = config.csa_compress_ratios
         num_head_empty_layers = (
             config.num_empty_layers_add_in_head
             if hasattr(config, "num_empty_layers_add_in_head") and config.num_empty_layers_add_in_head
             else 0
         )
-        mtp_num_layers = getattr(config, "num_nextn_predict_layers", 0)
+        if config.mtp_num_layers > 0:
+            mtp_num_layers = config.mtp_num_layers
+        else:
+            mtp_num_layers = getattr(config, "num_nextn_predict_layers", 0)
         # Note: num_hidden_layers in PaddleFormers config is the decoder layer count (NOT bumped by MTP).
         # MTP layers are appended AFTER the decoder layers, so MTP layer i is at index num_hidden_layers + i.
         num_decoder_layers = num_hidden_layers
@@ -703,10 +727,20 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             "model.embedding.embed_tokens.weight -> embed.weight",
             "model.norm.weight -> norm.weight",
         ]
+        if mtp_num_layers > 0 and getattr(config, "enable_mtp_magic_send", False):
+            stmts.append("model.mtp_embedding.embed_tokens.weight -> embed.weight")
         if config.tie_word_embeddings:
             stmts += ["model.lm_head.weight -> _"]
         else:
             stmts += ["model.lm_head.weight -> head.weight"]
+
+        use_fused_weight = config.moe_expert_fusion
+        if config.fp8 and (config.moe_expert_fusion is False) and config.moe_deep_gemm:
+            raise ValueError(
+                "For fp8 deep_gemm (i.e. use k-grouped gemm in backward), moe_expert_fusion must be True."
+            )
+        if config.fp8 and config.moe_expert_fusion and config.moe_deep_gemm is False:
+            use_fused_weight = False
 
         # === 2. MTP layers (inverse, reversed order) ===
         for i in reversed(range(mtp_num_layers)):
@@ -800,7 +834,8 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             ]
 
             # --- GroupGEMM de-fusion ---
-            if moe_expert_fusion:
+
+            if use_fused_weight:
                 ep_weight1 = []
                 ep_weight2 = []
                 for E in range(num_experts):
@@ -925,7 +960,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 stmts += [f"{src}.mlp.gate.tid2eid -> {tgt}.ffn.gate.tid2eid"]
 
             # --- GroupGEMM de-fusion: split stacked tensor back to per-expert ---
-            if moe_expert_fusion:
+            if use_fused_weight:
                 ep_weight1 = []
                 ep_weight2 = []
                 for E in range(num_experts):

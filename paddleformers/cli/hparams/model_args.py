@@ -161,6 +161,10 @@ class ModelArguments:
         default="dummy",
         metadata={"help": "MoE communication group. Supported values: 'mp', 'dummy'."},
     )
+    moe_logging: Optional[bool] = field(
+        default=None,
+        metadata={"help": "Whether to enable Fleet MoE balance logging."},
+    )
     moe_multimodal_dispatch_use_allgather: Optional[str] = field(
         default="v2-alltoall-unpad",
         metadata={"help": "moe dispatch use unpad allgather strategy."},

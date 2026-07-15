@@ -87,6 +87,10 @@ def main():
         num_iluvatar_gpus = len(paddle.device.get_available_custom_device())
         default_iluvatar_gpus = ",".join(map(str, range(0, num_iluvatar_gpus)))
         visible_cards = os.getenv("CUDA_VISIBLE_DEVICES", default_iluvatar_gpus)
+    elif current_device == "musa":
+        num_musas = len(paddle.device.get_available_custom_device())
+        default_musas = ",".join(map(str, range(0, num_musas)))
+        visible_cards = os.getenv("MUSA_VISIBLE_DEVICES", default_musas)
     else:
         import GPUtil
 
@@ -150,7 +154,7 @@ def main():
         # launch distributed training
         env = deepcopy(os.environ)
         args_to_pass = " ".join(shlex.quote(arg) for arg in sys.argv[1:])
-        if current_device == "iluvatar_gpu":
+        if current_device == "iluvatar_gpu" or current_device == "musa":
             current_device = "gpu"
         command = (
             f"python -m paddle.distributed.launch --log_dir {paddleformers_dist_log} "
