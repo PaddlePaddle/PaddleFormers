@@ -15,8 +15,8 @@
 from typing import Callable, Optional, cast
 
 import paddle
-from paddle import nn
 import paddle.nn.functional as F
+from paddle import nn
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
@@ -25,16 +25,18 @@ from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.norm import Norm as GeneralNorm
 from ...utils.log import logger
+from ..activations import ACT2FN
 from ..cache_utils import Cache, DynamicCache
 from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
-from ..activations import ACT2FN
 from .configuration import GraniteConfig
 
 try:
-    from paddle.distributed.flex_checkpoint.dcp.sharded_weight import build_sharded_state_dict
+    from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
+        build_sharded_state_dict,
+    )
 except ImportError:
     build_sharded_state_dict = None
 
@@ -50,8 +52,12 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     cos = cos.unsqueeze(unsqueeze_dim)
     sin = sin.unsqueeze(unsqueeze_dim)
     original_dtype = q.dtype
-    q_embed = paddle.add(paddle.multiply(q.astype("float32"), cos), paddle.multiply(rotate_half(q).astype("float32"), sin))
-    k_embed = paddle.add(paddle.multiply(k.astype("float32"), cos), paddle.multiply(rotate_half(k).astype("float32"), sin))
+    q_embed = paddle.add(
+        paddle.multiply(q.astype("float32"), cos), paddle.multiply(rotate_half(q).astype("float32"), sin)
+    )
+    k_embed = paddle.add(
+        paddle.multiply(k.astype("float32"), cos), paddle.multiply(rotate_half(k).astype("float32"), sin)
+    )
     return q_embed.astype(original_dtype), k_embed.astype(original_dtype)
 
 
@@ -67,9 +73,9 @@ class GraniteAttention(nn.Layer):
         else:
             self.head_dim = config.hidden_size // config.num_attention_heads
 
-        assert config.num_attention_heads % config.num_key_value_heads == 0, (
-            "num_attention_heads must be divisible by num_key_value_heads"
-        )
+        assert (
+            config.num_attention_heads % config.num_key_value_heads == 0
+        ), "num_attention_heads must be divisible by num_key_value_heads"
         self.num_key_value_groups = config.num_attention_heads // config.num_key_value_heads
         # Granite difference: scaling = attention_multiplier instead of head_dim**-0.5
         self.scaling = config.attention_multiplier
@@ -117,12 +123,16 @@ class GraniteAttention(nn.Layer):
         use_cache: bool = False,
     ) -> tuple[paddle.Tensor, list[paddle.Tensor] | None]:
         batch_size, seq_len = hidden_states.shape[:2]
-        q_shape = (batch_size, seq_len, -1, self.head_dim)
-        kv_shape = (batch_size, seq_len, -1, self.head_dim)
 
-        query_states = paddle.reshape(self.q_proj(hidden_states), [batch_size, seq_len, self.num_heads, self.head_dim]).transpose([0, 2, 1, 3])
-        key_states = paddle.reshape(self.k_proj(hidden_states), [batch_size, seq_len, self.num_key_value_heads, self.head_dim]).transpose([0, 2, 1, 3])
-        value_states = paddle.reshape(self.v_proj(hidden_states), [batch_size, seq_len, self.num_key_value_heads, self.head_dim]).transpose([0, 2, 1, 3])
+        query_states = paddle.reshape(
+            self.q_proj(hidden_states), [batch_size, seq_len, self.num_heads, self.head_dim]
+        ).transpose([0, 2, 1, 3])
+        key_states = paddle.reshape(
+            self.k_proj(hidden_states), [batch_size, seq_len, self.num_key_value_heads, self.head_dim]
+        ).transpose([0, 2, 1, 3])
+        value_states = paddle.reshape(
+            self.v_proj(hidden_states), [batch_size, seq_len, self.num_key_value_heads, self.head_dim]
+        ).transpose([0, 2, 1, 3])
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
@@ -273,8 +283,7 @@ class GraniteRotaryEmbedding(nn.Layer):
             inv_freq = self.inv_freq.astype("float32")
             # Use broadcasting instead of matmul: [1, 1, 32] * [batch, seq, 1] = [batch, seq, 32]
             freqs = paddle.multiply(
-                inv_freq.reshape([1, 1, -1]),
-                position_ids.astype("float32").unsqueeze(-1)
+                inv_freq.reshape([1, 1, -1]), position_ids.astype("float32").unsqueeze(-1)
             )  # [batch, seq, head_dim/2]
             emb = paddle.concat((freqs, freqs), axis=-1)
             cos = emb.cos() * self.attention_scaling
@@ -471,7 +480,9 @@ class GraniteModel(GranitePretrainedModel):
         all_hidden_states = tuple(all_hidden_states) if all_hidden_states else None
 
         if not return_dict:
-            return tuple(output for output in (hidden_states, past_key_values, all_hidden_states) if output is not None)
+            return tuple(
+                output for output in (hidden_states, past_key_values, all_hidden_states) if output is not None
+            )
 
         return BaseModelOutputWithPast(
             last_hidden_state=hidden_states,

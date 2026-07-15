@@ -127,7 +127,9 @@ class GraniteConfig(PretrainedConfig):
         self.rope_scaling = rope_scaling
         if self.rope_scaling is not None and "type" in self.rope_scaling:
             self.rope_scaling["rope_type"] = self.rope_scaling["type"]
-        self.rope_parameters = self.rope_scaling if self.rope_scaling is not None else {"rope_type": "default", "rope_theta": rope_theta}
+        self.rope_parameters = (
+            self.rope_scaling if self.rope_scaling is not None else {"rope_type": "default", "rope_theta": rope_theta}
+        )
         standardize_rope_params(self, rope_theta=self.rope_theta)
         rope_config_validation(self)
 

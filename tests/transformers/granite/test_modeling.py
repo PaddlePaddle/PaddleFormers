@@ -17,11 +17,7 @@ import unittest
 
 import paddle
 
-from paddleformers.transformers import (
-    GraniteConfig,
-    GraniteForCausalLM,
-    GraniteModel,
-)
+from paddleformers.transformers import GraniteConfig, GraniteForCausalLM, GraniteModel
 from tests.testing_utils import gpu_device_initializer
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
@@ -157,7 +153,9 @@ class GraniteModelTester:
         result = model(input_ids)
         self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.hidden_size])
 
-    def create_and_check_model_attention_mask(self, config, input_ids, input_mask, sequence_labels, token_labels, choice_labels):
+    def create_and_check_model_attention_mask(
+        self, config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+    ):
         model = GraniteModel(config)
         model.eval()
         attn_mask_2d = random_attention_mask([self.batch_size, self.seq_length])
@@ -192,9 +190,10 @@ class GraniteModelTester:
         selected_log_probs = paddle.take_along_axis(
             paddle.nn.functional.log_softmax(shift_logits, axis=-1), safe_labels.unsqueeze(-1), axis=-1
         ).squeeze(-1)
-        expected_loss = -(selected_log_probs * paddle.cast(valid, selected_log_probs.dtype)).sum() / paddle.cast(
-            valid, selected_log_probs.dtype
-        ).sum()
+        expected_loss = (
+            -(selected_log_probs * paddle.cast(valid, selected_log_probs.dtype)).sum()
+            / paddle.cast(valid, selected_log_probs.dtype).sum()
+        )
         self.parent.assertTrue(paddle.allclose(result.loss, expected_loss, rtol=1e-5, atol=1e-5))
 
     def create_and_check_loss_mask(self, config, input_ids):

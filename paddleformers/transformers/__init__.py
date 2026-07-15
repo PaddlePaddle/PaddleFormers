@@ -16,8 +16,8 @@ import logging
 import sys
 from contextlib import suppress
 from typing import TYPE_CHECKING
-from ..utils.lazy_import import _LazyModule
 
+from ..utils.lazy_import import _LazyModule
 
 # from .auto.modeling import AutoModelForCausalLM
 import_structure = {
@@ -382,41 +382,48 @@ import_structure = {
 }
 
 if TYPE_CHECKING:
+    from .attention_utils import create_bigbird_rand_mask_idx_list
+    from .audio_processing_utils import SequenceFeatureExtractor
     from .configuration_utils import PretrainedConfig
+    from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
+    from .image_processing_utils import (
+        BaseImageProcessor,
+        ImageProcessingMixin,
+        PaddleImageProcessingMixin,
+    )
+    from .image_processing_utils_fast import BaseImageProcessorFast
     from .model_utils import PretrainedModel, register_base_model
+    from .moe_gate import *
+    from .moe_layer import *
+    from .processing_utils import ProcessorMixin
+    from .sequence_parallel_utils import (
+        AllGatherVarlenOp,
+        sequence_parallel_sparse_mask_labels,
+    )
+    from .tensor_parallel_utils import fused_head_and_loss_fn, parallel_matmul
     from .tokenizer_utils import (
+        AddedToken,
+        BPETokenizer,
         PretrainedTokenizer,
         PreTrainedTokenizer,
         PreTrainedTokenizerBase,
         PreTrainedTokenizerFast,
-        BPETokenizer,
-        tokenize_chinese_chars,
-        is_chinese_char,
-        AddedToken,
-        normalize_chars,
-        tokenize_special_chars,
         convert_to_unicode,
+        is_chinese_char,
+        normalize_chars,
+        tokenize_chinese_chars,
+        tokenize_special_chars,
     )
-    from .processing_utils import ProcessorMixin
-    from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
-    from .audio_processing_utils import SequenceFeatureExtractor
-    from .image_processing_utils import PaddleImageProcessingMixin, ImageProcessingMixin, BaseImageProcessor
-    from .image_processing_utils_fast import BaseImageProcessorFast
     from .video_processing_utils import BaseVideoProcessor
-    from .attention_utils import create_bigbird_rand_mask_idx_list
-    from .sequence_parallel_utils import AllGatherVarlenOp, sequence_parallel_sparse_mask_labels
-    from .tensor_parallel_utils import parallel_matmul, fused_head_and_loss_fn
-    from .moe_gate import *
-    from .moe_layer import *
 
     with suppress(Exception):
         from paddle.distributed.fleet.utils.sequence_parallel_utils import (
-            GatherOp,
-            ScatterOp,
             AllGatherOp,
-            ReduceScatterOp,
             ColumnSequenceParallelLinear,
+            GatherOp,
+            ReduceScatterOp,
             RowSequenceParallelLinear,
+            ScatterOp,
             mark_as_sequence_parallel_parameter,
             register_sequence_parallel_allreduce_hooks,
         )
@@ -429,41 +436,41 @@ if TYPE_CHECKING:
     from .auto.tokenizer import *
     from .auto.video_processing import *
     from .deepseek_v3 import *
+    from .deepseek_v4 import *
     from .ernie4_5 import *
     from .ernie4_5_moe import *
     from .ernie4_5_moe_vl import *
-    from .kimi_k25 import *
-    from .kimi_k2 import *
-    from .paddleocr_vl import *
-    from .llama import *
+    from .gemma3_text import *
+    from .gemma4_moe import *
+    from .glm4_moe import *
+    from .glm4v_moe import *
+    from .glm_moe_dsa import *
+    from .glm_ocr import *
+    from .gpt_oss import *
     from .granite import *
+    from .intern import *
+    from .intern_lm2 import InternLM2Tokenizer
+    from .intern_lm2_5 import *
+    from .kimi_k2 import *
+    from .kimi_k25 import *
+    from .llama import *
+    from .minicpm import *
+    from .minimax_m2 import *
     from .optimization import *
+    from .paddleocr_vl import *
+    from .phi3 import *
+    from .phi4 import *
     from .qwen2 import *
     from .qwen2_5_vl import *
     from .qwen2_moe import *
     from .qwen2_vl import *
     from .qwen3 import *
+    from .qwen3_5 import *
     from .qwen3_moe import *
     from .qwen3_next import *
-    from .qwen3_vl import *
-    from .qwen3_5 import *
-    from .qwen3_vl_moe import *
     from .qwen3_omni_moe import *
-    from .glm4_moe import *
-    from .glm4v_moe import *
-    from .glm_moe_dsa import *
-    from .minimax_m2 import *
-    from .minicpm import *
-    from .deepseek_v4 import *
-    from .gpt_oss import *
-    from .phi3 import *
-    from .gemma3_text import *
-    from .glm_ocr import *
-    from .intern_lm2_5 import *
-    from .intern import *
-    from .intern_lm2 import InternLM2Tokenizer
-    from .gemma4_moe import *
-    from .phi4 import *
+    from .qwen3_vl import *
+    from .qwen3_vl_moe import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
