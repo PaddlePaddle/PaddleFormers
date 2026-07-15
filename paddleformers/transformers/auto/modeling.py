@@ -55,6 +55,7 @@ MAPPING_NAMES = OrderedDict(
     [
         ("DeepseekV3", "deepseek_v3"),
         ("DeepseekV32", "deepseek_v32"),
+        ("DiffTransformer", "diff_transformer"),
         ("Ernie4_5", "ernie4_5"),
         ("Ernie4_5_Moe", "ernie4_5_moe"),
         ("Ernie4_5_VLMoe", "ernie4_5_moe_vl"),
@@ -87,6 +88,7 @@ MAPPING_NAMES = OrderedDict(
         ("Gemma4Moe", "gemma4_moe"),
         ("Glm4vMoe", "glm4v_moe"),
         ("GlmOcr", "glm_ocr"),
+        ("Olmo2", "olmo2"),
         ("InternLM3", "intern_lm3"),
         ("InternLM2", "intern"),
     ]
