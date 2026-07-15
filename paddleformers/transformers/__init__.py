@@ -453,9 +453,9 @@ if TYPE_CHECKING:
     from .auto.processing import *
     from .auto.tokenizer import *
     from .auto.video_processing import *
-    from .diff_transformer import *
     from .deepseek_v3 import *
     from .deepseek_v4 import *
+    from .diff_transformer import *
     from .ernie4_5 import *
     from .ernie4_5_moe import *
     from .ernie4_5_moe_vl import *
@@ -476,6 +476,7 @@ if TYPE_CHECKING:
     from .llama import *
     from .minicpm import *
     from .minimax_m2 import *
+    from .olmo2 import *
     from .optimization import *
     from .paddleocr_vl import *
     from .phi3 import *
@@ -491,7 +492,6 @@ if TYPE_CHECKING:
     from .qwen3_omni_moe import *
     from .qwen3_vl import *
     from .qwen3_vl_moe import *
-    from .olmo2 import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
