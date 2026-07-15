@@ -544,7 +544,7 @@ class LlmMetaConfig:
             "init_method_std",
             float,
             0.02,
-            "Standard deviation for transformer/MoE weight initialization (Normal). Used to build the default init_method/output_layer_init_method when they are not explicitly set. Defaults to 0.02.",
+            "Standard deviation for initialization (Normal). Used to build the default init_method/output_layer_init_method when they are not explicitly set. Defaults to 0.02.",
         ),
         (
             "embedding_init_method",
