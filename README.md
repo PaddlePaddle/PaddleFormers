@@ -101,6 +101,11 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
       <td>minimax</td>
     </tr>
     <tr>
+      <td>OLMo2</td>
+      <td>allenai/OLMo-2-0425-1B、allenai/OLMo-2-0425-1B-SFT、allenai/OLMo-2-0425-1B-DPO、allenai/OLMo-2-0425-1B-Instruct、allenai/OLMo-2-1124-7B、allenai/OLMo-2-1124-7B-SFT、allenai/OLMo-2-1124-7B-DPO、allenai/OLMo-2-1124-7B-Instruct、allenai/OLMo-2-1124-13B、allenai/OLMo-2-1124-13B-SFT、allenai/OLMo-2-1124-13B-DPO、allenai/OLMo-2-1124-13B-Instruct、allenai/OLMo-2-0325-32B、allenai/OLMo-2-0325-32B-SFT、allenai/OLMo-2-0325-32B-DPO、allenai/OLMo-2-0325-32B-Instruct</td>
+      <td>jinja</td>
+    </tr>
+    <tr>
       <td>phi-4</td>
       <td>microsoft/phi-4</td>
       <td>phi4</td>

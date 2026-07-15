@@ -77,7 +77,7 @@ def get_lora_target_modules(model):
         ]
     elif model.config.model_type == "bloom":
         target_modules = [".*query_key_value.*", ".*dense.*", ".*dense_h_to_4h.*", ".*dense_4h_to_h.*"]
-    elif model.config.model_type in ["llama", "jamba"]:
+    elif model.config.model_type in ["llama", "jamba", "olmo2"]:
         target_modules = [
             ".*q_proj.*",
             ".*v_proj.*",
