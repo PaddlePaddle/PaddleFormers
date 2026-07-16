@@ -15,6 +15,7 @@
 import paddle
 from paddle import nn
 
+from ...nn.lm_head import LMHead as GeneralLMHead
 from ..cache_utils import Cache
 from ..llama.modeling import LlamaModel, LlamaPretrainedModel
 from ..model_outputs import CausalLMOutputWithPast
@@ -75,10 +76,7 @@ class IndexPretrainedModel(LlamaPretrainedModel):
                 f"model.layers.$LAYER_ID.mlp.{name}.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.{name}.weight"
             )
         if cls != cls.base_model_class:
-            lm_head_statement = "lm_head.weight -> lm_head.weight"
-            if not config.norm_head:
-                lm_head_statement = "lm_head.weight^T -> lm_head.weight"
-            statements.append(lm_head_statement)
+            statements.append("lm_head.weight -> lm_head.weight")
         return {"aoa_statements": statements}
 
     @classmethod
@@ -99,10 +97,7 @@ class IndexPretrainedModel(LlamaPretrainedModel):
                 f"{model_prefix}layers.$LAYER_ID.mlp.{name}.weight^T -> model.layers.$LAYER_ID.mlp.{name}.weight"
             )
         if cls != cls.base_model_class:
-            lm_head_statement = "lm_head.weight -> lm_head.weight"
-            if not config.norm_head:
-                lm_head_statement = "lm_head.weight^T -> lm_head.weight"
-            statements.append(lm_head_statement)
+            statements.append("lm_head.weight -> lm_head.weight")
         return {"aoa_statements": statements}
 
 
@@ -142,11 +137,7 @@ class IndexForCausalLM(IndexPretrainedModel):
         self.config = config
         self.model = IndexModel(config)
         self.vocab_size = config.vocab_size
-        self.lm_head = (
-            NormHead(config.hidden_size, config.vocab_size)
-            if config.norm_head
-            else nn.Linear(config.hidden_size, config.vocab_size, bias_attr=False)
-        )
+        self.lm_head = NormHead(config.hidden_size, config.vocab_size) if config.norm_head else GeneralLMHead(config)
         self.tie_weights()
 
     def get_input_embeddings(self):
@@ -182,6 +173,8 @@ class IndexForCausalLM(IndexPretrainedModel):
         return_dict: bool | None = None,
         **kwargs,
     ):
+        if kwargs.get("attn_mask_start_row_indices", None) is not None and attn_mask_startend_row_indices is None:
+            attn_mask_startend_row_indices = kwargs.pop("attn_mask_start_row_indices")
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         outputs = self.model(
             input_ids=input_ids,

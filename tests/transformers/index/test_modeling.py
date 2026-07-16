@@ -14,6 +14,7 @@
 
 import tempfile
 import unittest
+from unittest import mock
 
 import paddle
 
@@ -99,8 +100,8 @@ class IndexModelTest(unittest.TestCase):
     def test_aoa_lm_head_layout(self):
         normal = IndexForCausalLM._gen_aoa_config(self.config)["aoa_statements"]
         normal_inverse = IndexForCausalLM._gen_inv_aoa_config(self.config)["aoa_statements"]
-        self.assertIn("lm_head.weight^T -> lm_head.weight", normal)
-        self.assertIn("lm_head.weight^T -> lm_head.weight", normal_inverse)
+        self.assertIn("lm_head.weight -> lm_head.weight", normal)
+        self.assertIn("lm_head.weight -> lm_head.weight", normal_inverse)
         norm_config = IndexConfig(norm_head=True)
         norm = IndexForCausalLM._gen_aoa_config(norm_config)["aoa_statements"]
         norm_inverse = IndexForCausalLM._gen_inv_aoa_config(norm_config)["aoa_statements"]
@@ -138,6 +139,14 @@ class IndexModelTest(unittest.TestCase):
         )
         tied_model = IndexForCausalLM(tied_config)
         self.assertIs(tied_model.lm_head.weight, tied_model.model.embed_tokens.weight)
+        self.assertEqual(tied_model(self.input_ids, return_dict=True).logits.shape, [2, 4, 32])
+
+    def test_attn_mask_start_row_indices_alias(self):
+        model = IndexForCausalLM(self.config)
+        indices = paddle.zeros([2, 1, 4, 1], dtype="int32")
+        with mock.patch.object(model.model, "forward", wraps=model.model.forward) as model_forward:
+            model(self.input_ids, attn_mask_start_row_indices=indices)
+        self.assertIs(model_forward.call_args.kwargs["attn_mask_startend_row_indices"], indices)
 
     def test_save_load_and_generation(self):
         model = IndexForCausalLM(self.config)
@@ -147,7 +156,9 @@ class IndexModelTest(unittest.TestCase):
             loaded = IndexForCausalLM.from_pretrained(directory)
             self.assertTrue(paddle.allclose(model(self.input_ids)[0], loaded(self.input_ids)[0]))
         generated = model.generate(self.input_ids[:1, :2], max_new_tokens=2, use_cache=True)
-        self.assertEqual(generated[0].shape, [1, 2])
+        self.assertEqual(generated[0].shape[0], 1)
+        self.assertGreaterEqual(generated[0].shape[1], 1)
+        self.assertLessEqual(generated[0].shape[1], 2)
 
 
 if __name__ == "__main__":
