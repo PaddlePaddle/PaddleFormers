@@ -138,14 +138,14 @@ class LoRALinear(nn.Linear):
     def merge(self):
         if not self.merged:
             delta_weight = self.get_delta_weight()
-            new_weight = self.weight + delta_weight
+            new_weight = (self.weight + delta_weight).cast(dtype=self.weight.dtype)
             self.weight.set_value(new_weight)
             self.merged = True
 
     def unmerge(self):
         if self.merged:
             delta_weight = self.get_delta_weight()
-            new_weight = self.weight - delta_weight
+            new_weight = (self.weight - delta_weight).cast(dtype=self.weight.dtype)
             self.weight.set_value(new_weight)
             self.merged = False
 

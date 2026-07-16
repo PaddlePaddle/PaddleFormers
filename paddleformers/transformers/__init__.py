@@ -185,6 +185,9 @@ import_structure = {
     "llama.modeling": ["LlamaForCausalLM", "LlamaModel", "LlamaForCausalLMPipe", "LlamaRotaryEmbedding"],
     "llama.tokenizer": ["LlamaTokenizer", "Llama3Tokenizer"],
     "llama.tokenizer_fast": ["LlamaTokenizerFast"],
+    "index.configuration": ["IndexConfig"],
+    "index.modeling": ["IndexPretrainedModel", "IndexModel", "IndexForCausalLM", "NormHead"],
+    "index.tokenizer": ["IndexTokenizer"],
     "optimization": [
         "LinearDecayWithWarmup",
         "ConstScheduleWithWarmup",
@@ -450,6 +453,7 @@ if TYPE_CHECKING:
     from .kimi_k25 import *
     from .kimi_k2 import *
     from .paddleocr_vl import *
+    from .index import *
     from .llama import *
     from .optimization import *
     from .qwen2 import *
