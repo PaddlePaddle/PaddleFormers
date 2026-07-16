@@ -19,7 +19,6 @@ from ...nn.lm_head import LMHead as GeneralLMHead
 from ..cache_utils import Cache
 from ..llama.modeling import LlamaModel, LlamaPretrainedModel
 from ..model_outputs import CausalLMOutputWithPast
-from ..model_utils import register_base_model
 from .configuration import IndexConfig
 
 
@@ -76,7 +75,10 @@ class IndexPretrainedModel(LlamaPretrainedModel):
                 f"model.layers.$LAYER_ID.mlp.{name}.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.{name}.weight"
             )
         if cls != cls.base_model_class:
-            statements.append("lm_head.weight -> lm_head.weight")
+            if config.tie_word_embeddings:
+                statements.append("model.embed_tokens.weight -> lm_head.weight")
+            else:
+                statements.append("lm_head.weight -> lm_head.weight")
         return {"aoa_statements": statements}
 
     @classmethod
@@ -96,12 +98,11 @@ class IndexPretrainedModel(LlamaPretrainedModel):
             statements.append(
                 f"{model_prefix}layers.$LAYER_ID.mlp.{name}.weight^T -> model.layers.$LAYER_ID.mlp.{name}.weight"
             )
-        if cls != cls.base_model_class:
+        if not config.tie_word_embeddings and cls != cls.base_model_class:
             statements.append("lm_head.weight -> lm_head.weight")
         return {"aoa_statements": statements}
 
 
-@register_base_model
 class IndexModel(LlamaModel, IndexPretrainedModel):
     config_class = IndexConfig
 
@@ -127,6 +128,9 @@ class IndexModel(LlamaModel, IndexPretrainedModel):
         if output_hidden_states:
             output += (outputs.hidden_states,)
         return output
+
+
+IndexPretrainedModel.base_model_class = IndexModel
 
 
 class IndexForCausalLM(IndexPretrainedModel):

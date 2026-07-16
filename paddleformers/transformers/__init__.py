@@ -453,8 +453,8 @@ if TYPE_CHECKING:
     from .kimi_k25 import *
     from .kimi_k2 import *
     from .paddleocr_vl import *
-    from .index import *
     from .llama import *
+    from .index import *
     from .optimization import *
     from .qwen2 import *
     from .qwen2_5_vl import *

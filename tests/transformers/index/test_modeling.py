@@ -27,6 +27,7 @@ from paddleformers.transformers import (
     IndexModel,
 )
 from paddleformers.transformers.index.modeling import NormHead
+from paddleformers.transformers.llama.modeling import LlamaModel
 
 
 class IndexModelTest(unittest.TestCase):
@@ -46,6 +47,8 @@ class IndexModelTest(unittest.TestCase):
         self.mask = paddle.to_tensor([[1, 1, 1, 1], [1, 1, 0, 0]], dtype="int64")
 
     def test_config_and_auto_routing(self):
+        self.assertIs(IndexModel.base_model_class, IndexModel)
+        self.assertIs(LlamaModel.base_model_class, LlamaModel)
         config = IndexConfig(norm_head=1, rope_scaling={"type": "linear", "factor": 2.0})
         self.assertEqual(config.model_type, "index")
         self.assertEqual(config.max_length, 4096)
@@ -102,6 +105,11 @@ class IndexModelTest(unittest.TestCase):
         normal_inverse = IndexForCausalLM._gen_inv_aoa_config(self.config)["aoa_statements"]
         self.assertIn("lm_head.weight -> lm_head.weight", normal)
         self.assertIn("lm_head.weight -> lm_head.weight", normal_inverse)
+        tied_config = IndexConfig(tie_word_embeddings=True)
+        tied = IndexForCausalLM._gen_aoa_config(tied_config)["aoa_statements"]
+        tied_inverse = IndexForCausalLM._gen_inv_aoa_config(tied_config)["aoa_statements"]
+        self.assertIn("model.embed_tokens.weight -> lm_head.weight", tied)
+        self.assertNotIn("lm_head.weight -> lm_head.weight", tied_inverse)
         norm_config = IndexConfig(norm_head=True)
         norm = IndexForCausalLM._gen_aoa_config(norm_config)["aoa_statements"]
         norm_inverse = IndexForCausalLM._gen_inv_aoa_config(norm_config)["aoa_statements"]
