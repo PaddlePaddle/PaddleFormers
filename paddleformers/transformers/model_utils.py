@@ -31,7 +31,6 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, Union
 
 import aistudio_sdk
-import ml_dtypes
 import numpy as np
 import paddle
 import paddle.distributed as dist
@@ -619,6 +618,8 @@ def load_state_dict(
 
 
 def prepare_safe_save_state_dict(state_dict, save_to_hf=True):
+    import ml_dtypes
+
     for k in list(state_dict.keys()):
         if isinstance(state_dict[k], paddle.Tensor):
             if state_dict[k].dtype == paddle.bfloat16:
