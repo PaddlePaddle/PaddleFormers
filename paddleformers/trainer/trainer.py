@@ -3433,7 +3433,7 @@ class Trainer:
                         for n, p in self.model.named_parameters()
                         if id(p) in optimizer_param_ids
                         and not p.stop_gradient
-                        and not any(nd in n for nd in ["bias", "norm"])
+                        and len(p.shape) > 1
                     }
 
                     def apply_decay_param_fun(x):
