@@ -3412,7 +3412,7 @@ class Trainer:
 
                 return apply_decay_param_fun
 
-            if getattr(self.model.config, "use_accuracy_compatible", False):
+            if getattr(getattr(self.model, "config", None), "use_accuracy_compatible", False):
                 if self.optimizer_grouped_parameters is not None:
                     params = self.optimizer_grouped_parameters
                 else:
