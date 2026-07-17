@@ -40,6 +40,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("ernie4_5_moe", "Ernie4_5_MoeConfig"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLConfig"),
         ("paddleocr_vl", "PaddleOCRVLConfig"),
+        ("hunyuan_v1_dense", "HunyuanConfig"),
         ("llama", "LlamaConfig"),
         ("kimi_k2", "KimiK2Config"),
         ("qwen2", "Qwen2Config"),
@@ -87,6 +88,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("ernie4_5_moe", "Ernie4_5_Moe"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLMoeForConditionalGeneration"),
         ("paddleocr_vl", "PaddleOCRVLForConditionalGeneration"),
+        ("hunyuan_v1_dense", "Hunyuan"),
         ("llama", "Llama"),
         ("qwen2", "Qwen2"),
         ("qwen2_5_vl", "Qwen2_5_VL"),
@@ -121,6 +123,7 @@ MULTI_MODELS_MAPPING = OrderedDict(
 
 SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
     [
+        ("hunyuan_v1_dense", "hunyuan"),
         ("qwen2_5_vl_text", "qwen2_5_vl"),
         ("qwen3_vl_text", "qwen3_vl"),
         ("qwen3_vl_moe_text", "qwen3_vl_moe"),
