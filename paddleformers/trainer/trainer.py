@@ -3431,9 +3431,7 @@ class Trainer:
                     decay_parameters = {
                         p.name
                         for n, p in self.model.named_parameters()
-                        if id(p) in optimizer_param_ids
-                        and not p.stop_gradient
-                        and len(p.shape) > 1
+                        if id(p) in optimizer_param_ids and not p.stop_gradient and len(p.shape) > 1
                     }
 
                     def apply_decay_param_fun(x):
