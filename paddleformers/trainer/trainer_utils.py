@@ -1805,7 +1805,7 @@ def get_lr_ratio_fn(optimizer):
         candidate = getattr(opt, "_lr_ratio", None)
         if callable(candidate):
             return candidate
-        opt = getattr(opt, "_inner_opt", None)
+        opt = getattr(opt, "_inner_opt", None) or getattr(opt, "_optim", None)
     return None
 
 
