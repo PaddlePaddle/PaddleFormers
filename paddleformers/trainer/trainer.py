@@ -3424,7 +3424,7 @@ class Trainer:
                 # causing norm/bias to also be weight-decayed. The fp32 master then drifts step by step
                 # from step1 (bf16 masks it until the weight md5 diverges at step4). Only keep None when
                 # params is already a dict list with weight_decay groups (the groups carry their own wd config).
-                if isinstance(params, list) and params and isinstance(params[0], dict):
+                if isinstance(params, (list, tuple)) and len(params) > 0 and isinstance(params[0], dict):
                     apply_decay_param_fun = None
                 else:
                     optimizer_param_ids = {id(p) for p in params}
