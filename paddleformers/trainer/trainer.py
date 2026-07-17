@@ -3440,7 +3440,10 @@ class Trainer:
             else:
                 if self.optimizer_grouped_parameters is not None:
                     params = self.optimizer_grouped_parameters
-                    apply_decay_param_fun = None
+                    is_param_group_dict = (
+                        isinstance(params, (list, tuple)) and len(params) > 0 and isinstance(params[0], dict)
+                    )
+                    apply_decay_param_fun = None if is_param_group_dict else _build_apply_decay_param_fun()
                 else:
                     params = [p for p in self.model.parameters() if not p.stop_gradient]
                     apply_decay_param_fun = _build_apply_decay_param_fun()
