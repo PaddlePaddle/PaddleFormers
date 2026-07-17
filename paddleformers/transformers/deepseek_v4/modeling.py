@@ -95,20 +95,16 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         """
 
         def _ffn_gate_up(matrix, ortho_fn, intermediate_size=None):
-            """Slice FFN gate_up, orthogonalise gate and up independently."""
+            """Slice FFN gate_up, orthogonalise gate and up independently.
+
+            Handles both 2D (per-expert) and 3D (fused experts) weight tensors.
+            """
             import paddle
 
-            if matrix.ndim == 2:
-                gate, up = paddle.split(matrix, [intermediate_size, intermediate_size], axis=1)
-                return paddle.concat([ortho_fn(gate), ortho_fn(up)], axis=1)
-            elif matrix.ndim == 3:
-                expert_updates = []
-                for ei in range(matrix.shape[0]):
-                    gate, up = paddle.split(matrix[ei], [intermediate_size, intermediate_size], axis=1)
-                    expert_updates.append(paddle.concat([ortho_fn(gate), ortho_fn(up)], axis=1))
-                return paddle.stack(expert_updates, axis=0)
-            else:
-                raise ValueError(f"FFN gate_up split expects 2D or 3D tensor, got shape {matrix.shape}")
+            assert matrix.ndim == 2 or matrix.ndim == 3, "FFN gate_up split expects 2D or 3D tensor"
+
+            gate, up = paddle.split(matrix, [intermediate_size, intermediate_size], axis=-1)
+            return paddle.concat([ortho_fn(gate), ortho_fn(up)], axis=-1)
 
         def _mla_per_head(matrix_2d_global, ortho_fn, head_num=None, axis=None, head_split_sizes=None):
             """Slice MLA weights by heads."""
@@ -121,15 +117,11 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
 
         def _moe_experts(matrix_3d_global, ortho_fn):
             """Slice MoE weights by experts."""
-            import paddle
 
             if matrix_3d_global.ndim != 3:
                 raise ValueError(f"MoE expert split expects 3D tensor, got shape {matrix_3d_global.shape}")
-            n_experts = matrix_3d_global.shape[0]
-            return paddle.stack(
-                [ortho_fn(matrix_3d_global[ei]) for ei in range(n_experts)],
-                axis=0,
-            )
+
+            return ortho_fn(matrix_3d_global)
 
         slice_config = {}
 
@@ -168,7 +160,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     mla_slice_fn,
                     {
                         "head_num": num_attention_head,
-                        "axis": 1,
+                        "axis": -1,
                     },
                 )
 
@@ -178,7 +170,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                         mla_slice_fn,
                         {
                             "head_num": 1,
-                            "axis": 1,
+                            "axis": -1,
                             "head_split_sizes": [config.v_head_dim, config.v_head_dim],
                         },
                     )
@@ -186,7 +178,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                         mla_slice_fn,
                         {
                             "head_num": 1,
-                            "axis": 1,
+                            "axis": -1,
                             "head_split_sizes": [config.v_head_dim, config.v_head_dim],
                         },
                     )
@@ -197,7 +189,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                         mla_slice_fn,
                         {
                             "head_num": config.dsa_index_n_heads,
-                            "axis": 1,
+                            "axis": -1,
                         },
                     )
                     # Compressed weights
@@ -205,7 +197,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                         mla_slice_fn,
                         {
                             "head_num": 1,
-                            "axis": 1,
+                            "axis": -1,
                             "head_split_sizes": [config.dsa_index_head_dim, config.dsa_index_head_dim],
                         },
                     )
@@ -213,7 +205,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                         mla_slice_fn,
                         {
                             "head_num": 1,
-                            "axis": 1,
+                            "axis": -1,
                             "head_split_sizes": [config.dsa_index_head_dim, config.dsa_index_head_dim],
                         },
                     )
@@ -266,21 +258,21 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     mla_slice_fn,
                     {
                         "head_num": num_attention_head,
-                        "axis": 1,
+                        "axis": -1,
                         "head_split_sizes": [config.qk_nope_head_dim, config.qk_rope_head_dim],
                     },
                 )
 
                 slice_config[f"{prefix}.self_attn.kv_a_proj_with_mqa.weight"] = (
                     mla_slice_fn,
-                    {"head_num": 1, "axis": 1, "head_split_sizes": [config.kv_lora_rank, config.qk_rope_head_dim]},
+                    {"head_num": 1, "axis": -1, "head_split_sizes": [config.kv_lora_rank, config.qk_rope_head_dim]},
                 )
 
                 slice_config[f"{prefix}.self_attn.kv_b_proj.weight"] = (
                     mla_slice_fn,
                     {
                         "head_num": num_attention_head,
-                        "axis": 1,
+                        "axis": -1,
                         "head_split_sizes": [config.qk_nope_head_dim, config.v_head_dim],
                     },
                 )
@@ -289,7 +281,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             if use_gated_attn and mla_slice_fn is not None:
                 slice_config[f"{prefix}.self_attn.gate_proj.weight"] = (
                     mla_slice_fn,
-                    {"head_num": num_attention_head, "axis": 1},
+                    {"head_num": num_attention_head, "axis": -1},
                 )
 
         # Main layers
