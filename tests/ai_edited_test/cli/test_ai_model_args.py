@@ -51,7 +51,6 @@ class TestFP8MemConfigs(unittest.TestCase):
         self.assertFalse(args.recompute_fwd_gate_up)
         self.assertFalse(args.dequant_input)
         self.assertFalse(args.offline_quant_expert_weight)
-        self.assertFalse(args.clear_origin_weight_when_offline_quant)
 
 
 class TestFP8FusedOpsConfigs(unittest.TestCase):

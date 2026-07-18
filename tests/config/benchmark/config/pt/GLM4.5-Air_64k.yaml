@@ -1,8 +1,8 @@
 train_dataset_type: messages
 eval_dataset_type: messages
-train_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/data_60to64k/LVEval_60to64k_messages.jsonl
+train_dataset_path: ./dataset/data_60to64k/LVEval_60to64k_messages.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/data_60to64k/LVEval_60to64k_messages.jsonl
+eval_dataset_path: ./dataset/data_60to64k/LVEval_60to64k_messages.jsonl
 eval_dataset_prob: "1.0"
 
 max_seq_len: 65536
@@ -13,8 +13,10 @@ mix_strategy: concat
 truncate_packing: false
 padding_free: true
 
+pad_token_id: 151329
+
 ### model
-model_name_or_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/huggingface/GLM-4.5-Air
+model_name_or_path: ./huggingface/GLM-4.5-Air
 _attn_implementation: flashmask
 
 ### finetuning
@@ -57,9 +59,7 @@ recompute_granularity: full
 recompute_method: first_n
 recompute_num_layers: 9
 
-using_sonic_moe: true
-
-moe_grouped_gemm: true
+moe_expert_fusion: true
 moe_deep_gemm: false
 
 apply_rope_fusion: true
@@ -89,8 +89,6 @@ save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint
 continue_training: true
 dataloader_shuffle: false
-
-benchmark: true
 
 dataloader_num_workers: 24
 prefetch_factor: 24

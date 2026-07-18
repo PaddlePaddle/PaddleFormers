@@ -248,6 +248,7 @@ class LlmMetaConfig:
         ("expert_model_parallel_size", int, 1, "expert_model_parallel_size"),
         # context_parallel
         ("context_parallel_size", int, 1, "context_parallel_size"),
+        ("cp_balance_mode", str, "dualchunk_allgather", "CP scatter/gather layout mode"),
         # pp refine recompute
         ("no_recompute_layers", Optional[List[int]], None, "no_recompute_layers"),
         ("num_empty_layers_add_in_tail", int, 0, "Additional layers to append at the end"),
@@ -377,7 +378,7 @@ class LlmMetaConfig:
         (
             "moe_expert_fusion",
             bool,
-            True,
+            False,
             "Whether to fuse experts. Default to True.",
         ),
         (
@@ -393,16 +394,10 @@ class LlmMetaConfig:
             "Number of tokens per sub-batch after MoE expert dispatch. Controls memory usage for expert computations. Defaults to 4096 (balances memory efficiency and parallelism for most GPUs).",
         ),
         (
-            "moe_grouped_gemm",
-            bool,
-            False,
-            "Whether to enable grouped GEMM (General Matrix Multiplication) for MoE experts. Batches computations across multiple experts to improve hardware utilization. Defaults to True.",
-        ),
-        (
             "moe_deep_gemm",
             bool,
-            False,
-            "Whether to enable deep GEMM for MoE experts. Defaults to False. Effective only after the moe_grouped_gemm is set. ",
+            True,
+            "Whether to enable deep GEMM for MoE experts. Defaults to True. Effective only after the moe_expert_fusion is set. ",
         ),
         (
             "moe_ep_barrier",
@@ -415,6 +410,12 @@ class LlmMetaConfig:
             bool,
             False,
             "Whether to use SonicMoE as the computation backend for the moelayer.",
+        ),
+        (
+            "dsa_indexer_loss_coeff",
+            float,
+            0.01,
+            "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term.",
         ),
     ]
 
@@ -444,6 +445,12 @@ class LlmMetaConfig:
             True,
             "Whether to use FP8 for gradient storage during training (only effective if `fp8=True`). Further reduces memory footprint but may introduce minor numerical error. Defaults to False.",
         ),
+        (
+            "use_ue8m0",
+            bool,
+            False,
+            "Whether to use UE8M0 packed scaling factors for FP8 on Blackwell GPUs (SM100+). Enables deep_gemm backend for weight gradient computation. Defaults to False.",
+        ),
     ]
 
     model_conf = [
@@ -466,6 +473,18 @@ class LlmMetaConfig:
             "Whether to enable multi-latent attention mechanism. Defaults to False.",
         ),
         (
+            "csa_indexer_backend",
+            str,
+            "tilelang",
+            "CSA indexer backend. One of {'unfused', 'tilelang', 'cudnn'}. Defaults to 'tilelang'.",
+        ),
+        (
+            "csa_sparse_attn_backend",
+            str,
+            "tilelang",
+            "CSA sparse attention backend. One of {'unfused', 'tilelang', 'cudnn'}. Defaults to 'tilelang'.",
+        ),
+        (
             "no_rope_freq",
             bool,
             False,
@@ -482,6 +501,12 @@ class LlmMetaConfig:
             bool,
             False,
             "Whether to use high precision ROPEs.",
+        ),
+        (
+            "swa_high_precision_norm",
+            bool,
+            False,
+            "Whether to use high precision NORMS in DSV4 SWA. ONLY support for dsv4_hybrid_attention.",
         ),
         (
             "gated_linear_unit",
@@ -516,6 +541,12 @@ class LlmMetaConfig:
             "Method to initialize weights of the output layer of both attention and MLP blocks.",
         ),
         (
+            "init_method_std",
+            float,
+            0.02,
+            "Standard deviation for initialization (Normal). Used to build the default init_method/output_layer_init_method when they are not explicitly set. Defaults to 0.02.",
+        ),
+        (
             "embedding_init_method",
             Optional[Any],
             None,
@@ -534,6 +565,7 @@ class LlmMetaConfig:
             False,
             "Whether to enable accuracy-compatible kernels for cross-framework numerical alignment. Defaults to False.",
         ),
+        ("experimental_dataflow", bool, False, "Whether to enable experimental dataflow in Fleet. Default is False."),
     ]
 
     @classmethod
@@ -772,6 +804,7 @@ class PretrainedConfig:
         > Parameters for general components
 
         _attn_implementation (`str`, defaults to `eager`)
+        flashmask_use_varlen (`bool`, defaults to `False`)
 
         > Parameters linked to the tokenizer
 
@@ -846,6 +879,7 @@ class PretrainedConfig:
         self._unsavable_keys = set(LlmMetaConfig._get_unsavable_keys())
         self._unsavable_keys.discard("tensor_model_parallel_size")
         self._unsavable_keys.add("_attn_implementation")
+        self._unsavable_keys.add("flashmask_use_varlen")
 
         kwargs = set_expected_keys(self, llm_meta, kwargs)
         if self.sequence_parallel:
@@ -869,6 +903,7 @@ class PretrainedConfig:
 
         # for general components
         self._attn_implementation = kwargs.pop("_attn_implementation", "eager")
+        self.flashmask_use_varlen = kwargs.pop("flashmask_use_varlen", False)
 
         if "quantization_config" in kwargs and isinstance(kwargs["quantization_config"], Dict):
             kwargs["quantization_config"] = QuantizationConfig.from_dict(kwargs["quantization_config"])
@@ -1272,7 +1307,7 @@ class PretrainedConfig:
             id2label = kwargs["id2label"] if kwargs["id2label"] is not None else []
             if len(id2label) != num_labels:
                 raise ValueError(
-                    f"You passed along `num_labels={num_labels }` with an incompatible id to label map: "
+                    f"You passed along `num_labels={num_labels}` with an incompatible id to label map: "
                     f"{kwargs['id2label']}. Since those arguments are inconsistent with each other, you should remove "
                     "one of them."
                 )
@@ -1382,7 +1417,7 @@ class PretrainedConfig:
     def register_unsavable_keys(self, keys):
         # Save: not save it in any case
         # Print: show it if non default value
-        if type(keys) == list or type(keys) == tuple:
+        if isinstance(keys, (list, tuple)):
             for key in keys:
                 self._unsavable_keys.add(key)
         else:

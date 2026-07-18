@@ -71,4 +71,6 @@ unified_checkpoint_config: ignore_merge_optimizer
 pre_alloc_memory: 60
 amp_master_grad: 1
 
+moe_expert_fusion: false
+
 device: xpu

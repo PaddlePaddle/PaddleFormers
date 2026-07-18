@@ -40,7 +40,7 @@ class MoEAOAConfigParams:
     # MoE specific config
     num_experts: int = 0
     using_sonic_moe: bool = False
-    moe_grouped_gemm: bool = False
+    moe_expert_fusion: bool = False
     fp8: bool = False
     fd_fallback: bool = False
 
@@ -62,6 +62,8 @@ class MoEAOAConfigParams:
 
     # Runtime config
     model_prefix: str = "model."
+
+    index_n_heads: int = 0
 
     # Extra statements to add
     extra_statements: List[str] = field(default_factory=list)
@@ -113,7 +115,7 @@ class MoEAOAConfigGenerator:
             num_key_value_heads=config.num_key_value_heads,
             num_experts=num_experts,
             using_sonic_moe=getattr(config, "using_sonic_moe", False),
-            moe_grouped_gemm=getattr(config, "moe_grouped_gemm", False),
+            moe_expert_fusion=getattr(config, "moe_expert_fusion", False),
             fp8=getattr(config, "fp8", False),
             fd_fallback=config.get("fd_fallback", False) if hasattr(config, "get") else False,
             tie_word_embeddings=getattr(config, "tie_word_embeddings", False),
@@ -129,6 +131,7 @@ class MoEAOAConfigGenerator:
             use_qk_norm=getattr(config, "use_qk_norm", False),
             has_shared_experts=cls._has_shared_experts(config),
             model_prefix=cls._get_model_prefix(config),
+            index_n_heads=getattr(config, "index_n_heads", 0),
         )
 
     @classmethod
@@ -369,6 +372,23 @@ class MoEAOAConfigGenerator:
                 ]
             )
 
+        if params.index_n_heads and params.index_n_heads > 0:
+            indexer_weights = [
+                "wq_b",
+                "wk",
+                "weights_proj",
+            ]
+            statements.extend(
+                [
+                    f"{prefix}.self_attn.indexer.{weight_name}.weight^T -> {prefix_offset}.self_attn.core_attention.indexer.{weight_name}.weight"
+                    for weight_name in indexer_weights
+                ]
+            )
+            statements += [
+                f"{prefix}.self_attn.indexer.k_norm.bias ->  {prefix_offset}.self_attn.core_attention.indexer.k_norm.bias",
+                f"{prefix}.self_attn.indexer.k_norm.weight ->  {prefix_offset}.self_attn.core_attention.indexer.k_norm.weight",
+            ]
+
         return statements
 
     # ==================== MoE Expert Weights ====================
@@ -433,7 +453,7 @@ class MoEAOAConfigGenerator:
     @classmethod
     def _get_grouped_gemm_statements(cls, params: MoEAOAConfigParams) -> List[str]:
         """Generate grouped GEMM statements for efficient MoE computation."""
-        if not (params.moe_grouped_gemm or params.using_sonic_moe) and not params.fp8:
+        if not (params.moe_expert_fusion or params.using_sonic_moe) and not params.fp8:
             return cls._get_fd_fallback_statements(params)
 
         statements = []
@@ -725,6 +745,23 @@ class MoEAOAConfigGenerator:
                 ]
             )
 
+        if params.index_n_heads and params.index_n_heads > 0:
+            indexer_weights = [
+                "wq_b",
+                "wk",
+                "weights_proj",
+            ]
+            statements.extend(
+                [
+                    f"{prefix_offset}.self_attn.core_attention.indexer.{weight_name}.weight^T -> {prefix}.self_attn.indexer.{weight_name}.weight"
+                    for weight_name in indexer_weights
+                ]
+            )
+            statements += [
+                f"{prefix_offset}.self_attn.core_attention.indexer.k_norm.bias -> {prefix}.self_attn.indexer.k_norm.bias",
+                f"{prefix_offset}.self_attn.core_attention.indexer.k_norm.weight -> {prefix}.self_attn.indexer.k_norm.weight",
+            ]
+
         return statements
 
     # ==================== Inverse MoE Expert Weights ====================
@@ -805,7 +842,7 @@ class MoEAOAConfigGenerator:
 
         Un-groups the consolidated weight tensors back to per-expert weights.
         """
-        if (params.moe_grouped_gemm or params.using_sonic_moe) and not params.fp8:
+        if (params.moe_expert_fusion or params.using_sonic_moe) and not params.fp8:
             ep_weight1 = []
             ep_weight2 = []
             for expert_id in range(params.num_experts):

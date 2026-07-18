@@ -1179,7 +1179,7 @@ class PretrainingTrainer(Trainer):
             if not self.args.enable_global_training_logs:
                 global_training_logs.global_meters_keys = []
 
-            if get_env_device() == "gpu":
+            if get_env_device() == "gpu" or get_env_device() == "musa":
                 info_callback = global_training_logs.dict(use_async=True)
 
             if hasattr(self, "scaler"):
