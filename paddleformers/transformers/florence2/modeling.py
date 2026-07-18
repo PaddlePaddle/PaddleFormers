@@ -825,9 +825,7 @@ class Florence2ForConditionalGeneration(PretrainedModel):
             attention_mask=attention_mask, inputs_embeds=inputs_embeds, return_dict=True, **kwargs
         )
         output.image_hidden_states = image_features
-        return (
-            output if return_dict else ((output.loss, output.logits) if output.loss is not None else (output.logits,))
-        )
+        return output if return_dict else output.to_tuple()
 
     def prepare_inputs_for_generation(
         self,

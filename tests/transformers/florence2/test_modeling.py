@@ -12,6 +12,7 @@ from paddleformers.transformers import AutoConfig, AutoModelForCausalLM, AutoPro
 from paddleformers.transformers.florence2 import (
     Florence2Config,
     Florence2ForConditionalGeneration,
+    Florence2Processor,
 )
 from paddleformers.transformers.florence2.modeling import (
     BaseModelOutput,
@@ -64,6 +65,54 @@ def test_florence2_small_forward_and_loss():
     )
     assert output.logits.shape == [1, 3, 32]
     assert paddle.isfinite(output.loss)
+
+
+def test_florence2_return_dict_false_keeps_seq2seq_outputs():
+    model = _small_model()
+    inputs = {
+        "input_ids": paddle.to_tensor([[0, 5, 2]]),
+        "pixel_values": paddle.randn([1, 3, 32, 48]),
+        "decoder_input_ids": paddle.to_tensor([[2, 4, 5]]),
+        "use_cache": True,
+    }
+    dict_output = model(**inputs)
+    tuple_output = model(**inputs, return_dict=False)
+    assert isinstance(tuple_output, tuple)
+    assert paddle.allclose(tuple_output[0], dict_output.logits)
+    assert len(tuple_output) == len(dict_output.to_tuple())
+    assert tuple_output[1] is not None
+
+    labels_output = model(**inputs, labels=paddle.to_tensor([[4, 5, 2]]), return_dict=False)
+    assert isinstance(labels_output, tuple)
+    assert labels_output[0].ndim == 0
+    assert paddle.allclose(labels_output[1], model(**inputs, labels=paddle.to_tensor([[4, 5, 2]])).logits)
+
+
+def test_florence2_processor_rejects_mismatched_batch_sizes():
+    class ImageProcessor:
+        def __call__(self, images, return_tensors, **kwargs):
+            return {"pixel_values": np.zeros([len(images), 3, 2, 2], dtype="float32")}
+
+    class Tokenizer:
+        def __call__(self, texts, return_tensors, **kwargs):
+            return {
+                "input_ids": np.zeros([len(texts), 2], dtype="int64"),
+                "attention_mask": np.ones([len(texts), 2], dtype="int64"),
+            }
+
+    processor = Florence2Processor.__new__(Florence2Processor)
+    processor.image_processor = ImageProcessor()
+    processor.tokenizer = Tokenizer()
+    processor.image_seq_length = 2
+    processor.task_prompts_without_inputs = {}
+    processor.task_prompts_with_input = {}
+
+    with pytest.raises(ValueError, match="Each prompt must be associated with an image"):
+        processor(text=["<CAPTION>"], images=[np.zeros([2, 2, 3]), np.zeros([2, 2, 3])])
+    with pytest.raises(ValueError, match="Each prompt must be associated with an image"):
+        processor(text=["<CAPTION>", "<OCR>"], images=[np.zeros([2, 2, 3])])
+    inputs = processor(text=None, images=[np.zeros([2, 2, 3]), np.zeros([2, 2, 3])])
+    assert list(inputs["input_ids"].shape)[0] == 2
 
 
 def test_florence2_lora_train_step_and_merge():

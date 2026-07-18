@@ -103,10 +103,13 @@ class Florence2Processor(ProcessorMixin):
         if images is None:
             raise ValueError("`images` are expected as arguments to a Florence2Processor instance.")
         if text is None:
-            text = ""
+            text = [""] * (len(images) if isinstance(images, (list, tuple)) else 1)
         if isinstance(text, str):
             text = [text]
-        if isinstance(images, (list, tuple)) and len(images) < len(text):
+        if isinstance(images, (list, tuple)):
+            if len(images) != len(text):
+                raise ValueError("Each prompt must be associated with an image.")
+        elif len(text) != 1:
             raise ValueError("Each prompt must be associated with an image.")
         component_tensor_type = "np" if return_tensors == "pd" else return_tensors
         pixel_values = self.image_processor(images, return_tensors=component_tensor_type, **kwargs)["pixel_values"]
