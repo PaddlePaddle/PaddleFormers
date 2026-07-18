@@ -14,6 +14,7 @@ on:
         options:
           - 'false'
           - 'all'
+          - 'mistral'
           - 'llama'
           - 'qwen3'
           - 'glm4_moe'

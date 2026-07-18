@@ -151,6 +151,8 @@ def get_lora_target_modules(model):
             ".*v_proj.*",
             ".*o_proj.*",
             ".*gate.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
             ".*w1.*",
             ".*w2.*",
             ".*w3.*",

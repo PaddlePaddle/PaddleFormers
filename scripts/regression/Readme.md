@@ -9,6 +9,7 @@
 | qwen3 | PaddleFormers/tiny-random-qwen3v2 | text | qwen3 |
 | glm4_moe | PaddleFormers/tiny-random-glm4moe-bf16 | text | glm4_moe |
 | qwen2 | PaddleFormers/tiny-random-qwen2v2 | text | qwen |
+| mistral | PaddleFormers/tiny-random-mistral | text | qwen |
 | llama | PaddleFormers/tiny-random-llama3 | text | llama3 |
 | qwen3_next | PaddleFormers/tiny-random-qwen3next | text | qwen3 |
 | phi3 | PaddleFormers/tiny-random-phi4-bf16 | text | phi4 |
