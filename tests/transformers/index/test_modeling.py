@@ -101,6 +101,12 @@ class IndexModelTest(unittest.TestCase):
         self.assertIsNotNone(cached[1])
 
     def test_aoa_lm_head_layout(self):
+        base = IndexModel._gen_aoa_config(self.config)["aoa_statements"]
+        base_inverse = IndexModel._gen_inv_aoa_config(self.config)["aoa_statements"]
+        self.assertIn("model.embed_tokens.weight -> embed_tokens.weight", base)
+        self.assertIn("embed_tokens.weight -> model.embed_tokens.weight", base_inverse)
+        self.assertNotIn("lm_head.weight", " ".join(base))
+        self.assertNotIn("lm_head.weight", " ".join(base_inverse))
         normal = IndexForCausalLM._gen_aoa_config(self.config)["aoa_statements"]
         normal_inverse = IndexForCausalLM._gen_inv_aoa_config(self.config)["aoa_statements"]
         self.assertIn("lm_head.weight -> lm_head.weight", normal)

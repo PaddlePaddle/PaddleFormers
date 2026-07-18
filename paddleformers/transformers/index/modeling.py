@@ -130,6 +130,7 @@ class IndexModel(LlamaModel, IndexPretrainedModel):
         return output
 
 
+IndexModel.base_model_class = IndexModel
 IndexPretrainedModel.base_model_class = IndexModel
 
 
