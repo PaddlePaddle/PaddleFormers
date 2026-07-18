@@ -8,7 +8,7 @@ from paddle import nn
 
 from ..model_outputs import BaseModelOutput, Seq2SeqLMOutput, Seq2SeqModelOutput
 from ..model_utils import PretrainedModel
-from .configuration import Florence2Config, Florence2LanguageConfig, Florence2VisionConfig
+from .configuration import Florence2Config, Florence2VisionConfig
 
 __all__ = [
     "DaViT",

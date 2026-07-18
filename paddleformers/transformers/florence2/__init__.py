@@ -1,5 +1,10 @@
-from .configuration import Florence2Config, Florence2LanguageConfig, Florence2VisionConfig
-from .processing import Florence2Processor
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+
+from .configuration import (
+    Florence2Config,
+    Florence2LanguageConfig,
+    Florence2VisionConfig,
+)
 from .modeling import (
     DaViT,
     Florence2ForConditionalGeneration,
@@ -7,6 +12,7 @@ from .modeling import (
     Florence2VisionModel,
     Florence2VisionModelWithProjection,
 )
+from .processing import Florence2Processor
 
 __all__ = [
     "DaViT",

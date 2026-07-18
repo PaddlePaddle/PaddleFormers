@@ -1,3 +1,5 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+
 import os
 from tempfile import TemporaryDirectory
 
@@ -7,8 +9,14 @@ import pytest
 
 from paddleformers.peft.lora import LoRAConfig, LoRAModel
 from paddleformers.transformers import AutoConfig, AutoModelForCausalLM, AutoProcessor
-from paddleformers.transformers.florence2 import Florence2Config, Florence2ForConditionalGeneration
-from paddleformers.transformers.florence2.modeling import BaseModelOutput, shift_tokens_right
+from paddleformers.transformers.florence2 import (
+    Florence2Config,
+    Florence2ForConditionalGeneration,
+)
+from paddleformers.transformers.florence2.modeling import (
+    BaseModelOutput,
+    shift_tokens_right,
+)
 
 
 def _small_config():
