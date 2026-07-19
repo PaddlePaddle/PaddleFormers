@@ -111,8 +111,20 @@ def test_florence2_processor_rejects_mismatched_batch_sizes():
         processor(text=["<CAPTION>"], images=[np.zeros([2, 2, 3]), np.zeros([2, 2, 3])])
     with pytest.raises(ValueError, match="Each prompt must be associated with an image"):
         processor(text=["<CAPTION>", "<OCR>"], images=[np.zeros([2, 2, 3])])
+    numpy_images = np.zeros([2, 2, 2, 3], dtype="float32")
+    with pytest.raises(ValueError, match="Each prompt must be associated with an image"):
+        processor(text=["<CAPTION>"], images=numpy_images)
+    paddle_images = paddle.zeros([2, 3, 2, 2], dtype="float32")
+    with pytest.raises(ValueError, match="Each prompt must be associated with an image"):
+        processor(text=["<CAPTION>"], images=paddle_images)
     inputs = processor(text=None, images=[np.zeros([2, 2, 3]), np.zeros([2, 2, 3])])
     assert list(inputs["input_ids"].shape)[0] == 2
+    inputs = processor(text=None, images=numpy_images)
+    assert list(inputs["input_ids"].shape)[0] == 2
+    assert list(inputs["pixel_values"].shape)[0] == 2
+    inputs = processor(text=None, images=paddle_images)
+    assert list(inputs["input_ids"].shape)[0] == 2
+    assert list(inputs["pixel_values"].shape)[0] == 2
 
 
 def test_florence2_lora_train_step_and_merge():
