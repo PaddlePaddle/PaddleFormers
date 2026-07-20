@@ -68,9 +68,6 @@ variable_seq_lengths: true
 best_unbalanced_scheduler: true
 pp_release_grads: true
 
-# recompute
-recompute_granularity: full
-
 # amp
 amp_master_grad: true
 bf16: true
