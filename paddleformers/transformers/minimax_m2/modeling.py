@@ -553,7 +553,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             ]
 
             # transformer_layer.mlp.up_gate_proj.weight
-            if config.use_dense_mtp:
+            if getattr(config, "use_dense_mtp", False):
                 prefix_offset += ".transformer_layer"
                 aoa_config["aoa_statements"] += [
                     f"{prefix}.mlp.gate_proj.weight^T, {prefix}.mlp.up_proj.weight^T -> {prefix_offset}.mlp.up_gate_proj.weight, fused_ffn",
@@ -783,7 +783,11 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         )
 
         moe_layer_start = config.first_k_dense_replace
-        moe_layer_end = num_hidden_layers if config.use_dense_mtp else num_hidden_layers + num_nextn_predict_layers
+        moe_layer_end = (
+            num_hidden_layers
+            if getattr(config, "use_dense_mtp", False)
+            else num_hidden_layers + num_nextn_predict_layers
+        )
         # All layers are MoE (first_k_dense_replace=0)
         for layer_idx in reversed(range(moe_layer_start, moe_layer_end)):
             layer_idx_offset = layer_idx + num_head_empty_layers
@@ -794,7 +798,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 prefix_offset += ".transformer_layer"
             aoa_config["aoa_statements"] += [
                 f"{prefix}.block_sparse_moe.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias",
-                f"{prefix}.block_sparse_moe.gate.weight -> {prefix_offset}.mlp.gate.weight",
+                f"{prefix}.block_sparse_moe.gate.weight -> {prefix_offset}.mlp.gate.weight, dtype='bfloat16'",
             ]
 
             if config.routed_scaling_factor_learnable:
@@ -928,7 +932,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             ]
 
             # dense MTP: inverse mapping for dense MLP weights
-            if config.use_dense_mtp:
+            if getattr(config, "use_dense_mtp", False):
                 prefix_offset_tf = f"{prefix_offset}.transformer_layer"
                 aoa_statements += [
                     f"{prefix_offset_tf}.mlp.up_gate_proj.weight -> {prefix}.mlp.gate_proj.weight, {prefix}.mlp.up_proj.weight, fused_ffn",
@@ -1153,7 +1157,11 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         aoa_statements.append(f"{','.join(bias_v_ordered)} -> {prefix}.self_attn.v_proj.bias, axis=0")
 
         # All layers are MoE (first_k_dense_replace=0)
-        moe_layer_end = num_hidden_layers if config.use_dense_mtp else num_hidden_layers + num_nextn_predict_layers
+        moe_layer_end = (
+            num_hidden_layers
+            if getattr(config, "use_dense_mtp", False)
+            else num_hidden_layers + num_nextn_predict_layers
+        )
         for layer_idx in range(config.first_k_dense_replace, moe_layer_end):
             layer_idx_offset = layer_idx + num_head_empty_layers
             prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
@@ -1205,7 +1213,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 ]
 
             aoa_statements += [
-                f"{prefix_offset}.mlp.gate.weight -> {prefix}.block_sparse_moe.gate.weight",
+                f"{prefix_offset}.mlp.gate.weight -> {prefix}.block_sparse_moe.gate.weight, dtype='float32'",
                 f"{prefix_offset}.mlp.gate.e_score_correction_bias -> {prefix}.block_sparse_moe.e_score_correction_bias",
             ]
 
