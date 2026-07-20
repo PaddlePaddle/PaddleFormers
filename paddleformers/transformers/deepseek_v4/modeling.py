@@ -405,6 +405,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         num_experts = config.n_routed_experts
         n_shared_experts = getattr(config, "n_shared_experts", 1)
         moe_n_hash_layers = getattr(config, "moe_n_hash_layers", 3)
+        dense_mode = getattr(config, "csa_dense_mode", False)
         csa_compress_ratios = config.csa_compress_ratios
         num_head_empty_layers = (
             config.num_empty_layers_add_in_head
@@ -512,7 +513,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ]
 
             # --- DSA Indexer (present on layers with compress_ratio > 0 and <= 4) ---
-            if csa_compress_ratios[L] > 0 and csa_compress_ratios[L] <= 4:
+            if csa_compress_ratios[L] > 0 and csa_compress_ratios[L] <= 4 and not dense_mode:
                 idx_src = f"{src}.attn.indexer"
                 idx_tgt = f"{tgt}.self_attn.core_attention.indexer"
                 stmts += [
@@ -645,7 +646,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     f"{comp_src}.wgate.weight^T -> {comp_tgt}.linear_wgate.weight",
                     f"{comp_src}.wkv.weight^T -> {comp_tgt}.linear_wkv.weight",
                 ]
-                if csa_compress_ratios[mtp_layer_idx] <= 4:
+                if csa_compress_ratios[mtp_layer_idx] <= 4 and not dense_mode:
                     idx_src = f"{mtp_src}.attn.indexer"
                     idx_tgt = f"{tl}.self_attn.core_attention.indexer"
                     stmts += [
@@ -706,6 +707,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         num_experts = config.n_routed_experts
         n_shared_experts = getattr(config, "n_shared_experts", 1)
         moe_n_hash_layers = getattr(config, "moe_n_hash_layers", 3)
+        dense_mode = getattr(config, "csa_dense_mode", False)
         csa_compress_ratios = config.csa_compress_ratios
         num_head_empty_layers = (
             config.num_empty_layers_add_in_head
@@ -815,7 +817,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     f"{comp_src}.linear_wgate.weight^T -> {comp_tgt}.wgate.weight",
                     f"{comp_src}.linear_wkv.weight^T -> {comp_tgt}.wkv.weight",
                 ]
-                if csa_compress_ratios[mtp_layer_idx] <= 4:
+                if csa_compress_ratios[mtp_layer_idx] <= 4 and not dense_mode:
                     idx_src = f"{tl}.self_attn.core_attention.indexer"
                     idx_tgt = f"{mtp_tgt}.attn.indexer"
                     stmts += [
@@ -940,7 +942,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ]
 
             # --- DSA Indexer (present on layers with compress_ratio > 0 and <= 4) ---
-            if csa_compress_ratios[L] > 0 and csa_compress_ratios[L] <= 4:
+            if csa_compress_ratios[L] > 0 and csa_compress_ratios[L] <= 4 and not dense_mode:
                 idx_src = f"{src}.self_attn.core_attention.indexer"
                 idx_tgt = f"{tgt}.attn.indexer"
                 stmts += [
