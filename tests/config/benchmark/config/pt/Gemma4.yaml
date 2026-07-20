@@ -92,7 +92,6 @@ fp32_residual_connection: false
 template_backend: custom
 template: gemma4
 
-# Gemma4 flags
 num_nextn_predict_layers: 0
 num_empty_layers_add_in_tail: 0
 continue_training: true
