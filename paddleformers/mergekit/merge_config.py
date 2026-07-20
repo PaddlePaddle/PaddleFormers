@@ -41,7 +41,7 @@ class MergeConfig:
     convert_from_hf: Optional[bool] = field(
         default=True, metadata={"help": "Load base model from HuggingFace safetensors."}
     )
-    save_to_hf: Optional[bool] = field(default=True, metadata={"help": "Save model to HuggingFace safetensors."})
+    save_safetensors: Optional[bool] = field(default=True, metadata={"help": "Save model to HuggingFace safetensors."})
 
     # Model parameters
     model_path_list: Optional[List[str]] = field(default=None, metadata={"help": "Merge model name or path list"})
@@ -121,7 +121,7 @@ class MergeConfig:
             if "della" in self.merge_method or self.sparsify_type == "magprune":
                 if self.reserve_p <= self.epsilon / 2 or self.reserve_p >= (1 - self.epsilon):
                     raise ValueError(
-                        f"Error: reserve_p +- epsilon/2 must be in the range (0, 1). reserve_p + epsilon/2 = {self.reserve_p + self.epsilon / 2 }, reserve_p - epsilon/2 = {self.reserve_p - self.epsilon / 2 }"
+                        f"Error: reserve_p +- epsilon/2 must be in the range (0, 1). reserve_p + epsilon/2 = {self.reserve_p + self.epsilon / 2}, reserve_p - epsilon/2 = {self.reserve_p - self.epsilon / 2}"
                     )
 
     @property
