@@ -796,10 +796,16 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             if layer_idx >= num_hidden_layers:
                 # for mtp
                 prefix_offset += ".transformer_layer"
-            aoa_config["aoa_statements"] += [
-                f"{prefix}.block_sparse_moe.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias",
-                f"{prefix}.block_sparse_moe.gate.weight -> {prefix_offset}.mlp.gate.weight, dtype='float32'",
-            ]
+            if getattr(config, "use_accuracy_compatible", False):
+                aoa_config["aoa_statements"] += [
+                    f"{prefix}.block_sparse_moe.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias",
+                    f"{prefix}.block_sparse_moe.gate.weight -> {prefix_offset}.mlp.gate.weight, dtype='bfloat16'",
+                ]
+            else:
+                aoa_config["aoa_statements"] += [
+                    f"{prefix}.block_sparse_moe.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias",
+                    f"{prefix}.block_sparse_moe.gate.weight -> {prefix_offset}.mlp.gate.weight",
+                ]
 
             if config.routed_scaling_factor_learnable:
                 aoa_config["aoa_statements"] += [
@@ -1212,10 +1218,16 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     f"{prefix_offset}.block_sparse_moe.shared_experts.up_proj.weight^T -> {prefix}.block_sparse_moe.shared_experts.w3.weight",
                 ]
 
-            aoa_statements += [
-                f"{prefix_offset}.mlp.gate.weight -> {prefix}.block_sparse_moe.gate.weight, dtype='float32'",
-                f"{prefix_offset}.mlp.gate.e_score_correction_bias -> {prefix}.block_sparse_moe.e_score_correction_bias",
-            ]
+            if getattr(config, "use_accuracy_compatible", False):
+                aoa_statements += [
+                    f"{prefix_offset}.mlp.gate.weight -> {prefix}.block_sparse_moe.gate.weight, dtype='float32'",
+                    f"{prefix_offset}.mlp.gate.e_score_correction_bias -> {prefix}.block_sparse_moe.e_score_correction_bias",
+                ]
+            else:
+                aoa_statements += [
+                    f"{prefix_offset}.mlp.gate.weight -> {prefix}.block_sparse_moe.gate.weight",
+                    f"{prefix_offset}.mlp.gate.e_score_correction_bias -> {prefix}.block_sparse_moe.e_score_correction_bias",
+                ]
 
             if config.routed_scaling_factor_learnable:
                 aoa_statements += [
