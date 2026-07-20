@@ -989,6 +989,11 @@ class PretrainedConfig:
                 "Transformers. Using `model.gradient_checkpointing_enable()` instead, or if you are using the "
                 "`Trainer` API, pass `gradient_checkpointing=True` in your `TrainingArguments`."
             )
+        if "save_to_hf" in kwargs:
+            raise ValueError(
+                "The parameter `save_to_hf` has been renamed to `save_safetensors`. "
+                "Please update your code or config accordingly."
+            )
         self._save_safetensors = kwargs.pop("save_safetensors", True)
         self._unsavable_keys.add("_save_safetensors")
 
@@ -1089,6 +1094,11 @@ class PretrainedConfig:
 
         os.makedirs(save_directory, exist_ok=True)
 
+        if "save_to_hf" in kwargs:
+            raise ValueError(
+                "The parameter `save_to_hf` has been renamed to `save_safetensors`. "
+                "Please update your code or config accordingly."
+            )
         self._save_safetensors = kwargs.pop("save_safetensors", True)
 
         # If we have a custom config, we copy the file defining it in the folder and set the attributes so it can be

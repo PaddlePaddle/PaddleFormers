@@ -168,6 +168,12 @@ class MergeConfig:
 
         loaded_attributes = cls.from_json_file(config_file)
 
+        if "save_to_hf" in loaded_attributes or "save_to_hf" in kwargs:
+            raise ValueError(
+                "The parameter `save_to_hf` has been renamed to `save_safetensors`. "
+                "Please update your merge_config.json or arguments accordingly."
+            )
+
         config = cls(**kwargs)
 
         for key, value in loaded_attributes.items():

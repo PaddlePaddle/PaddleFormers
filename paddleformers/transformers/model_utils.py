@@ -3180,6 +3180,11 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         shard_format = kwargs.get("shard_format", "naive")  # support naive pipeline
         # variant = kwargs.get("variant", None)
         # is_main_process = kwargs.get("is_main_process", True)
+        if "save_to_hf" in kwargs:
+            raise ValueError(
+                "The parameter `save_to_hf` has been renamed to `save_safetensors`. "
+                "Please update your code or config accordingly."
+            )
         save_safetensors = kwargs.get("save_safetensors", True)
 
         save_checkpoint_format = kwargs.get("save_checkpoint_format", "flex_checkpoint")
