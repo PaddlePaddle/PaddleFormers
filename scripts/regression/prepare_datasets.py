@@ -101,7 +101,6 @@ def download_vl_datasets(force: bool = False) -> None:
                 print(f"[INFO] {name} already exists, skipping...")
                 continue
 
-        # Download
         print(f"[INFO] Downloading {name}...")
 
         if config["extract_cmd"]:
