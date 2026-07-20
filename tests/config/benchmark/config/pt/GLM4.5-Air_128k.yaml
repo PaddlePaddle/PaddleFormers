@@ -1,8 +1,8 @@
 train_dataset_type: messages
 eval_dataset_type: messages
-train_dataset_path: /root/efficient_benchmark/dataset/data_60to64k/LVEval_60to64k_messages.jsonl
+train_dataset_path: ./dataset/data_60to64k/LVEval_60to64k_messages.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: /root/efficient_benchmark/dataset/data_60to64k/LVEval_60to64k_messages.jsonl
+eval_dataset_path: ./dataset/data_60to64k/LVEval_60to64k_messages.jsonl
 eval_dataset_prob: "1.0"
 
 packing: true
@@ -14,7 +14,7 @@ random_shuffle: true
 dataloader_shuffle: false
 use_template: false
 
-model_name_or_path: /root/efficient_benchmark/huggingface/GLM-4.5-Air
+model_name_or_path: ./huggingface/GLM-4.5-Air
 
 # base
 stage: PT

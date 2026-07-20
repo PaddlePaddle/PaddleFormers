@@ -1,0 +1,52 @@
+### data
+train_dataset_type: erniekit
+eval_dataset_type: erniekit
+train_dataset_path: ./tmp/gsm8k/train.jsonl
+train_dataset_prob: "1.0"
+eval_dataset_path: ./tmp/gsm8k/test.jsonl
+eval_dataset_prob: "1.0"
+max_seq_len: 4096
+packing: false
+mix_strategy: concat
+template_backend: custom
+template: phi4
+
+### model
+model_name_or_path: microsoft/Phi-4-mini-flash-reasoning
+_attn_implementation: eager
+
+### finetuning
+# base
+stage: SFT
+fine_tuning: full
+seed: 23
+do_train: true
+do_eval: false
+per_device_train_batch_size: 1
+per_device_eval_batch_size: 1
+num_train_epochs: 1
+max_steps: 1000
+eval_steps: 1000
+evaluation_strategy: steps
+save_steps: 1000
+save_strategy: steps
+logging_steps: 1
+gradient_accumulation_steps: 1
+disable_tqdm: true
+eval_accumulation_steps: 4
+output_dir: ./tmp/phi4_sft_ckpts
+
+# train
+warmup_steps: 2
+learning_rate: 1.0e-4
+
+# performance
+tensor_model_parallel_size: 1
+pipeline_model_parallel_size: 1
+sharding: stage1
+recompute_granularity: ""
+bf16: true
+fp16_opt_level: O2
+amp_master_grad: false
+save_checkpoint_format: "flex_checkpoint"
+load_checkpoint_format: "flex_checkpoint"

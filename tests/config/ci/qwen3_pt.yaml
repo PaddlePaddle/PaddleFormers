@@ -19,6 +19,7 @@ prefetch_factor: 24
 model_name_or_path: ./Qwen3-30B-A3B-Base
 _attn_implementation: flashmask
 use_qk_norm: true
+init_method_std: 0.001
 
 ### finetuning
 # base
