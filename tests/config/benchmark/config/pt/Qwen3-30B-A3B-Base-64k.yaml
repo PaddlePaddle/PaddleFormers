@@ -1,9 +1,9 @@
 ### data
 train_dataset_type: messages
 eval_dataset_type: messages
-train_dataset_path: /root/efficient_benchmark/dataset/data_60to64k/LVEval_60to64k_messages.jsonl
+train_dataset_path: ./dataset/data_60to64k/LVEval_60to64k_messages.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: /root/efficient_benchmark/dataset/data_60to64k/LVEval_60to64k_messages.jsonl
+eval_dataset_path: ./dataset/data_60to64k/LVEval_60to64k_messages.jsonl
 eval_dataset_prob: "1.0"
 
 eval_iters: 10
@@ -23,7 +23,7 @@ dataloader_num_workers: 24
 prefetch_factor: 24
 
 ### model
-model_name_or_path: /root/efficient_benchmark/huggingface/Qwen/Qwen3-30B-A3B
+model_name_or_path: ./huggingface/Qwen/Qwen3-30B-A3B
 _attn_implementation: flashmask
 use_qk_norm: true
 
