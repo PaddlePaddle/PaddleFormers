@@ -1,0 +1,106 @@
+### data
+train_dataset_type: erniekit
+eval_dataset_type: erniekit
+train_dataset_path: ./dataset/Gemma4
+train_dataset_prob: "1.0"
+eval_dataset_path: ./dataset/Gemma4
+eval_dataset_prob: "1.0"
+packing: false
+truncate_packing: false
+max_seq_len: 8192
+mix_strategy: concat
+
+dataset_type: map
+random_shuffle: false
+dataloader_shuffle: false
+use_template: false
+
+### model
+model_name_or_path: ./huggingface/Gemma4
+
+### finetuning
+stage: PT
+fine_tuning: full
+seed: 23
+do_train: true
+do_eval: false
+per_device_eval_batch_size: 1
+per_device_train_batch_size: 1
+num_train_epochs: 1
+max_steps: 10
+eval_iters: 3000
+eval_steps: 1000
+evaluation_strategy: steps
+save_steps: 100
+save_hf_steps: -1
+save_strategy: steps
+logging_steps: 1
+gradient_accumulation_steps: 8
+logging_dir: ./gemma4_log
+output_dir: ./output/gemma4_log
+disable_tqdm: false
+eval_accumulation_steps: 16
+replicate_saved_into_local: false
+
+tensor_model_parallel_size: 1
+sequence_parallel: false
+use_expert_parallel: true
+expert_model_parallel_size: 2
+pipeline_model_parallel_size: 1
+
+# optimizer
+weight_decay: 0
+adam_beta2: 0.95
+router_aux_loss_coef: 0
+learning_rate: 0.00005
+warmup_steps: 0
+min_lr: 0.00001
+lr_scheduler_type: cosine
+
+# MoE
+moe_deep_gemm: false
+moe_router_force_load_balancing: false
+
+# pp
+pp_delay_scale_loss: true
+overlap_p2p_comm: true
+variable_seq_lengths: true
+best_unbalanced_scheduler: true
+pp_release_grads: true
+
+# recompute
+recompute_granularity: full
+
+# amp
+amp_master_grad: true
+bf16: true
+fp16_opt_level: O2
+
+# checkpoint
+save_checkpoint_format: flex_checkpoint
+load_checkpoint_format: flex_checkpoint
+save_to_hf: true
+
+# dataloader
+dataloader_num_workers: 8
+prefetch_factor: 16
+
+# misc
+tensorwise_offload_optimizer: false
+skip_profile_timer: false
+load_via_cpu: false
+fp32_residual_connection: false
+
+# template 
+template_backend: custom
+template: gemma4
+
+# Gemma4 flags
+num_nextn_predict_layers: 0
+num_empty_layers_add_in_tail: 0
+continue_training: true
+
+# performance
+recompute_granularity: full
+recompute_method: uniform
+recompute_num_layers: 1
