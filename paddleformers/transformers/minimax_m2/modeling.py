@@ -798,7 +798,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 prefix_offset += ".transformer_layer"
             aoa_config["aoa_statements"] += [
                 f"{prefix}.block_sparse_moe.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias",
-                f"{prefix}.block_sparse_moe.gate.weight -> {prefix_offset}.mlp.gate.weight, dtype='bfloat16'",
+                f"{prefix}.block_sparse_moe.gate.weight -> {prefix_offset}.mlp.gate.weight, dtype='float32'",
             ]
 
             if config.routed_scaling_factor_learnable:
