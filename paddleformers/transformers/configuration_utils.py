@@ -445,6 +445,12 @@ class LlmMetaConfig:
             True,
             "Whether to use FP8 for gradient storage during training (only effective if `fp8=True`). Further reduces memory footprint but may introduce minor numerical error. Defaults to False.",
         ),
+        (
+            "use_ue8m0",
+            bool,
+            False,
+            "Whether to use UE8M0 packed scaling factors for FP8 on Blackwell GPUs (SM100+). Enables deep_gemm backend for weight gradient computation. Defaults to False.",
+        ),
     ]
 
     model_conf = [
@@ -465,6 +471,12 @@ class LlmMetaConfig:
             bool,
             False,
             "Whether to enable multi-latent attention mechanism. Defaults to False.",
+        ),
+        (
+            "csa_indexer_backend",
+            str,
+            "tilelang",
+            "CSA indexer backend. One of {'unfused', 'tilelang', 'cudnn'}. Defaults to 'tilelang'.",
         ),
         (
             "csa_sparse_attn_backend",
@@ -489,6 +501,12 @@ class LlmMetaConfig:
             bool,
             False,
             "Whether to use high precision ROPEs.",
+        ),
+        (
+            "swa_high_precision_norm",
+            bool,
+            False,
+            "Whether to use high precision NORMS in DSV4 SWA. ONLY support for dsv4_hybrid_attention.",
         ),
         (
             "gated_linear_unit",
@@ -523,6 +541,12 @@ class LlmMetaConfig:
             "Method to initialize weights of the output layer of both attention and MLP blocks.",
         ),
         (
+            "init_method_std",
+            float,
+            0.02,
+            "Standard deviation for initialization (Normal). Used to build the default init_method/output_layer_init_method when they are not explicitly set. Defaults to 0.02.",
+        ),
+        (
             "embedding_init_method",
             Optional[Any],
             None,
@@ -535,6 +559,12 @@ class LlmMetaConfig:
             "Standard deviation for embedding layer initialization (only effective if `embedding_init_method='normal'`). Defaults to 0.02 (common choice for transformer embeddings to avoid saturation).",
         ),
         ("fa_version", int, 2, "FlashAttention or FlashMask version. Can be set to 2 or 3. Default is 2."),
+        (
+            "use_accuracy_compatible",
+            bool,
+            False,
+            "Whether to enable accuracy-compatible kernels for cross-framework numerical alignment. Defaults to False.",
+        ),
         ("experimental_dataflow", bool, False, "Whether to enable experimental dataflow in Fleet. Default is False."),
     ]
 

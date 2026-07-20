@@ -62,13 +62,21 @@ def parse_log_file(file_path):
     return loss_dict
 
 
+def write_loss_file(loss_dict, file_path, steps=None):
+    if steps is None:
+        steps = sorted(loss_dict)
+    with open(file_path, "w") as f:
+        for step in steps:
+            f.write(f"{step} {loss_dict[step]}\n")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Check loss values in log against ground truth.")
     parser.add_argument("--log_file", type=str, required=True, help="Path to the log file.")
     parser.add_argument(
         "--gt_file",
         type=str,
-        required=True,
+        default=None,
         help="Path to the ground truth file.",
     )
     parser.add_argument(
@@ -90,6 +98,11 @@ def main():
         default=None,
         help="Record the loss values from the log file to this file.",
     )
+    parser.add_argument(
+        "--extract_loss_only",
+        action="store_true",
+        help="Only extract loss values from the log file and write them to --log_loss_file.",
+    )
     args = parser.parse_args()
 
     print(f"Starting loss check with log file: {args.log_file}")
@@ -98,6 +111,21 @@ def main():
         print(f"Target Check Step: {args.compare_step}")
 
     log_dict = parse_log_file(args.log_file)
+    if args.extract_loss_only:
+        if args.log_loss_file is None:
+            print("\033[91mError: --log_loss_file is required when --extract_loss_only is set.\033[0m")
+            sys.exit(1)
+        if not log_dict:
+            print(f"\033[91mError: No loss values found in {args.log_file}.\033[0m")
+            sys.exit(1)
+        write_loss_file(log_dict, args.log_loss_file)
+        print(f"\033[92mExtracted loss values to {args.log_loss_file}.\033[0m")
+        return
+
+    if args.gt_file is None:
+        print("\033[91mError: --gt_file is required unless --extract_loss_only is set.\033[0m")
+        sys.exit(1)
+
     gt_dict = parse_ground_truth(args.gt_file)
 
     if args.compare_step is not None:
@@ -114,9 +142,7 @@ def main():
         gt_loss = gt_dict[target_step]
 
         if args.log_loss_file is not None:
-            log_loss_file = args.log_loss_file
-            with open(log_loss_file, "w") as f:
-                f.write(f"{target_step} {log_loss}\n")
+            write_loss_file(log_dict, args.log_loss_file, [target_step])
 
         print(f"\nChecking Step {target_step}:")
         print(f"  Log Loss: {log_loss}")
@@ -138,10 +164,7 @@ def main():
         target_losses = [gt_dict[s] for s in common_steps]
 
         if args.log_loss_file is not None:
-            log_loss_file = args.log_loss_file
-            with open(log_loss_file, "w") as f:
-                for s in common_steps:
-                    f.write(f"{s} {log_dict[s]}\n")
+            write_loss_file(log_dict, args.log_loss_file, common_steps)
 
         print("\nLog values (step loss):")
         print("\n".join([f"{s} {l:.8f}" for s, l in zip(common_steps, actual_losses)]))
