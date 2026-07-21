@@ -241,6 +241,35 @@ class Llama4ModelTest(ModelTesterMixin, unittest.TestCase):
             ],
         )
 
+    def test_chunked_attention_keeps_padding_mask_with_row_indices(self):
+        config = self.model_tester.get_config()
+        config.num_hidden_layers = 1
+        config.moe_layers = [0]
+        config.no_rope_layers = [1]
+        config.layer_types = ["chunked_attention"]
+        config.attention_chunk_size = 4
+        model = Llama4ForCausalLM(config)
+        model.eval()
+
+        input_ids = ids_tensor([1, 6], config.vocab_size, dtype=paddle.int64)
+        attention_mask = paddle.to_tensor([[0, 0, 1, 1, 1, 1]], dtype="int64")
+        row_indices = paddle.full([1, 1, 6, 1], 6, dtype="int32")
+
+        with paddle.no_grad():
+            expected = model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                return_dict=True,
+            ).logits
+            actual = model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                attn_mask_startend_row_indices=row_indices,
+                return_dict=True,
+            ).logits
+
+        self.assertTrue(paddle.allclose(actual, expected, atol=1e-6, rtol=1e-6))
+
     def test_chunked_cached_decode_matches_full_forward(self):
         config = self.model_tester.get_config()
         config.num_hidden_layers = 1

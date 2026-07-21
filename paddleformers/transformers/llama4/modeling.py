@@ -823,9 +823,9 @@ class Llama4ForCausalLM(Llama4TextPretrainedModel):
         if attn_mask_startend_row_indices is not None and attention_mask is not None:
             logger.warning(
                 "You have provided both attn_mask_startend_row_indices and attention_mask. "
-                "The attn_mask_startend_row_indices will be used."
+                "The attn_mask_startend_row_indices will be used for full-attention layers, "
+                "while attention_mask is still required by chunked-attention layers."
             )
-            attention_mask = None
 
         outputs = self.model(
             input_ids,
