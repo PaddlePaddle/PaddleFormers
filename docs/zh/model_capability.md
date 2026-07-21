@@ -38,7 +38,7 @@
 |🏛️PaddleOCR-VL|x|x|-|x|✓|✓|
 |Qwen2.5-VL|✓|x|-|x|✓|✓|
 |Qwen3-VL|x|x|✓|x|✓|✓|
-|Mistral-small-3.1|x|x|x|✓|x|
+|Mistral-small-3.1|x|x|x|x|✓|x|
 
 # 多硬件训练支持
 |模型|昆仑芯 P800|天数智芯天垓150|沐曦 C550|摩尔线程 S5000|

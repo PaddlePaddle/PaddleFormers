@@ -108,7 +108,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
         ("qwen3_5", "Qwen3_5ForConditionalGeneration"),
         ("pixtral", "PixtralVisionModel"),
-        ("mistral3", "Mistral3ForConditionalGeneration"),
+        ("mistral3", "Mistral3Model"),
         ("olmo2", "Olmo2ForCausalLM"),
         ("internlm3", "InternLM3ForCausalLM"),
         ("internlm2", "InternLM2"),

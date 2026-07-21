@@ -18,7 +18,7 @@ import paddle
 from paddle import nn
 
 from ..model_outputs import BaseModelOutput
-from ..model_utils import PretrainedModel
+from ..model_utils import PretrainedModel, register_base_model
 from .configuration import PixtralVisionConfig
 
 
@@ -353,7 +353,7 @@ class PixtralPretrainedModel(PretrainedModel):
                 f"{model_prefix}transformer.layers.$LAYER_ID.feed_forward.{proj_name}.weight"
             )
 
-        return aoa_statements
+        return {"aoa_statements": aoa_statements}
 
     @classmethod
     def _gen_inv_aoa_config(cls, config: PixtralVisionConfig):
@@ -382,9 +382,10 @@ class PixtralPretrainedModel(PretrainedModel):
                 f"vision_encoder.transformer.layers.$LAYER_ID.feed_forward.{proj_name}.weight^T"
             )
 
-        return aoa_statements
+        return {"aoa_statements": aoa_statements}
 
 
+@register_base_model
 class PixtralVisionModel(PixtralPretrainedModel):
     """Pixtral Vision Encoder with 2D Rotary Position Embedding."""
 

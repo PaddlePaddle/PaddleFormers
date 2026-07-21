@@ -231,6 +231,7 @@ class Mistral3ModelTest(unittest.TestCase):
 
     def test_auto_model_mapping(self):
         config = self.model_tester.get_config()
+        auto_model_from_config = AutoModel.from_config(config)
         model = Mistral3ForConditionalGeneration(config)
 
         with tempfile.TemporaryDirectory() as tmpdirname:
@@ -242,6 +243,7 @@ class Mistral3ModelTest(unittest.TestCase):
                 load_checkpoint_format="flex_checkpoint",
             )
 
+        self.assertIsInstance(auto_model_from_config, Mistral3Model)
         self.assertIsInstance(auto_model, Mistral3Model)
         self.assertIsInstance(auto_causal_lm, Mistral3ForConditionalGeneration)
         self.assertIsInstance(auto_conditional_generation, Mistral3ForConditionalGeneration)

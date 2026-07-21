@@ -164,6 +164,22 @@ class PixtralModelTest(unittest.TestCase):
     def test_vision_model_deterministic(self):
         self.model_tester.create_and_check_vision_model_deterministic()
 
+    def test_aoa_config_format(self):
+        config = self.model_tester.get_config()
+        aoa_config = PixtralVisionModel._gen_aoa_config(config)
+        inv_aoa_config = PixtralVisionModel._gen_inv_aoa_config(config)
+
+        self.assertIn("aoa_statements", aoa_config)
+        self.assertIn("aoa_statements", inv_aoa_config)
+        self.assertIn(
+            "vision_encoder.patch_conv.weight -> patch_conv.weight",
+            aoa_config["aoa_statements"],
+        )
+        self.assertIn(
+            "patch_conv.weight -> vision_encoder.patch_conv.weight",
+            inv_aoa_config["aoa_statements"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
