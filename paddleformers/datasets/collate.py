@@ -26,6 +26,22 @@ from paddleformers.peft.lora import LoRAModel
 from .SFTDataset import Sequence
 
 
+def _pad_and_stack_multimodal_tensors(tensors, padding_value=0):
+    max_length = max(tensor.shape[0] for tensor in tensors)
+    padded_tensors = []
+    for tensor in tensors:
+        padding_length = max_length - tensor.shape[0]
+        if padding_length > 0:
+            padding = paddle.full(
+                [padding_length, *tensor.shape[1:]],
+                padding_value,
+                dtype=tensor.dtype,
+            )
+            tensor = paddle.concat([tensor, padding], axis=0)
+        padded_tensors.append(tensor)
+    return paddle.stack(padded_tensors, axis=0)
+
+
 def calc_padding_size(seq_len: int, training_args) -> int:
     """
     Calculate appropriate padding size based on training parameters
@@ -811,11 +827,14 @@ def mm_collate_fn(
         if len(feature_attention_mask) > 0:
             feature_attention_mask = paddle.concat(feature_attention_mask, axis=0)
         if len(molmo_images) > 0:
-            molmo_images = paddle.stack(molmo_images, axis=0)
+            molmo_images = _pad_and_stack_multimodal_tensors(molmo_images)
         if len(molmo_image_masks) > 0:
-            molmo_image_masks = paddle.stack(molmo_image_masks, axis=0)
+            molmo_image_masks = _pad_and_stack_multimodal_tensors(molmo_image_masks)
         if len(molmo_image_input_idx) > 0:
-            molmo_image_input_idx = paddle.stack(molmo_image_input_idx, axis=0)
+            molmo_image_input_idx = _pad_and_stack_multimodal_tensors(
+                molmo_image_input_idx,
+                padding_value=-1,
+            )
         if get_token_type_func is not None:  # ernie45vl
             bs_idx_in_rope = 0
             padded_position_ids = padded_position_ids.transpose([1, 2, 0])

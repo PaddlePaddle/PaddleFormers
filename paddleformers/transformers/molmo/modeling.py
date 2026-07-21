@@ -803,6 +803,51 @@ class MolmoPretrainedModel(PretrainedModel):
             f"{model_prefix}norm.weight -> model.transformer.ln_f.weight",
         ]
 
+        if getattr(config, "vision_backbone", None) is not None:
+            v_prefix = f"{model_prefix}vision_backbone"
+            aoa_statements += [
+                f"{v_prefix}.pad_embed -> model.vision_backbone.pad_embed",
+                f"{v_prefix}.image_vit.class_embedding -> model.vision_backbone.image_vit.class_embedding",
+                f"{v_prefix}.image_vit.positional_embedding -> model.vision_backbone.image_vit.positional_embedding",
+                f"{v_prefix}.image_vit.patch_embedding.weight^T -> "
+                "model.vision_backbone.image_vit.patch_embedding.weight",
+                f"{v_prefix}.image_vit.pre_ln.weight -> model.vision_backbone.image_vit.pre_ln.weight",
+                f"{v_prefix}.image_vit.pre_ln.bias -> model.vision_backbone.image_vit.pre_ln.bias",
+                f"{v_prefix}.image_pooling_2d.wq.weight^T -> model.vision_backbone.image_pooling_2d.wq.weight",
+                f"{v_prefix}.image_pooling_2d.wq.bias -> model.vision_backbone.image_pooling_2d.wq.bias",
+                f"{v_prefix}.image_pooling_2d.wk.weight^T -> model.vision_backbone.image_pooling_2d.wk.weight",
+                f"{v_prefix}.image_pooling_2d.wk.bias -> model.vision_backbone.image_pooling_2d.wk.bias",
+                f"{v_prefix}.image_pooling_2d.wv.weight^T -> model.vision_backbone.image_pooling_2d.wv.weight",
+                f"{v_prefix}.image_pooling_2d.wv.bias -> model.vision_backbone.image_pooling_2d.wv.bias",
+                f"{v_prefix}.image_pooling_2d.wo.weight^T -> model.vision_backbone.image_pooling_2d.wo.weight",
+                f"{v_prefix}.image_pooling_2d.wo.bias -> model.vision_backbone.image_pooling_2d.wo.bias",
+                f"{v_prefix}.image_projector.w1.weight^T -> model.vision_backbone.image_projector.w1.weight",
+                f"{v_prefix}.image_projector.w2.weight^T -> model.vision_backbone.image_projector.w2.weight",
+                f"{v_prefix}.image_projector.w3.weight^T -> model.vision_backbone.image_projector.w3.weight",
+            ]
+            image_num_layers = config.vision_backbone["image_num_layers"]
+            for layer_id in range(image_num_layers):
+                src = f"{v_prefix}.image_vit.transformer.resblocks.{layer_id}"
+                dst = f"model.vision_backbone.image_vit.transformer.resblocks.{layer_id}"
+                aoa_statements += [
+                    f"{src}.attention.wq.weight^T -> {dst}.attention.wq.weight",
+                    f"{src}.attention.wq.bias -> {dst}.attention.wq.bias",
+                    f"{src}.attention.wk.weight^T -> {dst}.attention.wk.weight",
+                    f"{src}.attention.wk.bias -> {dst}.attention.wk.bias",
+                    f"{src}.attention.wv.weight^T -> {dst}.attention.wv.weight",
+                    f"{src}.attention.wv.bias -> {dst}.attention.wv.bias",
+                    f"{src}.attention.wo.weight^T -> {dst}.attention.wo.weight",
+                    f"{src}.attention.wo.bias -> {dst}.attention.wo.bias",
+                    f"{src}.feed_forward.w1.weight^T -> {dst}.feed_forward.w1.weight",
+                    f"{src}.feed_forward.w1.bias -> {dst}.feed_forward.w1.bias",
+                    f"{src}.feed_forward.w2.weight^T -> {dst}.feed_forward.w2.weight",
+                    f"{src}.feed_forward.w2.bias -> {dst}.feed_forward.w2.bias",
+                    f"{src}.attention_norm.weight -> {dst}.attention_norm.weight",
+                    f"{src}.attention_norm.bias -> {dst}.attention_norm.bias",
+                    f"{src}.ffn_norm.weight -> {dst}.ffn_norm.weight",
+                    f"{src}.ffn_norm.bias -> {dst}.ffn_norm.bias",
+                ]
+
         aoa_statements += [
             f"{model_prefix}layers.$LAYER_ID.attn_norm.weight -> model.transformer.blocks.$LAYER_ID.attn_norm.weight",
             f"{model_prefix}layers.$LAYER_ID.ff_norm.weight -> model.transformer.blocks.$LAYER_ID.ff_norm.weight",

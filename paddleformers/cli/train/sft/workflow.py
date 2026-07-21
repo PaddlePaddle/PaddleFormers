@@ -545,7 +545,7 @@ def run_sft(
                     count += 1
                     if count % 1000 == 0:
                         logger.info(
-                            f"Processed {count} samples in {time.time()-start_time:.2f} seconds, average speed: {count/(time.time()-start_time):.2f} samples/second"
+                            f"Processed {count} samples in {time.time() - start_time:.2f} seconds, average speed: {count / (time.time() - start_time):.2f} samples/second"
                         )
             train_builder.finalize(train_output_idx_files)
             logger.info(f"{runtime_timer.log()}")

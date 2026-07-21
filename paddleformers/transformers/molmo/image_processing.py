@@ -15,23 +15,15 @@
 
 from __future__ import annotations
 
-import sys
 from typing import Optional
 
 import einops
 import numpy as np
-
-if "torch" in sys.modules and sys.modules.get("torch") is None:
-    del sys.modules["torch"]
-if "torchvision" in sys.modules and sys.modules.get("torchvision") is None:
-    del sys.modules["torchvision"]
-import torch
-import torchvision.transforms
-from torchvision.transforms import InterpolationMode
-from torchvision.transforms.functional import convert_image_dtype
+import paddle
 from transformers.image_utils import OPENAI_CLIP_MEAN, OPENAI_CLIP_STD
 
 from ..image_processing_utils import BaseImageProcessor
+from ..paddle_vision_utils import resize as paddle_resize
 
 
 def pad_to_bounding_box(image, offset_height, offset_width, target_height, target_width, value=0):
@@ -70,13 +62,19 @@ def resize_and_pad(
     scaled_width = int(np.array(width, np.float32) * image_scale)
 
     if resize_method == "torch-bilinear":
-        image = torch.permute(torch.from_numpy(image), [2, 0, 1])
-        image = convert_image_dtype(image)
-        image = torchvision.transforms.Resize(
-            [scaled_height, scaled_width], InterpolationMode.BILINEAR, antialias=True
-        )(image)
-        image = torch.clip(image, 0.0, 1.0)
-        image = torch.permute(image, [1, 2, 0]).numpy()
+        image_dtype = image.dtype
+        image = paddle.to_tensor(image).transpose([2, 0, 1])
+        if np.issubdtype(image_dtype, np.integer):
+            image = image.astype("float32") / np.iinfo(image_dtype).max
+        else:
+            image = image.astype("float32")
+        image = paddle_resize(
+            image,
+            [scaled_height, scaled_width],
+            interpolation="bilinear",
+            antialias=True,
+        )
+        image = image.clip(0.0, 1.0).transpose([1, 2, 0]).numpy()
     else:
         raise NotImplementedError(resize_method)
 

@@ -1541,7 +1541,7 @@ class GlmOcrPlugin(BasePlugin):
                 if num_image_tokens >= len(images):
                     raise ValueError(
                         f"Found more {IMAGE_PLACEHOLDER} placeholders than provided images: "
-                        f"placeholders_so_far={num_image_tokens+1}, len(images)={len(images)}"
+                        f"placeholders_so_far={num_image_tokens + 1}, len(images)={len(images)}"
                     )
 
                 if self.expand_mm_tokens:

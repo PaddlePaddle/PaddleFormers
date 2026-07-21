@@ -18,7 +18,8 @@ import unittest
 
 import paddle
 
-from paddleformers.transformers import AutoModelForCausalLM
+from paddleformers.datasets.collate import _pad_and_stack_multimodal_tensors
+from paddleformers.transformers import AutoModel, AutoModelForCausalLM
 from paddleformers.transformers.molmo import MolmoConfig, MolmoForCausalLM, MolmoModel
 from paddleformers.transformers.molmo.modeling import MolmoPretrainedVisionBackbone
 from tests.transformers.test_configuration_common import ConfigTester
@@ -329,6 +330,36 @@ class MolmoModelTest(ModelTesterMixin, unittest.TestCase):
         config = self.model_tester.get_config()
         model = AutoModelForCausalLM.from_config(config)
         self.assertIsInstance(model, MolmoForCausalLM)
+
+    def test_auto_model_from_config(self):
+        config = self.model_tester.get_config()
+        model = AutoModel.from_config(config)
+        self.assertIsInstance(model, MolmoModel)
+
+    def test_variable_image_crops_are_padded(self):
+        first = paddle.ones([1, 4, 3], dtype="float32")
+        second = paddle.ones([2, 4, 3], dtype="float32")
+        images = _pad_and_stack_multimodal_tensors([first, second])
+
+        first_idx = paddle.ones([1, 4], dtype="int64")
+        second_idx = paddle.ones([2, 4], dtype="int64")
+        image_input_idx = _pad_and_stack_multimodal_tensors(
+            [first_idx, second_idx],
+            padding_value=-1,
+        )
+
+        self.assertEqual(images.shape, [2, 2, 4, 3])
+        self.assertTrue((images[0, 1] == 0).all())
+        self.assertTrue((image_input_idx[0, 1] == -1).all())
+
+    def test_inverse_aoa_config_contains_vision_weights(self):
+        config = self.model_tester.get_config(with_vision=True)
+        statements = MolmoForCausalLM._gen_inv_aoa_config(config)["aoa_statements"]
+        self.assertIn(
+            "model.vision_backbone.image_vit.patch_embedding.weight^T -> "
+            "model.vision_backbone.image_vit.patch_embedding.weight",
+            statements,
+        )
 
     def test_vision_backbone(self):
         self.model_tester.create_and_check_vision_backbone()
