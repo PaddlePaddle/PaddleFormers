@@ -76,7 +76,7 @@ recompute_num_layers: 1
 
 using_sonic_moe: false
 
-moe_grouped_gemm: true
+moe_expert_fusion: true
 # moe_deep_gemm: false
 moe_shared_expert_overlap: true
 
@@ -118,7 +118,6 @@ num_nextn_predict_layers: 0
 
 load_via_cpu: false
 save_total_limit: 2
-benchmark: true
 # fp8: e4m3
 # offload_fp8_expert_master_weight: false
 # num_hidden_layers: 30
