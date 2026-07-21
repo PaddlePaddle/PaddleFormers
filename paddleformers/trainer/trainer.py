@@ -3412,17 +3412,41 @@ class Trainer:
 
                 return apply_decay_param_fun
 
-            if self.optimizer_grouped_parameters is not None:
-                params = self.optimizer_grouped_parameters
-                # A plain list only customizes the trainable set, so it should still use the default decay filter.
-                # But dict may define per-group weight_decay explicitly, so do not override.
-                is_param_group_dict = (
-                    isinstance(params, (list, tuple)) and len(params) > 0 and isinstance(params[0], dict)
-                )
-                apply_decay_param_fun = None if is_param_group_dict else _build_apply_decay_param_fun()
+            if getattr(getattr(self.model, "config", None), "use_accuracy_compatible", False):
+                if self.optimizer_grouped_parameters is not None:
+                    params = self.optimizer_grouped_parameters
+                else:
+                    params = [p for p in self.model.parameters() if not p.stop_gradient]
+
+                # Align with Megatron: MG sets wd_mult=0 for all params with len(shape)==1 (norm/bias),
+                # i.e. no weight decay. When PF SFT/DPO passes a flat Parameter list via
+                # set_optimizer_grouped_parameters, the original logic set apply_decay_param_fun to None,
+                # causing norm/bias to also be weight-decayed. The fp32 master then drifts step by step
+                # from step1 (bf16 masks it until the weight md5 diverges at step4). Only keep None when
+                # params is already a dict list with weight_decay groups (the groups carry their own wd config).
+                if isinstance(params, (list, tuple)) and len(params) > 0 and isinstance(params[0], dict):
+                    apply_decay_param_fun = None
+                else:
+                    optimizer_param_ids = {id(p) for p in params}
+                    decay_parameters = {
+                        p.name
+                        for n, p in self.model.named_parameters()
+                        if id(p) in optimizer_param_ids and not p.stop_gradient and len(p.shape) > 1
+                    }
+
+                    def apply_decay_param_fun(x):
+                        return x in decay_parameters
+
             else:
-                params = [p for p in self.model.parameters() if not p.stop_gradient]
-                apply_decay_param_fun = _build_apply_decay_param_fun()
+                if self.optimizer_grouped_parameters is not None:
+                    params = self.optimizer_grouped_parameters
+                    is_param_group_dict = (
+                        isinstance(params, (list, tuple)) and len(params) > 0 and isinstance(params[0], dict)
+                    )
+                    apply_decay_param_fun = None if is_param_group_dict else _build_apply_decay_param_fun()
+                else:
+                    params = [p for p in self.model.parameters() if not p.stop_gradient]
+                    apply_decay_param_fun = _build_apply_decay_param_fun()
 
             optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
             if self.args.optim == OptimizerNames.ADAMW_CUSTOM:

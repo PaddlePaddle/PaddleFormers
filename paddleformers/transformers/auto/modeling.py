@@ -78,6 +78,7 @@ MAPPING_NAMES = OrderedDict(
         ("MiniCPM", "minicpm"),
         ("DeepseekV4", "deepseek_v4"),
         ("GptOss", "gpt_oss"),
+        ("Granite", "granite"),
         ("Phi3", "phi3"),
         ("Phi4MM", "phi4_multimodal"),
         ("Phi4Multimodal", "phi4_multimodal"),

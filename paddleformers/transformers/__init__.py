@@ -171,6 +171,14 @@ import_structure = {
     "paddleocr_vl.processor": ["PaddleOCRVLProcessor"],
     "gpt_oss.configuration": ["GptOssConfig"],
     "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM", "GptOssForCausalLMPipe"],
+    "granite.configuration": ["GraniteConfig"],
+    "granite.modeling": [
+        "GraniteDecoderLayer",
+        "GraniteModel",
+        "GranitePretrainedModel",
+        "GraniteForCausalLM",
+        "GraniteForCausalLMPipe",
+    ],
     "kimi_k25.vision_processor": ["KimiK25VisionProcessor"],
     "kimi_k25.processor": ["KimiK25Processor"],
     "kimi_k25.tokenizer": ["TikTokenTokenizer"],
@@ -317,6 +325,7 @@ import_structure = {
     "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM", "Glm4MoeForCausalLMDeprecated"],
     "glm_moe_dsa.configuration": ["GlmMoeDsaConfig"],
     "glm_moe_dsa": ["GlmMoeDsaForCausalLMPipe", "GlmMoeDsaForCausalLM"],
+    "granite": ["GraniteModel", "GranitePretrainedModel", "GraniteForCausalLM"],
     "minimax_m2.configuration": ["MiniMaxM2Config"],
     "minimax_m2": ["MiniMaxM2ForCausalLMPipe", "MiniMaxM2ForCausalLM"],
     "minicpm.configuration": ["MiniCPMConfig"],
@@ -486,6 +495,7 @@ if TYPE_CHECKING:
     from .minicpm import *
     from .deepseek_v4 import *
     from .gpt_oss import *
+    from .granite import *
     from .phi3 import *
     from .phi4_multimodal import *
     from .gemma3_text import *
