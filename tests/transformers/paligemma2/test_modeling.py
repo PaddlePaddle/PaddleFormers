@@ -242,15 +242,22 @@ class PaliGemma2Test(unittest.TestCase):
         )
         self.assertIs(causal_model.get_input_embeddings().weight, causal_model.get_output_embeddings().weight)
 
-    def test_conditional_generation_applies_final_logit_softcapping(self):
+    def test_final_logit_softcapping_matches_hf_model_classes(self):
         config = self.tester.get_config()
+        config.text_config.num_hidden_layers = 0
         config.text_config.final_logit_softcapping = 1.0
-        model = PaliGemma2ForConditionalGeneration(config)
-        model.lm_head.weight.set_value(paddle.full_like(model.lm_head.weight, 100.0))
+        conditional_model = PaliGemma2ForConditionalGeneration(config)
+        causal_model = PaliGemma2ForCausalLM(config)
+        conditional_model.lm_head.weight.set_value(paddle.full_like(conditional_model.lm_head.weight, 100.0))
+        causal_model.lm_head.weight.set_value(paddle.full_like(causal_model.lm_head.weight, 100.0))
         input_ids = paddle.randint(0, self.tester.text_vocab_size, [1, self.tester.seq_length])
-        logits = model(input_ids=input_ids).logits
-        self.assertLessEqual(float(paddle.abs(logits).max()), 1.0)
-        self.assertGreater(float(paddle.abs(logits).max()), 0.9)
+
+        conditional_logits = conditional_model(input_ids=input_ids).logits
+        causal_logits = causal_model(input_ids=input_ids).logits
+
+        self.assertGreater(float(paddle.abs(conditional_logits).max()), 1.0)
+        self.assertLessEqual(float(paddle.abs(causal_logits).max()), 1.0)
+        self.assertGreater(float(paddle.abs(causal_logits).max()), 0.9)
 
     def test_hf_paligemma_auto_loading_alias(self):
         config_dict = self.tester.get_config().to_dict()

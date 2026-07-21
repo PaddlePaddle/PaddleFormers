@@ -558,11 +558,8 @@ class PaliGemma2ForConditionalGeneration(PaliGemma2PreTrainedModel):
 
         hidden_states = self.language_model.norm(hidden_states)
 
-        # Compute logits
+        # HF PaliGemma applies its standalone LM head without Gemma2ForCausalLM's final softcap.
         logits = self.lm_head(hidden_states)
-        if self.config.text_config.final_logit_softcapping is not None:
-            logits = logits / self.config.text_config.final_logit_softcapping
-            logits = paddle.tanh(logits) * self.config.text_config.final_logit_softcapping
 
         loss = None
         if labels is not None:
