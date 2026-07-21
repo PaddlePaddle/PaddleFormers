@@ -1797,6 +1797,18 @@ class HFFormatFullParamSaver:
         return total_saved_size
 
 
+def get_lr_ratio_fn(optimizer):
+    opt = optimizer
+    visited = set()
+    while opt is not None and id(opt) not in visited:
+        visited.add(id(opt))
+        candidate = getattr(opt, "_lr_ratio", None)
+        if callable(candidate):
+            return candidate
+        opt = getattr(opt, "_inner_opt", None) or getattr(opt, "_optim", None)
+    return None
+
+
 def _is_muon_sharding_optimizer(optimizer):
     opt = optimizer
     while opt is not None:

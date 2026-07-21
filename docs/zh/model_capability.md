@@ -6,6 +6,7 @@
 |Gemma3|✓|✓|✓|✓|✓|
 |GLM-4.5|✓|✓|✓|✓|✓|
 |GPT-OSS|✓|✓|✓|x|x|
+|Granite|✓|✓|✓|✓|✓|
 |LLaMA3|✓|✓|✓|✓|✓|
 |MiniMax-Text-01|✓|✓|✓|x|x|
 |OLMo2|✓|✓|✓|✓|✓|
@@ -26,6 +27,7 @@
 |Gemma3|x|✓|-|x|✓|✓|
 |GLM-4.5|✓|✓|✓|✓|✓|✓|
 |GPT-OSS|✓|✓|x|x|✓|✓|
+|Granite|✓|✓|-|x|✓|✓|
 |LLaMA3|✓|✓|-|x|✓|✓|
 |MiniMax-Text-01|x|x|x|x|✓|✓|
 |OLMo2|✓|✓|-|x|✓|✓|

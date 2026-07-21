@@ -65,7 +65,12 @@ from tqdm.auto import tqdm
 from ..transformers.moe_gate import PretrainedMoEGate
 from ..transformers.moe_utils import offload, reload
 from ..utils.log import logger
-from .trainer_utils import IntervalStrategy, get_last_checkpoint, has_length
+from .trainer_utils import (
+    IntervalStrategy,
+    get_last_checkpoint,
+    get_lr_ratio_fn,
+    has_length,
+)
 from .training_args import TrainingArguments
 
 __all__ = [
@@ -796,6 +801,8 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
 
         model = kwargs["model"]
 
+        lr_ratio_fn = get_lr_ratio_fn(kwargs.get("optimizer"))
+
         biases = []
         usages = []
 
@@ -844,8 +851,13 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
                 if not hasattr(layer, "e_score_correction_bias") or layer.e_score_correction_bias is None:
                     return
                 with paddle.no_grad():
-                    if not layer.weight.stop_gradient:
-                        biases.pop(0).add_(update_list.pop(0))
+                    bias = biases.pop(0)
+                    upd = update_list.pop(0)
+                    frozen = layer.weight.stop_gradient or (
+                        lr_ratio_fn is not None and not float(lr_ratio_fn(layer.weight))
+                    )
+                    if not frozen:
+                        bias.add_(upd)
                     usages.pop(0).zero_()
 
         model.apply(update_bias)
