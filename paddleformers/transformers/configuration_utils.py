@@ -541,6 +541,12 @@ class LlmMetaConfig:
             "Method to initialize weights of the output layer of both attention and MLP blocks.",
         ),
         (
+            "init_method_std",
+            float,
+            0.02,
+            "Standard deviation for initialization (Normal). Used to build the default init_method/output_layer_init_method when they are not explicitly set. Defaults to 0.02.",
+        ),
+        (
             "embedding_init_method",
             Optional[Any],
             None,

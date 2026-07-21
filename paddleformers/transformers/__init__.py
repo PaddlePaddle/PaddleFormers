@@ -95,6 +95,14 @@ import_structure = {
     "auto.tokenizer": ["AutoTokenizer", "TOKENIZER_MAPPING"],
     "auto.video_processing": ["AutoVideoProcessor", "VIDEO_PROCESSOR_MAPPING"],
     "auto.feature_extraction": ["AutoFeatureExtractor"],
+    "diff_transformer.configuration": ["DiffTransformerConfig"],
+    "diff_transformer.modeling": [
+        "DiffTransformerModel",
+        "DiffTransformerForCausalLM",
+        "DiffTransformerPreTrainedModel",
+    ],
+    "diff_transformer.tokenizer": ["DiffTransformerTokenizer"],
+    "diff_transformer": [],
     "deepseek_v3.configuration": ["DeepseekV3Config"],
     "deepseek_v32.configuration": ["DeepseekV32Config"],
     "deepseek_v32.modeling": [
@@ -163,6 +171,14 @@ import_structure = {
     "paddleocr_vl.processor": ["PaddleOCRVLProcessor"],
     "gpt_oss.configuration": ["GptOssConfig"],
     "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM", "GptOssForCausalLMPipe"],
+    "granite.configuration": ["GraniteConfig"],
+    "granite.modeling": [
+        "GraniteDecoderLayer",
+        "GraniteModel",
+        "GranitePretrainedModel",
+        "GraniteForCausalLM",
+        "GraniteForCausalLMPipe",
+    ],
     "kimi_k25.vision_processor": ["KimiK25VisionProcessor"],
     "kimi_k25.processor": ["KimiK25Processor"],
     "kimi_k25.tokenizer": ["TikTokenTokenizer"],
@@ -317,6 +333,7 @@ import_structure = {
     "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM", "Glm4MoeForCausalLMDeprecated"],
     "glm_moe_dsa.configuration": ["GlmMoeDsaConfig"],
     "glm_moe_dsa": ["GlmMoeDsaForCausalLMPipe", "GlmMoeDsaForCausalLM"],
+    "granite": ["GraniteModel", "GranitePretrainedModel", "GraniteForCausalLM"],
     "minimax_m2.configuration": ["MiniMaxM2Config"],
     "minimax_m2": ["MiniMaxM2ForCausalLMPipe", "MiniMaxM2ForCausalLM"],
     "minicpm.configuration": ["MiniCPMConfig"],
@@ -356,6 +373,9 @@ import_structure = {
     ],
     "glm_ocr.processor": ["Glm46VProcessor"],
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
+    "olmo2.configuration": ["Olmo2Config"],
+    "olmo2.modeling": ["Olmo2DecoderLayer", "Olmo2Model", "Olmo2ForCausalLM", "Olmo2ForCausalLMPipe"],
+    "olmo2": [],
     "intern_lm3.configuration": ["InternLM3Config"],
     "intern_lm3.modeling": [
         "InternLM3Model",
@@ -439,6 +459,7 @@ if TYPE_CHECKING:
     from .auto.processing import *
     from .auto.tokenizer import *
     from .auto.video_processing import *
+    from .diff_transformer import *
     from .deepseek_v3 import *
     from .ernie4_5 import *
     from .ernie4_5_moe import *
@@ -466,9 +487,11 @@ if TYPE_CHECKING:
     from .minicpm import *
     from .deepseek_v4 import *
     from .gpt_oss import *
+    from .granite import *
     from .phi3 import *
     from .gemma3_text import *
     from .glm_ocr import *
+    from .olmo2 import *
     from .intern_lm3 import *
     from .intern_lm2_5 import *
     from .intern import *

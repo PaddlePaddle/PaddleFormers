@@ -965,6 +965,25 @@ register_template(
     template_class=Llama2Template,
 )
 
+register_template(
+    name="granite",
+    format_user=StringFormatter(
+        slots=[
+            "<|start_of_role|>user<|end_of_role|>{{content}}<|end_of_text|>\n<|start_of_role|>assistant<|end_of_role|>"
+        ]
+    ),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|start_of_role|>system<|end_of_role|>{{content}}<|end_of_text|>\n"]),
+    format_observation=StringFormatter(
+        slots=[
+            "<|start_of_role|>tool_response<|end_of_role|>{{content}}<|end_of_text|>\n<|start_of_role|>assistant<|end_of_role|>"
+        ]
+    ),
+    default_system="You are Granite, developed by IBM. You are a helpful AI assistant.",
+    suffix=["<|end_of_text|>"],
+    chat_sep="<|end_of_text|>\n",
+)
+
 
 register_template(
     name="phi4",
