@@ -1179,6 +1179,37 @@ class MolmoForCausalLM(MolmoPretrainedModel):
     def set_output_embeddings(self, new_embeddings):
         self.lm_head = new_embeddings
 
+    def prepare_inputs_for_generation(
+        self,
+        input_ids: paddle.Tensor,
+        past_key_values: Cache | None = None,
+        attention_mask: paddle.Tensor | None = None,
+        inputs_embeds: paddle.Tensor | None = None,
+        position_ids: paddle.Tensor | None = None,
+        use_cache: bool = True,
+        images: paddle.Tensor | None = None,
+        image_masks: paddle.Tensor | None = None,
+        image_input_idx: paddle.Tensor | None = None,
+        **kwargs,
+    ):
+        model_inputs = super().prepare_inputs_for_generation(
+            input_ids,
+            past_key_values=past_key_values,
+            attention_mask=attention_mask,
+            inputs_embeds=inputs_embeds,
+            position_ids=position_ids,
+            use_cache=use_cache,
+            images=images,
+            image_masks=image_masks,
+            image_input_idx=image_input_idx,
+            **kwargs,
+        )
+        if past_key_values is not None:
+            model_inputs["images"] = None
+            model_inputs["image_masks"] = None
+            model_inputs["image_input_idx"] = None
+        return model_inputs
+
     def forward(
         self,
         input_ids: paddle.Tensor,

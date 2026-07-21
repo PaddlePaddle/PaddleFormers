@@ -15,10 +15,17 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from types import SimpleNamespace
 
 import paddle
 
-from paddleformers.datasets.collate import _pad_and_stack_multimodal_tensors
+from paddleformers.datasets.collate import (
+    _pack_molmo_multimodal_inputs,
+    _pad_and_stack_multimodal_tensors,
+    _pad_and_stack_optional_multimodal_tensors,
+    mm_collate_fn,
+)
+from paddleformers.datasets.SFTDataset import Sequence
 from paddleformers.transformers import AutoModel, AutoModelForCausalLM
 from paddleformers.transformers.molmo import MolmoConfig, MolmoForCausalLM, MolmoModel
 from paddleformers.transformers.molmo.modeling import MolmoPretrainedVisionBackbone
@@ -351,6 +358,130 @@ class MolmoModelTest(ModelTesterMixin, unittest.TestCase):
         self.assertEqual(images.shape, [2, 2, 4, 3])
         self.assertTrue((images[0, 1] == 0).all())
         self.assertTrue((image_input_idx[0, 1] == -1).all())
+
+    def test_packed_multimodal_inputs_use_token_offsets(self):
+        first = Sequence(
+            token_ids=[1, 2, 3],
+            position_ids=[0, 1, 2],
+            labels=[1, 2, 3],
+            num_examples=1,
+            mm_inputs={
+                "images": paddle.ones([1, 2, 3]),
+                "image_masks": paddle.ones([1, 2]),
+                "image_input_idx": paddle.to_tensor([[1, -100]], dtype="int64"),
+            },
+        )
+        second = Sequence(
+            token_ids=[4, 5],
+            position_ids=[0, 1],
+            labels=[4, 5],
+            num_examples=1,
+            mm_inputs={
+                "images": paddle.ones([1, 2, 3]),
+                "image_masks": paddle.ones([1, 2]),
+                "image_input_idx": paddle.to_tensor([[0, 1]], dtype="int64"),
+            },
+        )
+
+        images, image_masks, image_input_idx = _pack_molmo_multimodal_inputs([first, second])
+
+        self.assertEqual(images.shape, [2, 2, 3])
+        self.assertEqual(image_masks.shape, [2, 2])
+        self.assertTrue(paddle.equal_all(image_input_idx, paddle.to_tensor([[1, -100], [3, 4]])))
+
+    def test_mm_collate_packs_molmo_inputs(self):
+        first = Sequence(
+            token_ids=[1, 2, 3],
+            position_ids=[0, 1, 2],
+            labels=[1, 2, 3],
+            num_examples=1,
+            mm_inputs={
+                "images": paddle.ones([1, 2, 3]),
+                "image_masks": paddle.ones([1, 2]),
+                "image_input_idx": paddle.to_tensor([[1, -100]], dtype="int64"),
+            },
+        )
+        second = Sequence(
+            token_ids=[4, 5],
+            position_ids=[0, 1],
+            labels=[4, 5],
+            num_examples=1,
+            mm_inputs={
+                "images": paddle.ones([1, 2, 3]),
+                "image_masks": paddle.ones([1, 2]),
+                "image_input_idx": paddle.to_tensor([[0, 1]], dtype="int64"),
+            },
+        )
+        training_args = SimpleNamespace(
+            num_nextn_predict_layers=0,
+            context_parallel_size=1,
+            tensor_model_parallel_size=1,
+            sequence_parallel=False,
+            fp8=False,
+        )
+        model_args = SimpleNamespace(
+            use_attn_mask_startend_row_indices=False,
+            use_global_causal_attn=False,
+        )
+        tokenizer = SimpleNamespace(pad_token_id=0)
+
+        for padding_free, batch in ((False, [[first, second]]), (True, [[first], [second]])):
+            with self.subTest(padding_free=padding_free):
+                inputs = mm_collate_fn(
+                    batch=batch,
+                    template=None,
+                    processor=None,
+                    tokenizer=tokenizer,
+                    training_args=training_args,
+                    model_args=model_args,
+                    max_seq_len=5,
+                    padding_free=padding_free,
+                    model=None,
+                )
+
+                self.assertEqual(inputs["input_ids"].shape, [1, 5])
+                self.assertEqual(inputs["images"].shape, [1, 2, 2, 3])
+                self.assertTrue(
+                    paddle.equal_all(
+                        inputs["image_input_idx"],
+                        paddle.to_tensor([[[1, -100], [3, 4]]]),
+                    )
+                )
+
+    def test_packed_multimodal_rows_are_padded(self):
+        first = paddle.ones([1, 2, 3])
+        second = paddle.ones([2, 2, 3])
+
+        images = _pad_and_stack_optional_multimodal_tensors([first, None, second])
+        image_input_idx = _pad_and_stack_optional_multimodal_tensors(
+            [paddle.ones([1, 2], dtype="int64"), None, paddle.ones([2, 2], dtype="int64")],
+            padding_value=-1,
+        )
+
+        self.assertEqual(images.shape, [3, 2, 2, 3])
+        self.assertTrue((images[1] == 0).all())
+        self.assertTrue((image_input_idx[0, 1] == -1).all())
+        self.assertTrue((image_input_idx[1] == -1).all())
+
+    def test_multimodal_generate_with_cache(self):
+        config = self.model_tester.get_config(with_vision=True)
+        config.eos_token_id = None
+        input_ids = ids_tensor([self.model_tester.batch_size, self.model_tester.seq_length], config.vocab_size)
+        images, image_masks, image_input_idx = self.model_tester.get_vision_inputs()
+        model = MolmoForCausalLM(config)
+        model.eval()
+
+        output = model.generate(
+            input_ids=input_ids,
+            images=images,
+            image_masks=image_masks,
+            image_input_idx=image_input_idx,
+            max_new_tokens=2,
+            do_sample=False,
+            use_cache=True,
+        )
+
+        self.assertEqual(output[0].shape, [self.model_tester.batch_size, 2])
 
     def test_inverse_aoa_config_contains_vision_weights(self):
         config = self.model_tester.get_config(with_vision=True)
