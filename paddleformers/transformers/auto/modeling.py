@@ -93,7 +93,11 @@ MAPPING_NAMES = OrderedDict(
 )
 
 MAPPING_SPACIAL_KEY = OrderedDict(
-    [("Gemma3", "Gemma3Text"), ("Ernie4_5_VLMoe", "Ernie4_5_VLMoeForConditionalGeneration")]
+    [
+        ("Gemma3", "Gemma3Text"),
+        ("Ernie4_5_VLMoe", "Ernie4_5_VLMoeForConditionalGeneration"),
+        ("Llama4", "Llama4Text"),
+    ]
 )
 CONFIGURATION_MODEL_MAPPING = OrderedDict([((), "Gemma3TextModel")])
 

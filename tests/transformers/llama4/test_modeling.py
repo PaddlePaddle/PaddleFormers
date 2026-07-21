@@ -20,10 +20,12 @@ import numpy as np
 import paddle
 
 from paddleformers.transformers import (
+    AutoModel,
     Llama4ForCausalLM,
     Llama4TextConfig,
     Llama4TextModel,
 )
+from paddleformers.transformers.llama4.modeling import Llama4TextExperts
 from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_modeling_common import (
@@ -195,6 +197,84 @@ class Llama4ModelTest(ModelTesterMixin, unittest.TestCase):
     def test_model_causal_lm(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_for_causal_lm(*config_and_inputs)
+
+    def test_expert_parameters_are_trainable_from_initialization(self):
+        config = self.model_tester.get_config()
+        experts = Llama4TextExperts(config)
+
+        self.assertGreater(paddle.count_nonzero(experts.gate_up_proj).item(), 0)
+        self.assertGreater(paddle.count_nonzero(experts.down_proj).item(), 0)
+
+        hidden_states = paddle.randn([config.num_local_experts * 2, config.hidden_size])
+        experts(hidden_states).sum().backward()
+        self.assertGreater(paddle.count_nonzero(experts.gate_up_proj.grad).item(), 0)
+
+    def test_auto_model_mapping(self):
+        config = self.model_tester.get_config()
+        model = AutoModel.from_config(config)
+        self.assertIsInstance(model, Llama4TextModel)
+
+        config_dict = config.to_dict()
+        config_dict["architectures"] = ["Llama4ForCausalLM"]
+        inferred_model_class = AutoModel._get_model_class_from_config(None, None, config_dict)
+        self.assertIs(inferred_model_class, Llama4TextModel)
+
+    def test_chunked_mask_uses_local_cache_and_left_padding(self):
+        config = self.model_tester.get_config()
+        config.attention_chunk_size = 4
+        model = Llama4TextModel(config)
+
+        cached_mask = model._create_chunked_causal_mask(1, 1, 6, paddle.float32, 4)
+        self.assertEqual((cached_mask == 0).reshape([-1]).tolist(), [False, True, True, True])
+
+        attention_mask = paddle.to_tensor([[0, 0, 1, 1, 1, 1]], dtype="int64")
+        padded_mask = model._create_chunked_causal_mask(1, 6, 0, paddle.float32, 4, attention_mask=attention_mask)
+        self.assertEqual(
+            (padded_mask == 0).squeeze(0).squeeze(0).tolist(),
+            [
+                [False, False, False, False, False, False],
+                [False, False, False, False, False, False],
+                [False, False, True, False, False, False],
+                [False, False, True, True, False, False],
+                [False, False, True, True, True, False],
+                [False, False, True, True, True, True],
+            ],
+        )
+
+    def test_chunked_cached_decode_matches_full_forward(self):
+        config = self.model_tester.get_config()
+        config.num_hidden_layers = 1
+        config.moe_layers = [0]
+        config.no_rope_layers = [1]
+        config.layer_types = ["chunked_attention"]
+        config.attention_chunk_size = 4
+        model = Llama4TextModel(config)
+        model.eval()
+
+        input_ids = ids_tensor([1, 7], config.vocab_size, dtype=paddle.int64)
+        attention_mask = paddle.ones([1, 7], dtype="int64")
+        with paddle.no_grad():
+            full_output = model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                use_cache=False,
+                return_dict=True,
+            ).last_hidden_state[:, -1]
+            prefill_output = model(
+                input_ids=input_ids[:, :-1],
+                attention_mask=attention_mask[:, :-1],
+                use_cache=True,
+                return_dict=True,
+            )
+            cached_output = model(
+                input_ids=input_ids[:, -1:],
+                attention_mask=attention_mask,
+                past_key_values=prefill_output.past_key_values,
+                use_cache=True,
+                return_dict=True,
+            ).last_hidden_state[:, -1]
+
+        self.assertTrue(paddle.allclose(cached_output, full_output, atol=1e-5, rtol=1e-5))
 
     @unittest.skip("Llama4 text model uses grouped KV cache; common cache format test is not applicable yet.")
     def test_past_key_values_format(self):

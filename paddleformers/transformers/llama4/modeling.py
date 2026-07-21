@@ -132,12 +132,12 @@ class Llama4TextExperts(nn.Layer):
         self.gate_up_proj = paddle.create_parameter(
             shape=[self.num_experts, self.hidden_size, 2 * self.expert_dim],
             dtype=paddle.get_default_dtype(),
-            default_initializer=nn.initializer.Constant(0.0),
+            default_initializer=nn.initializer.Normal(mean=0.0, std=config.initializer_range),
         )
         self.down_proj = paddle.create_parameter(
             shape=[self.num_experts, self.expert_dim, self.hidden_size],
             dtype=paddle.get_default_dtype(),
-            default_initializer=nn.initializer.KaimingUniform(),
+            default_initializer=nn.initializer.Normal(mean=0.0, std=config.initializer_range),
         )
 
     def forward(self, hidden_states):
@@ -594,18 +594,49 @@ class Llama4TextModel(Llama4TextPretrainedModel):
         )
         self.rotary_emb = Llama4TextRotaryEmbedding(config=config)
 
-    def _create_chunked_causal_mask(self, batch_size, seq_length, cache_length, dtype, chunk_size):
-        total_length = seq_length + cache_length
-        mask = paddle.full([seq_length, total_length], paddle.finfo(dtype).min, dtype=dtype)
-        for i in range(seq_length):
-            pos = i + cache_length
-            chunk_start = (pos // chunk_size) * chunk_size
-            attend_from = max(0, chunk_start)
-            attend_to = pos + 1
-            mask[i, attend_from:attend_to] = 0.0
+    def _create_chunked_causal_mask(
+        self, batch_size, seq_length, cache_length, dtype, chunk_size, attention_mask=None
+    ):
+        local_cache_length = min(cache_length, chunk_size - 1)
+        kv_length = local_cache_length + seq_length
+        kv_offset = cache_length - local_cache_length
 
-        mask = mask.unsqueeze(0).unsqueeze(0).expand([batch_size, 1, -1, -1])
-        return mask
+        query_positions = paddle.arange(cache_length, cache_length + seq_length, dtype="int64").reshape(
+            [1, seq_length, 1]
+        )
+        key_positions = paddle.arange(kv_offset, kv_offset + kv_length, dtype="int64").reshape([1, 1, kv_length])
+
+        padding_mask = None
+        if attention_mask is not None and attention_mask.ndim == 2:
+            padding_mask = attention_mask.astype("bool")
+            left_padding_tokens = (padding_mask.astype("int64").cumsum(axis=-1) == 0).astype("int64").sum(axis=-1)
+        else:
+            left_padding_tokens = paddle.zeros([batch_size], dtype="int64")
+        left_padding_tokens = left_padding_tokens.reshape([batch_size, 1, 1])
+
+        query_chunk = (query_positions - left_padding_tokens) // chunk_size
+        key_chunk = (key_positions - left_padding_tokens) // chunk_size
+        allowed = (key_positions <= query_positions) & (key_chunk == query_chunk)
+
+        if padding_mask is not None:
+            required_length = kv_offset + kv_length
+            if padding_mask.shape[-1] < required_length:
+                padding_mask = paddle.concat(
+                    [
+                        padding_mask,
+                        paddle.zeros(
+                            [batch_size, required_length - padding_mask.shape[-1]],
+                            dtype="bool",
+                        ),
+                    ],
+                    axis=-1,
+                )
+            local_padding_mask = padding_mask[:, kv_offset:required_length].unsqueeze(1)
+            allowed = allowed & local_padding_mask
+
+        min_value = paddle.full([], paddle.finfo(dtype).min, dtype=dtype)
+        mask = paddle.where(allowed, paddle.zeros([], dtype=dtype), min_value)
+        return mask.unsqueeze(1)
 
     def forward(
         self,
@@ -655,7 +686,12 @@ class Llama4TextModel(Llama4TextPretrainedModel):
 
         if self.config._attn_implementation == "eager":
             chunked_causal_mask = self._create_chunked_causal_mask(
-                bsz, seq_length, kv_seq_len, inputs_embeds.dtype, self.config.attention_chunk_size
+                bsz,
+                seq_length,
+                kv_seq_len,
+                inputs_embeds.dtype,
+                self.config.attention_chunk_size,
+                attention_mask,
             )
         else:
             chunked_causal_mask = full_causal_mask
