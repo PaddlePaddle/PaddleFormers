@@ -21,7 +21,7 @@ dataloader_num_workers: 4
 prefetch_factor: 32
 
 ### model
-model_name_or_path: ./dataset/MiniMax-V2.5-bf16
+model_name_or_path: ./huggingface/MiniMax-V2.5-bf16
 _attn_implementation: flashmask
 
 ### finetuning
