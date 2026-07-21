@@ -1,0 +1,124 @@
+# ==cxr add begin==
+use_template: true
+truncation_strategy: delete
+dataset_type: map
+random_shuffle: false
+packing: true
+truncate_packing: false
+# ==cxr add end==
+
+train_dataset_type: messages
+eval_dataset_type: messages
+train_dataset_path: ./dataset/PT_train_gsm8k_messages.jsonl
+train_dataset_prob: "1.0"
+eval_dataset_path: ./dataset/PT_train_gsm8k_messages.jsonl
+eval_dataset_prob: "1.0"
+
+max_seq_len: 8192
+mix_strategy: concat
+dataloader_shuffle: false
+dataloader_num_workers: 4
+prefetch_factor: 32
+
+### model
+model_name_or_path: ./dataset/MiniMax-V2.5-bf16
+_attn_implementation: flashmask
+
+### finetuning
+# base
+stage: PT
+fine_tuning: full
+seed: 23
+do_train: true
+do_eval: false
+per_device_eval_batch_size: 1
+per_device_train_batch_size: 1
+num_train_epochs: 1
+max_steps: 500
+eval_iters: 1000
+eval_steps: 1000000
+evaluation_strategy: steps
+save_steps: 20000
+save_hf_steps: 20000
+save_strategy: steps
+logging_steps: 1
+gradient_accumulation_steps: 8
+logging_dir: ./vdl_log
+output_dir: ./checkpoints
+disable_tqdm: true
+eval_accumulation_steps: 16
+
+# train
+lr_scheduler_type: cosine
+warmup_steps: 0
+learning_rate: 1.0e-5
+min_lr: 1.0e-6
+weight_decay: 0.1
+
+
+# performance
+context_parallel_size: 1
+tensor_model_parallel_size: 1
+expert_model_parallel_size: 8
+sequence_parallel: false
+use_expert_parallel: true
+pipeline_model_parallel_size: 8
+num_empty_layers_add_in_head: 0
+num_empty_layers_add_in_tail: 2
+# virtual_pipeline_model_parallel_size: 8
+
+# performance
+recompute_granularity: full
+# recompute_method: first_n
+# recompute_num_layers: 10
+recompute_method: uniform
+recompute_num_layers: 1
+
+using_sonic_moe: false
+
+moe_grouped_gemm: true
+# moe_deep_gemm: false
+moe_shared_expert_overlap: true
+
+apply_rope_fusion: false
+# fuse_rms_norm: true
+moe_router_force_load_balancing: false
+router_aux_loss_coef: 0.0001
+
+split_param: true
+sharding: stage1
+stage1_overlap: true
+hybrid_parallel_expert_grad_scale: 1.0
+
+# pp
+pp_delay_scale_loss: true
+overlap_p2p_comm: true
+variable_seq_lengths: true
+best_unbalanced_scheduler: true
+pp_release_grads: true
+
+
+amp_master_grad: true
+bf16: true
+fp16_opt_level: O2
+fa_version: 3
+
+save_checkpoint_format: flex_checkpoint
+load_checkpoint_format: flex_checkpoint
+continue_training: false
+
+# 原理不一致
+# calculate_per_token_loss: true  # PaddleFormers 不支持此字段，loss 已默认 per-token 平均
+use_qk_norm: true
+multi_latent_attention: false
+fp32_residual_connection: false
+tensorwise_offload_optimizer: true
+
+num_nextn_predict_layers: 0
+
+load_via_cpu: false
+save_total_limit: 2
+benchmark: true
+# fp8: e4m3
+# offload_fp8_expert_master_weight: false
+# num_hidden_layers: 30
