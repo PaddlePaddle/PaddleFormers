@@ -268,6 +268,8 @@ def run_sft(
         dtype=dtype,
         quantization_config=quantization_config,
     )
+    if getattr(training_args, "pad_token_id", None) is not None:
+        model_config.pad_token_id = training_args.pad_token_id
 
     if (
         model_config.tie_word_embeddings
@@ -328,10 +330,14 @@ def run_sft(
     model_config.max_sequence_length = data_args.max_seq_len
     model_config._attn_implementation = model_args._attn_implementation
     model_config.is_lora = model_args.lora
+    model_config.moe_logging = model_args.moe_logging
 
     # Sync arguments to MLLM sub_config
     if getattr(model_config, "text_config", None) is not None:
+        LlmMetaConfig.set_llm_config(model_config.text_config, training_args)
         model_config.text_config.max_sequence_length = data_args.max_seq_len
+        if hasattr(model_config.text_config, "mtp_num_hidden_layers"):
+            model_config.text_config.mtp_num_hidden_layers = getattr(training_args, "num_nextn_predict_layers", 0)
     if getattr(model_config, "vision_config", None) is not None:
         model_config.vision_config._attn_implementation = model_args._attn_implementation
         model_config.vision_config.recompute_granularity = model_config.recompute_granularity
@@ -753,27 +759,22 @@ def run_sft(
         train_result = trainer.train(resume_from_checkpoint=checkpoint)
         if model_args.neftune:
             neft_post_hook_handle.remove()
-        if training_args.benchmark:
-            total_tokens = (
-                data_args.max_seq_len
-                * training_args.per_device_train_batch_size
-                * training_args.dataset_world_size
-                * training_args.gradient_accumulation_steps
-                * training_args.max_steps
-            )
-            total_tokens_per_second_per_gpu = (
-                total_tokens / train_result.metrics["train_runtime"] / training_args.world_size
-            )
-            logger.info(f"Total_Tokens_per_second_per_gpu: {total_tokens_per_second_per_gpu} ")
-            logger.info("Benchmark done.")
-        else:
-            if not training_args.autotuner_benchmark:
-                trainer.save_model(
-                    merge_tensor_parallel=training_args.tensor_model_parallel_size > 1, last_fc_to_hf=True
-                )
-                trainer.log_metrics("train", train_result.metrics)
-                trainer.save_metrics("train", train_result.metrics)
-                trainer.save_state()
+        total_tokens = (
+            data_args.max_seq_len
+            * training_args.per_device_train_batch_size
+            * training_args.dataset_world_size
+            * training_args.gradient_accumulation_steps
+            * training_args.max_steps
+        )
+        total_tokens_per_second_per_gpu = (
+            total_tokens / train_result.metrics["train_runtime"] / training_args.world_size
+        )
+        logger.info(f"Total_Tokens_per_second_per_gpu: {total_tokens_per_second_per_gpu} ")
+        if not training_args.autotuner_benchmark:
+            trainer.save_model(merge_tensor_parallel=training_args.tensor_model_parallel_size > 1, last_fc_to_hf=True)
+            trainer.log_metrics("train", train_result.metrics)
+            trainer.save_metrics("train", train_result.metrics)
+            trainer.save_state()
 
 
 def create_peft_model(model_args, training_args, dtype, model):

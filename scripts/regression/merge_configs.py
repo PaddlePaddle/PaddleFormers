@@ -81,58 +81,6 @@ def save_yaml(filepath, data):
         f.write("\n".join(result_lines))
 
 
-def get_base_template():
-    """Get base_loss and base_result template for new models"""
-    return {
-        "base_loss": {
-            "sft_full_loss": 0.0,
-            "sft_full_resume_loss": 0.0,
-            "dpo_full_loss": 0.69314718,
-            "dpo_full_resume_loss": 0.69314718,
-            "pt_full_loss": 0.0,
-            "pt_full_resume_loss": 0.0,
-            "sft_lora_loss": 0.0,
-            "sft_lora_resume_loss": 0.0,
-            "dpo_lora_loss": 0.69314718,
-            "dpo_lora_resume_loss": 0.69314718,
-            "pt_lora_loss": 0.0,
-            "pt_lora_resume_loss": 0.0,
-            "sft_full_tp_pp_loss": 0.0,
-            "sft_full_tp_pp_resume_loss": 0.0,
-            "dpo_full_tp_pp_loss": 0.69314718,
-            "dpo_full_tp_pp_resume_loss": 0.69314718,
-            "pt_full_tp_pp_loss": 0.0,
-            "pt_full_tp_pp_resume_loss": 0.0,
-            "sft_lora_tp_pp_loss": 0.0,
-            "sft_lora_tp_pp_resume_loss": 0.0,
-            "dpo_lora_tp_pp_loss": 0.69314718,
-            "dpo_lora_tp_pp_resume_loss": 0.69314718,
-            "pt_lora_tp_pp_loss": 0.0,
-            "pt_lora_tp_pp_resume_loss": 0.0,
-            "sft_full_function_call_loss": 0.0,
-            "sft_full_function_call_resume_loss": 0.0,
-            "dpo_full_function_call_loss": 0.69314718,
-            "dpo_full_function_call_resume_loss": 0.69314718,
-        },
-        "base_result": {
-            "pt_full_excepted_result": [],
-            "sft_full_excepted_result": [],
-            "dpo_full_excepted_result": [],
-            "pt_lora_excepted_result": [],
-            "sft_lora_excepted_result": [],
-            "dpo_lora_excepted_result": [],
-            "pt_full_tp_pp_excepted_result": [],
-            "sft_full_tp_pp_excepted_result": [],
-            "dpo_full_tp_pp_excepted_result": [],
-            "pt_lora_tp_pp_excepted_result": [],
-            "sft_lora_tp_pp_excepted_result": [],
-            "dpo_lora_tp_pp_excepted_result": [],
-            "sft_full_function_call_excepted_result": [],
-            "dpo_full_function_call_excepted_result": [],
-        },
-    }
-
-
 def merge_configs(config_path, config_ci_path, output_path=None):
     """
     Compare two YAML config files and copy new models from origin to update config.
@@ -203,15 +151,9 @@ def merge_configs(config_path, config_ci_path, output_path=None):
                 updated_models[model_name] = new_fields
 
     if new_models:
-        print(f"\nAdding {len(new_models)} new model(s) to update config...")
-        base_template = get_base_template()
         for model_name, model_config in new_models.items():
-
             new_model = model_config.copy()
-
-            new_model.update(base_template)
-            config[model_name] = new_model
-            print(f"  ✓ Added model {model_name} with base_loss and base_result template")
+            config_ci[model_name] = new_model
 
     if updated_models:
         print(f"\nUpdating {len(updated_models)} model(s)...")
@@ -226,10 +168,8 @@ def merge_configs(config_path, config_ci_path, output_path=None):
                 for key, value in new_fields["other_fields"].items():
                     config_ci[model_name][key] = value
 
-            print(f"  ✓ Updated model {model_name}")
-
     if has_changes:
-        save_yaml(output_path, config)
+        save_yaml(output_path, config_ci)
     else:
         # No changes: preserve the original update_config (config.yaml) as output
         save_yaml(output_path, config_ci)
@@ -277,9 +217,6 @@ if __name__ == "__main__":
     result = merge_configs(str(origin_config_path), str(update_config_path), args.output)
 
     if result["new_models"] or result["updated_models"]:
-        print("  New models: {len(result['new_models'])}")
-        print("  Updated models: {len(result['updated_models'])}")
-
         if result["new_models"]:
             models_str = ",".join(result["new_models"])
             print("new_models=" + models_str)

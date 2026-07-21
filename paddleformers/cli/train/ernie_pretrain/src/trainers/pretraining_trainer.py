@@ -1179,7 +1179,7 @@ class PretrainingTrainer(Trainer):
             if not self.args.enable_global_training_logs:
                 global_training_logs.global_meters_keys = []
 
-            if get_env_device() == "gpu":
+            if get_env_device() == "gpu" or get_env_device() == "musa":
                 info_callback = global_training_logs.dict(use_async=True)
 
             if hasattr(self, "scaler"):
@@ -1314,6 +1314,18 @@ class PretrainingTrainer(Trainer):
                 self._end_save_time = time.time()
 
     def create_scheduler(self, num_training_steps):
+        # When freeze_training is enabled, use constant scheduler with lr=0
+        if getattr(self.args, "freeze_training", False):
+            logger.warning(
+                "WARNING: freeze_training is enabled! "
+                "Learning rate is set to 0 and model parameters will NOT be updated. "
+                "This mode is intended for debugging/profiling only, NOT for actual training."
+            )
+            from paddleformers.trainer.trainer_utils import get_constant_schedule
+
+            self.lr_scheduler = get_constant_schedule(learning_rate=0.0)
+            return self.lr_scheduler
+
         if self.args.warmup_steps > 0:
             warmup = self.args.warmup_steps
         else:

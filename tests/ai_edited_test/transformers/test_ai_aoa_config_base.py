@@ -38,7 +38,7 @@ class TestMoEAOAConfigParams(unittest.TestCase):
         self.assertEqual(params.num_key_value_heads, 0)
         self.assertEqual(params.num_experts, 0)
         self.assertFalse(params.using_sonic_moe)
-        self.assertFalse(params.moe_grouped_gemm)
+        self.assertFalse(params.moe_expert_fusion)
         self.assertFalse(params.fp8)
         self.assertFalse(params.fd_fallback)
         self.assertFalse(params.tie_word_embeddings)
@@ -61,7 +61,7 @@ class TestMoEAOAConfigParams(unittest.TestCase):
             num_key_value_heads=8,
             num_experts=8,
             using_sonic_moe=True,
-            moe_grouped_gemm=True,
+            moe_expert_fusion=True,
             fp8=True,
             tie_word_embeddings=True,
             num_head_empty_layers=2,
@@ -76,7 +76,7 @@ class TestMoEAOAConfigParams(unittest.TestCase):
         self.assertEqual(params.num_key_value_heads, 8)
         self.assertEqual(params.num_experts, 8)
         self.assertTrue(params.using_sonic_moe)
-        self.assertTrue(params.moe_grouped_gemm)
+        self.assertTrue(params.moe_expert_fusion)
         self.assertTrue(params.fp8)
         self.assertTrue(params.tie_word_embeddings)
         self.assertEqual(params.num_head_empty_layers, 2)
@@ -348,7 +348,7 @@ class TestMoEAOAConfigGeneratorGroupedGEMM(unittest.TestCase):
         params = MoEAOAConfigParams(
             num_hidden_layers=2,
             num_experts=4,
-            moe_grouped_gemm=False,
+            moe_expert_fusion=False,
             using_sonic_moe=False,
             fp8=False,
             fd_fallback=False,
@@ -365,7 +365,7 @@ class TestMoEAOAConfigGeneratorGroupedGEMM(unittest.TestCase):
         params = MoEAOAConfigParams(
             num_hidden_layers=2,
             num_experts=4,
-            moe_grouped_gemm=True,
+            moe_expert_fusion=True,
         )
         stmts = MoEAOAConfigGenerator._get_grouped_gemm_statements(params)
         self.assertTrue(len(stmts) > 0)
@@ -381,7 +381,7 @@ class TestMoEAOAConfigGeneratorGroupedGEMM(unittest.TestCase):
         params = MoEAOAConfigParams(
             num_hidden_layers=2,
             num_experts=4,
-            moe_grouped_gemm=False,
+            moe_expert_fusion=False,
             using_sonic_moe=False,
             fp8=False,
             fd_fallback=True,
@@ -601,7 +601,7 @@ class TestMoEAOAConfigGeneratorInverse(unittest.TestCase):
 
         params = MoEAOAConfigParams(
             num_experts=4,
-            moe_grouped_gemm=True,
+            moe_expert_fusion=True,
         )
         stmts = MoEAOAConfigGenerator._get_inv_grouped_gemm_layer_statements(params, "model.layers.0")
         self.assertTrue(len(stmts) > 0)
@@ -617,7 +617,7 @@ class TestMoEAOAConfigGeneratorInverse(unittest.TestCase):
 
         params = MoEAOAConfigParams(
             num_experts=4,
-            moe_grouped_gemm=False,
+            moe_expert_fusion=False,
             using_sonic_moe=False,
             fp8=False,
             fd_fallback=False,

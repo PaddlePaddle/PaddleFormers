@@ -71,6 +71,36 @@ class PreTrainingArguments(TrainingArguments):
         default=1,
         metadata={"help": "the logging interval of global_training_logs"},
     )
+    internal_medicine_monitors: Optional[str] = field(
+        default="",
+        metadata={
+            "help": "Comma-separated list of internal medicine monitors. Options: qk_stats,moe_health,massive_act,all"
+        },
+    )
+    internal_medicine_monitor_interval: int = field(
+        default=0,
+        metadata={
+            "help": "Step interval for internal medicine monitors. "
+            "0 (default) disables monitoring (no collection, no viewer). "
+            "Positive integer is the sampling interval."
+        },
+    )
+    internal_medicine_qk_row_stride: int = field(
+        default=1,
+        metadata={
+            "help": "qk_stats query-row subsampling stride. 1 = exact full pass. "
+            "Larger values (e.g. 16/32) subsample query rows to cut the O(S^2) cost "
+            "on long sequences; mean/entropy/sink stay unbiased, max is a lower bound."
+        },
+    )
+    internal_medicine_log_dir: str = field(
+        default="",
+        metadata={
+            "help": "Directory for the per-step JSONL produced by the internal-medicine "
+            "callback (rank 0 only). File name is fixed to 'internal_medicine.jsonl'. "
+            "Empty -> use output_dir. Consumed by tools/internal_medicine/server.py."
+        },
+    )
     num_consecutive: int = field(
         default=1,
         metadata={"help": "H5 file consecutive num."},
@@ -255,10 +285,6 @@ class FinetuningArguments(
         default=0.0,
         metadata={"help": "dropout probability for attention layers"},
     )
-    benchmark: bool = field(
-        default=False,
-        metadata={"help": "Whether to run benchmark by autotuner. True for from_scratch."},
-    )
 
     # performance
     compute_type: str = field(
@@ -297,7 +323,19 @@ class FinetuningArguments(
         },
     )
 
+    use_accuracy_compatible: bool = field(
+        default=False,
+        metadata={"help": ("Whether to enable accuracy alignment with the Megatron framework.")},
+    )
+
     def __post_init__(self):
+        if (
+            self.internal_medicine_monitors
+            and self.internal_medicine_monitor_interval is not None
+            and self.internal_medicine_monitor_interval < 0
+        ):
+            raise ValueError("internal_medicine_monitor_interval must be >= 0 (0 disables monitoring)")
+
         self.bf16 = True
         if self.compute_type == "bf16":
             self.fp16 = False
@@ -331,6 +369,10 @@ class FinetuningArguments(
             }
         elif self.compute_type == "nf4":
             self.weight_quantize_algo = {"nf4": DEFAULT_QUANTIZE_LAYERS}
+        elif self.compute_type == "float32":
+            self.bf16 = False
+            self.fp16 = False
+            self.weight_quantize_algo = None
         else:
             raise ValueError(f"Unknown compute_type: {self.compute_type}")
 

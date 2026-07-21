@@ -45,6 +45,14 @@ from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding
     DygraphShardingOptimizer,
     DygraphShardingOptimizerV2,
 )
+
+try:
+    from paddle.distributed.fleet.meta_optimizers.muon_sharding_optimizer import (
+        MuonShardingOptimizer,
+    )
+except (ImportError, ModuleNotFoundError):
+    MuonShardingOptimizer = None
+
 from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
 from paddle.distributed.fleet.meta_parallel.sharding.group_sharded_optimizer_stage2 import (
     GroupShardedOptimizerStage2,
@@ -58,6 +66,13 @@ from transformers.tokenization_utils_base import BatchEncoding
 
 # from ..ops import Topology
 from ..trainer.argparser import strtobool
+from ..utils.import_utils import is_paddlefleet_available
+
+if is_paddlefleet_available():
+    from ..transformers.gpt_provider import GPTModel
+else:
+    GPTModel = None
+
 from ..transformers.model_utils import (
     EMAStateHFFormatFullParamSaver,
     _add_variant,
@@ -81,6 +96,7 @@ from .utils.reshard import SHARDING_STRATEGY_V1, split_opt_state
 from .utils.sharding_io import GroupGetter, to_device
 
 __all__ = [
+    "FleetTrainingLogs",
     "TrainOutput",
     "PredictionOutput",
     "EvalPrediction",
@@ -94,6 +110,26 @@ __all__ = [
     "set_hyrbid_parallel_seed",
     "log_trainer_start",
 ]
+
+
+class FleetTrainingLogs:
+    def __init__(self, trainer):
+        self.trainer = trainer
+
+    def update(self, **kwargs):
+        for key, value in kwargs.items():
+            if hasattr(value, "item"):
+                value = value.item()
+            self.trainer.global_training_logs[key] = value
+
+    def is_moe_balance_logs_enabled(self):
+        config = getattr(self.trainer.model, "config", None)
+        if not getattr(config, "moe_logging", False):
+            return False
+
+        interval = self.trainer.args.global_logging_interval
+        remainder = (self.trainer.state.global_step + 1) % (interval * interval)
+        return 0 <= remainder < interval
 
 
 def mock_offload_optimizer():
@@ -498,6 +534,7 @@ class OptimizerNames(ExplicitEnum):
     ADAFACTOR = "adafactor"
     ADAMW_MINI = "adamw_mini"
     ADAMW_CUSTOM = "adamw_custom"
+    MUON = "muon"
 
 
 class ShardingOption(ExplicitEnum):
@@ -1503,8 +1540,11 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
         for buffer in optimizer._comm_buffer_list:
             for param_name, grad_view in buffer._sharding_param_grad_view.items():
                 struct_name = static_to_struct_mapping[param_name]
-                if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
-                    continue
+                if os.getenv("HACK_CONVERT_CKPT", "0").lower() not in ["true", "1"]:
+                    if not any(
+                        struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names
+                    ):
+                        continue
                 param_buffer = grad_view._param_buffer
                 param_begin = grad_view._param_begin
                 param_end = grad_view._param_end
@@ -1513,6 +1553,54 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
                     assert slice_param.numel().item() > 0
                     slice_param.name = param_name
                     parameter_list.append(slice_param)
+
+        optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), parameter_list)
+        return
+
+    elif MuonShardingOptimizer is not None and isinstance(inner_opt, MuonShardingOptimizer):
+        parameter_list = []
+
+        # --- 1D params: build shard-sized slice params from FusedCommBuffer ---
+        for buffer in optimizer._comm_buffer_list:
+            for param_name, grad_view in buffer._sharding_param_grad_view.items():
+                if param_name not in static_to_struct_mapping:
+                    continue
+                struct_name = static_to_struct_mapping[param_name]
+                if os.getenv("HACK_CONVERT_CKPT", "0").lower() not in ["true", "1"]:
+                    if not any(
+                        struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names
+                    ):
+                        continue
+                param_buffer = grad_view._param_buffer
+                param_begin = grad_view._param_begin
+                param_end = grad_view._param_end
+                if param_begin >= 0 and param_end > 0 and param_end > param_begin:
+                    slice_param = paddle.slice(param_buffer, axes=[0], starts=[param_begin], ends=[param_end])
+                    assert slice_param.numel().item() > 0
+                    slice_param.name = param_name
+                    parameter_list.append(slice_param)
+
+        # -- 2D params: build full-sized 2D params from _params_2d_by_color ---
+        for color_key, _ in optimizer._params_2d_by_color.items():
+            assert (
+                color_key in optimizer._rank2params_2d_by_color
+            ), f"color_key '{color_key}' not in optimizer._rank2params_2d_by_color."
+            rank2params_2d_by_color = optimizer._rank2params_2d_by_color[color_key]
+
+            group_info = optimizer._color_to_group_info[color_key]
+            sharding_rank = group_info["rank"] if group_info["rank"] >= 0 else 0
+            local_2d = rank2params_2d_by_color[sharding_rank]
+            for param in local_2d:
+                param_name = param.name
+                if param_name not in static_to_struct_mapping:
+                    continue
+                struct_name = static_to_struct_mapping[param_name]
+                if os.getenv("HACK_CONVERT_CKPT", "0").lower() not in ["true", "1"]:
+                    if not any(
+                        struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names
+                    ):
+                        continue
+                parameter_list.append(param)
 
         optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), parameter_list)
         return
@@ -1709,35 +1797,104 @@ class HFFormatFullParamSaver:
         return total_saved_size
 
 
+def get_lr_ratio_fn(optimizer):
+    opt = optimizer
+    visited = set()
+    while opt is not None and id(opt) not in visited:
+        visited.add(id(opt))
+        candidate = getattr(opt, "_lr_ratio", None)
+        if callable(candidate):
+            return candidate
+        opt = getattr(opt, "_inner_opt", None) or getattr(opt, "_optim", None)
+    return None
+
+
+def _is_muon_sharding_optimizer(optimizer):
+    opt = optimizer
+    while opt is not None:
+        if type(opt).__name__ == "MuonShardingOptimizer":
+            return True
+        opt = getattr(opt, "_inner_opt", None)
+    return False
+
+
+def _unwrap_muon_sharding_optimizer(optimizer):
+    opt = optimizer
+    while opt is not None:
+        if type(opt).__name__ == "MuonShardingOptimizer":
+            return opt
+        opt = getattr(opt, "_inner_opt", None)
+    return None
+
+
+def _get_muon_2d_param_names(muon_opt):
+    names = set()
+    for _color_key, params in muon_opt._params_2d_by_color.items():
+        for p in params:
+            names.add(p.name)
+    return names
+
+
+def _restore_master_weights_single(master_weights, model, optimizer, group, structure_name_map, restore_func):
+    nms = reshard_util.NodeModelState(group=group)
+    nms_tmp = reshard_util.NodeModelState(group=group)
+    nms_tmp.add_master_weights(master_weights)
+    nms_tmp.pack_keys(structure_name_map)
+    nms.merge_from(nms_tmp, max(group.rank, 0))
+    del nms_tmp
+    nms = restore_func(nms, model, optimizer)
+    nms.unpack_keys()
+    return reshard_util.all_gather_state_dict(nms.master_weights, lambda x: True, group)
+
+
 def recover_params_from_master_weight(ema_state_dict, model, optimizer, group):
-    master_weights = ema_state_dict["master_weights"]
+    master_weights = ema_state_dict.get("master_weights", {})
     tmp = OrderedDict()
     (master_weights, tmp) = (tmp, master_weights)
-    # cast to before
+    # cast to bf16 and move to cpu
     for (k, v) in tmp.items():
         name = v.name
         master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
         master_weights[k].name = name
 
     structure_name_map = {k: v.name for (k, v) in model.state_dict().items()}
-    node_model_state = reshard_util.NodeModelState(group=group)
-    node_model_state_tmp = reshard_util.NodeModelState(group=group)
-    node_model_state_tmp.add_master_weights(master_weights)
-    node_model_state_tmp.pack_keys(structure_name_map)
-    node_model_state.merge_from(node_model_state_tmp, max(group.rank, 0))
-    del node_model_state_tmp
-    sharding_strategy = reshard_util.get_sharding_strategy(optimizer)
-    logger.debug(f"sharding_strategy: {sharding_strategy}")
-    restore_func = (
-        reshard_util.sharding_v1.restore
-        if sharding_strategy == SHARDING_STRATEGY_V1
-        else reshard_util.sharding_v2.restore
-    )
-    node_model_state = restore_func(node_model_state, model, optimizer)
-    node_model_state.unpack_keys()
-    master_weights = node_model_state.master_weights
 
-    master_weights = reshard_util.all_gather_state_dict(master_weights, lambda x: True, group)
+    muon_opt = _unwrap_muon_sharding_optimizer(optimizer)
+    if muon_opt is not None:
+        param_2d_names = _get_muon_2d_param_names(muon_opt)
+        logger.debug(f"Muon EMA recovery: {len(param_2d_names)} 2D params detected")
+
+        mw_2d = OrderedDict()
+        mw_1d = OrderedDict()
+        for k, v in master_weights.items():
+            if k in param_2d_names:
+                mw_2d[k] = v
+            else:
+                mw_1d[k] = v
+
+        all_master_weights = OrderedDict()
+        restored_2d = _restore_master_weights_single(
+            mw_2d, model, optimizer, group, structure_name_map, reshard_util.sharding_v1.restore
+        )
+        all_master_weights.update(restored_2d)
+
+        restored_1d = _restore_master_weights_single(
+            mw_1d, model, optimizer, group, structure_name_map, reshard_util.sharding_v2.restore
+        )
+        all_master_weights.update(restored_1d)
+
+        master_weights = all_master_weights
+    else:
+        sharding_strategy = reshard_util.get_sharding_strategy(optimizer)
+        logger.debug(f"sharding_strategy: {sharding_strategy}")
+        restore_func = (
+            reshard_util.sharding_v1.restore
+            if sharding_strategy == SHARDING_STRATEGY_V1
+            else reshard_util.sharding_v2.restore
+        )
+        master_weights = _restore_master_weights_single(
+            master_weights, model, optimizer, group, structure_name_map, restore_func
+        )
 
     model_state_dict = model.state_dict()
     ema_param_state_dict = OrderedDict()
@@ -1787,6 +1944,7 @@ class EMAStateAssembler:
         self.model = model
         self.optimizer = optimizer
         self.model_sharded_state_dict = self.model.sharded_state_dict()
+        self.is_gpt_model = GPTModel is not None and isinstance(self.model, GPTModel)
         n_routed_experts = self.model.config.n_routed_experts
 
         hcg = paddle.distributed.fleet.get_hybrid_communicate_group()
@@ -2011,20 +2169,47 @@ class EMAStateAssembler:
 
         logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Loading EMA state from {ema_state_path}.")
         ema_state_dict = paddle.load(str(ema_state_path))
+        if "master_weights" not in ema_state_dict:
+            # FC format: flat dict with .w_0 suffix keys → rename back + re-pad to old format
+            model_state_dict = self.model.state_dict()
+            struct_name_to_static_name = {k: v.name for k, v in model_state_dict.items()}
+            opt_master_weights = self.optimizer.state_dict().get("master_weights", {})
+            master_weights = {}
+            model_params = {}
+            for k, v in ema_state_dict.items():
+                if k.endswith(".w_0"):
+                    struct_name = k[:-4]
+                    tensor_name = struct_name_to_static_name[self._rename(struct_name, False)]
+                    if tensor_name in opt_master_weights:
+                        opt_tensor = opt_master_weights[tensor_name]
+                        if opt_tensor.ndim == 1:
+                            # Flattened format (sharding_v2) → flatten + re-pad
+                            flat = v.flatten()
+                            expected_numel = opt_tensor._numel()
+                            if flat._numel() < expected_numel:
+                                padded = paddle.zeros([expected_numel], dtype=v.dtype)
+                                padded[: flat._numel()] = flat
+                                padded.name = tensor_name
+                                master_weights[tensor_name] = padded
+                                flat._clear()
+                            else:
+                                flat.name = tensor_name
+                                master_weights[tensor_name] = flat
+                        else:
+                            # Non-flattened (Muon etc.) → reshape to optimizer's shape
+                            reshaped = v.reshape(opt_tensor.shape)
+                            reshaped.name = tensor_name
+                            master_weights[tensor_name] = reshaped
+                    else:
+                        master_weights[tensor_name] = v
+                else:
+                    model_params[k] = v
+            ema_state_dict = {}
+            ema_state_dict["master_weights"] = master_weights
+            ema_state_dict.update(model_params)
         return ema_state_dict
 
-    def _build_ema_sharded_state_dict(self, ema_state_dict):
-        group_getter = GroupGetter(self.model)
-        ema_state_dict_grouped = split_opt_state(ema_state_dict, group_getter)
-        ema_params_recovered = {}
-        for gid in group_getter.get_group_ids():
-            sub_ema_state_dict = ema_state_dict_grouped[gid]
-            group = group_getter.get_group_by_id(gid)
-            recovered = recover_params_from_master_weight(sub_ema_state_dict, self.model, self.optimizer, group)
-            ema_params_recovered.update(recovered)
-
-        ema_sharded_state_dict = {}
-
+    def _rename(self, key, add_mode=True):
         def _remove_layer_suffix(s):
             return re.sub(r"_layer_\d+$", "", s)
 
@@ -2039,22 +2224,39 @@ class EMAStateAssembler:
 
             return re.sub(r"(?<=experts\.)\d+", replace, s)
 
-        def _rename(key, add_mode=True):
-            if ".experts." in key:
-                assert (
-                    self.expert_id_offset != -1
-                ), f"Your n_routed_experts is {self.model.config.n_routed_experts}, but you have param name:{key}, please check!"
+        if ".experts." in key:
+            assert (
+                self.expert_id_offset != -1
+            ), f"Your n_routed_experts is {self.model.config.n_routed_experts}, but you have param name:{key}, please check!"
+            if not self.is_gpt_model:
                 key = _update_expert_number(key, self.expert_id_offset, add_mode)
-            elif "_layer_" in key:
-                key = _remove_layer_suffix(key)
-            return key
+        elif "_layer_" in key:
+            key = _remove_layer_suffix(key)
+        return key
+
+    def _build_ema_sharded_state_dict(self, ema_state_dict):
+        group_getter = GroupGetter(self.model)
+        ema_state_dict_grouped = split_opt_state(ema_state_dict, group_getter)
+        ema_params_recovered = {}
+        for gid in group_getter.get_group_ids():
+            sub_ema_state_dict = ema_state_dict_grouped.get(gid, {})
+            group = group_getter.get_group_by_id(gid)
+            recovered = recover_params_from_master_weight(sub_ema_state_dict, self.model, self.optimizer, group)
+            ema_params_recovered.update(recovered)
+
+        ema_sharded_state_dict = {}
 
         for k, v in self.model_sharded_state_dict.items():
             if v.local_tensor.dtype == paddle.bfloat16:
-                ema_tensor = ema_params_recovered[_rename(k, False)]
+                ema_tensor = ema_params_recovered[self._rename(k, False)]
                 expected_shape = v.local_shape
                 # Handle grouped_gemm_experts: reshape 3D [num_experts, hidden, intermediate] to 2D [num_experts*hidden, intermediate]
-                if "grouped_gemm_experts" in k:
+                group_gemm_param_name_pattern = [
+                    "grouped_gemm_experts",
+                    "experts.up_gate_proj.weight",
+                    "experts.down_proj.weight",
+                ]
+                if any(pattern in k for pattern in group_gemm_param_name_pattern):
                     ema_tensor = paddle.reshape(ema_tensor, expected_shape)
                 ema_sharded_state_dict[k] = create_sharded_weight_with_new_local(k, ema_tensor, v)
 
@@ -2088,12 +2290,10 @@ class EMAStateAssembler:
                 v = paddle.reshape(v, expected_shape)
             ema_sharded_state_dict[k] = create_sharded_weight_with_new_local(k, v, ref_tensor)
 
-        # Fill missing params from model (e.g., e_score_correction_bias not tracked by EMA)
-        for k, v in self.model_sharded_state_dict.items():
-            if k not in ema_sharded_state_dict:
-                logger.debug(f"[EMAStateAssembler] Filling missing param {k} from model")
+        sharded_state_dict = self.model.sharded_state_dict()
+        for k, v in sharded_state_dict.items():
+            if v.local_tensor.stop_gradient and k not in ema_sharded_state_dict:
                 ema_sharded_state_dict[k] = v
-
         return ema_sharded_state_dict
 
     def _save_full_ema_states(self, step, ema_sharded_state_dict):
@@ -2151,19 +2351,8 @@ def select_flex_ckpt_comm_method():
         hcg = dist.fleet.get_hybrid_communicate_group()
         try:
             pp_group = hcg.get_pipe_parallel_group()
-            if pp_group is None or pp_group.nranks <= 1:
-                logger.info(
-                    "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
-                    "because the current pipeline_parallel_group is empty"
-                )
-                comm_method = _BROADCAST
         except Exception:
-            logger.info(
-                "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
-                "because failed to get pipeline_parallel_group"
-            )
-            comm_method = _BROADCAST
-
+            pp_group = None
         try:
             moe_group = hcg.get_expert_parallel_group()
             if moe_group is None or moe_group.nranks <= 1:
@@ -2195,7 +2384,8 @@ def select_flex_ckpt_comm_method():
             comm_method = _BROADCAST
 
         if comm_method == _PARALLEL_BROADCAST:
-            total_size = pp_group.nranks * moe_group.nranks * moe_sharding_group.nranks
+            pp_size = pp_group.nranks if pp_group is not None else 1
+            total_size = pp_size * moe_group.nranks * moe_sharding_group.nranks
             if total_size != world_size:
                 logger.info(
                     "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "

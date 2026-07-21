@@ -38,15 +38,11 @@ class FP8QuantWeightCallback(TrainerCallback):
         # offline quant fp8 weight
         if enable_in_dict_config(model.config.fp8_mem_configs, "offline_quant_expert_weight"):
             logger.info("offline quant expert weight from bf16 to fp8.")
-            clear_origin_weight = enable_in_dict_config(
-                model.config.fp8_mem_configs, "clear_origin_weight_when_offline_quant"
-            )
 
             if not g_shard_bypass_dygraph_optimizer or skip_count == 0:
                 model.fp8_quant_weight()
 
-            if clear_origin_weight:
-                logger.info("clear origin bf16 weight after fp8 quant.")
-                optimizer.clear_param_storage("moe_expert")
+            logger.info("clear origin bf16 weight after fp8 quant.")
+            optimizer.clear_param_storage("moe_expert")
 
         skip_count += 1
