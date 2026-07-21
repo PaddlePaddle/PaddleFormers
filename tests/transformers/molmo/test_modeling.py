@@ -335,6 +335,7 @@ class MolmoModelTest(ModelTesterMixin, unittest.TestCase):
 
     def test_auto_model_for_causal_lm_from_config(self):
         config = self.model_tester.get_config()
+        config.architectures = ["MolmoForCausalLM"]
         model = AutoModelForCausalLM.from_config(config)
         self.assertIsInstance(model, MolmoForCausalLM)
 
@@ -466,7 +467,9 @@ class MolmoModelTest(ModelTesterMixin, unittest.TestCase):
     def test_multimodal_generate_with_cache(self):
         config = self.model_tester.get_config(with_vision=True)
         config.eos_token_id = None
-        input_ids = ids_tensor([self.model_tester.batch_size, self.model_tester.seq_length], config.vocab_size)
+        input_ids = ids_tensor(
+            [self.model_tester.batch_size, self.model_tester.seq_length], config.vocab_size, dtype=paddle.int64
+        )
         images, image_masks, image_input_idx = self.model_tester.get_vision_inputs()
         model = MolmoForCausalLM(config)
         model.eval()
