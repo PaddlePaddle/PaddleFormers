@@ -22,6 +22,25 @@ from ...utils.download import resolve_file_path
 from ..feature_extraction_utils import FEATURE_EXTRACTOR_NAME, BatchFeature
 from ..processing_utils import ProcessingKwargs, ProcessorMixin, Unpack
 
+_RESOLVE_FILE_PATH_KWARGS = (
+    "subfolder",
+    "repo_type",
+    "revision",
+    "library_version",
+    "cache_dir",
+    "local_dir",
+    "local_dir_use_symlinks",
+    "user_agent",
+    "force_download",
+    "proxies",
+    "etag_timeout",
+    "resume_download",
+    "token",
+    "local_files_only",
+    "endpoint",
+    "download_hub",
+)
+
 
 class Phi4MultimodalProcessorKwargs(ProcessingKwargs, total=False):
     _defaults = {
@@ -42,9 +61,7 @@ class Phi4MultimodalProcessor(ProcessorMixin):
         from .image_processor import Phi4MultimodalImageProcessor
 
         preprocessor_config = {}
-        resolve_file_path_kwargs = {
-            key: kwargs[key] for key in inspect.signature(resolve_file_path).parameters if key in kwargs
-        }
+        resolve_file_path_kwargs = {key: kwargs[key] for key in _RESOLVE_FILE_PATH_KWARGS if key in kwargs}
         resolve_file_path_kwargs["force_return"] = True
         preprocessor_config_path = resolve_file_path(
             pretrained_model_name_or_path,
