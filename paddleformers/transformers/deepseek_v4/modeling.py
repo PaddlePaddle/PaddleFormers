@@ -422,9 +422,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         if mtp_num_layers > 0 and getattr(config, "enable_mtp_magic_send", False):
             for mtp_i in range(mtp_num_layers):
                 mtp_embed_idx = num_decoder_layers + num_head_empty_layers + mtp_i
-                stmts.append(
-                    f"embed.weight -> model.layers.{mtp_embed_idx}.mtp_embed.weight"
-                )
+                stmts.append(f"embed.weight -> model.layers.{mtp_embed_idx}.mtp_embed.weight")
         if config.tie_word_embeddings:
             stmts += ["embed.weight -> model.lm_head.weight"]
         else:
@@ -728,9 +726,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         if mtp_num_layers > 0 and getattr(config, "enable_mtp_magic_send", False):
             for mtp_i in range(mtp_num_layers):
                 mtp_embed_idx = num_decoder_layers + num_head_empty_layers + mtp_i
-                stmts.append(
-                    f"model.layers.{mtp_embed_idx}.mtp_embed.weight -> embed.weight"
-                )
+                stmts.append(f"model.layers.{mtp_embed_idx}.mtp_embed.weight -> embed.weight")
         if config.tie_word_embeddings:
             stmts += ["model.lm_head.weight -> _"]
         else:
