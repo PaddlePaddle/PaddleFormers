@@ -1,6 +1,9 @@
 name: Model Unittest GPU CE Release
 
 on:
+  pull_request:
+    branches:
+      - release/*
   schedule:
     - cron: "10 21 * * 0-4" # 每周日、一、二、三、四的6点
     - cron: "0 9 * * 5"
@@ -180,7 +183,7 @@ jobs:
 
           echo "work_dir = ${work_dir}"
           source ${work_dir}/../../../proxy_huggingface
-          git clone -b release/1.2 --depth=20 https://github.com/PaddlePaddle/PaddleFormers.git
+          git clone -b ${BRANCH} --depth=20 https://github.com/PaddlePaddle/PaddleFormers.git
           cd PaddleFormers
           git config --global user.name "PaddleCI"
           git config --global user.email "paddle_ci@example.com"
