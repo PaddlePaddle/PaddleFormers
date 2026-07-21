@@ -16,10 +16,10 @@
 
 import inspect
 import json
-import os
 import re
 
-from ..feature_extraction_utils import BatchFeature
+from ...utils.download import resolve_file_path
+from ..feature_extraction_utils import FEATURE_EXTRACTOR_NAME, BatchFeature
 from ..processing_utils import ProcessingKwargs, ProcessorMixin, Unpack
 
 
@@ -42,8 +42,16 @@ class Phi4MultimodalProcessor(ProcessorMixin):
         from .image_processor import Phi4MultimodalImageProcessor
 
         preprocessor_config = {}
-        preprocessor_config_path = os.path.join(pretrained_model_name_or_path, "preprocessor_config.json")
-        if os.path.exists(preprocessor_config_path):
+        resolve_file_path_kwargs = {
+            key: kwargs[key] for key in inspect.signature(resolve_file_path).parameters if key in kwargs
+        }
+        resolve_file_path_kwargs["force_return"] = True
+        preprocessor_config_path = resolve_file_path(
+            pretrained_model_name_or_path,
+            FEATURE_EXTRACTOR_NAME,
+            **resolve_file_path_kwargs,
+        )
+        if preprocessor_config_path is not None:
             with open(preprocessor_config_path, encoding="utf-8") as f:
                 preprocessor_config = json.load(f)
 
