@@ -104,7 +104,7 @@ save_to_hf: false
 continue_training: true
 
 ### misc
-tensorwise_offload_optimizer: false
+optimizer_cpu_offload: false
 skip_profile_timer: false
 load_via_cpu: false
 fp32_residual_connection: false

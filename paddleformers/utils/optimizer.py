@@ -161,7 +161,7 @@ class AdamWMini(AdamW):
 
 
 class AdamWCustom(AdamW):
-    def __init__(self, quantization_config, tensorwise_offload_optimizer, *args, **kwargs):
+    def __init__(self, quantization_config, optimizer_cpu_offload, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.weight_scale_mapping = {}
         for p in self._param_groups:
@@ -174,7 +174,7 @@ class AdamWCustom(AdamW):
         else:
             self.mp_group = None
 
-        self.tensorwise_offload_optimizer = tensorwise_offload_optimizer
+        self.optimizer_cpu_offload = optimizer_cpu_offload
 
     def _add_moments_pows(self, p, moment_dtype=core.VarDesc.VarType.FP32):
         acc_dtype = p.dtype
@@ -236,7 +236,7 @@ class AdamWCustom(AdamW):
             else:
                 self._add_moments_pows(p)
                 self._already_create_accumulator.add(p.name)
-            if self.tensorwise_offload_optimizer:
+            if self.optimizer_cpu_offload:
                 self.offload_optim(p)
 
     def _create_master_weight(self, param):
@@ -293,7 +293,7 @@ class AdamWCustom(AdamW):
         if self._apply_decay_param_fun is not None and not self._apply_decay_param_fun(param.name):
             with_decay = False
 
-        if self.tensorwise_offload_optimizer:
+        if self.optimizer_cpu_offload:
             self.reload_optim(param)
 
         moment1 = self._get_accumulator_master(self._moment1_acc_str, param_and_grad[0])
@@ -357,7 +357,7 @@ class AdamWCustom(AdamW):
                     raise NotImplementedError(
                         f"Please check your weight_quantize_algo {self.quantization_config.weight_quantize_algo}."
                     )
-            if self.tensorwise_offload_optimizer:
+            if self.optimizer_cpu_offload:
                 self.offload_optim(param)
 
             return None

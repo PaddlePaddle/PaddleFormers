@@ -51,7 +51,7 @@ fp16_opt_level: "O2"
 scale_loss: 4096
 seed: 42
 pre_alloc_memory: 60
-tensorwise_offload_optimizer: true
+optimizer_cpu_offload: true
 pipeline_model_parallel_size: 4
 use_expert_parallel: True
 expert_model_parallel_size: 8

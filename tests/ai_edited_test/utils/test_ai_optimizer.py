@@ -175,7 +175,7 @@ class TestAdamWCustomAdamwCustom(unittest.TestCase):
         with patch("paddle.distributed.get_world_size", return_value=1):
             self.optimizer = AdamWCustom(
                 quantization_config=self.mock_quant_config,
-                tensorwise_offload_optimizer=False,
+                optimizer_cpu_offload=False,
                 parameters=self.linear.parameters(),
                 learning_rate=0.001,
                 beta1=0.9,
@@ -356,7 +356,7 @@ class TestAdamWCustomIsDtypeFp16OrBf16(unittest.TestCase):
         with patch("paddle.distributed.get_world_size", return_value=1):
             self.optimizer = AdamWCustom(
                 quantization_config=self.mock_quant_config,
-                tensorwise_offload_optimizer=False,
+                optimizer_cpu_offload=False,
                 parameters=self.linear.parameters(),
                 learning_rate=0.001,
                 multi_precision=True,

@@ -1149,7 +1149,7 @@ class TrainingArguments:
         default=None,
         metadata={"help": "The intervals to skip, pass start global step and end global step at each interval"},
     )
-    tensorwise_offload_optimizer: Optional[bool] = field(
+    optimizer_cpu_offload: Optional[bool] = field(
         default=False,
         metadata={
             "help": (
@@ -1904,7 +1904,7 @@ class TrainingArguments:
             )
         self._post_init_save_checkpoint_format()
         self._post_init_load_checkpoint_format()
-        if self.tensorwise_offload_optimizer and self.data_parallel_size > 1:
+        if self.optimizer_cpu_offload and self.data_parallel_size > 1:
             raise NotImplementedError(
                 f"Optimizer offload is not supported under data parallel. Please use sharding by setting --sharding stage1 --sharding_parallel_size {self.sharding_parallel_size * self.data_parallel_size}."
             )

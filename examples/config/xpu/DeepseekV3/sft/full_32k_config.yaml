@@ -75,6 +75,6 @@ amp_master_grad: true
 fp16_opt_level: O2
 moe_router_force_load_balancing: false
 pre_alloc_memory: 60
-tensorwise_offload_optimizer: true
+optimizer_cpu_offload: true
 moe_subbatch_token_num_before_dispatch: 0
 device: xpu

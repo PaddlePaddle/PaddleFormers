@@ -64,7 +64,7 @@ overlap_p2p_comm: true
 best_unbalanced_scheduler: true
 sharding_comm_buffer_size_MB: 2048
 save_sharding_stage1_model_include_freeze_params: true
-tensorwise_offload_optimizer: false
+optimizer_cpu_offload: false
 unified_checkpoint_config: ignore_merge_optimizer
 pre_alloc_memory: 60
 amp_master_grad: 1

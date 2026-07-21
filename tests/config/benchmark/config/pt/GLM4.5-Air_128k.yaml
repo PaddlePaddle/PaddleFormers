@@ -96,7 +96,7 @@ continue_training: true
 dataloader_num_workers: 32
 prefetch_factor: 24
 
-tensorwise_offload_optimizer: true
+optimizer_cpu_offload: true
 skip_profile_timer: false
 load_via_cpu: false
 fp32_residual_connection: false

@@ -94,4 +94,4 @@ dataloader_num_workers: 24
 prefetch_factor: 24
 
 fp32_residual_connection: false
-tensorwise_offload_optimizer: true
+optimizer_cpu_offload: true

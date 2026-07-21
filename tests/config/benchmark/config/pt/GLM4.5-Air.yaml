@@ -92,6 +92,6 @@ save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint
 continue_training: true
 
-tensorwise_offload_optimizer: true
+optimizer_cpu_offload: true
 
 skip_profile_timer: false

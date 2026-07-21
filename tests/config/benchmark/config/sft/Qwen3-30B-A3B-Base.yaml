@@ -95,5 +95,5 @@ amp_master_grad: true
 save_checkpoint_format: "flex_checkpoint"
 load_checkpoint_format: "flex_checkpoint"
 
-tensorwise_offload_optimizer: true
+optimizer_cpu_offload: true
 moe_deep_gemm: false

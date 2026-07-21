@@ -48,7 +48,7 @@ tensor_model_parallel_size: 4
 pipeline_model_parallel_size: 1
 sequence_parallel: true
 sharding: stage1
-tensorwise_offload_optimizer: false
+optimizer_cpu_offload: false
 recompute_granularity: full
 recompute_method: uniform
 recompute_num_layers: 1

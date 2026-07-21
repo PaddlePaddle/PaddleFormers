@@ -1325,7 +1325,7 @@ class Trainer:
                 )
                 self._load_scheduler(resume_from_checkpoint)
 
-            if self.args.tensorwise_offload_optimizer:
+            if self.args.optimizer_cpu_offload:
                 logger.info("Offloading optimizer state for FC...")
                 for k, v in optimizer_sharded_state_dict.items():
                     offload(v.local_tensor)
@@ -3452,7 +3452,7 @@ class Trainer:
             if self.args.optim == OptimizerNames.ADAMW_CUSTOM:
                 optimizer_kwargs["quantization_config"] = self.model.config.quantization_config
                 optimizer_kwargs["use_lowprecision_moment"] = self.args.use_lowprecision_moment
-                optimizer_kwargs["tensorwise_offload_optimizer"] = self.args.tensorwise_offload_optimizer
+                optimizer_kwargs["optimizer_cpu_offload"] = self.args.optimizer_cpu_offload
 
             if hasattr(optimizer_cls, "_create_master_weight") and self.args.fp16_opt_level == "O2":
                 optimizer_kwargs["multi_precision"] = True
@@ -3477,7 +3477,7 @@ class Trainer:
                 **optimizer_kwargs,
             )
 
-            if self.args.tensorwise_offload_optimizer:
+            if self.args.optimizer_cpu_offload:
                 mock_offload_optimizer()
 
         return self.optimizer
@@ -4958,7 +4958,7 @@ class Trainer:
                     model=model,
                     optimizer=self.optimizer,
                     resume_from_checkpoint=checkpoint,
-                    offload=self.args.tensorwise_offload_optimizer,
+                    offload=self.args.optimizer_cpu_offload,
                 )
 
         if self.args.ignore_load_lr_and_optim and opt_state_dict:

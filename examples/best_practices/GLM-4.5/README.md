@@ -174,7 +174,7 @@ dataloader_num_workers: 8
 prefetch_factor: 2
 
 fp32_residual_connection: false
-tensorwise_offload_optimizer: true
+optimizer_cpu_offload: true
 
 mtp_loss_scaling_factor: 0.1
 num_nextn_predict_layers: 1

@@ -72,7 +72,7 @@ unified_checkpoint: true
 save_sharded_model: false
 load_sharded_model: false
 unified_checkpoint_config: ignore_merge_optimizer
-tensorwise_offload_optimizer: true
+optimizer_cpu_offload: true
 reorder_pipeline_priority: true
 pre_alloc_memory: 45
 distributed_dataloader: 1

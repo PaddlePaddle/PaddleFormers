@@ -58,7 +58,7 @@ paddleformers-cli train ./config/pretrain_argument.yaml # 注意：仓库中为�
 ```
 注意事项：
 
-* 以上单机多机配置需每卡至少 80G 显存，配置中默认开启`tensorwise_offload_optimizer`，会对性能造成影
+* 以上单机多机配置需每卡至少 80G 显存，配置中默认开启`optimizer_cpu_offload`，会对性能造成影
 * 如您需要热启 DeepSeek 官方在 huggingface 开源的 checkpoint，您可在 pretrain_argument.yaml 中通过配置 resume_from_huggingface_ckpt 参数，指定您的 checkpoint 路径即可
 * 更详细的分布式启动命令请参考[这里](https://www.paddlepaddle.org.cn/documentation/docs/zh/3.3/api/paddle/distributed/launch_cn.html)。
 * 运行命令前请参考下面环境变量进行设置：

@@ -52,7 +52,7 @@ fp16_opt_level: "O2"
 use_fp8: False
 scale_loss: 4096
 seed: 666
-tensorwise_offload_optimizer: True
+optimizer_cpu_offload: True
 pipeline_model_parallel_size: 2
 tensor_model_parallel_size: 1
 virtual_pipeline_model_parallel_size: 1

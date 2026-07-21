@@ -114,7 +114,7 @@ fuse_attention_qkv: true
 fuse_attention_ffn: true
 # loss_subbatch_sequence_length: 256
 
-tensorwise_offload_optimizer: true
+optimizer_cpu_offload: true
 skip_profile_timer: false
 load_via_cpu: true
 fp32_residual_connection: false

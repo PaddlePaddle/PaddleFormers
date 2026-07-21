@@ -73,7 +73,7 @@ partial_send_recv: false
 batch_p2p_comm: false
 save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint
-tensorwise_offload_optimizer: false
+optimizer_cpu_offload: false
 # offload_optim: false
 
 convert_from_hf: true

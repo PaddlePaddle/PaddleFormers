@@ -101,6 +101,6 @@ dataloader_num_workers: 0
 # profile_step_end: 2
 # num_hidden_layers: 38
 freeze_config: freeze_vision freeze_aligner
-tensorwise_offload_optimizer: true
+optimizer_cpu_offload: true
 processor_use_fast: false
 high_precision_rope: true

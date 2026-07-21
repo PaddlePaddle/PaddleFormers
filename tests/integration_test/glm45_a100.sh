@@ -56,7 +56,7 @@ elif [[ ${step} == "sft" ]]; then
     | .use_expert_parallel = false
     | .expert_model_parallel_size = 1
     | .per_device_train_batch_size = 1
-    | .tensorwise_offload_optimizer = true
+    | .optimizer_cpu_offload = true
     | .stage1_overlap = false
     | .num_empty_layers_add_in_head = 0
     | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"' \
@@ -87,7 +87,7 @@ elif [[ ${step} == "dpo" ]]; then
       | .logging_dir = strenv(cur_dir) + "/glm_full_dpo_vdl_log"
       | .num_empty_layers_add_in_tail = 0
       | .use_expert_parallel = false
-      | .tensorwise_offload_optimizer = true
+      | .optimizer_cpu_offload = true
       | .expert_model_parallel_size = 1
       | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_dpo_ckpts"' \
     $config_yaml > ${config_yaml}.tmp

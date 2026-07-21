@@ -369,7 +369,7 @@
                         格式示例: `{"attention_column_ln":0,"flash_attn":2}` (0表示不重计算，大于0表示进行重计算的数量)。
                         (`dict`, 可选)
 
-  --tensorwise_offload_optimizer
+  --optimizer_cpu_offload
                         是否开启逐张量优化器状态卸载 (Tensor-wise Offload)。
                         将优化器状态逐个卸载至 CPU，仅在更新时加载回 GPU。
                         相比 Sharding Offload，此选项可在非 Sharding 场景或配合 Sharding 进一步降低显存峰值。
