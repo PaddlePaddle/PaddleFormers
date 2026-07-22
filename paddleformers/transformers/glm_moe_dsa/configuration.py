@@ -114,8 +114,8 @@ class GlmMoeDsaConfig(PretrainedConfig):
                                                             \--k dense layers--/
         norm_topk_prob (`bool`, *optional*, defaults to `True`):
             Whether to normalize the topk probabilities.
-        use_qk_norm (`bool`, *optional*, defaults to `False`):
-            Whether to use query-key normalization in the attention
+        use_qk_norm (`bool`, *optional*, defaults to `True`):
+            Whether to normalize the compressed query and key/value MLA representations.
         disable_ffn_model_parallel (`bool`, *optional*, defaults to `False`):
             Whether to use tp in the moe
         fd_fallback (`bool`, *optional*, defaults to `False`):
@@ -152,7 +152,7 @@ class GlmMoeDsaConfig(PretrainedConfig):
         topk_group=1,
         first_k_dense_replace=1,
         norm_topk_prob=True,
-        use_qk_norm=False,
+        use_qk_norm=True,
         pp_seg_method="layer:Glm4MoeDecoderLayer",
         disable_ffn_model_parallel=False,
         scoring_func="sigmoid",

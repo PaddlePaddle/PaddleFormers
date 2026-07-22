@@ -115,6 +115,7 @@ class GlmMoeDsaModelTester:
             choice_labels = ids_tensor([self.batch_size], self.num_choices)
 
         config = self.get_config()
+        self.assertTrue(config.use_qk_norm)
         return config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
 
     def get_config(self) -> GlmMoeDsaConfig:
@@ -190,6 +191,12 @@ class GlmMoeDsaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
 
     def test_config(self):
         self.config_tester.run_common_tests()
+
+    def test_qk_norm_defaults_to_enabled(self):
+        self.assertTrue(GlmMoeDsaConfig().use_qk_norm)
+
+    def test_qk_norm_can_be_disabled_explicitly(self):
+        self.assertFalse(GlmMoeDsaConfig(use_qk_norm=False).use_qk_norm)
 
     def test_GlmMoeDsa_lm_head_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
