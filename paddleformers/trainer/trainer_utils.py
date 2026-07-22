@@ -1943,7 +1943,6 @@ class EMAStateAssembler:
         self.optimizer_name_suffix = optimizer_name_suffix
         self.model = model
         self.optimizer = optimizer
-        self.model_sharded_state_dict = self.model.sharded_state_dict()
         self.is_gpt_model = GPTModel is not None and isinstance(self.model, GPTModel)
         n_routed_experts = self.model.config.n_routed_experts
 
@@ -2246,7 +2245,7 @@ class EMAStateAssembler:
 
         ema_sharded_state_dict = {}
 
-        for k, v in self.model_sharded_state_dict.items():
+        for k, v in self.model.sharded_state_dict().items():
             if v.local_tensor.dtype == paddle.bfloat16:
                 ema_tensor = ema_params_recovered[self._rename(k, False)]
                 expected_shape = v.local_shape
@@ -2283,8 +2282,8 @@ class EMAStateAssembler:
             extra_params = ema_state_dict
 
         for k, v in extra_params.items():
-            assert k in self.model_sharded_state_dict, f"[EMAStateAssembler] {k} not in model_sharded_state_dict"
-            ref_tensor = self.model_sharded_state_dict[k]
+            assert k in self.model.sharded_state_dict(), f"[EMAStateAssembler] {k} not in model_sharded_state_dict"
+            ref_tensor = self.model.sharded_state_dict()[k]
             expected_shape = ref_tensor.local_shape
             if "grouped_gemm_experts" in k:
                 v = paddle.reshape(v, expected_shape)
