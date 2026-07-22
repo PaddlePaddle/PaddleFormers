@@ -50,6 +50,8 @@ class TestMoEAOAConfigParams(unittest.TestCase):
         self.assertFalse(params.use_qk_norm)
         self.assertTrue(params.has_shared_experts)
         self.assertEqual(params.model_prefix, "model.")
+        self.assertEqual(params.index_n_heads, 0)
+        self.assertIsNone(params.indexer_types)
         self.assertEqual(params.extra_statements, [])
 
     def test_custom_values(self):
@@ -241,6 +243,64 @@ class TestMoEAOAConfigGeneratorAttention(unittest.TestCase):
         stmts = MoEAOAConfigGenerator._get_attention_statements(params, 0, "model.layers.0", "model.layers.0")
         self.assertEqual(len(stmts), 6)
         self.assertIn("q_a_layernorm", "".join(stmts))
+
+    def test_mla_attention_skips_shared_indexer_weights(self):
+        from paddleformers.transformers.aoa_config_base import (
+            MoEAOAConfigGenerator,
+            MoEAOAConfigParams,
+        )
+
+        params = MoEAOAConfigParams(
+            multi_latent_attention=True,
+            index_n_heads=32,
+            indexer_types=["full", "shared"],
+        )
+        full_stmts = MoEAOAConfigGenerator._get_attention_statements(
+            params, 0, "model.layers.0", "model.layers.0"
+        )
+        shared_stmts = MoEAOAConfigGenerator._get_attention_statements(
+            params, 1, "model.layers.1", "model.layers.1"
+        )
+        self.assertIn("self_attn.indexer.wq_b.weight", "\n".join(full_stmts))
+        self.assertNotIn("self_attn.indexer", "\n".join(shared_stmts))
+        self.assertEqual(len(shared_stmts), 4)
+
+    def test_inverse_mla_attention_skips_shared_indexer_weights(self):
+        from paddleformers.transformers.aoa_config_base import (
+            MoEAOAConfigGenerator,
+            MoEAOAConfigParams,
+        )
+
+        params = MoEAOAConfigParams(
+            multi_latent_attention=True,
+            index_n_heads=32,
+            indexer_types=["full", "shared"],
+        )
+        full_stmts = MoEAOAConfigGenerator._get_inv_attention_statements(
+            params, 0, "model.layers.0", "model.layers.0"
+        )
+        shared_stmts = MoEAOAConfigGenerator._get_inv_attention_statements(
+            params, 1, "model.layers.1", "model.layers.1"
+        )
+        self.assertIn("core_attention.indexer.wq_b.weight", "\n".join(full_stmts))
+        self.assertNotIn("self_attn.indexer", "\n".join(shared_stmts))
+        self.assertEqual(len(shared_stmts), 4)
+
+    def test_mla_attention_rejects_unknown_indexer_type(self):
+        from paddleformers.transformers.aoa_config_base import (
+            MoEAOAConfigGenerator,
+            MoEAOAConfigParams,
+        )
+
+        params = MoEAOAConfigParams(
+            multi_latent_attention=True,
+            index_n_heads=32,
+            indexer_types=["unknown"],
+        )
+        with self.assertRaisesRegex(ValueError, "Unsupported indexer type"):
+            MoEAOAConfigGenerator._get_attention_statements(
+                params, 0, "model.layers.0", "model.layers.0"
+            )
 
 
 class TestMoEAOAConfigGeneratorMoELayers(unittest.TestCase):

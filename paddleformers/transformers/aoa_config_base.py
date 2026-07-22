@@ -64,6 +64,7 @@ class MoEAOAConfigParams:
     model_prefix: str = "model."
 
     index_n_heads: int = 0
+    indexer_types: List[str] | None = None
 
     # Extra statements to add
     extra_statements: List[str] = field(default_factory=list)
@@ -132,6 +133,7 @@ class MoEAOAConfigGenerator:
             has_shared_experts=cls._has_shared_experts(config),
             model_prefix=cls._get_model_prefix(config),
             index_n_heads=getattr(config, "index_n_heads", 0),
+            indexer_types=getattr(config, "indexer_types", None),
         )
 
     @classmethod
@@ -332,7 +334,7 @@ class MoEAOAConfigGenerator:
         Override this method for different attention types (standard QKV vs MLA).
         """
         if params.multi_latent_attention:
-            return cls._get_mla_attention_statements(params, prefix, prefix_offset)
+            return cls._get_mla_attention_statements(params, layer_idx, prefix, prefix_offset)
         return cls._get_standard_attention_statements(params, prefix, prefix_offset)
 
     @classmethod
@@ -352,7 +354,9 @@ class MoEAOAConfigGenerator:
         return statements
 
     @classmethod
-    def _get_mla_attention_statements(cls, params: MoEAOAConfigParams, prefix: str, prefix_offset: str) -> List[str]:
+    def _get_mla_attention_statements(
+        cls, params: MoEAOAConfigParams, layer_idx: int, prefix: str, prefix_offset: str
+    ) -> List[str]:
         """Generate Multi-Latent Attention (MLA) statements.
 
         MLA uses compressed KV representation with separate projections.
@@ -373,6 +377,19 @@ class MoEAOAConfigGenerator:
             )
 
         if params.index_n_heads and params.index_n_heads > 0:
+            indexer_type = (
+                params.indexer_types[layer_idx]
+                if params.indexer_types is not None and layer_idx < len(params.indexer_types)
+                else "full"
+            )
+            if indexer_type not in {"full", "shared"}:
+                raise ValueError(
+                    f"Unsupported indexer type {indexer_type!r} for layer {layer_idx}; "
+                    "expected 'full' or 'shared'"
+                )
+            if indexer_type == "shared":
+                return statements
+
             indexer_weights = [
                 "wq_b",
                 "wk",
@@ -700,7 +717,7 @@ class MoEAOAConfigGenerator:
     ) -> List[str]:
         """Generate inverse attention-related statements."""
         if params.multi_latent_attention:
-            return cls._get_inv_mla_attention_statements(params, prefix, prefix_offset)
+            return cls._get_inv_mla_attention_statements(params, layer_idx, prefix, prefix_offset)
         return cls._get_inv_standard_attention_statements(params, prefix, prefix_offset)
 
     @classmethod
@@ -727,7 +744,7 @@ class MoEAOAConfigGenerator:
 
     @classmethod
     def _get_inv_mla_attention_statements(
-        cls, params: MoEAOAConfigParams, prefix: str, prefix_offset: str
+        cls, params: MoEAOAConfigParams, layer_idx: int, prefix: str, prefix_offset: str
     ) -> List[str]:
         """Generate inverse Multi-Latent Attention (MLA) statements."""
         statements = [
@@ -746,6 +763,19 @@ class MoEAOAConfigGenerator:
             )
 
         if params.index_n_heads and params.index_n_heads > 0:
+            indexer_type = (
+                params.indexer_types[layer_idx]
+                if params.indexer_types is not None and layer_idx < len(params.indexer_types)
+                else "full"
+            )
+            if indexer_type not in {"full", "shared"}:
+                raise ValueError(
+                    f"Unsupported indexer type {indexer_type!r} for layer {layer_idx}; "
+                    "expected 'full' or 'shared'"
+                )
+            if indexer_type == "shared":
+                return statements
+
             indexer_weights = [
                 "wq_b",
                 "wk",
