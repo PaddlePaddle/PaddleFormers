@@ -134,7 +134,7 @@ def run_export(args: Optional[dict[str, Any]] = None) -> None:
         config["lora_model_path"] = last_checkpoint
         config["output_path"] = os.path.join(finetuning_args.output_dir, "export")
         config["convert_from_hf"] = finetuning_args.convert_from_hf
-        config["save_to_hf"] = finetuning_args.save_to_hf
+        config["save_safetensors"] = finetuning_args.save_safetensors
         config["merge_with_qdq_base_model"] = finetuning_args.merge_with_qdq_base_model
 
         if export_args.copy_tokenizer:
