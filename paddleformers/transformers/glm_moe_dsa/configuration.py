@@ -188,7 +188,7 @@ class GlmMoeDsaConfig(PretrainedConfig):
         self.rope_scaling = rope_scaling
         self.rope_interleave = rope_interleave
         self.rotary_interleaved = (
-            rope_interleave if rotary_interleaved is None else rotary_interleaved
+            False if rotary_interleaved is None else rotary_interleaved
         )
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
@@ -200,7 +200,10 @@ class GlmMoeDsaConfig(PretrainedConfig):
             self.rope_scaling["rope_type"] = self.rope_scaling["type"]
         self.rope_parameters = self.rope_scaling
         standardize_rope_params(self, rope_theta=rope_theta)
-        self.rotary_base = self.rope_parameters["rope_theta"]
+        self.rope_theta = self.rope_parameters["rope_theta"]
+        self.rotary_base = self.rope_theta
+        rope_type = self.rope_parameters["rope_type"]
+        self.rope_type = "rope" if rope_type == "default" else rope_type
         rope_config_validation(self)
 
         # MoE arguments
