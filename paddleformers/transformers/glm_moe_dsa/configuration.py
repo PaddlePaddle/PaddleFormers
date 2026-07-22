@@ -116,6 +116,8 @@ class GlmMoeDsaConfig(PretrainedConfig):
             Whether to normalize the topk probabilities.
         use_qk_norm (`bool`, *optional*, defaults to `True`):
             Whether to normalize the compressed query and key/value MLA representations.
+        fp32_residual_connection (`bool`, *optional*, defaults to `False`):
+            Whether to keep residual connections in float32.
         disable_ffn_model_parallel (`bool`, *optional*, defaults to `False`):
             Whether to use tp in the moe
         fd_fallback (`bool`, *optional*, defaults to `False`):
@@ -153,6 +155,7 @@ class GlmMoeDsaConfig(PretrainedConfig):
         first_k_dense_replace=1,
         norm_topk_prob=True,
         use_qk_norm=True,
+        fp32_residual_connection=False,
         pp_seg_method="layer:Glm4MoeDecoderLayer",
         disable_ffn_model_parallel=False,
         scoring_func="sigmoid",
@@ -213,6 +216,7 @@ class GlmMoeDsaConfig(PretrainedConfig):
         self.disable_ffn_model_parallel = disable_ffn_model_parallel
 
         super().__init__(
+            fp32_residual_connection=fp32_residual_connection,
             **kwargs,
         )
 

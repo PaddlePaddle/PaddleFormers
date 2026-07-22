@@ -198,6 +198,14 @@ class GlmMoeDsaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
     def test_qk_norm_can_be_disabled_explicitly(self):
         self.assertFalse(GlmMoeDsaConfig(use_qk_norm=False).use_qk_norm)
 
+    def test_fp32_residual_connection_defaults_to_disabled(self):
+        config = GlmMoeDsaConfig()
+        self.assertFalse(config.fp32_residual_connection)
+
+    def test_fp32_residual_connection_can_be_enabled_explicitly(self):
+        config = GlmMoeDsaConfig(fp32_residual_connection=True)
+        self.assertTrue(config.fp32_residual_connection)
+
     def test_GlmMoeDsa_lm_head_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_lm_head_model(*config_and_inputs)
