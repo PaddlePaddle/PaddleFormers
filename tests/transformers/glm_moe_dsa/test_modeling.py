@@ -206,6 +206,30 @@ class GlmMoeDsaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
         config = GlmMoeDsaConfig(fp32_residual_connection=True)
         self.assertTrue(config.fp32_residual_connection)
 
+    def test_rope_interleave_maps_to_paddlefleet_name(self):
+        config = GlmMoeDsaConfig(rope_interleave=True)
+        self.assertTrue(config.rope_interleave)
+        self.assertTrue(config.rotary_interleaved)
+
+    def test_rotary_interleaved_can_override_alias(self):
+        config = GlmMoeDsaConfig(
+            rope_interleave=True,
+            rotary_interleaved=False,
+        )
+        self.assertTrue(config.rope_interleave)
+        self.assertFalse(config.rotary_interleaved)
+
+    def test_nested_rope_theta_maps_to_paddlefleet_name(self):
+        config = GlmMoeDsaConfig(
+            rope_parameters={"rope_type": "default", "rope_theta": 8_000_000}
+        )
+        self.assertEqual(config.rope_parameters["rope_theta"], 8_000_000)
+        self.assertEqual(config.rotary_base, 8_000_000)
+
+    def test_top_level_rope_theta_maps_to_paddlefleet_name(self):
+        config = GlmMoeDsaConfig(rope_theta=123_456)
+        self.assertEqual(config.rotary_base, 123_456)
+
     def test_GlmMoeDsa_lm_head_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_lm_head_model(*config_and_inputs)
