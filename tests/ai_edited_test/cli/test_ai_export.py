@@ -210,7 +210,7 @@ class TestRunExport(unittest.TestCase):
                 output_dir="/tmp/model",
                 device="gpu",
                 convert_from_hf=False,
-                save_to_hf=False,
+                save_safetensors=False,
                 merge_with_qdq_base_model=False,
             )
             mock_export_args = MagicMock(copy_tokenizer=True)

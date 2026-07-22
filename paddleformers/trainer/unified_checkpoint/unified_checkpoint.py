@@ -94,7 +94,7 @@ class UnifiedCheckpointHandler:
         self.args = args
         self.async_handler = AsyncCheckpointHandler(args)
 
-    def save_unified_checkpoint(self, model, optimizer, output_dir, signal_dir=None, save_to_hf=False):
+    def save_unified_checkpoint(self, model, optimizer, output_dir, signal_dir=None, save_safetensors=False):
         """save unified checkpoint
 
         Args:
@@ -116,7 +116,7 @@ class UnifiedCheckpointHandler:
 
         # Under non distributed environment.
         if paddle.distributed.get_world_size() <= 1:
-            save_single_card_checkpoint(model_to_save, output_dir, save_to_hf=save_to_hf)
+            save_single_card_checkpoint(model_to_save, output_dir, save_safetensors=save_safetensors)
             return
 
         skip_save_model_weight = False
@@ -140,7 +140,7 @@ class UnifiedCheckpointHandler:
                 self.args,
                 model_to_save,
                 safe_serialization=True,
-                save_to_hf=save_to_hf,
+                save_safetensors=save_safetensors,
             )
             is_sync_save = True
             if "async_save" in self.args.unified_checkpoint_config:
@@ -151,7 +151,7 @@ class UnifiedCheckpointHandler:
                 signal_path=signal_dir,
                 is_sync=is_sync_save,
                 state_dict_type="model_weight",
-                save_to_hf=save_to_hf,
+                save_safetensors=save_safetensors,
             )
             if sharded_index is not None:
                 if isinstance(model_to_save, LoRAModel):
@@ -165,7 +165,7 @@ class UnifiedCheckpointHandler:
                         json.dump(sharded_index, f, indent=4)
 
         if self.args.should_save:
-            save_model_config(model_to_save, save_directory, save_to_hf)
+            save_model_config(model_to_save, save_directory, save_safetensors)
 
         empty_device_cache()
 
@@ -280,7 +280,7 @@ class UnifiedCheckpointHandler:
                     state_dict_shard[key] = optim_state_dict.pop(key)
                 self.async_handler._file_save_async_or_sync(
                     state_dict_shard,
-                    path=os.path.join(output_dir, optimizer_name + f"_shard_{i+1:04d}"),
+                    path=os.path.join(output_dir, optimizer_name + f"_shard_{i + 1:04d}"),
                     signal_path=signal_dir,
                     is_sync=is_sync_save,
                     state_dict_type="optimizer_weight",
@@ -298,7 +298,7 @@ class UnifiedCheckpointHandler:
                         state_dict_shard[key] = master_weights.pop(key)
                     self.async_handler._file_save_async_or_sync(
                         state_dict_shard,
-                        path=os.path.join(output_dir, master_weights_name + f"_shard_{i+1:04d}"),
+                        path=os.path.join(output_dir, master_weights_name + f"_shard_{i + 1:04d}"),
                         signal_path=signal_dir,
                         is_sync=is_sync_save,
                         state_dict_type="master_weight",
@@ -367,7 +367,7 @@ class UnifiedCheckpointHandler:
             for i in range(optim_shard_num):
                 optimizer_state_dict.update(
                     load_state_dict(
-                        optimizer_path + f"_shard_{i+1:04d}",
+                        optimizer_path + f"_shard_{i + 1:04d}",
                         None,
                         None,
                         device=device,
@@ -375,9 +375,9 @@ class UnifiedCheckpointHandler:
                     )
                 )
                 # normal AMP O2
-                if not is_amp_o1 and os.path.isfile(master_weights_path + f"_shard_{i+1:04d}"):
+                if not is_amp_o1 and os.path.isfile(master_weights_path + f"_shard_{i + 1:04d}"):
                     master_weights.update(
-                        load_state_dict(master_weights_path + f"_shard_{i+1:04d}", None, None, device=device)
+                        load_state_dict(master_weights_path + f"_shard_{i + 1:04d}", None, None, device=device)
                     )
                 gc.collect()
         else:
@@ -598,7 +598,7 @@ def unified_checkpoint_into_shards(
     args,
     model_to_save,
     safe_serialization=False,
-    save_to_hf=False,
+    save_safetensors=False,
 ):
     """Get state_dict and config to save
 
@@ -636,7 +636,7 @@ def unified_checkpoint_into_shards(
         logger.info("Unified model tensor parallel weights in shards")
         state_dict = merge_tensor_parallel_with_shard(state_dict, tp_actions, all_filter_keys)
 
-    if save_to_hf:
+    if save_safetensors:
         transpose_weight_keys = getattr(model_to_save, "transpose_weight_keys", None)
         state_dict = ConversionMixin.convert_transpose_selected_weights(state_dict, transpose_weight_keys)
 
