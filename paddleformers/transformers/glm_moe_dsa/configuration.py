@@ -143,6 +143,8 @@ class GlmMoeDsaConfig(PretrainedConfig):
         use_cache=True,
         rope_theta=10000.0,
         rope_scaling=None,
+        rope_interleave=False,
+        rotary_interleaved=None,
         attention_bias=False,
         attention_dropout=0.0,
         moe_intermediate_size=1408,
@@ -167,6 +169,8 @@ class GlmMoeDsaConfig(PretrainedConfig):
         fd_fallback=False,
         **kwargs,
     ):
+        if rope_scaling is None and "rope_parameters" in kwargs:
+            rope_scaling = kwargs.pop("rope_parameters")
         self.vocab_size = vocab_size
         self.max_position_embeddings = max_position_embeddings
         self.hidden_size = hidden_size
@@ -182,6 +186,10 @@ class GlmMoeDsaConfig(PretrainedConfig):
         self.use_cache = use_cache
         self.rope_theta = rope_theta
         self.rope_scaling = rope_scaling
+        self.rope_interleave = rope_interleave
+        self.rotary_interleaved = (
+            rope_interleave if rotary_interleaved is None else rotary_interleaved
+        )
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
         self.sliding_window = sliding_window
@@ -192,6 +200,7 @@ class GlmMoeDsaConfig(PretrainedConfig):
             self.rope_scaling["rope_type"] = self.rope_scaling["type"]
         self.rope_parameters = self.rope_scaling
         standardize_rope_params(self, rope_theta=rope_theta)
+        self.rotary_base = self.rope_parameters["rope_theta"]
         rope_config_validation(self)
 
         # MoE arguments
