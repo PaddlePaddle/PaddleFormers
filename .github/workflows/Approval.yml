@@ -13,6 +13,14 @@ env:
   COMMIT_ID: ${{ github.event.pull_request.head.sha }}
 
 jobs:
+  check-bypass:
+    name: Check bypass
+    uses: ./.github/workflows/check-bypass.yml
+    with:
+      workflow-name: "approve"
+    secrets:
+      github-token: ${{ secrets.GITHUB_TOKEN }}
+
   check-approvers:
     name: Check approval
     runs-on:
