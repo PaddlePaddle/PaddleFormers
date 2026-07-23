@@ -63,6 +63,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("gpt_oss", "GptOssConfig"),
         ("phi3", "Phi3Config"),
         ("granite", "GraniteConfig"),
+        ("gemma3", "Gemma3Config"),
         ("gemma3_text", "Gemma3TextConfig"),
         ("glm4v_moe", "Glm4vMoeConfig"),
         ("glm_ocr", "GlmOcrConfig"),
@@ -107,6 +108,8 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("glm_ocr", "GlmOcrForConditionalGeneration"),
         ("minicpm", "MiniCPM"),
         ("granite", "Granite"),
+        ("gemma3", "Gemma3ForConditionalGeneration"),
+        ("gemma3_text", "Gemma3TextModel"),
         ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
         ("qwen3_5", "Qwen3_5ForConditionalGeneration"),
         ("olmo2", "Olmo2ForCausalLM"),
@@ -128,6 +131,7 @@ MULTI_MODELS_MAPPING = OrderedDict(
 SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
     [
         ("paligemma", "paligemma2"),
+        ("gemma3", "gemma3"),
         ("qwen2_5_vl_text", "qwen2_5_vl"),
         ("qwen3_vl_text", "qwen3_vl"),
         ("qwen3_vl_moe_text", "qwen3_vl_moe"),
