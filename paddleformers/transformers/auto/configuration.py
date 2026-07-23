@@ -65,6 +65,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("granite", "GraniteConfig"),
         ("gemma3", "Gemma3Config"),
         ("gemma3_text", "Gemma3TextConfig"),
+        ("shieldgemma2", "ShieldGemma2Config"),
         ("glm4v_moe", "Glm4vMoeConfig"),
         ("glm_ocr", "GlmOcrConfig"),
         ("qwen3_5", "Qwen3_5Config"),
