@@ -766,7 +766,7 @@ class Gemma3ForConditionalGeneration(Gemma3PreTrainedModel, GenerationMixin):
         inputs_embeds: Optional[paddle.Tensor] = None,
         labels: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
-        logits_to_keep: int | paddle.Tensor = 0,
+        logits_to_keep: int | paddle.Tensor | None = 0,
         return_dict: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
@@ -791,9 +791,12 @@ class Gemma3ForConditionalGeneration(Gemma3PreTrainedModel, GenerationMixin):
             **kwargs,
         )
         hidden_states = outputs.last_hidden_state
-        slice_indices = (
-            slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) and logits_to_keep > 0 else slice(None)
-        )
+        if isinstance(logits_to_keep, int):
+            slice_indices = slice(-logits_to_keep, None) if logits_to_keep > 0 else slice(None)
+        elif logits_to_keep is None:
+            slice_indices = slice(None)
+        else:
+            slice_indices = logits_to_keep
         logits = self.lm_head(hidden_states[:, slice_indices, :])
 
         if self.config.text_config.final_logit_softcapping is not None:
@@ -859,8 +862,10 @@ class Gemma3ForConditionalGeneration(Gemma3PreTrainedModel, GenerationMixin):
             is_first_iteration=is_first_iteration,
             **kwargs,
         )
-        if is_first_iteration or not use_cache:
+        if is_first_iteration or past_key_values is None or not use_cache:
             model_inputs["pixel_values"] = pixel_values
+        else:
+            model_inputs["pixel_values"] = None
         if labels is not None:
             logger.warning("`labels` are ignored during generation.")
         return model_inputs

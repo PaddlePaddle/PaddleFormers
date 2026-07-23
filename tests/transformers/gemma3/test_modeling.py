@@ -125,6 +125,42 @@ class Gemma3ModelTest(unittest.TestCase):
             (self.model_tester.batch_size, self.model_tester.mm_tokens_per_image, self.model_tester.hidden_size),
         )
 
+    def test_logits_to_keep_tensor_selects_requested_tokens(self):
+        config, input_ids, token_type_ids, pixel_values = self.model_tester.prepare_config_and_inputs()
+        model = Gemma3ForConditionalGeneration(config)
+        model.eval()
+
+        outputs = model(
+            input_ids=input_ids,
+            token_type_ids=token_type_ids,
+            pixel_values=pixel_values,
+            logits_to_keep=paddle.to_tensor([0, 3, 7], dtype="int64"),
+            return_dict=True,
+        )
+
+        self.assertEqual(
+            tuple(outputs.logits.shape),
+            (self.model_tester.batch_size, 3, self.model_tester.vocab_size),
+        )
+
+    def test_generation_drops_pixel_values_after_prefill(self):
+        model = Gemma3ForConditionalGeneration(self.model_tester.get_config())
+        pixel_values = paddle.randn([1, 3, 16, 16], dtype="float32")
+
+        with mock.patch(
+            "paddleformers.generation.utils.GenerationMixin.prepare_inputs_for_generation",
+            return_value={"pixel_values": pixel_values},
+        ):
+            model_inputs = model.prepare_inputs_for_generation(
+                paddle.ones([1, 1], dtype="int64"),
+                past_key_values=object(),
+                pixel_values=pixel_values,
+                use_cache=True,
+                is_first_iteration=False,
+            )
+
+        self.assertIsNone(model_inputs["pixel_values"])
+
     def test_auto_model_registration(self):
         config = self.model_tester.get_config()
 
