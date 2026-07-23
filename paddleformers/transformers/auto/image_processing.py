@@ -60,6 +60,7 @@ IMAGE_PROCESSOR_MAPPING_NAMES.update(
         "qwen3_vl": ("Qwen3VLImageProcessor", "Qwen3VLImageProcessorFast"),
         "glm_ocr": ("Glm46VImageProcessor"),
         "molmo": ("MolmoImageProcessor"),
+        "paligemma": ("PaliGemmaImageProcessor"),
     }
 )
 
@@ -302,6 +303,11 @@ class AutoImageProcessor(hf.AutoImageProcessor):
                 raise initial_exception
 
         image_processor_type = config_dict.get("image_processor_type", None)
+        if (
+            image_processor_type == "SiglipImageProcessor"
+            and config_dict.get("processor_class") == "PaliGemmaProcessor"
+        ):
+            image_processor_type = "PaliGemmaImageProcessor"
         image_processor_auto_map = None
         if "AutoImageProcessor" in config_dict.get("auto_map", {}):
             image_processor_auto_map = config_dict["auto_map"]["AutoImageProcessor"]

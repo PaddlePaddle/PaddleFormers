@@ -989,8 +989,13 @@ class PretrainedConfig:
                 "Transformers. Using `model.gradient_checkpointing_enable()` instead, or if you are using the "
                 "`Trainer` API, pass `gradient_checkpointing=True` in your `TrainingArguments`."
             )
-        self._save_to_hf = kwargs.pop("save_to_hf", True)
-        self._unsavable_keys.add("_save_to_hf")
+        if "save_to_hf" in kwargs:
+            raise ValueError(
+                "The parameter `save_to_hf` has been renamed to `save_safetensors`. "
+                "Please update your code or config accordingly."
+            )
+        self._save_safetensors = kwargs.pop("save_safetensors", True)
+        self._unsavable_keys.add("_save_safetensors")
 
         # Initialize model weight for fleet model
         self.perform_initialization = kwargs.pop("perform_initialization", True)
@@ -1089,7 +1094,12 @@ class PretrainedConfig:
 
         os.makedirs(save_directory, exist_ok=True)
 
-        self._save_to_hf = kwargs.pop("save_to_hf", True)
+        if "save_to_hf" in kwargs:
+            raise ValueError(
+                "The parameter `save_to_hf` has been renamed to `save_safetensors`. "
+                "Please update your code or config accordingly."
+            )
+        self._save_safetensors = kwargs.pop("save_safetensors", True)
 
         # If we have a custom config, we copy the file defining it in the folder and set the attributes so it can be
         # loaded from the Hub.
@@ -1439,7 +1449,7 @@ class PretrainedConfig:
             del output["moe_group"]
         if "_unsavable_keys" in output:
             del output["_unsavable_keys"]
-        if self._save_to_hf and "dtype" in output:
+        if self._save_safetensors and "dtype" in output:
             output["torch_dtype"] = str(output["dtype"])
             del output["dtype"]
 

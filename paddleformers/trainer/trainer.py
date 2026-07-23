@@ -4726,7 +4726,7 @@ class Trainer:
                 json.dump(save_info, f)
 
         if self.args.enable_auto_parallel:
-            if self.args.save_to_hf:
+            if self.args.save_safetensors:
                 is_main_process = paddle.distributed.get_rank() == 0
                 self.model.save_pretrained(
                     output_dir,
@@ -4735,7 +4735,7 @@ class Trainer:
                     merge_tensor_parallel=merge_tensor_parallel,
                     is_main_process=is_main_process,
                     max_shard_size="1024GB",
-                    save_to_hf=True,
+                    save_safetensors=True,
                     enable_auto_parallel=True,
                     save_checkpoint_format=self.args.save_checkpoint_format,
                 )
@@ -4760,7 +4760,7 @@ class Trainer:
                 if not self.is_in_train:
                     self.args.unified_checkpoint_config = []
                 self.unified_checkpoint_handler.save_unified_checkpoint(
-                    self.model, self.optimizer, output_dir, signal_dir, save_to_hf=self.args.save_to_hf
+                    self.model, self.optimizer, output_dir, signal_dir, save_safetensors=self.args.save_safetensors
                 )
 
                 # recover unified_checkpoint_config for not trine stage
@@ -4802,7 +4802,7 @@ class Trainer:
                     merge_tensor_parallel=merge_tensor_parallel,
                     is_main_process=self.args.should_save,
                     max_shard_size="1024GB",
-                    save_to_hf=self.args.save_to_hf,
+                    save_safetensors=self.args.save_safetensors,
                     save_checkpoint_format=self.args.save_checkpoint_format,
                 )
             # TODO: @ZHUI unify unwrap_model(self.model) and self.model
@@ -4827,7 +4827,7 @@ class Trainer:
                             save_function=self._save_ckpt_func,
                             is_main_process=self.args.should_save,
                             max_shard_size="1024GB",
-                            save_to_hf=self.args.save_to_hf,
+                            save_safetensors=self.args.save_safetensors,
                             save_checkpoint_format=self.args.save_checkpoint_format,
                         )
                     else:
@@ -4838,7 +4838,7 @@ class Trainer:
                             save_function=self._save_ckpt_func,
                             is_main_process=self.args.should_save,
                             max_shard_size="1024GB",
-                            save_to_hf=self.args.save_to_hf,
+                            save_safetensors=self.args.save_safetensors,
                             save_checkpoint_format=self.args.save_checkpoint_format,
                         )
                 else:
@@ -4874,7 +4874,7 @@ class Trainer:
                         save_function=self._save_ckpt_func,
                         is_main_process=self.args.should_save,
                         max_shard_size="1024GB",
-                        save_to_hf=self.args.save_to_hf,
+                        save_safetensors=self.args.save_safetensors,
                         save_checkpoint_format=self.args.save_checkpoint_format,
                     )
                 else:
@@ -4885,7 +4885,7 @@ class Trainer:
                         save_function=self._save_ckpt_func,
                         is_main_process=self.args.should_save,
                         max_shard_size="1024GB",
-                        save_to_hf=self.args.save_to_hf,
+                        save_safetensors=self.args.save_safetensors,
                         save_checkpoint_format=self.args.save_checkpoint_format,
                     )
             if self.args.should_save_sharding_stage1_model:

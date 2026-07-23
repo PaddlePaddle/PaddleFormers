@@ -102,7 +102,7 @@ fp16_opt_level: O2
 
 save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint
-save_to_hf: true
+save_safetensors: true
 continue_training: false
 dataloader_shuffle: false
 benchmark: true
