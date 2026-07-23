@@ -2,8 +2,6 @@ name: Model Unittest GPU CI
 
 on:
   pull_request:
-  issue_comment:
-    types: [created, edited]
   schedule:
     - cron: '0 16 * * *'  # 毎日凌晨1:00 JST
   workflow_dispatch:
@@ -171,11 +169,11 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             MODE="manual"
             UPDATE_BASELINE_MODELS="${{ github.event.inputs.update_baseline_models }}"
-            PR_NUMBER="manual"
+            PR_NUMBER=0
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
             MODE="schedule"
             UPDATE_BASELINE_MODELS="false"
-            PR_NUMBER="schedule"
+            PR_NUMBER=0
           elif [[ "${{ github.event_name }}" == "issue_comment" ]]; then
             # Parse comment for [update-baseline: models]
             if grep -qE '\[update-baseline:[[:space:]]*[a-zA-Z0-9_,]+\]' <<< "$COMMENT_BODY"; then
@@ -201,18 +199,17 @@ jobs:
           docker exec -i -e "work_dir=$work_dir" -e "python_version=$python_version" $container_name /bin/bash <<-DOCKER_EOF
           echo "Change python version to $python_version"
           set -e
-          cp ${work_dir}/../../../Miniconda3-latest-Linux-x86_64.sh /tmp/miniconda.sh
-          bash /tmp/miniconda.sh -b -p /opt/conda
-          export PATH=/opt/conda/bin:$PATH
-          # source ${work_dir}/../../../proxy_huggingface
-          conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
-          conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
-          conda create -n py_$python_version python=$python_version -y
+          cp ${work_dir}/../../../Miniforge3-latest-Linux-x86_64.sh /tmp/miniforge.sh
+          bash /tmp/miniforge.sh -b -p /opt/conda
+          /opt/conda/bin/conda create -n py_\$python_version python=\$python_version -y \
+            --override-channels \
+            -c conda-forge
           . /opt/conda/etc/profile.d/conda.sh
-          conda activate py_$python_version
+          conda activate py_\$python_version
           python --version
           DOCKER_EOF
       - name: Test
+        id: test
         run: |
           # Use step outputs from previous step instead of env vars
           MODE="${{ steps.trigger_mode.outputs.mode }}"
@@ -243,6 +240,18 @@ jobs:
           echo "PR number: ${PR_NUMBER}"
           bash -x scripts/regression/ci_model_unittest.sh True False "$UPDATE_BASELINE_MODELS" $BRANCH ${PR_NUMBER}
           DOCKER_EOF
+      - name: Display Test Summary
+        if: always()
+        run: |
+          file_success=${{ github.workspace }}/PaddleFormers/model_unittest_logs/model_unittest.log
+          file_failed=${{ github.workspace }}/PaddleFormers/model_unittest_logs/model_unittest_FAIL.log
+          if [[ "${{ steps.test.outcome }}" == "success" ]]; then
+            echo "✅ Test passed successfully"
+            tail -n 1 ${file_success} || true
+          else
+            echo "❌ Test failed with status: ${{ steps.test.outcome }}"
+            grep "^FAILED scripts/regression" ${file_failed} | awk '{print $2}' | sort -u || true
+          fi
       - name: Upload Products
         if: always()
         env:
@@ -275,9 +284,9 @@ jobs:
           if [[ "$MODE" == "pr" ]]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           elif [[ "$MODE" == "comment" ]]; then
-            bos_prefix="${{ env.PR_NUMBER }}/comment_$(date +%Y%m%d)_${{ env.RUN_ID }}"
+            bos_prefix="${{ env.PR_NUMBER }}/comment_${{ env.RUN_ID }}"
           else
-            bos_prefix="${MODE}/$(date +%Y%m%d)_${{ env.RUN_ID }}"
+            bos_prefix="${MODE}/${{ env.RUN_ID }}"
           fi
 
           # logs
@@ -317,7 +326,7 @@ jobs:
   upload-allure:
     name: upload-allure
     needs: [model-unittest-gpu-ci]
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: 'ernie-cpu'
     permissions:
       contents: write
@@ -336,12 +345,12 @@ jobs:
           mkdir -p result
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             MODE="manual"
-            PR_NUMBER="manual"
+            PR_NUMBER=0
             cp -r gh-pages/model_CI/manual/history result/ || true
             destination_dir="model_CI/manual"
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
             MODE="schedule"
-            PR_NUMBER="schedule"
+            PR_NUMBER=0
             cp -r gh-pages/model_CI/schedule/history result/ || true
             destination_dir="model_CI/schedule"
           elif [[ "${{ github.event_name }}" == "issue_comment" ]]; then
@@ -370,9 +379,9 @@ jobs:
           if [[ "$MODE" == "pr" ]]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           elif [[ "$MODE" == "comment" ]]; then
-            bos_prefix="${{ env.PR_NUMBER }}/comment_$(date +%Y%m%d)_${{ env.RUN_ID }}"
+            bos_prefix="${{ env.PR_NUMBER }}/comment_${{ env.RUN_ID }}"
           else
-            bos_prefix="${MODE}/$(date +%Y%m%d)_${{ env.RUN_ID }}"
+            bos_prefix="${MODE}/${{ env.RUN_ID }}"
           fi
           echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/ci-model-unittest-gpu/${bos_prefix}/logs/report.tar.gz"
           wget -q --no-proxy \
@@ -388,6 +397,8 @@ jobs:
           fi
       - name: Deploy to GitHub Pages
         if: always()
+        timeout-minutes: 5
+        continue-on-error: true
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}

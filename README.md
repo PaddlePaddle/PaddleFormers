@@ -21,12 +21,17 @@
 
 # PaddleFormers
 ## 📝简介
-PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transformers 库，旨在为 PaddlePaddle 生态提供与 Hugging Face Transformers 项目对等的模型接口与功能体验，支持大语言模型（LLM）与视觉语言模型（VLM）的训练能力。PaddleFormers 充分发挥 PaddlePaddle 在高性能训练方面的内置优势，全面支持包括张量并行、流水线并行和专家并行在内的主流大模型分布式训练策略，以及自动混合精度等加速技术，在 DeepSeek-V3、GLM-4.5-Air 等重点模型上，训练性能明显超越 Megatron-LM ，实现了高效的预训练与后训练性能。
+PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transformers 库，旨在为 PaddlePaddle 生态提供与 Hugging Face Transformers 项目对等的模型接口与功能体验，支持大语言模型（LLM）与视觉语言模型（VLM）的训练能力。PaddleFormers 充分发挥 PaddlePaddle 在高性能训练方面的内置优势，全面支持包括张量并行、流水线并行和专家并行在内的主流大模型分布式训练策略，以及自动混合精度等加速技术，在 DeepSeek-V4、GLM-4.5-Air 等重点模型上，训练性能明显超越 Megatron-LM ，实现了高效的预训练与后训练性能。
 
 结合业界主流优化方法与飞桨在业务实践中积累的高效特性，PaddleFormers 致力于打造**高性能、低资源占用**的训练体验，帮助用户高效便捷地完成大模型训练，而无需关注底层复杂的优化细节。
 
 ## 🆕最新更新
-* 2026.03.31 - PaddleFormers v1.1 正式发布！在这个版本中我们支持了 GLM-4.5 系列模型的单步与多步 MTP 训练能力。依托 MTP 架构优势，开发者可显著提升推理效率；同时针对 MTP 模块训练场景，我们新增主干网络冻结开关，灵活满足各类模型精细化调优需求。此外，我们对视觉理解类模型进行了深度优化，Qwen3-VL 30B-A3B 模型性能相比上个版本提升48%，领先Megatron-LM 6%。
+
+> [!IMPORTANT]
+> **PaddleFormers v1.2 发布 — 业界率先实现对 DeepSeek-V4 大规模分布式训练的全面支持！** [查看训练实践 →](./examples/best_practices/DeepSeek-V4/)
+
+* 2026.06.19 - PaddleFormers v1.2 正式发布！这个版本我们支持了 DeepSeek-V4 系列模型128K 以上的长文训练。DeepSeek-V4 作为业界领先的开源 MoE 模型，其全新的 CSA+HCA 混合注意力、mHC 残差连接、Muon 优化器等架构创新对训练框架提出了极高要求。我们从训练策略、模型结构到通信算子进行了全栈适配：支持 Document Mask、Packing 数据流 以及 CP（上下文并行）等高效训练策略，新增 FlashMLA 高性能注意力算子、高度融合的高性能 FP8 MoE 模块、DeepEP/HybridEP 专家并行通信库、TileLang 融合算子以及 MoE Auto-Subbatch 显存动态负载均衡能力，实现了 DeepSeek-V4 模型的高效预训练、中训练和 SFT 训练能力。此外，本版本也对 DeepSeek-V3.2 和 Qwen3.5 系列模型训练进行了支持。
+* 2026.03.31 - PaddleFormers v1.1 正式发布！在这个版本中我们支持了 GLM-4.5 系列模型的单步与多步 MTP 训练能力。依托 MTP 架构优势，开发者可显著提升推理效率；同时针对 MTP 模块训练场景，我们新增主干网络冻结开关，灵活满足各类模型精细化调优需求。此外，我们对视觉理解类模型进行了深度优化，Qwen3-VL 30B-A3B 模型性能相比上个版本提升48%，领先 Megatron-LM 6%。
 * 2026.01.21 - PaddleFomers v1.0版本发布啦！我们提供了针对 LLM 和 VLM 等模型的训练能力，针对 DeepSeek-V3模型和 GLM-4.5-Air 等重点模型，我们实现了极致性能优化（训练性能明显超越 Megatron-LM ）。针对 PaddleOCR-VL，我们在昆仑芯 P800、天数天垓150等国产计算芯片上进行了适配，更好的满足国内用户需求。
 
 ## ✨特性
@@ -50,9 +55,19 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
   <tbody>
     <!-- LLM 分类 - 跨行合并开始 -->
     <tr>
-      <td rowspan="10" style="vertical-align: top;">LLM</td>
+      <td rowspan="15" style="vertical-align: top;">LLM</td>
       <td>DeepSeekv3</td>
       <td>deepseek-ai/DeepSeek-V3-Base、deepseek-ai/DeepSeek-V3、deepseek-ai/DeepSeek-V3-0324</td>
+      <td>deepseek3</td>
+    </tr>
+    <tr>
+      <td>DeepSeekv3.2</td>
+      <td>deepseek-ai/DeepSeek-V3.2</td>
+      <td>deepseek3</td>
+    </tr>
+    <tr>
+      <td>DeepSeekv4</td>
+      <td>deepseek-ai/DeepSeek-V4-Pro、deepseek-ai/DeepSeek-V4-Flash</td>
       <td>deepseek3</td>
     </tr>
     <tr>
@@ -76,9 +91,19 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
       <td>gpt</td>
     </tr>
     <tr>
+      <td>Granite</td>
+      <td>ibm-granite/granite-3.2-2b-base、ibm-granite/granite-3.2-2b-instruct、ibm-granite/granite-3.2-8b-base、ibm-granite/granite-3.2-8b-instruct</td>
+      <td>granite</td>
+    </tr>
+    <tr>
       <td>Llama-3</td>
       <td>meta-llama/Meta-Llama-3-8B、meta-llama/Meta-Llama-3-8B-Instruct、meta-llama/Meta-Llama-3-70B、meta-llama/Meta-Llama-3-70B-Instruct、meta-llama/Llama-3.1-8B、meta-llama/Llama-3.1-8B-Instruct、meta-llama/Llama-3.1-70B、meta-llama/Llama-3.1-70B-Instruct、meta-llama/Llama-3.1-405B、meta-llama/Llama-3.1-405B-Instruct、meta-llama/Llama-3.2-1B、meta-llama/Llama-3.2-1B-Instruct、meta-llama/Llama-3.2-3B、meta-llama/Llama-3.2-3B-Instruct、meta-llama/Llama-3.3-70B-Instruct</td>
       <td>llama3</td>
+    </tr>
+    <tr>
+      <td>OLMo2</td>
+      <td>allenai/OLMo-2-0425-1B、allenai/OLMo-2-0425-1B-SFT、allenai/OLMo-2-0425-1B-DPO、allenai/OLMo-2-0425-1B-Instruct、allenai/OLMo-2-1124-7B、allenai/OLMo-2-1124-7B-SFT、allenai/OLMo-2-1124-7B-DPO、allenai/OLMo-2-1124-7B-Instruct、allenai/OLMo-2-1124-13B、allenai/OLMo-2-1124-13B-SFT、allenai/OLMo-2-1124-13B-DPO、allenai/OLMo-2-1124-13B-Instruct、allenai/OLMo-2-0325-32B、allenai/OLMo-2-0325-32B-SFT、allenai/OLMo-2-0325-32B-DPO、allenai/OLMo-2-0325-32B-Instruct</td>
+      <td>jinja</td>
     </tr>
     <tr>
       <td>phi-4</td>
@@ -99,6 +124,11 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
       <td>Qwen3-Next</td>
       <td>Qwen/Qwen3-Next-80B-A3B-Instruct、Qwen/Qwen3-Next-80B-A3B-Thinking</td>
       <td>qwen3、qwen3_nothink</td>
+    </tr>
+    <tr>
+      <td>Qwen3.5</td>
+      <td>Qwen/Qwen3.5-MoE</td>
+      <td>qwen3_5、qwen3_5_nothink</td>
     </tr>
     <!-- VLM 分类 - 跨行合并开始 -->
     <tr>
@@ -131,9 +161,9 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
 ## 💾安装
 **环境依赖**
 
-* python ≥ 3.10
-* CUDA ≥ 12.0
-* PaddleFleet ≥ 0.2（仅为 GPU 训练功能依赖）
+* python ≥ 3.12
+* CUDA ≥ 13.0
+* PaddleFleet ≥ 0.3（仅为 GPU 训练功能依赖）
 
 **安装依赖（GPU）**
 
@@ -214,6 +244,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
 * [昆仑芯安装说明文档](./docs/zh/XPU_installation_guide.md)
 * [天数智芯安装说明文档](./docs/zh/ILUVATAR-GPU_installation_guide.md)
 * [沐曦安装说明文档](./docs/zh/Metax-GPU_installation_guide.md)
+* [摩尔线程安装说明文档](./docs/zh/MUSA-GPU_installation_guide.md)
 
 # ⚡快速体验
 
@@ -268,6 +299,7 @@ paddleformers-cli train ./examples/config/sft/full.yaml
 * [昆仑芯使用说明文档](./docs/zh/XPU_usage_guide.md)
 * [天数智芯使用说明文档](./docs/zh/ILUVATAR-GPU_usage_guide.md)
 * [沐曦使用说明文档](./docs/zh/Metax-GPU_usage_guide.md)
+* [摩尔线程使用说明文档](./docs/zh/MUSA-GPU_usage_guide.md)
 
 ## 🔍最佳实践
 * [基于 DeepSeekv3的高效预训练](./examples/best_practices/DeepSeek-V3/)

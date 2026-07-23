@@ -793,6 +793,10 @@ class TrainingArguments:
             )
         },
     )
+    cp_balance_mode: str = field(
+        default="dualchunk_allgather",
+        metadata={"help": "CP scatter/gather layout mode: 'dualchunk_allgather' or 'contiguous_allgather'."},
+    )
     expert_model_parallel_size: int = field(
         default=-1,
         metadata={"help": ("The paddle expert data parallel strategy.")},
@@ -1228,7 +1232,7 @@ class TrainingArguments:
         default=True,
         metadata={"help": "Load model from HuggingFace safetensors."},
     )
-    save_to_hf: Optional[bool] = field(
+    save_safetensors: Optional[bool] = field(
         default=True,
         metadata={"help": "Save model to HuggingFace safetensors."},
     )

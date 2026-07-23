@@ -142,18 +142,17 @@ jobs:
           docker exec -i -e "work_dir=$work_dir" -e "python_version=$python_version" $container_name /bin/bash <<-DOCKER_EOF
           echo "Change python version to $python_version"
           set -e
-          cp ${work_dir}/../../../Miniconda3-latest-Linux-x86_64.sh /tmp/miniconda.sh
-          bash /tmp/miniconda.sh -b -p /opt/conda
-          export PATH=/opt/conda/bin:$PATH
-          # source ${work_dir}/../../../proxy_huggingface
-          conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
-          conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
-          conda create -n py_$python_version python=$python_version -y
+          cp /home/models/Miniforge3-Linux-x86_64.sh /tmp/miniforge.sh
+          bash /tmp/miniforge.sh -b -p /opt/conda
+          /opt/conda/bin/conda create -n py_\$python_version python=\$python_version -y \
+            --override-channels \
+            -c conda-forge
           . /opt/conda/etc/profile.d/conda.sh
-          conda activate py_$python_version
+          conda activate py_\$python_version
           python --version
           DOCKER_EOF
       - name: Test
+        id: test
         run: |
           docker exec -t $container_name /bin/bash -c '
           . /opt/conda/etc/profile.d/conda.sh
@@ -169,7 +168,20 @@ jobs:
           source $work_dir/../../../AISTUDIO_ACCESS_TOKEN
           bash -x scripts/unit_test/ci_unittest.sh ${paddle_whl} true ${PYTEST_EXECUTE_FLAG_FILE} ${AGILE_COMPILE_BRANCH}
           '
+      - name: Display Test Summary
+        if: always()
+        run: |
+          file_success=${{ github.workspace }}/PaddleFormers/unittest_logs/unittest.log
+          file_failed=${{ github.workspace }}/PaddleFormers/unittest_logs/unittest_FAIL.log
+          if [[ "${{ steps.test.outcome }}" == "success" ]]; then
+            echo "✅ Test passed successfully"
+            tail -n 1 ${file_success} || true
+          else
+            echo "❌ Test failed with status: ${{ steps.test.outcome }}"
+            grep "^FAILED tests" ${file_failed} | awk '{print $2}' | sort -u || true
+          fi
       - name: Upload Products
+        if: always()
         env:
           home_path: ${{ github.workspace }}/../../..
           bos_file: ${{ github.workspace }}/../../../bos/BosClient.py
@@ -194,9 +206,9 @@ jobs:
           fi
           
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            bos_prefix="manual/$(date +%Y%m%d)_${{ github.run_id }}"
+            bos_prefix="manual/${{ github.run_id }}"
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
-            bos_prefix="schedule/$(date +%Y%m%d)_${{ github.run_id }}"
+            bos_prefix="schedule/${{ github.run_id }}"
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           fi
@@ -244,6 +256,7 @@ jobs:
           fi
           '
       - name: Set pytest execute flag output
+        if: always()
         id: set_pytest_flag  # 专门设置输出的步骤
         run: |
           # 检查标志文件是否存在，并设置作业输出
@@ -287,9 +300,9 @@ jobs:
           COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            bos_prefix="manual/$(date +%Y%m%d)_${{ github.run_id }}"
+            bos_prefix="manual/${{ github.run_id }}"
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
-            bos_prefix="schedule/$(date +%Y%m%d)_${{ github.run_id }}"
+            bos_prefix="schedule/${{ github.run_id }}"
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           fi
@@ -329,11 +342,11 @@ jobs:
     runs-on: 'ernie-cpu'
     steps:
       - name: Checkout gh-pages
+        continue-on-error: true
         uses: actions/checkout@v5
         with:
           ref: gh-pages
           path: gh-pages
-        continue-on-error: true
       - name: Determine trigger mode && Restore history
         id: trigger_mode
         run: |
@@ -342,12 +355,12 @@ jobs:
           mkdir -p result
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             MODE="manual"
-            PR_NUMBER="manual"
+            PR_NUMBER=0
             cp -r gh-pages/unit_CE/manual/history result/ || true
             destination_dir="unit_CE/manual"
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
             MODE="schedule"
-            PR_NUMBER="schedule"
+            PR_NUMBER=0
             cp -r gh-pages/unit_CE/schedule/history result/ || true
             destination_dir="unit_CE/schedule"
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
@@ -368,9 +381,9 @@ jobs:
           RUN_ID: ${{ github.run_id }}
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            bos_prefix="manual/$(date +%Y%m%d)_${{ github.run_id }}"
+            bos_prefix="manual/${{ github.run_id }}"
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
-            bos_prefix="schedule/$(date +%Y%m%d)_${{ github.run_id }}"
+            bos_prefix="schedule/${{ github.run_id }}"
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           fi
@@ -388,6 +401,8 @@ jobs:
           fi
       - name: Deploy to GitHub Pages
         if: always()
+        timeout-minutes: 5
+        continue-on-error: true
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}

@@ -24,6 +24,7 @@ jobs:
           KEEP_DAYS: ${{ inputs.keep_days || '14' }}
           DRY_RUN: ${{ inputs.dry_run || 'false' }}
         run: |
+          source /home/paddle-1/miniconda3/bin/activate py312
           python3 << 'EOF'
           import os, requests
           from datetime import datetime, timezone, timedelta
@@ -48,8 +49,19 @@ jobs:
                   f"https://api.github.com/gists?per_page=100&page={page}",
                   headers=headers
               )
-              gists = resp.json()
-              if not gists:
+
+              # 修复：检查响应状态和类型
+              if resp.status_code != 200:
+                  print(f"Error: API returned {resp.status_code}: {resp.text}")
+                  break
+
+              try:
+                  gists = resp.json()
+              except Exception as e:
+                  print(f"Error parsing JSON: {e}")
+                  break
+
+              if not isinstance(gists, list) or not gists:
                   break
 
               for g in gists:
