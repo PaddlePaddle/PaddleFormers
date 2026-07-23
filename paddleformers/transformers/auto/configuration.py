@@ -35,6 +35,8 @@ CONFIG_MAPPING_NAMES = OrderedDict(
     [
         ("deepseek_v3", "DeepseekV3Config"),
         ("deepseek_v32", "DeepseekV32Config"),
+        ("paligemma", "PaliGemma2Config"),
+        ("paligemma2", "PaliGemma2Config"),
         ("diff_transformer", "DiffTransformerConfig"),
         ("ernie4_5", "Ernie4_5Config"),
         ("ernie4_5_moe", "Ernie4_5_MoeConfig"),
@@ -85,6 +87,8 @@ MODEL_NAMES_MAPPING = OrderedDict(
     [
         ("deepseek_v2", "DeepseekV2"),
         ("deepseek_v3", "DeepseekV3"),
+        ("paligemma", "PaliGemma2"),
+        ("paligemma2", "PaliGemma2"),
         ("diff_transformer", "DiffTransformer"),
         ("ernie4_5", "Ernie4_5"),
         ("ernie4_5_moe", "Ernie4_5_Moe"),
@@ -127,6 +131,7 @@ MULTI_MODELS_MAPPING = OrderedDict(
 
 SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
     [
+        ("paligemma", "paligemma2"),
         ("qwen2_5_vl_text", "qwen2_5_vl"),
         ("qwen3_vl_text", "qwen3_vl"),
         ("qwen3_vl_moe_text", "qwen3_vl_moe"),
