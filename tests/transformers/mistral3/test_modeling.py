@@ -19,7 +19,10 @@ import unittest
 import paddle
 from paddle import nn
 
-from paddleformers.cli.utils import get_lora_target_modules, get_multimodel_lora_target_modules
+from paddleformers.cli.utils import (
+    get_lora_target_modules,
+    get_multimodel_lora_target_modules,
+)
 from paddleformers.transformers import (
     AutoConfig,
     AutoModel,
