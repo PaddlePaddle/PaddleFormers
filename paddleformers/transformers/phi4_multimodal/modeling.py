@@ -1548,6 +1548,7 @@ class Phi4MultimodalPreTrainedModel(PretrainedModel):
 
         return aoa_config
 
+
 @register_base_model
 class Phi4MultimodalModel(Phi4MultimodalPreTrainedModel):
     def __init__(self, config: Phi4MultimodalConfig):

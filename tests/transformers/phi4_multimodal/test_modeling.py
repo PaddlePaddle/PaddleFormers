@@ -74,9 +74,7 @@ class Phi4MultimodalModelingTest(unittest.TestCase):
 
     def test_aoa_vision_head_splits_torch_in_projection(self):
         config = Phi4MultimodalConfig(num_hidden_layers=0)
-        statements_text = "\n".join(
-            Phi4MultimodalForCausalLM._gen_aoa_config(config)["aoa_statements"]
-        )
+        statements_text = "\n".join(Phi4MultimodalForCausalLM._gen_aoa_config(config)["aoa_statements"])
 
         self.assertIn(
             "head.attention.in_proj_weight -> "

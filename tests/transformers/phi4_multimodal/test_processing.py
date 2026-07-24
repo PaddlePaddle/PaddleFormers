@@ -20,7 +20,9 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from paddleformers.transformers.feature_extraction_utils import FEATURE_EXTRACTOR_NAME
-from paddleformers.transformers.phi4_multimodal.image_processor import Phi4MultimodalImageProcessor
+from paddleformers.transformers.phi4_multimodal.image_processor import (
+    Phi4MultimodalImageProcessor,
+)
 from paddleformers.transformers.phi4_multimodal.processor import Phi4MultimodalProcessor
 
 
