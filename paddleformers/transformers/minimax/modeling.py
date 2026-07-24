@@ -256,9 +256,7 @@ class MiniMaxLightningAttention(nn.Layer):
 
             cur_positions = position_ids[start_idx:end_idx].astype(slope_rate.dtype)
             previous_position = (
-                position_ids[start_idx - 1].astype(slope_rate.dtype)
-                if start_idx > 0
-                else cur_positions[0] - 1
+                position_ids[start_idx - 1].astype(slope_rate.dtype) if start_idx > 0 else cur_positions[0] - 1
             )
             last_position = cur_positions[-1]
 
@@ -272,14 +270,9 @@ class MiniMaxLightningAttention(nn.Layer):
             query_decay = paddle.exp(-slope_rate * query_distance.reshape([1, -1, 1])).astype(cur_q.dtype)
             key_decay = paddle.exp(-slope_rate * key_distance.reshape([1, -1, 1])).astype(cur_k.dtype)
             diagonal_decay = paddle.where(
-                physical_causal_mask.reshape(
-                    [1, 1, end_idx - start_idx, end_idx - start_idx]
-                )
+                physical_causal_mask.reshape([1, 1, end_idx - start_idx, end_idx - start_idx])
                 & (pair_distance.reshape([1, 1, end_idx - start_idx, end_idx - start_idx]) >= 0),
-                paddle.exp(
-                    -slope_rate_4d
-                    * pair_distance.reshape([1, 1, end_idx - start_idx, end_idx - start_idx])
-                ),
+                paddle.exp(-slope_rate_4d * pair_distance.reshape([1, 1, end_idx - start_idx, end_idx - start_idx])),
                 paddle.zeros(
                     [1, self.num_attention_heads, end_idx - start_idx, end_idx - start_idx],
                     dtype=slope_rate.dtype,
@@ -303,9 +296,7 @@ class MiniMaxLightningAttention(nn.Layer):
     def _end_indices_from_4d_mask(attention_mask: paddle.Tensor) -> list[list[int]]:
         """Convert a causal dense mask into each key's exclusive query-end index."""
         if attention_mask.shape[1] != 1 or attention_mask.shape[-2] != attention_mask.shape[-1]:
-            raise ValueError(
-                "MiniMax linear_attention expects a 4D causal mask with shape [batch, 1, seq, seq]."
-            )
+            raise ValueError("MiniMax linear_attention expects a 4D causal mask with shape [batch, 1, seq, seq].")
 
         dense_masks = attention_mask[:, 0].astype("bool").numpy()
         all_end_indices = []
@@ -342,9 +333,7 @@ class MiniMaxLightningAttention(nn.Layer):
         seq_len = query_states.shape[2]
         position_ids_by_batch = position_ids.astype("int64").numpy().tolist()
 
-        for batch_idx, (end_indices, batch_positions) in enumerate(
-            zip(end_indices_by_batch, position_ids_by_batch)
-        ):
+        for batch_idx, (end_indices, batch_positions) in enumerate(zip(end_indices_by_batch, position_ids_by_batch)):
             if len(end_indices) != seq_len or len(batch_positions) != seq_len:
                 raise ValueError(
                     "MiniMax linear_attention mask and position_ids must match the input sequence length."
@@ -368,9 +357,7 @@ class MiniMaxLightningAttention(nn.Layer):
 
             valid_end_indices = end_indices[:valid_length]
             if any(end_idx > valid_length for end_idx in valid_end_indices):
-                raise ValueError(
-                    "MiniMax linear_attention valid tokens cannot attend into the right-padding suffix."
-                )
+                raise ValueError("MiniMax linear_attention valid tokens cannot attend into the right-padding suffix.")
 
             if valid_length == 0:
                 batch_outputs.append(paddle.zeros_like(query_states[batch_idx : batch_idx + 1]))
@@ -394,9 +381,7 @@ class MiniMaxLightningAttention(nn.Layer):
                     continue
 
                 active_prefix = [
-                    key_idx
-                    for key_idx in range(interval_start)
-                    if valid_end_indices[key_idx] > interval_start
+                    key_idx for key_idx in range(interval_start) if valid_end_indices[key_idx] > interval_start
                 ]
                 current_interval = list(range(interval_start, interval_end))
                 path_indices = active_prefix + current_interval
@@ -417,9 +402,7 @@ class MiniMaxLightningAttention(nn.Layer):
                     right == left + 1 for left, right in zip(path_positions, path_positions[1:])
                 )
                 if has_unit_position_steps:
-                    path_output, final_state = self._contiguous_path_attention(
-                        path_q, path_k, path_v, slope_rate
-                    )
+                    path_output, final_state = self._contiguous_path_attention(path_q, path_k, path_v, slope_rate)
                 else:
                     path_output, final_state = self._positioned_path_attention(
                         path_q,
@@ -489,8 +472,7 @@ class MiniMaxLightningAttention(nn.Layer):
                 or row_indices.shape[3] != 1
             ):
                 raise ValueError(
-                    "MiniMax linear_attention currently supports causal row indices with shape "
-                    "[batch, 1, seq, 1]."
+                    "MiniMax linear_attention currently supports causal row indices with shape " "[batch, 1, seq, 1]."
                 )
             end_indices_by_batch = row_indices[:, 0, :, 0].astype("int64").numpy().tolist()
         elif attention_mask is not None and attention_mask.ndim == 4:

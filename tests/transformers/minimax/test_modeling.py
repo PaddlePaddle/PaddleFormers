@@ -19,8 +19,8 @@ import paddle
 import paddle.nn.functional as F
 
 from paddleformers.transformers import MiniMaxConfig, MiniMaxForCausalLM, MiniMaxModel
-from paddleformers.transformers.minimax.modeling import MiniMaxLightningAttention
 from paddleformers.transformers.auto.modeling import AutoModelForCausalLM
+from paddleformers.transformers.minimax.modeling import MiniMaxLightningAttention
 from tests.testing_utils import gpu_device_initializer
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_modeling_common import (
@@ -237,7 +237,7 @@ class MiniMaxModelTest(ModelTesterMixin, unittest.TestCase):
         )
         expected = model(input_ids)[0]
         actual = model(input_ids, attn_mask_startend_row_indices=row_indices)[0]
-        paddle.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
+        paddle.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-5)
 
     def test_linear_attention_packing_matches_independent_sequences(self):
         config, input_ids, _ = self.model_tester.prepare_config_and_inputs()
@@ -268,7 +268,7 @@ class MiniMaxModelTest(ModelTesterMixin, unittest.TestCase):
         first_output = model(input_ids[:, :first_length])[0]
         second_output = model(input_ids[:, first_length:])[0]
         expected = paddle.cat([first_output, second_output], axis=1)
-        paddle.testing.assert_allclose(packed_output, expected, rtol=1e-5, atol=1e-5)
+        paddle.testing.assert_close(packed_output, expected, rtol=1e-5, atol=1e-5)
 
     def test_linear_attention_right_padding_preserves_valid_prefix(self):
         config = self.model_tester.get_config()
@@ -294,7 +294,7 @@ class MiniMaxModelTest(ModelTesterMixin, unittest.TestCase):
         )[0]
         expected_valid = layer(hidden_states[:, :valid_length])[0]
 
-        paddle.testing.assert_allclose(
+        paddle.testing.assert_close(
             actual[:, :valid_length],
             expected_valid,
             rtol=1e-5,
@@ -329,8 +329,7 @@ class MiniMaxModelTest(ModelTesterMixin, unittest.TestCase):
 
         logical_distance = position_ids[:, :, None] - position_ids[:, None, :]
         decay = paddle.exp(
-            -layer.slope_rate.unsqueeze(0)
-            * logical_distance.astype(layer.slope_rate.dtype).unsqueeze(1)
+            -layer.slope_rate.unsqueeze(0) * logical_distance.astype(layer.slope_rate.dtype).unsqueeze(1)
         )
         decay = paddle.where(attention_mask, decay, paddle.zeros_like(decay))
         weights = paddle.matmul(query_states, key_states.transpose([0, 1, 3, 2])) * decay
@@ -340,7 +339,7 @@ class MiniMaxModelTest(ModelTesterMixin, unittest.TestCase):
         expected = F.sigmoid(layer.output_gate(hidden_states)).astype(expected.dtype) * expected
         expected = layer.out_proj(expected)
 
-        paddle.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
+        paddle.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-5)
 
     def test_linear_attention_dpo_row_indices_match_explicit_reference(self):
         config = self.model_tester.get_config()
@@ -370,8 +369,7 @@ class MiniMaxModelTest(ModelTesterMixin, unittest.TestCase):
             attention_mask[:, :, key_idx:end_idx, key_idx] = True
         logical_distance = position_ids[:, :, None] - position_ids[:, None, :]
         decay = paddle.exp(
-            -layer.slope_rate.unsqueeze(0)
-            * logical_distance.astype(layer.slope_rate.dtype).unsqueeze(1)
+            -layer.slope_rate.unsqueeze(0) * logical_distance.astype(layer.slope_rate.dtype).unsqueeze(1)
         )
         decay = paddle.where(attention_mask, decay, paddle.zeros_like(decay))
         weights = paddle.matmul(query_states, key_states.transpose([0, 1, 3, 2])) * decay
@@ -381,7 +379,7 @@ class MiniMaxModelTest(ModelTesterMixin, unittest.TestCase):
         expected = F.sigmoid(layer.output_gate(hidden_states)).astype(expected.dtype) * expected
         expected = layer.out_proj(expected)
 
-        paddle.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
+        paddle.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-5)
         actual.mean().backward()
         self.assertIsNotNone(layer.qkv_proj.weight.grad)
         self.assertTrue(paddle.isfinite(layer.qkv_proj.weight.grad).all().item())
