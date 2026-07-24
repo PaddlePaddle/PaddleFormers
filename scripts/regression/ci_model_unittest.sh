@@ -188,6 +188,7 @@ if [[ ${FLAGS_enable_CI} == "True" ]] || [[ ${FLAGS_enable_CE} != "False" ]];the
     fi
 else
     echo -e "\033[32m Changed Not CI case, Skips \033[0m"
+    echo "SKIPPED: No CI-relevant changes detected" > "${log_path}/model_unittest.log"
     exit_code=0
 fi
 exit $exit_code

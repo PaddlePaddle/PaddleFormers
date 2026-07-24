@@ -156,6 +156,7 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     touch ${PYTEST_EXECUTE_FLAG_FILE}
 else
     echo -e "\033[32m Changed Not CI case, Skips \033[0m"
+    echo "SKIPPED: No CI-relevant changes detected" > "${log_path}/unittest.log"
     exit_code=0
 fi
 exit $exit_code

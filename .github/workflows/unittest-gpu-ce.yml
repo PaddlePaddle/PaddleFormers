@@ -166,8 +166,17 @@ jobs:
           file_success=${{ github.workspace }}/PaddleFormers/unittest_logs/unittest.log
           file_failed=${{ github.workspace }}/PaddleFormers/unittest_logs/unittest_FAIL.log
           if [[ "${{ steps.test.outcome }}" == "success" ]]; then
-            echo "✅ Test passed successfully"
-            tail -n 1 ${file_success} || true
+            if [[ ! -f "${file_success}" ]]; then
+              echo "::error::Expected success log not found: ${file_success}"
+              exit 1
+            fi
+            summary=$(tail -n 1 "${file_success}")
+            if [[ "${summary}" == SKIPPED:* ]]; then
+              echo "${summary}"
+            else
+              echo "✅ Test passed successfully"
+              echo "${summary}"
+            fi
           else
             echo "❌ Test failed with status: ${{ steps.test.outcome }}"
             grep "^FAILED tests" ${file_failed} | awk '{print $2}' | sort -u || true
