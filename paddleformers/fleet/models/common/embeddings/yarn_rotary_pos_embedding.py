@@ -70,6 +70,7 @@ class YarnRotaryEmbedding(RotaryEmbedding):
         mscale: float = 1.0,
         mscale_all_dim: float = 0.0,
         correction_range_round_to_int: bool = True,
+        use_accuracy_compatible: bool = False,
     ):
         self.dim = head_dim
         self.rotary_base = rotary_base
@@ -87,6 +88,7 @@ class YarnRotaryEmbedding(RotaryEmbedding):
             rotary_interleaved=rotary_interleaved,
             seq_len_interpolation_factor=seq_len_interpolation_factor,
             rotary_base=rotary_base,
+            use_accuracy_compatible=use_accuracy_compatible,
         )
 
         self.inv_freq_extra = 1.0 / (

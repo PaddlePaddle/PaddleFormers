@@ -207,3 +207,11 @@ class LanguageModelEmbedding(FleetLayer):
             embeddings = self.embedding_dropout(embeddings)
 
         return embeddings
+
+
+class Gemma4Embedding(LanguageModelEmbedding):
+    """Embedding scaled by sqrt(hidden_size), standard for all Gemma models."""
+
+    def forward(self, input_ids, position_ids, tokentype_ids=None):
+        embeddings = super().forward(input_ids, position_ids, tokentype_ids)
+        return embeddings * (self.config.hidden_size**0.5)

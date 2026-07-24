@@ -65,7 +65,12 @@ from tqdm.auto import tqdm
 from ..transformers.moe_gate import PretrainedMoEGate
 from ..transformers.moe_utils import offload, reload
 from ..utils.log import logger
-from .trainer_utils import IntervalStrategy, get_last_checkpoint, has_length
+from .trainer_utils import (
+    IntervalStrategy,
+    get_last_checkpoint,
+    get_lr_ratio_fn,
+    has_length,
+)
 from .training_args import TrainingArguments
 
 __all__ = [
@@ -796,6 +801,8 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
 
         model = kwargs["model"]
 
+        lr_ratio_fn = get_lr_ratio_fn(kwargs.get("optimizer"))
+
         biases = []
         usages = []
 
@@ -844,8 +851,13 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
                 if not hasattr(layer, "e_score_correction_bias") or layer.e_score_correction_bias is None:
                     return
                 with paddle.no_grad():
-                    if not layer.weight.stop_gradient:
-                        biases.pop(0).add_(update_list.pop(0))
+                    bias = biases.pop(0)
+                    upd = update_list.pop(0)
+                    frozen = layer.weight.stop_gradient or (
+                        lr_ratio_fn is not None and not float(lr_ratio_fn(layer.weight))
+                    )
+                    if not frozen:
+                        bias.add_(upd)
                     usages.pop(0).zero_()
 
         model.apply(update_bias)
@@ -935,15 +947,28 @@ class SPGradSyncCallback(TrainerCallback):
 
 
 class InternalMedicineCallback(TrainerCallback):
-    def __init__(self, monitors=None, monitor_interval: int = 1, verbose: bool = True, qk_row_stride: int = 1):
+    def __init__(
+        self,
+        monitors=None,
+        monitor_interval=0,
+        verbose: bool = True,
+        qk_row_stride: int = 1,
+        log_dir: str = "",
+    ):
         super().__init__()
         self.monitors = self._normalize_monitors(monitors)
-        self.monitor_interval = monitor_interval
+        self.monitor_interval = int(monitor_interval) if monitor_interval else 0
         self.verbose = verbose
         self.qk_row_stride = qk_row_stride
+        self.log_dir = log_dir or ""
+        self.log_path = os.path.join(self.log_dir, "internal_medicine.jsonl") if self.log_dir else ""
         self._monitor_dict = {}
         self._training_logs = None
         self._setup_done = False
+        # Lazy-resolved flags: only rank 0 writes; init on first on_log call so
+        # the distributed env is fully up by then.
+        self._is_writer = None
+        self._log_path_ready = False
 
     @staticmethod
     def _normalize_monitors(monitors) -> list:
@@ -956,6 +981,14 @@ class InternalMedicineCallback(TrainerCallback):
     def on_train_begin(self, args, state, control, model=None, **kwargs):
         if model is None or self._setup_done or not self.monitors:
             return
+        if self.monitor_interval <= 0:
+            logger.warning(
+                "[InternalMedicine] monitor_interval=%s is non-positive; skipping monitor setup.",
+                self.monitor_interval,
+            )
+            return
+
+        self._maybe_truncate_on_resume(state)
 
         try:
             from internal_medicine.backends.paddlefleet import setup_monitors
@@ -1004,13 +1037,116 @@ class InternalMedicineCallback(TrainerCallback):
             monitor.step()
 
     def on_log(self, args, state, control, logs=None, **kwargs):
-        if not self._setup_done or logs is None or self._training_logs is None:
+        if not self._setup_done or self._training_logs is None:
             return
 
         aggregated = self._training_logs.gather_and_aggregate()
         if aggregated:
-            logs.update(aggregated)
             self._training_logs.reset()
+            self._maybe_write_jsonl(state, aggregated)
+
+    def _resolve_writer(self):
+        """Decide once whether this process should write the jsonl file.
+
+        Only the global rank-0 process writes. Resolved lazily because the
+        distributed env may not be ready at callback construction time.
+        """
+        if self._is_writer is not None:
+            return self._is_writer
+        rank = 0
+        try:
+            import paddle.distributed as dist  # type: ignore
+
+            if dist.is_initialized():
+                rank = dist.get_rank()
+        except Exception:
+            rank = 0
+        self._is_writer = (rank == 0) and bool(self.log_path)
+        return self._is_writer
+
+    def _maybe_truncate_on_resume(self, state):
+        """Handle a pre-existing jsonl at setup time.
+
+        - Fresh start (resume_step == 0) with a leftover jsonl from a previous
+          run: rotate it aside to <log_path>.bak.<YYYYMMDD_HHMMSS> so the new
+          run starts with a clean file and the viewer isn't confused by a
+          non-monotonic global_step axis.
+        - Real resume from checkpoint (resume_step > 0): keep rows with
+          global_step <= resume_step, drop the tail (any "future" rows past
+          the checkpoint), same behavior as before.
+        """
+        if not self._resolve_writer():
+            return
+        if not self.log_path or not os.path.exists(self.log_path):
+            return
+        resume_step = int(getattr(state, "global_step", 0) or 0)
+        if resume_step <= 0:
+            try:
+                ts = time.strftime("%Y%m%d_%H%M%S")
+                bak = f"{self.log_path}.bak.{ts}"
+                suffix = 1
+                while os.path.exists(bak):
+                    bak = f"{self.log_path}.bak.{ts}.{suffix}"
+                    suffix += 1
+                os.replace(self.log_path, bak)
+                logger.info(
+                    "[InternalMedicine] rotated pre-existing jsonl to %s (fresh start)",
+                    bak,
+                )
+            except Exception:
+                logger.error("[InternalMedicine] failed to rotate pre-existing jsonl")
+            return
+        try:
+            kept = []
+            with open(self.log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.rstrip("\n")
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except json.JSONDecodeError:
+                        # Preserve unparseable lines rather than silently dropping.
+                        kept.append(line)
+                        continue
+                    if int(rec.get("global_step", 0)) <= resume_step:
+                        kept.append(line)
+            tmp = self.log_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                if kept:
+                    f.write("\n".join(kept) + "\n")
+            os.replace(tmp, self.log_path)
+            logger.info(
+                "[InternalMedicine] truncated jsonl on resume: kept %d rows with global_step<=%d"
+                % (len(kept), resume_step)
+            )
+        except Exception:
+            logger.error("[InternalMedicine] failed to truncate jsonl on resume")
+
+    def _maybe_write_jsonl(self, state, aggregated):
+        if not self._resolve_writer():
+            return
+        try:
+            if not self._log_path_ready:
+                d = os.path.dirname(self.log_path)
+                if d:
+                    os.makedirs(d, exist_ok=True)
+                self._log_path_ready = True
+            record = {"global_step": int(getattr(state, "global_step", 0))}
+            for k in sorted(aggregated.keys()):
+                v = aggregated[k]
+                # Only JSON-serializable scalars; cast tensors/numpy to float.
+                try:
+                    record[k] = float(v)
+                except (TypeError, ValueError):
+                    # Skip non-scalar entries silently — the viewer only
+                    # plots scalar series anyway.
+                    continue
+            with open(self.log_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except Exception:
+            # Never let logging IO crash training.
+            logger.exception("[InternalMedicine] failed to append jsonl record")
 
 
 class EMAStateAssemblerCallback(TrainerCallback):

@@ -18,11 +18,15 @@ import logging
 
 import paddle
 import paddlefleet_ops
-import paddleformers.fleet as fleet_ops
 
 from paddleformers.fleet.transformer.moe.fp8_utils import ExpertsGroupGemmContiguousNode
 
-from .fp8_utils import FP8_ALIGN, USE_INPLACE_SWIGLU_BWD, tilewise_quant
+from .fp8_utils import (
+    FP8_ALIGN,
+    USE_INPLACE_SWIGLU_BWD,
+    moe_token_padding_alignment,
+    tilewise_quant,
+)
 from .moe_utils import get_auto_sb_history
 from .vmm_utils import (
     allocator_free_block_info,
@@ -33,20 +37,38 @@ from .vmm_utils import (
     tokens_zip_unique_add_with_subbatch,
 )
 
+_scatter_router_scores_i32 = None
 if paddlefleet_ops.is_sonic_moe_available():
     from paddlefleet_ops.sonicmoe.enums import ActivationType
     from paddlefleet_ops.sonicmoe.ernie_compat.deepep_metadata import (
         deepep_topk_to_sonic_metadata,
     )
+
+    try:
+        from paddlefleet_ops.sonicmoe.ernie_compat.deepep_metadata import (
+            deepep_topk_to_sonic_metadata_with_scales,
+        )
+    except ImportError:
+        # Older installed paddlefleet_ops binaries (pre-#1348) do not export
+        # the fp8-scales variant; the sibling optional imports below use the
+        # same guard. Only the fp8 + fp8_scale MoE path calls it, which this
+        # config does not exercise.
+        deepep_topk_to_sonic_metadata_with_scales = None
     from paddlefleet_ops.sonicmoe.ernie_compat.mlp_node_v2 import (
         _differentiable_router_scores,
     )
     from paddlefleet_ops.sonicmoe.functional import (
         _DownProjection,
-        _refresh_fp8_config,
         _UpProjection,
     )
     from paddlefleet_ops.sonicmoe.functional.utils import enable_fp8
+
+    try:
+        from paddlefleet_ops.sonicmoe.quack_utils.blockscaled_fp8_gemm import (
+            _scatter_router_scores_i32,
+        )
+    except (ImportError, RuntimeError):
+        pass
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +103,57 @@ class _SonicFP8WeightCarrier(paddle.autograd.PyLayer):
 
 def _make_sonic_fp8_weight_carrier(weight):
     return _SonicFP8WeightCarrier.apply(weight)
+
+
+class _SonicRouterScoresFromMetadata(paddle.autograd.PyLayer):
+    @staticmethod
+    def forward(ctx, topk_scores, metadata_scores, score_src_idx):
+        if len(topk_scores.shape) != 2:
+            raise ValueError(
+                f"topk_scores: expected rank 2, got shape {topk_scores.shape}"
+            )
+        if len(metadata_scores.shape) != 1:
+            raise ValueError(
+                "metadata_scores: expected rank 1, got shape "
+                f"{metadata_scores.shape}"
+            )
+        if len(score_src_idx.shape) != 1:
+            raise ValueError(
+                f"score_src_idx: expected rank 1, got shape {score_src_idx.shape}"
+            )
+        if metadata_scores.shape[0] < score_src_idx.shape[0]:
+            raise ValueError(
+                "metadata_scores must include every real score referenced by "
+                f"score_src_idx; got {metadata_scores.shape[0]} scores and "
+                f"{score_src_idx.shape[0]} indices"
+            )
+        if "int32" not in str(score_src_idx.dtype):
+            raise ValueError(
+                f"score_src_idx: expected int32, got {score_src_idx.dtype}"
+            )
+        metadata_scores.stop_gradient = True
+        score_src_idx.stop_gradient = True
+        ctx.save_for_backward(score_src_idx)
+        ctx.input_shape = list(topk_scores.shape)
+        ctx.n_total = int(topk_scores.shape[0]) * int(topk_scores.shape[1])
+        scores = metadata_scores.clone()
+        scores.stop_gradient = topk_scores.stop_gradient
+        return scores
+
+    @staticmethod
+    def backward(ctx, grad_out):
+        (score_src_idx,) = ctx.saved_tensor()
+        if _scatter_router_scores_i32 is None:
+            raise RuntimeError(
+                "SonicMoE metadata router score backward requires "
+                "paddlefleet_ops.sonicmoe.quack_utils.blockscaled_fp8_gemm."
+                "_scatter_router_scores_i32; update paddlefleet_ops or use "
+                "the differentiable router-score fallback."
+            )
+        grad_flat = _scatter_router_scores_i32(
+            grad_out.contiguous(), score_src_idx, ctx.n_total
+        )
+        return grad_flat.reshape(ctx.input_shape), None, None
 
 
 class UnZipNode:
@@ -136,6 +209,7 @@ class UnZipNode:
         num_experts,
         tokens_per_expert,
         fill_output=True,
+        padding_alignment=FP8_ALIGN,
     ):
         """
         前向传播函数，用于解压输入的张量。
@@ -172,7 +246,7 @@ class UnZipNode:
                 dispatched_probs,
                 num_experts=num_experts,
                 tokens_per_expert=tokens_per_expert,
-                padding_alignment=FP8_ALIGN,
+                padding_alignment=padding_alignment,
                 do_gather=fill_output,
                 using_ue8m0_scale=using_ue8m0_scale,
             )
@@ -276,6 +350,7 @@ class ZipNode:
         num_experts,
         tokens_per_expert,
         fill_output=True,
+        padding_alignment=FP8_ALIGN,
     ):
         with paddle.amp.auto_cast(False):
             (
@@ -290,7 +365,7 @@ class ZipNode:
                 dispatched_probs,
                 num_experts,
                 tokens_per_expert,
-                padding_alignment=FP8_ALIGN,
+                padding_alignment=padding_alignment,
                 do_gather=fill_output,
             )
         return unzipped_grad
@@ -314,10 +389,13 @@ class MlpNode:
         use_fp8_mlp=True,
         moe_deep_gemm=False,
         use_auto_subbatch=False,
+        auto_subbatch_mode=None,
         moe_subbatch_diag=False,
         use_ue8m0=False,
         dw_p2p_overlap=False,
         clamp_value=None,
+        activation_type=None,
+        use_accuracy_compatible=False,
     ):
         """
         Constructor
@@ -325,6 +403,9 @@ class MlpNode:
         self.token_dispatcher = custom_map.token_dispatcher
         self.moe_expert_fusion = moe_expert_fusion
         self.experts = getattr(custom_map, "experts", None)
+        if activation_type is None:
+            activation_type = getattr(custom_map, "_activation_type", "swiglu")
+        self.activation_type = activation_type
 
         self.moe_rank = getattr(custom_map, "moe_rank", 0)
         self.tokens_per_expert = (
@@ -376,10 +457,23 @@ class MlpNode:
                 )
                 recompute_moe_gate_up = True
 
+        valid_auto_subbatch_modes = {None, "post_permute", "pre_permute"}
+        if auto_subbatch_mode not in valid_auto_subbatch_modes:
+            raise ValueError(
+                "auto_subbatch_mode must be one of None, 'post_permute', "
+                f"or 'pre_permute', got {auto_subbatch_mode!r}"
+            )
+        if use_auto_subbatch and auto_subbatch_mode == "pre_permute":
+            assert moe_expert_fusion, (
+                "auto_subbatch_mode='pre_permute' requires "
+                f"moe_expert_fusion=True, got {moe_expert_fusion}"
+            )
+
         # Per-expert gemm node list is needed when:
         #   no subbatch:     never
         #   static subbatch: always (regardless of deep_gemm)
         #   auto_subbatch:   only when moe_expert_fusion=False (fusion mode uses runtime fallback)
+        #   pre_permute:     uses fusion node (group_gemm per chunk), no per-expert list needed
         _need_per_expert_nodes = _has_static_subbatch or (
             use_auto_subbatch and not moe_expert_fusion
         )
@@ -403,6 +497,8 @@ class MlpNode:
                     dw_p2p_overlap=dw_p2p_overlap,
                     moe_expert_fusion=moe_expert_fusion,
                     clamp_value=clamp_value,
+                    activation_type=activation_type,
+                    use_accuracy_compatible=use_accuracy_compatible,
                 )
                 for local_expert_id in range(self.num_experts_per_device)
             ]
@@ -419,16 +515,32 @@ class MlpNode:
                 dw_p2p_overlap=dw_p2p_overlap,
                 moe_expert_fusion=moe_expert_fusion,
                 clamp_value=clamp_value,
+                activation_type=activation_type,
+                use_accuracy_compatible=use_accuracy_compatible,
             )
         self.unzip_node = UnZipNode(self.token_dispatcher)
         self.zip_node = ZipNode(self.token_dispatcher)
         self.hs_2d_dispatched_fp8 = None
         self.hs_2d_dispatched_scale = None
+        self.hs_2d_dispatched_bf16 = None
         self.dispatched_indices = None
         self.dispatched_probs = None
         self.unzipped_probs = None
+        # == [MG accuracy-alignment diff · ref PF PR#968] per-expert padding alignment ==
+        # When use_accuracy_compatible=True and non-fp8/non-grouped_gemm, use
+        #   alignment=1 (real token count) so the permute and per-expert GEMM M dim
+        #   equal the real tokens_per_expert and cuBLAS picks the same algorithm as
+        #   MG SequentialMLP; otherwise align to FP8_ALIGN (kernel requirement) to
+        #   preserve the original behavior.
+        self.moe_permute_padding_alignment = moe_token_padding_alignment(
+            use_fp8_mlp=use_fp8_mlp,
+            moe_grouped_gemm=moe_expert_fusion,
+            use_accuracy_compatible=use_accuracy_compatible,
+        )
         self.padding_token_per_experts = [
-            (x + FP8_ALIGN - 1) // FP8_ALIGN * FP8_ALIGN
+            (x + self.moe_permute_padding_alignment - 1)
+            // self.moe_permute_padding_alignment
+            * self.moe_permute_padding_alignment
             for x in self.tokens_per_expert
         ]
         self.token_offsets = [0]
@@ -438,6 +550,12 @@ class MlpNode:
         self.use_fp8_mlp = use_fp8_mlp
         self.use_auto_subbatch = use_auto_subbatch
         self.moe_subbatch_diag = moe_subbatch_diag
+        # Resolve effective auto_subbatch_mode. use_auto_subbatch is the
+        # master switch; auto_subbatch_mode only selects the enabled strategy.
+        if use_auto_subbatch:
+            self.auto_subbatch_mode = auto_subbatch_mode or "post_permute"
+        else:
+            self.auto_subbatch_mode = None
         if self.moe_subbatch_token_num_after_dispatch is not None:
             self.min_auto_subbatch_rows = (
                 self.moe_subbatch_token_num_after_dispatch
@@ -544,6 +662,8 @@ class MlpNode:
         self.padding_token_per_experts = None
         self.router_topk = None
         self.unzip_node.reset_state()
+        self._pre_permute_cached_chunks = None
+        self._pre_permute_chunk_bounds = None
         self.release_mem()
 
     def release_mem(self):
@@ -805,6 +925,138 @@ class MlpNode:
                         getattr(pw, grad_attr)._slice(lid, lid + 1),
                     )
 
+    def _gate_up_out_dim(self, hidden_size):
+        """Return the gate_up projection output width
+        Two expert layouts, both with the output width as the last weight dim:
+          - per-expert (non-fused): up_gate_proj.weight [H, 2*inter]
+          - grouped deep_gemm:      grouped_gemm_experts.weight1 [E, H, 2*inter]
+        Falls back to 2 * hidden_size if the weight cannot be resolved.
+        """
+        # per-expert (non-fused) path
+        if self.experts is not None:
+            for expert in self.experts:
+                if expert is None:
+                    continue
+                w = getattr(
+                    getattr(expert, "up_gate_proj", None), "weight", None
+                )
+                if w is not None and len(w.shape) >= 1:
+                    return int(w.shape[-1])
+
+        # grouped deep_gemm path (stacked weight1)
+        nodes = self.experts_group_gemm_node
+        node = nodes[0] if isinstance(nodes, list) else nodes
+        parent = getattr(node, "grouped_gemm_experts", None)
+        w1 = getattr(parent, "weight1", None) if parent is not None else None
+        if w1 is not None and len(w1.shape) >= 1:
+            return int(w1.shape[-1])
+
+        return hidden_size * 2
+
+    def _bwd_pre_permute_feature_sizes(
+        self, hidden_size, gate_up_out_dim, inter_dim
+    ):
+        """Byte-size of each concurrent backward buffer per FP8_ALIGN unzipped
+        tokens, for find_max_concurrent_subbatch_size.
+        """
+        gemm_node = self.experts_group_gemm_node
+        if isinstance(gemm_node, list):
+            gemm_node = gemm_node[0] if gemm_node else None
+        use_bf16_wgrad = getattr(gemm_node, "use_bf16_gemm_weight_grad", False)
+        # Mirror the actual swiglu-bwd op dispatch (see bwd_down_input_fp8):
+        #   clamp_value>0          -> fused_swiglu_weighted_clamp_bwd (out-of-place,
+        #                             do1 = empty_like(o1), a separate buffer)
+        #   USE_INPLACE_SWIGLU_BWD -> _fused_swiglu_probs_bwd inplace (do1 reuses o1)
+        #   otherwise              -> fused_swiglu_weighted_bwd (out-of-place)
+        # so clamp forces the out-of-place peak even when USE_INPLACE_SWIGLU_BWD.
+        clamp_value = getattr(gemm_node, "clamp_value", None)
+        clamp_active = clamp_value is not None and clamp_value > 0
+        used_inplace = USE_INPLACE_SWIGLU_BWD and not clamp_active
+
+        if use_bf16_wgrad:
+            if used_inplace:
+                # do1 reuses o1 buffer (inplace), peak at dw1 dequant:
+                #   out_grad(H*2) + o1/do1(inter*2*2) + o2_s(inter*2)
+                #   + input_fp8(H) + dequant_x(H*2)
+                return [
+                    FP8_ALIGN
+                    * hidden_size
+                    * 2,  # out_grad (permuted_grad) [N,H] bf16
+                    FP8_ALIGN
+                    * gate_up_out_dim
+                    * 2,  # o1/do1 [N,inter*2] bf16 (inplace)
+                    FP8_ALIGN
+                    * inter_dim
+                    * 2,  # o2_s [N,inter] bf16 (held for dw2)
+                    FP8_ALIGN
+                    * hidden_size,  # permuted_input [N,H] fp8 (alive at dw1)
+                    FP8_ALIGN
+                    * hidden_size
+                    * 2,  # dw1 dequant x [N,H] bf16 (the peak)
+                ]
+            else:
+                # do1 is a separate buffer (out-of-place), o1 stays alive:
+                #   out_grad(H*2) + o1(inter*2*2) + do1(inter*2*2) + o2_s(inter*2)
+                #   + input_fp8(H) + dequant_x(H*2)
+                return [
+                    FP8_ALIGN
+                    * hidden_size
+                    * 2,  # out_grad (permuted_grad) [N,H] bf16
+                    FP8_ALIGN * gate_up_out_dim * 2,  # o1 [N,inter*2] bf16
+                    FP8_ALIGN
+                    * gate_up_out_dim
+                    * 2,  # do1 [N,inter*2] bf16 (out-of-place)
+                    FP8_ALIGN
+                    * inter_dim
+                    * 2,  # o2_s [N,inter] bf16 (held for dw2)
+                    FP8_ALIGN
+                    * hidden_size,  # permuted_input [N,H] fp8 (alive at dw1)
+                    FP8_ALIGN
+                    * hidden_size
+                    * 2,  # dw1 dequant x [N,H] bf16 (the peak)
+                ]
+
+        # fp8 wgrad path
+        if used_inplace:
+            return [
+                FP8_ALIGN
+                * hidden_size
+                * 2,  # out_grad (permuted_grad) [N,H] bf16
+                FP8_ALIGN
+                * gate_up_out_dim
+                * 2,  # o1/do1 [N,inter*2] bf16 (inplace)
+                FP8_ALIGN * inter_dim * 2,  # o2_s [N,inter] bf16
+                FP8_ALIGN * hidden_size,  # input_x_t_fp8 [N,H] fp8
+                FP8_ALIGN * gate_up_out_dim,  # do1_t_fp8 [N,inter*2] fp8
+            ]
+        else:
+            return [
+                FP8_ALIGN
+                * hidden_size
+                * 2,  # out_grad (permuted_grad) [N,H] bf16
+                FP8_ALIGN * gate_up_out_dim * 2,  # o1 [N,inter*2] bf16
+                FP8_ALIGN
+                * gate_up_out_dim
+                * 2,  # do1 [N,inter*2] bf16 (out-of-place)
+                FP8_ALIGN * inter_dim * 2,  # o2_s [N,inter] bf16
+                FP8_ALIGN * hidden_size,  # input_x_t_fp8 [N,H] fp8
+                FP8_ALIGN * gate_up_out_dim,  # do1_t_fp8 [N,inter*2] fp8
+            ]
+
+    def _fwd_pre_permute_feature_sizes(
+        self, hidden_size, gate_up_out_dim, inter_dim, unpermute_tmp_per_N
+    ):
+        """Byte-size of each concurrent forward buffer per FP8_ALIGN unzipped
+        tokens, for find_max_concurrent_subbatch_size.
+        """
+        return [
+            # max(o1 [N,2*inter], o3 [N,H]) bf16 (not concurrent: clear_o1)
+            FP8_ALIGN * max(gate_up_out_dim * 2, hidden_size * 2),
+            FP8_ALIGN * hidden_size,  # permuted_input [N,H] fp8
+            FP8_ALIGN * inter_dim,  # o2_fp8 [N,inter] fp8
+            FP8_ALIGN * unpermute_tmp_per_N,  # unpermute tmp (per-N 折算)
+        ]
+
     def fallback_to_no_expert_fusion(self):
         """
         Fallback from expert_fusion=True to per-expert mode, splitting the fused
@@ -960,6 +1212,7 @@ class MlpNode:
         dispatched_indices,
         dispatched_probs,
         fill_output,
+        padding_alignment=None,
     ):
         """
         前向计算的公共预处理，被 forward() 和 forward_auto_subbatch() 共用。
@@ -1039,6 +1292,11 @@ class MlpNode:
             num_experts=num_experts,
             tokens_per_expert=self.tokens_per_expert,
             fill_output=fill_output,
+            **(
+                {}
+                if padding_alignment is None
+                else {"padding_alignment": padding_alignment}
+            ),
         )
         self.unzipped_probs = unzipped_probs
 
@@ -1186,6 +1444,7 @@ class MlpNode:
             dispatched_indices,
             dispatched_probs,
             fill_output=zip_unzip_fusion,
+            padding_alignment=self.moe_permute_padding_alignment,
         )
 
         # 2. subbatch planning
@@ -1379,6 +1638,339 @@ class MlpNode:
             )
         return output
 
+    @paddle.no_grad()
+    def forward_auto_subbatch_pre_permute(
+        self, hs_2d_dispatched, dispatched_indices, dispatched_probs
+    ):
+        """
+        Pre-permute auto subbatch 前向: 在 dispatched 空间 (S 维度) 切 chunk，
+        每个 chunk 独立完成 permute→compute→unpermute，峰值显存仅取决于单个 chunk 的展开大小。
+
+        与 post_permute 模式对比:
+          post_permute: 全量 moe_permute → [N, H] → subbatch on N
+          pre_permute:  切 S → per-chunk permute → per-chunk compute → per-chunk unpermute
+
+        正确性保证: 每个 token 的路由独立（由 dispatched_indices[i] 决定），
+        按 S 维度切块后每个 chunk 内部 permute→compute→unpermute 是自洽闭环。
+        """
+        use_fp8_dispatch_a2a = isinstance(hs_2d_dispatched, tuple)
+        if use_fp8_dispatch_a2a:
+            hs_input, hs_scale = hs_2d_dispatched
+            S = hs_input.shape[0]
+            hidden_size = hs_input.shape[1]
+            output_dtype = paddle.bfloat16
+        else:
+            S = hs_2d_dispatched.shape[0]
+            hidden_size = hs_2d_dispatched.shape[1]
+            output_dtype = hs_2d_dispatched.dtype
+
+        num_experts = len(self.tokens_per_expert)
+
+        # Cast indices to int32 and save for backward
+        self.dispatched_indices = dispatched_indices.to(paddle.int32)
+        self.dispatched_probs = dispatched_probs
+
+        # Quantize input to FP8 only when use_fp8_mlp=True or fp8_dispatch_a2a
+        # When use_fp8_mlp=False (BF16 gemm path), keep input as BF16
+        gemm_node = self.experts_group_gemm_node
+        use_fp8_path = getattr(gemm_node, "use_fp8_mlp", True)
+
+        if use_fp8_dispatch_a2a:
+            hs_fp8 = hs_input
+            hs_fp8_scale = hs_scale
+            hs_input._record_stream()
+            hs_scale._record_stream()
+            self.hs_2d_dispatched_bf16 = None
+        elif use_fp8_path:
+            hs_fp8, hs_fp8_scale = tilewise_quant(hs_2d_dispatched)
+            hs_2d_dispatched._clear_to_zero_allocation()
+            self.hs_2d_dispatched_bf16 = None
+        else:
+            # BF16 path: no FP8 quantization
+            hs_fp8 = None
+            hs_fp8_scale = None
+            self.hs_2d_dispatched_bf16 = hs_2d_dispatched
+
+        # Save input for backward (always keep hs_2d_dispatched_fp8 so backward
+        # can fall back to recompute path if cached path has insufficient memory)
+        self.hs_2d_dispatched_fp8 = hs_fp8
+        self.hs_2d_dispatched_scale = hs_fp8_scale
+
+        # History tracking
+        _free_blocks_now = allocator_free_block_info()
+        _allocator_total_free = sum(s for s, _ in _free_blocks_now)
+        _history = get_auto_sb_history()
+        _history.record_forward(_allocator_total_free)
+
+        if self.recompute_moe_premute:
+            self._pre_permute_cached_chunks = None
+        else:
+            self._pre_permute_cached_chunks = []
+            self._pre_permute_chunk_bounds = []
+
+        # Global expansion ratio for initial chunk size estimate
+        N_total = self.token_offsets[-1]
+        global_ratio = N_total / max(S, 1)
+
+        # Pre-allocate final output [S, H] before estimating chunk_size,
+        # so that find_max_concurrent_subbatch_size sees the true free memory
+        # available for the loop.
+        final_output = paddle.empty([S, hidden_size], dtype=output_dtype)
+
+        # Determine chunk_size based on VMM free memory
+        # unpermute tmp: chunk_size = N_chunk / global_ratio
+        # → unpermute_tmp per N token = H * 2 / global_ratio (bytes)
+        gate_up_out_dim = self._gate_up_out_dim(hidden_size)  # == inter*2
+        inter_dim = max(gate_up_out_dim // 2, 1)
+        _unpermute_tmp_per_N = (
+            int(hidden_size * 2 / global_ratio) if global_ratio > 0 else 0
+        )
+        fwd_feature_sizes = self._fwd_pre_permute_feature_sizes(
+            hidden_size, gate_up_out_dim, inter_dim, _unpermute_tmp_per_N
+        )
+        max_N_chunk = (
+            find_max_concurrent_subbatch_size(
+                fwd_feature_sizes,
+                upper=N_total // FP8_ALIGN if N_total > 0 else 1,
+            )
+            * FP8_ALIGN
+        )
+        if max_N_chunk > 0 and global_ratio > 0:
+            chunk_size = int(max_N_chunk / global_ratio)
+        else:
+            chunk_size = S
+        # Align to FP8_ALIGN
+        chunk_size = (chunk_size // FP8_ALIGN) * FP8_ALIGN
+        # Clamp
+        chunk_size = max(chunk_size, num_experts * FP8_ALIGN)
+        chunk_size = min(chunk_size, S)
+        # Snap trailing gap smaller than one FP8_ALIGN unit to S,
+        # so we don't emit a tiny tail chunk purely due to alignment.
+        if 0 < S - chunk_size <= FP8_ALIGN:
+            chunk_size = S
+        # Allow test override for forced multi-chunk
+        if hasattr(self, "max_pre_permute_chunk_size_fwd"):
+            chunk_size = min(chunk_size, self.max_pre_permute_chunk_size_fwd)
+        elif hasattr(self, "max_pre_permute_chunk_size"):
+            chunk_size = min(chunk_size, self.max_pre_permute_chunk_size)
+
+        # Main loop
+        sb_start = 0
+        initial_chunk_size = chunk_size
+        single_chunk = chunk_size >= S
+        num_chunks = 0
+
+        # Capture decision-time memory state for diagnostics
+        if not single_chunk:
+            _decision_free = _allocator_total_free
+            _decision_top5_mb = sorted(
+                (s / 1024 / 1024 for s, _ in _free_blocks_now),
+                reverse=True,
+            )[:5]
+
+        while sb_start < S:
+            sb_end = min(sb_start + chunk_size, S)
+
+            # Slice chunk
+            chunk_indices = self.dispatched_indices[sb_start:sb_end]
+            chunk_probs = dispatched_probs[sb_start:sb_end]
+            if use_fp8_path:
+                chunk_fp8 = hs_fp8[sb_start:sb_end]
+                chunk_scale = (
+                    hs_fp8_scale[sb_start:sb_end]
+                    if hs_fp8_scale is not None
+                    else None
+                )
+                chunk_bf16 = None
+            else:
+                chunk_fp8 = None
+                chunk_scale = None
+                chunk_bf16 = self.hs_2d_dispatched_bf16[sb_start:sb_end]
+
+            # Compute tokens_per_expert for this chunk via bincount.
+            # Map any -1 (invalid) indices to the num_experts bin, then discard
+            # that extra bin. This avoids masked_select + D2H sync.
+            flat_indices = chunk_indices.flatten().to(paddle.int32)
+            flat_indices = paddle.where(
+                flat_indices >= 0,
+                flat_indices,
+                paddle.full_like(flat_indices, num_experts),
+            )
+            chunk_tpe_tensor = paddle.bincount(
+                flat_indices, minlength=num_experts + 1
+            )[:num_experts]
+            chunk_tpe = chunk_tpe_tensor.tolist()
+
+            # Pad to FP8_ALIGN
+            padded_chunk_tpe = [
+                (t + FP8_ALIGN - 1) // FP8_ALIGN * FP8_ALIGN for t in chunk_tpe
+            ]
+            N_chunk = sum(padded_chunk_tpe)
+
+            # Memory check: use fragmentation-aware estimation
+            # (same logic as initial chunk_size, but re-query current free blocks)
+            # Skip when single_chunk: the initial estimate already covers it.
+            if N_chunk > 0 and not single_chunk:
+                max_N_now = (
+                    find_max_concurrent_subbatch_size(
+                        fwd_feature_sizes,
+                        upper=N_chunk // FP8_ALIGN,
+                    )
+                    * FP8_ALIGN
+                )
+                if max_N_now < N_chunk and chunk_size > num_experts * FP8_ALIGN:
+                    # Shrink: scale chunk_size by how much we can actually fit
+                    shrink_factor = max_N_now / N_chunk * 0.85
+                    chunk_size = int(chunk_size * shrink_factor)
+                    chunk_size = (chunk_size // FP8_ALIGN) * FP8_ALIGN
+                    chunk_size = max(chunk_size, num_experts * FP8_ALIGN)
+                    single_chunk = False
+                    continue  # retry with smaller chunk
+
+            chunk_num_tokens = sb_end - sb_start
+
+            if N_chunk == 0:
+                # All tokens in this chunk go to no expert, output zeros
+                final_output[sb_start:sb_end] = 0
+                sb_start = sb_end
+                chunk_size = initial_chunk_size
+                num_chunks += 1
+                continue
+
+            # Permute this chunk
+            using_ue8m0_scale = (
+                chunk_scale is not None and chunk_scale.dtype == paddle.int32
+            )
+            if use_fp8_path:
+                with paddle.amp.auto_cast(False):
+                    (
+                        permuted_tokens,
+                        chunk_rowmap,
+                        permuted_probs,
+                        permuted_scale,
+                    ) = paddle.nn.functional.moe_permute(
+                        chunk_fp8,
+                        chunk_scale,
+                        chunk_indices,
+                        chunk_probs,
+                        num_experts=num_experts,
+                        tokens_per_expert=chunk_tpe,
+                        padding_alignment=FP8_ALIGN,
+                        do_gather=True,
+                        using_ue8m0_scale=using_ue8m0_scale,
+                    )
+
+                # Group gemm (FP8 path): set input_fp8/scale, call forward(None, ...)
+                gemm_node = self.experts_group_gemm_node
+                gemm_node.input_fp8 = permuted_tokens
+                gemm_node.input_scale = permuted_scale
+
+                expert_out = gemm_node.forward(
+                    None, permuted_probs, padded_chunk_tpe
+                )
+
+                # Cleanup gemm node state
+                gemm_node.input_fp8 = None
+                gemm_node.input_scale = None
+                gemm_node.input = None
+            else:
+                # BF16 path: permute without scale
+                with paddle.amp.auto_cast(False):
+                    (
+                        permuted_tokens,
+                        chunk_rowmap,
+                        permuted_probs,
+                        _permuted_scale,
+                    ) = paddle.nn.functional.moe_permute(
+                        chunk_bf16,
+                        None,
+                        chunk_indices,
+                        chunk_probs,
+                        num_experts=num_experts,
+                        tokens_per_expert=chunk_tpe,
+                        padding_alignment=FP8_ALIGN,
+                        do_gather=True,
+                        using_ue8m0_scale=False,
+                    )
+                permuted_scale = None
+
+                # Group gemm (BF16 path): pass input directly
+                gemm_node = self.experts_group_gemm_node
+
+                expert_out = gemm_node.forward(
+                    permuted_tokens, permuted_probs, padded_chunk_tpe
+                )
+
+                # Cleanup gemm node state
+                gemm_node.input_fp8 = None
+                gemm_node.input_scale = None
+                gemm_node.input = None
+
+            # Unpermute this chunk's output back to dispatched space
+            with paddle.amp.auto_cast(False):
+                chunk_output, _ = paddle.nn.functional.moe_unpermute(
+                    expert_out,
+                    chunk_rowmap,
+                    chunk_indices,
+                    permuted_probs,
+                    chunk_num_tokens,
+                    num_experts,
+                )
+
+            final_output[sb_start:sb_end] = chunk_output
+
+            # Cache permuted input for backward (non-recompute path)
+            if self._pre_permute_cached_chunks is not None:
+                self._pre_permute_cached_chunks.append(
+                    (permuted_tokens.detach(), permuted_scale, chunk_rowmap)
+                )
+                self._pre_permute_chunk_bounds.append((sb_start, sb_end))
+
+            # Per-chunk diagnostic
+            if not single_chunk:
+                logger.info(
+                    "[AutoSubbatch PRE_PERMUTE FWD] chunk %d/%d done: "
+                    "sb=[%d,%d), N_chunk=%d, decision_free_mb=%.1f, "
+                    "decision_top5_mb=[%s]",
+                    num_chunks + 1,
+                    (S + initial_chunk_size - 1) // initial_chunk_size,
+                    sb_start,
+                    sb_end,
+                    N_chunk,
+                    _decision_free / 1024 / 1024,
+                    ", ".join(f"{b:.1f}" for b in _decision_top5_mb),
+                )
+
+            # Advance
+            sb_start = sb_end
+            chunk_size = initial_chunk_size
+            num_chunks += 1
+
+            # Cleanup chunk tensors (only delete if not cached)
+            if self._pre_permute_cached_chunks is None:
+                del permuted_tokens, chunk_rowmap, permuted_scale
+            del permuted_probs, expert_out, chunk_output
+
+        # Save unzipped_probs as None (not used in pre_permute backward the same way)
+        self.unzipped_probs = None
+
+        final_output.stop_gradient = False
+
+        if self.moe_subbatch_diag:
+            logger.info(
+                "[AutoSubbatch PRE_PERMUTE FWD] mode=pre_permute, total_tokens=%d, "
+                "S=%d, chunk_size=%d, num_chunks=%d, global_ratio=%.2f, "
+                "allocator_free_mb=%.2f",
+                N_total,
+                S,
+                initial_chunk_size,
+                num_chunks,
+                global_ratio,
+                _allocator_total_free / 1024 / 1024,
+            )
+
+        return final_output
+
     # ==================== backward methods ====================
 
     def backward_auto_subbatch(self, hidden_states_out_grad):
@@ -1440,6 +2032,7 @@ class MlpNode:
             num_experts=len(self.tokens_per_expert),
             tokens_per_expert=self.tokens_per_expert,
             fill_output=zip_unzip_fusion,
+            padding_alignment=self.moe_permute_padding_alignment,
         )
         if self.recompute_moe_premute and zip_unzip_fusion:
             (unzipped_tokens, _, _, unzipped_scale) = self.unzip_node.forward(
@@ -1450,6 +2043,7 @@ class MlpNode:
                 num_experts=len(self.tokens_per_expert),
                 tokens_per_expert=self.tokens_per_expert,
                 fill_output=True,
+                padding_alignment=self.moe_permute_padding_alignment,
             )
 
         # 2. subbatch planning
@@ -1698,6 +2292,495 @@ class MlpNode:
         return hs_fp8_dispatched_grad, dispatched_probs_grad
 
     @paddle.no_grad()
+    def backward_auto_subbatch_pre_permute(self, hidden_states_out_grad):
+        """
+        Pre-permute auto subbatch 反向: 在 dispatched 空间 (S 维度) 切 chunk，
+        每个 chunk 独立完成 permute_grad→expert_bwd→unpermute_grad。
+
+        两种路径:
+        - recompute_moe_premute=True: 反向独立决策 chunk 边界，重新 permute 前向输入
+        - recompute_moe_premute=False: 复用前向 chunk 边界，使用缓存的 permuted 结果
+        """
+        S = hidden_states_out_grad.shape[0]
+        hidden_size = hidden_states_out_grad.shape[1]
+
+        # Early return for empty input (EP dispatch sent 0 tokens to this rank)
+        if S == 0:
+            topk = (
+                self.router_topk
+                if self.router_topk is not None
+                else (
+                    self.dispatched_probs.shape[1]
+                    if self.dispatched_probs is not None
+                    else 1
+                )
+            )
+            self.reset_state()
+            return (
+                paddle.empty(
+                    [0, hidden_size], dtype=hidden_states_out_grad.dtype
+                ),
+                paddle.empty([0, topk], dtype=paddle.float32),
+            )
+
+        num_experts = len(self.tokens_per_expert)
+        N_total = self.token_offsets[-1]
+        global_ratio = N_total / max(S, 1)
+
+        # Pre-allocate weight grads so VMM query reflects true availability
+        self._ensure_weight_grad()
+
+        # Determine if FP8 or BF16 path
+        gemm_node = self.experts_group_gemm_node
+        use_fp8_path = getattr(gemm_node, "use_fp8_mlp", True)
+
+        # Check if we have cached permuted results from forward (non-recompute path)
+        use_cached = (
+            self._pre_permute_cached_chunks is not None
+            and len(self._pre_permute_cached_chunks) > 0
+        )
+        # Pre-allocate final grads as zeros so cached backward leaves
+        # all-empty chunks with correct zero gradients.
+        final_input_grad = paddle.zeros(
+            [S, hidden_size], dtype=hidden_states_out_grad.dtype
+        )
+        dispatched_probs_grad = paddle.zeros(
+            [S, self.router_topk], dtype=paddle.float32
+        )
+
+        # Backward per-unzipped-token peak buffers (bytes per FP8_ALIGN tokens),
+        gate_up_out_dim = self._gate_up_out_dim(hidden_size)  # == inter*2
+        inter_dim = max(gate_up_out_dim // 2, 1)
+        bwd_feature_sizes = self._bwd_pre_permute_feature_sizes(
+            hidden_size, gate_up_out_dim, inter_dim
+        )
+
+        if use_cached:
+            # Check if backward peak fits in current free memory (fragmentation
+            # aware); if not, discard cache and fall back to recompute path
+            # which can independently decide smaller chunk boundaries.
+            max_chunk_S = max(
+                sb_end - sb_start
+                for sb_start, sb_end in self._pre_permute_chunk_bounds
+            )
+            max_N_estimate = int(max_chunk_S * global_ratio)
+            max_N_fit = (
+                find_max_concurrent_subbatch_size(
+                    bwd_feature_sizes,
+                    upper=max(max_N_estimate // FP8_ALIGN, 1),
+                )
+                * FP8_ALIGN
+            )
+            if max_N_fit < max_N_estimate:
+                logger.info(
+                    "[AutoSubbatch PRE_PERMUTE BWD] cached path memory "
+                    "insufficient (need_N=%d, fit_N=%d), "
+                    "falling back to recompute path",
+                    max_N_estimate,
+                    max_N_fit,
+                )
+                self._pre_permute_cached_chunks = None
+                self._pre_permute_chunk_bounds = None
+                use_cached = False
+
+        if use_cached:
+            # Non-recompute path: use forward's chunk boundaries and cached permuted inputs
+            chunk_bounds = self._pre_permute_chunk_bounds
+            cached_chunks = self._pre_permute_cached_chunks
+            num_chunks = len(chunk_bounds)
+
+            for chunk_idx, (sb_start, sb_end) in enumerate(chunk_bounds):
+                chunk_indices = self.dispatched_indices[sb_start:sb_end]
+                chunk_probs = self.dispatched_probs[sb_start:sb_end]
+                chunk_grad = hidden_states_out_grad[sb_start:sb_end]
+                chunk_num_tokens = sb_end - sb_start
+
+                # Get cached permuted input and rowmap from forward
+                permuted_input, permuted_input_scale, chunk_rowmap = (
+                    cached_chunks[chunk_idx]
+                )
+
+                # Compute tokens_per_expert for this chunk (needed for permute_grad)
+                # Map any -1 (invalid) indices to the num_experts bin, then
+                # discard that extra bin. Avoids masked_select + D2H sync.
+                flat_indices = chunk_indices.flatten().to(paddle.int32)
+                flat_indices = paddle.where(
+                    flat_indices >= 0,
+                    flat_indices,
+                    paddle.full_like(flat_indices, num_experts),
+                )
+                chunk_tpe_tensor = paddle.bincount(
+                    flat_indices, minlength=num_experts + 1
+                )[:num_experts]
+                chunk_tpe = chunk_tpe_tensor.tolist()
+                padded_chunk_tpe = [
+                    (t + FP8_ALIGN - 1) // FP8_ALIGN * FP8_ALIGN
+                    for t in chunk_tpe
+                ]
+                # Step 1: Permute grad (zip_grad direction)
+                using_ue8m0_scale = False
+                with paddle.amp.auto_cast(False):
+                    (
+                        permuted_grad,
+                        _,
+                        permuted_probs,
+                        _,
+                    ) = paddle.nn.functional.moe_permute(
+                        chunk_grad,
+                        None,
+                        chunk_indices,
+                        chunk_probs,
+                        num_experts=num_experts,
+                        tokens_per_expert=chunk_tpe,
+                        padding_alignment=FP8_ALIGN,
+                        do_gather=True,
+                        using_ue8m0_scale=using_ue8m0_scale,
+                    )
+
+                # Step 2: Use cached permuted_input directly (no re-permute needed)
+                if use_fp8_path:
+                    gemm_node.input_fp8 = permuted_input
+                    gemm_node.input_scale = permuted_input_scale
+                else:
+                    gemm_node.input = permuted_input
+                    gemm_node.input_fp8 = None
+                    gemm_node.input_scale = None
+                gemm_node.tokens_per_expert = padded_chunk_tpe
+                gemm_node.o1 = None
+                orig_recompute = gemm_node.recompute_moe_gate_up
+                gemm_node.recompute_moe_gate_up = True
+                permuted_input_grad, permuted_probs_grad = gemm_node.backward(
+                    permuted_grad, permuted_probs
+                )
+                gemm_node.recompute_moe_gate_up = orig_recompute
+                gemm_node.input_fp8 = None
+                gemm_node.input_scale = None
+                gemm_node.input = None
+                gemm_node.tokens_per_expert = None
+
+                # Step 3: Unpermute grad back to dispatched space
+                with paddle.amp.auto_cast(False):
+                    chunk_input_grad, chunk_probs_grad = (
+                        paddle.nn.functional.moe_unpermute(
+                            permuted_input_grad,
+                            chunk_rowmap,
+                            chunk_indices,
+                            permuted_probs_grad,
+                            chunk_num_tokens,
+                            num_experts,
+                        )
+                    )
+
+                final_input_grad[sb_start:sb_end] = chunk_input_grad
+                dispatched_probs_grad[sb_start:sb_end] = chunk_probs_grad
+
+                # Cleanup
+                del permuted_grad, permuted_probs, permuted_probs_grad
+                del permuted_input_grad, chunk_input_grad, chunk_probs_grad
+
+            # Release cached data
+            self._pre_permute_cached_chunks = None
+            self._pre_permute_chunk_bounds = None
+
+        else:
+            # Recompute path: independently decide chunk boundaries for backward
+            _free_before_chunk_blocks = allocator_free_block_info()
+            _free_before_chunk_calc = sum(
+                s for s, _ in _free_before_chunk_blocks
+            )
+            _effective_free = _free_before_chunk_calc
+
+            # BWD recompute path chunk sizing: fragmentation-aware, using the
+            # shared bwd_feature_sizes (real gate_up/inter widths + dx output),
+            # mirroring the forward path's find_max_concurrent_subbatch_size.
+            max_N_chunk = (
+                find_max_concurrent_subbatch_size(
+                    bwd_feature_sizes,
+                    upper=N_total // FP8_ALIGN if N_total > 0 else 1,
+                )
+                * FP8_ALIGN
+            )
+            if max_N_chunk > 0 and global_ratio > 0:
+                chunk_size = int(max_N_chunk / global_ratio)
+            else:
+                chunk_size = S
+            chunk_size = (chunk_size // FP8_ALIGN) * FP8_ALIGN
+            chunk_size = max(chunk_size, num_experts * FP8_ALIGN)
+            chunk_size = min(chunk_size, S)
+            # Snap trailing gap smaller than one FP8_ALIGN unit to S,
+            # so we don't emit a tiny tail chunk purely due to alignment.
+            if 0 < S - chunk_size <= FP8_ALIGN:
+                chunk_size = S
+            # Allow test override for forced multi-chunk
+            if hasattr(self, "max_pre_permute_chunk_size_bwd"):
+                chunk_size = min(
+                    chunk_size, self.max_pre_permute_chunk_size_bwd
+                )
+            elif hasattr(self, "max_pre_permute_chunk_size"):
+                chunk_size = min(chunk_size, self.max_pre_permute_chunk_size)
+
+            # Main loop
+            sb_start = 0
+            initial_chunk_size = chunk_size
+            single_chunk = chunk_size >= S
+            num_chunks = 0
+
+            # Capture decision-time memory state for diagnostics
+            if not single_chunk:
+                _decision_free = _free_before_chunk_calc
+                _decision_top5_mb = sorted(
+                    (s / 1024 / 1024 for s, _ in _free_before_chunk_blocks),
+                    reverse=True,
+                )[:5]
+
+            while sb_start < S:
+                sb_end = min(sb_start + chunk_size, S)
+
+                # Slice chunk
+                chunk_indices = self.dispatched_indices[sb_start:sb_end]
+                chunk_probs = self.dispatched_probs[sb_start:sb_end]
+                chunk_grad = hidden_states_out_grad[sb_start:sb_end]
+                chunk_num_tokens = sb_end - sb_start
+
+                # Compute tokens_per_expert for this chunk via bincount.
+                # Map any -1 (invalid) indices to the num_experts bin, then
+                # discard that extra bin. Avoids masked_select + D2H sync.
+                flat_indices = chunk_indices.flatten().to(paddle.int32)
+                flat_indices = paddle.where(
+                    flat_indices >= 0,
+                    flat_indices,
+                    paddle.full_like(flat_indices, num_experts),
+                )
+                chunk_tpe_tensor = paddle.bincount(
+                    flat_indices, minlength=num_experts + 1
+                )[:num_experts]
+                chunk_tpe = chunk_tpe_tensor.tolist()
+
+                # Pad to FP8_ALIGN
+                padded_chunk_tpe = [
+                    (t + FP8_ALIGN - 1) // FP8_ALIGN * FP8_ALIGN
+                    for t in chunk_tpe
+                ]
+                N_chunk = sum(padded_chunk_tpe)
+
+                # Memory recheck: fragmentation-aware, mirroring the forward
+                # path. Skip when single_chunk (the initial fragmentation-aware
+                # estimate already covers the whole-S case).
+                if N_chunk > 0 and not single_chunk:
+                    max_N_now = (
+                        find_max_concurrent_subbatch_size(
+                            bwd_feature_sizes,
+                            upper=N_chunk // FP8_ALIGN,
+                        )
+                        * FP8_ALIGN
+                    )
+                    if (
+                        max_N_now < N_chunk
+                        and chunk_size > num_experts * FP8_ALIGN
+                    ):
+                        shrink_factor = max_N_now / N_chunk * 0.85
+                        chunk_size = int(chunk_size * shrink_factor)
+                        chunk_size = (chunk_size // FP8_ALIGN) * FP8_ALIGN
+                        chunk_size = max(chunk_size, num_experts * FP8_ALIGN)
+                        single_chunk = False
+                        continue
+
+                if N_chunk == 0:
+                    final_input_grad[sb_start:sb_end] = 0
+                    dispatched_probs_grad[sb_start:sb_end] = 0
+                    sb_start = sb_end
+                    chunk_size = initial_chunk_size
+                    num_chunks += 1
+                    continue
+
+                # Step 1: Permute grad (zip_grad direction)
+                using_ue8m0_scale = False
+                with paddle.amp.auto_cast(False):
+                    (
+                        permuted_grad,
+                        chunk_rowmap,
+                        permuted_probs,
+                        _,
+                    ) = paddle.nn.functional.moe_permute(
+                        chunk_grad,
+                        None,
+                        chunk_indices,
+                        chunk_probs,
+                        num_experts=num_experts,
+                        tokens_per_expert=chunk_tpe,
+                        padding_alignment=FP8_ALIGN,
+                        do_gather=True,
+                        using_ue8m0_scale=using_ue8m0_scale,
+                    )
+
+                # Step 2: Recompute forward input for gemm backward
+                if use_fp8_path:
+                    chunk_input_fp8 = self.hs_2d_dispatched_fp8[sb_start:sb_end]
+                    chunk_input_scale = (
+                        self.hs_2d_dispatched_scale[sb_start:sb_end]
+                        if self.hs_2d_dispatched_scale is not None
+                        else None
+                    )
+                    recompute_ue8m0 = (
+                        chunk_input_scale is not None
+                        and chunk_input_scale.dtype == paddle.int32
+                    )
+                    with paddle.amp.auto_cast(False):
+                        (
+                            permuted_input,
+                            _,
+                            _,
+                            permuted_input_scale,
+                        ) = paddle.nn.functional.moe_permute(
+                            chunk_input_fp8,
+                            chunk_input_scale,
+                            chunk_indices,
+                            chunk_probs,
+                            num_experts=num_experts,
+                            tokens_per_expert=chunk_tpe,
+                            padding_alignment=FP8_ALIGN,
+                            do_gather=True,
+                            using_ue8m0_scale=recompute_ue8m0,
+                        )
+                    # Last/only chunk: the un-permuted dispatched source is now
+                    # fully consumed. Release it before gemm_node.backward so the
+                    # dw1 fused_act_dequant peak no longer holds both the source
+                    # [S,H] fp8 and the freshly-permuted permuted_input [N,H] fp8
+                    # (single-chunk otherwise pays an extra 1H).
+                    if sb_end >= S:
+                        del chunk_input_fp8, chunk_input_scale
+                        self.hs_2d_dispatched_fp8 = None
+                        self.hs_2d_dispatched_scale = None
+                else:
+                    # BF16 path: re-permute BF16 input
+                    chunk_input_bf16 = self.hs_2d_dispatched_bf16[
+                        sb_start:sb_end
+                    ]
+                    with paddle.amp.auto_cast(False):
+                        (
+                            permuted_input,
+                            _,
+                            _,
+                            _,
+                        ) = paddle.nn.functional.moe_permute(
+                            chunk_input_bf16,
+                            None,
+                            chunk_indices,
+                            chunk_probs,
+                            num_experts=num_experts,
+                            tokens_per_expert=chunk_tpe,
+                            padding_alignment=FP8_ALIGN,
+                            do_gather=True,
+                            using_ue8m0_scale=False,
+                        )
+                    permuted_input_scale = None
+                    # Last/only chunk: release the un-permuted BF16 source before
+                    # gemm backward (mirrors the fp8 branch).
+                    if sb_end >= S:
+                        del chunk_input_bf16
+                        self.hs_2d_dispatched_bf16 = None
+
+                # Step 3: Group gemm backward (all experts in one call)
+                gemm_node = self.experts_group_gemm_node
+                if use_fp8_path:
+                    gemm_node.input_fp8 = permuted_input
+                    gemm_node.input_scale = permuted_input_scale
+                else:
+                    gemm_node.input = permuted_input
+                    gemm_node.input_fp8 = None
+                    gemm_node.input_scale = None
+                gemm_node.tokens_per_expert = padded_chunk_tpe
+                gemm_node.o1 = None
+                orig_recompute = gemm_node.recompute_moe_gate_up
+                gemm_node.recompute_moe_gate_up = True
+                permuted_input_grad, permuted_probs_grad = gemm_node.backward(
+                    permuted_grad, permuted_probs
+                )
+                gemm_node.recompute_moe_gate_up = orig_recompute
+                gemm_node.input_fp8 = None
+                gemm_node.input_scale = None
+                gemm_node.input = None
+                gemm_node.tokens_per_expert = None
+
+                # Step 4: Unpermute grad back to dispatched space
+                with paddle.amp.auto_cast(False):
+                    chunk_input_grad, chunk_probs_grad = (
+                        paddle.nn.functional.moe_unpermute(
+                            permuted_input_grad,
+                            chunk_rowmap,
+                            chunk_indices,
+                            permuted_probs_grad,
+                            chunk_num_tokens,
+                            num_experts,
+                        )
+                    )
+
+                final_input_grad[sb_start:sb_end] = chunk_input_grad
+                dispatched_probs_grad[sb_start:sb_end] = chunk_probs_grad
+
+                # Per-chunk diagnostic
+                if not single_chunk:
+                    logger.info(
+                        "[AutoSubbatch PRE_PERMUTE BWD] chunk %d/%d done: "
+                        "sb=[%d,%d), N_chunk=%d, decision_free_mb=%.1f, "
+                        "decision_top5_mb=[%s]",
+                        num_chunks + 1,
+                        (S + chunk_size - 1) // chunk_size,
+                        sb_start,
+                        sb_end,
+                        N_chunk,
+                        _decision_free / 1024 / 1024,
+                        ", ".join(f"{b:.1f}" for b in _decision_top5_mb),
+                    )
+
+                # Advance
+                sb_start = sb_end
+                chunk_size = initial_chunk_size
+                num_chunks += 1
+
+                # Cleanup
+                del (
+                    permuted_grad,
+                    chunk_rowmap,
+                    permuted_probs,
+                    permuted_probs_grad,
+                )
+                del permuted_input_grad
+                del chunk_input_grad, chunk_probs_grad
+                del permuted_input, permuted_input_scale
+
+        # Reset state
+        self.reset_state()
+
+        # History tracking
+        _history = get_auto_sb_history()
+        _iteration_finished = _history.record_backward()
+
+        if self.moe_subbatch_diag:
+            if use_cached:
+                _diag_chunk_size = (
+                    chunk_bounds[0][1] - chunk_bounds[0][0]
+                    if chunk_bounds
+                    else S
+                )
+            else:
+                _diag_chunk_size = initial_chunk_size
+            logger.info(
+                "[AutoSubbatch PRE_PERMUTE BWD] mode=pre_permute, total_tokens=%d, "
+                "S=%d, chunk_size=%d, num_chunks=%d, global_ratio=%.2f, "
+                "allocator_free_mb=%.2f, use_cached=%s",
+                N_total,
+                S,
+                _diag_chunk_size,
+                num_chunks,
+                global_ratio,
+                sum(s for s, _ in allocator_free_block_info()) / 1024 / 1024,
+                use_cached,
+            )
+
+        return final_input_grad, dispatched_probs_grad
+
+    @paddle.no_grad()
     def forward(self, hs_2d_dispatched, dispatched_indices, dispatched_probs):
         """
         对输入数据进行前向传播计算。
@@ -1712,6 +2795,10 @@ class MlpNode:
 
         """
         if self.use_auto_subbatch:
+            if self.auto_subbatch_mode == "pre_permute":
+                return self.forward_auto_subbatch_pre_permute(
+                    hs_2d_dispatched, dispatched_indices, dispatched_probs
+                )
             return self.forward_auto_subbatch(
                 hs_2d_dispatched, dispatched_indices, dispatched_probs
             )
@@ -1740,6 +2827,7 @@ class MlpNode:
             dispatched_indices,
             dispatched_probs,
             fill_output=fill_output,
+            padding_alignment=self.moe_permute_padding_alignment,
         )
         fwd_path = "unknown"
         if (
@@ -1868,6 +2956,10 @@ class MlpNode:
 
         """
         if self.use_auto_subbatch:
+            if self.auto_subbatch_mode == "pre_permute":
+                return self.backward_auto_subbatch_pre_permute(
+                    hidden_states_out_grad
+                )
             return self.backward_auto_subbatch(hidden_states_out_grad)
 
         if (
@@ -1889,6 +2981,7 @@ class MlpNode:
             num_experts=len(self.tokens_per_expert),
             tokens_per_expert=self.tokens_per_expert,
             fill_output=fill_output,
+            padding_alignment=self.moe_permute_padding_alignment,
         )
         hidden_states_out_grad._record_stream()
         bwd_path = "unknown"
@@ -2024,10 +3117,13 @@ class FusionMoePyLayer(paddle.autograd.PyLayer):
         is_first_fwd=False,
         fp8_dispatched_handle=None,
         use_auto_subbatch=False,
+        auto_subbatch_mode=None,
         moe_subbatch_diag=False,
         use_ue8m0=False,
         dw_p2p_overlap=False,
         clamp_value=None,
+        activation_type=None,
+        use_accuracy_compatible=False,
     ):
         """
         根据给定的参数执行前向传播操作。
@@ -2037,10 +3133,14 @@ class FusionMoePyLayer(paddle.autograd.PyLayer):
             dispatched_probs (tensor): 分派概率张量。
             dispatched_indices (tensor): 分派索引张量。
             num_experts_per_tok (int): topk。
+            activation_type (str, optional): Activation type, "swiglu" or "geglu".
+                Defaults to custom_map._activation_type if present, otherwise "swiglu".
 
         Returns:
             tensor: 前向传播的结果张量。
         """
+        if activation_type is None:
+            activation_type = getattr(custom_map, "_activation_type", "swiglu")
         ctx.node = MlpNode(
             custom_map,
             num_experts_per_tok,
@@ -2053,10 +3153,13 @@ class FusionMoePyLayer(paddle.autograd.PyLayer):
             moe_deep_gemm=moe_deep_gemm,
             moe_expert_fusion=moe_expert_fusion,
             use_auto_subbatch=use_auto_subbatch,
+            auto_subbatch_mode=auto_subbatch_mode,
             moe_subbatch_diag=moe_subbatch_diag,
             use_ue8m0=use_ue8m0,
             dw_p2p_overlap=dw_p2p_overlap,
             clamp_value=clamp_value,
+            activation_type=activation_type,
+            use_accuracy_compatible=use_accuracy_compatible,
         )
 
         if fp8_dispatched_handle is not None:
@@ -2186,6 +3289,8 @@ class HybridEPMoePyLayer(paddle.autograd.PyLayer):
         is_first_fwd=False,
         dw_p2p_overlap=False,
         clamp_value=None,
+        use_ue8m0=False,
+        use_accuracy_compatible=False,
     ):
         node = ExpertsGroupGemmContiguousNode(
             custom_map,
@@ -2195,8 +3300,11 @@ class HybridEPMoePyLayer(paddle.autograd.PyLayer):
             use_fp8_mlp=use_fp8_mlp,
             moe_deep_gemm=moe_deep_gemm,
             moe_expert_fusion=moe_expert_fusion,
+            use_ue8m0=use_ue8m0,
             dw_p2p_overlap=dw_p2p_overlap,
             clamp_value=clamp_value,
+            activation_type=getattr(custom_map, "_activation_type", "swiglu"),
+            use_accuracy_compatible=use_accuracy_compatible,
         )
         original_hidden_shape = tuple(hidden_states.shape)
         original_probs_shape = tuple(dispatched_probs.shape)
@@ -2263,6 +3371,7 @@ def run_sonic_moe(
     tokens_per_expert=None,
     fp8_scale=None,
     fp8_combine_grad_handle=None,
+    fp8_config=None,
 ):
     T = hidden_states.shape[0]
     stream_id = paddle.device.current_stream()
@@ -2274,55 +3383,88 @@ def run_sonic_moe(
             paddle.int32
         )
 
-    (
-        expert_frequency_offset,
-        x_gather_idx,
-        s_scatter_idx,
-        s_reverse_scatter_idx,
-        num_activated_expert_per_token_offset,
-        _router_scores,
-        TK_padded,
-        total_pad_rows,
-        _N_recv,
-        _score_src_idx,
-    ) = deepep_topk_to_sonic_metadata(
-        topk_indices.cast(paddle.int32),
-        topk_scores,
-        tokens_per_expert,
-        E,
-        block=128 if fp8 else 1,
-    )
+    fp8_scale_packed = None
+    if fp8 and fp8_scale is not None:
+        (
+            expert_frequency_offset,
+            x_gather_idx,
+            s_scatter_idx,
+            s_reverse_scatter_idx,
+            num_activated_expert_per_token_offset,
+            _router_scores,
+            TK_padded,
+            total_pad_rows,
+            _N_recv,
+            _score_src_idx,
+            fp8_scale_packed,
+        ) = deepep_topk_to_sonic_metadata_with_scales(
+            topk_indices.cast(paddle.int32),
+            topk_scores,
+            tokens_per_expert,
+            E,
+            fp8_scale,
+            int(hidden_states.shape[1]),
+            block=128,
+        )
+    else:
+        (
+            expert_frequency_offset,
+            x_gather_idx,
+            s_scatter_idx,
+            s_reverse_scatter_idx,
+            num_activated_expert_per_token_offset,
+            _router_scores,
+            TK_padded,
+            total_pad_rows,
+            _N_recv,
+            _score_src_idx,
+        ) = deepep_topk_to_sonic_metadata(
+            topk_indices.cast(paddle.int32),
+            topk_scores,
+            tokens_per_expert,
+            E,
+            block=128 if fp8 else 1,
+        )
 
     s_scatter_idx.stop_gradient = True
     activation_type = ActivationType("swiglu")
 
     total_expert_freq = TK_padded
-    scores_for_down = _differentiable_router_scores(
-        topk_scores,
-        topk_indices.cast(paddle.int32),
-        num_activated_expert_per_token_offset,
-        TK_padded - total_pad_rows,
-        TK_padded,
-        E,
-        score_src_idx=_score_src_idx,
-    )
+    if _score_src_idx is not None and _scatter_router_scores_i32 is not None:
+        scores_for_down = _SonicRouterScoresFromMetadata.apply(
+            topk_scores, _router_scores, _score_src_idx
+        )
+    else:
+        scores_for_down = _differentiable_router_scores(
+            topk_scores,
+            topk_indices.cast(paddle.int32),
+            num_activated_expert_per_token_offset,
+            TK_padded - total_pad_rows,
+            TK_padded,
+            E,
+            score_src_idx=_score_src_idx,
+        )
 
     fp8_hidden_states = None
     if fp8_scale is not None:
-        fp8_hidden_states = (hidden_states, fp8_scale)
+        fp8_hidden_states = (
+            (hidden_states, fp8_scale, fp8_scale_packed)
+            if fp8_scale_packed is not None
+            else (hidden_states, fp8_scale)
+        )
 
-    if fp8:
-        w1_sonic = _make_sonic_fp8_weight_carrier(w1)
-        w2_sonic = _make_sonic_fp8_weight_carrier(w2)
-    else:
-        w1_sonic = w1.permute([1, 2, 0])
-        w2_sonic = w2.permute([1, 2, 0])
+    # if fp8:
+    #     w1_sonic = _make_sonic_fp8_weight_carrier(w1)
+    #     w2_sonic = _make_sonic_fp8_weight_carrier(w2)
+    # else:
+    #     w1_sonic = w1.permute([1, 2, 0])
+    #     w2_sonic = w2.permute([1, 2, 0])
 
     with enable_fp8(fp8):
-        _refresh_fp8_config()
+        # _refresh_fp8_config()
         y1, z = _UpProjection.apply(
             hidden_states,
-            w1_sonic,
+            w1,
             None,
             expert_frequency_offset,
             total_expert_freq,
@@ -2337,11 +3479,12 @@ def run_sonic_moe(
             is_inference_mode_enabled=False,
             use_low_precision_postact_buffer=False,
             prequant_activation_payload=fp8_hidden_states,
+            fp8_config=fp8_config,
         )
         hidden_states = _DownProjection.apply(
             y1,
             z,
-            w2_sonic,
+            w2,
             None,
             scores_for_down,
             s_scatter_idx,
@@ -2357,6 +3500,7 @@ def run_sonic_moe(
             activation_type,
             None,
             fp8_combine_grad_handle,
+            fp8_config=fp8_config,
         )
 
     return hidden_states

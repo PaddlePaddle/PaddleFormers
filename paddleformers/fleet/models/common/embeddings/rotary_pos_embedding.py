@@ -68,6 +68,7 @@ class RotaryEmbedding(nn.Layer):
         rope_scaling: bool = False,
         rope_scaling_factor: float = 8.0,
         cp_group: paddle.distributed.communication.group.Group | None = None,
+        use_accuracy_compatible: bool = False,
     ) -> None:
         super().__init__()
 
@@ -77,15 +78,30 @@ class RotaryEmbedding(nn.Layer):
         self.rotary_interleaved = rotary_interleaved
 
         self.seq_len_interpolation_factor = seq_len_interpolation_factor
-        self.inv_freq = 1.0 / (
-            rotary_base
-            ** (
-                paddle.arange(0, dim, 2, dtype=paddle.int64).astype(
-                    dtype=paddle.float32
-                )
+
+        if use_accuracy_compatible:
+            _exp_cpu = (
+                paddle.arange(0, dim, 2, dtype=paddle.int64)
+                .cpu()
+                .astype(paddle.float32)
                 / dim
             )
-        )
+            _inv_freq_cpu = 1.0 / (rotary_base**_exp_cpu)
+            self.inv_freq = (
+                _inv_freq_cpu.cuda()
+                if paddle.is_compiled_with_cuda()
+                else _inv_freq_cpu
+            )
+        else:
+            self.inv_freq = 1.0 / (
+                rotary_base
+                ** (
+                    paddle.arange(0, dim, 2, dtype=paddle.int64).astype(
+                        dtype=paddle.float32
+                    )
+                    / dim
+                )
+            )
 
         if rope_scaling:
             self.inv_freq = self._apply_scaling(
@@ -290,6 +306,7 @@ class MultimodalRotaryEmbedding(nn.Layer):
         rotary_base: int = 10000,
         rope_scaling: bool = False,
         cp_group: paddle.distributed.communication.group.Group | None = None,
+        use_accuracy_compatible: bool = False,
     ) -> None:
         super().__init__()
 

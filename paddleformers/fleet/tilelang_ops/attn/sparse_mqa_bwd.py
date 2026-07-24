@@ -196,9 +196,12 @@ def bwd(
                     )
 
                 for bi_i, d_i in T.Parallel(BS, D):
-                    KV_shared[bi_i, d_i] = KV[
-                        by, Indices[by, s_i, i_i * BS + bi_i], d_i
-                    ]
+                    # -1 padding index clamped to a safe in-bounds row (computed
+                    # locally, same pipeline stage); numeric contribution stays
+                    # zeroed via `mask`, but dereferencing -1 reads OOB memory.
+                    raw_idx = Indices[by, s_i, i_i * BS + bi_i]
+                    safe_idx = T.if_then_else(raw_idx != -1, raw_idx, 0)
+                    KV_shared[bi_i, d_i] = KV[by, safe_idx, d_i]
 
                 T.gemm(
                     Q_shared,
@@ -273,16 +276,15 @@ def bwd(
                             ]
 
                     for bi_i, d_i in T.Parallel(BS // split_store, D // 4):
+                        raw_idx = Indices[
+                            by, s_i, i_i * BS + bi_i + s * (BS // split_store)
+                        ]
+                        # -1 padding index clamped to a safe row; masked slots
+                        # carry zero gradient so the atomic add is a no-op, but
+                        # writing to -1 would target OOB memory.
+                        safe_idx = T.if_then_else(raw_idx != -1, raw_idx, 0)
                         T.atomic_addx4(
-                            dKV[
-                                by,
-                                Indices[
-                                    by,
-                                    s_i,
-                                    i_i * BS + bi_i + s * (BS // split_store),
-                                ],
-                                d_i * 4,
-                            ],
+                            dKV[by, safe_idx, d_i * 4],
                             acc_dkv_shared[bi_i, d_i * 4],
                         )
 
@@ -401,9 +403,12 @@ def bwd_det(
                     )
 
                 for bi_i, d_i in T.Parallel(BS, D):
-                    KV_shared[bi_i, d_i] = KV[
-                        by, Indices[by, s_i, i_i * BS + bi_i], d_i
-                    ]
+                    # -1 padding index clamped to a safe in-bounds row (computed
+                    # locally, same pipeline stage); numeric contribution stays
+                    # zeroed via `mask`, but dereferencing -1 reads OOB memory.
+                    raw_idx = Indices[by, s_i, i_i * BS + bi_i]
+                    safe_idx = T.if_then_else(raw_idx != -1, raw_idx, 0)
+                    KV_shared[bi_i, d_i] = KV[by, safe_idx, d_i]
 
                 T.gemm(
                     Q_shared,

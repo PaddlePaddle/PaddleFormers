@@ -40,10 +40,25 @@ from .moe_utils import (
 
 try:
     from paddlefleet_ops import deep_gemm as paddlefleet_deep_gemm
-    from paddlefleet_ops.sonicmoe.functional import clear_all_fp8_weight_caches
+    from paddlefleet_ops.sonicmoe.functional import (
+        _refresh_fp8_config,
+        clear_all_fp8_weight_caches,
+    )
     from paddlefleet_ops.sonicmoe.quack_utils import quantize_native_fp8_weights
 except (ImportError, RuntimeError):
     pass
+
+
+try:
+    from paddlefleet_ops.sonicmoe.ernie_compat.weight_layout_fusion import (
+        fused_grouped_w1_to_sonic,
+        fused_sonic_w1_to_grouped,
+        fused_transpose_w2_layout,
+    )
+except (ImportError, RuntimeError):
+    fused_grouped_w1_to_sonic = None
+    fused_sonic_w1_to_grouped = None
+    fused_transpose_w2_layout = None
 
 
 class BMMFunction(paddle.autograd.PyLayer):
@@ -140,12 +155,22 @@ class GroupedMLPExpert(FleetLayer):
         config: TransformerConfig,
         moe_deep_gemm,
         pg_collection: ProcessGroupCollection | None = None,
+        intermediate_size_per_partition: int | None = None,
     ):
         super().__init__(config=config)
         self.config: TransformerConfig = config
         self.config.hidden_act = F.silu
         self.num_local_experts = num_local_experts
         self.moe_deep_gemm = moe_deep_gemm
+        # Intermediate size for the local shard of every expert. When using the
+        # 'allgather' MoE dispatcher every expert is sharded along its
+        # intermediate dim across the EP group, so this can be smaller than
+        # ``config.moe_intermediate_size``.
+        self.intermediate_size_per_partition = (
+            intermediate_size_per_partition
+            if intermediate_size_per_partition is not None
+            else self.config.moe_intermediate_size
+        )
         assert not config.use_bias, (
             "Bias not supported in Grouped GEMM yet, please set 'use_bias' to False."
         )
@@ -178,13 +203,13 @@ class GroupedMLPExpert(FleetLayer):
             )
 
         # No tensor parallel - full sizes
-        fc1_output_size = self.config.moe_intermediate_size
+        fc1_output_size = self.intermediate_size_per_partition
         if config.gated_linear_unit:
             # Project to 4h. If using swiglu double the output width,
             # see https://arxiv.org/pdf/2002.05202.pdf
             fc1_output_size *= 2
 
-        fc2_input_size = self.config.moe_intermediate_size
+        fc2_input_size = self.intermediate_size_per_partition
 
         dtype = "bfloat16"
         w1_shape = [
@@ -290,7 +315,23 @@ class GroupedMLPExpert(FleetLayer):
         self,
         structured_name_prefix: str = "",
     ):
+        # standard:  shard on expert dim (axis=0), each rank owns disjoint experts.
+        # allgather: shard on intermediate dim, each rank owns all experts.
+        # Cross-topology reshard is handled by the DCP resharder.
+        # See _get_intermediate_sharded_state_dict for allgather details.
+        is_intermediate_sharded = (
+            getattr(self.config, "moe_token_dispatcher_type", None)
+            == "allgather"
+            and self.expert_parallel
+        )
+
         state_dict = self.state_dict(structured_name_prefix="")
+
+        if is_intermediate_sharded:
+            return self._get_intermediate_sharded_state_dict(
+                state_dict, structured_name_prefix
+            )
+
         model_type = getattr(self.config, "model_type", "none")
         if "qwen3_vl" not in model_type and "qwen3_5" not in model_type:
             w1 = state_dict["weight1"].reshape(-1, self.weight1.shape[-1])
@@ -324,6 +365,102 @@ class GroupedMLPExpert(FleetLayer):
             sharded_dict[full_key2].grouped_gemm_param = True
         return sharded_dict
 
+    def _get_intermediate_sharded_state_dict(
+        self, state_dict, structured_name_prefix: str
+    ):
+        """Build sharded state dict for the allgather EP layout.
+
+        weight1 [E, H, 2*I_local] is reshaped to [E, H, 2, I_local] and
+        sharded on axis=3 → global [E, H, 2, I_full].
+        Separating gate (axis=2, idx=0) and up (axis=2, idx=1) before
+        sharding ensures they stay contiguous across ranks.
+
+        weight2 [E, I_local, H] is sharded on axis=1 → global [E, I_full, H].
+
+        In allgather mode E = num_experts (all experts per rank); in deepep
+        mode E = num_experts // EP (disjoint experts per rank).  The DCP
+        resharder handles this difference during cross-topology loading.
+        """
+        if self.ep_group is None:
+            raise ValueError(
+                "intermediate-sharded layout requires an EP group; "
+                f"got ep_group=None. Check moe_token_dispatcher_type "
+                f"({self.config.moe_token_dispatcher_type!r}) and EP "
+                f"initialisation."
+            )
+        if not self.config.gated_linear_unit:
+            raise ValueError(
+                "intermediate-sharded layout currently assumes a gated "
+                "linear unit (weight1 last dim = 2 * intermediate); "
+                "non-gated MLP support is not implemented."
+            )
+        ep_size = self.ep_group.nranks
+        if (
+            self.intermediate_size_per_partition * ep_size
+            != self.config.moe_intermediate_size
+        ):
+            raise ValueError(
+                "intermediate-sharded layout inconsistency: "
+                f"intermediate_size_per_partition="
+                f"{self.intermediate_size_per_partition} * ep_size="
+                f"{ep_size} != moe_intermediate_size="
+                f"{self.config.moe_intermediate_size}"
+            )
+        w1_raw = state_dict["weight1"]
+        w2_raw = state_dict["weight2"]
+        # weight1 must be 3-D [E, H, 2*I_local]
+        if len(w1_raw.shape) != 3:
+            raise ValueError(
+                f"weight1 must be 3-D [E, H, 2*I_local], got shape "
+                f"{w1_raw.shape}"
+            )
+        E = w1_raw.shape[0]
+        H = w1_raw.shape[1]
+        I_local = self.intermediate_size_per_partition
+        expected_last = 2 * I_local
+        if w1_raw.shape[-1] != expected_last:
+            raise ValueError(
+                f"weight1 last dim {w1_raw.shape[-1]} "
+                f"!= 2 * intermediate_size_per_partition "
+                f"({expected_last})"
+            )
+        # weight2 shape must be [E, I_local, H]
+        expected_w2_shape = [E, I_local, H]
+        if list(w2_raw.shape) != expected_w2_shape:
+            raise ValueError(
+                f"weight2 shape {list(w2_raw.shape)} != expected "
+                f"{expected_w2_shape} [E, I_local, H]"
+            )
+        # Reshape [E, H, 2*I_local] -> [E, H, 2, I_local], shard axis=3.
+        # Gate (idx 0) and up (idx 1) are separated on axis=2, so each
+        # stays contiguous when axis=3 is sharded across ranks.
+        w1 = w1_raw.reshape([E, H, 2, I_local])
+        w1.name = self.weight1.name
+        # weight2 [E, I_local, H], shard axis=1
+        w2 = w2_raw
+        w2.name = self.weight2.name
+        w1_axis = 3
+        w2_axis = 1
+
+        sharded_dict = {}
+        full_key1 = f"{structured_name_prefix}weight1"
+        full_key2 = f"{structured_name_prefix}weight2"
+        sharded_dict[full_key1] = shard_weight(
+            key=full_key1,
+            weight=w1,
+            axis=w1_axis,
+            group=self.ep_group,
+        )
+        sharded_dict[full_key1].grouped_gemm_param = True
+        sharded_dict[full_key2] = shard_weight(
+            key=full_key2,
+            weight=w2,
+            axis=w2_axis,
+            group=self.ep_group,
+        )
+        sharded_dict[full_key2].grouped_gemm_param = True
+        return sharded_dict
+
 
 class SonicMoEExpert(GroupedMLPExpert):
     _GROUPED_LAYOUT = "grouped"
@@ -337,25 +474,34 @@ class SonicMoEExpert(GroupedMLPExpert):
 
     @staticmethod
     def _grouped_w1_to_sonic(weight):
-        target_shape = [weight.shape[0], weight.shape[2], weight.shape[1]]
-        gate, up = paddle.chunk(weight, 2, axis=-1)
-        gate = gate.transpose([0, 2, 1])
-        up = up.transpose([0, 2, 1])
-        return paddle.stack([gate, up], axis=2).reshape(target_shape)
+        if fused_grouped_w1_to_sonic is not None:
+            return fused_grouped_w1_to_sonic(weight)
+        else:
+            target_shape = [weight.shape[0], weight.shape[2], weight.shape[1]]
+            gate, up = paddle.chunk(weight, 2, axis=-1)
+            gate = gate.transpose([0, 2, 1])
+            up = up.transpose([0, 2, 1])
+            return paddle.stack([gate, up], axis=2).reshape(target_shape)
 
     @staticmethod
     def _sonic_w1_to_grouped(weight):
-        target_shape = [weight.shape[0], weight.shape[2], weight.shape[1]]
-        weight = weight.reshape([weight.shape[0], -1, 2, weight.shape[2]])
-        gate = weight[:, :, 0, :].transpose([0, 2, 1])
-        up = weight[:, :, 1, :].transpose([0, 2, 1])
-        return paddle.concat([gate, up], axis=-1)
+        if fused_sonic_w1_to_grouped is not None:
+            return fused_sonic_w1_to_grouped(weight)
+        else:
+            target_shape = [weight.shape[0], weight.shape[2], weight.shape[1]]
+            weight = weight.reshape([weight.shape[0], -1, 2, weight.shape[2]])
+            gate = weight[:, :, 0, :].transpose([0, 2, 1])
+            up = weight[:, :, 1, :].transpose([0, 2, 1])
+            return paddle.concat([gate, up], axis=-1)
 
     @staticmethod
     def _transpose_w2_layout(weight):
         # if not SonicMoEExpert._is_tensor_initialized(weight):
         #     return weight
-        return weight.transpose([0, 2, 1])
+        if fused_transpose_w2_layout is not None:
+            return fused_transpose_w2_layout(weight)
+        else:
+            return weight.transpose([0, 2, 1])
 
     @staticmethod
     def _assign_tensor(tensor, value):
@@ -374,6 +520,7 @@ class SonicMoEExpert(GroupedMLPExpert):
         topk: int,
         config: TransformerConfig,
         pg_collection: ProcessGroupCollection | None = None,
+        intermediate_size_per_partition: int | None = None,
     ):
         assert config.gated_linear_unit is True, (
             "Sonic MoE must use SwiGLU, i.e. set gated_linear_unit=True."
@@ -383,14 +530,20 @@ class SonicMoEExpert(GroupedMLPExpert):
             config=config,
             moe_deep_gemm=False,
             pg_collection=pg_collection,
+            intermediate_size_per_partition=intermediate_size_per_partition,
         )
         self.hidden_size = self.config.hidden_size
         self.K = topk
         self._weights_layout = self._GROUPED_LAYOUT
+        self.sonic_moe_config = _refresh_fp8_config()
+        self.sonic_moe_config.enabled = self.config.fp8 is not None
+        self.sonic_moe_config.fp8_wgrad = self.config.fp8_wgrad
+        self.sonic_moe_config.fuse_y1_quant = True
+        self.sonic_moe_config.fuse_y1_bf16_trunc = True
 
-    def _convert_grad_layout(self, param, converter):
+    def _convert_grad_layout(self, param, converter, convert_main_grad=True):
         main_grad = getattr(param, "main_grad", None)
-        if main_grad is not None:
+        if convert_main_grad and main_grad is not None:
             self._assign_tensor(main_grad, converter(main_grad))
         if param.grad is not None and (
             main_grad is None or param.grad.data_ptr() != main_grad.data_ptr()
@@ -412,7 +565,15 @@ class SonicMoEExpert(GroupedMLPExpert):
                     param.get_tensor()._set_dims([shape[0], shape[2], shape[1]])
                 else:
                     self._assign_tensor(param, converter(param))
-                self._convert_grad_layout(param, converter)
+                # weight2's main_grad stays in the original grouped layout
+                # ([E, I, H]); its grouped->sonic->grouped transpose is elided and
+                # the down-proj bf16/fp8 wgrad accumulates into it via a permute
+                # view. weight1's main_grad must still be converted because the
+                # grouped->sonic conversion also interleaves gate/up (a perfect
+                # shuffle the wgrad kernel does not undo).
+                self._convert_grad_layout(
+                    param, converter, convert_main_grad=(param is self.weight1)
+                )
         self._weights_layout = target_layout
 
     def convert_weights_to_sonic_layout(self):
@@ -440,15 +601,15 @@ class SonicMoEExpert(GroupedMLPExpert):
         self.convert_weights_to_sonic_layout()
 
         payload = quantize_native_fp8_weights(
-            self.weight1.permute([1, 2, 0]),
-            self.weight2.permute([1, 2, 0]),
+            self.weight1,
+            self.weight2,
         )
         assert payload["format"] == "1x32", (
             f"quant strategy {payload.get('format')} is not supported."
         )
         w1_fp8, w1_scale, w1t_fp8, w1t_scale = payload["w1"]
         w2_fp8, w2_scale, w2t_fp8, w2t_scale = payload["w2"]
-        self.weight1.fp8 = (w1_fp8.mT, w1_scale)
+        self.weight1.fp8 = (w1_fp8, w1_scale)
         self.weight1.transposed_fp8 = (w1t_fp8, w1t_scale)
         self.weight2.fp8 = (w2_fp8, w2_scale)
         self.weight2.transposed_fp8 = (w2t_fp8, w2t_scale)
@@ -458,6 +619,14 @@ class SonicMoEExpert(GroupedMLPExpert):
         for weight in (self.weight1, self.weight2):
             weight.fp8 = None
             weight.transposed_fp8 = None
+
+    def need_quant_weight(self):
+        for w in [self.weight1, self.weight2]:
+            if not hasattr(w, "fp8") or w.fp8 is None:
+                return True
+            if not hasattr(w, "transposed_fp8") or w.transposed_fp8 is None:
+                return True
+        return False
 
     def forward(
         self,
@@ -470,6 +639,8 @@ class SonicMoEExpert(GroupedMLPExpert):
         fp8_combine_grad_handle=None,
     ):
         self.convert_weights_to_sonic_layout()
+        if self.sonic_moe_config.enabled is True and self.need_quant_weight():
+            self.quant_weight()
         hidden_states = run_sonic_moe(
             hidden_states,
             topk_indices,
@@ -482,6 +653,7 @@ class SonicMoEExpert(GroupedMLPExpert):
             tokens_per_expert=tokens_per_expert,
             fp8_scale=fp8_scale,
             fp8_combine_grad_handle=fp8_combine_grad_handle,
+            fp8_config=self.sonic_moe_config,
         )
         return hidden_states
 

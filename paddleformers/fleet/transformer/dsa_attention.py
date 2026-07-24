@@ -112,7 +112,11 @@ def hadamard_transform(x: Tensor, scale: float = 1.0) -> Tensor:
     return (x.reshape(original_shape) * scale).cast(output_dtype)
 
 
-def rotate_activation(x: Tensor, use_fast_hadamard: bool = False) -> Tensor:
+def rotate_activation(
+    x: Tensor,
+    use_fast_hadamard: bool = False,
+    high_precision_hadamard: bool = False,
+) -> Tensor:
     """Apply Hadamard rotation activation.
 
     Reference:
@@ -120,13 +124,15 @@ def rotate_activation(x: Tensor, use_fast_hadamard: bool = False) -> Tensor:
 
     Args:
         x: Input tensor (must be bfloat16).
+        high_precision_hadamard: if True, means type of input x is float32.
 
     Returns:
         Rotated tensor.
     """
-    assert x.dtype == paddle.bfloat16, (
-        f"rotate_activation only support bf16 input, but got {x.dtype}"
-    )
+    if not high_precision_hadamard:
+        assert x.dtype == paddle.bfloat16, (
+            f"rotate_activation only support bf16 input, but got {x.dtype}"
+        )
     hidden_size = x.shape[-1]
     scale = hidden_size**-0.5
 
@@ -1089,9 +1095,10 @@ class DSAIndexerLossLoggingHelper:
 
     @staticmethod
     def register_total_num_layers(config):
-        DSAIndexerLossLoggingHelper.num_layers = (
-            DSAIndexerLossLoggingHelper.get_total_num_layers(config)
-        )
+        num_layers = DSAIndexerLossLoggingHelper.get_total_num_layers(config)
+        if DSAIndexerLossLoggingHelper.num_layers != num_layers:
+            DSAIndexerLossLoggingHelper.tracker.clear()
+        DSAIndexerLossLoggingHelper.num_layers = num_layers
 
     @staticmethod
     def save_loss_to_tracker(
@@ -1211,8 +1218,10 @@ class DSAIndexerLossLoggingHelper:
 
         indexer_loss_values = tracker["values"] * loss_scale
         if csa_compress_ratios is not None:
+            # CSA layers (1 < ratio < 128) run the Lightning Indexer; keep this in
+            # sync with CompressedSparseAttention.__init__ in csa_attention.py.
             num_indexer_layers = sum(
-                1 for ratio in csa_compress_ratios if ratio == 4
+                1 for ratio in csa_compress_ratios if 1 < ratio < 128
             )
         else:
             num_indexer_layers = indexer_loss_values.shape[0]
@@ -1266,7 +1275,7 @@ class DSAttention(FleetLayer):
         layer_number: int,
         attn_mask_type: AttnMaskType,
         attention_type: str,
-        softmax_scale: float,
+        softmax_scale: float | None = None,
         k_channels: int | None = None,
         v_channels: int | None = None,
         is_mtp_layer: bool = False,
@@ -1286,7 +1295,12 @@ class DSAttention(FleetLayer):
             pg_collection = ProcessGroupCollection.use_mpu_process_groups()
         self.pg_collection = pg_collection
 
-        self.softmax_scale = softmax_scale
+        if softmax_scale is None:
+            # Default to 1/sqrt(k_channels) consistent with DotProductAttention
+            k_ch = k_channels if k_channels is not None else config.head_dim
+            self.softmax_scale = k_ch**-0.5
+        else:
+            self.softmax_scale = softmax_scale
 
         # DSA Indexer - build from spec
         # sublayers_spec.indexer should be a LayerSpec for DSAIndexer

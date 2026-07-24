@@ -48,7 +48,6 @@ from paddleformers.fleet.models.gpt.lm_head import (
 from paddleformers.fleet.models.gpt.moe_layer_specs import (
     get_moe_layer_spec_for_backend,
 )
-from paddleformers.fleet.models.gpt.mtp_embedding_layer import MTPEmbeddingLayer
 from paddleformers.fleet.transformer.attention import (
     SelfAttention,
     SelfAttentionSublayersSpec,
@@ -87,12 +86,14 @@ from paddleformers.fleet.transformer.mlp import MLP, MLPSublayersSpec
 from paddleformers.fleet.transformer.multi_latent_attention import (
     MLASelfAttention,
     MLASelfAttentionSublayersSpec,
+    MQASelfAttention,
 )
 from paddleformers.fleet.transformer.multi_token_prediction import (
     get_mtp_layer_spec_for_backend,
 )
 from paddleformers.fleet.transformer.paddle_norm import L2Norm
 from paddleformers.fleet.transformer.transformer_layer import (
+    HySparseTransformerLayer,
     TransformerLayer,
     TransformerLayerSublayersSpec,
     TransformerLayerWithOverlap,
@@ -232,6 +233,10 @@ def get_attention_spec(
         assert qk_l2_norm is False, "qk_l2_norm is not supported with MLA."
         # Decide attention class: always MLASelfAttention (DSA is a pluggable core_attention)
         attn_cls = MLASelfAttention
+
+        if config is not None and config.enable_hy_sparse_attention:
+            attn_cls = MQASelfAttention
+
         # Gated attention
         gated_attention = getattr(config, "gated_attention", False)
 
@@ -336,12 +341,29 @@ def get_attention_spec(
                 o_proj=backend.row_parallel_linear(),
                 q_layernorm=qk_norm,
                 kv_layernorm=qk_norm,
+                gate_proj=backend.column_parallel_linear()
+                if gated_attention
+                else None,
+            ),
+        )
+    elif attention_layer_type == "gemma4":
+        from paddleformers.fleet.transformer.gemma4_attention import Gemma4SelfAttention
+
+        return LayerSpec(
+            layer=Gemma4SelfAttention,
+            sublayers_spec=SelfAttentionSublayersSpec(
+                qkv_proj=backend.column_parallel_linear(),
+                core_attention=backend.core_attention(),
+                o_proj=backend.row_parallel_linear(),
+                q_norm=qk_norm_standard,
+                k_norm=qk_norm_standard,
             ),
         )
     else:
         raise ValueError(
             f"Unknown attention_layer_type: {attention_layer_type!r}. "
-            f"Expected 'self_attention' or 'gated_delta_net'."
+            f"Expected 'self_attention', 'gated_delta_net', 'multi_latent_attention', "
+            f"'dsv4_hybrid_attention', or 'gemma4'."
         )
 
 
@@ -407,6 +429,41 @@ def get_gpt_layer_local_spec(
 
         transformer_cls = HyperConnectionTransformerLayer
 
+    if config is not None and config.enable_hy_sparse_attention:
+        # HySparse is only implemented for the MLA-absorbed MQA attention path
+        # (MQASelfAttention). HySparseTransformerLayer passes a ``shared_kv``
+        # kwarg into the attention forward; a plain SelfAttention.forward has no
+        # such parameter and would raise TypeError. Require MLA here so the
+        # attention class is MQASelfAttention (see get_attention_spec).
+        is_mla = (
+            multi_latent_attention
+            or attention_layer_type == "multi_latent_attention"
+        )
+        if not is_mla:
+            raise ValueError(
+                "enable_hy_sparse_attention requires multi-latent attention "
+                "(the MLA-absorbed MQA path); set multi_latent_attention=True "
+                "(or attention_layer_type='multi_latent_attention'). HySparse "
+                "is not supported with standard self-attention."
+            )
+        # HySparseTransformerLayer does not implement the hyper-connection or
+        # block-attention-residual dataflows. Overriding transformer_cls here
+        # would silently drop those layers instead of applying them, so reject
+        # the unsupported combinations explicitly rather than downgrading.
+        if config.enable_hyper_connections:
+            raise ValueError(
+                "enable_hy_sparse_attention is incompatible with "
+                "enable_hyper_connections: HySparseTransformerLayer does not "
+                "implement the hyper-connection dataflow."
+            )
+        if config.block_attention_residuals:
+            raise ValueError(
+                "enable_hy_sparse_attention is incompatible with "
+                "block_attention_residuals: HySparseTransformerLayer does not "
+                "implement the block-attention-residual dataflow."
+            )
+        transformer_cls = HySparseTransformerLayer
+
     if paddle.distributed.is_initialized():
         try:
             pp_configs = fleet.fleet._user_defined_strategy.hybrid_configs[
@@ -462,9 +519,40 @@ def get_gpt_layer_local_spec(
         self_attention_hc_spec = LayerSpec(layer=HyperConnectionModule)
         mlp_hc_spec = LayerSpec(layer=HyperConnectionModule)
 
-    return LayerSpec(
-        layer=transformer_cls,
-        sublayers_spec=TransformerLayerSublayersSpec(
+    # Gemma4: use extended sublayer spec with extra norms and custom MoE
+    if attention_layer_type == "gemma4":
+        from paddleformers.fleet.transformer.moe.moe_layer import (
+            Gemma4MoELayer,
+            MoESublayers,
+        )
+        from paddleformers.fleet.transformer.transformer_layer import (
+            Gemma4TransformerLayerSublayersSpec,
+        )
+
+        gemma4_moe_spec = LayerSpec(
+            layer=Gemma4MoELayer,
+            extra_kwargs={
+                "sublayers": MoESublayers(
+                    mlp_spec=MLPSublayersSpec(
+                        up_gate_proj=backend.column_parallel_linear(),
+                        down_proj=backend.row_parallel_linear(),
+                        hidden_act=backend.hidden_act(),
+                    ),
+                )
+            },
+        )
+
+        sublayers_spec = Gemma4TransformerLayerSublayersSpec(
+            input_layernorm=layer_norm,
+            self_attn=self_attn_spec,
+            post_self_attn_layernorm=layer_norm,
+            post_attention_layernorm=IdentityOp,
+            pre_mlp_layernorm=layer_norm,
+            mlp=gemma4_moe_spec,
+            post_mlp_layernorm=layer_norm,
+        )
+    else:
+        sublayers_spec = TransformerLayerSublayersSpec(
             input_layernorm=layer_norm,
             self_attention_hyper_connection=self_attention_hc_spec,
             self_attn=self_attn_spec,
@@ -478,7 +566,11 @@ def get_gpt_layer_local_spec(
                 "input_layernorm.": "self_attn.qkv_proj.layer_norm_",
                 "post_attention_layernorm.": "mlp.up_gate_proj.layer_norm_",
             },
-        ),
+        )
+
+    return LayerSpec(
+        layer=transformer_cls,
+        sublayers_spec=sublayers_spec,
         extra_kwargs={
             "config": config,
             "layer_number": layer_number,
@@ -812,14 +904,6 @@ def get_gpt_spec(
             HyperConnectionExpandLayer,
         )
 
-    # MTP magic send: re-embed input_ids at the last stage
-    mtp_embedding_spec = None
-    if config.enable_mtp_magic_send and config.num_nextn_predict_layers > 0:
-        mtp_embedding_spec = LayerSpec(
-            layer=MTPEmbeddingLayer,
-            extra_kwargs={"config": config},
-        )
-
     return LayerSpec(
         layer=GPTModel,
         extra_kwargs={
@@ -848,7 +932,6 @@ def get_gpt_spec(
             else None,
             tail_empty_layers=tail_empty_layers_spec,
             mtp=mtp_layers_spec,
-            mtp_embedding=mtp_embedding_spec,
             mtp_lm_head=mtp_lm_head_spec,
             mtp_loss=mtp_loss_spec,
             layer_norm=LayerSpec(

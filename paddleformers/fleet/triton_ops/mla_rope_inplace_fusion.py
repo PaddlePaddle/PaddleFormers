@@ -73,6 +73,32 @@ def _mul_round_bf16(a, b):
 
 
 @triton.jit
+def _cos_sin_kernel(
+    FREQS,
+    COS_OUT,
+    SIN_OUT,
+    n_elements,
+    mscale,
+    INVERSE: tl.constexpr,
+    BLOCK: tl.constexpr,
+):
+    """Fused port of the eager cos/sin prelude."""
+    pid = tl.program_id(0)
+    offs = pid * BLOCK + tl.arange(0, BLOCK)
+    mask = offs < n_elements
+
+    f = tl.load(FREQS + offs, mask=mask)  # fp32
+
+    c = (tl.cos(f) * mscale).to(tl.bfloat16)
+    s = (tl.sin(f) * mscale).to(tl.bfloat16)
+    if INVERSE:
+        s = -s
+
+    tl.store(COS_OUT + offs, c, mask=mask)
+    tl.store(SIN_OUT + offs, s, mask=mask)
+
+
+@triton.jit
 def _rope_mla_inplace_fwd_kernel(
     T,
     COS,
@@ -263,6 +289,38 @@ class RoPEMLAInplaceFusion(paddle.autograd.PyLayer):
         return grad, None, None  # (t, cos, sin)
 
 
+def _fused_cos_sin(
+    freqs: paddle.Tensor,
+    mscale: float,
+    inverse: bool,
+    dtype: paddle.dtype,
+) -> tuple[paddle.Tensor, paddle.Tensor]:
+    """Triton replacement for the three-line eager cos/sin prelude:
+
+    cos = (paddle.cos(freqs) * mscale).to(dtype)
+    sin = (paddle.sin(freqs) * mscale).to(dtype)
+    if inverse:
+        sin = -sin
+    """
+    freqs = freqs.contiguous()
+    n = freqs.size
+    cos = paddle.empty(freqs.shape, dtype=dtype)
+    sin = paddle.empty(freqs.shape, dtype=dtype)
+
+    BLOCK = 1024
+    grid = (triton.cdiv(n, BLOCK),)
+    _cos_sin_kernel[grid](
+        freqs,
+        cos,
+        sin,
+        n,
+        mscale,
+        inverse,
+        BLOCK,
+    )
+    return cos, sin
+
+
 def fused_apply_mla_rope_inplace(
     t: paddle.Tensor,
     freqs: paddle.Tensor,
@@ -304,7 +362,7 @@ def fused_apply_mla_rope_inplace(
     )
     B, S, H, D = t.shape
     pe_dim = freqs.shape[-1]
-    assert D > pe_dim, f"t last dim {D} must exceed rope pe_dim {pe_dim}"
+    assert D >= pe_dim, f"t last dim {D} must be at least rope pe_dim {pe_dim}"
     nope_dim_check = D - pe_dim
     assert nope_dim == nope_dim_check, (
         f"nope_dim {nope_dim} mismatches D-pe_dim {nope_dim_check}"
@@ -326,14 +384,9 @@ def fused_apply_mla_rope_inplace(
     if B_f < B:
         freqs = freqs.broadcast_to([B, S, 1, pe_dim])
 
-    # Compute cos/sin on the (possibly non-contiguous / broadcast) freqs.
-    # For inverse=True, mirror the eager `sin_ = -sin_` step (rope_utils.py).
-    # Negating after the bf16 cast is equivalent to negating before (bf16
-    # negate is a sign-bit flip), so both orders produce identical bytes.
-    cos = (paddle.cos(freqs) * mscale).to(t.dtype)
-    sin = (paddle.sin(freqs) * mscale).to(t.dtype)
-    if inverse:
-        sin = -sin
+    # Compute cos/sin on freqs
+    cos, sin = _fused_cos_sin(freqs, mscale, inverse, t.dtype)
+
     return RoPEMLAInplaceFusion.apply(
         t, cos, sin, nope_dim, pe_dim, clone_input
     )

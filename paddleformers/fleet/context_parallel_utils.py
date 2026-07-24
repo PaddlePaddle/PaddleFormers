@@ -15,10 +15,12 @@
 import inspect
 
 import paddle
+import paddlefleet_ops.flash_mask_facade
 from paddle import distributed as dist
 from paddle.autograd.py_layer import PyLayer
 from paddle.distributed import fleet
 from paddle.nn.functional.flash_attention import flashmask_attention
+from paddlefleet_ops.flash_mask_facade import get_fa_version
 
 _flash_mask_available = False
 try:
@@ -33,6 +35,7 @@ try:
             _flash_attn_bwd,
             _flash_attn_fwd,
         )
+        from paddlefleet_ops.flash_mask.utils import bshd_slice_contiguous_kv
 
         _flash_mask_available = True
 except (ImportError, AttributeError):
@@ -153,16 +156,34 @@ def scatter_balance(input_tensor, group=None, axis=0):
 
 def all_gather_balance(input_tensor, group=None, axis=0):
     """
-    All-gather operation with balanced reconstruction.
-    This function performs all-gather to reconstruct the original tensor
-    from balanced scattered chunks.
+    Balanced all-gather operation using Triton reorder kernel.
+
+    Gathers tensors from all ranks via all_gather, then reorders the gathered data
+    using a Triton kernel (balanced_gather_reorder_kernel) to reconstruct the original
+    sequence order from the DualChunkSwap balanced layout. Each rank's local tensor
+    contains two chunks (one from the start, one from the end of the sequence), and
+    this function reassembles them into the full contiguous sequence.
+
+    This is the inverse of reduce_scatter_any_axis_balance and scatter_balance.
+
     Args:
-        input_tensor (paddle.Tensor): Input tensor chunk
-        group (paddle.distributed.Group, optional): Communication group
-        axis (int, optional): Axis along which to gather. Defaults to 0
+        input_tensor (paddle.Tensor): Local tensor chunk to gather. Each rank's
+            chunk size along `axis` must be even (split into two halves by the
+            balanced strategy).
+        group (paddle.distributed.Group, optional): Communication group. If None,
+            uses the model parallel group from fleet.
+        axis (int, optional): Axis along which to gather and reorder. Defaults to 0.
+
     Returns:
-        paddle.Tensor: Reconstructed full tensor
+        paddle.Tensor: Full gathered tensor with shape[axis] = input_shape[axis] * parallelism,
+            reordered to restore the original sequence order.
     """
+    import triton
+
+    from paddleformers.fleet.triton_ops.balanced_reorder import (
+        balanced_gather_reorder_kernel,
+    )
+
     if group is None:
         hcg = fleet.get_hybrid_communicate_group()
         group = hcg.get_model_parallel_group()
@@ -171,60 +192,60 @@ def all_gather_balance(input_tensor, group=None, axis=0):
     if parallelism == 1:
         return input_tensor.clone()
 
-    # Split input into two halves (start and end chunks)
-    chunk_start, chunk_end = paddle.split(input_tensor, 2, axis=axis)
+    # Single all_gather (gathers along axis=0)
+    shape = list(input_tensor.shape)
+    gathered_shape = list(shape)
+    gathered_shape[0] = shape[0] * parallelism
+    gathered = paddle.empty(gathered_shape, dtype=input_tensor.dtype)
+    dist.stream.all_gather(
+        gathered, input_tensor.contiguous(), group=group, use_calc_stream=True
+    )
 
-    if axis == 0:
-        # Handle axis=0 case with optimized memory layout
-        output_shape_start = list(chunk_start.shape)
-        output_shape_start[axis] = output_shape_start[axis] * parallelism
+    # Compute strides for reorder kernel
+    axis_size = shape[axis]
+    chunk_size = axis_size // 2
+    N = parallelism
 
-        gathered_start = paddle.empty(
-            shape=output_shape_start, dtype=input_tensor.dtype
-        )
-        dist.stream.all_gather(
-            gathered_start, chunk_start, group=group, use_calc_stream=True
-        )
+    # outer_size: product of all dims left of axis in the *original* (per-rank) shape
+    outer_size = 1
+    for i in range(axis):
+        outer_size *= shape[i]
 
-        # Gather end chunks
-        gathered_end_list = [
-            paddle.empty(chunk_end.shape, dtype=input_tensor.dtype)
-            for _ in range(parallelism)
-        ]
-        dist.stream.all_gather(
-            gathered_end_list, chunk_end, group=group, use_calc_stream=True
-        )
+    # inner_size: product of all dims right of axis
+    inner_size = 1
+    for i in range(axis + 1, len(shape)):
+        inner_size *= shape[i]
 
-        # Reverse the end chunks to reconstruct original order
-        gathered_end_list.reverse()
+    # src is gathered along axis=0: shape = [N*S0, S1, ..., S_axis, ..., S_last]
+    # src_rank_stride = elements per rank = product of original shape
+    src_rank_stride = 1
+    for s in shape:
+        src_rank_stride *= s
 
-        result = paddle.concat([gathered_start, *gathered_end_list], axis=axis)
-        return result
-    else:
-        # Handle other axes
-        gathered_start_list = [
-            paddle.empty(chunk_start.shape, dtype=input_tensor.dtype)
-            for _ in range(parallelism)
-        ]
-        dist.stream.all_gather(
-            gathered_start_list, chunk_start, group=group, use_calc_stream=True
-        )
+    # src_outer_stride = elements to skip per outer index = S_axis * inner_size
+    src_outer_stride = axis_size * inner_size
 
-        gathered_end_list = [
-            paddle.empty(chunk_end.shape, dtype=input_tensor.dtype)
-            for _ in range(parallelism)
-        ]
-        dist.stream.all_gather(
-            gathered_end_list, chunk_end, group=group, use_calc_stream=True
-        )
+    out_shape = list(shape)
+    out_shape[axis] = 2 * N * chunk_size
+    output = paddle.empty(out_shape, dtype=input_tensor.dtype)
 
-        # Reverse the end chunks
-        gathered_end_list = gathered_end_list[::-1]
+    BLOCK_SIZE = 1024
+    num_blocks_per_chunk = triton.cdiv(chunk_size * inner_size, BLOCK_SIZE)
+    grid = (num_blocks_per_chunk * 2 * N, outer_size, 1)
 
-        result = paddle.concat(
-            gathered_start_list + gathered_end_list, axis=axis
-        )
-        return result
+    balanced_gather_reorder_kernel[grid](
+        gathered,
+        output,
+        N,
+        chunk_size,
+        inner_size,
+        src_rank_stride,
+        src_outer_stride,
+        num_blocks_per_chunk,
+        BLOCK_SIZE=BLOCK_SIZE,
+    )
+
+    return output
 
 
 def reduce_scatter_any_axis(input_tensor, axis, group=None):
@@ -286,16 +307,32 @@ def reduce_scatter_any_axis(input_tensor, axis, group=None):
 
 def reduce_scatter_any_axis_balance(input_tensor, axis, group=None):
     """
-    Balanced reduce-scatter operation along any axis.
-    Similar to reduce_scatter_any_axis but uses balanced splitting strategy
-    by processing chunks from both ends of the tensor.
+    Balanced reduce-scatter operation along any axis using Triton reorder kernel.
+
+    Performs reduce-scatter with the DualChunkSwap balanced strategy: first reorders
+    the input tensor via a Triton kernel (balanced_scatter_reorder_kernel) to prepare
+    balanced chunks for each rank, then uses alltoall_single to exchange data, and
+    finally sums the received chunks to produce the reduced result.
+
+    This is the inverse of all_gather_balance and is used in backward passes of
+    context parallel attention (e.g., to reduce-scatter key/value gradients).
+
     Args:
-        input_tensor (paddle.Tensor): Input tensor to reduce and scatter
-        axis (int): Axis along which to perform reduce-scatter
-        group (paddle.distributed.Group, optional): Communication group
+        input_tensor (paddle.Tensor): Input tensor to reduce and scatter. The size
+            along `axis` must be divisible by (parallelism * 2).
+        axis (int): Axis along which to perform the balanced reduce-scatter.
+        group (paddle.distributed.Group, optional): Communication group. If None,
+            uses the context parallel group from fleet.
+
     Returns:
-        paddle.Tensor: Reduced and scattered tensor chunk with balanced distribution
+        paddle.Tensor: Reduced tensor with shape[axis] = input_shape[axis] / parallelism.
     """
+    import triton
+
+    from paddleformers.fleet.triton_ops.balanced_reorder import (
+        balanced_scatter_reorder_kernel,
+    )
+
     if group is None:
         hcg = fleet.get_hybrid_communicate_group()
         group = hcg.get_context_parallel_group()
@@ -304,45 +341,62 @@ def reduce_scatter_any_axis_balance(input_tensor, axis, group=None):
     if parallelism == 1:
         return input_tensor.clone()
 
-    assert input_tensor.shape[axis] % (parallelism * 2) == 0, (
-        f"Input sequence length {input_tensor.shape[axis]} can't be ",
-        f"divided exactly by context parallelism * 2 {parallelism * 2}",
+    N = parallelism
+    shape = list(input_tensor.shape)
+
+    assert shape[axis] % (N * 2) == 0, (
+        f"Input sequence length {shape[axis]} can't be "
+        f"divided exactly by context parallelism * 2 {N * 2}"
     )
 
-    # Split input into two halves
-    input_start, input_end = paddle.split(input_tensor, 2, axis=axis)
+    chunk_size = shape[axis] // (2 * N)
 
-    # Split each half across ranks
-    chunks_start = paddle.split(input_start, parallelism, axis=axis)
-    chunks_end = paddle.split(input_end, parallelism, axis=axis)
+    outer_size = 1
+    for i in range(axis):
+        outer_size *= shape[i]
 
-    # Reverse end chunks for balanced distribution
-    chunks_end = chunks_end[::-1]
+    inner_size = 1
+    for i in range(axis + 1, len(shape)):
+        inner_size *= shape[i]
 
-    # Combine corresponding start and end chunks
-    combined_chunks = [
-        paddle.concat([start_chunk, end_chunk], axis=axis)
-        for start_chunk, end_chunk in zip(chunks_start, chunks_end)
-    ]
+    src_outer_stride = shape[axis] * inner_size
+    dst_outer_stride = 2 * chunk_size * inner_size
+    dst_rank_stride = outer_size * dst_outer_stride
 
-    # Perform alltoall communication
-    output_buffers = [
-        paddle.empty(combined_chunks[0].shape, dtype=input_tensor.dtype)
-        for _ in range(parallelism)
-    ]
+    per_rank_shape = list(shape)
+    per_rank_shape[axis] = 2 * chunk_size
+    # send_buf: [N, *per_rank_shape], contiguous, kernel writes into it
+    send_buf = paddle.empty([N, *per_rank_shape], dtype=input_tensor.dtype)
 
-    dist.stream.alltoall(
-        output_buffers, combined_chunks, group=group, use_calc_stream=True
+    BLOCK_SIZE = 1024
+    num_blocks_per_chunk = triton.cdiv(chunk_size * inner_size, BLOCK_SIZE)
+    grid = (num_blocks_per_chunk * 2 * N, outer_size, 1)
+
+    balanced_scatter_reorder_kernel[grid](
+        input_tensor,
+        send_buf,
+        N,
+        chunk_size,
+        inner_size,
+        src_outer_stride,
+        dst_rank_stride,
+        dst_outer_stride,
+        num_blocks_per_chunk,
+        BLOCK_SIZE=BLOCK_SIZE,
     )
 
-    # Sum the received chunks
-    result = paddle.stack(output_buffers, axis=0).sum(axis=0)
+    # alltoall_single: send_buf[r] -> rank r's recv_buf[my_rank]
+    recv_buf = paddle.empty_like(send_buf)
+    dist.stream.alltoall_single(
+        recv_buf.reshape([-1]),
+        send_buf.reshape([-1]),
+        group=group,
+        use_calc_stream=True,
+    )
+
+    # sum across N received chunks: same order as original stack+sum
+    result = recv_buf.reshape([N, *per_rank_shape]).sum(axis=0)
     return result
-
-
-# ===========================================================================
-# Contiguous CP primitives (rank r owns [r*chunk, (r+1)*chunk])
-# ===========================================================================
 
 
 def scatter_contiguous(input_tensor, group=None, axis=0):
@@ -455,13 +509,13 @@ class ContextParallelScatterOp(PyLayer):
         group = hcg.get_context_parallel_group()
         ctx.group = group
 
-        if mode == "contiguous_allgather":
+        if mode.startswith("contiguous"):
             return scatter_contiguous(input_tensor, group=group, axis=axis)
         return scatter_balance(input_tensor, axis=axis, group=group)
 
     @staticmethod
     def backward(ctx, grad_output):
-        if ctx.mode == "contiguous_allgather":
+        if ctx.mode.startswith("contiguous"):
             return all_gather_contiguous(
                 grad_output, group=ctx.group, axis=ctx.axis
             )
@@ -489,13 +543,13 @@ class ContextParallelGatherOp(PyLayer):
         group = hcg.get_context_parallel_group()
         ctx.group = group
 
-        if mode == "contiguous_allgather":
+        if mode.startswith("contiguous"):
             return all_gather_contiguous(input_tensor, group=group, axis=axis)
         return all_gather_balance(input_tensor, axis=axis, group=group)
 
     @staticmethod
     def backward(ctx, grad_output):
-        if ctx.mode == "contiguous_allgather":
+        if ctx.mode.startswith("contiguous"):
             return scatter_contiguous(
                 grad_output, group=ctx.group, axis=ctx.axis
             )
@@ -523,13 +577,13 @@ class ContextParallelAllGatherOp(PyLayer):
         group = hcg.get_context_parallel_group()
         ctx.group = group
 
-        if mode == "contiguous_allgather":
+        if mode.startswith("contiguous"):
             return all_gather_contiguous(input_tensor, group=group, axis=axis)
         return all_gather_balance(input_tensor, axis=axis, group=group)
 
     @staticmethod
     def backward(ctx, grad_output):
-        if ctx.mode == "contiguous_allgather":
+        if ctx.mode.startswith("contiguous"):
             return reduce_scatter_contiguous(
                 grad_output, axis=ctx.axis, group=ctx.group
             )
@@ -602,7 +656,16 @@ def preprocess_index_dual_chunks(
 
 
 def cp_flashmask_allgatherkv_balance_forward(
-    query, key, value, startend_row_indices, group, causal, is_training
+    query,
+    key,
+    value,
+    startend_row_indices,
+    learnable_sink,
+    group,
+    causal,
+    is_training,
+    softmax_scale,
+    mode: str = "dualchunk_allgather",
 ):
     """
     Forward pass of context parallel flashmask attention with balanced all-gather strategy.
@@ -616,6 +679,8 @@ def cp_flashmask_allgatherkv_balance_forward(
         group (paddle.distributed.Group): Communication group
         causal (bool): Whether to use causal attention
         is_training (bool): Whether in training mode
+        softmax_scale (float): softmax scaling factor
+        mode (str): Attention mode, support 'dualchunk_allgather' and 'contiguous_allgather'
     Returns:
         tuple: (output, log_sum_exp, processed_indices, fa_version)
             ``fa_version`` is the effective FlashAttention version actually
@@ -629,39 +694,37 @@ def cp_flashmask_allgatherkv_balance_forward(
     rank = group.rank
     cp_size = group.world_size
 
-    # All-gather key tensors across context parallel ranks
-    key_gathered = all_gather_balance(key, axis=1, group=group)
+    if mode == "dualchunk_allgather":
+        key_gathered = all_gather_balance(key, axis=1, group=group)
+        value_gathered = all_gather_balance(value, axis=1, group=group)
 
-    # All-gather value tensors across context parallel ranks
-    value_gathered = all_gather_balance(value, axis=1, group=group)
+        # Calculate sequence block size for dual-chunk strategy
+        seq_blocksize = query.shape[1] // 2
 
-    # Calculate sequence block size for dual-chunk strategy
-    seq_blocksize = query.shape[1] // 2
+        # Preprocess indices for dual-chunk strategy
+        startend_row_indices = preprocess_index_dual_chunks(
+            startend_row_indices,
+            chunk_id_first=rank,
+            chunk_id_second=2 * cp_size - rank - 1,
+            seq_blocksize=seq_blocksize,
+            max_seqlen_q=seq_blocksize,
+        )
+    elif mode == "contiguous_allgather":
+        key_gathered = all_gather_contiguous(key, axis=1, group=group)
+        value_gathered = all_gather_contiguous(value, axis=1, group=group)
 
-    # Preprocess indices for dual-chunk strategy
-    startend_row_indices = preprocess_index_dual_chunks(
-        startend_row_indices,
-        chunk_id_first=rank,
-        chunk_id_second=2 * cp_size - rank - 1,
-        seq_blocksize=seq_blocksize,
-        max_seqlen_q=seq_blocksize,
-    )
+        startend_row_indices = preprocess_index(
+            startend_row_indices,
+            chunk_id=group.rank,
+            seq_blocksize=query.shape[1],
+            max_seqlen_q=query.shape[1],
+        )
+    else:
+        raise ValueError(f"Unsupported FlashMask context parallel mode: {mode}")
 
-    # Perform flashmask attention with startend_row_indices
-    fa_version = paddle.base.framework.get_flags(["FLAGS_flash_attn_version"])[
-        "FLAGS_flash_attn_version"
-    ]
-    # Apply deterministic override here so forward and backward use the same
-    # effective fa_version (mirrors backward's previous logic and the
-    # framework flashmask_attention's internal deterministic fallback).
-    deterministic = paddle.get_flags(["FLAGS_cudnn_deterministic"])[
-        "FLAGS_cudnn_deterministic"
-    ]
-    if "block_mask" in inspect.signature(flashmask_attention).parameters:
-        if deterministic and query.shape[-1] > 128:
-            fa_version = 2
-    elif deterministic:
-        fa_version = 2
+    q_head_dim = query.shape[-1]
+    v_head_dim = value_gathered.shape[-1]
+    fa_version = get_fa_version(q_head_dim, v_head_dim, startend_row_indices)
 
     if fa_version == 4 and _flash_mask_available:
         output, log_sum_exp = _flash_attn_fwd(
@@ -671,9 +734,15 @@ def cp_flashmask_allgatherkv_balance_forward(
             causal=causal,
             return_lse=True,
             startend_row_indices=startend_row_indices,
+            learnable_sink=learnable_sink,
             pack_gqa=False,
+            softmax_scale=softmax_scale,
         )
     else:
+        if learnable_sink is not None:
+            raise NotImplementedError(
+                "learnable_sink only supported on fa_version==4 cute backend"
+            )
         output, log_sum_exp = flashmask_attention(
             query,
             key_gathered,
@@ -682,6 +751,7 @@ def cp_flashmask_allgatherkv_balance_forward(
             causal=causal,
             return_softmax_lse=True,
             training=is_training,
+            softmax_scale=softmax_scale,
         )
 
     paddle.base.core.nvprof_nvtx_pop()
@@ -696,9 +766,12 @@ def cp_flashmask_allgatherkv_balance_backward(
     output,
     log_sum_exp,
     output_grad,
+    learnable_sink,
     group,
     causal,
     fa_version: int,
+    softmax_scale,
+    mode: str = "dualchunk_allgather",
 ):
     """
     Backward pass of context parallel flashmask attention with balanced all-gather strategy.
@@ -717,18 +790,35 @@ def cp_flashmask_allgatherkv_balance_backward(
         fa_version (int): FlashAttention version that was actually used by the
             forward kernel. Must be propagated from the forward call to keep
             fwd/bwd consistent.
+        softmax_scale (float): Softmax scaling factor
+        mode (str): Attention mode, support 'dualchunk_allgather' and 'contiguous_allgather'
     Returns:
-        tuple: (query_grad, key_grad, value_grad)
+        tuple: (query_grad, key_grad, value_grad, sink_grad)
     """
     paddle.base.core.nvprof_nvtx_push(
         "cp_flashmask_allgatherkv_balance_backward"
     )
 
     # All-gather key and value tensors (same as forward pass)
-    key_gathered = all_gather_balance(key, axis=1, group=group)
-    value_gathered = all_gather_balance(value, axis=1, group=group)
+    if mode == "dualchunk_allgather":
+        key_gathered = all_gather_balance(key, axis=1, group=group)
+        value_gathered = all_gather_balance(value, axis=1, group=group)
+    elif mode == "contiguous_allgather":
+        key_gathered = all_gather_contiguous(key, axis=1, group=group)
+        value_gathered = all_gather_contiguous(value, axis=1, group=group)
+    else:
+        raise ValueError(f"Unsupported FlashMask context parallel mode: {mode}")
 
+    sink_grad = None
     if fa_version == 2:
+        if learnable_sink is not None:
+            raise NotImplementedError(
+                "learnable_sink only supported on fa_version==4 cute backend"
+            )
+        if softmax_scale is not None:
+            raise NotImplementedError(
+                "fa_version==2 does not support setting softmax_scale"
+            )
         # Create seed offset tensor (required for gradient computation)
         seed_offset = paddle.zeros(
             shape=[query.shape[1], query.shape[2]], dtype=paddle.int64
@@ -750,6 +840,10 @@ def cp_flashmask_allgatherkv_balance_backward(
             )
         )
     elif fa_version == 3:
+        if learnable_sink is not None:
+            raise NotImplementedError(
+                "learnable_sink only supported on fa_version==4 cute backend"
+            )
         sig_params = inspect.signature(flashmask_attention).parameters
         if "group" in sig_params:
             query_grad, key_grad_gathered, value_grad_gathered = (
@@ -762,7 +856,9 @@ def cp_flashmask_allgatherkv_balance_backward(
                     startend_row_indices,
                     None,  # block_mask
                     output_grad,
-                    query.shape[-1] ** (-0.5),
+                    query.shape[-1] ** (-0.5)
+                    if softmax_scale is None
+                    else softmax_scale,
                     False,
                     0,  # rank
                     1,  # nranks
@@ -779,7 +875,9 @@ def cp_flashmask_allgatherkv_balance_backward(
                     startend_row_indices,
                     None,  # block_mask
                     output_grad,
-                    query.shape[-1] ** (-0.5),
+                    query.shape[-1] ** (-0.5)
+                    if softmax_scale is None
+                    else softmax_scale,
                     False,
                 )
             )
@@ -793,7 +891,9 @@ def cp_flashmask_allgatherkv_balance_backward(
                     log_sum_exp,
                     startend_row_indices,
                     output_grad,
-                    query.shape[-1] ** (-0.5),
+                    query.shape[-1] ** (-0.5)
+                    if softmax_scale is None
+                    else softmax_scale,
                     False,
                 )
             )
@@ -805,18 +905,22 @@ def cp_flashmask_allgatherkv_balance_backward(
             )
         else:
             flashmask_info = None
-        query_grad, key_grad_gathered, value_grad_gathered = _flash_attn_bwd(
-            query,
-            key_gathered,
-            value_gathered,
-            output,
-            output_grad,
-            log_sum_exp,
-            flashmask_info,
-            causal=causal,
-            deterministic=paddle.get_flags(["FLAGS_cudnn_deterministic"])[
-                "FLAGS_cudnn_deterministic"
-            ],
+        query_grad, key_grad_gathered, value_grad_gathered, sink_grad = (
+            _flash_attn_bwd(
+                query,
+                key_gathered,
+                value_gathered,
+                output,
+                output_grad,
+                log_sum_exp,
+                flashmask_info,
+                learnable_sink=learnable_sink,
+                causal=causal,
+                softmax_scale=softmax_scale,
+                deterministic=paddle.get_flags(["FLAGS_cudnn_deterministic"])[
+                    "FLAGS_cudnn_deterministic"
+                ],
+            )
         )
     else:
         raise ValueError(
@@ -824,15 +928,25 @@ def cp_flashmask_allgatherkv_balance_backward(
         )
 
     # Reduce-scatter key and value gradients
-    key_grad = reduce_scatter_any_axis_balance(
-        key_grad_gathered, axis=1, group=group
-    )
-    value_grad = reduce_scatter_any_axis_balance(
-        value_grad_gathered, axis=1, group=group
-    )
+    if mode == "dualchunk_allgather":
+        key_grad = reduce_scatter_any_axis_balance(
+            key_grad_gathered, axis=1, group=group
+        )
+        value_grad = reduce_scatter_any_axis_balance(
+            value_grad_gathered, axis=1, group=group
+        )
+    elif mode == "contiguous_allgather":
+        key_grad = reduce_scatter_contiguous(
+            key_grad_gathered, axis=1, group=group
+        )
+        value_grad = reduce_scatter_contiguous(
+            value_grad_gathered, axis=1, group=group
+        )
+    else:
+        raise ValueError(f"Unsupported FlashMask context parallel mode: {mode}")
 
     paddle.base.core.nvprof_nvtx_pop()
-    return query_grad, key_grad, value_grad
+    return query_grad, key_grad, value_grad, sink_grad
 
 
 def scatter_with_padding(input_tensor, num_pad, axis, group):
@@ -970,7 +1084,9 @@ class FlashMaskContextParallel(PyLayer):
         dropout=0.0,
         causal=False,
         training=True,
-        mode="allgather_kv",
+        learnable_sink=None,
+        softmax_scale=None,
+        mode="dualchunk_allgather",
     ):
         """
         Forward pass of FlashMask attention with context parallelism.
@@ -984,7 +1100,7 @@ class FlashMaskContextParallel(PyLayer):
             dropout (float): Dropout probability
             causal (bool): Whether to use causal attention
             training (bool): Whether in training mode
-            mode (str): Attention mode, currently supports "allgather_kv"
+            mode (str): Attention mode, supports "dualchunk_allgather" and "contiguous_allgather"
         Returns:
             paddle.Tensor: Attention output
         Raises:
@@ -1019,7 +1135,16 @@ class FlashMaskContextParallel(PyLayer):
         # Perform forward pass
         output, log_sum_exp, startend_row_indices, fa_version = (
             cp_flashmask_allgatherkv_balance_forward(
-                query, key, value, startend_row_indices, group, causal, training
+                query,
+                key,
+                value,
+                startend_row_indices,
+                learnable_sink,
+                group,
+                causal,
+                training,
+                softmax_scale,
+                mode,
             )
         )
 
@@ -1030,6 +1155,15 @@ class FlashMaskContextParallel(PyLayer):
         ctx.group = group
         ctx.causal = causal
         ctx.fa_version = fa_version
+        ctx.learnable_sink = learnable_sink
+        ctx.softmax_scale = softmax_scale
+        # Only a trainable sink (a Parameter) needs a gradient returned from
+        # backward. A fixed off-by-one sink is created as a stop_gradient=True
+        # Tensor, and Paddle's PyLayer requires None in that return slot.
+        ctx.sink_requires_grad = (
+            learnable_sink is not None and not learnable_sink.stop_gradient
+        )
+        ctx.mode = mode
 
         return output
 
@@ -1050,9 +1184,12 @@ class FlashMaskContextParallel(PyLayer):
         group = ctx.group
         causal = ctx.causal
         fa_version = ctx.fa_version
+        learnable_sink = ctx.learnable_sink
+        softmax_scale = ctx.softmax_scale
+        mode = ctx.mode
 
         # Compute gradients
-        query_grad, key_grad, value_grad = (
+        query_grad, key_grad, value_grad, sink_grad = (
             cp_flashmask_allgatherkv_balance_backward(
                 query,
                 key,
@@ -1061,13 +1198,712 @@ class FlashMaskContextParallel(PyLayer):
                 output,
                 log_sum_exp,
                 output_grad,
+                learnable_sink,
                 group,
                 causal,
                 fa_version,
+                softmax_scale,
+                mode,
             )
         )
 
+        # PyLayer maps backward returns positionally onto the forward TENSOR
+        # inputs: query(0)/key(1)/value(2)/startend_row_indices(3)/
+        # learnable_sink(4). startend_row_indices is stop_gradient=True, so its
+        # slot (position 3) must be None -- sink_grad belongs in position 4.
+        # A fixed off-by-one sink is also stop_gradient=True, so for it the
+        # 3-tuple (sink slot omitted) is correct.
+        if ctx.sink_requires_grad:
+            return query_grad, key_grad, value_grad, None, sink_grad
         return query_grad, key_grad, value_grad
+
+
+# ======================== P2P SWA CP fast path Layer ========================
+
+
+def _wait_all(tasks):
+    """Wait for all asynchronous communication tasks."""
+    for task in tasks:
+        task.wait()
+
+
+def _exchange_prev_window(key, value, group, window_size=128):
+    """Exchange each rank's tail KV window with the next CP rank."""
+    rank = group.rank
+    cp_size = group.world_size
+
+    assert len(key.shape) == 4, (
+        f"SWA P2P expects BSHD KV, got key.shape={key.shape}"
+    )
+    assert key.shape[1] >= window_size, (
+        f"SWA window requires local KV sequence length >= {window_size}, "
+        f"got {key.shape[1]}"
+    )
+    assert value.shape == key.shape, (
+        f"key/value shape mismatch: key={key.shape}, value={value.shape}"
+    )
+
+    recv_window = paddle.empty(
+        [2, key.shape[0], window_size, key.shape[2], key.shape[3]],
+        dtype=key.dtype,
+    )
+    ops = []
+
+    if rank > 0:
+        recv_rank = group.ranks[rank - 1]
+        ops.append(dist.P2POp(dist.irecv, recv_window, recv_rank, group))
+
+    if rank < cp_size - 1:
+        send_rank = group.ranks[rank + 1]
+        send_window = paddle.stack(
+            [key[:, -window_size:, :, :], value[:, -window_size:, :, :]], axis=0
+        ).contiguous()
+        ops.append(dist.P2POp(dist.isend, send_window, send_rank, group))
+
+    if ops:
+        _wait_all(dist.batch_isend_irecv(ops))
+
+    return recv_window[0], recv_window[1]
+
+
+def _scatter_kv_to_global_tensor(key, value, recv_key, recv_value, group):
+    """Place local KV and received previous-window KV into global sequence layout."""
+    rank = group.rank
+    cp_size = group.world_size
+    local_seqlen = key.shape[1]
+    total_seqlen = local_seqlen * cp_size
+    local_start = rank * local_seqlen
+    local_end = local_start + local_seqlen
+
+    if cp_size == 1:
+        return key, value
+
+    scratch_shape = [key.shape[0], total_seqlen, key.shape[2], key.shape[3]]
+    key_tensor = paddle.empty(scratch_shape, dtype=key.dtype)
+    value_tensor = paddle.empty(scratch_shape, dtype=value.dtype)
+    key_tensor[:, local_start:local_end, :, :] = key
+    value_tensor[:, local_start:local_end, :, :] = value
+
+    if rank > 0:
+        window_size = recv_key.shape[1]
+        window_start = local_start - window_size
+        key_tensor[:, window_start:local_start, :, :] = recv_key
+        value_tensor[:, window_start:local_start, :, :] = recv_value
+
+    return key_tensor, value_tensor
+
+
+def _send_window_grad_back(
+    key_grad_tensor, value_grad_tensor, key, value, group, window_size
+):
+    """Return remote-window KV gradients to owner ranks and accumulate them."""
+    rank = group.rank
+    cp_size = group.world_size
+    local_seqlen = key.shape[1]
+    local_start = rank * local_seqlen
+
+    if cp_size == 1:
+        return key_grad_tensor, value_grad_tensor
+
+    key_grad, value_grad = bshd_slice_contiguous_kv(
+        key_grad_tensor, value_grad_tensor, local_start, local_seqlen
+    )
+
+    recv_grad_window = paddle.empty(
+        [2, key.shape[0], window_size, key.shape[2], key.shape[3]],
+        dtype=key.dtype,
+    )
+    ops = []
+
+    if rank < cp_size - 1:
+        send_rank = group.ranks[rank + 1]
+        ops.append(dist.P2POp(dist.irecv, recv_grad_window, send_rank, group))
+
+    if rank > 0:
+        recv_rank = group.ranks[rank - 1]
+        window_start = local_start - window_size
+        send_grad_window = paddle.stack(
+            [
+                key_grad_tensor[:, window_start:local_start, :, :],
+                value_grad_tensor[:, window_start:local_start, :, :],
+            ],
+            axis=0,
+        ).contiguous()
+        ops.append(dist.P2POp(dist.isend, send_grad_window, recv_rank, group))
+
+    if ops:
+        _wait_all(dist.batch_isend_irecv(ops))
+
+    if rank < cp_size - 1:
+        key_grad[:, -window_size:, :, :].add_(recv_grad_window[0])
+        value_grad[:, -window_size:, :, :].add_(recv_grad_window[1])
+
+    return key_grad, value_grad
+
+
+def cp_flashmask_swa_p2p_forward(
+    query,
+    key,
+    value,
+    startend_row_indices,
+    learnable_sink,
+    group,
+    causal,
+    is_training,
+    softmax_scale,
+    window_size,
+):
+    """Run forward SWA FlashMask CP with one-hop P2P KV exchange."""
+    paddle.base.core.nvprof_nvtx_push("cp_flashmask_swa_p2p_forward")
+
+    startend_row_indices = preprocess_index(
+        startend_row_indices,
+        chunk_id=group.rank,
+        seq_blocksize=query.shape[1],
+        max_seqlen_q=query.shape[1],
+    )
+
+    recv_key, recv_value = _exchange_prev_window(key, value, group, window_size)
+
+    key_tensor, value_tensor = _scatter_kv_to_global_tensor(
+        key, value, recv_key, recv_value, group
+    )
+
+    output, log_sum_exp = _flash_attn_fwd(
+        query,
+        key_tensor,
+        value_tensor,
+        startend_row_indices=startend_row_indices,
+        learnable_sink=learnable_sink,
+        causal=causal,
+        return_lse=True,
+        pack_gqa=False,
+        softmax_scale=softmax_scale,
+    )
+
+    paddle.base.core.nvprof_nvtx_pop()
+
+    return output, log_sum_exp, recv_key, recv_value, startend_row_indices
+
+
+def cp_flashmask_swa_p2p_backward(
+    query,
+    key,
+    value,
+    recv_key,
+    recv_value,
+    startend_row_indices,
+    output,
+    log_sum_exp,
+    output_grad,
+    learnable_sink,
+    group,
+    causal,
+    softmax_scale,
+    window_size,
+):
+    """Run backward SWA FlashMask CP and return P2P KV gradients."""
+    paddle.base.core.nvprof_nvtx_push("cp_flashmask_swa_p2p_backward")
+
+    key_tensor, value_tensor = _scatter_kv_to_global_tensor(
+        key, value, recv_key, recv_value, group
+    )
+
+    flashmask_info = None
+    if startend_row_indices is not None:
+        flashmask_info = FlashMaskInfoPaddle(
+            startend_row_indices=startend_row_indices,
+            is_causal=causal,
+        )
+
+    local_seqlen = key.shape[1]
+    local_start = group.rank * local_seqlen
+    local_end = local_start + local_seqlen
+    kv_postprocess_start = (
+        local_start if group.rank == 0 else local_start - window_size
+    )
+
+    query_grad, key_grad_tensor, value_grad_tensor, grad_sink = _flash_attn_bwd(
+        query,
+        key_tensor,
+        value_tensor,
+        output,
+        output_grad,
+        log_sum_exp,
+        flashmask_info=flashmask_info,
+        learnable_sink=learnable_sink,
+        causal=causal,
+        softmax_scale=softmax_scale,
+        deterministic=paddle.get_flags(["FLAGS_cudnn_deterministic"])[
+            "FLAGS_cudnn_deterministic"
+        ],
+        kv_postprocess_start=kv_postprocess_start,
+        kv_postprocess_end=local_end,
+    )
+
+    key_grad, value_grad = _send_window_grad_back(
+        key_grad_tensor, value_grad_tensor, key, value, group, window_size
+    )
+
+    paddle.base.core.nvprof_nvtx_pop()
+
+    return query_grad, key_grad, value_grad, grad_sink
+
+
+class FlashMaskSwaP2P(PyLayer):
+    """PyLayer for FlashMask SWA context parallelism using one-hop P2P KV exchange."""
+
+    @staticmethod
+    def forward(
+        ctx,
+        query,
+        key,
+        value,
+        startend_row_indices,
+        fixed_seed_offset=None,
+        dropout=0.0,
+        causal=False,
+        training=True,
+        learnable_sink=None,
+        softmax_scale=None,
+        group=None,
+        mode="contiguous_allgather",
+        window_size=None,
+    ):
+        """Forward pass for SWA P2P FlashMask attention."""
+        if dropout > 0.0:
+            raise NotImplementedError(
+                "Dropout is not supported in FlashMask context parallel yet."
+            )
+        if fixed_seed_offset is not None:
+            raise NotImplementedError("Fixed seed offset is not supported yet.")
+        window_size = 128 if window_size is None else window_size
+        if window_size <= 0:
+            raise ValueError(
+                f"SWA P2P window_size must be positive, got {window_size}"
+            )
+
+        output, log_sum_exp, recv_key, recv_value, startend_row_indices = (
+            cp_flashmask_swa_p2p_forward(
+                query,
+                key,
+                value,
+                startend_row_indices,
+                learnable_sink,
+                group,
+                causal,
+                training,
+                softmax_scale,
+                window_size,
+            )
+        )
+
+        ctx.save_for_backward(
+            query,
+            key,
+            value,
+            recv_key,
+            recv_value,
+            output,
+            log_sum_exp,
+            startend_row_indices,
+        )
+        ctx.learnable_sink = learnable_sink
+        ctx.softmax_scale = softmax_scale
+        ctx.sink_requires_grad = (
+            learnable_sink is not None and not learnable_sink.stop_gradient
+        )
+        ctx.group = group
+        ctx.causal = causal
+        ctx.window_size = window_size
+        return output
+
+    @staticmethod
+    def backward(ctx, output_grad):
+        """Backward pass for SWA P2P FlashMask attention."""
+        (
+            query,
+            key,
+            value,
+            recv_key,
+            recv_value,
+            output,
+            log_sum_exp,
+            startend_row_indices,
+        ) = ctx.saved_tensor()
+        query_grad, key_grad, value_grad, grad_sink = (
+            cp_flashmask_swa_p2p_backward(
+                query,
+                key,
+                value,
+                recv_key,
+                recv_value,
+                startend_row_indices,
+                output,
+                log_sum_exp,
+                output_grad,
+                ctx.learnable_sink,
+                ctx.group,
+                ctx.causal,
+                ctx.softmax_scale,
+                ctx.window_size,
+            )
+        )
+        if ctx.sink_requires_grad:
+            return query_grad, key_grad, value_grad, None, grad_sink
+        return query_grad, key_grad, value_grad
+
+
+# ===========================================================================
+# Ulysses Context Parallel (All-to-All based sequence parallelism)
+#
+# DeepSpeed-Ulysses partitions the input sequence across P GPUs. Before
+# attention, an all-to-all redistributes Q/K/V so that each GPU holds the
+# *full sequence* but only h/P attention heads. After local attention, a
+# reverse all-to-all restores the original sequence-partitioned layout.
+# ===========================================================================
+
+
+def _ulysses_generate_layout_params(
+    scatter_idx, batch_dim_idx, seq_world_size, input
+):
+    """
+    Generate reshape/permute parameters for the all-to-all in Ulysses SP.
+
+    With batch_dim_idx=0 (tensor layout [batch, seq, heads, head_dim]):
+      - scatter_idx < 2 (scatter_idx=0 or 1, i.e. scatter along sequence dim):
+            Input  [b, full_seq, h/P, d] -> Output [b, full_seq/P, h, d]
+            Scatters sequence across ranks, gathers heads from all ranks.
+      - scatter_idx >= 2 (scatter_idx=2, i.e. scatter along heads dim):
+            Input  [b, seq/P, h, d]      -> Output [b, seq, h/P, d]
+            Scatters heads across ranks, gathers sequence from all ranks.
+    """
+    if batch_dim_idx == 0:
+        if scatter_idx < 2:
+            # Scatter sequence, gather heads
+            bs, global_seq_len, num_local_head, head_dim = input.shape
+            pre_all2all_inp_shape = [
+                bs,
+                seq_world_size,
+                global_seq_len // seq_world_size,
+                num_local_head,
+                head_dim,
+            ]
+            pre_all2all_permute_idx = (1, 0, 2, 3, 4)
+            post_all2all_permute_idx = (1, 2, 0, 3, 4)
+            post_all2all_res_shape = [
+                bs,
+                global_seq_len // seq_world_size,
+                seq_world_size * num_local_head,
+                head_dim,
+            ]
+        else:
+            # Scatter heads, gather sequence
+            bs, local_seq_len, num_total_head, head_dim = input.shape
+            assert num_total_head % seq_world_size == 0, (
+                f"Number of heads ({num_total_head}) must be divisible by the sequence parallel size ({seq_world_size})!"
+            )
+            pre_all2all_inp_shape = [
+                bs,
+                local_seq_len,
+                seq_world_size,
+                num_total_head // seq_world_size,
+                head_dim,
+            ]
+            pre_all2all_permute_idx = (2, 0, 1, 3, 4)
+            post_all2all_permute_idx = (1, 0, 2, 3, 4)
+            post_all2all_res_shape = [
+                bs,
+                seq_world_size * local_seq_len,
+                num_total_head // seq_world_size,
+                head_dim,
+            ]
+    else:
+        if scatter_idx < 2:
+            # batch_dim_idx=1: tensor layout [seq, batch, heads, head_dim]
+            global_seq_len, bs, num_local_head, head_dim = input.shape
+            pre_all2all_inp_shape = [
+                seq_world_size,
+                global_seq_len // seq_world_size,
+                bs,
+                num_local_head,
+                head_dim,
+            ]
+            pre_all2all_permute_idx = None
+            post_all2all_permute_idx = (1, 2, 0, 3, 4)
+            post_all2all_res_shape = [
+                global_seq_len // seq_world_size,
+                bs,
+                seq_world_size * num_local_head,
+                head_dim,
+            ]
+        else:
+            local_seq_len, bs, num_total_head, head_dim = input.shape
+            assert num_total_head % seq_world_size == 0, (
+                f"Number of heads ({num_total_head}) must be divisible by the sequence parallel size ({seq_world_size})!"
+            )
+            pre_all2all_inp_shape = [
+                local_seq_len,
+                bs,
+                seq_world_size,
+                num_total_head // seq_world_size,
+                head_dim,
+            ]
+            pre_all2all_permute_idx = (2, 0, 1, 3, 4)
+            post_all2all_permute_idx = None
+            post_all2all_res_shape = [
+                local_seq_len * seq_world_size,
+                bs,
+                num_total_head // seq_world_size,
+                head_dim,
+            ]
+
+    return (
+        pre_all2all_permute_idx,
+        pre_all2all_inp_shape,
+        post_all2all_permute_idx,
+        post_all2all_res_shape,
+    )
+
+
+def _ulysses_single_all_to_all(
+    input, scatter_idx, gather_idx, batch_dim_idx, group
+):
+    """
+    Perform a single all-to-all with reshape/permute for Ulysses SP.
+    """
+    seq_world_size = dist.get_world_size(group)
+    (
+        pre_all2all_permute_idx,
+        pre_all2all_inp_shape,
+        post_all2all_permute_idx,
+        post_all2all_res_shape,
+    ) = _ulysses_generate_layout_params(
+        scatter_idx, batch_dim_idx, seq_world_size, input
+    )
+
+    # Pre-process: reshape and permute
+    input_t = input.reshape(pre_all2all_inp_shape).contiguous()
+    if pre_all2all_permute_idx is not None:
+        input_t = input_t.permute(pre_all2all_permute_idx).contiguous()
+
+    # All-to-all communication
+    output = paddle.empty_like(input_t)
+    dist.alltoall(output, input_t, group=group)
+
+    # Post-process: permute and reshape
+    if post_all2all_permute_idx is not None:
+        output = output.permute(post_all2all_permute_idx).contiguous()
+    output = output.reshape(post_all2all_res_shape).contiguous()
+
+    return output
+
+
+# ---------------------------------------------------------------------------
+# Fused Ulysses all-to-all permute (Triton).
+#
+# For the production path (batch_dim_idx=0), the pre/post reshape+transpose+
+# .contiguous() around the all-to-all are pure data movement whose cost (two
+# physical copies) rivals the communication itself. A single Triton kernel
+# fuses reshape+transpose+contiguous into one coalesced copy, and the post
+# output reuses the send buffer for a lower peak. The kernels live in
+# paddleformers.fleet.triton_ops.ulysses_alltoall_fused; the thin wrappers below keep
+# stable module-level names. A cheap non-Triton guard runs first so that
+# unsupported layouts, CPU/non-CUDA inputs, or Triton-less environments fall
+# back to the reference _ulysses_single_all_to_all path; the Triton import is
+# deferred to call time and is itself guarded.
+# ---------------------------------------------------------------------------
+def _ulysses_fused_supported(scatter_idx, batch_dim_idx, input):
+    """Whether the fused Triton path can handle this call.
+
+    Only batch_dim_idx=0 with a 4-D CUDA input is fused. Everything else
+    (other layouts, CPU/non-CUDA inputs, or an environment where the Triton
+    op cannot be imported) returns False so the caller keeps using the
+    reference reshape/permute all-to-all.
+    """
+    if (
+        batch_dim_idx != 0
+        or len(input.shape) != 4
+        or not paddle.is_compiled_with_cuda()
+        or not input.place.is_gpu_place()
+    ):
+        return False
+
+    try:
+        from paddleformers.fleet.triton_ops.ulysses_alltoall_fused import (
+            ulysses_alltoall_fused_supported,
+        )
+    except (ImportError, OSError):
+        # ImportError: Triton not installed. OSError: Triton present but its
+        # binary deps fail to load (e.g. shared library errors). Either way,
+        # fall back to the reference reshape/permute path.
+        return False
+
+    return ulysses_alltoall_fused_supported(scatter_idx, batch_dim_idx, input)
+
+
+def _ulysses_single_all_to_all_fused(input, scatter_idx, group):
+    """Fused seq<->head all-to-all for batch_dim_idx=0 (bit-exact, 2x peak)."""
+    from paddleformers.fleet.triton_ops.ulysses_alltoall_fused import (
+        ulysses_single_all_to_all_fused,
+    )
+
+    return ulysses_single_all_to_all_fused(input, scatter_idx, group)
+
+
+class UlyssesAlltoAll(PyLayer):
+    """
+    Ulysses All-to-All for sequence parallelism.
+
+    Forward performs all-to-all with the given scatter/gather indices.
+    Backward performs the inverse all-to-all (swap scatter and gather indices).
+
+    When the layout matches the production path (batch_dim_idx=0, 4-D input), a
+    fused Triton kernel replaces the reshape+transpose+.contiguous() permutes
+    for lower latency and peak memory. Otherwise it falls back to the reference
+    reshape/permute path. Both are bit-exact.
+    """
+
+    @staticmethod
+    def forward(ctx, input, scatter_idx, gather_idx, batch_dim_idx, group):
+        ctx.scatter_idx = scatter_idx
+        ctx.gather_idx = gather_idx
+        ctx.batch_dim_idx = batch_dim_idx
+        ctx.group = group
+        if _ulysses_fused_supported(scatter_idx, batch_dim_idx, input):
+            return _ulysses_single_all_to_all_fused(input, scatter_idx, group)
+        return _ulysses_single_all_to_all(
+            input, scatter_idx, gather_idx, batch_dim_idx, group
+        )
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        # Inverse a2a swaps scatter/gather; the fused check uses the backward
+        # scatter index (ctx.gather_idx).
+        if _ulysses_fused_supported(
+            ctx.gather_idx, ctx.batch_dim_idx, grad_output
+        ):
+            return _ulysses_single_all_to_all_fused(
+                grad_output, ctx.gather_idx, ctx.group
+            )
+        return _ulysses_single_all_to_all(
+            grad_output,
+            ctx.gather_idx,
+            ctx.scatter_idx,
+            ctx.batch_dim_idx,
+            ctx.group,
+        )
+
+
+def flashmask_attention_ulysses(
+    query,
+    key,
+    value,
+    startend_row_indices,
+    causal=False,
+    learnable_sink=None,
+    softmax_scale=None,
+):
+    """
+    FlashMask attention with Ulysses context parallelism.
+
+    Each CP rank initially holds a sequence partition [b, N/P, h, d]. The Ulysses
+    all-to-all redistributes Q/K/V so each rank holds the full sequence but only
+    h/P heads: [b, N, h/P, d]. Local flashmask attention is then computed per rank.
+    A reverse all-to-all restores the original sequence-partitioned layout.
+
+    Requires: num_heads % cp_size == 0, and q_heads == k_heads == v_heads (no GQA).
+
+    Args:
+        query: [batch, seq_len/P, num_heads, head_dim] - sequence-partitioned query
+        key:   [batch, seq_len/P, num_kv_heads, head_dim] - sequence-partitioned key
+        value: [batch, seq_len/P, num_kv_heads, head_dim] - sequence-partitioned value
+        startend_row_indices: [b, num_mask_heads, seq_len, cols] attention mask indices
+            num_mask_heads must be 1 (broadcast) or equal to num_kv_heads.
+        dropout: dropout probability
+        causal: whether to use causal attention
+        training: whether in training mode
+
+    Returns:
+        [batch, seq_len/P, num_heads, head_dim] - sequence-partitioned output
+    """
+    if learnable_sink is not None:
+        raise NotImplementedError(
+            "flashmask_attention_ulysses does not support learnable_sink "
+            "(softmax sink)"
+        )
+
+    if softmax_scale is not None:
+        raise NotImplementedError(
+            "flashmask_attention_ulysses does not support setting softmax_scale"
+        )
+    hcg = fleet.get_hybrid_communicate_group()
+    cp_group = hcg.get_context_parallel_group()
+    cp_size = cp_group.nranks
+    cp_rank = cp_group.rank
+
+    num_q_heads = query.shape[2]
+    num_k_heads = key.shape[2]
+    num_v_heads = value.shape[2]
+
+    assert num_q_heads == num_k_heads == num_v_heads, (
+        f"Ulysses a2a CP requires q_heads == k_heads == v_heads, "
+        f"got q={num_q_heads}, k={num_k_heads}, v={num_v_heads}"
+    )
+    assert num_q_heads % cp_size == 0, (
+        f"num_heads ({num_q_heads}) must be divisible by cp_size ({cp_size}) for Ulysses"
+    )
+
+    # Validate and slice startend_row_indices along head dimension
+    # startend_row_indices shape: [b, num_mask_heads, seq_len, cols]
+    num_mask_heads = startend_row_indices.shape[1]
+    assert num_mask_heads == 1 or num_mask_heads == num_k_heads, (
+        f"startend_row_indices head dim must be 1 or num_kv_heads ({num_k_heads}), "
+        f"got {num_mask_heads}"
+    )
+
+    # When mask has per-head indices, slice the heads belonging to this rank
+    if num_mask_heads != 1:
+        heads_per_rank = num_mask_heads // cp_size
+        head_start = cp_rank * heads_per_rank
+        head_end = head_start + heads_per_rank
+        startend_row_indices = startend_row_indices[
+            :, head_start:head_end, :, :
+        ]
+
+    # Before attention: scatter heads across ranks, gather full sequence from all ranks
+    # [b, N/P, h, d] -> [b, N, h/P, d]
+    query = UlyssesAlltoAll.apply(
+        query, scatter_idx=2, gather_idx=1, batch_dim_idx=0, group=cp_group
+    )
+    key = UlyssesAlltoAll.apply(
+        key, scatter_idx=2, gather_idx=1, batch_dim_idx=0, group=cp_group
+    )
+    value = UlyssesAlltoAll.apply(
+        value, scatter_idx=2, gather_idx=1, batch_dim_idx=0, group=cp_group
+    )
+
+    # Local flashmask attention on full sequence with h/P heads
+    attn_output = paddlefleet_ops.flash_mask_facade.flashmask_attention(
+        query,
+        key,
+        value,
+        startend_row_indices=startend_row_indices,
+        causal=causal,
+        softmax_scale=softmax_scale,
+    )
+
+    # After attention: scatter sequence across ranks, gather full heads from all ranks
+    # [b, N, h/P, d] -> [b, N/P, h, d]
+    attn_output = UlyssesAlltoAll.apply(
+        attn_output,
+        scatter_idx=1,
+        gather_idx=2,
+        batch_dim_idx=0,
+        group=cp_group,
+    )
+
+    return attn_output
 
 
 def flashmask_attention_cp(
@@ -1079,7 +1915,10 @@ def flashmask_attention_cp(
     dropout=0.0,
     causal=False,
     training=True,
-    mode="allgather_kv",
+    learnable_sink=None,
+    softmax_scale=None,
+    mode="dualchunk_allgather",
+    window_size=None,
 ):
     """
     FlashMask attention with context parallelism - public API.
@@ -1094,7 +1933,7 @@ def flashmask_attention_cp(
         dropout (float, optional): Dropout probability. Defaults to 0.0
         causal (bool, optional): Whether to use causal attention. Defaults to False
         training (bool, optional): Whether in training mode. Defaults to True
-        mode (str, optional): Attention mode. Defaults to "allgather_kv"
+        mode (str, optional): Attention mode. Defaults to "dualchunk_allgather"
     Returns:
         paddle.Tensor: Attention output with shape [batch, seq_len/n, num_heads, head_dim]
     Example:
@@ -1114,15 +1953,182 @@ def flashmask_attention_cp(
         )
         ```
     """
-    output = FlashMaskContextParallel.apply(
-        query,
-        key,
-        value,
-        startend_row_indices,
-        fixed_seed_offset,
-        dropout,
-        causal,
-        training,
-        mode,
-    )
+    if mode == "contiguous_swap2p":
+        hcg = fleet.get_hybrid_communicate_group()
+        cp_group = hcg.get_context_parallel_group()
+
+        assert _flash_mask_available, (
+            "P2P SWA fast path requires flashmask installed. Please check."
+        )
+
+        return FlashMaskSwaP2P.apply(
+            query,
+            key,
+            value,
+            startend_row_indices,
+            fixed_seed_offset,
+            dropout,
+            causal,
+            training,
+            learnable_sink,
+            softmax_scale,
+            cp_group,
+            mode,
+            window_size,
+        )
+    elif mode == "dualchunk_allgather":
+        output = FlashMaskContextParallel.apply(
+            query,
+            key,
+            value,
+            startend_row_indices,
+            fixed_seed_offset,
+            dropout,
+            causal,
+            training,
+            learnable_sink,
+            softmax_scale,
+            mode,
+        )
+    elif mode == "contiguous_a2a":
+        if fixed_seed_offset is not None:
+            raise NotImplementedError(
+                "flashmask_attention_ulysses does not support setting fixed_seed_offset"
+            )
+
+        if dropout != 0.0:
+            raise NotImplementedError(
+                "flashmask_attention_ulysses does not support dropout"
+            )
+
+        if not training:
+            raise NotImplementedError(
+                "flashmask_attention_ulysses does not support setting training"
+            )
+
+        output = flashmask_attention_ulysses(
+            query=query,
+            key=key,
+            value=value,
+            startend_row_indices=startend_row_indices,
+            causal=causal,
+            learnable_sink=learnable_sink,
+            softmax_scale=softmax_scale,
+        )
+    else:
+        raise ValueError(f"invalid cp_balance_mode: {mode}")
     return output
+
+
+# ===================== MTP Distillation Loss Shift Layer =====================
+
+
+def _mtp_distillation_loss_shift_forward(tensor, nextn, group):
+    ops = []
+
+    bs, _, hidden = tensor.shape
+    rank = group.rank
+    cp_size = group.world_size
+
+    if rank > 0:
+        send_rank = group.ranks[rank - 1]
+        send_window = tensor[:, :nextn].contiguous()
+        ops.append(dist.P2POp(dist.isend, send_window, send_rank, group))
+
+    if rank < cp_size - 1:
+        recv_rank = group.ranks[rank + 1]
+        recv_window = paddle.empty([bs, nextn, hidden], tensor.dtype)
+        ops.append(dist.P2POp(dist.irecv, recv_window, recv_rank, group))
+    else:
+        recv_window = paddle.zeros([bs, nextn, hidden], tensor.dtype)
+
+    _wait_all(dist.batch_isend_irecv(ops))
+
+    tensor = paddle.concat([tensor[:, 1:], recv_window], axis=1)
+    return tensor
+
+
+def _mtp_distillation_loss_shift_backward(tensor, nextn, group):
+    ops = []
+
+    bs, _, hidden = tensor.shape
+    rank = group.rank
+    cp_size = group.world_size
+
+    if rank < cp_size - 1:
+        send_rank = group.ranks[rank + 1]
+        send_window = tensor[:, -nextn:].contiguous()
+        ops.append(dist.P2POp(dist.isend, send_window, send_rank, group))
+
+    if rank > 0:
+        recv_rank = group.ranks[rank - 1]
+        recv_window = paddle.empty([bs, nextn, hidden], tensor.dtype)
+        ops.append(dist.P2POp(dist.irecv, recv_window, recv_rank, group))
+    else:
+        recv_window = paddle.zeros([bs, nextn, hidden], tensor.dtype)
+
+    _wait_all(dist.batch_isend_irecv(ops))
+
+    # output has shape [bs, seq_len, hidden]
+    output = paddle.nn.functional.pad(
+        tensor[:, :-nextn], [0, 0, 1], mode="constant", value=0
+    )
+    output[:, :nextn] += recv_window
+    return output
+
+
+class MTPDistillationLossShift(PyLayer):
+    """
+    Shift LMHead logits for MTP distillation loss computation.
+
+    Given a local input tensor of shape [B, S, H] on each rank of a CP group, this function is
+    conceptually equivalent to first all-gathering the global tensor of shape [B, S*cp_size, H]
+    and then returning the slice [:, S*cp_rank+1 : S*(cp_rank+1)+nextn, :] on each rank.
+    In practice, only the boundary tokens are exchanged between neighboring ranks instead of
+    performing a full gather.
+    """
+
+    @staticmethod
+    def forward(
+        ctx, tensor, num_nextn_predict_layers, mode="contiguous_allgather"
+    ):
+        hcg = fleet.get_hybrid_communicate_group()
+        group = hcg.get_context_parallel_group()
+
+        assert len(tensor.shape) == 3, (
+            f"Expect input of shape [B, S, H], got {tensor.shape}"
+        )
+        batch_size, seq_len, hidden_size = tensor.shape
+        assert seq_len > num_nextn_predict_layers, (
+            "The local seq_len per-rank should be greater than nextn, "
+            f"got {seq_len=} and {num_nextn_predict_layers=}"
+        )
+        assert num_nextn_predict_layers > 0, (
+            f"num_nextn_predict_layers must be greater than 0, got {num_nextn_predict_layers}"
+        )
+        assert mode == "contiguous_allgather", (
+            f"MTPDistillationLossShift only supports 'contiguous_allgather' mode, got {mode}"
+        )
+
+        ctx.group = group
+        ctx.batch_size = batch_size
+        ctx.seq_len = seq_len
+        ctx.hidden_size = hidden_size
+        ctx.num_nextn_predict_layers = num_nextn_predict_layers
+
+        return _mtp_distillation_loss_shift_forward(
+            tensor, num_nextn_predict_layers, group
+        )
+
+    @staticmethod
+    def backward(ctx, output_grad):
+        output_grad = output_grad.reshape(
+            [
+                ctx.batch_size,
+                ctx.seq_len + ctx.num_nextn_predict_layers - 1,
+                ctx.hidden_size,
+            ]
+        )
+        return _mtp_distillation_loss_shift_backward(
+            output_grad, ctx.num_nextn_predict_layers, ctx.group
+        )

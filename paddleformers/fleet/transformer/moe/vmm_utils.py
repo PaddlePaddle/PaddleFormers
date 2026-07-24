@@ -15,7 +15,7 @@
 """Memory block utility functions for auto subbatch."""
 
 import paddle
-import paddleformers.fleet as fleet_ops
+import paddlefleet_ops
 from paddle.device.cuda.memory_analyzer import GB, MemoryAnalysisTool
 
 
@@ -101,8 +101,10 @@ def allocator_free_block_info() -> list[tuple[int, int]]:
     free blocks，保持 conservative auto subbatch 行为。
     """
     if _use_virtual_memory_auto_growth():
-        return vmm_free_and_growable_block_info()
-    return legacy_free_block_info()
+        result = vmm_free_and_growable_block_info()
+    else:
+        result = legacy_free_block_info()
+    return result
 
 
 def vmm_free_and_growable_block_info() -> list[tuple[int, int]]:
@@ -112,7 +114,10 @@ def vmm_free_and_growable_block_info() -> list[tuple[int, int]]:
 
     堆大小的上限由 FLAGS_max_reserved_threshold_in_gb 配置。
     """
-    all_heaps = MemoryAnalysisTool.vmm_all_block_info()
+    try:
+        all_heaps = MemoryAnalysisTool.vmm_large_all_block_info()
+    except (AttributeError, TypeError):
+        all_heaps = MemoryAnalysisTool.vmm_all_block_info()
     assert all_heaps, (
         "vmm_all_block_info() returned empty, is FLAGS_use_virtual_memory_auto_growth=True?"
     )

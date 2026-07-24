@@ -120,9 +120,13 @@ def sparse_mqa_fwd(
                     mask[bi_i] = Indices[b_i, s_i, i_i * BI + bi_i] != -1
 
                 for bi_i, d_i in T.Parallel(BI, D):
-                    KV_shared[bi_i, d_i] = KV[
-                        b_i, Indices[b_i, s_i, i_i * BI + bi_i], d_i
-                    ]
+                    # -1 marks a padding slot. Clamp it to a safe in-bounds row
+                    # (computed locally, same pipeline stage as the gather); the
+                    # numeric contribution is still zeroed via `mask`, but
+                    # dereferencing -1 reads OOB memory.
+                    raw_idx = Indices[b_i, s_i, i_i * BI + bi_i]
+                    safe_idx = T.if_then_else(raw_idx != -1, raw_idx, 0)
+                    KV_shared[bi_i, d_i] = KV[b_i, safe_idx, d_i]
 
                 for h_i, bi_i in T.Parallel(H_per_block, BI):
                     acc_s[h_i, bi_i] = T.if_then_else(

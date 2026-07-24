@@ -460,8 +460,7 @@ class LigerFusedLinearCrossEntropyFunction(paddle.autograd.PyLayer):
                 else:
                     # 默认: grad_weight=[V,H]，与 main_grad=[V,H] 相同，直接累加
                     weight.main_grad.add_(grad_weight)
-                if hasattr(weight, "_apply_backward_hook"):
-                    weight._apply_backward_hook()
+
                 grad_weight = None
 
         # Multimax params: accumulate into main_grad when present (matches
@@ -500,8 +499,6 @@ class LigerFusedLinearCrossEntropyFunction(paddle.autograd.PyLayer):
                             param.shape, dtype=paddle.float32
                         )
                     param.main_grad.add_(g.cast(param.main_grad.dtype))
-                    if hasattr(param, "_apply_backward_hook"):
-                        param._apply_backward_hook()
                     # multimax params have stop_gradient=False so Paddle's
                     # autograd requires a non-None gradient at this position.
                     # Return zeros: real gradient is already in main_grad for

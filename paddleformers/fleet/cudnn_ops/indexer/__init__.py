@@ -18,10 +18,24 @@ from .csa_indexer_fwd_cudnn import (
     cudnn_indexer_topk,
     cudnn_indexer_topk_fwd,
 )
+from .docmask_utils import (
+    bshd_b1_to_thd,
+    shift_scores_to_local_window,
+    thd_to_bshd_b1,
+    topk_global_to_local,
+    topk_local_to_global,
+    valid_range_to_counts,
+)
 
 __all__ = [
     "csa_indexer_bwd",
     "cudnn_indexer_forward",
     "cudnn_indexer_topk",
     "cudnn_indexer_topk_fwd",
+    "bshd_b1_to_thd",
+    "shift_scores_to_local_window",
+    "thd_to_bshd_b1",
+    "topk_global_to_local",
+    "topk_local_to_global",
+    "valid_range_to_counts",
 ]

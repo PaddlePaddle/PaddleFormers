@@ -22,6 +22,65 @@ from typing import Any
 
 import paddle
 
+
+# ---------------------------------------------------------------------------
+# Patch CUTLASS DSL scalar types to cache __c_pointers__ results.
+# Prevents pymalloc arena fragmentation from short-lived ctypes objects
+# created on every kernel launch. Must run before any CUTLASS kernel is called.
+# ---------------------------------------------------------------------------
+def _patch_cutlass_cptr_cache(maxsize=4096):
+    try:
+        from cutlass.base_dsl import typing as _typing
+    except Exception:
+        return 0
+    _logger = logging.getLogger(__name__)
+    _warned = set()
+    count = 0
+
+    def _make_cached(orig_fn, cache, cls_name):
+        def _cached(self):
+            v = self.value
+            r = cache.get(v)
+            if r is None:
+                r = orig_fn(self)
+                if len(cache) < maxsize:
+                    cache[v] = r
+                elif cls_name not in _warned:
+                    _warned.add(cls_name)
+                    _logger.warning(
+                        f"[cptr_cache] {cls_name}.__c_pointers__ cache exceeded "
+                        f"{maxsize} entries. Dynamic scalar values may cause "
+                        f"pymalloc arena fragmentation."
+                    )
+            return r
+
+        return _cached
+
+    _Numeric = getattr(_typing, "Numeric", None)
+    for name in dir(_typing):
+        cls = getattr(_typing, name)
+        if (
+            isinstance(cls, type)
+            and "__c_pointers__" in cls.__dict__
+            and _Numeric
+            and issubclass(cls, _Numeric)
+            and cls is not _Numeric
+            and not name.startswith("_")
+        ):
+            cache = {}
+            cls.__c_pointers__ = _make_cached(cls.__c_pointers__, cache, name)
+            count += 1
+    return count
+
+
+_patched_count = _patch_cutlass_cptr_cache()
+if _patched_count:
+    logging.getLogger(__name__).warning(
+        f"[cptr_cache] Patched {_patched_count} CUTLASS DSL types"
+    )
+del _patch_cutlass_cptr_cache, _patched_count
+# ---------------------------------------------------------------------------
+
 from .utils import (
     HardwareIncompatibleBlocker,
     ModuleContext,

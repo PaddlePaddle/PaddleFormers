@@ -154,6 +154,29 @@ def get_magic_init_method(sigma):
     return init_method
 
 
+def truncated_init_method_normal(sigma, truncate_factor=3.0):
+    """Init method based on truncated normal N(0, sigma^2) clipped to
+    [-truncate_factor*sigma, truncate_factor*sigma].
+
+    Initialized under an fp32 default dtype guard to avoid numerical issues
+    in low-precision (e.g. bf16) default dtype. Independent from the other
+    init methods so existing behavior is unaffected.
+    """
+
+    def init_method(weight):
+        dtype = paddle.get_default_dtype()
+        try:
+            paddle.set_default_dtype("float32")
+            bound = truncate_factor * sigma
+            paddle.nn.init.trunc_normal_(
+                weight, mean=0.0, std=sigma, a=-bound, b=bound
+            )
+        finally:
+            paddle.set_default_dtype(dtype)
+
+    return init_method
+
+
 def get_pg_size(group=None):
     """Get world size for a distributed group.
 

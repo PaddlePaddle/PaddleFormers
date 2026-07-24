@@ -104,6 +104,20 @@ __all__ = [
 FP8_ALIGN = 128
 
 
+def moe_token_padding_alignment(
+    *, use_fp8_mlp: bool, moe_grouped_gemm: bool, use_accuracy_compatible: bool
+) -> int:
+    # == [MG accuracy-alignment diff] per-expert token padding alignment ==
+    # Only when use_accuracy_compatible=True and on the pure-bf16 non-grouped_gemm
+    #   path do we skip padding (return 1), so each expert's GEMM M dim == the real
+    #   token count and cuBLAS picks the same algorithm as MG SequentialMLP. In all
+    #   other cases (including when accuracy compatible is off) align to FP8_ALIGN
+    #   to preserve the original behavior.
+    if use_accuracy_compatible and not use_fp8_mlp and not moe_grouped_gemm:
+        return 1
+    return FP8_ALIGN
+
+
 def _get_fp8_weight_and_scale(
     weight, transpose=False, num_expert=None, use_ue8m0=None
 ):
@@ -252,11 +266,11 @@ def split_group_gemm(
         if use_ue8m0:
             w_scale_tma_align = w_scale[i].T.contiguous().T
         else:
-            w_scale_tma_align = w_scale[i]
+            w_scale_tma_align = w_scale[i].contiguous()
 
         deep_gemm.fp8_gemm_nt(
             (x_i, x_scale_tma_align),
-            (w_fp8[i].contiguous(), w_scale_tma_align.contiguous()),
+            (w_fp8[i].contiguous(), w_scale_tma_align),
             gemm_out[start_idx:end_idx],
         )
 
@@ -451,6 +465,8 @@ class ExpertsGroupGemmContiguousNode:
         dw_p2p_overlap=False,
         moe_expert_fusion=False,
         clamp_value=None,
+        activation_type="swiglu",
+        use_accuracy_compatible=False,
     ):
         """
             Initializes the experts group gemm contiguous node.
@@ -460,6 +476,7 @@ class ExpertsGroupGemmContiguousNode:
             recompute_moe_gate_up (bool, optional): Whether to recompute forward gate up. Defaults to False.
             dequant_input (bool, optional): Whether to dequantize input. Defaults to False.
             name (str, optional): Name of the node. Defaults to "experts_group_gemm_contiguous_node".
+            activation_type (str, optional): Activation function type. "swiglu" or "geglu". Defaults to "swiglu".
         """
         if moe_deep_gemm and expert_id is not None:
             # Per-expert node for deep_gemm: slice stacked weight to [1, K, N]
@@ -518,6 +535,13 @@ class ExpertsGroupGemmContiguousNode:
         self.dw_p2p_overlap = dw_p2p_overlap
         self.moe_expert_fusion = moe_expert_fusion
         self.clamp_value = clamp_value
+        self.activation_type = activation_type
+        self.use_accuracy_compatible = use_accuracy_compatible
+        self.token_padding_alignment = moe_token_padding_alignment(
+            use_fp8_mlp=use_fp8_mlp,
+            moe_grouped_gemm=not self.is_split_group_gemm,
+            use_accuracy_compatible=use_accuracy_compatible,
+        )
 
     def cached_tensors(self):
         """
@@ -753,13 +777,70 @@ class ExpertsGroupGemmContiguousNode:
         """
         fwd_down_bf16
         """
-
-        if self.clamp_value is not None and self.clamp_value > 0:
-            o2 = fused_swiglu_scale_forward(
-                o1, unzipped_probs, self.clamp_value
-            )
+        # == [MG accuracy-alignment diff · fwd SwiGLU×probs] ==
+        # Original impl: `o2 = fused_swiglu_scale_forward(o1, unzipped_probs)`.
+        #   The fused kernel computes SwiGLU and the probs multiply along its own
+        #   precision path, which differs from MG SequentialMLP and leaves the
+        #   post-swiglu-scale output misaligned in the last bits.
+        # Change (only active when use_accuracy_compatible=True): compute the
+        #   equivalent by hand -- promote both SwiGLU and the per-token router
+        #   scale to fp32, then cast back to the original dtype once, replicating
+        #   MG's "compute in fp32, round once"; otherwise keep the fused kernel.
+        # NOTE: the fp32 path hard-codes the SwiGLU (silu) formula, so GeGLU
+        #   experts must NOT take it -- they use a dedicated gelu branch inside
+        #   the accuracy-compatible block (kept consistent with the non-
+        #   accuracy-compatible GeGLU branch below).
+        # NOTE: the SwiGLU fp32 path is additionally gated on is_split_group_gemm
+        #   to stay paired with the backward: bwd_down_input_bf16's fp32-autograd
+        #   branch also requires is_split_group_gemm, so grouped-gemm
+        #   (moe_expert_fusion=True) must keep the fused forward/backward pair
+        #   here -- otherwise forward would be fp32 round-once while backward
+        #   stays on the fused-kernel precision path. GeGLU is unaffected: its
+        #   forward is gelu on both paths and pairs with the analytic GeGLU
+        #   backward, which is not gated on is_split_group_gemm.
+        # ==================================================================
+        if self.use_accuracy_compatible and (
+            self.activation_type == "geglu" or self.is_split_group_gemm
+        ):
+            x_glu, x_linear = paddle.chunk(o1, chunks=2, axis=-1)
+            probs = unzipped_probs
+            if len(probs.shape) == 1:
+                probs = probs.unsqueeze(-1)
+            if self.activation_type == "geglu":
+                # GeGLU: gelu_tanh(gate) * up, then scale by probs. Keep the
+                # gelu math identical to the non-accuracy-compatible GeGLU
+                # branch below (and to bwd_down_input_bf16's GeGLU recompute)
+                # so forward and backward share one activation path.
+                o2 = (
+                    (F.gelu(x_glu, approximate=True) * x_linear) * probs
+                ).cast(o1.dtype)
+            else:
+                # SwiGLU: promote to fp32 and round once. Apply the same
+                # activation_func_clamp_value semantics as the fused kernel
+                # (clamp gate to max, value to [-clamp, clamp]) so this fp32
+                # path matches fused_swiglu_scale_forward when clamp is set.
+                gate_f = x_glu.astype("float32")
+                val_f = x_linear.astype("float32")
+                if self.clamp_value is not None and self.clamp_value > 0:
+                    cv = float(self.clamp_value)
+                    gate_f = paddle.clip(gate_f, max=cv)
+                    val_f = paddle.clip(val_f, min=-cv, max=cv)
+                o2 = (F.silu(gate_f) * val_f * probs.astype("float32")).astype(
+                    o1.dtype
+                )
         else:
-            o2 = fused_swiglu_scale_forward(o1, unzipped_probs)
+            if self.activation_type == "geglu":
+                # GeGLU: gelu_tanh(gate) * up, then scale by probs
+                # F.gelu promotes bf16 to float32, cast back to bf16 for downstream ops
+                gate, up = paddle.chunk(o1, 2, dim=-1)
+                o2 = F.gelu(gate, approximate=True) * up
+                o2 = (o2 * unzipped_probs.unsqueeze(-1)).cast(o1.dtype)
+            elif self.clamp_value is not None and self.clamp_value > 0:
+                o2 = fused_swiglu_scale_forward(
+                    o1, unzipped_probs, self.clamp_value
+                )
+            else:
+                o2 = fused_swiglu_scale_forward(o1, unzipped_probs)
 
         if clear_o1:
             o1._clear_to_zero_allocation()
@@ -811,6 +892,12 @@ class ExpertsGroupGemmContiguousNode:
         if not self.use_fp8_mlp:
             return self.fwd_down_bf16(o1, unzipped_probs, expert_w2, clear_o1)
         else:
+            assert self.activation_type != "geglu", (
+                "FP8 MoE path does not support activation_type='geglu' yet. "
+                "The fwd_down_fp8 branch uses fused SwiGLU FP8 kernels which are "
+                "incompatible with GeGLU. Please disable fp8 for Gemma4 MoE or "
+                "implement a GeGLU FP8 kernel."
+            )
             return self.fwd_down_fp8(
                 o1, unzipped_probs, expert_w2, num_expert, o3, clear_o1
             )
@@ -940,9 +1027,14 @@ class ExpertsGroupGemmContiguousNode:
                         start_idx:end_idx
                     ].contiguous()
                     expert_w2_i = expert_w2[i].T.contiguous()
-                    do2_s_list.append(
-                        F.linear(x=unzipped_grad_i, weight=expert_w2_i)
-                    )
+                    if self.use_accuracy_compatible:
+                        do2_s_list.append(
+                            paddle.matmul(unzipped_grad_i, expert_w2_i)
+                        )
+                    else:
+                        do2_s_list.append(
+                            F.linear(x=unzipped_grad_i, weight=expert_w2_i)
+                        )
                     start_idx = end_idx
                 do2_s = paddle.concat(do2_s_list, axis=0)
         else:
@@ -952,7 +1044,113 @@ class ExpertsGroupGemmContiguousNode:
                 do2_s_shape = [unzipped_grad.shape[0], expert_w2[0].shape[1]]
             do2_s = paddle.empty(do2_s_shape, dtype=unzipped_grad.dtype)
 
-        if self.clamp_value is not None and self.clamp_value > 0:
+        # == [MG accuracy-alignment diff · bwd SwiGLU×probs] ==
+        # Original impl: `fused_swiglu_scale_forward` + `fused_swiglu_scale_backward`.
+        #   This fused-kernel pair recomputes o2_s and derives do1 / probs_grad, but
+        #   its backward precision path differs from the forward hand-written fp32
+        #   path (fwd_down_bf16), leaving backward gradients misaligned with MG in
+        #   the last bits.
+        # Change (only when use_accuracy_compatible=True and non-grouped_gemm and
+        #   non-empty grad): rebuild the compute graph with the exact same fp32
+        #   expression as the forward (F.silu(gate) * val * scale) and let autograd
+        #   run the backward, so forward and backward share one fp32 math path;
+        #   otherwise keep the original fused kernel (preserve existing behavior).
+        # NOTE: this fp32 path hard-codes the SwiGLU (silu) formula, so it must
+        #   NOT be taken for GeGLU experts -- GeGLU falls through to its own
+        #   branch below, which uses gelu.
+        # ==================================================================
+        if (
+            self.use_accuracy_compatible
+            and self.activation_type != "geglu"
+            and self.is_split_group_gemm
+            and numpy.prod(unzipped_grad.shape) != 0
+        ):
+            x_glu, x_linear = paddle.chunk(o1, chunks=2, axis=-1)
+            probs_v = (
+                unzipped_probs
+                if unzipped_probs.ndim > 1
+                else unzipped_probs.unsqueeze(-1)
+            )
+            with paddle.enable_grad():
+                gate_g = x_glu.astype("float32").detach()
+                val_g = x_linear.astype("float32").detach()
+                scale_g = probs_v.astype("float32").detach()
+                gate_g.stop_gradient = False
+                val_g.stop_gradient = False
+                scale_g.stop_gradient = False
+                # Apply the same activation_func_clamp_value semantics as the
+                # forward / fused kernel (clamp gate to max, value to
+                # [-clamp, clamp]). autograd through paddle.clip masks the
+                # gradient where saturated, matching fused_swiglu_weighted_clamp_bwd.
+                if self.clamp_value is not None and self.clamp_value > 0:
+                    cv = float(self.clamp_value)
+                    gate_c = paddle.clip(gate_g, max=cv)
+                    val_c = paddle.clip(val_g, min=-cv, max=cv)
+                else:
+                    gate_c = gate_g
+                    val_c = val_g
+                o2_f32 = F.silu(gate_c) * val_c * scale_g
+                paddle.autograd.backward(
+                    [o2_f32], [do2_s.astype("float32").detach()]
+                )
+                d_gate_f32 = gate_g.grad
+                d_up_f32 = val_g.grad
+                d_scale_f32 = scale_g.grad.reshape(unzipped_probs.shape).astype(
+                    "float32"
+                )
+
+            do1 = paddle.concat([d_gate_f32, d_up_f32], axis=-1).astype(
+                o1.dtype
+            )
+            o2_s = o2_f32.detach().astype(o1.dtype)
+            probs_grad = d_scale_f32.astype(unzipped_probs.dtype)
+            return do1, o2_s, probs_grad
+
+        if self.activation_type == "geglu":
+            # GeGLU forward recompute (needed for backward weight computation)
+            gate, up = paddle.chunk(o1, 2, dim=-1)
+            gate_act = F.gelu(gate, approximate=True)
+            o2_s_no_scale = gate_act * up
+            o2_s = (o2_s_no_scale * unzipped_probs).cast(o1.dtype)
+
+            # probs_grad: d(loss)/d(probs) = do2_s * o2_no_scale, summed over hidden dim
+            probs_grad = (
+                do2_s.cast(paddle.float32) * o2_s_no_scale.cast(paddle.float32)
+            ).sum(-1, keepdim=True)
+
+            # Propagate gradient through probs scaling (aligned with Megatron):
+            # do2 = do2_s * probs  (chain rule through o2_s = o2_no_scale * probs)
+            do2 = do2_s * unzipped_probs
+
+            # GeGLU backward through activation
+            # d_up = do2 * gelu(gate)
+            d_up = do2 * gate_act.cast(do2.dtype)
+            # d_gate = do2 * up * gelu'(gate)  (tanh-approximate gelu derivative)
+            import math
+
+            kAlpha = math.sqrt(2.0 / math.pi)
+            inner = kAlpha * (
+                gate.cast(paddle.float32)
+                + 0.044715 * paddle.pow(gate.cast(paddle.float32), 3)
+            )
+            tanh_inner = paddle.tanh(inner)
+            d_gate = (
+                do2
+                * up.cast(do2.dtype)
+                * (
+                    0.5 * (1.0 + tanh_inner)
+                    + 0.5
+                    * gate.cast(paddle.float32)
+                    * (1.0 - tanh_inner * tanh_inner)
+                    * kAlpha
+                    * (
+                        1.0
+                        + 0.134145 * paddle.pow(gate.cast(paddle.float32), 2)
+                    )
+                ).cast(do2.dtype)
+            )
+            do1 = paddle.concat([d_gate, d_up], dim=-1).cast(o1.dtype)
+        elif self.clamp_value is not None and self.clamp_value > 0:
             do1, probs_grad, o2_s = fused_swiglu_weighted_clamp_bwd(
                 o1, unzipped_probs, do2_s, float(self.clamp_value)
             )
@@ -1018,6 +1216,14 @@ class ExpertsGroupGemmContiguousNode:
                 bw_w2_scale.contiguous().transpose([0, 2, 1]).contiguous()
             )
 
+        # Pre-allocate do2_s before fp8 quant to avoid fragmentation:
+        # do2_s (long-lived, inplace becomes o2_s) should be at lower address,
+        # so that the short-lived unzipped_grad_fp8 is freed at the tail.
+        do2_s = paddle.empty(
+            [unzipped_grad.shape[0], bw_w2_quant.shape[1]],
+            dtype=unzipped_grad.dtype,
+        )
+
         # compute gemm
         if self.use_ue8m0 and self.moe_expert_fusion:
             unzipped_grad_fp8, unzipped_grad_scale = (
@@ -1041,10 +1247,6 @@ class ExpertsGroupGemmContiguousNode:
                 )
             )
 
-        do2_s = paddle.empty(
-            [unzipped_grad_fp8.shape[0], bw_w2_quant.shape[1]],
-            dtype=unzipped_grad.dtype,
-        )
         if numpy.prod(unzipped_grad_fp8.shape) != 0:
             if not self.moe_expert_fusion:
                 split_group_gemm(
@@ -1137,7 +1339,10 @@ class ExpertsGroupGemmContiguousNode:
                     end_idx = start_idx + token_num
                     do1_i = do1[start_idx:end_idx].contiguous()
                     expert_w1_i = expert_w1[i].T.contiguous()
-                    dx_list.append(F.linear(x=do1_i, weight=expert_w1_i))
+                    if self.use_accuracy_compatible:
+                        dx_list.append(paddle.matmul(do1_i, expert_w1_i))
+                    else:
+                        dx_list.append(F.linear(x=do1_i, weight=expert_w1_i))
                     start_idx = end_idx
                 dx = paddle.concat(dx_list, axis=0)
         else:
@@ -2074,14 +2279,34 @@ class ExpertsGroupGemmContiguousNode:
 
                 if n > 0:
                     end_idx = start_idx + n
-                    paddle._C_ops.fused_linear_param_grad_add(
-                        x._slice(start_idx, end_idx),
-                        dy._slice(start_idx, end_idx),
-                        grad_attr,
-                        None,
-                        True,
-                        False,
-                    )
+                    # == [MG accuracy-alignment diff · expert wgrad] ==
+                    # Only active when use_accuracy_compatible=True: on the non-fp8
+                    #   path, cast the x/dy slices to fp32 before accumulating via
+                    #   fused_linear_param_grad_add, matching MG SequentialMLP's fp32
+                    #   expert wgrad. Otherwise keep the original direct accumulation.
+                    # Note: this local tree already pre-pads tokens_per_expert
+                    #   upstream (padding_token_per_experts, which is alignment-aware),
+                    #   so the FP8_ALIGN re-padding from the upstream PR is a no-op
+                    #   here and is intentionally omitted.
+                    # ============================================================
+                    if self.use_accuracy_compatible and not self.use_fp8_mlp:
+                        paddle._C_ops.fused_linear_param_grad_add(
+                            x._slice(start_idx, end_idx).astype("float32"),
+                            dy._slice(start_idx, end_idx).astype("float32"),
+                            grad_attr,
+                            None,
+                            True,
+                            False,
+                        )
+                    else:
+                        paddle._C_ops.fused_linear_param_grad_add(
+                            x._slice(start_idx, end_idx),
+                            dy._slice(start_idx, end_idx),
+                            grad_attr,
+                            None,
+                            True,
+                            False,
+                        )
                     start_idx = end_idx
 
                 if (

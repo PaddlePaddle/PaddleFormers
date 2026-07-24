@@ -28,7 +28,6 @@ from paddlefleet_ops import (
 
 from paddleformers.fleet.refined_recompute.queue_check import global_rr_queue_log
 
-from .fp8_utils import FP8_ALIGN
 from .moe_utils import manual_backward
 
 if is_deep_ep_available():
@@ -63,8 +62,9 @@ else:
 _buffer = None
 _hybrid_ep_buffer = None
 
-# HybridEP dispatch/combine kernels use 64-token chunks for public APIs.
-HYBRIDEP_TOKEN_ALIGNMENT = 64
+# HybridEP dispatch/combine kernels use 128-token chunks to align with default
+# NUM_OF_TOKENS_PER_CHUNK_DISPATCH_API and NUM_OF_TOKENS_PER_CHUNK_COMBINE_API
+HYBRIDEP_TOKEN_ALIGNMENT = 128
 
 
 def barrier_ep(ep_group):
@@ -171,7 +171,12 @@ def get_buffer(group: Group, hidden_bytes: int):
         or _buffer.num_nvl_bytes < num_nvl_bytes
         or _buffer.num_rdma_bytes < num_rdma_bytes
     ):
-        _buffer = deep_ep.Buffer(group, num_nvl_bytes, num_rdma_bytes)
+        _buffer = deep_ep.Buffer(
+            group,
+            num_nvl_bytes,
+            num_rdma_bytes,
+            num_qps_per_rank=max(24, deep_ep.Buffer.num_sms),
+        )
     return _buffer
 
 
@@ -445,7 +450,9 @@ class DeepEPDispatch(PyLayer):
                         using_ue8m0_scale=use_ue8m0,
                     )
                 )
-                scale = scale.T.contiguous()
+                scale = _normalize_fp8_scale_for_deepep(
+                    x_fp8, scale, use_ue8m0=use_ue8m0
+                )
             x = (x_fp8, scale)
         recv_x, recv_token_probs, states, event = fused_dispatch_forward_func(
             x,
@@ -909,7 +916,7 @@ class HybridEPDispatch(PyLayer):
         ctx.token_indices = token_indices
         ctx.num_unpadded_tokens = x.shape[0]
         ctx.hidden_dtype = x.dtype
-        ctx.use_fp8_dispatch = fp8_dispatch
+        ctx.pad_multiple = manager._dispatch_pad_multiple
         ctx.set_grad_in_dtype_consistent(False)
         return recv_x, recv_token_probs, scale
 
@@ -924,7 +931,7 @@ class HybridEPDispatch(PyLayer):
             if grad_token_probs is None
             else grad_token_probs.astype("float32"),
             handle=ctx.handle,
-            pad_multiple=FP8_ALIGN if ctx.use_fp8_dispatch else None,
+            pad_multiple=ctx.pad_multiple,
         )
         if grad_x.shape[0] != ctx.num_unpadded_tokens:
             grad_x = grad_x[: ctx.num_unpadded_tokens]
@@ -946,6 +953,7 @@ def _replay_hybrid_ep_dispatch_backward(
     grad_output,
     num_permuted_tokens,
     use_fp8_dispatch,
+    pad_multiple,
 ):
     replay_handle = handle
     if use_fp8_dispatch:
@@ -964,7 +972,7 @@ def _replay_hybrid_ep_dispatch_backward(
         hidden=grad_output.contiguous(),
         handle=replay_handle,
         num_permuted_tokens=num_permuted_tokens,
-        pad_multiple=FP8_ALIGN if use_fp8_dispatch else None,
+        pad_multiple=pad_multiple,
         non_blocking=False,
     )
     return grad_x[:num_permuted_tokens]
@@ -983,16 +991,18 @@ class HybridEPCombine(PyLayer):
             f"{x.shape[0]} rows but num_permuted_tokens is "
             f"{num_permuted_tokens}."
         )
-        use_fp8_dispatch = "UINT8" in str(handle[7].token_data_type)
+        use_fp8_dispatch = manager._dispatch_uses_fp8
+        pad_multiple = manager._dispatch_pad_multiple
         combined_x, _ = manager._active_buffer.combine_with_unpermute(
             hidden=x,
             handle=handle,
-            pad_multiple=FP8_ALIGN if use_fp8_dispatch else None,
+            pad_multiple=pad_multiple,
         )
         combined_x.stop_gradient = False
         ctx.buffer = manager._active_buffer
         ctx.handle = handle
         ctx.use_fp8_dispatch = use_fp8_dispatch
+        ctx.pad_multiple = pad_multiple
         ctx.num_permuted_tokens = num_permuted_tokens
         return combined_x
 
@@ -1003,7 +1013,8 @@ class HybridEPCombine(PyLayer):
             ctx.handle,
             grad_output,
             ctx.num_permuted_tokens,
-            ctx.use_fp8_dispatch,
+            use_fp8_dispatch=ctx.use_fp8_dispatch,
+            pad_multiple=ctx.pad_multiple,
         )
         return grad_x
 

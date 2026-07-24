@@ -287,11 +287,8 @@ class HyperConnectionModule(nn.Layer):
     def _init_weights(self) -> None:
         """Initialize weights for stable training."""
         # Xavier uniform for mapping projection.
-        # Use the model-parallel RNG tracker so that the initialization is
-        # controlled by PaddleFleet's RNG state (seeded once at model init)
-        # rather than the per-layer pipeline seed (base_seed + layer_index).
-        # This prevents layer_index shifts (e.g. from MTPEmbeddingLayer insertion
-        # in magic_send mode) from changing the weights.
+        # Use model-parallel RNG tracker to keep initialization deterministic
+        # regardless of layer_index shifts.
         if paddle.distributed.get_world_size() <= 1:
             nn.initializer.XavierUniform()(self.mapping_proj.weight)
         else:
@@ -801,9 +798,14 @@ class HyperConnectionContractLayer(FleetLayer):
             dict_args["mhc_multistream"] = hidden_states
 
             if self.magic_send:
-                # magic_send: hidden_states is pure backbone [B, S, n*H]
-                # Magic send: backbone processes only main sequence, no MTP chunks concatenated.
-                # Simply contract the entire tensor.
+                # Expand mhc_multistream to num_mtp+1 slots; zeros will be overwritten by MTP layers.
+                dict_args["mhc_multistream"] = paddle.concat(
+                    [hidden_states]
+                    + [
+                        paddle.zeros_like(hidden_states)
+                        for _ in range(self.num_mtp)
+                    ]
+                )
                 dict_args["hidden_states"] = (
                     HyperConnectionModule.learned_output_contract(
                         hidden_states,
@@ -829,7 +831,7 @@ class HyperConnectionContractLayer(FleetLayer):
                     self.config.rms_norm_eps,
                 )
 
-                # 为了后面MTP slice、取shape的时候兼容,原本也是expand过来的[[s,b,h]...]
+                # Expand to match expected layout [[s,b,h]...] for downstream MTP slicing
                 mtp_contracted = [
                     c[..., : c.shape[-1] // self.n] for c in chunks[1:]
                 ]

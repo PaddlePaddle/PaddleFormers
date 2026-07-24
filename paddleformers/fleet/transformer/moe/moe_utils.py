@@ -861,3 +861,24 @@ class AllGatherGroupOp(paddle.autograd.PyLayer):
         """
         paddle.distributed.barrier(ctx.group)
         return reduce_scatter_group(grad, group=ctx.group)
+
+
+class ReduceScatterGroupOp(paddle.autograd.PyLayer):
+    """
+    Perform group reduce-scatter (sum). Backward pass is an all-gather.
+
+    This is the dual of :class:`AllGatherGroupOp` and is used by the
+    'allgather' MoE token dispatcher to combine partial expert outputs along
+    the EP group: forward sums across EP ranks while scattering along the
+    leading (token) dimension; backward replicates the gradient via
+    all-gather.
+    """
+
+    @staticmethod
+    def forward(ctx, input, group=None):
+        ctx.group = group
+        return reduce_scatter_group(input, group=group)
+
+    @staticmethod
+    def backward(ctx, grad):
+        return all_gather_group(grad, group=ctx.group)

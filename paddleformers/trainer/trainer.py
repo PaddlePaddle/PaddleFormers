@@ -497,12 +497,28 @@ class Trainer:
                 model, PipelineLayer
             ), f"Only support pipeline parallel mode when model is PipelineLayer or PipelineLayer!!! but get {type(model.model)}"
         default_callbacks = DEFAULT_CALLBACKS.copy()
-        if getattr(self.args, "internal_medicine_monitors", ""):
+
+        _im_monitors = getattr(self.args, "internal_medicine_monitors", "")
+        _im_interval = getattr(self.args, "internal_medicine_monitor_interval", 0)
+        if _im_monitors:
+            if _im_interval is None:
+                raise ValueError(
+                    "internal_medicine_monitor_interval is None. Expected int "
+                    "(0 to disable monitoring, positive int for sampling interval). "
+                )
+            _im_interval = int(_im_interval)
+        else:
+            _im_interval = 0
+        if _im_monitors and _im_interval > 0:
+            _im_log_dir = (
+                getattr(self.args, "internal_medicine_log_dir", "") or getattr(self.args, "output_dir", "") or "."
+            )
             default_callbacks.append(
                 InternalMedicineCallback(
-                    monitors=self.args.internal_medicine_monitors,
-                    monitor_interval=self.args.internal_medicine_monitor_interval,
+                    monitors=_im_monitors,
+                    monitor_interval=_im_interval,
                     qk_row_stride=getattr(self.args, "internal_medicine_qk_row_stride", 1),
+                    log_dir=_im_log_dir,
                 )
             )
         default_callbacks += get_reporting_integration_callbacks(self.args.report_to)
@@ -3396,17 +3412,41 @@ class Trainer:
 
                 return apply_decay_param_fun
 
-            if self.optimizer_grouped_parameters is not None:
-                params = self.optimizer_grouped_parameters
-                # A plain list only customizes the trainable set, so it should still use the default decay filter.
-                # But dict may define per-group weight_decay explicitly, so do not override.
-                is_param_group_dict = (
-                    isinstance(params, (list, tuple)) and len(params) > 0 and isinstance(params[0], dict)
-                )
-                apply_decay_param_fun = None if is_param_group_dict else _build_apply_decay_param_fun()
+            if getattr(getattr(self.model, "config", None), "use_accuracy_compatible", False):
+                if self.optimizer_grouped_parameters is not None:
+                    params = self.optimizer_grouped_parameters
+                else:
+                    params = [p for p in self.model.parameters() if not p.stop_gradient]
+
+                # Align with Megatron: MG sets wd_mult=0 for all params with len(shape)==1 (norm/bias),
+                # i.e. no weight decay. When PF SFT/DPO passes a flat Parameter list via
+                # set_optimizer_grouped_parameters, the original logic set apply_decay_param_fun to None,
+                # causing norm/bias to also be weight-decayed. The fp32 master then drifts step by step
+                # from step1 (bf16 masks it until the weight md5 diverges at step4). Only keep None when
+                # params is already a dict list with weight_decay groups (the groups carry their own wd config).
+                if isinstance(params, (list, tuple)) and len(params) > 0 and isinstance(params[0], dict):
+                    apply_decay_param_fun = None
+                else:
+                    optimizer_param_ids = {id(p) for p in params}
+                    decay_parameters = {
+                        p.name
+                        for n, p in self.model.named_parameters()
+                        if id(p) in optimizer_param_ids and not p.stop_gradient and len(p.shape) > 1
+                    }
+
+                    def apply_decay_param_fun(x):
+                        return x in decay_parameters
+
             else:
-                params = [p for p in self.model.parameters() if not p.stop_gradient]
-                apply_decay_param_fun = _build_apply_decay_param_fun()
+                if self.optimizer_grouped_parameters is not None:
+                    params = self.optimizer_grouped_parameters
+                    is_param_group_dict = (
+                        isinstance(params, (list, tuple)) and len(params) > 0 and isinstance(params[0], dict)
+                    )
+                    apply_decay_param_fun = None if is_param_group_dict else _build_apply_decay_param_fun()
+                else:
+                    params = [p for p in self.model.parameters() if not p.stop_gradient]
+                    apply_decay_param_fun = _build_apply_decay_param_fun()
 
             optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
             if self.args.optim == OptimizerNames.ADAMW_CUSTOM:
@@ -4181,6 +4221,17 @@ class Trainer:
         with self.autocast_smart_context_manager():
             loss = model.forward_backward_pipeline(inputs, self.scaler if self.do_grad_scaling else None)
 
+        # MTP magic send: reset per-depth counters after each optimizer step
+        if getattr(self.args, "enable_mtp_magic_send", False):
+            try:
+                from paddlefleet.models.gpt.mtp_embedding_layer import (
+                    mtp_magic_instance,
+                )
+
+                mtp_magic_instance.clear_count_dict()
+            except (ImportError, ModuleNotFoundError):
+                pass
+
         return loss.detach()
 
     def save_model(
@@ -4675,7 +4726,7 @@ class Trainer:
                 json.dump(save_info, f)
 
         if self.args.enable_auto_parallel:
-            if self.args.save_to_hf:
+            if self.args.save_safetensors:
                 is_main_process = paddle.distributed.get_rank() == 0
                 self.model.save_pretrained(
                     output_dir,
@@ -4684,7 +4735,7 @@ class Trainer:
                     merge_tensor_parallel=merge_tensor_parallel,
                     is_main_process=is_main_process,
                     max_shard_size="1024GB",
-                    save_to_hf=True,
+                    save_safetensors=True,
                     enable_auto_parallel=True,
                     save_checkpoint_format=self.args.save_checkpoint_format,
                 )
@@ -4709,7 +4760,7 @@ class Trainer:
                 if not self.is_in_train:
                     self.args.unified_checkpoint_config = []
                 self.unified_checkpoint_handler.save_unified_checkpoint(
-                    self.model, self.optimizer, output_dir, signal_dir, save_to_hf=self.args.save_to_hf
+                    self.model, self.optimizer, output_dir, signal_dir, save_safetensors=self.args.save_safetensors
                 )
 
                 # recover unified_checkpoint_config for not trine stage
@@ -4751,7 +4802,7 @@ class Trainer:
                     merge_tensor_parallel=merge_tensor_parallel,
                     is_main_process=self.args.should_save,
                     max_shard_size="1024GB",
-                    save_to_hf=self.args.save_to_hf,
+                    save_safetensors=self.args.save_safetensors,
                     save_checkpoint_format=self.args.save_checkpoint_format,
                 )
             # TODO: @ZHUI unify unwrap_model(self.model) and self.model
@@ -4776,7 +4827,7 @@ class Trainer:
                             save_function=self._save_ckpt_func,
                             is_main_process=self.args.should_save,
                             max_shard_size="1024GB",
-                            save_to_hf=self.args.save_to_hf,
+                            save_safetensors=self.args.save_safetensors,
                             save_checkpoint_format=self.args.save_checkpoint_format,
                         )
                     else:
@@ -4787,7 +4838,7 @@ class Trainer:
                             save_function=self._save_ckpt_func,
                             is_main_process=self.args.should_save,
                             max_shard_size="1024GB",
-                            save_to_hf=self.args.save_to_hf,
+                            save_safetensors=self.args.save_safetensors,
                             save_checkpoint_format=self.args.save_checkpoint_format,
                         )
                 else:
@@ -4823,7 +4874,7 @@ class Trainer:
                         save_function=self._save_ckpt_func,
                         is_main_process=self.args.should_save,
                         max_shard_size="1024GB",
-                        save_to_hf=self.args.save_to_hf,
+                        save_safetensors=self.args.save_safetensors,
                         save_checkpoint_format=self.args.save_checkpoint_format,
                     )
                 else:
@@ -4834,7 +4885,7 @@ class Trainer:
                         save_function=self._save_ckpt_func,
                         is_main_process=self.args.should_save,
                         max_shard_size="1024GB",
-                        save_to_hf=self.args.save_to_hf,
+                        save_safetensors=self.args.save_safetensors,
                         save_checkpoint_format=self.args.save_checkpoint_format,
                     )
             if self.args.should_save_sharding_stage1_model:
@@ -5383,6 +5434,16 @@ class Trainer:
         if need_clear:
             if hasattr(model, "_p2p_helper"):
                 model._p2p_helper.clear_meta_cache()
+            # MTP magic send: reset counters after eval step (shared singleton with train)
+            if getattr(self.args, "enable_mtp_magic_send", False):
+                try:
+                    from paddlefleet.models.gpt.mtp_embedding_layer import (
+                        mtp_magic_instance,
+                    )
+
+                    mtp_magic_instance.clear_count_dict()
+                except (ImportError, ModuleNotFoundError):
+                    pass
 
         return (loss, None, labels)
 

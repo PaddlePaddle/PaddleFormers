@@ -440,8 +440,20 @@ class RecomputeWithoutOutputFunction(paddle.autograd.PyLayer):
             if ctx.share_grad_holder
             else contextlib.nullcontext()
         )
+        # Filter out None outputs and their corresponding grads
+        filtered = [
+            (o, g)
+            for o, g in zip(outputs, output_grads)
+            if o is not None and isinstance(o, paddle.Tensor)
+        ]
+        if filtered:
+            filtered_outputs, filtered_grads = zip(*filtered)
+        else:
+            filtered_outputs, filtered_grads = (), ()
         with paddle.amp.auto_cast(enable=False), share_grad_holder:
-            paddle.autograd.backward(outputs, output_grads)
+            paddle.autograd.backward(
+                list(filtered_outputs), list(filtered_grads)
+            )
         ctx.outputs = None
         ctx.inputs = None
         grads = tuple(
@@ -560,7 +572,8 @@ class RecomputeWithoutOutput:
             outputs = (outputs,)
 
         for stale_output, recomputed_output in zip(self.outputs, outputs):
-            recomputed_output._share_buffer_to(stale_output)
+            if stale_output is not None and recomputed_output is not None:
+                recomputed_output._share_buffer_to(stale_output)
 
         self.ctx.inputs = inputs
         self.ctx.outputs = outputs
@@ -571,7 +584,8 @@ class RecomputeWithoutOutput:
     def discard_output_and_register_recompute(self, hook_tensor):
         """Clear saved output data and register the recomputation hook on the target tensor."""
         for output in self.outputs:
-            output._clear_data()
+            if output is not None:
+                output._clear_data()
 
         if not hook_tensor.stop_gradient:
             hook_tensor.register_hook(self._recompute)
