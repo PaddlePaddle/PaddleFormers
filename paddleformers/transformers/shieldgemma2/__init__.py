@@ -20,10 +20,16 @@ from ...utils.lazy_import import _LazyModule
 import_structure = {
     "configuration": ["ShieldGemma2Config", "ShieldGemma2VisionConfig"],
     "modeling": ["ShieldGemma2ForImageClassification", "ShieldGemma2ImageClassifierOutputWithNoAttention"],
+    "processor": [
+        "DEFAULT_SHIELDGEMMA2_POLICIES",
+        "ShieldGemma2Processor",
+        "ShieldGemma2ProcessorKwargs",
+    ],
 }
 
 if TYPE_CHECKING:
     from .configuration import *
     from .modeling import *
+    from .processor import *
 else:
     sys.modules[__name__] = _LazyModule(__name__, globals()["__file__"], import_structure, module_spec=__spec__)

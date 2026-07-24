@@ -203,6 +203,11 @@ import_structure = {
         "ShieldGemma2ForImageClassification",
         "ShieldGemma2ImageClassifierOutputWithNoAttention",
     ],
+    "shieldgemma2.processor": [
+        "DEFAULT_SHIELDGEMMA2_POLICIES",
+        "ShieldGemma2Processor",
+        "ShieldGemma2ProcessorKwargs",
+    ],
     "kimi_k2.configuration": ["KimiK2Config"],
     "kimi_k2.modeling": ["KimiK2ForCausalLM", "KimiK2ForCausalLMPipe"],
     "kimi_k2.tokenizer": ["KimiK2TikTokenTokenizer"],

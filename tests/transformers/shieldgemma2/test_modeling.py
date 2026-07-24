@@ -19,6 +19,7 @@ import unittest
 import paddle
 
 from paddleformers.transformers import (
+    AutoModel,
     ShieldGemma2Config,
     ShieldGemma2ForImageClassification,
 )
@@ -81,6 +82,10 @@ class ShieldGemma2ModelTest(unittest.TestCase):
         self.assertIsInstance(loaded_config, ShieldGemma2Config)
         self.assertEqual(loaded_config.text_config.model_type, "gemma3_text")
         self.assertEqual(loaded_config.vision_config.model_type, "shieldgemma2_vision")
+
+    def test_auto_model_registration(self):
+        model = AutoModel.from_config(self.model_tester.get_config())
+        self.assertIsInstance(model, ShieldGemma2ForImageClassification)
 
     def test_model_forward(self):
         config, input_ids, pixel_values = self.model_tester.prepare_config_and_inputs()

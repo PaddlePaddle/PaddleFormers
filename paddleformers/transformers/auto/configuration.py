@@ -111,6 +111,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("granite", "Granite"),
         ("gemma3", "Gemma3ForConditionalGeneration"),
         ("gemma3_text", "Gemma3TextModel"),
+        ("shieldgemma2", "ShieldGemma2ForImageClassification"),
         ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
         ("qwen3_5", "Qwen3_5ForConditionalGeneration"),
         ("olmo2", "Olmo2ForCausalLM"),
