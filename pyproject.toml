@@ -46,7 +46,7 @@ dependencies = [
     "librosa",
     "binpacking",
     "orjson",
-    "paddlepaddle-gpu==3.4.0.post20260626+93ecba8dc6c",
+    "paddlepaddle-gpu==3.4.0.post20260723+6ec1dc38ef0",
 ]
 
 [project.optional-dependencies]
