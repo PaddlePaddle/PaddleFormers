@@ -25,6 +25,7 @@ from paddleformers.datasets.template.template import (
     GLM5ReasoningTemplate,
     ReasoningTemplate,
     Role,
+    TEMPLATES,
     Template,
     get_template_and_fix_tokenizer,
     register_template,
@@ -137,6 +138,23 @@ class TestTemplate(unittest.TestCase):
         """Test that registering a duplicate template raises ValueError."""
         with self.assertRaises(ValueError):
             register_template(name="default")  # already registered
+
+    def test_llama4_template_uses_official_header_tokens(self):
+        template = TEMPLATES["llama4"]
+        self.assertEqual(
+            template.format_user.apply(content="hello"),
+            [
+                (
+                    "<|header_start|>user<|header_end|>\n\nhello<|eot|>"
+                    "<|header_start|>assistant<|header_end|>\n\n"
+                )
+            ],
+        )
+        self.assertEqual(
+            template.format_system.apply(content="system"),
+            ["<|header_start|>system<|header_end|>\n\nsystem<|eot|>"],
+        )
+        self.assertEqual(template.suffix, ["<|eot|>"])
 
 
 class TestReasoningTemplate(unittest.TestCase):

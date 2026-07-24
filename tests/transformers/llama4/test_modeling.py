@@ -19,6 +19,7 @@ import unittest
 import numpy as np
 import paddle
 
+from paddleformers.cli.utils import get_lora_target_modules
 from paddleformers.transformers import (
     AutoModel,
     Llama4ForCausalLM,
@@ -218,6 +219,13 @@ class Llama4ModelTest(ModelTesterMixin, unittest.TestCase):
         config_dict["architectures"] = ["Llama4ForCausalLM"]
         inferred_model_class = AutoModel._get_model_class_from_config(None, None, config_dict)
         self.assertIs(inferred_model_class, Llama4TextModel)
+
+    def test_lora_target_modules(self):
+        model = Llama4ForCausalLM(self.model_tester.get_config())
+        target_modules = get_lora_target_modules(model)
+        self.assertIn(".*q_proj.*", target_modules)
+        self.assertIn(".*gate_proj.*", target_modules)
+        self.assertIn(".*down_proj.*", target_modules)
 
     def test_chunked_mask_uses_local_cache_and_left_padding(self):
         config = self.model_tester.get_config()
