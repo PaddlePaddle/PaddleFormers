@@ -2076,6 +2076,18 @@ class HFFormatFullParamSaver:
         return total_saved_size
 
 
+def get_lr_ratio_fn(optimizer):
+    opt = optimizer
+    visited = set()
+    while opt is not None and id(opt) not in visited:
+        visited.add(id(opt))
+        candidate = getattr(opt, "_lr_ratio", None)
+        if callable(candidate):
+            return candidate
+        opt = getattr(opt, "_inner_opt", None) or getattr(opt, "_optim", None)
+    return None
+
+
 def _is_muon_sharding_optimizer(optimizer):
     opt = optimizer
     while opt is not None:
@@ -2237,7 +2249,6 @@ class EMAStateAssembler:
         self.optimizer_name_suffix = optimizer_name_suffix
         self.model = model
         self.optimizer = optimizer
-        self.model_sharded_state_dict = self.model.sharded_state_dict()
         self.is_gpt_model = GPTModel is not None and isinstance(
             self.model, GPTModel
         )
@@ -2589,7 +2600,9 @@ class EMAStateAssembler:
 
         ema_sharded_state_dict = {}
 
-        for k, v in self.model_sharded_state_dict.items():
+        model_sharded_state_dict = self.model.sharded_state_dict()
+
+        for k, v in model_sharded_state_dict.items():
             if v.local_tensor.dtype == paddle.bfloat16:
                 ema_tensor = ema_params_recovered[self._rename(k, False)]
                 expected_shape = v.local_shape
@@ -2642,10 +2655,10 @@ class EMAStateAssembler:
             extra_params = ema_state_dict
 
         for k, v in extra_params.items():
-            assert k in self.model_sharded_state_dict, (
+            assert k in model_sharded_state_dict, (
                 f"[EMAStateAssembler] {k} not in model_sharded_state_dict"
             )
-            ref_tensor = self.model_sharded_state_dict[k]
+            ref_tensor = model_sharded_state_dict[k]
             expected_shape = ref_tensor.local_shape
             if "grouped_gemm_experts" in k:
                 v = paddle.reshape(v, expected_shape)
@@ -2653,8 +2666,7 @@ class EMAStateAssembler:
                 k, v, ref_tensor
             )
 
-        sharded_state_dict = self.model.sharded_state_dict()
-        for k, v in sharded_state_dict.items():
+        for k, v in model_sharded_state_dict.items():
             if v.local_tensor.stop_gradient and k not in ema_sharded_state_dict:
                 ema_sharded_state_dict[k] = v
         return ema_sharded_state_dict

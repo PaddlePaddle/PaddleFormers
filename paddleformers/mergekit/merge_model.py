@@ -960,7 +960,7 @@ class MergeModel:
                         tensor = tensor.cpu().numpy()
             merge_state_dict[k] = tensor
         if (
-            self.merge_config.save_to_hf
+            self.merge_config.save_safetensors
             and self.transpose_weight_keys is not None
         ):
             merge_state_dict = (
@@ -975,7 +975,7 @@ class MergeModel:
             merge_state_dict,
             save_file_name,
             metadata={"format": "pt"}
-            if self.merge_config.save_to_hf
+            if self.merge_config.save_safetensors
             else {"format": "np"},
         )
         logger.info(f"Model weights saved in {save_file_name}.")
@@ -1070,13 +1070,6 @@ class MergeModel:
                 )
                 local_keys = divided_key_list[rank]
                 shard_file = f"{self.merge_config.merge_prefix}-{rank + 1:05d}-of-{dist.get_world_size():05d}.safetensors"
-                self.shard_lora_merge(
-                    base_index,
-                    shard_file,
-                    lora_config,
-                    file_type_list,
-                    key_list=local_keys,
-                )
                 for i in range(len(divided_key_list)):
                     shard_file = f"{self.merge_config.merge_prefix}-{i + 1:05d}-of-{dist.get_world_size():05d}.safetensors"
                     for k in divided_key_list[i]:

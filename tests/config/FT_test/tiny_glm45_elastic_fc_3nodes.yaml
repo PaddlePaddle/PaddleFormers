@@ -70,7 +70,7 @@ tensorwise_offload_optimizer: false
 # offload_optim: false
 
 convert_from_hf: true
-save_to_hf: true
+save_safetensors: true
 replicate_saved_into_local: true
 amp_custom_white_list:
   - "lookup_table"

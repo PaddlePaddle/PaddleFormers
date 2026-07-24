@@ -59,20 +59,22 @@ __all__ = [
 ]
 
 
-def save_file_sync(state_dict, path, save_to_hf=False):
+def save_file_sync(state_dict, path, save_safetensors=False):
     state_dict, metadata = prepare_safe_save_state_dict(
-        state_dict, save_to_hf=save_to_hf
+        state_dict, save_safetensors=save_safetensors
     )
     safe_save_file(state_dict, path, metadata=metadata)
 
 
-def save_single_card_checkpoint(model_to_save, output_dir, save_to_hf=False):
+def save_single_card_checkpoint(
+    model_to_save, output_dir, save_safetensors=False
+):
     """Save checkpoint for non-distributed environment."""
 
     state_dict = get_expected_state_dict(
         model_to_save, concat_additional_adapter=True
     )
-    if save_to_hf:
+    if save_safetensors:
         transpose_weight_keys = getattr(
             model_to_save, "transpose_weight_keys", None
         )
@@ -110,10 +112,10 @@ def save_single_card_checkpoint(model_to_save, output_dir, save_to_hf=False):
     save_file_sync(
         state_dict,
         path=os.path.join(output_dir, weight_filename),
-        save_to_hf=save_to_hf,
+        save_safetensors=save_safetensors,
     )
 
-    save_model_config(model_to_save, output_dir, save_to_hf)
+    save_model_config(model_to_save, output_dir, save_safetensors)
 
 
 def save_single_card_optimizer(model, optimizer, output_dir):

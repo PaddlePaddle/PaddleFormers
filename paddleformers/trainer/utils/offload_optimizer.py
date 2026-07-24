@@ -92,33 +92,53 @@ def hack_offload_optimizer(mode=None):
 
     opt_type._insert_sync = new_insert_sync
 
-    # Step 4: mock Muon._muon_update and Muon._apply_optimize
-    # Muon's _muon_update is pure Python (paddle.lerp + paddle.assign),
+    # Step 4: mock Muon's momentum update and Muon._apply_optimize
+    # Muon's momentum update is pure Python (paddle.lerp + paddle.assign),
     # so it bypasses the _C_ops.adamw_ patch above. We need explicit
     # reload/offload for Muon's momentum_buffer and master_weights.
     try:
         from paddle.optimizer.muon import Muon
 
-        # 4a: Patch _muon_update — per-param momentum offload
-        # Note: _muon_update is an instance method, not a staticmethod.
-        # It requires self as the first argument.
-        origin_muon_update = Muon._muon_update
+        # 4a: Patch the Muon momentum update. Newer Paddle provides the
+        # batched _muon_update_group, while stable releases (e.g.
+        # release/3.3) still have the per-param _muon_update. Prefer
+        # patching _muon_update_group and fall back to _muon_update.
+        if hasattr(Muon, "_muon_update_group"):
+            # Batched momentum offload. _muon_update_group fetches
+            # momentum buffers internally via _get_accumulator, so reload
+            # them for every param in the group before the update and
+            # offload them back afterwards.
+            origin_muon_update_group = Muon._muon_update_group
 
-        def new_muon_update(
-            self,
-            param,
-            grad,
-            lr,
-            momentum_buffer,
-            momentum_beta,
-            ns_steps,
-            nesterov,
-            epsilon,
-            weight_decay,
-            version,
-        ):
-            reload(momentum_buffer)
-            ret = origin_muon_update(
+            def new_muon_update_group(
+                self, group_params_grads, *args, **kwargs
+            ):
+                for param, _ in group_params_grads:
+                    momentum_buffer = self._get_accumulator(
+                        self._moment_acc_str, param
+                    )
+                    reload(momentum_buffer)
+
+                ret = origin_muon_update_group(
+                    self, group_params_grads, *args, **kwargs
+                )
+
+                for param, _ in group_params_grads:
+                    is_offload_opt = getattr(param, "is_offload_opt", True)
+                    if is_offload_opt:
+                        momentum_buffer = self._get_accumulator(
+                            self._moment_acc_str, param
+                        )
+                        offload(momentum_buffer)
+                return ret
+
+            Muon._muon_update_group = new_muon_update_group
+        elif hasattr(Muon, "_muon_update"):
+            # Per-param momentum offload for older Paddle where
+            # _muon_update receives momentum_buffer as an argument.
+            origin_muon_update = Muon._muon_update
+
+            def new_muon_update(
                 self,
                 param,
                 grad,
@@ -130,13 +150,27 @@ def hack_offload_optimizer(mode=None):
                 epsilon,
                 weight_decay,
                 version,
-            )
-            is_offload_opt = getattr(param, "is_offload_opt", True)
-            if is_offload_opt:
-                offload(momentum_buffer)
-            return ret
+            ):
+                reload(momentum_buffer)
+                ret = origin_muon_update(
+                    self,
+                    param,
+                    grad,
+                    lr,
+                    momentum_buffer,
+                    momentum_beta,
+                    ns_steps,
+                    nesterov,
+                    epsilon,
+                    weight_decay,
+                    version,
+                )
+                is_offload_opt = getattr(param, "is_offload_opt", True)
+                if is_offload_opt:
+                    offload(momentum_buffer)
+                return ret
 
-        Muon._muon_update = new_muon_update
+            Muon._muon_update = new_muon_update
 
         # 4b: Patch _apply_optimize — reload/offload master_weights around Muon updates
         origin_muon_apply = Muon._apply_optimize
@@ -222,33 +256,53 @@ def hack_offload_optimizer_eb5():
 
     opt_type._insert_sync = new_insert_sync
 
-    # Step 4: mock Muon._muon_update and Muon._apply_optimize
-    # Muon's _muon_update is pure Python (paddle.lerp + paddle.assign),
+    # Step 4: mock Muon's momentum update and Muon._apply_optimize
+    # Muon's momentum update is pure Python (paddle.lerp + paddle.assign),
     # so it bypasses the _C_ops.adamw_ patch above. We need explicit
     # reload/offload for Muon's momentum_buffer and master_weights.
     try:
         from paddle.optimizer.muon import Muon
 
-        # 4a: Patch _muon_update — per-param momentum offload
-        # Note: _muon_update is an instance method, not a staticmethod.
-        # It requires self as the first argument.
-        origin_muon_update = Muon._muon_update
+        # 4a: Patch the Muon momentum update. Newer Paddle provides the
+        # batched _muon_update_group, while stable releases (e.g.
+        # release/3.3) still have the per-param _muon_update. Prefer
+        # patching _muon_update_group and fall back to _muon_update.
+        if hasattr(Muon, "_muon_update_group"):
+            # Batched momentum offload. _muon_update_group fetches
+            # momentum buffers internally via _get_accumulator, so reload
+            # them for every param in the group before the update and
+            # offload them back afterwards.
+            origin_muon_update_group = Muon._muon_update_group
 
-        def new_muon_update(
-            self,
-            param,
-            grad,
-            lr,
-            momentum_buffer,
-            momentum_beta,
-            ns_steps,
-            nesterov,
-            epsilon,
-            weight_decay,
-            version,
-        ):
-            reload(momentum_buffer)
-            ret = origin_muon_update(
+            def new_muon_update_group(
+                self, group_params_grads, *args, **kwargs
+            ):
+                for param, _ in group_params_grads:
+                    momentum_buffer = self._get_accumulator(
+                        self._moment_acc_str, param
+                    )
+                    reload(momentum_buffer)
+
+                ret = origin_muon_update_group(
+                    self, group_params_grads, *args, **kwargs
+                )
+
+                for param, _ in group_params_grads:
+                    is_offload_opt = getattr(param, "is_offload_opt", True)
+                    if is_offload_opt:
+                        momentum_buffer = self._get_accumulator(
+                            self._moment_acc_str, param
+                        )
+                        offload(momentum_buffer)
+                return ret
+
+            Muon._muon_update_group = new_muon_update_group
+        elif hasattr(Muon, "_muon_update"):
+            # Per-param momentum offload for older Paddle where
+            # _muon_update receives momentum_buffer as an argument.
+            origin_muon_update = Muon._muon_update
+
+            def new_muon_update(
                 self,
                 param,
                 grad,
@@ -260,13 +314,27 @@ def hack_offload_optimizer_eb5():
                 epsilon,
                 weight_decay,
                 version,
-            )
-            is_offload_opt = getattr(param, "is_offload_opt", True)
-            if is_offload_opt:
-                offload(momentum_buffer)
-            return ret
+            ):
+                reload(momentum_buffer)
+                ret = origin_muon_update(
+                    self,
+                    param,
+                    grad,
+                    lr,
+                    momentum_buffer,
+                    momentum_beta,
+                    ns_steps,
+                    nesterov,
+                    epsilon,
+                    weight_decay,
+                    version,
+                )
+                is_offload_opt = getattr(param, "is_offload_opt", True)
+                if is_offload_opt:
+                    offload(momentum_buffer)
+                return ret
 
-        Muon._muon_update = new_muon_update
+            Muon._muon_update = new_muon_update
 
         # 4b: Patch _apply_optimize — reload/offload master_weights around Muon updates
         origin_muon_apply = Muon._apply_optimize

@@ -83,7 +83,7 @@ def common_test_save_and_load(config_first, config_second, model_class):
     with tempfile.TemporaryDirectory() as tempdir:
         # test load pdparams: model.pdparams
         model_first.save_pretrained(
-            save_dir=tempdir, save_to_hf=False, save_checkpoint_format=""
+            save_dir=tempdir, save_safetensors=False, save_checkpoint_format=""
         )
         common_test_load(model_class, model_first, config_second, tempdir)
 
@@ -91,7 +91,7 @@ def common_test_save_and_load(config_first, config_second, model_class):
         model_first.save_pretrained(
             tempdir,
             max_shard_size="5MB",
-            save_to_hf=False,
+            save_safetensors=False,
             save_checkpoint_format="",
         )
         common_test_load(model_class, model_first, config_second, tempdir)
@@ -100,7 +100,7 @@ def common_test_save_and_load(config_first, config_second, model_class):
         model_first.save_pretrained(
             tempdir,
             safe_serialization=True,
-            save_to_hf=False,
+            save_safetensors=False,
             save_checkpoint_format="",
         )
         common_test_load(model_class, model_first, config_second, tempdir)
@@ -110,7 +110,7 @@ def common_test_save_and_load(config_first, config_second, model_class):
             tempdir,
             max_shard_size="5MB",
             safe_serialization=True,
-            save_to_hf=False,
+            save_safetensors=False,
             save_checkpoint_format="",
         )
         common_test_load(model_class, model_first, config_second, tempdir)

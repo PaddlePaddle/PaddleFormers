@@ -84,7 +84,7 @@ def trans_paddlenlp2hf():
         args.hf_model_path,
         max_shard_size=args.max_shard_size,
         save_checkpoint_format="flex_checkpoint",
-        save_to_hf=True,
+        save_safetensors=True,
     )
 
     # copy rest files

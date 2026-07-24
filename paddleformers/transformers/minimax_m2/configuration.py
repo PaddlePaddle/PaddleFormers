@@ -143,6 +143,15 @@ class MiniMaxM2Config(PretrainedConfig):
         use_routing_bias=True,
         moe_layer_freq=1,
         attn_type_list=None,
+        v_head_dim=None,
+        use_gated_attn=False,
+        use_vha_attention=False,
+        window_attn_skip_freq=None,
+        add_full_attention_sink_bias=False,
+        add_swa_attention_sink_bias=False,
+        experimental_attention_variant=None,
+        routed_scaling_factor_learnable=False,
+        moe_latent_size=None,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -196,6 +205,19 @@ class MiniMaxM2Config(PretrainedConfig):
         self.use_routing_bias = use_routing_bias
         self.moe_layer_freq = moe_layer_freq
         self.attn_type_list = attn_type_list
+
+        # Attention feature flags (MiniMax-M2 defaults to standard GQA attention).
+        # These mirror PaddleFleet TransformerConfig defaults and are read directly
+        # (non-getattr) in modeling._gen_aoa_config / _gen_inv_aoa_config.
+        self.v_head_dim = v_head_dim if v_head_dim is not None else head_dim
+        self.use_gated_attn = use_gated_attn
+        self.use_vha_attention = use_vha_attention
+        self.window_attn_skip_freq = window_attn_skip_freq
+        self.add_full_attention_sink_bias = add_full_attention_sink_bias
+        self.add_swa_attention_sink_bias = add_swa_attention_sink_bias
+        self.experimental_attention_variant = experimental_attention_variant
+        self.routed_scaling_factor_learnable = routed_scaling_factor_learnable
+        self.moe_latent_size = moe_latent_size
 
         self.pp_seg_method = pp_seg_method
         self.disable_ffn_model_parallel = disable_ffn_model_parallel

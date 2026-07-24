@@ -892,7 +892,7 @@ def is_sharding_split_param_mode(args):
     )
 
 
-def save_model_config(model_to_save, save_directory, save_to_hf=False):
+def save_model_config(model_to_save, save_directory, save_safetensors=False):
     """
     Save model config.
     """
@@ -924,7 +924,9 @@ def save_model_config(model_to_save, save_directory, save_to_hf=False):
             clean_model_class_name(model_to_save.__class__.__name__)
         ]
 
-    config_to_save.save_pretrained(save_directory, save_to_hf=save_to_hf)
+    config_to_save.save_pretrained(
+        save_directory, save_safetensors=save_safetensors
+    )
     # save generation config
     if model_to_save.can_generate():
         model_to_save.generation_config.save_pretrained(save_directory)

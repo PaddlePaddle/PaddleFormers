@@ -485,7 +485,7 @@ class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
     def test_inference_no_attention(self):
         model = LlamaModel.from_pretrained(
             "Paddleformers/tiny-random-llama",
-            save_to_hf=False,
+            save_safetensors=False,
             save_checkpoint_format="",
         )
         model.eval()
@@ -518,7 +518,7 @@ class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
         model = LlamaModel.from_pretrained(
             "Paddleformers/tiny-random-llama",
             download_hub="aistudio",
-            save_to_hf=False,
+            save_safetensors=False,
             save_checkpoint_format="",
         )
         model.eval()

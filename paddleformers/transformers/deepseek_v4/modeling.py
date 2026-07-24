@@ -95,30 +95,20 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         """
 
         def _ffn_gate_up(matrix, ortho_fn, intermediate_size=None):
-            """Slice FFN gate_up, orthogonalise gate and up independently."""
+            """Slice FFN gate_up, orthogonalise gate and up independently.
+
+            Handles both 2D (per-expert) and 3D (fused experts) weight tensors.
+            """
             import paddle
 
-            if matrix.ndim == 2:
-                gate, up = paddle.split(
-                    matrix, [intermediate_size, intermediate_size], axis=1
-                )
-                return paddle.concat([ortho_fn(gate), ortho_fn(up)], axis=1)
-            elif matrix.ndim == 3:
-                expert_updates = []
-                for ei in range(matrix.shape[0]):
-                    gate, up = paddle.split(
-                        matrix[ei],
-                        [intermediate_size, intermediate_size],
-                        axis=1,
-                    )
-                    expert_updates.append(
-                        paddle.concat([ortho_fn(gate), ortho_fn(up)], axis=1)
-                    )
-                return paddle.stack(expert_updates, axis=0)
-            else:
-                raise ValueError(
-                    f"FFN gate_up split expects 2D or 3D tensor, got shape {matrix.shape}"
-                )
+            assert matrix.ndim == 2 or matrix.ndim == 3, (
+                "FFN gate_up split expects 2D or 3D tensor"
+            )
+
+            gate, up = paddle.split(
+                matrix, [intermediate_size, intermediate_size], axis=-1
+            )
+            return paddle.concat([ortho_fn(gate), ortho_fn(up)], axis=-1)
 
         def _mla_per_head(
             matrix_2d_global,
@@ -141,17 +131,13 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
 
         def _moe_experts(matrix_3d_global, ortho_fn):
             """Slice MoE weights by experts."""
-            import paddle
 
             if matrix_3d_global.ndim != 3:
                 raise ValueError(
                     f"MoE expert split expects 3D tensor, got shape {matrix_3d_global.shape}"
                 )
-            n_experts = matrix_3d_global.shape[0]
-            return paddle.stack(
-                [ortho_fn(matrix_3d_global[ei]) for ei in range(n_experts)],
-                axis=0,
-            )
+
+            return ortho_fn(matrix_3d_global)
 
         slice_config = {}
 
@@ -166,6 +152,9 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         moe_grouped_gemm = getattr(config, "moe_grouped_gemm", False)
         use_gated_attn = getattr(config, "use_gated_attn", False)
         csa_compress_ratios = getattr(config, "csa_compress_ratios", None)
+        num_empty_layers_add_in_head = getattr(
+            config, "num_empty_layers_add_in_head", 0
+        )
 
         # Get Muon configuration from muon_configs
         muon_qkv_update_mode = muon_configs.get(
@@ -193,7 +182,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     mla_slice_fn,
                     {
                         "head_num": num_attention_head,
-                        "axis": 1,
+                        "axis": -1,
                     },
                 )
 
@@ -205,7 +194,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                         mla_slice_fn,
                         {
                             "head_num": 1,
-                            "axis": 1,
+                            "axis": -1,
                             "head_split_sizes": [
                                 config.v_head_dim,
                                 config.v_head_dim,
@@ -218,7 +207,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                         mla_slice_fn,
                         {
                             "head_num": 1,
-                            "axis": 1,
+                            "axis": -1,
                             "head_split_sizes": [
                                 config.v_head_dim,
                                 config.v_head_dim,
@@ -236,7 +225,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                         mla_slice_fn,
                         {
                             "head_num": config.dsa_index_n_heads,
-                            "axis": 1,
+                            "axis": -1,
                         },
                     )
                     # Compressed weights
@@ -246,7 +235,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                         mla_slice_fn,
                         {
                             "head_num": 1,
-                            "axis": 1,
+                            "axis": -1,
                             "head_split_sizes": [
                                 config.dsa_index_head_dim,
                                 config.dsa_index_head_dim,
@@ -259,7 +248,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                         mla_slice_fn,
                         {
                             "head_num": 1,
-                            "axis": 1,
+                            "axis": -1,
                             "head_split_sizes": [
                                 config.dsa_index_head_dim,
                                 config.dsa_index_head_dim,
@@ -334,7 +323,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     mla_slice_fn,
                     {
                         "head_num": num_attention_head,
-                        "axis": 1,
+                        "axis": -1,
                         "head_split_sizes": [
                             config.qk_nope_head_dim,
                             config.qk_rope_head_dim,
@@ -348,7 +337,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     mla_slice_fn,
                     {
                         "head_num": 1,
-                        "axis": 1,
+                        "axis": -1,
                         "head_split_sizes": [
                             config.kv_lora_rank,
                             config.qk_rope_head_dim,
@@ -360,7 +349,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     mla_slice_fn,
                     {
                         "head_num": num_attention_head,
-                        "axis": 1,
+                        "axis": -1,
                         "head_split_sizes": [
                             config.qk_nope_head_dim,
                             config.v_head_dim,
@@ -372,12 +361,15 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             if use_gated_attn and mla_slice_fn is not None:
                 slice_config[f"{prefix}.self_attn.gate_proj.weight"] = (
                     mla_slice_fn,
-                    {"head_num": num_attention_head, "axis": 1},
+                    {"head_num": num_attention_head, "axis": -1},
                 )
 
         # Main layers
         for layer_idx in range(num_hidden_layers):
-            _add_layer_slice_config(f"model.layers.{layer_idx}", layer_idx)
+            _add_layer_slice_config(
+                f"model.layers.{layer_idx + num_empty_layers_add_in_head}",
+                layer_idx,
+            )
 
         # MTP layers
         if config.mtp_num_layers > 0:
@@ -390,12 +382,12 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             )
         for layer_idx in range(num_nextn_predict_layers):
             _add_layer_slice_config(
-                f"model.layers.{num_hidden_layers + layer_idx}",
+                f"model.layers.{num_hidden_layers + num_empty_layers_add_in_head + layer_idx}",
                 num_hidden_layers + layer_idx,
             )
         for layer_idx in range(num_nextn_predict_layers):
             _add_layer_slice_config(
-                f"model.layers.{num_hidden_layers + layer_idx}.transformer_layer",
+                f"model.layers.{num_hidden_layers + num_empty_layers_add_in_head + layer_idx}.transformer_layer",
                 num_hidden_layers + layer_idx,
             )
 
@@ -494,6 +486,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         num_experts = config.n_routed_experts
         n_shared_experts = getattr(config, "n_shared_experts", 1)
         moe_n_hash_layers = getattr(config, "moe_n_hash_layers", 3)
+        dense_mode = getattr(config, "csa_dense_mode", False)
         csa_compress_ratios = config.csa_compress_ratios
         num_head_empty_layers = (
             config.num_empty_layers_add_in_head
@@ -501,7 +494,10 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             and config.num_empty_layers_add_in_head
             else 0
         )
-        mtp_num_layers = getattr(config, "num_nextn_predict_layers", 0)
+        if config.mtp_num_layers > 0:
+            mtp_num_layers = config.mtp_num_layers
+        else:
+            mtp_num_layers = getattr(config, "num_nextn_predict_layers", 0)
         # Note: num_hidden_layers in PaddleFormers config is the decoder layer count (NOT bumped by MTP).
         # MTP layers are appended AFTER the decoder layers, so MTP layer i is at index num_hidden_layers + i.
         num_decoder_layers = num_hidden_layers
@@ -513,8 +509,16 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             "embed.weight -> model.embedding.embed_tokens.weight",
             "norm.weight -> model.norm.weight",
         ]
-        if mtp_num_layers > 0:
-            stmts.append("embed.weight -> model.mtp_embedding.embed_tokens.weight")
+        if mtp_num_layers > 0 and getattr(
+            config, "enable_mtp_magic_send", False
+        ):
+            for mtp_i in range(mtp_num_layers):
+                mtp_embed_idx = (
+                    num_decoder_layers + num_head_empty_layers + mtp_i
+                )
+                stmts.append(
+                    f"embed.weight -> model.layers.{mtp_embed_idx}.mtp_embed.weight"
+                )
         if config.tie_word_embeddings:
             stmts += ["embed.weight -> model.lm_head.weight"]
         else:
@@ -607,7 +611,11 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ]
 
             # --- DSA Indexer (present on layers with compress_ratio > 0 and <= 4) ---
-            if csa_compress_ratios[L] > 0 and csa_compress_ratios[L] <= 4:
+            if (
+                csa_compress_ratios[L] > 0
+                and csa_compress_ratios[L] <= 4
+                and not dense_mode
+            ):
                 idx_src = f"{src}.attn.indexer"
                 idx_tgt = f"{tgt}.self_attn.core_attention.indexer"
                 stmts += [
@@ -753,7 +761,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     f"{comp_src}.wgate.weight^T -> {comp_tgt}.linear_wgate.weight",
                     f"{comp_src}.wkv.weight^T -> {comp_tgt}.linear_wkv.weight",
                 ]
-                if csa_compress_ratios[mtp_layer_idx] <= 4:
+                if csa_compress_ratios[mtp_layer_idx] <= 4 and not dense_mode:
                     idx_src = f"{mtp_src}.attn.indexer"
                     idx_tgt = f"{tl}.self_attn.core_attention.indexer"
                     stmts += [
@@ -818,6 +826,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         num_experts = config.n_routed_experts
         n_shared_experts = getattr(config, "n_shared_experts", 1)
         moe_n_hash_layers = getattr(config, "moe_n_hash_layers", 3)
+        dense_mode = getattr(config, "csa_dense_mode", False)
         csa_compress_ratios = config.csa_compress_ratios
         num_head_empty_layers = (
             config.num_empty_layers_add_in_head
@@ -825,7 +834,10 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             and config.num_empty_layers_add_in_head
             else 0
         )
-        mtp_num_layers = getattr(config, "num_nextn_predict_layers", 0)
+        if config.mtp_num_layers > 0:
+            mtp_num_layers = config.mtp_num_layers
+        else:
+            mtp_num_layers = getattr(config, "num_nextn_predict_layers", 0)
         # Note: num_hidden_layers in PaddleFormers config is the decoder layer count (NOT bumped by MTP).
         # MTP layers are appended AFTER the decoder layers, so MTP layer i is at index num_hidden_layers + i.
         num_decoder_layers = num_hidden_layers
@@ -837,8 +849,16 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             "model.embedding.embed_tokens.weight -> embed.weight",
             "model.norm.weight -> norm.weight",
         ]
-        if mtp_num_layers > 0:
-            stmts.append("model.mtp_embedding.embed_tokens.weight -> embed.weight")
+        if mtp_num_layers > 0 and getattr(
+            config, "enable_mtp_magic_send", False
+        ):
+            for mtp_i in range(mtp_num_layers):
+                mtp_embed_idx = (
+                    num_decoder_layers + num_head_empty_layers + mtp_i
+                )
+                stmts.append(
+                    f"model.layers.{mtp_embed_idx}.mtp_embed.weight -> embed.weight"
+                )
         if config.tie_word_embeddings:
             stmts += ["model.lm_head.weight -> _"]
         else:
@@ -938,7 +958,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     f"{comp_src}.linear_wgate.weight^T -> {comp_tgt}.wgate.weight",
                     f"{comp_src}.linear_wkv.weight^T -> {comp_tgt}.wkv.weight",
                 ]
-                if csa_compress_ratios[mtp_layer_idx] <= 4:
+                if csa_compress_ratios[mtp_layer_idx] <= 4 and not dense_mode:
                     idx_src = f"{tl}.self_attn.core_attention.indexer"
                     idx_tgt = f"{mtp_tgt}.attn.indexer"
                     stmts += [
@@ -1066,7 +1086,11 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ]
 
             # --- DSA Indexer (present on layers with compress_ratio > 0 and <= 4) ---
-            if csa_compress_ratios[L] > 0 and csa_compress_ratios[L] <= 4:
+            if (
+                csa_compress_ratios[L] > 0
+                and csa_compress_ratios[L] <= 4
+                and not dense_mode
+            ):
                 idx_src = f"{src}.self_attn.core_attention.indexer"
                 idx_tgt = f"{tgt}.attn.indexer"
                 stmts += [

@@ -1439,7 +1439,7 @@ class TrainingArguments:
         default=True,
         metadata={"help": "Load model from HuggingFace safetensors."},
     )
-    save_to_hf: bool | None = field(
+    save_safetensors: bool | None = field(
         default=True,
         metadata={"help": "Save model to HuggingFace safetensors."},
     )

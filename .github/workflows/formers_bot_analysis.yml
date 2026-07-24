@@ -221,6 +221,20 @@ jobs:
         run: |
           python3 - <<'PYEOF'
           import json, os, urllib.request, urllib.error, sys
+      - name: Post or update PR comment
+        # 定时触发时无 PR，跳过评论；schedule 仅写 Summary
+        if: always() && needs.check-and-collect.outputs.is_schedule == 'false'
+        id: post_comment # ← 加 id，供下一步读 output
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ needs.check-and-collect.outputs.pr_number }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RESULT_FILE: /tmp/bot_results/bot_result_paddleformers_${{ env.TASK_ID }}.md
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, urllib.request, urllib.error, sys
 
           token       = os.environ['BOT_TOKEN']
           repo        = os.environ['REPO']
@@ -293,12 +307,6 @@ jobs:
               with open(gh_output, "a") as f:
                   f.write(f"comment_id={comment_id}\n")
           PYEOF
-      - name: Skip GitHub PR comment
-        id: post_comment
-        if: always()
-        run: |
-          echo "comment_id=" >> "$GITHUB_OUTPUT"
-          echo "Skip posting bot analysis to GitHub PR comments."
       - name: Report to monitor
         # 无论评论是否成功都上报，comment_id 可能为空（schedule 场景）
         if: always()

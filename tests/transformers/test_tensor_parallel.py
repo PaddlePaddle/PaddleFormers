@@ -82,7 +82,7 @@ def common_test_merge(model, model_class=None):
             save_dir=tempdir,
             merge_tensor_parallel=True,
             is_main_process=is_main_process,
-            save_to_hf=False,
+            save_safetensors=False,
             save_checkpoint_format="",
         )
         common_test_load(model_class, tempdir)
@@ -93,7 +93,7 @@ def common_test_merge(model, model_class=None):
             variant=f"tp{rank:0>2d}",
             max_shard_size="5MB",
             is_main_process=is_main_process,
-            save_to_hf=False,
+            save_safetensors=False,
             save_checkpoint_format="",
         )
         common_test_load(model_class, tempdir)
@@ -102,7 +102,7 @@ def common_test_merge(model, model_class=None):
             tempdir,
             max_shard_size="5MB",
             is_main_process=is_main_process,
-            save_to_hf=False,
+            save_safetensors=False,
             save_checkpoint_format="",
         )
         common_test_load(model_class, tempdir)
@@ -112,7 +112,7 @@ def common_test_merge(model, model_class=None):
             max_shard_size="5MB",
             safe_serialization=True,
             is_main_process=is_main_process,
-            save_to_hf=False,
+            save_safetensors=False,
             save_checkpoint_format="",
         )
         common_test_load(model_class, tempdir)
@@ -121,7 +121,7 @@ def common_test_merge(model, model_class=None):
             tempdir,
             safe_serialization=True,
             is_main_process=is_main_process,
-            save_to_hf=False,
+            save_safetensors=False,
             save_checkpoint_format="",
         )
         common_test_load(model_class, tempdir)

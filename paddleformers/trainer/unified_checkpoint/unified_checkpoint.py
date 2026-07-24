@@ -98,7 +98,12 @@ class UnifiedCheckpointHandler:
         self.async_handler = AsyncCheckpointHandler(args)
 
     def save_unified_checkpoint(
-        self, model, optimizer, output_dir, signal_dir=None, save_to_hf=False
+        self,
+        model,
+        optimizer,
+        output_dir,
+        signal_dir=None,
+        save_safetensors=False,
     ):
         """save unified checkpoint
 
@@ -124,7 +129,7 @@ class UnifiedCheckpointHandler:
         # Under non distributed environment.
         if paddle.distributed.get_world_size() <= 1:
             save_single_card_checkpoint(
-                model_to_save, output_dir, save_to_hf=save_to_hf
+                model_to_save, output_dir, save_safetensors=save_safetensors
             )
             return
 
@@ -155,7 +160,7 @@ class UnifiedCheckpointHandler:
                     self.args,
                     model_to_save,
                     safe_serialization=True,
-                    save_to_hf=save_to_hf,
+                    save_safetensors=save_safetensors,
                 )
             )
             is_sync_save = True
@@ -167,7 +172,7 @@ class UnifiedCheckpointHandler:
                 signal_path=signal_dir,
                 is_sync=is_sync_save,
                 state_dict_type="model_weight",
-                save_to_hf=save_to_hf,
+                save_safetensors=save_safetensors,
             )
             if sharded_index is not None:
                 if isinstance(model_to_save, LoRAModel):
@@ -181,7 +186,7 @@ class UnifiedCheckpointHandler:
                         json.dump(sharded_index, f, indent=4)
 
         if self.args.should_save:
-            save_model_config(model_to_save, save_directory, save_to_hf)
+            save_model_config(model_to_save, save_directory, save_safetensors)
 
         empty_device_cache()
 
@@ -767,7 +772,7 @@ def unified_checkpoint_into_shards(
     args,
     model_to_save,
     safe_serialization=False,
-    save_to_hf=False,
+    save_safetensors=False,
 ):
     """Get state_dict and config to save
 
@@ -812,7 +817,7 @@ def unified_checkpoint_into_shards(
             state_dict, tp_actions, all_filter_keys
         )
 
-    if save_to_hf:
+    if save_safetensors:
         transpose_weight_keys = getattr(
             model_to_save, "transpose_weight_keys", None
         )

@@ -68,7 +68,7 @@ fp16_opt_level: O2
 # checkpoint
 save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint
-save_to_hf: true
+save_safetensors: true
 # dataloader
 dataloader_num_workers: 4
 prefetch_factor: 4

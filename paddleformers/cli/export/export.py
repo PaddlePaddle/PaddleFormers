@@ -142,7 +142,7 @@ def run_export(args: Optional[dict[str, Any]] = None) -> None:
             finetuning_args.output_dir, "export"
         )
         config["convert_from_hf"] = finetuning_args.convert_from_hf
-        config["save_to_hf"] = finetuning_args.save_to_hf
+        config["save_safetensors"] = finetuning_args.save_safetensors
         config["merge_with_qdq_base_model"] = (
             finetuning_args.merge_with_qdq_base_model
         )

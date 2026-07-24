@@ -56,6 +56,7 @@ PROCESSOR_MAPPING_NAMES = OrderedDict(
         ("ernie4_5_moe_vl", "Ernie4_5_VLProcessor"),
         ("glm4v_moe", "Glm4vProcessor"),
         ("glm_ocr", "Glm46VProcessor"),
+        ("paligemma2", "PaliGemmaProcessor"),
     ]
 )
 

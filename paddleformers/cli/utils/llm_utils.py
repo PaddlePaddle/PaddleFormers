@@ -87,7 +87,7 @@ def get_lora_target_modules(model):
             ".*dense_h_to_4h.*",
             ".*dense_4h_to_h.*",
         ]
-    elif model.config.model_type in ["llama", "jamba"]:
+    elif model.config.model_type in ["llama", "jamba", "olmo2"]:
         target_modules = [
             ".*q_proj.*",
             ".*v_proj.*",
@@ -298,12 +298,34 @@ def get_lora_target_modules(model):
             ".*up_proj.*",
             ".*down_proj.*",
         ]
+    elif model.config.model_type == "granite":
+        target_modules = [
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
+        ]
     elif model.config.model_type == "gemma3_text":
         target_modules = [
             ".*q_proj.*",
             ".*k_proj.*",
             ".*v_proj.*",
             ".*o_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
+        ]
+    elif model.config.model_type == "minicpm":
+        target_modules = [
+            ".*qkv_proj.*",
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*up_gate_proj.*",
             ".*gate_proj.*",
             ".*up_proj.*",
             ".*down_proj.*",
@@ -391,6 +413,14 @@ def get_lora_target_modules(model):
             ".*gate_up_proj.*",
             ".*down_proj.*",
         ]
+    elif model.config.model_type in ("phi4", "phi4flash"):
+        # phi4flash: hybrid decoder (Mamba SSM + Attention), only attention layers have Wqkv/out_proj
+        target_modules = [
+            ".*attn.Wqkv.*",
+            ".*attn.out_proj.*",
+            ".*mlp.fc1.*",
+            ".*mlp.fc2.*",
+        ]
     elif model.config.model_type == "glm4v_moe":
         target_modules = [
             # language_model
@@ -429,6 +459,17 @@ def get_lora_target_modules(model):
             "model.visual.blocks.*mlp.gate_proj.*",
             "model.visual.blocks.*mlp.up_proj.*",
             "model.visual.blocks.*mlp.down_proj.*",
+        ]
+    elif model.config.model_type == "internlm2":
+        # Covers both InternLM2 2.0 and 2.5: both route through the unified
+        # `intern/` proxy with `model_type = "internlm2"` and share the same
+        # weight key names (wqkv/wo/w1/w2/w3).
+        target_modules = [
+            ".*wqkv.*",
+            ".*wo.*",
+            ".*w1.*",
+            ".*w2.*",
+            ".*w3.*",
         ]
     else:
         raise ValueError(

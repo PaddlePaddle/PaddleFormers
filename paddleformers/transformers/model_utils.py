@@ -690,7 +690,7 @@ def load_state_dict(
     return state_dict
 
 
-def prepare_safe_save_state_dict(state_dict, save_to_hf=True):
+def prepare_safe_save_state_dict(state_dict, save_safetensors=True):
     for k in list(state_dict.keys()):
         if isinstance(state_dict[k], paddle.Tensor):
             if state_dict[k].dtype == paddle.bfloat16:
@@ -703,7 +703,7 @@ def prepare_safe_save_state_dict(state_dict, save_to_hf=True):
                 )
             else:
                 state_dict[k] = state_dict.pop(k).cpu().numpy()
-    metadata = {"format": "pt"} if save_to_hf else {"format": "np"}
+    metadata = {"format": "pt"} if save_safetensors else {"format": "np"}
     return state_dict, metadata
 
 
@@ -3705,7 +3705,12 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         )  # support naive pipeline
         # variant = kwargs.get("variant", None)
         # is_main_process = kwargs.get("is_main_process", True)
-        save_to_hf = kwargs.get("save_to_hf", True)
+        if "save_to_hf" in kwargs:
+            raise ValueError(
+                "The parameter `save_to_hf` has been renamed to `save_safetensors`. "
+                "Please update your code or config accordingly."
+            )
+        save_safetensors = kwargs.get("save_safetensors", True)
 
         save_checkpoint_format = kwargs.get(
             "save_checkpoint_format", "flex_checkpoint"
@@ -3718,7 +3723,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             # use flex_checkpoint as the default format in auto_parallel
             save_checkpoint_format = "flex_checkpoint"
 
-        safe_serialization = safe_serialization or save_to_hf
+        safe_serialization = safe_serialization or save_safetensors
 
         using_sonic_moe = self.config.using_sonic_moe
 
@@ -3814,7 +3819,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 ):
                     # hacking for FastDeploy to deploy paddle series model
                     config_to_save.save_pretrained(
-                        save_directory, save_to_hf=True
+                        save_directory, save_safetensors=True
                     )
                 else:
                     config_to_save.save_pretrained(save_directory)
@@ -3880,7 +3885,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             config_to_save.architectures = [
                 clean_model_class_name(model_to_save.__class__.__name__)
             ]
-        if not save_to_hf:
+        if not save_safetensors:
             config_to_save.source = "paddle"
         # Save the config
         if is_main_process:
@@ -3924,7 +3929,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             state_dict = original_state_dict
 
         # convert to fit HF torch weights
-        if save_to_hf:
+        if save_safetensors:
             state_dict = self.convert_transpose_selected_weights(
                 state_dict, self.transpose_weight_keys
             )
@@ -3967,7 +3972,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 # At some point we will need to deal better with save_function (used for TPU and other distributed
                 # joyfulness), but for now this enough.
                 shard, metadata = prepare_safe_save_state_dict(
-                    shard, save_to_hf=save_to_hf
+                    shard, save_safetensors=save_safetensors
                 )
                 safe_save_file(
                     shard,

@@ -53,7 +53,7 @@ class AutoModelTest(unittest.TestCase):
     def test_from_pretrained_local(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             self.model.save_pretrained(
-                tmp_dir, save_to_hf=False, save_checkpoint_format=""
+                tmp_dir, save_safetensors=False, save_checkpoint_format=""
             )
             model = AutoModel.from_pretrained(
                 tmp_dir, convert_from_hf=False, load_checkpoint_format=""
@@ -66,7 +66,9 @@ class AutoModelTest(unittest.TestCase):
             # when init_class is not found, we rely on the filename to get the import class
             model_save_path = os.path.join(tmp_dir, "tiny-random-llama")
             model.save_pretrained(
-                model_save_path, save_to_hf=False, save_checkpoint_format=""
+                model_save_path,
+                save_safetensors=False,
+                save_checkpoint_format="",
             )
             config = model.config.to_dict()
             config.pop("architectures")
@@ -168,7 +170,9 @@ class AutoModelTest(unittest.TestCase):
 
                     with tempfile.TemporaryDirectory() as tmp_dir:
                         model.save_pretrained(
-                            tmp_dir, save_to_hf=False, save_checkpoint_format=""
+                            tmp_dir,
+                            save_safetensors=False,
+                            save_checkpoint_format="",
                         )
                         new_model = auto_class.from_pretrained(
                             tmp_dir,
