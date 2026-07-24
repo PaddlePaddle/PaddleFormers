@@ -27,6 +27,7 @@ sys.path.insert(
 import unittest
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import paddle
 
 
@@ -919,6 +920,130 @@ class TestLinearWithGradAccumulationFunc(unittest.TestCase):
                 async_grad_allreduce=True,
             )
             self.assertTrue(len(w) > 0)
+
+
+class TestLinearWithGradAccumUseAccuracyCompatible(unittest.TestCase):
+    """Tests for the use_accuracy_compatible branch in
+    LinearWithGradAccumulationAndAsyncCommunication.forward (no-bias path)."""
+
+    def _run(self, use_accuracy_compatible, input_tensor, weight):
+        from paddleformers.fleet.tensor_parallel.layers import (
+            LinearWithGradAccumulationAndAsyncCommunication,
+        )
+
+        mock_group = _make_mock_group(world_size=1)
+        return LinearWithGradAccumulationAndAsyncCommunication.apply(
+            input_tensor,
+            weight,
+            None,  # bias -> exercises the matmul / F.linear branch
+            False,  # gradient_accumulation_fusion
+            False,  # allreduce_dgrad
+            False,  # sequence_parallel
+            None,  # grad_output_buffer
+            0,  # wgrad_deferral_limit
+            mock_group,  # tp_group
+            use_accuracy_compatible,  # use_accuracy_compatible
+        )
+
+    def test_accuracy_compatible_true_matches_default(self):
+        """F.linear (compatible) and matmul (default) must give the same
+        result for the no-bias forward."""
+        paddle.seed(2026)
+        input_tensor = paddle.randn([4, 8], dtype=paddle.float32)
+        weight = paddle.randn([8, 16], dtype=paddle.float32)
+
+        out_compat = self._run(True, input_tensor, weight)
+        out_default = self._run(False, input_tensor, weight)
+
+        self.assertEqual(out_compat.shape, [4, 16])
+        np.testing.assert_allclose(
+            out_compat.numpy(),
+            out_default.numpy(),
+            rtol=1e-6,
+            atol=1e-6,
+        )
+
+    def test_accuracy_compatible_matches_reference_linear(self):
+        """The compatible branch must equal paddle.nn.functional.linear."""
+        paddle.seed(0)
+        input_tensor = paddle.randn([3, 8], dtype=paddle.float32)
+        weight = paddle.randn([8, 5], dtype=paddle.float32)
+
+        out_compat = self._run(True, input_tensor, weight)
+        ref = paddle.nn.functional.linear(input_tensor, weight)
+        np.testing.assert_allclose(
+            out_compat.numpy(), ref.numpy(), rtol=1e-6, atol=1e-6
+        )
+
+    def test_default_flag_is_matmul(self):
+        """When the flag is omitted it defaults to False (matmul branch)."""
+        from paddleformers.fleet.tensor_parallel.layers import (
+            LinearWithGradAccumulationAndAsyncCommunication,
+        )
+
+        mock_group = _make_mock_group(world_size=1)
+        input_tensor = paddle.randn([2, 8], dtype=paddle.float32)
+        weight = paddle.randn([8, 4], dtype=paddle.float32)
+
+        # No use_accuracy_compatible argument -> defaults to False.
+        out = LinearWithGradAccumulationAndAsyncCommunication.apply(
+            input_tensor,
+            weight,
+            None,
+            False,
+            False,
+            False,
+            None,
+            0,
+            mock_group,
+        )
+        ref = paddle.matmul(input_tensor, weight)
+        np.testing.assert_allclose(
+            out.numpy(), ref.numpy(), rtol=1e-6, atol=1e-6
+        )
+
+    def test_wrapper_passes_flag_through(self):
+        """linear_with_grad_accumulation_and_async_allreduce forwards
+        use_accuracy_compatible into the forward and gives a valid result."""
+        from paddleformers.fleet.tensor_parallel.layers import (
+            linear_with_grad_accumulation_and_async_allreduce,
+        )
+
+        paddle.seed(7)
+        input_tensor = paddle.randn([4, 8], dtype=paddle.float32)
+        weight = paddle.randn([8, 16], dtype=paddle.float32)
+
+        out = linear_with_grad_accumulation_and_async_allreduce(
+            input_tensor,
+            weight,
+            None,
+            gradient_accumulation_fusion=False,
+            allreduce_dgrad=False,
+            sequence_parallel=False,
+            tp_group=None,
+            use_accuracy_compatible=True,
+        )
+        ref = paddle.nn.functional.linear(input_tensor, weight)
+        self.assertEqual(out.shape, [4, 16])
+        np.testing.assert_allclose(
+            out.numpy(), ref.numpy(), rtol=1e-6, atol=1e-6
+        )
+
+    def test_compatible_backward_grads(self):
+        """Gradients must flow through the F.linear (compatible) branch."""
+        paddle.seed(11)
+        input_tensor = paddle.randn([4, 8], dtype=paddle.float32)
+        input_tensor.stop_gradient = False
+        weight = paddle.randn([8, 16], dtype=paddle.float32)
+        weight.stop_gradient = False
+
+        out = self._run(True, input_tensor, weight)
+        out.sum().backward()
+
+        self.assertIsNotNone(input_tensor.grad)
+        self.assertIsNotNone(weight.grad)
+        self.assertEqual(input_tensor.grad.shape, [4, 8])
+        self.assertEqual(weight.grad.shape, [8, 16])
 
 
 class TestGradAccumFusionAvailable(unittest.TestCase):

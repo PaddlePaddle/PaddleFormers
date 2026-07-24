@@ -81,9 +81,11 @@ class TestCpFlashmaskBackwardDispatch(unittest.TestCase):
                 out,
                 lse,
                 out_grad,
+                None,
                 group,
                 False,
                 config.fa_version,
+                None,  # softmax_scale
             )
 
         return mock_v2_grad
@@ -132,6 +134,7 @@ class TestFlashMaskAttnFunctorBackwardDispatch(unittest.TestCase):
 
         mock_ctx = MagicMock()
         mock_ctx.fa_version = 3
+        mock_ctx.sink_requires_grad = False
         mock_ctx.saved_tensor.return_value = (q, k, v, indices, out, lse, False)
 
         mock_v2_grad = MagicMock(return_value=(dummy, dummy, dummy))
@@ -183,7 +186,7 @@ class TestRefinedRecomputeFirstFwdDispatch(unittest.TestCase):
         create=True,
     )
     @patch(
-        "paddleformers.fleet.refined_recompute.flash_attn._get_fa_version",
+        "paddleformers.fleet.refined_recompute.flash_attn.get_fa_version",
         return_value=3,
     )
     @patch("paddleformers.fleet.refined_recompute.flash_attn.inspect.signature")

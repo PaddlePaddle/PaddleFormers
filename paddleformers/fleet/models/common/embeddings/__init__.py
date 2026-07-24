@@ -12,10 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from .gemma4_rotary_pos_embedding import (
+    DualRoPEOutput as DualRoPEOutput,
+    Gemma4DualRotaryEmbedding as Gemma4DualRotaryEmbedding,
+    Gemma4ProportionalRotaryEmbedding as Gemma4ProportionalRotaryEmbedding,
+)
 from .language_model_embedding import (
+    Gemma4Embedding as Gemma4Embedding,
     LanguageModelEmbedding as LanguageModelEmbedding,
 )
-from .rope_utils import apply_rotary_pos_emb as apply_rotary_pos_emb
+from .rope_utils import (
+    apply_rotary_pos_emb as apply_rotary_pos_emb,
+)
 from .rotary_pos_embedding import (
     MultimodalRotaryEmbedding as MultimodalRotaryEmbedding,
     Rope2DPosEmbRepeated as Rope2DPosEmbRepeated,

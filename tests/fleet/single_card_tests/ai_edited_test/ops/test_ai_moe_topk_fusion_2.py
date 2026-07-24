@@ -24,6 +24,7 @@ sys.path.insert(
     ),
 )
 
+import numpy as np
 import paddle
 
 try:
@@ -63,7 +64,12 @@ class TestMoETopkFusionCuda(unittest.TestCase):
         self.assertEqual(topk_probs.shape, [2, 2])
         self.assertEqual(topk_indices.dtype, paddle.int64)
         self.assertEqual(topk_indices.numpy().tolist(), [[1, 3], [2, 0]])
-        self.assertEqual(topk_probs.numpy().tolist(), [[0.9, 0.7], [0.8, 0.5]])
+        np.testing.assert_allclose(
+            topk_probs.numpy(),
+            [[0.9, 0.7], [0.8, 0.5]],
+            rtol=1e-6,
+            atol=1e-6,
+        )
 
     def test_forward_normalizes_selected_gate_probs(self):
         gate_probs = paddle.to_tensor(
@@ -92,7 +98,12 @@ class TestMoETopkFusionCuda(unittest.TestCase):
         )
 
         self.assertEqual(topk_indices.numpy().tolist(), [[0, 1]])
-        self.assertEqual(topk_probs.numpy().tolist(), [[0.0, 0.1]])
+        np.testing.assert_allclose(
+            topk_probs.numpy(),
+            [[0.0, 0.1]],
+            rtol=1e-6,
+            atol=1e-6,
+        )
 
     def test_backward_scatter_gradients_to_selected_experts(self):
         gate_probs = paddle.to_tensor(

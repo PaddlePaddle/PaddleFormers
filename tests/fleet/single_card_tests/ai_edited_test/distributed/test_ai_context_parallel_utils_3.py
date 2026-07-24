@@ -24,7 +24,7 @@ sys.path.insert(
 )
 
 
-# Tests for src/paddleformers.fleet/context_parallel_utils.py
+# Tests for paddleformers/fleet/context_parallel_utils.py
 # Test FlashMaskContextParallel, flashmask_attention_cp, preprocess_index
 
 import unittest
@@ -216,21 +216,26 @@ class TestFlashMaskContextParallelBackward(unittest.TestCase):
         mock_ctx.group = mock.MagicMock()
         mock_ctx.causal = False
         mock_ctx.fa_version = 2
+        mock_ctx.softmax_scale = None
+        mock_ctx.mode = "dualchunk_allgather"
 
         grad = paddle.randn([2, 8, 4, 16])
 
         with mock.patch(
             "paddleformers.fleet.context_parallel_utils.cp_flashmask_allgatherkv_balance_backward",
-            return_value=(grad, grad, grad),
+            return_value=(grad, grad, grad, None),
         ) as mock_bwd:
             result = FlashMaskContextParallel.backward(mock_ctx, grad)
             mock_bwd.assert_called_once()
             call_args = mock_bwd.call_args[0]
-            # First args are tensors (query/key/value); fa_version is the last arg.
+            # First args are tensors (query/key/value); tail args are
+            # fa_version, softmax_scale, mode.
             self.assertIs(call_args[0], query)
             self.assertIs(call_args[1], key)
             self.assertIs(call_args[2], value)
-            self.assertEqual(call_args[-1], mock_ctx.fa_version)
+            self.assertEqual(call_args[-3], mock_ctx.fa_version)
+            self.assertEqual(call_args[-2], mock_ctx.softmax_scale)
+            self.assertEqual(call_args[-1], mock_ctx.mode)
 
 
 class TestFlashmaskAttentionCP(unittest.TestCase):
@@ -354,14 +359,17 @@ class TestPreprocessIndexDualChunks(unittest.TestCase):
 
 
 class TestCpFlashmaskForwardDeterministicOverride(unittest.TestCase):
-    """Tests covering the deterministic fa_version override in
-    cp_flashmask_allgatherkv_balance_forward (lines around 595-609).
+    """Tests covering the fa_version selection in
+    cp_flashmask_allgatherkv_balance_forward, which now delegates to
+    ``flash_mask_facade.get_fa_version``.
 
-    Four branches are covered:
-      A) block_mask in signature, deterministic + hdim>128 -> override to 2
-      B) block_mask in signature, deterministic but hdim<=128 -> no override
-      C) block_mask NOT in signature, deterministic -> override to 2
-      D) block_mask NOT in signature, no deterministic -> no override
+    Under FA3, deterministic mode only falls back to FA2 when head_dim > 128;
+    the ``block_mask`` signature no longer affects the decision.
+
+      A) deterministic + hdim>128 -> override to 2
+      B) deterministic + hdim<=128 -> no override (stays 3)
+      C) deterministic + small hdim -> no override (stays 3)
+      D) no deterministic -> no override (stays 3)
     """
 
     def _run_forward(self, *, has_block_mask, deterministic, hdim, fa_flag=3):
@@ -389,9 +397,9 @@ class TestCpFlashmaskForwardDeterministicOverride(unittest.TestCase):
                 return_softmax_lse=False,
                 training=False,
                 block_mask=None,
+                softmax_scale=None,
             ):
                 return paddle.zeros_like(q), paddle.zeros([1, 1, 4])
-
         else:
 
             def fake_flashmask(
@@ -402,6 +410,7 @@ class TestCpFlashmaskForwardDeterministicOverride(unittest.TestCase):
                 causal=False,
                 return_softmax_lse=False,
                 training=False,
+                softmax_scale=None,
             ):
                 return paddle.zeros_like(q), paddle.zeros([1, 1, 4])
 
@@ -424,37 +433,82 @@ class TestCpFlashmaskForwardDeterministicOverride(unittest.TestCase):
             mock.patch.object(paddle, "get_flags", return_value=flags_det),
         ):
             out = cpu.cp_flashmask_allgatherkv_balance_forward(
-                query, key, value, indices, group, False, True
+                query, key, value, indices, None, group, False, True, None
             )
         return out[-1]  # fa_version
 
     def test_branch_a_block_mask_det_hdim_gt_128(self):
-        """A) block_mask in sig, deterministic + hdim>128 -> 2."""
+        """A) deterministic + hdim>128 -> 2."""
         fa = self._run_forward(
             has_block_mask=True, deterministic=True, hdim=192, fa_flag=3
         )
         self.assertEqual(fa, 2)
 
     def test_branch_b_block_mask_det_hdim_le_128(self):
-        """B) block_mask in sig, deterministic but hdim<=128 -> no override."""
+        """B) deterministic but hdim<=128 -> no override."""
         fa = self._run_forward(
             has_block_mask=True, deterministic=True, hdim=128, fa_flag=3
         )
         self.assertEqual(fa, 3)
 
     def test_branch_c_no_block_mask_deterministic(self):
-        """C) block_mask NOT in sig, deterministic -> override to 2."""
+        """C) deterministic + small hdim -> no override (stays 3)."""
         fa = self._run_forward(
             has_block_mask=False, deterministic=True, hdim=64, fa_flag=3
         )
-        self.assertEqual(fa, 2)
+        self.assertEqual(fa, 3)
 
     def test_branch_d_no_block_mask_no_deterministic(self):
-        """D) block_mask NOT in sig, no deterministic -> no override."""
+        """D) no deterministic -> no override."""
         fa = self._run_forward(
             has_block_mask=False, deterministic=False, hdim=64, fa_flag=3
         )
         self.assertEqual(fa, 3)
+
+
+class TestCpFlashmaskBackwardSoftmaxScaleNotSupported(unittest.TestCase):
+    """Cover the softmax_scale branch at line 806 in
+    cp_flashmask_allgatherkv_balance_backward (fa_version==2, softmax_scale not None)."""
+
+    def test_fa_version2_softmax_scale_raises(self):
+        """fa_version==2 with softmax_scale != None raises NotImplementedError."""
+        from paddleformers.fleet.context_parallel_utils import (
+            cp_flashmask_allgatherkv_balance_backward,
+        )
+
+        B, S, H, D = 1, 8, 2, 16
+        q = paddle.randn([B, S, H, D])
+        k = paddle.randn([B, S, H, D])
+        v = paddle.randn([B, S, H, D])
+        indices = paddle.zeros([B, 2, S], dtype="int64")
+        out = paddle.randn([B, S, H, D])
+        lse = paddle.randn([B, H, S])
+        out_grad = paddle.randn([B, S, H, D])
+
+        group = mock.MagicMock()
+        group.rank = 0
+        group.world_size = 2
+
+        with mock.patch(
+            "paddleformers.fleet.context_parallel_utils.all_gather_balance",
+            side_effect=lambda x, **kw: x,
+        ):
+            with self.assertRaises(NotImplementedError) as ctx:
+                cp_flashmask_allgatherkv_balance_backward(
+                    q,
+                    k,
+                    v,
+                    indices,
+                    out,
+                    lse,
+                    out_grad,
+                    None,  # learnable_sink
+                    group,
+                    False,  # causal
+                    2,  # fa_version
+                    0.5,  # softmax_scale (not None, triggers the branch)
+                )
+            self.assertIn("softmax_scale", str(ctx.exception))
 
 
 if __name__ == "__main__":

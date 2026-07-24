@@ -186,6 +186,18 @@ class TestMLAGateConstruction(unittest.TestCase):
         self.assertEqual(in_features, expected_in)
         self.assertEqual(out_features, expected_out)
 
+    def test_gate_proj_input_dim_uses_q_lora_rank(self):
+        """When gated_attn_use_q_lora=True, gate_proj input dim is q_lora_rank."""
+        attn = _build_mla(gated_attention=True, gated_attn_use_q_lora=True)
+        self.assertTrue(attn.gated_attn_use_q_lora)
+        gate = attn.gate_proj
+        in_features = gate.linear.weight.shape[0]
+        out_features = gate.linear.weight.shape[1]
+        expected_in = 64  # q_lora_rank (not hidden_size=128)
+        expected_out = 4 * 32  # num_attention_heads * v_head_dim = 128
+        self.assertEqual(in_features, expected_in)
+        self.assertEqual(out_features, expected_out)
+
 
 class TestMLAGatedForward(unittest.TestCase):
     def test_forward_shape_with_gate(self):
@@ -197,6 +209,14 @@ class TestMLAGatedForward(unittest.TestCase):
 
     def test_forward_shape_without_gate(self):
         attn = _build_mla(gated_attention=False)
+        attn.eval()
+        x = paddle.randn([2, 4, 128])
+        out, bias = attn(x, attention_mask=None)
+        self.assertEqual(out.shape, [2, 4, 128])
+
+    def test_forward_shape_with_gate_q_lora(self):
+        """Forward with gated_attn_use_q_lora: gate consumes q_compressed."""
+        attn = _build_mla(gated_attention=True, gated_attn_use_q_lora=True)
         attn.eval()
         x = paddle.randn([2, 4, 128])
         out, bias = attn(x, attention_mask=None)

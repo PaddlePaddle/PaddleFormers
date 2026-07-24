@@ -59,6 +59,16 @@ result = judge_machine_type()
 print("你的机器类型是：", result)
 
 
+def judge_h_subtype():
+    """Distinguish H800 vs H20 within the Hopper ("H") family."""
+    name = "".join(get_gpu_models_via_nvidia_smi()).upper()
+    if "H800" in name:
+        return "H800"
+    if "H20" in name:
+        return "H20"
+    return None
+
+
 class TestGPTModel(unittest.TestCase):
     def setUp(self):
         seed = 46
@@ -175,12 +185,20 @@ class TestGPTModel(unittest.TestCase):
 
         repo_name = os.environ.get("repo_flag")
         if judge_machine_type() == "H":
-            assert loss.item() == 5.295381546020508, (
-                f"loss not equal ({loss.item()} != 5.295381546020508), please check your modify"
-            )
-            assert embed_tokens_grad_norm == 5.6999006271362305, (
-                f"grad norm of embed_tokens not equal ({embed_tokens_grad_norm} != 5.6999006271362305), please check your modify"
-            )
+            if judge_h_subtype() == "H800":
+                assert loss.item() == 5.1971893310546875, (
+                    f"loss not equal ({loss.item()} != 5.1971893310546875), please check your modify"
+                )
+                assert embed_tokens_grad_norm == 4.866423606872559, (
+                    f"grad norm of embed_tokens not equal ({embed_tokens_grad_norm} != 4.866423606872559), please check your modify"
+                )
+            else:
+                assert loss.item() == 5.295381546020508, (
+                    f"loss not equal ({loss.item()} != 5.295381546020508), please check your modify"
+                )
+                assert embed_tokens_grad_norm == 5.6999006271362305, (
+                    f"grad norm of embed_tokens not equal ({embed_tokens_grad_norm} != 5.6999006271362305), please check your modify"
+                )
         elif judge_machine_type() == "V":
             assert loss.item() == 5.284281253814697, (
                 f"loss not equal ({loss.item()} != 5.284281253814697), please check your modify"

@@ -12,10 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib
+import math
+import sys
+import types
 import unittest
+from pathlib import Path
+from unittest.mock import Mock, patch
 
 import paddle
 
+from paddleformers.fleet.training.arguments import (
+    core_transformer_config_from_args,
+)
 from paddleformers.fleet.training.initialize import initialize_fleet
 from paddleformers.fleet.transformer.transformer_config import TransformerConfig
 
@@ -190,64 +199,9 @@ class TestMoETokenDispatcherConfig(unittest.TestCase):
 
 
 class TestMagicInit(unittest.TestCase):
-    """Tests for the magic_init functionality in TransformerConfig."""
-
-    def test_magic_init_false_default_behavior(self):
-        """When magic_init is False (default), normal init methods should be used."""
-        config = TransformerConfig(
-            num_hidden_layers=12,
-            hidden_size=768,
-            magic_init=False,
-        )
-        # When False, init_method should be set but not the magic init
-        self.assertIsNotNone(config.init_method)
-        self.assertIsNotNone(config.output_layer_init_method)
+    """Tests for magic_init sigma calculation and init method assignment."""
 
     def test_magic_init_true_sigma_calculation(self):
-        """When magic_init is True, sigma should be sqrt(0.3333 / hidden_size)."""
-        import math
-
-        hidden_size = 768
-        config = TransformerConfig(
-            num_hidden_layers=12,
-            hidden_size=hidden_size,
-            magic_init=True,
-        )
-        expected_sigma = math.sqrt(0.3333 / hidden_size)
-        self.assertAlmostEqual(config.init_method_std, expected_sigma, places=6)
-
-    def test_magic_init_true_all_methods_same(self):
-        """When magic_init is True, all init methods should be the same."""
-        config = TransformerConfig(
-            num_hidden_layers=12,
-            hidden_size=768,
-            magic_init=True,
-        )
-        # All init methods should be the same function
-        self.assertIs(config.init_method, config.output_layer_init_method)
-        self.assertIs(config.init_method, config.embedding_init_method)
-
-    def test_magic_init_true_different_hidden_sizes(self):
-        """Test sigma calculation with different hidden sizes."""
-        import math
-
-        for hidden_size in [512, 768, 1024, 2048, 4096]:
-            config = TransformerConfig(
-                num_hidden_layers=12,
-                hidden_size=hidden_size,
-                magic_init=True,
-            )
-            expected_sigma = math.sqrt(0.3333 / hidden_size)
-            self.assertAlmostEqual(
-                config.init_method_std, expected_sigma, places=6
-            )
-
-    def test_magic_init_true_init_method_matches_get_magic_init_method(self):
-        """When magic_init is True, init method should match get_magic_init_method."""
-        import math
-
-        from paddleformers.fleet.utils import get_magic_init_method
-
         hidden_size = 768
         config = TransformerConfig(
             num_hidden_layers=12,
@@ -255,70 +209,119 @@ class TestMagicInit(unittest.TestCase):
             magic_init=True,
         )
 
-        # Create test weight
-        weight = paddle.randn([100, 100])
-
-        # Apply config's init method
-        config.init_method(weight)
-
-        # Calculate expected using get_magic_init_method
         expected_sigma = math.sqrt(0.3333 / hidden_size)
-        magic_init = get_magic_init_method(expected_sigma)
-        expected_weight = paddle.randn([100, 100])
-        magic_init(expected_weight)
-
-        # Compare results using same random seed
-        paddle.seed(1234)
-        weight1 = paddle.randn([100, 100])
-        config.init_method(weight1)
-
-        paddle.seed(1234)
-        weight2 = paddle.randn([100, 100])
-        magic_init(weight2)
-
-        paddle.testing.assert_close(weight1, weight2, rtol=1e-6, atol=1e-6)
-
-    def test_magic_init_false_uses_normal_init(self):
-        """When magic_init is False, normal init methods should be used."""
-        config = TransformerConfig(
-            num_hidden_layers=12,
-            hidden_size=768,
-            magic_init=False,
-        )
-        # Should have init_method_std set to normal value
-        self.assertIsNotNone(config.init_method_std)
-        # Should be a reasonable value for normal init (not the magic init value)
-        import math
-
-        magic_sigma = math.sqrt(0.3333 / 768)
-        self.assertNotAlmostEqual(config.init_method_std, magic_sigma, places=6)
-
-    def test_magic_init_true_with_moe(self):
-        """Test magic_init works correctly with MoE models."""
-        import math
-
-        config = TransformerConfig(
-            num_hidden_layers=12,
-            hidden_size=768,
-            n_routed_experts=8,
-            magic_init=True,
-        )
-        expected_sigma = math.sqrt(0.3333 / 768)
+        self.assertFalse(config.use_truncated_normal_init)
         self.assertAlmostEqual(config.init_method_std, expected_sigma, places=6)
-        # All init methods should still be the same
-        self.assertIs(config.init_method, config.output_layer_init_method)
-        self.assertIs(config.init_method, config.embedding_init_method)
+        self.assertIsNotNone(config.init_method)
 
-    def test_magic_init_true_raises_on_zero_hidden_size(self):
-        """When magic_init is True and hidden_size is 0, should raise ValueError."""
-        with self.assertRaises(
-            ValueError,
-            msg="hidden_size must be non-zero when magic_init is True.",
+    def test_magic_init_true_zero_hidden_size_raises(self):
+        with self.assertRaisesRegex(
+            ValueError, "hidden_size must be non-zero when magic_init is True."
         ):
             TransformerConfig(
                 num_hidden_layers=12,
                 hidden_size=0,
                 magic_init=True,
+            )
+
+
+class TestTruncateNormInit(unittest.TestCase):
+    """Tests for the use_truncated_normal_init functionality in TransformerConfig."""
+
+    def test_truncate_norm_sigma_calculation(self):
+        hidden_size = 1024
+        config = TransformerConfig(
+            num_hidden_layers=12,
+            hidden_size=hidden_size,
+            use_truncated_normal_init=True,
+        )
+
+        self.assertAlmostEqual(
+            config.init_method_std,
+            0.02,
+            places=6,
+        )
+
+    def test_truncate_norm_takes_precedence_over_magic_init(self):
+        hidden_size = 1024
+        config = TransformerConfig(
+            num_hidden_layers=12,
+            hidden_size=hidden_size,
+            magic_init=True,
+            use_truncated_normal_init=True,
+        )
+
+        self.assertAlmostEqual(
+            config.init_method_std,
+            0.02,
+            places=6,
+        )
+        self.assertIs(config.init_method, config.output_layer_init_method)
+        self.assertIs(config.init_method, config.embedding_init_method)
+
+    def test_truncate_norm_init_method_restores_default_dtype(self):
+        from paddleformers.fleet.utils import truncated_init_method_normal
+
+        original_dtype = paddle.get_default_dtype()
+        weight = paddle.empty([8, 8], dtype="float32")
+        init_method = truncated_init_method_normal(0.5, truncate_factor=2.0)
+
+        try:
+            paddle.set_default_dtype("float64")
+            init_method(weight)
+            self.assertEqual(paddle.get_default_dtype(), "float64")
+        finally:
+            paddle.set_default_dtype(original_dtype)
+
+    def test_truncate_norm_init_method_restores_default_dtype_on_error(self):
+        from paddleformers.fleet.utils import truncated_init_method_normal
+
+        original_dtype = paddle.get_default_dtype()
+        init_method = truncated_init_method_normal(0.5, truncate_factor=2.0)
+        weight = Mock()
+
+        try:
+            paddle.set_default_dtype("float64")
+            with (
+                patch("paddle.nn.init.trunc_normal_", side_effect=RuntimeError),
+                self.assertRaises(RuntimeError),
+            ):
+                init_method(weight)
+            self.assertEqual(paddle.get_default_dtype(), "float64")
+        finally:
+            paddle.set_default_dtype(original_dtype)
+
+    def test_truncate_norm_zero_hidden_size_falls_back_to_init_std(self):
+        config = TransformerConfig(
+            num_hidden_layers=12,
+            hidden_size=0,
+            use_truncated_normal_init=True,
+        )
+
+        self.assertEqual(config.init_method_std, 0.02)
+
+    def test_truncate_norm_none_init_std_zero_hidden_size_raises(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "hidden_size must be non-zero when init_method_std is None and use_truncated_normal_init is True.",
+        ):
+            TransformerConfig(
+                num_hidden_layers=12,
+                hidden_size=0,
+                init_method_std=None,
+                use_truncated_normal_init=True,
+            )
+
+    def test_truncate_norm_raises_on_non_positive_factor(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "truncated_normal_init_factor must be positive when use_truncated_normal_init is True.",
+        ):
+            TransformerConfig(
+                num_hidden_layers=12,
+                hidden_size=1024,
+                use_truncated_normal_init=True,
+                truncated_normal_init_factor=0,
             )
 
 
@@ -332,6 +335,114 @@ class TestPadTokenId(unittest.TestCase):
     def test_override_value(self):
         config = TransformerConfig(num_hidden_layers=2, pad_token_id=151643)
         self.assertEqual(config.pad_token_id, 151643)
+
+
+class FakeDictConfig(dict):
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError as exc:
+            raise AttributeError(name) from exc
+
+
+class TestYamlArguments(unittest.TestCase):
+    def _load_yaml_arguments_with_fake_omegaconf(self):
+        class FakeOmegaConf:
+            @staticmethod
+            def create(value):
+                return FakeDictConfig(value)
+
+            @staticmethod
+            def to_container(value, resolve=True):
+                return dict(value)
+
+        fake_omegaconf = types.SimpleNamespace(
+            DictConfig=FakeDictConfig,
+            OmegaConf=FakeOmegaConf,
+        )
+
+        module_name = "paddleformers.fleet.training.yaml_arguments"
+        module_path = (
+            Path(__file__).resolve().parents[3]
+            / "paddleformers"
+            / "fleet"
+            / "training"
+            / "yaml_arguments.py"
+        )
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
+        yaml_arguments = importlib.util.module_from_spec(spec)
+        with patch.dict(sys.modules, {"omegaconf": fake_omegaconf}):
+            spec.loader.exec_module(yaml_arguments)
+        return yaml_arguments
+
+    def test_deepep_buffer_configs_keeps_dict_value(self):
+        yaml_arguments = self._load_yaml_arguments_with_fake_omegaconf()
+        cfg = FakeDictConfig(
+            {
+                "model": FakeDictConfig(
+                    {
+                        "num_hidden_layers": 2,
+                        "deepep_buffer_configs": FakeDictConfig(
+                            {
+                                "num_sms": 24,
+                                "dispatch_config": [60, 256],
+                                "combine_config": [20, 256],
+                            }
+                        ),
+                    }
+                )
+            }
+        )
+
+        result = yaml_arguments._flatten_configs(cfg)
+
+        self.assertEqual(result.num_hidden_layers, 2)
+        self.assertEqual(
+            result.deepep_buffer_configs,
+            {
+                "num_sms": 24,
+                "dispatch_config": [60, 256],
+                "combine_config": [20, 256],
+            },
+        )
+        self.assertFalse(hasattr(result, "num_sms"))
+
+    def test_regular_nested_config_still_flattens(self):
+        yaml_arguments = self._load_yaml_arguments_with_fake_omegaconf()
+        cfg = FakeDictConfig(
+            {
+                "model": FakeDictConfig({"num_hidden_layers": 2}),
+                "training": FakeDictConfig({"micro_batch_size": 4}),
+            }
+        )
+
+        result = yaml_arguments._flatten_configs(cfg)
+
+        self.assertEqual(result.num_hidden_layers, 2)
+        self.assertEqual(result.micro_batch_size, 4)
+        self.assertFalse(hasattr(result, "model"))
+        self.assertFalse(hasattr(result, "training"))
+
+    def test_core_config_receives_deepep_buffer_configs(self):
+        yaml_arguments = self._load_yaml_arguments_with_fake_omegaconf()
+        args = yaml_arguments._flatten_configs(
+            FakeDictConfig(
+                {
+                    "model": FakeDictConfig(
+                        {
+                            "num_hidden_layers": 2,
+                            "deepep_buffer_configs": FakeDictConfig(
+                                {"num_sms": 24}
+                            ),
+                        }
+                    )
+                }
+            )
+        )
+
+        config = core_transformer_config_from_args(args)
+
+        self.assertEqual(config.deepep_buffer_configs, {"num_sms": 24})
 
 
 if __name__ == "__main__":

@@ -359,7 +359,7 @@ class GPTLMHead(ColumnParallelLinear):
 
 
 class GPTMainLMHead(GPTLMHead):
-    """主干网 LM Head: 含 block_attn_res, 只做单次预测。"""
+    """Main LM Head with block_attn_res, single prediction."""
 
     def __init__(self, **kwargs):
         block_attn_res_spec = kwargs.pop("block_attn_res", IdentityOp)
@@ -401,10 +401,9 @@ class GPTMainLMHead(GPTLMHead):
 
 
 class GPTMTPLMHead(GPTLMHead):
-    """MTP LM Head: 将拼接的 hidden_states 拆分后逐MTP计算。"""
+    """MTP LM Head: splits concatenated hidden_states and computes per-MTP logits."""
 
     def __init__(self, **kwargs):
-        # MTP head 不需要 block_attn_res
         kwargs.pop("block_attn_res", None)
         super().__init__(**kwargs)
 

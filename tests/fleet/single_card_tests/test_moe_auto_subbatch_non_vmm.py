@@ -29,7 +29,7 @@ Tests:
 Note: Ordinary (non-auto) subbatch tests are in test_moe_subbatch.py.
 
 Run with:
-  python tests/single_card_tests/test_moe_auto_subbatch_non_vmm.py
+  python tests/fleet/single_card_tests/test_moe_auto_subbatch_non_vmm.py
 """
 
 import contextlib
@@ -377,32 +377,6 @@ class TestAutoSubbatch(unittest.TestCase):
             "moe_expert_fusion": False,
             "recompute_moe_premute": False,
             "recompute_moe_gate_up": False,
-        }
-        # case13: 显存充裕 → 走 3a group_gemm
-        logging.info("case13 (split, plenty)")
-        cases["case13 (split, plenty)"] = self.run_moe_layer(**kwargs)
-        # case14: 前向紧张 → fallback 到逐专家
-        logging.info("case14 (split, tight_fwd)")
-        cases["case14 (split, tight_fwd)"] = self.run_moe_layer(
-            tight_forward=True, **kwargs
-        )
-        # case15: 反向紧张 → 前向 3a, 反向 fallback
-        logging.info("case15 (split, tight_bwd)")
-        cases["case15 (split, tight_bwd)"] = self.run_moe_layer(
-            tight_backward=True, **kwargs
-        )
-        # case16: 向+反向都紧张, fallback
-        logging.info("case16 (split, tight_both)")
-        cases["case16 (split, tight_both)"] = self.run_moe_layer(
-            tight_forward=True, tight_backward=True, **kwargs
-        )
-
-        # split gemm + moe_subbatch_token_num_after_dispatch 512 ---
-        kwargs = {
-            "moe_expert_fusion": False,
-            "recompute_moe_premute": False,
-            "recompute_moe_gate_up": True,
-            "moe_subbatch_token_num_after_dispatch": 512,
         }
         # case13: 显存充裕 → 走 3a group_gemm
         logging.info("case13 (split, plenty)")

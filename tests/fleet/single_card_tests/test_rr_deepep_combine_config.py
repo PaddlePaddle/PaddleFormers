@@ -405,6 +405,7 @@ class TestDeepEPCombineAsyncFunctor(unittest.TestCase):
         mock_ctx.group.id = 0
         mock_ctx.handle = MagicMock()
         mock_ctx.bwf = MagicMock(return_value=(paddle.to_tensor([0.1]),))
+        mock_ctx.fp8_dispatch = False
 
         grad_output = paddle.to_tensor([1.0, 1.0])
         fn_out_grad = paddle.to_tensor([0.5])
@@ -633,6 +634,94 @@ class TestFusedCombineRRBranch(unittest.TestCase):
         # positional args: x, group, states, *fn_args
         # fn_args should be unpacked as positional
         self.assertEqual(len(call_args[0]), 5)  # x, group, states, arg1, arg2
+
+
+@unittest.skipUnless(HAS_DEEP_EP, "DeepEP not available")
+class TestDeepEPDispatchFp8NormalizeBranch(unittest.TestCase):
+    """Cover line 453: scale = _normalize_fp8_scale_for_deepep(x_fp8, scale, use_ue8m0)
+    inside DeepEPDispatch.forward (fp8_dispatch=True, using_sonic_moe=False)."""
+
+    def _run_dispatch_forward(self, num_tokens, hidden, use_ue8m0):
+        from unittest.mock import MagicMock, patch
+
+        import paddle
+
+        import paddleformers.fleet.transformer.moe.fused_a2a as _fused_mod
+
+        num_scales = hidden // 128
+        if use_ue8m0:
+            num_scales //= 4
+
+        x = paddle.randn([num_tokens, hidden], dtype="float32")
+        x_fp8_fake = paddle.zeros([num_tokens, hidden], dtype="float32")
+        # fp8_quant_blockwise returns scale in transposed form [num_scales, num_tokens]
+        scale_fake = paddle.ones([num_scales, num_tokens], dtype="float32")
+        # _normalize_fp8_scale_for_deepep should transpose → [num_tokens, num_scales]
+        scale_normalized = paddle.ones(
+            [num_tokens, num_scales], dtype="float32"
+        )
+
+        recv_x_fake = (
+            paddle.zeros([num_tokens, hidden], dtype="float32"),
+            scale_normalized,
+        )
+        recv_probs_fake = paddle.zeros([num_tokens], dtype="float32")
+        states_fake = {
+            "handle": MagicMock(),
+            "dispatched_indices": None,
+            "tokens_per_expert": None,
+        }
+        event_fake = MagicMock()
+
+        ctx = MagicMock()
+        ctx.set_grad_in_dtype_consistent = MagicMock()
+
+        with (
+            patch.object(
+                _fused_mod.paddle.incubate.nn.functional,
+                "fp8_quant_blockwise",
+                return_value=(x_fp8_fake, scale_fake),
+            ),
+            patch.object(
+                _fused_mod,
+                "fused_dispatch_forward_func",
+                return_value=(
+                    recv_x_fake,
+                    recv_probs_fake,
+                    states_fake,
+                    event_fake,
+                ),
+            ),
+        ):
+            result = _fused_mod.DeepEPDispatch.forward(
+                ctx,
+                x,
+                token_indices=paddle.zeros([num_tokens], dtype="int64"),
+                token_probs=paddle.ones([num_tokens], dtype="float32"),
+                num_experts=4,
+                group=MagicMock(),
+                fp8_dispatch=True,
+                using_sonic_moe=False,
+                use_ue8m0=use_ue8m0,
+            )
+        return result
+
+    def test_fp8_dispatch_non_ue8m0_runs(self):
+        """fp8_dispatch=True, use_ue8m0=False: line 453 executes, scale shape is correct."""
+        result = self._run_dispatch_forward(
+            num_tokens=4, hidden=256, use_ue8m0=False
+        )
+        # forward returns (recv_x, recv_token_probs, states, {"scale": scale})
+        self.assertIsNotNone(result)
+        self.assertIsNotNone(result[-1])  # fp8 extra dict is not None
+
+    def test_fp8_dispatch_ue8m0_runs(self):
+        """fp8_dispatch=True, use_ue8m0=True: line 453 executes with ue8m0 scale."""
+        result = self._run_dispatch_forward(
+            num_tokens=4, hidden=512, use_ue8m0=True
+        )
+        self.assertIsNotNone(result)
+        self.assertIsNotNone(result[-1])
 
 
 if __name__ == "__main__":

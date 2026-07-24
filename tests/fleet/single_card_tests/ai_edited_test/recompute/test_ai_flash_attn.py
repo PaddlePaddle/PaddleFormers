@@ -60,7 +60,7 @@ class TestFlashAttnFunctor(unittest.TestCase):
         hold_tensors = {"result_attention": q, "causal": True, "softmax_lse": k}
 
         with patch(
-            "paddleformers.fleet.refined_recompute.flash_attn._get_fa_version",
+            "paddleformers.fleet.refined_recompute.flash_attn.get_fa_version",
             return_value=99,
         ):
             with self.assertRaises(ValueError) as ctx:
@@ -99,7 +99,7 @@ class TestRefinedRcomputeFlashMaskAttention(unittest.TestCase):
     """Tests for RefinedRcomputeFlashMaskAttention class."""
 
     @patch(
-        "paddleformers.fleet.refined_recompute.flash_attn._get_fa_version",
+        "paddleformers.fleet.refined_recompute.flash_attn.get_fa_version",
         return_value=2,
     )
     @patch(
@@ -145,7 +145,7 @@ class TestRefinedRcomputeFlashMaskAttention(unittest.TestCase):
         self.assertIn("causal", hold_tensors)
 
     @patch(
-        "paddleformers.fleet.refined_recompute.flash_attn._get_fa_version",
+        "paddleformers.fleet.refined_recompute.flash_attn.get_fa_version",
         return_value=99,
     )
     @patch(
@@ -177,7 +177,7 @@ class TestRefinedRcomputeFlashMaskAttention(unittest.TestCase):
         self.assertIn("Invalid flash attention version", str(ctx.exception))
 
     @patch(
-        "paddleformers.fleet.refined_recompute.flash_attn._get_fa_version",
+        "paddleformers.fleet.refined_recompute.flash_attn.get_fa_version",
         return_value=3,
     )
     @patch(
@@ -218,7 +218,7 @@ class TestRefinedRcomputeFlashMaskAttention(unittest.TestCase):
         self.assertTrue(result is not None)
 
     @patch(
-        "paddleformers.fleet.refined_recompute.flash_attn._get_fa_version",
+        "paddleformers.fleet.refined_recompute.flash_attn.get_fa_version",
         return_value=3,
     )
     @patch(

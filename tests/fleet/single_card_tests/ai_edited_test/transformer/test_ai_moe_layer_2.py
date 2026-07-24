@@ -48,8 +48,8 @@ class Gate:
         self.calls = []
         self.layer_number = None
 
-    def __call__(self, hidden_states, input_ids=None):
-        self.calls.append((hidden_states, input_ids))
+    def __call__(self, hidden_states, input_ids=None, origin_input_ids=None):
+        self.calls.append((hidden_states, input_ids, origin_input_ids))
         return "gate-output"
 
     def set_layer_number(self, layer_number, is_mtp_layer=False):
@@ -182,6 +182,9 @@ class TestMoELayerLightweightMethods(unittest.TestCase):
         self.assertTrue(MoELayer.use_fp8(model))
 
         model.gate = Gate()
+        # set_layer_number now colors expert params; MinimalMoE is not a
+        # MoELayer subclass, so stub the coloring hook out (not under test here).
+        model._color_expert_params = lambda: None
         MoELayer.set_layer_number(model, 11)
         self.assertEqual(model.layer_number, 11)
         self.assertEqual(model.gate.layer_number, 11)

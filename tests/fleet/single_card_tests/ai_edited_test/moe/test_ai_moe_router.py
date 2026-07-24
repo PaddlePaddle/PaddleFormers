@@ -452,6 +452,23 @@ class TestMoERouter(unittest.TestCase):
         "paddleformers.fleet.transformer.moe.moe_router.get_context_parallel_world_size",
         return_value=1,
     )
+    def test_seq_aux_loss_rejects_negative_scoring_func(self, mock_cp):
+        """Test seq_aux_loss rejects scoring functions that may go negative."""
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
+
+        config = _make_router_config(
+            moe_router_load_balancing_type="seq_aux_loss",
+            scoring_func="tanh",
+        )
+        with self.assertRaisesRegex(ValueError, "non-negative"):
+            StandardMoERouter(config)
+
+    @patch(
+        "paddleformers.fleet.transformer.moe.moe_router.get_context_parallel_world_size",
+        return_value=1,
+    )
     def test_gate_detach_matmul_no_fuse(self, mock_cp):
         """Test gate_detach_matmul without fusion."""
         from paddleformers.fleet.transformer.moe.moe_router import (
@@ -1086,6 +1103,75 @@ class TestSeqAuxLoss(unittest.TestCase):
         )
         self.assertTrue(np.isfinite(loss.numpy()))
 
+    def test_seq_aux_loss_non_experimental_matches_formula(self):
+        router, _ = self._make_router()
+        bsz, seq_len, num_experts, top_k = 2, 3, 4, 2
+        probs = paddle.ones([bsz, seq_len, num_experts]) / num_experts
+        routing_map = paddle.zeros([bsz * seq_len, num_experts])
+        routing_map[:, 0] = 1.0
+        routing_map[:, 1] = 1.0
+        input_ids = paddle.to_tensor([[1, 0, 2], [3, 4, 5]], dtype="int64")
+
+        loss = router._cal_seq_aux_loss(
+            probs,
+            top_k=top_k,
+            routing_map=routing_map,
+            seq_len=seq_len,
+            batch_size=bsz,
+            input_ids=input_ids,
+        )
+
+        denom = (
+            (input_ids != 0).astype(paddle.float32).sum(axis=-1, keepdim=True)
+        )
+        routing_3d = routing_map.reshape([bsz, seq_len, num_experts])
+        cost_coeff = routing_3d.sum(axis=1, dtype="float32") / (
+            denom * paddle.to_tensor(top_k / num_experts, dtype="float32")
+        )
+        expected = (cost_coeff * probs.sum(axis=1) / denom).sum(axis=1).mean()
+        self.assertAlmostEqual(
+            float(loss.numpy()), float(expected.numpy()), places=6
+        )
+
+    def test_seq_aux_loss_experimental_uses_origin_ids_formula(self):
+        router, cfg = self._make_router()
+        cfg.gpt_model_use_experimental_version = True
+        bsz, seq_len, num_experts, top_k = 2, 3, 4, 2
+        probs = paddle.ones([bsz, seq_len, num_experts]) / num_experts
+        routing_map = paddle.zeros([bsz * seq_len, num_experts])
+        routing_map[:, 0] = 1.0
+        routing_map[:, 1] = 1.0
+        input_ids = paddle.to_tensor([[1, 2, 3], [4, 5, 6]], dtype="int64")
+        origin_input_ids = paddle.to_tensor(
+            [[1, 0, 2, 0], [3, 4, 5, 6]], dtype="int64"
+        )
+
+        loss = router._cal_seq_aux_loss(
+            probs,
+            top_k=top_k,
+            routing_map=routing_map,
+            seq_len=seq_len,
+            batch_size=bsz,
+            input_ids=input_ids,
+            origin_input_ids=origin_input_ids,
+        )
+
+        denom = (
+            (origin_input_ids != 0)
+            .astype(paddle.float32)
+            .sum(axis=-1, keepdim=True)
+        )
+        routing_3d = routing_map.reshape([bsz, seq_len, num_experts])
+        cost_coeff = (
+            routing_3d.sum(axis=1, dtype="float32")
+            / denom
+            * paddle.to_tensor(num_experts / top_k, dtype="float32")
+        )
+        expected = (cost_coeff * probs.mean(axis=1)).sum(axis=1).mean()
+        self.assertAlmostEqual(
+            float(loss.numpy()), float(expected.numpy()), places=6
+        )
+
 
 class TestZLossWithInputIds(unittest.TestCase):
     """Cover the input_ids-aware branch of ``_cal_z_loss``."""
@@ -1334,6 +1420,37 @@ class TestZLossExperimental(unittest.TestCase):
         )
         loss = router._cal_z_loss(logits, input_ids=input_ids)
         self.assertTrue(np.isfinite(loss.numpy()))
+
+    @patch(
+        "paddleformers.fleet.transformer.moe.moe_router.get_context_parallel_world_size",
+        return_value=1,
+    )
+    def test_z_loss_experimental_uses_origin_input_ids(self, _mock):
+        from paddleformers.fleet.transformer.moe.moe_router import (
+            StandardMoERouter,
+        )
+
+        cfg = _make_router_config(router_z_loss_coef=0.1)
+        cfg.gpt_model_use_experimental_version = True
+        router = StandardMoERouter(cfg)
+        logits = paddle.randn([6, 4])
+        input_ids = paddle.to_tensor([[1, 2, 3], [4, 5, 6]], dtype="int64")
+        origin_input_ids = paddle.to_tensor(
+            [[1, 0, 2, 0], [3, 4, 5, 6]], dtype="int64"
+        )
+
+        loss = router._cal_z_loss(
+            logits,
+            input_ids=input_ids,
+            origin_input_ids=origin_input_ids,
+        )
+
+        loss_mask = (input_ids != 0).astype(paddle.float32).reshape([-1])
+        denom = (origin_input_ids != 0).astype(paddle.float32).sum()
+        expected = (logits.logsumexp(1).square() * loss_mask).sum() / denom
+        self.assertAlmostEqual(
+            float(loss.numpy()), float(expected.numpy()), places=6
+        )
 
 
 class TestMoeTopkFusionLazyImport(unittest.TestCase):
@@ -2063,6 +2180,8 @@ class TestMoELayerSetLayerNumberForwardsIsMtp(unittest.TestCase):
         moe = MoELayer.__new__(MoELayer)
         moe.gate = MagicMock()
         moe.layer_number = None
+        # set_layer_number now colors expert params; EP=1 makes that a no-op.
+        moe.expert_model_parallel_size = 1
         return moe
 
     def test_forwards_is_mtp_layer_true(self):

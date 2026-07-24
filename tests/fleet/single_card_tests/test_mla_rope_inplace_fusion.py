@@ -31,6 +31,9 @@ from paddleformers.fleet.models.common.embeddings.rope_utils import (
     _apply_rotary_pos_emb_bshd,
 )
 from paddleformers.fleet.triton_ops import fused_apply_mla_rope_inplace
+from paddleformers.fleet.triton_ops.mla_rope_inplace_fusion import (
+    _fused_cos_sin,
+)
 
 # Shapes from DeepSeek-V4-Flash
 B, S, H, D = 1, 4096, 64, 512
@@ -138,6 +141,21 @@ class TestFusedMLARopeQPeInplace(unittest.TestCase):
         freqs = paddle.randn([B, S, 1, ROPE_DIM])
         freqs.stop_gradient = True
         self._run_case(B, S, freqs, inverse=True)
+
+    def test_fused_cos_sin(self) -> None:
+        freqs = paddle.randn([B, S, 1, ROPE_DIM])
+        dtype = paddle.bfloat16
+        mscale = 0.5
+
+        cos_ref = (paddle.cos(freqs) * mscale).to(dtype)
+        sin_ref = (paddle.sin(freqs) * mscale).to(dtype)
+
+        cos_fused, sin_fused = _fused_cos_sin(
+            freqs, mscale, inverse=False, dtype=dtype
+        )
+
+        _check_equal(cos_ref, cos_fused)
+        _check_equal(sin_ref, sin_fused)
 
 
 if __name__ == "__main__":

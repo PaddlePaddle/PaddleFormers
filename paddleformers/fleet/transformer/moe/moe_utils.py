@@ -22,7 +22,7 @@ import paddle
 from paddle import Tensor, framework
 
 try:
-    from paddlefleet_ops import deep_gemm as deep_gemm
+    from paddlefleet_ops import deep_gemm as paddlefleet_deep_gemm
 except (ImportError, RuntimeError):
     pass
 try:
@@ -58,6 +58,78 @@ def use_accuracy_compatible_kernel() -> bool:
     kernels at the cost of throughput.
     """
     return _USE_ACCURACY_COMPATIBLE_KERNEL
+
+
+class AutoSBHistoryTracker:
+    """只统计 warmup 阶段连续 MoE auto-subbatch forward 起点的显存下降。"""
+
+    def __init__(self):
+        self.step_idx = 0
+        self.forward_count = 0
+        self.backward_count = 0
+        self._last_forward_free = None
+        self.max_delta = 0
+        self.prev_total_steps = 0
+        self.prev_max_delta = 0
+
+    def in_warmup(self) -> bool:
+        return self.backward_count == 0
+
+    def record_forward(self, available_free: int):
+        if self.in_warmup():
+            if self._last_forward_free is not None:
+                self.max_delta = max(
+                    self.max_delta,
+                    self._last_forward_free - available_free,
+                    0,
+                )
+            self._last_forward_free = available_free
+            self.step_idx += 1
+        self.forward_count += 1
+
+    def record_backward(self) -> bool:
+        self.backward_count += 1
+        if self.forward_count > 0 and self.backward_count == self.forward_count:
+            self._new_iteration()
+            return True
+        return False
+
+    def _new_iteration(self):
+        if self.step_idx > 0:
+            self.prev_total_steps = self.step_idx
+            self.prev_max_delta = max(self.prev_max_delta, self.max_delta)
+        self.step_idx = 0
+        self.forward_count = 0
+        self.backward_count = 0
+        self._last_forward_free = None
+        self.max_delta = 0
+
+    def should_degrade(self, available_free: int) -> bool:
+        predicted_need = self.predicted_need_for_remaining()
+        return (
+            self.in_warmup()
+            and predicted_need > 0
+            and available_free < predicted_need
+        )
+
+    def predicted_need_for_remaining(self) -> int:
+        """预测当前 warmup 从当前 forward 起还需要的显存。返回 0 表示无法预测（冷启动）。"""
+        if self.prev_total_steps == 0 or self.prev_max_delta == 0:
+            return 0
+        remaining = self.prev_total_steps - self.step_idx + 1
+        if remaining <= 0:
+            return 0
+        predicted = self.prev_max_delta * remaining
+        # 安全系数 1.2x + 128MB 余量
+        predicted = int(predicted * 1.2) + 128 * 1024 * 1024
+        return predicted
+
+
+_AutoSBHistory = AutoSBHistoryTracker()
+
+
+def get_auto_sb_history():
+    return _AutoSBHistory
 
 
 def _unpermute_scatter(
@@ -615,7 +687,7 @@ def filter_scores(
 
 
 def k_grouped_bf16_gemm_tn_contiguous_aligned(a, b, d, ks, ks_tensor, c):
-    ALIGNMENT = deep_gemm.get_mk_alignment_for_contiguous_layout()
+    ALIGNMENT = paddlefleet_deep_gemm.get_mk_alignment_for_contiguous_layout()
 
     # Compute padded sizes using tensor ops
     padded_ks_tensor = ((ks_tensor + ALIGNMENT - 1) // ALIGNMENT) * ALIGNMENT
@@ -670,7 +742,7 @@ def k_grouped_bf16_gemm_tn_contiguous_aligned(a, b, d, ks, ks_tensor, c):
     a_padded = pad_grouped_tensor(a, ks_tensor, padded_ks_tensor)
     b_padded = pad_grouped_tensor(b, ks_tensor, padded_ks_tensor)
 
-    deep_gemm.k_grouped_bf16_gemm_tn_contiguous(
+    paddlefleet_deep_gemm.k_grouped_bf16_gemm_tn_contiguous(
         a=a_padded,
         b=b_padded,
         d=d,
@@ -789,3 +861,24 @@ class AllGatherGroupOp(paddle.autograd.PyLayer):
         """
         paddle.distributed.barrier(ctx.group)
         return reduce_scatter_group(grad, group=ctx.group)
+
+
+class ReduceScatterGroupOp(paddle.autograd.PyLayer):
+    """
+    Perform group reduce-scatter (sum). Backward pass is an all-gather.
+
+    This is the dual of :class:`AllGatherGroupOp` and is used by the
+    'allgather' MoE token dispatcher to combine partial expert outputs along
+    the EP group: forward sums across EP ranks while scattering along the
+    leading (token) dimension; backward replicates the gradient via
+    all-gather.
+    """
+
+    @staticmethod
+    def forward(ctx, input, group=None):
+        ctx.group = group
+        return reduce_scatter_group(input, group=group)
+
+    @staticmethod
+    def backward(ctx, grad):
+        return all_gather_group(grad, group=ctx.group)

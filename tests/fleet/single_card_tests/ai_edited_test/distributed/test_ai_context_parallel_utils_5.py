@@ -24,7 +24,7 @@ sys.path.insert(
 )
 
 
-# Tests for src/paddleformers.fleet/context_parallel_utils.py
+# Tests for paddleformers/fleet/context_parallel_utils.py
 # Test ContextParallelScatterOp, ContextParallelGatherOp,
 # ContextParallelAllGatherOp PyLayers
 
@@ -95,6 +95,7 @@ class TestContextParallelScatterOp(unittest.TestCase):
         mock_ctx = mock.MagicMock()
         mock_ctx.axis = 0
         mock_ctx.group = mock.MagicMock()
+        mock_ctx.mode = "dualchunk_allgather"
 
         grad = paddle.randn([4, 16])
 
@@ -168,6 +169,7 @@ class TestContextParallelGatherOp(unittest.TestCase):
         mock_ctx = mock.MagicMock()
         mock_ctx.axis = 1
         mock_ctx.group = mock.MagicMock()
+        mock_ctx.mode = "dualchunk_allgather"
 
         grad = paddle.randn([8, 16])
 
@@ -241,6 +243,7 @@ class TestContextParallelAllGatherOp(unittest.TestCase):
         mock_ctx = mock.MagicMock()
         mock_ctx.axis = 1
         mock_ctx.group = mock.MagicMock()
+        mock_ctx.mode = "dualchunk_allgather"
 
         grad = paddle.randn([8, 16])
 

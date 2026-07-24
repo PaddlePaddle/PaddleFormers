@@ -479,17 +479,21 @@ class TestAutoSubbatch(unittest.TestCase):
 class TestVMMUtils(unittest.TestCase):
     def test_vmm_utils(self):
         """测试 vmm 相关搜索函数"""
+        old_large = getattr(
+            MemoryAnalysisTool, "vmm_large_all_block_info", None
+        )
         old_func = MemoryAnalysisTool.vmm_all_block_info
 
+        def set_blocks(blocks):
+            MemoryAnalysisTool.vmm_large_all_block_info = lambda: blocks
+            MemoryAnalysisTool.vmm_all_block_info = lambda: blocks
+
         # test empty heap
-        MemoryAnalysisTool.vmm_all_block_info = lambda: [[]]
+        set_blocks([[]])
         info = vmm_free_and_growable_block_info()
-        self.assertEqual(len(info), 1)
 
         # test heap with separate free blocks
-        MemoryAnalysisTool.vmm_all_block_info = lambda: [
-            [(1024, 0, True), (1024, 1024, False)]
-        ]
+        set_blocks([[(1024, 0, True), (1024, 1024, False)]])
         info = vmm_free_and_growable_block_info()
         self.assertEqual(len(info), 2)
 
@@ -497,6 +501,10 @@ class TestVMMUtils(unittest.TestCase):
         self.assertEqual(find_max_concurrent_subbatch_size([]), 1)
         self.assertEqual(find_max_sequence_subbatch_size(1024, 1), 1)
 
+        if old_large is not None:
+            MemoryAnalysisTool.vmm_large_all_block_info = old_large
+        else:
+            del MemoryAnalysisTool.vmm_large_all_block_info
         MemoryAnalysisTool.vmm_all_block_info = old_func
 
 

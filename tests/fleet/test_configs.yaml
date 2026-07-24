@@ -43,6 +43,9 @@ tests:
   - test_case: [tests/fleet/multi_card_tests/moe/test_shared_expert_gated.py]
     products:
       - num_gpus: 4
+  - test_case: [tests/fleet/multi_card_tests/moe/test_allgather_dispatcher_ep.py]
+    products:
+      - num_gpus: 2
   # ai_edited_test: tensor_parallel (Pattern A/B, TP=4 sharding=2 -> 8 GPUs)
   - test_case: [tests/fleet/multi_card_tests/ai_edited_test/tensor_parallel/test_ai_mappings.py]
     products:
@@ -134,6 +137,14 @@ tests:
       - num_gpus: 2
   # transformer: MTP input mask when tp > 1 (TP=2)
   - test_case: [tests/fleet/multi_card_tests/transformer/test_mtp_input_mask_tp.py]
+    products:
+      - num_gpus: 2
+  # transformer: FlashMask FA4 sink context-parallel (CP=2)
+  - test_case: [tests/fleet/multi_card_tests/transformer/test_flash_mask_sink_cp.py]
+    products:
+      - num_gpus: 2
+  # transformer: CSA context-parallel, including cuDNN indexer docmask path (CP=2)
+  - test_case: [tests/fleet/multi_card_tests/transformer/test_csa_attention_cp.py]
     products:
       - num_gpus: 2
   # default fallback for remaining multi_card_tests

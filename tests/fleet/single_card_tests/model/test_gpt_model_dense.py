@@ -58,6 +58,16 @@ result = judge_machine_type()
 print("The type of your machine", result)
 
 
+def judge_h_subtype():
+    """Distinguish H800 vs H20 within the Hopper ("H") family."""
+    name = "".join(get_gpu_models_via_nvidia_smi()).upper()
+    if "H800" in name:
+        return "H800"
+    if "H20" in name:
+        return "H20"
+    return None
+
+
 class TestGPTModel(unittest.TestCase):
     def setUp(self):
         seed = 46
@@ -163,12 +173,20 @@ class TestGPTModel(unittest.TestCase):
         print("embed_tokens_grad_norm", embed_tokens_grad_norm)
 
         if judge_machine_type() == "H":
-            assert loss.item() == 5.399779796600342, (
-                f"loss is not equal ({loss.item()} != 5.399779796600342), please check your modify"
-            )
-            assert embed_tokens_grad_norm == 4.742391586303711, (
-                f"grad norm of embed_tokens is not equal ({embed_tokens_grad_norm} != 4.742391586303711), please check your modify"
-            )
+            if judge_h_subtype() == "H800":
+                assert loss.item() == 5.75022029876709, (
+                    f"loss is not equal ({loss.item()} != 5.75022029876709), please check your modify"
+                )
+                assert embed_tokens_grad_norm == 5.828077793121338, (
+                    f"grad norm of embed_tokens is not equal ({embed_tokens_grad_norm} != 5.828077793121338), please check your modify"
+                )
+            else:
+                assert loss.item() == 5.399779796600342, (
+                    f"loss is not equal ({loss.item()} != 5.399779796600342), please check your modify"
+                )
+                assert embed_tokens_grad_norm == 4.742391586303711, (
+                    f"grad norm of embed_tokens is not equal ({embed_tokens_grad_norm} != 4.742391586303711), please check your modify"
+                )
         elif judge_machine_type() == "V":
             assert loss.item() == 5.344659805297852, (
                 f"loss is not equal ({loss.item()} != 5.344659805297852), please check your modify"

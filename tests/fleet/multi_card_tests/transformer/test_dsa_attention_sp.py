@@ -23,8 +23,6 @@ Run with:
         tests/fleet/multi_card_tests/transformer/test_dsa_attention_sp.py
 """
 
-import os
-import sys
 import unittest
 
 import numpy as np
@@ -32,13 +30,6 @@ import paddle
 import paddle.distributed as dist
 from paddle.distributed import fleet
 from paddle.distributed.fleet.meta_parallel import LayerSpec
-
-sys.path.insert(
-    0,
-    os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    ),
-)
 
 from paddleformers.fleet.process_groups_config import ProcessGroupCollection
 from paddleformers.fleet.tensor_parallel.random import (

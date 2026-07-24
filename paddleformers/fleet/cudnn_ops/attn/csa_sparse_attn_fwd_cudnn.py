@@ -49,7 +49,7 @@ def _get_topk_alignment() -> int:
 
 
 def flash_mla_sparse_attn(
-    q, kv, attn_sink, topk_idxs, sm_scale=None, indexer_topk: int = 0
+    q, kv, attn_sink, topk_idxs, sm_scale=None, indexer_topk: int = 0, d_v=None
 ):
     if _flash_mla_sparse_fwd is None:
         raise RuntimeError("flash_mla is not available")
@@ -57,6 +57,10 @@ def flash_mla_sparse_attn(
     b, sq, h, d = q.shape
     _, skv, _ = kv.shape
     topk = topk_idxs.shape[-1]
+    # Value dim may be smaller than the query/key dim (absorbed MLA MQA uses
+    # d_qk=576 / d_v=512). Default to a symmetric d_v=d.
+    if d_v is None:
+        d_v = d
 
     q_flat = q.reshape([b * sq, h, d])
     kv_flat = kv.reshape([b * skv, d])
@@ -72,7 +76,7 @@ def flash_mla_sparse_attn(
         kv_flat.unsqueeze(1),
         global_idxs.unsqueeze(1),
         sm_scale,
-        d_v=d,
+        d_v=d_v,
         attn_sink=attn_sink,
         topk_length=None,
         indexer_topk=indexer_topk,
@@ -83,4 +87,8 @@ def flash_mla_sparse_attn(
     else:
         out_flat, _max_logits, lse = res
         lse_indexer = None
-    return out_flat.reshape([b, sq, h, d]), lse.reshape([b, sq, h]), lse_indexer
+    return (
+        out_flat.reshape([b, sq, h, d_v]),
+        lse.reshape([b, sq, h]),
+        lse_indexer,
+    )

@@ -70,7 +70,9 @@ class SonicMoETopk(paddle.autograd.PyLayer):
             top_gate: [T, k] float32 scores of selected experts.
             top_idx: [T, k] int64 indices of selected experts.
         """
-        from paddlefleet_ops.sonicmoe.functional.forward import _topk_fwd
+        from paddlefleet_ops.sonicmoe.functional.forward import (
+            _topk_fwd,
+        )
 
         T, E = scores.shape
 
@@ -264,11 +266,16 @@ class TestSonicMoEExpertParallelPrecision(unittest.TestCase):
             transformer_config,
             num_experts=self.n_routed_experts,
         )
-        return MoELayer(
+        moe_layer = MoELayer(
             transformer_config,
             transformer_layer_spec.sublayers_spec.mlp.extra_kwargs["sublayers"],
             pg_collection or self.pg_collection,
         )
+        mix_precision_utils.MixPrecisionLayer(moe_layer, dtype="bfloat16")
+        for param in moe_layer.parameters():
+            if hasattr(param, "main_grad") and param.main_grad is None:
+                param.main_grad = paddle.zeros_like(param, dtype=paddle.float32)
+        return moe_layer
 
     @staticmethod
     def _expert_slice_for_rank(tensor, ep_rank, ep_size):
@@ -352,7 +359,7 @@ class TestSonicMoEExpertParallelPrecision(unittest.TestCase):
             master_grad=True,
             master_weight=True,
         )
-        mix_precision_utils.MixPrecisionLayer(moe_layer, dtype="bfloat16")
+        # mix_precision_utils.MixPrecisionLayer(moe_layer, dtype="bfloat16")
         hidden_states = input_data.detach().clone()
         hidden_states.stop_gradient = False
         with paddle.amp.auto_cast(level="O2", dtype="bfloat16"):
@@ -439,6 +446,13 @@ class TestSonicMoEExpertParallelPrecision(unittest.TestCase):
             using_sonic_moe=True,
             fp8="e4m3",
         )
+        paddle.seed(self.seed)
+        model_parallel_cuda_manual_seed(self.seed)
+        moe_layer_sonic_fp8_dispatch = self._build_moe_layer(
+            using_sonic_moe=True,
+            fp8="e4m3",
+        )
+        moe_layer_sonic_fp8_dispatch.fp8_dispatch = True
 
         input_data_list = []
         for step_idx in range(acc_steps):
@@ -456,8 +470,15 @@ class TestSonicMoEExpertParallelPrecision(unittest.TestCase):
         output_bf16, grads_bf16 = self._run_accumulated_forward_backward(
             moe_layer_sonic_bf16, input_data_list
         )
+        moe_layer_sonic_fp8.grouped_gemm_experts.quant_weight()
         output_fp8, grads_fp8 = self._run_accumulated_forward_backward(
             moe_layer_sonic_fp8, input_data_list
+        )
+        moe_layer_sonic_fp8_dispatch.grouped_gemm_experts.quant_weight()
+        output_fp8_dispatch, grads_fp8_dispatch = (
+            self._run_accumulated_forward_backward(
+                moe_layer_sonic_fp8_dispatch, input_data_list
+            )
         )
         clear_all_fp8_weight_caches()
 
@@ -486,6 +507,31 @@ class TestSonicMoEExpertParallelPrecision(unittest.TestCase):
             grads_bf16,
             tol=fp8_tol,
             title="Sonic-MoE FP8 vs BF16 accumulated grad",
+        )
+
+        self._assert_tensor_diff_less(
+            output_fp8_dispatch,
+            output_bf16,
+            tol=fp8_tol,
+            title="Sonic-MoE FP8-dispatch vs BF16 final output",
+        )
+        self._assert_grad_diff_less(
+            grads_fp8_dispatch,
+            grads_bf16,
+            tol=fp8_tol,
+            title="Sonic-MoE FP8-dispatch vs BF16 accumulated grad",
+        )
+        self._assert_tensor_diff_less(
+            output_fp8_dispatch,
+            output_fp8,
+            tol=1e-8,
+            title="Sonic-MoE FP8-dispatch vs FP8 final output",
+        )
+        self._assert_grad_diff_less(
+            grads_fp8_dispatch,
+            grads_fp8,
+            tol=1e-8,
+            title="Sonic-MoE FP8-dispatch vs FP8 accumulated grad",
         )
 
         print("Final output and parameter gradient precision checks passed!")
@@ -524,9 +570,11 @@ class TestSonicMoEExpertParallelPrecision(unittest.TestCase):
             dtype=paddle.bfloat16,
         )
 
+        moe_layer_single.grouped_gemm_experts.quant_weight()
         output_single, loss_single, input_grad_single, grads_single = (
             self._run_forward_backward(moe_layer_single, input_data)
         )
+        moe_layer_ep.grouped_gemm_experts.quant_weight()
         output_ep, loss_ep, input_grad_ep, grads_ep = (
             self._run_forward_backward(moe_layer_ep, input_data)
         )
@@ -564,9 +612,55 @@ class TestSonicMoEExpertParallelPrecision(unittest.TestCase):
 
         print("Expert-parallel FP8 precision checks passed!")
 
+    def run_test_bf16_wgrad(self):
+        acc_steps = 1
+
+        paddle.seed(self.seed)
+        model_parallel_cuda_manual_seed(self.seed)
+        moe_layer_sonic_bf16 = self._build_moe_layer(using_sonic_moe=True)
+        paddle.seed(self.seed)
+        model_parallel_cuda_manual_seed(self.seed)
+        moe_layer_sonic_fp8 = self._build_moe_layer(
+            using_sonic_moe=True,
+            fp8="e4m3",
+            fp8_wgrad=False,
+        )
+
+        input_data_list = []
+        for step_idx in range(acc_steps):
+            paddle.seed(self.seed + step_idx)
+            input_data_list.append(
+                paddle.randn(
+                    [4, 256, self.hidden_size],
+                    dtype=paddle.bfloat16,
+                )
+            )
+
+        output_bf16, grads_bf16 = self._run_accumulated_forward_backward(
+            moe_layer_sonic_bf16, input_data_list
+        )
+        output_fp8, grads_fp8 = self._run_accumulated_forward_backward(
+            moe_layer_sonic_fp8, input_data_list
+        )
+
+        fp8_tol = 5e-3
+        self._assert_tensor_diff_less(
+            output_fp8,
+            output_bf16,
+            tol=fp8_tol,
+            title="Sonic-MoE FP8 vs BF16 final output",
+        )
+        self._assert_grad_diff_less(
+            grads_fp8,
+            grads_bf16,
+            tol=fp8_tol,
+            title="Sonic-MoE FP8 vs BF16 accumulated grad",
+        )
+
     def test_sonic_moe_all(self):
         self.run_test_sonic_moe_ep_grad_accumulation()
         self.run_test_ep_precision()
+        self.run_test_bf16_wgrad()
 
 
 if __name__ == "__main__":

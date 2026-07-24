@@ -186,7 +186,7 @@ class EcosystemLibrary:
                 ]
                 try:
                     subprocess.check_call(cmd)
-                except subprocess.CalledProcessError:
+                except subprocess.CalledProcessError as e:
                     cmd_str = " ".join(cmd)
                     logger.error(f"Failed to run {cmd_str}.")
                     raise
@@ -194,24 +194,22 @@ class EcosystemLibrary:
 
 def check_submodule_updated():
     if backends.IS_NVIDIA:
-        required_paths = [
-            "third_party/DeepGEMM/setup.py",
-            "third_party/DeepEP/setup.py",
-            "third_party/HybridEP/setup.py",
-            "third_party/HybridEP/third-party/nccl/Makefile",
-            "third_party/quack/pyproject.toml",
-            "third_party/sonic-moe/pyproject.toml",
-            "third_party/flash-attention/setup.py",
-            "third_party/FlashMLA/setup.py",
+        third_parties = [
+            "DeepGEMM",
+            "DeepEP",
+            "HybridEP",
+            "quack",
+            "sonic-moe",
+            "flash-attention",
+            "FlashMLA",
+            "fast-hadamard-transform",
         ]
-        missing_paths = [
-            path for path in required_paths if not (PKG_ROOT / path).exists()
-        ]
-        if missing_paths:
+        if not all(
+            (PKG_ROOT / "third_party" / third_party / ".git").exists()
+            for third_party in third_parties
+        ):
             logger.error(
-                "\033[91m Found uninitialized submodules. Please use "
-                "'git submodule update --init --recursive' from the PaddleFormers "
-                f"workspace root to fix. Missing: {', '.join(missing_paths)}\033[0m"
+                "\033[91m Found uninitialized submodules. Please use 'git submodule update --init --recursive' to fix!\033[0m"
             )
             sys.exit(1)
     elif backends.IS_XPU:
@@ -317,6 +315,8 @@ def get_cuda_version():
 def get_special_build_deps():
     if backends.IS_NVIDIA:
         cuda_major, cuda_minor = get_cuda_version()
+        major = sys.version_info.major
+        minor = sys.version_info.minor
         deps = []
         # for deep_ep build
         if platform.machine() == "aarch64":
@@ -408,7 +408,7 @@ def get_libs():
             artifacts=[
                 Artifact("flash_mask", "flash_mask"),
             ],
-            extra_env={"FLASHMASK_BUILD": "fa4"},
+            extra_env={"FLASHMASK_BUILD": "fa4+utils"},
             include_dirs=[
                 "flash_mask/flashmask_attention_v3/csrc",
                 "flash_mask/flashmask_attention_v3",
@@ -428,6 +428,18 @@ def get_libs():
                     (cuda_major, cuda_minor) <= (12, 8)
                 ),
             },
+        ),
+        EcosystemLibrary(
+            name="fast-hadamard-transform",
+            source_rel_path="third_party/fast-hadamard-transform",
+            artifacts=[
+                Artifact("fast_hadamard_transform", "fast_hadamard_transform"),
+                Artifact(
+                    "fast_hadamard_transform_cuda",
+                    "fast_hadamard_transform_cuda",
+                ),
+            ],
+            include_dirs=["csrc"],
         ),
     ]
     if (cuda_major, cuda_minor) >= (12, 9):
@@ -472,11 +484,6 @@ def get_libs():
                 artifacts=[
                     Artifact("cudnn", "cudnn"),
                 ],
-                extra_env={
-                    "FETCHCONTENT_SOURCE_DIR_DLPACK": str(
-                        PKG_ROOT / "third_party" / "dlpack"
-                    ),
-                },
             )
         )
     return LIBRARIES

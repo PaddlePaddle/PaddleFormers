@@ -21,7 +21,7 @@ classifiers = [
 ]
 dependencies = [
     "colorlog>=6.10.1",
-    "paddlepaddle-gpu==3.4.0.post20260623+7bd6c765854",
+    "paddlepaddle-gpu==3.4.0.post20260723+6ec1dc38ef0",
     "tilelang-paddle",
     "scikit-learn",
     "multiprocess",

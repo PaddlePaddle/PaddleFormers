@@ -24,8 +24,8 @@ sys.path.insert(
 )
 
 
-# Extra tests for paddleformers.fleet/refined_recompute/flash_attn.py
-# Focus on: _get_fa_version, flashattn_auto_cast,
+# Extra tests for paddlefleet/refined_recompute/flash_attn.py
+# Focus on: get_fa_version, flashattn_auto_cast,
 # RefinedRcomputeFlashAttention, FlashAttnFunctor
 
 import unittest
@@ -34,24 +34,20 @@ import paddle
 
 
 class TestGetFaVersion(unittest.TestCase):
-    """Tests for _get_fa_version function."""
+    """Tests for get_fa_version function (flash_mask_facade)."""
 
     def test_returns_int(self):
-        """Test that _get_fa_version returns an integer."""
-        from paddleformers.fleet.refined_recompute.flash_attn import (
-            _get_fa_version,
-        )
+        """Test that get_fa_version returns an integer."""
+        from paddlefleet_ops.flash_mask_facade import get_fa_version
 
-        result = _get_fa_version(64)
+        result = get_fa_version(64)
         self.assertIsInstance(result, int)
 
     def test_returns_2_or_3(self):
-        """Test that _get_fa_version returns 2 or 3."""
-        from paddleformers.fleet.refined_recompute.flash_attn import (
-            _get_fa_version,
-        )
+        """Test that get_fa_version returns a valid version."""
+        from paddlefleet_ops.flash_mask_facade import get_fa_version
 
-        result = _get_fa_version(64)
+        result = get_fa_version(64)
         self.assertIn(result, [2, 3, 4])
 
 

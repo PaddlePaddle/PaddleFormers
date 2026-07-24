@@ -32,7 +32,7 @@ from paddleformers.fleet.training.initialize import initialize_fleet
 
 PP_DEGREE = 4
 REPO_FLAG = os.getenv("repo_flag")
-SKIP_TESTS = REPO_FLAG != "paddleformers.fleet"
+SKIP_TESTS = REPO_FLAG != "paddlefleet"
 
 
 def get_gpu_models_via_nvidia_smi():
@@ -58,6 +58,16 @@ def judge_machine_type():
             return "H"
         elif "B" in name:
             return "B"
+
+
+def judge_h_subtype():
+    """Distinguish H800 vs H20 within the Hopper ("H") family."""
+    name = "".join(get_gpu_models_via_nvidia_smi()).upper()
+    if "H800" in name:
+        return "H800"
+    if "H20" in name:
+        return "H20"
+    return None
 
 
 def _set_random_seed(
@@ -229,7 +239,14 @@ class TestPP(unittest.TestCase):
         pp.pprint(rst)
 
         if judge_machine_type() == "H":
-            assert overlap_loss._md5sum() == "bce3fed95247f1b7a165e32b33d6fca7"
+            if judge_h_subtype() == "H800":
+                assert (
+                    overlap_loss._md5sum() == "7258f65d3eb11c437c1a6829ea1201d1"
+                )
+            else:
+                assert (
+                    overlap_loss._md5sum() == "bce3fed95247f1b7a165e32b33d6fca7"
+                )
             if paddle.distributed.get_rank() == 0:
                 for name, p in overlap_gpt_model.named_parameters():
                     print(f"  {name}: {p.grad._md5sum()}")

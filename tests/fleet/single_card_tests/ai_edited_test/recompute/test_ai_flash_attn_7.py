@@ -24,206 +24,160 @@ sys.path.insert(
 )
 
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import paddle
 
-from paddleformers.fleet.refined_recompute.flash_attn import (
-    _get_fa_version,
-    flashattn_auto_cast,
-)
+from paddlefleet_ops.flash_mask_facade import get_fa_version
+from paddleformers.fleet.refined_recompute.flash_attn import flashattn_auto_cast
 
 
 class TestGetFAVersionXPU(unittest.TestCase):
-    """Tests for _get_fa_version with XPU device."""
+    """Tests for get_fa_version with XPU device."""
 
     @patch(
-        "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_device",
+        "paddlefleet_ops.flash_mask_facade.paddle.get_device",
         return_value="xpu:0",
     )
     def test_xpu_returns_version_2(self, mock_device):
         """Test XPU device always returns version 2."""
-        result = _get_fa_version(64)
+        result = get_fa_version(64)
         self.assertEqual(result, 2)
 
     @patch(
-        "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_device",
+        "paddlefleet_ops.flash_mask_facade.paddle.get_device",
         return_value="xpu:1",
     )
     def test_xpu_any_id(self, mock_device):
         """Test XPU device with any device ID returns version 2."""
-        result = _get_fa_version(128)
+        result = get_fa_version(128)
         self.assertEqual(result, 2)
 
     @patch(
-        "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_device",
+        "paddlefleet_ops.flash_mask_facade.paddle.get_device",
         return_value="xpu:0",
     )
     def test_xpu_different_hdim(self, mock_device):
         """Test XPU returns version 2 regardless of hdim."""
         for hdim in [32, 64, 128, 256]:
-            result = _get_fa_version(hdim)
+            result = get_fa_version(hdim)
             self.assertEqual(result, 2)
 
 
 class TestGetFAVersionGPU(unittest.TestCase):
-    """Tests for _get_fa_version with GPU device."""
+    """Tests for get_fa_version with GPU device."""
 
     @patch(
-        "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_device",
+        "paddlefleet_ops.flash_mask_facade.paddle.get_device",
         return_value="gpu:0",
     )
-    @patch(
-        "paddleformers.fleet.refined_recompute.flash_attn.paddle.base.framework.get_flags"
-    )
+    @patch("paddlefleet_ops.flash_mask_facade.paddle.base.framework.get_flags")
     def test_gpu_returns_flag_value(self, mock_get_flags, mock_device):
         """Test GPU returns FLAGS_flash_attn_version."""
         mock_get_flags.return_value = {"FLAGS_flash_attn_version": 3}
-        with (
-            patch(
-                "paddleformers.fleet.refined_recompute.flash_attn.inspect.signature",
-                return_value=MagicMock(parameters={}),
-            ),
-            patch(
-                "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_flags",
-                return_value={"FLAGS_cudnn_deterministic": False},
-            ),
+        with patch(
+            "paddlefleet_ops.flash_mask_facade.paddle.get_flags",
+            return_value={"FLAGS_cudnn_deterministic": False},
         ):
-            result = _get_fa_version(64)
+            result = get_fa_version(64)
             self.assertEqual(result, 3)
 
     @patch(
-        "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_device",
+        "paddlefleet_ops.flash_mask_facade.paddle.get_device",
         return_value="gpu:0",
     )
-    @patch(
-        "paddleformers.fleet.refined_recompute.flash_attn.paddle.base.framework.get_flags"
-    )
+    @patch("paddlefleet_ops.flash_mask_facade.paddle.base.framework.get_flags")
     def test_gpu_flag_version_2(self, mock_get_flags, mock_device):
         """Test GPU returns 2 when flag is set to 2."""
         mock_get_flags.return_value = {"FLAGS_flash_attn_version": 2}
-        with (
-            patch(
-                "paddleformers.fleet.refined_recompute.flash_attn.inspect.signature",
-                return_value=MagicMock(parameters={}),
-            ),
-            patch(
-                "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_flags",
-                return_value={"FLAGS_cudnn_deterministic": False},
-            ),
+        with patch(
+            "paddlefleet_ops.flash_mask_facade.paddle.get_flags",
+            return_value={"FLAGS_cudnn_deterministic": False},
         ):
-            result = _get_fa_version(64)
+            result = get_fa_version(64)
             self.assertEqual(result, 2)
 
 
 class TestGetFAVersionDeterministic(unittest.TestCase):
-    """Tests for _get_fa_version with deterministic mode."""
+    """Tests for get_fa_version with deterministic mode (FA3).
+
+    FA3 only falls back to FA2 under deterministic mode when head_dim > 128.
+    """
 
     @patch(
-        "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_device",
+        "paddlefleet_ops.flash_mask_facade.paddle.get_device",
         return_value="gpu:0",
     )
+    @patch("paddlefleet_ops.flash_mask_facade.paddle.base.framework.get_flags")
     @patch(
-        "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_flags",
+        "paddlefleet_ops.flash_mask_facade.paddle.get_flags",
         return_value={"FLAGS_cudnn_deterministic": True},
     )
-    def test_deterministic_no_block_mask_returns_2(
-        self, mock_get_flags, mock_device
+    def test_deterministic_large_hdim_returns_2(
+        self, mock_get_flags, mock_base_flags, mock_device
     ):
-        """Test deterministic mode returns 2 when no block_mask param."""
-        with patch(
-            "paddleformers.fleet.refined_recompute.flash_attn.inspect.signature",
-            return_value=MagicMock(parameters={}),
-        ):
-            result = _get_fa_version(64)
-            self.assertEqual(result, 2)
+        """Deterministic FA3 with hdim>128 falls back to version 2."""
+        mock_base_flags.return_value = {"FLAGS_flash_attn_version": 3}
+        result = get_fa_version(256)
+        self.assertEqual(result, 2)
 
     @patch(
-        "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_device",
+        "paddlefleet_ops.flash_mask_facade.paddle.get_device",
         return_value="gpu:0",
     )
+    @patch("paddlefleet_ops.flash_mask_facade.paddle.base.framework.get_flags")
     @patch(
-        "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_flags",
+        "paddlefleet_ops.flash_mask_facade.paddle.get_flags",
         return_value={"FLAGS_cudnn_deterministic": True},
     )
-    def test_deterministic_with_block_mask_small_hdim(
-        self, mock_get_flags, mock_device
+    def test_deterministic_hdim_128_keeps_3(
+        self, mock_get_flags, mock_base_flags, mock_device
     ):
-        """Test deterministic with block_mask and small hdim returns 2."""
-        with patch(
-            "paddleformers.fleet.refined_recompute.flash_attn.inspect.signature",
-            return_value=MagicMock(parameters={"block_mask": MagicMock()}),
-        ):
-            result = _get_fa_version(64)
-            self.assertEqual(result, 2)
+        """Deterministic FA3 with hdim==128 keeps version 3."""
+        mock_base_flags.return_value = {"FLAGS_flash_attn_version": 3}
+        result = get_fa_version(128)
+        self.assertEqual(result, 3)
 
     @patch(
-        "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_device",
+        "paddlefleet_ops.flash_mask_facade.paddle.get_device",
         return_value="gpu:0",
     )
+    @patch("paddlefleet_ops.flash_mask_facade.paddle.base.framework.get_flags")
     @patch(
-        "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_flags",
+        "paddlefleet_ops.flash_mask_facade.paddle.get_flags",
         return_value={"FLAGS_cudnn_deterministic": True},
     )
-    def test_deterministic_with_block_mask_large_hdim(
-        self, mock_get_flags, mock_device
+    def test_deterministic_small_hdim_keeps_3(
+        self, mock_get_flags, mock_base_flags, mock_device
     ):
-        """Test deterministic with block_mask and large hdim returns 2."""
-        with patch(
-            "paddleformers.fleet.refined_recompute.flash_attn.inspect.signature",
-            return_value=MagicMock(parameters={"block_mask": MagicMock()}),
-        ):
-            result = _get_fa_version(256)
-            self.assertEqual(result, 2)
-
-    @patch(
-        "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_device",
-        return_value="gpu:0",
-    )
-    @patch(
-        "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_flags",
-        return_value={"FLAGS_cudnn_deterministic": True},
-    )
-    def test_deterministic_with_block_mask_hdim_128(
-        self, mock_get_flags, mock_device
-    ):
-        """Test deterministic with block_mask and hdim=128 returns 2."""
-        with patch(
-            "paddleformers.fleet.refined_recompute.flash_attn.inspect.signature",
-            return_value=MagicMock(parameters={"block_mask": MagicMock()}),
-        ):
-            result = _get_fa_version(128)
-            self.assertEqual(result, 2)
+        """Deterministic FA3 with hdim<=128 keeps version 3."""
+        mock_base_flags.return_value = {"FLAGS_flash_attn_version": 3}
+        result = get_fa_version(64)
+        self.assertEqual(result, 3)
 
 
 class TestGetFAVersionNonDeterministic(unittest.TestCase):
-    """Tests for _get_fa_version with non-deterministic mode."""
+    """Tests for get_fa_version with non-deterministic mode."""
 
     @patch(
-        "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_device",
+        "paddlefleet_ops.flash_mask_facade.paddle.get_device",
         return_value="gpu:0",
     )
+    @patch("paddlefleet_ops.flash_mask_facade.paddle.base.framework.get_flags")
     @patch(
-        "paddleformers.fleet.refined_recompute.flash_attn.paddle.base.framework.get_flags"
+        "paddlefleet_ops.flash_mask_facade.is_flash_mask_available",
+        return_value=True,
     )
-    def test_non_deterministic_returns_flag(self, mock_get_flags, mock_device):
-        """Test non-deterministic returns flag value."""
+    def test_non_deterministic_returns_flag(
+        self, mock_available, mock_get_flags, mock_device
+    ):
+        """Test non-deterministic FA4 returns flag value when available."""
         mock_get_flags.return_value = {"FLAGS_flash_attn_version": 4}
-        with (
-            patch(
-                "paddleformers.fleet.refined_recompute.flash_attn.inspect.signature",
-                return_value=MagicMock(parameters={}),
-            ),
-            patch(
-                "paddleformers.fleet.refined_recompute.flash_attn.paddle.get_flags",
-                return_value={"FLAGS_cudnn_deterministic": False},
-            ),
-            patch(
-                "paddleformers.fleet.refined_recompute.flash_attn._flash_mask_available",
-                True,
-            ),
+        with patch(
+            "paddlefleet_ops.flash_mask_facade.paddle.get_flags",
+            return_value={"FLAGS_cudnn_deterministic": False},
         ):
-            result = _get_fa_version(64)
+            result = get_fa_version(64)
             self.assertEqual(result, 4)
 
 

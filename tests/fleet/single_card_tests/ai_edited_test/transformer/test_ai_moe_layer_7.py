@@ -122,6 +122,7 @@ class TestMoELayerInitExpertParallel(unittest.TestCase):
 
         layer = MoELayer.__new__(MoELayer)
         layer.config = config
+        layer.moe_token_dispatcher_type = config.moe_token_dispatcher_type
         layer.pg_collection = pg
         layer.moe_group = pg.ep
         layer.expert_model_parallel_size = 4
@@ -144,6 +145,7 @@ class TestMoELayerInitExpertParallel(unittest.TestCase):
 
         layer = MoELayer.__new__(MoELayer)
         layer.config = config
+        layer.moe_token_dispatcher_type = config.moe_token_dispatcher_type
         layer.pg_collection = pg
         layer.moe_group = pg.ep
         layer.expert_model_parallel_size = 2
@@ -158,6 +160,7 @@ class TestMoELayerInitExpertParallel(unittest.TestCase):
 
         layer = MoELayer.__new__(MoELayer)
         layer.config = config
+        layer.moe_token_dispatcher_type = config.moe_token_dispatcher_type
         layer.pg_collection = pg
         layer.expert_model_parallel_size = 1
         layer.num_experts = 4
@@ -238,6 +241,8 @@ class TestMoELayerSetLayerNumber(unittest.TestCase):
     def test_set_layer_number(self):
         layer = MoELayer.__new__(MoELayer)
         layer.gate = MagicMock()
+        # set_layer_number now colors expert params; EP=1 makes that a no-op.
+        layer.expert_model_parallel_size = 1
         layer.set_layer_number(5)
         self.assertEqual(layer.layer_number, 5)
         layer.gate.set_layer_number.assert_called_once_with(
@@ -247,6 +252,7 @@ class TestMoELayerSetLayerNumber(unittest.TestCase):
     def test_set_layer_number_no_set_method(self):
         layer = MoELayer.__new__(MoELayer)
         layer.gate = MagicMock()
+        layer.expert_model_parallel_size = 1
         del layer.gate.set_layer_number
         with self.assertRaises(AssertionError):
             layer.set_layer_number(5)
@@ -278,10 +284,14 @@ class TestMoELayerDispatchPermuteUnpermute(unittest.TestCase):
 
     def test_combine_delegates(self):
         layer = MoELayer.__new__(MoELayer)
+        layer.moe_token_dispatcher_type = "deepep"
         layer.token_dispatcher = MagicMock()
+        layer.use_rr_deepep_combine = False
+        layer.fp8_dispatch = False
+        layer.using_sonic_moe = False
+        layer.fp8_dispatch_bwd = False
         hidden = paddle.randn([4, 64])
-        layer.token_dispatcher.token_combine.return_value = hidden
-        layer.token_dispatcher.combine_postprocess.return_value = hidden
+        layer.token_dispatcher._comm_manager.combine.return_value = hidden
         result = layer.combine(hidden)
         self.assertEqual(result.shape, [4, 64])
 
@@ -316,6 +326,7 @@ class TestMoELayerForwardLogging(unittest.TestCase):
         z_loss = paddle.to_tensor(2.5, dtype="float32")
 
         layer = MoELayer.__new__(MoELayer)
+        layer.moe_token_dispatcher_type = "deepep"
         layer.sequence_parallel = False
         layer.expert_model_parallel_size = 1
         layer.shared_experts = None

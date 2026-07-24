@@ -100,6 +100,7 @@ class TestRefinedRcomputeFlashMaskCpAttentionForward(unittest.TestCase):
 
         attn = RefinedRcomputeFlashMaskCpAttention()
         hold_tensors = {
+            "mode": "dualchunk_allgather",
             "result_attention": paddle.randn([2, 4, 8], dtype=paddle.bfloat16),
             "softmax_lse": paddle.randn([2, 4], dtype=paddle.float32),
             "startend_row_indices": paddle.to_tensor(
@@ -282,6 +283,7 @@ class TestFlashMaskAttnCpFunctorForwardAndBackward(unittest.TestCase):
         result_attn = paddle.randn([2, 4, 8], dtype=paddle.bfloat16)
 
         hold_tensors = {
+            "mode": "dualchunk_allgather",
             "result_attention": result_attn,
             "softmax_lse": paddle.randn([2, 4], dtype=paddle.float32),
             "startend_row_indices": paddle.to_tensor(
@@ -292,7 +294,7 @@ class TestFlashMaskAttnCpFunctorForwardAndBackward(unittest.TestCase):
             "fa_version": 2,
         }
 
-        result = FlashMaskAttnCpFunctor.apply(q, k, v, hold_tensors)
+        result = FlashMaskAttnCpFunctor.apply(q, k, v, None, hold_tensors)
         self.assertTrue(result is result_attn)
 
 

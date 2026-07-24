@@ -388,6 +388,72 @@ class TestCudnnIndexerTopkFwd(unittest.TestCase):
             "cuDNN and Paddle indexer top-k sets should match",
         )
 
+    def test_seq_offset_matches_sliced_global_run(self):
+        """CP causal-only mode: local chunk with seq_offset equals global slice."""
+        B, S_global, H_i, D_i, ratio, topk = 1, 64, 64, 128, 4, 8
+        S_k = S_global // ratio
+        q, k, w = _make_indexer_inputs(B, S_global, S_k, H_i, D_i, seed=2031)
+        offset = 32
+        S_local = 32
+        global_indices, _ = self.cudnn_indexer_topk_fwd(
+            q, k, w, ratio=ratio, topk_effective=topk
+        )
+        local_indices, _ = self.cudnn_indexer_topk_fwd(
+            q[:, offset : offset + S_local],
+            k,
+            w[:, offset : offset + S_local],
+            ratio=ratio,
+            topk_effective=topk,
+            seq_offset=offset,
+        )
+        self.assertTrue(
+            _sorted_compare_indices(
+                local_indices, global_indices[:, offset : offset + S_local]
+            ),
+            "cuDNN seq_offset top-k sets should match sliced global run",
+        )
+
+    def test_seq_offset_with_valid_range_matches_sliced_global_run(self):
+        """CP docmask fallback: local valid_range + seq_offset equals global slice."""
+        from paddleformers.fleet.transformer.csa_attention import (
+            get_valid_range,
+        )
+
+        B, S_global, H_i, D_i, ratio, topk = 1, 64, 64, 128, 4, 8
+        S_k = S_global // ratio
+        q, k, w = _make_indexer_inputs(B, S_global, S_k, H_i, D_i, seed=2032)
+        startend = paddle.to_tensor(
+            [32] * 32 + [64] * 32, dtype="int32"
+        ).reshape([1, 1, S_global, 1])
+        valid_range = get_valid_range(ratio, B, S_global, startend)
+        offset = 32
+        S_local = 32
+        global_indices, _ = self.cudnn_indexer_topk_fwd(
+            q,
+            k,
+            w,
+            ratio=ratio,
+            topk_effective=topk,
+            valid_range=valid_range,
+            startend_row_indices=startend,
+        )
+        local_indices, _ = self.cudnn_indexer_topk_fwd(
+            q[:, offset : offset + S_local],
+            k,
+            w[:, offset : offset + S_local],
+            ratio=ratio,
+            topk_effective=topk,
+            valid_range=valid_range[:, offset : offset + S_local],
+            startend_row_indices=startend,
+            seq_offset=offset,
+        )
+        self.assertTrue(
+            _sorted_compare_indices(
+                local_indices, global_indices[:, offset : offset + S_local]
+            ),
+            "cuDNN seq_offset docmask top-k sets should match sliced global run",
+        )
+
 
 @_require_sm100
 class TestCudnnVsTileLangCrossValidation(unittest.TestCase):

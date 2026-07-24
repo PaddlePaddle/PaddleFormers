@@ -72,20 +72,32 @@ class RMSNorm(paddle.nn.Layer):
         if input_is_parallel:
             self.enable_sequence_parallel()
 
-    def forward(self, hidden_states: Tensor):
-        # Ensure hidden_states dtype matches weight dtype for rms_norm
-        if hidden_states.dtype != self.weight.dtype:
-            hidden_states = hidden_states.astype(self.weight.dtype)
+    def forward(
+        self,
+        hidden_states: Tensor,
+        high_precision_norm: bool = False,
+        return_high_precision_norm: bool = False,
+    ):
+        if high_precision_norm:
+            hidden_states = hidden_states.astype(paddle.float32)
+            weight = self.weight.astype(paddle.float32)
+        else:
+            if hidden_states.dtype != self.weight.dtype:
+                hidden_states = hidden_states.astype(self.weight.dtype)
+            weight = self.weight
         rms_norm_out = rms_norm(
             hidden_states,
             hidden_states.shape[-1:],
-            self.weight,
+            weight,
             self.variance_epsilon,
         )
+        return_dtype = self.weight.dtype
+        if return_high_precision_norm:
+            return_dtype = paddle.float32
         if isinstance(rms_norm_out, (tuple, list)):
-            return rms_norm_out[0].astype(self.weight.dtype)
+            return rms_norm_out[0].astype(return_dtype)
         else:
-            return rms_norm_out.astype(self.weight.dtype)
+            return rms_norm_out.astype(return_dtype)
 
     def enable_sequence_parallel(self):
         mark_as_sequence_parallel_parameter(self.weight)

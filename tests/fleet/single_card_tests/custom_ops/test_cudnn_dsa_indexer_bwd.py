@@ -666,7 +666,7 @@ class TestCudnnCsaIndexerBwd(unittest.TestCase):
 
 
 class TestCudnnOpsInit(unittest.TestCase):
-    """Cover paddlefleet.cudnn_ops.__init__.py direct imports."""
+    """Cover paddleformers.fleet.cudnn_ops.__init__.py direct imports."""
 
     def test_export_csa_indexer_bwd(self):
         import paddleformers.fleet.cudnn_ops as cudnn_ops_mod
@@ -708,7 +708,7 @@ class TestTileLangCSAIndexerLossAutoScalerCudnn(unittest.TestCase):
         if hasattr(self, "DSAScaler"):
             self.DSAScaler._main_loss_backward_scale = self._orig_scale
 
-    def _run_with_scale(self, scale):
+    def _run_with_scale(self, scale, with_loss_mask=False):
         import paddleformers.fleet.cudnn_ops as cudnn_ops_mod
 
         captured = {}
@@ -763,9 +763,16 @@ class TestTileLangCSAIndexerLossAutoScalerCudnn(unittest.TestCase):
             )
             ctx.loss_coeff = 0.01
             ctx.indexer_backend = "cudnn"
+            ctx.loss_mask = (
+                paddle.ones([b, sq], dtype="float32")
+                if with_loss_mask
+                else None
+            )
+            if with_loss_mask:
+                ctx.num_rows = float(b * sq)
 
             grad_output = paddle.ones_like(weights)
-            self.AutoScaler.backward(ctx, grad_output)
+            captured["grads"] = self.AutoScaler.backward(ctx, grad_output)
         finally:
             if orig is not None:
                 cudnn_ops_mod.csa_indexer_bwd = orig
@@ -776,6 +783,14 @@ class TestTileLangCSAIndexerLossAutoScalerCudnn(unittest.TestCase):
     def test_scale_none(self):
         captured = self._run_with_scale(None)
         self.assertIsNone(captured["grad_loss"])
+
+    def test_backward_returns_one_grad_per_tensor_forward_input(self):
+        captured = self._run_with_scale(None)
+        self.assertEqual(len(captured["grads"]), 7)
+
+    def test_backward_returns_loss_mask_grad_when_tensor_input_present(self):
+        captured = self._run_with_scale(None, with_loss_mask=True)
+        self.assertEqual(len(captured["grads"]), 8)
 
     def test_scale_paddle_tensor(self):
         scale_t = paddle.to_tensor(2.5, dtype="float32")
@@ -843,8 +858,6 @@ class TestTransformerConfigCsaIndexerBackend(unittest.TestCase):
             experimental_attention_variant="dsv4_hybrid",
             csa_compress_ratios=[4],
             csa_indexer_backend="cudnn",
-            csa_tilelang_backend="attention_paddle_compat",
-            csa_tilelang_enable_indexer=True,
         )
         self.assertEqual(cfg.csa_indexer_backend, "cudnn")
 
@@ -857,8 +870,6 @@ class TestTransformerConfigCsaIndexerBackend(unittest.TestCase):
             experimental_attention_variant="dsv4_hybrid",
             csa_compress_ratios=[4],
             csa_indexer_backend="tilelang",
-            csa_tilelang_backend="attention_paddle_compat",
-            csa_tilelang_enable_indexer=True,
         )
         self.assertEqual(cfg.csa_indexer_backend, "tilelang")
 
@@ -872,8 +883,6 @@ class TestTransformerConfigCsaIndexerBackend(unittest.TestCase):
                 experimental_attention_variant="dsv4_hybrid",
                 csa_compress_ratios=[4],
                 csa_indexer_backend="invalid_backend",
-                csa_tilelang_backend="attention_paddle_compat",
-                csa_tilelang_enable_indexer=True,
             )
         self.assertIn("invalid_backend", str(cm.exception))
 
@@ -891,7 +900,7 @@ class TestTransformerConfigCsaIndexerBackend(unittest.TestCase):
 
 
 class TestIndexerSubpackageInit(unittest.TestCase):
-    """Cover paddlefleet.cudnn_ops.indexer.__init__.py re-export."""
+    """Cover paddleformers.fleet.cudnn_ops.indexer.__init__.py re-export."""
 
     def test_import_from_indexer(self):
         from paddleformers.fleet.cudnn_ops.indexer import csa_indexer_bwd

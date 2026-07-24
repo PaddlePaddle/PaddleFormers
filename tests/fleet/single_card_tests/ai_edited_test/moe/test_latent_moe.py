@@ -16,8 +16,8 @@
 Unit tests for Latent MoE feature.
 
 Covers new code in:
-  - src/paddleformers.fleet/transformer/transformer_config.py  (moe_latent_size)
-  - src/paddleformers.fleet/transformer/moe/moe_layer.py       (__init__, dispatch_preprocess,
+  - paddleformers/fleet/transformer/transformer_config.py  (moe_latent_size)
+  - paddleformers/fleet/transformer/moe/moe_layer.py       (__init__, dispatch_preprocess,
                                                          aux_loss_compute, forward)
 
 Target: >90% line coverage of all newly added lines.
@@ -548,6 +548,14 @@ class TestForwardLatent(unittest.TestCase):
         stub.moe_use_fusion_node = False
         stub.training = False
         stub.router_aux_loss_coef = 0.0
+        stub.moe_token_dispatcher_type = "alltoall"
+        stub.moe_allgather_gate_overlap = False
+
+        # _prepare_gate_input / _prepare_expert_input must return real tensors
+        stub._prepare_gate_input = lambda h, r: h
+        stub._prepare_expert_input = lambda h, r: h
+        stub._post_routed_output = lambda x: x
+        stub._post_shared_output = lambda x: x
 
         # gate returns: (capacity, topk_weights, topk_indices, gates_masked, mask,
         #                priorities, aux_loss, z_loss)
@@ -818,6 +826,7 @@ class TestFusionMoeForwardLatent(unittest.TestCase):
         expert_out_size = latent_size if use_latent_moe else hidden_size
         stub = MagicMock()
         stub.use_latent_moe = use_latent_moe
+        stub._latent_hidden = None
         if use_latent_moe:
             stub.fc1_latent_proj = nn.Linear(hidden_size, latent_size)
             stub.fc2_latent_proj = nn.Linear(latent_size, hidden_size)
@@ -828,12 +837,24 @@ class TestFusionMoeForwardLatent(unittest.TestCase):
         stub.recompute_moe_gate_up = False
         stub.recompute_moe_premute = False
         stub.fp8_wgrad = True
+        stub._use_hybrid_ep_fusion.return_value = False
+        stub._project_to_latent.side_effect = (
+            (lambda x: stub.fc1_latent_proj(x))
+            if use_latent_moe
+            else (lambda x: x)
+        )
+        stub.combine.return_value = paddle.randn([bs_seq, expert_out_size])
         stub.dispatch.return_value = (
             paddle.randn([bs_seq, expert_out_size]),
             None,
         )
         stub.token_dispatcher._comm_manager.combine.return_value = paddle.randn(
             [bs_seq, expert_out_size]
+        )
+        stub.token_dispatcher.get_dispatched_routing.return_value = (
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
         )
         return stub, bs_seq
 

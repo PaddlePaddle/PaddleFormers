@@ -98,34 +98,28 @@ class TestFlashattnAutoCast(unittest.TestCase):
 
 
 class TestGetFaVersion(unittest.TestCase):
-    """Tests for _get_fa_version function."""
+    """Tests for get_fa_version function (flash_mask_facade)."""
 
     def test_get_fa_version_returns_int(self):
-        """Test _get_fa_version returns an integer."""
-        from paddleformers.fleet.refined_recompute.flash_attn import (
-            _get_fa_version,
-        )
+        """Test get_fa_version returns an integer."""
+        from paddlefleet_ops.flash_mask_facade import get_fa_version
 
-        version = _get_fa_version(64)
+        version = get_fa_version(64)
         self.assertIsInstance(version, int)
 
     def test_get_fa_version_valid_values(self):
-        """Test _get_fa_version returns 2 or 3."""
-        from paddleformers.fleet.refined_recompute.flash_attn import (
-            _get_fa_version,
-        )
+        """Test get_fa_version returns a valid version."""
+        from paddlefleet_ops.flash_mask_facade import get_fa_version
 
-        version = _get_fa_version(64)
+        version = get_fa_version(64)
         self.assertIn(version, [2, 3, 4])
 
     def test_get_fa_version_different_hdim(self):
-        """Test _get_fa_version with different head dims."""
-        from paddleformers.fleet.refined_recompute.flash_attn import (
-            _get_fa_version,
-        )
+        """Test get_fa_version with different head dims."""
+        from paddlefleet_ops.flash_mask_facade import get_fa_version
 
         for hdim in [32, 64, 128]:
-            version = _get_fa_version(hdim)
+            version = get_fa_version(hdim)
             self.assertIn(version, [2, 3, 4])
 
 

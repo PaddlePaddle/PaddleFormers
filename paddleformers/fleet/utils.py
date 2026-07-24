@@ -22,6 +22,7 @@ import inspect
 import math
 import operator
 import warnings
+from collections.abc import Callable
 from contextlib import nullcontext
 from functools import reduce
 from typing import TYPE_CHECKING, Any
@@ -153,6 +154,29 @@ def get_magic_init_method(sigma):
     return init_method
 
 
+def truncated_init_method_normal(sigma, truncate_factor=3.0):
+    """Init method based on truncated normal N(0, sigma^2) clipped to
+    [-truncate_factor*sigma, truncate_factor*sigma].
+
+    Initialized under an fp32 default dtype guard to avoid numerical issues
+    in low-precision (e.g. bf16) default dtype. Independent from the other
+    init methods so existing behavior is unaffected.
+    """
+
+    def init_method(weight):
+        dtype = paddle.get_default_dtype()
+        try:
+            paddle.set_default_dtype("float32")
+            bound = truncate_factor * sigma
+            paddle.nn.init.trunc_normal_(
+                weight, mean=0.0, std=sigma, a=-bound, b=bound
+            )
+        finally:
+            paddle.set_default_dtype(dtype)
+
+    return init_method
+
+
 def get_pg_size(group=None):
     """Get world size for a distributed group.
 
@@ -272,7 +296,9 @@ def is_paddle_min_version(version, check_equality=True):
     return get_paddle_version() > PkgVersion(version)
 
 
-# context parallel
+########################
+### context parallel ###
+########################
 
 
 def get_batch_on_this_cp_rank(inputs, cp_balance_mode="dualchunk_allgather"):
@@ -304,7 +330,9 @@ def get_batch_on_this_cp_rank(inputs, cp_balance_mode="dualchunk_allgather"):
     return res
 
 
-# NVTX profiling
+######################
+### NVTX profiling ###
+######################
 _nvtx_enabled: bool = False  # Whether NVTX range profiling is enabled
 _nvtx_range_messages: list[
     str
@@ -536,7 +564,7 @@ def deprecate_inference_params(inference_context, inference_params):
     if inference_context is None and inference_params is not None:
         warnings.warn(
             "`inference_params` renamed to `inference_context`, and will be "
-            "removed in `paddleformers.fleet`"
+            "removed in `paddlefleet`"
         )
         return inference_params
     return inference_context

@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import warnings
 from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -431,7 +430,45 @@ class MultiTokenPredictionLayer(FleetLayer):
                 eps=self.config.rms_norm_eps,
             )
 
+        # MTP Magic Send: per-layer embedding and counter
+        self.mtp_embed = None
+        if config.enable_mtp_magic_send:
+            import copy
+
+            from paddleformers.fleet.tensor_parallel import (
+                VocabParallelEmbedding,
+            )
+
+            no_init_cfg = copy.copy(config)
+            no_init_cfg.perform_initialization = False
+            self.mtp_embed = VocabParallelEmbedding(
+                num_embeddings=config.vocab_size,
+                embedding_dim=config.hidden_size,
+                init_method=config.embedding_init_method,
+                reduce_scatter_embeddings=False,
+                config=no_init_cfg,
+            )
+            if self.config.context_parallel_size > 1:
+                from paddleformers.fleet.context_parallel_utils import (
+                    mark_context_parallel_parameter_disable_scale_grad,
+                )
+
+                mark_context_parallel_parameter_disable_scale_grad(
+                    self.mtp_embed
+                )
+
+            from paddleformers.fleet.models.gpt.mtp_embedding_layer import (
+                mtp_magic_instance,
+            )
+
+            self.magic_key = f"mtp_layer_{self.layer_number}"
+            mtp_magic_instance.set_magic_count(self.magic_key, -1)
+
         self.offload_context = nullcontext()
+
+    @property
+    def transformer_layer_weights(self):
+        return self.transformer_layer.named_parameters()
 
     def _concat_embeddings(
         self,
@@ -489,7 +526,7 @@ class MultiTokenPredictionLayer(FleetLayer):
             # e_proj: [.., h] -> [.., h/tp]
             e_out, _ = self.e_proj(decoder_input)
             # h_proj: applied per-stream [.., n, h] -> [.., n, h/tp]
-            # 这里hs_streams是4D tensor: [b,s,n,h]会导致算梯度的时候调用.t()报错，必须reshape到更低维度
+            # 4D tensor [b,s,n,h] causes .t() error in backward; reshape to 3D first
             orig_shape = list(hs_streams.shape)  # [s/sp, b, n, h]
             if self.tensor_parallel > 1 and self.sequence_parallel:
                 # [s/sp, b, n, h] --> [s, b, n, h]
@@ -750,11 +787,10 @@ class MultiTokenPredictionLayer(FleetLayer):
                 "recompute_num_layers must be 1 for MTP recompute"
             )
             outputs = checkpoint_handler()
-        elif self.config.recompute_method == "block":
-            warnings.warn(
-                "recompute_method == 'block' is not supported for MTP yet."
-                " Skipping recompute."
-            )
+        elif self.config.recompute_method in ("block", "first_n"):
+            # "block" and "first_n" are decoder-layer concepts (based on
+            # decoder layer_number vs recompute_num_layers).  They don't
+            # apply to MTP layers, so skip recompute and run forward directly.
             outputs = forward_func(*args, **kwargs)
         else:
             raise ValueError("Invalid activation recompute method.")
@@ -772,57 +808,82 @@ class MultiTokenPredictionLayer(FleetLayer):
             )
 
         # === Magic Send branch ===
-        # hidden_states is pure backbone output (not concatenated); mtp_input_embeds provided by MTPEmbeddingLayer
         if self.config.enable_mtp_magic_send:
-            hidden_states = dict_args["hidden_states"]
+            prev = dict_args["hidden_states"]
             mhc_multistream = dict_args.pop("mhc_multistream", None)
-            # Save backbone output for downstream GPTMainLMHead (main logits computation)
-            dict_args["_backbone_hidden_states"] = hidden_states
-            mtp_input_embeds = dict_args.get("mtp_input_embeds", None)
-            if mtp_input_embeds is None:
-                raise RuntimeError(
-                    "enable_mtp_magic_send=True but mtp_input_embeds not found in dict_args. "
-                    "MTPEmbeddingLayer may not have been executed."
+
+            # Split prev into segments, take last as chain_input
+            n_slices = self.layer_number + 1
+            if self.layer_number == 0:
+                prev_segs = [prev]
+                chain_input = prev
+            else:
+                prev_segs = paddle.split(prev, n_slices)
+                chain_input = prev_segs[-1]
+
+            # mHC: split multi-stream into per-layer chunks, override chain_input
+            mhc_enabled = mhc_multistream is not None
+            mhc_chunks = None
+            if mhc_enabled:
+                mhc_chunks = paddle.split(
+                    mhc_multistream, self.config.num_nextn_predict_layers + 1
+                )
+                chain_input = mhc_chunks[self.layer_number]
+
+            # --- Index-based input_ids addressing ---
+            from paddleformers.fleet.models.gpt.mtp_embedding_layer import (
+                mtp_magic_instance,
+            )
+
+            magic_count = mtp_magic_instance.get_magic_count(self.magic_key)
+            # Skip increment during recompute replay
+            if paddle.is_grad_enabled() or not self.training:
+                magic_count += 1
+                mtp_magic_instance.set_magic_count(self.magic_key, magic_count)
+            input_ids_list = mtp_magic_instance.get("input_ids")
+            magic_idx = magic_count % len(input_ids_list)
+            input_ids = input_ids_list[magic_idx]
+
+            # Re-embed input_ids locally
+            mtp_input_embeds = self.mtp_embed(input_ids).astype(
+                self.mtp_embed.weight.dtype
+            )
+
+            # Zero-out padding for MoE routing
+            if (
+                self.config.expert_model_parallel_size > 1
+                and self.config.tensor_model_parallel_size < 2
+            ):
+                from paddleformers.fleet.models.gpt.utils import fill_feature
+
+                pad_token_id = getattr(self.config, "pad_token_id", 0) or 0
+                mtp_input_embeds = fill_feature(
+                    mtp_input_embeds, input_ids == pad_token_id, 0
                 )
 
-            # mtp_input_embeds: [B, S+num_mtp, H] (full embedding of original input_ids)
-            # Extract shifted slice for current depth as decoder_input
-            num_mtp = self.config.num_nextn_predict_layers
-            # Compute global main sequence length S (before CP/SP scatter).
-            # hidden_states arriving here is already CP-local and/or SP-local,
-            # so we must recover the full sequence length for correct slicing of
-            # mtp_input_embeds (which is always kept at full [B, S+num_mtp, H]).
+            # Compute global seq_len
             cp_world_size = get_context_parallel_world_size()
             if self.config.sequence_parallel:
-                # SP format: hidden_states is [S_local/tp, B, H]
                 seq_len = (
-                    hidden_states.shape[0]
+                    chain_input.shape[0]
                     * self.config.tensor_model_parallel_size
                 )
             else:
-                # Non-SP: hidden_states is [B, S_local, H]
-                seq_len = hidden_states.shape[1]
-            # Recover global seq_len if CP is active
+                seq_len = chain_input.shape[1]
             if cp_world_size > 1 and self.config.experimental_dataflow:
                 seq_len = seq_len * cp_world_size
 
-            # shifted embedding for depth k: mtp_input_embeds[:, (k+1):(k+1+seq_len), :]
+            # Shifted embedding slice for current depth
             depth = self.layer_number
             decoder_input = mtp_input_embeds[
                 :, (depth + 1) : (depth + 1 + seq_len), :
             ]
 
-            # Apply CP/SP scatter to decoder_input to match the format of hidden_states.
-            # In the non-magic-send path, GPTEmbedding applies these transforms to each
-            # shifted MTP embedding before it enters MultiTokenPredictionLayer.
-            if (
-                get_context_parallel_world_size() > 1
-                and self.config.experimental_dataflow
-            ):
+            # CP/SP scatter
+            if cp_world_size > 1 and self.config.experimental_dataflow:
                 decoder_input = ContextParallelScatterOp.apply(
                     decoder_input, axis=1, mode=self.config.cp_balance_mode
                 )
-
             if self.config.sequence_parallel:
                 batch_size, local_seq_len, hidden_size = decoder_input.shape
                 decoder_input = decoder_input.reshape(
@@ -836,102 +897,164 @@ class MultiTokenPredictionLayer(FleetLayer):
                         .contiguous()
                     )  # [S/tp, B, H]
 
-            # Pop auxiliary data
-            origin_start_row_indices = dict_args.pop(
-                "attn_mask_startend_row_indices", None
+            # Per-depth input_ids for MoE mask
+            mtp_input_ids_local = input_ids[
+                :, (depth + 1) : (depth + 1 + seq_len)
+            ].contiguous()
+
+            # Trim rotary embeddings to seq_len (once; seq_len is constant across depths)
+            _rotary_keys = (
+                "rotary_pos_emb",
+                "rotary_pos_cos",
+                "rotary_pos_sin",
+                "swa_rotary_pos_emb",
+                "swa_rotary_pos_cos",
+                "swa_rotary_pos_sin",
             )
-            mtp_startend_row_indices_all = dict_args.pop(
+            for rk in _rotary_keys:
+                rv = dict_args.get(rk, None)
+                if rv is None:
+                    continue
+                if rk in ("rotary_pos_emb", "swa_rotary_pos_emb"):
+                    dict_args[rk] = (
+                        rv[:seq_len]
+                        if self.config.sequence_parallel
+                        else rv[:, :seq_len]
+                    )
+                else:
+                    dict_args[rk] = rv[:, :seq_len]
+
+            # Per-depth attention mask
+            mtp_startend_row_indices_all = dict_args.get(
                 "mtp_startend_row_indices_all", None
             )
-            mtp_hidden_inputs_mask_all = dict_args.pop(
+            mtp_hidden_inputs_mask_all = dict_args.get(
                 "mtp_hidden_inputs_mask_all", None
             )
-            mtp_input_ids_for_moe_mask = dict_args.pop(
-                "mtp_input_ids_for_moe_mask", None
-            )
-            origin_input_ids = dict_args.pop("input_ids", None)
 
-            # Trim rotary_pos_emb to main decoder length
-            origin_rotary_pos_emb = dict_args.get("rotary_pos_emb", None)
-            if origin_rotary_pos_emb is not None:
-                if self.config.sequence_parallel:
-                    dict_args["rotary_pos_emb"] = origin_rotary_pos_emb[
-                        :seq_len
-                    ]
-                else:
-                    dict_args["rotary_pos_emb"] = origin_rotary_pos_emb[
-                        :, :seq_len
-                    ]
-            origin_rotary_pos_cos = dict_args.get("rotary_pos_cos", None)
-            if origin_rotary_pos_cos is not None:
-                dict_args["rotary_pos_cos"] = origin_rotary_pos_cos[:, :seq_len]
-            origin_rotary_pos_sin = dict_args.get("rotary_pos_sin", None)
-            if origin_rotary_pos_sin is not None:
-                dict_args["rotary_pos_sin"] = origin_rotary_pos_sin[:, :seq_len]
-
-            # Set per-depth mask
+            mtp_mask = None
             if mtp_startend_row_indices_all is not None:
                 if self.config.gpt_model_use_experimental_version:
-                    dict_args["attn_mask_startend_row_indices"] = (
-                        mtp_startend_row_indices_all[:, depth : depth + 1, :, :]
-                    )
+                    mtp_mask = mtp_startend_row_indices_all[
+                        :, depth : depth + 1, :, :
+                    ]
                 else:
-                    dict_args["attn_mask_startend_row_indices"] = (
-                        mtp_startend_row_indices_all[
-                            :, depth : depth + 1, :, :1
-                        ]
-                    )
-            if mtp_hidden_inputs_mask_all is not None:
-                dict_args["mtp_hidden_inputs_mask"] = (
-                    mtp_hidden_inputs_mask_all[:, depth : depth + 1, :]
-                )
-            if mtp_input_ids_for_moe_mask is not None:
-                dict_args["input_ids"] = mtp_input_ids_for_moe_mask[
-                    :, depth, :
-                ].contiguous()
-            else:
-                dict_args.pop("input_ids", None)
+                    mtp_mask = mtp_startend_row_indices_all[
+                        :, depth : depth + 1, :, :1
+                    ]
+            mtp_hidden_inputs_mask = (
+                mtp_hidden_inputs_mask_all[:, depth : depth + 1, :]
+                if mtp_hidden_inputs_mask_all is not None
+                else None
+            )
 
-            # Set hidden_states and decoder_input, call _proj_and_transformer_layer
-            # mHC: use multi-stream hidden states for MTP computation
-            if self.mhc_enabled and mhc_multistream is not None:
-                dict_args["hidden_states"] = mhc_multistream
-            else:
-                dict_args["hidden_states"] = hidden_states
+            # Update dict_args for _proj_and_transformer_layer call
+            # (mirrors non-magic-send branch: update fields in dict_args, then **dict_args)
+            dict_args["hidden_states"] = chain_input
             dict_args["decoder_input"] = decoder_input
+            dict_args["attn_mask_startend_row_indices"] = mtp_mask
+            dict_args["mtp_hidden_inputs_mask"] = mtp_hidden_inputs_mask
+            dict_args["input_ids"] = mtp_input_ids_local
+            # Remove keys not accepted by _proj_and_transformer_layer,
+            # and also remove any None-valued keys (PP framework's
+            # convert_tensor_dict_to_tuple crashes on None values).
+            _pop_keys = (
+                "mtp_startend_row_indices_all",
+                "mtp_hidden_inputs_mask_all",
+                "mhc_multistream",
+                "labels",
+                "mtp_input_ids_for_moe_mask",
+            )
+            _stashed = {}
+            for k in _pop_keys:
+                if k in dict_args:
+                    _stashed[k] = dict_args.pop(k)
+            # Remove None values to avoid PP framework crash
+            _none_keys = [k for k, v in dict_args.items() if v is None]
+            for k in _none_keys:
+                dict_args.pop(k)
 
+            # Projection + transformer
             if self.config.recompute_granularity == "full" and self.training:
-                hidden_states = self._checkpointed_forward(
+                output = self._checkpointed_forward(
                     self._proj_and_transformer_layer,
                     **dict_args,
                 )
             else:
-                hidden_states = self._proj_and_transformer_layer(
+                output = self._proj_and_transformer_layer(
                     **dict_args,
                 )
 
-            # mHC: contract multi-stream output to single-stream for loss computation
-            if self.mhc_enabled and mhc_multistream is not None:
-                hidden_states = self._postprocess(hidden_states)
+            # Restore stashed keys back into dict_args
+            dict_args.update(_stashed)
 
-            # Write back result
-            dict_args.pop("decoder_input", None)
+            # mHC: contract multi-stream to single-stream for concat
+            if mhc_enabled:
+                single_stream_output = self._postprocess(output)
+            else:
+                single_stream_output = output
 
-            # Concat [backbone_hidden | mtp_hidden] for unified split in downstream LM heads.
-            backbone_hs = dict_args.get(
-                "_backbone_hidden_states", hidden_states
+            # Cumulative concat: append this layer's output
+            new_hidden = paddle.concat([*prev_segs, single_stream_output])
+
+            # Build return dict: only include tensors that need P2P communication.
+            # PP framework serializes ALL dict values for send/recv, so we must
+            # not include non-contiguous slices or unnecessary auxiliary tensors.
+            new_args = {"hidden_states": new_hidden}
+            for rk in (
+                "rotary_pos_emb",
+                "rotary_pos_cos",
+                "rotary_pos_sin",
+                "swa_rotary_pos_emb",
+                "swa_rotary_pos_cos",
+                "swa_rotary_pos_sin",
+            ):
+                val = dict_args.get(rk, None)
+                if val is not None:
+                    new_args[rk] = val
+            if mtp_startend_row_indices_all is not None:
+                new_args["mtp_startend_row_indices_all"] = (
+                    mtp_startend_row_indices_all.contiguous()
+                )
+            if mtp_hidden_inputs_mask_all is not None:
+                new_args["mtp_hidden_inputs_mask_all"] = (
+                    mtp_hidden_inputs_mask_all.contiguous()
+                )
+            if "labels" in dict_args:
+                new_args["labels"] = dict_args["labels"]
+            if "input_ids" in dict_args:
+                new_args["input_ids"] = dict_args["input_ids"]
+            # Forward position_ids, attention_bias, blocks if present
+            for extra_key in ("position_ids", "attention_bias", "blocks"):
+                if extra_key in dict_args and dict_args[extra_key] is not None:
+                    new_args[extra_key] = dict_args[extra_key]
+
+            # mHC: pass multi-stream output to next MTP layer
+            if (
+                mhc_enabled
+                and self.layer_number < self.config.num_nextn_predict_layers - 1
+            ):
+                mhc_chunks[self.layer_number + 1] = output
+                new_args["mhc_multistream"] = paddle.concat(mhc_chunks)
+
+            # Mark auxiliary tensors as stop_gradient for P2P
+            _stop_grad_keys = (
+                "mtp_startend_row_indices_all",
+                "mtp_hidden_inputs_mask_all",
+                "labels",
+                "rotary_pos_emb",
+                "rotary_pos_cos",
+                "rotary_pos_sin",
+                "swa_rotary_pos_emb",
+                "swa_rotary_pos_cos",
+                "swa_rotary_pos_sin",
             )
-            dict_args["hidden_states"] = paddle.concat(
-                [backbone_hs, hidden_states]
-            )
+            for aux_key in _stop_grad_keys:
+                val = new_args.get(aux_key, None)
+                if val is not None and hasattr(val, "stop_gradient"):
+                    val.stop_gradient = True
 
-            # Strip auxiliary float tensors (stop_gradient=False) to avoid grad=None crash in P2P backward.
-            _keep_keys = {"hidden_states", "labels"}
-            for key in list(dict_args.keys()):
-                if key not in _keep_keys:
-                    dict_args.pop(key)
-
-            return dict_args
+            return new_args
 
         # === Original concat+split logic ===
         hidden_states_concat = dict_args["hidden_states"]
@@ -1062,18 +1185,9 @@ class MultiTokenPredictionLayer(FleetLayer):
                 else:
                     dict_args.pop("input_ids", None)
 
-                if (
-                    self.config.recompute_granularity == "full"
-                    and self.training
-                ):
-                    hidden_states = self._checkpointed_forward(
-                        self._proj_and_transformer_layer,
-                        **dict_args,
-                    )
-                else:
-                    hidden_states = self._proj_and_transformer_layer(
-                        **dict_args,
-                    )
+                hidden_states = self._proj_and_transformer_layer(
+                    **dict_args,
+                )
 
                 if mhc_chunks is not None:
                     # mHC: hidden_states is multi-stream, store for next depth
@@ -1132,15 +1246,9 @@ class MultiTokenPredictionLayer(FleetLayer):
             else:
                 dict_args.pop("input_ids", None)
 
-            if self.config.recompute_granularity == "full" and self.training:
-                hidden_states = self._checkpointed_forward(
-                    self._proj_and_transformer_layer,
-                    **dict_args,
-                )
-            else:
-                hidden_states = self._proj_and_transformer_layer(
-                    **dict_args,
-                )
+            hidden_states = self._proj_and_transformer_layer(
+                **dict_args,
+            )
 
             if mhc_chunks is not None:
                 # mHC: hidden_states is multi-stream, store for next depth

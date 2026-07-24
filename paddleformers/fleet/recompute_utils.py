@@ -14,7 +14,36 @@
 
 from __future__ import annotations
 
+import logging
+import os
 from itertools import chain
+
+logger = logging.getLogger(__name__)
+
+g_has_print_recovery_log = False
+
+
+def has_recovered():
+    """has recovered"""
+    recover_step = os.getenv("RECOVER_STEP")
+    if recover_step is None:
+        return True
+    recover_step = int(recover_step)
+    current_step = os.getenv("TRAINER_GLOBAL_STEP")
+    if current_step is None:
+        current_step = os.getenv("PDC_INIT_STEP")
+        assert current_step is not None, (
+            "TRAINER_GLOBAL_STEP or PDC_INIT_STEP should be specified"
+        )
+    current_step = int(current_step)
+    if current_step > recover_step:
+        global g_has_print_recovery_log
+        if not g_has_print_recovery_log:
+            logger.info(f"Recovery would be enabled in the step {current_step}")
+            g_has_print_recovery_log = True
+        return True
+    else:
+        return False
 
 
 def need_recompute_in_block(layer_number, config, recompute_num_layers):

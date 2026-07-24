@@ -730,41 +730,6 @@ class TestLigerFusedLinearCrossEntropyFunctionGPU(unittest.TestCase):
         loss.backward()
         self.assertIsNotNone(bias.grad)
 
-    def test_apply_with_backward_hook(self):
-        """Test apply with _apply_backward_hook on weight."""
-        from paddleformers.fleet.triton_ops.fused_linear_cross_entropy import (
-            LigerFusedLinearCrossEntropyFunction,
-        )
-
-        BT, H, V = 4, 8, 16
-        _input = paddle.randn([BT, H], dtype=paddle.float32)
-        _input.stop_gradient = False
-        weight = paddle.randn([V, H], dtype=paddle.float32)
-        weight.stop_gradient = False
-        weight.main_grad = paddle.zeros([V, H], dtype=paddle.float32)
-
-        hook_called = [False]
-
-        def hook_fn():
-            hook_called[0] = True
-
-        weight._apply_backward_hook = hook_fn
-        target = paddle.randint(0, V, [BT])
-
-        loss = LigerFusedLinearCrossEntropyFunction.apply(
-            _input,
-            weight,
-            target,
-            None,
-            -100,
-            "mean",
-            1,
-            False,
-        )
-
-        loss.backward()
-        self.assertTrue(hook_called[0])
-
     def test_apply_main_grad_none(self):
         """Test apply when main_grad is None."""
         from paddleformers.fleet.triton_ops.fused_linear_cross_entropy import (

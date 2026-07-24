@@ -31,6 +31,7 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import AllGatherOp
 from paddleformers.fleet.context_parallel_utils import (
     ContextParallelGatherOp,
     ContextParallelScatterOp,
+    MTPDistillationLossShift,
 )
 from paddleformers.fleet.parallel_state import (
     get_context_parallel_world_size,
@@ -557,11 +558,19 @@ class LanguageLoss(FleetLayer):
                 else:
                     target_p_self_op_dist = nn.Softmax(axis=2)(logits[0])
                 if get_context_parallel_world_size() > 1:
-                    target_p_self_op_dist = ContextParallelGatherOp.apply(
-                        target_p_self_op_dist,
-                        axis=1,
-                        mode=self.config.cp_balance_mode,
-                    )
+                    cp_balance_mode = self.config.cp_balance_mode
+                    if cp_balance_mode == "contiguous_allgather":
+                        target_p_self_op_dist = MTPDistillationLossShift.apply(
+                            target_p_self_op_dist,
+                            self.config.num_nextn_predict_layers,
+                            mode=cp_balance_mode,
+                        )
+                    else:
+                        target_p_self_op_dist = ContextParallelGatherOp.apply(
+                            target_p_self_op_dist,
+                            axis=1,
+                            mode=cp_balance_mode,
+                        )
 
                 def padding(tensor, left=False, pad_len=1):
                     zeropadding = paddle.zeros_like(tensor[:, -pad_len:, :])
@@ -594,18 +603,27 @@ class LanguageLoss(FleetLayer):
                                 prediction_scores_cur_depth
                             )
 
-                        target_p = target_p_self_op_dist[
-                            :, (depth + 1) :, :
-                        ].clone()
-                        target_p = padding(
-                            target_p, left=False, pad_len=depth + 1
-                        )
-                        if get_context_parallel_world_size() > 1:
-                            target_p = ContextParallelScatterOp.apply(
-                                target_p,
-                                axis=1,
-                                mode=self.config.cp_balance_mode,
+                        if not (
+                            get_context_parallel_world_size() > 1
+                            and cp_balance_mode == "contiguous_allgather"
+                        ):
+                            target_p = target_p_self_op_dist[
+                                :, (depth + 1) :, :
+                            ].clone()
+                            target_p = padding(
+                                target_p, left=False, pad_len=depth + 1
                             )
+                        if get_context_parallel_world_size() > 1:
+                            if cp_balance_mode == "contiguous_allgather":
+                                target_p = target_p_self_op_dist[
+                                    :, depth : depth + out_logp.shape[1]
+                                ]
+                            else:
+                                target_p = ContextParallelScatterOp.apply(
+                                    target_p,
+                                    axis=1,
+                                    mode=cp_balance_mode,
+                                )
                         plogp = target_p * out_logp
 
                         lossmask = lossmask[..., None]

@@ -44,6 +44,8 @@ _ACCURACY_COMPATIBLE_KERNEL: bool = (
     os.environ.get("FLAGS_use_accuracy_compatible_kernel", "0") == "1"
 )
 
+_MHC_COMPUTE_H_EPS = 1e-6
+
 
 def _use_accuracy_compatible_kernel() -> bool:
     """Switch for Megatron-aligned (accuracy-compatible) numeric paths.
@@ -65,24 +67,26 @@ class SinkhornKnopp(paddle.autograd.PyLayer):
 
     @staticmethod
     def _sinkhorn_normalize(
-        M: Tensor, num_iterations: int, eps: float = 1e-6
+        input_logits: Tensor, num_iterations: int, eps: float = 1e-6
     ) -> Tensor:
         """
         Apply Sinkhorn-Knopp normalization iterations.
 
         Args:
-            M: [..., n, n] - positive matrix to normalize
+            input_logits: [..., n, n] - positive matrix to normalize
             num_iterations: Number of Sinkhorn iterations
             eps: Small constant for numerical stability
 
         Returns:
             M: [..., n, n] - doubly stochastic matrix
         """
-        for _ in range(num_iterations):
+        M = input_logits.softmax(dim=-1) + eps
+        M = M / (M.sum(axis=-2, keepdim=True) + eps)
+        for _ in range(num_iterations - 1):
             # T_r: Row normalization
-            M = M / M.sum(axis=-1, keepdim=True).clip(min=eps)
+            M = M / (M.sum(axis=-1, keepdim=True) + eps)
             # T_c: Column normalization
-            M = M / M.sum(axis=-2, keepdim=True).clip(min=eps)
+            M = M / (M.sum(axis=-2, keepdim=True) + eps)
         return M
 
     @staticmethod
@@ -100,26 +104,9 @@ class SinkhornKnopp(paddle.autograd.PyLayer):
         Returns:
             H_res: [..., n, n] - doubly stochastic matrix
         """
-        # Stabilized exp: subtract row-wise max to prevent overflow.
-        # Under FLAGS_use_accuracy_compatible_kernel, force this outside AMP
-        # so the Paddle native path preserves the BF16 contract used by
-        # Megatron's torch implementation.
-        if _use_accuracy_compatible_kernel():
-            with paddle.amp.auto_cast(enable=False):
-                M_init = paddle.exp(
-                    H_res_logits - H_res_logits.max(axis=-1, keepdim=True)
-                )
-                M = SinkhornKnopp._sinkhorn_normalize(
-                    M_init, num_iterations, eps
-                )
-        else:
-            M_init = paddle.exp(
-                H_res_logits - H_res_logits.max(axis=-1, keepdim=True)
-            )
-            M = SinkhornKnopp._sinkhorn_normalize(M_init, num_iterations, eps)
+        M = SinkhornKnopp._sinkhorn_normalize(H_res_logits, num_iterations, eps)
 
-        # Save initial M for backward recomputation
-        ctx.save_for_backward(M_init)
+        ctx.save_for_backward(H_res_logits)
         ctx.num_iterations = num_iterations
         ctx.eps = eps
         return M
@@ -129,13 +116,13 @@ class SinkhornKnopp(paddle.autograd.PyLayer):
         """
         Backward through Sinkhorn-Knopp iterations using recomputation.
         """
-        (M_init,) = ctx.saved_tensor()
+        (input_logits,) = ctx.saved_tensor()
         num_iterations = ctx.num_iterations
         eps = ctx.eps
 
         with paddle.enable_grad():
             # Recompute forward with autograd enabled
-            M_input = M_init.detach()
+            M_input = input_logits.detach()
             M_input.stop_gradient = False
 
             M_current = SinkhornKnopp._sinkhorn_normalize(
@@ -143,16 +130,12 @@ class SinkhornKnopp(paddle.autograd.PyLayer):
             )
 
             # Compute dL/dM_input via autograd
-            grad_M_init = paddle.grad(
+            grad_input = paddle.grad(
                 outputs=[M_current],
                 inputs=[M_input],
                 grad_outputs=[grad_output],
                 create_graph=False,
             )[0]
-
-        # Apply chain rule: dL/dH = dL/dM_init * dM_init/dH = dL/dM_init * M_init
-        # Since M_init = exp(H_res_logits), d(exp(x))/dx = exp(x) = M_init
-        grad_input = grad_M_init * M_init
 
         return grad_input
 
@@ -243,6 +226,7 @@ class HyperConnectionModule(nn.Layer):
         self.n = config.num_residual_streams
         self.hidden_size = config.hidden_size
         self.sinkhorn_iterations = config.mhc_sinkhorn_iterations
+        self.compute_h_eps = _MHC_COMPUTE_H_EPS
 
         # Projection weights for dynamic mappings
         # Input: [..., n*C] -> Output: n^2 + 2n values per token
@@ -305,11 +289,8 @@ class HyperConnectionModule(nn.Layer):
     def _init_weights(self) -> None:
         """Initialize weights for stable training."""
         # Xavier uniform for mapping projection.
-        # Use the model-parallel RNG tracker so that the initialization is
-        # controlled by PaddleFleet's RNG state (seeded once at model init)
-        # rather than the per-layer pipeline seed (base_seed + layer_index).
-        # This prevents layer_index shifts (e.g. from MTPEmbeddingLayer insertion
-        # in magic_send mode) from changing the weights.
+        # Use model-parallel RNG tracker to keep initialization deterministic
+        # regardless of layer_index shifts.
         if paddle.distributed.get_world_size() <= 1:
             nn.initializer.XavierUniform()(self.mapping_proj.weight)
         else:
@@ -378,7 +359,7 @@ class HyperConnectionModule(nn.Layer):
         )
         h = r * proj * alpha_ + self.bias
         # H_pre = σ(α_pre * (θ_pre @ x̃) + b_pre)
-        h_pre = h[..., : self.n].sigmoid()  # [..., n]
+        h_pre = h[..., : self.n].sigmoid() + self.compute_h_eps  # [..., n]
         # H_post = 2σ(α_post * (θ_post @ x̃) + b_post)
         h_post = h[..., self.n : 2 * self.n].sigmoid() * 2  # [..., n]
         h_res = h[..., 2 * self.n :]
@@ -819,9 +800,14 @@ class HyperConnectionContractLayer(FleetLayer):
             dict_args["mhc_multistream"] = hidden_states
 
             if self.magic_send:
-                # magic_send: hidden_states is pure backbone [B, S, n*H]
-                # Magic send: backbone processes only main sequence, no MTP chunks concatenated.
-                # Simply contract the entire tensor.
+                # Expand mhc_multistream to num_mtp+1 slots; zeros will be overwritten by MTP layers.
+                dict_args["mhc_multistream"] = paddle.concat(
+                    [hidden_states]
+                    + [
+                        paddle.zeros_like(hidden_states)
+                        for _ in range(self.num_mtp)
+                    ]
+                )
                 dict_args["hidden_states"] = (
                     HyperConnectionModule.learned_output_contract(
                         hidden_states,
@@ -847,7 +833,7 @@ class HyperConnectionContractLayer(FleetLayer):
                     self.config.rms_norm_eps,
                 )
 
-                # 为了后面MTP slice、取shape的时候兼容,原本也是expand过来的[[s,b,h]...]
+                # Expand to match expected layout [[s,b,h]...] for downstream MTP slicing
                 mtp_contracted = [
                     c[..., : c.shape[-1] // self.n] for c in chunks[1:]
                 ]

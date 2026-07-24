@@ -25,6 +25,7 @@ sys.path.insert(
 
 
 import unittest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import paddle
@@ -273,6 +274,86 @@ class TestFusionLayerUtils(unittest.TestCase):
                 use_fp8_mlp=False,
                 moe_deep_gemm=False,
             )
+
+    def _bare_mlp_node(self, **attrs):
+        """Build an MlpNode instance without running __init__, setting only the
+        attributes the pure helper methods read."""
+        from paddleformers.fleet.transformer.moe.fusion_layer_utils import (
+            MlpNode,
+        )
+
+        node = object.__new__(MlpNode)
+        node.experts = None
+        node.experts_group_gemm_node = None
+        for k, v in attrs.items():
+            setattr(node, k, v)
+        return node
+
+    def test_gate_up_out_dim_per_expert(self):
+        """_gate_up_out_dim: per-expert (non-fused) layout reads up_gate_proj."""
+        expert = SimpleNamespace(
+            up_gate_proj=SimpleNamespace(
+                weight=paddle.randn([128, 64], dtype=paddle.bfloat16)
+            )
+        )
+        # first entry None exercises the `if expert is None: continue` branch
+        node = self._bare_mlp_node(experts=[None, expert])
+        self.assertEqual(node._gate_up_out_dim(128), 64)
+
+    def test_gate_up_out_dim_grouped(self):
+        """_gate_up_out_dim: grouped deep_gemm layout reads stacked weight1,
+        with experts_group_gemm_node given as a list."""
+        parent = SimpleNamespace(
+            weight1=paddle.randn([2, 128, 64], dtype=paddle.bfloat16)
+        )
+        gemm = SimpleNamespace(grouped_gemm_experts=parent)
+        node = self._bare_mlp_node(experts=None, experts_group_gemm_node=[gemm])
+        self.assertEqual(node._gate_up_out_dim(128), 64)
+
+    def test_gate_up_out_dim_fallback(self):
+        """_gate_up_out_dim: falls back to 2*hidden when weight unresolved."""
+        gemm = SimpleNamespace()  # no grouped_gemm_experts attribute
+        node = self._bare_mlp_node(experts=None, experts_group_gemm_node=gemm)
+        self.assertEqual(node._gate_up_out_dim(128), 256)
+
+    def test_bwd_feature_sizes_bf16_inplace(self):
+        """bf16 wgrad + no clamp -> inplace peak (do1 reuses o1): 5 buffers.
+        Also exercises the list-form experts_group_gemm_node branch."""
+        gemm = SimpleNamespace(use_bf16_gemm_weight_grad=True, clamp_value=None)
+        node = self._bare_mlp_node(experts_group_gemm_node=[gemm])
+        sizes = node._bwd_pre_permute_feature_sizes(128, 64, 32)
+        self.assertEqual(len(sizes), 5)
+
+    def test_bwd_feature_sizes_bf16_clamp_out_of_place(self):
+        """bf16 wgrad + clamp_value>0 -> out-of-place peak (do1 is a separate
+        buffer, matching fused_swiglu_weighted_clamp_bwd): 6 buffers."""
+        gemm = SimpleNamespace(use_bf16_gemm_weight_grad=True, clamp_value=1.0)
+        node = self._bare_mlp_node(experts_group_gemm_node=gemm)
+        inplace = self._bare_mlp_node(
+            experts_group_gemm_node=SimpleNamespace(
+                use_bf16_gemm_weight_grad=True, clamp_value=None
+            )
+        )._bwd_pre_permute_feature_sizes(128, 64, 32)
+        sizes = node._bwd_pre_permute_feature_sizes(128, 64, 32)
+        self.assertEqual(len(sizes), 6)
+        # clamp path must estimate a strictly larger footprint than inplace
+        self.assertGreater(sum(sizes), sum(inplace))
+
+    def test_bwd_feature_sizes_fp8_inplace(self):
+        """fp8 wgrad + no clamp -> inplace peak: 5 buffers."""
+        gemm = SimpleNamespace(
+            use_bf16_gemm_weight_grad=False, clamp_value=None
+        )
+        node = self._bare_mlp_node(experts_group_gemm_node=gemm)
+        sizes = node._bwd_pre_permute_feature_sizes(128, 64, 32)
+        self.assertEqual(len(sizes), 5)
+
+    def test_bwd_feature_sizes_fp8_clamp_out_of_place(self):
+        """fp8 wgrad + clamp_value>0 -> out-of-place peak: 6 buffers."""
+        gemm = SimpleNamespace(use_bf16_gemm_weight_grad=False, clamp_value=2.0)
+        node = self._bare_mlp_node(experts_group_gemm_node=gemm)
+        sizes = node._bwd_pre_permute_feature_sizes(128, 64, 32)
+        self.assertEqual(len(sizes), 6)
 
 
 if __name__ == "__main__":
