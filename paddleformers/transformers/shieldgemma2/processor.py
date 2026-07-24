@@ -68,7 +68,7 @@ class ShieldGemma2Processor(Gemma3Processor):
         text=None,
         **kwargs: Unpack[ShieldGemma2ProcessorKwargs],
     ) -> BatchFeature:
-        if not images:
+        if images is None or (isinstance(images, Sequence) and len(images) == 0):
             raise ValueError("ShieldGemma 2 needs images to classify")
         if not isinstance(images, Sequence):
             images = [images]

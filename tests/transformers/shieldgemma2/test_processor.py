@@ -15,6 +15,9 @@
 import unittest
 from unittest.mock import patch
 
+import numpy as np
+import paddle
+
 from paddleformers.transformers import ShieldGemma2Processor
 from paddleformers.transformers.auto.processing import processor_class_from_name
 from paddleformers.transformers.gemma3.processor import Gemma3Processor
@@ -70,6 +73,9 @@ class ShieldGemma2ProcessorTest(unittest.TestCase):
 
     def test_processor_rejects_missing_images_or_chat_template(self):
         with self.assertRaisesRegex(ValueError, "needs images"):
+            self.processor(images=None)
+
+        with self.assertRaisesRegex(ValueError, "needs images"):
             self.processor(images=[])
 
         self.processor.chat_template = None
@@ -82,6 +88,24 @@ class ShieldGemma2ProcessorTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "at most one image"):
             self.processor(images=[["image-a", "image-b"]])
+
+    def test_processor_accepts_single_array_or_tensor_image(self):
+        images = [
+            np.zeros((4, 4, 3), dtype=np.uint8),
+            paddle.zeros([3, 4, 4]),
+        ]
+
+        with patch.object(self.processor, "apply_chat_template", return_value=["rendered"]), patch.object(
+            Gemma3Processor, "__call__", return_value="encoded"
+        ) as parent_call:
+            for image in images:
+                with self.subTest(image_type=type(image).__name__):
+                    output = self.processor(images=image)
+
+                    self.assertEqual(output, "encoded")
+                    expanded_images = parent_call.call_args.kwargs["images"]
+                    self.assertEqual(len(expanded_images), len(self.processor.policy_definitions))
+                    self.assertTrue(all(batch[0] is image for batch in expanded_images))
 
 
 if __name__ == "__main__":
