@@ -21,11 +21,11 @@ import paddle
 from PIL import Image, ImageOps
 
 from ..feature_extraction_utils import BatchFeature
-from ..image_processing_utils import PaddleImageProcessingMixin
+from ..image_processing_utils import BaseImageProcessor
 from ..image_utils import PILImageResampling, make_flat_list_of_images
 
 
-class Phi4MultimodalImageProcessor(PaddleImageProcessingMixin):
+class Phi4MultimodalImageProcessor(BaseImageProcessor):
     model_input_names = ["image_pixel_values", "image_sizes", "image_attention_mask"]
 
     def __init__(

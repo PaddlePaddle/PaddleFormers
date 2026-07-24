@@ -403,6 +403,17 @@ def get_lora_target_modules(model):
             ".*gate_up_proj.*",
             ".*down_proj.*",
         ]
+    elif model.config.model_type == "phi4_multimodal":
+        # Keep the outer PEFT adapter on the language backbone. Phi-4
+        # Multimodal already has its own vision/speech adapters, so broad
+        # patterns would either wrap the modality encoders or match those
+        # native adapter sublayers a second time.
+        target_modules = [
+            "model.layers.*.self_attn.qkv_proj",
+            "model.layers.*.self_attn.o_proj",
+            "model.layers.*.mlp.gate_up_proj",
+            "model.layers.*.mlp.down_proj",
+        ]
     elif model.config.model_type in ("phi4", "phi4flash"):
         # phi4flash: hybrid decoder (Mamba SSM + Attention), only attention layers have Wqkv/out_proj
         target_modules = [

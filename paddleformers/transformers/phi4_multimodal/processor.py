@@ -97,8 +97,8 @@ class Phi4MultimodalProcessor(ProcessorMixin):
     ):
         if feature_extractor is None:
             feature_extractor = audio_processor
-        self.image_token = getattr(tokenizer, "image_token", "<|image|>")
-        self.audio_token = getattr(tokenizer, "audio_token", "<|audio|>")
+        self.image_token = getattr(tokenizer, "image_token", "<|endoftext10|>")
+        self.audio_token = getattr(tokenizer, "audio_token", "<|endoftext11|>")
         self.image_token_id = getattr(tokenizer, "image_token_id", None)
         if self.image_token_id is None and tokenizer is not None:
             self.image_token_id = tokenizer.convert_tokens_to_ids(self.image_token)
@@ -133,12 +133,12 @@ class Phi4MultimodalProcessor(ProcessorMixin):
         concatenated_prompt = "".join(text)
         if concatenated_prompt.count(self.image_token) != len(num_img_tokens):
             raise ValueError(
-                "You should add as many image tokens `<|image|>` in your prompt as images passed to the processor. "
+                f"You should add as many image tokens `{self.image_token}` in your prompt as images passed to the processor. "
                 f"Input contains {concatenated_prompt.count(self.image_token)} tokens != {len(num_img_tokens)} images."
             )
         if concatenated_prompt.count(self.audio_token) != len(audio_embed_sizes):
             raise ValueError(
-                "You should add as many audio tokens `<|audio|>` in your prompt as audios passed to the processor. "
+                f"You should add as many audio tokens `{self.audio_token}` in your prompt as audios passed to the processor. "
                 f"Input contains {concatenated_prompt.count(self.audio_token)} tokens != {len(audio_embed_sizes)} audios."
             )
 

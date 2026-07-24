@@ -1529,39 +1529,24 @@ class Phi4MultimodalPreTrainedModel(PretrainedModel):
         # We'll handle this mapping for the vision pooling head attention
         head_src = f"{vp_src}.head.attention"
         head_dst = f"{vp_dst}.head.attention"
-        stmts.append(f"{head_src}.in_proj_weight^T -> {head_dst}.in_proj_weight_t")
-        stmts.append(f"{head_src}.in_proj_bias -> {head_dst}.in_proj_bias_t")
+        q_weight_tmp = f"{head_src}.in_proj_weight.q"
+        k_weight_tmp = f"{head_src}.in_proj_weight.k"
+        v_weight_tmp = f"{head_src}.in_proj_weight.v"
+        stmts.append(f"{head_src}.in_proj_weight -> {q_weight_tmp}, {k_weight_tmp}, {v_weight_tmp}, axis=0")
+        stmts.append(f"{q_weight_tmp}^T -> {head_dst}.q_proj.weight")
+        stmts.append(f"{k_weight_tmp}^T -> {head_dst}.k_proj.weight")
+        stmts.append(f"{v_weight_tmp}^T -> {head_dst}.v_proj.weight")
+        q_bias_tmp = f"{head_src}.in_proj_bias.q"
+        k_bias_tmp = f"{head_src}.in_proj_bias.k"
+        v_bias_tmp = f"{head_src}.in_proj_bias.v"
+        stmts.append(f"{head_src}.in_proj_bias -> {q_bias_tmp}, {k_bias_tmp}, {v_bias_tmp}, axis=0")
+        stmts.append(f"{q_bias_tmp} -> {head_dst}.q_proj.bias")
+        stmts.append(f"{k_bias_tmp} -> {head_dst}.k_proj.bias")
+        stmts.append(f"{v_bias_tmp} -> {head_dst}.v_proj.bias")
         stmts.append(f"{head_src}.out_proj.weight^T -> {head_dst}.out_proj.weight")
         stmts.append(f"{head_src}.out_proj.bias -> {head_dst}.out_proj.bias")
 
         return aoa_config
-
-    @classmethod
-    def _gen_inv_aoa_config(cls, config: Phi4MultimodalConfig):
-        model_prefix = "" if cls == cls.base_model_class else "model."
-        aoa_statements = []
-
-        # Decoder layers
-        for layer_id in range(config.num_hidden_layers):
-            tp = f"{model_prefix}layers.{layer_id}"
-            lp = f"model.layers.{layer_id}"
-            aoa_statements.append(f"{tp}.input_layernorm.weight -> {lp}.input_layernorm.weight")
-            aoa_statements.append(f"{tp}.post_attention_layernorm.weight -> {lp}.post_attention_layernorm.weight")
-            aoa_statements.append(f"{tp}.mlp.down_proj.weight^T -> {lp}.mlp.down_proj.weight")
-            aoa_statements.append(f"{tp}.self_attn.o_proj.weight^T -> {lp}.self_attn.o_proj.weight")
-            aoa_statements.append(
-                f"{tp}.self_attn.qkv_proj.weight -> {lp}.self_attn.qkv_proj.weight, "
-                f"fused_qkv_old, num_heads={config.num_attention_heads}, "
-                f"num_key_value_groups={config.num_key_value_heads}, axis=1"
-            )
-            aoa_statements.append(f"{tp}.self_attn.qkv_proj.weight^T -> {lp}.self_attn.qkv_proj.weight")
-            aoa_statements.append(f"{tp}.mlp.gate_up_proj.weight^T -> {lp}.mlp.gate_up_proj.weight, fused_ffn")
-
-        aoa_statements.append(f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight")
-        aoa_statements.append(f"{model_prefix}norm.weight -> model.norm.weight")
-
-        return {"aoa_statements": aoa_statements}
-
 
 @register_base_model
 class Phi4MultimodalModel(Phi4MultimodalPreTrainedModel):
@@ -1947,7 +1932,6 @@ Phi4MMForConditionalGeneration = Phi4MultimodalForCausalLM
 class Phi4MultimodalForCausalLMPipe(GeneralModelForCausalLMPipe):
     config_class = Phi4MultimodalConfig
     _gen_aoa_config = Phi4MultimodalForCausalLM._gen_aoa_config
-    _gen_inv_aoa_config = Phi4MultimodalForCausalLM._gen_inv_aoa_config
 
 
 Phi4MMForCausalLMPipe = Phi4MultimodalForCausalLMPipe

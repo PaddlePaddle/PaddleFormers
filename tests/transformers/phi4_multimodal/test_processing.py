@@ -16,13 +16,54 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from paddleformers.transformers.feature_extraction_utils import FEATURE_EXTRACTOR_NAME
+from paddleformers.transformers.phi4_multimodal.image_processor import Phi4MultimodalImageProcessor
 from paddleformers.transformers.phi4_multimodal.processor import Phi4MultimodalProcessor
 
 
 class Phi4MultimodalProcessorTest(unittest.TestCase):
+    def test_image_processor_save_and_reload(self):
+        image_processor = Phi4MultimodalImageProcessor(
+            size={"height": 28, "width": 28},
+            patch_size=14,
+            dynamic_hd=4,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            image_processor.save_pretrained(tmpdirname)
+            reloaded = Phi4MultimodalImageProcessor.from_pretrained(tmpdirname)
+
+        self.assertEqual(reloaded.size, {"height": 28, "width": 28})
+        self.assertEqual(reloaded.patch_size, 14)
+        self.assertEqual(reloaded.dynamic_hd, 4)
+
+    def test_uses_model_special_tokens_when_tokenizer_has_no_aliases(self):
+        token_ids = {"<|endoftext10|>": 200010, "<|endoftext11|>": 200011}
+        tokenizer = SimpleNamespace(convert_tokens_to_ids=lambda token: token_ids[token])
+
+        def fake_processor_init(processor, image_processor, feature_extractor, tokenizer, **kwargs):
+            processor.image_processor = image_processor
+            processor.feature_extractor = feature_extractor
+            processor.tokenizer = tokenizer
+
+        with patch(
+            "paddleformers.transformers.phi4_multimodal.processor.ProcessorMixin.__init__",
+            new=fake_processor_init,
+        ):
+            processor = Phi4MultimodalProcessor(
+                image_processor=MagicMock(),
+                feature_extractor=MagicMock(),
+                tokenizer=tokenizer,
+            )
+
+        self.assertEqual(processor.image_token, "<|endoftext10|>")
+        self.assertEqual(processor.audio_token, "<|endoftext11|>")
+        self.assertEqual(processor.image_token_id, 200010)
+        self.assertEqual(processor.audio_token_id, 200011)
+
     def test_get_arguments_resolves_remote_subfolder_config(self):
         with tempfile.TemporaryDirectory() as tmpdirname:
             config_path = Path(tmpdirname) / FEATURE_EXTRACTOR_NAME
