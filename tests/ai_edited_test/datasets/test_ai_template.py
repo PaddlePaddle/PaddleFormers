@@ -22,10 +22,10 @@ from paddleformers.datasets.template.formatter import (
     ToolFormatter,
 )
 from paddleformers.datasets.template.template import (
+    TEMPLATES,
     GLM5ReasoningTemplate,
     ReasoningTemplate,
     Role,
-    TEMPLATES,
     Template,
     get_template_and_fix_tokenizer,
     register_template,
@@ -143,12 +143,7 @@ class TestTemplate(unittest.TestCase):
         template = TEMPLATES["llama4"]
         self.assertEqual(
             template.format_user.apply(content="hello"),
-            [
-                (
-                    "<|header_start|>user<|header_end|>\n\nhello<|eot|>"
-                    "<|header_start|>assistant<|header_end|>\n\n"
-                )
-            ],
+            [("<|header_start|>user<|header_end|>\n\nhello<|eot|>" "<|header_start|>assistant<|header_end|>\n\n")],
         )
         self.assertEqual(
             template.format_system.apply(content="system"),

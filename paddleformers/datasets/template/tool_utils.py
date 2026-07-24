@@ -306,9 +306,7 @@ class Llama4ToolUtils(ToolUtils):
     @override
     @staticmethod
     def tool_formatter(tools: list[dict[str, Any]]) -> str:
-        normalized_tools = [
-            tool.get("function", {}) if tool.get("type") == "function" else tool for tool in tools
-        ]
+        normalized_tools = [tool.get("function", {}) if tool.get("type") == "function" else tool for tool in tools]
         tool_text = json.dumps(normalized_tools, indent=4, ensure_ascii=False)
         return LLAMA4_TOOL_PROMPT.format(tool_text=tool_text)
 
