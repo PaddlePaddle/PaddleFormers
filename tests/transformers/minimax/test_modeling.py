@@ -16,8 +16,10 @@ from __future__ import annotations
 import unittest
 
 import paddle
+import paddle.nn.functional as F
 
 from paddleformers.transformers import MiniMaxConfig, MiniMaxForCausalLM, MiniMaxModel
+from paddleformers.transformers.minimax.modeling import MiniMaxLightningAttention
 from paddleformers.transformers.auto.modeling import AutoModelForCausalLM
 from tests.testing_utils import gpu_device_initializer
 from tests.transformers.test_configuration_common import ConfigTester
@@ -169,27 +171,220 @@ class MiniMaxModelTest(ModelTesterMixin, unittest.TestCase):
         config = self.model_tester.get_config()
         self.model_tester.create_and_check_auto_model(config)
 
-    def test_linear_attention_rejects_packing_masks(self):
+    def test_default_lora_targets_cover_all_projection_types(self):
+        from paddleformers.cli.utils import get_lora_target_modules
+        from paddleformers.peft import LoRAConfig, LoRAModel
+
+        config = self.model_tester.get_config()
+        model = MiniMaxForCausalLM(config)
+        target_modules = get_lora_target_modules(model)
+        self.assertEqual(
+            target_modules,
+            [
+                ".*q_proj.*",
+                ".*k_proj.*",
+                ".*v_proj.*",
+                ".*o_proj.*",
+                ".*qkv_proj.*",
+                ".*out_proj.*",
+                ".*output_gate.*",
+                ".*block_sparse_moe.experts.*w1.*",
+                ".*block_sparse_moe.experts.*w2.*",
+                ".*block_sparse_moe.experts.*w3.*",
+            ],
+        )
+
+        lora_model = LoRAModel(
+            model,
+            LoRAConfig(
+                target_modules=target_modules,
+                r=4,
+                lora_alpha=8,
+                merge_weights=False,
+                dtype="float32",
+            ),
+        )
+        injected_layers = {
+            name for name, layer in lora_model.model.named_sublayers() if type(layer).__name__ == "LoRALinear"
+        }
+        expected_attention_layers = {
+            "model.layers.0.self_attn.q_proj",
+            "model.layers.0.self_attn.k_proj",
+            "model.layers.0.self_attn.v_proj",
+            "model.layers.0.self_attn.o_proj",
+            "model.layers.1.self_attn.qkv_proj",
+            "model.layers.1.self_attn.out_proj",
+            "model.layers.1.self_attn.output_gate",
+        }
+        expected_expert_layers = {
+            f"model.layers.{layer_idx}.block_sparse_moe.experts.{expert_idx}.{projection}"
+            for layer_idx in range(config.num_hidden_layers)
+            for expert_idx in range(config.num_local_experts)
+            for projection in ("w1", "w2", "w3")
+        }
+        self.assertSetEqual(injected_layers, expected_attention_layers | expected_expert_layers)
+        self.assertNotIn("model.layers.0.block_sparse_moe.gate", injected_layers)
+
+    def test_linear_attention_accepts_single_segment_row_indices(self):
         config, input_ids, _ = self.model_tester.prepare_config_and_inputs()
         model = MiniMaxModel(config)
+        model.eval()
 
-        packed_row_indices = paddle.zeros(
-            [self.model_tester.batch_size, self.model_tester.seq_length, 4], dtype=paddle.int32
+        row_indices = paddle.full(
+            [self.model_tester.batch_size, 1, self.model_tester.seq_length, 1],
+            self.model_tester.seq_length,
+            dtype=paddle.int32,
         )
-        with self.assertRaisesRegex(ValueError, "linear_attention does not support packed"):
-            model(input_ids, attn_mask_startend_row_indices=packed_row_indices)
+        expected = model(input_ids)[0]
+        actual = model(input_ids, attn_mask_startend_row_indices=row_indices)[0]
+        paddle.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
 
-        packed_4d_mask = paddle.ones(
+    def test_linear_attention_packing_matches_independent_sequences(self):
+        config, input_ids, _ = self.model_tester.prepare_config_and_inputs()
+        model = MiniMaxModel(config)
+        model.eval()
+        first_length = 3
+        second_length = self.model_tester.seq_length - first_length
+        position_ids = paddle.to_tensor(
+            [list(range(first_length)) + list(range(second_length))] * self.model_tester.batch_size,
+            dtype=paddle.int64,
+        )
+        row_indices = paddle.to_tensor(
             [
-                self.model_tester.batch_size,
-                1,
-                self.model_tester.seq_length,
-                self.model_tester.seq_length,
+                [
+                    [[first_length] for _ in range(first_length)]
+                    + [[self.model_tester.seq_length] for _ in range(second_length)]
+                ]
+                for _ in range(self.model_tester.batch_size)
             ],
-            dtype=paddle.bool,
+            dtype=paddle.int32,
         )
-        with self.assertRaisesRegex(ValueError, "linear_attention does not support 4D packing"):
-            model(input_ids, attention_mask=packed_4d_mask)
+
+        packed_output = model(
+            input_ids,
+            position_ids=position_ids,
+            attn_mask_startend_row_indices=row_indices,
+        )[0]
+        first_output = model(input_ids[:, :first_length])[0]
+        second_output = model(input_ids[:, first_length:])[0]
+        expected = paddle.cat([first_output, second_output], axis=1)
+        paddle.testing.assert_allclose(packed_output, expected, rtol=1e-5, atol=1e-5)
+
+    def test_linear_attention_right_padding_preserves_valid_prefix(self):
+        config = self.model_tester.get_config()
+        layer = MiniMaxLightningAttention(config, layer_idx=1)
+        layer.eval()
+        valid_length = 5
+        hidden_states = paddle.randn([1, self.model_tester.seq_length, config.hidden_size])
+        position_ids = paddle.to_tensor([[0, 1, 2, 3, 4, 0, 0]], dtype=paddle.int64)
+        row_indices = paddle.to_tensor(
+            [
+                [
+                    [[valid_length] for _ in range(valid_length)]
+                    + [[key_idx] for key_idx in range(valid_length, self.model_tester.seq_length)]
+                ]
+            ],
+            dtype=paddle.int32,
+        )
+
+        actual = layer(
+            hidden_states,
+            position_ids=position_ids,
+            attn_mask_startend_row_indices=row_indices,
+        )[0]
+        expected_valid = layer(hidden_states[:, :valid_length])[0]
+
+        paddle.testing.assert_allclose(
+            actual[:, :valid_length],
+            expected_valid,
+            rtol=1e-5,
+            atol=1e-5,
+        )
+        self.assertEqual(
+            paddle.max(paddle.abs(actual[:, valid_length:])).item(),
+            0.0,
+        )
+
+    def test_linear_attention_branched_mask_matches_dense_reference(self):
+        config = self.model_tester.get_config()
+        layer = MiniMaxLightningAttention(config, layer_idx=1)
+        layer.eval()
+        hidden_states = paddle.randn([1, 8, config.hidden_size])
+        position_ids = paddle.to_tensor([[0, 1, 2, 3, 4, 2, 3, 4]], dtype=paddle.int64)
+
+        attention_mask = paddle.tril(paddle.ones([1, 1, 8, 8], dtype=paddle.bool))
+        attention_mask[:, :, 5:, 2:5] = False
+        actual = layer(
+            hidden_states,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+        )[0]
+
+        qkv_states = layer.act_fn(layer.qkv_proj(hidden_states))
+        qkv_states = qkv_states.reshape([1, 8, config.num_attention_heads, 3 * config.head_dim])
+        query_states, key_states, value_states = paddle.split(qkv_states, num_or_sections=3, axis=-1)
+        query_states = query_states.transpose([0, 2, 1, 3])
+        key_states = key_states.transpose([0, 2, 1, 3])
+        value_states = value_states.transpose([0, 2, 1, 3])
+
+        logical_distance = position_ids[:, :, None] - position_ids[:, None, :]
+        decay = paddle.exp(
+            -layer.slope_rate.unsqueeze(0)
+            * logical_distance.astype(layer.slope_rate.dtype).unsqueeze(1)
+        )
+        decay = paddle.where(attention_mask, decay, paddle.zeros_like(decay))
+        weights = paddle.matmul(query_states, key_states.transpose([0, 1, 3, 2])) * decay
+        expected = paddle.matmul(weights, value_states)
+        expected = expected.transpose([0, 2, 1, 3]).reshape([1, 8, -1])
+        expected = layer.norm(expected)
+        expected = F.sigmoid(layer.output_gate(hidden_states)).astype(expected.dtype) * expected
+        expected = layer.out_proj(expected)
+
+        paddle.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
+
+    def test_linear_attention_dpo_row_indices_match_explicit_reference(self):
+        config = self.model_tester.get_config()
+        layer = MiniMaxLightningAttention(config, layer_idx=1)
+        layer.eval()
+        valid_length = 8
+        hidden_states = paddle.randn([1, 10, config.hidden_size])
+        position_ids = paddle.to_tensor([[0, 1, 2, 3, 4, 2, 3, 4, 0, 0]], dtype=paddle.int64)
+        end_indices = [8, 8, 8, 5, 5, 8, 8, 8, 8, 9]
+        row_indices = paddle.to_tensor([[list(zip(end_indices))]], dtype=paddle.int32)
+
+        actual = layer(
+            hidden_states,
+            position_ids=position_ids,
+            attn_mask_startend_row_indices=row_indices,
+        )[0]
+
+        qkv_states = layer.act_fn(layer.qkv_proj(hidden_states))
+        qkv_states = qkv_states.reshape([1, 10, config.num_attention_heads, 3 * config.head_dim])
+        query_states, key_states, value_states = paddle.split(qkv_states, num_or_sections=3, axis=-1)
+        query_states = query_states.transpose([0, 2, 1, 3])
+        key_states = key_states.transpose([0, 2, 1, 3])
+        value_states = value_states.transpose([0, 2, 1, 3])
+
+        attention_mask = paddle.zeros([1, 1, 10, 10], dtype=paddle.bool)
+        for key_idx, end_idx in enumerate(end_indices[:valid_length]):
+            attention_mask[:, :, key_idx:end_idx, key_idx] = True
+        logical_distance = position_ids[:, :, None] - position_ids[:, None, :]
+        decay = paddle.exp(
+            -layer.slope_rate.unsqueeze(0)
+            * logical_distance.astype(layer.slope_rate.dtype).unsqueeze(1)
+        )
+        decay = paddle.where(attention_mask, decay, paddle.zeros_like(decay))
+        weights = paddle.matmul(query_states, key_states.transpose([0, 1, 3, 2])) * decay
+        expected = paddle.matmul(weights, value_states)
+        expected = expected.transpose([0, 2, 1, 3]).reshape([1, 10, -1])
+        expected = layer.norm(expected)
+        expected = F.sigmoid(layer.output_gate(hidden_states)).astype(expected.dtype) * expected
+        expected = layer.out_proj(expected)
+
+        paddle.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
+        actual.mean().backward()
+        self.assertIsNotNone(layer.qkv_proj.weight.grad)
+        self.assertTrue(paddle.isfinite(layer.qkv_proj.weight.grad).all().item())
 
     def test_causal_lm_passes_loss_mask_to_criterion(self):
         class RecordingCriterion(paddle.nn.Layer):

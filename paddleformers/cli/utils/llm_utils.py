@@ -144,6 +144,22 @@ def get_lora_target_modules(model):
             ".*w2.*",
             ".*w3.*",
         ]
+    elif model.config.model_type == "minimax":
+        target_modules = [
+            # Full attention
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            # Lightning attention
+            ".*qkv_proj.*",
+            ".*out_proj.*",
+            ".*output_gate.*",
+            # Sparse MoE experts; the router is a standalone parameter rather than a Linear layer.
+            ".*block_sparse_moe.experts.*w1.*",
+            ".*block_sparse_moe.experts.*w2.*",
+            ".*block_sparse_moe.experts.*w3.*",
+        ]
     elif model.config.model_type == "mistral":
         target_modules = [
             ".*q_proj.*",

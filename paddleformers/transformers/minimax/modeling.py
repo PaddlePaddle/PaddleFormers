@@ -194,11 +194,268 @@ class MiniMaxLightningAttention(nn.Layer):
 
         return query_decay, key_decay, diagonal_decay
 
+    def _contiguous_path_attention(
+        self,
+        query_states: paddle.Tensor,
+        key_states: paddle.Tensor,
+        value_states: paddle.Tensor,
+        slope_rate: paddle.Tensor,
+    ) -> tuple[paddle.Tensor, paddle.Tensor]:
+        """Run the original block algorithm on one independent causal path."""
+        _, _, seq_len, head_dim = query_states.shape
+        attn_weights_inter = paddle.zeros(
+            [query_states.shape[0], self.num_attention_heads, head_dim, head_dim],
+            dtype=query_states.dtype,
+        )
+        attn_output = []
+        for start_idx in range(0, seq_len, self.block_size):
+            end_idx = min(start_idx + self.block_size, seq_len)
+            cur_bs = end_idx - start_idx
+
+            cur_q = query_states[:, :, start_idx:end_idx]
+            cur_k = key_states[:, :, start_idx:end_idx]
+            cur_v = value_states[:, :, start_idx:end_idx]
+
+            cur_qd = self.query_decay[:, :cur_bs].astype(cur_q.dtype)
+            cur_kd = self.key_decay[:, -cur_bs:].astype(cur_k.dtype)
+            cur_dd = self.diagonal_decay[:, :, :cur_bs, :cur_bs].astype(cur_q.dtype)
+            block_decay = paddle.exp(-slope_rate * cur_bs).astype(attn_weights_inter.dtype)
+
+            attn_intra = paddle.matmul(cur_q, cur_k.transpose([0, 1, 3, 2]))
+            attn_output_intra = paddle.matmul(attn_intra * cur_dd, cur_v)
+            attn_output_inter = paddle.matmul(cur_q * cur_qd, attn_weights_inter)
+            attn_output.append(attn_output_inter + attn_output_intra)
+
+            next_stat = paddle.matmul((cur_k * cur_kd).transpose([0, 1, 3, 2]), cur_v)
+            attn_weights_inter = attn_weights_inter * block_decay + next_stat
+
+        return paddle.cat(attn_output, axis=-2), attn_weights_inter
+
+    def _positioned_path_attention(
+        self,
+        query_states: paddle.Tensor,
+        key_states: paddle.Tensor,
+        value_states: paddle.Tensor,
+        position_ids: paddle.Tensor,
+        slope_rate: paddle.Tensor,
+    ) -> tuple[paddle.Tensor, paddle.Tensor]:
+        """Run block lightning attention on a causal path whose positions may repeat."""
+        _, _, seq_len, head_dim = query_states.shape
+        attn_weights_inter = paddle.zeros(
+            [query_states.shape[0], self.num_attention_heads, head_dim, head_dim],
+            dtype=query_states.dtype,
+        )
+        attn_output = []
+        slope_rate_4d = slope_rate.unsqueeze(0)
+
+        for start_idx in range(0, seq_len, self.block_size):
+            end_idx = min(start_idx + self.block_size, seq_len)
+            cur_q = query_states[:, :, start_idx:end_idx]
+            cur_k = key_states[:, :, start_idx:end_idx]
+            cur_v = value_states[:, :, start_idx:end_idx]
+
+            cur_positions = position_ids[start_idx:end_idx].astype(slope_rate.dtype)
+            previous_position = (
+                position_ids[start_idx - 1].astype(slope_rate.dtype)
+                if start_idx > 0
+                else cur_positions[0] - 1
+            )
+            last_position = cur_positions[-1]
+
+            query_distance = cur_positions - previous_position
+            key_distance = last_position - cur_positions
+            pair_distance = cur_positions.unsqueeze(-1) - cur_positions.unsqueeze(0)
+            physical_causal_mask = paddle.tril(
+                paddle.ones([end_idx - start_idx, end_idx - start_idx], dtype=paddle.bool)
+            )
+
+            query_decay = paddle.exp(-slope_rate * query_distance.reshape([1, -1, 1])).astype(cur_q.dtype)
+            key_decay = paddle.exp(-slope_rate * key_distance.reshape([1, -1, 1])).astype(cur_k.dtype)
+            diagonal_decay = paddle.where(
+                physical_causal_mask.reshape(
+                    [1, 1, end_idx - start_idx, end_idx - start_idx]
+                )
+                & (pair_distance.reshape([1, 1, end_idx - start_idx, end_idx - start_idx]) >= 0),
+                paddle.exp(
+                    -slope_rate_4d
+                    * pair_distance.reshape([1, 1, end_idx - start_idx, end_idx - start_idx])
+                ),
+                paddle.zeros(
+                    [1, self.num_attention_heads, end_idx - start_idx, end_idx - start_idx],
+                    dtype=slope_rate.dtype,
+                ),
+            ).astype(cur_q.dtype)
+            block_decay = paddle.exp(-slope_rate * (last_position - previous_position)).astype(
+                attn_weights_inter.dtype
+            )
+
+            attn_intra = paddle.matmul(cur_q, cur_k.transpose([0, 1, 3, 2]))
+            attn_output_intra = paddle.matmul(attn_intra * diagonal_decay, cur_v)
+            attn_output_inter = paddle.matmul(cur_q * query_decay, attn_weights_inter)
+            attn_output.append(attn_output_inter + attn_output_intra)
+
+            next_stat = paddle.matmul((cur_k * key_decay).transpose([0, 1, 3, 2]), cur_v)
+            attn_weights_inter = attn_weights_inter * block_decay + next_stat
+
+        return paddle.cat(attn_output, axis=-2), attn_weights_inter
+
+    @staticmethod
+    def _end_indices_from_4d_mask(attention_mask: paddle.Tensor) -> list[list[int]]:
+        """Convert a causal dense mask into each key's exclusive query-end index."""
+        if attention_mask.shape[1] != 1 or attention_mask.shape[-2] != attention_mask.shape[-1]:
+            raise ValueError(
+                "MiniMax linear_attention expects a 4D causal mask with shape [batch, 1, seq, seq]."
+            )
+
+        dense_masks = attention_mask[:, 0].astype("bool").numpy()
+        all_end_indices = []
+        for dense_mask in dense_masks:
+            seq_len = dense_mask.shape[0]
+            end_indices = []
+            for key_idx in range(seq_len):
+                visible_queries = [query_idx for query_idx in range(seq_len) if dense_mask[query_idx, key_idx]]
+                if not visible_queries:
+                    end_indices.append(key_idx)
+                    continue
+                expected_queries = list(range(key_idx, visible_queries[-1] + 1))
+                if visible_queries != expected_queries:
+                    raise ValueError(
+                        "MiniMax linear_attention only supports causal masks where each key is visible "
+                        "to one contiguous range of query rows."
+                    )
+                end_indices.append(visible_queries[-1] + 1)
+            all_end_indices.append(end_indices)
+        return all_end_indices
+
+    def _structured_attention(
+        self,
+        query_states: paddle.Tensor,
+        key_states: paddle.Tensor,
+        value_states: paddle.Tensor,
+        position_ids: paddle.Tensor,
+        end_indices_by_batch: list[list[int]],
+        slope_rate: paddle.Tensor,
+    ) -> tuple[paddle.Tensor, paddle.Tensor]:
+        """Evaluate packed or branched causal paths without leaking recurrent state."""
+        batch_outputs = []
+        batch_final_states = []
+        seq_len = query_states.shape[2]
+        position_ids_by_batch = position_ids.astype("int64").numpy().tolist()
+
+        for batch_idx, (end_indices, batch_positions) in enumerate(
+            zip(end_indices_by_batch, position_ids_by_batch)
+        ):
+            if len(end_indices) != seq_len or len(batch_positions) != seq_len:
+                raise ValueError(
+                    "MiniMax linear_attention mask and position_ids must match the input sequence length."
+                )
+
+            valid_length = next(
+                (key_idx for key_idx, end_idx in enumerate(end_indices) if end_idx <= key_idx),
+                seq_len,
+            )
+            if any(end_idx <= key_idx for key_idx, end_idx in enumerate(end_indices[:valid_length])):
+                raise ValueError(
+                    "MiniMax linear_attention structured masks must contain one contiguous valid-token prefix."
+                )
+            if any(
+                end_idx > key_idx or end_idx > seq_len
+                for key_idx, end_idx in enumerate(end_indices[valid_length:], start=valid_length)
+            ):
+                raise ValueError(
+                    "MiniMax linear_attention only supports an invisible, contiguous right-padding suffix."
+                )
+
+            valid_end_indices = end_indices[:valid_length]
+            if any(end_idx > valid_length for end_idx in valid_end_indices):
+                raise ValueError(
+                    "MiniMax linear_attention valid tokens cannot attend into the right-padding suffix."
+                )
+
+            if valid_length == 0:
+                batch_outputs.append(paddle.zeros_like(query_states[batch_idx : batch_idx + 1]))
+                batch_final_states.append(
+                    paddle.zeros(
+                        [1, self.num_attention_heads, query_states.shape[-1], query_states.shape[-1]],
+                        dtype=query_states.dtype,
+                    )
+                )
+                continue
+
+            boundaries = sorted(set(valid_end_indices))
+            if not boundaries or boundaries[-1] != valid_length:
+                raise ValueError("MiniMax linear_attention structured mask must cover every valid query row.")
+
+            interval_outputs = []
+            final_state = None
+            interval_start = 0
+            for interval_end in boundaries:
+                if interval_end <= interval_start:
+                    continue
+
+                active_prefix = [
+                    key_idx
+                    for key_idx in range(interval_start)
+                    if valid_end_indices[key_idx] > interval_start
+                ]
+                current_interval = list(range(interval_start, interval_end))
+                path_indices = active_prefix + current_interval
+                path_positions = [batch_positions[index] for index in path_indices]
+                if any(right < left for left, right in zip(path_positions, path_positions[1:])):
+                    raise ValueError(
+                        "MiniMax linear_attention cannot represent this structured mask as non-decreasing "
+                        "logical-position paths."
+                    )
+
+                index_tensor = paddle.to_tensor(path_indices, dtype="int64")
+                path_q = paddle.index_select(query_states[batch_idx : batch_idx + 1], index_tensor, axis=2)
+                path_k = paddle.index_select(key_states[batch_idx : batch_idx + 1], index_tensor, axis=2)
+                path_v = paddle.index_select(value_states[batch_idx : batch_idx + 1], index_tensor, axis=2)
+                path_position_ids = paddle.to_tensor(path_positions, dtype="int64")
+
+                has_unit_position_steps = all(
+                    right == left + 1 for left, right in zip(path_positions, path_positions[1:])
+                )
+                if has_unit_position_steps:
+                    path_output, final_state = self._contiguous_path_attention(
+                        path_q, path_k, path_v, slope_rate
+                    )
+                else:
+                    path_output, final_state = self._positioned_path_attention(
+                        path_q,
+                        path_k,
+                        path_v,
+                        path_position_ids,
+                        slope_rate,
+                    )
+
+                interval_outputs.append(path_output[:, :, -len(current_interval) :])
+                interval_start = interval_end
+
+            if interval_start != valid_length:
+                raise ValueError("MiniMax linear_attention structured mask did not cover the valid-token prefix.")
+
+            batch_output = paddle.cat(interval_outputs, axis=2)
+            if valid_length < seq_len:
+                batch_output = paddle.cat(
+                    [
+                        batch_output,
+                        paddle.zeros_like(query_states[batch_idx : batch_idx + 1, :, valid_length:]),
+                    ],
+                    axis=2,
+                )
+            batch_outputs.append(batch_output)
+            batch_final_states.append(final_state)
+
+        return paddle.cat(batch_outputs, axis=0), paddle.cat(batch_final_states, axis=0)
+
     def forward(
         self,
         hidden_states: paddle.Tensor,
         position_embeddings: tuple[paddle.Tensor, paddle.Tensor] | None = None,
         attention_mask: paddle.Tensor | None = None,
+        position_ids: paddle.Tensor | None = None,
+        attn_mask_startend_row_indices: paddle.Tensor | None = None,
         past_key_values: Cache | None = None,
         use_cache: bool = False,
         **kwargs,
@@ -219,7 +476,41 @@ class MiniMaxLightningAttention(nn.Layer):
         if past_key_values is not None and isinstance(past_key_values, MiniMaxCache):
             attn_weights_inter = past_key_values.get_linear_cache(self.layer_idx)
 
-        if attn_weights_inter is None:
+        end_indices_by_batch = None
+        if attn_mask_startend_row_indices is not None:
+            row_indices = attn_mask_startend_row_indices
+            if row_indices.ndim == 3:
+                row_indices = row_indices.unsqueeze(-1)
+            if (
+                row_indices.ndim != 4
+                or row_indices.shape[0] != batch_size
+                or row_indices.shape[1] != 1
+                or row_indices.shape[2] != seq_len
+                or row_indices.shape[3] != 1
+            ):
+                raise ValueError(
+                    "MiniMax linear_attention currently supports causal row indices with shape "
+                    "[batch, 1, seq, 1]."
+                )
+            end_indices_by_batch = row_indices[:, 0, :, 0].astype("int64").numpy().tolist()
+        elif attention_mask is not None and attention_mask.ndim == 4:
+            end_indices_by_batch = self._end_indices_from_4d_mask(attention_mask)
+            attention_mask = None
+
+        if end_indices_by_batch is not None:
+            if attn_weights_inter is not None:
+                raise ValueError("MiniMax cached linear_attention does not support structured training masks.")
+            if position_ids is None or position_ids.ndim != 2:
+                raise ValueError("MiniMax structured linear_attention requires 2D position_ids.")
+            attn_output, attn_weights_inter = self._structured_attention(
+                query_states,
+                key_states,
+                value_states,
+                position_ids,
+                end_indices_by_batch,
+                slope_rate,
+            )
+        elif attn_weights_inter is None:
             attn_weights_inter = paddle.zeros(
                 [batch_size, self.num_attention_heads, self.head_dim, self.head_dim],
                 dtype=hidden_states.dtype,
@@ -268,7 +559,8 @@ class MiniMaxLightningAttention(nn.Layer):
                 cur_out = paddle.matmul(cur_q, attn_weights_inter)
                 attn_output.append(cur_out)
 
-        attn_output = paddle.cat(attn_output, axis=-2)
+        if isinstance(attn_output, list):
+            attn_output = paddle.cat(attn_output, axis=-2)
 
         attn_output = attn_output.transpose([0, 2, 1, 3])
         attn_output = attn_output.reshape([batch_size, seq_len, self.num_attention_heads * self.head_dim])
@@ -585,6 +877,7 @@ class MiniMaxDecoderLayer(nn.Layer):
             hidden_states=hidden_states,
             position_embeddings=position_embeddings,
             attention_mask=attention_mask,
+            position_ids=position_ids,
             past_key_values=past_key_values,
             use_cache=use_cache,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
@@ -802,17 +1095,6 @@ class MiniMaxModel(MiniMaxPretrainedModel):
         if (input_ids is not None) and (inputs_embeds is not None):
             raise ValueError("You must specify exactly one of input_ids or inputs_embeds (not both)")
 
-        if "linear_attention" in self.config.layer_types:
-            if attn_mask_startend_row_indices is not None:
-                raise ValueError(
-                    "MiniMax linear_attention does not support packed attn_mask_startend_row_indices yet; "
-                    "disable packing/use_attn_mask_startend_row_indices or implement segment-reset support."
-                )
-            if attention_mask is not None and attention_mask.ndim == 4:
-                raise ValueError(
-                    "MiniMax linear_attention does not support 4D packing attention masks yet; disable packing."
-                )
-
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
 
@@ -856,7 +1138,7 @@ class MiniMaxModel(MiniMaxPretrainedModel):
                 input_mask_startend = attn_mask_startend_row_indices
             else:
                 input_attention_mask = attention_mask
-                input_mask_startend = None
+                input_mask_startend = attn_mask_startend_row_indices
 
             hidden_states = decoder_layer(
                 hidden_states,
