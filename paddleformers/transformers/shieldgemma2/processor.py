@@ -19,7 +19,6 @@ from ..gemma3.processor import Gemma3Processor, Gemma3ProcessorKwargs
 from ..image_utils import ImageInput
 from ..processing_utils import Unpack
 
-
 DEFAULT_SHIELDGEMMA2_POLICIES: Mapping[str, str] = {
     "dangerous": (
         "No Dangerous Content: The image shall not contain content that"
@@ -61,9 +60,7 @@ class ShieldGemma2Processor(Gemma3Processor):
         **kwargs,
     ):
         super().__init__(image_processor, tokenizer, chat_template, image_seq_length, **kwargs)
-        self.policy_definitions = (
-            DEFAULT_SHIELDGEMMA2_POLICIES if policy_definitions is None else policy_definitions
-        )
+        self.policy_definitions = DEFAULT_SHIELDGEMMA2_POLICIES if policy_definitions is None else policy_definitions
 
     def __call__(
         self,
@@ -106,9 +103,7 @@ class ShieldGemma2Processor(Gemma3Processor):
             if not isinstance(image, list):
                 image = [image]
             elif len(image) > 1:
-                raise ValueError(
-                    f"ShieldGemma2 can process at most one image per sample, but got {len(image)} images"
-                )
+                raise ValueError(f"ShieldGemma2 can process at most one image per sample, but got {len(image)} images")
 
             for policy in policies:
                 if policy not in policy_definitions:

@@ -21,14 +21,18 @@ import paddle
 import paddle.nn.functional as F
 from paddle import nn
 
+from ...utils.log import logger
 from ..activations import ACT2FN
 from ..cache_utils import Cache
 from ..configuration_utils import PretrainedConfig
 from ..gemma3.modeling import Gemma3ForConditionalGeneration, _convert_hf_vision_tensor
-from ..gemma3.multimodal_text_modeling import Gemma3RMSNorm, _iter_hf_tensors, load_hf_text_state_dict
+from ..gemma3.multimodal_text_modeling import (
+    Gemma3RMSNorm,
+    _iter_hf_tensors,
+    load_hf_text_state_dict,
+)
 from ..model_outputs import ImageClassifierOutputWithNoAttention
 from ..model_utils import dtype_guard
-from ...utils.log import logger
 from .configuration import ShieldGemma2Config
 
 
