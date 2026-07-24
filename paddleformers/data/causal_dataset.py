@@ -1,6 +1,7 @@
 # Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 
 """GPT style dataset."""
+
 import hashlib
 import math
 import os
@@ -32,7 +33,9 @@ import pickle
 import requests
 
 
-def get_logits(batch_ids, max_retries=1, timeout=1200, retry_delay=1, prob_nums=10):
+def get_logits(
+    batch_ids, max_retries=1, timeout=1200, retry_delay=1, prob_nums=10
+):
     """
     Retrieve logits with retry mechanism if no response is received within the specified time
 
@@ -63,7 +66,9 @@ def get_logits(batch_ids, max_retries=1, timeout=1200, retry_delay=1, prob_nums=
 
     for attempt in range(max_retries):
         try:
-            response = requests.post(url=url, json=payload, headers=headers, timeout=timeout)
+            response = requests.post(
+                url=url, json=payload, headers=headers, timeout=timeout
+            )
             response.raise_for_status()  # 检查HTTP错误
 
             data = pickle.loads(response.content)
@@ -73,9 +78,11 @@ def get_logits(batch_ids, max_retries=1, timeout=1200, retry_delay=1, prob_nums=
             all_ids = paddle.to_tensor(all_ids, dtype="int64")
             return all_token, all_ids
 
-        except (requests.exceptions.RequestException, IOError) as e:
+        except (OSError, requests.exceptions.RequestException) as e:
             if attempt == max_retries - 1:
-                raise Exception(f"Failed after {max_retries} attempts. Last error: {str(e)}")
+                raise Exception(
+                    f"Failed after {max_retries} attempts. Last error: {e!s}"
+                )
             time.sleep(retry_delay)
 
 
@@ -93,10 +100,16 @@ def check_data_split(splits_string, do_train, do_eval, do_predict):
     splits_sum = sum(splits)
     data_flag = True
     assert splits_sum > 0.0, "sum of splits should larger than 0.0!"
-    if (do_train and splits[0] == 0) or (do_eval and splits[1] == 0) or (do_predict and splits[2] == 0):
+    if (
+        (do_train and splits[0] == 0)
+        or (do_eval and splits[1] == 0)
+        or (do_predict and splits[2] == 0)
+    ):
         data_flag = False
     if not data_flag:
-        raise ValueError("If do_train/do_eval/do_predict is True, the corresponding dataset split should not be 0!")
+        raise ValueError(
+            "If do_train/do_eval/do_predict is True, the corresponding dataset split should not be 0!"
+        )
 
 
 def get_train_valid_test_split_(splits_string, size):
@@ -117,7 +130,9 @@ def get_train_valid_test_split_(splits_string, size):
     splits = [split / splits_sum for split in splits]
     splits_index = [0]
     for index, split in enumerate(splits):
-        splits_index.append(splits_index[index] + int(round(split * float(size))))
+        splits_index.append(
+            splits_index[index] + int(round(split * float(size)))
+        )
     diff = splits_index[-1] - size
     for index in range(1, len(splits_index)):
         splits_index[index] -= diff
@@ -126,8 +141,9 @@ def get_train_valid_test_split_(splits_string, size):
     return splits_index
 
 
-def get_datasets_weights_and_num_samples(data_prefix, train_val_test_num_samples):
-
+def get_datasets_weights_and_num_samples(
+    data_prefix, train_val_test_num_samples
+):
     # The data prefix should be in the format of:
     #   weight-1, data-prefix-1, weight-2, data-prefix-2, ..
     assert len(data_prefix) % 2 == 0
@@ -151,7 +167,10 @@ def get_datasets_weights_and_num_samples(data_prefix, train_val_test_num_samples
     datasets_train_valid_test_num_samples = []
     for weight in weights:
         datasets_train_valid_test_num_samples.append(
-            [int(math.ceil(val * weight * 1.005)) + 20 for val in train_val_test_num_samples]
+            [
+                int(math.ceil(val * weight * 1.005)) + 20
+                for val in train_val_test_num_samples
+            ]
         )
 
     return prefixes, weights, datasets_train_valid_test_num_samples
@@ -202,11 +221,15 @@ def build_train_valid_test_datasets(
 
     # Blending dataset.
     # Parse the values.
-    output = get_datasets_weights_and_num_samples(data_prefix, train_val_test_num_samples)
+    output = get_datasets_weights_and_num_samples(
+        data_prefix, train_val_test_num_samples
+    )
     prefixes, weights, datasets_train_valid_test_num_samples = output
     # NOTE: megatron/gpt_dataset.py has been updated. When creating BlendableDataset, we will use the raw train_val_test_num_samples instead of the expanded ones.
     # Please refer to https://github.com/NVIDIA/NeMo/blob/72f630d087d45655b1a069dc72debf01dfdbdb2d/nemo/collections/nlp/data/language_modeling/megatron/gpt_dataset.py#L74-L80 for more information
-    train_num_samples, valid_num_samples, test_num_samples = train_val_test_num_samples
+    train_num_samples, valid_num_samples, test_num_samples = (
+        train_val_test_num_samples
+    )
 
     # Build individual datasets.
     train_datasets = []
@@ -238,12 +261,20 @@ def build_train_valid_test_datasets(
     blending_train_dataset = None
     if train_datasets:
         blending_train_dataset = BlendableDataset(
-            train_datasets, weights, train_num_samples, share_folder, data_cache_path=data_cache_path
+            train_datasets,
+            weights,
+            train_num_samples,
+            share_folder,
+            data_cache_path=data_cache_path,
         )
     blending_valid_dataset = None
     if valid_datasets:
         blending_valid_dataset = BlendableDataset(
-            valid_datasets, weights, valid_num_samples, share_folder, data_cache_path=data_cache_path
+            valid_datasets,
+            weights,
+            valid_num_samples,
+            share_folder,
+            data_cache_path=data_cache_path,
         )
     blending_test_dataset = None
     if test_datasets:
@@ -255,7 +286,11 @@ def build_train_valid_test_datasets(
             data_cache_path=data_cache_path,
         )
 
-    return (blending_train_dataset, blending_valid_dataset, blending_test_dataset)
+    return (
+        blending_train_dataset,
+        blending_valid_dataset,
+        blending_test_dataset,
+    )
 
 
 def _build_train_valid_test_datasets(
@@ -282,19 +317,23 @@ def _build_train_valid_test_datasets(
 
     # Indexed dataset.
     if need_data:
-        indexed_dataset = get_indexed_dataset_(data_prefix, data_impl, skip_warmup)
+        indexed_dataset = get_indexed_dataset_(
+            data_prefix, data_impl, skip_warmup
+        )
 
         total_num_of_documents = indexed_dataset.sizes.shape[0]
-        splits = get_train_valid_test_split_(splits_string, total_num_of_documents)
+        splits = get_train_valid_test_split_(
+            splits_string, total_num_of_documents
+        )
 
         # Print stats about the splits.
         print_rank_0(" > dataset split:")
 
         def print_split_stats(name, index):
-            print_rank_0("    {}:".format(name))
+            print_rank_0(f"    {name}:")
             print_rank_0(
-                "     document indices in [{}, {}) total of {} "
-                "documents".format(splits[index], splits[index + 1], splits[index + 1] - splits[index])
+                f"     document indices in [{splits[index]}, {splits[index + 1]}) total of {splits[index + 1] - splits[index]} "
+                "documents"
             )
 
         print_split_stats("train", 0)
@@ -305,7 +344,11 @@ def _build_train_valid_test_datasets(
         paddle.distributed.barrier()
 
     def build_dataset(index, name):
-        documents = np.arange(splits[index], splits[index + 1], 1, np.int32) if need_data else None
+        documents = (
+            np.arange(splits[index], splits[index + 1], 1, np.int32)
+            if need_data
+            else None
+        )
         dataset = GPTDataset(
             name,
             data_prefix,
@@ -341,8 +384,11 @@ def get_indexed_dataset_(data_prefix, data_impl, skip_warmup):
 
     start_time = time.time()
     indexed_dataset = make_indexed_dataset(data_prefix, data_impl, skip_warmup)
-    print_rank_0(" > finished creating indexed dataset in {:4f} " "seconds".format(time.time() - start_time))
-    print_rank_0("    number of documents: {}".format(indexed_dataset.sizes.shape[0]))
+    print_rank_0(
+        f" > finished creating indexed dataset in {time.time() - start_time:4f} "
+        "seconds"
+    )
+    print_rank_0(f"    number of documents: {indexed_dataset.sizes.shape[0]}")
 
     return indexed_dataset
 
@@ -367,7 +413,6 @@ class GPTDataset(paddle.io.Dataset):
         self_constraint_cpt=False,
         prob_nums=10,
     ):
-
         self.name = name
         self.indexed_dataset = indexed_dataset
         self.return_doc_ids = return_doc_ids
@@ -407,17 +452,31 @@ class GPTDataset(paddle.io.Dataset):
         if need_data and len(documents) > 0:
             start_time = time.time()
             print_rank_0(f" > loading doc-idx mapping from {doc_idx_filename}")
-            self.doc_idx = np.load(doc_idx_filename, allow_pickle=True, mmap_mode="r")
+            self.doc_idx = np.load(
+                doc_idx_filename, allow_pickle=True, mmap_mode="r"
+            )
 
-            print_rank_0(f" > loading sample-idx mapping from {sample_idx_filename}")
-            self.sample_idx = np.load(sample_idx_filename, allow_pickle=True, mmap_mode="r")
+            print_rank_0(
+                f" > loading sample-idx mapping from {sample_idx_filename}"
+            )
+            self.sample_idx = np.load(
+                sample_idx_filename, allow_pickle=True, mmap_mode="r"
+            )
 
-            print_rank_0(f" > loading shuffle-idx mapping from {shuffle_idx_filename}")
-            self.shuffle_idx = np.load(shuffle_idx_filename, allow_pickle=True, mmap_mode="r")
+            print_rank_0(
+                f" > loading shuffle-idx mapping from {shuffle_idx_filename}"
+            )
+            self.shuffle_idx = np.load(
+                shuffle_idx_filename, allow_pickle=True, mmap_mode="r"
+            )
 
-            print_rank_0("    loaded indexed file in {:3.3f} seconds".format(time.time() - start_time))
-            print_rank_0("    total number of samples: {}".format(self.sample_idx.shape[0]))
-            print_rank_0("    total number of epochs: {}".format(num_epochs))
+            print_rank_0(
+                f"    loaded indexed file in {time.time() - start_time:3.3f} seconds"
+            )
+            print_rank_0(
+                f"    total number of samples: {self.sample_idx.shape[0]}"
+            )
+            print_rank_0(f"    total number of epochs: {num_epochs}")
 
         if paddle.distributed.get_world_size() > 1:
             paddle.distributed.barrier()
@@ -441,7 +500,9 @@ class GPTDataset(paddle.io.Dataset):
             doc_ids.append(self.doc_idx[doc_index_f])
 
             sample, mask = self.indexed_dataset.get(
-                self.doc_idx[doc_index_f], offset=offset_f, length=offset_l - offset_f + 1
+                self.doc_idx[doc_index_f],
+                offset=offset_f,
+                length=offset_l - offset_f + 1,
             )
 
             # position_ids
@@ -450,7 +511,9 @@ class GPTDataset(paddle.io.Dataset):
         else:
             # Otherwise, get the rest of the initial document.
             doc_ids.append(self.doc_idx[doc_index_f])
-            sample, mask = self.indexed_dataset.get(self.doc_idx[doc_index_f], offset=offset_f)
+            sample, mask = self.indexed_dataset.get(
+                self.doc_idx[doc_index_f], offset=offset_f
+            )
             append_mask = True
             if mask is None:
                 append_mask = False
@@ -468,7 +531,9 @@ class GPTDataset(paddle.io.Dataset):
 
             # And finally add the relevant portion of last document.
             doc_ids.append(self.doc_idx[doc_index_l])
-            sample, mask = self.indexed_dataset.get(self.doc_idx[doc_index_l], length=offset_l + 1)
+            sample, mask = self.indexed_dataset.get(
+                self.doc_idx[doc_index_l], length=offset_l + 1
+            )
             sample_list.append(sample)
             if append_mask:
                 mask_list.append(mask)
@@ -482,7 +547,9 @@ class GPTDataset(paddle.io.Dataset):
 
         kl_logits, kl_ids = None, None
         if self.self_constraint_cpt:
-            kl_logits, kl_ids = get_logits([sample.tolist()], prob_nums=self.prob_nums)
+            kl_logits, kl_ids = get_logits(
+                [sample.tolist()], prob_nums=self.prob_nums
+            )
 
         res = None
         if self.return_doc_ids:  # for retro preprocessing
@@ -521,7 +588,17 @@ class GPTDataset(paddle.io.Dataset):
 
 
 def _build_index_mappings(
-    name, data_prefix, documents, sizes, splits_string, num_samples, seq_length, seed, share_folder, *, data_cache_path
+    name,
+    data_prefix,
+    documents,
+    sizes,
+    splits_string,
+    num_samples,
+    seq_length,
+    seed,
+    share_folder,
+    *,
+    data_cache_path,
 ):
     """Build doc-idx, sample-idx, and shuffle-idx.
     doc-idx: is an array (ordered) of documents to be used in training.
@@ -585,7 +662,10 @@ def _build_index_mappings(
         flush=True,
     )
     if check_rank_flag:
-        print_rank_0(" > WARNING: could not find index map files, building " "the indices on rank 0 ...")
+        print_rank_0(
+            " > WARNING: could not find index map files, building "
+            "the indices on rank 0 ..."
+        )
 
         # For the last epoch, decide whether include the entire epoch
         # in the global shuffle or not.
@@ -594,22 +674,34 @@ def _build_index_mappings(
         # not mean anything.
         if num_epochs == 1:
             separate_last_epoch = False
-            print(" > only one epoch required, setting " "separate_last_epoch to False", flush=True)
+            print(
+                " > only one epoch required, setting "
+                "separate_last_epoch to False",
+                flush=True,
+            )
 
         else:
             # Get the number of samples for the last epoch
-            num_samples_from_epochs_minus_one = ((num_epochs - 1) * tokens_per_epoch - 1) // seq_length
-            last_epoch_num_samples = num_samples - num_samples_from_epochs_minus_one
-            assert last_epoch_num_samples >= 0, "last epoch number of samples should be non-negative."
+            num_samples_from_epochs_minus_one = (
+                (num_epochs - 1) * tokens_per_epoch - 1
+            ) // seq_length
+            last_epoch_num_samples = (
+                num_samples - num_samples_from_epochs_minus_one
+            )
+            assert last_epoch_num_samples >= 0, (
+                "last epoch number of samples should be non-negative."
+            )
             num_samples_per_epoch = (tokens_per_epoch - 1) // seq_length
-            assert last_epoch_num_samples <= (
-                num_samples_per_epoch + 1
-            ), "last epoch number of samples exceeded max value."
+            assert last_epoch_num_samples <= (num_samples_per_epoch + 1), (
+                "last epoch number of samples exceeded max value."
+            )
             # If we have less than 80% of the samples for the last epoch,
             # separate out the epoch and treat it differently.
             # Note: the 80% number is just based on common sense and can
             # be adjusted if needed.
-            separate_last_epoch = last_epoch_num_samples < int(0.80 * num_samples_per_epoch)
+            separate_last_epoch = last_epoch_num_samples < int(
+                0.80 * num_samples_per_epoch
+            )
             if separate_last_epoch:
                 string = (
                     " > last epoch number of samples ({}) is smaller "
@@ -622,7 +714,10 @@ def _build_index_mappings(
                     "than 80% of number of samples per epoch ({}), "
                     "setting separate_last_epoch to False"
                 )
-            print(string.format(last_epoch_num_samples, num_samples_per_epoch), flush=True)
+            print(
+                string.format(last_epoch_num_samples, num_samples_per_epoch),
+                flush=True,
+            )
 
         try:
             os.makedirs(data_cache_dir, exist_ok=True)
@@ -633,11 +728,13 @@ def _build_index_mappings(
 
             # doc-idx.
             start_time = time.time()
-            doc_idx = _build_doc_idx(documents, num_epochs, np_rng, separate_last_epoch)
+            doc_idx = _build_doc_idx(
+                documents, num_epochs, np_rng, separate_last_epoch
+            )
             np.save(idx_path["doc"], doc_idx, allow_pickle=True)
             print_rank_0(
                 " > elapsed time to build and save doc-idx mapping "
-                "(seconds): {:4f}".format(time.time() - start_time)
+                f"(seconds): {time.time() - start_time:4f}"
             )
             # sample-idx.
             start_time = time.time()
@@ -648,11 +745,13 @@ def _build_index_mappings(
 
             assert doc_idx.dtype == np.int32
             assert sizes.dtype == np.int32
-            sample_idx = helpers.build_sample_idx(sizes, doc_idx, seq_length, num_epochs, tokens_per_epoch)
+            sample_idx = helpers.build_sample_idx(
+                sizes, doc_idx, seq_length, num_epochs, tokens_per_epoch
+            )
             np.save(idx_path["sample"], sample_idx, allow_pickle=True)
             print_rank_0(
                 " > elapsed time to build and save sample-idx mapping "
-                "(seconds): {:4f}".format(time.time() - start_time)
+                f"(seconds): {time.time() - start_time:4f}"
             )
             # shuffle-idx.
             start_time = time.time()
@@ -662,17 +761,27 @@ def _build_index_mappings(
                 num_samples_ = num_samples_from_epochs_minus_one
             else:
                 num_samples_ = sample_idx.shape[0] - 1
-            shuffle_idx = _build_shuffle_idx(num_samples_, sample_idx.shape[0] - 1, np_rng)
+            shuffle_idx = _build_shuffle_idx(
+                num_samples_, sample_idx.shape[0] - 1, np_rng
+            )
             np.save(idx_path["shuffle"], shuffle_idx, allow_pickle=True)
             print_rank_0(
                 " > elapsed time to build and save shuffle-idx mapping"
-                " (seconds): {:4f}".format(time.time() - start_time)
+                f" (seconds): {time.time() - start_time:4f}"
             )
         except OSError:
-            print(f"There was an error trying to create the data cache directory ({data_cache_dir})")
-            print('or a file in it. This defaults to a directory "index-cache" within the directory')
-            print("the data files are in and can be set with the --data-cache-path argument. Please")
-            print("ensure you have write access to this directory or specify one that you do have")
+            print(
+                f"There was an error trying to create the data cache directory ({data_cache_dir})"
+            )
+            print(
+                'or a file in it. This defaults to a directory "index-cache" within the directory'
+            )
+            print(
+                "the data files are in and can be set with the --data-cache-path argument. Please"
+            )
+            print(
+                "ensure you have write access to this directory or specify one that you do have"
+            )
             print("write access to.")
             # data_cache_success = False
     else:
@@ -686,11 +795,16 @@ def _build_index_mappings(
                 time.sleep(3)
             else:
                 try:
-                    np.load(idx_path["shuffle"], allow_pickle=True, mmap_mode="r")
+                    np.load(
+                        idx_path["shuffle"], allow_pickle=True, mmap_mode="r"
+                    )
                     print("build success", flush=True)
                     break
                 except Exception:
-                    print("%s file is still writing or damaged, please wait for a moment." % idx_path["shuffle"])
+                    print(
+                        "%s file is still writing or damaged, please wait for a moment."
+                        % idx_path["shuffle"]
+                    )
                     time.sleep(3)
     # try:
     #     hcg = paddle.distributed.fleet.get_hybrid_communicate_group()
@@ -707,7 +821,14 @@ def _build_index_mappings(
     #     exit()
     # paddle.distributed.barrier()
 
-    return idx_path["doc"], idx_path["sample"], idx_path["shuffle"], desc, desc_hash, num_epochs
+    return (
+        idx_path["doc"],
+        idx_path["sample"],
+        idx_path["shuffle"],
+        desc,
+        desc_hash,
+        num_epochs,
+    )
 
 
 def _num_tokens(documents, sizes):
@@ -797,8 +918,8 @@ def _build_sample_idx(sizes, doc_idx, seq_length, num_epochs, tokens_per_epoch):
 def _build_shuffle_idx(num_samples, total_size, np_rng):
     """Build the range [0, size) and shuffle."""
     print(
-        " > building shuffle index with split [0, {}) and [{}, {}) "
-        "...".format(num_samples, num_samples, total_size),
+        f" > building shuffle index with split [0, {num_samples}) and [{num_samples}, {total_size}) "
+        "...",
         flush=True,
     )
 
@@ -806,12 +927,16 @@ def _build_shuffle_idx(num_samples, total_size, np_rng):
     if total_size >= (np.iinfo(np.uint32).max - 1):
         dtype_ = np.int64
 
-    shuffle_idx_first = np.arange(start=0, stop=num_samples, step=1, dtype=dtype_)
+    shuffle_idx_first = np.arange(
+        start=0, stop=num_samples, step=1, dtype=dtype_
+    )
     np_rng.shuffle(shuffle_idx_first)
     if num_samples == total_size:
         return shuffle_idx_first
 
-    shuffle_idx_last = np.arange(start=num_samples, stop=total_size, step=1, dtype=dtype_)
+    shuffle_idx_last = np.arange(
+        start=num_samples, stop=total_size, step=1, dtype=dtype_
+    )
     np_rng.shuffle(shuffle_idx_last)
 
     return np.concatenate((shuffle_idx_first, shuffle_idx_last))

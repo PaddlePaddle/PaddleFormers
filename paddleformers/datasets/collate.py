@@ -12,10 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import functools
 import inspect
 import math
+import operator
 import os
-from typing import List
 
 import numpy as np
 import paddle
@@ -38,7 +39,11 @@ def calc_padding_size(seq_len: int, training_args) -> int:
         int: Aligned sequence length
     """
     cp_size = training_args.context_parallel_size
-    sp_size = training_args.tensor_model_parallel_size if training_args.sequence_parallel else 1
+    sp_size = (
+        training_args.tensor_model_parallel_size
+        if training_args.sequence_parallel
+        else 1
+    )
     padding_to_size = 2 if cp_size * sp_size > 1 else 1
     if training_args.fp8:
         padding_to_size = (padding_to_size + 3) // 4 * 4
@@ -87,11 +92,18 @@ def dpo_collate_fn(
 
     # 1.max_seq_len
     if padding_free:
-        batch = [sum(batch, [])]
-        max_seq_len = sum(len(sequence.token_ids) for sequences in batch for sequence in sequences)
+        batch = [functools.reduce(operator.iadd, batch, [])]
+        max_seq_len = sum(
+            len(sequence.token_ids)
+            for sequences in batch
+            for sequence in sequences
+        )
         # batch = [[Sequence1, Sequence2, Sequence3]]
     if not max_seq_len:
-        max_seq_len = max(sum(len(sequence.token_ids) for sequence in sequences) for sequences in batch)
+        max_seq_len = max(
+            sum(len(sequence.token_ids) for sequence in sequences)
+            for sequences in batch
+        )
     max_seq_len = calc_padding_size(max_seq_len, training_args)
 
     # 2.init input_dict
@@ -112,19 +124,40 @@ def dpo_collate_fn(
         input_dict["attention_mask"] = []
         use_attn_mask_startend_row_indices = False
     else:
-        raise ValueError("attention_mask and attn_mask_startend_row_indices are both None.")
+        raise ValueError(
+            "attention_mask and attn_mask_startend_row_indices are both None."
+        )
 
     # 3.iterate batch
     sequence_sum_flatten = 0
     for i, sequences in enumerate(batch):
         # 3.1 padding
-        difference = max_seq_len - sum([len(sequence.token_ids) for sequence in sequences])
-        input_dict["input_ids"].append(sum([sequence.token_ids for sequence in sequences], []) + [0] * difference)
+        difference = max_seq_len - sum(
+            [len(sequence.token_ids) for sequence in sequences]
+        )
+        input_dict["input_ids"].append(
+            functools.reduce(
+                operator.iadd,
+                [sequence.token_ids for sequence in sequences],
+                [],
+            )
+            + [0] * difference
+        )
         input_dict["position_ids"].append(
-            sum([sequence.position_ids for sequence in sequences], []) + [0] * difference
+            functools.reduce(
+                operator.iadd,
+                [sequence.position_ids for sequence in sequences],
+                [],
+            )
+            + [0] * difference
         )
         input_dict["response_labels"].append(
-            sum([sequence.response_labels for sequence in sequences], []) + [-100] * difference
+            functools.reduce(
+                operator.iadd,
+                [sequence.response_labels for sequence in sequences],
+                [],
+            )
+            + [-100] * difference
         )
 
         # 3.2 attention mask
@@ -132,10 +165,16 @@ def dpo_collate_fn(
             start_row_indices = []
             sequence_sum = 0
             for sequence in sequences:
-                start_row_indices += [indice + sequence_sum for indice in sequence.attn_mask_startend_row_indices]
+                start_row_indices += [
+                    indice + sequence_sum
+                    for indice in sequence.attn_mask_startend_row_indices
+                ]
                 sequence_sum += len(sequence.token_ids)
             input_dict["attn_mask_startend_row_indices"].append(
-                [start_row_indices + list(range(start_row_indices[-1], max_seq_len))]
+                [
+                    start_row_indices
+                    + list(range(start_row_indices[-1], max_seq_len))
+                ]
             )
         else:
             input_dict["attention_mask"].append(
@@ -144,7 +183,9 @@ def dpo_collate_fn(
                     # pad to max_loength
                     np.pad(
                         # block attention_mask
-                        block_diag(*[sequence.attention_mask for sequence in sequences]),
+                        block_diag(
+                            *[sequence.attention_mask for sequence in sequences]
+                        ),
                         pad_width=((0, difference), (0, difference)),
                         mode="constant",
                         constant_values=False,
@@ -184,7 +225,9 @@ def dpo_collate_fn(
         if key == "attention_mask":
             input_dict[key] = np.array(input_dict[key], dtype=np.float32)
         elif key == "attn_mask_startend_row_indices":
-            input_dict[key] = np.array(input_dict[key], dtype=np.int32)[..., None]
+            input_dict[key] = np.array(input_dict[key], dtype=np.int32)[
+                ..., None
+            ]
         else:
             input_dict[key] = np.array(input_dict[key])
 
@@ -240,11 +283,18 @@ def mm_dpo_collate_fn(
 
     # 1.max_seq_len & get_rope_func & get_token_type_func
     if padding_free:
-        batch = [sum(batch, [])]
-        max_seq_len = sum(len(sequence.token_ids) for sequences in batch for sequence in sequences)
+        batch = [functools.reduce(operator.iadd, batch, [])]
+        max_seq_len = sum(
+            len(sequence.token_ids)
+            for sequences in batch
+            for sequence in sequences
+        )
         # batch = [[Sequence1, Sequence2, Sequence3]]
     if not max_seq_len:
-        max_seq_len = max(sum(len(sequence.token_ids) for sequence in sequences) for sequences in batch)
+        max_seq_len = max(
+            sum(len(sequence.token_ids) for sequence in sequences)
+            for sequences in batch
+        )
     max_seq_len = calc_padding_size(max_seq_len, training_args)
 
     if isinstance(model, LoRAModel):
@@ -252,7 +302,11 @@ def mm_dpo_collate_fn(
 
     if model is not None and hasattr(model, "get_rope_index"):
         get_rope_func = model.get_rope_index  # transformers < 4.52.0 or lora
-    elif model is not None and hasattr(model, "model") and hasattr(model.model, "get_rope_index"):
+    elif (
+        model is not None
+        and hasattr(model, "model")
+        and hasattr(model.model, "get_rope_index")
+    ):
         get_rope_func = model.model.get_rope_index  # transformers >= 4.52.0
     else:
         get_rope_func = None
@@ -260,8 +314,14 @@ def mm_dpo_collate_fn(
 
     if model is not None and hasattr(model, "get_token_type_ids"):
         get_token_type_func = model.get_token_type_ids  # transformers < 4.52.0
-    elif model is not None and hasattr(model, "model") and hasattr(model.model, "get_token_type_ids"):
-        get_token_type_func = model.model.get_token_type_ids  # transformers >= 4.52.0
+    elif (
+        model is not None
+        and hasattr(model, "model")
+        and hasattr(model.model, "get_token_type_ids")
+    ):
+        get_token_type_func = (
+            model.model.get_token_type_ids
+        )  # transformers >= 4.52.0
     else:
         get_token_type_func = None
 
@@ -283,7 +343,9 @@ def mm_dpo_collate_fn(
         input_dict["attention_mask"] = []
         use_attn_mask_startend_row_indices = False
     else:
-        raise ValueError("attention_mask and attn_mask_startend_row_indices are both None.")
+        raise ValueError(
+            "attention_mask and attn_mask_startend_row_indices are both None."
+        )
 
     if get_token_type_func is not None:
         input_dict["token_type_ids"] = []
@@ -299,11 +361,25 @@ def mm_dpo_collate_fn(
     sequence_sum_flatten = 0
     for i, sequences in enumerate(batch):
         # 3.1 input_ids & response_labels
-        difference = max_seq_len - sum([len(sequence.token_ids) for sequence in sequences])
-        padded_token_ids = sum([sequence.token_ids for sequence in sequences], []) + [0] * difference
+        difference = max_seq_len - sum(
+            [len(sequence.token_ids) for sequence in sequences]
+        )
+        padded_token_ids = (
+            functools.reduce(
+                operator.iadd,
+                [sequence.token_ids for sequence in sequences],
+                [],
+            )
+            + [0] * difference
+        )
         input_dict["input_ids"].append(padded_token_ids)
         input_dict["response_labels"].append(
-            sum([sequence.response_labels for sequence in sequences], []) + [-100] * difference
+            functools.reduce(
+                operator.iadd,
+                [sequence.response_labels for sequence in sequences],
+                [],
+            )
+            + [-100] * difference
         )
 
         # 3.2 attention mask
@@ -311,10 +387,16 @@ def mm_dpo_collate_fn(
             start_row_indices = []
             sequence_sum = 0
             for sequence in sequences:
-                start_row_indices += [indice + sequence_sum for indice in sequence.attn_mask_startend_row_indices]
+                start_row_indices += [
+                    indice + sequence_sum
+                    for indice in sequence.attn_mask_startend_row_indices
+                ]
                 sequence_sum += len(sequence.token_ids)
             input_dict["attn_mask_startend_row_indices"].append(
-                [start_row_indices + list(range(start_row_indices[-1], max_seq_len))]
+                [
+                    start_row_indices
+                    + list(range(start_row_indices[-1], max_seq_len))
+                ]
             )
         else:
             input_dict["attention_mask"].append(
@@ -323,7 +405,9 @@ def mm_dpo_collate_fn(
                     # pad to max_loength
                     np.pad(
                         # block attention_mask
-                        block_diag(*[sequence.attention_mask for sequence in sequences]),
+                        block_diag(
+                            *[sequence.attention_mask for sequence in sequences]
+                        ),
                         pad_width=((0, difference), (0, difference)),
                         mode="constant",
                         constant_values=False,
@@ -378,38 +462,77 @@ def mm_dpo_collate_fn(
                 chosen_len = seq.response_index[1] - seq.response_index[0]
                 rejected_len = seq.response_index[2] - seq.response_index[1]
                 chosen_input_ids = seq.token_ids[:-rejected_len]
-                rejected_input_ids = chosen_input_ids[:-chosen_len] + seq.token_ids[-rejected_len:]
+                rejected_input_ids = (
+                    chosen_input_ids[:-chosen_len]
+                    + seq.token_ids[-rejected_len:]
+                )
                 func_params = inspect.signature(get_rope_func).parameters.keys()
-                filtered_args = {k: paddle.to_tensor(mm_inputs[k]) for k in func_params if k in mm_inputs}
+                filtered_args = {
+                    k: paddle.to_tensor(mm_inputs[k])
+                    for k in func_params
+                    if k in mm_inputs
+                }
 
                 res_position_ids = []
-                for i, input_ids in enumerate([chosen_input_ids, rejected_input_ids]):
+                for i, input_ids in enumerate(
+                    [chosen_input_ids, rejected_input_ids]
+                ):
                     if seq.has_mm[i]:
                         input_ids_tensor = paddle.to_tensor([input_ids])
                         call_args = dict(filtered_args)
-                        if "mm_token_type_ids" in func_params and "mm_token_type_ids" not in call_args:
+                        if (
+                            "mm_token_type_ids" in func_params
+                            and "mm_token_type_ids" not in call_args
+                        ):
                             rope_model = get_rope_func.__self__
-                            mm_token_type_ids = paddle.zeros_like(input_ids_tensor)
-                            if hasattr(rope_model, "image_token_id") and rope_model.image_token_id is not None:
-                                mm_token_type_ids[input_ids_tensor == rope_model.image_token_id] = 1
-                            if hasattr(rope_model, "video_token_id") and rope_model.video_token_id is not None:
-                                mm_token_type_ids[input_ids_tensor == rope_model.video_token_id] = 2
+                            mm_token_type_ids = paddle.zeros_like(
+                                input_ids_tensor
+                            )
+                            if (
+                                hasattr(rope_model, "image_token_id")
+                                and rope_model.image_token_id is not None
+                            ):
+                                mm_token_type_ids[
+                                    input_ids_tensor
+                                    == rope_model.image_token_id
+                                ] = 1
+                            if (
+                                hasattr(rope_model, "video_token_id")
+                                and rope_model.video_token_id is not None
+                            ):
+                                mm_token_type_ids[
+                                    input_ids_tensor
+                                    == rope_model.video_token_id
+                                ] = 2
                             call_args["mm_token_type_ids"] = mm_token_type_ids
-                        pos_ids, _ = get_rope_func(input_ids=input_ids_tensor, **call_args)
+                        pos_ids, _ = get_rope_func(
+                            input_ids=input_ids_tensor, **call_args
+                        )
                         res_position_ids.append(pos_ids)
                     else:
                         input_ids = paddle.to_tensor([input_ids])
                         res_position_ids.append(
-                            paddle.arange(input_ids.shape[1]).view(1, 1, -1).expand(3, input_ids.shape[0], -1)
+                            paddle.arange(input_ids.shape[1])
+                            .view(1, 1, -1)
+                            .expand(3, input_ids.shape[0], -1)
                         )
                 original_position_ids.append(
-                    paddle.concat([res_position_ids[0], res_position_ids[1][:, :, -rejected_len:]], axis=-1)
+                    paddle.concat(
+                        [
+                            res_position_ids[0],
+                            res_position_ids[1][:, :, -rejected_len:],
+                        ],
+                        axis=-1,
+                    )
                 )
 
         if len(original_position_ids) > 0:
-            original_position_ids = paddle.concat(original_position_ids, axis=-1)
+            original_position_ids = paddle.concat(
+                original_position_ids, axis=-1
+            )
             padded_position_ids = paddle.nn.functional.pad(
-                original_position_ids, pad=[0, max_seq_len - original_position_ids.shape[2]]
+                original_position_ids,
+                pad=[0, max_seq_len - original_position_ids.shape[2]],
             )
         else:
             padded_position_ids = []
@@ -422,7 +545,11 @@ def mm_dpo_collate_fn(
             bs_idx_in_rope = 0
             padded_position_ids = padded_position_ids.transpose([1, 2, 0])
             padded_token_type_ids, images, grid_thw = get_token_type_func(
-                paddle.to_tensor(padded_token_ids), pixel_values, image_grid_thw, pixel_values_videos, video_grid_thw
+                paddle.to_tensor(padded_token_ids),
+                pixel_values,
+                image_grid_thw,
+                pixel_values_videos,
+                video_grid_thw,
             )
             input_dict["position_ids"].append(padded_position_ids)
             input_dict["token_type_ids"].append(padded_token_type_ids)
@@ -440,9 +567,13 @@ def mm_dpo_collate_fn(
         if key == "attention_mask":
             input_dict[key] = np.array(input_dict[key], dtype=np.float32)
         elif key == "attn_mask_startend_row_indices":
-            input_dict[key] = np.array(input_dict[key], dtype=np.int32)[..., None]
+            input_dict[key] = np.array(input_dict[key], dtype=np.int32)[
+                ..., None
+            ]
         elif key == "position_ids":
-            input_dict[key] = paddle.concat(input_dict[key], axis=bs_idx_in_rope)
+            input_dict[key] = paddle.concat(
+                input_dict[key], axis=bs_idx_in_rope
+            )
             input_dict[key] = np.array(input_dict[key])
         else:
             input_dict[key] = np.array(input_dict[key])
@@ -451,7 +582,12 @@ def mm_dpo_collate_fn(
 
 
 def collate_fn(
-    batch: List[List[Sequence]], tokenizer, training_args, model_args, max_seq_len: int, padding_free: bool
+    batch: list[list[Sequence]],
+    tokenizer,
+    training_args,
+    model_args,
+    max_seq_len: int,
+    padding_free: bool,
 ):
     """Convert batch of sequences into training tensors.
 
@@ -469,7 +605,9 @@ def collate_fn(
     """
     input_keys = ["input_ids", "labels", "position_ids"]
     mtp_depth = training_args.num_nextn_predict_layers
-    use_mtp_attention_flexible = getattr(model_args, "mtp_attention_flexible", False) and mtp_depth > 0
+    use_mtp_attention_flexible = (
+        getattr(model_args, "mtp_attention_flexible", False) and mtp_depth > 0
+    )
 
     if mtp_depth > 0:
         input_keys.append("nbatch_pack_offset")
@@ -492,12 +630,18 @@ def collate_fn(
 
     return_list = []
     if padding_free:
-        batch = [sum(batch, [])]
-        max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
+        batch = [functools.reduce(operator.iadd, batch, [])]
+        max_seq_len = sum(
+            len(item.token_ids) for sequence in batch for item in sequence
+        )
     fixed_tokens_path = os.environ.get("LOAD_FIXED_DATA_PATH")
     fixed_tokens = None
     if fixed_tokens_path:
-        rank = paddle.distributed.get_rank() if paddle.distributed.is_initialized() else 0
+        rank = (
+            paddle.distributed.get_rank()
+            if paddle.distributed.is_initialized()
+            else 0
+        )
         seq_len = training_args.max_seq_len
         suffix = f"step0_rank{rank}_seq{seq_len}.npy"
         tokens_file = os.path.join(fixed_tokens_path, f"tokens_{suffix}")
@@ -508,13 +652,17 @@ def collate_fn(
         max_seq_len = calc_padding_size(len(fixed_input_ids), training_args)
         fixed_tokens = True
     if not max_seq_len:
-        max_seq_len = max(sum(len(item.token_ids) for item in sequence) for sequence in batch)
+        max_seq_len = max(
+            sum(len(item.token_ids) for item in sequence) for sequence in batch
+        )
     max_seq_len = calc_padding_size(max_seq_len, training_args)
     if mtp_depth > 0:
         max_seq_len += mtp_depth
 
     # mask_seq_len: when mtp_attention_flexible is enabled, masks use (max_seq_len - mtp_depth)
-    mask_seq_len = max_seq_len - mtp_depth if use_mtp_attention_flexible else max_seq_len
+    mask_seq_len = (
+        max_seq_len - mtp_depth if use_mtp_attention_flexible else max_seq_len
+    )
 
     for batch_sequence in batch:
         if fixed_tokens is not None:
@@ -522,18 +670,36 @@ def collate_fn(
             token_ids = [fixed_input_ids]
             labels = [fixed_labels]
             position_ids = [fixed_position_ids]
-        elif len(batch_sequence) == 1 and isinstance(batch_sequence[0].position_ids[0], List):
+        elif len(batch_sequence) == 1 and isinstance(
+            batch_sequence[0].position_ids[0], list
+        ):
             original_position_ids = batch_sequence[0].position_ids
         else:
             original_position_ids = [seq.position_ids for seq in batch_sequence]
         if fixed_tokens is None:
-            token_ids = [sum([seq.token_ids for seq in batch_sequence], [])]
-            labels = [sum([seq.labels for seq in batch_sequence], [])]
-            position_ids = [sum(original_position_ids, [])]
+            token_ids = [
+                functools.reduce(
+                    operator.iadd, [seq.token_ids for seq in batch_sequence], []
+                )
+            ]
+            labels = [
+                functools.reduce(
+                    operator.iadd, [seq.labels for seq in batch_sequence], []
+                )
+            ]
+            position_ids = [
+                functools.reduce(operator.iadd, original_position_ids, [])
+            ]
         # padding
-        padded_token_ids = pad_batch_data(token_ids, pad_idx=tokenizer.pad_token_id, max_seq_len=max_seq_len)
-        padded_labels = pad_batch_data(labels, pad_idx=-100, max_seq_len=max_seq_len)
-        padded_position_ids = pad_batch_data(position_ids, pad_idx=0, max_seq_len=max_seq_len)
+        padded_token_ids = pad_batch_data(
+            token_ids, pad_idx=tokenizer.pad_token_id, max_seq_len=max_seq_len
+        )
+        padded_labels = pad_batch_data(
+            labels, pad_idx=-100, max_seq_len=max_seq_len
+        )
+        padded_position_ids = pad_batch_data(
+            position_ids, pad_idx=0, max_seq_len=max_seq_len
+        )
         return_list.append(
             [
                 padded_token_ids,
@@ -544,13 +710,17 @@ def collate_fn(
 
         if mtp_depth > 0:
             # each sequence end index
-            batch_sequence_len = [len(sequence) for sequence in original_position_ids]
+            batch_sequence_len = [
+                len(sequence) for sequence in original_position_ids
+            ]
             nbatch_pack_offset = [0] * sum(batch_sequence_len)
             prefix_sum = 0
             for sequence_len in batch_sequence_len[:-1]:
                 prefix_sum += sequence_len
                 nbatch_pack_offset[prefix_sum - 1] = 1
-            padded_nbatch_pack_offset = pad_batch_data([nbatch_pack_offset], pad_idx=0, max_seq_len=max_seq_len)
+            padded_nbatch_pack_offset = pad_batch_data(
+                [nbatch_pack_offset], pad_idx=0, max_seq_len=max_seq_len
+            )
             return_list[-1].append(padded_nbatch_pack_offset)
 
         if use_mtp_attention_flexible:
@@ -558,12 +728,18 @@ def collate_fn(
             if model_args.use_attn_mask_startend_row_indices:
                 return_list[-1].append(
                     gen_attn_mask_startend_row_indices(
-                        original_position_ids, mask_seq_len, model_args.use_global_causal_attn
+                        original_position_ids,
+                        mask_seq_len,
+                        model_args.use_global_causal_attn,
                     )
                 )
             else:
                 return_list[-1].append(
-                    gen_self_attn_mask(original_position_ids, mask_seq_len, model_args.use_global_causal_attn)
+                    gen_self_attn_mask(
+                        original_position_ids,
+                        mask_seq_len,
+                        model_args.use_global_causal_attn,
+                    )
                 )
             if model_args.use_attn_mask_startend_row_indices:
                 return_list[-1].append(
@@ -595,18 +771,27 @@ def collate_fn(
             if model_args.use_attn_mask_startend_row_indices:
                 return_list[-1].append(
                     gen_attn_mask_startend_row_indices(
-                        original_position_ids, mask_seq_len, model_args.use_global_causal_attn
+                        original_position_ids,
+                        mask_seq_len,
+                        model_args.use_global_causal_attn,
                     )
                 )
             else:
                 return_list[-1].append(
-                    gen_self_attn_mask(original_position_ids, mask_seq_len, model_args.use_global_causal_attn)
+                    gen_self_attn_mask(
+                        original_position_ids,
+                        mask_seq_len,
+                        model_args.use_global_causal_attn,
+                    )
                 )
 
-    return_list = [np.concatenate(tensor_list) for tensor_list in zip(*return_list)]
+    return_list = [
+        np.concatenate(tensor_list) for tensor_list in zip(*return_list)
+    ]
     input_dict = dict(zip(input_keys, return_list))
     if fixed_tokens is not None and (
-        os.environ.get("LOG_DATA_MD5", "0") == "1" or os.environ.get("LOG_LAYER_MD5", "0") == "1"
+        os.environ.get("LOG_DATA_MD5", "0") == "1"
+        or os.environ.get("LOG_LAYER_MD5", "0") == "1"
     ):
         import hashlib
 
@@ -634,7 +819,7 @@ def collate_fn(
 
 
 def mm_collate_fn(
-    batch: List[List[Sequence]],
+    batch: list[list[Sequence]],
     template,
     processor,
     tokenizer,
@@ -665,7 +850,11 @@ def mm_collate_fn(
 
     if model is not None and hasattr(model, "get_rope_index"):
         get_rope_func = model.get_rope_index  # transformers < 4.52.0 or lora
-    elif model is not None and hasattr(model, "model") and hasattr(model.model, "get_rope_index"):
+    elif (
+        model is not None
+        and hasattr(model, "model")
+        and hasattr(model.model, "get_rope_index")
+    ):
         get_rope_func = model.model.get_rope_index  # transformers >= 4.52.0
     else:
         get_rope_func = None
@@ -676,8 +865,14 @@ def mm_collate_fn(
 
     if model is not None and hasattr(model, "get_token_type_ids"):
         get_token_type_func = model.get_token_type_ids  # transformers < 4.52.0
-    elif model is not None and hasattr(model, "model") and hasattr(model.model, "get_token_type_ids"):
-        get_token_type_func = model.model.get_token_type_ids  # transformers >= 4.52.0
+    elif (
+        model is not None
+        and hasattr(model, "model")
+        and hasattr(model.model, "get_token_type_ids")
+    ):
+        get_token_type_func = (
+            model.model.get_token_type_ids
+        )  # transformers >= 4.52.0
     else:
         get_token_type_func = None
 
@@ -695,7 +890,9 @@ def mm_collate_fn(
         input_keys.append("feature_attention_mask")
 
     mtp_depth = training_args.num_nextn_predict_layers
-    use_mtp_attention_flexible = getattr(model_args, "mtp_attention_flexible", False) and mtp_depth > 0
+    use_mtp_attention_flexible = (
+        getattr(model_args, "mtp_attention_flexible", False) and mtp_depth > 0
+    )
 
     if mtp_depth > 0:
         input_keys.append("nbatch_pack_offset")
@@ -718,16 +915,22 @@ def mm_collate_fn(
 
     return_list = []
     if padding_free:
-        batch = [sum(batch, [])]
-        max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
+        batch = [functools.reduce(operator.iadd, batch, [])]
+        max_seq_len = sum(
+            len(item.token_ids) for sequence in batch for item in sequence
+        )
     if not max_seq_len:
-        max_seq_len = max(sum(len(item.token_ids) for item in sequence) for sequence in batch)
+        max_seq_len = max(
+            sum(len(item.token_ids) for item in sequence) for sequence in batch
+        )
     max_seq_len = calc_padding_size(max_seq_len, training_args)
     if mtp_depth > 0:
         max_seq_len += mtp_depth
 
     # mask_seq_len: when mtp_attention_flexible is enabled, masks use (max_seq_len - mtp_depth)
-    mask_seq_len = max_seq_len - mtp_depth if use_mtp_attention_flexible else max_seq_len
+    mask_seq_len = (
+        max_seq_len - mtp_depth if use_mtp_attention_flexible else max_seq_len
+    )
 
     for batch_sequence in batch:
         original_token_ids = []
@@ -752,29 +955,57 @@ def mm_collate_fn(
             if "input_features" in mm_inputs:
                 input_features.append(mm_inputs["input_features"])
             if "feature_attention_mask" in mm_inputs:
-                feature_attention_mask.append(mm_inputs["feature_attention_mask"])
+                feature_attention_mask.append(
+                    mm_inputs["feature_attention_mask"]
+                )
             if get_rope_func is not None:
-                filtered_args = {k: paddle.to_tensor(mm_inputs[k]) for k in func_params if k in mm_inputs}
+                filtered_args = {
+                    k: paddle.to_tensor(mm_inputs[k])
+                    for k in func_params
+                    if k in mm_inputs
+                }
                 total_input_ids = paddle.to_tensor([seq.token_ids])
-                filtered_args["attention_mask"] = paddle.ones_like(total_input_ids)
+                filtered_args["attention_mask"] = paddle.ones_like(
+                    total_input_ids
+                )
                 if "video_second_per_grid" in mm_inputs:
-                    filtered_args["second_per_grids"] = mm_inputs["video_second_per_grid"]
+                    filtered_args["second_per_grids"] = mm_inputs[
+                        "video_second_per_grid"
+                    ]
 
-                if "mm_token_type_ids" in func_params and "mm_token_type_ids" not in filtered_args:
+                if (
+                    "mm_token_type_ids" in func_params
+                    and "mm_token_type_ids" not in filtered_args
+                ):
                     rope_model = get_rope_func.__self__
                     mm_token_type_ids = paddle.zeros_like(total_input_ids)
-                    if hasattr(rope_model, "image_token_id") and rope_model.image_token_id is not None:
-                        mm_token_type_ids[total_input_ids == rope_model.image_token_id] = 1
-                    if hasattr(rope_model, "video_token_id") and rope_model.video_token_id is not None:
-                        mm_token_type_ids[total_input_ids == rope_model.video_token_id] = 2
+                    if (
+                        hasattr(rope_model, "image_token_id")
+                        and rope_model.image_token_id is not None
+                    ):
+                        mm_token_type_ids[
+                            total_input_ids == rope_model.image_token_id
+                        ] = 1
+                    if (
+                        hasattr(rope_model, "video_token_id")
+                        and rope_model.video_token_id is not None
+                    ):
+                        mm_token_type_ids[
+                            total_input_ids == rope_model.video_token_id
+                        ] = 2
                     filtered_args["mm_token_type_ids"] = mm_token_type_ids
-                position_ids, _ = get_rope_func(input_ids=total_input_ids, **filtered_args)
+                position_ids, _ = get_rope_func(
+                    input_ids=total_input_ids, **filtered_args
+                )
                 original_position_ids.append(position_ids)
 
         if original_position_ids:
-            original_position_ids = paddle.concat(original_position_ids, axis=-1)
+            original_position_ids = paddle.concat(
+                original_position_ids, axis=-1
+            )
             padded_position_ids = paddle.nn.functional.pad(
-                original_position_ids, pad=[0, max_seq_len - original_position_ids.shape[2]]
+                original_position_ids,
+                pad=[0, max_seq_len - original_position_ids.shape[2]],
             )
         else:
             padded_position_ids = []
@@ -782,8 +1013,12 @@ def mm_collate_fn(
         token_ids = [np.concatenate(original_token_ids)]
         labels = [np.concatenate([seq.labels for seq in batch_sequence])]
         # padding
-        padded_token_ids = pad_batch_data(token_ids, pad_idx=tokenizer.pad_token_id, max_seq_len=max_seq_len)
-        padded_labels = pad_batch_data(labels, pad_idx=-100, max_seq_len=max_seq_len)
+        padded_token_ids = pad_batch_data(
+            token_ids, pad_idx=tokenizer.pad_token_id, max_seq_len=max_seq_len
+        )
+        padded_labels = pad_batch_data(
+            labels, pad_idx=-100, max_seq_len=max_seq_len
+        )
         return_list.append(
             [
                 padded_token_ids,
@@ -797,12 +1032,18 @@ def mm_collate_fn(
         if len(input_features) > 0:
             input_features = paddle.concat(input_features, axis=0)
         if len(feature_attention_mask) > 0:
-            feature_attention_mask = paddle.concat(feature_attention_mask, axis=0)
+            feature_attention_mask = paddle.concat(
+                feature_attention_mask, axis=0
+            )
         if get_token_type_func is not None:  # ernie45vl
             bs_idx_in_rope = 0
             padded_position_ids = padded_position_ids.transpose([1, 2, 0])
             padded_token_type_ids, images, grid_thw = get_token_type_func(
-                paddle.to_tensor(padded_token_ids), pixel_values, image_grid_thw, pixel_values_videos, video_grid_thw
+                paddle.to_tensor(padded_token_ids),
+                pixel_values,
+                image_grid_thw,
+                pixel_values_videos,
+                video_grid_thw,
             )
             return_list[-1].extend(
                 [
@@ -827,13 +1068,17 @@ def mm_collate_fn(
 
         if mtp_depth > 0:
             # each sequence end index
-            batch_sequence_len = [len(sequence) for sequence in original_token_ids]
+            batch_sequence_len = [
+                len(sequence) for sequence in original_token_ids
+            ]
             nbatch_pack_offset = [0] * sum(batch_sequence_len)
             prefix_sum = 0
             for sequence_len in batch_sequence_len[:-1]:
                 prefix_sum += sequence_len
                 nbatch_pack_offset[prefix_sum - 1] = 1
-            padded_nbatch_pack_offset = pad_batch_data([nbatch_pack_offset], pad_idx=0, max_seq_len=max_seq_len)
+            padded_nbatch_pack_offset = pad_batch_data(
+                [nbatch_pack_offset], pad_idx=0, max_seq_len=max_seq_len
+            )
             return_list[-1].append(padded_nbatch_pack_offset)
 
         if use_mtp_attention_flexible:
@@ -841,12 +1086,18 @@ def mm_collate_fn(
             if model_args.use_attn_mask_startend_row_indices:
                 return_list[-1].append(
                     gen_attn_mask_startend_row_indices(
-                        original_token_ids, mask_seq_len, model_args.use_global_causal_attn
+                        original_token_ids,
+                        mask_seq_len,
+                        model_args.use_global_causal_attn,
                     )
                 )
             else:
                 return_list[-1].append(
-                    gen_self_attn_mask(original_token_ids, mask_seq_len, model_args.use_global_causal_attn)
+                    gen_self_attn_mask(
+                        original_token_ids,
+                        mask_seq_len,
+                        model_args.use_global_causal_attn,
+                    )
                 )
             if model_args.use_attn_mask_startend_row_indices:
                 return_list[-1].append(
@@ -878,18 +1129,26 @@ def mm_collate_fn(
             if model_args.use_attn_mask_startend_row_indices:
                 return_list[-1].append(
                     gen_attn_mask_startend_row_indices(
-                        original_token_ids, mask_seq_len, model_args.use_global_causal_attn
+                        original_token_ids,
+                        mask_seq_len,
+                        model_args.use_global_causal_attn,
                     )
                 )
             else:
                 return_list[-1].append(
-                    gen_self_attn_mask(original_token_ids, mask_seq_len, model_args.use_global_causal_attn)
+                    gen_self_attn_mask(
+                        original_token_ids,
+                        mask_seq_len,
+                        model_args.use_global_causal_attn,
+                    )
                 )
 
     transposed_list = list(zip(*return_list))
     input_dict = {}
     for key, tensors in zip(input_keys, transposed_list):
-        filtered_tensors = [paddle.to_tensor(x) for x in tensors if x is not None and len(x) > 0]
+        filtered_tensors = [
+            paddle.to_tensor(x) for x in tensors if x is not None and len(x) > 0
+        ]
         if filtered_tensors:
             if key == "position_ids":
                 value = paddle.concat(filtered_tensors, axis=bs_idx_in_rope)
@@ -917,7 +1176,11 @@ def pad_batch_data(
     corresponding position data and attention bias.
     """
     return_list = []
-    max_len = max_seq_len if max_seq_len is not None else max(len(inst) for inst in insts)
+    max_len = (
+        max_seq_len
+        if max_seq_len is not None
+        else max(len(inst) for inst in insts)
+    )
     # Any token included in dict can be used to pad, since the paddings' loss
     # will be masked out by weights and make no effect on parameter gradients.
 
@@ -929,13 +1192,20 @@ def pad_batch_data(
 
     # position data
     if return_pos:
-        inst_pos = np.array([list(range(0, len(inst))) + [pad_idx] * (max_len - len(inst)) for inst in insts])
+        inst_pos = np.array(
+            [
+                list(range(0, len(inst))) + [pad_idx] * (max_len - len(inst))
+                for inst in insts
+            ]
+        )
 
         return_list += [inst_pos.astype("int64").reshape([-1, max_len])]
 
     if return_input_mask:
         # This is used to avoid attention on paddings.
-        input_mask_data = np.array([[1] * len(inst) + [0] * (max_len - len(inst)) for inst in insts])
+        input_mask_data = np.array(
+            [[1] * len(inst) + [0] * (max_len - len(inst)) for inst in insts]
+        )
         input_mask_data = np.expand_dims(input_mask_data, axis=-1)
         return_list += [input_mask_data.astype("float32")]
 
@@ -955,7 +1225,11 @@ def pad_batch_data(
     return return_list if len(return_list) > 1 else return_list[0]
 
 
-def gen_self_attn_mask(batch_token_ids: List[List[int]], max_seq_len: int, use_global_causal_attn: bool):
+def gen_self_attn_mask(
+    batch_token_ids: list[list[int]],
+    max_seq_len: int,
+    use_global_causal_attn: bool,
+):
     """Generate self-attention mask for multi-sequence batches.
 
     Args:
@@ -965,25 +1239,33 @@ def gen_self_attn_mask(batch_token_ids: List[List[int]], max_seq_len: int, use_g
     Returns:
         ndarray: 4D attention mask array.
     """
-    input_mask_data = np.zeros((1, 1, max_seq_len, max_seq_len), dtype="float32")
+    input_mask_data = np.zeros(
+        (1, 1, max_seq_len, max_seq_len), dtype="float32"
+    )
     offset = 0
     if use_global_causal_attn:
         total_len = 0
         for index, token_ids in enumerate(batch_token_ids):
             total_len += len(token_ids)
         b = np.tril(np.ones([total_len, total_len]), 0)
-        input_mask_data[0, 0, offset : offset + total_len, offset : offset + total_len] = b
+        input_mask_data[
+            0, 0, offset : offset + total_len, offset : offset + total_len
+        ] = b
     else:
         for index, token_ids in enumerate(batch_token_ids):
             cur_len = len(token_ids)
             b = np.tril(np.ones([cur_len, cur_len]), 0)
-            input_mask_data[0, 0, offset : offset + cur_len, offset : offset + cur_len] = b
+            input_mask_data[
+                0, 0, offset : offset + cur_len, offset : offset + cur_len
+            ] = b
             offset += cur_len
     return input_mask_data
 
 
 def gen_attn_mask_startend_row_indices(
-    batch_token_ids: List[List[int]], max_seq_len: int, use_global_causal_attn: bool
+    batch_token_ids: list[list[int]],
+    max_seq_len: int,
+    use_global_causal_attn: bool,
 ):
     """Generate row indices for flash attention masks.
 
@@ -1003,20 +1285,26 @@ def gen_attn_mask_startend_row_indices(
         attn_mask_startend_row_indices.extend([offset + total_len] * total_len)
         offset += total_len
         if offset < max_seq_len:
-            attn_mask_startend_row_indices.extend(list(range(offset, max_seq_len)))
+            attn_mask_startend_row_indices.extend(
+                list(range(offset, max_seq_len))
+            )
     else:
         for token_ids in batch_token_ids:
             cur_len = len(token_ids)
             attn_mask_startend_row_indices.extend([offset + cur_len] * cur_len)
             offset += cur_len
         if offset < max_seq_len:
-            attn_mask_startend_row_indices.extend(list(range(offset, max_seq_len)))
+            attn_mask_startend_row_indices.extend(
+                list(range(offset, max_seq_len))
+            )
     # NOTE(hehuang): The dtype of attn_mask_startend_row_indices must be np.int32
-    return np.array(attn_mask_startend_row_indices, dtype=np.int32)[None, None, ..., None]  # add dimension modify
+    return np.array(attn_mask_startend_row_indices, dtype=np.int32)[
+        None, None, ..., None
+    ]  # add dimension modify
 
 
 def gen_mtp_attn_mask(
-    batch_token_ids: List[List[int]],
+    batch_token_ids: list[list[int]],
     max_seq_len: int,
     mtp_depth: int,
     use_global_causal_attn: bool,
@@ -1037,7 +1325,9 @@ def gen_mtp_attn_mask(
     total_len = sum(len(ids) for ids in batch_token_ids)
     if use_global_causal_attn:
         single = np.zeros((max_seq_len, max_seq_len), dtype=np.float32)
-        single[:total_len, :total_len] = np.tril(np.ones([total_len, total_len]))
+        single[:total_len, :total_len] = np.tril(
+            np.ones([total_len, total_len])
+        )
         result = np.stack([single] * mtp_depth, axis=0)
     else:
         internal_boundaries = []
@@ -1049,11 +1339,15 @@ def gen_mtp_attn_mask(
         for mtp_idx in range(mtp_depth):
             mask = np.zeros((max_seq_len, max_seq_len), dtype=np.float32)
             shift = mtp_idx + 1
-            all_boundaries = [b - shift for b in internal_boundaries if b - shift > 0] + [total_len]
+            all_boundaries = [
+                b - shift for b in internal_boundaries if b - shift > 0
+            ] + [total_len]
             prev = 0
             for boundary in all_boundaries:
                 if boundary > prev:
-                    mask[prev:boundary, prev:boundary] = np.tril(np.ones([boundary - prev, boundary - prev]))
+                    mask[prev:boundary, prev:boundary] = np.tril(
+                        np.ones([boundary - prev, boundary - prev])
+                    )
                 prev = boundary
             result.append(mask)
         result = np.stack(result, axis=0)
@@ -1061,7 +1355,7 @@ def gen_mtp_attn_mask(
 
 
 def gen_mtp_startend_row_indices_all(
-    batch_token_ids: List[List[int]],
+    batch_token_ids: list[list[int]],
     max_seq_len: int,
     mtp_depth: int,
     use_global_causal_attn: bool,
@@ -1092,7 +1386,9 @@ def gen_mtp_startend_row_indices_all(
         result = []
         for mtp_idx in range(mtp_depth):
             shift = mtp_idx + 1
-            all_boundaries = [b - shift for b in internal_boundaries if b - shift > 0] + [total_len]
+            all_boundaries = [
+                b - shift for b in internal_boundaries if b - shift > 0
+            ] + [total_len]
             indices = []
             prev = 0
             for boundary in all_boundaries:
@@ -1104,7 +1400,7 @@ def gen_mtp_startend_row_indices_all(
 
 
 def gen_mtp_hidden_inputs_mask_all(
-    batch_position_ids: List[List[int]],
+    batch_position_ids: list[list[int]],
     max_seq_len: int,
     mtp_depth: int,
 ) -> np.ndarray:
@@ -1120,9 +1416,15 @@ def gen_mtp_hidden_inputs_mask_all(
         np.ndarray, shape [1, mtp_depth, max_seq_len], dtype=int32.
         After collate (np.concatenate along dim0), final shape is [B, num_mtp, S].
     """
-    all_position_ids = np.concatenate([np.array(ids, dtype=np.int32) for ids in batch_position_ids])
+    all_position_ids = np.concatenate(
+        [np.array(ids, dtype=np.int32) for ids in batch_position_ids]
+    )
     if len(all_position_ids) < max_seq_len:
-        all_position_ids = np.pad(all_position_ids, (0, max_seq_len - len(all_position_ids)), constant_values=0)
+        all_position_ids = np.pad(
+            all_position_ids,
+            (0, max_seq_len - len(all_position_ids)),
+            constant_values=0,
+        )
     detect = np.append(all_position_ids, 0)
     boundaries = np.where(detect[:-1] > detect[1:])[0]
     mask = np.ones(max_seq_len, dtype=np.int32)

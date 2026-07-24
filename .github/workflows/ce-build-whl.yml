@@ -1,22 +1,18 @@
 name: Build Whl CE
-
 on:
   push:
     branches:
       - develop
       - release/*
-
 env:
   BRANCH: ${{ github.ref_name }}
   COMMIT_ID: ${{ github.sha }}
   TASK: PaddleFormers-CE-${{ github.sha }}-build
   CE_name: build-ce
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
-
 defaults:
   run:
     shell: bash
-
 jobs:
   build-ce:
     name: build-ce
@@ -25,7 +21,6 @@ jobs:
       - name: Determine Image Name
         run: |
           echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev-latest" >> "$GITHUB_ENV"
-
       - name: Run Container
         env:
           work_dir: ${{ github.workspace }}
@@ -50,7 +45,6 @@ jobs:
             -e FLAGS_dynamic_static_unified_comm \
             -e python_version \
             -w /workspace --privileged $IMAGE_NAME
-            
       - name: Download Code
         run: |
           docker exec -t $container_name /bin/bash -c '
@@ -71,7 +65,6 @@ jobs:
           git checkout ${BRANCH}
           git log --pretty=oneline -10
           '
-
       - name: Test
         run: |
           docker exec -t $container_name /bin/bash -c '
@@ -81,7 +74,6 @@ jobs:
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
           bash scripts/dependence/build.sh
           '
-          
       - name: Upload Products
         if: always()
         run: |
@@ -112,7 +104,6 @@ jobs:
             done
           done
           '
-
       - name: Terminate And Delete the Container
         if: always()
         run: |

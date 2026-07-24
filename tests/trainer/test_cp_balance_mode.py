@@ -30,11 +30,20 @@ class TestCpBalanceModeTrainingArgs(unittest.TestCase):
     def test_field_exists_with_default(self):
         fields = {f.name: f for f in dataclasses.fields(TrainingArguments)}
         self.assertIn("cp_balance_mode", fields)
-        self.assertEqual(fields["cp_balance_mode"].default, "dualchunk_allgather")
+        self.assertEqual(
+            fields["cp_balance_mode"].default, "dualchunk_allgather"
+        )
 
     def test_parseable_from_cmdline(self):
         parser = PdArgumentParser((TrainingArguments,))
-        ns = parser.parse_args(["--output_dir", "/tmp/test", "--cp_balance_mode", "contiguous_allgather"])
+        ns = parser.parse_args(
+            [
+                "--output_dir",
+                "/tmp/test",
+                "--cp_balance_mode",
+                "contiguous_allgather",
+            ]
+        )
         self.assertEqual(ns.cp_balance_mode, "contiguous_allgather")
 
 
@@ -65,10 +74,17 @@ class TestGetInputsListCpBalanceMode(unittest.TestCase):
     def test_passes_contiguous_mode(self):
         mock_get_batch = MagicMock(side_effect=lambda inputs, **kw: inputs)
 
-        with patch("paddleformers.trainer.trainer.is_paddlefleet_available", return_value=True), patch(
-            "paddleformers.trainer.trainer.FleetGPTModel", str
-        ), patch("paddleformers.trainer.trainer.get_batch_on_this_cp_rank", mock_get_batch):
-
+        with (
+            patch(
+                "paddleformers.trainer.trainer.is_paddleformers_available",
+                return_value=True,
+            ),
+            patch("paddleformers.trainer.trainer.FleetGPTModel", str),
+            patch(
+                "paddleformers.trainer.trainer.get_batch_on_this_cp_rank",
+                mock_get_batch,
+            ),
+        ):
             from paddleformers.trainer.trainer import Trainer
 
             args = MagicMock()
@@ -82,7 +98,9 @@ class TestGetInputsListCpBalanceMode(unittest.TestCase):
 
             trainer = object.__new__(Trainer)
             trainer.args = args
-            trainer.model = "fake_model"  # isinstance("fake_model", str) == True
+            trainer.model = (
+                "fake_model"  # isinstance("fake_model", str) == True
+            )
             trainer.timers = None
 
             trainer._get_inputs_list({"input_ids": [1, 2, 3]})

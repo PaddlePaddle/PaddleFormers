@@ -18,7 +18,7 @@ import math
 import os
 import shutil
 import struct
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 import paddle
@@ -55,7 +55,12 @@ def compute_metrics(eval_preds):
 def get_lora_target_modules(model):
     # Not yet support RowParallelLinear
     if model.config.model_type == "chatglm":
-        target_modules = [".*query_key_value.*", ".*dense.*", ".*dense_h_to_4h.*", ".*dense_4h_to_h.*"]
+        target_modules = [
+            ".*query_key_value.*",
+            ".*dense.*",
+            ".*dense_h_to_4h.*",
+            ".*dense_4h_to_h.*",
+        ]
     elif model.config.model_type == "chatglm_v2":
         target_modules = [
             ".*query.*",
@@ -76,7 +81,12 @@ def get_lora_target_modules(model):
             ".*out_proj.*",
         ]
     elif model.config.model_type == "bloom":
-        target_modules = [".*query_key_value.*", ".*dense.*", ".*dense_h_to_4h.*", ".*dense_4h_to_h.*"]
+        target_modules = [
+            ".*query_key_value.*",
+            ".*dense.*",
+            ".*dense_h_to_4h.*",
+            ".*dense_4h_to_h.*",
+        ]
     elif model.config.model_type in ["llama", "jamba", "olmo2"]:
         target_modules = [
             ".*q_proj.*",
@@ -174,7 +184,7 @@ def get_lora_target_modules(model):
             ".*up_proj.*",
             ".*down_proj.*",
             # Projector
-            ".*merger.mlp\.[02].*",
+            r".*merger.mlp\.[02].*",
         ]
     elif model.config.model_type == "qwen3_vl":
         target_modules = [
@@ -433,7 +443,7 @@ def get_lora_target_modules(model):
             "model.visual.*up_proj.*",
             "model.visual.*down_proj.*",
             # alinger
-            "model.visual.merger.mlp\.[02].*",
+            r"model.visual.merger.mlp\.[02].*",
         ]
     elif model.config.model_type == "glm_ocr":
         target_modules = [
@@ -462,14 +472,16 @@ def get_lora_target_modules(model):
             ".*w3.*",
         ]
     else:
-        raise ValueError(f"Unknown base_model_prefix: {model.config.model_type}.")
+        raise ValueError(
+            f"Unknown base_model_prefix: {model.config.model_type}."
+        )
     return target_modules
 
 
 def get_infer_model_path(input_dir, model_prefix):
     if dist.get_world_size() > 1:
         local_rank = dist.get_rank()
-        return os.path.join(input_dir, "rank_{}".format(local_rank), model_prefix)
+        return os.path.join(input_dir, f"rank_{local_rank}", model_prefix)
     else:
         return os.path.join(input_dir, model_prefix)
 
@@ -512,26 +524,40 @@ def get_alibi_slopes(num_heads):
 
     if closest_power_of_2 != num_heads:
         extra_base = 2 ** (-(2 ** -(math.log2(2 * closest_power_of_2) - 3)))
-        num_remaining_heads = min(closest_power_of_2, num_heads - closest_power_of_2)
+        num_remaining_heads = min(
+            closest_power_of_2, num_heads - closest_power_of_2
+        )
         extra_powers = np.arange(1, 1 + 2 * num_remaining_heads, 2)
-        slopes = np.concatenate([slopes, np.power(extra_base, extra_powers)], axis=0)
+        slopes = np.concatenate(
+            [slopes, np.power(extra_base, extra_powers)], axis=0
+        )
 
     return slopes.astype("float32")
 
 
-def pad_batch_data(insts, masks=None, pad_id=0, return_seq_len=False, pad_style="right"):
+def pad_batch_data(
+    insts, masks=None, pad_id=0, return_seq_len=False, pad_style="right"
+):
     """Pad sequences to the max sequence length in batch."""
     max_len = max(map(len, insts))
     if pad_style == "left":
-        inst_data = np.array([[pad_id] * (max_len - len(inst)) + list(inst) for inst in insts])
+        inst_data = np.array(
+            [[pad_id] * (max_len - len(inst)) + list(inst) for inst in insts]
+        )
     else:
-        inst_data = np.array([list(inst) + [pad_id] * (max_len - len(inst)) for inst in insts])
+        inst_data = np.array(
+            [list(inst) + [pad_id] * (max_len - len(inst)) for inst in insts]
+        )
 
     if masks is not None:
         if pad_style == "left":
-            inst_mask = np.array([[0] * (max_len - len(inst)) + list(inst) for inst in masks])
+            inst_mask = np.array(
+                [[0] * (max_len - len(inst)) + list(inst) for inst in masks]
+            )
         else:
-            inst_mask = np.array([list(inst) + [0] * (max_len - len(inst)) for inst in masks])
+            inst_mask = np.array(
+                [list(inst) + [0] * (max_len - len(inst)) for inst in masks]
+            )
 
     if return_seq_len:
         seq_len = np.array([len(inst) for inst in insts])
@@ -579,14 +605,25 @@ def dybatch_preprocess(
             input_ids.append(tokens["input_ids"][0])
             position_ids.append(tokens["position_ids"][0])
 
-        pad_token_id = tokenizer([tokenizer.pad_token], return_tensors="np")["input_ids"][0][0]
-        inputs["input_ids"], seq_len = pad_batch_data(input_ids, pad_id=pad_token_id, return_seq_len=True)
+        pad_token_id = tokenizer([tokenizer.pad_token], return_tensors="np")[
+            "input_ids"
+        ][0][0]
+        inputs["input_ids"], seq_len = pad_batch_data(
+            input_ids, pad_id=pad_token_id, return_seq_len=True
+        )
         bs = inputs["input_ids"].shape[0]
         max_len = max(map(len, input_ids))
 
         inst_data_pos = []
         for i in range(len(position_ids)):
-            inst_data_pos.append(np.array([list(inst) + [0] * (max_len - len(inst)) for inst in position_ids[i]]))
+            inst_data_pos.append(
+                np.array(
+                    [
+                        list(inst) + [0] * (max_len - len(inst))
+                        for inst in position_ids[i]
+                    ]
+                )
+            )
         inputs["position_ids"] = paddle.to_tensor(np.array(inst_data_pos))
     elif "gpt" in architectures:
         input_ids = []
@@ -604,15 +641,21 @@ def dybatch_preprocess(
             )
             input_ids.append(tokens["input_ids"][0])
 
-        pad_token_id = tokenizer([tokenizer.pad_token], return_tensors="np")["input_ids"][0][-1]
-        inputs["input_ids"], seq_len = pad_batch_data(input_ids, pad_id=pad_token_id, return_seq_len=True)
+        pad_token_id = tokenizer([tokenizer.pad_token], return_tensors="np")[
+            "input_ids"
+        ][0][-1]
+        inputs["input_ids"], seq_len = pad_batch_data(
+            input_ids, pad_id=pad_token_id, return_seq_len=True
+        )
         bs = inputs["input_ids"].shape[0]
         max_len = max(map(len, input_ids))
 
         position_ids = paddle.arange(sum(seq_len), dtype="int64")
         pre_len = seq_len[0]
         for length in seq_len[1:]:
-            position_ids[pre_len : length + pre_len] = position_ids[pre_len : length + pre_len] - pre_len
+            position_ids[pre_len : length + pre_len] = (
+                position_ids[pre_len : length + pre_len] - pre_len
+            )
             pre_len += length
         inputs["position_ids"] = position_ids
     else:
@@ -639,18 +682,30 @@ def dybatch_preprocess(
                 input_ids.append(tokens["input_ids"][0])
                 attention_mask.append(tokens["attention_mask"][0])
 
-            pad_token_id = tokenizer([tokenizer.pad_token], return_tensors="np")["input_ids"][0][-1]
-            inputs["input_ids"], inputs["attention_mask"], seq_len = pad_batch_data(
-                input_ids, attention_mask, pad_id=pad_token_id, return_seq_len=True, pad_style=pad_style
+            pad_token_id = tokenizer(
+                [tokenizer.pad_token], return_tensors="np"
+            )["input_ids"][0][-1]
+            inputs["input_ids"], inputs["attention_mask"], seq_len = (
+                pad_batch_data(
+                    input_ids,
+                    attention_mask,
+                    pad_id=pad_token_id,
+                    return_seq_len=True,
+                    pad_style=pad_style,
+                )
             )
             bs = inputs["input_ids"].shape[0]
             max_len = max(map(len, input_ids))
 
-            position_ids = paddle.zeros(shape=[bs, max_length + src_length], dtype="int64")
+            position_ids = paddle.zeros(
+                shape=[bs, max_length + src_length], dtype="int64"
+            )
 
             for i in range(bs):
                 position_ids[
-                    i, pre_caches_length + max_len - seq_len[i] : pre_caches_length + max_len
+                    i,
+                    pre_caches_length + max_len - seq_len[i] : pre_caches_length
+                    + max_len,
                 ] = paddle.arange(seq_len[i]).unsqueeze(axis=0)
                 seq_len[i] = max_len
             inputs["position_ids"] = position_ids
@@ -663,20 +718,28 @@ def dybatch_preprocess(
                     max_length=src_length,
                     return_attention_mask=False,
                     return_token_type_ids=False,
-                    add_special_tokens=tokenizer.chat_template is None
+                    add_special_tokens=tokenizer.chat_template is None,
                     # add_special_tokens=tokenizer.chat_template is None or isinstance(tokenizer, ChatGLMv2Tokenizer),
                 )
                 input_ids.append(tokens["input_ids"][0])
 
-            pad_token_id = tokenizer([tokenizer.pad_token], return_tensors="np")["input_ids"][0][-1]
-            inputs["input_ids"], seq_len = pad_batch_data(input_ids, pad_id=pad_token_id, return_seq_len=True)
+            pad_token_id = tokenizer(
+                [tokenizer.pad_token], return_tensors="np"
+            )["input_ids"][0][-1]
+            inputs["input_ids"], seq_len = pad_batch_data(
+                input_ids, pad_id=pad_token_id, return_seq_len=True
+            )
             bs = inputs["input_ids"].shape[0]
             max_len = max(map(len, input_ids))
 
-            position_ids = paddle.zeros(shape=[bs, max_length + src_length], dtype="int64")
+            position_ids = paddle.zeros(
+                shape=[bs, max_length + src_length], dtype="int64"
+            )
 
             for i in range(bs):
-                position_ids[i, pre_caches_length : pre_caches_length + seq_len[i]] = paddle.arange(seq_len[i])
+                position_ids[
+                    i, pre_caches_length : pre_caches_length + seq_len[i]
+                ] = paddle.arange(seq_len[i])
             inputs["position_ids"] = position_ids
 
     tgt_ids = [input[-1:] for input in input_ids]
@@ -692,7 +755,9 @@ def dybatch_preprocess(
     if isinstance(eos_token_id, int):
         eos_token_id = [eos_token_id]
 
-    inputs["eos_token_id"] = np.array(eos_token_id * bs).reshape(-1, 1).astype("int64")
+    inputs["eos_token_id"] = (
+        np.array(eos_token_id * bs).reshape(-1, 1).astype("int64")
+    )
 
     inputs["top_p"] = (
         np.array(
@@ -715,11 +780,17 @@ def dybatch_preprocess(
         .astype("float32")
     )
     inputs["seq_len_encoder"] = seq_len.astype("int32").reshape(-1, 1)
-    inputs["seq_len_decoder"] = (seq_len + pre_caches_length).astype("int32").reshape(-1, 1)
+    inputs["seq_len_decoder"] = (
+        (seq_len + pre_caches_length).astype("int32").reshape(-1, 1)
+    )
     inputs["step_idx"] = np.array(step_idx).astype("int64").reshape(-1, 1)
     inputs["tgt_ids"] = np.array(tgt_ids).astype("int64").reshape(-1, 1)
     inputs["tgt_pos"] = tgt_pos.reshape(-1, 1)
-    inputs["max_length"] = np.array(max_length - pre_caches_length).astype("int64").reshape((-1, 1))
+    inputs["max_length"] = (
+        np.array(max_length - pre_caches_length)
+        .astype("int64")
+        .reshape((-1, 1))
+    )
     inputs["min_length"] = (
         np.array(
             [
@@ -781,7 +852,7 @@ def load_real_time_tokens():
     tokens = []
     files = glob.glob(os.path.join("./real_time_save.*"))
     for j in range(1, len(files) + 1):
-        filename = "./real_time_save.temp_ids_rank_0_step_{}".format(j)
+        filename = f"./real_time_save.temp_ids_rank_0_step_{j}"
         if not os.path.exists(filename):
             break
         fp = open(filename, "rb+")
@@ -795,7 +866,9 @@ def load_real_time_tokens():
 
 
 def init_chat_template(
-    tokenizer: PreTrainedTokenizer, model_name_or_path: str, chat_template_file: Optional[str] = None
+    tokenizer: PreTrainedTokenizer,
+    model_name_or_path: str,
+    chat_template_file: Optional[str] = None,
 ):
     """init chat template for the given tokenizer.
 
@@ -822,26 +895,36 @@ def init_chat_template(
     # it will load the `chat_template.json` file by default, so do nothing
     if chat_template_file == model_name_or_path:
         if tokenizer.chat_template is None:
-            logger.warning(f"there is not `chat_template.json` file in the `{model_name_or_path}`")
+            logger.warning(
+                f"there is not `chat_template.json` file in the `{model_name_or_path}`"
+            )
         return
 
     if os.path.isdir(chat_template_file):
-        local_chat_template_file_path = os.path.join(chat_template_file, "chat_template.json")
+        local_chat_template_file_path = os.path.join(
+            chat_template_file, "chat_template.json"
+        )
         if os.path.exists(local_chat_template_file_path):
             chat_template_file = local_chat_template_file_path
         else:
-            logger.warning(f"there is not `chat_template.json` file in the `{model_name_or_path}`")
+            logger.warning(
+                f"there is not `chat_template.json` file in the `{model_name_or_path}`"
+            )
             return
 
     if not os.path.exists(chat_template_file):
-        logger.warning(f"there is not `chat_template.json` file from path<`{model_name_or_path}`>")
+        logger.warning(
+            f"there is not `chat_template.json` file from path<`{model_name_or_path}`>"
+        )
         return
 
     logger.info(f"loading `chat_template.json` from `{chat_template_file}`")
     tokenizer.init_chat_template(chat_template_file)
 
 
-def get_model_max_position_embeddings(config: PretrainedConfig) -> Optional[int]:
+def get_model_max_position_embeddings(
+    config: PretrainedConfig,
+) -> Optional[int]:
     names = [
         "max_position_embeddings",  # most of models
         "max_sequence_length",  # GLM model
@@ -862,7 +945,9 @@ def read_res(
 ):
     from ..utils.env import USE_FAST_TOKENIZER
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, padding_side="left", use_fast=USE_FAST_TOKENIZER)
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name_or_path, padding_side="left", use_fast=USE_FAST_TOKENIZER
+    )
 
     paddle.device.set_device("cpu")
     paddle.disable_static()
@@ -885,7 +970,9 @@ def read_res(
         if int(output_tensor[0, 0]) == -1:
             break
     output = np.concatenate(outputs, axis=1).tolist()
-    seqs = tokenizer.batch_decode(output, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+    seqs = tokenizer.batch_decode(
+        output, skip_special_tokens=True, clean_up_tokenization_spaces=False
+    )
     for i, (out, seq) in enumerate(zip(output, seqs)):
         result_queue.put([i, out, seq])
 
@@ -902,7 +989,9 @@ def read_res_dynamic_insert(
 ):
     from ..utils.env import USE_FAST_TOKENIZER
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, padding_side="left", use_fast=USE_FAST_TOKENIZER)
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name_or_path, padding_side="left", use_fast=USE_FAST_TOKENIZER
+    )
 
     paddle.device.set_device("cpu")
     paddle.disable_static()
@@ -926,14 +1015,18 @@ def read_res_dynamic_insert(
                 output_numpy[output_numpy == -1] = tokenizer.eos_token_id
                 outputs[task_id] = output_numpy
                 count += 1
-                logger.info(f"Post-processing task {task_id} ({count}/{total_request_num})")
+                logger.info(
+                    f"Post-processing task {task_id} ({count}/{total_request_num})"
+                )
 
         except Exception as e:
-            logger.error(f"Error processing task: {str(e)}")
+            logger.error(f"Error processing task: {e!s}")
             continue
     output = np.concatenate(outputs, axis=0).tolist()
     if detokenize:
-        seqs = tokenizer.batch_decode(output, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+        seqs = tokenizer.batch_decode(
+            output, skip_special_tokens=True, clean_up_tokenization_spaces=False
+        )
     else:
         seqs = [None] * len(output)
     for i, (out, seq) in enumerate(zip(output, seqs)):
@@ -949,7 +1042,9 @@ def speculate_read_res(
 ):
     from ..utils.env import USE_FAST_TOKENIZER
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, padding_side="left", use_fast=USE_FAST_TOKENIZER)
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name_or_path, padding_side="left", use_fast=USE_FAST_TOKENIZER
+    )
     paddle.device.set_device("cpu")
     paddle.disable_static()
     outputs = []
@@ -972,9 +1067,7 @@ def speculate_read_res(
         accept_num = output_tensor[2 : bsz + 2].numpy()
         for bi in range(bsz):
             output_numpy = output_tensor[
-                2
-                + SPECULATE_MAX_BSZ
-                + bi * MAX_DRAFT_TOKENS : 2
+                2 + SPECULATE_MAX_BSZ + bi * MAX_DRAFT_TOKENS : 2
                 + SPECULATE_MAX_BSZ
                 + bi * MAX_DRAFT_TOKENS
                 + int(accept_num[bi]),
@@ -985,14 +1078,18 @@ def speculate_read_res(
         if int(output_tensor[0, 0]) == -1:
             break
 
-    seqs = tokenizer.batch_decode(outputs, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+    seqs = tokenizer.batch_decode(
+        outputs, skip_special_tokens=True, clean_up_tokenization_spaces=False
+    )
     for i, (out, seq) in enumerate(zip(outputs, seqs)):
         result_queue.put([i, out, seq])
 
     logger.info("Finish read result message")
 
 
-def get_rotary_position_embedding(position_ids, head_dim, rope_theta=10000.0, rope_scaling: dict = None):
+def get_rotary_position_embedding(
+    position_ids, head_dim, rope_theta=10000.0, rope_scaling: dict | None = None
+):
     """
     Pre-calculate rotary position embedding for position_ids.
 
@@ -1005,7 +1102,9 @@ def get_rotary_position_embedding(position_ids, head_dim, rope_theta=10000.0, ro
     """
     bsz, max_seq_len = position_ids.shape[:2]
     rot_emb = paddle.zeros((2, bsz, max_seq_len, 1, head_dim), dtype="float32")
-    inv_freq = rope_theta ** (-paddle.arange(0, head_dim, 2, dtype="float32") / head_dim)
+    inv_freq = rope_theta ** (
+        -paddle.arange(0, head_dim, 2, dtype="float32") / head_dim
+    )
 
     if rope_scaling is not None:
         rope_type = rope_scaling.get("rope_type", None)
@@ -1013,10 +1112,16 @@ def get_rotary_position_embedding(position_ids, head_dim, rope_theta=10000.0, ro
             factor = rope_scaling.get("factor", 8.0)
             low_freq_factor = rope_scaling.get("low_freq_factor", 1.0)
             high_freq_factor = rope_scaling.get("high_freq_factor", 4.0)
-            original_max_position_embeddings = rope_scaling.get("original_max_position_embeddings", 8192)
+            original_max_position_embeddings = rope_scaling.get(
+                "original_max_position_embeddings", 8192
+            )
 
-            low_freq_wavelen = original_max_position_embeddings / low_freq_factor
-            high_freq_wavelen = original_max_position_embeddings / high_freq_factor
+            low_freq_wavelen = (
+                original_max_position_embeddings / low_freq_factor
+            )
+            high_freq_wavelen = (
+                original_max_position_embeddings / high_freq_factor
+            )
             new_freqs = []
             for freq in inv_freq:
                 wavelen = 2 * math.pi / freq
@@ -1026,16 +1131,21 @@ def get_rotary_position_embedding(position_ids, head_dim, rope_theta=10000.0, ro
                     new_freqs.append(freq / factor)
                 else:
                     assert low_freq_wavelen != high_freq_wavelen
-                    smooth = (original_max_position_embeddings / wavelen - low_freq_factor) / (
-                        high_freq_factor - low_freq_factor
+                    smooth = (
+                        original_max_position_embeddings / wavelen
+                        - low_freq_factor
+                    ) / (high_freq_factor - low_freq_factor)
+                    new_freqs.append(
+                        (1 - smooth) * freq / factor + smooth * freq
                     )
-                    new_freqs.append((1 - smooth) * freq / factor + smooth * freq)
             inv_freq = paddle.to_tensor(new_freqs, dtype=inv_freq.dtype)
 
     # shape: [B, S, D/2]
     freqs = paddle.einsum("ij,k->ijk", position_ids.cast("float32"), inv_freq)
     # shape: [B, S, 1, D]
-    emb = paddle.cat([freqs, freqs], axis=-1).reshape((bsz, max_seq_len, 1, head_dim))
+    emb = paddle.cat([freqs, freqs], axis=-1).reshape(
+        (bsz, max_seq_len, 1, head_dim)
+    )
 
     rot_emb[0] = paddle.cos(emb)
     rot_emb[1] = paddle.sin(emb)
@@ -1049,7 +1159,9 @@ def init_dist_env():
     Returns:
         tuple: A tuple containing tensor parallel rank and degree.
     """
-    world_size = paddle.distributed.get_world_size()  # Get the total number of distributed nodes
+    world_size = (
+        paddle.distributed.get_world_size()
+    )  # Get the total number of distributed nodes
 
     if world_size > 1:
         is_fleet_init = True
@@ -1072,8 +1184,12 @@ def init_dist_env():
                 "pp_degree": 1,  # Pipeline parallelism degree
                 "sharding_degree": 1,  # Sharding parallelism degree
             }
-            fleet.init(is_collective=True, strategy=strategy)  # Initialize Fleet
-            hcg = fleet.get_hybrid_communicate_group()  # Get the hybrid communicate group after initialization
+            fleet.init(
+                is_collective=True, strategy=strategy
+            )  # Initialize Fleet
+            hcg = (
+                fleet.get_hybrid_communicate_group()
+            )  # Get the hybrid communicate group after initialization
 
             # Get tensor parallel degree and rank after Fleet initialization
             tensor_model_parallel_size = hcg.get_model_parallel_world_size()
@@ -1087,8 +1203,9 @@ def init_dist_env():
 
 
 def get_eos_token_id(
-    tokenizer: PreTrainedTokenizer, generation_config: Optional[GenerationConfig] = None
-) -> List[List[int]]:
+    tokenizer: PreTrainedTokenizer,
+    generation_config: Optional[GenerationConfig] = None,
+) -> list[list[int]]:
     """get eos_token_id from generation_config or tokenizer
 
     Returns:
@@ -1098,7 +1215,10 @@ def get_eos_token_id(
     if tokenizer.eos_token_id is not None:
         eos_token_ids.append(tokenizer.eos_token_id)
 
-    if generation_config is not None and generation_config.eos_token_id is not None:
+    if (
+        generation_config is not None
+        and generation_config.eos_token_id is not None
+    ):
         if isinstance(generation_config.eos_token_id, int):
             eos_token_ids.append(generation_config.eos_token_id)
         else:
@@ -1114,7 +1234,9 @@ def set_triton_cache(model_name_or_path, mode):
     """
     valid_modes = {"export", "static", "dynamic"}
     if mode not in valid_modes:
-        raise ValueError(f"Invalid mode: {mode}. Valid modes are: {valid_modes}")
+        raise ValueError(
+            f"Invalid mode: {mode}. Valid modes are: {valid_modes}"
+        )
     mp_id = paddle.distributed.get_rank()
     triton_dir = f"triton_ops_rank_{mp_id}"
     triton_kernel_cache_dir = f"{model_name_or_path}/{triton_dir}"
@@ -1129,6 +1251,10 @@ def set_triton_cache(model_name_or_path, mode):
             for file in files:
                 if file.endswith("_package.so"):
                     so_full_path = os.path.join(root, file)
-                    paddle.utils.cpp_extension.load_op_meta_info_and_register_op(so_full_path)
+                    paddle.utils.cpp_extension.load_op_meta_info_and_register_op(
+                        so_full_path
+                    )
     else:
-        os.environ["TRITON_KERNEL_CACHE_DIR"] = f"/root/.paddleformers/{triton_dir}"
+        os.environ["TRITON_KERNEL_CACHE_DIR"] = (
+            f"/root/.paddleformers/{triton_dir}"
+        )

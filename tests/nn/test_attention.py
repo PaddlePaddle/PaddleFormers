@@ -17,14 +17,16 @@ from typing import Optional
 
 import numpy as np
 import paddle
-import paddle.nn as nn
+from paddle import nn
 
 from paddleformers.nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 
 from ..testing_utils import gpu_device_initializer
 
 
-def flashmask_to_densemask(startend_row_indices, num_key_value_groups, dtype, causal=True):
+def flashmask_to_densemask(
+    startend_row_indices, num_key_value_groups, dtype, causal=True
+):
     """
     Helper function to convert the sparse `startend_row_indices` format, used by FlashMask,
     into a dense attention mask tensor that can be used by naive attention implementations.
@@ -60,7 +62,9 @@ def flashmask_to_densemask(startend_row_indices, num_key_value_groups, dtype, ca
     # If using Grouped-Query Attention (GQA), the mask for KV heads must be
     # expanded to match the number of Query heads.
     if num_key_value_groups > 1:
-        m = m.unsqueeze(2).expand([bz, num_head, num_key_value_groups, seq_len, seq_len])
+        m = m.unsqueeze(2).expand(
+            [bz, num_head, num_key_value_groups, seq_len, seq_len]
+        )
         num_q_heads = num_head * num_key_value_groups
         m = m.reshape([bz, num_q_heads, seq_len, seq_len])
 
@@ -97,7 +101,9 @@ class TestAttentionInterface(unittest.TestCase):
         else:
             m[:, :, :, 0] = diag  # For causal, start is always the diagonal
             if has_end:
-                m[:, :, :, 1] = m[:, :, :, 0] + np.random.randint(1, seqlen, m[:, :, :, 0].shape)
+                m[:, :, :, 1] = m[:, :, :, 0] + np.random.randint(
+                    1, seqlen, m[:, :, :, 0].shape
+                )
                 m[:, :, :, 1] = np.minimum(seqlen, m[:, :, :, 1])
 
         return paddle.to_tensor(m, dtype="int32")
@@ -118,14 +124,27 @@ class TestAttentionInterface(unittest.TestCase):
         # Tensors are created in the [batch, seq_len, num_heads, head_dim] layout.
         # This setup configures a Multi-Head Attention (MHA) scenario because the
         # number of heads for key and value is the same as for query.
-        self.query = paddle.rand([self.batch_size, self.seq_len, self.num_heads, self.head_dim], dtype=self.dtype)
-        self.key = paddle.rand([self.batch_size, self.seq_len, self.num_heads, self.head_dim], dtype=self.dtype)
-        self.value = paddle.rand([self.batch_size, self.seq_len, self.num_heads, self.head_dim], dtype=self.dtype)
+        self.query = paddle.rand(
+            [self.batch_size, self.seq_len, self.num_heads, self.head_dim],
+            dtype=self.dtype,
+        )
+        self.key = paddle.rand(
+            [self.batch_size, self.seq_len, self.num_heads, self.head_dim],
+            dtype=self.dtype,
+        )
+        self.value = paddle.rand(
+            [self.batch_size, self.seq_len, self.num_heads, self.head_dim],
+            dtype=self.dtype,
+        )
         self.sink = paddle.rand([self.num_heads], dtype=self.dtype)
 
         # Flashmask is generated based on the number of attention heads.
         self.startend_row_indices = self.gen_random_flashmask(
-            self.batch_size, self.num_heads, self.seq_len, has_end=False, causal=False
+            self.batch_size,
+            self.num_heads,
+            self.seq_len,
+            has_end=False,
+            causal=False,
         )
 
     def assert_tensor_close(self, a, b, atol=1e-2, rtol=1e-2):
@@ -178,12 +197,18 @@ class TestAttentionInterface(unittest.TestCase):
 
         # Step 5: Prepare and concatenate the sink logits. The sink is a special token
         # that every other token can attend to, preventing the attention from collapsing.
-        sinks = sink.reshape(shape=[1, -1, 1, 1]).expand(shape=[query_states.shape[0], -1, query_states.shape[-2], -1])
+        sinks = sink.reshape(shape=[1, -1, 1, 1]).expand(
+            shape=[query_states.shape[0], -1, query_states.shape[-2], -1]
+        )
         combined_logits = paddle.cat(x=[attn_weights, sinks], axis=-1)
 
         # Step 6: Apply softmax over the combined logits (scores + sink)
-        combined_logits = combined_logits - paddle.max(combined_logits, axis=-1, keepdim=True)
-        probs = nn.functional.softmax(combined_logits, axis=-1, dtype=combined_logits.dtype)
+        combined_logits = combined_logits - paddle.max(
+            combined_logits, axis=-1, keepdim=True
+        )
+        probs = nn.functional.softmax(
+            combined_logits, axis=-1, dtype=combined_logits.dtype
+        )
 
         # Step 7: Separate the attention probabilities from the sink probabilities
         scores = probs[..., :-1]
@@ -195,8 +220,13 @@ class TestAttentionInterface(unittest.TestCase):
         attn_output = paddle.matmul(attn_weights, value_states)
 
         # Step 10: Reshape the output back to [B, S, H, D] and flatten the head dimension
-        attn_output = paddle.transpose(attn_output, perm=[0, 2, 1, 3]).contiguous()
-        attn_output = paddle.reshape(x=attn_output, shape=[0, 0, attn_output.shape[2] * attn_output.shape[3]])
+        attn_output = paddle.transpose(
+            attn_output, perm=[0, 2, 1, 3]
+        ).contiguous()
+        attn_output = paddle.reshape(
+            x=attn_output,
+            shape=[0, 0, attn_output.shape[2] * attn_output.shape[3]],
+        )
 
         return attn_output
 
@@ -266,14 +296,27 @@ class TestAttentionInterface(unittest.TestCase):
 
         # Create the ground truth dense causal mask for the naive implementation
         causal_mask = paddle.triu(
-            paddle.full(shape=[self.seq_len, self.seq_len], fill_value=float("-inf"), dtype=self.dtype),
+            paddle.full(
+                shape=[self.seq_len, self.seq_len],
+                fill_value=float("-inf"),
+                dtype=self.dtype,
+            ),
             diagonal=1,
         )
-        causal_mask = causal_mask.unsqueeze(0).unsqueeze(0).expand(shape=[self.batch_size, self.num_heads, -1, -1])
+        causal_mask = (
+            causal_mask.unsqueeze(0)
+            .unsqueeze(0)
+            .expand(shape=[self.batch_size, self.num_heads, -1, -1])
+        )
 
         # Get the output from the naive reference implementation
         eager_output_causal = self.naive_attn_sink(
-            self.query, self.key, self.value, self.sink, causal_mask, self.scaling
+            self.query,
+            self.key,
+            self.value,
+            self.sink,
+            causal_mask,
+            self.scaling,
         )
 
         # Compare the results from the optimized and naive implementations
@@ -296,11 +339,19 @@ class TestAttentionInterface(unittest.TestCase):
 
         # Create the ground truth dense mask from the FlashMask sparse format
         dense_mask = flashmask_to_densemask(
-            self.startend_row_indices, num_key_value_groups=1, dtype=self.dtype, causal=False
+            self.startend_row_indices,
+            num_key_value_groups=1,
+            dtype=self.dtype,
+            causal=False,
         )
         # Get the output from the naive reference implementation
         eager_output_flashmask = self.naive_attn_sink(
-            self.query, self.key, self.value, self.sink, dense_mask, self.scaling
+            self.query,
+            self.key,
+            self.value,
+            self.sink,
+            dense_mask,
+            self.scaling,
         )
 
         # Compare the results

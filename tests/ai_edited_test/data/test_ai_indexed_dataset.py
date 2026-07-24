@@ -192,7 +192,9 @@ class TestMakeDataset(unittest.TestCase):
             with open(idx_path, "wb") as f:
                 f.write(b"TNTIDX\x00\x00")
                 f.write(struct.pack("<Q", 1))  # version
-                f.write(struct.pack("<QQ", code(np.int32), 4))  # code, element_size
+                f.write(
+                    struct.pack("<QQ", code(np.int32), 4)
+                )  # code, element_size
                 f.write(struct.pack("<QQ", 0, 0))  # len, s
                 f.write(struct.pack("<Q", 0))  # doc_count
                 write_longs(f, np.array([0], dtype=np.int64))  # dim_offsets

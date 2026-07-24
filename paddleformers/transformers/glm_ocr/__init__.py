@@ -13,6 +13,7 @@
 # limitations under the License.
 
 """Package"""
+
 import sys
 from typing import TYPE_CHECKING
 
@@ -21,7 +22,11 @@ from ...utils.lazy_import import _LazyModule
 import_structure = {
     "image_processor": ["Glm46VImageProcessor"],
     "processor": ["Glm46VProcessor"],
-    "configuration": ["GlmOcrConfig", "GlmOcrTextConfig", "GlmOcrVisionConfig"],  # 补上这两个
+    "configuration": [
+        "GlmOcrConfig",
+        "GlmOcrTextConfig",
+        "GlmOcrVisionConfig",
+    ],  # 补上这两个
     "modeling": ["GlmOcrForConditionalGeneration"],
 }
 

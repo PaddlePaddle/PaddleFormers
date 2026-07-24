@@ -23,7 +23,14 @@ import paddle
 
 # Direct import to avoid __init__.py triggering workflow.py which requires AutoTokenizer
 _MODULE_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "..", "..", "paddleformers", "cli", "train", "deepseek_v3_pretrain"
+    os.path.dirname(__file__),
+    "..",
+    "..",
+    "..",
+    "paddleformers",
+    "cli",
+    "train",
+    "deepseek_v3_pretrain",
 )
 _MODULE_DIR = os.path.abspath(_MODULE_DIR)
 
@@ -49,7 +56,9 @@ if _pkg_name not in sys.modules:
     sys.modules[_pkg_name] = _pkg_mod
 
 # Load the moe_utils module directly
-_moe_utils_mod = _load_module("moe_utils", os.path.join(_MODULE_DIR, "moe_utils.py"))
+_moe_utils_mod = _load_module(
+    "moe_utils", os.path.join(_MODULE_DIR, "moe_utils.py")
+)
 permute_fast = _moe_utils_mod.permute_fast
 unpermute_fast = _moe_utils_mod.unpermute_fast
 topk_to_permuted_indices = _moe_utils_mod.topk_to_permuted_indices
@@ -70,11 +79,13 @@ class TestTopkToPermutedIndices(unittest.TestCase):
         num_tokens_per_expert_list = [2, 2, 3, 1]
         topk = 2
 
-        token_permuted_indices, prob_permuted_indices = topk_to_permuted_indices(
-            topk_idx, num_tokens_per_expert_list, topk
+        token_permuted_indices, prob_permuted_indices = (
+            topk_to_permuted_indices(topk_idx, num_tokens_per_expert_list, topk)
         )
 
-        self.assertEqual(token_permuted_indices.shape[0], prob_permuted_indices.shape[0])
+        self.assertEqual(
+            token_permuted_indices.shape[0], prob_permuted_indices.shape[0]
+        )
         # Total assignments = 4 tokens * 2 topk = 8
         self.assertEqual(token_permuted_indices.shape[0], 8)
 
@@ -84,8 +95,8 @@ class TestTopkToPermutedIndices(unittest.TestCase):
         num_tokens_per_expert_list = [1, 1, 1]
         topk = 1
 
-        token_permuted_indices, prob_permuted_indices = topk_to_permuted_indices(
-            topk_idx, num_tokens_per_expert_list, topk
+        token_permuted_indices, prob_permuted_indices = (
+            topk_to_permuted_indices(topk_idx, num_tokens_per_expert_list, topk)
         )
 
         self.assertEqual(token_permuted_indices.shape[0], 3)
@@ -282,14 +293,35 @@ class TestGetEnvDevice(unittest.TestCase):
     def test_returns_valid_device(self):
         """Test that get_env_device returns a valid device name."""
         device = get_env_device()
-        valid_devices = ["gpu", "npu", "mlu", "gcu", "intel_hpu", "rocm", "xpu", "cpu"]
+        valid_devices = [
+            "gpu",
+            "npu",
+            "mlu",
+            "gcu",
+            "intel_hpu",
+            "rocm",
+            "xpu",
+            "cpu",
+        ]
         self.assertIn(device, valid_devices)
 
-    @patch.object(_moe_utils_mod.paddle, "is_compiled_with_cuda", return_value=False)
-    @patch.object(_moe_utils_mod.paddle, "is_compiled_with_rocm", return_value=False)
-    @patch.object(_moe_utils_mod.paddle, "is_compiled_with_xpu", return_value=False)
-    @patch.object(_moe_utils_mod.paddle.device, "get_all_custom_device_type", return_value=[])
-    def test_cpu_device_when_no_accelerator(self, mock_custom, mock_xpu, mock_rocm, mock_cuda):
+    @patch.object(
+        _moe_utils_mod.paddle, "is_compiled_with_cuda", return_value=False
+    )
+    @patch.object(
+        _moe_utils_mod.paddle, "is_compiled_with_rocm", return_value=False
+    )
+    @patch.object(
+        _moe_utils_mod.paddle, "is_compiled_with_xpu", return_value=False
+    )
+    @patch.object(
+        _moe_utils_mod.paddle.device,
+        "get_all_custom_device_type",
+        return_value=[],
+    )
+    def test_cpu_device_when_no_accelerator(
+        self, mock_custom, mock_xpu, mock_rocm, mock_cuda
+    ):
         """Test that CPU is returned when no accelerator is available."""
         result = get_env_device()
         self.assertEqual(result, "cpu")

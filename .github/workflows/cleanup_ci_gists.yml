@@ -1,8 +1,7 @@
 name: Cleanup CI Gists
-
 on:
   schedule:
-    - cron: '0 3 * * *'  # 每天北京时间11点（UTC+8）
+    - cron: '0 3 * * *' # 每天北京时间11点（UTC+8）
   workflow_dispatch:
     inputs:
       keep_days:
@@ -13,7 +12,6 @@ on:
         description: '只预览不删除 (true/false)'
         default: 'false'
         required: false
-
 jobs:
   cleanup:
     runs-on: ernie-cpu
@@ -36,9 +34,8 @@ jobs:
           cutoff   = datetime.now(timezone.utc) - timedelta(days=keep)
 
           CI_PREFIXES = [
-              "PaddleFleet CI ",    
-              "PaddleFormers CI ", 
-              "error_", 
+              "PaddleFormers CI ",
+              "error_",
           ]
 
           print(f"{'[DRY RUN] ' if dry_run else ''}Deleting gists older than {keep} days (before {cutoff.date()})\n")

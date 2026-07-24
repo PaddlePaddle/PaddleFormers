@@ -9,7 +9,7 @@ class TestLinearUtils(unittest.TestCase):
     """Tests for transformers/linear_utils.py"""
 
     def test_linear_is_nn_linear(self):
-        import paddle.nn as nn
+        from paddle import nn
 
         from paddleformers.transformers.linear_utils import Linear
 
@@ -48,7 +48,10 @@ class TestLinearUtils(unittest.TestCase):
         self.assertIsNotNone(ColumnSequenceParallelLinear)
         self.assertIsNotNone(RowSequenceParallelLinear)
 
-    @patch("paddleformers.transformers.linear_utils.get_env_device", return_value="npu")
+    @patch(
+        "paddleformers.transformers.linear_utils.get_env_device",
+        return_value="npu",
+    )
     def test_npu_device_uses_mc2(self, mock_device):
         from paddleformers.transformers.linear_utils import (
             ColumnSequenceParallelLinear,
@@ -60,7 +63,10 @@ class TestLinearUtils(unittest.TestCase):
         self.assertIsNotNone(ColumnSequenceParallelLinear)
         self.assertIsNotNone(RowSequenceParallelLinear)
 
-    @patch("paddleformers.transformers.linear_utils.get_env_device", return_value="cpu")
+    @patch(
+        "paddleformers.transformers.linear_utils.get_env_device",
+        return_value="cpu",
+    )
     def test_cpu_device_default(self, mock_device):
         from paddleformers.transformers.linear_utils import Linear
 

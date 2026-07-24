@@ -11,13 +11,17 @@ class TestPdcSdk(unittest.TestCase):
     def test_pdc_flash_device_available_true(self):
         from paddleformers.utils.pdc_sdk import pdc_flash_device_available
 
-        with patch("paddleformers.utils.pdc_sdk.os.path.exists", return_value=True):
+        with patch(
+            "paddleformers.utils.pdc_sdk.os.path.exists", return_value=True
+        ):
             self.assertTrue(pdc_flash_device_available())
 
     def test_pdc_flash_device_available_false(self):
         from paddleformers.utils.pdc_sdk import pdc_flash_device_available
 
-        with patch("paddleformers.utils.pdc_sdk.os.path.exists", return_value=False):
+        with patch(
+            "paddleformers.utils.pdc_sdk.os.path.exists", return_value=False
+        ):
             self.assertFalse(pdc_flash_device_available())
 
     def test_PDCErrorCode_values(self):

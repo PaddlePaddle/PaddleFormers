@@ -16,13 +16,16 @@
 
 import os
 from functools import partial
+from typing import TYPE_CHECKING
 
 import paddle
 
 from paddleformers.cli.utils.process import add_new_special_tokens
 from paddleformers.datasets.collate import dpo_collate_fn, mm_dpo_collate_fn
 from paddleformers.datasets.loader import create_dataset
-from paddleformers.datasets.template.template import get_template_and_fix_tokenizer
+from paddleformers.datasets.template.template import (
+    get_template_and_fix_tokenizer,
+)
 from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
 from paddleformers.trainer import (
@@ -44,21 +47,23 @@ from paddleformers.transformers import (
     AutoTokenizer,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
-from paddleformers.utils.import_utils import is_paddlefleet_available
+from paddleformers.utils.import_utils import is_paddleformers_available
 from paddleformers.utils.log import logger
 
-from ...hparams import (
-    DataArguments,
-    FinetuningArguments,
-    GeneratingArguments,
-    ModelArguments,
-)
 from ...utils.llm_utils import get_lora_target_modules
 from .dpo_argument import DPOConfig
 from .dpo_estimate_training import dpo_estimate_training
 from .dpo_trainer import DPOTrainer
 
-if is_paddlefleet_available():
+if TYPE_CHECKING:
+    from ...hparams import (
+        DataArguments,
+        FinetuningArguments,
+        GeneratingArguments,
+        ModelArguments,
+    )
+
+if is_paddleformers_available():
     from paddleformers.transformers.gpt_provider import GPTModel
 
 
@@ -87,26 +92,43 @@ def run_dpo(
         training_args.reference_free = True
         training_args.sft_loss_ratio = 1.0
         training_args.loss_type = "or"
-        logger.info("orpo loss_type is equal to sft_loss + pref_loss_ratio * or_loss.")
-    if training_args.loss_type in ["or", "simpo"] and not training_args.reference_free:
+        logger.info(
+            "orpo loss_type is equal to sft_loss + pref_loss_ratio * or_loss."
+        )
+    if (
+        training_args.loss_type in ["or", "simpo"]
+        and not training_args.reference_free
+    ):
         training_args.reference_free = True
         logger.warning(
             f"{training_args.loss_type} loss_type only supports reference_free. Set reference_free to True."
         )
     if training_args.pipeline_model_parallel_size > 1:
         assert (
-            hasattr(training_args, "clear_every_step_cache") and training_args.clear_every_step_cache
+            hasattr(training_args, "clear_every_step_cache")
+            and training_args.clear_every_step_cache
         ), "Should set '--clear_every_step_cache True' in bash script for pp."
     if training_args.sequence_parallel:
         if training_args.pipeline_model_parallel_size > 1:
             assert (
-                hasattr(training_args, "partial_send_recv") and not training_args.partial_send_recv
-            ), "Should set '--partial_send_recv False' in bash script for pp with sp."
+                hasattr(training_args, "partial_send_recv")
+                and not training_args.partial_send_recv
+            ), (
+                "Should set '--partial_send_recv False' in bash script for pp with sp."
+            )
         if training_args.tensor_model_parallel_size <= 1:
             training_args.sequence_parallel = False
-            logger.info("tensor_model_parallel_size = 1. Set sequence_parallel to False.")
-    if is_paddlefleet_available() and model_args.lora and training_args.moe_token_dispatcher_type == "deepep":
-        logger.warning("For PaddleFleet, moe_use_fusion_node should False when using LoRA.")
+            logger.info(
+                "tensor_model_parallel_size = 1. Set sequence_parallel to False."
+            )
+    if (
+        is_paddleformers_available()
+        and model_args.lora
+        and training_args.moe_token_dispatcher_type == "deepep"
+    ):
+        logger.warning(
+            "For PaddleFleet, moe_use_fusion_node should False when using LoRA."
+        )
         training_args.moe_use_fusion_node = False
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")
@@ -119,9 +141,16 @@ def run_dpo(
     )
 
     last_checkpoint = None
-    if os.path.isdir(training_args.output_dir) and training_args.do_train and not training_args.overwrite_output_dir:
+    if (
+        os.path.isdir(training_args.output_dir)
+        and training_args.do_train
+        and not training_args.overwrite_output_dir
+    ):
         last_checkpoint = get_last_checkpoint(training_args.output_dir)
-        if last_checkpoint is not None and training_args.resume_from_checkpoint is None:
+        if (
+            last_checkpoint is not None
+            and training_args.resume_from_checkpoint is None
+        ):
             logger.info(
                 f"Checkpoint detected, resuming training at {last_checkpoint}. To avoid this behavior, change "
                 "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
@@ -166,7 +195,9 @@ def run_dpo(
         model_config.pad_token_id = training_args.pad_token_id
     if "qwen3_vl" in model_config.model_type and not model_args.lora:
         if training_args.sequence_parallel:
-            logger.warning("Qwen3VL model do not support `sequence_parallel` yet, temporarily set to False")
+            logger.warning(
+                "Qwen3VL model do not support `sequence_parallel` yet, temporarily set to False"
+            )
         training_args.sequence_parallel = False
 
     LlmMetaConfig.set_llm_config(model_config, training_args)
@@ -175,10 +206,18 @@ def run_dpo(
     if getattr(model_config, "text_config", None) is not None:
         model_config.text_config.max_sequence_length = data_args.max_seq_len
     if getattr(model_config, "vision_config", None) is not None:
-        model_config.vision_config._attn_implementation = model_args._attn_implementation
-        model_config.vision_config.recompute_granularity = model_config.recompute_granularity
-        model_config.vision_config.recompute_method = model_config.recompute_method
-        model_config.vision_config.recompute_num_layers = model_config.recompute_num_layers
+        model_config.vision_config._attn_implementation = (
+            model_args._attn_implementation
+        )
+        model_config.vision_config.recompute_granularity = (
+            model_config.recompute_granularity
+        )
+        model_config.vision_config.recompute_method = (
+            model_config.recompute_method
+        )
+        model_config.vision_config.recompute_num_layers = (
+            model_config.recompute_num_layers
+        )
 
     if not training_args.reference_free and not model_args.lora:
         ref_model_config = AutoConfig.from_pretrained(
@@ -196,24 +235,38 @@ def run_dpo(
 
         # Sync arguments to MLLM sub_config for reference model
         if getattr(ref_model_config, "text_config", None) is not None:
-            ref_model_config.text_config.max_sequence_length = data_args.max_seq_len
+            ref_model_config.text_config.max_sequence_length = (
+                data_args.max_seq_len
+            )
         if getattr(ref_model_config, "vision_config", None) is not None:
-            ref_model_config.vision_config._attn_implementation = model_args._attn_implementation
-            ref_model_config.vision_config.recompute_granularity = model_config.recompute_granularity
-            ref_model_config.vision_config.recompute_method = model_config.recompute_method
-            ref_model_config.vision_config.recompute_num_layers = model_config.recompute_num_layers
+            ref_model_config.vision_config._attn_implementation = (
+                model_args._attn_implementation
+            )
+            ref_model_config.vision_config.recompute_granularity = (
+                model_config.recompute_granularity
+            )
+            ref_model_config.vision_config.recompute_method = (
+                model_config.recompute_method
+            )
+            ref_model_config.vision_config.recompute_num_layers = (
+                model_config.recompute_num_layers
+            )
 
     if model_args.stage == "VL-DPO":
         model_class = AutoModelForConditionalGeneration
         if training_args.pipeline_model_parallel_size > 1:
             if data_args.eval_with_do_generation and training_args.do_eval:
-                raise ValueError("Please set eval_with_do_generation to false in pipeline parallel mode.")
+                raise ValueError(
+                    "Please set eval_with_do_generation to false in pipeline parallel mode."
+                )
             model_class = AutoModelForConditionalGenerationPipe
     else:
         model_class = AutoModelForCausalLM
         if training_args.pipeline_model_parallel_size > 1:
             if data_args.eval_with_do_generation and training_args.do_eval:
-                raise ValueError("Please set eval_with_do_generation to false in pipeline parallel mode.")
+                raise ValueError(
+                    "Please set eval_with_do_generation to false in pipeline parallel mode."
+                )
             model_class = AutoModelForCausalLMPipe
     if not training_args.reference_free and not model_args.lora:
         ref_model_config.dpo_config = dpo_config
@@ -241,30 +294,38 @@ def run_dpo(
         else:
             ref_model = None
 
-    if is_paddlefleet_available() and isinstance(model, GPTModel):
-        training_args.per_device_eval_batch_size = training_args.per_device_train_batch_size
-        logger.warning(f"eval_batch_size set to {training_args.per_device_eval_batch_size} in Pipeline Parallel!")
+    if is_paddleformers_available() and isinstance(model, GPTModel):
+        training_args.per_device_eval_batch_size = (
+            training_args.per_device_train_batch_size
+        )
+        logger.warning(
+            f"eval_batch_size set to {training_args.per_device_eval_batch_size} in Pipeline Parallel!"
+        )
 
     if training_args.pipeline_model_parallel_size > 1:
         model.config.dpo_config = None
 
     if model_args.tokenizer_name_or_path is not None:
-        tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path)
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_args.tokenizer_name_or_path
+        )
     else:
         tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
     add_new_special_tokens(tokenizer, data_args.new_special_tokens_path)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
+    processor = AutoProcessor.from_pretrained(
+        model_args.model_name_or_path, use_fast=data_args.processor_use_fast
+    )
 
     logger.info("Loading model & tokenizer successfully !")
 
     if model_args.lora:
         if training_args.sharding_parallel_size > 1:
-            assert (
-                not training_args.stage1_overlap
-            ), "Currently not support enabling sharding_stage1_overlap in lora mode."
+            assert not training_args.stage1_overlap, (
+                "Currently not support enabling sharding_stage1_overlap in lora mode."
+            )
         if model_args.lora_path is None:
             target_modules = get_lora_target_modules(model)
             if model_args.rslora_plus:
@@ -279,7 +340,9 @@ def run_dpo(
             lora_config = LoRAConfig(
                 target_modules=target_modules,
                 r=model_args.lora_rank,
-                lora_alpha=2 * model_args.lora_rank if not model_args.rslora else 4,
+                lora_alpha=2 * model_args.lora_rank
+                if not model_args.rslora
+                else 4,
                 rslora=model_args.rslora,
                 lora_plus_scale=model_args.lora_plus_scale,
                 tensor_model_parallel_size=training_args.tensor_model_parallel_size,
@@ -351,8 +414,13 @@ def run_dpo(
                 "When using 'random' mix_strategy, max_steps must be explicitly set (cannot be -1). "
                 "Random mixing requires a fixed number of training steps to properly sample data."
             )
-        if training_args.should_load_dataset and paddle.distributed.get_rank() == 0:
-            training_args, _ = dpo_estimate_training(tokenizer, data_args, training_args, dataset_config)
+        if (
+            training_args.should_load_dataset
+            and paddle.distributed.get_rank() == 0
+        ):
+            training_args, _ = dpo_estimate_training(
+                tokenizer, data_args, training_args, dataset_config
+            )
 
         if paddle.distributed.get_world_size() > 1:
             paddle.distributed.barrier()
@@ -363,16 +431,24 @@ def run_dpo(
             f"Re-setting training_args.max_steps to {training_args.max_steps} ({training_args.num_train_epochs})"
         )
         if training_args.max_steps <= 0:
-            raise ValueError(f"Invalid max_steps: {training_args.max_steps}. Please check your dataset")
+            raise ValueError(
+                f"Invalid max_steps: {training_args.max_steps}. Please check your dataset"
+            )
     if training_args.save_strategy == IntervalStrategy.EPOCH:
         training_args.save_strategy = IntervalStrategy.STEPS
-        training_args.save_steps = int(training_args.max_steps / training_args.num_train_epochs)
+        training_args.save_steps = int(
+            training_args.max_steps / training_args.num_train_epochs
+        )
     if training_args.evaluation_strategy == IntervalStrategy.EPOCH:
         training_args.evaluation_strategy = IntervalStrategy.STEPS
-        training_args.eval_steps = int(training_args.max_steps / training_args.num_train_epochs)
+        training_args.eval_steps = int(
+            training_args.max_steps / training_args.num_train_epochs
+        )
     if training_args.logging_strategy == IntervalStrategy.EPOCH:
         training_args.logging_strategy = IntervalStrategy.STEPS
-        training_args.logging_steps = int(training_args.max_steps / training_args.num_train_epochs)
+        training_args.logging_steps = int(
+            training_args.max_steps / training_args.num_train_epochs
+        )
     if training_args.do_train and training_args.should_load_dataset:
         train_dataset = create_dataset(
             task_group=data_args.train_dataset_path,
@@ -409,10 +485,16 @@ def run_dpo(
     # padding to the maximum seq length in batch data when max_seq_len is None
     max_seq_len = (
         data_args.max_seq_len
-        if (data_args.packing or training_args.sequence_parallel or training_args.context_parallel_size > 1)
+        if (
+            data_args.packing
+            or training_args.sequence_parallel
+            or training_args.context_parallel_size > 1
+        )
         else None
     )
-    logger.info(f"Setting max_seq_len to {max_seq_len} using PaddleFormers Model.")
+    logger.info(
+        f"Setting max_seq_len to {max_seq_len} using PaddleFormers Model."
+    )
 
     # Choose collate function based on stage
     if model_args.stage == "VL-DPO":
@@ -439,15 +521,26 @@ def run_dpo(
         ref_model=ref_model,
         dpo_config=dpo_config,
         args=training_args,
-        train_dataset=(train_dataset if training_args.do_train and training_args.should_load_dataset else None),
-        eval_dataset=(eval_dataset if training_args.do_eval and training_args.should_load_dataset else None),
+        train_dataset=(
+            train_dataset
+            if training_args.do_train and training_args.should_load_dataset
+            else None
+        ),
+        eval_dataset=(
+            eval_dataset
+            if training_args.do_eval and training_args.should_load_dataset
+            else None
+        ),
         tokenizer=tokenizer,
         data_collator=data_collator,
         model_with_dpo_criterion=model_args.model_with_dpo_criterion,
         callbacks=callbacks,
     )
     trainable_parameters = [
-        p for p in model.parameters() if not p.stop_gradient or ("quantization_linear" in p.name and "w_1" in p.name)
+        p
+        for p in model.parameters()
+        if not p.stop_gradient
+        or ("quantization_linear" in p.name and "w_1" in p.name)
     ]
     trainer.set_optimizer_grouped_parameters(trainable_parameters)
 
@@ -455,7 +548,11 @@ def run_dpo(
         train_result = trainer.train(resume_from_checkpoint=last_checkpoint)
 
         if not training_args.autotuner_benchmark:
-            trainer.save_model(merge_tensor_parallel=training_args.tensor_model_parallel_size > 1, last_fc_to_hf=True)
+            trainer.save_model(
+                merge_tensor_parallel=training_args.tensor_model_parallel_size
+                > 1,
+                last_fc_to_hf=True,
+            )
             trainer.log_metrics("train", train_result.metrics)
             trainer.save_metrics("train", train_result.metrics)
             trainer.save_state()

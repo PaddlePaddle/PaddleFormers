@@ -23,7 +23,14 @@ import paddle
 
 # Direct import to avoid __init__.py triggering workflow.py which requires AutoTokenizer
 _MODULE_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "..", "..", "paddleformers", "cli", "train", "deepseek_v3_pretrain"
+    os.path.dirname(__file__),
+    "..",
+    "..",
+    "..",
+    "paddleformers",
+    "cli",
+    "train",
+    "deepseek_v3_pretrain",
 )
 _MODULE_DIR = os.path.abspath(_MODULE_DIR)
 
@@ -49,7 +56,9 @@ if _pkg_name not in sys.modules:
     sys.modules[_pkg_name] = _pkg_mod
 
 # Load the fp8_linear module directly
-_fp8_mod = _load_module("fp8_linear", os.path.join(_MODULE_DIR, "fp8_linear.py"))
+_fp8_mod = _load_module(
+    "fp8_linear", os.path.join(_MODULE_DIR, "fp8_linear.py")
+)
 
 original_linear = _fp8_mod.original_linear
 block_size = _fp8_mod.block_size
@@ -124,7 +133,9 @@ class TestRegisterScale(unittest.TestCase):
                 self._weight_attr = None
 
             def create_parameter(self, shape, attr, dtype, is_bias):
-                raise AssertionError("create_parameter should not be called for non-quantized weights")
+                raise AssertionError(
+                    "create_parameter should not be called for non-quantized weights"
+                )
 
         fake = FakeLinear()
         register_scale(fake)
@@ -183,7 +194,11 @@ class TestFP8LinearFunction(unittest.TestCase):
 
     def test_matmul_equivalent_shapes(self):
         """Test that matmul produces correct linear operation shapes."""
-        for in_features, out_features, batch_size in [(16, 32, 4), (64, 128, 2), (4, 8, 1)]:
+        for in_features, out_features, batch_size in [
+            (16, 32, 4),
+            (64, 128, 2),
+            (4, 8, 1),
+        ]:
             x = paddle.randn([batch_size, in_features])
             weight = paddle.randn([in_features, out_features])
             result = paddle.matmul(x, weight)

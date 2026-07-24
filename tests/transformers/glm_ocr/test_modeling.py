@@ -30,7 +30,10 @@ from paddleformers.transformers import (
 from tests.testing_utils import gpu_device_initializer
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
-from tests.transformers.test_modeling_common import ModelTesterMixin, floats_tensor
+from tests.transformers.test_modeling_common import (
+    ModelTesterMixin,
+    floats_tensor,
+)
 
 
 class GlmOcrModelTester:
@@ -111,7 +114,10 @@ class GlmOcrModelTester:
         self.vision_in_channels = vision_in_channels
 
     def get_config(self) -> GlmOcrConfig:
-        from paddleformers.transformers import GlmOcrTextConfig, GlmOcrVisionConfig
+        from paddleformers.transformers import (
+            GlmOcrTextConfig,
+            GlmOcrVisionConfig,
+        )
 
         # GlmOcrTextConfig accepts rope_theta directly as a parameter,
         # standardize_rope_params writes it to rope_parameters["rope_theta"]
@@ -179,7 +185,11 @@ class GlmOcrModelTester:
         #   merged tokens = (4/2) * (4/2) * 1 = 4 ✓
         #
         # pixel_values shape: [batch_size * 16, C, temporal_patch_size, patch_size, patch_size]
-        self.grid_thw = [1, 4, 4]  # t, h, w (for prepare_config_and_inputs_for_common)
+        self.grid_thw = [
+            1,
+            4,
+            4,
+        ]  # t, h, w (for prepare_config_and_inputs_for_common)
         t, h, w = self.grid_thw
         total_raw_patches = t * h * w  # = 16
         pixel_values = floats_tensor(
@@ -204,18 +214,24 @@ class GlmOcrModelTester:
         suffix = [200, 201, 202, 203, 204]
 
         ids_list = prefix + image_tokens + suffix
-        input_ids = paddle.to_tensor(ids_list, dtype="int64").expand([self.batch_size, -1])
+        input_ids = paddle.to_tensor(ids_list, dtype="int64").expand(
+            [self.batch_size, -1]
+        )
 
         # labels: mask image region and prefix with -100, only compute loss on suffix
         labels_list = ([-100] * (len(prefix) + self.num_image_tokens)) + suffix
-        labels = paddle.to_tensor(labels_list, dtype="int64").expand([self.batch_size, -1])
+        labels = paddle.to_tensor(labels_list, dtype="int64").expand(
+            [self.batch_size, -1]
+        )
 
         attention_mask = paddle.ones(input_ids.shape, dtype="int64")
 
         # image_grid_thw: [batch_size * num_images_per_sample, 3]
 
         t, h, w = self.grid_thw
-        image_grid_thw = paddle.to_tensor([[t, h, w]] * self.batch_size, dtype="int64")
+        image_grid_thw = paddle.to_tensor(
+            [[t, h, w]] * self.batch_size, dtype="int64"
+        )
 
         inputs_dict = {
             "input_ids": input_ids,
@@ -227,13 +243,20 @@ class GlmOcrModelTester:
         return config, inputs_dict
 
 
-class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
+class GlmOcrModelTest(
+    ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
+):
     """
     Model tester for `GlmOcrForConditionalGeneration`.
     """
 
     all_model_classes = (GlmOcrForConditionalGeneration,)
-    all_generative_model_classes = {GlmOcrForConditionalGeneration: {GlmOcrForConditionalGeneration, "glmocr"}}
+    all_generative_model_classes = {
+        GlmOcrForConditionalGeneration: {
+            GlmOcrForConditionalGeneration,
+            "glmocr",
+        }
+    }
     max_new_tokens = 3
 
     @gpu_device_initializer(log_prefix="GlmOcrModelTest")
@@ -256,12 +279,18 @@ class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
                 }
             )
         if config is not None:
-            for key in ["image_token_id", "video_start_token_id", "video_end_token_id"]:
+            for key in [
+                "image_token_id",
+                "video_start_token_id",
+                "video_end_token_id",
+            ]:
                 token_index = getattr(config, key, None)
                 if token_index is None and hasattr(self, "model_tester"):
                     token_index = getattr(self.model_tester, key, None)
                 if token_index is not None and token_index < config.vocab_size:
-                    logits_processor_kwargs["bad_words_ids"].append([token_index])
+                    logits_processor_kwargs["bad_words_ids"].append(
+                        [token_index]
+                    )
 
         return logits_processor_kwargs
 
@@ -276,7 +305,9 @@ class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
         return_dict_in_generate=False,
         use_cache=True,
     ):
-        logits_processor_kwargs = self._get_logits_processor_kwargs(do_sample=False, config=model.config)
+        logits_processor_kwargs = self._get_logits_processor_kwargs(
+            do_sample=False, config=model.config
+        )
         output_generate = model.generate(
             do_sample=False,
             num_beams=1,
@@ -306,7 +337,9 @@ class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
         return_dict_in_generate=False,
         use_cache=True,
     ):
-        logits_processor_kwargs = self._get_logits_processor_kwargs(do_sample=False, config=model.config)
+        logits_processor_kwargs = self._get_logits_processor_kwargs(
+            do_sample=False, config=model.config
+        )
         output_generate = model.generate(
             do_sample=False,
             max_new_tokens=self.max_new_tokens,
@@ -337,7 +370,9 @@ class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
         use_cache=True,
     ):
         paddle.seed(0)
-        logits_processor_kwargs = self._get_logits_processor_kwargs(do_sample=True, config=model.config)
+        logits_processor_kwargs = self._get_logits_processor_kwargs(
+            do_sample=True, config=model.config
+        )
         output_generate = model.generate(
             do_sample=True,
             num_beams=1,
@@ -357,7 +392,9 @@ class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
         return output_generate
 
     def prepare_config_and_inputs_for_generate(self, batch_size=2):
-        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+        config, inputs_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
         return config, inputs_dict
 
     # ------------------------------------------------------------------ #
@@ -366,7 +403,9 @@ class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
 
     def test_forward_pass(self):
         """Basic forward pass, verify logits shape is correct."""
-        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+        config, inputs_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
         for model_class in self.all_model_classes:
             model = model_class(config).eval()
             outputs = model(**inputs_dict)
@@ -378,7 +417,9 @@ class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
 
     def test_forward_with_labels(self):
         """When labels are provided, should return non-None loss."""
-        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+        config, inputs_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
         for model_class in self.all_model_classes:
             model = model_class(config).eval()
             outputs = model(**inputs_dict)
@@ -387,8 +428,14 @@ class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
 
     def test_forward_without_images(self):
         """Pure text input (no pixel_values / image_grid_thw) should not raise error."""
-        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
-        text_only = {k: v for k, v in inputs_dict.items() if k not in ("pixel_values", "image_grid_thw")}
+        config, inputs_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
+        text_only = {
+            k: v
+            for k, v in inputs_dict.items()
+            if k not in ("pixel_values", "image_grid_thw")
+        }
         # Replace image tokens with padding so shapes stay consistent
         input_ids = text_only["input_ids"].clone()
         image_tok = self.model_tester.image_token_id
@@ -408,7 +455,9 @@ class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
 
     def test_mismatching_num_image_tokens(self):
         """Should raise ValueError when pixel_values and image_grid_thw describe mismatched token counts."""
-        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+        config, inputs_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
         for model_class in self.all_model_classes:
             model = model_class(config).eval()
             _ = model(**inputs_dict)  # baseline: no error
@@ -429,35 +478,56 @@ class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
         for model_class in self.all_generative_model_classes:
             config, inputs_dict = self.prepare_config_and_inputs_for_generate()
             model = model_class(config).eval()
-            output_generate = self._greedy_generate(model=model, inputs_dict=inputs_dict)
+            output_generate = self._greedy_generate(
+                model=model, inputs_dict=inputs_dict
+            )
 
             if model.config.is_encoder_decoder:
-                self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + 1)
+                self.assertTrue(
+                    output_generate[0].shape[1] == self.max_new_tokens + 1
+                )
             else:
-                self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + inputs_dict["input_ids"].shape[1])
+                self.assertTrue(
+                    output_generate[0].shape[1]
+                    == self.max_new_tokens + inputs_dict["input_ids"].shape[1]
+                )
 
     def test_beam_search_generate(self):
         for model_class in self.all_generative_model_classes:
             config, inputs_dict = self.prepare_config_and_inputs_for_generate()
             model = model_class(config).eval()
             beam_kwargs, _ = self._get_beam_scorer_and_kwargs(1, 1)
-            output_generate = self._beam_search_generate(model=model, inputs_dict=inputs_dict, beam_kwargs=beam_kwargs)
+            output_generate = self._beam_search_generate(
+                model=model, inputs_dict=inputs_dict, beam_kwargs=beam_kwargs
+            )
 
             if model.config.is_encoder_decoder:
-                self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + 1)
+                self.assertTrue(
+                    output_generate[0].shape[1] == self.max_new_tokens + 1
+                )
             else:
-                self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + inputs_dict["input_ids"].shape[1])
+                self.assertTrue(
+                    output_generate[0].shape[1]
+                    == self.max_new_tokens + inputs_dict["input_ids"].shape[1]
+                )
 
     def test_sample_generate(self):
         for model_class in self.all_generative_model_classes:
             config, inputs_dict = self.prepare_config_and_inputs_for_generate()
             model = model_class(config).eval()
-            output_generate = self._sample_generate(model=model, inputs_dict=inputs_dict, num_return_sequences=1)
+            output_generate = self._sample_generate(
+                model=model, inputs_dict=inputs_dict, num_return_sequences=1
+            )
 
             if model.config.is_encoder_decoder:
-                self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + 1)
+                self.assertTrue(
+                    output_generate[0].shape[1] == self.max_new_tokens + 1
+                )
             else:
-                self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + inputs_dict["input_ids"].shape[1])
+                self.assertTrue(
+                    output_generate[0].shape[1]
+                    == self.max_new_tokens + inputs_dict["input_ids"].shape[1]
+                )
 
     # ------------------------------------------------------------------ #
     #  KV Cache                                                           #
@@ -465,8 +535,12 @@ class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
 
     def test_use_cache_consistency(self):
         """Logits with use_cache=True and use_cache=False should be consistent (prefill stage)."""
-        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
-        no_label_inputs = {k: v for k, v in inputs_dict.items() if k != "labels"}
+        config, inputs_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
+        no_label_inputs = {
+            k: v for k, v in inputs_dict.items() if k != "labels"
+        }
 
         for model_class in self.all_model_classes:
             model = model_class(config).eval()
@@ -485,8 +559,12 @@ class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
 
     def test_past_key_values_not_none_with_cache(self):
         """past_key_values should not be None when use_cache=True."""
-        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
-        no_label_inputs = {k: v for k, v in inputs_dict.items() if k != "labels"}
+        config, inputs_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
+        no_label_inputs = {
+            k: v for k, v in inputs_dict.items() if k != "labels"
+        }
 
         for model_class in self.all_model_classes:
             model = model_class(config).eval()
@@ -500,8 +578,12 @@ class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
 
     def test_rope_deltas_not_none_after_forward(self):
         """After forward pass, rope_deltas should be computed and cached to model.model.rope_deltas."""
-        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
-        no_label_inputs = {k: v for k, v in inputs_dict.items() if k != "labels"}
+        config, inputs_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
+        no_label_inputs = {
+            k: v for k, v in inputs_dict.items() if k != "labels"
+        }
 
         for model_class in self.all_model_classes:
             model = model_class(config).eval()
@@ -515,7 +597,9 @@ class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
 
     def test_prepare_inputs_for_generation_prefill(self):
         """In prefill stage (past_key_values=None), pixel_values should be preserved."""
-        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+        config, inputs_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
         model = GlmOcrForConditionalGeneration(config).eval()
 
         model_inputs = model.prepare_inputs_for_generation(
@@ -532,7 +616,9 @@ class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
         """In decode stage (past_key_values is not None), pixel_values should be cleared."""
         from paddleformers.transformers.cache_utils import DynamicCache
 
-        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+        config, inputs_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
         model = GlmOcrForConditionalGeneration(config).eval()
 
         dummy_cache = DynamicCache(config=config.text_config)
@@ -553,8 +639,12 @@ class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
 
     def test_return_dict_false(self):
         """When return_dict=False, should return a tuple with logits as the first element."""
-        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
-        no_label_inputs = {k: v for k, v in inputs_dict.items() if k != "labels"}
+        config, inputs_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
+        no_label_inputs = {
+            k: v for k, v in inputs_dict.items() if k != "labels"
+        }
 
         for model_class in self.all_model_classes:
             model = model_class(config).eval()
@@ -567,7 +657,9 @@ class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
     #  Skipped tests                                                      #
     # ------------------------------------------------------------------ #
 
-    @unittest.skip("Group beam search is not compatible with current GlmOcr implementation")
+    @unittest.skip(
+        "Group beam search is not compatible with current GlmOcr implementation"
+    )
     def test_group_beam_search_generate(self):
         pass
 
@@ -578,7 +670,9 @@ class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
     def test_resize_tokens_embeddings(self):
         pass
 
-    @unittest.skip("GlmOcr currently does not support flex checkpoint save and load")
+    @unittest.skip(
+        "GlmOcr currently does not support flex checkpoint save and load"
+    )
     def test_save_load_flex_checkpoint(self):
         pass
 
@@ -607,12 +701,14 @@ class GlmOcrIntegrationTest(unittest.TestCase):
             dtype="float32",
             load_checkpoint_format="flex_checkpoint",
         )
-        self.processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-glmocr")
-
-        image_path = (
-            "https://paddle-model-ecology.bj.bcebos.com/PPOCRVL/dataset/exam_paper_0829/part_0000/img_000040676.png"
+        self.processor = AutoProcessor.from_pretrained(
+            "PaddleFormers/tiny-random-glmocr"
         )
-        image = Image.open(BytesIO(requests.get(image_path).content)).convert("RGB")
+
+        image_path = "https://paddle-model-ecology.bj.bcebos.com/PPOCRVL/dataset/exam_paper_0829/part_0000/img_000040676.png"
+        image = Image.open(BytesIO(requests.get(image_path).content)).convert(
+            "RGB"
+        )
         self.messages = [
             {
                 "role": "user",
@@ -749,6 +845,8 @@ class GlmOcrIntegrationTest(unittest.TestCase):
             dtype="float32",
         )
         self.assertTrue(
-            paddle.allclose(EXPECTED_LOGITS_SLICE, logits[0, 0, :30], atol=5e-4, rtol=1e-5),
-            msg=f"logits slice mismatch. got={logits[0,0,:30].cpu().numpy().tolist()}",
+            paddle.allclose(
+                EXPECTED_LOGITS_SLICE, logits[0, 0, :30], atol=5e-4, rtol=1e-5
+            ),
+            msg=f"logits slice mismatch. got={logits[0, 0, :30].cpu().numpy().tolist()}",
         )

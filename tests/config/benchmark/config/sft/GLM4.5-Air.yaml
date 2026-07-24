@@ -12,13 +12,10 @@ mix_strategy: concat
 dataloader_shuffle: false
 dataloader_num_workers: 24
 prefetch_factor: 24
-
 pad_token_id: 151329
-
 ### model
 model_name_or_path: ./huggingface/GLM-4.5-Air
 _attn_implementation: flashmask
-
 ### finetuning
 # base
 stage: SFT
@@ -41,14 +38,11 @@ logging_dir: ./vdl_log
 output_dir: ./checkpoints
 disable_tqdm: true
 eval_accumulation_steps: 16
-
 # args
 router_aux_loss_coef: 0.0001
-
 # train
 warmup_steps: 20
 learning_rate: 1.0e-5
-
 # parallel
 tensor_model_parallel_size: 1
 sequence_parallel: false
@@ -58,12 +52,10 @@ pipeline_model_parallel_size: 4
 #virtual_pipeline_model_parallel_size: 12
 num_empty_layers_add_in_head: 0
 num_empty_layers_add_in_tail: 2
-
 # performance
 recompute_granularity: full
 recompute_method: block
 recompute_num_layers: 11
-
 moe_expert_fusion: true
 apply_rope_fusion: true
 fp32_residual_connection: false
@@ -80,18 +72,13 @@ overlap_p2p_comm: true
 variable_seq_lengths: true
 best_unbalanced_scheduler: true
 pp_release_grads: true
-
 # tp
-
 amp_master_grad: true
 bf16: true
 fp16_opt_level: O2
-
 save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint
 continue_training: true
-
 tensorwise_offload_optimizer: true
-
 skip_profile_timer: false
 moe_deep_gemm: false

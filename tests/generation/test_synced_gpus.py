@@ -21,7 +21,11 @@ import paddle
 
 from paddleformers.generation import GenerationConfig
 from paddleformers.trainer import PdArgumentParser, Trainer, TrainingArguments
-from paddleformers.transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+from paddleformers.transformers import (
+    AutoConfig,
+    AutoModelForCausalLM,
+    AutoTokenizer,
+)
 
 sys.path.append(str(Path(__file__).parent.parent.parent))
 from tests.transformers.test_modeling_common import ids_tensor
@@ -31,7 +35,10 @@ if __name__ == "__main__":
     model_config.fuse_rms_norm = False
     tokenizer = AutoTokenizer.from_pretrained("Paddleformers/tiny-random-llama")
     model = AutoModelForCausalLM.from_pretrained(
-        "Paddleformers/tiny-random-llama", config=model_config, convert_from_hf=False, load_checkpoint_format=""
+        "Paddleformers/tiny-random-llama",
+        config=model_config,
+        convert_from_hf=False,
+        load_checkpoint_format="",
     )
     model.config.eos_token_id = -1
     world_size = paddle.distributed.get_world_size()
@@ -51,14 +58,18 @@ if __name__ == "__main__":
         trainer._wrap_model(trainer.model_wrapped)
     model = trainer.model
     model.eval()
-    input_ids = ids_tensor([1, 5], vocab_size=model.config.vocab_size, dtype="int64")
+    input_ids = ids_tensor(
+        [1, 5], vocab_size=model.config.vocab_size, dtype="int64"
+    )
     attention_mask = paddle.ones_like(input_ids, dtype="bool")
     input_kwargs = {
         "input_ids": input_ids,
         "attention_mask": attention_mask,
         "synced_gpus": True,
     }
-    generation_config = GenerationConfig(max_length=10 + paddle.distributed.get_rank(), trunc_input=False)
+    generation_config = GenerationConfig(
+        max_length=10 + paddle.distributed.get_rank(), trunc_input=False
+    )
 
     def test_synced_gpus_sample():
         with paddle.no_grad():

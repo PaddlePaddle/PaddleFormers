@@ -46,7 +46,9 @@ class GeneratingArguments:
     )
     temperature: float = field(
         default=0.95,
-        metadata={"help": "The value used to modulate the next token probabilities."},
+        metadata={
+            "help": "The value used to modulate the next token probabilities."
+        },
     )
     top_p: float = field(
         default=0.7,
@@ -85,4 +87,7 @@ class GeneratingArguments:
         default=None,
         metadata={"help": "Relevant options for stream output"},
     )
-    enable_thinking: bool = field(default=False, metadata={"help": "Whether enable thinking when using VL model."})
+    enable_thinking: bool = field(
+        default=False,
+        metadata={"help": "Whether enable thinking when using VL model."},
+    )

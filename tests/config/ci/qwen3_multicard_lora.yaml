@@ -1,4 +1,3 @@
-
 # data
 train_dataset_type: erniekit
 eval_dataset_type: erniekit
@@ -6,21 +5,17 @@ train_dataset_path: ./data/sft/train.jsonl
 train_dataset_prob: "1.0"
 eval_dataset_path: ./data/sft/dev.jsonl
 eval_dataset_prob: "1.0"
-
 eval_iters: 10
-
 max_seq_len: 4096
 num_samples_each_epoch: 6000000
 packing: true
 mix_strategy: concat
-
 ### model
 model_name_or_path: ./checkpoints/qwen3-30b-a3b-sft
 gated_linear_unit: true
 _attn_implementation: flashmask
 lora: true
 lora_rank: 8
-
 ### finetuning
 # base
 stage: SFT
@@ -43,11 +38,9 @@ disable_tqdm: true
 eval_accumulation_steps: 1
 output_dir: ./checkpoints/qwen3-30b-a3b-lora
 continue_training: true
-
 # train
 warmup_steps: 10
 learning_rate: 1.0e-5
-
 # performance
 recompute_granularity: ""
 # apply_rope_fusion: true
@@ -55,7 +48,6 @@ moe_router_fusion: false
 moe_router_force_load_balancing: true
 # moe_expert_fusion: true
 moe_use_fusion_node: false
-
 sharding: stage1
 split_param: true
 tensor_model_parallel_size: 2
@@ -63,7 +55,6 @@ sequence_parallel: true
 pipeline_model_parallel_size: 2
 use_expert_parallel: true
 expert_model_parallel_size: 4
-
 optim: adamw
 bf16: true
 fp16_opt_level: O2
@@ -72,10 +63,8 @@ fuse_swiglu: true
 # fuse_linear: true
 # use_paddlefleet: true
 use_qk_norm: true
-
 # unified_checkpoint: false
 save_checkpoint_format: "flex_checkpoint"
 load_checkpoint_format: "flex_checkpoint"
-
 router_aux_loss_coef: 0.0
 moe_deep_gemm: false

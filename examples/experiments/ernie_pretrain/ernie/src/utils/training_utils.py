@@ -17,25 +17,29 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def reset_per_device_batch_size(global_batch_size, per_device_train_batch_size, dataset_world_size):
-    assert (
-        global_batch_size % dataset_world_size == 0
-    ), f"global_bsz={global_batch_size} not evenly divided by world_size={dataset_world_size}"
+def reset_per_device_batch_size(
+    global_batch_size, per_device_train_batch_size, dataset_world_size
+):
+    assert global_batch_size % dataset_world_size == 0, (
+        f"global_bsz={global_batch_size} not evenly divided by world_size={dataset_world_size}"
+    )
     batch_per_device = global_batch_size // dataset_world_size
     if batch_per_device < per_device_train_batch_size:
         gradient_accumulation_steps = 1
         per_device_train_batch_size = batch_per_device
         logger.info(
-            f"reset `per_device_train_batch_size` to {per_device_train_batch_size}, global_batch_size={global_batch_size }, "
-            f"dp_worldsize={ dataset_world_size}, accumulate_steps={gradient_accumulation_steps} "
+            f"reset `per_device_train_batch_size` to {per_device_train_batch_size}, global_batch_size={global_batch_size}, "
+            f"dp_worldsize={dataset_world_size}, accumulate_steps={gradient_accumulation_steps} "
         )
     else:
-        assert (
-            batch_per_device % per_device_train_batch_size == 0
-        ), f"global_bsz={global_batch_size} not evenly divided by world_size={dataset_world_size}, batch_per_device={batch_per_device}"
-        gradient_accumulation_steps = batch_per_device // per_device_train_batch_size
+        assert batch_per_device % per_device_train_batch_size == 0, (
+            f"global_bsz={global_batch_size} not evenly divided by world_size={dataset_world_size}, batch_per_device={batch_per_device}"
+        )
+        gradient_accumulation_steps = (
+            batch_per_device // per_device_train_batch_size
+        )
         logger.info(
-            f"per_device_train_batch_size={per_device_train_batch_size}, global_batch_size={global_batch_size }, "
+            f"per_device_train_batch_size={per_device_train_batch_size}, global_batch_size={global_batch_size}, "
             f"dp_worldsize={dataset_world_size}, accumulate_steps={gradient_accumulation_steps} "
         )
     return per_device_train_batch_size, gradient_accumulation_steps

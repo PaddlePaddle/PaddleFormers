@@ -20,7 +20,14 @@ import unittest
 
 # Direct import to avoid __init__.py triggering workflow.py which requires AutoTokenizer
 _MODULE_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "..", "..", "paddleformers", "cli", "train", "deepseek_v3_pretrain"
+    os.path.dirname(__file__),
+    "..",
+    "..",
+    "..",
+    "paddleformers",
+    "cli",
+    "train",
+    "deepseek_v3_pretrain",
 )
 _MODULE_DIR = os.path.abspath(_MODULE_DIR)
 
@@ -63,7 +70,9 @@ if "transformers.tokenization_utils_tokenizers" not in sys.modules:
     sys.modules["transformers.tokenization_utils_tokenizers"] = _mock_mod
 
 # Load the load_hf_ckpt module directly
-_load_mod = _load_module("load_hf_ckpt", os.path.join(_UTILS_DIR, "load_hf_ckpt.py"))
+_load_mod = _load_module(
+    "load_hf_ckpt", os.path.join(_UTILS_DIR, "load_hf_ckpt.py")
+)
 
 _EXPERT_W1_RE = _load_mod._EXPERT_W1_RE
 _EXPERT_W1_RE_v2 = _load_mod._EXPERT_W1_RE_v2
@@ -86,11 +95,15 @@ class TestPaddleNameToHfNamesDSV2(unittest.TestCase):
     """Test paddle_name_to_hf_names_ds_v2 function."""
 
     def test_embed_tokens(self):
-        result = paddle_name_to_hf_names_ds_v2("_layers.deepseek_v2.embed_tokens.weight")
+        result = paddle_name_to_hf_names_ds_v2(
+            "_layers.deepseek_v2.embed_tokens.weight"
+        )
         self.assertEqual(result, ["model.embed_tokens.weight"])
 
     def test_norm_weight(self):
-        result = paddle_name_to_hf_names_ds_v2("_layers.deepseek_v2.norm.weight")
+        result = paddle_name_to_hf_names_ds_v2(
+            "_layers.deepseek_v2.norm.weight"
+        )
         self.assertEqual(result, ["model.norm.weight"])
 
     def test_lm_head(self):
@@ -101,15 +114,21 @@ class TestPaddleNameToHfNamesDSV2(unittest.TestCase):
         """Test unmatched name returns via fallback path."""
         # Names that don't match _LAYER_RE_v2 trigger a logger.warning bug,
         # so test with a name that matches but goes to default return
-        result = paddle_name_to_hf_names_ds_v2("_layers.deepseek_v2.layers.3.self_attn.o_proj.weight")
+        result = paddle_name_to_hf_names_ds_v2(
+            "_layers.deepseek_v2.layers.3.self_attn.o_proj.weight"
+        )
         self.assertEqual(result, ["model.layers.3.self_attn.o_proj.weight"])
 
     def test_custom_name_map(self):
-        result = paddle_name_to_hf_names_ds_v2("_layers.deepseek_v2.layers.3.self_attn.input_layernorm.weight")
+        result = paddle_name_to_hf_names_ds_v2(
+            "_layers.deepseek_v2.layers.3.self_attn.input_layernorm.weight"
+        )
         self.assertEqual(result, ["model.layers.3.input_layernorm.weight"])
 
     def test_expert_w1(self):
-        result = paddle_name_to_hf_names_ds_v2("_layers.deepseek_v2.layers.5.mlp.experts.2.w1.weight")
+        result = paddle_name_to_hf_names_ds_v2(
+            "_layers.deepseek_v2.layers.5.mlp.experts.2.w1.weight"
+        )
         self.assertEqual(
             result,
             [
@@ -119,20 +138,32 @@ class TestPaddleNameToHfNamesDSV2(unittest.TestCase):
         )
 
     def test_expert_w2(self):
-        result = paddle_name_to_hf_names_ds_v2("_layers.deepseek_v2.layers.5.mlp.experts.2.w2.weight")
-        self.assertEqual(result, ["model.layers.5.mlp.experts.2.down_proj.weight"])
+        result = paddle_name_to_hf_names_ds_v2(
+            "_layers.deepseek_v2.layers.5.mlp.experts.2.w2.weight"
+        )
+        self.assertEqual(
+            result, ["model.layers.5.mlp.experts.2.down_proj.weight"]
+        )
 
     def test_expert_gate_up_fused(self):
-        result = paddle_name_to_hf_names_ds_v2("_layers.deepseek_v2.layers.5.mlp.experts.3.gate_up_fused_proj.weight")
+        result = paddle_name_to_hf_names_ds_v2(
+            "_layers.deepseek_v2.layers.5.mlp.experts.3.gate_up_fused_proj.weight"
+        )
         self.assertEqual(len(result), 2)
 
     def test_shared_expert_w1(self):
-        result = paddle_name_to_hf_names_ds_v2("_layers.deepseek_v2.layers.5.mlp.shared_experts.w1.weight")
+        result = paddle_name_to_hf_names_ds_v2(
+            "_layers.deepseek_v2.layers.5.mlp.shared_experts.w1.weight"
+        )
         self.assertEqual(len(result), 2)
 
     def test_shared_expert_w2(self):
-        result = paddle_name_to_hf_names_ds_v2("_layers.deepseek_v2.layers.5.mlp.shared_experts.w2.weight")
-        self.assertEqual(result, ["model.layers.5.mlp.shared_experts.down_proj.weight"])
+        result = paddle_name_to_hf_names_ds_v2(
+            "_layers.deepseek_v2.layers.5.mlp.shared_experts.w2.weight"
+        )
+        self.assertEqual(
+            result, ["model.layers.5.mlp.shared_experts.down_proj.weight"]
+        )
 
     def test_shared_expert_gate_up_fused(self):
         result = paddle_name_to_hf_names_ds_v2(
@@ -145,11 +176,15 @@ class TestPaddleNameToHfNames(unittest.TestCase):
     """Test paddle_name_to_hf_names function."""
 
     def test_embed_tokens_local_shared(self):
-        result = paddle_name_to_hf_names("_layers.local_shared_layers.DeepseekV2_shared_weight.embed_tokens.weight")
+        result = paddle_name_to_hf_names(
+            "_layers.local_shared_layers.DeepseekV2_shared_weight.embed_tokens.weight"
+        )
         self.assertEqual(result, ["model.embed_tokens.weight"])
 
     def test_embed_tokens_deepseek_v2(self):
-        result = paddle_name_to_hf_names("_layers.deepseek_v2.embed_tokens.weight")
+        result = paddle_name_to_hf_names(
+            "_layers.deepseek_v2.embed_tokens.weight"
+        )
         self.assertEqual(result, ["model.embed_tokens.weight"])
 
     def test_unmatched_name(self):
@@ -198,18 +233,30 @@ class TestHandleExpertWeights(unittest.TestCase):
     """Test _handle_expert_weights function."""
 
     def test_w1_weight(self):
-        result = _handle_expert_weights("model.layers.3", "mlp.experts.5.w1.weight")
+        result = _handle_expert_weights(
+            "model.layers.3", "mlp.experts.5.w1.weight"
+        )
         self.assertEqual(len(result), 2)
-        self.assertEqual(result[0], "model.layers.3.mlp.experts.5.gate_proj.weight")
-        self.assertEqual(result[1], "model.layers.3.mlp.experts.5.up_proj.weight")
+        self.assertEqual(
+            result[0], "model.layers.3.mlp.experts.5.gate_proj.weight"
+        )
+        self.assertEqual(
+            result[1], "model.layers.3.mlp.experts.5.up_proj.weight"
+        )
 
     def test_w2_weight(self):
-        result = _handle_expert_weights("model.layers.3", "mlp.experts.5.w2.weight")
+        result = _handle_expert_weights(
+            "model.layers.3", "mlp.experts.5.w2.weight"
+        )
         self.assertEqual(len(result), 1)
-        self.assertEqual(result[0], "model.layers.3.mlp.experts.5.down_proj.weight")
+        self.assertEqual(
+            result[0], "model.layers.3.mlp.experts.5.down_proj.weight"
+        )
 
     def test_non_expert_weight(self):
-        result = _handle_expert_weights("model.layers.3", "self_attn.q_proj.weight")
+        result = _handle_expert_weights(
+            "model.layers.3", "self_attn.q_proj.weight"
+        )
         self.assertIsNone(result)
 
 
@@ -217,16 +264,22 @@ class TestHandleSharedExpertWeights(unittest.TestCase):
     """Test _handle_shared_expert_weights function."""
 
     def test_w1_weight(self):
-        result = _handle_shared_expert_weights("model.layers.3", "mlp.shared_experts.w1.weight")
+        result = _handle_shared_expert_weights(
+            "model.layers.3", "mlp.shared_experts.w1.weight"
+        )
         self.assertEqual(len(result), 2)
 
     def test_w2_weight(self):
-        result = _handle_shared_expert_weights("model.layers.3", "mlp.shared_experts.w2.weight")
+        result = _handle_shared_expert_weights(
+            "model.layers.3", "mlp.shared_experts.w2.weight"
+        )
         self.assertEqual(len(result), 1)
         self.assertIn("down_proj.weight", result[0])
 
     def test_non_shared_expert_weight(self):
-        result = _handle_shared_expert_weights("model.layers.3", "self_attn.q_proj.weight")
+        result = _handle_shared_expert_weights(
+            "model.layers.3", "self_attn.q_proj.weight"
+        )
         self.assertIsNone(result)
 
 
@@ -245,7 +298,9 @@ class TestHandleMlpWeights(unittest.TestCase):
         self.assertEqual(result[0], "model.layers.3.mlp.down_proj.weight")
 
     def test_non_mlp_weight(self):
-        result = _handle_mlp_weights("model.layers.3", "self_attn.q_proj.weight")
+        result = _handle_mlp_weights(
+            "model.layers.3", "self_attn.q_proj.weight"
+        )
         self.assertIsNone(result)
 
 
@@ -332,11 +387,15 @@ class TestRegexPatterns(unittest.TestCase):
         self.assertEqual(m.group(1), "5")
 
     def test_share_expert_w1_re_v2(self):
-        m = _SHARE_EXPERT_W1_RE_v2.match("mlp.shared_experts.gate_up_fused_proj.weight")
+        m = _SHARE_EXPERT_W1_RE_v2.match(
+            "mlp.shared_experts.gate_up_fused_proj.weight"
+        )
         self.assertIsNotNone(m)
 
     def test_layer_re_v2(self):
-        m = _LAYER_RE_v2.match("_layers.deepseek_v2.layers.5.self_attn.q_proj.weight")
+        m = _LAYER_RE_v2.match(
+            "_layers.deepseek_v2.layers.5.self_attn.q_proj.weight"
+        )
         self.assertIsNotNone(m)
         self.assertEqual(m.group(1), "5")
         self.assertEqual(m.group(2), "self_attn.q_proj.weight")

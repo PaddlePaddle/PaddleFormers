@@ -26,9 +26,9 @@ from paddle.distributed import fleet
 from paddle.distributed.parallel import sync_params_buffers
 
 from ...utils.log import logger
-from ...utils.nested import nested_broadcast_tensor_with_empty  # noqa: F401
 from ...utils.nested import (
     nested_broadcast_tensor,
+    nested_broadcast_tensor_with_empty,  # noqa: F401
     nested_empty_tensor,
     nested_reduce_tensor,
 )
@@ -43,13 +43,19 @@ __all__ = [
 ]
 
 
-def distributed_concat(tensor: Any, num_total_examples: Optional[int] = None) -> Any:
+def distributed_concat(
+    tensor: Any, num_total_examples: Optional[int] = None
+) -> Any:
     try:
         if isinstance(tensor, (tuple, list)):
-            return type(tensor)(distributed_concat(t, num_total_examples) for t in tensor)
+            return type(tensor)(
+                distributed_concat(t, num_total_examples) for t in tensor
+            )
         output_tensors = []
         dist.all_gather(output_tensors, tensor)
-        output_tensors = [t if len(t.shape) > 0 else t.reshape_([-1]) for t in output_tensors]
+        output_tensors = [
+            t if len(t.shape) > 0 else t.reshape_([-1]) for t in output_tensors
+        ]
         concat = paddle.cat(output_tensors, axis=0)
 
         # truncate the dummy elements added by SequentialDistributedSampler
@@ -67,9 +73,10 @@ def paddle_pad_and_concatenate(tensor1, tensor2, padding_index=-100):
 
     # raise ValueError("Error")
     # Let's figure out the new shape
-    new_shape = (tensor1.shape[0] + tensor2.shape[0], max(tensor1.shape[1], tensor2.shape[1])) + tuple(
-        tensor1.shape[2:]
-    )
+    new_shape = (
+        tensor1.shape[0] + tensor2.shape[0],
+        max(tensor1.shape[1], tensor2.shape[1]),
+    ) + tuple(tensor1.shape[2:])
 
     # Now let's fill the result tensor
     # result = tensor1.new_full(new_shape, padding_index)
@@ -86,7 +93,10 @@ def numpy_pad_and_concatenate(array1, array2, padding_index=-100):
         return np.concatenate((array1, array2), axis=0)
 
     # Let's figure out the new shape
-    new_shape = (array1.shape[0] + array2.shape[0], max(array1.shape[1], array2.shape[1])) + array1.shape[2:]
+    new_shape = (
+        array1.shape[0] + array2.shape[0],
+        max(array1.shape[1], array2.shape[1]),
+    ) + array1.shape[2:]
 
     # Now let's fill the result tensor
     result = np.full_like(array1, padding_index, shape=new_shape)
@@ -100,17 +110,26 @@ def nested_concat(tensors, new_tensors, padding_index=-100):
     Concat the `new_tensors` to `tensors` on the first dim and pad them on the second if needed. Works for tensors or
     nested list/tuples of tensors.
     """
-    assert type(tensors) == type(
-        new_tensors
-    ), f"Expected `tensors` and `new_tensors` to have the same type but found {type(tensors)} and {type(new_tensors)}."
+    assert type(tensors) == type(new_tensors), (
+        f"Expected `tensors` and `new_tensors` to have the same type but found {type(tensors)} and {type(new_tensors)}."
+    )
     if isinstance(tensors, (list, tuple)):
-        return type(tensors)(nested_concat(t, n, padding_index=padding_index) for t, n in zip(tensors, new_tensors))
+        return type(tensors)(
+            nested_concat(t, n, padding_index=padding_index)
+            for t, n in zip(tensors, new_tensors)
+        )
     elif isinstance(tensors, paddle.Tensor):
-        return paddle_pad_and_concatenate(tensors, new_tensors, padding_index=padding_index)
+        return paddle_pad_and_concatenate(
+            tensors, new_tensors, padding_index=padding_index
+        )
     elif isinstance(tensors, np.ndarray):
-        return numpy_pad_and_concatenate(tensors, new_tensors, padding_index=padding_index)
+        return numpy_pad_and_concatenate(
+            tensors, new_tensors, padding_index=padding_index
+        )
     else:
-        raise TypeError(f"Unsupported type for concatenation: got {type(tensors)}")
+        raise TypeError(
+            f"Unsupported type for concatenation: got {type(tensors)}"
+        )
 
 
 def nested_detach(tensors):
@@ -265,12 +284,16 @@ def broadcast_dp_optimizer(state_dict):
     if process_rank != src_rank:
         state_dict = nested_empty_tensor(fake_state_dict)
 
-    state_dict = nested_broadcast_tensor(state_dict, src=src_rank, group=dp_group)
+    state_dict = nested_broadcast_tensor(
+        state_dict, src=src_rank, group=dp_group
+    )
 
     return state_dict
 
 
-def broadcast_moe_optimizer(state_dict, model_state_dict=None, broadcast_dp=True):
+def broadcast_moe_optimizer(
+    state_dict, model_state_dict=None, broadcast_dp=True
+):
     try:
         hcg = fleet.get_hybrid_communicate_group()
         dp_group = hcg.get_data_parallel_group()
@@ -292,7 +315,9 @@ def broadcast_moe_optimizer(state_dict, model_state_dict=None, broadcast_dp=True
                 sync_vname.append(v.name)
 
         filter_opt_state_dict = {"master_weights": {}}
-        filter_opt_state_dict["LR_Scheduler"] = opt_state_dict.get("LR_Scheduler", {})
+        filter_opt_state_dict["LR_Scheduler"] = opt_state_dict.get(
+            "LR_Scheduler", {}
+        )
         for op_k, op_v in opt_state_dict.items():
             if op_k not in ["master_weights", "LR_Scheduler"]:
                 for sync_v in sync_vname:
@@ -310,7 +335,11 @@ def broadcast_moe_optimizer(state_dict, model_state_dict=None, broadcast_dp=True
         # boardcast_keys
         base_state_dict = {"master_weights": {}}
         buf = [
-            {i: j.shape for i, j in state_dict.items() if i not in ["master_weights", "LR_Scheduler"]},
+            {
+                i: j.shape
+                for i, j in state_dict.items()
+                if i not in ["master_weights", "LR_Scheduler"]
+            },
             {i: j.shape for i, j in state_dict["master_weights"].items()},
             {"LR_Scheduler": state_dict.get("LR_Scheduler", {})},
         ]
@@ -325,16 +354,24 @@ def broadcast_moe_optimizer(state_dict, model_state_dict=None, broadcast_dp=True
             logger.info(f"broadcast moe optimizer {k} from {src_rank}")
             base_state_dict[k] = v.cpu()
         for k, s in buf[1].items():
-            v = state_dict["master_weights"].get(k, paddle.zeros(s, "float32")).cuda()
+            v = (
+                state_dict["master_weights"]
+                .get(k, paddle.zeros(s, "float32"))
+                .cuda()
+            )
             v.name = k
             dist.broadcast(v, src=src_rank, group=dp_group)
-            logger.info(f"broadcast moe optimizer-master_weights {k} from {src_rank}")
+            logger.info(
+                f"broadcast moe optimizer-master_weights {k} from {src_rank}"
+            )
             base_state_dict["master_weights"][k] = v.cpu()
         base_state_dict.update(buf[2])
         return base_state_dict
 
     if broadcast_dp:
-        filter_opt_state_dict = _filter_sync_optimizer_state(model_state_dict, state_dict)
+        filter_opt_state_dict = _filter_sync_optimizer_state(
+            model_state_dict, state_dict
+        )
         base_state_dict = broadcast_dp_optimizer(filter_opt_state_dict)
     else:
         base_state_dict = _broadcast_moe_optimizer_state(state_dict)
@@ -356,7 +393,9 @@ def broadcast_dataset_rank0_model(model):
     if paddle.distributed.get_world_size() <= 1:
         return
 
-    logger.info("Start broadcast model in sharding group or data parallel group.")
+    logger.info(
+        "Start broadcast model in sharding group or data parallel group."
+    )
     hcg = fleet.get_hybrid_communicate_group()
     sharding_group = hcg.get_sharding_parallel_group()
     dp_group = hcg.get_data_parallel_group()

@@ -13,23 +13,21 @@
 # limitations under the License.
 
 from dataclasses import dataclass
-from typing import List
 
 
 @dataclass
 class BaseGroundingPlugin:
-    def normalize_bbox(self, bbox: List[float]) -> List[int]:
+    def normalize_bbox(self, bbox: list[float]) -> list[int]:
         return [int(coord) for coord in bbox]
 
     def format_ref_object(self, obj_name: str) -> str:
         return f"<|object_ref_start|>{obj_name}<|object_ref_end|>"
 
-    def format_bbox(self, bbox: List[float]) -> str:
+    def format_bbox(self, bbox: list[float]) -> str:
         normalized = self.normalize_bbox(bbox)
         return f"<|box_start|>({normalized[0]},{normalized[1]}),({normalized[2]},{normalized[3]})<|box_end|>"
 
     def process_messages(self, messages, objects):
-
         ref_objects = objects.get("ref", [])
         bboxes = objects.get("bbox", [])
 
@@ -44,9 +42,13 @@ class BaseGroundingPlugin:
             current_bboxes = bboxes[bbox_idx : bbox_idx + bbox_count]
 
             for ref in current_refs:
-                message["content"] = message["content"].replace("<ref-object>", self.format_ref_object(ref), 1)
+                message["content"] = message["content"].replace(
+                    "<ref-object>", self.format_ref_object(ref), 1
+                )
             for bbox in current_bboxes:
-                message["content"] = message["content"].replace("<bbox>", self.format_bbox(bbox), 1)
+                message["content"] = message["content"].replace(
+                    "<bbox>", self.format_bbox(bbox), 1
+                )
 
             ref_idx += ref_count
             bbox_idx += bbox_count

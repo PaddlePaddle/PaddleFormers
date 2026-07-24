@@ -24,8 +24,12 @@ def memory_info():
     def _to_giga_bytes(nbytes):
         return nbytes / (1024 * 1024 * 1024)
 
-    max_memory_allocated = _to_giga_bytes(paddle.device.cuda.max_memory_allocated())
-    max_memory_reserved = _to_giga_bytes(paddle.device.cuda.max_memory_reserved())
+    max_memory_allocated = _to_giga_bytes(
+        paddle.device.cuda.max_memory_allocated()
+    )
+    max_memory_reserved = _to_giga_bytes(
+        paddle.device.cuda.max_memory_reserved()
+    )
     memory_allocated = _to_giga_bytes(paddle.device.cuda.memory_allocated())
     memory_reserved = _to_giga_bytes(paddle.device.cuda.memory_reserved())
     return f"memory_allocated={memory_allocated:.3f} GB, memory_reserved={memory_reserved:.3f}; max_memory_allocated={max_memory_allocated:.3f} GB, max_memory_reserved={max_memory_reserved:.3f} GB"
@@ -35,20 +39,23 @@ def _forward_pre_hook(layer, inputs):
     global _DEBUG_INFO
     if _DEBUG_INFO is not None:
         if _DEBUG_INFO == "memory":
-            print(f"++ [Enter {layer.__class__.__name__} forward] {memory_info()}")
+            print(
+                f"++ [Enter {layer.__class__.__name__} forward] {memory_info()}"
+            )
         else:
             print(f"++ [Enter {layer.__class__.__name__} forward] ")
 
     if _PROFILER_ENABLED:
         paddle.base.core.nvprof_nvtx_push(layer.__class__.__name__ + "_fwd")
-    return None
 
 
 def _forward_post_hook(layer, inputs, outputs):
     global _DEBUG_INFO
     if _DEBUG_INFO is not None:
         if _DEBUG_INFO == "memory":
-            print(f"-- [Leave {layer.__class__.__name__} forward] {memory_info()}")
+            print(
+                f"-- [Leave {layer.__class__.__name__} forward] {memory_info()}"
+            )
         else:
             print(f"-- [Leave {layer.__class__.__name__} forward] ")
 
@@ -78,13 +85,17 @@ def register_profile_hook(model, debug=None):
         _register_hook_recursively(model, _forward_pre_hook, _forward_post_hook)
     elif isinstance(model, list):
         for layer in model:
-            _register_hook_recursively(layer, _forward_pre_hook, _forward_post_hook)
+            _register_hook_recursively(
+                layer, _forward_pre_hook, _forward_post_hook
+            )
 
 
-def switch_profile(iter_id, start, end, event_name=None, enable_layerwise_event=False):
+def switch_profile(
+    iter_id, start, end, event_name=None, enable_layerwise_event=False
+):
     global _PROFILER_ENABLED
     if event_name is None:
-        event_name = "iter_{}".format(iter_id)
+        event_name = f"iter_{iter_id}"
     if iter_id == start:
         paddle.device.cuda.synchronize()
         paddle.base.core.nvprof_start()

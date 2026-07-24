@@ -20,11 +20,11 @@ import json
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional, Union
+from typing import Optional
 
 from typing_extensions import override
 
-SLOTS = list[Union[str, set[str], dict[str, str]]]
+SLOTS = list[str | set[str] | dict[str, str]]
 
 from .tool_utils import FunctionCall, get_tool_utils
 
@@ -39,7 +39,7 @@ class Formatter(ABC):
         r"""Forms a list of slots according to the inputs to encode."""
         ...
 
-    def extract(self, content: str) -> Union[str, list["FunctionCall"]]:
+    def extract(self, content: str) -> str | list["FunctionCall"]:
         r"""Extract a list of tuples from the response message if using tools.
 
         Each tuple consists of function name and function arguments.
@@ -56,7 +56,9 @@ class EmptyFormatter(Formatter):
                 has_placeholder = True
 
         if has_placeholder:
-            raise ValueError("Empty formatter should not contain any placeholder.")
+            raise ValueError(
+                "Empty formatter should not contain any placeholder."
+            )
 
     @override
     def apply(self, **kwargs) -> SLOTS:
@@ -72,7 +74,9 @@ class StringFormatter(Formatter):
                 has_placeholder = True
 
         if not has_placeholder:
-            raise ValueError("A placeholder is required in the string formatter.")
+            raise ValueError(
+                "A placeholder is required in the string formatter."
+            )
 
     @override
     def apply(self, **kwargs) -> SLOTS:
@@ -88,7 +92,9 @@ class StringFormatter(Formatter):
             elif isinstance(slot, (dict, set)):
                 elements.append(slot)
             else:
-                raise RuntimeError(f"Input must be string, set[str] or dict[str, str], got {type(slot)}.")
+                raise RuntimeError(
+                    f"Input must be string, set[str] or dict[str, str], got {type(slot)}."
+                )
 
         return elements
 
@@ -104,7 +110,10 @@ class FunctionFormatter(StringFormatter):
         content: str = kwargs.pop("content")
         thought_words, thought = kwargs.pop("thought_words", None), None
         if thought_words and len(thought_words) == 2 and len(content) > 0:
-            regex = re.compile(rf"{re.escape(thought_words[0])}(.*?){re.escape(thought_words[1])}", re.DOTALL)
+            regex = re.compile(
+                rf"{re.escape(thought_words[0])}(.*?){re.escape(thought_words[1])}",
+                re.DOTALL,
+            )
             thought = re.search(regex, content)
 
         if thought:
@@ -125,7 +134,9 @@ class FunctionFormatter(StringFormatter):
                 functions.append(FunctionCall(tool_call["name"], arguments))
 
         except json.JSONDecodeError:
-            raise RuntimeError(f"Invalid JSON format in function message: {str([content])}.")  # flat string
+            raise RuntimeError(
+                f"Invalid JSON format in function message: {[content]!s}."
+            )  # flat string
 
         function_str = self.tool_utils.function_formatter(functions)
         if thought:
@@ -144,9 +155,13 @@ class ToolFormatter(Formatter):
         content = kwargs.pop("content")
         try:
             tools = json.loads(content)
-            return [self.tool_utils.tool_formatter(tools) if len(tools) != 0 else ""]
+            return [
+                self.tool_utils.tool_formatter(tools) if len(tools) != 0 else ""
+            ]
         except json.JSONDecodeError:
-            raise RuntimeError(f"Invalid JSON format in tool description: {str([content])}.")  # flat string
+            raise RuntimeError(
+                f"Invalid JSON format in tool description: {[content]!s}."
+            )  # flat string
 
 
 @dataclass
@@ -160,13 +175,24 @@ class ThinkingFormatter(StringFormatter):
         reasoning_result = []
         thought_words, thought = kwargs.pop("thought_words", None), None
         if thought_words and len(thought_words) == 2 and len(content) > 0:
-            regex = re.compile(rf"{re.escape(thought_words[0])}(.*?){re.escape(thought_words[1])}", re.DOTALL)
+            regex = re.compile(
+                rf"{re.escape(thought_words[0])}(.*?){re.escape(thought_words[1])}",
+                re.DOTALL,
+            )
             thought = re.search(regex, content)
 
         if thought:
             content = content.replace(thought.group(0), "")
-            reasoning_content = thought.group(0).split("</think>")[0].rstrip("\n").split("<think>")[-1].lstrip("\n")
-            reasoning_result = ["<think>\n" + reasoning_content.strip("\n") + "\n</think>\n"]
+            reasoning_content = (
+                thought.group(0)
+                .split("</think>")[0]
+                .rstrip("\n")
+                .split("<think>")[-1]
+                .lstrip("\n")
+            )
+            reasoning_result = [
+                "<think>\n" + reasoning_content.strip("\n") + "\n</think>\n"
+            ]
 
         if content:
             return reasoning_result + super().apply(content=content)

@@ -30,7 +30,9 @@ class TestMoEAOAConfigParams(unittest.TestCase):
     """Tests for MoEAOAConfigParams dataclass."""
 
     def test_default_values(self):
-        from paddleformers.transformers.aoa_config_base import MoEAOAConfigParams
+        from paddleformers.transformers.aoa_config_base import (
+            MoEAOAConfigParams,
+        )
 
         params = MoEAOAConfigParams()
         self.assertEqual(params.num_hidden_layers, 0)
@@ -53,7 +55,9 @@ class TestMoEAOAConfigParams(unittest.TestCase):
         self.assertEqual(params.extra_statements, [])
 
     def test_custom_values(self):
-        from paddleformers.transformers.aoa_config_base import MoEAOAConfigParams
+        from paddleformers.transformers.aoa_config_base import (
+            MoEAOAConfigParams,
+        )
 
         params = MoEAOAConfigParams(
             num_hidden_layers=32,
@@ -87,9 +91,13 @@ class TestMoEAOAConfigParams(unittest.TestCase):
         self.assertFalse(params.has_shared_experts)
 
     def test_extra_statements(self):
-        from paddleformers.transformers.aoa_config_base import MoEAOAConfigParams
+        from paddleformers.transformers.aoa_config_base import (
+            MoEAOAConfigParams,
+        )
 
-        params = MoEAOAConfigParams(extra_statements=["custom.stmt1", "custom.stmt2"])
+        params = MoEAOAConfigParams(
+            extra_statements=["custom.stmt1", "custom.stmt2"]
+        )
         self.assertEqual(len(params.extra_statements), 2)
 
 
@@ -106,7 +114,10 @@ class TestMoEAOAConfigGeneratorBasicWeights(unittest.TestCase):
         stmts = MoEAOAConfigGenerator._get_basic_weight_statements(params)
         self.assertEqual(len(stmts), 3)
         self.assertIn("model.norm.weight -> model.norm.weight", stmts[0])
-        self.assertIn("model.embed_tokens.weight -> model.embedding.embed_tokens.weight", stmts[1])
+        self.assertIn(
+            "model.embed_tokens.weight -> model.embedding.embed_tokens.weight",
+            stmts[1],
+        )
         self.assertIn("lm_head.weight -> model.lm_head.weight", stmts[2])
 
     def test_get_basic_weight_statements_tied(self):
@@ -118,7 +129,9 @@ class TestMoEAOAConfigGeneratorBasicWeights(unittest.TestCase):
         params = MoEAOAConfigParams(tie_word_embeddings=True)
         stmts = MoEAOAConfigGenerator._get_basic_weight_statements(params)
         self.assertEqual(len(stmts), 3)
-        self.assertIn("model.embed_tokens.weight -> model.lm_head.weight", stmts[2])
+        self.assertIn(
+            "model.embed_tokens.weight -> model.lm_head.weight", stmts[2]
+        )
 
     def test_get_basic_weight_statements_custom_prefix(self):
         from paddleformers.transformers.aoa_config_base import (
@@ -192,7 +205,9 @@ class TestMoEAOAConfigGeneratorAttention(unittest.TestCase):
             num_key_value_heads=8,
             attention_bias=False,
         )
-        stmts = MoEAOAConfigGenerator._get_attention_statements(params, 0, "model.layers.0", "model.layers.0")
+        stmts = MoEAOAConfigGenerator._get_attention_statements(
+            params, 0, "model.layers.0", "model.layers.0"
+        )
         self.assertEqual(len(stmts), 1)
         self.assertIn("fused_qkv", stmts[0])
         self.assertIn("num_heads=32", stmts[0])
@@ -208,7 +223,9 @@ class TestMoEAOAConfigGeneratorAttention(unittest.TestCase):
             num_key_value_heads=8,
             attention_bias=True,
         )
-        stmts = MoEAOAConfigGenerator._get_attention_statements(params, 0, "model.layers.0", "model.layers.0")
+        stmts = MoEAOAConfigGenerator._get_attention_statements(
+            params, 0, "model.layers.0", "model.layers.0"
+        )
         self.assertEqual(len(stmts), 2)
         self.assertIn("q_proj.bias", stmts[1])
         self.assertIn("axis=0", stmts[1])
@@ -223,7 +240,9 @@ class TestMoEAOAConfigGeneratorAttention(unittest.TestCase):
             multi_latent_attention=True,
             use_qk_norm=False,
         )
-        stmts = MoEAOAConfigGenerator._get_attention_statements(params, 0, "model.layers.0", "model.layers.0")
+        stmts = MoEAOAConfigGenerator._get_attention_statements(
+            params, 0, "model.layers.0", "model.layers.0"
+        )
         self.assertEqual(len(stmts), 4)
         self.assertIn("kv_a_proj_with_mqa", stmts[0])
         self.assertIn("q_b_proj", stmts[3])
@@ -238,7 +257,9 @@ class TestMoEAOAConfigGeneratorAttention(unittest.TestCase):
             multi_latent_attention=True,
             use_qk_norm=True,
         )
-        stmts = MoEAOAConfigGenerator._get_attention_statements(params, 0, "model.layers.0", "model.layers.0")
+        stmts = MoEAOAConfigGenerator._get_attention_statements(
+            params, 0, "model.layers.0", "model.layers.0"
+        )
         self.assertEqual(len(stmts), 6)
         self.assertIn("q_a_layernorm", "".join(stmts))
 
@@ -276,7 +297,9 @@ class TestMoEAOAConfigGeneratorMoELayers(unittest.TestCase):
             num_key_value_heads=8,
             has_shared_experts=False,
         )
-        stmts = MoEAOAConfigGenerator._get_moe_expert_statements(params, "model.layers.0", "model.layers.0")
+        stmts = MoEAOAConfigGenerator._get_moe_expert_statements(
+            params, "model.layers.0", "model.layers.0"
+        )
         combined = "\n".join(stmts)
         self.assertNotIn("shared_experts", combined)
 
@@ -287,7 +310,9 @@ class TestMoEAOAConfigGeneratorMoELayers(unittest.TestCase):
         )
 
         params = MoEAOAConfigParams(using_sonic_moe=False)
-        stmts = MoEAOAConfigGenerator._get_routed_expert_statements(params, "model.layers.0", "model.layers.0")
+        stmts = MoEAOAConfigGenerator._get_routed_expert_statements(
+            params, "model.layers.0", "model.layers.0"
+        )
         combined = "\n".join(stmts)
         self.assertIn("$EXPERT_ID", combined)
         self.assertIn("^T", combined)
@@ -299,7 +324,9 @@ class TestMoEAOAConfigGeneratorMoELayers(unittest.TestCase):
         )
 
         params = MoEAOAConfigParams(using_sonic_moe=True)
-        stmts = MoEAOAConfigGenerator._get_routed_expert_statements(params, "model.layers.0", "model.layers.0")
+        stmts = MoEAOAConfigGenerator._get_routed_expert_statements(
+            params, "model.layers.0", "model.layers.0"
+        )
         combined = "\n".join(stmts)
         self.assertIn("axis=0", combined)
         self.assertNotIn("^T", combined)
@@ -396,7 +423,9 @@ class TestMoEAOAConfigGeneratorExtractParams(unittest.TestCase):
     """Tests for _extract_params."""
 
     def test_extract_with_n_routed_experts(self):
-        from paddleformers.transformers.aoa_config_base import MoEAOAConfigGenerator
+        from paddleformers.transformers.aoa_config_base import (
+            MoEAOAConfigGenerator,
+        )
 
         config = _MockConfig(
             num_hidden_layers=8,
@@ -408,7 +437,9 @@ class TestMoEAOAConfigGeneratorExtractParams(unittest.TestCase):
         self.assertEqual(params.num_experts, 8)
 
     def test_extract_with_num_experts(self):
-        from paddleformers.transformers.aoa_config_base import MoEAOAConfigGenerator
+        from paddleformers.transformers.aoa_config_base import (
+            MoEAOAConfigGenerator,
+        )
 
         config = _MockConfig(
             num_hidden_layers=8,
@@ -420,7 +451,9 @@ class TestMoEAOAConfigGeneratorExtractParams(unittest.TestCase):
         self.assertEqual(params.num_experts, 16)
 
     def test_extract_no_experts(self):
-        from paddleformers.transformers.aoa_config_base import MoEAOAConfigGenerator
+        from paddleformers.transformers.aoa_config_base import (
+            MoEAOAConfigGenerator,
+        )
 
         config = _MockConfig(
             num_hidden_layers=8,
@@ -431,7 +464,9 @@ class TestMoEAOAConfigGeneratorExtractParams(unittest.TestCase):
         self.assertEqual(params.num_experts, 0)
 
     def test_extract_with_fd_fallback(self):
-        from paddleformers.transformers.aoa_config_base import MoEAOAConfigGenerator
+        from paddleformers.transformers.aoa_config_base import (
+            MoEAOAConfigGenerator,
+        )
 
         config = _MockConfig(
             num_hidden_layers=8,
@@ -485,7 +520,9 @@ class TestMoEAOAConfigGeneratorGenAoaConfig(unittest.TestCase):
     """Tests for gen_aoa_config main entry point."""
 
     def test_gen_aoa_config(self):
-        from paddleformers.transformers.aoa_config_base import MoEAOAConfigGenerator
+        from paddleformers.transformers.aoa_config_base import (
+            MoEAOAConfigGenerator,
+        )
 
         config = _MockConfig(
             num_hidden_layers=2,
@@ -539,7 +576,9 @@ class TestMoEAOAConfigGeneratorInverse(unittest.TestCase):
         self.assertTrue(len(result["aoa_statements"]) > 0)
 
     def test_gen_inv_aoa_config(self):
-        from paddleformers.transformers.aoa_config_base import MoEAOAConfigGenerator
+        from paddleformers.transformers.aoa_config_base import (
+            MoEAOAConfigGenerator,
+        )
 
         config = _MockConfig(
             num_hidden_layers=2,
@@ -557,7 +596,9 @@ class TestMoEAOAConfigGeneratorInverse(unittest.TestCase):
             MoEAOAConfigParams,
         )
 
-        params = MoEAOAConfigParams(first_k_dense_replace=2, num_head_empty_layers=1)
+        params = MoEAOAConfigParams(
+            first_k_dense_replace=2, num_head_empty_layers=1
+        )
         stmts = MoEAOAConfigGenerator._get_inv_dense_layer_statements(params)
         self.assertTrue(len(stmts) > 0)
         combined = "\n".join(stmts)
@@ -569,7 +610,11 @@ class TestMoEAOAConfigGeneratorInverse(unittest.TestCase):
             MoEAOAConfigParams,
         )
 
-        params = MoEAOAConfigParams(num_hidden_layers=4, num_nextn_predict_layers=2, num_head_empty_layers=0)
+        params = MoEAOAConfigParams(
+            num_hidden_layers=4,
+            num_nextn_predict_layers=2,
+            num_head_empty_layers=0,
+        )
         stmts = MoEAOAConfigGenerator._get_inv_mtp_layer_statements(params)
         self.assertTrue(len(stmts) > 0)
         combined = "\n".join(stmts)
@@ -603,7 +648,9 @@ class TestMoEAOAConfigGeneratorInverse(unittest.TestCase):
             num_experts=4,
             moe_expert_fusion=True,
         )
-        stmts = MoEAOAConfigGenerator._get_inv_grouped_gemm_layer_statements(params, "model.layers.0")
+        stmts = MoEAOAConfigGenerator._get_inv_grouped_gemm_layer_statements(
+            params, "model.layers.0"
+        )
         self.assertTrue(len(stmts) > 0)
         combined = "\n".join(stmts)
         self.assertIn("weight1", combined)
@@ -622,7 +669,9 @@ class TestMoEAOAConfigGeneratorInverse(unittest.TestCase):
             fp8=False,
             fd_fallback=False,
         )
-        stmts = MoEAOAConfigGenerator._get_inv_grouped_gemm_layer_statements(params, "model.layers.0")
+        stmts = MoEAOAConfigGenerator._get_inv_grouped_gemm_layer_statements(
+            params, "model.layers.0"
+        )
         self.assertEqual(stmts, [])
 
 
@@ -630,13 +679,17 @@ class TestMoEAOAConfigGeneratorModelPrefix(unittest.TestCase):
     """Tests for _get_model_prefix."""
 
     def test_default_prefix(self):
-        from paddleformers.transformers.aoa_config_base import MoEAOAConfigGenerator
+        from paddleformers.transformers.aoa_config_base import (
+            MoEAOAConfigGenerator,
+        )
 
         prefix = MoEAOAConfigGenerator._get_model_prefix(_MockConfig())
         self.assertEqual(prefix, "model.")
 
     def test_base_model_class(self):
-        from paddleformers.transformers.aoa_config_base import MoEAOAConfigGenerator
+        from paddleformers.transformers.aoa_config_base import (
+            MoEAOAConfigGenerator,
+        )
 
         class TestGen(MoEAOAConfigGenerator):
             pass
@@ -650,9 +703,13 @@ class TestMoEAOAConfigGeneratorHasSharedExperts(unittest.TestCase):
     """Tests for _has_shared_experts."""
 
     def test_default_has_shared(self):
-        from paddleformers.transformers.aoa_config_base import MoEAOAConfigGenerator
+        from paddleformers.transformers.aoa_config_base import (
+            MoEAOAConfigGenerator,
+        )
 
-        self.assertTrue(MoEAOAConfigGenerator._has_shared_experts(_MockConfig()))
+        self.assertTrue(
+            MoEAOAConfigGenerator._has_shared_experts(_MockConfig())
+        )
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ class TestPerfUtils(unittest.TestCase):
     """Tests for utils/perf_utils.py"""
 
     def test_register_profile_hook_layer(self):
-        import paddle.nn as nn
+        from paddle import nn
 
         from paddleformers.utils.perf_utils import register_profile_hook
 
@@ -18,7 +18,7 @@ class TestPerfUtils(unittest.TestCase):
         # Just ensure no exception
 
     def test_register_profile_hook_list(self):
-        import paddle.nn as nn
+        from paddle import nn
 
         from paddleformers.utils.perf_utils import register_profile_hook
 
@@ -27,7 +27,7 @@ class TestPerfUtils(unittest.TestCase):
         # Just ensure no exception
 
     def test_register_profile_hook_debug_memory(self):
-        import paddle.nn as nn
+        from paddle import nn
 
         from paddleformers.utils.perf_utils import register_profile_hook
 
@@ -46,7 +46,10 @@ class TestPerfUtils(unittest.TestCase):
     def test_add_record_event_profiler_enabled(self):
         from paddleformers.utils.perf_utils import add_record_event
 
-        with patch("paddle.base.core.nvprof_nvtx_push"), patch("paddle.base.core.nvprof_nvtx_pop"):
+        with (
+            patch("paddle.base.core.nvprof_nvtx_push"),
+            patch("paddle.base.core.nvprof_nvtx_pop"),
+        ):
             with add_record_event("test_event"):
                 pass
 

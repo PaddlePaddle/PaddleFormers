@@ -139,7 +139,9 @@ class TestRMSNorm(unittest.TestCase):
         norm = RMSNorm(config)
         # Manually set weight to float16
         norm.weight = paddle.create_parameter(
-            shape=[64], dtype="float16", default_initializer=paddle.nn.initializer.Constant(1.0)
+            shape=[64],
+            dtype="float16",
+            default_initializer=paddle.nn.initializer.Constant(1.0),
         )
         x = paddle.randn([2, 4, 64], dtype="float32")
         out = norm(x)

@@ -44,14 +44,14 @@ def hack_offload_optimizer(mode=None):
         return hack_offload_optimizer_eb5()
 
     # Step 1: mock _add_accumulator
-    origin_add_accumulator = getattr(Optimizer, "_add_accumulator")
+    origin_add_accumulator = Optimizer._add_accumulator
 
     def new_add_accumulator(self, *args, **kwargs):
         x = origin_add_accumulator(self, *args, **kwargs)
         offload(x)
         return x
 
-    setattr(Optimizer, "_add_accumulator", new_add_accumulator)
+    Optimizer._add_accumulator = new_add_accumulator
 
     # Step 2: mock _C_ops.adamw_ and _C_ops.adamw
     for name in ["adam_", "adamw_"]:
@@ -76,7 +76,7 @@ def hack_offload_optimizer(mode=None):
 
     # Step 3: mock _insert_sync
     opt_type = HybridParallelOptimizer
-    origin_insert_sync = getattr(opt_type, "_insert_sync")
+    origin_insert_sync = opt_type._insert_sync
 
     def new_insert_sync(self, sync_var, *args, **kwargs):
         origin_place = sync_var.place
@@ -90,7 +90,7 @@ def hack_offload_optimizer(mode=None):
         assert new_sync_var is sync_var, "to_device must be inplace operation"
         return ret
 
-    setattr(opt_type, "_insert_sync", new_insert_sync)
+    opt_type._insert_sync = new_insert_sync
 
     # Step 4: mock Muon's momentum update and Muon._apply_optimize
     # Muon's momentum update is pure Python (paddle.lerp + paddle.assign),
@@ -110,17 +110,25 @@ def hack_offload_optimizer(mode=None):
             # offload them back afterwards.
             origin_muon_update_group = Muon._muon_update_group
 
-            def new_muon_update_group(self, group_params_grads, *args, **kwargs):
+            def new_muon_update_group(
+                self, group_params_grads, *args, **kwargs
+            ):
                 for param, _ in group_params_grads:
-                    momentum_buffer = self._get_accumulator(self._moment_acc_str, param)
+                    momentum_buffer = self._get_accumulator(
+                        self._moment_acc_str, param
+                    )
                     reload(momentum_buffer)
 
-                ret = origin_muon_update_group(self, group_params_grads, *args, **kwargs)
+                ret = origin_muon_update_group(
+                    self, group_params_grads, *args, **kwargs
+                )
 
                 for param, _ in group_params_grads:
                     is_offload_opt = getattr(param, "is_offload_opt", True)
                     if is_offload_opt:
-                        momentum_buffer = self._get_accumulator(self._moment_acc_str, param)
+                        momentum_buffer = self._get_accumulator(
+                            self._moment_acc_str, param
+                        )
                         offload(momentum_buffer)
                 return ret
 
@@ -201,14 +209,14 @@ def hack_offload_optimizer(mode=None):
 
 def hack_offload_optimizer_eb5():
     # Step 1: mock _add_accumulator
-    origin_add_accumulator = getattr(Optimizer, "_add_accumulator")
+    origin_add_accumulator = Optimizer._add_accumulator
 
     def new_add_accumulator(self, *args, **kwargs):
         x = origin_add_accumulator(self, *args, **kwargs)
         offload(x)
         return x
 
-    setattr(Optimizer, "_add_accumulator", new_add_accumulator)
+    Optimizer._add_accumulator = new_add_accumulator
 
     # Step 2: mock _C_ops.adamw_ and _C_ops.adamw
     for name in ["adam_", "adamw_"]:
@@ -232,7 +240,7 @@ def hack_offload_optimizer_eb5():
 
     # Step 3: mock _insert_sync
     opt_type = HybridParallelOptimizer
-    origin_insert_sync = getattr(opt_type, "_insert_sync")
+    origin_insert_sync = opt_type._insert_sync
 
     def new_insert_sync(self, sync_var, *args, **kwargs):
         origin_place = sync_var.place
@@ -246,7 +254,7 @@ def hack_offload_optimizer_eb5():
         assert new_sync_var is sync_var, "to_device must be inplace operation"
         return ret
 
-    setattr(opt_type, "_insert_sync", new_insert_sync)
+    opt_type._insert_sync = new_insert_sync
 
     # Step 4: mock Muon's momentum update and Muon._apply_optimize
     # Muon's momentum update is pure Python (paddle.lerp + paddle.assign),
@@ -266,17 +274,25 @@ def hack_offload_optimizer_eb5():
             # offload them back afterwards.
             origin_muon_update_group = Muon._muon_update_group
 
-            def new_muon_update_group(self, group_params_grads, *args, **kwargs):
+            def new_muon_update_group(
+                self, group_params_grads, *args, **kwargs
+            ):
                 for param, _ in group_params_grads:
-                    momentum_buffer = self._get_accumulator(self._moment_acc_str, param)
+                    momentum_buffer = self._get_accumulator(
+                        self._moment_acc_str, param
+                    )
                     reload(momentum_buffer)
 
-                ret = origin_muon_update_group(self, group_params_grads, *args, **kwargs)
+                ret = origin_muon_update_group(
+                    self, group_params_grads, *args, **kwargs
+                )
 
                 for param, _ in group_params_grads:
                     is_offload_opt = getattr(param, "is_offload_opt", True)
                     if is_offload_opt:
-                        momentum_buffer = self._get_accumulator(self._moment_acc_str, param)
+                        momentum_buffer = self._get_accumulator(
+                            self._moment_acc_str, param
+                        )
                         offload(momentum_buffer)
                 return ret
 

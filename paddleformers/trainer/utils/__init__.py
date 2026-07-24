@@ -18,7 +18,11 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "ckpt_converter": ["get_rank_to_read_files", "flatten_state_dict", "CheckpointConverter"],
+    "ckpt_converter": [
+        "get_rank_to_read_files",
+        "flatten_state_dict",
+        "CheckpointConverter",
+    ],
     "doc": ["add_start_docstrings"],
     "helper": [],
     "reshard": [],

@@ -13,14 +13,17 @@
 # limitations under the License.
 """Paddle Qwen3-Next model."""
 
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 import paddle
 import paddle.distributed as dist
 import paddle.nn.functional as F
 from paddle import Tensor, nn
 from paddle.distributed import fleet
-from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp, ScatterOp
+from paddle.distributed.fleet.utils.sequence_parallel_utils import (
+    GatherOp,
+    ScatterOp,
+)
 
 from ...nn.activation import ACT2FN
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
@@ -36,7 +39,10 @@ from ..configuration_utils import PretrainedConfig
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
-from ..qwen2_moe.modeling import Qwen2MoeSparseMoeBlock, load_balancing_loss_func
+from ..qwen2_moe.modeling import (
+    Qwen2MoeSparseMoeBlock,
+    load_balancing_loss_func,
+)
 from ..qwen3_moe.modeling import Qwen3MoeAttention, Qwen3MoeMLP
 from .configuration import Qwen3NextConfig
 
@@ -64,7 +70,9 @@ class Qwen3NextRMSNormGated(nn.Layer):
         hidden_states = hidden_states.to(paddle.float32)
         variance = hidden_states.pow(2).mean(-1, keepdim=True)
         # Norm before gate
-        hidden_states = hidden_states * paddle.rsqrt(variance + self.variance_epsilon)
+        hidden_states = hidden_states * paddle.rsqrt(
+            variance + self.variance_epsilon
+        )
         hidden_states = self.weight * hidden_states.to(input_dtype)
         hidden_states = hidden_states * F.silu(gate.to(paddle.float32))
 
@@ -88,15 +96,21 @@ class Qwen3NextDynamicCache:
     and `recurrent_states` represents the recurrent state and has a shape of `(batch_size, d_inner, d_state)`.
     """
 
-    is_compileable = False
+    is_compilable = False
 
     def __init__(self, config: Qwen3NextConfig):
         super().__init__()
         self.layer_types = config.layer_types
         self.transformer_layers = [
-            i for i in range(config.num_hidden_layers) if self.layer_types[i] == "full_attention"
+            i
+            for i in range(config.num_hidden_layers)
+            if self.layer_types[i] == "full_attention"
         ]
-        self.last_linear_layer = len(self.layer_types) - 1 - self.layer_types[::-1].index("linear_attention")
+        self.last_linear_layer = (
+            len(self.layer_types)
+            - 1
+            - self.layer_types[::-1].index("linear_attention")
+        )
 
         # Initialize everything to None -> will be lazy initialized to allow multi-gpu (device_map) inference
         self.conv_states = [None for _ in range(config.num_hidden_layers)]
@@ -121,8 +135,12 @@ class Qwen3NextDynamicCache:
             self.key_cache[layer_idx] = key_states
             self.value_cache[layer_idx] = value_states
         else:
-            self.key_cache[layer_idx] = paddle.cat([self.key_cache[layer_idx], key_states], dim=2)
-            self.value_cache[layer_idx] = paddle.cat([self.value_cache[layer_idx], value_states], dim=2)
+            self.key_cache[layer_idx] = paddle.cat(
+                [self.key_cache[layer_idx], key_states], dim=2
+            )
+            self.value_cache[layer_idx] = paddle.cat(
+                [self.value_cache[layer_idx], value_states], dim=2
+            )
 
         return self.key_cache[layer_idx], self.value_cache[layer_idx]
 
@@ -132,24 +150,41 @@ class Qwen3NextDynamicCache:
             if self.key_cache[layer_idx] is not None:
                 device = self.key_cache[layer_idx].device
                 beam_idx = beam_idx.to(device)
-                self.key_cache[layer_idx] = self.key_cache[layer_idx].index_select(0, beam_idx)
-                self.value_cache[layer_idx] = self.value_cache[layer_idx].index_select(0, beam_idx)
+                self.key_cache[layer_idx] = self.key_cache[
+                    layer_idx
+                ].index_select(0, beam_idx)
+                self.value_cache[layer_idx] = self.value_cache[
+                    layer_idx
+                ].index_select(0, beam_idx)
 
             if self.conv_states[layer_idx] is not None:
                 device = self.conv_states[layer_idx].device
                 beam_idx = beam_idx.to(device)
-                self.conv_states[layer_idx] = self.conv_states[layer_idx].index_select(0, beam_idx)
-                self.recurrent_states[layer_idx] = self.recurrent_states[layer_idx].index_select(0, beam_idx)
+                self.conv_states[layer_idx] = self.conv_states[
+                    layer_idx
+                ].index_select(0, beam_idx)
+                self.recurrent_states[layer_idx] = self.recurrent_states[
+                    layer_idx
+                ].index_select(0, beam_idx)
 
     def get_seq_length(self, layer_idx: Optional[int] = 0) -> int:
         """Returns the sequence length of the cached states. A layer index can be optionally passed."""
         # take any layer that contains cache and not empty tensor
-        layer_idx = self.transformer_layers[0] if layer_idx not in self.transformer_layers else layer_idx
-        if len(self.key_cache) <= layer_idx or self.key_cache[layer_idx] is None:
+        layer_idx = (
+            self.transformer_layers[0]
+            if layer_idx not in self.transformer_layers
+            else layer_idx
+        )
+        if (
+            len(self.key_cache) <= layer_idx
+            or self.key_cache[layer_idx] is None
+        ):
             return 0
         return self.key_cache[layer_idx].shape[-2]
 
-    def get_mask_sizes(self, cache_position: Tensor, layer_idx: int) -> tuple[int, int]:
+    def get_mask_sizes(
+        self, cache_position: Tensor, layer_idx: int
+    ) -> tuple[int, int]:
         """
         Return a tuple (kv_length, kv_offset) corresponding to the length and offset that will be returned for
         the given layer at `layer_idx`.
@@ -183,14 +218,24 @@ def _compute_default_rope_parameters(
         post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
     """
     base = config.rope_theta
-    partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
-    head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+    partial_rotary_factor = (
+        config.partial_rotary_factor
+        if hasattr(config, "partial_rotary_factor")
+        else 1.0
+    )
+    head_dim = (
+        getattr(config, "head_dim", None)
+        or config.hidden_size // config.num_attention_heads
+    )
     dim = int(head_dim * partial_rotary_factor)
 
     attention_factor = 1.0  # Unused in this type of RoPE
 
     # Compute the inverse frequencies
-    inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype="int64").to(dtype="float") / dim))
+    inv_freq = 1.0 / (
+        base
+        ** (paddle.arange(0, dim, 2, dtype="int64").to(dtype="float") / dim)
+    )
     return inv_freq, attention_factor
 
 
@@ -200,11 +245,17 @@ class Qwen3NextRotaryEmbedding(nn.Layer):
     def __init__(self, config: Qwen3NextConfig, device=None):
         super().__init__()
         # BC: "rope_type" was originally "type"
-        if hasattr(config, "rope_scaling") and isinstance(config.rope_scaling, dict):
-            self.rope_type = config.rope_scaling.get("rope_type", config.rope_scaling.get("type"))
+        if hasattr(config, "rope_scaling") and isinstance(
+            config.rope_scaling, dict
+        ):
+            self.rope_type = config.rope_scaling.get(
+                "rope_type", config.rope_scaling.get("type")
+            )
         else:
             self.rope_type = "default"
-        assert self.rope_type == "default", f"Currently only supports default rope_type, but got {self.rope_type}"
+        assert self.rope_type == "default", (
+            f"Currently only supports default rope_type, but got {self.rope_type}"
+        )
         self.max_seq_len_cached = config.max_position_embeddings
         self.original_max_seq_len = config.max_position_embeddings
 
@@ -235,24 +286,41 @@ class Qwen3NextRotaryEmbedding(nn.Layer):
         """
         base = config.rope_parameters["rope_theta"]
         partial_rotary_factor = config.get("partial_rotary_factor", 1.0)
-        head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+        head_dim = (
+            getattr(config, "head_dim", None)
+            or config.hidden_size // config.num_attention_heads
+        )
         dim = int(head_dim * partial_rotary_factor)
 
         attention_factor = 1.0  # Unused in this type of RoPE
 
         # Compute the inverse frequencies
-        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        inv_freq = 1.0 / (
+            base
+            ** (
+                paddle.arange(0, dim, 2, dtype=paddle.int64).astype(
+                    dtype=paddle.float32
+                )
+                / dim
+            )
+        )
         return inv_freq, attention_factor
 
     @dynamic_rope_update
     @paddle.no_grad()
     def forward(self, x, position_ids):
         with paddle.amp.auto_cast(enable=False):
-            inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
+            inv_freq_expanded = (
+                self.inv_freq[None, :, None]
+                .float()
+                .expand([position_ids.shape[0], -1, 1])
+            )
 
             position_ids_expanded = position_ids[:, None, :].float()
 
-            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+            freqs = (
+                inv_freq_expanded.float() @ position_ids_expanded.float()
+            ).transpose(1, 2)
 
             emb = paddle.concat((freqs, freqs), axis=-1)
 
@@ -263,7 +331,9 @@ class Qwen3NextRotaryEmbedding(nn.Layer):
 
 
 class Qwen3NextRMSNorm(nn.Layer):
-    def __init__(self, dim: int, eps: float = 1e-6, input_is_parallel: bool = False):
+    def __init__(
+        self, dim: int, eps: float = 1e-6, input_is_parallel: bool = False
+    ):
         super().__init__()
         self.eps = eps
         self.weight = nn.Parameter(paddle.zeros(dim))
@@ -321,7 +391,11 @@ class Qwen3NextAttention(Qwen3MoeAttention):
         mix_layer = self.qkv_proj(hidden_states)
         if self.sequence_parallel:
             max_sequence_length = self.config.max_sequence_length
-            bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
+            bsz = (
+                hidden_states.shape[0]
+                * self.config.tensor_model_parallel_size
+                // max_sequence_length
+            )
             q_len = max_sequence_length
             target_shape = [
                 bsz,
@@ -331,30 +405,55 @@ class Qwen3NextAttention(Qwen3MoeAttention):
             ]
         else:
             bsz, q_len, _ = hidden_states.shape
-            target_shape = [0, 0, self.num_key_value_heads, (self.num_key_value_groups * 2 + 2) * self.head_dim]
+            target_shape = [
+                0,
+                0,
+                self.num_key_value_heads,
+                (self.num_key_value_groups * 2 + 2) * self.head_dim,
+            ]
         mix_layer = paddle.reshape_(mix_layer, target_shape)
         query_states, key_states, value_states = paddle.split(
             mix_layer,
-            num_or_sections=[self.num_key_value_groups * self.head_dim * 2, self.head_dim, self.head_dim],
+            num_or_sections=[
+                self.num_key_value_groups * self.head_dim * 2,
+                self.head_dim,
+                self.head_dim,
+            ],
             axis=-1,
         )
 
-        query_states, gate = paddle.chunk(query_states.view(bsz, q_len, -1, self.head_dim * 2), chunks=2, dim=-1)
+        query_states, gate = paddle.chunk(
+            query_states.view(bsz, q_len, -1, self.head_dim * 2),
+            chunks=2,
+            dim=-1,
+        )
         gate = gate.reshape(bsz, q_len, -1)
 
-        query_states = self.q_norm(query_states.view(bsz, q_len, -1, self.head_dim))
+        query_states = self.q_norm(
+            query_states.view(bsz, q_len, -1, self.head_dim)
+        )
         key_states = self.k_norm(key_states.view(bsz, q_len, -1, self.head_dim))
         value_states = value_states.reshape(bsz, q_len, -1, self.head_dim)
 
         cos, sin = position_embeddings
-        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, unsqueeze_dim=2)
+        query_states, key_states = apply_rotary_pos_emb(
+            query_states, key_states, cos, sin, unsqueeze_dim=2
+        )
 
         if past_key_values is not None:
             # sin and cos are specific to RoPE models; cache_position needed for the static cache
-            cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
-            key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx, cache_kwargs)
+            cache_kwargs = {
+                "sin": sin,
+                "cos": cos,
+                "cache_position": cache_position,
+            }
+            key_states, value_states = past_key_values.update(
+                key_states, value_states, self.layer_idx, cache_kwargs
+            )
 
-        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        attention_interface = ALL_ATTENTION_FUNCTIONS[
+            self.config._attn_implementation
+        ]
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -386,9 +485,17 @@ def paddle_causal_conv1d_update(
     _, hidden_size, seq_len = hidden_states.shape
     state_len = conv_state.shape[-1]
 
-    hidden_states_new = paddle.cat([conv_state, hidden_states], dim=-1).to(weight.dtype)
+    hidden_states_new = paddle.cat([conv_state, hidden_states], dim=-1).to(
+        weight.dtype
+    )
     conv_state.copy_(hidden_states_new[:, :, -state_len:])
-    out = F.conv1d(hidden_states_new, weight.unsqueeze(1), bias, padding=0, groups=hidden_size)
+    out = F.conv1d(
+        hidden_states_new,
+        weight.unsqueeze(1),
+        bias,
+        padding=0,
+        groups=hidden_size,
+    )
     out = F.silu(out[:, :, -seq_len:])
     out = out.to(hidden_states.dtype)
     return out
@@ -416,7 +523,8 @@ def paddle_chunk_gated_delta_rule(
         query = l2norm(query, dim=-1, eps=1e-6)
         key = l2norm(key, dim=-1, eps=1e-6)
     query, key, value, beta, g = [
-        x.transpose(1, 2).contiguous().to(paddle.float32) for x in (query, key, value, beta, g)
+        x.transpose(1, 2).contiguous().to(paddle.float32)
+        for x in (query, key, value, beta, g)
     ]
 
     batch_size, sequence_length, num_heads, k_head_dim = key.shape
@@ -435,14 +543,19 @@ def paddle_chunk_gated_delta_rule(
     k_beta = key * beta.unsqueeze(-1)
     # reshape to chunks
     query, key, value, k_beta, v_beta = [
-        x.reshape(x.shape[0], x.shape[1], -1, chunk_size, x.shape[-1]) for x in (query, key, value, k_beta, v_beta)
+        x.reshape(x.shape[0], x.shape[1], -1, chunk_size, x.shape[-1])
+        for x in (query, key, value, k_beta, v_beta)
     ]
     g = g.reshape(g.shape[0], g.shape[1], -1, chunk_size)
-    mask = paddle.triu(paddle.ones(chunk_size, chunk_size, dtype=paddle.bool), diagonal=0)
+    mask = paddle.triu(
+        paddle.ones(chunk_size, chunk_size, dtype=paddle.bool), diagonal=0
+    )
 
     # chunk decay
     g = g.cumsum(dim=-1)
-    decay_mask = ((g.unsqueeze(-1) - g.unsqueeze(-2)).tril().exp().float()).tril()
+    decay_mask = (
+        (g.unsqueeze(-1) - g.unsqueeze(-2)).tril().exp().float()
+    ).tril()
     attn = -((k_beta @ key.transpose(-1, -2)) * decay_mask).masked_fill(mask, 0)
     for i in range(1, chunk_size):
         row = attn[..., i, :i].clone()
@@ -452,43 +565,65 @@ def paddle_chunk_gated_delta_rule(
     value = attn @ v_beta
     k_cumdecay = attn @ (k_beta * g.exp().unsqueeze(-1))
     last_recurrent_state = (
-        paddle.zeros(batch_size, sequence_length, k_head_dim, v_head_dim).to(value)
+        paddle.zeros(batch_size, sequence_length, k_head_dim, v_head_dim).to(
+            value
+        )
         if initial_state is None
         else initial_state.to(value)
     )
     core_attn_out = paddle.zeros_like(value)
-    mask = paddle.triu(paddle.ones(chunk_size, chunk_size, dtype=paddle.bool), diagonal=1)
+    mask = paddle.triu(
+        paddle.ones(chunk_size, chunk_size, dtype=paddle.bool), diagonal=1
+    )
 
     # for each chunk
     for i in range(0, tot_heads // chunk_size):
         q_i, k_i, v_i = query[:, :, i], key[:, :, i], value[:, :, i]
-        attn = (q_i @ k_i.transpose(-1, -2) * decay_mask[:, :, i]).masked_fill_(mask, 0)
+        attn = (q_i @ k_i.transpose(-1, -2) * decay_mask[:, :, i]).masked_fill_(
+            mask, 0
+        )
         v_prime = (k_cumdecay[:, :, i]) @ last_recurrent_state
         v_new = v_i - v_prime
         attn_inter = (q_i * g[:, :, i, :, None].exp()) @ last_recurrent_state
         core_attn_out[:, :, i] = attn_inter + attn @ v_new
         last_recurrent_state = (
             last_recurrent_state * g[:, :, i, -1, None, None].exp()
-            + (k_i * (g[:, :, i, -1, None] - g[:, :, i]).exp()[..., None]).transpose(-1, -2) @ v_new
+            + (
+                k_i * (g[:, :, i, -1, None] - g[:, :, i]).exp()[..., None]
+            ).transpose(-1, -2)
+            @ v_new
         )
 
     if not output_final_state:
         last_recurrent_state = None
-    core_attn_out = core_attn_out.reshape(core_attn_out.shape[0], core_attn_out.shape[1], -1, core_attn_out.shape[-1])
+    core_attn_out = core_attn_out.reshape(
+        core_attn_out.shape[0],
+        core_attn_out.shape[1],
+        -1,
+        core_attn_out.shape[-1],
+    )
     core_attn_out = core_attn_out[:, :, :num_heads]
     core_attn_out = core_attn_out.transpose(1, 2).contiguous().to(initial_dtype)
     return core_attn_out, last_recurrent_state
 
 
 def paddle_recurrent_gated_delta_rule(
-    query, key, value, g, beta, initial_state, output_final_state, use_qk_l2norm_in_kernel=False
+    query,
+    key,
+    value,
+    g,
+    beta,
+    initial_state,
+    output_final_state,
+    use_qk_l2norm_in_kernel=False,
 ):
     initial_dtype = query.dtype
     if use_qk_l2norm_in_kernel:
         query = l2norm(query, dim=-1, eps=1e-6)
         key = l2norm(key, dim=-1, eps=1e-6)
     query, key, value, beta, g = [
-        x.transpose(1, 2).contiguous().to(paddle.float32) for x in (query, key, value, beta, g)
+        x.transpose(1, 2).contiguous().to(paddle.float32)
+        for x in (query, key, value, beta, g)
     ]
 
     batch_size, sequence_length, num_heads, k_head_dim = key.shape
@@ -496,9 +631,13 @@ def paddle_recurrent_gated_delta_rule(
     scale = 1 / (query.shape[-1] ** 0.5)
     query = query * scale
 
-    core_attn_out = paddle.zeros(batch_size, sequence_length, num_heads, v_head_dim).to(value)
+    core_attn_out = paddle.zeros(
+        batch_size, sequence_length, num_heads, v_head_dim
+    ).to(value)
     last_recurrent_state = (
-        paddle.zeros(batch_size, sequence_length, k_head_dim, v_head_dim).to(value)
+        paddle.zeros(batch_size, sequence_length, k_head_dim, v_head_dim).to(
+            value
+        )
         if initial_state is None
         else initial_state.to(value)
     )
@@ -513,8 +652,12 @@ def paddle_recurrent_gated_delta_rule(
         last_recurrent_state = last_recurrent_state * g_t
         kv_mem = (last_recurrent_state * k_t.unsqueeze(-1)).sum(dim=-2)
         delta = (v_t - kv_mem) * beta_t
-        last_recurrent_state = last_recurrent_state + k_t.unsqueeze(-1) * delta.unsqueeze(-2)
-        core_attn_out[:, :, i] = (last_recurrent_state * q_t.unsqueeze(-1)).sum(dim=-2)
+        last_recurrent_state = last_recurrent_state + k_t.unsqueeze(
+            -1
+        ) * delta.unsqueeze(-2)
+        core_attn_out[:, :, i] = (last_recurrent_state * q_t.unsqueeze(-1)).sum(
+            dim=-2
+        )
 
     if not output_final_state:
         last_recurrent_state = None
@@ -619,8 +762,12 @@ class Qwen3NextGatedDeltaNet(nn.Layer):
         # projection of the input hidden states
         projection_size_qkvz = self.key_dim * 2 + self.value_dim * 2
         projection_size_ba = self.num_v_heads * 2
-        self.in_proj_qkvz = nn.Linear(self.hidden_size, projection_size_qkvz, bias_attr=False)
-        self.in_proj_ba = nn.Linear(self.hidden_size, projection_size_ba, bias_attr=False)
+        self.in_proj_qkvz = nn.Linear(
+            self.hidden_size, projection_size_qkvz, bias_attr=False
+        )
+        self.in_proj_ba = nn.Linear(
+            self.hidden_size, projection_size_ba, bias_attr=False
+        )
 
         # time step projection (discretization)
         # instantiate once and copy inv_dt in init_weights of PretrainedModel
@@ -637,16 +784,27 @@ class Qwen3NextGatedDeltaNet(nn.Layer):
                 eps=self.layer_norm_epsilon,
                 activation=self.activation,
                 device=paddle.device.get_device(),
-                dtype=config.dtype if config.dtype is not None else paddle.get_default_dtype(),
+                dtype=config.dtype
+                if config.dtype is not None
+                else paddle.get_default_dtype(),
             )
         )
 
-        self.out_proj = nn.Linear(self.value_dim, self.hidden_size, bias_attr=False)
+        self.out_proj = nn.Linear(
+            self.value_dim, self.hidden_size, bias_attr=False
+        )
 
         self.causal_conv1d_fn = causal_conv1d_fn
-        self.causal_conv1d_update = causal_conv1d_update or paddle_causal_conv1d_update
-        self.chunk_gated_delta_rule = chunk_gated_delta_rule or paddle_chunk_gated_delta_rule
-        self.recurrent_gated_delta_rule = fused_recurrent_gated_delta_rule or paddle_recurrent_gated_delta_rule
+        self.causal_conv1d_update = (
+            causal_conv1d_update or paddle_causal_conv1d_update
+        )
+        self.chunk_gated_delta_rule = (
+            chunk_gated_delta_rule or paddle_chunk_gated_delta_rule
+        )
+        self.recurrent_gated_delta_rule = (
+            fused_recurrent_gated_delta_rule
+            or paddle_recurrent_gated_delta_rule
+        )
 
         if not is_fast_path_available:
             logger.warning_once(
@@ -662,9 +820,13 @@ class Qwen3NextGatedDeltaNet(nn.Layer):
 
         new_tensor_shape_qkvz = mixed_qkvz.shape[:-1] + [
             self.num_k_heads,
-            2 * self.head_k_dim + 2 * self.head_v_dim * self.num_v_heads // self.num_k_heads,
+            2 * self.head_k_dim
+            + 2 * self.head_v_dim * self.num_v_heads // self.num_k_heads,
         ]
-        new_tensor_shape_ba = mixed_ba.shape[:-1] + [self.num_k_heads, 2 * self.num_v_heads // self.num_k_heads]
+        new_tensor_shape_ba = mixed_ba.shape[:-1] + [
+            self.num_k_heads,
+            2 * self.num_v_heads // self.num_k_heads,
+        ]
 
         mixed_qkvz = mixed_qkvz.view(*new_tensor_shape_qkvz)
         mixed_ba = mixed_ba.view(*new_tensor_shape_ba)
@@ -674,11 +836,18 @@ class Qwen3NextGatedDeltaNet(nn.Layer):
             (self.num_v_heads // self.num_k_heads * self.head_v_dim),
             (self.num_v_heads // self.num_k_heads * self.head_v_dim),
         ]
-        split_arg_list_ba = [self.num_v_heads // self.num_k_heads, self.num_v_heads // self.num_k_heads]
-        query, key, value, z = paddle.split(mixed_qkvz, split_arg_list_qkvz, axis=3)
+        split_arg_list_ba = [
+            self.num_v_heads // self.num_k_heads,
+            self.num_v_heads // self.num_k_heads,
+        ]
+        query, key, value, z = paddle.split(
+            mixed_qkvz, split_arg_list_qkvz, axis=3
+        )
         b, a = paddle.split(mixed_ba, split_arg_list_ba, axis=3)
         # [b, sq, ng, np/ng * hn] -> [b, sq, np, hn]
-        value = value.reshape(value.shape[0], value.shape[1], -1, self.head_v_dim)
+        value = value.reshape(
+            value.shape[0], value.shape[1], -1, self.head_v_dim
+        )
         z = z.reshape(z.shape[0], z.shape[1], -1, self.head_v_dim)
         b = b.reshape(b.shape[0], b.shape[1], self.num_v_heads)
         a = a.reshape(a.shape[0], a.shape[1], self.num_v_heads)
@@ -694,7 +863,9 @@ class Qwen3NextGatedDeltaNet(nn.Layer):
         if self.sequence_parallel:
             hidden_states = GatherOp.apply(hidden_states).unsqueeze(0)
 
-        hidden_states = apply_mask_to_padding_states(hidden_states, attention_mask)
+        hidden_states = apply_mask_to_padding_states(
+            hidden_states, attention_mask
+        )
 
         # Set up dimensions for reshapes later
         batch_size, seq_len, _ = hidden_states.shape
@@ -713,8 +884,12 @@ class Qwen3NextGatedDeltaNet(nn.Layer):
 
         projected_states_qkvz = self.in_proj_qkvz(hidden_states)
         projected_states_ba = self.in_proj_ba(hidden_states)
-        query, key, value, z, b, a = self.fix_query_key_value_ordering(projected_states_qkvz, projected_states_ba)
-        query, key, value = (x.reshape(x.shape[0], x.shape[1], -1) for x in (query, key, value))
+        query, key, value, z, b, a = self.fix_query_key_value_ordering(
+            projected_states_qkvz, projected_states_ba
+        )
+        query, key, value = (
+            x.reshape(x.shape[0], x.shape[1], -1) for x in (query, key, value)
+        )
 
         mixed_qkv = paddle.cat((query, key, value), dim=-1)
         mixed_qkv = mixed_qkv.transpose(1, 2)
@@ -731,7 +906,9 @@ class Qwen3NextGatedDeltaNet(nn.Layer):
             )
         else:
             if cache_params is not None:
-                conv_state = F.pad(mixed_qkv, (self.conv_kernel_size - mixed_qkv.shape[-1], 0))
+                conv_state = F.pad(
+                    mixed_qkv, (self.conv_kernel_size - mixed_qkv.shape[-1], 0)
+                )
                 cache_params.conv_states[self.layer_idx] = conv_state
             if self.causal_conv1d_fn is not None:
                 mixed_qkv = self.causal_conv1d_fn(
@@ -754,16 +931,24 @@ class Qwen3NextGatedDeltaNet(nn.Layer):
             ],
             axis=-1,
         )
-        query = query.reshape(query.shape[0], query.shape[1], -1, self.head_k_dim)
+        query = query.reshape(
+            query.shape[0], query.shape[1], -1, self.head_k_dim
+        )
         key = key.reshape(key.shape[0], key.shape[1], -1, self.head_k_dim)
-        value = value.reshape(value.shape[0], value.shape[1], -1, self.head_v_dim)
+        value = value.reshape(
+            value.shape[0], value.shape[1], -1, self.head_v_dim
+        )
 
         beta = b.sigmoid()
         # If the model is loaded in fp16, without the .float() here, A might be -inf
         g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
         if self.num_v_heads // self.num_k_heads > 1:
-            query = query.repeat_interleave(self.num_v_heads // self.num_k_heads, axis=2)
-            key = key.repeat_interleave(self.num_v_heads // self.num_k_heads, axis=2)
+            query = query.repeat_interleave(
+                self.num_v_heads // self.num_k_heads, axis=2
+            )
+            key = key.repeat_interleave(
+                self.num_v_heads // self.num_k_heads, axis=2
+            )
 
         if not use_precomputed_states:
             core_attn_out, last_recurrent_state = self.chunk_gated_delta_rule(
@@ -778,15 +963,17 @@ class Qwen3NextGatedDeltaNet(nn.Layer):
             )
 
         else:
-            core_attn_out, last_recurrent_state = self.recurrent_gated_delta_rule(
-                query,
-                key,
-                value,
-                g=g,
-                beta=beta,
-                initial_state=recurrent_state,
-                output_final_state=cache_params is not None,
-                use_qk_l2norm_in_kernel=True,
+            core_attn_out, last_recurrent_state = (
+                self.recurrent_gated_delta_rule(
+                    query,
+                    key,
+                    value,
+                    g=g,
+                    beta=beta,
+                    initial_state=recurrent_state,
+                    output_final_state=cache_params is not None,
+                    use_qk_l2norm_in_kernel=True,
+                )
             )
 
         # Update cache
@@ -799,7 +986,9 @@ class Qwen3NextGatedDeltaNet(nn.Layer):
         z = z.reshape(-1, z.shape[-1])
         core_attn_out = self.norm(core_attn_out, z)
         core_attn_out = core_attn_out.reshape(z_shape_og)
-        core_attn_out = core_attn_out.reshape(core_attn_out.shape[0], core_attn_out.shape[1], -1)
+        core_attn_out = core_attn_out.reshape(
+            core_attn_out.shape[0], core_attn_out.shape[1], -1
+        )
 
         output = self.out_proj(core_attn_out)
 
@@ -824,13 +1013,18 @@ class Qwen3NextDecoderLayer(nn.Layer):
             self.self_attn = Qwen3NextAttention(config, layer_idx)
 
         try:
-            moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
+            moe_group = (
+                fleet.get_hybrid_communicate_group().get_expert_parallel_group()
+            )
         except:
             moe_group = None
-        expert_model_parallel_size = dist.get_world_size(moe_group) if moe_group is not None else 1
+        expert_model_parallel_size = (
+            dist.get_world_size(moe_group) if moe_group is not None else 1
+        )
 
         if (layer_idx not in config.mlp_only_layers) and (
-            config.num_experts > 0 and (layer_idx + 1) % config.decoder_sparse_step == 0
+            config.num_experts > 0
+            and (layer_idx + 1) % config.decoder_sparse_step == 0
         ):
             self.mlp = (
                 QuickAccessMoEFactory.create_from_model_name(
@@ -846,7 +1040,9 @@ class Qwen3NextDecoderLayer(nn.Layer):
                 else Qwen2MoeSparseMoeBlock(config)
             )
         else:
-            self.mlp = Qwen3MoeMLP(config, intermediate_size=config.intermediate_size)
+            self.mlp = Qwen3MoeMLP(
+                config, intermediate_size=config.intermediate_size
+            )
 
         self.input_layernorm = Qwen3NextRMSNorm(
             config.hidden_size,
@@ -863,9 +1059,9 @@ class Qwen3NextDecoderLayer(nn.Layer):
         self,
         hidden_states: Tensor,
         attention_mask: Optional[Tensor] = None,
-        past_key_values: Optional[List[Tensor]] = None,
+        past_key_values: Optional[list[Tensor]] = None,
         use_cache: Optional[bool] = False,
-        position_embeddings: tuple[Tensor, Tensor] = None,
+        position_embeddings: tuple[Tensor, Tensor] | None = None,
         attn_mask_startend_row_indices: Optional[Tensor] = None,
         batch_size: Optional[int] = None,
         **kwargs,
@@ -1027,12 +1223,19 @@ class Qwen3NextModel(Qwen3NextPretrainedModel):
     def __init__(self, config: Qwen3NextConfig):
         super().__init__(config)
         self.embed_tokens = GeneralEmbedding.create(
-            config=config, num_embeddings=config.vocab_size, embedding_dim=config.hidden_size
+            config=config,
+            num_embeddings=config.vocab_size,
+            embedding_dim=config.hidden_size,
         )
         self.layers = nn.LayerList(
-            [Qwen3NextDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
+            [
+                Qwen3NextDecoderLayer(config, layer_idx)
+                for layer_idx in range(config.num_hidden_layers)
+            ]
         )
-        self.norm = Qwen3NextRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.norm = Qwen3NextRMSNorm(
+            config.hidden_size, eps=config.rms_norm_eps
+        )
         self.rotary_emb = Qwen3NextRotaryEmbedding(config)
         if config.rope_scaling:
             logger.warning_once("The rope_scaling is not implemented.")
@@ -1050,17 +1253,27 @@ class Qwen3NextModel(Qwen3NextPretrainedModel):
         **kwargs,
     ) -> MoEModelOutputWithPast:
         if (input_ids is None) ^ (inputs_embeds is not None):
-            raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
+            raise ValueError(
+                "You must specify exactly one of input_ids or inputs_embeds"
+            )
 
         if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
+            inputs_embeds = self.embed_tokens(input_ids).astype(
+                self.embed_tokens.weight.dtype
+            )
 
         if use_cache and past_key_values is None:
             past_key_values = Qwen3NextDynamicCache(config=self.config)
 
         if cache_position is None:
-            past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
-            cache_position = paddle.arange(past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1])
+            past_seen_tokens = (
+                past_key_values.get_seq_length()
+                if past_key_values is not None
+                else 0
+            )
+            cache_position = paddle.arange(
+                past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1]
+            )
         if position_ids is None:
             position_ids = cache_position.unsqueeze(0)
 
@@ -1071,7 +1284,9 @@ class Qwen3NextModel(Qwen3NextPretrainedModel):
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
         causal_mask = None
-        linear_attn_mask = self._update_linear_attn_mask(attention_mask, cache_position)
+        linear_attn_mask = self._update_linear_attn_mask(
+            attention_mask, cache_position
+        )
 
         hidden_states = inputs_embeds
 
@@ -1079,7 +1294,11 @@ class Qwen3NextModel(Qwen3NextPretrainedModel):
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
         for decoder_layer in self.layers[: self.config.num_hidden_layers]:
-            layer_mask = linear_attn_mask if decoder_layer.layer_type == "linear_attention" else causal_mask
+            layer_mask = (
+                linear_attn_mask
+                if decoder_layer.layer_type == "linear_attention"
+                else causal_mask
+            )
 
             hidden_states = decoder_layer(
                 hidden_states,
@@ -1107,7 +1326,9 @@ class Qwen3NextModel(Qwen3NextPretrainedModel):
             2. Attending to all inputs
         """
         linear_attn_mask = attention_mask
-        if cache_position[0] > 0 or (attention_mask is not None and paddle.all(attention_mask == 1)):
+        if cache_position[0] > 0 or (
+            attention_mask is not None and paddle.all(attention_mask == 1)
+        ):
             linear_attn_mask = None
         return linear_attn_mask
 
@@ -1134,7 +1355,7 @@ class Qwen3NextForCausalLM(Qwen3NextPretrainedModel):
         labels: Optional[Tensor] = None,
         loss_mask: Optional[Tensor] = None,
         use_cache: Optional[bool] = None,
-        past_key_values: Optional[List[Tensor]] = None,
+        past_key_values: Optional[list[Tensor]] = None,
         output_router_logits: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         attn_mask_startend_row_indices=None,
@@ -1163,11 +1384,20 @@ class Qwen3NextForCausalLM(Qwen3NextPretrainedModel):
         "Hey, are you conscious? Can you talk to me?\nI'm not conscious, but I can talk to you."
         ```"""
         output_router_logits = (
-            output_router_logits if output_router_logits is not None else self.config.output_router_logits
+            output_router_logits
+            if output_router_logits is not None
+            else self.config.output_router_logits
         )
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict
+            if return_dict is not None
+            else self.config.use_return_dict
+        )
 
-        if attn_mask_startend_row_indices is not None and attention_mask is not None:
+        if (
+            attn_mask_startend_row_indices is not None
+            and attention_mask is not None
+        ):
             logger.warning(
                 "You have provided both attn_mask_startend_row_indices and attention_mask. "
                 "The attn_mask_startend_row_indices will be used."

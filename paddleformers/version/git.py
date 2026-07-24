@@ -13,6 +13,7 @@
 # limitations under the License.
 
 """Git utilities."""
+
 # https://github.com/python/mypy/blob/2c2d126cc742f2467045d36780c33bb8fb77a614/mypy/git.py#L1-L34
 # Used also from setup.py, so don't pull in anything additional here (like mypy or typing):
 from __future__ import annotations
@@ -39,10 +40,14 @@ def have_git() -> bool:
 
 def git_revision(dir: str) -> bytes:
     """Get the SHA-1 of the HEAD of a git repository."""
-    return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=dir).strip()
+    return subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=dir
+    ).strip()
 
 
 def is_dirty(dir: str) -> bool:
     """Check whether a git repository has uncommitted changes."""
-    output = subprocess.check_output(["git", "status", "-uno", "--porcelain"], cwd=dir)
+    output = subprocess.check_output(
+        ["git", "status", "-uno", "--porcelain"], cwd=dir
+    )
     return output.strip() != b""

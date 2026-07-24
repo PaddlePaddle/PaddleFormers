@@ -34,7 +34,9 @@ def dist_gather_tensor_with_gradient(tensor):
 
     if sharding_group.nranks > 1:
         all_tensors = []
-        paddle.distributed.all_gather(all_tensors, tensor.contiguous(), group=sharding_group)
+        paddle.distributed.all_gather(
+            all_tensors, tensor.contiguous(), group=sharding_group
+        )
         all_tensors[sharding_rank] = tensor
         all_tensors = paddle.cat(all_tensors, axis=0)
     else:
@@ -42,7 +44,9 @@ def dist_gather_tensor_with_gradient(tensor):
 
     if data_group.nranks > 1:
         final_tensors = []
-        paddle.distributed.all_gather(final_tensors, all_tensors.contiguous(), group=data_group)
+        paddle.distributed.all_gather(
+            final_tensors, all_tensors.contiguous(), group=data_group
+        )
         final_tensors[data_rank] = all_tensors
         final_tensors = paddle.cat(final_tensors, axis=0)
     else:

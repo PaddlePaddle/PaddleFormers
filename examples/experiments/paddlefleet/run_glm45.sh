@@ -1,11 +1,11 @@
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-# 
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -27,7 +27,7 @@ master=`cat /root/paddlejob/workspace/hostfile | head -n $(($START_RANK+1)) | ta
 port=36677
 
 rank=$(($rank-$START_RANK))
-#bash script/kill_process.sh 
+#bash script/kill_process.sh
 #sleep 5
 
 # 使用标准的FP32格式计算, 提升精度

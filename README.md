@@ -211,23 +211,17 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
 > git clone https://github.com/PaddlePaddle/PaddleFormers.git
 > cd PaddleFormers
 > # cuda12.6
-> python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
-> # cuda12.9
-> # python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
-> # cuda13.0
-> # python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
+> python -m pip install -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
+> python -m pip install -e packages/paddlefleet_ops --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
+> # cuda12.9/cuda13.0: replace cu126 in the index URLs with cu129/cu130.
 > ```
 ------
-> **安装方案二：** 如果您不想拉取源码，可以基于下面的命令安装 PaddleFormers 和 PaddleFleet。
+> **安装方案二：** 如果您不想拉取源码，可以基于下面的命令安装 PaddleFormers 和 PaddleFleet Ops。
 >
 > ```shell
 > # Install via pip
-> # cuda12.6
-> python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
-> # cuda12.9
-> # python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
-> # cuda13.0
-> # python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
+> python -m pip install paddleformers paddlefleet_ops --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
+> # cuda12.9/cuda13.0: replace cu126 in the index URL with cu129/cu130.
 > ```
 ------
 > **安装方案三：** 如果您只需使用 tokenizer 或者 processor，可以通过以下命令安装，这种情况下不会安装训练相关的依赖，安装速度更加快。

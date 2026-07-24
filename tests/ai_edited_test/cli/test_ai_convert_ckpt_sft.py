@@ -20,7 +20,14 @@ import unittest
 
 # Direct import to avoid __init__.py triggering workflow.py which requires AutoTokenizer
 _MODULE_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "..", "..", "paddleformers", "cli", "train", "deepseek_v3_pretrain"
+    os.path.dirname(__file__),
+    "..",
+    "..",
+    "..",
+    "paddleformers",
+    "cli",
+    "train",
+    "deepseek_v3_pretrain",
 )
 _MODULE_DIR = os.path.abspath(_MODULE_DIR)
 
@@ -44,7 +51,9 @@ def _load_module(name, path):
 # and mocking it breaks importlib.util.find_spec() used by transformers.
 if "torch" not in sys.modules:
     _mock_torch = types.ModuleType("torch")
-    _mock_torch.__spec__ = types.SimpleNamespace(name="torch", origin=None, submodule_search_locations=[])
+    _mock_torch.__spec__ = types.SimpleNamespace(
+        name="torch", origin=None, submodule_search_locations=[]
+    )
     _mock_torch.__path__ = []
     _mock_torch.__version__ = "2.0.0"
     _mock_torch.int8 = "int8"
@@ -78,7 +87,9 @@ if "safetensors.torch" not in sys.modules:
     sys.modules["safetensors.torch"] = _mock_safetensors_torch
 
 # Load the convert_ckpt_to_sft module directly
-_conv_mod = _load_module("convert_ckpt_to_sft", os.path.join(_UTILS_DIR, "convert_ckpt_to_sft.py"))
+_conv_mod = _load_module(
+    "convert_ckpt_to_sft", os.path.join(_UTILS_DIR, "convert_ckpt_to_sft.py")
+)
 
 _EXPERT_W1_RE = _conv_mod._EXPERT_W1_RE
 _EXPERT_W1_RE_v2 = _conv_mod._EXPERT_W1_RE_v2
@@ -120,13 +131,17 @@ class TestPaddleNameToHfNames(unittest.TestCase):
 
     def test_router_ignored(self):
         """Test that router names return empty list."""
-        result = paddle_name_to_hf_names("deepseek_v2.layers.3.mlp.router.weight")
+        result = paddle_name_to_hf_names(
+            "deepseek_v2.layers.3.mlp.router.weight"
+        )
         self.assertEqual(result, [])
 
     def test_input_layernorm_ignored(self):
         """Test that input_layernorm names return empty list due to filter."""
         # The source code checks "input_layernorm" in paddle_name before custom_name_map
-        result = paddle_name_to_hf_names("deepseek_v2.layers.3.input_layernorm.weight")
+        result = paddle_name_to_hf_names(
+            "deepseek_v2.layers.3.input_layernorm.weight"
+        )
         self.assertEqual(result, [])
 
     def test_unmatched_name(self):
@@ -137,37 +152,49 @@ class TestPaddleNameToHfNames(unittest.TestCase):
     def test_custom_name_map(self):
         """Test custom name mapping for fused_rms_norm_linear.rms_norm_weight."""
         # "input_layernorm" in name triggers the filter, but other custom_name_map entries work
-        result = paddle_name_to_hf_names("deepseek_v2.layers.3.self_attn.fused_rms_norm_linear.rms_norm_weight")
+        result = paddle_name_to_hf_names(
+            "deepseek_v2.layers.3.self_attn.fused_rms_norm_linear.rms_norm_weight"
+        )
         self.assertEqual(result, ["model.layers.3.input_layernorm.weight"])
 
     def test_expert_w1(self):
         """Test expert w1 weight conversion."""
-        result = paddle_name_to_hf_names("deepseek_v2.layers.5.mlp.experts.2.w1.weight")
+        result = paddle_name_to_hf_names(
+            "deepseek_v2.layers.5.mlp.experts.2.w1.weight"
+        )
         self.assertEqual(len(result), 2)
         self.assertIn("gate_proj.weight", result[0])
         self.assertIn("up_proj.weight", result[1])
 
     def test_expert_w2(self):
         """Test expert w2 weight conversion."""
-        result = paddle_name_to_hf_names("deepseek_v2.layers.5.mlp.experts.2.w2.weight")
+        result = paddle_name_to_hf_names(
+            "deepseek_v2.layers.5.mlp.experts.2.w2.weight"
+        )
         self.assertEqual(len(result), 1)
         self.assertIn("down_proj.weight", result[0])
 
     def test_expert_gate_up_fused(self):
         """Test expert gate_up_fused_proj weight conversion."""
-        result = paddle_name_to_hf_names("deepseek_v2.layers.5.mlp.experts.3.gate_up_fused_proj.weight")
+        result = paddle_name_to_hf_names(
+            "deepseek_v2.layers.5.mlp.experts.3.gate_up_fused_proj.weight"
+        )
         self.assertEqual(len(result), 2)
         self.assertIn("gate_proj.weight", result[0])
         self.assertIn("up_proj.weight", result[1])
 
     def test_shared_expert_w1(self):
         """Test shared expert w1 weight conversion."""
-        result = paddle_name_to_hf_names("deepseek_v2.layers.5.mlp.shared_experts.w1.weight")
+        result = paddle_name_to_hf_names(
+            "deepseek_v2.layers.5.mlp.shared_experts.w1.weight"
+        )
         self.assertEqual(len(result), 2)
 
     def test_shared_expert_w2(self):
         """Test shared expert w2 weight conversion."""
-        result = paddle_name_to_hf_names("deepseek_v2.layers.5.mlp.shared_experts.w2.weight")
+        result = paddle_name_to_hf_names(
+            "deepseek_v2.layers.5.mlp.shared_experts.w2.weight"
+        )
         self.assertEqual(len(result), 1)
         self.assertIn("down_proj.weight", result[0])
 
@@ -186,7 +213,9 @@ class TestPaddleNameToHfNames(unittest.TestCase):
 
     def test_fallback_name_replacement(self):
         """Test fallback name replacement for unmatched patterns."""
-        result = paddle_name_to_hf_names("deepseek_v2.layers.3.self_attn.o_proj.weight")
+        result = paddle_name_to_hf_names(
+            "deepseek_v2.layers.3.self_attn.o_proj.weight"
+        )
         self.assertEqual(result, ["model.layers.3.self_attn.o_proj.weight"])
 
 
@@ -195,20 +224,32 @@ class TestHandleExpertWeights(unittest.TestCase):
 
     def test_w1_weight(self):
         """Test handling of expert w1 weight."""
-        result = _handle_expert_weights("model.layers.3", "mlp.experts.5.w1.weight")
+        result = _handle_expert_weights(
+            "model.layers.3", "mlp.experts.5.w1.weight"
+        )
         self.assertEqual(len(result), 2)
-        self.assertEqual(result[0], "model.layers.3.mlp.experts.5.gate_proj.weight")
-        self.assertEqual(result[1], "model.layers.3.mlp.experts.5.up_proj.weight")
+        self.assertEqual(
+            result[0], "model.layers.3.mlp.experts.5.gate_proj.weight"
+        )
+        self.assertEqual(
+            result[1], "model.layers.3.mlp.experts.5.up_proj.weight"
+        )
 
     def test_w2_weight(self):
         """Test handling of expert w2 weight."""
-        result = _handle_expert_weights("model.layers.3", "mlp.experts.5.w2.weight")
+        result = _handle_expert_weights(
+            "model.layers.3", "mlp.experts.5.w2.weight"
+        )
         self.assertEqual(len(result), 1)
-        self.assertEqual(result[0], "model.layers.3.mlp.experts.5.down_proj.weight")
+        self.assertEqual(
+            result[0], "model.layers.3.mlp.experts.5.down_proj.weight"
+        )
 
     def test_non_expert_weight(self):
         """Test handling of non-expert weight returns None."""
-        result = _handle_expert_weights("model.layers.3", "self_attn.q_proj.weight")
+        result = _handle_expert_weights(
+            "model.layers.3", "self_attn.q_proj.weight"
+        )
         self.assertIsNone(result)
 
 
@@ -217,18 +258,24 @@ class TestHandleSharedExpertWeights(unittest.TestCase):
 
     def test_w1_weight(self):
         """Test handling of shared expert w1 weight."""
-        result = _handle_shared_expert_weights("model.layers.3", "mlp.shared_experts.w1.weight")
+        result = _handle_shared_expert_weights(
+            "model.layers.3", "mlp.shared_experts.w1.weight"
+        )
         self.assertEqual(len(result), 2)
 
     def test_w2_weight(self):
         """Test handling of shared expert w2 weight."""
-        result = _handle_shared_expert_weights("model.layers.3", "mlp.shared_experts.w2.weight")
+        result = _handle_shared_expert_weights(
+            "model.layers.3", "mlp.shared_experts.w2.weight"
+        )
         self.assertEqual(len(result), 1)
         self.assertIn("down_proj.weight", result[0])
 
     def test_non_shared_expert_weight(self):
         """Test handling of non-shared-expert weight returns None."""
-        result = _handle_shared_expert_weights("model.layers.3", "self_attn.q_proj.weight")
+        result = _handle_shared_expert_weights(
+            "model.layers.3", "self_attn.q_proj.weight"
+        )
         self.assertIsNone(result)
 
 
@@ -250,7 +297,9 @@ class TestHandleMlpWeights(unittest.TestCase):
 
     def test_non_mlp_weight(self):
         """Test handling of non-mlp weight returns None."""
-        result = _handle_mlp_weights("model.layers.3", "self_attn.q_proj.weight")
+        result = _handle_mlp_weights(
+            "model.layers.3", "self_attn.q_proj.weight"
+        )
         self.assertIsNone(result)
 
 
@@ -259,23 +308,41 @@ class TestIsNeedTranspose(unittest.TestCase):
 
     def test_kv_down_weight(self):
         """Test that fused_rms_norm_linear.kv_down_weight needs transpose."""
-        self.assertTrue(_is_need_transpose("deepseek_v2.layers.3.self_attn.fused_rms_norm_linear.kv_down_weight"))
+        self.assertTrue(
+            _is_need_transpose(
+                "deepseek_v2.layers.3.self_attn.fused_rms_norm_linear.kv_down_weight"
+            )
+        )
 
     def test_kv_up_weight(self):
         """Test that memory_recompute_att.kv_up_weight needs transpose."""
-        self.assertTrue(_is_need_transpose("deepseek_v2.layers.3.self_attn.memory_recompute_att.kv_up_weight"))
+        self.assertTrue(
+            _is_need_transpose(
+                "deepseek_v2.layers.3.self_attn.memory_recompute_att.kv_up_weight"
+            )
+        )
 
     def test_o_proj_weight(self):
         """Test that o_proj.weight needs transpose."""
-        self.assertTrue(_is_need_transpose("deepseek_v2.layers.3.self_attn.o_proj.weight"))
+        self.assertTrue(
+            _is_need_transpose("deepseek_v2.layers.3.self_attn.o_proj.weight")
+        )
 
     def test_q_down_weight(self):
         """Test that fused_rms_norm_linear.q_down_weight needs transpose."""
-        self.assertTrue(_is_need_transpose("deepseek_v2.layers.3.self_attn.fused_rms_norm_linear.q_down_weight"))
+        self.assertTrue(
+            _is_need_transpose(
+                "deepseek_v2.layers.3.self_attn.fused_rms_norm_linear.q_down_weight"
+            )
+        )
 
     def test_q_up_weight(self):
         """Test that memory_recompute_att.q_up_weight needs transpose."""
-        self.assertTrue(_is_need_transpose("deepseek_v2.layers.3.self_attn.memory_recompute_att.q_up_weight"))
+        self.assertTrue(
+            _is_need_transpose(
+                "deepseek_v2.layers.3.self_attn.memory_recompute_att.q_up_weight"
+            )
+        )
 
     def test_w1_transpose(self):
         """Test that w1 needs transpose."""
@@ -287,11 +354,15 @@ class TestIsNeedTranspose(unittest.TestCase):
 
     def test_gate_weight_transpose(self):
         """Test that gate.weight needs transpose."""
-        self.assertTrue(_is_need_transpose("deepseek_v2.layers.3.mlp.gate.weight"))
+        self.assertTrue(
+            _is_need_transpose("deepseek_v2.layers.3.mlp.gate.weight")
+        )
 
     def test_eh_proj_transpose(self):
         """Test that eh_proj.weight needs transpose."""
-        self.assertTrue(_is_need_transpose("deepseek_v2.layers.3.eh_proj.weight"))
+        self.assertTrue(
+            _is_need_transpose("deepseek_v2.layers.3.eh_proj.weight")
+        )
 
     def test_lm_head_transpose(self):
         """Test that lm_head.weight needs transpose."""
@@ -299,8 +370,12 @@ class TestIsNeedTranspose(unittest.TestCase):
 
     def test_no_transpose_needed(self):
         """Test names that do not need transpose."""
-        self.assertFalse(_is_need_transpose("deepseek_v2.layers.3.self_attn.q_proj.weight"))
-        self.assertFalse(_is_need_transpose("deepseek_v2.layers.3.self_attn.k_proj.weight"))
+        self.assertFalse(
+            _is_need_transpose("deepseek_v2.layers.3.self_attn.q_proj.weight")
+        )
+        self.assertFalse(
+            _is_need_transpose("deepseek_v2.layers.3.self_attn.k_proj.weight")
+        )
         self.assertFalse(_is_need_transpose("deepseek_v2.norm.weight"))
 
 
@@ -384,7 +459,9 @@ class TestRegexPatterns(unittest.TestCase):
 
     def test_share_expert_w1_re_v2(self):
         """Test _SHARE_EXPERT_W1_RE_v2 pattern matching."""
-        m = _SHARE_EXPERT_W1_RE_v2.match("mlp.shared_experts.gate_up_fused_proj.weight")
+        m = _SHARE_EXPERT_W1_RE_v2.match(
+            "mlp.shared_experts.gate_up_fused_proj.weight"
+        )
         self.assertIsNotNone(m)
 
 

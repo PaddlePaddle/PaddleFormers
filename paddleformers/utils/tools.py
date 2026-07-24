@@ -20,9 +20,8 @@ from .log import logger
 
 
 def dispatch_to(dispatch_fn, *, cond=None):
-
     if cond is None:
-        cond = lambda self, *args, **kwargs: True  # noqa: E731
+        cond = lambda self, *args, **kwargs: True
 
     def decorator(fn):
         def wrapper(*args, **kwargs):
@@ -52,7 +51,7 @@ def static_params_to_dygraph(model, static_tensor_dict):
     state_dict = model.state_dict()
     # static_tensor_dict = paddle.static.load_program_state(static_params_path)
 
-    ret_dict = dict()
+    ret_dict = {}
     for n, p in state_dict.items():
         if p.name not in static_tensor_dict:
             logger.info("%s parameter is missing from you state dict." % n)
@@ -76,7 +75,7 @@ def dygraph_params_to_static(model, dygraph_tensor_dict, topo=None):
     """
     state_dict = model.state_dict()
 
-    ret_dict = dict()
+    ret_dict = {}
     for name, parm in state_dict.items():
         if name not in dygraph_tensor_dict:
             logger.info("%s parameter is missing from you state dict." % name)
@@ -89,7 +88,9 @@ def dygraph_params_to_static(model, dygraph_tensor_dict, topo=None):
                 if parm.shape[dim] != v:
                     break
 
-            splited = np.split(tensor, topo.mp_info.size, axis=dim)[topo.mp_info.rank]
+            splited = np.split(tensor, topo.mp_info.size, axis=dim)[
+                topo.mp_info.rank
+            ]
             ret_dict[parm.name] = splited
         else:
             ret_dict[parm.name] = tensor
@@ -97,7 +98,7 @@ def dygraph_params_to_static(model, dygraph_tensor_dict, topo=None):
     return ret_dict
 
 
-class TimeCostAverage(object):
+class TimeCostAverage:
     """
     Simple tool for calculating time average cost in the process of training and inferencing.
     """
@@ -269,14 +270,16 @@ def device_guard(device="cpu", dev_id=0):
     @contextlib.contextmanager
     def _device_guard():
         if not is_paddle_available():
-            raise ImportError("PaddlePaddle is not available. Please install it first.")
+            raise ImportError(
+                "PaddlePaddle is not available. Please install it first."
+            )
         import paddle
 
         origin_device = paddle.device.get_device()
         if device == "cpu":
             paddle.set_device(device)
         elif device in ["gpu", "xpu", "npu"]:
-            paddle.set_device("{}:{}".format(device, dev_id))
+            paddle.set_device(f"{device}:{dev_id}")
         try:
             yield
         finally:
@@ -339,7 +342,9 @@ class PaddleDeviceWrapper:
         if func is not None:
             return func
         else:
-            hardware_func = self.get_nested_attr(self.paddle_device_hardware, name)
+            hardware_func = self.get_nested_attr(
+                self.paddle_device_hardware, name
+            )
             if hardware_func is not None:
                 return hardware_func
             else:

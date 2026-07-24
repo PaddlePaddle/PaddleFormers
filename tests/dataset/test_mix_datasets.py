@@ -16,7 +16,10 @@ import os
 import unittest
 
 from paddleformers.datasets.loader import create_dataset
-from paddleformers.datasets.reader.mix_datasets import ConcatDataset, InterLeaveDataset
+from paddleformers.datasets.reader.mix_datasets import (
+    ConcatDataset,
+    InterLeaveDataset,
+)
 from paddleformers.transformers import AutoTokenizer
 from tests.testing_utils import get_tests_dir
 
@@ -79,18 +82,26 @@ class TestPTDataset(unittest.TestCase):
 
     def test_random_dataset_len(self):
         train_dataset = self._build_dataset(mix_strategy="random")
-        self.assertEqual(len(train_dataset.mix_datasets), NUM_SAMPLES_EACH_EPOCH)
+        self.assertEqual(
+            len(train_dataset.mix_datasets), NUM_SAMPLES_EACH_EPOCH
+        )
 
     def test_concat_dataset_len(self):
-        train_dataset = self._build_dataset(mix_strategy="concat", multi_source=True)
+        train_dataset = self._build_dataset(
+            mix_strategy="concat", multi_source=True
+        )
         self.assertEqual(len(train_dataset.mix_datasets), 40)
 
     def test_interleave_under_dataset_len(self):
-        train_dataset = self._build_dataset(mix_strategy="interleave_under", multi_source=True)
+        train_dataset = self._build_dataset(
+            mix_strategy="interleave_under", multi_source=True
+        )
         self.assertEqual(len(train_dataset.mix_datasets), 39)
 
     def test_interleave_over_dataset_len(self):
-        train_dataset = self._build_dataset(mix_strategy="interleave_over", multi_source=True)
+        train_dataset = self._build_dataset(
+            mix_strategy="interleave_over", multi_source=True
+        )
         self.assertEqual(len(train_dataset.mix_datasets), 40)
 
 
@@ -136,18 +147,26 @@ class TestSFTDataset(unittest.TestCase):
 
     def test_random_dataset_len(self):
         train_dataset = self._build_dataset(mix_strategy="random")
-        self.assertEqual(len(train_dataset.mix_datasets), NUM_SAMPLES_EACH_EPOCH)
+        self.assertEqual(
+            len(train_dataset.mix_datasets), NUM_SAMPLES_EACH_EPOCH
+        )
 
     def test_concat_dataset_len(self):
-        train_dataset = self._build_dataset(mix_strategy="concat", multi_source=True)
+        train_dataset = self._build_dataset(
+            mix_strategy="concat", multi_source=True
+        )
         self.assertEqual(len(train_dataset.mix_datasets), 20)
 
     def test_interleave_under_dataset_len(self):
-        train_dataset = self._build_dataset(mix_strategy="interleave_under", multi_source=True)
+        train_dataset = self._build_dataset(
+            mix_strategy="interleave_under", multi_source=True
+        )
         self.assertEqual(len(train_dataset.mix_datasets), 17)
 
     def test_interleave_over_dataset_len(self):
-        train_dataset = self._build_dataset(mix_strategy="interleave_over", multi_source=True)
+        train_dataset = self._build_dataset(
+            mix_strategy="interleave_over", multi_source=True
+        )
         self.assertEqual(len(train_dataset.mix_datasets), 26)
 
 
@@ -193,18 +212,26 @@ class TestDPODataset(unittest.TestCase):
 
     def test_random_dataset_len(self):
         train_dataset = self._build_dataset(mix_strategy="random")
-        self.assertEqual(len(train_dataset.mix_datasets), NUM_SAMPLES_EACH_EPOCH)
+        self.assertEqual(
+            len(train_dataset.mix_datasets), NUM_SAMPLES_EACH_EPOCH
+        )
 
     def test_concat_dataset_len(self):
-        train_dataset = self._build_dataset(mix_strategy="concat", multi_source=True)
+        train_dataset = self._build_dataset(
+            mix_strategy="concat", multi_source=True
+        )
         self.assertEqual(len(train_dataset.mix_datasets), 20)
 
     def test_interleave_under_dataset_len(self):
-        train_dataset = self._build_dataset(mix_strategy="interleave_under", multi_source=True)
+        train_dataset = self._build_dataset(
+            mix_strategy="interleave_under", multi_source=True
+        )
         self.assertEqual(len(train_dataset.mix_datasets), 17)
 
     def test_interleave_over_dataset_len(self):
-        train_dataset = self._build_dataset(mix_strategy="interleave_over", multi_source=True)
+        train_dataset = self._build_dataset(
+            mix_strategy="interleave_over", multi_source=True
+        )
         self.assertEqual(len(train_dataset.mix_datasets), 26)
 
 
@@ -230,7 +257,9 @@ def _make_mock_multi_source(datasets_and_probs):
         pass
 
     ms = _MultiSource()
-    ms._task_group = [{"dataset": ds, "prob": prob} for ds, prob in datasets_and_probs]
+    ms._task_group = [
+        {"dataset": ds, "prob": prob} for ds, prob in datasets_and_probs
+    ]
     return ms
 
 
@@ -284,7 +313,9 @@ class TestInterleaveDatasetContent(unittest.TestCase):
         ds_a = _make_list_dataset([{"src": "a", "i": i} for i in range(2)])
         ds_b = _make_list_dataset([{"src": "b", "i": i} for i in range(10)])
         ms = _make_mock_multi_source([(ds_a, 0.5), (ds_b, 0.5)])
-        ds = InterLeaveDataset(ms, **{**BASE_CONFIG, "mix_strategy": "interleave_under"})
+        ds = InterLeaveDataset(
+            ms, **{**BASE_CONFIG, "mix_strategy": "interleave_under"}
+        )
         self.assertLessEqual(len(ds), 10)
 
     def test_interleave_over_uses_all_items_from_both_sources(self):
@@ -292,7 +323,9 @@ class TestInterleaveDatasetContent(unittest.TestCase):
         ds_a = _make_list_dataset([{"src": "a", "i": i} for i in range(3)])
         ds_b = _make_list_dataset([{"src": "b", "i": i} for i in range(3)])
         ms = _make_mock_multi_source([(ds_a, 0.5), (ds_b, 0.5)])
-        ds = InterLeaveDataset(ms, **{**BASE_CONFIG, "mix_strategy": "interleave_over"})
+        ds = InterLeaveDataset(
+            ms, **{**BASE_CONFIG, "mix_strategy": "interleave_over"}
+        )
         sources = [r["src"] for r in ds]
         self.assertGreaterEqual(sources.count("a"), 3)
         self.assertGreaterEqual(sources.count("b"), 3)

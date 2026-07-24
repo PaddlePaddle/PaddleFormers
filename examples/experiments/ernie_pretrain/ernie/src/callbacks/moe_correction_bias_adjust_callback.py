@@ -34,7 +34,9 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
     def on_optimizer_end(self, args, state, control, **kwargs):
         # Skip bias update when freeze_training is enabled
         if getattr(args, "freeze_training", False):
-            logger.warning("freeze_training is enabled! MoE e_score_correction_bias will NOT be updated.")
+            logger.warning(
+                "freeze_training is enabled! MoE e_score_correction_bias will NOT be updated."
+            )
             return
 
         model = kwargs["model"]
@@ -47,11 +49,13 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
             if isinstance(layer, ErnieDecoderLayer):
                 if not isinstance(layer.mlp, (MOELayer)):
                     return
-                assert hasattr(
-                    layer.mlp, "moe_statics"
-                ), "make sure update to latest ernie-core, too use AuxFree Balance"
+                assert hasattr(layer.mlp, "moe_statics"), (
+                    "make sure update to latest ernie-core, too use AuxFree Balance"
+                )
                 usages[layer.layer_idx] = layer.mlp.moe_statics.expert_usage
-                biases[layer.layer_idx] = layer.mlp.moe_statics.e_score_correction_bias
+                biases[layer.layer_idx] = (
+                    layer.mlp.moe_statics.e_score_correction_bias
+                )
 
         model.apply(get_stat)
         if not usages:

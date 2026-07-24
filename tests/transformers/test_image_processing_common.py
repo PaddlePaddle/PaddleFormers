@@ -23,13 +23,20 @@ from PIL import Image
 from .test_utils import check_json_file_has_correct_format
 
 
-def prepare_image_inputs(image_processor_tester, equal_resolution=False, numpify=False, paddlefy=False):
+def prepare_image_inputs(
+    image_processor_tester,
+    equal_resolution=False,
+    numpify=False,
+    paddlefy=False,
+):
     """This function prepares a list of PIL images, or a list of numpy arrays if one specifies numpify=True,
     or a list of PaddlePaddle tensors if one specifies paddlefy=True.
     One can specify whether the images are of the same resolution or not.
     """
 
-    assert not (numpify and paddlefy), "You cannot specify both numpy and PaddlePaddle tensors at the same time"
+    assert not (numpify and paddlefy), (
+        "You cannot specify both numpy and PaddlePaddle tensors at the same time"
+    )
 
     image_inputs = []
     for i in range(image_processor_tester.batch_size):
@@ -40,15 +47,28 @@ def prepare_image_inputs(image_processor_tester, equal_resolution=False, numpify
             min_resolution = image_processor_tester.min_resolution
             if getattr(image_processor_tester, "size_divisor", None):
                 # If `size_divisor` is defined, the image needs to have width/size >= `size_divisor`
-                min_resolution = max(image_processor_tester.size_divisor, min_resolution)
-            width, height = np.random.choice(np.arange(min_resolution, image_processor_tester.max_resolution), 2)
+                min_resolution = max(
+                    image_processor_tester.size_divisor, min_resolution
+                )
+            width, height = np.random.choice(
+                np.arange(
+                    min_resolution, image_processor_tester.max_resolution
+                ),
+                2,
+            )
         image_inputs.append(
-            np.random.randint(255, size=(image_processor_tester.num_channels, width, height), dtype=np.uint8)
+            np.random.randint(
+                255,
+                size=(image_processor_tester.num_channels, width, height),
+                dtype=np.uint8,
+            )
         )
 
     if not numpify and not paddlefy:
         # PIL expects the channel dimension as last dimension
-        image_inputs = [Image.fromarray(np.moveaxis(image, 0, -1)) for image in image_inputs]
+        image_inputs = [
+            Image.fromarray(np.moveaxis(image, 0, -1)) for image in image_inputs
+        ]
 
     if paddlefy:
         image_inputs = [paddle.to_tensor(image) for image in image_inputs]
@@ -60,27 +80,41 @@ class ImageProcessingSavingTestMixin:
     test_cast_dtype = None
 
     def test_image_processor_to_json_string(self):
-        image_processor = self.image_processing_class(**self.image_processor_dict)
+        image_processor = self.image_processing_class(
+            **self.image_processor_dict
+        )
         obj = json.loads(image_processor.to_json_string())
         for key, value in self.image_processor_dict.items():
             self.assertEqual(obj[key], value)
 
     def test_image_processor_to_json_file(self):
-        image_processor_first = self.image_processing_class(**self.image_processor_dict)
+        image_processor_first = self.image_processing_class(
+            **self.image_processor_dict
+        )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             json_file_path = os.path.join(tmpdir, "image_processor.json")
             image_processor_first.to_json_file(json_file_path)
-            image_processor_second = self.image_processing_class.from_json_file(json_file_path)
+            image_processor_second = self.image_processing_class.from_json_file(
+                json_file_path
+            )
 
-        self.assertEqual(image_processor_second.to_dict(), image_processor_first.to_dict())
+        self.assertEqual(
+            image_processor_second.to_dict(), image_processor_first.to_dict()
+        )
 
     def test_image_processor_from_and_save_pretrained(self):
-        image_processor_first = self.image_processing_class(**self.image_processor_dict)
+        image_processor_first = self.image_processing_class(
+            **self.image_processor_dict
+        )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             saved_file = image_processor_first.save_pretrained(tmpdir)[0]
             check_json_file_has_correct_format(saved_file)
-            image_processor_second = self.image_processing_class.from_pretrained(tmpdir)
+            image_processor_second = (
+                self.image_processing_class.from_pretrained(tmpdir)
+            )
 
-        self.assertEqual(image_processor_second.to_dict(), image_processor_first.to_dict())
+        self.assertEqual(
+            image_processor_second.to_dict(), image_processor_first.to_dict()
+        )

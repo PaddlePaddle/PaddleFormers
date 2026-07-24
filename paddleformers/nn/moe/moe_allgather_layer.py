@@ -18,7 +18,7 @@ moe_layer_all_gather
 """
 
 import inspect
-from typing import List, Optional, Tuple
+from typing import Optional
 
 import paddle
 import paddle.distributed as dist
@@ -34,7 +34,9 @@ from paddle.incubate.nn.functional import (
 )
 from paddle.incubate.tensor.manipulation import async_offload
 
-from paddleformers.peft.lora.lora_quantization_layers import QuantizationLoRALinear
+from paddleformers.peft.lora.lora_quantization_layers import (
+    QuantizationLoRALinear,
+)
 from paddleformers.utils.log import logger
 
 from .all_gather import AllGatherAsync, AlltoAllSmart, allgather_async
@@ -100,9 +102,9 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
     def __init__(
         self,
         gate: nn.Layer,
-        experts: List[nn.Layer],
+        experts: list[nn.Layer],
         layer_idx,
-        shared_experts: Optional[List[nn.Layer]] = None,
+        shared_experts: Optional[list[nn.Layer]] = None,
         group: Group = None,
         recompute=False,
         k=2,
@@ -111,7 +113,7 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
         group_experts=False,
         use_expert_out_alltoall=True,  #
         use_padding=True,
-        dense_token_type=3,  # considerd as dense tokens (no moe)
+        dense_token_type=3,  # considered as dense tokens (no moe)
         moe_statics=None,
         moe_num_experts=None,
     ):
@@ -130,14 +132,17 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
         )
         self.enable_reverse_token_drop = enable_reverse_token_drop
         self.use_padding = use_padding
-        self.multimodal_experts = isinstance(moe_num_experts, (tuple, list)) and len(moe_num_experts) > 1
+        self.multimodal_experts = (
+            isinstance(moe_num_experts, (tuple, list))
+            and len(moe_num_experts) > 1
+        )
         self.send_rank = None
         self.local_expert_id = None
         self.dense_token_type = dense_token_type
         self.capacity_tensor = None
         self.use_expert_out_alltoall = use_expert_out_alltoall
         logger.info(
-            f"uisng MOEAllGatherLayerV2, use_expert_out_alltoall={use_expert_out_alltoall}, "  # false
+            f"using MOEAllGatherLayerV2, use_expert_out_alltoall={use_expert_out_alltoall}, "  # false
             f"use_padding={use_padding}, enable_reverse_token_drop={self.enable_reverse_token_drop}"  # true false
         )
         self.zero = paddle.to_tensor(0, dtype=paddle.float32)
@@ -147,7 +152,7 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
         input: paddle.Tensor,
         token_type_ids=None,
         use_dense_expert=False,
-    ) -> Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
+    ) -> tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         """Implements forward pass for Mixture-of-Experts (MoE) layer with distributed communication.
 
         Core Functionality:
@@ -179,7 +184,9 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
         else:
             orig_shape = None
 
-        assert len(input.shape) == 2, f"input Tensor must have dimensions: (s)equence, (d)im, got:{input.shape}"
+        assert len(input.shape) == 2, (
+            f"input Tensor must have dimensions: (s)equence, (d)im, got:{input.shape}"
+        )
         dispatch_token_type_ids = None
         global_dense_expert_mask = None
         if token_type_ids is not None:
@@ -188,12 +195,19 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
             if self.config.sequence_parallel:
                 hcg = fleet.get_hybrid_communicate_group()
                 rank = hcg.get_model_parallel_rank()
-                interval = token_type_ids.shape[0] // hcg.get_model_parallel_world_size()
-                token_type_ids = token_type_ids.slice([0], rank * interval, (rank + 1) * interval)
+                interval = (
+                    token_type_ids.shape[0]
+                    // hcg.get_model_parallel_world_size()
+                )
+                token_type_ids = token_type_ids.slice(
+                    [0], rank * interval, (rank + 1) * interval
+                )
                 token_type_ids.stop_gradient = True
 
             if use_dense_expert:
-                global_dense_expert_mask = dispatch_token_type_ids == self.dense_token_type
+                global_dense_expert_mask = (
+                    dispatch_token_type_ids == self.dense_token_type
+                )
 
         assert self.gate is not None
         if hasattr(self, "rng") and self.rng.random() < self.all_to_all_dropout:
@@ -215,7 +229,9 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
             (gate_logits, gate_prob),
             (gate_logits_mm, gate_prob_mm),
             expert_num_local,
-        ) = self.fused_gate_and_dispatch(input, token_type_ids, global_dense_expert_mask)
+        ) = self.fused_gate_and_dispatch(
+            input, token_type_ids, global_dense_expert_mask
+        )
         seqlen_this_mp = input.shape[0]
         if len(scatter_index_rev):
             recv_rank_local = scatter_index_rev // seqlen_this_mp
@@ -224,7 +240,9 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
 
         if self.use_padding:
             if self.send_rank is None:
-                capacity = self.gate.get_capacity(input.shape[0] * self.config.moe_world_size)
+                capacity = self.gate.get_capacity(
+                    input.shape[0] * self.config.moe_world_size
+                )
                 self.send_rank = (
                     paddle.arange(self.config.moe_world_size)
                     .repeat_interleave(capacity * self.num_local_experts)
@@ -236,22 +254,32 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
                     .tile(self.config.moe_world_size)
                     .astype(self.send_rank.dtype)
                 )
-            recv_rank, recv_rank_task = allgather_async(recv_rank_local, group=self.config.moe_group)
+            recv_rank, recv_rank_task = allgather_async(
+                recv_rank_local, group=self.config.moe_group
+            )
             send_rank = self.send_rank
             local_expert_id = self.local_expert_id
 
         else:
             all_expert_num = sum(expert_num_global_list)
             if self.config.moe_group.nranks > 1:
-                recv_rank = paddle.empty([all_expert_num], dtype=recv_rank_local.dtype)
+                recv_rank = paddle.empty(
+                    [all_expert_num], dtype=recv_rank_local.dtype
+                )
                 recv_rank_task = dist.stream.alltoall_single(
                     recv_rank,
                     recv_rank_local.tile(self.config.moe_world_size),
                     [
-                        sum(expert_num_global_list[i * self.num_local_experts : (i + 1) * self.num_local_experts])
+                        sum(
+                            expert_num_global_list[
+                                i * self.num_local_experts : (i + 1)
+                                * self.num_local_experts
+                            ]
+                        )
                         for i in range(self.config.moe_world_size)
                     ],  # output-size
-                    [len(recv_rank_local)] * self.config.moe_world_size,  # input-size
+                    [len(recv_rank_local)]
+                    * self.config.moe_world_size,  # input-size
                     group=self.config.moe_group,
                     sync_op=False,
                     use_calc_stream=False,
@@ -261,7 +289,9 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
                 recv_rank = recv_rank_local.tile(self.config.moe_world_size)
 
             send_rank, local_expert_id = build_src_rank_and_local_expert_id(
-                expert_num_global, expert_num_global_list, self.num_local_experts
+                expert_num_global,
+                expert_num_global_list,
+                self.num_local_experts,
             )
 
         if not self.use_expert_out_alltoall:
@@ -270,8 +300,12 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
                 if self.recompute and self.training
                 else self.forward_experts(*dispatched_input)
             )
-            expert_outs = paddle.cat([e for e in expert_outs if e is not None], axis=0)  # [e*c,m]
-            expert_out_to_combine = AllGatherGroupOp.apply(expert_outs, group=self.config.moe_group)  # for test
+            expert_outs = paddle.cat(
+                [e for e in expert_outs if e is not None], axis=0
+            )  # [e*c,m]
+            expert_out_to_combine = AllGatherGroupOp.apply(
+                expert_outs, group=self.config.moe_group
+            )  # for test
             router_loss2 = self.calc_router_loss_and_logging(
                 router_loss,
                 gate_logits,
@@ -289,14 +323,22 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
             world_size = dist.get_world_size(self.config.moe_group)
             this_rank = dist.get_rank(self.config.moe_group)
 
-            recv_size = paddle.count_nonzero(recv_rank == dist.get_rank(self.config.moe_group))
-            recv_size = paddle.maximum(recv_size, paddle.ones([], dtype=recv_size.dtype))
+            recv_size = paddle.count_nonzero(
+                recv_rank == dist.get_rank(self.config.moe_group)
+            )
+            recv_size = paddle.maximum(
+                recv_size, paddle.ones([], dtype=recv_size.dtype)
+            )
 
-            recv_size_cpu, recv_size_task = async_offload(recv_size, get_async_loader())
+            recv_size_cpu, recv_size_task = async_offload(
+                recv_size, get_async_loader()
+            )
 
             send_rank_this_rank = paddle.count_nonzero(send_rank == this_rank)
 
-            send_rank_this_rank_cpu, send_rank_this_rank_task = async_offload(send_rank_this_rank, get_async_loader())
+            send_rank_this_rank_cpu, send_rank_this_rank_task = async_offload(
+                send_rank_this_rank, get_async_loader()
+            )
 
             recv_rank[recv_rank == -1] = world_size
             send_recv_count_global = paddle.scatter_nd_add(
@@ -318,14 +360,20 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
             if send_rank_this_rank_task is not None:
                 send_rank_this_rank_task.cpu_wait()
 
-            input_size = sum([len(i) if i is not None else 0 for i in dispatched_input])
+            input_size = sum(
+                [len(i) if i is not None else 0 for i in dispatched_input]
+            )
             if self.use_padding or input_size > 1:
                 assert send_rank_this_rank_cpu.item() == input_size, (
                     send_rank,
                     [len(i) if i is not None else 0 for i in dispatched_input],
                 )
 
-            expert_out_to_combine, router_loss2, distributed_input_to_alltoall_out = AlltoAllSmart.apply(
+            (
+                expert_out_to_combine,
+                router_loss2,
+                distributed_input_to_alltoall_out,
+            ) = AlltoAllSmart.apply(
                 *dispatched_input,
                 router_loss,
                 gate_logits,
@@ -342,7 +390,9 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
                 send_rank_global=send_rank,
                 recv_rank_global=recv_rank,
                 num_local_experts=self.num_local_experts,
-                capacity=dispatched_input[0].shape[1] if self.use_padding else None,
+                capacity=dispatched_input[0].shape[1]
+                if self.use_padding
+                else None,
                 use_padding=self.use_padding,
                 expert_num_global=expert_num_global_list,
                 is_first_fwd=not framework._dygraph_tracer()._has_grad,
@@ -354,21 +404,29 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
                 recv_counts_num=recv_counts_num_cpu,
             )
             # /origin input -> distributed input/ => /origin-input -> alltoall out -input/
-            local_scatter_index = distributed_input_to_alltoall_out[local_scatter_index]
+            local_scatter_index = distributed_input_to_alltoall_out[
+                local_scatter_index
+            ]
             local_scatter_index.stop_gradient = True
         # global -> local
-        combined_output = self.combine_expert_output(expert_out_to_combine, local_combine_weights, local_scatter_index)
+        combined_output = self.combine_expert_output(
+            expert_out_to_combine, local_combine_weights, local_scatter_index
+        )
 
         if self.shared_experts is not None:
             shared_out = self.shared_experts(input)
             combined_output += shared_out
 
         if orig_shape:
-            combined_output = combined_output.reshape(orig_shape[:-1] + [combined_output.shape[-1]])
+            combined_output = combined_output.reshape(
+                orig_shape[:-1] + [combined_output.shape[-1]]
+            )
 
         return combined_output, local_combine_weights, router_loss2, gate_logits
 
-    def fused_gate_logits_process_fused(self, gate_logits_lm, gate_logits_mm=None, token_type_ids=None):
+    def fused_gate_logits_process_fused(
+        self, gate_logits_lm, gate_logits_mm=None, token_type_ids=None
+    ):
         """Process gating logits for expert selection in Mixture-of-Experts (MoE) layers.
 
         Core Functionality:
@@ -387,11 +445,15 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
             )
         """
         top_k = self.k
-        num_expert_per_rank_per_modality = gate_logits_lm.shape[-1] // self.config.moe_world_size
+        num_expert_per_rank_per_modality = (
+            gate_logits_lm.shape[-1] // self.config.moe_world_size
+        )
         group_size = gate_logits_lm.shape[-1] // top_k
         if self.group_experts:
             assert not self.use_correction_bias
-            gate_logits_lm = gate_logits_lm.reshape([gate_logits_lm.shape[0], top_k, -1])
+            gate_logits_lm = gate_logits_lm.reshape(
+                [gate_logits_lm.shape[0], top_k, -1]
+            )
             prob_lm = self.gate.act(gate_logits_lm)
             prob_lm_ = prob_lm
             weight_lm, expert_id_lm = prob_lm_.topk(k=1, axis=-1)
@@ -401,24 +463,37 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
         else:
             prob_lm = self.gate.act(gate_logits_lm)
             if self.use_correction_bias:
-                prob_lm_ = prob_lm + self.moe_statics.e_score_correction_bias[0].detach()
+                prob_lm_ = (
+                    prob_lm
+                    + self.moe_statics.e_score_correction_bias[0].detach()
+                )
             else:
                 prob_lm_ = prob_lm
             weight_lm, expert_id_lm = prob_lm_.topk(k=top_k, axis=-1)
 
         if self.use_correction_bias:
-            batch_idx = paddle.arange(prob_lm_.shape[0]).unsqueeze(-1).expand_as(expert_id_lm)
+            batch_idx = (
+                paddle.arange(prob_lm_.shape[0])
+                .unsqueeze(-1)
+                .expand_as(expert_id_lm)
+            )
             weight_lm = prob_lm[batch_idx, expert_id_lm]  # use correct bias
 
         expert_id_lm = expand_modality_expert_id(
             expert_id_lm,
-            num_expert_per_modality=(num_expert_per_rank_per_modality if token_type_ids is not None else 0),
+            num_expert_per_modality=(
+                num_expert_per_rank_per_modality
+                if token_type_ids is not None
+                else 0
+            ),
             group_size=group_size,
             modality_offset=0,
             is_group_expert=self.group_experts,
         )
         expert_id_lm = expert_id_lm.reshape(weight_lm.shape)
-        lm_weight_and_expert_id = paddle.cat([weight_lm, expert_id_lm.astype("float32")], -1)
+        lm_weight_and_expert_id = paddle.cat(
+            [weight_lm, expert_id_lm.astype("float32")], -1
+        )
 
         if token_type_ids is None or gate_logits_mm is None:
             return (
@@ -429,12 +504,18 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
 
         prob_mm = self.gate.act(gate_logits_mm)
         if self.use_correction_bias:
-            prob_mm_ = prob_mm + self.moe_statics.e_score_correction_bias[1].detach()
+            prob_mm_ = (
+                prob_mm + self.moe_statics.e_score_correction_bias[1].detach()
+            )
         else:
             prob_mm_ = prob_mm
         weight_mm, expert_id_mm = prob_mm_.topk(k=top_k, axis=-1)
         if self.use_correction_bias:
-            batch_idx = paddle.arange(prob_lm_.shape[0]).unsqueeze(-1).expand_as(expert_id_lm)
+            batch_idx = (
+                paddle.arange(prob_lm_.shape[0])
+                .unsqueeze(-1)
+                .expand_as(expert_id_lm)
+            )
             weight_mm = prob_mm[batch_idx, expert_id_mm]  # use correct bias
 
         expert_id_mm = expand_modality_expert_id(
@@ -445,15 +526,23 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
             is_group_expert=False,
         )
         expert_id_mm = expert_id_mm.reshape(weight_mm.shape)
-        mm_weight_and_expert_id = paddle.cat([weight_mm, expert_id_mm.astype("float32")], -1)
+        mm_weight_and_expert_id = paddle.cat(
+            [weight_mm, expert_id_mm.astype("float32")], -1
+        )
         weight_and_expert = paddle.where(
             (token_type_ids == 0).unsqueeze(-1),
             lm_weight_and_expert_id,
             mm_weight_and_expert_id,
         )
-        return weight_and_expert, prob_lm.reshape([prob_lm.shape[0], -1]), prob_mm
+        return (
+            weight_and_expert,
+            prob_lm.reshape([prob_lm.shape[0], -1]),
+            prob_mm,
+        )
 
-    def fused_gate_and_dispatch(self, input, token_type_ids=None, global_dense_expert_mask=None):
+    def fused_gate_and_dispatch(
+        self, input, token_type_ids=None, global_dense_expert_mask=None
+    ):
         """Implements fused expert gating and token dispatch logic for Mixture-of-Experts (MoE) layers.
 
         Core Functionality:
@@ -491,18 +580,26 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
 
         def build_weights_and_expert_id(input):
             nonlocal token_type_ids, args
-            logits, capacity, router_loss = self.gate(input, *args, transform_weight=False)
+            logits, capacity, router_loss = self.gate(
+                input, *args, transform_weight=False
+            )
             if self.multimodal_experts:
                 gate_logits_lm, gate_logits_mm = logits.chunk(2, axis=-1)
             else:
                 gate_logits_lm, gate_logits_mm = logits, None
 
-            weigth_and_expert, gate_prob_lm, gate_prob_mm = self.fused_gate_logits_process_fused(
-                gate_logits_lm,
-                gate_logits_mm,
-                token_type_ids if global_dense_expert_mask is None else None,
+            weigth_and_expert, gate_prob_lm, gate_prob_mm = (
+                self.fused_gate_logits_process_fused(
+                    gate_logits_lm,
+                    gate_logits_mm,
+                    token_type_ids
+                    if global_dense_expert_mask is None
+                    else None,
+                )
             )
-            weigth_and_expert = AllGatherGroupOp.apply(weigth_and_expert, group=self.config.moe_group)
+            weigth_and_expert = AllGatherGroupOp.apply(
+                weigth_and_expert, group=self.config.moe_group
+            )
             return (
                 weigth_and_expert,
                 gate_logits_lm,
@@ -526,7 +623,9 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
             group=self.config.moe_group,
             is_first_fwd=not framework._dygraph_tracer()._has_grad,
         )
-        combine_weights_unnorm, expert_id = combine_weights_and_expert_id.chunk(2, axis=-1)
+        combine_weights_unnorm, expert_id = combine_weights_and_expert_id.chunk(
+            2, axis=-1
+        )
         expert_id = expert_id.cast("int32")
         expert_id.stop_gradient = True
         num_experts = (
@@ -539,8 +638,15 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
             expert_id[global_dense_expert_mask] = num_experts
             num_experts += 1
 
-        if "reverse_token_drop" in inspect.signature(moe_gate_dispatch_partial_nosoftmaxtopk).parameters:
-            compat_kwargs = {"reverse_token_drop": self.enable_reverse_token_drop}
+        if (
+            "reverse_token_drop"
+            in inspect.signature(
+                moe_gate_dispatch_partial_nosoftmaxtopk
+            ).parameters
+        ):
+            compat_kwargs = {
+                "reverse_token_drop": self.enable_reverse_token_drop
+            }
         else:
             compat_kwargs = {}
 
@@ -564,8 +670,10 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
                 capacity,
                 num_experts,
                 self.use_padding,
-                expert_start_index=self.num_local_experts * self.config.moe_rank,
-                expert_end_index=self.num_local_experts * (self.config.moe_rank + 1),
+                expert_start_index=self.num_local_experts
+                * self.config.moe_rank,
+                expert_end_index=self.num_local_experts
+                * (self.config.moe_rank + 1),
                 **compat_kwargs,
             )
 
@@ -573,7 +681,9 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
             if self.multimodal_experts:
                 # MLLM
                 for i in range(len(self.moe_statics.expert_usage)):
-                    self.moe_statics.expert_usage[i] += expert_num_local[self.gate.experts_type_mask[i]].detach()
+                    self.moe_statics.expert_usage[i] += expert_num_local[
+                        self.gate.experts_type_mask[i]
+                    ].detach()
             else:
                 # LLM
                 self.moe_statics.expert_usage[0] += expert_num_local.detach()
@@ -588,8 +698,12 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
         scatter_index.stop_gradient = True
         expert_num_global.stop_gradient = True
         expert_num_global_notrunc = expert_num_global
-        self.capacity_tensor = paddle.to_tensor(capacity, dtype=expert_num_global.dtype)
-        expert_num_global = paddle.minimum(expert_num_global, self.capacity_tensor)
+        self.capacity_tensor = paddle.to_tensor(
+            capacity, dtype=expert_num_global.dtype
+        )
+        expert_num_global = paddle.minimum(
+            expert_num_global, self.capacity_tensor
+        )
 
         if global_dense_expert_mask is not None:
             expert_num_global = expert_num_global[:-1]
@@ -602,11 +716,17 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
         expert_offset_global = expert_num_global.cumsum()
 
         loader = get_async_loader()
-        expert_num_global_list, offload_task = async_offload(expert_num_global, loader)
+        expert_num_global_list, offload_task = async_offload(
+            expert_num_global, loader
+        )
         if self.use_padding:
             offset = last_local_expert * capacity
         else:
-            offset = expert_offset_global[last_local_expert - 1] if self.config.moe_rank > 0 else 0
+            offset = (
+                expert_offset_global[last_local_expert - 1]
+                if self.config.moe_rank > 0
+                else 0
+            )
         local_combine_weights_unnorm = ReshardCombineWeight.apply(
             combine_weights_unnorm.contiguous(), group=self.config.moe_group
         )
@@ -624,9 +744,13 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
             )
         else:
             local_combine_weights = local_combine_weights_unnorm
-        local_combine_weights = local_combine_weights.cast(dispatched_input.dtype)
+        local_combine_weights = local_combine_weights.cast(
+            dispatched_input.dtype
+        )
         if self.use_padding:
-            dispatched_input = dispatched_input.reshape([self.num_local_experts, -1, d_model])
+            dispatched_input = dispatched_input.reshape(
+                [self.num_local_experts, -1, d_model]
+            )
             dispatched_input = dispatched_input.unbind(0)
         else:
             s = self.num_local_experts * self.config.moe_rank
@@ -635,12 +759,16 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
             expert_num_local_valid = [i for i in expert_num_local if i > 0]
             valid_pos = [j for j, i in enumerate(expert_num_local) if i > 0]
             if expert_num_local_valid:
-                dispatched_input_list = dispatched_input.split(expert_num_local_valid)
+                dispatched_input_list = dispatched_input.split(
+                    expert_num_local_valid
+                )
                 dispatched_input = [None] * len(expert_num_local)
                 for p, t in zip(valid_pos, dispatched_input_list):
                     dispatched_input[p] = t
             else:
-                dispatched_input = [dispatched_input] + ([None] * (len(expert_num_local) - 1))
+                dispatched_input = [dispatched_input] + (
+                    [None] * (len(expert_num_local) - 1)
+                )
 
         scatter_index.stop_gradient = True
         scatter_index_rev.stop_gradient = True
@@ -688,14 +816,23 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
 
         no_tokens_expert_outputs = []
         if not self.multimodal_experts:
-            true_experts = self.experts[self.rank * self.num_local_experts : (self.rank + 1) * self.num_local_experts]
+            true_experts = self.experts[
+                self.rank * self.num_local_experts : (self.rank + 1)
+                * self.num_local_experts
+            ]
         else:
             true_experts = []
             for i, num in enumerate(self.num_local_multimodal_experts):
                 current_modal_experts = self.experts[
-                    self.multimodal_expert_index[i] : self.multimodal_expert_index[i + 1]
+                    self.multimodal_expert_index[
+                        i
+                    ] : self.multimodal_expert_index[i + 1]
                 ]
-                true_experts.extend(current_modal_experts[self.rank * num : (self.rank + 1) * num])
+                true_experts.extend(
+                    current_modal_experts[
+                        self.rank * num : (self.rank + 1) * num
+                    ]
+                )
 
         assert len(dispatched_input) == len(true_experts), (
             len(dispatched_input),
@@ -705,7 +842,9 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
         for iexpert, chunk in enumerate(dispatched_input):
             if chunk is None:
                 # QuantizationLoRALinear can not call `.weight`.
-                if not isinstance(true_experts[iexpert].down_proj, QuantizationLoRALinear):
+                if not isinstance(
+                    true_experts[iexpert].down_proj, QuantizationLoRALinear
+                ):
                     input_shape = [
                         1,
                         true_experts[iexpert].down_proj.weight.shape[1],
@@ -725,7 +864,9 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
                 if true_experts[iexpert].training:
                     chunk.stop_gradient = False
                 expert_out = true_experts[iexpert](chunk.contiguous())
-                no_tokens_expert_outputs.append(expert_out * 0.0)  # mutiply 0.0 to zero out and grad
+                no_tokens_expert_outputs.append(
+                    expert_out * 0.0
+                )  # multiply 0.0 to zero out and grad
 
                 expert_outputs.append(None)
                 continue
@@ -774,11 +915,17 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
         Returns:
             Tensor: Updated router loss with new auxiliary components
         """
-        dispatch_mask_3d = dispatch_mask.reshape([self.config.moe_world_size, -1])
+        dispatch_mask_3d = dispatch_mask.reshape(
+            [self.config.moe_world_size, -1]
+        )
         if token_type_ids is not None and self.gate.config.moe_use_hard_gate:
             # MLLM
             if not self.gate.weight.stop_gradient:
-                dispatch_tokens_mask = dispatch_token_type_ids == 0 if dispatch_token_type_ids is not None else None
+                dispatch_tokens_mask = (
+                    dispatch_token_type_ids == 0
+                    if dispatch_token_type_ids is not None
+                    else None
+                )
                 lm_tokens_mask = (token_type_ids == 0).astype(gate_prob.dtype)
                 # hard code
                 lm_experts = (
@@ -786,7 +933,9 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
                     if isinstance(self.gate.num_experts, (tuple, list))
                     else self.gate.num_experts
                 )
-                dispatch_mask_lm = dispatch_mask_3d[:, : lm_experts // self.config.moe_world_size].reshape([-1])
+                dispatch_mask_lm = dispatch_mask_3d[
+                    :, : lm_experts // self.config.moe_world_size
+                ].reshape([-1])
                 router_loss += self._calc_router_loss(
                     dispatch_mask_lm,
                     gate_logits * lm_tokens_mask.unsqueeze(-1),
@@ -802,8 +951,14 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
             else:
                 router_loss += self.zero * gate_logits[0, 0] * gate_prob[0, 0]
             if gate_prob_mm is not None:
-                mm_tokens_mask = (token_type_ids == 1).astype(gate_prob_mm.dtype)
-                dispatch_tokens_mask = dispatch_token_type_ids == 1 if dispatch_token_type_ids is not None else None
+                mm_tokens_mask = (token_type_ids == 1).astype(
+                    gate_prob_mm.dtype
+                )
+                dispatch_tokens_mask = (
+                    dispatch_token_type_ids == 1
+                    if dispatch_token_type_ids is not None
+                    else None
+                )
                 dispatch_mask_mm = dispatch_mask_3d[
                     :, self.gate.num_experts[0] // self.config.moe_world_size :
                 ].reshape([-1])
@@ -832,7 +987,10 @@ class MOEAllGatherLayerV2(MOEAlltoAllLayer):
                 self.layer_idx,
                 0,
                 paddle.ones([gate_prob.shape[0]], "bool"),
-                paddle.ones([self.gate.config.moe_world_size * gate_prob.shape[0]], "bool"),
+                paddle.ones(
+                    [self.gate.config.moe_world_size * gate_prob.shape[0]],
+                    "bool",
+                ),
                 prefix="lm",
             )
 

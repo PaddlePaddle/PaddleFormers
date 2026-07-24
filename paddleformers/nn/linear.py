@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import paddle.nn as nn
+from paddle import nn
 
 from ..transformers.configuration_utils import PretrainedConfig
 from ..transformers.linear_utils import (
@@ -41,8 +41,8 @@ class Linear(GeneralInterface):
         in_features,
         out_features,
         weight_attr=None,
-        has_bias: bool = None,
-        linear_type: str = None,
+        has_bias: bool | None = None,
+        linear_type: str | None = None,
         tp_plan: str = "colwise",
         config: PretrainedConfig = None,
         gather_output: bool = False,
@@ -55,11 +55,20 @@ class Linear(GeneralInterface):
             linear_type = self.get_linear_type(config, tp_plan)
 
         linear_cls = self._global_mapping[linear_type]
-        kwargs = self.get_linear_kwargs(linear_type, has_bias, gather_output, input_is_parallel)
-        return linear_cls(in_features=in_features, out_features=out_features, weight_attr=weight_attr, **kwargs)
+        kwargs = self.get_linear_kwargs(
+            linear_type, has_bias, gather_output, input_is_parallel
+        )
+        return linear_cls(
+            in_features=in_features,
+            out_features=out_features,
+            weight_attr=weight_attr,
+            **kwargs,
+        )
 
     @classmethod
-    def get_linear_type(self, config: PretrainedConfig, tp_plan: str = None):
+    def get_linear_type(
+        self, config: PretrainedConfig, tp_plan: str | None = None
+    ):
         if config.tensor_model_parallel_size <= 1:
             return "default"
         linear_type = tp_plan
@@ -69,7 +78,13 @@ class Linear(GeneralInterface):
         return linear_type
 
     @classmethod
-    def get_linear_kwargs(self, linear_type, has_bias=False, gather_output=False, input_is_parallel=True):
+    def get_linear_kwargs(
+        self,
+        linear_type,
+        has_bias=False,
+        gather_output=False,
+        input_is_parallel=True,
+    ):
         ALL_LINEAR_KWARGS = {
             "default": {"bias_attr": has_bias},
             "colwise": {

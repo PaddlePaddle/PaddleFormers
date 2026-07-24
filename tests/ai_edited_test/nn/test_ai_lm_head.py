@@ -20,9 +20,13 @@ class TestLMHead(unittest.TestCase):
         config = MagicMock()
         config.vocab_size = overrides.get("vocab_size", 100)
         config.hidden_size = overrides.get("hidden_size", 64)
-        config.tensor_model_parallel_size = overrides.get("tensor_model_parallel_size", 1)
+        config.tensor_model_parallel_size = overrides.get(
+            "tensor_model_parallel_size", 1
+        )
         config.lm_head_bias = overrides.get("lm_head_bias", False)
-        config.use_fused_head_and_loss_fn = overrides.get("use_fused_head_and_loss_fn", False)
+        config.use_fused_head_and_loss_fn = overrides.get(
+            "use_fused_head_and_loss_fn", False
+        )
         config.sequence_parallel = False
         config.max_sequence_length = 128
         config.tensor_parallel_output = False
@@ -72,7 +76,10 @@ class TestLMHead(unittest.TestCase):
         config = self._make_config()
         head = LMHead(config)
         x = paddle.randn([2, 8, 64], dtype="float32")
-        with patch("paddleformers.nn.lm_head.calc_lm_head_logits", return_value=paddle.randn([2, 8, 100])) as mock_fn:
+        with patch(
+            "paddleformers.nn.lm_head.calc_lm_head_logits",
+            return_value=paddle.randn([2, 8, 100]),
+        ) as mock_fn:
             head(x)
             mock_fn.assert_called_once()
             # Verify key arguments
@@ -129,7 +136,9 @@ class TestLMHead(unittest.TestCase):
 
         config = self._make_config(tensor_model_parallel_size=2)
         head = LMHead(config)
-        with patch("paddleformers.nn.lm_head.build_sharded_state_dict") as mock_build:
+        with patch(
+            "paddleformers.nn.lm_head.build_sharded_state_dict"
+        ) as mock_build:
             mock_build.return_value = {"test": "value"}
             head.sharded_state_dict(structured_name_prefix="test.")
             mock_build.assert_called_once()

@@ -46,7 +46,9 @@ class TestTPSplitMerge(unittest.TestCase):
         # test slice
         weight_cases.append(py_safe_slice_)
         # test paddle
-        weight_cases.append(paddle.Tensor.__call__(py_safe_slice_[:], zero_copy=True))
+        weight_cases.append(
+            paddle.Tensor.__call__(py_safe_slice_[:], zero_copy=True)
+        )
         # test numpy
         weight_cases.append(py_safe_slice_[:])
 
@@ -57,12 +59,40 @@ class TestTPSplitMerge(unittest.TestCase):
         num_kv_groups_list = [1, 2]
         tp_splited_truth_list = [
             [
-                np.concatenate([weight_value[:, 0:4], weight_value[:, 8:12], weight_value[:, 16:20]], axis=1),
-                np.concatenate([weight_value[:, 4:8], weight_value[:, 12:16], weight_value[:, 20:24]], axis=1),
+                np.concatenate(
+                    [
+                        weight_value[:, 0:4],
+                        weight_value[:, 8:12],
+                        weight_value[:, 16:20],
+                    ],
+                    axis=1,
+                ),
+                np.concatenate(
+                    [
+                        weight_value[:, 4:8],
+                        weight_value[:, 12:16],
+                        weight_value[:, 20:24],
+                    ],
+                    axis=1,
+                ),
             ],
             [
-                np.concatenate([weight_value[:, 0:6], weight_value[:, 12:15], weight_value[:, 18:21]], axis=1),
-                np.concatenate([weight_value[:, 6:12], weight_value[:, 15:18], weight_value[:, 21:24]], axis=1),
+                np.concatenate(
+                    [
+                        weight_value[:, 0:6],
+                        weight_value[:, 12:15],
+                        weight_value[:, 18:21],
+                    ],
+                    axis=1,
+                ),
+                np.concatenate(
+                    [
+                        weight_value[:, 6:12],
+                        weight_value[:, 15:18],
+                        weight_value[:, 21:24],
+                    ],
+                    axis=1,
+                ),
             ],
         ]
 
@@ -85,10 +115,14 @@ class TestTPSplitMerge(unittest.TestCase):
 
                 # test tp split
                 for tpi in range(len(splited_list)):
-                    self.assertTrue((splited_list[tpi] == tp_splited_truth[tpi]).all())
+                    self.assertTrue(
+                        (splited_list[tpi] == tp_splited_truth[tpi]).all()
+                    )
 
                 # test tp merge
-                merged_tensor = naive_fuse_merge_tp(splited_list, is_column, fuse_tensor_parts, num_kv_groups)
+                merged_tensor = naive_fuse_merge_tp(
+                    splited_list, is_column, fuse_tensor_parts, num_kv_groups
+                )
                 self.assertTrue((merged_tensor == weight_value).all())
 
 

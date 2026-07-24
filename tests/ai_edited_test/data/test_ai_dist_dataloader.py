@@ -53,7 +53,9 @@ class TestIterableDummyDataset(unittest.TestCase):
         """Test that IterableDummyDataset is a subclass of paddle.io.IterableDataset."""
         from paddleformers.data.dist_dataloader import IterableDummyDataset
 
-        self.assertTrue(issubclass(IterableDummyDataset, paddle.io.IterableDataset))
+        self.assertTrue(
+            issubclass(IterableDummyDataset, paddle.io.IterableDataset)
+        )
 
     def test_iter_returns_none(self):
         """Test that __iter__ returns None (non-iterator)."""
@@ -103,7 +105,9 @@ class TestInitDataloaderCommGroup(unittest.TestCase):
 
     def test_import(self):
         """Test that init_dataloader_comm_group can be imported."""
-        from paddleformers.data.dist_dataloader import init_dataloader_comm_group
+        from paddleformers.data.dist_dataloader import (
+            init_dataloader_comm_group,
+        )
 
         self.assertTrue(callable(init_dataloader_comm_group))
 

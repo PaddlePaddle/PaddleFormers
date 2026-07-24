@@ -1,21 +1,16 @@
 name: Unittest GPU CI
-
 on:
-  pull_request:
   schedule:
     - cron: "0 18 * * *"
   workflow_dispatch:
-
-permissions: 
-    pull-requests: read
-    contents: read
-    actions: read
-    checks: read
-
+permissions:
+  pull-requests: read
+  contents: read
+  actions: read
+  checks: read
 concurrency:
   group: unittest-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
-
 env:
   PR_ID: ${{ github.event.pull_request.number || '0' }}
   COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -31,16 +26,13 @@ env:
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
   PYTEST_EXECUTE_FLAG_FILE: ${{ github.workspace }}/../../../PYTEST_EXECUTE_FLAG_FILE/${{ github.event.pull_request.number || '0' }}/${{ github.event.pull_request.head.sha || github.sha }}/pytest_execute.flag
   PYTEST_EXECUTE_FLAG: false
-
 defaults:
   run:
     shell: bash
-
 jobs:
   check_skip:
     name: Check skip-unittest-ci label
     runs-on: 'ernie-cpu'
-
     outputs:
       skip: ${{ steps.check_skip.outputs.skip }}
     steps:
@@ -65,13 +57,12 @@ jobs:
         run: |
           echo "skip-unittest-ci label found"
           echo "Downstream GPU jobs will be skipped"
-
   unittest-gpu-ci:
     needs: check_skip
     if: needs.check_skip.outputs.skip == 'false'
     name: unittest-gpu-ci
     runs-on: 'ernie-unittest'
-    outputs:  
+    outputs:
       pytest_execute_flag: ${{ steps.set_pytest_flag.outputs.pytest_execute_flag }}
     steps:
       - name: Determine the runner
@@ -264,7 +255,7 @@ jobs:
           '
       - name: Set pytest execute flag output
         if: always()
-        id: set_pytest_flag  # 专门设置输出的步骤
+        id: set_pytest_flag # 专门设置输出的步骤
         run: |
           # 检查标志文件是否存在，并设置作业输出
           if [ -f "${{ env.PYTEST_EXECUTE_FLAG_FILE }}" ]; then
@@ -278,7 +269,6 @@ jobs:
         if: always()
         run: |
           docker rm -f $container_name 2>/dev/null || true
-
   upload-coverage:
     name: upload-coverage
     needs: [unittest-gpu-ci]
@@ -341,7 +331,6 @@ jobs:
           files: coverage.xml
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-
   upload-allure:
     name: upload-allure
     needs: [unittest-gpu-ci]
@@ -378,7 +367,7 @@ jobs:
             cp -r gh-pages/unit_CI/$PR_NUMBER/history result/ || true
             destination_dir="unit_CI/$PR_NUMBER"
           fi
-          
+
           echo "mode=$MODE" >> "$GITHUB_OUTPUT"
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
           echo "destination_dir=$destination_dir" >> "$GITHUB_OUTPUT"

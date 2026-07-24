@@ -29,7 +29,7 @@ def gen_allure_report():
     # install allure
     exit_code, output = subprocess.getstatusoutput("allure --version")
     if exit_code == 0:
-        print("allure version is:{}".format(output))
+        print(f"allure version is:{output}")
         allure_bin = "allure"
     else:
         if os.path.exists("allure-2.19.0.zip") is False:
@@ -43,40 +43,50 @@ def gen_allure_report():
         allure_bin = "%s/allure-2.19.0/bin/allure" % (os.getcwd())
         exit_code, output = subprocess.getstatusoutput("java -version")
         if exit_code == 0:
-            print("java version is:{}".format(output))
+            print(f"java version is:{output}")
         else:  # install java
             if os.path.exists("java_linux.tar.gz") is False:
-                java_src = "https://paddle-qa.bj.bcebos.com/java/java_linux.tar.gz"
+                java_src = (
+                    "https://paddle-qa.bj.bcebos.com/java/java_linux.tar.gz"
+                )
                 wget.download(java_src)
                 tf = tarfile.open("java_linux.tar.gz")
                 tf.extractall(os.getcwd())
             os.environ["JAVA_HOME"] = os.path.join(os.getcwd(), "jdk1.8.0_351")
             os.environ["JRE_HOME"] = os.path.join(os.getenv("JAVA_HOME"), "jre")
-            os.environ["CLASSPATH"] = os.path.join(os.getenv("JAVA_HOME"), "lib")
-            os.environ["PATH"] += os.pathsep + os.path.join(os.getenv("JAVA_HOME"), "bin")
+            os.environ["CLASSPATH"] = os.path.join(
+                os.getenv("JAVA_HOME"), "lib"
+            )
+            os.environ["PATH"] += os.pathsep + os.path.join(
+                os.getenv("JAVA_HOME"), "bin"
+            )
             exit_code, output = subprocess.getstatusoutput("java -version")
-            print("java version is:{}".format(output))
+            print(f"java version is:{output}")
     exit_code, output = subprocess.getstatusoutput("%s --version" % allure_bin)
     if exit_code == 0:
-        print("allure version is:{}".format(output))
+        print(f"allure version is:{output}")
         cmd = "%s generate result -o report" % allure_bin
         ret = os.system(cmd)
         if ret:
             print("allure generate report failed")
         else:
             print("allure generate report success")
-        os.environ["REPORT_SERVER_USERNAME"] = os.getenv("REPORT_SERVER_USERNAME")
-        os.environ["REPORT_SERVER_PASSWORD"] = os.getenv("REPORT_SERVER_PASSWORD")
+        os.environ["REPORT_SERVER_USERNAME"] = os.getenv(
+            "REPORT_SERVER_USERNAME"
+        )
+        os.environ["REPORT_SERVER_PASSWORD"] = os.getenv(
+            "REPORT_SERVER_PASSWORD"
+        )
         os.environ["REPORT_SERVER"] = os.getenv("REPORT_SERVER")
         job_build_id = os.getenv("AGILE_JOB_BUILD_ID")
         REPORT_SERVER = os.getenv("REPORT_SERVER")
 
-        cmd = "curl -s {}/report/upload.sh | bash -s ./report {} report".format(REPORT_SERVER, job_build_id)
+        cmd = f"curl -s {REPORT_SERVER}/report/upload.sh | bash -s ./report {job_build_id} report"
 
         if job_build_id:
             # upload allure report
-            cmd = "curl -s {}/report/upload.sh | bash -s ./report {} report".format(REPORT_SERVER, job_build_id)
-            print("upload cmd is {}".format(cmd))
+            cmd = f"curl -s {REPORT_SERVER}/report/upload.sh | bash -s ./report {job_build_id} report"
+            print(f"upload cmd is {cmd}")
             ret = os.system(cmd)
         else:
             print("非流水线任务，请补充9位数字流水线任务id")
@@ -101,7 +111,9 @@ def gen_allure_report():
                 print("#### can not remove bos_new.tar.gz")
         return ret
     else:
-        print("allure is not config correctly:{}, please config allure manually!".format(output))
+        print(
+            f"allure is not config correctly:{output}, please config allure manually!"
+        )
         return 1
 
 

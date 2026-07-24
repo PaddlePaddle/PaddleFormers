@@ -40,7 +40,8 @@ paddleformers_build (){
     rm -rf paddleformers.egg-info/
 
     python -m pip install -r requirements.txt
-    python setup.py bdist_wheel
+    python -m pip install uv
+    uv build --wheel --package paddleformers --out-dir dist --clear -v
 
     echo "install_formers_develop_whl"
     cd ../
@@ -53,7 +54,7 @@ paddleformers_build (){
     commit=${commit:-unknown}
     cp $formers_dir/dist/p****.whl ${upload_path}/
     cp $formers_dir/dist/p****.whl ${upload_path}/paddleformers-0.0.0.dev-py3-none-any.whl
-    
+
     whl_file=$(ls $formers_dir/dist/paddleformers-*.whl)
     base_name=$(basename $whl_file)
     new_name=$(echo $base_name | sed "s/\.dev[0-9]\+/&+${commit}/")

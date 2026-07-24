@@ -17,13 +17,12 @@ import copy
 
 import numpy as np
 import paddle
-import paddle.nn as nn
 import paddle.nn.functional as F
-from paddle import ParamAttr
+from paddle import ParamAttr, nn
 from paddle.nn import Layer
 
 
-class Registry(object):
+class Registry:
     def __init__(self):
         self.cls_dict = {}
 
@@ -39,7 +38,15 @@ AttentionRegistry = Registry()
 
 
 def create_bigbird_rand_mask_idx(
-    num_layers, query_length, key_length, num_heads, block_size, window_size, num_global_blocks, num_rand_blocks, seed
+    num_layers,
+    query_length,
+    key_length,
+    num_heads,
+    block_size,
+    window_size,
+    num_global_blocks,
+    num_rand_blocks,
+    seed,
 ):
     # TODO(zsj): need to simplify
     num_key_blocks = key_length // block_size
@@ -49,19 +56,31 @@ def create_bigbird_rand_mask_idx(
     rand_mask_idx = [[] for i in range(num_heads)]
     for query_block_idx in range(num_query_blocks):
         left_key_block_idx = max(0, query_block_idx - num_window_blocks)
-        right_key_block_idx = min(query_block_idx + num_window_blocks, num_key_blocks - 1)
+        right_key_block_idx = min(
+            query_block_idx + num_window_blocks, num_key_blocks - 1
+        )
 
-        illegal_blocks_idx = [i for i in range(left_key_block_idx, right_key_block_idx + 1)]
-        illegal_blocks_idx.extend([i for i in range(num_global_blocks)])
+        illegal_blocks_idx = list(
+            range(left_key_block_idx, right_key_block_idx + 1)
+        )
+        illegal_blocks_idx.extend(list(range(num_global_blocks)))
         left_key_block_idx = query_block_idx - num_window_blocks
         right_key_block_idx = query_block_idx + num_window_blocks
 
         if num_global_blocks > left_key_block_idx:
             num_fill_blocks = num_global_blocks - left_key_block_idx
-            illegal_blocks_idx.extend([i for i in range(num_key_blocks - num_fill_blocks, num_key_blocks)])
+            illegal_blocks_idx.extend(
+                list(range(num_key_blocks - num_fill_blocks, num_key_blocks))
+            )
         if right_key_block_idx >= num_key_blocks:
             num_fill_blocks = right_key_block_idx - num_key_blocks + 1
-            illegal_blocks_idx.extend([i for i in range(num_global_blocks, num_global_blocks + num_fill_blocks)])
+            illegal_blocks_idx.extend(
+                list(
+                    range(
+                        num_global_blocks, num_global_blocks + num_fill_blocks
+                    )
+                )
+            )
 
         illegal_blocks_idx = set(illegal_blocks_idx)
 
@@ -75,20 +94,32 @@ def create_bigbird_rand_mask_idx(
                     break
             rand_mask_idx[i].append(legal_blocks_idx)
     rand_mask_idx = np.stack(rand_mask_idx, axis=0)
-    rand_mask_idx = rand_mask_idx[:, num_global_blocks:] - num_global_blocks // 2
+    rand_mask_idx = (
+        rand_mask_idx[:, num_global_blocks:] - num_global_blocks // 2
+    )
     # transform rand_mask_idx
     H = rand_mask_idx.shape[0]
     L = rand_mask_idx.shape[1]
     R = rand_mask_idx.shape[2]
     rand_mask_idx = rand_mask_idx.reshape([-1, 1])
     head_idx = np.arange(H).reshape([-1, 1])
-    head_idx = np.pad(head_idx, ([0, 0], [0, L * R - 1]), mode="edge").reshape([-1, 1])
+    head_idx = np.pad(head_idx, ([0, 0], [0, L * R - 1]), mode="edge").reshape(
+        [-1, 1]
+    )
     rand_mask_idx_list = np.concatenate([head_idx, rand_mask_idx], axis=1)
     return rand_mask_idx_list
 
 
 def create_bigbird_rand_mask_idx_list(
-    num_layers, query_length, key_length, num_heads, block_size, window_size, num_global_blocks, num_rand_blocks, seed
+    num_layers,
+    query_length,
+    key_length,
+    num_heads,
+    block_size,
+    window_size,
+    num_global_blocks,
+    num_rand_blocks,
+    seed,
 ):
     rand_mask_idx_list = [
         create_bigbird_rand_mask_idx(
@@ -110,7 +141,9 @@ def create_bigbird_rand_mask_idx_list(
 
 def _convert_param_attr_to_list(param_attr, n):
     if isinstance(param_attr, (list, tuple)):
-        assert len(param_attr) == n, "length of param_attr should be %d when it is a list/tuple" % n
+        assert len(param_attr) == n, (
+            "length of param_attr should be %d when it is a list/tuple" % n
+        )
         param_attrs = []
         for attr in param_attr:
             if isinstance(attr, bool):
@@ -138,15 +171,30 @@ def _convert_param_attr_to_list(param_attr, n):
 
 
 class Linear3D(Layer):
-    def __init__(self, hidden_size, num_attention_heads, size_per_head, weight_attr=None, bias_attr=None):
+    def __init__(
+        self,
+        hidden_size,
+        num_attention_heads,
+        size_per_head,
+        weight_attr=None,
+        bias_attr=None,
+    ):
         super(Linear3D, self).__init__()
         self._dtype = self._helper.get_default_dtype()
         self._weight_attr = weight_attr
         self._bias_attr = bias_attr
         self.weight = self.create_parameter(
-            shape=[hidden_size, hidden_size], attr=self._weight_attr, dtype=self._dtype, is_bias=False
+            shape=[hidden_size, hidden_size],
+            attr=self._weight_attr,
+            dtype=self._dtype,
+            is_bias=False,
         )
-        self.bias = self.create_parameter(shape=[hidden_size], attr=self._bias_attr, dtype=self._dtype, is_bias=True)
+        self.bias = self.create_parameter(
+            shape=[hidden_size],
+            attr=self._bias_attr,
+            dtype=self._dtype,
+            is_bias=True,
+        )
         self.size_per_head = size_per_head
         self.num_attention_heads = num_attention_heads
         self.hidden_size = hidden_size
@@ -164,7 +212,15 @@ class Linear3D(Layer):
 
 
 class Attention(Layer):
-    def __init__(self, num_heads=1, block_size=1, window_size=3, num_global_blocks=1, num_rand_blocks=1, seed=None):
+    def __init__(
+        self,
+        num_heads=1,
+        block_size=1,
+        window_size=3,
+        num_global_blocks=1,
+        num_rand_blocks=1,
+        seed=None,
+    ):
         super().__init__()
 
     def forward(
@@ -204,7 +260,12 @@ class DefaultAttention(Attention):
             product = product + attn_mask
         weights = F.softmax(product)
         if dropout:
-            weights = F.dropout(weights, dropout, training=self.training, mode="upscale_in_train")
+            weights = F.dropout(
+                weights,
+                dropout,
+                training=self.training,
+                mode="upscale_in_train",
+            )
 
         out = paddle.matmul(weights, value_matrix)
         return out
@@ -212,19 +273,36 @@ class DefaultAttention(Attention):
 
 @AttentionRegistry.register("bigbird")
 class BigBirdSparseAttention(Attention):
-    def __init__(self, num_heads=1, block_size=1, window_size=3, num_global_blocks=1, num_rand_blocks=1, seed=None):
+    def __init__(
+        self,
+        num_heads=1,
+        block_size=1,
+        window_size=3,
+        num_global_blocks=1,
+        num_rand_blocks=1,
+        seed=None,
+    ):
         super(BigBirdSparseAttention, self).__init__(
-            num_heads, block_size, window_size, num_global_blocks, num_rand_blocks, seed
+            num_heads,
+            block_size,
+            window_size,
+            num_global_blocks,
+            num_rand_blocks,
+            seed,
         )
         for k, v in locals().items():
             if k != "self":
                 setattr(self, k, v)
         self.num_global_blocks_back = num_global_blocks // 2
         self.num_global_blocks_front = (
-            num_global_blocks // 2 if num_global_blocks % 2 == 0 else num_global_blocks // 2 + 1
+            num_global_blocks // 2
+            if num_global_blocks % 2 == 0
+            else num_global_blocks // 2 + 1
         )
 
-    def _get_band_mask(self, blocked_query_mask, blocked_key_mask, batch_size, sequence_length):
+    def _get_band_mask(
+        self, blocked_query_mask, blocked_key_mask, batch_size, sequence_length
+    ):
         """
         Return second mask: [B, 1, L-G, bs, G+W]
         """
@@ -241,19 +319,34 @@ class BigBirdSparseAttention(Attention):
         # query_mask: [B, L, bs]
         # key_mask: [B, L, bs]
         # [B, L-G, bs, 1] * [B, L-G, 1, G*bs] -> [B, L-G, bs, G*bs]
-        temp_query_mask = paddle.reshape(blocked_query_mask[:, GF:-GB], [B, L - G, bs, 1])
-        temp_key_mask_front = paddle.reshape(blocked_key_mask[:, :GF], [B, 1, 1, GF * bs])
-        global_block_mask_front = paddle.einsum("blqd,bmdk->blqk", temp_query_mask, temp_key_mask_front)
+        temp_query_mask = paddle.reshape(
+            blocked_query_mask[:, GF:-GB], [B, L - G, bs, 1]
+        )
+        temp_key_mask_front = paddle.reshape(
+            blocked_key_mask[:, :GF], [B, 1, 1, GF * bs]
+        )
+        global_block_mask_front = paddle.einsum(
+            "blqd,bmdk->blqk", temp_query_mask, temp_key_mask_front
+        )
 
-        temp_key_mask_back = paddle.reshape(blocked_key_mask[:, -GB:], [B, 1, 1, GB * bs])
-        global_block_mask_back = paddle.einsum("blqd,bmdk->blqk", temp_query_mask, temp_key_mask_back)
+        temp_key_mask_back = paddle.reshape(
+            blocked_key_mask[:, -GB:], [B, 1, 1, GB * bs]
+        )
+        global_block_mask_back = paddle.einsum(
+            "blqd,bmdk->blqk", temp_query_mask, temp_key_mask_back
+        )
         # create window block mask
         key_mask_list = []
         for query_block_id in range(GF, GF + W // 2):
             left_block_id = query_block_id - W // 2
             right_block_id = query_block_id + W // 2
-            zero_key_mask = paddle.zeros_like(blocked_key_mask[:, -(W - (right_block_id + 1 - G)) : -GB])
-            temp_key_mask = paddle.cat([blocked_key_mask[:, GF : (right_block_id + 1)], zero_key_mask], axis=1)
+            zero_key_mask = paddle.zeros_like(
+                blocked_key_mask[:, -(W - (right_block_id + 1 - G)) : -GB]
+            )
+            temp_key_mask = paddle.cat(
+                [blocked_key_mask[:, GF : (right_block_id + 1)], zero_key_mask],
+                axis=1,
+            )
             temp_key_mask = paddle.unsqueeze(temp_key_mask, 1)
             key_mask_list.append(temp_key_mask)
         roll_key_mask1 = paddle.cat(key_mask_list, axis=1)
@@ -264,7 +357,9 @@ class BigBirdSparseAttention(Attention):
         for query_block_id in range(GF + W // 2, GF + W // 2 + W):
             left_block_id = query_block_id - W // 2
             right_block_id = query_block_id + W // 2
-            key_mask_list.append(blocked_key_mask[:, left_block_id : left_block_id + band_length])
+            key_mask_list.append(
+                blocked_key_mask[:, left_block_id : left_block_id + band_length]
+            )
         window_key_mask = paddle.cat(key_mask_list, axis=2)
         window_key_mask = paddle.reshape(window_key_mask, [0, 0, W * bs])
 
@@ -272,18 +367,33 @@ class BigBirdSparseAttention(Attention):
         for query_block_id in range((L - GB) - W // 2, L - GB):
             left_block_id = query_block_id - W // 2
             right_block_id = query_block_id + W // 2
-            zero_key_mask = paddle.zeros_like(blocked_key_mask[:, GF : GF + W - (L - left_block_id - GB)])
-            temp_key_mask = paddle.cat([zero_key_mask, blocked_key_mask[:, left_block_id:-GB]], axis=1)
+            zero_key_mask = paddle.zeros_like(
+                blocked_key_mask[:, GF : GF + W - (L - left_block_id - GB)]
+            )
+            temp_key_mask = paddle.cat(
+                [zero_key_mask, blocked_key_mask[:, left_block_id:-GB]], axis=1
+            )
             temp_key_mask = paddle.unsqueeze(temp_key_mask, 1)
             key_mask_list.append(temp_key_mask)
         roll_key_mask2 = paddle.cat(key_mask_list, axis=1)
         roll_key_mask2 = paddle.reshape(roll_key_mask2, [0, 0, W * bs])
 
-        window_key_mask = paddle.cat([roll_key_mask1, window_key_mask, roll_key_mask2], axis=1)
+        window_key_mask = paddle.cat(
+            [roll_key_mask1, window_key_mask, roll_key_mask2], axis=1
+        )
         window_key_mask = paddle.unsqueeze(window_key_mask, axis=2)
         # [B, L-G, bs, 1] * [B, L-G, 1, W*bs] -> [B, L-G, bs, W*bs]
-        window_block_mask = paddle.einsum("blkd,bldq->blkq", temp_query_mask, window_key_mask)
-        band_mask = paddle.cat([global_block_mask_front, window_block_mask, global_block_mask_back], axis=3)
+        window_block_mask = paddle.einsum(
+            "blkd,bldq->blkq", temp_query_mask, window_key_mask
+        )
+        band_mask = paddle.cat(
+            [
+                global_block_mask_front,
+                window_block_mask,
+                global_block_mask_back,
+            ],
+            axis=3,
+        )
         band_mask = paddle.unsqueeze(band_mask, 1)  # for head
         band_mask = paddle.expand(band_mask, [B, H, L - G, bs, -1])
         return band_mask
@@ -321,15 +431,35 @@ class BigBirdSparseAttention(Attention):
             left_block_id = query_block_id - W // 2
             right_block_id = query_block_id + W // 2
             band_matrix_list.append(
-                paddle.unsqueeze(blocked_matrix[:, :, left_block_id : left_block_id + band_length], axis=3)
+                paddle.unsqueeze(
+                    blocked_matrix[
+                        :, :, left_block_id : left_block_id + band_length
+                    ],
+                    axis=3,
+                )
             )
         band_matrix = paddle.cat(band_matrix_list, axis=3)
 
-        global_blocked_front_matrix = paddle.unsqueeze(blocked_matrix[:, :, :GF], axis=2)
-        global_blocked_front_matrix = paddle.expand(global_blocked_front_matrix, [B, H, band_length, GF, bs, -1])
-        global_blocked_back_matrix = paddle.unsqueeze(blocked_matrix[:, :, -GB:], axis=2)
-        global_blocked_back_matrix = paddle.expand(global_blocked_back_matrix, [B, H, band_length, GB, bs, -1])
-        band_matrix = paddle.cat([global_blocked_front_matrix, band_matrix, global_blocked_back_matrix], axis=3)
+        global_blocked_front_matrix = paddle.unsqueeze(
+            blocked_matrix[:, :, :GF], axis=2
+        )
+        global_blocked_front_matrix = paddle.expand(
+            global_blocked_front_matrix, [B, H, band_length, GF, bs, -1]
+        )
+        global_blocked_back_matrix = paddle.unsqueeze(
+            blocked_matrix[:, :, -GB:], axis=2
+        )
+        global_blocked_back_matrix = paddle.expand(
+            global_blocked_back_matrix, [B, H, band_length, GB, bs, -1]
+        )
+        band_matrix = paddle.cat(
+            [
+                global_blocked_front_matrix,
+                band_matrix,
+                global_blocked_back_matrix,
+            ],
+            axis=3,
+        )
         blocked_list.append(band_matrix)
 
         for query_block_id in range(L - GB - W // 2, L - GB):
@@ -344,10 +474,19 @@ class BigBirdSparseAttention(Attention):
             blocked_list.append(temp_blocked_matrix)
 
         band_matrix = paddle.cat(blocked_list, axis=2)
-        band_matrix = paddle.reshape(band_matrix, [B, H, L - G, (G + W) * bs, -1])
+        band_matrix = paddle.reshape(
+            band_matrix, [B, H, L - G, (G + W) * bs, -1]
+        )
         return band_matrix
 
-    def _get_rand_mask(self, blocked_query_mask, blocked_key_mask, rand_mask_idx, batch_size, sequence_length):
+    def _get_rand_mask(
+        self,
+        blocked_query_mask,
+        blocked_key_mask,
+        rand_mask_idx,
+        batch_size,
+        sequence_length,
+    ):
         """
         return random mask: [B, H, L-G, bs, R * bs]
         """
@@ -363,12 +502,25 @@ class BigBirdSparseAttention(Attention):
         R = self.num_rand_blocks
         temp_block_key_mask = paddle.unsqueeze(blocked_key_mask, 1)
         temp_block_key_mask = paddle.expand(temp_block_key_mask, [B, H, L, -1])
-        temp_block_key_mask_list = [paddle.gather_nd(temp_block_key_mask[b], rand_mask_idx) for b in range(B)]
+        temp_block_key_mask_list = [
+            paddle.gather_nd(temp_block_key_mask[b], rand_mask_idx)
+            for b in range(B)
+        ]
         temp_block_key_mask = paddle.cat(temp_block_key_mask_list, 0)
         temp_block_key_mask = paddle.reshape(
-            temp_block_key_mask, [B, temp_block_key_mask.shape[0] // B // (L - GF - GB) // R, L - GF - GB, -1]
+            temp_block_key_mask,
+            [
+                B,
+                temp_block_key_mask.shape[0] // B // (L - GF - GB) // R,
+                L - GF - GB,
+                -1,
+            ],
         )
-        rand_mask = paddle.einsum("blq,bhlk->bhlqk", blocked_query_mask[:, GF:-GB], temp_block_key_mask)
+        rand_mask = paddle.einsum(
+            "blq,bhlk->bhlqk",
+            blocked_query_mask[:, GF:-GB],
+            temp_block_key_mask,
+        )
         return rand_mask
 
     def _gather_random_key_value(self, blocked_matrix, rand_mask_idx, B, T):
@@ -382,18 +534,37 @@ class BigBirdSparseAttention(Attention):
         bs = self.block_size
         L = T // bs
         R = self.num_rand_blocks
-        gathered_matrix = paddle.cat([paddle.gather_nd(blocked_matrix[b, :], rand_mask_idx) for b in range(B)], axis=0)
-        gathered_matrix = paddle.reshape(gathered_matrix, [B, H, L - G, R * bs, -1])
+        gathered_matrix = paddle.cat(
+            [
+                paddle.gather_nd(blocked_matrix[b, :], rand_mask_idx)
+                for b in range(B)
+            ],
+            axis=0,
+        )
+        gathered_matrix = paddle.reshape(
+            gathered_matrix, [B, H, L - G, R * bs, -1]
+        )
         return gathered_matrix
 
-    def _get_global_out(self, query_matrix, key_matrix, value_matrix, key_mask, d_head, dropout, is_front=True):
+    def _get_global_out(
+        self,
+        query_matrix,
+        key_matrix,
+        value_matrix,
+        key_mask,
+        d_head,
+        dropout,
+        is_front=True,
+    ):
         GB = self.num_global_blocks_back
         GF = self.num_global_blocks_front
         if is_front:
             global_query_matrix = query_matrix[:, :, 0 : GF * self.block_size]
         else:
             global_query_matrix = query_matrix[:, :, -GB * self.block_size :]
-        global_product = paddle.matmul(global_query_matrix, key_matrix, transpose_y=True)
+        global_product = paddle.matmul(
+            global_query_matrix, key_matrix, transpose_y=True
+        )
         global_product = global_product * (d_head**-0.5)
         global_product += (1 - key_mask) * -1e6
         global_weights = F.softmax(global_product)
@@ -445,26 +616,42 @@ class BigBirdSparseAttention(Attention):
         blocked_key_mask = paddle.reshape(key_mask, [B, L, bs])
 
         # 1. global_front_product
-        global_front_out = self._get_global_out(query_matrix, key_matrix, value_matrix, key_mask, d_head, dropout)
+        global_front_out = self._get_global_out(
+            query_matrix, key_matrix, value_matrix, key_mask, d_head, dropout
+        )
 
         # 2. global_back_product
         global_back_out = self._get_global_out(
-            query_matrix, key_matrix, value_matrix, key_mask, d_head, dropout, False
+            query_matrix,
+            key_matrix,
+            value_matrix,
+            key_mask,
+            d_head,
+            dropout,
+            False,
         )
 
         # 3. second_product
 
         # create second matrix
         # [B, 1, L-G, bs, (G+W)*bs]
-        band_mask = self._get_band_mask(blocked_query_mask, blocked_key_mask, B, T)
+        band_mask = self._get_band_mask(
+            blocked_query_mask, blocked_key_mask, B, T
+        )
         # [B, H, L-G, bs, R*bs]
-        rand_mask = self._get_rand_mask(blocked_query_mask, blocked_key_mask, rand_mask_idx, B, T)
+        rand_mask = self._get_rand_mask(
+            blocked_query_mask, blocked_key_mask, rand_mask_idx, B, T
+        )
         # [B, H, L-G, bs, (G+W+R)*bs]
         second_mask = paddle.cat([band_mask, rand_mask], axis=4)
 
         # [B, H, L-G, R * bs, -1]
-        random_keys = self._gather_random_key_value(blocked_key_matrix, rand_mask_idx, B, T)
-        random_values = self._gather_random_key_value(blocked_value_matrix, rand_mask_idx, B, T)
+        random_keys = self._gather_random_key_value(
+            blocked_key_matrix, rand_mask_idx, B, T
+        )
+        random_values = self._gather_random_key_value(
+            blocked_value_matrix, rand_mask_idx, B, T
+        )
 
         band_keys_matrix = self._get_band_matrix(blocked_key_matrix, B, T)
         band_value_matrix = self._get_band_matrix(blocked_value_matrix, B, T)
@@ -474,17 +661,27 @@ class BigBirdSparseAttention(Attention):
         # [B, H, L - G, (G+W+R)*bs, -1]
         second_key_matrix = paddle.cat([band_keys_matrix, random_keys], axis=3)
         # [B, H, L - G, (G+W+R)*bs, -1]
-        second_value_matrix = paddle.cat([band_value_matrix, random_values], axis=3)
-        second_top_value_matrix, second_middle_value_matrix, second_bottom_value_matrix = self._get_splited_matrix(
-            second_value_matrix
+        second_value_matrix = paddle.cat(
+            [band_value_matrix, random_values], axis=3
         )
-        second_product = paddle.einsum("bhlqd,bhlkd->bhlqk", second_query_matrix, second_key_matrix)
+        (
+            second_top_value_matrix,
+            second_middle_value_matrix,
+            second_bottom_value_matrix,
+        ) = self._get_splited_matrix(second_value_matrix)
+        second_product = paddle.einsum(
+            "bhlqd,bhlkd->bhlqk", second_query_matrix, second_key_matrix
+        )
         second_product = second_product * (d_head**-0.5)
         second_product += (1 - second_mask) * -1e6
         second_weights = F.softmax(second_product)
 
-        second_top_weights, second_middle_weights, second_bottom_weights = self._get_splited_matrix(second_weights)
-        second_top_out = paddle.einsum("bhlqk,bhlkd->bhlqd", second_top_weights, second_top_value_matrix)
+        second_top_weights, second_middle_weights, second_bottom_weights = (
+            self._get_splited_matrix(second_weights)
+        )
+        second_top_out = paddle.einsum(
+            "bhlqk,bhlkd->bhlqd", second_top_weights, second_top_value_matrix
+        )
 
         second_middle_out = paddle.einsum(
             "bhlqk,bhlkd->bhlqd",
@@ -493,7 +690,9 @@ class BigBirdSparseAttention(Attention):
         )
         # add global block attention
         second_middle_out += paddle.einsum(
-            "bhlqk,bhkd->bhlqd", second_middle_weights[:, :, :, :, : GF * bs], blocked_value_matrix[:, :, 0]
+            "bhlqk,bhkd->bhlqd",
+            second_middle_weights[:, :, :, :, : GF * bs],
+            blocked_value_matrix[:, :, 0],
         )
         second_middle_out += paddle.einsum(
             "bhlqk,bhkd->bhlqd",
@@ -502,22 +701,31 @@ class BigBirdSparseAttention(Attention):
         )
         # add random block attention
         second_middle_out += paddle.einsum(
-            "...qk,...kd->...qd", second_middle_weights[:, :, :, :, -R * bs :], random_values[:, :, GF:-GB]
+            "...qk,...kd->...qd",
+            second_middle_weights[:, :, :, :, -R * bs :],
+            random_values[:, :, GF:-GB],
         )
 
-        second_bottom_out = paddle.einsum("bhlqk,bhlkd->bhlqd", second_bottom_weights, second_bottom_value_matrix)
+        second_bottom_out = paddle.einsum(
+            "bhlqk,bhlkd->bhlqd",
+            second_bottom_weights,
+            second_bottom_value_matrix,
+        )
 
-        second_out = paddle.cat([second_top_out, second_middle_out, second_bottom_out], axis=2)
+        second_out = paddle.cat(
+            [second_top_out, second_middle_out, second_bottom_out], axis=2
+        )
         second_out = paddle.reshape(second_out, [B, H, (L - G) * bs, -1])
 
         # [B, H, T, D]
-        out = paddle.cat([global_front_out, second_out, global_back_out], axis=2)
+        out = paddle.cat(
+            [global_front_out, second_out, global_back_out], axis=2
+        )
         out = out * query_mask
         return out
 
 
 class MultiHeadAttention(Layer):
-
     Cache = collections.namedtuple("Cache", ["k", "v"])
     StaticCache = collections.namedtuple("StaticCache", ["k", "v"])
 
@@ -537,7 +745,6 @@ class MultiHeadAttention(Layer):
         seed=None,
         attention_type="bigbird",
     ):
-
         super(MultiHeadAttention, self).__init__()
         self.embed_dim = embed_dim
         self.kdim = kdim if kdim is not None else embed_dim
@@ -546,15 +753,42 @@ class MultiHeadAttention(Layer):
         self.dropout = dropout
 
         self.head_dim = embed_dim // num_heads
-        assert self.head_dim * num_heads == self.embed_dim, "embed_dim must be divisible by num_heads"
+        assert self.head_dim * num_heads == self.embed_dim, (
+            "embed_dim must be divisible by num_heads"
+        )
 
-        self.q_proj = Linear3D(embed_dim, num_heads, self.head_dim, weight_attr, bias_attr=bias_attr)
-        self.k_proj = Linear3D(embed_dim, num_heads, self.head_dim, weight_attr, bias_attr=bias_attr)
-        self.v_proj = Linear3D(embed_dim, num_heads, self.head_dim, weight_attr, bias_attr=bias_attr)
-        self.out_proj = nn.Linear(embed_dim, embed_dim, weight_attr, bias_attr=bias_attr)
+        self.q_proj = Linear3D(
+            embed_dim,
+            num_heads,
+            self.head_dim,
+            weight_attr,
+            bias_attr=bias_attr,
+        )
+        self.k_proj = Linear3D(
+            embed_dim,
+            num_heads,
+            self.head_dim,
+            weight_attr,
+            bias_attr=bias_attr,
+        )
+        self.v_proj = Linear3D(
+            embed_dim,
+            num_heads,
+            self.head_dim,
+            weight_attr,
+            bias_attr=bias_attr,
+        )
+        self.out_proj = nn.Linear(
+            embed_dim, embed_dim, weight_attr, bias_attr=bias_attr
+        )
 
         self._attn_implementation = AttentionRegistry.cls_dict[attention_type](
-            num_heads, block_size, window_size, num_global_blocks, num_rand_blocks, seed
+            num_heads,
+            block_size,
+            window_size,
+            num_global_blocks,
+            num_rand_blocks,
+            seed,
         )
 
     def _prepare_qkv(self, query, key, value, cache=None):
@@ -584,16 +818,32 @@ class MultiHeadAttention(Layer):
             k, v = self.compute_kv(key, value)
             return self.StaticCache(k, v)
         elif value is None:  # incremental_state
-            k = paddle.full(shape=[-1, self.num_heads, 0, self.head_dim], fill_value=0, dtype=key.dtype)
+            k = paddle.full(
+                shape=[-1, self.num_heads, 0, self.head_dim],
+                fill_value=0,
+                dtype=key.dtype,
+            )
 
-            v = paddle.full(shape=[-1, self.num_heads, 0, self.head_dim], fill_value=0, dtype=key.dtype)
+            v = paddle.full(
+                shape=[-1, self.num_heads, 0, self.head_dim],
+                fill_value=0,
+                dtype=key.dtype,
+            )
             return self.Cache(k, v)
         else:
             # incremental_state with initial value, mainly for usage like UniLM
             return self.Cache(key, value)
 
     def forward(
-        self, query, key, value, attn_mask=None, rand_mask_idx=None, query_mask=None, key_mask=None, cache=None
+        self,
+        query,
+        key,
+        value,
+        attn_mask=None,
+        rand_mask_idx=None,
+        query_mask=None,
+        key_mask=None,
+        cache=None,
     ):
         key = query if key is None else key
         value = query if value is None else value
@@ -604,7 +854,15 @@ class MultiHeadAttention(Layer):
             q, k, v, cache = self._prepare_qkv(query, key, value, cache)
 
         out = self._attn_implementation(
-            q, k, v, self.head_dim, attn_mask, rand_mask_idx, query_mask, key_mask, self.dropout
+            q,
+            k,
+            v,
+            self.head_dim,
+            attn_mask,
+            rand_mask_idx,
+            query_mask,
+            key_mask,
+            self.dropout,
         )
         # combine heads
         out = paddle.transpose(out, perm=[0, 2, 1, 3])

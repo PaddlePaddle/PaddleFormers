@@ -45,34 +45,46 @@ class TestVocab(CpuCommonTest):
     @testing_utils.assert_raises(ValueError)
     def test_sort_index_value_error1(self):
         token_to_idx = {"一万七千多": 1, "一万七千余": 2, "IP地址": 3}
-        Vocab(counter=self.counter, unk_token="[UNK]", token_to_idx=token_to_idx)
+        Vocab(
+            counter=self.counter, unk_token="[UNK]", token_to_idx=token_to_idx
+        )
 
     @testing_utils.assert_raises(ValueError)
     def test_sort_index_value_error2(self):
         token_to_idx = {"一万七千多": 1, "一万七千余": 2, "一万七千": 2}
-        Vocab(counter=self.counter, unk_token="[UNK]", token_to_idx=token_to_idx)
+        Vocab(
+            counter=self.counter, unk_token="[UNK]", token_to_idx=token_to_idx
+        )
 
     @testing_utils.assert_raises(ValueError)
     def test_sort_index_value_error3(self):
         token_to_idx = {"一万七千多": -1, "一万七千余": 2, "一万七千": 3}
-        Vocab(counter=self.counter, unk_token="[UNK]", token_to_idx=token_to_idx)
+        Vocab(
+            counter=self.counter, unk_token="[UNK]", token_to_idx=token_to_idx
+        )
 
     @testing_utils.assert_raises(ValueError)
     def test_to_token_excess_size(self):
         token_to_idx = {"一万七千多": 1, "一万七千余": 2, "一万万": 3}
-        vocab = Vocab(counter=self.counter, unk_token="[UNK]", token_to_idx=token_to_idx)
+        vocab = Vocab(
+            counter=self.counter, unk_token="[UNK]", token_to_idx=token_to_idx
+        )
         vocab.to_tokens(len(vocab))
 
     def test_counter(self):
         token_to_idx = {"一万七千多": 1, "一万七千余": 2, "一万万": 3}
-        vocab = Vocab(counter=self.counter, unk_token="[UNK]", token_to_idx=token_to_idx)
+        vocab = Vocab(
+            counter=self.counter, unk_token="[UNK]", token_to_idx=token_to_idx
+        )
         self.check_output_equal(vocab.to_tokens(1), "一万七千多")
         self.check_output_equal(vocab.to_tokens(2), "一万七千余")
         self.check_output_equal(vocab.to_tokens(3), "一万万")
 
     def test_json(self):
         token_to_idx = {"一万七千多": 1, "一万七千余": 2, "一万万": 3}
-        vocab = Vocab(counter=self.counter, unk_token="[UNK]", token_to_idx=token_to_idx)
+        vocab = Vocab(
+            counter=self.counter, unk_token="[UNK]", token_to_idx=token_to_idx
+        )
         json_str = vocab.to_json()
         copied_vocab = Vocab.from_json(json_str)
         for key, value in copied_vocab.token_to_idx.items():

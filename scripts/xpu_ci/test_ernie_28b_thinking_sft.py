@@ -16,7 +16,9 @@ import pytest
 from conftest import run_command_and_validate
 
 
-def test_ernie_28b_thinking_sft_training(project_root, base_value_dir, log_file):
+def test_ernie_28b_thinking_sft_training(
+    project_root, base_value_dir, log_file
+):
     """Test ERNIE-28B-thinking SFT training loss values.
 
     This test runs the following shell command:

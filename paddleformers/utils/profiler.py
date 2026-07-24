@@ -14,7 +14,7 @@
 
 import sys
 
-import paddle.profiler as profiler
+from paddle import profiler
 
 # A global variable to record the number of calling times for profiler
 # functions. It is used to specify the tracing range of training steps.
@@ -25,7 +25,7 @@ _profiler_options = None
 _prof = None
 
 
-class ProfilerOptions(object):
+class ProfilerOptions:
     """
     Use a string to initialize a ProfilerOptions.
     The string should be in the format: "key1=value1;key2=value;key3=value3".
@@ -68,11 +68,20 @@ class ProfilerOptions(object):
             if key == "batch_range":
                 value_list = value.replace("[", "").replace("]", "").split(",")
                 value_list = list(map(int, value_list))
-                if len(value_list) >= 2 and value_list[0] >= 0 and value_list[1] > value_list[0]:
+                if (
+                    len(value_list) >= 2
+                    and value_list[0] >= 0
+                    and value_list[1] > value_list[0]
+                ):
                     self._options[key] = value_list
             elif key == "exit_on_finished":
                 self._options[key] = value.lower() in ("yes", "true", "t", "1")
-            elif key in ["state", "sorted_key", "tracer_option", "profile_path"]:
+            elif key in [
+                "state",
+                "sorted_key",
+                "tracer_option",
+                "profile_path",
+            ]:
                 self._options[key] = value
             elif key == "timer_only":
                 self._options[key] = value
@@ -81,7 +90,9 @@ class ProfilerOptions(object):
 
     def __getitem__(self, name):
         if self._options.get(name, None) is None:
-            raise ValueError("ProfilerOptions does not have an option named %s." % name)
+            raise ValueError(
+                "ProfilerOptions does not have an option named %s." % name
+            )
         return self._options[name]
 
 
@@ -111,8 +122,13 @@ def add_profiler_step(options_str=None):
         _timer_only = str(_profiler_options["timer_only"]) == str(True)
         _record_shapes = str(_profiler_options["record_shapes"]) == str(True)
         _prof = profiler.Profiler(
-            scheduler=(_profiler_options["batch_range"][0], _profiler_options["batch_range"][1]),
-            on_trace_ready=profiler.export_chrome_tracing(_profiler_options["profile_path"]),
+            scheduler=(
+                _profiler_options["batch_range"][0],
+                _profiler_options["batch_range"][1],
+            ),
+            on_trace_ready=profiler.export_chrome_tracing(
+                _profiler_options["profile_path"]
+            ),
             timer_only=_timer_only,
             record_shapes=_record_shapes,
         )

@@ -59,26 +59,38 @@ class TestAttentionRegistry(unittest.TestCase):
 
     def test_default_attention_registered(self):
         self.assertIn("default_attention", AttentionRegistry.cls_dict)
-        self.assertEqual(AttentionRegistry.cls_dict["default_attention"], DefaultAttention)
+        self.assertEqual(
+            AttentionRegistry.cls_dict["default_attention"], DefaultAttention
+        )
 
-    @unittest.skip("bigbird identity check fails due to auto-reregistration in CI")
+    @unittest.skip(
+        "bigbird identity check fails due to auto-reregistration in CI"
+    )
     def test_bigbird_registered(self):
-        from paddleformers.transformers.attention_utils import BigBirdSparseAttention
+        from paddleformers.transformers.attention_utils import (
+            BigBirdSparseAttention,
+        )
 
         self.assertIn("bigbird", AttentionRegistry.cls_dict)
-        self.assertEqual(AttentionRegistry.cls_dict["bigbird"], BigBirdSparseAttention)
+        self.assertEqual(
+            AttentionRegistry.cls_dict["bigbird"], BigBirdSparseAttention
+        )
 
 
 class TestLinear3D(unittest.TestCase):
     """Tests for Linear3D layer."""
 
     def test_init(self):
-        layer = Linear3D(hidden_size=64, num_attention_heads=4, size_per_head=16)
+        layer = Linear3D(
+            hidden_size=64, num_attention_heads=4, size_per_head=16
+        )
         self.assertEqual(layer.weight.shape, [64, 64])
         self.assertEqual(layer.bias.shape, [64])
 
     def test_forward_shape(self):
-        layer = Linear3D(hidden_size=64, num_attention_heads=4, size_per_head=16)
+        layer = Linear3D(
+            hidden_size=64, num_attention_heads=4, size_per_head=16
+        )
         input_tensor = paddle.randn([2, 8, 64])
         output = layer(input_tensor)
         # Output should be [B, H, T, D/H]
@@ -97,7 +109,14 @@ class TestDefaultAttention(unittest.TestCase):
         query_mask = paddle.ones([B, 1, T, 1])
         key_mask = paddle.ones([B, 1, 1, T])
 
-        output = attn(query, key, value, d_head=D, query_mask=query_mask, key_mask=key_mask)
+        output = attn(
+            query,
+            key,
+            value,
+            d_head=D,
+            query_mask=query_mask,
+            key_mask=key_mask,
+        )
         self.assertEqual(output.shape, [B, H, T, D])
 
     def test_forward_with_attn_mask(self):
@@ -110,7 +129,15 @@ class TestDefaultAttention(unittest.TestCase):
         key_mask = paddle.ones([B, 1, 1, T])
         attn_mask = paddle.zeros([B, 1, T, T])
 
-        output = attn(query, key, value, d_head=D, attn_mask=attn_mask, query_mask=query_mask, key_mask=key_mask)
+        output = attn(
+            query,
+            key,
+            value,
+            d_head=D,
+            attn_mask=attn_mask,
+            query_mask=query_mask,
+            key_mask=key_mask,
+        )
         self.assertEqual(output.shape, [B, H, T, D])
 
 
@@ -153,7 +180,9 @@ class TestMultiHeadAttention(unittest.TestCase):
         value = paddle.randn([B, T, 64])
         query_mask = paddle.ones([B, 1, T, 1])
         key_mask = paddle.ones([B, 1, 1, T])
-        output = mha(query, key, value, query_mask=query_mask, key_mask=key_mask)
+        output = mha(
+            query, key, value, query_mask=query_mask, key_mask=key_mask
+        )
         self.assertEqual(output.shape, [B, T, 64])
 
     def test_compute_kv(self):
@@ -196,7 +225,14 @@ class TestMultiHeadAttention(unittest.TestCase):
         key_mask = paddle.ones([B, 1, 1, T])
 
         cache = mha.gen_cache(key, value, type=MultiHeadAttention.StaticCache)
-        result = mha(query, key, value, query_mask=query_mask, key_mask=key_mask, cache=cache)
+        result = mha(
+            query,
+            key,
+            value,
+            query_mask=query_mask,
+            key_mask=key_mask,
+            cache=cache,
+        )
         # When cache is not None, forward returns a tuple (output, cache)
         self.assertIsInstance(result, tuple)
         output, new_cache = result
@@ -213,7 +249,9 @@ class TestMultiHeadAttention(unittest.TestCase):
         query_mask = paddle.ones([B, 1, T, 1])
         key_mask = paddle.ones([B, 1, 1, T])
         # key and value default to query when None
-        output = mha(query, None, None, query_mask=query_mask, key_mask=key_mask)
+        output = mha(
+            query, None, None, query_mask=query_mask, key_mask=key_mask
+        )
         self.assertEqual(output.shape, [B, T, 64])
 
 

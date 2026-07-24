@@ -21,15 +21,9 @@ from typing import Literal, Optional
 # from ..linear_utils import RowParallelLinear as PD_RowParallelLinear
 from paddleformers.transformers.linear_utils import (
     ColumnParallelLinear as PD_ColumnParallelLinear,
-)
-from paddleformers.transformers.linear_utils import (
     ColumnSequenceParallelLinear as PD_ColumnSequenceParallelLinear,
-)
-from paddleformers.transformers.linear_utils import Linear as PD_Linear
-from paddleformers.transformers.linear_utils import (
+    Linear as PD_Linear,
     RowParallelLinear as PD_RowParallelLinear,
-)
-from paddleformers.transformers.linear_utils import (
     RowSequenceParallelLinear as PD_RowSequenceParallelLinear,
 )
 
@@ -52,7 +46,10 @@ block_size = 128
 
 
 def fp8_linear(
-    x: paddle.Tensor, weight: paddle.Tensor, bias: Optional[paddle.Tensor] = None, name=None
+    x: paddle.Tensor,
+    weight: paddle.Tensor,
+    bias: Optional[paddle.Tensor] = None,
+    name=None,
 ) -> paddle.Tensor:
     """
     Applies a linear transformation to the incoming data: y = xA^T + b.
@@ -95,8 +92,12 @@ paddle.nn.functional.linear = fp8_linear
 def register_scale(self):
     if self.weight.element_size() == 1:
         in_features, out_features = self.weight.shape
-        scale_out_features = (out_features + self.block_size - 1) // self.block_size
-        scale_in_features = (in_features + self.block_size - 1) // self.block_size
+        scale_out_features = (
+            out_features + self.block_size - 1
+        ) // self.block_size
+        scale_in_features = (
+            in_features + self.block_size - 1
+        ) // self.block_size
         self.weight_scale_inv = self.create_parameter(
             shape=[scale_in_features, scale_out_features],
             attr=self._weight_attr,

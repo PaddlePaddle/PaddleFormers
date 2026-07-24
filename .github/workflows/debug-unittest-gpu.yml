@@ -1,8 +1,6 @@
 name: Debug Unittest GPU with SSH
-
 on:
   workflow_dispatch:
-
 env:
   PR_ID: ${{ github.event.pull_request.number }}
   COMMIT_ID: ${{ github.event.pull_request.head.sha }}
@@ -12,11 +10,9 @@ env:
   ci_scripts: /workspace/PaddleFormers/scripts/unit_test
   CI_name: unittest-gpu-debug
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
-
 defaults:
   run:
     shell: bash
-
 jobs:
   debug-container:
     name: unittest-gpu-debug
@@ -57,7 +53,6 @@ jobs:
             -e FLAGS_dynamic_static_unified_comm \
             -e python_version \
             -w /workspace --privileged $image_name
-       
       - name: Download Code
         run: |
           docker exec -t $container_name /bin/bash -c '
@@ -85,7 +80,6 @@ jobs:
           git log --pretty=oneline -10
           unset http_proxy && unset https_proxy
           '
-
       - name: Prepare Environment
         run: |
           docker exec -t $container_name /bin/bash -c '
@@ -95,7 +89,6 @@ jobs:
           pip config set global.cache-dir "/home/.cache/pip"
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
           '
-
       - name: Print Info
         env:
           work_dir: ${{ github.workspace }}

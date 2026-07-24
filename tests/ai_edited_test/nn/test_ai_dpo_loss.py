@@ -64,9 +64,14 @@ class TestDpoPreprocessInputs(unittest.TestCase):
         mock_self = MagicMock()
         logits = paddle.randn([2, 4, 8])
         labels = paddle.randint(0, 8, [2, 4])
-        result_logits, result_labels, hidden_states, lm_head_weight, lm_head_bias, transpose_y = dpo_preprocess_inputs(
-            mock_self, logits, labels
-        )
+        (
+            result_logits,
+            result_labels,
+            hidden_states,
+            lm_head_weight,
+            lm_head_bias,
+            transpose_y,
+        ) = dpo_preprocess_inputs(mock_self, logits, labels)
         self.assertTrue(paddle.allclose(result_logits, logits).item())
         self.assertTrue(paddle.allclose(result_labels, labels).item())
         self.assertIsNone(hidden_states)
@@ -85,7 +90,9 @@ class TestDpoPreprocessInputs(unittest.TestCase):
         ty = True
         logits_tuple = (hidden, weight, bias, ty)
         labels = paddle.randint(0, 16, [2, 4])
-        result_logits, result_labels, hs, w, b, t = dpo_preprocess_inputs(mock_self, logits_tuple, labels)
+        result_logits, result_labels, hs, w, b, t = dpo_preprocess_inputs(
+            mock_self, logits_tuple, labels
+        )
         self.assertIsNone(result_logits)
         self.assertTrue(paddle.allclose(hs, hidden).item())
         self.assertTrue(paddle.allclose(w, weight).item())
@@ -98,7 +105,9 @@ class TestDpoPreprocessInputs(unittest.TestCase):
         inner = paddle.randn([2, 4, 8])
         logits_tuple = (inner,)
         labels = paddle.randint(0, 8, [2, 4])
-        result_logits, _, _, _, _, _ = dpo_preprocess_inputs(mock_self, logits_tuple, labels)
+        result_logits, _, _, _, _, _ = dpo_preprocess_inputs(
+            mock_self, logits_tuple, labels
+        )
         self.assertTrue(paddle.allclose(result_logits, inner).item())
 
 
@@ -148,7 +157,14 @@ class TestCalDpoLoss(unittest.TestCase):
         ref_chosen = paddle.randn([4])
         ref_rejected = paddle.randn([4])
 
-        loss = cal_dpo_loss(mock_self, policy_chosen, policy_rejected, ref_chosen, ref_rejected, None)
+        loss = cal_dpo_loss(
+            mock_self,
+            policy_chosen,
+            policy_rejected,
+            ref_chosen,
+            ref_rejected,
+            None,
+        )
         self.assertEqual(loss.shape, [])
         self.assertFalse(paddle.isnan(loss).item())
 
@@ -268,7 +284,14 @@ class TestCalDpoLoss(unittest.TestCase):
         policy_rejected = -paddle.abs(paddle.randn([4]))
         ref_chosen = -paddle.abs(paddle.randn([4]))
         ref_rejected = -paddle.abs(paddle.randn([4]))
-        loss = cal_dpo_loss(mock_self, policy_chosen, policy_rejected, ref_chosen, ref_rejected, None)
+        loss = cal_dpo_loss(
+            mock_self,
+            policy_chosen,
+            policy_rejected,
+            ref_chosen,
+            ref_rejected,
+            None,
+        )
         self.assertEqual(loss.shape, [])
 
     def test_invalid_loss_type_raises(self):
@@ -317,7 +340,9 @@ class TestCalDpoLoss(unittest.TestCase):
         loss_1 = cal_dpo_loss(mock_self_1, pc, pr, rc, rr, None)
         loss_2 = cal_dpo_loss(mock_self_2, pc, pr, rc, rr, None)
 
-        np.testing.assert_allclose(loss_2.numpy(), 2.0 * loss_1.numpy(), atol=1e-5)
+        np.testing.assert_allclose(
+            loss_2.numpy(), 2.0 * loss_1.numpy(), atol=1e-5
+        )
 
     def test_label_smoothing_applied(self):
         """Test sigmoid loss with label_smoothing > 0."""

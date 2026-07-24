@@ -12,10 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-""" GlmOCR model configuration."""
+"""GlmOCR model configuration."""
 
 from ..configuration_utils import PretrainedConfig
-from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
+from ..modeling_rope_utils import (
+    rope_config_validation,
+    standardize_rope_params,
+)
 
 
 class GlmOcrVisionConfig(PretrainedConfig):
@@ -104,7 +107,6 @@ class GlmOcrVisionConfig(PretrainedConfig):
 
 
 class GlmOcrTextConfig(PretrainedConfig):
-
     model_type = "glm_ocr_text"
     base_config_key = "text_config"
     keys_to_ignore_at_inference = ["past_key_values"]
@@ -215,28 +217,55 @@ class GlmOcrConfig(PretrainedConfig):
     ```"""
 
     model_type = "glm_ocr"
-    sub_configs = {"vision_config": GlmOcrVisionConfig, "text_config": GlmOcrTextConfig}
+    sub_configs = {
+        "vision_config": GlmOcrVisionConfig,
+        "text_config": GlmOcrTextConfig,
+    }
     keys_to_ignore_at_inference = ["past_key_values"]
 
     def __setattr__(self, key, value):
         # 同步到 text_config
         if (
-            (text_config := super().__getattribute__("__dict__").get("text_config")) is not None
-            and key not in ["_name_or_path", "model_type", "dtype", "_attn_implementation_internal"]
+            (
+                text_config := super()
+                .__getattribute__("__dict__")
+                .get("text_config")
+            )
+            is not None
+            and key
+            not in [
+                "_name_or_path",
+                "model_type",
+                "dtype",
+                "_attn_implementation_internal",
+            ]
             and key in text_config.__dict__
         ):
             setattr(text_config, key, value)
         # 同步到 vision_config
         if (
-            (vision_config := super().__getattribute__("__dict__").get("vision_config")) is not None
-            and key not in ["_name_or_path", "model_type", "dtype", "_attn_implementation_internal"]
+            (
+                vision_config := super()
+                .__getattribute__("__dict__")
+                .get("vision_config")
+            )
+            is not None
+            and key
+            not in [
+                "_name_or_path",
+                "model_type",
+                "dtype",
+                "_attn_implementation_internal",
+            ]
             and key in vision_config.__dict__
         ):
             setattr(vision_config, key, value)
         super().__setattr__(key, value)
 
     def __getattribute__(self, key):
-        if "text_config" in super().__getattribute__("__dict__") and key not in [
+        if "text_config" in super().__getattribute__(
+            "__dict__"
+        ) and key not in [
             "_name_or_path",
             "model_type",
             "dtype",
@@ -261,7 +290,9 @@ class GlmOcrConfig(PretrainedConfig):
         **kwargs,
     ):
         if isinstance(vision_config, dict):
-            self.vision_config = self.sub_configs["vision_config"](**vision_config)
+            self.vision_config = self.sub_configs["vision_config"](
+                **vision_config
+            )
         elif vision_config is None:
             self.vision_config = self.sub_configs["vision_config"]()
         else:

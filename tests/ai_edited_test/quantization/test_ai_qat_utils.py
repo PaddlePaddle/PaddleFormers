@@ -59,7 +59,9 @@ class TestQminQmaxMapping(unittest.TestCase):
 
     def test_int8_ranges(self):
         """Test int8 quantization ranges."""
-        self.assertEqual(QMIN_QMAX_MAPPING["a8w8linear_activation"], (-128, 127))
+        self.assertEqual(
+            QMIN_QMAX_MAPPING["a8w8linear_activation"], (-128, 127)
+        )
         self.assertEqual(QMIN_QMAX_MAPPING["a8w8linear_weight"], (-128, 127))
 
     def test_int4_weight_range(self):
@@ -94,10 +96,19 @@ class TestQuantize(unittest.TestCase):
 
     def test_quantize_activation_with_hadamard(self):
         """Test activation quantization with hadamard."""
-        config = MockQuantizationConfig(apply_hadamard=True, hadamard_block_size=4)
+        config = MockQuantizationConfig(
+            apply_hadamard=True, hadamard_block_size=4
+        )
         # Hadamard requires last dim to be power of 2
         x = paddle.randn([2, 4])
-        quant_x, scale = quantize(x, "a8w8linear", "activation", config, side="right", apply_hadamard=True)
+        quant_x, scale = quantize(
+            x,
+            "a8w8linear",
+            "activation",
+            config,
+            side="right",
+            apply_hadamard=True,
+        )
         self.assertIsNotNone(quant_x)
 
     def test_quantize_with_activation_scale(self):
@@ -106,7 +117,13 @@ class TestQuantize(unittest.TestCase):
         x = paddle.randn([2, 4])
         activation_scale = paddle.ones([1]) * 2.0
         activation_scale.stop_gradient = True
-        quant_x, scale = quantize(x, "a8w8linear", "activation", config, activation_scale=activation_scale)
+        quant_x, scale = quantize(
+            x,
+            "a8w8linear",
+            "activation",
+            config,
+            activation_scale=activation_scale,
+        )
         self.assertEqual(quant_x.dtype, paddle.int8)
 
     def test_quantize_unknown_algo_raises(self):

@@ -42,7 +42,14 @@ def save_yaml(filepath, data):
             return True
 
     with open(filepath, "w", encoding="utf-8") as f:
-        yaml.dump(data, f, Dumper=NoAliasDumper, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        yaml.dump(
+            data,
+            f,
+            Dumper=NoAliasDumper,
+            default_flow_style=False,
+            allow_unicode=True,
+            sort_keys=False,
+        )
 
     with open(filepath, "r", encoding="utf-8") as f:
         content = f.read()
@@ -55,7 +62,6 @@ def save_yaml(filepath, data):
         line = lines[i]
 
         if re.match(r"^(\s+)-\s+-\s+\S", line):
-
             indent_match = re.match(r"^(\s+)-\s+-\s+", line)
             indent = indent_match.group(1)
             array_items = []
@@ -64,7 +70,9 @@ def save_yaml(filepath, data):
             j = i + 1
             while j < len(lines):
                 next_line = lines[j]
-                next_indent_match = re.match(r"^" + re.escape(indent) + r"\s+-\s+", next_line)
+                next_indent_match = re.match(
+                    r"^" + re.escape(indent) + r"\s+-\s+", next_line
+                )
                 if next_indent_match:
                     array_items.append(next_line[next_indent_match.end() :])
                     j += 1
@@ -112,12 +120,10 @@ def merge_configs(config_path, config_ci_path, output_path=None):
 
     for model_name, model_config in config.items():
         if model_name not in config_ci:
-
             new_models[model_name] = model_config
             has_changes = True
             print(f"[NEW] Model: {model_name}")
         else:
-
             ci_config = config_ci[model_name]
             cli_args_updates = {}
             other_field_updates = {}
@@ -139,7 +145,9 @@ def merge_configs(config_path, config_ci_path, output_path=None):
 
                 new_fields = {
                     "cli_args": cli_args_updates if cli_args_updates else None,
-                    "other_fields": other_field_updates if other_field_updates else None,
+                    "other_fields": other_field_updates
+                    if other_field_updates
+                    else None,
                 }
 
                 print(f"[UPDATE] Model {model_name} has new fields:")
@@ -158,7 +166,6 @@ def merge_configs(config_path, config_ci_path, output_path=None):
     if updated_models:
         print(f"\nUpdating {len(updated_models)} model(s)...")
         for model_name, new_fields in updated_models.items():
-
             if new_fields.get("cli_args"):
                 if "cli_args" not in config_ci[model_name]:
                     config_ci[model_name]["cli_args"] = {}
@@ -189,7 +196,10 @@ if __name__ == "__main__":
     script_dir = Path(__file__).parent.absolute()
 
     parser.add_argument(
-        "--origin_config", type=str, default="config.yaml", help="Source config file name (default: config.yaml)"
+        "--origin_config",
+        type=str,
+        default="config.yaml",
+        help="Source config file name (default: config.yaml)",
     )
     parser.add_argument(
         "--update_config",
@@ -198,7 +208,10 @@ if __name__ == "__main__":
         help="Target config file name to be updated (default: config_ci.yaml)",
     )
     parser.add_argument(
-        "--output", type=str, default=None, help="Output file path. If None, overwrite update_config (default: None)"
+        "--output",
+        type=str,
+        default=None,
+        help="Output file path. If None, overwrite update_config (default: None)",
     )
 
     args = parser.parse_args()
@@ -214,7 +227,9 @@ if __name__ == "__main__":
         print(f"Error: {update_config_path} does not exist")
         sys.exit(1)
 
-    result = merge_configs(str(origin_config_path), str(update_config_path), args.output)
+    result = merge_configs(
+        str(origin_config_path), str(update_config_path), args.output
+    )
 
     if result["new_models"] or result["updated_models"]:
         if result["new_models"]:

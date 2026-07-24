@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,7 +14,7 @@
 """Image processor class for ERNIE4.5-MOE-VL."""
 
 import math
-from typing import List, Optional, Union
+from typing import Optional
 
 import numpy as np
 from PIL import Image
@@ -108,7 +107,7 @@ def is_scaled_image(image: np.ndarray) -> bool:
     return np.min(image) >= 0 and np.max(image) <= 1
 
 
-def make_batched_images(images) -> List[List[ImageInput]]:
+def make_batched_images(images) -> list[list[ImageInput]]:
     """
     Accepts images in list or nested list format, and makes a list of images for preprocessing.
 
@@ -119,7 +118,11 @@ def make_batched_images(images) -> List[List[ImageInput]]:
     Returns:
         list: A list of images.
     """
-    if isinstance(images, (list, tuple)) and isinstance(images[0], (list, tuple)) and is_valid_image(images[0][0]):
+    if (
+        isinstance(images, (list, tuple))
+        and isinstance(images[0], (list, tuple))
+        and is_valid_image(images[0][0])
+    ):
         return [img for img_list in images for img in img_list]
 
     elif isinstance(images, (list, tuple)) and is_valid_image(images[0]):
@@ -131,9 +134,13 @@ def make_batched_images(images) -> List[List[ImageInput]]:
     raise ValueError(f"Could not make batched images from {images}")
 
 
-def make_batched_videos(videos) -> List[VideoInput]:
+def make_batched_videos(videos) -> list[VideoInput]:
     """dummy"""
-    if isinstance(videos, (list, tuple)) and isinstance(videos[0], (list, tuple)) and is_valid_image(videos[0][0]):
+    if (
+        isinstance(videos, (list, tuple))
+        and isinstance(videos[0], (list, tuple))
+        and is_valid_image(videos[0][0])
+    ):
         return videos
 
     elif isinstance(videos, (list, tuple)) and is_valid_image(videos[0]):
@@ -194,10 +201,10 @@ class Ernie4_5_VLImageProcessor(BaseImageProcessor):
         do_resize: bool = True,
         resample: PILImageResampling = PILImageResampling.BICUBIC,
         do_rescale: bool = True,
-        rescale_factor: Union[float, List[float]] = 1 / 255,
+        rescale_factor: float | list[float] = 1 / 255,
         do_normalize: bool = True,
-        image_mean: Optional[Union[float, List[float]]] = None,
-        image_std: Optional[Union[float, List[float]]] = None,
+        image_mean: Optional[float | list[float]] = None,
+        image_std: Optional[float | list[float]] = None,
         do_convert_rgb: bool = True,
         min_pixels: int = 56 * 56,
         max_pixels: int = 28 * 28 * 1280,
@@ -213,7 +220,9 @@ class Ernie4_5_VLImageProcessor(BaseImageProcessor):
         self.do_rescale = do_rescale
         self.rescale_factor = rescale_factor
         self.do_normalize = do_normalize
-        self.image_mean = image_mean if image_mean is not None else OPENAI_CLIP_MEAN
+        self.image_mean = (
+            image_mean if image_mean is not None else OPENAI_CLIP_MEAN
+        )
         self.image_std = image_std if image_std is not None else OPENAI_CLIP_STD
         self.min_pixels = min_pixels
         self.max_pixels = max_pixels
@@ -226,20 +235,34 @@ class Ernie4_5_VLImageProcessor(BaseImageProcessor):
     def set_pixels(self, min_pixels=None, max_pixels=None, msg=""):
         """set_pixels"""
         if min_pixels is not None:
-            assert isinstance(min_pixels, int) and min_pixels >= 0, "min_pixels must be positive int"
-            logger.info(f"{msg} Ernie4_5_VLImageProcessor set min_pixels = {min_pixels}")
+            assert isinstance(min_pixels, int) and min_pixels >= 0, (
+                "min_pixels must be positive int"
+            )
+            logger.info(
+                f"{msg} Ernie4_5_VLImageProcessor set min_pixels = {min_pixels}"
+            )
             self.min_pixels = min_pixels
             self.size["min_pixels"] = int(min_pixels)
         if max_pixels is not None:
-            assert isinstance(max_pixels, int) and max_pixels > 0, "max_pixels must be positive int"
-            logger.info(f"{msg} Ernie4_5_VLImageProcessor set max_pixels = {max_pixels}")
+            assert isinstance(max_pixels, int) and max_pixels > 0, (
+                "max_pixels must be positive int"
+            )
+            logger.info(
+                f"{msg} Ernie4_5_VLImageProcessor set max_pixels = {max_pixels}"
+            )
             self.max_pixels = max_pixels
             self.size["max_pixels"] = int(max_pixels)
 
-    def get_smarted_resize(self, height, width, min_pixels=None, max_pixels=None):
+    def get_smarted_resize(
+        self, height, width, min_pixels=None, max_pixels=None
+    ):
         """dummy"""
-        actual_min_pixels = min_pixels if min_pixels is not None else self.min_pixels
-        actual_max_pixels = max_pixels if max_pixels is not None else self.max_pixels
+        actual_min_pixels = (
+            min_pixels if min_pixels is not None else self.min_pixels
+        )
+        actual_max_pixels = (
+            max_pixels if max_pixels is not None else self.max_pixels
+        )
         resized_height, resized_width = smart_resize(
             height,
             width,
@@ -254,17 +277,17 @@ class Ernie4_5_VLImageProcessor(BaseImageProcessor):
 
     def _preprocess(
         self,
-        images: Union[ImageInput, VideoInput],
+        images: ImageInput | VideoInput,
         do_resize: bool = True,
         resample: PILImageResampling = None,
         do_rescale: bool = True,
         rescale_factor: float = 1 / 255,
         do_normalize: bool = True,
-        image_mean: Optional[Union[float, List[float]]] = None,
-        image_std: Optional[Union[float, List[float]]] = None,
+        image_mean: Optional[float | list[float]] = None,
+        image_std: Optional[float | list[float]] = None,
         do_convert_rgb: bool = False,
         data_format: Optional[ChannelDimension] = ChannelDimension.FIRST,
-        input_data_format: Optional[Union[str, ChannelDimension]] = None,
+        input_data_format: Optional[str | ChannelDimension] = None,
         predetermined_grid_thw=None,
     ):
         """
@@ -326,14 +349,16 @@ class Ernie4_5_VLImageProcessor(BaseImageProcessor):
         processed_images = []
 
         if predetermined_grid_thw is not None:
-            assert len(predetermined_grid_thw) == len(
-                images
-            ), f"len(predetermined_grid_thw) {len(predetermined_grid_thw)} == len(images) {len(images)}"
+            assert len(predetermined_grid_thw) == len(images), (
+                f"len(predetermined_grid_thw) {len(predetermined_grid_thw)} == len(images) {len(images)}"
+            )
 
         for img_idx, image in enumerate(images):
             if do_resize:
                 if predetermined_grid_thw is not None:
-                    (resized_height, resized_width) = predetermined_grid_thw[img_idx]
+                    (resized_height, resized_width) = predetermined_grid_thw[
+                        img_idx
+                    ]
                     resized_height *= self.patch_size
                     resized_width *= self.patch_size
                 else:
@@ -356,7 +381,9 @@ class Ernie4_5_VLImageProcessor(BaseImageProcessor):
                     data_format=input_data_format,
                 )
             if do_rescale:
-                image = rescale(image, scale=rescale_factor, data_format=input_data_format)
+                image = rescale(
+                    image, scale=rescale_factor, data_format=input_data_format
+                )
 
             if do_normalize:
                 image = normalize(
@@ -366,7 +393,9 @@ class Ernie4_5_VLImageProcessor(BaseImageProcessor):
                     data_format=input_data_format,
                 )
 
-            image = to_channel_dimension_format(image, data_format, input_channel_dim=input_data_format)  # [C, H, W]
+            image = to_channel_dimension_format(
+                image, data_format, input_channel_dim=input_data_format
+            )  # [C, H, W]
 
             if image.dtype != "uint8":
                 image = image.astype("bfloat16")
@@ -398,7 +427,10 @@ class Ernie4_5_VLImageProcessor(BaseImageProcessor):
         patches = patches.transpose([0, 2, 5, 3, 6, 1, 4, 7])
 
         flatten_patches = patches.reshape(
-            [grid_t * grid_h * grid_w, channel * self.patch_size * self.patch_size]
+            [
+                grid_t * grid_h * grid_w,
+                channel * self.patch_size * self.patch_size,
+            ]
         )  # [grid_t * grid_h * grid_w, C * psz * psz]
 
         return flatten_patches, (grid_t, grid_h, grid_w)
@@ -408,17 +440,17 @@ class Ernie4_5_VLImageProcessor(BaseImageProcessor):
         images: ImageInput,
         videos: VideoInput = None,
         do_resize: bool = True,
-        size: Optional[Union[int, List[int]]] = None,
+        size: Optional[int | list[int]] = None,
         resample: PILImageResampling = None,
         do_rescale: bool = True,
         rescale_factor: float = 1 / 255,
         do_normalize: bool = True,
-        image_mean: Optional[Union[float, List[float]]] = None,
-        image_std: Optional[Union[float, List[float]]] = None,
+        image_mean: Optional[float | list[float]] = None,
+        image_std: Optional[float | list[float]] = None,
         do_convert_rgb: bool = False,
-        return_tensors: Optional[Union[str, TensorType]] = None,
+        return_tensors: Optional[str | TensorType] = None,
         data_format: Optional[ChannelDimension] = ChannelDimension.FIRST,
-        input_data_format: Optional[Union[str, ChannelDimension]] = None,
+        input_data_format: Optional[str | ChannelDimension] = None,
         predetermined_grid_thw=None,
     ):
         """
@@ -472,11 +504,21 @@ class Ernie4_5_VLImageProcessor(BaseImageProcessor):
         size = size if size is not None else self.size
         resample = resample if resample is not None else self.resample
         do_rescale = do_rescale if do_rescale is not None else self.do_rescale
-        rescale_factor = rescale_factor if rescale_factor is not None else self.rescale_factor
-        do_normalize = do_normalize if do_normalize is not None else self.do_normalize
+        rescale_factor = (
+            rescale_factor
+            if rescale_factor is not None
+            else self.rescale_factor
+        )
+        do_normalize = (
+            do_normalize if do_normalize is not None else self.do_normalize
+        )
         image_mean = image_mean if image_mean is not None else self.image_mean
         image_std = image_std if image_std is not None else self.image_std
-        do_convert_rgb = do_convert_rgb if do_convert_rgb is not None else self.do_convert_rgb
+        do_convert_rgb = (
+            do_convert_rgb
+            if do_convert_rgb is not None
+            else self.do_convert_rgb
+        )
 
         if images is not None:
             images = make_batched_images(images)
@@ -484,14 +526,19 @@ class Ernie4_5_VLImageProcessor(BaseImageProcessor):
             videos = make_batched_videos(videos)
 
         if images is not None and not valid_images(images):
-            raise ValueError("Invalid image type. Must be of type PIL.Image.Image, numpy.ndarray, " "torch.Tensor.")
+            raise ValueError(
+                "Invalid image type. Must be of type PIL.Image.Image, numpy.ndarray, "
+                "torch.Tensor."
+            )
 
         data = {}
         if images is not None:
             pixel_values, vision_grid_thws = [], []
             for img_idx, image in enumerate(images):
                 if predetermined_grid_thw is not None:
-                    predetermined_grid_thw_one = [predetermined_grid_thw[img_idx]]
+                    predetermined_grid_thw_one = [
+                        predetermined_grid_thw[img_idx]
+                    ]
                 else:
                     predetermined_grid_thw_one = None
                 patches, image_grid_thw = self._preprocess(
@@ -512,7 +559,12 @@ class Ernie4_5_VLImageProcessor(BaseImageProcessor):
                 vision_grid_thws.append(image_grid_thw)
             pixel_values = np.array(pixel_values)
             vision_grid_thws = np.array(vision_grid_thws)
-            data.update({"pixel_values": pixel_values, "image_grid_thw": vision_grid_thws})
+            data.update(
+                {
+                    "pixel_values": pixel_values,
+                    "image_grid_thw": vision_grid_thws,
+                }
+            )
 
         if videos is not None:
             pixel_values, vision_grid_thws = [], []

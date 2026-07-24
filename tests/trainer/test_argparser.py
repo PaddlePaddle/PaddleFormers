@@ -48,7 +48,9 @@ class PreTrainingArguments(TrainingArguments):
     # NOTE(gongenlei): new add autotuner_benchmark
     autotuner_benchmark: bool = field(
         default=False,
-        metadata={"help": "Weather to run benchmark by autotuner. True for from_scratch and pad_max_length."},
+        metadata={
+            "help": "Weather to run benchmark by autotuner. True for from_scratch and pad_max_length."
+        },
     )
     unified_checkpoint: bool = field(
         default=True,
@@ -131,7 +133,9 @@ class ArgparserTest(unittest.TestCase):
             self.assertEqual(model_args.get(key), value)
 
     def test_parse_json_file(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmpfile:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False
+        ) as tmpfile:
             create_json_from_dict(ArgparserTest.args_dict, tmpfile.name)
             tmpfile_path = tmpfile.name
         with patch("sys.argv", [ArgparserTest.script_name, tmpfile_path]):
@@ -142,9 +146,17 @@ class ArgparserTest(unittest.TestCase):
 
     def test_parse_json_file_and_cmd_lines(self):
         half_size = len(ArgparserTest.args_dict) // 2
-        json_part = {k: ArgparserTest.args_dict[k] for k in list(ArgparserTest.args_dict)[:half_size]}
-        cmd_line_part = {k: ArgparserTest.args_dict[k] for k in list(ArgparserTest.args_dict)[half_size:]}
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmpfile:
+        json_part = {
+            k: ArgparserTest.args_dict[k]
+            for k in list(ArgparserTest.args_dict)[:half_size]
+        }
+        cmd_line_part = {
+            k: ArgparserTest.args_dict[k]
+            for k in list(ArgparserTest.args_dict)[half_size:]
+        }
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False
+        ) as tmpfile:
             create_json_from_dict(json_part, tmpfile.name)
             tmpfile_path = tmpfile.name
         cmd_line_args = [ArgparserTest.script_name, tmpfile_path]
@@ -160,7 +172,9 @@ class ArgparserTest(unittest.TestCase):
         os.remove(tmpfile_path)
 
     def test_parse_json_file_and_cmd_lines_with_conflict(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmpfile:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False
+        ) as tmpfile:
             json.dump(ArgparserTest.args_dict, tmpfile)
             tmpfile_path = tmpfile.name
         cmd_line_args = [
@@ -179,6 +193,10 @@ class ArgparserTest(unittest.TestCase):
         self.assertEqual(model_args.get("max_steps"), 3000)
         self.assertEqual(model_args.get("log_on_each_node"), False)
         for key, value in ArgparserTest.args_dict.items():
-            if key not in ["min_learning_rate", "max_steps", "log_on_each_node"]:
+            if key not in [
+                "min_learning_rate",
+                "max_steps",
+                "log_on_each_node",
+            ]:
                 self.assertEqual(model_args.get(key), value)
         os.remove(tmpfile_path)

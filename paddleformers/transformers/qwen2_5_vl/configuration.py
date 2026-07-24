@@ -20,7 +20,10 @@
 """Qwen2_5_VL model configuration"""
 
 from ..configuration_utils import PretrainedConfig, layer_type_validation
-from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
+from ..modeling_rope_utils import (
+    rope_config_validation,
+    standardize_rope_params,
+)
 
 
 class Qwen2_5_VLVisionConfig(PretrainedConfig):
@@ -209,7 +212,9 @@ class Qwen2_5_VLTextConfig(PretrainedConfig):
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
         self.use_sliding_window = use_sliding_window
-        self.sliding_window = sliding_window if self.use_sliding_window else None
+        self.sliding_window = (
+            sliding_window if self.use_sliding_window else None
+        )
         self.max_window_layers = max_window_layers
 
         # for backward compatibility
@@ -230,7 +235,8 @@ class Qwen2_5_VLTextConfig(PretrainedConfig):
         if self.layer_types is None:
             self.layer_types = [
                 "sliding_attention"
-                if self.sliding_window is not None and i >= self.max_window_layers
+                if self.sliding_window is not None
+                and i >= self.max_window_layers
                 else "full_attention"
                 for i in range(self.num_hidden_layers)
             ]
@@ -242,7 +248,10 @@ class Qwen2_5_VLTextConfig(PretrainedConfig):
             self.rope_parameters["rope_type"] = "default"
         rope_config_validation(self, ignore_keys={"mrope_section"})
         super().__init__(
-            tie_word_embeddings=tie_word_embeddings, bos_token_id=bos_token_id, eos_token_id=eos_token_id, **kwargs
+            tie_word_embeddings=tie_word_embeddings,
+            bos_token_id=bos_token_id,
+            eos_token_id=eos_token_id,
+            **kwargs,
         )
 
 
@@ -281,7 +290,10 @@ class Qwen2_5_VLConfig(PretrainedConfig):
     ```"""
 
     model_type = "qwen2_5_vl"
-    sub_configs = {"vision_config": Qwen2_5_VLVisionConfig, "text_config": Qwen2_5_VLTextConfig}
+    sub_configs = {
+        "vision_config": Qwen2_5_VLVisionConfig,
+        "text_config": Qwen2_5_VLTextConfig,
+    }
     keys_to_ignore_at_inference = ["past_key_values"]
 
     def __init__(
@@ -300,7 +312,9 @@ class Qwen2_5_VLConfig(PretrainedConfig):
         super().__init__(**kwargs)
 
         if isinstance(vision_config, dict):
-            self.vision_config = self.sub_configs["vision_config"](**vision_config)
+            self.vision_config = self.sub_configs["vision_config"](
+                **vision_config
+            )
         elif vision_config is None:
             self.vision_config = self.sub_configs["vision_config"]()
 
@@ -317,8 +331,19 @@ class Qwen2_5_VLConfig(PretrainedConfig):
 
     def __setattr__(self, key, value):
         if (
-            (text_config := super().__getattribute__("__dict__").get("text_config")) is not None
-            and key not in ["_name_or_path", "model_type", "dtype", "_attn_implementation_internal"]
+            (
+                text_config := super()
+                .__getattribute__("__dict__")
+                .get("text_config")
+            )
+            is not None
+            and key
+            not in [
+                "_name_or_path",
+                "model_type",
+                "dtype",
+                "_attn_implementation_internal",
+            ]
             and key in text_config.__dict__
         ):
             setattr(text_config, key, value)
@@ -326,7 +351,9 @@ class Qwen2_5_VLConfig(PretrainedConfig):
             super().__setattr__(key, value)
 
     def __getattribute__(self, key):
-        if "text_config" in super().__getattribute__("__dict__") and key not in [
+        if "text_config" in super().__getattribute__(
+            "__dict__"
+        ) and key not in [
             "_name_or_path",
             "model_type",
             "dtype",

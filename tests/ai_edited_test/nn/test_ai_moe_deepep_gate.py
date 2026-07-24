@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import paddle
-import paddle.nn as nn
+from paddle import nn
 
 
 def _make_gate_cls():
@@ -154,7 +154,9 @@ class TestMoEGateMixin(unittest.TestCase):
         x = paddle.to_tensor([0, 1, 2])
         result = gate._one_hot_to_float(x, num_classes=4)
         self.assertEqual(result.shape, [3, 4])
-        self.assertTrue(result.dtype == paddle.float32 or str(result.dtype) == "float32")
+        self.assertTrue(
+            result.dtype == paddle.float32 or str(result.dtype) == "float32"
+        )
 
     def test_one_hot_to_float_int32_input(self):
         """Test _one_hot_to_float with int32 input."""
@@ -235,13 +237,17 @@ class TestMoEGateMixin(unittest.TestCase):
         scores = paddle.randn([6, 8])
         topk_weight, _ = gate._topk_greedy(scores, k=2)
         # First weight should be >= second weight per row
-        self.assertTrue(paddle.all(topk_weight[:, 0] >= topk_weight[:, 1]).item())
+        self.assertTrue(
+            paddle.all(topk_weight[:, 0] >= topk_weight[:, 1]).item()
+        )
 
     def test_topk_group_limited_greedy(self):
         """Test _topk_group_limited_greedy returns correct shapes."""
         gate = _make_gate(n_group=4, topk_group=2)
         scores = paddle.randn([6, 8])
-        topk_weight, topk_idx = gate._topk_group_limited_greedy(scores, k=2, n_group=4, topk_group=2)
+        topk_weight, topk_idx = gate._topk_group_limited_greedy(
+            scores, k=2, n_group=4, topk_group=2
+        )
         self.assertEqual(topk_weight.shape, [6, 2])
         self.assertEqual(topk_idx.shape, [6, 2])
 
@@ -250,13 +256,17 @@ class TestMoEGateMixin(unittest.TestCase):
         gate = _make_gate(n_group=3)
         scores = paddle.randn([6, 8])
         with self.assertRaises(AssertionError):
-            gate._topk_group_limited_greedy(scores, k=2, n_group=3, topk_group=1)
+            gate._topk_group_limited_greedy(
+                scores, k=2, n_group=3, topk_group=1
+            )
 
     def test_topk_noaux_tc(self):
         """Test _topk_noaux_tc returns correct shapes."""
         gate = _make_gate(topk_method="noaux_tc", n_group=4, topk_group=2)
         scores = paddle.randn([6, 8])
-        topk_weight, topk_idx = gate._topk_noaux_tc(scores, k=2, n_group=4, topk_group=2)
+        topk_weight, topk_idx = gate._topk_noaux_tc(
+            scores, k=2, n_group=4, topk_group=2
+        )
         self.assertEqual(topk_weight.shape, [6, 2])
         self.assertEqual(topk_idx.shape, [6, 2])
 
@@ -287,7 +297,9 @@ class TestMoEGateMixin(unittest.TestCase):
     def test_cal_aux_loss(self):
         """Test _cal_aux_loss returns a scalar tensor."""
         gate = _make_gate(global_aux_loss=False)
-        gates = paddle.nn.functional.softmax(paddle.randn([6, 8]).cast("float32"), axis=-1)
+        gates = paddle.nn.functional.softmax(
+            paddle.randn([6, 8]).cast("float32"), axis=-1
+        )
         mask = paddle.zeros([6, 8])
         mask[:, 0] = 1.0
         mask[:, 1] = 1.0
@@ -307,7 +319,9 @@ class TestMoEGateMixin(unittest.TestCase):
             "seq_aux": True,
         }
         cls = _make_gate_cls()
-        with patch("paddleformers.nn.moe_deepep.moe_gate.dist.get_rank", return_value=0):
+        with patch(
+            "paddleformers.nn.moe_deepep.moe_gate.dist.get_rank", return_value=0
+        ):
             gate = cls(
                 num_experts=8,
                 expert_hidden_size=16,
@@ -337,7 +351,9 @@ class TestMoEGateMixin(unittest.TestCase):
             output_list.append(tensor.clone())
 
         mock_all_gather.side_effect = fake_all_gather
-        gates = paddle.nn.functional.softmax(paddle.randn([6, 8]).cast("float32"), axis=-1)
+        gates = paddle.nn.functional.softmax(
+            paddle.randn([6, 8]).cast("float32"), axis=-1
+        )
         mask = paddle.zeros([6, 8])
         mask[:, 0] = 1.0
         aux_loss = gate._cal_aux_loss(gates, mask)
@@ -402,7 +418,16 @@ class TestStandardMoEGate(unittest.TestCase):
         """Test forward returns a positive capacity."""
         gate = _make_gate()
         x = paddle.randn([4, 16])
-        capacity, top_gate, top_idx, gates_masked, mask, token_priority, l_aux, l_zloss = gate(x)
+        (
+            capacity,
+            top_gate,
+            top_idx,
+            gates_masked,
+            mask,
+            token_priority,
+            l_aux,
+            l_zloss,
+        ) = gate(x)
         self.assertIsInstance(capacity, int)
         self.assertGreater(capacity, 0)
 
@@ -439,16 +464,36 @@ class TestStandardMoEGate(unittest.TestCase):
 
     def test_forward_group_limited_greedy(self):
         """Test forward with group_limited_greedy topk_method."""
-        gate = _make_gate(topk_method="group_limited_greedy", n_group=4, topk_group=2)
+        gate = _make_gate(
+            topk_method="group_limited_greedy", n_group=4, topk_group=2
+        )
         x = paddle.randn([4, 16])
-        capacity, top_gate, top_idx, gates_masked, mask, token_priority, l_aux, l_zloss = gate(x)
+        (
+            capacity,
+            top_gate,
+            top_idx,
+            gates_masked,
+            mask,
+            token_priority,
+            l_aux,
+            l_zloss,
+        ) = gate(x)
         self.assertEqual(top_gate.shape, [4, 2])
 
     def test_forward_noaux_tc(self):
         """Test forward with noaux_tc topk_method."""
         gate = _make_gate(topk_method="noaux_tc", n_group=4, topk_group=2)
         x = paddle.randn([4, 16])
-        capacity, top_gate, top_idx, gates_masked, mask, token_priority, l_aux, l_zloss = gate(x)
+        (
+            capacity,
+            top_gate,
+            top_idx,
+            gates_masked,
+            mask,
+            token_priority,
+            l_aux,
+            l_zloss,
+        ) = gate(x)
         self.assertEqual(top_gate.shape, [4, 2])
 
     def test_forward_invalid_topk_method_raises(self):
@@ -487,7 +532,9 @@ class TestStandardMoEGate(unittest.TestCase):
         x = paddle.randn([4, 16])
         gate(x)
         # expert_usage should have changed
-        self.assertFalse(np.array_equal(initial_usage, gate.expert_usage.numpy()))
+        self.assertFalse(
+            np.array_equal(initial_usage, gate.expert_usage.numpy())
+        )
 
     def test_topkgating_returns_8_values(self):
         """Test topkgating returns 8 values."""

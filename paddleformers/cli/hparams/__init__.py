@@ -24,7 +24,13 @@ import_structure = {
     "finetuning_args": ["FinetuningArguments"],
     "generating_args": ["GeneratingArguments"],
     "model_args": ["ModelArguments"],
-    "parser": ["get_eval_args", "get_train_args", "get_server_args", "get_export_args", "read_args"],
+    "parser": [
+        "get_eval_args",
+        "get_train_args",
+        "get_server_args",
+        "get_export_args",
+        "read_args",
+    ],
     "server_args": ["ServerArguments"],
 }
 

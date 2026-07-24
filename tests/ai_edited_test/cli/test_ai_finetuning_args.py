@@ -16,10 +16,14 @@ class TestPreTrainingArguments(unittest.TestCase):
         """Test PreTrainingArguments field defaults without instantiation."""
         import dataclasses
 
-        from paddleformers.cli.hparams.finetuning_args import PreTrainingArguments
+        from paddleformers.cli.hparams.finetuning_args import (
+            PreTrainingArguments,
+        )
 
         fields = {
-            f.name: f.default for f in dataclasses.fields(PreTrainingArguments) if f.default is not dataclasses.MISSING
+            f.name: f.default
+            for f in dataclasses.fields(PreTrainingArguments)
+            if f.default is not dataclasses.MISSING
         }
         self.assertEqual(fields["eval_iters"], -1)
         self.assertEqual(fields["use_async_save"], False)
@@ -40,7 +44,9 @@ class TestPreTrainingArguments(unittest.TestCase):
         """Test VLSFTTrainingArguments field defaults."""
         import dataclasses
 
-        from paddleformers.cli.hparams.finetuning_args import VLSFTTrainingArguments
+        from paddleformers.cli.hparams.finetuning_args import (
+            VLSFTTrainingArguments,
+        )
 
         fields = {
             f.name: f.default
@@ -60,13 +66,19 @@ class TestSFTTrainingArguments(unittest.TestCase):
         """Test SFTTrainingArguments field defaults."""
         import dataclasses
 
-        from paddleformers.cli.hparams.finetuning_args import SFTTrainingArguments
+        from paddleformers.cli.hparams.finetuning_args import (
+            SFTTrainingArguments,
+        )
 
         fields = {
-            f.name: f.default for f in dataclasses.fields(SFTTrainingArguments) if f.default is not dataclasses.MISSING
+            f.name: f.default
+            for f in dataclasses.fields(SFTTrainingArguments)
+            if f.default is not dataclasses.MISSING
         }
         self.assertEqual(fields["max_estimate_samples"], 1e5)
-        self.assertEqual(fields["estimation_output_file"], "estimation_output.json")
+        self.assertEqual(
+            fields["estimation_output_file"], "estimation_output.json"
+        )
 
 
 class TestDPOTrainingArguments(unittest.TestCase):
@@ -76,10 +88,14 @@ class TestDPOTrainingArguments(unittest.TestCase):
         """Test DPOTrainingArguments field defaults."""
         import dataclasses
 
-        from paddleformers.cli.hparams.finetuning_args import DPOTrainingArguments
+        from paddleformers.cli.hparams.finetuning_args import (
+            DPOTrainingArguments,
+        )
 
         fields = {
-            f.name: f.default for f in dataclasses.fields(DPOTrainingArguments) if f.default is not dataclasses.MISSING
+            f.name: f.default
+            for f in dataclasses.fields(DPOTrainingArguments)
+            if f.default is not dataclasses.MISSING
         }
         self.assertEqual(fields["num_of_gpus"], -1)
         self.assertEqual(fields["normalize_logps"], False)
@@ -103,10 +119,14 @@ class TestFinetuningArgumentsFieldDefaults(unittest.TestCase):
         """Test FinetuningArguments field defaults."""
         import dataclasses
 
-        from paddleformers.cli.hparams.finetuning_args import FinetuningArguments
+        from paddleformers.cli.hparams.finetuning_args import (
+            FinetuningArguments,
+        )
 
         fields = {
-            f.name: f.default for f in dataclasses.fields(FinetuningArguments) if f.default is not dataclasses.MISSING
+            f.name: f.default
+            for f in dataclasses.fields(FinetuningArguments)
+            if f.default is not dataclasses.MISSING
         }
         self.assertEqual(fields["compute_type"], "bf16")
         self.assertEqual(fields["use_fp8"], False)
@@ -131,7 +151,9 @@ class TestFinetuningArgumentsComputeType(unittest.TestCase):
 
     def _apply_compute_type_logic(self, compute_type):
         """Replicate the compute_type mapping from FinetuningArguments.__post_init__."""
-        from paddleformers.cli.hparams.finetuning_args import DEFAULT_QUANTIZE_LAYERS
+        from paddleformers.cli.hparams.finetuning_args import (
+            DEFAULT_QUANTIZE_LAYERS,
+        )
 
         bf16 = True
         fp16 = False
@@ -187,7 +209,9 @@ class TestFinetuningArgumentsComputeType(unittest.TestCase):
         self.assertIsNone(algo)
 
     def test_compute_type_wint4(self):
-        from paddleformers.cli.hparams.finetuning_args import DEFAULT_QUANTIZE_LAYERS
+        from paddleformers.cli.hparams.finetuning_args import (
+            DEFAULT_QUANTIZE_LAYERS,
+        )
 
         bf16, fp16, algo = self._apply_compute_type_logic("wint4")
         self.assertIsInstance(algo, dict)
@@ -207,7 +231,9 @@ class TestFinetuningArgumentsComputeType(unittest.TestCase):
         self.assertIn(".*self_attn.qkv_proj.*", algo["weight_only_int8"])
 
     def test_compute_type_nf4(self):
-        from paddleformers.cli.hparams.finetuning_args import DEFAULT_QUANTIZE_LAYERS
+        from paddleformers.cli.hparams.finetuning_args import (
+            DEFAULT_QUANTIZE_LAYERS,
+        )
 
         bf16, fp16, algo = self._apply_compute_type_logic("nf4")
         self.assertIsInstance(algo, dict)
@@ -232,14 +258,18 @@ class TestGetTrainArgs(unittest.TestCase):
         os.environ.clear()
         os.environ.update(self._original_env)
 
-    @patch("paddleformers.cli.hparams.parser.is_env_enabled", return_value=False)
+    @patch(
+        "paddleformers.cli.hparams.parser.is_env_enabled", return_value=False
+    )
     @patch("paddleformers.cli.hparams.parser._parse_train_args")
     def test_get_train_args_vl_stage_sets_env_vars(self, mock_parse, mock_env):
         """Test get_train_args sets NCCL env vars when stage contains 'VL'."""
         from paddleformers.cli.hparams.parser import get_train_args
 
         mock_model_args = MagicMock(stage="VL-SFT")
-        mock_data_args = MagicMock(packing=True, truncate_packing=True, template_backend="jinja")
+        mock_data_args = MagicMock(
+            packing=True, truncate_packing=True, template_backend="jinja"
+        )
         mock_preprocess_args = MagicMock()
         mock_generating_args = MagicMock()
         mock_finetuning_args = MagicMock()
@@ -256,15 +286,22 @@ class TestGetTrainArgs(unittest.TestCase):
         self.assertEqual(os.environ.get("NCCL_DEBUG"), "INFO")
         self.assertEqual(os.environ.get("PYTHONUNBUFFERED"), "1")
 
-    @patch("paddleformers.cli.hparams.parser.is_env_enabled", return_value=False)
+    @patch(
+        "paddleformers.cli.hparams.parser.is_env_enabled", return_value=False
+    )
     @patch("paddleformers.cli.hparams.parser._parse_train_args")
-    def test_get_train_args_vl_truncate_packing_warning(self, mock_parse, mock_env):
+    def test_get_train_args_vl_truncate_packing_warning(
+        self, mock_parse, mock_env
+    ):
         """Test get_train_args warns and resets truncate_packing when both packing and truncate_packing are True."""
         from paddleformers.cli.hparams.parser import get_train_args
 
         mock_model_args = MagicMock(stage="VL-SFT")
         mock_data_args = MagicMock(
-            packing=True, truncate_packing=True, split_multi_turn=False, template_backend="custom"
+            packing=True,
+            truncate_packing=True,
+            split_multi_turn=False,
+            template_backend="custom",
         )
         mock_preprocess_args = MagicMock()
         mock_generating_args = MagicMock()
@@ -282,14 +319,20 @@ class TestGetTrainArgs(unittest.TestCase):
             mock_logger.warning.assert_called_once()
             self.assertFalse(mock_data_args.truncate_packing)
 
-    @patch("paddleformers.cli.hparams.parser.is_env_enabled", return_value=False)
+    @patch(
+        "paddleformers.cli.hparams.parser.is_env_enabled", return_value=False
+    )
     @patch("paddleformers.cli.hparams.parser._parse_train_args")
-    def test_get_train_args_split_multi_turn_requires_jinja(self, mock_parse, mock_env):
+    def test_get_train_args_split_multi_turn_requires_jinja(
+        self, mock_parse, mock_env
+    ):
         """Test get_train_args raises ValueError when split_multi_turn is True but template_backend is not jinja."""
         from paddleformers.cli.hparams.parser import get_train_args
 
         mock_model_args = MagicMock(stage="SFT")
-        mock_data_args = MagicMock(split_multi_turn=True, template_backend="custom")
+        mock_data_args = MagicMock(
+            split_multi_turn=True, template_backend="custom"
+        )
         mock_preprocess_args = MagicMock()
         mock_generating_args = MagicMock()
         mock_finetuning_args = MagicMock()
@@ -305,16 +348,24 @@ class TestGetTrainArgs(unittest.TestCase):
             get_train_args({"output_dir": "/tmp/out"})
         self.assertIn("template_backend must be jinja", str(ctx.exception))
 
-    @patch("paddleformers.cli.hparams.parser.is_env_enabled", return_value=False)
+    @patch(
+        "paddleformers.cli.hparams.parser.is_env_enabled", return_value=False
+    )
     @patch("paddleformers.cli.hparams.parser._parse_train_args")
-    def test_get_train_args_flashmask_requires_attn_mask(self, mock_parse, mock_env):
+    def test_get_train_args_flashmask_requires_attn_mask(
+        self, mock_parse, mock_env
+    ):
         """Test get_train_args raises ValueError when flashmask is used without use_attn_mask_startend_row_indices."""
         from paddleformers.cli.hparams.parser import get_train_args
 
         mock_model_args = MagicMock(
-            stage="SFT", _attn_implementation="flashmask", use_attn_mask_startend_row_indices=False
+            stage="SFT",
+            _attn_implementation="flashmask",
+            use_attn_mask_startend_row_indices=False,
         )
-        mock_data_args = MagicMock(split_multi_turn=False, template_backend="custom")
+        mock_data_args = MagicMock(
+            split_multi_turn=False, template_backend="custom"
+        )
         mock_preprocess_args = MagicMock()
         mock_generating_args = MagicMock()
         mock_finetuning_args = MagicMock()

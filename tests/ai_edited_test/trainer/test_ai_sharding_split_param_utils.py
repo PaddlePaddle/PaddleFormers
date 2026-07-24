@@ -33,7 +33,9 @@ class TestShardingSplitParamUtils(unittest.TestCase):
         param_shape_info = {}
         param_slice_info = {}
 
-        result = reshape_params(state_dict, struct2static, param_shape_info, param_slice_info)
+        result = reshape_params(
+            state_dict, struct2static, param_shape_info, param_slice_info
+        )
         self.assertEqual(result, {})
 
     def test_merge_splited_param_no_partial(self):
@@ -53,9 +55,16 @@ class TestShardingSplitParamUtils(unittest.TestCase):
         recv_table = {}
 
         with patch(
-            "paddleformers.trainer.unified_checkpoint.sharding_split_param_utils.dist.get_rank", return_value=0
+            "paddleformers.trainer.unified_checkpoint.sharding_split_param_utils.dist.get_rank",
+            return_value=0,
         ):
-            result = merge_splited_param(state_dict, partial_tensor_list, param_shape_info, send_table, recv_table)
+            result = merge_splited_param(
+                state_dict,
+                partial_tensor_list,
+                param_shape_info,
+                send_table,
+                recv_table,
+            )
         self.assertIn("param0.moment1_0", result)
         self.assertEqual(result["param0.moment1_0"].shape, [8])
 
@@ -75,9 +84,16 @@ class TestShardingSplitParamUtils(unittest.TestCase):
         recv_table = {}
 
         with patch(
-            "paddleformers.trainer.unified_checkpoint.sharding_split_param_utils.dist.get_rank", return_value=0
+            "paddleformers.trainer.unified_checkpoint.sharding_split_param_utils.dist.get_rank",
+            return_value=0,
         ):
-            result = merge_splited_param(state_dict, partial_tensor_list, param_shape_info, send_table, recv_table)
+            result = merge_splited_param(
+                state_dict,
+                partial_tensor_list,
+                param_shape_info,
+                send_table,
+                recv_table,
+            )
         # beta1_pow_acc_0 has numel==1 so should be skipped
         self.assertIn("beta1_pow_acc_0", result)
 

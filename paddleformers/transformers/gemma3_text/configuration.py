@@ -12,12 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-""" Gemma3 model configuration """
+"""Gemma3 model configuration"""
+
 from typing import TYPE_CHECKING, Any, Optional, Union
 
 from ...utils.log import logger
 from ..configuration_utils import PretrainedConfig, layer_type_validation
-from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
+from ..modeling_rope_utils import (
+    rope_config_validation,
+    standardize_rope_params,
+)
 
 if TYPE_CHECKING:
     # TODO: Implement SiglipVisionConfig for multimodal support
@@ -178,7 +182,7 @@ class Gemma3TextConfig(PretrainedConfig):
         rope_parameters=None,
         rope_local_base_freq=10000.0,
         use_bidirectional_attention=False,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(
             pad_token_id=pad_token_id,
@@ -219,7 +223,11 @@ class Gemma3TextConfig(PretrainedConfig):
         self._sliding_window_pattern = kwargs.get("sliding_window_pattern", 6)
         if self.layer_types is None:
             self.layer_types = [
-                ("sliding_attention" if bool((i + 1) % self._sliding_window_pattern) else "full_attention")
+                (
+                    "sliding_attention"
+                    if bool((i + 1) % self._sliding_window_pattern)
+                    else "full_attention"
+                )
                 for i in range(self.num_hidden_layers)
             ]
         layer_type_validation(self.layer_types, self.num_hidden_layers)
@@ -284,8 +292,10 @@ class Gemma3Config(PretrainedConfig):
 
     def __init__(
         self,
-        text_config: Optional[Union[Gemma3TextConfig, dict[str, Any]]] = None,
-        vision_config: Optional[Union["SiglipVisionConfig", dict[str, Any]]] = None,
+        text_config: Optional[Gemma3TextConfig | dict[str, Any]] = None,
+        vision_config: Optional[
+            Union["SiglipVisionConfig", dict[str, Any]]
+        ] = None,
         mm_tokens_per_image: int = 256,
         boi_token_index: int = 255_999,
         eoi_token_index: int = 256_000,
@@ -295,7 +305,9 @@ class Gemma3Config(PretrainedConfig):
     ):
         if text_config is None:
             text_config = Gemma3TextConfig()
-            logger.info("text_config is None, using default Gemma3TextConfig text config.")
+            logger.info(
+                "text_config is None, using default Gemma3TextConfig text config."
+            )
         elif isinstance(text_config, dict):
             text_config = Gemma3TextConfig(**text_config)
 

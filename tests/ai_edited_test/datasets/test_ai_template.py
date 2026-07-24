@@ -51,10 +51,14 @@ class TestTemplate(unittest.TestCase):
 
     def _make_template(self, **kwargs):
         defaults = {
-            "format_user": StringFormatter(slots=["User: {{content}}\nAssistant: "]),
+            "format_user": StringFormatter(
+                slots=["User: {{content}}\nAssistant: "]
+            ),
             "format_assistant": StringFormatter(slots=["{{content}}"]),
             "format_system": StringFormatter(slots=["System: {{content}}\n"]),
-            "format_function": FunctionFormatter(slots=["{{content}}"], tool_format="default"),
+            "format_function": FunctionFormatter(
+                slots=["{{content}}"], tool_format="default"
+            ),
             "format_observation": StringFormatter(slots=["{{content}}"]),
             "format_tools": ToolFormatter(tool_format="default"),
             "format_prefix": EmptyFormatter(),
@@ -73,7 +77,9 @@ class TestTemplate(unittest.TestCase):
         return Template(**defaults)
 
     def test_add_thought(self):
-        template = self._make_template(thought_words=("<think\n", "\n</think\n"))
+        template = self._make_template(
+            thought_words=("<think\n", "\n</think\n")
+        )
         result = template.add_thought("hello")
         # add_thought returns f"{thought_words[0]}{thought_words[1]}" + content
         self.assertIn("hello", result)
@@ -81,7 +87,9 @@ class TestTemplate(unittest.TestCase):
         self.assertIn("\n</think\n", result)
 
     def test_remove_thought(self):
-        template = self._make_template(thought_words=("<think\n", "\n</think\n"))
+        template = self._make_template(
+            thought_words=("<think\n", "\n</think\n")
+        )
         content = "<think\nthinking\n</think\nhello"
         result = template.remove_thought(content)
         self.assertNotIn("<think\n", result)
@@ -113,7 +121,9 @@ class TestTemplate(unittest.TestCase):
             {"role": Role.USER, "content": "hello"},
             {"role": Role.ASSISTANT, "content": "world"},
         ]
-        prompt_ids, response_ids = template.encode_oneturn(tokenizer, messages, system="Custom system")
+        prompt_ids, response_ids = template.encode_oneturn(
+            tokenizer, messages, system="Custom system"
+        )
         self.assertIsInstance(prompt_ids, list)
 
     def test_encode_multiturn(self):
@@ -144,10 +154,14 @@ class TestReasoningTemplate(unittest.TestCase):
 
     def _make_reasoning_template(self, **kwargs):
         defaults = {
-            "format_user": StringFormatter(slots=["User: {{content}}\nAssistant: "]),
+            "format_user": StringFormatter(
+                slots=["User: {{content}}\nAssistant: "]
+            ),
             "format_assistant": StringFormatter(slots=["{{content}}"]),
             "format_system": StringFormatter(slots=["System: {{content}}\n"]),
-            "format_function": FunctionFormatter(slots=["{{content}}"], tool_format="default"),
+            "format_function": FunctionFormatter(
+                slots=["{{content}}"], tool_format="default"
+            ),
             "format_observation": StringFormatter(slots=["{{content}}"]),
             "format_tools": ToolFormatter(tool_format="default"),
             "format_prefix": EmptyFormatter(),
@@ -215,10 +229,14 @@ class TestGLM5ReasoningTemplate(unittest.TestCase):
     def test_add_thought_only_closing_tag(self):
         """GLM-5 uses only the closing tag for empty thought."""
         template = GLM5ReasoningTemplate(
-            format_user=StringFormatter(slots=["User: {{content}}\nAssistant: "]),
+            format_user=StringFormatter(
+                slots=["User: {{content}}\nAssistant: "]
+            ),
             format_assistant=StringFormatter(slots=["{{content}}"]),
             format_system=StringFormatter(slots=["{{content}}"]),
-            format_function=FunctionFormatter(slots=["{{content}}"], tool_format="glm_moe_dsa"),
+            format_function=FunctionFormatter(
+                slots=["{{content}}"], tool_format="glm_moe_dsa"
+            ),
             format_observation=StringFormatter(slots=["{{content}}"]),
             format_tools=ToolFormatter(tool_format="glm_moe_dsa"),
             format_prefix=EmptyFormatter(),
@@ -244,10 +262,14 @@ class TestGLM5ReasoningTemplate(unittest.TestCase):
         tokenizer.encode.return_value = [42]
 
         template = GLM5ReasoningTemplate(
-            format_user=StringFormatter(slots=["User: {{content}}\nAssistant: "]),
+            format_user=StringFormatter(
+                slots=["User: {{content}}\nAssistant: "]
+            ),
             format_assistant=StringFormatter(slots=["{{content}}"]),
             format_system=StringFormatter(slots=["{{content}}"]),
-            format_function=FunctionFormatter(slots=["{{content}}"], tool_format="glm_moe_dsa"),
+            format_function=FunctionFormatter(
+                slots=["{{content}}"], tool_format="glm_moe_dsa"
+            ),
             format_observation=StringFormatter(slots=["{{content}}"]),
             format_tools=ToolFormatter(tool_format="glm_moe_dsa"),
             format_prefix=EmptyFormatter(),
@@ -264,7 +286,9 @@ class TestGLM5ReasoningTemplate(unittest.TestCase):
         )
         template.get_thought_word_ids(tokenizer)
         # Should only encode the closing tag
-        tokenizer.encode.assert_called_with("\n</think\n", add_special_tokens=False)
+        tokenizer.encode.assert_called_with(
+            "\n</think\n", add_special_tokens=False
+        )
 
 
 class TestGetTemplateAndFixTokenizer(unittest.TestCase):
@@ -274,7 +298,12 @@ class TestGetTemplateAndFixTokenizer(unittest.TestCase):
         """Test when template is None and no chat_template on tokenizer."""
         tokenizer = MagicMock()
         tokenizer.chat_template = None
-        config = {"tokenizer": tokenizer, "template": None, "tool_format": None, "default_system": None}
+        config = {
+            "tokenizer": tokenizer,
+            "template": None,
+            "tool_format": None,
+            "default_system": None,
+        }
         result = get_template_and_fix_tokenizer(config)
         # Should fall back to 'empty' template
         self.assertIsNotNone(result)
@@ -282,8 +311,15 @@ class TestGetTemplateAndFixTokenizer(unittest.TestCase):
     def test_template_not_specified_with_chat_template_string(self):
         """Test when template is None but chat_template exists."""
         tokenizer = MagicMock()
-        tokenizer.chat_template = "<s>{% for m in messages %}{{ m.content }}{% endfor %}</s>"
-        config = {"tokenizer": tokenizer, "template": None, "tool_format": None, "default_system": None}
+        tokenizer.chat_template = (
+            "<s>{% for m in messages %}{{ m.content }}{% endfor %}</s>"
+        )
+        config = {
+            "tokenizer": tokenizer,
+            "template": None,
+            "tool_format": None,
+            "default_system": None,
+        }
         # This will call parse_template which has complex logic, just ensure it doesn't crash
         # with a simple chat_template string
         try:
@@ -310,7 +346,12 @@ class TestGetTemplateAndFixTokenizer(unittest.TestCase):
         tokenizer.eos_token_id = 2
         tokenizer.pad_token_id = 0
         tokenizer.add_special_tokens.return_value = 0
-        config = {"tokenizer": tokenizer, "template": "default", "tool_format": None, "default_system": None}
+        config = {
+            "tokenizer": tokenizer,
+            "template": "default",
+            "tool_format": None,
+            "default_system": None,
+        }
         result = get_template_and_fix_tokenizer(config)
         self.assertIsNotNone(result)
 
@@ -321,7 +362,12 @@ class TestGetTemplateAndFixTokenizer(unittest.TestCase):
         tokenizer.eos_token_id = 2
         tokenizer.pad_token_id = 0
         tokenizer.add_special_tokens.return_value = 0
-        config = {"tokenizer": tokenizer, "template": "default", "tool_format": "qwen", "default_system": None}
+        config = {
+            "tokenizer": tokenizer,
+            "template": "default",
+            "tool_format": "qwen",
+            "default_system": None,
+        }
         result = get_template_and_fix_tokenizer(config)
         self.assertIsNotNone(result)
 

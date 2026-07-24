@@ -15,6 +15,7 @@
 """
 Distributed utils
 """
+
 import paddle
 
 # Import / Override modules for specific devices
@@ -94,7 +95,9 @@ def parallel_matmul(
         Tensor: Output tensor.
     """
     if paddle.is_compiled_with_xpu():
-        from .common_dist_utils import _parallel_matmul as default_parallel_matmul
+        from .common_dist_utils import (
+            _parallel_matmul as default_parallel_matmul,
+        )
         from .xpu_dist_utils import parallel_matmul as xpu_parallel_matmul
 
         if xpu_parallel_matmul is not None:

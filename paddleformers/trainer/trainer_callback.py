@@ -18,13 +18,15 @@
 """
 Callbacks to use with the Trainer class and customize the training loop.
 """
+
 import dataclasses
+import importlib
 import json
 import os
 import random
+import sys
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Union
 
 import numpy as np
 import paddle
@@ -37,14 +39,14 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import (
     is_sequence_parallel_parameter,
 )
 
-from ..utils.import_utils import is_paddlefleet_available
+from ..utils.import_utils import is_paddleformers_available
 
 # Conditionally import paddlefleet modules
-if is_paddlefleet_available():
-    from paddlefleet.models.gpt import GPTModel
-    from paddlefleet.transformer.moe.moe_expert import SonicMoEExpert
-    from paddlefleet.transformer.moe.moe_layer import MoELayer
-    from paddlefleet.transformer.moe.moe_router import StandardMoERouter
+if is_paddleformers_available():
+    from paddleformers.fleet.models.gpt import GPTModel
+    from paddleformers.fleet.transformer.moe.moe_expert import SonicMoEExpert
+    from paddleformers.fleet.transformer.moe.moe_layer import MoELayer
+    from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
 else:
 
     class GPTModel:
@@ -134,19 +136,19 @@ class TrainerState:
             machines, this is only going to be `True` for one process).
     """
 
-    epoch: Optional[float] = None
+    epoch: float | None = None
     global_step: int = 0
     consumed_samples: int = 0
     max_steps: int = 0
     num_train_epochs: int = 0
     total_flos: float = 0
-    log_history: List[Dict[str, float]] = None
-    best_metric: Optional[float] = None
-    best_model_checkpoint: Optional[str] = None
+    log_history: list[dict[str, float]] = None
+    best_metric: float | None = None
+    best_model_checkpoint: str | None = None
     is_local_process_zero: bool = True
     is_world_process_zero: bool = True
     trial_name: str = None
-    trial_params: Dict[str, Union[str, float, int, bool]] = None
+    trial_params: dict[str, str | float | int | bool] = None
 
     def __post_init__(self):
         if self.log_history is None:
@@ -157,7 +159,10 @@ class TrainerState:
 
     def save_to_json(self, json_path: str):
         """Save the content of this instance in JSON format inside `json_path`."""
-        json_string = json.dumps(dataclasses.asdict(self), indent=2, sort_keys=True) + "\n"
+        json_string = (
+            json.dumps(dataclasses.asdict(self), indent=2, sort_keys=True)
+            + "\n"
+        )
         with open(json_path, "w", encoding="utf-8") as f:
             f.write(json_string)
 
@@ -277,90 +282,186 @@ class TrainerCallback:
                 logger.info(logs)
     ```"""
 
-    def on_init_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+    def on_init_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
         """
         Event called at the end of the initialization of the [`Trainer`].
         """
         pass
 
-    def on_train_begin(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+    def on_train_begin(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
         """
         Event called at the beginning of training.
         """
         pass
 
-    def on_train_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+    def on_train_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
         """
         Event called at the end of training.
         """
         pass
 
-    def on_epoch_begin(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+    def on_epoch_begin(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
         """
         Event called at the beginning of an epoch.
         """
         pass
 
-    def on_epoch_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+    def on_epoch_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
         """
         Event called at the end of an epoch.
         """
         pass
 
-    def on_step_begin(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+    def on_step_begin(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
         """
         Event called at the beginning of a training step. If using gradient accumulation, one training step might take
         several inputs.
         """
         pass
 
-    def on_load_data_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+    def on_load_data_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
         pass
 
-    def on_optimizer_begin(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+    def on_optimizer_begin(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
         pass
 
-    def on_optimizer_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+    def on_optimizer_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
         pass
 
-    def on_substep_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+    def on_substep_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
         """
         Event called at the end of an substep during gradient accumulation.
         """
         pass
 
-    def on_step_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+    def on_step_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
         """
         Event called at the end of a training step. If using gradient accumulation, one training step might take
         several inputs.
         """
         pass
 
-    def on_evaluate(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+    def on_evaluate(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
         """
         Event called after an evaluation phase.
         """
         pass
 
-    def on_save(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+    def on_save(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
         """
         Event called after a checkpoint save.
         """
         pass
 
-    def on_log(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+    def on_log(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
         """
         Event called after logging the last logs.
         """
         pass
 
-    def on_prediction_step(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+    def on_prediction_step(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
         """
         Event called after a prediction step.
         """
         pass
 
-    def on_save_hf(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+    def on_save_hf(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
         """
         Event called after a huggingface checkpoint save.
         """
@@ -381,7 +482,9 @@ class CallbackHandler(TrainerCallback):
         self.train_dataloader = None
         self.eval_dataloader = None
 
-        if not any(isinstance(cb, DefaultFlowCallback) for cb in self.callbacks):
+        if not any(
+            isinstance(cb, DefaultFlowCallback) for cb in self.callbacks
+        ):
             logger.warning(
                 "The Trainer will not work properly if you don't have a `DefaultFlowCallback` in its callbacks. You\n"
                 + "should add one before training with `trainer.add_callback(DefaultFlowCallback). The current list of"
@@ -391,7 +494,9 @@ class CallbackHandler(TrainerCallback):
 
     def add_callback(self, callback):
         cb = callback() if isinstance(callback, type) else callback
-        cb_class = callback if isinstance(callback, type) else callback.__class__
+        cb_class = (
+            callback if isinstance(callback, type) else callback.__class__
+        )
         if cb_class in [c.__class__ for c in self.callbacks]:
             logger.warning(
                 f"You are adding a {cb_class} to the callbacks of this Trainer, but there is already one. The current"
@@ -425,62 +530,159 @@ class CallbackHandler(TrainerCallback):
     def callback_list(self):
         return "\n".join(cb.__class__.__name__ for cb in self.callbacks)
 
-    def on_init_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl):
+    def on_init_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+    ):
         return self.call_event("on_init_end", args, state, control)
 
-    def on_train_begin(self, args: TrainingArguments, state: TrainerState, control: TrainerControl):
+    def on_train_begin(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+    ):
         control.should_training_stop = False
         return self.call_event("on_train_begin", args, state, control)
 
-    def on_train_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+    def on_train_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
         return self.call_event("on_train_end", args, state, control, **kwargs)
 
-    def on_epoch_begin(self, args: TrainingArguments, state: TrainerState, control: TrainerControl):
+    def on_epoch_begin(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+    ):
         control.should_epoch_stop = False
         return self.call_event("on_epoch_begin", args, state, control)
 
-    def on_epoch_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl):
+    def on_epoch_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+    ):
         return self.call_event("on_epoch_end", args, state, control)
 
-    def on_step_begin(self, args: TrainingArguments, state: TrainerState, control: TrainerControl):
+    def on_step_begin(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+    ):
         control.should_log = False
         control.should_evaluate = False
         control.should_save = False
         control.should_save_hf = False
         return self.call_event("on_step_begin", args, state, control)
 
-    def on_load_data_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, inputs: Dict):
-        return self.call_event("on_load_data_end", args, state, control, inputs=inputs)
+    def on_load_data_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        inputs: dict,
+    ):
+        return self.call_event(
+            "on_load_data_end", args, state, control, inputs=inputs
+        )
 
-    def on_optimizer_begin(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, scaler):
-        return self.call_event("on_optimizer_begin", args, state, control, scaler=scaler)
+    def on_optimizer_begin(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        scaler,
+    ):
+        return self.call_event(
+            "on_optimizer_begin", args, state, control, scaler=scaler
+        )
 
-    def on_optimizer_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, scaler):
-        return self.call_event("on_optimizer_end", args, state, control, scaler=scaler)
+    def on_optimizer_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        scaler,
+    ):
+        return self.call_event(
+            "on_optimizer_end", args, state, control, scaler=scaler
+        )
 
-    def on_substep_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl):
+    def on_substep_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+    ):
         return self.call_event("on_substep_end", args, state, control)
 
-    def on_step_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl):
+    def on_step_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+    ):
         return self.call_event("on_step_end", args, state, control)
 
-    def on_evaluate(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, metrics):
+    def on_evaluate(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        metrics,
+    ):
         control.should_evaluate = False
-        return self.call_event("on_evaluate", args, state, control, metrics=metrics)
+        return self.call_event(
+            "on_evaluate", args, state, control, metrics=metrics
+        )
 
-    def on_save(self, args: TrainingArguments, state: TrainerState, control: TrainerControl):
+    def on_save(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+    ):
         control.should_save = False
         return self.call_event("on_save", args, state, control)
 
-    def on_save_hf(self, args: TrainingArguments, state: TrainerState, control: TrainerControl):
+    def on_save_hf(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+    ):
         control.should_save_hf = False
         return self.call_event("on_save_hf", args, state, control)
 
-    def on_log(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, logs, **kwargs):
+    def on_log(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        logs,
+        **kwargs,
+    ):
         control.should_log = False
-        return self.call_event("on_log", args, state, control, logs=logs, **kwargs)
+        return self.call_event(
+            "on_log", args, state, control, logs=logs, **kwargs
+        )
 
-    def on_prediction_step(self, args: TrainingArguments, state: TrainerState, control: TrainerControl):
+    def on_prediction_step(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+    ):
         return self.call_event("on_prediction_step", args, state, control)
 
     def call_event(self, event, args, state, control, **kwargs):
@@ -508,15 +710,27 @@ class DefaultFlowCallback(TrainerCallback):
     A [`TrainerCallback`] that handles the default flow of the training loop for logs, evaluation and checkpoints.
     """
 
-    def on_step_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+    def on_step_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
         # Log
         if state.global_step == 1 and args.logging_first_step:
             control.should_log = True
-        if args.logging_strategy == IntervalStrategy.STEPS and state.global_step % args.logging_steps == 0:
+        if (
+            args.logging_strategy == IntervalStrategy.STEPS
+            and state.global_step % args.logging_steps == 0
+        ):
             control.should_log = True
 
         # Evaluate
-        if args.evaluation_strategy == IntervalStrategy.STEPS and state.global_step % args.eval_steps == 0:
+        if (
+            args.evaluation_strategy == IntervalStrategy.STEPS
+            and state.global_step % args.eval_steps == 0
+        ):
             control.should_evaluate = True
 
         # Save
@@ -551,7 +765,13 @@ class DefaultFlowCallback(TrainerCallback):
 
         return control
 
-    def on_epoch_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+    def on_epoch_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ):
         # Log
         if args.logging_strategy == IntervalStrategy.EPOCH:
             control.should_log = True
@@ -586,11 +806,15 @@ class ProgressCallback(TrainerCallback):
             self.training_bar.update(state.global_step - self.current_step)
             self.current_step = state.global_step
 
-    def on_prediction_step(self, args, state, control, eval_dataloader=None, **kwargs):
+    def on_prediction_step(
+        self, args, state, control, eval_dataloader=None, **kwargs
+    ):
         if state.is_local_process_zero and has_length(eval_dataloader.dataset):
             if self.prediction_bar is None:
                 self.prediction_bar = tqdm(
-                    total=len(eval_dataloader), leave=self.training_bar is None, desc="PredictProcess"
+                    total=len(eval_dataloader),
+                    leave=self.training_bar is None,
+                    desc="PredictProcess",
                 )
             self.prediction_bar.update(1)
 
@@ -650,7 +874,11 @@ class EarlyStoppingCallback(TrainerCallback):
     in [`TrainerState`].
     """
 
-    def __init__(self, early_stopping_patience: int = 1, early_stopping_threshold: Optional[float] = 0.0):
+    def __init__(
+        self,
+        early_stopping_patience: int = 1,
+        early_stopping_threshold: float | None = 0.0,
+    ):
         self.early_stopping_patience = early_stopping_patience
         self.early_stopping_threshold = early_stopping_threshold
         # early_stopping_patience_counter denotes the number of times validation metrics failed to improve.
@@ -661,20 +889,23 @@ class EarlyStoppingCallback(TrainerCallback):
         operator = np.greater if args.greater_is_better else np.less
         if state.best_metric is None or (
             operator(metric_value, state.best_metric)
-            and abs(metric_value - state.best_metric) > self.early_stopping_threshold
+            and abs(metric_value - state.best_metric)
+            > self.early_stopping_threshold
         ):
             self.early_stopping_patience_counter = 0
         else:
             self.early_stopping_patience_counter += 1
 
     def on_train_begin(self, args, state, control, **kwargs):
-        assert args.load_best_model_at_end, "EarlyStoppingCallback requires load_best_model_at_end = True"
-        assert (
-            args.metric_for_best_model is not None
-        ), "EarlyStoppingCallback requires metric_for_best_model is defined"
-        assert (
-            args.evaluation_strategy != IntervalStrategy.NO
-        ), "EarlyStoppingCallback requires IntervalStrategy of steps or epoch"
+        assert args.load_best_model_at_end, (
+            "EarlyStoppingCallback requires load_best_model_at_end = True"
+        )
+        assert args.metric_for_best_model is not None, (
+            "EarlyStoppingCallback requires metric_for_best_model is defined"
+        )
+        assert args.evaluation_strategy != IntervalStrategy.NO, (
+            "EarlyStoppingCallback requires IntervalStrategy of steps or epoch"
+        )
 
     def on_evaluate(self, args, state, control, metrics, **kwargs):
         metric_to_check = args.metric_for_best_model
@@ -706,7 +937,9 @@ class StepFlexToken(TrainerCallback):
             model.step_flex_token(state.global_step)
 
 
-g_shard_bypass_dygraph_optimizer = int(os.environ.get("FLAGS_shard_bypass_dygraph_optimizer", 0))
+g_shard_bypass_dygraph_optimizer = int(
+    os.environ.get("FLAGS_shard_bypass_dygraph_optimizer", 0)
+)
 
 
 def enable_in_dict_config(config, key):
@@ -796,7 +1029,9 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
     def on_optimizer_end(self, args, state, control, **kwargs):
         # Skip bias update when freeze_training is enabled
         if getattr(args, "freeze_training", False):
-            logger.warning("freeze_training is enabled! MoE e_score_correction_bias will NOT be updated.")
+            logger.warning(
+                "freeze_training is enabled! MoE e_score_correction_bias will NOT be updated."
+            )
             return
 
         model = kwargs["model"]
@@ -808,9 +1043,13 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
 
         def get_stat(layer):
             if (
-                isinstance(layer, PretrainedMoEGate) or isinstance(layer, StandardMoERouter)
-            ) and layer.topk_method == "noaux_tc":
-                if hasattr(layer, "e_score_correction_bias") and layer.e_score_correction_bias is not None:
+                isinstance(layer, (PretrainedMoEGate, StandardMoERouter))
+                and layer.topk_method == "noaux_tc"
+            ):
+                if (
+                    hasattr(layer, "e_score_correction_bias")
+                    and layer.e_score_correction_bias is not None
+                ):
                     biases.append(layer.e_score_correction_bias)
                     usages.append(layer.expert_usage)
 
@@ -818,7 +1057,9 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
 
         if not usages:
             return
-        usages_tensor = paddle.stack(usages, 0)  # [num_layers, num_local_experts]
+        usages_tensor = paddle.stack(
+            usages, 0
+        )  # [num_layers, num_local_experts]
         if not hasattr(fleet, "_hcg"):
             dist.all_reduce(usages_tensor)
             return
@@ -846,15 +1087,20 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
 
         def update_bias(layer):
             if (
-                isinstance(layer, PretrainedMoEGate) or isinstance(layer, StandardMoERouter)
-            ) and layer.topk_method == "noaux_tc":
-                if not hasattr(layer, "e_score_correction_bias") or layer.e_score_correction_bias is None:
+                isinstance(layer, (PretrainedMoEGate, StandardMoERouter))
+                and layer.topk_method == "noaux_tc"
+            ):
+                if (
+                    not hasattr(layer, "e_score_correction_bias")
+                    or layer.e_score_correction_bias is None
+                ):
                     return
                 with paddle.no_grad():
                     bias = biases.pop(0)
                     upd = update_list.pop(0)
                     frozen = layer.weight.stop_gradient or (
-                        lr_ratio_fn is not None and not float(lr_ratio_fn(layer.weight))
+                        lr_ratio_fn is not None
+                        and not float(lr_ratio_fn(layer.weight))
                     )
                     if not frozen:
                         bias.add_(upd)
@@ -874,11 +1120,17 @@ class MoeExpertsGradScaleCallback(TrainerCallback):
             args (_type_): _description_
         """
         if not args.use_expert_parallel:
-            raise ValueError("This callback should be used with expert parallel")
+            raise ValueError(
+                "This callback should be used with expert parallel"
+            )
         if args.expert_model_parallel_size > 1:
-            self.expert_gradient_scaling_factor = 1.0 / args.expert_model_parallel_size
+            self.expert_gradient_scaling_factor = (
+                1.0 / args.expert_model_parallel_size
+            )
             if args.tensor_model_parallel_size > 1:
-                self.expert_gradient_scaling_factor *= args.tensor_model_parallel_size
+                self.expert_gradient_scaling_factor *= (
+                    args.tensor_model_parallel_size
+                )
             logger.info(
                 f"EP-MoE is used, expert gradient scaling factor is set to {self.expert_gradient_scaling_factor}"
             )
@@ -940,8 +1192,12 @@ class SPGradSyncCallback(TrainerCallback):
         """on_optimizer_begin"""
         if self._sp_params:
             now = time.time()
-            mp_group = fleet.get_hybrid_communicate_group().get_model_parallel_group()
-            fused_allreduce_gradients_with_group(self._sp_params, group=mp_group, scale=1.0)  # sum not mean
+            mp_group = (
+                fleet.get_hybrid_communicate_group().get_model_parallel_group()
+            )
+            fused_allreduce_gradients_with_group(
+                self._sp_params, group=mp_group, scale=1.0
+            )  # sum not mean
             another_time = time.time()
             logger.info(f"sync gradients takes {another_time - now} time")
 
@@ -961,7 +1217,11 @@ class InternalMedicineCallback(TrainerCallback):
         self.verbose = verbose
         self.qk_row_stride = qk_row_stride
         self.log_dir = log_dir or ""
-        self.log_path = os.path.join(self.log_dir, "internal_medicine.jsonl") if self.log_dir else ""
+        self.log_path = (
+            os.path.join(self.log_dir, "internal_medicine.jsonl")
+            if self.log_dir
+            else ""
+        )
         self._monitor_dict = {}
         self._training_logs = None
         self._setup_done = False
@@ -976,7 +1236,24 @@ class InternalMedicineCallback(TrainerCallback):
             return ["all"]
         if isinstance(monitors, str):
             monitors = monitors.split(",")
-        return [str(monitor).strip() for monitor in monitors if str(monitor).strip()]
+        return [
+            str(monitor).strip() for monitor in monitors if str(monitor).strip()
+        ]
+
+    @staticmethod
+    def _register_paddlefleet_compat_modules():
+        module_names = [
+            "parallel_state",
+            "process_groups_config",
+            "utils",
+        ]
+        fleet_module = importlib.import_module("paddleformers.fleet")
+        sys.modules.setdefault("paddlefleet", fleet_module)
+        for module_name in module_names:
+            sys.modules.setdefault(
+                f"paddlefleet.{module_name}",
+                importlib.import_module(f"paddleformers.fleet.{module_name}"),
+            )
 
     def on_train_begin(self, args, state, control, model=None, **kwargs):
         if model is None or self._setup_done or not self.monitors:
@@ -991,7 +1268,9 @@ class InternalMedicineCallback(TrainerCallback):
         self._maybe_truncate_on_resume(state)
 
         try:
-            from internal_medicine.backends.paddlefleet import setup_monitors
+            from internal_medicine.backends.paddleformers.fleet import (
+                setup_monitors,
+            )
             from internal_medicine.core.training_logs import training_logs
         except ImportError:
             logger.exception(
@@ -1002,6 +1281,7 @@ class InternalMedicineCallback(TrainerCallback):
             return
 
         try:
+            self._register_paddlefleet_compat_modules()
             setup_monitors(
                 model,
                 monitors=self.monitors,
@@ -1012,7 +1292,10 @@ class InternalMedicineCallback(TrainerCallback):
             )
             self._training_logs = training_logs
             self._setup_done = True
-            logger.info("[InternalMedicine/pfleet] Monitors registered: %s" % list(self._monitor_dict.keys()))
+            logger.info(
+                "[InternalMedicine/pfleet] Monitors registered: %s",
+                list(self._monitor_dict.keys()),
+            )
         except Exception:
             logger.error("[InternalMedicine/pfleet] Failed to setup monitors")
 
@@ -1094,7 +1377,9 @@ class InternalMedicineCallback(TrainerCallback):
                     bak,
                 )
             except Exception:
-                logger.error("[InternalMedicine] failed to rotate pre-existing jsonl")
+                logger.error(
+                    "[InternalMedicine] failed to rotate pre-existing jsonl"
+                )
             return
         try:
             kept = []
@@ -1106,7 +1391,6 @@ class InternalMedicineCallback(TrainerCallback):
                     try:
                         rec = json.loads(line)
                     except json.JSONDecodeError:
-                        # Preserve unparseable lines rather than silently dropping.
                         kept.append(line)
                         continue
                     if int(rec.get("global_step", 0)) <= resume_step:
@@ -1121,7 +1405,9 @@ class InternalMedicineCallback(TrainerCallback):
                 % (len(kept), resume_step)
             )
         except Exception:
-            logger.error("[InternalMedicine] failed to truncate jsonl on resume")
+            logger.error(
+                "[InternalMedicine] failed to truncate jsonl on resume"
+            )
 
     def _maybe_write_jsonl(self, state, aggregated):
         if not self._resolve_writer():
@@ -1157,7 +1443,9 @@ class EMAStateAssemblerCallback(TrainerCallback):
         start = time.time()
         self.ema_state_assembler.run()
         duration = time.time() - start
-        logger.info(f"[EMAStateAssembler] Assembling EMA state took {duration:.3f} seconds.")
+        logger.info(
+            f"[EMAStateAssembler] Assembling EMA state took {duration:.3f} seconds."
+        )
 
 
 class SonicMoELayoutSwitchCallback(TrainerCallback):
@@ -1168,7 +1456,9 @@ class SonicMoELayoutSwitchCallback(TrainerCallback):
 
         model.apply(apply_layout_switch)
 
-    def _prepare_sonic_moe_fp8_weights(self, model, ensure_grouped_for_master=False):
+    def _prepare_sonic_moe_fp8_weights(
+        self, model, ensure_grouped_for_master=False
+    ):
         def prepare_fp8_weights(layer):
             if isinstance(layer, SonicMoEExpert):
                 layer.convert_weights_to_sonic_layout()
@@ -1183,7 +1473,10 @@ class SonicMoELayoutSwitchCallback(TrainerCallback):
             self._cached_expert_param_name = None
             for param in optimizer._inner_opt._parameter_list:
                 color = getattr(param, "color", -1)
-                if isinstance(color, dict) and color.get("color") == "moe_expert":
+                if (
+                    isinstance(color, dict)
+                    and color.get("color") == "moe_expert"
+                ):
                     self._cached_expert_param_name = param.name
                     break
         return (
@@ -1198,16 +1491,24 @@ class SonicMoELayoutSwitchCallback(TrainerCallback):
             optimizer = kwargs["optimizer"]
             if args.fp8:
                 need_master = not self._optimizer_has_expert_master(optimizer)
-                self._prepare_sonic_moe_fp8_weights(model, ensure_grouped_for_master=need_master)
+                self._prepare_sonic_moe_fp8_weights(
+                    model, ensure_grouped_for_master=need_master
+                )
                 optimizer.clear_param_storage("moe_expert")
             else:
-                self._apply_to_sonic_moe_experts(model, "convert_weights_to_sonic_layout")
+                self._apply_to_sonic_moe_experts(
+                    model, "convert_weights_to_sonic_layout"
+                )
 
     def on_optimizer_begin(self, args, state, control, **kwargs):
         if args.using_sonic_moe:
             if args.fp8:
-                self._apply_to_sonic_moe_experts(kwargs["model"], "clear_fp8_weights")
-            self._apply_to_sonic_moe_experts(kwargs["model"], "convert_weights_to_grouped_layout")
+                self._apply_to_sonic_moe_experts(
+                    kwargs["model"], "clear_fp8_weights"
+                )
+            self._apply_to_sonic_moe_experts(
+                kwargs["model"], "convert_weights_to_grouped_layout"
+            )
 
 
 class InterleaveGateUpCallback(TrainerCallback):
@@ -1219,13 +1520,15 @@ class InterleaveGateUpCallback(TrainerCallback):
     def interleave_gate_up_proj(self, w):
         w_cloned = w.clone().detach()
         I = w_cloned.shape[1] // 2
-        interleaved_w = paddle.stack([w_cloned[:, :I, :], w_cloned[:, I:, :]], dim=2).reshape(
-            w_cloned.shape[0], 2 * I, w_cloned.shape[2]
-        )
+        interleaved_w = paddle.stack(
+            [w_cloned[:, :I, :], w_cloned[:, I:, :]], dim=2
+        ).reshape(w_cloned.shape[0], 2 * I, w_cloned.shape[2])
         paddle.assign(interleaved_w, w)
 
     def on_train_begin(self, args, state, control, **kwargs):
-        if self.resume_from_checkpoint is not None or get_last_checkpoint(self.output_dir):
+        if self.resume_from_checkpoint is not None or get_last_checkpoint(
+            self.output_dir
+        ):
             # NOTE(xingmingyyj) For a normal hot start from weights saved by FlexCheckpoint, we assume that the weights have already been interleaved.
             return
         for name, param in self.model.state_dict().items():

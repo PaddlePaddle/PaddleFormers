@@ -15,7 +15,10 @@
 """Qwen3 model configuration"""
 
 from ..configuration_utils import PretrainedConfig, layer_type_validation
-from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
+from ..modeling_rope_utils import (
+    rope_config_validation,
+    standardize_rope_params,
+)
 
 
 class Qwen3Config(PretrainedConfig):
@@ -164,7 +167,9 @@ class Qwen3Config(PretrainedConfig):
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
         self.use_sliding_window = use_sliding_window
-        self.sliding_window = sliding_window if self.use_sliding_window else None
+        self.sliding_window = (
+            sliding_window if self.use_sliding_window else None
+        )
         self.max_window_layers = max_window_layers
 
         # for backward compatibility
@@ -190,7 +195,8 @@ class Qwen3Config(PretrainedConfig):
         if self.layer_types is None:
             self.layer_types = [
                 "sliding_attention"
-                if self.sliding_window is not None and i >= self.max_window_layers
+                if self.sliding_window is not None
+                and i >= self.max_window_layers
                 else "full_attention"
                 for i in range(self.num_hidden_layers)
             ]

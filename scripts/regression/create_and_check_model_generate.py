@@ -119,28 +119,36 @@ def create_and_check_model_generate(
     if not model_config:
         raise ValueError(f"Unsupported model key: {model_key}")
 
-    module = __import__(model_config["import_path"], fromlist=[model_config["class_name"]])
+    module = __import__(
+        model_config["import_path"], fromlist=[model_config["class_name"]]
+    )
     model_class = getattr(module, model_config["class_name"])
     model_dtype = model_config["dtype"]
     model = model_class.from_pretrained(
-        model_path, dtype=model_dtype, convert_from_hf=True, num_nextn_predict_layers=0
+        model_path,
+        dtype=model_dtype,
+        convert_from_hf=True,
+        num_nextn_predict_layers=0,
     )
 
     input_ids = paddle.to_tensor([[1, 306, 4658, 278, 6593, 310, 2834, 338]])
     attention_mask = paddle.ones_like(input_ids)
     with paddle.no_grad():
-        result = model.generate(input_ids, attention_mask=attention_mask, max_new_tokens=10)
+        result = model.generate(
+            input_ids, attention_mask=attention_mask, max_new_tokens=10
+        )
 
     excepted_result = paddle.to_tensor(excepted_result)
     print(f"excepted_result is : {excepted_result}")
     print(f"result[0] is : {result[0]}")
-    assert paddle.allclose(result[0], excepted_result), f"Result {result[0]} does not match expected {excepted_result}"
+    assert paddle.allclose(result[0], excepted_result), (
+        f"Result {result[0]} does not match expected {excepted_result}"
+    )
 
     return [tensor.numpy().tolist() for tensor in result]
 
 
 if __name__ == "__main__":
-
     create_and_check_model_generate(
         model_key=sys.argv[1],
         model_path=sys.argv[2],

@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -40,7 +39,9 @@ class TestHFMultiSourceImageProcessor(unittest.TestCase):
         self.assertIsInstance(inputs["image_grid_thw"], paddle.Tensor)
         self.assertEqual(inputs["pixel_values"].shape, [5704, 1176])
         self.assertEqual(inputs["pixel_values"].dtype, paddle.float32)
-        self.assertEqual(inputs["image_grid_thw"].tolist(), EXPECTED_IMAGE_GRID_THW)
+        self.assertEqual(
+            inputs["image_grid_thw"].tolist(), EXPECTED_IMAGE_GRID_THW
+        )
         self.assertTrue(
             paddle.allclose(
                 paddle.to_tensor(paddle.mean(inputs["pixel_values"])),
@@ -51,7 +52,10 @@ class TestHFMultiSourceImageProcessor(unittest.TestCase):
         )
         self.assertTrue(
             paddle.allclose(
-                paddle.to_tensor(paddle.max(inputs["pixel_values"])), EXPECTED_PIXEL_VALUES_MAX, atol=1e-5, rtol=1e-5
+                paddle.to_tensor(paddle.max(inputs["pixel_values"])),
+                EXPECTED_PIXEL_VALUES_MAX,
+                atol=1e-5,
+                rtol=1e-5,
             )
         )
 
@@ -63,10 +67,14 @@ class TestHFMultiSourceImageProcessor(unittest.TestCase):
 
     @skip_for_none_ce_case
     def test_model_scope(self):
-        image_processor = AutoImageProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", download_hub="modelscope")
+        image_processor = AutoImageProcessor.from_pretrained(
+            "Qwen/Qwen2.5-VL-3B-Instruct", download_hub="modelscope"
+        )
         self.preprocess(image_processor)
 
     @skip_for_none_ce_case
     def test_hf_hub(self):
-        image_processor = AutoImageProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", download_hub="huggingface")
+        image_processor = AutoImageProcessor.from_pretrained(
+            "Qwen/Qwen2.5-VL-3B-Instruct", download_hub="huggingface"
+        )
         self.preprocess(image_processor)

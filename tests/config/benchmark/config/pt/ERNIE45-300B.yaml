@@ -1,6 +1,5 @@
 # stage
 stage: ernie_pretrain
-
 # data
 dataset_type: pretrain
 input_dir: "1.0 ./dataset/eb45_industrycorpus2_94k/eb45_industrycorpus2_94k"
@@ -11,9 +10,7 @@ base_seq_length: 8192
 dataloader_num_workers: 8
 prefetch_factor: 32
 ignore_data_skip: 0
-
 pad_token_id: 0
-
 # model
 model_name_or_path: ./huggingface/ERNIE-4.5-300B-A47B/
 tokenizer_name_or_path: PaddleFormers/examples/experiments/ernie_pretrain/ernie/src/tokenizers/tokenizer_model
@@ -21,7 +18,6 @@ moe_router_bias_update_rate: 0.001
 moe_with_send_router_loss: False
 moe_group: ep
 use_moe: true
-
 # train
 output_dir: ./output/eb45_300b_pt
 num_consecutive: 32
@@ -71,15 +67,12 @@ sharding: "stage1"
 sharding_parallel_size: 8
 amp_master_grad: 1
 global_batch_size: 128
-
 # pipeline_parallel_config
 overlap_p2p_comm: true
 best_unbalanced_scheduler: true
-
 # sharding_parallel_config
 split_param: true
 sharding_comm_buffer_size_MB: 2048
-
 # tensor_parallel_config
 tp_sync_param: true
 sync_grad: true
@@ -94,30 +87,25 @@ metrics_output_path: ./output/paddle_distributed_logs/
 log_global_grad_norm: True
 enable_optimizer_timer: False
 gc_interval: 100000
-
 ernie_model_config:
-    num_nextn_predict_layers: 1
-    use_ep_comm_overlap: false
-    use_combine_before_a2a: true
-    use_rms_qkv_recompute: true
-
-    moe_logging: True
-    moe_use_aux_free: true
-    use_recompute: false
-    use_fp8_mlp: true
-    use_fp8_fuse_node: true
-    fp8_mem_configs:
-        shared_expert: false
-        recompute_fwd_gate_up: [4, 5, 6, 7, 8, 10, 11, 12, 13, 16, 17, 18]
-        dequant_input: true
-    fp8_fused_ops_configs:
-        stack_quant: true
-        swiglu_probs_bwd: true
-        split_group_gemm: false
-        spaq: true
-        transpose_split_quant: true
-
-    moe_gate: top2_fused
-
+  num_nextn_predict_layers: 1
+  use_ep_comm_overlap: false
+  use_combine_before_a2a: true
+  use_rms_qkv_recompute: true
+  moe_logging: True
+  moe_use_aux_free: true
+  use_recompute: false
+  use_fp8_mlp: true
+  use_fp8_fuse_node: true
+  fp8_mem_configs:
+    shared_expert: false
+    recompute_fwd_gate_up: [4, 5, 6, 7, 8, 10, 11, 12, 13, 16, 17, 18]
+    dequant_input: true
+  fp8_fused_ops_configs:
+    stack_quant: true
+    swiglu_probs_bwd: true
+    split_group_gemm: false
+    spaq: true
+    transpose_split_quant: true
+  moe_gate: top2_fused
 moe_deep_gemm: false
-

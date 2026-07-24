@@ -13,7 +13,8 @@
 # limitations under the License.
 
 import logging
-from typing import Any, Callable, List
+from collections.abc import Callable
+from typing import Any
 
 import paddle
 from paddle import framework
@@ -48,11 +49,16 @@ def get_global_training_logs():
 
 def global_training_logs_enabled():
     global_training_logs = get_global_training_logs()
-    return isinstance(global_training_logs, dict) or global_training_logs.is_enabled()
+    return (
+        isinstance(global_training_logs, dict)
+        or global_training_logs.is_enabled()
+    )
 
 
 def inplace_offload(tensor):
-    tmp = tensor.pin_memory() if paddle.is_compiled_with_cuda() else tensor.cpu()
+    tmp = (
+        tensor.pin_memory() if paddle.is_compiled_with_cuda() else tensor.cpu()
+    )
     tmp._share_buffer_to(tensor)
 
 
@@ -79,14 +85,16 @@ class FakeClone(paddle.autograd.PyLayer):
         return grad_output
 
 
-def manual_backward(f: Callable, is_first_fwd: bool, *args: List[Any]):
+def manual_backward(f: Callable, is_first_fwd: bool, *args: list[Any]):
     tracer = framework._dygraph_tracer()
     orig = tracer._has_grad
     if not is_first_fwd:
         tracer._has_grad = True
 
     detached_args = detach_and_requires_grad_(*args)
-    detached_args_clone = [FakeClone.apply(a) if a is not None else None for a in detached_args]
+    detached_args_clone = [
+        FakeClone.apply(a) if a is not None else None for a in detached_args
+    ]
     out = f(*detached_args_clone)
     if isinstance(out, list):
         out = tuple(out)
@@ -108,7 +116,9 @@ def manual_backward(f: Callable, is_first_fwd: bool, *args: List[Any]):
         grad = list(grad)
         grad = [g for g in grad if g is not None]
         assert grad and out_cached, (len(grad), len(out_cached))
-        grad, out_cached = zip(*[(g, o) for g, o in zip(grad, out_cached) if not o.stop_gradient])
+        grad, out_cached = zip(
+            *[(g, o) for g, o in zip(grad, out_cached) if not o.stop_gradient]
+        )
 
         assert len(grad) == len(out_cached), (len(grad), len(out_cached), f)
         paddle.autograd.backward(out_cached, grad)
@@ -134,7 +144,9 @@ class FakeGather(paddle.autograd.PyLayer):
 
         grad_input = paddle.zeros(input_shape, dtype=grad_output.dtype)
         if indices.shape[0] != 0:
-            paddle.scatter_(grad_input, indices.unsqueeze(-1), grad_output, overwrite=False)
+            paddle.scatter_(
+                grad_input, indices.unsqueeze(-1), grad_output, overwrite=False
+            )
         return grad_input, None
 
 
@@ -148,10 +160,13 @@ class FusedUnpermutation(paddle.autograd.PyLayer):
         dispatched_probs,
         prob_permuted_indices,
     ):
-        assert token_permuted_indices.stop_gradient, "token_permuted_indices must be stop_gradient"
+        assert token_permuted_indices.stop_gradient, (
+            "token_permuted_indices must be stop_gradient"
+        )
         if dispatched_probs is not None:
             assert (
-                prob_permuted_indices is not None and prob_permuted_indices.stop_gradient
+                prob_permuted_indices is not None
+                and prob_permuted_indices.stop_gradient
             ), "dispatched_probs must be stop_gradient"
 
         output_tokens.stop_gradient = False
@@ -187,12 +202,14 @@ class FusedUnpermutation(paddle.autograd.PyLayer):
 
         src_token_num = permuted_tokens.shape[0]
         if src_token_num > 0:
-            permuted_tokens_grad, dispatched_probs_grad = moe_permutation.unpermute_grad(
-                output_tokens_grad,
-                permuted_tokens,
-                token_permuted_indices,
-                dispatched_probs,
-                prob_permuted_indices,
+            permuted_tokens_grad, dispatched_probs_grad = (
+                moe_permutation.unpermute_grad(
+                    output_tokens_grad,
+                    permuted_tokens,
+                    token_permuted_indices,
+                    dispatched_probs,
+                    prob_permuted_indices,
+                )
             )
         else:
             permuted_tokens_grad = paddle.zeros_like(permuted_tokens)

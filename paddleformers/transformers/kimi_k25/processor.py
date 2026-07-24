@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 # Copyright 2026 The Moonshot AI Inc. team and HuggingFace Inc. team. All rights reserved.
 #
@@ -45,7 +44,9 @@ class KimiK25Processor(ProcessorMixin):
         chat_template=None,
         **kwargs,
     ):
-        super().__init__(image_processor, tokenizer, chat_template=chat_template)
+        super().__init__(
+            image_processor, tokenizer, chat_template=chat_template
+        )
         self.image_processor = self.media_processor = image_processor
         # A special temporal placeholder to be replaced by actual video placeholders
         self.video_placeholder = "<|kimi_k25_video_placeholder|>"
@@ -58,7 +59,12 @@ class KimiK25Processor(ProcessorMixin):
         assert video_count == len(video_prompts)
         text_parts = text.split(self.video_placeholder)
         assert len(text_parts) == len(video_prompts) + 1
-        text = "".join([text_parts[i] + video_prompts[i] for i in range(len(video_prompts))])
+        text = "".join(
+            [
+                text_parts[i] + video_prompts[i]
+                for i in range(len(video_prompts))
+            ]
+        )
         text += text_parts[-1]
         return text
 
@@ -69,20 +75,24 @@ class KimiK25Processor(ProcessorMixin):
             if media["type"] == "image":
                 updated_medias.append(media)
             elif media["type"] == "video":
-                video_chunks = self.media_processor.split_video_chunks(media["video"], **kwargs)
+                video_chunks = self.media_processor.split_video_chunks(
+                    media["video"], **kwargs
+                )
                 updated_medias.extend(video_chunks)
-                video_prompts.append("".join([vc["prompt"] for vc in video_chunks]))
+                video_prompts.append(
+                    "".join([vc["prompt"] for vc in video_chunks])
+                )
             else:
                 raise ValueError(f"unsupported media type: {media['type']}")
         return updated_medias, video_prompts
 
     def __call__(
         self,
-        messages: list[dict] = None,
-        medias: list[dict] = None,
-        text: str = None,
+        messages: list[dict] | None = None,
+        medias: list[dict] | None = None,
+        text: str | None = None,
         return_tensors: str = "pd",
-        **kwargs
+        **kwargs,
     ) -> BatchFeature:
         """
         Process multimodal inputs for Kimi-K2.5 model.
@@ -99,19 +109,32 @@ class KimiK25Processor(ProcessorMixin):
             BatchFeature with fields: input_ids, attention_mask, pixel_values, grid_thws.
         """
         if messages is None and (medias is None or text is None):
-            raise ValueError("Provide either 'messages' or both 'medias' and 'text'")
+            raise ValueError(
+                "Provide either 'messages' or both 'medias' and 'text'"
+            )
 
         if medias is not None and text is not None:
-            updated_medias, video_prompts = self.preprocess_medias(medias, **kwargs)
-            preprocessed = self.media_processor.preprocess(updated_medias, return_tensors=return_tensors)
+            updated_medias, video_prompts = self.preprocess_medias(
+                medias, **kwargs
+            )
+            preprocessed = self.media_processor.preprocess(
+                updated_medias, return_tensors=return_tensors
+            )
             text = self.update_raw_text(text, video_prompts)
-            text_inputs = self.tokenizer(text, add_special_tokens=False, return_tensors=return_tensors, **kwargs)
+            text_inputs = self.tokenizer(
+                text,
+                add_special_tokens=False,
+                return_tensors=return_tensors,
+                **kwargs,
+            )
             return BatchFeature(data={**text_inputs, **preprocessed.data})
 
         if medias is None:
             medias = self._extract_medias_from_messages(messages)
         updated_medias, video_prompts = self.preprocess_medias(medias, **kwargs)
-        preprocessed = self.media_processor.preprocess(updated_medias, return_tensors=return_tensors)
+        preprocessed = self.media_processor.preprocess(
+            updated_medias, return_tensors=return_tensors
+        )
 
         # Generate text if not provided
         if text is None:
@@ -119,7 +142,12 @@ class KimiK25Processor(ProcessorMixin):
 
         text = self.update_raw_text(text, video_prompts)
 
-        text_inputs = self.tokenizer(text, add_special_tokens=False, return_tensors=return_tensors, **kwargs)
+        text_inputs = self.tokenizer(
+            text,
+            add_special_tokens=False,
+            return_tensors=return_tensors,
+            **kwargs,
+        )
         return BatchFeature(data={**text_inputs, **preprocessed.data})
 
     @staticmethod
@@ -142,7 +170,11 @@ class KimiK25Processor(ProcessorMixin):
                 content_type = content_part.get("type")
                 if content_type in ["video_url", "video"]:
                     medias.append(
-                        {"type": "video", "video": content_part["video_url"]["url"], "first_frame_timestamp": 0.0}
+                        {
+                            "type": "video",
+                            "video": content_part["video_url"]["url"],
+                            "first_frame_timestamp": 0.0,
+                        }
                     )
                 elif content_type in ["image_url", "image"]:
                     medias.append(

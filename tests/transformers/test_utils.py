@@ -17,7 +17,9 @@ import os
 import unittest
 
 from paddleformers.transformers import Qwen3Model, utils
-from paddleformers.transformers.qwen3.modeling import Qwen3ForTokenClassification
+from paddleformers.transformers.qwen3.modeling import (
+    Qwen3ForTokenClassification,
+)
 
 
 class TestUtils(unittest.TestCase):
@@ -26,7 +28,10 @@ class TestUtils(unittest.TestCase):
     def test_find_transformer_model_type(self):
         """test for `find_transformer_model_type`"""
         self.assertEqual(utils.find_transformer_model_type(Qwen3Model), "qwen3")
-        self.assertEqual(utils.find_transformer_model_type(Qwen3ForTokenClassification), "qwen3")
+        self.assertEqual(
+            utils.find_transformer_model_type(Qwen3ForTokenClassification),
+            "qwen3",
+        )
 
 
 def check_json_file_has_correct_format(file_path):

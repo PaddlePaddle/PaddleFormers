@@ -65,16 +65,24 @@ class DistDataLoader(paddle.io.DataLoader):
         reader_buffer_size=2,
         **kwargs,
     ):
-
         eval = kwargs.pop("eval", False)
         is_iterable_dataset = kwargs.pop("is_iterable_dataset", False)
         self._pp_data_group = kwargs.pop("pp_data_group", None)
 
         if dataset is None:
-            dataset = DummyDataset() if not is_iterable_dataset else IterableDummyDataset()
+            dataset = (
+                DummyDataset()
+                if not is_iterable_dataset
+                else IterableDummyDataset()
+            )
             logger.info("rank has no data, use Dummpy dataset")
 
-        super().__init__(dataset=dataset, batch_sampler=batch_sampler, collate_fn=collate_fn, num_workers=num_workers)
+        super().__init__(
+            dataset=dataset,
+            batch_sampler=batch_sampler,
+            collate_fn=collate_fn,
+            num_workers=num_workers,
+        )
 
         self._hcg = fleet.get_hybrid_communicate_group()
         self.eval = eval
@@ -89,9 +97,14 @@ class DistDataLoader(paddle.io.DataLoader):
         self.mp_rank = self._hcg.get_model_parallel_rank()
         self.mp_src_rank = self._hcg.get_model_parallel_group_src_rank()
 
-        if hasattr(self._hcg, "get_context_parallel_world_size") and self._hcg.get_context_parallel_world_size() > 1:
+        if (
+            hasattr(self._hcg, "get_context_parallel_world_size")
+            and self._hcg.get_context_parallel_world_size() > 1
+        ):
             self.dist_data_loader_group = self._hcg.get_cp_mp_parallel_group()
-            self.dist_data_loader_src_rank = self._hcg.get_cp_mp_parallel_group_src_rank()
+            self.dist_data_loader_src_rank = (
+                self._hcg.get_cp_mp_parallel_group_src_rank()
+            )
         else:
             self.dist_data_loader_group = self.mp_group
             self.dist_data_loader_src_rank = self.mp_src_rank
@@ -125,8 +138,8 @@ class DistDataLoader(paddle.io.DataLoader):
             self._lazy_dataloader_iter = None
         else:
             logger.info(
-                "mp{}_pp{}_sharding{}_dp{} no data needed, "
-                "skip init dataloader.".format(self.mp_rank, self.pp_rank, sharding_rank, self.dp_rank)
+                f"mp{self.mp_rank}_pp{self.pp_rank}_sharding{sharding_rank}_dp{self.dp_rank} no data needed, "
+                "skip init dataloader."
             )
 
     @property
@@ -139,7 +152,9 @@ class DistDataLoader(paddle.io.DataLoader):
         if self._need_data:
             return super().__len__()
         else:
-            raise ValueError("raise error for `paddleformers.trainer.trainer_utils.has_length`")
+            raise ValueError(
+                "raise error for `paddleformers.trainer.trainer_utils.has_length`"
+            )
 
     def __iter__(self):
         return self
@@ -190,9 +205,15 @@ class DistDataLoader(paddle.io.DataLoader):
                 data = nested_empty_tensor(fake_data)
 
         if self.dist_data_loader_group.nranks > 1 and self.pp_rank == 0:
-            data = nested_broadcast_tensor(data, src=self.dist_data_loader_src_rank, group=self.dist_data_loader_group)
+            data = nested_broadcast_tensor(
+                data,
+                src=self.dist_data_loader_src_rank,
+                group=self.dist_data_loader_group,
+            )
         if dst_pp_group is not None:
-            data = nested_broadcast_tensor(data, src=dst_pp_group.ranks[0], group=dst_pp_group)
+            data = nested_broadcast_tensor(
+                data, src=dst_pp_group.ranks[0], group=dst_pp_group
+            )
         # for pp1 - pp_{n-1}, Paddle need to receive empty dict for pipeline parallel.
         if data is None:
             data = {}
@@ -204,7 +225,9 @@ class DistDataLoader(paddle.io.DataLoader):
         if self._need_data:
             try:
                 data = next(self._dataloader_iter)
-                data = nested_copy_place(data, place=paddle.framework._current_expected_place())
+                data = nested_copy_place(
+                    data, place=paddle.framework._current_expected_place()
+                )
             except Exception as e:
                 logger.debug(e)
         data = self._broadcast_data(data)
@@ -242,9 +265,13 @@ def init_stream_data_group():
     for rank in range(world_size):
         coord = topo.get_coord(rank)
         logger.info(
-            "[dataflow] rank: {}, model: {}, pipe: {}, sep: {}".format(rank, coord.model, coord.pipe, coord.sep)
+            f"[dataflow] rank: {rank}, model: {coord.model}, pipe: {coord.pipe}, sep: {coord.sep}"
         )
-        if coord.model == 0 and coord.pipe == 0 and getattr(coord, "sep", 0) == 0:
+        if (
+            coord.model == 0
+            and coord.pipe == 0
+            and getattr(coord, "sep", 0) == 0
+        ):
             dataset_ranks.append(rank)
 
     if len(dataset_ranks) <= 1:
@@ -296,9 +323,14 @@ class StreamDistDataLoader:
         self.mp_rank = self._hcg.get_model_parallel_rank()
         self.mp_src_rank = self._hcg.get_model_parallel_group_src_rank()
 
-        if hasattr(self._hcg, "get_context_parallel_world_size") and self._hcg.get_context_parallel_world_size() > 1:
+        if (
+            hasattr(self._hcg, "get_context_parallel_world_size")
+            and self._hcg.get_context_parallel_world_size() > 1
+        ):
             self.dist_data_loader_group = self._hcg.get_cp_mp_parallel_group()
-            self.dist_data_loader_src_rank = self._hcg.get_cp_mp_parallel_group_src_rank()
+            self.dist_data_loader_src_rank = (
+                self._hcg.get_cp_mp_parallel_group_src_rank()
+            )
         else:
             self.dist_data_loader_group = self.mp_group
             self.dist_data_loader_src_rank = self.mp_src_rank
@@ -336,8 +368,8 @@ class StreamDistDataLoader:
             )
         else:
             logger.info(
-                "StreamDistDataLoader: rank {} does not read data, "
-                "only global rank 0 reads.".format(paddle.distributed.get_rank())
+                f"StreamDistDataLoader: rank {paddle.distributed.get_rank()} does not read data, "
+                "only global rank 0 reads."
             )
 
         if self._need_data:
@@ -350,7 +382,9 @@ class StreamDistDataLoader:
         return self._lazy_dataloader_iter
 
     def __len__(self):
-        raise ValueError("raise error for `paddleformers.trainer.trainer_utils.has_length`")
+        raise ValueError(
+            "raise error for `paddleformers.trainer.trainer_utils.has_length`"
+        )
 
     def __iter__(self):
         return self
@@ -366,7 +400,9 @@ class StreamDistDataLoader:
             # Only 1 dataset rank, no scatter needed. This rank is global rank 0.
             try:
                 data = next(self._dataloader_iter)
-                data = nested_copy_place(data, place=paddle.framework._current_expected_place())
+                data = nested_copy_place(
+                    data, place=paddle.framework._current_expected_place()
+                )
                 return data
             except StopIteration:
                 return None
@@ -377,7 +413,9 @@ class StreamDistDataLoader:
             try:
                 for _ in range(self._dataset_world_size):
                     batch = next(self._dataloader_iter)
-                    batch = nested_copy_place(batch, place=paddle.framework._current_expected_place())
+                    batch = nested_copy_place(
+                        batch, place=paddle.framework._current_expected_place()
+                    )
                     batches.append(batch)
             except StopIteration:
                 exhausted = True
@@ -386,37 +424,55 @@ class StreamDistDataLoader:
                 # Not enough data for a full round, signal stop
                 fake_data = [None] * self._dataset_world_size
                 paddle.distributed.broadcast_object_list(
-                    fake_data, src=self._stream_data_src, group=self._stream_data_group
+                    fake_data,
+                    src=self._stream_data_src,
+                    group=self._stream_data_group,
                 )
                 return None
 
             # Broadcast per-rank metadata (supports variable tensor shapes across batches)
             all_meta = [nested_reduce_tensor(b) for b in batches]
             paddle.distributed.broadcast_object_list(
-                all_meta, src=self._stream_data_src, group=self._stream_data_group
+                all_meta,
+                src=self._stream_data_src,
+                group=self._stream_data_group,
             )
 
             # Use rank 0's own metadata to allocate output
-            src_index = self._stream_data_group.ranks.index(self._stream_data_src)
+            src_index = self._stream_data_group.ranks.index(
+                self._stream_data_src
+            )
             out_data = nested_empty_tensor(all_meta[src_index])
             out_data = nested_scatter_tensor(
-                batches, out_data, src=self._stream_data_src, group=self._stream_data_group
+                batches,
+                out_data,
+                src=self._stream_data_src,
+                group=self._stream_data_group,
             )
             return out_data
         else:
             # Non-rank-0 dataset rank: receive metadata then recv tensors
             all_meta = [None] * self._dataset_world_size
             paddle.distributed.broadcast_object_list(
-                all_meta, src=self._stream_data_src, group=self._stream_data_group
+                all_meta,
+                src=self._stream_data_src,
+                group=self._stream_data_group,
             )
 
             if all_meta[0] is None:
                 return None
 
             # Pick this rank's metadata
-            my_index = self._stream_data_group.ranks.index(paddle.distributed.get_rank())
+            my_index = self._stream_data_group.ranks.index(
+                paddle.distributed.get_rank()
+            )
             out_data = nested_empty_tensor(all_meta[my_index])
-            out_data = nested_scatter_tensor(None, out_data, src=self._stream_data_src, group=self._stream_data_group)
+            out_data = nested_scatter_tensor(
+                None,
+                out_data,
+                src=self._stream_data_src,
+                group=self._stream_data_group,
+            )
             return out_data
 
     def _broadcast_data(self, data):
@@ -436,14 +492,18 @@ class StreamDistDataLoader:
                 fake_data = [nested_reduce_tensor(data)]
             else:
                 if data is not None:
-                    logger.warning(f"Your local rank {process_rank} are forbidden to have a state_dict.")
+                    logger.warning(
+                        f"Your local rank {process_rank} are forbidden to have a state_dict."
+                    )
                 fake_data = [None]
         if self._pp_group is not None:
             if process_rank == self._pp_group.ranks[0]:
                 fake_data = [nested_reduce_tensor(data)]
             else:
                 if data is not None:
-                    logger.warning(f"Your local rank {process_rank} are forbidden to have a state_dict.")
+                    logger.warning(
+                        f"Your local rank {process_rank} are forbidden to have a state_dict."
+                    )
                 fake_data = [None]
         if self.dist_data_loader_group.nranks > 1 and self.pp_rank == 0:
             paddle.distributed.broadcast_object_list(
@@ -471,9 +531,15 @@ class StreamDistDataLoader:
                 data = nested_empty_tensor(fake_data)
 
         if self.dist_data_loader_group.nranks > 1 and self.pp_rank == 0:
-            data = nested_broadcast_tensor(data, src=self.dist_data_loader_src_rank, group=self.dist_data_loader_group)
+            data = nested_broadcast_tensor(
+                data,
+                src=self.dist_data_loader_src_rank,
+                group=self.dist_data_loader_group,
+            )
         if dst_pp_group is not None:
-            data = nested_broadcast_tensor(data, src=dst_pp_group.ranks[0], group=dst_pp_group)
+            data = nested_broadcast_tensor(
+                data, src=dst_pp_group.ranks[0], group=dst_pp_group
+            )
         if data is None:
             data = {}
 

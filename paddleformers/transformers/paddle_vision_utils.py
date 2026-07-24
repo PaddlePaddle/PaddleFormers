@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,12 +15,11 @@
 API for image and video processing, serving as a backend for PaddlePaddle processors.
 """
 
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 import numpy as np
 import paddle
-from paddle.nn.functional import interpolate
-from paddle.nn.functional import pad as paddle_pad
+from paddle.nn.functional import interpolate, pad as paddle_pad
 from PIL import Image
 
 
@@ -50,20 +48,28 @@ def _pad_symmetric(img: paddle.Tensor, padding: list[int]) -> paddle.Tensor:
     if padding[0] < 0 or padding[1] < 0 or padding[2] < 0 or padding[3] < 0:
         neg_min_padding = [-min(x, 0) for x in padding]
         crop_left, crop_right, crop_top, crop_bottom = neg_min_padding
-        img = img[..., crop_top : img.shape[-2] - crop_bottom, crop_left : img.shape[-1] - crop_right]
+        img = img[
+            ...,
+            crop_top : img.shape[-2] - crop_bottom,
+            crop_left : img.shape[-1] - crop_right,
+        ]
         padding = [max(x, 0) for x in padding]
 
     in_sizes = img.size()
 
-    _x_indices = [i for i in range(in_sizes[-1])]  # [0, 1, 2, 3, ...]
-    left_indices = [i for i in range(padding[0] - 1, -1, -1)]  # e.g. [3, 2, 1, 0]
+    _x_indices = list(range(in_sizes[-1]))  # [0, 1, 2, 3, ...]
+    left_indices = list(range(padding[0] - 1, -1, -1))  # e.g. [3, 2, 1, 0]
     right_indices = [-(i + 1) for i in range(padding[1])]  # e.g. [-1, -2, -3]
-    x_indices = paddle.to_tensor(left_indices + _x_indices + right_indices).contiguous()
+    x_indices = paddle.to_tensor(
+        left_indices + _x_indices + right_indices
+    ).contiguous()
 
-    _y_indices = [i for i in range(in_sizes[-2])]
-    top_indices = [i for i in range(padding[2] - 1, -1, -1)]
+    _y_indices = list(range(in_sizes[-2]))
+    top_indices = list(range(padding[2] - 1, -1, -1))
     bottom_indices = [-(i + 1) for i in range(padding[3])]
-    y_indices = paddle.to_tensor(top_indices + _y_indices + bottom_indices).contiguous()
+    y_indices = paddle.to_tensor(
+        top_indices + _y_indices + bottom_indices
+    ).contiguous()
 
     ndim = img.ndim
     if ndim == 3:
@@ -71,7 +77,9 @@ def _pad_symmetric(img: paddle.Tensor, padding: list[int]) -> paddle.Tensor:
     elif ndim == 4:
         return img[:, :, y_indices[:, None], x_indices[None, :]]
     else:
-        raise RuntimeError("Symmetric padding of N-D tensors are not supported yet")
+        raise RuntimeError(
+            "Symmetric padding of N-D tensors are not supported yet"
+        )
 
 
 def _compute_resized_output_size(
@@ -86,12 +94,19 @@ def _compute_resized_output_size(
         if not allow_size_none:
             raise ValueError("This should never happen!!")
         if not isinstance(max_size, int):
-            raise ValueError(f"max_size must be an integer when size is None, but got {max_size} instead.")
+            raise ValueError(
+                f"max_size must be an integer when size is None, but got {max_size} instead."
+            )
         new_short, new_long = int(max_size * short / long), max_size
-        new_w, new_h = (new_short, new_long) if w <= h else (new_long, new_short)
+        new_w, new_h = (
+            (new_short, new_long) if w <= h else (new_long, new_short)
+        )
     elif len(size) == 1:
         requested_new_short = size if isinstance(size, int) else size[0]
-        new_short, new_long = requested_new_short, int(requested_new_short * long / short)
+        new_short, new_long = (
+            requested_new_short,
+            int(requested_new_short * long / short),
+        )
 
         if max_size is not None:
             if max_size <= requested_new_short:
@@ -100,9 +115,14 @@ def _compute_resized_output_size(
                     f"size for the smaller edge size = {size}"
                 )
             if new_long > max_size:
-                new_short, new_long = int(max_size * new_short / new_long), max_size
+                new_short, new_long = (
+                    int(max_size * new_short / new_long),
+                    max_size,
+                )
 
-        new_w, new_h = (new_short, new_long) if w <= h else (new_long, new_short)
+        new_w, new_h = (
+            (new_short, new_long) if w <= h else (new_long, new_short)
+        )
     else:  # specified both h and w
         new_w, new_h = size[1], size[0]
     return [new_h, new_w]
@@ -129,7 +149,9 @@ def resize(
     shape = image.shape
     numel = image.size
     num_channels, old_height, old_width = shape[-3:]
-    new_height, new_width = _compute_resized_output_size((old_height, old_width), size=size, max_size=max_size)
+    new_height, new_width = _compute_resized_output_size(
+        (old_height, old_width), size=size, max_size=max_size
+    )
 
     if (new_height, new_width) == (old_height, old_width):
         return image
@@ -146,10 +168,16 @@ def resize(
 
         image = image.reshape(-1, num_channels, old_height, old_width)
         strides = image.stride()
-        if image.is_contiguous() and image.shape[0] == 1 and numel != strides[0]:
+        if (
+            image.is_contiguous()
+            and image.shape[0] == 1
+            and numel != strides[0]
+        ):
             new_strides = list(strides)
             new_strides[0] = numel
-            image = image.as_strided((1, num_channels, old_height, old_width), new_strides)
+            image = image.as_strided(
+                (1, num_channels, old_height, old_width), new_strides
+            )
 
         need_cast = dtype not in acceptable_dtypes
         if need_cast:
@@ -166,14 +194,20 @@ def resize(
         if need_cast:
             if interpolation == "bicubic" and dtype == paddle.uint8:
                 image = image.clip_(min=0, max=255)
-            if dtype in (paddle.uint8, paddle.int8, paddle.int16, paddle.int32, paddle.int64):
+            if dtype in (
+                paddle.uint8,
+                paddle.int8,
+                paddle.int16,
+                paddle.int32,
+                paddle.int64,
+            ):
                 image = image.round_()
             image = image.to(dtype=dtype)
 
     return image.reshape(shape[:-3] + [num_channels, new_height, new_width])
 
 
-def _parse_pad_padding(padding: Union[int, list[int]]) -> list[int]:
+def _parse_pad_padding(padding: int | list[int]) -> list[int]:
     if isinstance(padding, int):
         pad_left = pad_right = pad_top = pad_bottom = padding
     elif isinstance(padding, (tuple, list)):
@@ -192,7 +226,9 @@ def _parse_pad_padding(padding: Union[int, list[int]]) -> list[int]:
                 f"Padding must be an int or a 1, 2, or 4 element tuple, not a {len(padding)} element tuple"
             )
     else:
-        raise TypeError(f"`padding` should be an integer or tuple or list of integers, but got {padding}")
+        raise TypeError(
+            f"`padding` should be an integer or tuple or list of integers, but got {padding}"
+        )
 
     return [pad_left, pad_right, pad_top, pad_bottom]
 
@@ -200,7 +236,7 @@ def _parse_pad_padding(padding: Union[int, list[int]]) -> list[int]:
 def pad(
     image: paddle.Tensor,
     padding: list[int],
-    fill: Optional[Union[int, float, list[float]]] = None,
+    fill: Optional[int | float | list[float]] = None,
     padding_mode: str = "constant",
 ) -> paddle.Tensor:
     # Be aware that while `padding` has order `[left, top, right, bottom]`, `paddle_padding` uses
@@ -218,17 +254,23 @@ def pad(
         fill = 0
 
     if isinstance(fill, (int, float)):
-        return _pad_with_scalar_fill(image, paddle_padding, fill=fill, padding_mode=padding_mode)
+        return _pad_with_scalar_fill(
+            image, paddle_padding, fill=fill, padding_mode=padding_mode
+        )
     elif len(fill) == 1:
-        return _pad_with_scalar_fill(image, paddle_padding, fill=fill[0], padding_mode=padding_mode)
+        return _pad_with_scalar_fill(
+            image, paddle_padding, fill=fill[0], padding_mode=padding_mode
+        )
     else:
-        return _pad_with_vector_fill(image, paddle_padding, fill=fill, padding_mode=padding_mode)
+        return _pad_with_vector_fill(
+            image, paddle_padding, fill=fill, padding_mode=padding_mode
+        )
 
 
 def _pad_with_scalar_fill(
     image: paddle.Tensor,
     paddle_padding: list[int],
-    fill: Union[int, float],
+    fill: float,
     padding_mode: str,
 ) -> paddle.Tensor:
     shape = image.shape
@@ -254,7 +296,9 @@ def _pad_with_scalar_fill(
         needs_cast = False
 
     if padding_mode == "constant":
-        image = paddle_pad(image, paddle_padding, mode=padding_mode, value=float(fill))
+        image = paddle_pad(
+            image, paddle_padding, mode=padding_mode, value=float(fill)
+        )
     elif padding_mode in ("reflect", "replicate"):
         image = paddle_pad(image, paddle_padding, mode=padding_mode)
     else:  # padding_mode == "symmetric"
@@ -275,12 +319,21 @@ def _pad_with_vector_fill(
     padding_mode: str,
 ) -> paddle.Tensor:
     if padding_mode != "constant":
-        raise ValueError(f"Padding mode '{padding_mode}' is not supported if fill is not scalar")
+        raise ValueError(
+            f"Padding mode '{padding_mode}' is not supported if fill is not scalar"
+        )
 
-    output = _pad_with_scalar_fill(image, paddle_padding, fill=0, padding_mode="constant")
+    output = _pad_with_scalar_fill(
+        image, paddle_padding, fill=0, padding_mode="constant"
+    )
     left, right, top, bottom = paddle_padding
 
-    fill = paddle.to_tensor(fill).to(dtype=image.dtype).reshape(-1, 1, 1).contiguous()
+    fill = (
+        paddle.to_tensor(fill)
+        .to(dtype=image.dtype)
+        .reshape(-1, 1, 1)
+        .contiguous()
+    )
 
     if top > 0:
         output[..., :top, :] = fill
@@ -293,7 +346,9 @@ def _pad_with_vector_fill(
     return output
 
 
-def crop(image: paddle.Tensor, top: int, left: int, height: int, width: int) -> paddle.Tensor:
+def crop(
+    image: paddle.Tensor, top: int, left: int, height: int, width: int
+) -> paddle.Tensor:
     h, w = image.shape[-2:]
 
     right = left + width
@@ -307,12 +362,16 @@ def crop(image: paddle.Tensor, top: int, left: int, height: int, width: int) -> 
             max(min(bottom, 0) - top, 0),
             max(bottom - max(h, top), 0),
         ]
-        return _pad_with_scalar_fill(image, paddle_padding, fill=0, padding_mode="constant")
+        return _pad_with_scalar_fill(
+            image, paddle_padding, fill=0, padding_mode="constant"
+        )
     return image[..., top:bottom, left:right]
 
 
 def _rgb_to_grayscale_image(
-    image: paddle.Tensor, num_output_channels: int = 1, preserve_dtype: bool = True
+    image: paddle.Tensor,
+    num_output_channels: int = 1,
+    preserve_dtype: bool = True,
 ) -> paddle.Tensor:
     if image.shape[-3] == 1 and num_output_channels == 1:
         return image.clone()
@@ -333,15 +392,26 @@ def _rgb_to_grayscale_image(
 def grayscale_to_rgb(image: paddle.Tensor) -> paddle.Tensor:
     if image.shape[-3] >= 3:
         return image
-    return _rgb_to_grayscale_image(image, num_output_channels=3, preserve_dtype=True)
+    return _rgb_to_grayscale_image(
+        image, num_output_channels=3, preserve_dtype=True
+    )
 
 
-def normalize(image: paddle.Tensor, mean: list[float], std: list[float], inplace: bool = False) -> paddle.Tensor:
+def normalize(
+    image: paddle.Tensor,
+    mean: list[float],
+    std: list[float],
+    inplace: bool = False,
+) -> paddle.Tensor:
     if not image.is_floating_point():
-        raise TypeError(f"Input tensor should be a float tensor. Got {image.dtype}.")
+        raise TypeError(
+            f"Input tensor should be a float tensor. Got {image.dtype}."
+        )
 
     if image.ndim < 3:
-        raise ValueError(f"Expected tensor to be a tensor image of size (..., C, H, W). Got {image.shape}.")
+        raise ValueError(
+            f"Expected tensor to be a tensor image of size (..., C, H, W). Got {image.shape}."
+        )
 
     if isinstance(std, (tuple, list)):
         divzero = not all(std)

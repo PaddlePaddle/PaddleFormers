@@ -34,7 +34,9 @@ class TestMLP(unittest.TestCase):
         # Default test input
         self.batch_size = 2
         self.seq_len = 10
-        self.test_input = paddle.randn([self.batch_size, self.seq_len, self.config.hidden_size])
+        self.test_input = paddle.randn(
+            [self.batch_size, self.seq_len, self.config.hidden_size]
+        )
 
     def test_initialization_default(self):
         # Test default initialization
@@ -53,30 +55,54 @@ class TestMLP(unittest.TestCase):
         # Test initialization with custom sizes
         custom_hidden = self.config.hidden_size
         custom_intermediate = self.config.intermediate_size
-        mlp = MLP(self.config, hidden_size=custom_hidden, intermediate_size=custom_intermediate, fuse_up_gate=True)
+        mlp = MLP(
+            self.config,
+            hidden_size=custom_hidden,
+            intermediate_size=custom_intermediate,
+            fuse_up_gate=True,
+        )
 
         self.assertEqual(mlp.hidden_size, custom_hidden)
         self.assertEqual(mlp.intermediate_size, custom_intermediate)
-        self.assertEqual(mlp.up_gate_proj.weight.shape, [custom_hidden, custom_intermediate * 2])
-        self.assertEqual(mlp.down_proj.weight.shape, [custom_intermediate, custom_hidden])
+        self.assertEqual(
+            mlp.up_gate_proj.weight.shape,
+            [custom_hidden, custom_intermediate * 2],
+        )
+        self.assertEqual(
+            mlp.down_proj.weight.shape, [custom_intermediate, custom_hidden]
+        )
 
     def test_initialization_non_fuse_ffn(self):
         # Test initialization with custom sizes
         custom_hidden = self.config.hidden_size
         custom_intermediate = self.config.intermediate_size
-        mlp = MLP(self.config, hidden_size=custom_hidden, intermediate_size=custom_intermediate, fuse_up_gate=False)
+        mlp = MLP(
+            self.config,
+            hidden_size=custom_hidden,
+            intermediate_size=custom_intermediate,
+            fuse_up_gate=False,
+        )
 
         self.assertEqual(mlp.hidden_size, custom_hidden)
         self.assertEqual(mlp.intermediate_size, custom_intermediate)
-        self.assertEqual(mlp.up_proj.weight.shape, [custom_hidden, custom_intermediate])
-        self.assertEqual(mlp.gate_proj.weight.shape, [custom_hidden, custom_intermediate])
-        self.assertEqual(mlp.down_proj.weight.shape, [custom_intermediate, custom_hidden])
+        self.assertEqual(
+            mlp.up_proj.weight.shape, [custom_hidden, custom_intermediate]
+        )
+        self.assertEqual(
+            mlp.gate_proj.weight.shape, [custom_hidden, custom_intermediate]
+        )
+        self.assertEqual(
+            mlp.down_proj.weight.shape, [custom_intermediate, custom_hidden]
+        )
 
         mlp(self.test_input)
 
     def test_custom_proj_names(self):
         # Test initialization with custom projection names
-        custom_names = {"gate_up_proj_name": "custom_gate_up", "down_proj_name": "custom_down"}
+        custom_names = {
+            "gate_up_proj_name": "custom_gate_up",
+            "down_proj_name": "custom_down",
+        }
         mlp = MLP(self.config, **custom_names, fuse_up_gate=True)
         mlp(self.test_input)
 

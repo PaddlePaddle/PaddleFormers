@@ -29,20 +29,35 @@ class SparsifyMethod:
         elif self.merge_config.sparsify_type == "trim":
             return self.trim(tensor)
         else:
-            raise ValueError(f"Unknown sparsify method: {self.merge_config.sparsify_type}")
+            raise ValueError(
+                f"Unknown sparsify method: {self.merge_config.sparsify_type}"
+            )
 
     def dare(self, tensor):
         if self.merge_config.tensor_type == "np":
-            tensor *= (np.random.rand(*tensor.shape) < self.merge_config.reserve_p).astype(tensor.dtype)
+            tensor *= (
+                np.random.rand(*tensor.shape) < self.merge_config.reserve_p
+            ).astype(tensor.dtype)
             if self.merge_config.rescale:
                 tensor /= self.merge_config.reserve_p
             return tensor
         elif self.merge_config.tensor_type == "pd":
-            mode = "upscale_in_train" if self.merge_config.rescale else "downscale_in_infer"
-            tensor = paddle.nn.functional.dropout(tensor, p=1 - self.merge_config.reserve_p, mode=mode, training=True)
+            mode = (
+                "upscale_in_train"
+                if self.merge_config.rescale
+                else "downscale_in_infer"
+            )
+            tensor = paddle.nn.functional.dropout(
+                tensor,
+                p=1 - self.merge_config.reserve_p,
+                mode=mode,
+                training=True,
+            )
             return tensor
         else:
-            raise ValueError(f"Unknown tensor type {self.merge_config.tensor_type}")
+            raise ValueError(
+                f"Unknown tensor type {self.merge_config.tensor_type}"
+            )
 
     def magprune(self, tensor):
         if self.merge_config.tensor_type == "np":
@@ -57,7 +72,9 @@ class SparsifyMethod:
             probs = np.empty_like(sorted_indices)
             probs[sorted_indices] = np.arange(tensor.size).astype(tensor.dtype)
             probs = probs.reshape(tensor.shape)  # r_i ∈ {0，1，... ,n}
-            probs = probs * self.merge_config.epsilon / tensor.size  # Δ_i =  ε/n * r_i
+            probs = (
+                probs * self.merge_config.epsilon / tensor.size
+            )  # Δ_i =  ε/n * r_i
             p_min = drop_p - self.merge_config.epsilon / 2  # minimal drop rate
             probs += p_min  # p_i for each parameter
 
@@ -75,7 +92,11 @@ class SparsifyMethod:
             sorted_indices = paddle.argsort(-abs_tensor.flatten())
 
             probs = paddle.zeros_like(sorted_indices, dtype="float32")
-            probs = paddle.scatter(probs, sorted_indices, paddle.arange(tensor.numel(), dtype="float32"))
+            probs = paddle.scatter(
+                probs,
+                sorted_indices,
+                paddle.arange(tensor.numel(), dtype="float32"),
+            )
             probs = probs.reshape(tensor.shape)
             probs = probs * self.merge_config.epsilon / tensor.numel()
             p_min = drop_p - self.merge_config.epsilon / 2
@@ -86,7 +107,9 @@ class SparsifyMethod:
                 tensor /= 1 - probs
             return tensor
         else:
-            raise ValueError(f"Unknown tensor type {self.merge_config.tensor_type}")
+            raise ValueError(
+                f"Unknown tensor type {self.merge_config.tensor_type}"
+            )
 
     def trim(self, tensor):
         if self.merge_config.tensor_type == "np":
@@ -106,8 +129,12 @@ class SparsifyMethod:
             return tensor.reshape(shape)
         elif self.merge_config.tensor_type == "pd":
             abs_tensor = paddle.abs(tensor)
-            threshold = paddle.quantile(abs_tensor, 1 - self.merge_config.reserve_p)
-            tensor = paddle.where(abs_tensor < threshold, paddle.zeros_like(tensor), tensor)
+            threshold = paddle.quantile(
+                abs_tensor, 1 - self.merge_config.reserve_p
+            )
+            tensor = paddle.where(
+                abs_tensor < threshold, paddle.zeros_like(tensor), tensor
+            )
             if self.merge_config.rescale:
                 org_sum = paddle.sum(abs_tensor)
                 new_sum = paddle.sum(paddle.abs(tensor))
@@ -115,4 +142,6 @@ class SparsifyMethod:
                     tensor *= org_sum / new_sum
             return tensor
         else:
-            raise ValueError(f"Unknown tensor type {self.merge_config.tensor_type}")
+            raise ValueError(
+                f"Unknown tensor type {self.merge_config.tensor_type}"
+            )

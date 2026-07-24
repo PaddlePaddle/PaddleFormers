@@ -24,7 +24,9 @@ from .convertor import erniekit_convertor, messages_convertor
 from .download_manager import HuggingFaceDownload
 from .io import load_csv, load_json, load_parquet, load_txt
 
-DATA_INFO_FILE = os.path.join(os.path.abspath(os.path.dirname(__file__)), "data_info.json")
+DATA_INFO_FILE = os.path.join(
+    os.path.abspath(os.path.dirname(__file__)), "data_info.json"
+)
 DATASET_WORKROOT = os.getenv("DATASET_WORKROOT", "/root/.cache/paddleformers")
 DATASET_DOWNLOAD_ROOT = os.path.join(DATASET_WORKROOT, "download")
 
@@ -80,7 +82,9 @@ class FileReader(BaseReader):
 
         # load file
         if ext not in self.loader_map:
-            raise ValueError(f"Unsupported file extension: {ext}. Supported extension are: {self.loader_map.keys()}")
+            raise ValueError(
+                f"Unsupported file extension: {ext}. Supported extension are: {self.loader_map.keys()}"
+            )
         res = self.loader_map[ext](self._file_path)
 
         # sample
@@ -103,7 +107,9 @@ class FileReader(BaseReader):
 
             del res_list
             res = sampled_data
-            logger.info(f"Sampled {len(res)} samples from {total_samples} total samples.")
+            logger.info(
+                f"Sampled {len(res)} samples from {total_samples} total samples."
+            )
         else:
             logger.info(f"Loading {self._file_path} as stream.")
 
@@ -117,7 +123,9 @@ class FileReader(BaseReader):
                 convert_data = self.convertor_map[self._file_type](item)
                 checked_data = self._data_check(convert_data)
             except Exception as e:
-                logger.warning(f"preprocess data error: {e}, data: {str(item)[:30]}")
+                logger.warning(
+                    f"preprocess data error: {e}, data: {str(item)[:30]}"
+                )
                 continue
             if not checked_data:
                 # ignore invalid example
@@ -129,7 +137,9 @@ class FileReader(BaseReader):
                     if "assistant" in turn["role"]:
                         if checked_data["label"][assistant_index]:
                             new_data = copy.deepcopy(checked_data)
-                            new_data["messages"] = checked_data["messages"][: index + 1]
+                            new_data["messages"] = checked_data["messages"][
+                                : index + 1
+                            ]
                             new_data["label"] = [1]
                             yield new_data
                         assistant_index += 1
@@ -169,11 +179,16 @@ class FileReader(BaseReader):
                         item["role"] = ROLE_MAPPING[item["role"]]
 
                     # Convert content to string if needed
-                    if item["role"] in ("observation", "function") and not isinstance(item["content"], str):
+                    if item["role"] in (
+                        "observation",
+                        "function",
+                    ) and not isinstance(item["content"], str):
                         item["content"] = json.dumps(item["content"])
 
                     # Convert tool_calls to string if present and not already a string
-                    if "tool_calls" in item and not isinstance(item["tool_calls"], str):
+                    if "tool_calls" in item and not isinstance(
+                        item["tool_calls"], str
+                    ):
                         item["tool_calls"] = json.dumps(item["tool_calls"])
 
         # Convert the content of tool list into a string
@@ -183,11 +198,16 @@ class FileReader(BaseReader):
         # If no label is input, it means each response needs to be learned.
         if "label" not in data:
             data["label"] = [
-                1 for turn in data["messages"] if ("assistant" in turn["role"] or "function" in turn["role"])
+                1
+                for turn in data["messages"]
+                if ("assistant" in turn["role"] or "function" in turn["role"])
             ]
 
         system = ""
-        if self._template_backend != "jinja" and "system" in data["messages"][0]["role"]:
+        if (
+            self._template_backend != "jinja"
+            and "system" in data["messages"][0]["role"]
+        ):
             # extract system message when template_backend is not jinja
             system = data["messages"][0]["content"]
             if not isinstance(system, str):
@@ -198,22 +218,34 @@ class FileReader(BaseReader):
         # Convert the relative paths of multimode data into absolute paths
         if "images" in data:
             for idx in range(len(data["images"])):
-                if data["images"][idx].startswith("http") or os.path.isabs(data["images"][idx]):
+                if data["images"][idx].startswith("http") or os.path.isabs(
+                    data["images"][idx]
+                ):
                     pass
                 else:
-                    data["images"][idx] = os.path.join(os.path.dirname(self._file_path), data["images"][idx])
+                    data["images"][idx] = os.path.join(
+                        os.path.dirname(self._file_path), data["images"][idx]
+                    )
         if "videos" in data:
             for idx in range(len(data["videos"])):
-                if data["videos"][idx].startswith("http") or os.path.isabs(data["videos"][idx]):
+                if data["videos"][idx].startswith("http") or os.path.isabs(
+                    data["videos"][idx]
+                ):
                     pass
                 else:
-                    data["videos"][idx] = os.path.join(os.path.dirname(self._file_path), data["videos"][idx])
+                    data["videos"][idx] = os.path.join(
+                        os.path.dirname(self._file_path), data["videos"][idx]
+                    )
         if "audios" in data:
             for idx in range(len(data["audios"])):
-                if data["audios"][idx].startswith("http") or os.path.isabs(data["audios"][idx]):
+                if data["audios"][idx].startswith("http") or os.path.isabs(
+                    data["audios"][idx]
+                ):
                     pass
                 else:
-                    data["audios"][idx] = os.path.join(os.path.dirname(self._file_path), data["audios"][idx])
+                    data["audios"][idx] = os.path.join(
+                        os.path.dirname(self._file_path), data["audios"][idx]
+                    )
 
         return data
 

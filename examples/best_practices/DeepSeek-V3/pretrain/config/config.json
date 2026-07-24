@@ -70,7 +70,7 @@
     "use_dualpipev": true,
     "send_mtp_embed": false,
     "mlp_fwd_subbatch_rows": 0,
-    "mlp_bwd_subbatch_rows": 65536,    
+    "mlp_bwd_subbatch_rows": 65536,
     "output_subbatch_rows": 2048,
     "dsv3_use_fp8_gemm": true,
     "dsv3_use_atten_recompute": true,

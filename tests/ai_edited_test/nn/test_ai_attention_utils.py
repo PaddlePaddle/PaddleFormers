@@ -49,12 +49,24 @@ class TestRepeatKV(unittest.TestCase):
         # After unsqueeze(-2).tile([1,1,1,3,1]).reshape, the pattern is:
         # result[:, :, 0] = result[:, :, 1] = result[:, :, 2] = x[:, :, 0]
         # result[:, :, 3] = result[:, :, 4] = result[:, :, 5] = x[:, :, 1]
-        np.testing.assert_allclose(result[:, :, 0, :].numpy(), x[:, :, 0, :].numpy())
-        np.testing.assert_allclose(result[:, :, 1, :].numpy(), x[:, :, 0, :].numpy())
-        np.testing.assert_allclose(result[:, :, 2, :].numpy(), x[:, :, 0, :].numpy())
-        np.testing.assert_allclose(result[:, :, 3, :].numpy(), x[:, :, 1, :].numpy())
-        np.testing.assert_allclose(result[:, :, 4, :].numpy(), x[:, :, 1, :].numpy())
-        np.testing.assert_allclose(result[:, :, 5, :].numpy(), x[:, :, 1, :].numpy())
+        np.testing.assert_allclose(
+            result[:, :, 0, :].numpy(), x[:, :, 0, :].numpy()
+        )
+        np.testing.assert_allclose(
+            result[:, :, 1, :].numpy(), x[:, :, 0, :].numpy()
+        )
+        np.testing.assert_allclose(
+            result[:, :, 2, :].numpy(), x[:, :, 0, :].numpy()
+        )
+        np.testing.assert_allclose(
+            result[:, :, 3, :].numpy(), x[:, :, 1, :].numpy()
+        )
+        np.testing.assert_allclose(
+            result[:, :, 4, :].numpy(), x[:, :, 1, :].numpy()
+        )
+        np.testing.assert_allclose(
+            result[:, :, 5, :].numpy(), x[:, :, 1, :].numpy()
+        )
 
     def test_repeat_kv_single_kv_head(self):
         """Edge case: single key-value head repeated to multiple attention heads."""

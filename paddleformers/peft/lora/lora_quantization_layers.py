@@ -40,7 +40,10 @@ class QuantizationLoRABaseLinear(nn.Layer):
         self._dtype = layer._dtype
         self.quant_dtype = layer.quant_dtype
         self.quant_weight = layer.quant_weight
-        if self.weight_quantize_algo in ["fp4", "nf4"] and self.quantization_config.qlora_weight_double_quant:
+        if (
+            self.weight_quantize_algo in ["fp4", "nf4"]
+            and self.quantization_config.qlora_weight_double_quant
+        ):
             self.qweight_scale = layer.qweight_scale
             self.double_weight_scale = layer.double_weight_scale
             self.weight_scale_offset = layer.weight_scale_offset
@@ -54,7 +57,9 @@ class QuantizationLoRABaseLinear(nn.Layer):
         if self.weight_quantize_algo == "llm.int8":
             raise NotImplementedError("llm.int8 not yet support lora strategy.")
         if self.lora_config.rslora:
-            self.scaling = self.lora_config.lora_alpha / math.sqrt(self.lora_config.r)
+            self.scaling = self.lora_config.lora_alpha / math.sqrt(
+                self.lora_config.r
+            )
         else:
             self.scaling = self.lora_config.lora_alpha / self.lora_config.r
         self.disable_lora = False
@@ -75,8 +80,15 @@ class QuantizationLoRABaseLinear(nn.Layer):
             weight_quantize_algo=self.weight_quantize_algo,
             dtype=self._dtype,
             weight_scale=self.weight_scale,
-            quant_state=(self.qweight_scale, self.double_weight_scale, self.weight_scale_offset)
-            if (self.weight_quantize_algo in ["fp4", "nf4"] and self.quantization_config.qlora_weight_double_quant)
+            quant_state=(
+                self.qweight_scale,
+                self.double_weight_scale,
+                self.weight_scale_offset,
+            )
+            if (
+                self.weight_quantize_algo in ["fp4", "nf4"]
+                and self.quantization_config.qlora_weight_double_quant
+            )
             else None,
             bias=self.bias if add_bias else None,
         )
@@ -105,7 +117,9 @@ class QuantizationLoRALinear(QuantizationLoRABaseLinear):
             shape=[layer.in_features, self.lora_config.r],
             dtype=self._dtype,
             is_bias=False,
-            default_initializer=nn.initializer.KaimingUniform(negative_slope=math.sqrt(5), nonlinearity="leaky_relu"),
+            default_initializer=nn.initializer.KaimingUniform(
+                negative_slope=math.sqrt(5), nonlinearity="leaky_relu"
+            ),
         )
         self.lora_B = self.create_parameter(
             shape=[self.lora_config.r, layer.out_features],
@@ -123,7 +137,9 @@ class QuantizationLoRALinear(QuantizationLoRABaseLinear):
     def forward(self, x):
         result = super().forward(x)
         if not self.disable_lora:
-            result += (self.lora_dropout(x) @ self.lora_A @ self.lora_B) * self.scaling
+            result += (
+                self.lora_dropout(x) @ self.lora_A @ self.lora_B
+            ) * self.scaling
         return result
 
 
@@ -150,7 +166,9 @@ class ColumnParallelQuantizationLoRALinear(QuantizationLoRABaseLinear):
     """
 
     def __init__(self, layer, lora_config):
-        super(ColumnParallelQuantizationLoRALinear, self).__init__(layer, lora_config)
+        super(ColumnParallelQuantizationLoRALinear, self).__init__(
+            layer, lora_config
+        )
 
         # Parallel parameters
         self.model_parallel_group = layer.model_parallel_group
@@ -164,7 +182,9 @@ class ColumnParallelQuantizationLoRALinear(QuantizationLoRABaseLinear):
             shape=[layer.in_features, self.lora_config.r],
             dtype=self._dtype,
             is_bias=False,
-            default_initializer=nn.initializer.KaimingUniform(negative_slope=math.sqrt(5), nonlinearity="leaky_relu"),
+            default_initializer=nn.initializer.KaimingUniform(
+                negative_slope=math.sqrt(5), nonlinearity="leaky_relu"
+            ),
         )
         # Sync lora_A parameters before training
         self.lora_A.is_distributed = False
@@ -211,7 +231,9 @@ class ColumnParallelQuantizationLoRALinear(QuantizationLoRABaseLinear):
             output_parallel += delta_parallel
 
         if self.gather_output:
-            output = mp_ops._c_concat(output_parallel, group=self.model_parallel_group)
+            output = mp_ops._c_concat(
+                output_parallel, group=self.model_parallel_group
+            )
         else:
             output = output_parallel
         return output
@@ -221,10 +243,16 @@ class ColumnParallelQuantizationLoRALinear(QuantizationLoRABaseLinear):
         structured_name_prefix: str = "",
     ):
         state_dict = self.state_dict(structured_name_prefix="")
-        return build_sharded_state_dict(state_dict, {"weight": 1, "bias": 0, "lora_B": 1}, structured_name_prefix)
+        return build_sharded_state_dict(
+            state_dict,
+            {"weight": 1, "bias": 0, "lora_B": 1},
+            structured_name_prefix,
+        )
 
 
-class FleetColumnParallelQuantizationLoRALinear(ColumnParallelQuantizationLoRALinear):
+class FleetColumnParallelQuantizationLoRALinear(
+    ColumnParallelQuantizationLoRALinear
+):
     def __init__(self, layer, skip_bias_add, lora_config):
         super().__init__(layer, lora_config)
         self.skip_bias_add = skip_bias_add
@@ -247,13 +275,17 @@ class RowParallelQuantizationLoRALinear(QuantizationLoRABaseLinear):
     """
 
     def __init__(self, layer, lora_config):
-        super(RowParallelQuantizationLoRALinear, self).__init__(layer, lora_config)
+        super(RowParallelQuantizationLoRALinear, self).__init__(
+            layer, lora_config
+        )
         # Parallel parameters
         self.model_parallel_group = layer.model_parallel_group
         self.world_size = layer.world_size
         self.input_is_parallel = layer.input_is_parallel
         if not self.input_is_parallel and self.sequence_parallel:
-            raise ValueError("Sequence parallel only support input_is_parallel.")
+            raise ValueError(
+                "Sequence parallel only support input_is_parallel."
+            )
         self.sequence_parallel = layer.sequence_parallel
         self.mp_skip_c_identity = layer.mp_skip_c_identity
 
@@ -323,7 +355,9 @@ class RowParallelQuantizationLoRALinear(QuantizationLoRABaseLinear):
         structured_name_prefix: str = "",
     ):
         state_dict = self.state_dict(structured_name_prefix="")
-        return build_sharded_state_dict(state_dict, {"weight": 0, "lora_A": 0}, structured_name_prefix)
+        return build_sharded_state_dict(
+            state_dict, {"weight": 0, "lora_A": 0}, structured_name_prefix
+        )
 
 
 class FleetRowParallelQuantizationLoRALinear(RowParallelQuantizationLoRALinear):

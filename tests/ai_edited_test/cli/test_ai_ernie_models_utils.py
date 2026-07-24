@@ -37,14 +37,20 @@ class TestGetGlobalTrainingLogs(unittest.TestCase):
         # It might return a dict, TrainingLogs instance, or other
         self.assertIsNotNone(result)
 
-    @patch("paddleformers.cli.train.ernie_pretrain.models.utils.get_global_training_logs")
+    @patch(
+        "paddleformers.cli.train.ernie_pretrain.models.utils.get_global_training_logs"
+    )
     def test_global_training_logs_enabled_with_dict(self, mock_get_logs):
         """Test global_training_logs_enabled with a dict."""
         mock_get_logs.return_value = {}
         self.assertTrue(global_training_logs_enabled())
 
-    @patch("paddleformers.cli.train.ernie_pretrain.models.utils.get_global_training_logs")
-    def test_global_training_logs_enabled_with_enabled_object(self, mock_get_logs):
+    @patch(
+        "paddleformers.cli.train.ernie_pretrain.models.utils.get_global_training_logs"
+    )
+    def test_global_training_logs_enabled_with_enabled_object(
+        self, mock_get_logs
+    ):
         """Test global_training_logs_enabled with an enabled object."""
         mock_obj = MagicMock()
         mock_obj.is_enabled.return_value = True
@@ -120,7 +126,9 @@ class TestFakeGather(unittest.TestCase):
 
     def test_backward(self):
         """Test FakeGather backward."""
-        input_tensor = paddle.to_tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], stop_gradient=False)
+        input_tensor = paddle.to_tensor(
+            [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], stop_gradient=False
+        )
         indices = paddle.to_tensor([0, 2], dtype=paddle.int64)
         result = FakeGather.apply(input_tensor, indices)
         loss = result.sum()

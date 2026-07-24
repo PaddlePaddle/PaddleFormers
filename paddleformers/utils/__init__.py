@@ -16,6 +16,8 @@ import contextlib
 import sys
 from typing import TYPE_CHECKING
 
+import paddle
+
 from ..utils.lazy_import import _LazyModule
 
 import_structure = {
@@ -49,6 +51,7 @@ import_structure = {
         "is_g2p_en_available",
         "is_datasets_available",
         "is_transformers_available",
+        "is_paddleformers_available",
         "is_paddlefleet_available",
         "dynamic_graph_pybind_context",
         "custom_import",
@@ -58,7 +61,14 @@ import_structure = {
     "infohub": ["infohub", "InfoHub"],
     "memory_utils": ["empty_device_cache"],
     "moe_hybrid_parallel_optimizer": ["MoEHybridParallelOptimizer"],
-    "paddle_patch": ["enhance_set_value", "new_repr", "_numel", "_numpy", "enhance_init", "enhance_to_tensor"],
+    "paddle_patch": [
+        "enhance_set_value",
+        "new_repr",
+        "_numel",
+        "_numpy",
+        "enhance_init",
+        "enhance_to_tensor",
+    ],
     "serialization": [
         "seek_by_string",
         "load_torch_inner",
@@ -114,7 +124,7 @@ def device_guard(device="cpu", dev_id=0):
     if device == "cpu":
         paddle.set_device(device)
     elif device in ["gpu", "xpu", "npu"]:
-        paddle.set_device("{}:{}".format(device, dev_id))
+        paddle.set_device(f"{device}:{dev_id}")
     try:
         yield
     finally:
@@ -122,8 +132,6 @@ def device_guard(device="cpu", dev_id=0):
 
 
 if TYPE_CHECKING:
-    import paddle
-
     from .batch_sampler import *
     from .env import CONFIG_NAME, GENERATION_CONFIG_NAME, LEGACY_CONFIG_NAME
     from .import_utils import *

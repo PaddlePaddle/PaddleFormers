@@ -18,4 +18,8 @@ from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
 
 
 def rng_ctx(is_mp: bool, in_dynamic_mode: bool):
-    return get_rng_state_tracker().rng_state() if (is_mp and in_dynamic_mode) else nullcontext()
+    return (
+        get_rng_state_tracker().rng_state()
+        if (is_mp and in_dynamic_mode)
+        else nullcontext()
+    )

@@ -21,7 +21,13 @@ from ...transformers.tensor_parallel_utils import parallel_matmul
 
 
 def calc_lm_head_logits(
-    config, hidden_states, weight, bias, tensor_parallel_output=None, training=True, gather_hidden_states=False
+    config,
+    hidden_states,
+    weight,
+    bias,
+    tensor_parallel_output=None,
+    training=True,
+    gather_hidden_states=False,
 ):
     """
     Calculate language model head logits with support for various parallelization strategies.
@@ -46,7 +52,9 @@ def calc_lm_head_logits(
         hidden_states = GatherOp.apply(hidden_states)
         seq_length = config.max_sequence_length
 
-        hidden_states = hidden_states.reshape([-1, seq_length, hidden_states.shape[-1]])
+        hidden_states = hidden_states.reshape(
+            [-1, seq_length, hidden_states.shape[-1]]
+        )
 
     if tensor_parallel_output is None:
         tensor_parallel_output = config.tensor_parallel_output
@@ -64,7 +72,9 @@ def calc_lm_head_logits(
     return logits
 
 
-def subbatch(f, arg_idx, axis, bs, out_idx, use_recompute=False, same_arg_idx={}):
+def subbatch(
+    f, arg_idx, axis, bs, out_idx, use_recompute=False, same_arg_idx={}
+):
     """
     Converts a function to one that applies to subbatch of an input dimension.
     This is useful for processing large tensors in smaller chunks to reduce memory usage.
@@ -85,14 +95,15 @@ def subbatch(f, arg_idx, axis, bs, out_idx, use_recompute=False, same_arg_idx={}
 
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
-
-        assert len(arg_idx) == len(axis), "Number of batching args and number of batching dims should match."
+        assert len(arg_idx) == len(axis), (
+            "Number of batching args and number of batching dims should match."
+        )
 
         inps = [args[i] for i in arg_idx]
         axis_width = [inp.shape[d] for inp, d in zip(inps, axis)]
         assert len(set(axis_width)) == 1, "Batch sizes should be kept equal."
 
-        inp_axis = {inp: d for inp, d in zip(inps, axis)}
+        inp_axis = dict(zip(inps, axis))
 
         axis_width = axis_width[0]
         if axis_width < bs:
@@ -103,9 +114,9 @@ def subbatch(f, arg_idx, axis, bs, out_idx, use_recompute=False, same_arg_idx={}
             _args = []
             for i, inp in enumerate(args):
                 if i in same_arg_idx:
-                    assert (
-                        i > same_arg_idx[i]
-                    ), f"expect i > same_arg_idx[i], but got i: {i} and same_arg_idx[i]: {same_arg_idx[i]}"
+                    assert i > same_arg_idx[i], (
+                        f"expect i > same_arg_idx[i], but got i: {i} and same_arg_idx[i]: {same_arg_idx[i]}"
+                    )
                     _args.append(_args[same_arg_idx[i]])
                 elif i in arg_idx:
                     inp = inp.slice(
@@ -117,7 +128,9 @@ def subbatch(f, arg_idx, axis, bs, out_idx, use_recompute=False, same_arg_idx={}
                 else:
                     _args.append(inp)
             if use_recompute:
-                out = paddle.distributed.fleet.utils.recompute(f, *_args, **kwargs)
+                out = paddle.distributed.fleet.utils.recompute(
+                    f, *_args, **kwargs
+                )
             else:
                 out = f(*_args, **kwargs)
             outs.append(out)

@@ -75,10 +75,17 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
             A dict mapping parameter name strings to (slice_fn, slice_kwargs) tuples.
         """
 
-        def _qkv_per_head(matrix_2d_global, ortho_fn, kv_head_num=None, num_key_value_groups=None):
+        def _qkv_per_head(
+            matrix_2d_global,
+            ortho_fn,
+            kv_head_num=None,
+            num_key_value_groups=None,
+        ):
             import paddle
 
-            head_dim = matrix_2d_global.shape[-1] // (num_key_value_groups * kv_head_num + 2 * kv_head_num)
+            head_dim = matrix_2d_global.shape[-1] // (
+                num_key_value_groups * kv_head_num + 2 * kv_head_num
+            )
             groups = paddle.split(matrix_2d_global, kv_head_num, axis=-1)
 
             processed_groups = []
@@ -90,20 +97,30 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
                 )
                 q_heads = paddle.split(q_part, num_key_value_groups, axis=-1)
                 q_ortho = paddle.concat([ortho_fn(h) for h in q_heads], axis=-1)
-                processed_groups.append(paddle.concat([q_ortho, ortho_fn(k_head), ortho_fn(v_head)], axis=-1))
+                processed_groups.append(
+                    paddle.concat(
+                        [q_ortho, ortho_fn(k_head), ortho_fn(v_head)], axis=-1
+                    )
+                )
 
             return paddle.concat(processed_groups, axis=-1)
 
-        def _qkv_sep(matrix_2d, ortho_fn, kv_head_num=None, num_key_value_groups=None):
+        def _qkv_sep(
+            matrix_2d, ortho_fn, kv_head_num=None, num_key_value_groups=None
+        ):
             import paddle
 
-            head_dim = matrix_2d.shape[-1] // (num_key_value_groups * kv_head_num + 2 * kv_head_num)
+            head_dim = matrix_2d.shape[-1] // (
+                num_key_value_groups * kv_head_num + 2 * kv_head_num
+            )
             q_group_size = num_key_value_groups * head_dim
 
             groups = paddle.split(matrix_2d, kv_head_num, axis=-1)
             q_parts, k_parts, v_parts = [], [], []
             for group in groups:
-                q_p, k_p, v_p = paddle.split(group, [q_group_size, head_dim, head_dim], axis=-1)
+                q_p, k_p, v_p = paddle.split(
+                    group, [q_group_size, head_dim, head_dim], axis=-1
+                )
                 q_parts.append(q_p)
                 k_parts.append(k_p)
                 v_parts.append(v_p)
@@ -117,29 +134,50 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
             v_groups = paddle.split(v_ortho, kv_head_num, axis=-1)
 
             return paddle.concat(
-                [paddle.concat([q_groups[i], k_groups[i], v_groups[i]], axis=-1) for i in range(kv_head_num)],
+                [
+                    paddle.concat(
+                        [q_groups[i], k_groups[i], v_groups[i]], axis=-1
+                    )
+                    for i in range(kv_head_num)
+                ],
                 axis=-1,
             )
 
         def _ffn_gate_up(matrix, ortho_fn, intermediate_size=None):
             import paddle
 
-            assert matrix.ndim == 2 or matrix.ndim == 3, "FFN gate_up split expects 2D or 3D tensor"
+            assert matrix.ndim == 2 or matrix.ndim == 3, (
+                "FFN gate_up split expects 2D or 3D tensor"
+            )
 
-            gate, up = paddle.split(matrix, [intermediate_size, intermediate_size], axis=-1)
+            gate, up = paddle.split(
+                matrix, [intermediate_size, intermediate_size], axis=-1
+            )
             return paddle.concat([ortho_fn(gate), ortho_fn(up)], axis=-1)
 
-        def _mla_per_head(matrix_2d_global, ortho_fn, head_num=None, axis=None, head_split_sizes=None):
+        def _mla_per_head(
+            matrix_2d_global,
+            ortho_fn,
+            head_num=None,
+            axis=None,
+            head_split_sizes=None,
+        ):
             import paddle
 
-            split_args = head_num if head_split_sizes is None else head_split_sizes * head_num
+            split_args = (
+                head_num
+                if head_split_sizes is None
+                else head_split_sizes * head_num
+            )
             groups = paddle.split(matrix_2d_global, split_args, axis=axis)
             processed_groups = [ortho_fn(group) for group in groups]
             return paddle.concat(processed_groups, axis=axis)
 
         def _moe_experts(matrix_3d_global, ortho_fn):
             if matrix_3d_global.ndim != 3:
-                raise ValueError(f"MoE expert split expects 3D tensor, got shape {matrix_3d_global.shape}")
+                raise ValueError(
+                    f"MoE expert split expects 3D tensor, got shape {matrix_3d_global.shape}"
+                )
 
             return ortho_fn(matrix_3d_global)
 
@@ -151,21 +189,31 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
         num_attention_head = config.num_attention_heads
         num_key_value_heads = config.num_key_value_heads
         num_key_value_groups = num_attention_head // num_key_value_heads
-        use_mla = getattr(config, "q_lora_rank", None) and config.q_lora_rank > 0
+        use_mla = (
+            getattr(config, "q_lora_rank", None) and config.q_lora_rank > 0
+        )
         moe_expert_fusion = getattr(config, "moe_expert_fusion", False)
         use_gated_attn = getattr(config, "use_gated_attn", False)
 
-        muon_qkv_update_mode = muon_configs.get("muon_qkv_update_mode", "split_head")
+        muon_qkv_update_mode = muon_configs.get(
+            "muon_qkv_update_mode", "split_head"
+        )
         muon_ffn_split = muon_configs.get("muon_ffn_split", False)
 
         qkv_slice_fn = None
         qkv_kwargs = {}
         if muon_qkv_update_mode == "split_head":
             qkv_slice_fn = _qkv_per_head
-            qkv_kwargs = {"kv_head_num": num_key_value_heads, "num_key_value_groups": num_key_value_groups}
+            qkv_kwargs = {
+                "kv_head_num": num_key_value_heads,
+                "num_key_value_groups": num_key_value_groups,
+            }
         elif muon_qkv_update_mode == "split_qkv":
             qkv_slice_fn = _qkv_sep
-            qkv_kwargs = {"kv_head_num": num_key_value_heads, "num_key_value_groups": num_key_value_groups}
+            qkv_kwargs = {
+                "kv_head_num": num_key_value_heads,
+                "num_key_value_groups": num_key_value_groups,
+            }
 
         ffn_slice_fn = _ffn_gate_up if muon_ffn_split else None
 
@@ -177,16 +225,24 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
 
         def _add_layer_slice_config(prefix):
             if not use_mla and qkv_slice_fn is not None:
-                slice_config[f"{prefix}.self_attn.qkv_proj.weight"] = (qkv_slice_fn, qkv_kwargs.copy())
+                slice_config[f"{prefix}.self_attn.qkv_proj.weight"] = (
+                    qkv_slice_fn,
+                    qkv_kwargs.copy(),
+                )
 
             if ffn_slice_fn is not None:
                 moe_intermediate_size = config.moe_intermediate_size
                 intermediate_size = config.intermediate_size
 
                 param_name = f"{prefix}.mlp.experts.up_gate_proj.weight"
-                slice_config[param_name] = (ffn_slice_fn, {"intermediate_size": moe_intermediate_size})
+                slice_config[param_name] = (
+                    ffn_slice_fn,
+                    {"intermediate_size": moe_intermediate_size},
+                )
 
-                slice_config[f"{prefix}.mlp.shared_experts.up_gate_proj.weight"] = (
+                slice_config[
+                    f"{prefix}.mlp.shared_experts.up_gate_proj.weight"
+                ] = (
                     ffn_slice_fn,
                     {"intermediate_size": moe_intermediate_size},
                 )
@@ -195,18 +251,32 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
                     {"intermediate_size": moe_intermediate_size},
                 )
                 param_name = f"{prefix}.mlp.up_gate_proj.weight"
-                slice_config[param_name] = (ffn_slice_fn, {"intermediate_size": intermediate_size})
+                slice_config[param_name] = (
+                    ffn_slice_fn,
+                    {"intermediate_size": intermediate_size},
+                )
 
-                if hasattr(config, "n_routed_experts") and config.n_routed_experts > 0:
+                if (
+                    hasattr(config, "n_routed_experts")
+                    and config.n_routed_experts > 0
+                ):
                     for expert_idx in range(config.n_routed_experts):
-                        slice_config[f"{prefix}.mlp.experts.{expert_idx}.up_gate_proj.weight"] = (
+                        slice_config[
+                            f"{prefix}.mlp.experts.{expert_idx}.up_gate_proj.weight"
+                        ] = (
                             ffn_slice_fn,
                             {"intermediate_size": moe_intermediate_size},
                         )
 
             if moe_expert_fusion and fused_moe_fn is not None:
-                slice_config[f"{prefix}.mlp.experts.down_proj.weight"] = (fused_moe_fn, {})
-                slice_config[f"{prefix}.mlp.grouped_gemm_experts.weight2"] = (fused_moe_fn, {})
+                slice_config[f"{prefix}.mlp.experts.down_proj.weight"] = (
+                    fused_moe_fn,
+                    {},
+                )
+                slice_config[f"{prefix}.mlp.grouped_gemm_experts.weight2"] = (
+                    fused_moe_fn,
+                    {},
+                )
 
             if use_mla and mla_slice_fn is not None:
                 assert (
@@ -221,13 +291,25 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
                     {
                         "head_num": num_attention_head,
                         "axis": -1,
-                        "head_split_sizes": [config.qk_nope_head_dim, config.qk_rope_head_dim],
+                        "head_split_sizes": [
+                            config.qk_nope_head_dim,
+                            config.qk_rope_head_dim,
+                        ],
                     },
                 )
 
-                slice_config[f"{prefix}.self_attn.kv_a_proj_with_mqa.weight"] = (
+                slice_config[
+                    f"{prefix}.self_attn.kv_a_proj_with_mqa.weight"
+                ] = (
                     mla_slice_fn,
-                    {"head_num": 1, "axis": -1, "head_split_sizes": [config.kv_lora_rank, config.qk_rope_head_dim]},
+                    {
+                        "head_num": 1,
+                        "axis": -1,
+                        "head_split_sizes": [
+                            config.kv_lora_rank,
+                            config.qk_rope_head_dim,
+                        ],
+                    },
                 )
 
                 slice_config[f"{prefix}.self_attn.kv_b_proj.weight"] = (
@@ -235,7 +317,10 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
                     {
                         "head_num": num_attention_head,
                         "axis": -1,
-                        "head_split_sizes": [config.qk_nope_head_dim, config.v_head_dim],
+                        "head_split_sizes": [
+                            config.qk_nope_head_dim,
+                            config.v_head_dim,
+                        ],
                     },
                 )
 
@@ -252,11 +337,19 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
         if mtp_num_layers > 0:
             num_nextn_predict_layers = mtp_num_layers
         else:
-            num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
+            num_nextn_predict_layers = (
+                config.num_nextn_predict_layers
+                if config.num_nextn_predict_layers
+                else 0
+            )
         for layer_idx in range(num_nextn_predict_layers):
-            _add_layer_slice_config(f"model.layers.{num_hidden_layers + layer_idx}")
+            _add_layer_slice_config(
+                f"model.layers.{num_hidden_layers + layer_idx}"
+            )
         for layer_idx in range(num_nextn_predict_layers):
-            _add_layer_slice_config(f"model.layers.{num_hidden_layers + layer_idx}.transformer_layer")
+            _add_layer_slice_config(
+                f"model.layers.{num_hidden_layers + layer_idx}.transformer_layer"
+            )
 
         return slice_config
 
@@ -273,7 +366,10 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
         """
         from functools import partial
 
-        from paddle.optimizer.muon import MuonParamInfo, _default_should_use_muon
+        from paddle.optimizer.muon import (
+            MuonParamInfo,
+            _default_should_use_muon,
+        )
 
         info_map = {}
         exclude_patterns = config.muon_configs["muon_exclude_patterns"]
@@ -293,7 +389,9 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
 
         for pp_name, param in model.named_parameters():
             name = pp_to_single.get(pp_name, pp_name)
-            use_muon = _default_should_use_muon(name, param.shape, exclude_patterns) and _default_should_use_muon(
+            use_muon = _default_should_use_muon(
+                name, param.shape, exclude_patterns
+            ) and _default_should_use_muon(
                 param.name, param.shape, exclude_patterns
             )
 
@@ -330,11 +428,19 @@ class GlmMoeDsaForCausalLM(GlmMoeDsaPreTrainedModel):
 
     def __new__(cls, config):
         # Hybrid parallel config convert.
-        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
+        config.tensor_model_parallel_size = max(
+            config.tensor_model_parallel_size, 1
+        )
         config.context_parallel_size = max(config.context_parallel_size, 1)
-        config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
-        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
-        config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+        config.pipeline_model_parallel_size = max(
+            config.pipeline_model_parallel_size, 1
+        )
+        config.virtual_pipeline_model_parallel_size = max(
+            config.virtual_pipeline_model_parallel_size, 1
+        )
+        config.expert_model_parallel_size = max(
+            config.expert_model_parallel_size, 1
+        )
         config.fuse_rms_norm = True
         config.multi_latent_attention = True
         model_provider_class = GLMMoEModelProvider
@@ -351,16 +457,26 @@ class GlmMoeDsaForCausalLM(GlmMoeDsaPreTrainedModel):
         return gpt_model
 
 
-class GlmMoeDsaForCausalLMPipe(GlmMoeDsaPreTrainedModel, GeneralModelForCausalLMPipe):
+class GlmMoeDsaForCausalLMPipe(
+    GlmMoeDsaPreTrainedModel, GeneralModelForCausalLMPipe
+):
     is_fleet = True
 
     def __new__(cls, config):
         # Hybrid parallel config convert.
-        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
+        config.tensor_model_parallel_size = max(
+            config.tensor_model_parallel_size, 1
+        )
         config.context_parallel_size = max(config.context_parallel_size, 1)
-        config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
-        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
-        config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+        config.pipeline_model_parallel_size = max(
+            config.pipeline_model_parallel_size, 1
+        )
+        config.virtual_pipeline_model_parallel_size = max(
+            config.virtual_pipeline_model_parallel_size, 1
+        )
+        config.expert_model_parallel_size = max(
+            config.expert_model_parallel_size, 1
+        )
         config.fuse_rms_norm = True
         config.multi_latent_attention = True
         model_provider_class = GLMMoEModelProvider

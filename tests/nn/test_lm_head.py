@@ -27,7 +27,9 @@ class TestLMHead(unittest.TestCase):
         lm_head = LMHead(config)
 
         # Check weight shape and attributes
-        self.assertEqual(lm_head.weight.shape, [config.vocab_size, config.hidden_size])
+        self.assertEqual(
+            lm_head.weight.shape, [config.vocab_size, config.hidden_size]
+        )
         self.assertFalse(lm_head.weight.is_distributed)
         self.assertIsNone(lm_head.bias)
         self.assertFalse(lm_head.vocab_parallel)
@@ -38,7 +40,9 @@ class TestLMHead(unittest.TestCase):
         config.tie_word_embeddings = True
         lm_head = LMHead(config)
 
-        self.assertEqual(lm_head.weight.shape, [config.vocab_size, config.hidden_size])
+        self.assertEqual(
+            lm_head.weight.shape, [config.vocab_size, config.hidden_size]
+        )
 
     def test_forward_normal(self):
         # Test normal forward pass

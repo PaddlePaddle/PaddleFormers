@@ -24,7 +24,12 @@ class TestQloraWeightQuantize(unittest.TestCase):
         from paddleformers.quantization.qlora import qlora_weight_quantize
 
         weight = paddle.randn([128, 256], dtype=paddle.float16).cuda()
-        result = qlora_weight_quantize(weight=weight, quant_algo="nf4", double_quant=False, return_dict=True)
+        result = qlora_weight_quantize(
+            weight=weight,
+            quant_algo="nf4",
+            double_quant=False,
+            return_dict=True,
+        )
         self.assertIn("quant_weight", result)
         self.assertIn("weight_scale", result)
 
@@ -34,7 +39,11 @@ class TestQloraWeightQuantize(unittest.TestCase):
 
         weight = paddle.randn([128, 256], dtype=paddle.float16).cuda()
         result = qlora_weight_quantize(
-            weight=weight, quant_algo="nf4", double_quant=True, return_dict=True, linear_name="test_linear"
+            weight=weight,
+            quant_algo="nf4",
+            double_quant=True,
+            return_dict=True,
+            linear_name="test_linear",
         )
         self.assertIn("test_linear.quant_weight", result)
         self.assertIn("test_linear.qweight_scale", result)
@@ -47,7 +56,10 @@ class TestQloraWeightQuantize(unittest.TestCase):
 
         weight = paddle.randn([128, 256], dtype=paddle.float16).cuda()
         quant_weight, state = qlora_weight_quantize(
-            weight=weight, quant_algo="nf4", double_quant=False, return_dict=False
+            weight=weight,
+            quant_algo="nf4",
+            double_quant=False,
+            return_dict=False,
         )
         self.assertIsNotNone(quant_weight)
         self.assertIsNotNone(state)
@@ -67,7 +79,10 @@ class TestQloraWeightDequantize(unittest.TestCase):
 
         weight = paddle.randn([128, 256], dtype=paddle.float16).cuda()
         quant_weight, state = qlora_weight_quantize(
-            weight=weight, quant_algo="nf4", double_quant=False, return_dict=False
+            weight=weight,
+            quant_algo="nf4",
+            double_quant=False,
+            return_dict=False,
         )
         dequant_weight = qlora_weight_dequantize(quant_weight, "nf4", state)
         self.assertEqual(dequant_weight.shape, weight.shape)
@@ -80,7 +95,9 @@ class TestQloraWeightQuantizeDequantize(unittest.TestCase):
 
     def test_quantize_dequantize_shape(self):
         """Test that quantize_dequantize preserves shape and dtype."""
-        from paddleformers.quantization.qlora import qlora_weight_quantize_dequantize
+        from paddleformers.quantization.qlora import (
+            qlora_weight_quantize_dequantize,
+        )
 
         weight = paddle.randn([64, 128], dtype=paddle.float16).cuda()
         result = qlora_weight_quantize_dequantize(weight, quant_algo="nf4")
@@ -102,14 +119,23 @@ class TestQloraWeightLinear(unittest.TestCase):
 
         in_features = 64
         out_features = 32
-        weight = paddle.randn([in_features, out_features], dtype=paddle.float16).cuda()
+        weight = paddle.randn(
+            [in_features, out_features], dtype=paddle.float16
+        ).cuda()
         quant_weight, state = qlora_weight_quantize(
-            weight=weight, quant_algo="nf4", double_quant=False, return_dict=False
+            weight=weight,
+            quant_algo="nf4",
+            double_quant=False,
+            return_dict=False,
         )
 
         x = paddle.randn([2, in_features], dtype=paddle.float16).cuda()
         output = qlora_weight_linear(
-            x=x, quant_weight=quant_weight, dtype=paddle.float16, state=state, quant_algo="nf4"
+            x=x,
+            quant_weight=quant_weight,
+            dtype=paddle.float16,
+            state=state,
+            quant_algo="nf4",
         )
         self.assertEqual(output.shape, [2, out_features])
 
@@ -122,9 +148,14 @@ class TestQloraWeightLinear(unittest.TestCase):
 
         in_features = 64
         out_features = 32
-        weight = paddle.randn([in_features, out_features], dtype=paddle.float16).cuda()
+        weight = paddle.randn(
+            [in_features, out_features], dtype=paddle.float16
+        ).cuda()
         quant_weight, state = qlora_weight_quantize(
-            weight=weight, quant_algo="nf4", double_quant=False, return_dict=False
+            weight=weight,
+            quant_algo="nf4",
+            double_quant=False,
+            return_dict=False,
         )
 
         bias = paddle.randn([out_features], dtype=paddle.float16).cuda()

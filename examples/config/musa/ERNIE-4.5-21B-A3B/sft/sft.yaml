@@ -1,8 +1,6 @@
 device: musa
-
 # stage
 stage: ernie_pretrain
-
 # data
 dataset_type: pretrain
 input_dir: "1.0 ./data/eb45_industrycorpus2_94k"
@@ -11,7 +9,6 @@ max_seq_len: 2048
 dataloader_num_workers: 8
 prefetch_factor: 32
 ignore_data_skip: 0
-
 # model
 model_name_or_path: model_configs/ERNIE-4p5-21B-A3B/
 tokenizer_name_or_path: examples/experiments/ernie_pretrain/ernie/src/tokenizers/tokenizer_model
@@ -19,7 +16,6 @@ moe_router_bias_update_rate: 0.001
 moe_with_send_router_loss: False
 moe_group: ep
 use_moe: true
-
 # train
 output_dir: ./output/
 num_consecutive: 32
@@ -62,29 +58,26 @@ global_batch_size: 128
 use_ortho_loss_callback: true
 same_data: True
 continue_training: False
-
 # sharding_parallel_config
 split_param: true
 sharding_comm_buffer_size_MB: 2048
-
 # tensor_parallel_config
 skip_profile_timer: False
 load_sharded_model: True
 save_sharded_model: True
 ignore_load_lr_and_optim: False
 gc_interval: 100000
-
 # ernie_model_config
 ernie_model_config:
-    use_quant_before_a2a: true
-    use_async_a2a: false
-    use_rms_qkv_recompute: true
-    moe_logging: true
-    use_recompute: false
-    num_nextn_predict_layers: 1
-    use_fp8_mlp: false
-    num_hidden_layers: 28
-    num_empty_layers_add_in_tail: 0
-    use_fp8_fuse_node: false
-    use_ep_comm_overlap: false
-    use_combine_before_a2a: true
+  use_quant_before_a2a: true
+  use_async_a2a: false
+  use_rms_qkv_recompute: true
+  moe_logging: true
+  use_recompute: false
+  num_nextn_predict_layers: 1
+  use_fp8_mlp: false
+  num_hidden_layers: 28
+  num_empty_layers_add_in_tail: 0
+  use_fp8_fuse_node: false
+  use_ep_comm_overlap: false
+  use_combine_before_a2a: true

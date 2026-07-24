@@ -11,7 +11,6 @@ on:
       can-skip:
         description: "Whether the workflow can be skipped."
         value: ${{ jobs.check-bypass.outputs.can-skip }}
-
 jobs:
   check-bypass:
     name: Check bypass
@@ -20,13 +19,13 @@ jobs:
     permissions:
       contents: read
     env:
-      CI_TEAM_MEMBERS: '["swgu98", "risemeup1" , "XieYunshen", "tianlef"]'
+      CI_TEAM_MEMBERS: '["swgu98", "risemeup1", "XieYunshen", "luotao1", "tianlef", "ooooo-create"]'
     outputs:
       can-skip: ${{ steps.check-bypass.outputs.can-skip }}
     steps:
       - id: check-bypass
         name: Check Bypass
-        uses: PFCCLab/ci-bypass@v1
+        uses: PFCCLab/ci-bypass@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           non-pull-request-event-strategy: 'never-skipped'

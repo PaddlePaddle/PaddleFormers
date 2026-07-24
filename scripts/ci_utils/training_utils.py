@@ -50,10 +50,19 @@ class TrainingTestRunner:
         def get_loss_lines(log_content, max_lines=30):
             """Extract lines containing loss information."""
             lines = log_content.split("\n")
-            loss_lines = [l for l in lines if "loss:" in l.lower() or "global_step" in l.lower()]
+            loss_lines = [
+                l
+                for l in lines
+                if "loss:" in l.lower() or "global_step" in l.lower()
+            ]
             if len(loss_lines) > max_lines:
-                return "\n".join(loss_lines[:max_lines]) + f"\n... ({len(loss_lines) - max_lines} more loss lines)"
-            return "\n".join(loss_lines) if loss_lines else "(no loss lines found)"
+                return (
+                    "\n".join(loss_lines[:max_lines])
+                    + f"\n... ({len(loss_lines) - max_lines} more loss lines)"
+                )
+            return (
+                "\n".join(loss_lines) if loss_lines else "(no loss lines found)"
+            )
 
         if not losses:
             msg = (
@@ -88,7 +97,9 @@ class TrainingTestRunner:
 
         # Compare with baseline
         try:
-            passed, details = compare_with_baseline(losses, self.baseline_path, tolerance=self.tolerance)
+            passed, details = compare_with_baseline(
+                losses, self.baseline_path, tolerance=self.tolerance
+            )
         except Exception as e:
             return (
                 False,
@@ -105,7 +116,9 @@ class TrainingTestRunner:
             )
 
         if not passed:
-            failed_steps = [step for step, res in details.items() if not res["passed"]]
+            failed_steps = [
+                step for step, res in details.items() if not res["passed"]
+            ]
             msg = (
                 f"\n{'=' * 80}\n"
                 f"LOSS PRECISION COMPARISON FAILED\n"
@@ -143,10 +156,14 @@ def _get_last_n_lines(text, n=100):
     lines = text.strip().split("\n")
     if len(lines) <= n:
         return text
-    return f"... (truncated, showing last {n} lines) ...\n" + "\n".join(lines[-n:])
+    return f"... (truncated, showing last {n} lines) ...\n" + "\n".join(
+        lines[-n:]
+    )
 
 
-def run_command_and_validate(cmd, baseline_path, log_file, working_dir=None, tolerance=1e-6, timeout=3600):
+def run_command_and_validate(
+    cmd, baseline_path, log_file, working_dir=None, tolerance=1e-6, timeout=3600
+):
     """
     Execute a shell command, capture output, and validate loss values.
 
@@ -177,7 +194,14 @@ def run_command_and_validate(cmd, baseline_path, log_file, working_dir=None, tol
 
     # Execute command
     try:
-        result = subprocess.run(cmd, shell=True, cwd=working_dir, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            cwd=working_dir,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
     except subprocess.TimeoutExpired as e:
         # Get partial output if available
         partial_stdout = e.stdout if e.stdout else ""
@@ -199,16 +223,16 @@ def run_command_and_validate(cmd, baseline_path, log_file, working_dir=None, tol
 
     # Create detailed log with metadata
     log_header = f"""
-{'=' * 80}
+{"=" * 80}
 TEST EXECUTION LOG
-{'=' * 80}
+{"=" * 80}
 Executed Command: {cmd}
-Working Directory: {working_dir or '(current)'}
+Working Directory: {working_dir or "(current)"}
 Baseline File: {baseline_path}
 Tolerance: {tolerance}
 Timeout: {timeout}s
 Return Code: {result.returncode}
-{'=' * 80}
+{"=" * 80}
 
 """
 

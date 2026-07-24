@@ -1,0 +1,72 @@
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+[project]
+name = "paddlefleet-ops"
+dynamic = ["version", "dependencies"]
+description = "PaddleFleet custom CUDA/C++ operators (self-developed kernels + DeepEP/DeepGEMM/SonicMoE/quack)"
+requires-python = ">=3.10"
+license = { text = "Apache 2.0" }
+authors = [{ name = "PaddlePaddle", email = "Paddle-better@baidu.com" }]
+maintainers = [{ name = "PaddlePaddle", email = "Paddle-better@baidu.com" }]
+keywords = ["PaddlePaddle", "Paddle", "gpu", "cuda", "custom-ops"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+[project.urls]
+Homepage = "https://github.com/PaddlePaddle/PaddleFleet"
+
+[build-system]
+requires = [
+    "setuptools>=66.1.0",
+    "pip",
+    "wheel",
+    "packaging",
+    "ninja==1.11.1.1",  # For nvidia-cudnn-frontend
+    "pybind11[global]>=2.13,<3", # For nvidia-cudnn-frontend
+]
+build-backend = "build_backend"
+backend-path = ["."]
+
+[tool.setuptools]
+include-package-data = true
+package-dir = { "" = "src" }
+
+[tool.setuptools.package-data]
+"paddlefleet_ops" = ["*", "**/*"]
+
+[tool.setuptools.exclude-package-data]
+"paddlefleet_ops" = ["*.pyc", "**/*.pyc", "__pycache__/*", "**/__pycache__/*"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["paddlefleet_ops*"]
+
+[tool.setuptools.dynamic]
+version = { attr = "paddlefleet_ops.version.__version__" }
+
+[tool.uv]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "src/paddlefleet_ops/_extensions/*.cu" },
+    { file = "third_party/" },
+]

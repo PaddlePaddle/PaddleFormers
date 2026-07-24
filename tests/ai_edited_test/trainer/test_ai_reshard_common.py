@@ -39,7 +39,10 @@ class TestIsShardingOpt(unittest.TestCase):
     def test_non_sharding_optimizer_returns_false(self):
         """Test that a regular optimizer returns False."""
         optimizer = MagicMock(spec=[])
-        with patch("paddleformers.trainer.utils.reshard.common.unwrap_optimizer", return_value=None):
+        with patch(
+            "paddleformers.trainer.utils.reshard.common.unwrap_optimizer",
+            return_value=None,
+        ):
             result = is_sharding_opt(optimizer)
             self.assertFalse(result)
 
@@ -58,17 +61,26 @@ class TestConvertOptNameToTname(unittest.TestCase):
     def test_beta_pow_conversion(self):
         """Test beta power accumulator name conversion."""
         tensor_names = ["linear.weight"]
-        opt_names = ["linear.weight_beta1_pow_acc_0", "linear.weight_beta2_pow_acc_0"]
+        opt_names = [
+            "linear.weight_beta1_pow_acc_0",
+            "linear.weight_beta2_pow_acc_0",
+        ]
         result = convert_opt_name_to_tname(tensor_names, opt_names)
-        self.assertEqual(result["linear.weight_beta1_pow_acc_0"], "linear.weight")
-        self.assertEqual(result["linear.weight_beta2_pow_acc_0"], "linear.weight")
+        self.assertEqual(
+            result["linear.weight_beta1_pow_acc_0"], "linear.weight"
+        )
+        self.assertEqual(
+            result["linear.weight_beta2_pow_acc_0"], "linear.weight"
+        )
 
     def test_fp32_master_conversion(self):
         """Test fp32 master weight name conversion."""
         tensor_names = ["linear.weight"]
         opt_names = ["linear.weight_fp32_master_0_moment1_0"]
         result = convert_opt_name_to_tname(tensor_names, opt_names)
-        self.assertEqual(result["linear.weight_fp32_master_0_moment1_0"], "linear.weight")
+        self.assertEqual(
+            result["linear.weight_fp32_master_0_moment1_0"], "linear.weight"
+        )
 
     def test_multiple_params(self):
         """Test conversion with multiple parameters."""
@@ -99,7 +111,10 @@ class TestNodeModelState(unittest.TestCase):
     def test_add_weights_with_rank(self):
         """Test adding weights with rank."""
         state = NodeModelState(group=None)
-        model_state_dict = {"w1": paddle.randn([2, 2]), "w2": paddle.randn([3, 3])}
+        model_state_dict = {
+            "w1": paddle.randn([2, 2]),
+            "w2": paddle.randn([3, 3]),
+        }
         state.add_weights(model_state_dict, rank=0)
         self.assertIn(("w1", 0), state.model_weights)
         self.assertIn(("w2", 0), state.model_weights)
@@ -185,7 +200,9 @@ class TestSplitModelState(unittest.TestCase):
 
     def test_basic_split(self):
         """Test splitting model state by group."""
-        model_state = OrderedDict([("w1", paddle.randn([2, 2])), ("w2", paddle.randn([3, 3]))])
+        model_state = OrderedDict(
+            [("w1", paddle.randn([2, 2])), ("w2", paddle.randn([3, 3]))]
+        )
         mock_group = MagicMock()
         mock_group.id = 0
         mock_getter = MagicMock()
@@ -217,7 +234,10 @@ class TestSplitOptState(unittest.TestCase):
         opt_state = OrderedDict(
             [
                 ("moment1", paddle.randn([2, 2])),
-                ("master_weights", OrderedDict([("mw1", paddle.randn([2, 2]))])),
+                (
+                    "master_weights",
+                    OrderedDict([("mw1", paddle.randn([2, 2]))]),
+                ),
                 ("LR_Scheduler", MagicMock()),
             ]
         )
@@ -239,14 +259,20 @@ class TestMergeOptState(unittest.TestCase):
         state1 = OrderedDict(
             [
                 ("moment1", paddle.randn([2, 2])),
-                ("master_weights", OrderedDict([("mw1", paddle.randn([2, 2]))])),
+                (
+                    "master_weights",
+                    OrderedDict([("mw1", paddle.randn([2, 2]))]),
+                ),
                 ("LR_Scheduler", None),
             ]
         )
         state2 = OrderedDict(
             [
                 ("moment2", paddle.randn([3, 3])),
-                ("master_weights", OrderedDict([("mw2", paddle.randn([3, 3]))])),
+                (
+                    "master_weights",
+                    OrderedDict([("mw2", paddle.randn([3, 3]))]),
+                ),
                 ("LR_Scheduler", MagicMock()),
             ]
         )

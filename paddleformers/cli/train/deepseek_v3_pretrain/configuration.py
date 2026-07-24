@@ -11,7 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-""" DeepSeekV2 model configuration"""
+"""DeepSeekV2 model configuration"""
+
 from paddleformers.transformers.configuration_utils import PretrainedConfig
 
 __all__ = [
@@ -255,7 +256,9 @@ class DeepseekV2FastConfig(PretrainedConfig):
         self.stepped_recompute_fwd_gate_up = stepped_recompute_fwd_gate_up
         self.is_split_group_gemm = is_split_group_gemm
         self.fakse_gate_restrict_balance = fakse_gate_restrict_balance
-        self.adaptive_remained_O1_recompute_ratio = adaptive_remained_O1_recompute_ratio
+        self.adaptive_remained_O1_recompute_ratio = (
+            adaptive_remained_O1_recompute_ratio
+        )
         self.offline_quant_expert_weight = offline_quant_expert_weight
         self.mlp_bwd_subbatch_rows = mlp_bwd_subbatch_rows
         self.mlp_fwd_subbatch_rows = mlp_fwd_subbatch_rows

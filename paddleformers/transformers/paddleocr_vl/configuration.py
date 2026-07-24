@@ -12,16 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-""" PaddleOCR-VL model configuration."""
+"""PaddleOCR-VL model configuration."""
 
 from ..configuration_utils import PretrainedConfig
-from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
+from ..modeling_rope_utils import (
+    rope_config_validation,
+    standardize_rope_params,
+)
 
 __all__ = ["PaddleOCRVLConfig", "PaddleOCRVisionConfig"]
 
 
 class PaddleOCRVisionConfig(PretrainedConfig):
-
     model_type = "paddleocr_vl"
     base_config_key = "vision_config"
 
@@ -127,7 +129,9 @@ class PaddleOCRVLConfig(PretrainedConfig):
             **kwargs,
         )
         if isinstance(vision_config, dict):
-            self.vision_config = self.sub_configs["vision_config"](**vision_config)
+            self.vision_config = self.sub_configs["vision_config"](
+                **vision_config
+            )
         elif vision_config is None:
             self.vision_config = self.sub_configs["vision_config"]()
         self.vocab_size = vocab_size
@@ -208,7 +212,9 @@ class PaddleOCRVLConfig(PretrainedConfig):
         )
 
     def __getattribute__(self, key):
-        if "text_config" in super().__getattribute__("__dict__") and key not in [
+        if "text_config" in super().__getattribute__(
+            "__dict__"
+        ) and key not in [
             "_name_or_path",
             "model_type",
             "dtype",

@@ -1,3 +1,17 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # Copyright 2025 the HuggingFace Team & PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,7 +29,7 @@
 """Image processor class for GLM-4.6V (PaddlePaddle version)."""
 
 import math
-from typing import Dict, List, Optional, Union
+from typing import Optional
 
 import numpy as np
 
@@ -50,7 +64,7 @@ def is_scaled_image(image: np.ndarray) -> bool:
     return np.min(image) >= 0 and np.max(image) <= 1
 
 
-def make_batched_images(images) -> List[ImageInput]:
+def make_batched_images(images) -> list[ImageInput]:
     """
     Accepts images in list or nested list format, and makes a flat list of images for preprocessing.
 
@@ -61,7 +75,11 @@ def make_batched_images(images) -> List[ImageInput]:
     Returns:
         list: A flat list of images.
     """
-    if isinstance(images, (list, tuple)) and isinstance(images[0], (list, tuple)) and is_valid_image(images[0][0]):
+    if (
+        isinstance(images, (list, tuple))
+        and isinstance(images[0], (list, tuple))
+        and is_valid_image(images[0][0])
+    ):
         return [img for img_list in images for img in img_list]
     elif isinstance(images, (list, tuple)) and is_valid_image(images[0]):
         return images
@@ -101,7 +119,9 @@ def smart_resize(
         `Tuple[int, int]`: Resized (height, width).
     """
     if num_frames < temporal_factor:
-        raise ValueError(f"num_frames={num_frames} must be >= temporal_factor={temporal_factor}")
+        raise ValueError(
+            f"num_frames={num_frames} must be >= temporal_factor={temporal_factor}"
+        )
 
     # Ensure minimum spatial size
     if height < factor or width < factor:
@@ -171,10 +191,10 @@ class Glm46VImageProcessor(BaseImageProcessor):
         do_resize: bool = True,
         resample: int = PILImageResampling.BICUBIC,
         do_rescale: bool = True,
-        rescale_factor: Union[int, float] = 1 / 255,
+        rescale_factor: float = 1 / 255,
         do_normalize: bool = True,
-        image_mean: Optional[Union[float, List[float]]] = None,
-        image_std: Optional[Union[float, List[float]]] = None,
+        image_mean: Optional[float | list[float]] = None,
+        image_std: Optional[float | list[float]] = None,
         do_convert_rgb: bool = True,
         min_pixels: int = 112 * 112,
         max_pixels: int = 14 * 14 * 2 * 2 * 2 * 6144,
@@ -189,7 +209,9 @@ class Glm46VImageProcessor(BaseImageProcessor):
         self.do_rescale = do_rescale
         self.rescale_factor = rescale_factor
         self.do_normalize = do_normalize
-        self.image_mean = image_mean if image_mean is not None else OPENAI_CLIP_MEAN
+        self.image_mean = (
+            image_mean if image_mean is not None else OPENAI_CLIP_MEAN
+        )
         self.image_std = image_std if image_std is not None else OPENAI_CLIP_STD
         self.do_convert_rgb = do_convert_rgb
         self.min_pixels = min_pixels
@@ -199,9 +221,15 @@ class Glm46VImageProcessor(BaseImageProcessor):
         self.merge_size = merge_size
         self.size = {"shortest_edge": min_pixels, "longest_edge": max_pixels}
 
-    def get_smarted_resize(self, height, width, min_pixels=None, max_pixels=None):
-        actual_min_pixels = min_pixels if min_pixels is not None else self.min_pixels
-        actual_max_pixels = max_pixels if max_pixels is not None else self.max_pixels
+    def get_smarted_resize(
+        self, height, width, min_pixels=None, max_pixels=None
+    ):
+        actual_min_pixels = (
+            min_pixels if min_pixels is not None else self.min_pixels
+        )
+        actual_max_pixels = (
+            max_pixels if max_pixels is not None else self.max_pixels
+        )
         resized_height, resized_width = smart_resize(
             self.temporal_patch_size,
             height,
@@ -216,16 +244,29 @@ class Glm46VImageProcessor(BaseImageProcessor):
             resized_width // self.patch_size,
         )
 
-    def set_pixels(self, min_pixels: Optional[int] = None, max_pixels: Optional[int] = None, msg: str = ""):
+    def set_pixels(
+        self,
+        min_pixels: Optional[int] = None,
+        max_pixels: Optional[int] = None,
+        msg: str = "",
+    ):
         """Dynamically update min/max pixel constraints."""
         if min_pixels is not None:
-            assert isinstance(min_pixels, int) and min_pixels >= 0, "min_pixels must be a non-negative int"
-            logger.info(f"{msg} Glm46VImageProcessor set min_pixels = {min_pixels}")
+            assert isinstance(min_pixels, int) and min_pixels >= 0, (
+                "min_pixels must be a non-negative int"
+            )
+            logger.info(
+                f"{msg} Glm46VImageProcessor set min_pixels = {min_pixels}"
+            )
             self.min_pixels = min_pixels
             self.size["shortest_edge"] = min_pixels
         if max_pixels is not None:
-            assert isinstance(max_pixels, int) and max_pixels > 0, "max_pixels must be a positive int"
-            logger.info(f"{msg} Glm46VImageProcessor set max_pixels = {max_pixels}")
+            assert isinstance(max_pixels, int) and max_pixels > 0, (
+                "max_pixels must be a positive int"
+            )
+            logger.info(
+                f"{msg} Glm46VImageProcessor set max_pixels = {max_pixels}"
+            )
             self.max_pixels = max_pixels
             self.size["longest_edge"] = max_pixels
 
@@ -248,8 +289,12 @@ class Glm46VImageProcessor(BaseImageProcessor):
         Returns:
             `int`: Number of image patches.
         """
-        actual_min_pixels = min_pixels if min_pixels is not None else self.min_pixels
-        actual_max_pixels = max_pixels if max_pixels is not None else self.max_pixels
+        actual_min_pixels = (
+            min_pixels if min_pixels is not None else self.min_pixels
+        )
+        actual_max_pixels = (
+            max_pixels if max_pixels is not None else self.max_pixels
+        )
         factor = self.patch_size * self.merge_size
 
         resized_height, resized_width = smart_resize(
@@ -267,17 +312,17 @@ class Glm46VImageProcessor(BaseImageProcessor):
 
     def _preprocess(
         self,
-        images: Union[ImageInput, List[ImageInput]],
+        images: ImageInput | list[ImageInput],
         do_resize: Optional[bool] = None,
         resample: Optional[PILImageResampling] = None,
         do_rescale: Optional[bool] = None,
         rescale_factor: Optional[float] = None,
         do_normalize: Optional[bool] = None,
-        image_mean: Optional[Union[float, List[float]]] = None,
-        image_std: Optional[Union[float, List[float]]] = None,
+        image_mean: Optional[float | list[float]] = None,
+        image_std: Optional[float | list[float]] = None,
         do_convert_rgb: Optional[bool] = None,
         data_format: Optional[ChannelDimension] = ChannelDimension.FIRST,
-        input_data_format: Optional[Union[str, ChannelDimension]] = None,
+        input_data_format: Optional[str | ChannelDimension] = None,
     ):
         """
         Core preprocessing pipeline for a single image or a temporal sequence of frames.
@@ -324,7 +369,9 @@ class Glm46VImageProcessor(BaseImageProcessor):
         # Use the size of the first frame as the reference for smart_resize
         from ..image_utils import get_image_size
 
-        height, width = get_image_size(images_np[0], channel_dim=input_data_format)
+        height, width = get_image_size(
+            images_np[0], channel_dim=input_data_format
+        )
         resized_height, resized_width = height, width
 
         factor = self.patch_size * self.merge_size
@@ -349,7 +396,9 @@ class Glm46VImageProcessor(BaseImageProcessor):
                     if input_data_format == ChannelDimension.FIRST
                     else image.astype(np.uint8)
                 )
-                pil_img = pil_img.resize((resized_width, resized_height), resample=resample)
+                pil_img = pil_img.resize(
+                    (resized_width, resized_height), resample=resample
+                )
                 image = to_numpy_array(pil_img)
                 # After PIL, image is HWC; reset input format accordingly
                 _cur_format = ChannelDimension.LAST
@@ -364,7 +413,9 @@ class Glm46VImageProcessor(BaseImageProcessor):
                 image -= np.array(image_mean, dtype=np.float32)
                 image /= np.array(image_std, dtype=np.float32)
 
-            image = to_channel_dimension_format(image, data_format, input_channel_dim=_cur_format)
+            image = to_channel_dimension_format(
+                image, data_format, input_channel_dim=_cur_format
+            )
             processed_images.append(image)
 
         # Stack frames: shape (num_frames, C, H, W) if FIRST
@@ -377,7 +428,9 @@ class Glm46VImageProcessor(BaseImageProcessor):
 
         # Pad temporal dimension to be divisible by temporal_patch_size
         if patches.shape[0] % self.temporal_patch_size != 0:
-            pad_len = self.temporal_patch_size - (patches.shape[0] % self.temporal_patch_size)
+            pad_len = self.temporal_patch_size - (
+                patches.shape[0] % self.temporal_patch_size
+            )
             repeats = np.repeat(patches[-1][np.newaxis], pad_len, axis=0)
             patches = np.concatenate([patches, repeats], axis=0)
 
@@ -404,7 +457,10 @@ class Glm46VImageProcessor(BaseImageProcessor):
         patches = patches.transpose(0, 3, 6, 4, 7, 2, 1, 5, 8)
         flatten_patches = patches.reshape(
             grid_t * grid_h * grid_w,
-            channel * self.temporal_patch_size * self.patch_size * self.patch_size,
+            channel
+            * self.temporal_patch_size
+            * self.patch_size
+            * self.patch_size,
         )
 
         return flatten_patches, (grid_t, grid_h, grid_w)
@@ -414,17 +470,17 @@ class Glm46VImageProcessor(BaseImageProcessor):
         images: ImageInput,
         videos=None,
         do_resize: Optional[bool] = None,
-        size: Optional[Dict[str, int]] = None,
+        size: Optional[dict[str, int]] = None,
         resample: Optional[PILImageResampling] = None,
         do_rescale: Optional[bool] = None,
         rescale_factor: Optional[float] = None,
         do_normalize: Optional[bool] = None,
-        image_mean: Optional[Union[float, List[float]]] = None,
-        image_std: Optional[Union[float, List[float]]] = None,
+        image_mean: Optional[float | list[float]] = None,
+        image_std: Optional[float | list[float]] = None,
         do_convert_rgb: Optional[bool] = None,
         return_tensors=None,
         data_format: Optional[ChannelDimension] = ChannelDimension.FIRST,
-        input_data_format: Optional[Union[str, ChannelDimension]] = None,
+        input_data_format: Optional[str | ChannelDimension] = None,
     ) -> BatchFeature:
         """
         Preprocess one or more images.
@@ -459,27 +515,43 @@ class Glm46VImageProcessor(BaseImageProcessor):
         do_resize = do_resize if do_resize is not None else self.do_resize
         resample = resample if resample is not None else self.resample
         do_rescale = do_rescale if do_rescale is not None else self.do_rescale
-        rescale_factor = rescale_factor if rescale_factor is not None else self.rescale_factor
-        do_normalize = do_normalize if do_normalize is not None else self.do_normalize
+        rescale_factor = (
+            rescale_factor
+            if rescale_factor is not None
+            else self.rescale_factor
+        )
+        do_normalize = (
+            do_normalize if do_normalize is not None else self.do_normalize
+        )
         image_mean = image_mean if image_mean is not None else self.image_mean
         image_std = image_std if image_std is not None else self.image_std
-        do_convert_rgb = do_convert_rgb if do_convert_rgb is not None else self.do_convert_rgb
+        do_convert_rgb = (
+            do_convert_rgb
+            if do_convert_rgb is not None
+            else self.do_convert_rgb
+        )
 
         # Allow caller to override pixel bounds via `size`
         if size is not None:
             if "shortest_edge" not in size or "longest_edge" not in size:
-                raise ValueError("size must contain 'shortest_edge' and 'longest_edge' keys.")
+                raise ValueError(
+                    "size must contain 'shortest_edge' and 'longest_edge' keys."
+                )
             self.min_pixels = size["shortest_edge"]
             self.max_pixels = size["longest_edge"]
 
         if videos is not None:
-            raise NotImplementedError("Video input is not yet supported in Glm46VImageProcessor.")
+            raise NotImplementedError(
+                "Video input is not yet supported in Glm46VImageProcessor."
+            )
 
         if images is not None:
             images = make_batched_images(images)
 
         if images is not None and not valid_images(images):
-            raise ValueError("Invalid image type. Must be of type PIL.Image.Image, numpy.ndarray, or paddle.Tensor.")
+            raise ValueError(
+                "Invalid image type. Must be of type PIL.Image.Image, numpy.ndarray, or paddle.Tensor."
+            )
 
         data = {}
         if images is not None:
@@ -503,6 +575,11 @@ class Glm46VImageProcessor(BaseImageProcessor):
 
             pixel_values = np.array(pixel_values)
             vision_grid_thws = np.array(vision_grid_thws)
-            data.update({"pixel_values": pixel_values, "image_grid_thw": vision_grid_thws})
+            data.update(
+                {
+                    "pixel_values": pixel_values,
+                    "image_grid_thw": vision_grid_thws,
+                }
+            )
 
         return BatchFeature(data=data, tensor_type=return_tensors)

@@ -16,7 +16,10 @@
 from typing import Optional, TypedDict
 
 from ..configuration_utils import PretrainedConfig
-from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
+from ..modeling_rope_utils import (
+    rope_config_validation,
+    standardize_rope_params,
+)
 
 
 class RopeParameters(TypedDict, total=False):
@@ -315,12 +318,18 @@ class Glm4vMoeTextConfig(PretrainedConfig):
         # RoPE
         self.rope_theta = rope_theta
         default_rope_params = kwargs.setdefault("rope_scaling", {})
-        self.rope_parameters = rope_parameters if rope_parameters is not None else default_rope_params
+        self.rope_parameters = (
+            rope_parameters
+            if rope_parameters is not None
+            else default_rope_params
+        )
 
         # Standardize and validate the correctness of rotary position embeddings parameters
         self.rope_parameters.setdefault("rope_theta", self.rope_theta)
         if "partial_rotary_factor" in kwargs:
-            self.rope_parameters.setdefault("partial_rotary_factor", kwargs["partial_rotary_factor"])
+            self.rope_parameters.setdefault(
+                "partial_rotary_factor", kwargs["partial_rotary_factor"]
+            )
             ignore_keys_at_rope_validation = {"partial_rotary_factor"}
 
         standardize_rope_params(self)
@@ -372,7 +381,10 @@ class Glm4vMoeConfig(PretrainedConfig):
     ```"""
 
     model_type = "glm4v_moe"
-    sub_configs = {"vision_config": Glm4vMoeVisionConfig, "text_config": Glm4vMoeTextConfig}
+    sub_configs = {
+        "vision_config": Glm4vMoeVisionConfig,
+        "text_config": Glm4vMoeTextConfig,
+    }
     keys_to_ignore_at_inference = ["past_key_values"]
 
     def __init__(
@@ -389,7 +401,9 @@ class Glm4vMoeConfig(PretrainedConfig):
         **kwargs,
     ):
         if isinstance(vision_config, dict):
-            self.vision_config = self.sub_configs["vision_config"](**vision_config)
+            self.vision_config = self.sub_configs["vision_config"](
+                **vision_config
+            )
         elif vision_config is None:
             self.vision_config = self.sub_configs["vision_config"]()
 
@@ -410,8 +424,19 @@ class Glm4vMoeConfig(PretrainedConfig):
 
     def __setattr__(self, key, value):
         if (
-            (text_config := super().__getattribute__("__dict__").get("text_config")) is not None
-            and key not in ["_name_or_path", "model_type", "dtype", "_attn_implementation_internal"]
+            (
+                text_config := super()
+                .__getattribute__("__dict__")
+                .get("text_config")
+            )
+            is not None
+            and key
+            not in [
+                "_name_or_path",
+                "model_type",
+                "dtype",
+                "_attn_implementation_internal",
+            ]
             and key in text_config.__dict__
         ):
             setattr(text_config, key, value)
@@ -419,7 +444,9 @@ class Glm4vMoeConfig(PretrainedConfig):
             super().__setattr__(key, value)
 
     def __getattribute__(self, key):
-        if "text_config" in super().__getattribute__("__dict__") and key not in [
+        if "text_config" in super().__getattribute__(
+            "__dict__"
+        ) and key not in [
             "_name_or_path",
             "model_type",
             "dtype",

@@ -11,8 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""cli
-"""
+"""cli"""
+
 import os
 import shlex
 import subprocess
@@ -36,7 +36,9 @@ parent_dir = script_dir.parent.parent
 if str(parent_dir) not in sys.path:
     sys.path.insert(0, str(parent_dir))
 
-os.environ["PYTHONPATH"] = f"{parent_dir!s}{os.pathsep}{os.environ.get('PYTHONPATH', '')}"
+os.environ["PYTHONPATH"] = (
+    f"{parent_dir!s}{os.pathsep}{os.environ.get('PYTHONPATH', '')}"
+)
 
 
 USAGE = (
@@ -69,7 +71,9 @@ def main():
 
     command = sys.argv[1] if len(sys.argv) > 1 else "help"
     distributed_funcs = ["train", "export"]
-    paddleformers_dist_log = os.getenv("PADDLEFORMERS_DIST_LOG", "paddleformers_dist_log")
+    paddleformers_dist_log = os.getenv(
+        "PADDLEFORMERS_DIST_LOG", "paddleformers_dist_log"
+    )
     nnodes = os.getenv("NNODES", "1")
     rank = os.getenv("RANK", "0")
     master_ip = os.getenv("MASTER_ADDR", "127.0.0.1")
@@ -128,7 +132,9 @@ def main():
         set_env_if_empty("BKCL_TREE_THRESHOLD", "0")
         set_env_if_empty("BKCL_ENABLE_XDR", "1")
         set_env_if_empty("BKCL_RDMA_FORCE_TREE", "1")
-        set_env_if_empty("BKCL_RDMA_NICS", "eth1,eth1,eth2,eth2,eth3,eth3,eth4,eth4")
+        set_env_if_empty(
+            "BKCL_RDMA_NICS", "eth1,eth1,eth2,eth2,eth3,eth3,eth4,eth4"
+        )
         set_env_if_empty("BKCL_SOCKET_IFNAME", "eth0")
         set_env_if_empty("BKCL_FORCE_L3_RDMA", "0")
         set_env_if_empty("BKCL_USE_AR", "1")
@@ -150,7 +156,6 @@ def main():
         set_env_if_empty("FLAGS_embedding_deterministic", "1")
 
     if command in distributed_funcs:
-
         # launch distributed training
         env = deepcopy(os.environ)
         args_to_pass = " ".join(shlex.quote(arg) for arg in sys.argv[1:])

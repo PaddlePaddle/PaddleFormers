@@ -19,10 +19,20 @@ from typing import TYPE_CHECKING
 from ..utils.lazy_import import _LazyModule
 
 import_structure = {
-    "merge_model": ["save_file", "device_guard", "divide_lora_key_list", "divide_positions", "MergeModel"],
+    "merge_model": [
+        "save_file",
+        "device_guard",
+        "divide_lora_key_list",
+        "divide_positions",
+        "MergeModel",
+    ],
     "merge_method": ["MergeMethod"],
     "sparsify_method": ["SparsifyMethod"],
-    "merge_utils": ["divide_positions", "divide_lora_key_list", "divide_safetensor_key_list"],
+    "merge_utils": [
+        "divide_positions",
+        "divide_lora_key_list",
+        "divide_safetensor_key_list",
+    ],
     "merge_config": ["MergeConfig"],
 }
 

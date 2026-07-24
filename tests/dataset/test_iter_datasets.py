@@ -22,11 +22,19 @@ from tests.testing_utils import get_tests_dir
 class TestIterDataset(unittest.TestCase):
     def test_skip(self):
         fixture_path = get_tests_dir(os.path.join("fixtures", "dummy"))
-        first_ds = load_dataset("json", data_files=os.path.join(fixture_path, "tnews", "train.json"), lazy=True)[0]
+        first_ds = load_dataset(
+            "json",
+            data_files=os.path.join(fixture_path, "tnews", "train.json"),
+            lazy=True,
+        )[0]
         first_ds = first_ds.skip(5)
         first_data = next(iter(first_ds))
         second_ds = iter(
-            load_dataset("json", data_files=os.path.join(fixture_path, "tnews", "train.json"), lazy=True)[0]
+            load_dataset(
+                "json",
+                data_files=os.path.join(fixture_path, "tnews", "train.json"),
+                lazy=True,
+            )[0]
         )
         for i in range(5):
             next(second_ds)

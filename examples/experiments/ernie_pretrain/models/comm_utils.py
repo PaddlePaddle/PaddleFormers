@@ -40,10 +40,16 @@ def scatter(input, group=None, axis=0):
     rank = group.rank
     seq_len = input.shape[axis]
     assert seq_len % parallelism == 0, (
-        f"Input sequence length {seq_len} can't be divided exactly" f" by sequence parallelism {parallelism}"
+        f"Input sequence length {seq_len} can't be divided exactly"
+        f" by sequence parallelism {parallelism}"
     )
     interval = seq_len // parallelism
-    input = paddle.slice(input, axes=[axis], starts=[interval * rank], ends=[interval * (rank + 1)])
+    input = paddle.slice(
+        input,
+        axes=[axis],
+        starts=[interval * rank],
+        ends=[interval * (rank + 1)],
+    )
     input = paddle.assign(input)
     return input
 
@@ -60,7 +66,9 @@ def mp_slice(x, indices=None, group=None, axis=0):
     rank = group.rank
     assert len(indices) == parallelism, (len(indices), parallelism)
     indices = F.pad(paddle.to_tensor(indices).cumsum(0), [1, 0])
-    input = paddle.slice(x, axes=[axis], starts=[indices[rank]], ends=[indices[rank + 1]])
+    input = paddle.slice(
+        x, axes=[axis], starts=[indices[rank]], ends=[indices[rank + 1]]
+    )
     input = paddle.assign(input)
     return input
 
@@ -96,7 +104,9 @@ def scatter_varlen(x, recv_tensor, indices, src_rank, group, sync_op=True):
     else:
         x = paddle.empty([], dtype=recv_tensor.dtype)
         in_split_size = [0] * world_size
-    out_split_size = [indices[rank] if i == src_rank else 0 for i in range(world_size)]
+    out_split_size = [
+        indices[rank] if i == src_rank else 0 for i in range(world_size)
+    ]
     task = dist.stream.alltoall_single(
         recv_tensor,
         x,
@@ -122,7 +132,10 @@ def all_gather(input, group=None, axis=0):
         output = paddle.empty(shape=output_shape, dtype=input.dtype)
         dist.stream.all_gather(output, input, group=group, use_calc_stream=True)
         return output
-    outputs = [paddle.empty(output_shape, dtype=input.dtype) for _ in range(parallelism)]
+    outputs = [
+        paddle.empty(output_shape, dtype=input.dtype)
+        for _ in range(parallelism)
+    ]
     dist.stream.all_gather(outputs, input, group=group, use_calc_stream=True)
     output = paddle.concat(outputs, axis=axis)
     return output
@@ -136,26 +149,31 @@ def reduce_scatter(input, group=None):
     if parallelism == 1:
         return input.clone()
     output_shape = input.shape
-    assert (
-        input.shape[0] % parallelism == 0
-    ), f"Input sequence length {input.shape[0]} can't be divided exactly by sequence parallelism {parallelism}"
+    assert input.shape[0] % parallelism == 0, (
+        f"Input sequence length {input.shape[0]} can't be divided exactly by sequence parallelism {parallelism}"
+    )
     output_shape[0] = output_shape[0] // parallelism
     output = paddle.empty(shape=output_shape, dtype=input.dtype)
-    dist.stream.reduce_scatter(output, input, op=dist.ReduceOp.SUM, group=group, use_calc_stream=True)
+    dist.stream.reduce_scatter(
+        output, input, op=dist.ReduceOp.SUM, group=group, use_calc_stream=True
+    )
     return output
 
 
-def subbatch(f, arg_idx, axis, bs, out_idx, use_recompute=False, same_arg_idx={}):
+def subbatch(
+    f, arg_idx, axis, bs, out_idx, use_recompute=False, same_arg_idx={}
+):
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
-
-        assert len(arg_idx) == len(axis), "Number of batching args and number of batching dims should match."
+        assert len(arg_idx) == len(axis), (
+            "Number of batching args and number of batching dims should match."
+        )
 
         inps = [args[i] for i in arg_idx]
         axis_width = [inp.shape[d] for inp, d in zip(inps, axis)]
         assert len(set(axis_width)) == 1, "Batch sizes should be kept equal."
 
-        inp_axis = {inp: d for inp, d in zip(inps, axis)}
+        inp_axis = dict(zip(inps, axis))
 
         axis_width = axis_width[0]
         if axis_width < bs:
@@ -166,9 +184,9 @@ def subbatch(f, arg_idx, axis, bs, out_idx, use_recompute=False, same_arg_idx={}
             _args = []
             for i, inp in enumerate(args):
                 if i in same_arg_idx:
-                    assert (
-                        i > same_arg_idx[i]
-                    ), f"expect i > same_arg_idx[i], but got i: {i} and same_arg_idx[i]: {same_arg_idx[i]}"
+                    assert i > same_arg_idx[i], (
+                        f"expect i > same_arg_idx[i], but got i: {i} and same_arg_idx[i]: {same_arg_idx[i]}"
+                    )
                     _args.append(_args[same_arg_idx[i]])
                 elif i in arg_idx:
                     inp = inp.slice(
@@ -180,7 +198,9 @@ def subbatch(f, arg_idx, axis, bs, out_idx, use_recompute=False, same_arg_idx={}
                 else:
                     _args.append(inp)
             if use_recompute:
-                out = paddle.distributed.fleet.utils.recompute(f, *_args, **kwargs)
+                out = paddle.distributed.fleet.utils.recompute(
+                    f, *_args, **kwargs
+                )
             else:
                 out = f(*_args, **kwargs)
             outs.append(out)
@@ -190,17 +210,25 @@ def subbatch(f, arg_idx, axis, bs, out_idx, use_recompute=False, same_arg_idx={}
     return wrapper
 
 
-def gather_varlen(input, dst, group, offload_pp_data_chunk_size=0, all_shape_and_dtype=None):
+def gather_varlen(
+    input, dst, group, offload_pp_data_chunk_size=0, all_shape_and_dtype=None
+):
     if dist.get_world_size(group) <= 1:
         return input
     if group is None:
         group = dist.collective._get_global_group()
 
-    shape_and_dtype = (None, None) if input is None else (input.shape, input.dtype)
+    shape_and_dtype = (
+        (None, None) if input is None else (input.shape, input.dtype)
+    )
     if all_shape_and_dtype is None:
         all_shape_and_dtype = []
-        dist.all_gather_object(all_shape_and_dtype, shape_and_dtype, group=group)
-    assert any(s is not None for s, _ in all_shape_and_dtype), all_shape_and_dtype
+        dist.all_gather_object(
+            all_shape_and_dtype, shape_and_dtype, group=group
+        )
+    assert any(s is not None for s, _ in all_shape_and_dtype), (
+        all_shape_and_dtype
+    )
 
     any_shape = None
     shape0_all = []
@@ -213,7 +241,9 @@ def gather_varlen(input, dst, group, offload_pp_data_chunk_size=0, all_shape_and
 
     output = []
     if offload_pp_data_chunk_size > 0:
-        assert (group.nranks >= offload_pp_data_chunk_size) and (group.nranks % offload_pp_data_chunk_size == 0), (
+        assert (group.nranks >= offload_pp_data_chunk_size) and (
+            group.nranks % offload_pp_data_chunk_size == 0
+        ), (
             f"group.nranks {group.nranks} must be greater than offload_pp_data_chunk_size {offload_pp_data_chunk_size} "
             f"and group.nranks % offload_pp_data_chunk_size == 0"
         )
@@ -226,7 +256,10 @@ def gather_varlen(input, dst, group, offload_pp_data_chunk_size=0, all_shape_and
                 output_ptr = len(output)
                 with batch_isend_irecv_coalescing_manager(group, tasks):
                     for src in range(start, end):
-                        if all_shape_and_dtype[src][0] is None or all_shape_and_dtype[src][0][0] == 0:
+                        if (
+                            all_shape_and_dtype[src][0] is None
+                            or all_shape_and_dtype[src][0][0] == 0
+                        ):
                             pass
                         elif src != group.rank:
                             recv_tensor = paddle.empty(
@@ -234,7 +267,9 @@ def gather_varlen(input, dst, group, offload_pp_data_chunk_size=0, all_shape_and
                                 dtype=all_shape_and_dtype[src][1],
                             )
                             output.append(recv_tensor)
-                            task = dist.irecv(recv_tensor, group.ranks[src], group=group)
+                            task = dist.irecv(
+                                recv_tensor, group.ranks[src], group=group
+                            )
                             tasks.append(task)
                         else:
                             output.append(input)
@@ -250,7 +285,11 @@ def gather_varlen(input, dst, group, offload_pp_data_chunk_size=0, all_shape_and
                 tasks = []
                 with batch_isend_irecv_coalescing_manager(group, tasks):
                     for _ in range(1):
-                        if group.rank in list(range(start, end)) and input is not None and input.shape[0] != 0:
+                        if (
+                            group.rank in list(range(start, end))
+                            and input is not None
+                            and input.shape[0] != 0
+                        ):
                             task = dist.isend(input, dst, group=group)
                             tasks.append(task)
                 for task in tasks:
@@ -268,7 +307,9 @@ def gather_varlen(input, dst, group, offload_pp_data_chunk_size=0, all_shape_and
                             dtype=all_shape_and_dtype[src][1],
                         )
                         output.append(recv_tensor)
-                        task = dist.irecv(recv_tensor, group.ranks[src], group=group)
+                        task = dist.irecv(
+                            recv_tensor, group.ranks[src], group=group
+                        )
                         tasks.append(task)
                     else:
                         output.append(input)

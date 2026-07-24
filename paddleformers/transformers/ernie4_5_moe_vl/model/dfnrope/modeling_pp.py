@@ -38,15 +38,24 @@ class DFNRopeVisionTransformerPipe(DFNRopeVisionTransformerPretrainedModel):
         self.sorted_idx = None
         self.seq_list = None
         self.new_thw = []
-        self.pp_data_balance = getattr(config.vision_config, "pp_data_balance", False)
-        self.attn_sep = getattr(config.vision_config, "attn_sep", False) and config.tensor_model_parallel_size > 1
+        self.pp_data_balance = getattr(
+            config.vision_config, "pp_data_balance", False
+        )
+        self.attn_sep = (
+            getattr(config.vision_config, "attn_sep", False)
+            and config.tensor_model_parallel_size > 1
+        )
         self.use_full_recompute = use_full_recompute
         if self.use_full_recompute:
-            logger.info("use full recompute, vision model will NOT use recompute inner")
+            logger.info(
+                "use full recompute, vision model will NOT use recompute inner"
+            )
             config.vision_config.recompute = False
         super().__init__(config)
         if self.config.tensor_model_parallel_size > 1:
-            logger.info("use sp extract feature, vit parameter will be marked as sequence parallel")
+            logger.info(
+                "use sp extract feature, vit parameter will be marked as sequence parallel"
+            )
             for p in self.parameters():
                 mark_as_sequence_parallel_parameter(p)
 
@@ -70,24 +79,34 @@ class DFNRopeVisionTransformerPipe(DFNRopeVisionTransformerPretrainedModel):
             if self.attn_sep:
                 seqlen = images.shape[0]
                 num_pad = math.ceil(seqlen / parallelism) * parallelism - seqlen
-                images = paddle.nn.functional.pad(images, [0, num_pad, 0, 0], value=0)
-                images_indices = [images.shape[0] // parallelism for _ in range(parallelism)]
+                images = paddle.nn.functional.pad(
+                    images, [0, num_pad, 0, 0], value=0
+                )
+                images_indices = [
+                    images.shape[0] // parallelism for _ in range(parallelism)
+                ]
                 images = SliceVarlenOp.apply(images, images_indices)
             else:
                 images = SliceVarlenOp.apply(images, images_indices)
                 images = images.detach()
 
             if len(images):
-                image_features = self._extract_feature(images, grid_thw, num_pad=num_pad)
+                image_features = self._extract_feature(
+                    images, grid_thw, num_pad=num_pad
+                )
             else:
                 image_features = paddle.empty(
                     [0, self.config.hidden_size],
                     dtype=self.patch_embed.proj.weight.dtype,
                 )
-                image_features.stop_gradient = self.patch_embed.proj.weight.stop_gradient
+                image_features.stop_gradient = (
+                    self.patch_embed.proj.weight.stop_gradient
+                )
             # sanity check
             if not second_fwd:
-                image_features = AllGatherVarlenOpV2.apply(image_features, images_indices)
+                image_features = AllGatherVarlenOpV2.apply(
+                    image_features, images_indices
+                )
                 if self.attn_sep:
                     image_features = image_features[:seqlen, :]
             # diff = (feas-image_features).abs().mean()
@@ -98,7 +117,11 @@ class DFNRopeVisionTransformerPipe(DFNRopeVisionTransformerPretrainedModel):
 
     def _extract_feature(self, images, grid_thw, num_pad=0):
         """extract feature"""
-        ctx = paddle.no_grad if getattr(self.config, "freeze_vision", False) else contextlib.nullcontext
+        ctx = (
+            paddle.no_grad
+            if getattr(self.config, "freeze_vision", False)
+            else contextlib.nullcontext
+        )
         with ctx():
             image_features = super().forward(images, grid_thw, num_pad)
         return image_features

@@ -41,7 +41,9 @@ def _save_optimizer(obj, name_mapping, path, saved_signal_path, protocol):
         os.fsync(f.fileno())
     end_time = time.time()
     elapsed_time = end_time - start_time
-    logger.info(f"Async save optimizer took {elapsed_time:.6f} seconds to execute.")
+    logger.info(
+        f"Async save optimizer took {elapsed_time:.6f} seconds to execute."
+    )
 
 
 class AsyncSaver:
@@ -55,7 +57,9 @@ class AsyncSaver:
         atexit.register(self.shutdown)
 
     def run(self, optimizer_state_dict, path, saved_signal_path, protocol=4):
-        logger.info(f"Started saving optimizer_state_dict to {os.path.abspath(path)}.")
+        logger.info(
+            f"Started saving optimizer_state_dict to {os.path.abspath(path)}."
+        )
         self._wait_for_previous_result()
 
         self._reset_state(path, saved_signal_path, protocol)
@@ -63,7 +67,13 @@ class AsyncSaver:
 
         self.result = self.pool.apply_async(
             _save_optimizer,
-            args=(self.cpu_optimizer_state_dict, self.name_mapping, self.path, self.saved_signal_path, self.protocol),
+            args=(
+                self.cpu_optimizer_state_dict,
+                self.name_mapping,
+                self.path,
+                self.saved_signal_path,
+                self.protocol,
+            ),
         )
 
         logger.info("Finished launching saving optimizer_state_dict process")
@@ -77,10 +87,14 @@ class AsyncSaver:
                     break
                 except Exception as e:
                     if retries == max_retries - 1:
-                        raise RuntimeError(f"Failed after {max_retries} retries during async save.")
+                        raise RuntimeError(
+                            f"Failed after {max_retries} retries during async save."
+                        )
 
                     time.sleep(1 + retries * 2)
-                    logger.warning(f"An error occurred during async save: {e}. Retrying...")
+                    logger.warning(
+                        f"An error occurred during async save: {e}. Retrying..."
+                    )
                     self.result = self.pool.apply_async(
                         _save_optimizer,
                         args=(

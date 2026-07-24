@@ -1,0 +1,13 @@
+[run]
+branch = True
+source = paddleformers
+concurrency = multiprocessing
+patch = subprocess
+parallel = True
+omit =
+    **/sonicmoe/**
+
+[paths]
+source =
+    paddleformers
+    */site-packages/paddleformers

@@ -17,7 +17,9 @@ import unittest
 
 from paddleformers.cli.utils.process import add_new_special_tokens
 from paddleformers.datasets.loader import create_dataset as create_dataset_sft
-from paddleformers.datasets.template.template import get_template_and_fix_tokenizer
+from paddleformers.datasets.template.template import (
+    get_template_and_fix_tokenizer,
+)
 from paddleformers.transformers import (
     AutoProcessor,
     AutoTokenizer,
@@ -41,7 +43,9 @@ class TestPacking(unittest.TestCase):
         if isinstance(tokenizer, (LlamaTokenizer, Llama3Tokenizer)):
             tokenizer.pad_token_id = tokenizer.eos_token_id
 
-        processor = AutoProcessor.from_pretrained(MODEL_NAME_OR_PATH, use_fast=None)
+        processor = AutoProcessor.from_pretrained(
+            MODEL_NAME_OR_PATH, use_fast=None
+        )
 
         dataset_config = {
             "tokenizer": tokenizer,
@@ -99,13 +103,17 @@ class TestPacking(unittest.TestCase):
 
     def test_base_packing_multiple_samples_per_batch(self):
         """With base packing (no binpacking, no greedy), multiple samples should be packed."""
-        dataset, _ = self._build_dataset(packing=True, binpacking=False, greedy_intokens=False)
+        dataset, _ = self._build_dataset(
+            packing=True, binpacking=False, greedy_intokens=False
+        )
         batch = next(iter(dataset))
         self.assertGreater(len(batch), 1)
 
     def test_greedy_packing_multiple_samples_per_batch(self):
         """With greedy packing, multiple samples should be packed into one batch."""
-        dataset, _ = self._build_dataset(packing=True, binpacking=False, greedy_intokens=True)
+        dataset, _ = self._build_dataset(
+            packing=True, binpacking=False, greedy_intokens=True
+        )
         batch = next(iter(dataset))
         self.assertGreater(len(batch), 1)
 
@@ -137,9 +145,13 @@ class TestPacking(unittest.TestCase):
         no_pack_ds, _ = self._build_dataset(packing=False)
         no_pack_sample = next(iter(no_pack_ds))[0]
 
-        pack_ds, _ = self._build_dataset(packing=True, binpacking=False, greedy_intokens=False)
+        pack_ds, _ = self._build_dataset(
+            packing=True, binpacking=False, greedy_intokens=False
+        )
         pack_first_sample = next(iter(pack_ds))[0]
 
         self.assertEqual(pack_first_sample.token_ids, no_pack_sample.token_ids)
         self.assertEqual(pack_first_sample.labels, no_pack_sample.labels)
-        self.assertEqual(pack_first_sample.position_ids, no_pack_sample.position_ids)
+        self.assertEqual(
+            pack_first_sample.position_ids, no_pack_sample.position_ids
+        )

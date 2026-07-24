@@ -18,10 +18,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Paddle Qwen3_VL model."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Optional
 
 import paddle
 import paddle.nn.functional as F
@@ -84,8 +85,12 @@ class Qwen3VLVisionMLP(nn.Layer):
         self.hidden_size = config.hidden_size
         self.intermediate_size = config.intermediate_size
         self.act_type = config.get("hidden_act", "silu")
-        self.linear_fc1 = nn.Linear(self.hidden_size, self.intermediate_size, bias_attr=True)
-        self.linear_fc2 = nn.Linear(self.intermediate_size, self.hidden_size, bias_attr=True)
+        self.linear_fc1 = nn.Linear(
+            self.hidden_size, self.intermediate_size, bias_attr=True
+        )
+        self.linear_fc2 = nn.Linear(
+            self.intermediate_size, self.hidden_size, bias_attr=True
+        )
         self.act_fn = ACT2FN[self.act_type]
 
     def forward(self, hidden_state):
@@ -107,14 +112,26 @@ class Qwen3VLVisionPatchEmbed(nn.Layer):
         self.embed_dim = embed_dim
 
         kernel_size = [temporal_patch_size, patch_size, patch_size]
-        self.proj = nn.Conv3d(in_channels, embed_dim, kernel_size=kernel_size, stride=kernel_size, bias=True)
+        self.proj = nn.Conv3d(
+            in_channels,
+            embed_dim,
+            kernel_size=kernel_size,
+            stride=kernel_size,
+            bias=True,
+        )
 
     def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
         target_dtype = self.proj.weight.dtype
         hidden_states = hidden_states.reshape(
-            -1, self.in_channels, self.temporal_patch_size, self.patch_size, self.patch_size
+            -1,
+            self.in_channels,
+            self.temporal_patch_size,
+            self.patch_size,
+            self.patch_size,
         )
-        hidden_states = self.proj(hidden_states.to(dtype=target_dtype)).reshape(-1, self.embed_dim)
+        hidden_states = self.proj(hidden_states.to(dtype=target_dtype)).reshape(
+            -1, self.embed_dim
+        )
         return hidden_states
 
 
@@ -123,7 +140,9 @@ class Qwen3VLVisionRotaryEmbedding(nn.Layer):
 
     def __init__(self, dim: int, theta: float = 10000.0) -> None:
         super().__init__()
-        inv_freq = 1.0 / (theta ** (paddle.arange(0, dim, 2, dtype=paddle.float32) / dim))
+        inv_freq = 1.0 / (
+            theta ** (paddle.arange(0, dim, 2, dtype=paddle.float32) / dim)
+        )
         self.register_buffer("inv_freq", inv_freq, persistable=False)
 
     def forward(self, seqlen: int) -> paddle.Tensor:
@@ -136,15 +155,21 @@ class Qwen3VLVisionPatchMerger(nn.Layer):
     def __init__(
         self,
         config: Qwen3VLConfig,
-        dim: int = None,
-        context_dim: int = None,
-        spatial_merge_size: int = None,
+        dim: int | None = None,
+        context_dim: int | None = None,
+        spatial_merge_size: int | None = None,
         use_postshuffle_norm: bool = False,
     ) -> None:
         super().__init__()
-        context_dim = context_dim if context_dim is not None else config.hidden_size
+        context_dim = (
+            context_dim if context_dim is not None else config.hidden_size
+        )
         dim = dim if dim is not None else config.out_hidden_size
-        spatial_merge_size = spatial_merge_size if spatial_merge_size is not None else config.spatial_merge_size
+        spatial_merge_size = (
+            spatial_merge_size
+            if spatial_merge_size is not None
+            else config.spatial_merge_size
+        )
 
         self.hidden_size = context_dim * (spatial_merge_size**2)
         self.use_postshuffle_norm = use_postshuffle_norm
@@ -179,7 +204,10 @@ def apply_rotary_pos_emb_vision(q, k, cos, sin):
     orig_k_dtype = k.dtype
     with paddle.amp.auto_cast(False):
         q, k = q.astype(dtype="float32"), k.astype(dtype="float32")
-        cos, sin = cos.unsqueeze(-2).astype(dtype="float32"), sin.unsqueeze(-2).astype(dtype="float32")
+        cos, sin = (
+            cos.unsqueeze(-2).astype(dtype="float32"),
+            sin.unsqueeze(-2).astype(dtype="float32"),
+        )
         q_embed = (q * cos) + (rotate_half(q) * sin)
         k_embed = (k * cos) + (rotate_half(k) * sin)
         return q_embed.astype(orig_q_dtype), k_embed.astype(orig_k_dtype)
@@ -213,22 +241,31 @@ class Qwen3VLVisionAttention(nn.Layer):
         hidden_states: paddle.Tensor,
         cu_seqlens: paddle.Tensor,
         rotary_pos_emb: Optional[paddle.Tensor] = None,
-        position_embeddings: Optional[tuple[paddle.Tensor, paddle.Tensor]] = None,
+        position_embeddings: Optional[
+            tuple[paddle.Tensor, paddle.Tensor]
+        ] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> paddle.Tensor:
         seq_length = hidden_states.shape[0]
         query_states, key_states, value_states = (
-            self.qkv(hidden_states).reshape(seq_length, 3, self.num_heads, -1).permute(1, 0, 2, 3).unbind(0)
+            self.qkv(hidden_states)
+            .reshape(seq_length, 3, self.num_heads, -1)
+            .permute(1, 0, 2, 3)
+            .unbind(0)
         )
         cos, sin = position_embeddings
-        query_states, key_states = apply_rotary_pos_emb_vision(query_states, key_states, cos, sin)
+        query_states, key_states = apply_rotary_pos_emb_vision(
+            query_states, key_states, cos, sin
+        )
 
         query_states = query_states.transpose(0, 1).unsqueeze(0)
         key_states = key_states.transpose(0, 1).unsqueeze(0)
         value_states = value_states.transpose(0, 1).unsqueeze(0)
 
-        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        attention_interface = ALL_ATTENTION_FUNCTIONS[
+            self.config._attn_implementation
+        ]
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -260,7 +297,9 @@ class Qwen3VLVisionBlock(nn.Layer):
         hidden_states: paddle.Tensor,
         cu_seqlens: paddle.Tensor,
         rotary_pos_emb: Optional[paddle.Tensor] = None,
-        position_embeddings: Optional[tuple[paddle.Tensor, paddle.Tensor]] = None,
+        position_embeddings: Optional[
+            tuple[paddle.Tensor, paddle.Tensor]
+        ] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> paddle.Tensor:
@@ -292,16 +331,27 @@ class Qwen3VLPretrainedModel(PretrainedModel):
         "up_proj",
         "down_proj",
         "proj",
-        "linear_fc\d+",
+        r"linear_fc\d+",
     ]
 
     @classmethod
     def _gen_aoa_config(cls, config: Qwen3VLConfig):
         mapping = cls._checkpoint_conversion_mapping
-        llm_target = next((v for v in mapping.values() if "language_model" in v), "language_model")
-        visual_target = next((v for v in mapping.values() if "visual" in v), "visual")
-        llm_prefix = f"{llm_target}." if not llm_target.endswith(".") else llm_target
-        visual_prefix = f"{visual_target}." if not visual_target.endswith(".") else visual_target
+        llm_target = next(
+            (v for v in mapping.values() if "language_model" in v),
+            "language_model",
+        )
+        visual_target = next(
+            (v for v in mapping.values() if "visual" in v), "visual"
+        )
+        llm_prefix = (
+            f"{llm_target}." if not llm_target.endswith(".") else llm_target
+        )
+        visual_prefix = (
+            f"{visual_target}."
+            if not visual_target.endswith(".")
+            else visual_target
+        )
 
         # language model
         aoa_config = {
@@ -388,10 +438,21 @@ class Qwen3VLPretrainedModel(PretrainedModel):
     @classmethod
     def _gen_inv_aoa_config(cls, config: Qwen3VLConfig):
         mapping = cls._checkpoint_conversion_mapping
-        llm_target = next((v for v in mapping.values() if "language_model" in v), "language_model")
-        visual_target = next((v for v in mapping.values() if "visual" in v), "visual")
-        llm_prefix = f"{llm_target}." if not llm_target.endswith(".") else llm_target
-        visual_prefix = f"{visual_target}." if not visual_target.endswith(".") else visual_target
+        llm_target = next(
+            (v for v in mapping.values() if "language_model" in v),
+            "language_model",
+        )
+        visual_target = next(
+            (v for v in mapping.values() if "visual" in v), "visual"
+        )
+        llm_prefix = (
+            f"{llm_target}." if not llm_target.endswith(".") else llm_target
+        )
+        visual_prefix = (
+            f"{visual_target}."
+            if not visual_target.endswith(".")
+            else visual_target
+        )
 
         # language model
         aoa_config = {
@@ -493,8 +554,12 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
         super().__init__(config, *inputs, **kwargs)
         self.spatial_merge_size = config.spatial_merge_size
         self.patch_size = config.patch_size
-        self.spatial_merge_unit = self.spatial_merge_size * self.spatial_merge_size
-        self.pos_embed = nn.Embedding(config.num_position_embeddings, config.hidden_size)
+        self.spatial_merge_unit = (
+            self.spatial_merge_size * self.spatial_merge_size
+        )
+        self.pos_embed = nn.Embedding(
+            config.num_position_embeddings, config.hidden_size
+        )
         self.deepstack_visual_indexes = config.deepstack_visual_indexes
         self.deepstack_merger_list = nn.LayerList(
             [
@@ -516,7 +581,9 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
         head_dim = config.hidden_size // config.num_heads
         self.rotary_pos_emb = Qwen3VLVisionRotaryEmbedding(head_dim // 2)
 
-        self.blocks = nn.LayerList([Qwen3VLVisionBlock(config) for _ in range(config.depth)])
+        self.blocks = nn.LayerList(
+            [Qwen3VLVisionBlock(config) for _ in range(config.depth)]
+        )
         self.merger = Qwen3VLVisionPatchMerger(
             config=config,
             dim=config.out_hidden_size,
@@ -551,7 +618,11 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
             )
             wpos_ids = wpos_ids.transpose([0, 2, 1, 3])
             wpos_ids = wpos_ids.flatten()
-            pos_ids.append(paddle.stack(x=[hpos_ids, wpos_ids], axis=-1).tile(repeat_times=[t, 1]))
+            pos_ids.append(
+                paddle.stack(x=[hpos_ids, wpos_ids], axis=-1).tile(
+                    repeat_times=[t, 1]
+                )
+            )
         pos_ids = paddle.cat(x=pos_ids, axis=0)
         max_grid_size = grid_thw[:, 1:].max()
         rotary_pos_emb_full = self.rotary_pos_emb(max_grid_size)
@@ -565,7 +636,9 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
         hidden_states: paddle.Tensor,
         cu_seqlens: paddle.Tensor,
         rotary_pos_emb: Optional[paddle.Tensor] = None,
-        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
+        position_embeddings: Optional[
+            tuple[paddle.Tensor, paddle.Tensor]
+        ] = None,
     ):
         def create_custom_forward(module):
             def custom_forward(*inputs):
@@ -583,7 +656,11 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
         return hidden_states
 
     def fast_pos_embed_interpolate(self, grid_thw):
-        grid_ts, grid_hs, grid_ws = grid_thw[:, 0], grid_thw[:, 1], grid_thw[:, 2]
+        grid_ts, grid_hs, grid_ws = (
+            grid_thw[:, 0],
+            grid_thw[:, 1],
+            grid_thw[:, 2],
+        )
         device = paddle.get_device()
 
         idx_list = [[] for _ in range(4)]
@@ -595,8 +672,12 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
 
             h_idxs_floor = h_idxs.int()
             w_idxs_floor = w_idxs.int()
-            h_idxs_ceil = (h_idxs.int() + 1).clip(max=self.num_grid_per_side - 1)
-            w_idxs_ceil = (w_idxs.int() + 1).clip(max=self.num_grid_per_side - 1)
+            h_idxs_ceil = (h_idxs.int() + 1).clip(
+                max=self.num_grid_per_side - 1
+            )
+            w_idxs_ceil = (w_idxs.int() + 1).clip(
+                max=self.num_grid_per_side - 1
+            )
 
             dh = h_idxs - h_idxs_floor.astype("float32")
             dw = w_idxs - w_idxs_floor.astype("float32")
@@ -623,18 +704,37 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
                 weight_list[i].extend(weights[i].tolist())
 
         idx_tensor = paddle.tensor(idx_list, dtype=paddle.long, device=device)
-        weight_tensor = paddle.tensor(weight_list, dtype=self.pos_embed.weight.dtype, device=device)
-        pos_embeds = self.pos_embed(idx_tensor).to(device) * weight_tensor[:, :, None]
-        patch_pos_embeds = pos_embeds[0] + pos_embeds[1] + pos_embeds[2] + pos_embeds[3]
+        weight_tensor = paddle.tensor(
+            weight_list, dtype=self.pos_embed.weight.dtype, device=device
+        )
+        pos_embeds = (
+            self.pos_embed(idx_tensor).to(device) * weight_tensor[:, :, None]
+        )
+        patch_pos_embeds = (
+            pos_embeds[0] + pos_embeds[1] + pos_embeds[2] + pos_embeds[3]
+        )
 
-        patch_pos_embeds = patch_pos_embeds.split([h * w for h, w in zip(grid_hs, grid_ws)])
+        patch_pos_embeds = patch_pos_embeds.split(
+            [h * w for h, w in zip(grid_hs, grid_ws)]
+        )
 
         patch_pos_embeds_permute = []
         merge_size = self.config.spatial_merge_size
-        for pos_embed, t, h, w in zip(patch_pos_embeds, grid_ts, grid_hs, grid_ws):
+        for pos_embed, t, h, w in zip(
+            patch_pos_embeds, grid_ts, grid_hs, grid_ws
+        ):
             pos_embed = pos_embed.tile([t, 1])
             pos_embed = (
-                pos_embed.reshape([t, h // merge_size, merge_size, w // merge_size, merge_size, -1])
+                pos_embed.reshape(
+                    [
+                        t,
+                        h // merge_size,
+                        merge_size,
+                        w // merge_size,
+                        merge_size,
+                        -1,
+                    ]
+                )
                 .permute(0, 1, 3, 2, 4, 5)
                 .flatten(0, 4)
             )
@@ -642,7 +742,9 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
         patch_pos_embeds = paddle.cat(patch_pos_embeds_permute)
         return patch_pos_embeds
 
-    def forward(self, hidden_states: paddle.Tensor, grid_thw: paddle.Tensor) -> paddle.Tensor:
+    def forward(
+        self, hidden_states: paddle.Tensor, grid_thw: paddle.Tensor
+    ) -> paddle.Tensor:
         """
         Args:
             hidden_states (`paddle.Tensor` of shape `(batch_size, seq_len, hidden_size)`):
@@ -665,9 +767,9 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
         emb = paddle.cat((rotary_pos_emb, rotary_pos_emb), axis=-1)
         position_embeddings = (emb.cos(), emb.sin())
 
-        cu_seqlens = paddle.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
-            axis=0, dtype="int32"
-        )
+        cu_seqlens = paddle.repeat_interleave(
+            grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]
+        ).cumsum(axis=0, dtype="int32")
         cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
 
         lengths = cu_seqlens[1:] - cu_seqlens[:-1]
@@ -680,9 +782,9 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
             ],
             axis=1,
         )
-        attn_mask_startend_row_indices = paddle.repeat_interleave(indices_per_segment, lengths, axis=0)[
-            None, None, ...
-        ]
+        attn_mask_startend_row_indices = paddle.repeat_interleave(
+            indices_per_segment, lengths, axis=0
+        )[None, None, ...]
 
         deepstack_feature_lists = []
         for layer_num, blk in enumerate(self.blocks):
@@ -710,9 +812,9 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 )
             if layer_num in self.deepstack_visual_indexes:
-                deepstack_feature = self.deepstack_merger_list[self.deepstack_visual_indexes.index(layer_num)](
-                    hidden_states
-                )
+                deepstack_feature = self.deepstack_merger_list[
+                    self.deepstack_visual_indexes.index(layer_num)
+                ](hidden_states)
                 deepstack_feature_lists.append(deepstack_feature)
 
         hidden_states = self.merger(hidden_states)
@@ -742,8 +844,8 @@ class Qwen3VLModelOutputWithPast(ModelOutput):
 
     last_hidden_state: Optional[paddle.Tensor] = None
     past_key_values: Optional[Cache] = None
-    hidden_states: Optional[Tuple[paddle.Tensor]] = None
-    attentions: Optional[Tuple[paddle.Tensor]] = None
+    hidden_states: Optional[tuple[paddle.Tensor]] = None
+    attentions: Optional[tuple[paddle.Tensor]] = None
     rope_deltas: Optional[paddle.Tensor] = None
 
 
@@ -757,7 +859,9 @@ class Qwen3VLTextRotaryEmbedding(nn.Layer):
         self.config = config
 
         rope_parameters = config.rope_parameters
-        self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
+        self.rope_type = rope_parameters.get(
+            "rope_type", rope_parameters.get("type", "default")
+        )
         rope_init_fn = self.compute_default_rope_parameters
         if self.rope_type != "default":
             rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
@@ -765,13 +869,15 @@ class Qwen3VLTextRotaryEmbedding(nn.Layer):
 
         self.register_buffer("inv_freq", inv_freq, persistable=False)
         self.original_inv_freq = inv_freq
-        self.mrope_section = config.rope_parameters.get("mrope_section", [24, 20, 20])
+        self.mrope_section = config.rope_parameters.get(
+            "mrope_section", [24, 20, 20]
+        )
 
     @staticmethod
     def compute_default_rope_parameters(
         config: Optional[Qwen3VLTextConfig] = None,
         seq_len: Optional[int] = None,
-    ) -> tuple["paddle.Tensor", float]:
+    ) -> tuple[paddle.Tensor, float]:
         """
         Computes the inverse frequencies according to the original RoPE implementation
         Args:
@@ -784,12 +890,23 @@ class Qwen3VLTextRotaryEmbedding(nn.Layer):
             post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
         """
         base = config.rope_parameters["rope_theta"]
-        dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+        dim = (
+            getattr(config, "head_dim", None)
+            or config.hidden_size // config.num_attention_heads
+        )
 
         attention_factor = 1.0  # Unused in this type of RoPE
 
         # Compute the inverse frequencies
-        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        inv_freq = 1.0 / (
+            base
+            ** (
+                paddle.arange(0, dim, 2, dtype=paddle.int64).astype(
+                    dtype=paddle.float32
+                )
+                / dim
+            )
+        )
         return inv_freq, attention_factor
 
     def apply_interleaved_mrope(self, freqs, mrope_section):
@@ -811,10 +928,16 @@ class Qwen3VLTextRotaryEmbedding(nn.Layer):
 
     def forward(self, x, position_ids):
         with paddle.amp.auto_cast(False):
-            inv_freq_expanded = self.inv_freq[None, None, :, None].float().expand([1, position_ids.shape[1], -1, 1])
+            inv_freq_expanded = (
+                self.inv_freq[None, None, :, None]
+                .float()
+                .expand([1, position_ids.shape[1], -1, 1])
+            )
             position_ids_expanded = position_ids[:, :, None, :].float()
 
-            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(2, 3)
+            freqs = (
+                inv_freq_expanded.float() @ position_ids_expanded.float()
+            ).transpose(2, 3)
             freqs = self.apply_interleaved_mrope(freqs, self.mrope_section)
             emb = paddle.concat((freqs, freqs), axis=-1)
 
@@ -861,7 +984,9 @@ class Qwen3VLTextAttention(nn.Layer):
     and "Generating Long Sequences with Sparse Transformers".
     """
 
-    def __init__(self, config: Qwen3VLTextConfig, layer_idx: Optional[int] = None):
+    def __init__(
+        self, config: Qwen3VLTextConfig, layer_idx: Optional[int] = None
+    ):
         super().__init__()
         self.config = config
         self.layer_idx = layer_idx
@@ -902,18 +1027,25 @@ class Qwen3VLTextAttention(nn.Layer):
         #     )
 
         self.sequence_parallel = config.sequence_parallel
-        self.gqa_or_mqa = config.num_attention_heads != config.num_key_value_heads
+        self.gqa_or_mqa = (
+            config.num_attention_heads != config.num_key_value_heads
+        )
 
         if config.tensor_model_parallel_size > 1:
-            assert (
-                self.num_heads % config.tensor_model_parallel_size == 0
-            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            assert self.num_heads % config.tensor_model_parallel_size == 0, (
+                f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            )
             self.num_heads = self.num_heads // config.tensor_model_parallel_size
 
             assert (
-                self.num_key_value_heads % config.tensor_model_parallel_size == 0
-            ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
-            self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
+                self.num_key_value_heads % config.tensor_model_parallel_size
+                == 0
+            ), (
+                f"num_key_value_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            )
+            self.num_key_value_heads = (
+                self.num_key_value_heads // config.tensor_model_parallel_size
+            )
 
         kv_hidden_size = self.config.num_key_value_heads * self.head_dim
         q_hidden_size = self.config.num_attention_heads * self.head_dim
@@ -932,8 +1064,16 @@ class Qwen3VLTextAttention(nn.Layer):
             config=config,
             tp_plan="rowwise",
         )
-        self.layer_type = config.layer_types[layer_idx] if hasattr(config, "layer_types") else None
-        self.sliding_window = config.sliding_window if self.layer_type == "sliding_attention" else None
+        self.layer_type = (
+            config.layer_types[layer_idx]
+            if hasattr(config, "layer_types")
+            else None
+        )
+        self.sliding_window = (
+            config.sliding_window
+            if self.layer_type == "sliding_attention"
+            else None
+        )
 
     def forward(
         self,
@@ -943,14 +1083,22 @@ class Qwen3VLTextAttention(nn.Layer):
         past_key_values: Optional[Cache] = None,
         output_attentions: bool = False,
         use_cache: bool = False,  # default true
-        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
+        position_embeddings: Optional[
+            tuple[paddle.Tensor, paddle.Tensor]
+        ] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
-    ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
+    ) -> tuple[
+        paddle.Tensor, Optional[paddle.Tensor], Optional[tuple[paddle.Tensor]]
+    ]:
         mix_layer = self.qkv_proj(hidden_states)
         if self.sequence_parallel:
             max_sequence_length = self.config.max_sequence_length
-            bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
+            bsz = (
+                hidden_states.shape[0]
+                * self.config.tensor_model_parallel_size
+                // max_sequence_length
+            )
             q_len = max_sequence_length
             target_shape = [
                 bsz,
@@ -959,17 +1107,28 @@ class Qwen3VLTextAttention(nn.Layer):
                 (self.num_key_value_groups + 2) * self.head_dim,
             ]
         else:
-            target_shape = [0, 0, self.num_key_value_heads, (self.num_key_value_groups + 2) * self.head_dim]
+            target_shape = [
+                0,
+                0,
+                self.num_key_value_heads,
+                (self.num_key_value_groups + 2) * self.head_dim,
+            ]
         # mix_layer = mix_layer.reshape(target_shape)
         mix_layer = paddle.reshape_(mix_layer, target_shape)
         query_states, key_states, value_states = paddle.split(
             mix_layer,
-            num_or_sections=[self.num_key_value_groups * self.head_dim, self.head_dim, self.head_dim],
+            num_or_sections=[
+                self.num_key_value_groups * self.head_dim,
+                self.head_dim,
+                self.head_dim,
+            ],
             axis=-1,
         )
         if self.gqa_or_mqa:
             # query_states = query_states.reshape([0, 0, self.num_heads, self.head_dim])
-            query_states = paddle.reshape_(query_states, [0, 0, self.num_heads, self.head_dim])
+            query_states = paddle.reshape_(
+                query_states, [0, 0, self.num_heads, self.head_dim]
+            )
 
         # apply qk_norm
         query_states = self.q_norm(query_states)
@@ -979,13 +1138,19 @@ class Qwen3VLTextAttention(nn.Layer):
         value_states = value_states.transpose([0, 2, 1, 3])
 
         cos, sin = position_embeddings
-        query_states, key_states = apply_multimodal_rotary_pos_emb(query_states, key_states, cos, sin)
+        query_states, key_states = apply_multimodal_rotary_pos_emb(
+            query_states, key_states, cos, sin
+        )
 
         # [bs, num_head, seq_len, head_dim]
         if past_key_values is not None:
-            key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
+            key_states, value_states = past_key_values.update(
+                key_states, value_states, self.layer_idx
+            )
 
-        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        attention_interface = ALL_ATTENTION_FUNCTIONS[
+            self.config._attn_implementation
+        ]
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -1043,7 +1208,9 @@ class Qwen3VLTextDecoderLayer(nn.Layer):
         past_key_values: Optional[Cache] = None,
         output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = False,
-        position_embeddings: Optional[tuple[paddle.Tensor, paddle.Tensor]] = None,
+        position_embeddings: Optional[
+            tuple[paddle.Tensor, paddle.Tensor]
+        ] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
     ):
@@ -1115,7 +1282,10 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
             padding_idx=self.padding_idx,
         )
         self.layers = nn.LayerList(
-            [Qwen3VLTextDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
+            [
+                Qwen3VLTextDecoderLayer(config, layer_idx)
+                for layer_idx in range(config.num_hidden_layers)
+            ]
         )
         self._attn_implementation = config._attn_implementation
         self.norm = GeneralNorm.create(
@@ -1131,7 +1301,9 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
         self.gradient_checkpointing = False
         self.has_sliding_layers = getattr(
             self.config, "sliding_window", None
-        ) is not None and "sliding_attention" in getattr(self.config, "layer_types", [])
+        ) is not None and "sliding_attention" in getattr(
+            self.config, "layer_types", []
+        )
 
     @paddle.jit.not_to_static
     def recompute_training_full(
@@ -1139,7 +1311,7 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
         layer_module: nn.Layer,
         hidden_states: Tensor,
         attention_mask: Tensor,
-        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]],
+        position_embeddings: Optional[tuple[paddle.Tensor, paddle.Tensor]],
         position_ids: Optional[paddle.Tensor],
         past_key_values: Optional[Cache],
         output_attentions: bool,
@@ -1167,7 +1339,10 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
         return hidden_states
 
     def _deepstack_process(
-        self, hidden_states: paddle.Tensor, visual_pos_masks: paddle.Tensor, visual_embeds: paddle.Tensor
+        self,
+        hidden_states: paddle.Tensor,
+        visual_pos_masks: paddle.Tensor,
+        visual_embeds: paddle.Tensor,
     ):
         # Store original shape and flatten hidden_states to 2D [B*S, D]
         original_shape = hidden_states.shape
@@ -1175,7 +1350,9 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
             hidden_states = hidden_states.flatten(start_axis=0, stop_axis=1)
 
         visual_pos_masks = visual_pos_masks.to(hidden_states.device)
-        visual_embeds = visual_embeds.to(hidden_states.device, hidden_states.dtype)
+        visual_embeds = visual_embeds.to(
+            hidden_states.device, hidden_states.dtype
+        )
 
         # complicated logic for squential parallelism
         if visual_pos_masks.ndim > 1:
@@ -1184,7 +1361,9 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
         # This block handles Sequence Parallelism (Row Slicing)
         if visual_pos_masks.shape[0] > hidden_states.shape[0]:
             try:
-                from paddle.distributed.fleet import get_hybrid_communicate_group
+                from paddle.distributed.fleet import (
+                    get_hybrid_communicate_group,
+                )
 
                 hcg = get_hybrid_communicate_group()
                 mp_rank = hcg.get_model_parallel_rank()
@@ -1198,20 +1377,28 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
             end_idx = start_idx + chunk_size
             if start_idx > 0:
                 pre_mask = visual_pos_masks[:start_idx]
-                visual_offset = paddle.sum(paddle.cast(pre_mask, "int32")).item()
+                visual_offset = paddle.sum(
+                    paddle.cast(pre_mask, "int32")
+                ).item()
             else:
                 visual_offset = 0
             local_mask = visual_pos_masks[start_idx:end_idx]
-            local_visual_count = paddle.sum(paddle.cast(local_mask, "int32")).item()
+            local_visual_count = paddle.sum(
+                paddle.cast(local_mask, "int32")
+            ).item()
 
-            visual_embeds = visual_embeds[visual_offset : visual_offset + local_visual_count]
+            visual_embeds = visual_embeds[
+                visual_offset : visual_offset + local_visual_count
+            ]
             visual_pos_masks = local_mask
 
         # If TP is enabled, hidden_states has shape [..., Hidden_Dim / TP_Size],
         # but visual_embeds usually has full [Hidden_Dim]. We need to slice visual_embeds column-wise.
         if hidden_states.shape[-1] != visual_embeds.shape[-1]:
             try:
-                from paddle.distributed.fleet import get_hybrid_communicate_group
+                from paddle.distributed.fleet import (
+                    get_hybrid_communicate_group,
+                )
 
                 hcg = get_hybrid_communicate_group()
                 tp_rank = hcg.get_model_parallel_rank()
@@ -1254,32 +1441,54 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
         visual_pos_masks: Optional[paddle.Tensor] = None,
         deepstack_visual_embeds: Optional[paddle.Tensor] = None,
         **kwargs,
-    ) -> Union[Tuple, BaseModelOutputWithPast]:
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+    ) -> tuple | BaseModelOutputWithPast:
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
         )
-        use_cache = use_cache if use_cache is not None else self.config.use_cache
+        output_hidden_states = (
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
+        )
+        use_cache = (
+            use_cache if use_cache is not None else self.config.use_cache
+        )
 
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict
+            if return_dict is not None
+            else self.config.use_return_dict
+        )
 
         if input_ids is not None and inputs_embeds is not None:
-            raise ValueError("You cannot specify both decoder_input_ids and decoder_inputs_embeds at the same time")
+            raise ValueError(
+                "You cannot specify both decoder_input_ids and decoder_inputs_embeds at the same time"
+            )
         elif input_ids is not None:
             batch_size, seq_length = input_ids.shape
         elif inputs_embeds is not None:
             batch_size, seq_length, _ = inputs_embeds.shape
         else:
-            raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
+            raise ValueError(
+                "You have to specify either decoder_input_ids or decoder_inputs_embeds"
+            )
 
         if self.config.recompute_granularity == "full" and self.training:
             if use_cache:
-                logger.warning_once("`use_cache=True` is incompatible with recompute. Setting `use_cache=False`...")
+                logger.warning_once(
+                    "`use_cache=True` is incompatible with recompute. Setting `use_cache=False`..."
+                )
                 use_cache = False
 
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache(config=self.config)
-        cache_length = past_key_values.get_seq_length() if past_key_values is not None else 0
+        cache_length = (
+            past_key_values.get_seq_length()
+            if past_key_values is not None
+            else 0
+        )
 
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
@@ -1287,19 +1496,31 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
         if self.config.sequence_parallel:
             # [bs, seq_len, num_head * head_dim] -> [bs * seq_len, num_head * head_dim]
             bs, seq_len, hidden_size = inputs_embeds.shape
-            inputs_embeds = paddle.reshape_(inputs_embeds, [bs * seq_len, hidden_size])
+            inputs_embeds = paddle.reshape_(
+                inputs_embeds, [bs * seq_len, hidden_size]
+            )
             # [seq_len * bs / n, num_head * head_dim] (n is mp parallelism)
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
         if cache_position is None:
-            past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
-            cache_position = paddle.arange(past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1])
+            past_seen_tokens = (
+                past_key_values.get_seq_length()
+                if past_key_values is not None
+                else 0
+            )
+            cache_position = paddle.arange(
+                past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1]
+            )
 
         if position_ids is None:
             # the hard coded `3` is for temporal, height and width.
-            position_ids = cache_position.reshape([1, 1, -1]).expand([3, inputs_embeds.shape[0], -1])
+            position_ids = cache_position.reshape([1, 1, -1]).expand(
+                [3, inputs_embeds.shape[0], -1]
+            )
         elif position_ids.ndim == 2:
-            position_ids = position_ids[None, ...].expand(3, position_ids.shape[0])
+            position_ids = position_ids[None, ...].expand(
+                3, position_ids.shape[0]
+            )
 
         if position_ids.ndim == 3 and position_ids.shape[0] == 4:
             text_position_ids = position_ids[0]
@@ -1320,10 +1541,14 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
         }
         # Create the causal mask and row indices
-        full_mask, full_indices = create_causal_mask_and_row_indices(**mask_kwargs)
+        full_mask, full_indices = create_causal_mask_and_row_indices(
+            **mask_kwargs
+        )
 
         causal_mask_mapping = {"full_attention": full_mask}
-        attn_mask_startend_row_indices_mapping = {"full_attention": full_indices}
+        attn_mask_startend_row_indices_mapping = {
+            "full_attention": full_indices
+        }
 
         # if model has sliding layer
         if self.has_sliding_layers:
@@ -1353,7 +1578,9 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
                 layer_outputs = self.recompute_training_full(
                     decoder_layer,
                     hidden_states,
-                    attention_mask=causal_mask_mapping[decoder_layer.attention_type],
+                    attention_mask=causal_mask_mapping[
+                        decoder_layer.attention_type
+                    ],
                     position_embeddings=position_embeddings,
                     position_ids=text_position_ids,
                     past_key_values=past_key_values,
@@ -1367,7 +1594,9 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
             else:
                 layer_outputs = decoder_layer(
                     hidden_states,
-                    attention_mask=causal_mask_mapping[decoder_layer.attention_type],
+                    attention_mask=causal_mask_mapping[
+                        decoder_layer.attention_type
+                    ],
                     position_embeddings=position_embeddings,
                     position_ids=text_position_ids,
                     past_key_values=past_key_values,
@@ -1380,7 +1609,9 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
                 )
 
             hidden_states = layer_outputs[0]
-            if deepstack_visual_embeds is not None and idx < len(deepstack_visual_embeds):
+            if deepstack_visual_embeds is not None and idx < len(
+                deepstack_visual_embeds
+            ):
                 hidden_states = self._deepstack_process(
                     hidden_states,
                     visual_pos_masks,
@@ -1398,7 +1629,14 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
 
         if not return_dict:
             return tuple(
-                v for v in [hidden_states, past_key_values, all_hidden_states, all_self_attns] if v is not None
+                v
+                for v in [
+                    hidden_states,
+                    past_key_values,
+                    all_hidden_states,
+                    all_self_attns,
+                ]
+                if v is not None
             )
         return BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
@@ -1444,7 +1682,9 @@ class Qwen3VLModelDeprecated(Qwen3VLPretrainedModel):
 
         # Since we use timestamps to separate videos, like <t1> <vision_start> <frame1> <vision_end> <t2> <vision_start> <frame2> <vision_end>, the video_grid_thw should also be split
         if video_grid_thw is not None:
-            video_grid_thw = paddle.repeat_interleave(video_grid_thw, video_grid_thw[:, 0], dim=0)
+            video_grid_thw = paddle.repeat_interleave(
+                video_grid_thw, video_grid_thw[:, 0], dim=0
+            )
             video_grid_thw[:, 0] = 1
 
         spatial_merge_size = self.config.vision_config.spatial_merge_size
@@ -1452,7 +1692,9 @@ class Qwen3VLModelDeprecated(Qwen3VLPretrainedModel):
         video_token_id = self.config.video_token_id
         vision_start_token_id = self.config.vision_start_token_id
         mrope_position_deltas = []
-        if input_ids is not None and (image_grid_thw is not None or video_grid_thw is not None):
+        if input_ids is not None and (
+            image_grid_thw is not None or video_grid_thw is not None
+        ):
             total_input_ids = input_ids
             if attention_mask is None:
                 attention_mask = paddle.ones_like(total_input_ids)
@@ -1468,7 +1710,9 @@ class Qwen3VLModelDeprecated(Qwen3VLPretrainedModel):
             for i, input_ids in enumerate(total_input_ids):
                 input_ids = input_ids[attention_mask[i] == 1]
                 image_nums, video_nums = 0, 0
-                vision_start_indices = paddle.argwhere(input_ids == vision_start_token_id).squeeze(1)
+                vision_start_indices = paddle.argwhere(
+                    input_ids == vision_start_token_id
+                ).squeeze(1)
                 vision_tokens = input_ids[vision_start_indices + 1]
                 image_nums = (vision_tokens == image_token_id).sum()
                 video_nums = (vision_tokens == video_token_id).sum()
@@ -1511,33 +1755,82 @@ class Qwen3VLModelDeprecated(Qwen3VLPretrainedModel):
                     )
                     text_len = ed - st
 
-                    st_idx = llm_pos_ids_list[-1].max() + 1 if len(llm_pos_ids_list) > 0 else 0
-                    llm_pos_ids_list.append(paddle.arange(text_len).view(1, -1).expand(3, -1) + st_idx)
+                    st_idx = (
+                        llm_pos_ids_list[-1].max() + 1
+                        if len(llm_pos_ids_list) > 0
+                        else 0
+                    )
+                    llm_pos_ids_list.append(
+                        paddle.arange(text_len).view(1, -1).expand(3, -1)
+                        + st_idx
+                    )
 
                     # t_index is always 0 because llm_grid_t is always 1 (we use timestamps to encode the temporal information for videos)
-                    t_index = paddle.arange(llm_grid_t).view(-1, 1).expand(-1, llm_grid_h * llm_grid_w).flatten()
-                    h_index = paddle.arange(llm_grid_h).view(1, -1, 1).expand(llm_grid_t, -1, llm_grid_w).flatten()
-                    w_index = paddle.arange(llm_grid_w).view(1, 1, -1).expand(llm_grid_t, llm_grid_h, -1).flatten()
-                    llm_pos_ids_list.append(paddle.stack([t_index, h_index, w_index]) + text_len + st_idx)
+                    t_index = (
+                        paddle.arange(llm_grid_t)
+                        .view(-1, 1)
+                        .expand(-1, llm_grid_h * llm_grid_w)
+                        .flatten()
+                    )
+                    h_index = (
+                        paddle.arange(llm_grid_h)
+                        .view(1, -1, 1)
+                        .expand(llm_grid_t, -1, llm_grid_w)
+                        .flatten()
+                    )
+                    w_index = (
+                        paddle.arange(llm_grid_w)
+                        .view(1, 1, -1)
+                        .expand(llm_grid_t, llm_grid_h, -1)
+                        .flatten()
+                    )
+                    llm_pos_ids_list.append(
+                        paddle.stack([t_index, h_index, w_index])
+                        + text_len
+                        + st_idx
+                    )
                     st = ed + llm_grid_t * llm_grid_h * llm_grid_w
 
                 if st < len(input_tokens):
-                    st_idx = llm_pos_ids_list[-1].max() + 1 if len(llm_pos_ids_list) > 0 else 0
+                    st_idx = (
+                        llm_pos_ids_list[-1].max() + 1
+                        if len(llm_pos_ids_list) > 0
+                        else 0
+                    )
                     text_len = len(input_tokens) - st
-                    llm_pos_ids_list.append(paddle.arange(text_len).view(1, -1).expand(3, -1) + st_idx)
+                    llm_pos_ids_list.append(
+                        paddle.arange(text_len).view(1, -1).expand(3, -1)
+                        + st_idx
+                    )
 
-                llm_positions = paddle.cat(llm_pos_ids_list, dim=1).reshape(3, -1)
-                position_ids[..., i, attention_mask[i] == 1] = llm_positions.to(position_ids.device)
-                mrope_position_deltas.append(llm_positions.max() + 1 - len(total_input_ids[i]))
-            mrope_position_deltas = paddle.tensor(mrope_position_deltas, device=input_ids.device).unsqueeze(1)
+                llm_positions = paddle.cat(llm_pos_ids_list, dim=1).reshape(
+                    3, -1
+                )
+                position_ids[..., i, attention_mask[i] == 1] = llm_positions.to(
+                    position_ids.device
+                )
+                mrope_position_deltas.append(
+                    llm_positions.max() + 1 - len(total_input_ids[i])
+                )
+            mrope_position_deltas = paddle.tensor(
+                mrope_position_deltas, device=input_ids.device
+            ).unsqueeze(1)
             return position_ids, mrope_position_deltas
         else:
             if attention_mask is not None:
                 position_ids = attention_mask.long().cumsum(-1) - 1
                 position_ids.masked_fill_(attention_mask == 0, 1)
-                position_ids = position_ids.unsqueeze(0).expand(3, -1, -1).to(attention_mask.device)
-                max_position_ids = position_ids.max(0, keepdim=False)[0].max(-1, keepdim=True)[0]
-                mrope_position_deltas = max_position_ids + 1 - attention_mask.shape[-1]
+                position_ids = (
+                    position_ids.unsqueeze(0)
+                    .expand(3, -1, -1)
+                    .to(attention_mask.device)
+                )
+                max_position_ids = position_ids.max(0, keepdim=False)[0].max(
+                    -1, keepdim=True
+                )[0]
+                mrope_position_deltas = (
+                    max_position_ids + 1 - attention_mask.shape[-1]
+                )
             else:
                 position_ids = (
                     paddle.arange(input_ids.shape[1], device=input_ids.device)
@@ -1552,7 +1845,11 @@ class Qwen3VLModelDeprecated(Qwen3VLPretrainedModel):
 
             return position_ids, mrope_position_deltas
 
-    def get_video_features(self, pixel_values_videos: paddle.Tensor, video_grid_thw: Optional[paddle.Tensor] = None):
+    def get_video_features(
+        self,
+        pixel_values_videos: paddle.Tensor,
+        video_grid_thw: Optional[paddle.Tensor] = None,
+    ):
         """
         Encodes videos into continuous embeddings that can be forwarded to the language model.
 
@@ -1562,13 +1859,23 @@ class Qwen3VLModelDeprecated(Qwen3VLPretrainedModel):
             video_grid_thw (`paddle.Tensor` of shape `(num_videos, 3)`, *optional*):
                 The temporal, height and width of feature shape of each video in LLM.
         """
-        pixel_values_videos = pixel_values_videos.astype(self.visual.patch_embed.proj.weight.dtype)
-        video_embeds, deepstack_video_embeds = self.visual(pixel_values_videos, grid_thw=video_grid_thw)
-        split_sizes = (video_grid_thw.prod(-1) // self.visual.spatial_merge_size**2).tolist()
+        pixel_values_videos = pixel_values_videos.astype(
+            self.visual.patch_embed.proj.weight.dtype
+        )
+        video_embeds, deepstack_video_embeds = self.visual(
+            pixel_values_videos, grid_thw=video_grid_thw
+        )
+        split_sizes = (
+            video_grid_thw.prod(-1) // self.visual.spatial_merge_size**2
+        ).tolist()
         video_embeds = paddle.split(video_embeds, split_sizes)
         return video_embeds, deepstack_video_embeds
 
-    def get_image_features(self, pixel_values: paddle.Tensor, image_grid_thw: Optional[paddle.Tensor] = None):
+    def get_image_features(
+        self,
+        pixel_values: paddle.Tensor,
+        image_grid_thw: Optional[paddle.Tensor] = None,
+    ):
         """
         Encodes images into continuous embeddings that can be forwarded to the language model.
 
@@ -1578,9 +1885,15 @@ class Qwen3VLModelDeprecated(Qwen3VLPretrainedModel):
             image_grid_thw (`paddle.Tensor` of shape `(num_images, 3)`, *optional*):
                 The temporal, height and width of feature shape of each image in LLM.
         """
-        pixel_values = pixel_values.astype(self.visual.patch_embed.proj.weight.dtype)
-        image_embeds, deepstack_image_embeds = self.visual(pixel_values, grid_thw=image_grid_thw)
-        split_sizes = (image_grid_thw.prod(-1) // self.visual.spatial_merge_size**2).tolist()
+        pixel_values = pixel_values.astype(
+            self.visual.patch_embed.proj.weight.dtype
+        )
+        image_embeds, deepstack_image_embeds = self.visual(
+            pixel_values, grid_thw=image_grid_thw
+        )
+        split_sizes = (
+            image_grid_thw.prod(-1) // self.visual.spatial_merge_size**2
+        ).tolist()
         image_embeds = paddle.split(image_embeds, split_sizes)
         return image_embeds, deepstack_image_embeds
 
@@ -1609,15 +1922,27 @@ class Qwen3VLModelDeprecated(Qwen3VLPretrainedModel):
             special_video_mask = input_ids == self.config.video_token_id
 
         n_image_tokens = special_image_mask.sum()
-        special_image_mask = special_image_mask.unsqueeze(-1).expand_as(inputs_embeds)
-        if image_features is not None and inputs_embeds[special_image_mask].numel() != image_features.numel():
+        special_image_mask = special_image_mask.unsqueeze(-1).expand_as(
+            inputs_embeds
+        )
+        if (
+            image_features is not None
+            and inputs_embeds[special_image_mask].numel()
+            != image_features.numel()
+        ):
             raise ValueError(
                 f"Image features and image tokens do not match: tokens: {n_image_tokens}, features {image_features.shape[0]}"
             )
 
         n_video_tokens = special_video_mask.sum()
-        special_video_mask = special_video_mask.unsqueeze(-1).expand_as(inputs_embeds)
-        if video_features is not None and inputs_embeds[special_video_mask].numel() != video_features.numel():
+        special_video_mask = special_video_mask.unsqueeze(-1).expand_as(
+            inputs_embeds
+        )
+        if (
+            video_features is not None
+            and inputs_embeds[special_video_mask].numel()
+            != video_features.numel()
+        ):
             raise ValueError(
                 f"Videos features and video tokens do not match: tokens: {n_video_tokens}, features {video_features.shape[0]}"
             )
@@ -1643,7 +1968,7 @@ class Qwen3VLModelDeprecated(Qwen3VLPretrainedModel):
         cache_position: Optional[paddle.Tensor] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
-    ) -> Union[tuple, Qwen3VLModelOutputWithPast]:
+    ) -> tuple | Qwen3VLModelOutputWithPast:
         r"""
         image_grid_thw (`paddle.Tensor` of shape `(num_images, 3)`, *optional*):
             The temporal, height and width of feature shape of each image in LLM.
@@ -1654,30 +1979,56 @@ class Qwen3VLModelDeprecated(Qwen3VLPretrainedModel):
         """
         image_mask = None
         video_mask = None
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
         )
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        output_hidden_states = (
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
+        )
+        return_dict = (
+            return_dict
+            if return_dict is not None
+            else self.config.use_return_dict
+        )
 
         if inputs_embeds is None:
             inputs_embeds = self.get_input_embeddings()(input_ids)
 
         if pixel_values is not None:
-            image_embeds, deepstack_image_embeds = self.get_image_features(pixel_values, image_grid_thw)
-            image_embeds = paddle.cat(image_embeds, dim=0).astype(inputs_embeds.dtype)
-            image_mask, _ = self.get_placeholder_mask(
-                input_ids, inputs_embeds=inputs_embeds, image_features=image_embeds
+            image_embeds, deepstack_image_embeds = self.get_image_features(
+                pixel_values, image_grid_thw
             )
-            inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds)
+            image_embeds = paddle.cat(image_embeds, dim=0).astype(
+                inputs_embeds.dtype
+            )
+            image_mask, _ = self.get_placeholder_mask(
+                input_ids,
+                inputs_embeds=inputs_embeds,
+                image_features=image_embeds,
+            )
+            inputs_embeds = inputs_embeds.masked_scatter(
+                image_mask, image_embeds
+            )
 
         if pixel_values_videos is not None:
-            video_embeds, deepstack_video_embeds = self.get_video_features(pixel_values_videos, video_grid_thw)
-            video_embeds = paddle.cat(video_embeds, axis=0).astype(inputs_embeds.dtype)
-            _, video_mask = self.get_placeholder_mask(
-                input_ids, inputs_embeds=inputs_embeds, video_features=video_embeds
+            video_embeds, deepstack_video_embeds = self.get_video_features(
+                pixel_values_videos, video_grid_thw
             )
-            inputs_embeds = inputs_embeds.masked_scatter(video_mask, video_embeds)
+            video_embeds = paddle.cat(video_embeds, axis=0).astype(
+                inputs_embeds.dtype
+            )
+            _, video_mask = self.get_placeholder_mask(
+                input_ids,
+                inputs_embeds=inputs_embeds,
+                video_features=video_embeds,
+            )
+            inputs_embeds = inputs_embeds.masked_scatter(
+                video_mask, video_embeds
+            )
 
         # Deepstack
         visual_pos_masks = None
@@ -1690,8 +2041,12 @@ class Qwen3VLModelDeprecated(Qwen3VLPretrainedModel):
             deepstack_visual_embeds = []
             image_mask_joint = image_mask[visual_pos_masks]
             video_mask_joint = video_mask[visual_pos_masks]
-            for img_embed, vid_embed in zip(deepstack_image_embeds, deepstack_video_embeds):
-                embed_joint = img_embed.new_zeros(visual_pos_masks.sum(), img_embed.shape[-1]).to(img_embed.device)
+            for img_embed, vid_embed in zip(
+                deepstack_image_embeds, deepstack_video_embeds
+            ):
+                embed_joint = img_embed.new_zeros(
+                    visual_pos_masks.sum(), img_embed.shape[-1]
+                ).to(img_embed.device)
                 embed_joint[image_mask_joint, :] = img_embed
                 embed_joint[video_mask_joint, :] = vid_embed
                 deepstack_visual_embeds.append(embed_joint)
@@ -1705,7 +2060,11 @@ class Qwen3VLModelDeprecated(Qwen3VLPretrainedModel):
             deepstack_visual_embeds = deepstack_video_embeds
 
         if position_ids is None:
-            if self.rope_deltas is None or cache_position is None or cache_position[0] == 0:
+            if (
+                self.rope_deltas is None
+                or cache_position is None
+                or cache_position[0] == 0
+            ):
                 position_ids, rope_deltas = self.get_rope_index(
                     input_ids,
                     image_grid_thw,
@@ -1716,12 +2075,16 @@ class Qwen3VLModelDeprecated(Qwen3VLPretrainedModel):
             else:
                 batch_size, seq_length, _ = inputs_embeds.shape
                 position_ids = paddle.arange(seq_length)
-                position_ids = position_ids.view(1, 1, -1).expand(3, batch_size, -1)
+                position_ids = position_ids.view(1, 1, -1).expand(
+                    3, batch_size, -1
+                )
                 if cache_position is not None:
                     delta = cache_position[0] + self.rope_deltas
                 else:
                     delta = paddle.zeros((batch_size, seq_length))
-                delta = delta.repeat_interleave(batch_size // delta.shape[0], axis=1)
+                delta = delta.repeat_interleave(
+                    batch_size // delta.shape[0], axis=1
+                )
                 position_ids = position_ids + delta
 
         outputs = self.language_model(
@@ -1778,7 +2141,9 @@ class Qwen3VLForConditionalGenerationDeprecated(Qwen3VLPretrainedModel):
         "^visual": "model.visual",
         r"^model(?!\.(language_model|visual))": "model.language_model",
     }
-    _tied_weights_keys = {"lm_head.weight": "model.language_model.embed_tokens.weight"}
+    _tied_weights_keys = {
+        "lm_head.weight": "model.language_model.embed_tokens.weight"
+    }
     config_class = Qwen3VLConfig
 
     def __init__(self, config):
@@ -1800,10 +2165,20 @@ class Qwen3VLForConditionalGenerationDeprecated(Qwen3VLPretrainedModel):
     def get_decoder(self):
         return self.model.get_decoder()
 
-    def get_video_features(self, pixel_values_videos: paddle.Tensor, video_grid_thw: Optional[paddle.Tensor] = None):
-        return self.model.get_video_features(pixel_values_videos, video_grid_thw)
+    def get_video_features(
+        self,
+        pixel_values_videos: paddle.Tensor,
+        video_grid_thw: Optional[paddle.Tensor] = None,
+    ):
+        return self.model.get_video_features(
+            pixel_values_videos, video_grid_thw
+        )
 
-    def get_image_features(self, pixel_values: paddle.Tensor, image_grid_thw: Optional[paddle.Tensor] = None):
+    def get_image_features(
+        self,
+        pixel_values: paddle.Tensor,
+        image_grid_thw: Optional[paddle.Tensor] = None,
+    ):
         return self.model.get_image_features(pixel_values, image_grid_thw)
 
     @property
@@ -1832,10 +2207,10 @@ class Qwen3VLForConditionalGenerationDeprecated(Qwen3VLPretrainedModel):
         video_grid_thw: Optional[paddle.Tensor] = None,
         rope_deltas: Optional[paddle.Tensor] = None,
         cache_position: Optional[paddle.Tensor] = None,
-        logits_to_keep: Union[int, paddle.Tensor] = 0,
+        logits_to_keep: int | paddle.Tensor = 0,
         return_dict: Optional[bool] = True,
         **kwargs,
-    ) -> Union[tuple, Qwen3VLCausalLMOutputWithPast]:
+    ) -> tuple | Qwen3VLCausalLMOutputWithPast:
         r"""
         labels (`paddle.Tensor` of shape `(batch_size, sequence_length)`, *optional*):
             Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
@@ -1884,9 +2259,15 @@ class Qwen3VLForConditionalGenerationDeprecated(Qwen3VLPretrainedModel):
         ```
         """
 
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
+        )
         output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
         )
 
         outputs = self.model(
@@ -1911,7 +2292,11 @@ class Qwen3VLForConditionalGenerationDeprecated(Qwen3VLPretrainedModel):
         hidden_states = outputs[0]
 
         # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
-        slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
+        slice_indices = (
+            slice(-logits_to_keep, None)
+            if isinstance(logits_to_keep, int)
+            else logits_to_keep
+        )
         logits = self.lm_head(hidden_states[..., slice_indices, :])
 
         loss = None
@@ -1942,7 +2327,6 @@ class Qwen3VLForConditionalGenerationDeprecated(Qwen3VLPretrainedModel):
         video_grid_thw=None,
         **kwargs,
     ):
-
         # If we have cache: let's slice `input_ids` through `cache_position`, to keep only the unprocessed tokens
         # Exception 1: when passing input_embeds, input_ids may be missing entries
         # Exception 2: some generation methods do special slicing of input_ids, so we don't need to do it here
@@ -1986,13 +2370,19 @@ class Qwen3VLForConditionalGenerationDeprecated(Qwen3VLPretrainedModel):
             elif "position_ids" in model_inputs:
                 batch_size, seq_length = model_inputs["position_ids"].shape
                 position_ids = paddle.arange(seq_length)
-                position_ids = position_ids.view(1, 1, -1).expand(3, batch_size, -1)
+                position_ids = position_ids.view(1, 1, -1).expand(
+                    3, batch_size, -1
+                )
                 delta = cache_position[0] + self.model.rope_deltas
-                delta = delta.repeat_interleave(batch_size // delta.shape[0], dim=0)
+                delta = delta.repeat_interleave(
+                    batch_size // delta.shape[0], dim=0
+                )
                 vision_positions = position_ids + delta.expand_as(position_ids)
             # Concatenate "text + vision" positions into [4, bs, seq-len]
             text_positions = model_inputs["position_ids"][None, ...]
-            model_inputs["position_ids"] = paddle.cat([text_positions, vision_positions], dim=0)
+            model_inputs["position_ids"] = paddle.cat(
+                [text_positions, vision_positions], dim=0
+            )
 
         if cache_position[0] != 0:
             model_inputs["pixel_values"] = None
@@ -2023,13 +2413,22 @@ class Qwen3VLForConditionalGenerationDeprecated(Qwen3VLPretrainedModel):
 
         if inputs_embeds is not None:
             vision_start_mask = (
-                inputs_embeds == self.get_input_embeddings()(paddle.to_tensor(vision_start_token_id, dtype="int64"))
+                inputs_embeds
+                == self.get_input_embeddings()(
+                    paddle.to_tensor(vision_start_token_id, dtype="int64")
+                )
             )[..., 0]
             image_mask = (
-                inputs_embeds == self.get_input_embeddings()(paddle.to_tensor(image_token_id, dtype="int64"))
+                inputs_embeds
+                == self.get_input_embeddings()(
+                    paddle.to_tensor(image_token_id, dtype="int64")
+                )
             )[..., 0]
             video_mask = (
-                inputs_embeds == self.get_input_embeddings()(paddle.to_tensor(video_token_id, dtype="int64"))
+                inputs_embeds
+                == self.get_input_embeddings()(
+                    paddle.to_tensor(video_token_id, dtype="int64")
+                )
             )[..., 0]
         else:
             vision_start_mask = input_ids == vision_start_token_id
@@ -2057,7 +2456,12 @@ class Qwen3VLForConditionalGenerationDeprecated(Qwen3VLPretrainedModel):
         if expand_size == 1:
             return input_ids, model_kwargs
 
-        visual_keys = ["pixel_values", "image_grid_thw", "pixel_values_videos", "video_grid_thw"]
+        visual_keys = [
+            "pixel_values",
+            "image_grid_thw",
+            "pixel_values_videos",
+            "video_grid_thw",
+        ]
 
         def _expand_dict_for_generation_visual(dict_to_expand):
             image_grid_thw = model_kwargs.get("image_grid_thw", None)
@@ -2069,7 +2473,9 @@ class Qwen3VLForConditionalGenerationDeprecated(Qwen3VLPretrainedModel):
             def _repeat_interleave_samples(x, lengths, repeat_times):
                 samples = paddle.split(x, lengths)
                 repeat_args = [repeat_times] + [1] * (x.dim() - 1)
-                result = paddle.cat([sample.repeat(*repeat_args) for sample in samples], dim=0)
+                result = paddle.cat(
+                    [sample.repeat(*repeat_args) for sample in samples], dim=0
+                )
                 return result
 
             for key in dict_to_expand:
@@ -2077,26 +2483,38 @@ class Qwen3VLForConditionalGenerationDeprecated(Qwen3VLPretrainedModel):
                     # split images into samples
                     samples = paddle.split(image_grid_thw, list(image_nums))
                     # compute the sequence length of images for each sample
-                    lengths = [paddle.prod(sample, dim=1).sum() for sample in samples]
+                    lengths = [
+                        paddle.prod(sample, dim=1).sum() for sample in samples
+                    ]
                     dict_to_expand[key] = _repeat_interleave_samples(
-                        dict_to_expand[key], lengths=lengths, repeat_times=expand_size
+                        dict_to_expand[key],
+                        lengths=lengths,
+                        repeat_times=expand_size,
                     )
                 elif key == "image_grid_thw":
                     # get the num of images for each sample
                     lengths = list(image_nums)
                     dict_to_expand[key] = _repeat_interleave_samples(
-                        dict_to_expand[key], lengths=lengths, repeat_times=expand_size
+                        dict_to_expand[key],
+                        lengths=lengths,
+                        repeat_times=expand_size,
                     )
                 elif key == "pixel_values_videos":
                     samples = paddle.split(video_grid_thw, list(video_nums))
-                    lengths = [paddle.prod(sample, dim=1).sum() for sample in samples]
+                    lengths = [
+                        paddle.prod(sample, dim=1).sum() for sample in samples
+                    ]
                     dict_to_expand[key] = _repeat_interleave_samples(
-                        dict_to_expand[key], lengths=lengths, repeat_times=expand_size
+                        dict_to_expand[key],
+                        lengths=lengths,
+                        repeat_times=expand_size,
                     )
                 elif key == "video_grid_thw":
                     lengths = list(video_nums)
                     dict_to_expand[key] = _repeat_interleave_samples(
-                        dict_to_expand[key], lengths=lengths, repeat_times=expand_size
+                        dict_to_expand[key],
+                        lengths=lengths,
+                        repeat_times=expand_size,
                     )
             return dict_to_expand
 
@@ -2108,7 +2526,9 @@ class Qwen3VLForConditionalGenerationDeprecated(Qwen3VLPretrainedModel):
                     and isinstance(dict_to_expand[key], paddle.Tensor)
                     and key not in visual_keys
                 ):
-                    dict_to_expand[key] = dict_to_expand[key].repeat_interleave(expand_size, dim=0)
+                    dict_to_expand[key] = dict_to_expand[key].repeat_interleave(
+                        expand_size, dim=0
+                    )
             return dict_to_expand
 
         model_kwargs = _expand_dict_for_generation_visual(model_kwargs)
@@ -2120,8 +2540,12 @@ class Qwen3VLForConditionalGenerationDeprecated(Qwen3VLPretrainedModel):
 
         if is_encoder_decoder:
             if model_kwargs.get("encoder_outputs") is None:
-                raise ValueError("If `is_encoder_decoder` is True, make sure that `encoder_outputs` is defined.")
-            model_kwargs["encoder_outputs"] = _expand_dict_for_generation(model_kwargs["encoder_outputs"])
+                raise ValueError(
+                    "If `is_encoder_decoder` is True, make sure that `encoder_outputs` is defined."
+                )
+            model_kwargs["encoder_outputs"] = _expand_dict_for_generation(
+                model_kwargs["encoder_outputs"]
+            )
 
         return input_ids, model_kwargs
 

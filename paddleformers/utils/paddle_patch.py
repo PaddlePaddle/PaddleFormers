@@ -17,9 +17,11 @@ import os
 import ml_dtypes
 import numpy as np
 import paddle
-import paddle.nn as nn
+from paddle import nn
 
-enable_paddleformers_monkey_patch = int(os.getenv("FLAGS_enable_paddleformers_monkey_patch", "1"))
+enable_paddleformers_monkey_patch = int(
+    os.getenv("FLAGS_enable_paddleformers_monkey_patch", "1")
+)
 
 np.bfloat16 = ml_dtypes.bfloat16
 np.float8_e5m2 = ml_dtypes.float8_e5m2
@@ -69,7 +71,11 @@ paddle_set_value_mapping = {
 
 
 def enhance_init(*args, **kwargs):
-    if len(args) > 0 and isinstance(args[0], np.ndarray) and args[0].dtype in numpy_paddle_mapping:
+    if (
+        len(args) > 0
+        and isinstance(args[0], np.ndarray)
+        and args[0].dtype in numpy_paddle_mapping
+    ):
         inter_dtype, tgt_dtype = numpy_paddle_mapping[args[0].dtype]
         tensor = args[0].view(inter_dtype)
         new_args = (tensor, *args[1:])
@@ -105,7 +111,10 @@ def enhance_set_value(self, *args, **kwargs):
     else:
         tensor = kwargs.get("value", None)
 
-    if isinstance(tensor, np.ndarray) and tensor.dtype in paddle_set_value_mapping:
+    if (
+        isinstance(tensor, np.ndarray)
+        and tensor.dtype in paddle_set_value_mapping
+    ):
         inter_dtype, tgt_dtype = paddle_set_value_mapping[tensor.dtype]
         tensor = tensor.view(inter_dtype)
         if "value" in kwargs:
@@ -115,7 +124,10 @@ def enhance_set_value(self, *args, **kwargs):
             new_args = (tensor, *args[1:])
         return origin_set_value(self, *new_args, **kwargs)
 
-    if isinstance(tensor, paddle.Tensor) and tensor.dtype in paddle_set_value_mapping:
+    if (
+        isinstance(tensor, paddle.Tensor)
+        and tensor.dtype in paddle_set_value_mapping
+    ):
         inter_dtype, _ = paddle_set_value_mapping[tensor.dtype]
         tensor = tensor.view(inter_dtype)
         if "value" in kwargs:

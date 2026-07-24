@@ -59,10 +59,10 @@ class MoeLoggingCallback(TrainerCallback):
         if isinstance(optimizer, GroupShardedOptimizerStage2):
             optimizer = optimizer._optim
         if optimizer._grad_clip is not None:
-            assert hasattr(
-                optimizer._grad_clip, "stat"
-            ), f"expect clip type to be `ClipGradForMOEByGlobalNorm` or `HybridParallelClipGrad`,\
+            assert hasattr(optimizer._grad_clip, "stat"), (
+                f"expect clip type to be `ClipGradForMOEByGlobalNorm` or `HybridParallelClipGrad`,\
             got grad-clip-type: {type(optimizer._grad_clip)} optimizer-type:{type(optimizer)}"
+            )
         self.optimizer = optimizer
         self.check_step = 0
 
@@ -93,7 +93,9 @@ class MoeLoggingCallback(TrainerCallback):
             dist.all_gather_object(sd_md5_lst, p_md5_info, sharding_group)
             for idx, (name, pmd5, no_sync) in enumerate(p_md5_info):
                 if set([info[idx][1] for info in sd_md5_lst]) != {pmd5}:  # noqa: C403
-                    logger.error(f"param: {name} md5 is not equal between sharding-group")
+                    logger.error(
+                        f"param: {name} md5 is not equal between sharding-group"
+                    )
                     check_error = True
 
         if not args.use_hybrid_parallel or args.data_parallel_size > 1:
@@ -102,11 +104,15 @@ class MoeLoggingCallback(TrainerCallback):
             for idx, (name, pmd5, no_sync) in enumerate(p_md5_info):
                 if no_sync:
                     if set([info[idx][1] for info in dp_md5_lst]) == {pmd5}:  # noqa: C403
-                        logger.error(f"param: {name} md5 is not different between dp-group")
+                        logger.error(
+                            f"param: {name} md5 is not different between dp-group"
+                        )
                         check_error = True
                 else:
                     if set([info[idx][1] for info in dp_md5_lst]) != {pmd5}:  # noqa: C403
-                        logger.error(f"param: {name} md5 is not equal between dp-group")
+                        logger.error(
+                            f"param: {name} md5 is not equal between dp-group"
+                        )
                         check_error = True
         assert not check_error, "params md5 check failed"
         logger.info("params md5 check pass")

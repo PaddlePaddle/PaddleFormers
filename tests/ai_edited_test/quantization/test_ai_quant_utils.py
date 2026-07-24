@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 import paddle
-import paddle.nn as nn
+from paddle import nn
 
 from paddleformers.quantization.quantization_utils import (
     convert_to_quantize_dequantize_state_dict,
@@ -34,7 +34,9 @@ class MockQuantizationConfig:
         self.group_size = group_size
         self.qlora_weight_double_quant = qlora_weight_double_quant
         self.qlora_weight_blocksize = qlora_weight_blocksize
-        self.qlora_weight_double_quant_block_size = qlora_weight_double_quant_block_size
+        self.qlora_weight_double_quant_block_size = (
+            qlora_weight_double_quant_block_size
+        )
         self.llm_int8_threshold = llm_int8_threshold
         self.apply_hadamard = apply_hadamard
 
@@ -67,13 +69,17 @@ class TestParseWeightQuantizeAlgo(unittest.TestCase):
 
     def test_dict_algo_match(self):
         """Test dict algo with matching module."""
-        config = MockQuantizationConfig(weight_quantize_algo={"weight_only_int8": ["linear"]})
+        config = MockQuantizationConfig(
+            weight_quantize_algo={"weight_only_int8": ["linear"]}
+        )
         result = parse_weight_quantize_algo(config, "linear")
         self.assertEqual(result, "weight_only_int8")
 
     def test_dict_algo_no_match(self):
         """Test dict algo without matching module."""
-        config = MockQuantizationConfig(weight_quantize_algo={"weight_only_int8": ["other"]})
+        config = MockQuantizationConfig(
+            weight_quantize_algo={"weight_only_int8": ["other"]}
+        )
         result = parse_weight_quantize_algo(config, "linear")
         self.assertIsNone(result)
 
@@ -81,10 +87,14 @@ class TestParseWeightQuantizeAlgo(unittest.TestCase):
 class TestReplaceWithQuantizationLinear(unittest.TestCase):
     """Tests for replace_with_quantization_linear."""
 
-    @unittest.skip("QuantizationLinear.__init__ requires specific GPU/dtype support not available in CI")
+    @unittest.skip(
+        "QuantizationLinear.__init__ requires specific GPU/dtype support not available in CI"
+    )
     def test_replace_linear(self):
         """Test that nn.Linear is replaced with QuantizationLinear."""
-        from paddleformers.quantization.quantization_linear import QuantizationLinear
+        from paddleformers.quantization.quantization_linear import (
+            QuantizationLinear,
+        )
 
         model = SimpleModel()
         config = MockQuantizationConfig(weight_quantize_algo="weight_only_int8")
@@ -97,7 +107,9 @@ class TestReplaceWithQuantizationLinear(unittest.TestCase):
     def test_skip_ignored_module(self):
         """Test that ignored modules are not replaced."""
         model = SimpleModel()
-        config = MockQuantizationConfig(weight_quantize_algo="weight_only_int8", ignore_modules=["linear"])
+        config = MockQuantizationConfig(
+            weight_quantize_algo="weight_only_int8", ignore_modules=["linear"]
+        )
         replace_with_quantization_linear(model, config)
         # Should still be nn.Linear since it's ignored
         self.assertIsInstance(model.linear, nn.Linear)
@@ -106,26 +118,40 @@ class TestReplaceWithQuantizationLinear(unittest.TestCase):
 class TestConvertToQuantizeStateDict(unittest.TestCase):
     """Tests for convert_to_quantize_state_dict."""
 
-    @unittest.skip("weight_quantize requires specific GPU/dtype support not available in CI")
+    @unittest.skip(
+        "weight_quantize requires specific GPU/dtype support not available in CI"
+    )
     def test_none_algo_skipped(self):
         """Test that layers with None algo are skipped."""
         config = MockQuantizationConfig()
-        with patch("paddleformers.quantization.quantization_utils.parse_weight_quantize_algo", return_value=None):
+        with patch(
+            "paddleformers.quantization.quantization_utils.parse_weight_quantize_algo",
+            return_value=None,
+        ):
             state_dict = {"linear.weight": paddle.randn([4, 4])}
-            result = convert_to_quantize_state_dict(state_dict, ["linear"], config, "float32")
+            result = convert_to_quantize_state_dict(
+                state_dict, ["linear"], config, "float32"
+            )
             self.assertIn("linear.weight", result)
 
 
 class TestConvertToQuantizeDequantizeStateDict(unittest.TestCase):
     """Tests for convert_to_quantize_dequantize_state_dict."""
 
-    @unittest.skip("weight_quantize requires specific GPU/dtype support not available in CI")
+    @unittest.skip(
+        "weight_quantize requires specific GPU/dtype support not available in CI"
+    )
     def test_none_algo_skipped(self):
         """Test that layers with None algo are skipped."""
         config = MockQuantizationConfig()
-        with patch("paddleformers.quantization.quantization_utils.parse_weight_quantize_algo", return_value=None):
+        with patch(
+            "paddleformers.quantization.quantization_utils.parse_weight_quantize_algo",
+            return_value=None,
+        ):
             state_dict = {"linear.weight": paddle.randn([4, 4])}
-            result = convert_to_quantize_dequantize_state_dict(state_dict, ["linear"], config)
+            result = convert_to_quantize_dequantize_state_dict(
+                state_dict, ["linear"], config
+            )
             self.assertIn("linear.weight", result)
 
 

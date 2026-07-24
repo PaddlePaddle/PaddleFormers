@@ -16,7 +16,7 @@ import unittest
 from unittest.mock import patch
 
 import paddle
-import paddle.nn as nn
+from paddle import nn
 
 
 class _MockKTOConfig:
@@ -32,12 +32,20 @@ class _MockConfig:
     """Mock model config for KTO criterion."""
 
     def __init__(self, **kwargs):
-        self.tensor_parallel_output = kwargs.get("tensor_parallel_output", False)
-        self.tensor_model_parallel_size = kwargs.get("tensor_model_parallel_size", 1)
+        self.tensor_parallel_output = kwargs.get(
+            "tensor_parallel_output", False
+        )
+        self.tensor_model_parallel_size = kwargs.get(
+            "tensor_model_parallel_size", 1
+        )
         self.vocab_size = kwargs.get("vocab_size", 1000)
         self.fused_linear = kwargs.get("fused_linear", False)
-        self.use_fused_head_and_loss_fn = kwargs.get("use_fused_head_and_loss_fn", False)
-        self.use_filtered_label_loss = kwargs.get("use_filtered_label_loss", False)
+        self.use_fused_head_and_loss_fn = kwargs.get(
+            "use_fused_head_and_loss_fn", False
+        )
+        self.use_filtered_label_loss = kwargs.get(
+            "use_filtered_label_loss", False
+        )
         self.sequence_parallel = kwargs.get("sequence_parallel", False)
         self.chunk_size = kwargs.get("chunk_size", 1024)
         self.kto_config = kwargs.get("kto_config", None)
@@ -54,7 +62,9 @@ class TestKTOCriterionInit(unittest.TestCase):
         config = _MockConfig(kto_config=kto_config)
         criterion = KTOCriterion(config)
         self.assertEqual(criterion.kto_config.beta, kto_config.beta)
-        self.assertEqual(criterion.kto_config.desirable_weight, kto_config.desirable_weight)
+        self.assertEqual(
+            criterion.kto_config.desirable_weight, kto_config.desirable_weight
+        )
 
     @patch("paddle.distributed.get_world_size", return_value=1)
     def test_init_with_explicit_kto_config(self, mock_world_size):
@@ -223,10 +233,14 @@ class TestKTOCriterionKtoLogps(unittest.TestCase):
         logits = paddle.randn([batch_size, seq_len, 100], dtype="float32")
         # In the default (non-fused, non-filtered) path, labels = response_labels + response_kl_labels
         # uses element-wise addition for paddle tensors. Shape must match logits.shape[:-1].
-        response_labels = paddle.randint(0, 100, [batch_size, seq_len], dtype="int64")
+        response_labels = paddle.randint(
+            0, 100, [batch_size, seq_len], dtype="int64"
+        )
         response_kl_labels = paddle.zeros([batch_size, seq_len], dtype="int64")
         # response_indexs: [batch_idx, start, chosen_end, kl_end, is_chosen(1) or rejected(0)]
-        response_indexs = paddle.to_tensor([[0, 0, 5, 8, 1], [1, 0, 5, 8, 1]], dtype="int64")
+        response_indexs = paddle.to_tensor(
+            [[0, 0, 5, 8, 1], [1, 0, 5, 8, 1]], dtype="int64"
+        )
 
         chosen_logps, rejected_logps, kl_logps = criterion.kto_logps(
             logits, response_labels, response_kl_labels, response_indexs
@@ -245,10 +259,14 @@ class TestKTOCriterionKtoLogps(unittest.TestCase):
 
         batch_size, seq_len = 2, 10
         logits = paddle.randn([batch_size, seq_len, 100], dtype="float32")
-        response_labels = paddle.randint(0, 100, [batch_size, seq_len], dtype="int64")
+        response_labels = paddle.randint(
+            0, 100, [batch_size, seq_len], dtype="int64"
+        )
         response_kl_labels = paddle.zeros([batch_size, seq_len], dtype="int64")
         # One chosen, one rejected
-        response_indexs = paddle.to_tensor([[0, 0, 5, 8, 1], [1, 0, 5, 8, 0]], dtype="int64")
+        response_indexs = paddle.to_tensor(
+            [[0, 0, 5, 8, 1], [1, 0, 5, 8, 0]], dtype="int64"
+        )
 
         chosen_logps, rejected_logps, kl_logps = criterion.kto_logps(
             logits, response_labels, response_kl_labels, response_indexs
@@ -271,11 +289,22 @@ class TestKTOCriterionForward(unittest.TestCase):
 
         batch_size, seq_len = 2, 10
         logits = paddle.randn([batch_size, seq_len, 100], dtype="float32")
-        response_labels = paddle.randint(0, 100, [batch_size, seq_len], dtype="int64")
+        response_labels = paddle.randint(
+            0, 100, [batch_size, seq_len], dtype="int64"
+        )
         response_kl_labels = paddle.zeros([batch_size, seq_len], dtype="int64")
-        response_indexs = paddle.to_tensor([[0, 0, 5, 8, 1], [1, 0, 5, 8, 0]], dtype="int64")
+        response_indexs = paddle.to_tensor(
+            [[0, 0, 5, 8, 1], [1, 0, 5, 8, 0]], dtype="int64"
+        )
 
-        labels = (response_labels, response_kl_labels, response_indexs, None, None, None)
+        labels = (
+            response_labels,
+            response_kl_labels,
+            response_indexs,
+            None,
+            None,
+            None,
+        )
         result = criterion.forward(logits, labels)
         # Should return reference logps when reference is None
         self.assertEqual(len(result), 3)
@@ -290,15 +319,26 @@ class TestKTOCriterionForward(unittest.TestCase):
 
         batch_size, seq_len = 2, 10
         logits = paddle.randn([batch_size, seq_len, 100], dtype="float32")
-        response_labels = paddle.randint(0, 100, [batch_size, seq_len], dtype="int64")
+        response_labels = paddle.randint(
+            0, 100, [batch_size, seq_len], dtype="int64"
+        )
         response_kl_labels = paddle.zeros([batch_size, seq_len], dtype="int64")
-        response_indexs = paddle.to_tensor([[0, 0, 5, 8, 1], [1, 0, 5, 8, 0]], dtype="int64")
+        response_indexs = paddle.to_tensor(
+            [[0, 0, 5, 8, 1], [1, 0, 5, 8, 0]], dtype="int64"
+        )
 
         ref_chosen = paddle.randn([1], dtype="float32")
         ref_rejected = paddle.randn([1], dtype="float32")
         ref_kl = paddle.randn([2], dtype="float32")
 
-        labels = (response_labels, response_kl_labels, response_indexs, ref_chosen, ref_rejected, ref_kl)
+        labels = (
+            response_labels,
+            response_kl_labels,
+            response_indexs,
+            ref_chosen,
+            ref_rejected,
+            ref_kl,
+        )
         result = criterion.forward(logits, labels)
         # Should return policy logps, loss, and kl when reference is provided
         self.assertEqual(len(result), 5)
@@ -313,11 +353,22 @@ class TestKTOCriterionForward(unittest.TestCase):
 
         batch_size, seq_len = 2, 10
         logits = (paddle.randn([batch_size, seq_len, 100], dtype="float32"),)
-        response_labels = paddle.randint(0, 100, [batch_size, seq_len], dtype="int64")
+        response_labels = paddle.randint(
+            0, 100, [batch_size, seq_len], dtype="int64"
+        )
         response_kl_labels = paddle.zeros([batch_size, seq_len], dtype="int64")
-        response_indexs = paddle.to_tensor([[0, 0, 5, 8, 1], [1, 0, 5, 8, 0]], dtype="int64")
+        response_indexs = paddle.to_tensor(
+            [[0, 0, 5, 8, 1], [1, 0, 5, 8, 0]], dtype="int64"
+        )
 
-        labels = (response_labels, response_kl_labels, response_indexs, None, None, None)
+        labels = (
+            response_labels,
+            response_kl_labels,
+            response_indexs,
+            None,
+            None,
+            None,
+        )
         result = criterion.forward(logits, labels)
         self.assertEqual(len(result), 3)
 
@@ -341,7 +392,9 @@ class TestKTOCriterionLogpsShapeMismatch(unittest.TestCase):
         response_indexs = paddle.to_tensor([[0, 0, 3, 5, 1]], dtype="int64")
 
         with self.assertRaises(ValueError):
-            criterion.kto_logps(logits, response_labels, response_kl_labels, response_indexs)
+            criterion.kto_logps(
+                logits, response_labels, response_kl_labels, response_indexs
+            )
 
 
 if __name__ == "__main__":

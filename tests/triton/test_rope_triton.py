@@ -18,7 +18,6 @@ import paddle
 
 
 def apply_rotary_ref(x, cos, sin, conjugate=False):
-
     orig_dtype = x.dtype
     x = x.astype("float32")
     cos = cos.astype("float32")
@@ -68,8 +67,12 @@ class TestTritonRoPE(unittest.TestCase):
 
         for batch, seq_len, num_heads, head_dim in self.test_shapes:
             with self.subTest(shape=(batch, seq_len, num_heads, head_dim)):
-                q = paddle.randn([batch, seq_len, num_heads, head_dim], dtype=self.dtype)
-                k = paddle.randn([batch, seq_len, num_heads, head_dim], dtype=self.dtype)
+                q = paddle.randn(
+                    [batch, seq_len, num_heads, head_dim], dtype=self.dtype
+                )
+                k = paddle.randn(
+                    [batch, seq_len, num_heads, head_dim], dtype=self.dtype
+                )
                 cos = paddle.randn([seq_len, head_dim // 2], dtype=self.dtype)
                 sin = paddle.randn([seq_len, head_dim // 2], dtype=self.dtype)
 
@@ -81,14 +84,26 @@ class TestTritonRoPE(unittest.TestCase):
 
                 # Check correctness
                 q_close = paddle.allclose(
-                    q_ref.astype("float32"), q_tri.astype("float32"), rtol=1e-2, atol=1e-2
+                    q_ref.astype("float32"),
+                    q_tri.astype("float32"),
+                    rtol=1e-2,
+                    atol=1e-2,
                 ).item()
                 k_close = paddle.allclose(
-                    k_ref.astype("float32"), k_tri.astype("float32"), rtol=1e-2, atol=1e-2
+                    k_ref.astype("float32"),
+                    k_tri.astype("float32"),
+                    rtol=1e-2,
+                    atol=1e-2,
                 ).item()
 
-                self.assertTrue(q_close, f"Q mismatch for shape {(batch, seq_len, num_heads, head_dim)}")
-                self.assertTrue(k_close, f"K mismatch for shape {(batch, seq_len, num_heads, head_dim)}")
+                self.assertTrue(
+                    q_close,
+                    f"Q mismatch for shape {(batch, seq_len, num_heads, head_dim)}",
+                )
+                self.assertTrue(
+                    k_close,
+                    f"K mismatch for shape {(batch, seq_len, num_heads, head_dim)}",
+                )
 
     def test_backward_correctness(self):
         """Test backward pass correctness."""
@@ -96,8 +111,12 @@ class TestTritonRoPE(unittest.TestCase):
 
         batch, seq_len, num_heads, head_dim = 1, 1024, 16, 72
 
-        q = paddle.randn([batch, seq_len, num_heads, head_dim], dtype=self.dtype)
-        k = paddle.randn([batch, seq_len, num_heads, head_dim], dtype=self.dtype)
+        q = paddle.randn(
+            [batch, seq_len, num_heads, head_dim], dtype=self.dtype
+        )
+        k = paddle.randn(
+            [batch, seq_len, num_heads, head_dim], dtype=self.dtype
+        )
         cos = paddle.randn([seq_len, head_dim // 2], dtype=self.dtype)
         sin = paddle.randn([seq_len, head_dim // 2], dtype=self.dtype)
 
@@ -117,10 +136,16 @@ class TestTritonRoPE(unittest.TestCase):
 
         # Compare
         grad_q_close = paddle.allclose(
-            grad_ref.astype("float32"), q_tri.grad.astype("float32"), rtol=1e-2, atol=1e-2
+            grad_ref.astype("float32"),
+            q_tri.grad.astype("float32"),
+            rtol=1e-2,
+            atol=1e-2,
         ).item()
         grad_k_close = paddle.allclose(
-            grad_ref.astype("float32"), k_tri.grad.astype("float32"), rtol=1e-2, atol=1e-2
+            grad_ref.astype("float32"),
+            k_tri.grad.astype("float32"),
+            rtol=1e-2,
+            atol=1e-2,
         ).item()
 
         self.assertTrue(grad_q_close, "grad_q mismatch")
@@ -135,15 +160,23 @@ class TestTritonRoPE(unittest.TestCase):
 
         for dtype in dtypes:
             with self.subTest(dtype=dtype):
-                q = paddle.randn([batch, seq_len, num_heads, head_dim], dtype=dtype)
-                k = paddle.randn([batch, seq_len, num_heads, head_dim], dtype=dtype)
+                q = paddle.randn(
+                    [batch, seq_len, num_heads, head_dim], dtype=dtype
+                )
+                k = paddle.randn(
+                    [batch, seq_len, num_heads, head_dim], dtype=dtype
+                )
                 cos = paddle.randn([seq_len, head_dim // 2], dtype=dtype)
                 sin = paddle.randn([seq_len, head_dim // 2], dtype=dtype)
 
                 q_out, k_out = apply_rotary_pos_emb_vision(q, k, cos, sin)
 
-                self.assertEqual(q_out.dtype, q.dtype, f"Q dtype not preserved for {dtype}")
-                self.assertEqual(k_out.dtype, k.dtype, f"K dtype not preserved for {dtype}")
+                self.assertEqual(
+                    q_out.dtype, q.dtype, f"Q dtype not preserved for {dtype}"
+                )
+                self.assertEqual(
+                    k_out.dtype, k.dtype, f"K dtype not preserved for {dtype}"
+                )
 
     def test_3d_input(self):
         """Test that 3D input (without batch dim) works correctly."""
@@ -163,12 +196,24 @@ class TestTritonRoPE(unittest.TestCase):
         self.assertEqual(k_out.shape, k.shape)
 
         # Check correctness
-        q_ref, k_ref = apply_rotary_pos_emb_vision_ref(q.unsqueeze(0), k.unsqueeze(0), cos, sin)
+        q_ref, k_ref = apply_rotary_pos_emb_vision_ref(
+            q.unsqueeze(0), k.unsqueeze(0), cos, sin
+        )
         q_ref = q_ref.squeeze(0)
         k_ref = k_ref.squeeze(0)
 
-        q_close = paddle.allclose(q_ref.astype("float32"), q_out.astype("float32"), rtol=1e-2, atol=1e-2).item()
-        k_close = paddle.allclose(k_ref.astype("float32"), k_out.astype("float32"), rtol=1e-2, atol=1e-2).item()
+        q_close = paddle.allclose(
+            q_ref.astype("float32"),
+            q_out.astype("float32"),
+            rtol=1e-2,
+            atol=1e-2,
+        ).item()
+        k_close = paddle.allclose(
+            k_ref.astype("float32"),
+            k_out.astype("float32"),
+            rtol=1e-2,
+            atol=1e-2,
+        ).item()
 
         self.assertTrue(q_close, "Q mismatch for 3D input")
         self.assertTrue(k_close, "K mismatch for 3D input")

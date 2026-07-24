@@ -20,7 +20,14 @@ import unittest
 
 # Direct import to avoid __init__.py triggering workflow.py which requires AutoTokenizer
 _MODULE_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "..", "..", "paddleformers", "cli", "train", "deepseek_v3_pretrain"
+    os.path.dirname(__file__),
+    "..",
+    "..",
+    "..",
+    "paddleformers",
+    "cli",
+    "train",
+    "deepseek_v3_pretrain",
 )
 _MODULE_DIR = os.path.abspath(_MODULE_DIR)
 
@@ -46,7 +53,9 @@ if _pkg_name not in sys.modules:
     sys.modules[_pkg_name] = _pkg_mod
 
 # Load the configuration module directly
-_config_mod = _load_module("configuration", os.path.join(_MODULE_DIR, "configuration.py"))
+_config_mod = _load_module(
+    "configuration", os.path.join(_MODULE_DIR, "configuration.py")
+)
 DeepseekV2FastConfig = _config_mod.DeepseekV2FastConfig
 
 
@@ -128,7 +137,9 @@ class TestDeepseekV2FastConfig(unittest.TestCase):
 
     def test_keys_to_ignore_at_inference(self):
         """Test keys_to_ignore_at_inference attribute."""
-        self.assertEqual(self.config.keys_to_ignore_at_inference, ["past_key_values"])
+        self.assertEqual(
+            self.config.keys_to_ignore_at_inference, ["past_key_values"]
+        )
 
     def test_custom_initialization(self):
         """Test config with custom parameter values."""
@@ -172,7 +183,9 @@ class TestDeepseekV2FastConfig(unittest.TestCase):
 
     def test_num_key_value_heads_backward_compatibility(self):
         """Test that num_key_value_heads defaults to num_attention_heads when None."""
-        config = DeepseekV2FastConfig(num_attention_heads=16, num_key_value_heads=None)
+        config = DeepseekV2FastConfig(
+            num_attention_heads=16, num_key_value_heads=None
+        )
         self.assertEqual(config.num_key_value_heads, 16)
 
     def test_use_fp8_default(self):
@@ -204,10 +217,14 @@ class TestDeepseekV2FastConfig(unittest.TestCase):
         config = DeepseekV2FastConfig(max_sequence_length=8192)
         self.assertEqual(config.max_sequence_length, 8192)
 
-    @unittest.skip("DeepseekV2FastConfig loaded via importlib may have different PretrainedConfig identity")
+    @unittest.skip(
+        "DeepseekV2FastConfig loaded via importlib may have different PretrainedConfig identity"
+    )
     def test_inheritance(self):
         """Test that DeepseekV2FastConfig inherits from PretrainedConfig."""
-        from paddleformers.transformers.configuration_utils import PretrainedConfig
+        from paddleformers.transformers.configuration_utils import (
+            PretrainedConfig,
+        )
 
         self.assertIsInstance(self.config, PretrainedConfig)
 

@@ -23,7 +23,14 @@ import paddle
 
 # Direct import to avoid __init__.py triggering workflow.py which requires AutoTokenizer
 _MODULE_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "..", "..", "paddleformers", "cli", "train", "deepseek_v3_pretrain"
+    os.path.dirname(__file__),
+    "..",
+    "..",
+    "..",
+    "paddleformers",
+    "cli",
+    "train",
+    "deepseek_v3_pretrain",
 )
 _MODULE_DIR = os.path.abspath(_MODULE_DIR)
 
@@ -51,10 +58,14 @@ if _pkg_name not in sys.modules:
     sys.modules[_pkg_name] = _pkg_mod
 
 # Load moe_utils first (it has no relative imports from this package)
-_moe_utils_mod = _load_module("moe_utils", os.path.join(_MODULE_DIR, "moe_utils.py"))
+_moe_utils_mod = _load_module(
+    "moe_utils", os.path.join(_MODULE_DIR, "moe_utils.py")
+)
 
 # Now load moe_layer - it uses relative imports but we pre-populated sys.modules
-_moe_layer_mod = _load_module("moe_layer", os.path.join(_MODULE_DIR, "moe_layer.py"))
+_moe_layer_mod = _load_module(
+    "moe_layer", os.path.join(_MODULE_DIR, "moe_layer.py")
+)
 MoELayer = _moe_layer_mod.MoELayer
 record_stream_for_multi_input = _moe_layer_mod.record_stream_for_multi_input
 stop_gradient_for_multi_input = _moe_layer_mod.stop_gradient_for_multi_input

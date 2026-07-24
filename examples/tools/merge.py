@@ -24,7 +24,7 @@ from paddleformers.data import indexed_dataset
 
 def print_datetime(string):
     time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print("[" + string + "] datetime: {} ".format(time_str))
+    print("[" + string + f"] datetime: {time_str} ")
 
 
 def merge_sft_datasets(input_dirs, output_dir):
@@ -39,7 +39,6 @@ def merge_sft_datasets(input_dirs, output_dir):
     print_datetime("Validating input directories...")
 
     for input_dir in input_dirs:
-
         index_path = os.path.join(input_dir, "index.idx")
         if not os.path.exists(index_path):
             raise ValueError(f"index.idx not found in {input_dir}")
@@ -90,7 +89,9 @@ def merge_sft_datasets(input_dirs, output_dir):
     merged_sizes = np.array(merged_sizes, dtype=np.int32)
     merged_doc_idx = np.array(merged_doc_idx, dtype=np.int64)
 
-    print_datetime(f"Total samples: {len(merged_sizes)}, Total docs: {len(merged_doc_idx) - 1}")
+    print_datetime(
+        f"Total samples: {len(merged_sizes)}, Total docs: {len(merged_doc_idx) - 1}"
+    )
 
     for bin_file in bin_files:
         print_datetime(f"Merging {bin_file}...")
@@ -107,7 +108,9 @@ def merge_sft_datasets(input_dirs, output_dir):
     print_datetime("Writing merged index.idx...")
     output_index_path = os.path.join(output_dir, "index.idx")
 
-    with indexed_dataset.SFTMMapIndexedDataset.Index.writer(output_index_path, dtype) as writer:
+    with indexed_dataset.SFTMMapIndexedDataset.Index.writer(
+        output_index_path, dtype
+    ) as writer:
         writer.write(merged_sizes.tolist(), merged_doc_idx.tolist())
 
     print_datetime("Merge completed successfully!")

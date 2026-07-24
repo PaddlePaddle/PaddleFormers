@@ -29,7 +29,7 @@ import subprocess
 import tempfile
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import pytest
 import yaml
@@ -68,9 +68,9 @@ class ModelConfig:
     name: str
     repo_id: str
     model_type: str = "text"
-    cli_args: Dict[str, Any] = field(default_factory=dict)
-    base_loss: Dict[str, float] = field(default_factory=dict)
-    base_result: Dict[str, List[List[int]]] = field(default_factory=dict)
+    cli_args: dict[str, Any] = field(default_factory=dict)
+    base_loss: dict[str, float] = field(default_factory=dict)
+    base_result: dict[str, list[list[int]]] = field(default_factory=dict)
 
 
 @dataclass
@@ -141,7 +141,9 @@ class TrainTester:
             base_result=model_cfg.get("base_result", {}),
         )
 
-    def update_training_args(self, yaml_path: str, tmp_dir: str, updates: Dict[str, Any]) -> str:
+    def update_training_args(
+        self, yaml_path: str, tmp_dir: str, updates: dict[str, Any]
+    ) -> str:
         """Update training arguments in a YAML configuration file.
 
         Creates a new YAML file with updated parameters while preserving
@@ -161,9 +163,13 @@ class TrainTester:
         config.update(updates)
         os.makedirs(tmp_dir, exist_ok=True)
 
-        updated_yaml_path = os.path.join(tmp_dir, f"updated_{os.path.basename(yaml_path)}")
+        updated_yaml_path = os.path.join(
+            tmp_dir, f"updated_{os.path.basename(yaml_path)}"
+        )
         with open(updated_yaml_path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(config, f, indent=4, allow_unicode=True, sort_keys=False)
+            yaml.safe_dump(
+                config, f, indent=4, allow_unicode=True, sort_keys=False
+            )
 
         return updated_yaml_path
 
@@ -174,7 +180,7 @@ class TrainTester:
         test_type: str,
         new_loss: float,
         new_resume_loss: float,
-        new_result: List[List[int]],
+        new_result: list[list[int]],
     ) -> None:
         """Update baseline values in the configuration file.
 
@@ -206,7 +212,15 @@ class TrainTester:
 
         try:
             config = self._load_and_validate_config(config_path, model_key)
-            self._update_config_values(config, model_key, train_type, test_type, new_loss, new_resume_loss, new_result)
+            self._update_config_values(
+                config,
+                model_key,
+                train_type,
+                test_type,
+                new_loss,
+                new_resume_loss,
+                new_result,
+            )
             self._save_config_safely(config, config_path)
 
         except Exception as e:
@@ -238,7 +252,9 @@ class TrainTester:
                 os.remove(backup_path)
             raise e
 
-    def _load_and_validate_config(self, config_path: str, model_key: str) -> Dict[str, Any]:
+    def _load_and_validate_config(
+        self, config_path: str, model_key: str
+    ) -> dict[str, Any]:
         """Load and validate the configuration file."""
         with open(config_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f) or {}
@@ -250,13 +266,13 @@ class TrainTester:
 
     def _update_config_values(
         self,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         model_key: str,
         train_type: str,
         test_type: str,
         new_loss: float,
         new_resume_loss: float,
-        new_result: List[List[int]],
+        new_result: list[list[int]],
     ) -> None:
         """Update the loss and result values in the configuration."""
         model_cfg = config[model_key]
@@ -278,21 +294,36 @@ class TrainTester:
             model_cfg["base_result"] = {}
         model_cfg["base_result"][result_key] = new_result
 
-        print(f"[UPDATE INFO] Updated {model_key} base_loss, resume_loss and base_result")
+        print(
+            f"[UPDATE INFO] Updated {model_key} base_loss, resume_loss and base_result"
+        )
 
-    def _save_config_safely(self, config: Dict[str, Any], config_path: str) -> None:
+    def _save_config_safely(
+        self, config: dict[str, Any], config_path: str
+    ) -> None:
         """Safely save the configuration using atomic file operations."""
         temp_path = config_path + ".tmp"
 
         with open(temp_path, "w", encoding="utf-8") as f:
-            yaml.dump(config, f, Dumper=CompactListDumper, indent=4, allow_unicode=True, sort_keys=False)
+            yaml.dump(
+                config,
+                f,
+                Dumper=CompactListDumper,
+                indent=4,
+                allow_unicode=True,
+                sort_keys=False,
+            )
 
         # Atomic replace
         os.replace(temp_path, config_path)
 
     def assert_loss(
-        self, output: str, base_loss: float, phase_name: str, update_flag: bool = False
-    ) -> Tuple[float, Optional[str]]:
+        self,
+        output: str,
+        base_loss: float,
+        phase_name: str,
+        update_flag: bool = False,
+    ) -> tuple[float, str | None]:
         """Validate training loss against baseline.
 
         Args:
@@ -304,7 +335,9 @@ class TrainTester:
         Returns:
             Tuple of (actual_loss, error_message). Error message is None if valid.
         """
-        loss_pattern = re.compile(r"(?<![A-Za-z_])loss:\s*([0-9]+\.[0-9]+),\s*learning_rate:")
+        loss_pattern = re.compile(
+            r"(?<![A-Za-z_])loss:\s*([0-9]+\.[0-9]+),\s*learning_rate:"
+        )
         losses = [float(m.group(1)) for m in loss_pattern.finditer(output)]
 
         avg_loss = round(sum(losses) / len(losses), 10) if losses else 0
@@ -314,11 +347,14 @@ class TrainTester:
             return avg_loss, None
         else:
             if abs(avg_loss - base_loss) > LOSS_TOLERANCE:
-                return avg_loss, f"{phase_name} loss: {avg_loss}, base_loss: {base_loss}, difference detected!"
+                return (
+                    avg_loss,
+                    f"{phase_name} loss: {avg_loss}, base_loss: {base_loss}, difference detected!",
+                )
 
         return avg_loss, None
 
-    def extract_loss(self, log_content: str) -> Optional[float]:
+    def extract_loss(self, log_content: str) -> float | None:
         """Extract the first loss value from log content.
 
         Args:
@@ -327,13 +363,15 @@ class TrainTester:
         Returns:
             First loss value found, or None if not found.
         """
-        loss_pattern = re.compile(r"(?<![A-Za-z_])loss:\s*([0-9]+\.[0-9]+),\s*learning_rate:")
+        loss_pattern = re.compile(
+            r"(?<![A-Za-z_])loss:\s*([0-9]+\.[0-9]+),\s*learning_rate:"
+        )
         match = loss_pattern.search(log_content)
         return float(match.group(1)) if match else None
 
     def assert_loss_consistent(
         self, log_file: str, resume_log_file: str
-    ) -> Tuple[Tuple[Optional[float], Optional[float]], Optional[str]]:
+    ) -> tuple[tuple[float | None, float | None], str | None]:
         """Verify loss consistency between training and resume phases.
 
         Compares the last loss from First training with the first loss
@@ -352,26 +390,37 @@ class TrainTester:
         with open(resume_log_file, "r", encoding="utf-8") as f:
             resume_log_content = f.read()
 
-        loss_pattern = re.compile(r"(?<![A-Za-z_])loss:\s*([0-9]+\.[0-9]+),\s*learning_rate:")
+        loss_pattern = re.compile(
+            r"(?<![A-Za-z_])loss:\s*([0-9]+\.[0-9]+),\s*learning_rate:"
+        )
 
         # Extract last loss from training log
         training_losses = loss_pattern.findall(log_content)
         if not training_losses:
-            return (None, None), f"Failed to extract any loss from training log: {log_file}"
+            return (
+                None,
+                None,
+            ), f"Failed to extract any loss from training log: {log_file}"
         last_training_loss = float(training_losses[-1])
 
         # Extract first loss from resume log
         resume_loss_matches = list(loss_pattern.finditer(resume_log_content))
         if not resume_loss_matches:
-            return (last_training_loss, None), f"Failed to extract first loss from resume log: {resume_log_file}"
+            return (
+                (last_training_loss, None),
+                f"Failed to extract first loss from resume log: {resume_log_file}",
+            )
         first_resume_loss = float(resume_loss_matches[0].group(1))
 
         # Compare losses
         if abs(last_training_loss - first_resume_loss) > LOSS_TOLERANCE:
             return (
-                last_training_loss,
-                first_resume_loss,
-            ), f"Loss mismatch! Training loss: {last_training_loss}, Resume loss: {first_resume_loss}"
+                (
+                    last_training_loss,
+                    first_resume_loss,
+                ),
+                f"Loss mismatch! Training loss: {last_training_loss}, Resume loss: {first_resume_loss}",
+            )
 
         print(f"Loss transition consistent: {last_training_loss}")
         return (last_training_loss, first_resume_loss), None
@@ -403,7 +452,9 @@ class TrainTester:
             return os.path.join(os.environ["PF_HOME"], repo_id)
         return f"./{repo_id}"
 
-    def run_training(self, config_path: str, log_file: str, sleep_before: int = 0) -> TrainingResult:
+    def run_training(
+        self, config_path: str, log_file: str, sleep_before: int = 0
+    ) -> TrainingResult:
         """Execute a training run and save logs.
 
         Args:
@@ -426,10 +477,16 @@ class TrainTester:
             with open(log_file, "r", encoding="utf-8") as f:
                 stdout_content = f.read()
 
-        return TrainingResult(return_code=return_code, stdout=stdout_content, log_file=log_file)
+        return TrainingResult(
+            return_code=return_code, stdout=stdout_content, log_file=log_file
+        )
 
     def run_export(
-        self, model_name_or_path: str, output_dir: str, log_file: str, lora: bool = True
+        self,
+        model_name_or_path: str,
+        output_dir: str,
+        log_file: str,
+        lora: bool = True,
     ) -> subprocess.CompletedProcess:
         """Export and merge LoRA weights.
 
@@ -447,13 +504,17 @@ class TrainTester:
             "output_dir": output_dir,
         }
         export_config_path = "./examples/config/run_export.yaml"
-        updated_config_path = self.update_training_args(export_config_path, CONFIG_PATH, export_update_args)
+        updated_config_path = self.update_training_args(
+            export_config_path, CONFIG_PATH, export_update_args
+        )
 
         cmd = ["paddleformers-cli", "export", updated_config_path]
         if lora:
             cmd.append("lora=True")
 
-        process = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        process = subprocess.run(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        )
 
         # Save export log
         if process.stdout and process.stdout.strip():
@@ -462,7 +523,9 @@ class TrainTester:
 
         return process
 
-    def cleanup_checkpoint(self, output_dir: str, checkpoint_name: str = "checkpoint-2") -> None:
+    def cleanup_checkpoint(
+        self, output_dir: str, checkpoint_name: str = "checkpoint-2"
+    ) -> None:
         """Remove a checkpoint directory for resume testing.
 
         Args:
@@ -516,7 +579,9 @@ class BaseTrainingTest:
         expected_result = model_cfg.base_result.get(result_key, 0)
 
         # Setup output directory
-        output_dir = os.path.join(OUTPUT_DIR, f"{train_type}_{model_key}_{test_type}")
+        output_dir = os.path.join(
+            OUTPUT_DIR, f"{train_type}_{model_key}_{test_type}"
+        )
         config_path = os.path.join(CONFIG_PATH, config_subpath)
 
         # Prepare training arguments
@@ -530,10 +595,16 @@ class BaseTrainingTest:
         }
 
         # Execute First training
-        updated_config = self.tester.update_training_args(config_path, output_dir, update_args)
-        log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_{test_type}.log")
+        updated_config = self.tester.update_training_args(
+            config_path, output_dir, update_args
+        )
+        log_file = os.path.join(
+            LOG_PATH, f"{model_key}_{train_type}_{test_type}.log"
+        )
         training_result = self.tester.run_training(updated_config, log_file)
-        self.tester.assert_result(training_result.return_code, training_result.stdout)
+        self.tester.assert_result(
+            training_result.return_code, training_result.stdout
+        )
 
         time.sleep(3)
         resume_sed_cmds = [
@@ -545,36 +616,57 @@ class BaseTrainingTest:
             subprocess.run(cmd, shell=True)
         self.tester.cleanup_checkpoint(output_dir)
 
-        resume_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_{test_type}_resume.log")
-        resume_result = self.tester.run_training(updated_config, resume_log_file)
-        self.tester.assert_result(resume_result.return_code, resume_result.stdout)
+        resume_log_file = os.path.join(
+            LOG_PATH, f"{model_key}_{train_type}_{test_type}_resume.log"
+        )
+        resume_result = self.tester.run_training(
+            updated_config, resume_log_file
+        )
+        self.tester.assert_result(
+            resume_result.return_code, resume_result.stdout
+        )
 
         errors = []
 
-        actual_loss, msg = self.tester.assert_loss(training_result.stdout, base_loss, "First-Training", should_update)
+        actual_loss, msg = self.tester.assert_loss(
+            training_result.stdout, base_loss, "First-Training", should_update
+        )
         if msg:
             errors.append(AssertionError(msg))
 
         actual_resume_loss, msg = self.tester.assert_loss(
-            resume_result.stdout, base_resume_loss, "Resume-Training", should_update
+            resume_result.stdout,
+            base_resume_loss,
+            "Resume-Training",
+            should_update,
         )
         if msg:
             errors.append(AssertionError(msg))
 
         if not should_update:
-            _, msg = self.tester.assert_loss_consistent(log_file, resume_log_file)
+            _, msg = self.tester.assert_loss_consistent(
+                log_file, resume_log_file
+            )
             if msg:
                 errors.append(AssertionError(msg))
 
         generate_dir = output_dir
         if requires_export:
-            export_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_{test_type}_export.log")
-            merge_result = self.tester.run_export(model_name_or_path, output_dir, export_log_file, lora=True)
-            self.tester.assert_result(merge_result.returncode, merge_result.stdout)
+            export_log_file = os.path.join(
+                LOG_PATH, f"{model_key}_{train_type}_{test_type}_export.log"
+            )
+            merge_result = self.tester.run_export(
+                model_name_or_path, output_dir, export_log_file, lora=True
+            )
+            self.tester.assert_result(
+                merge_result.returncode, merge_result.stdout
+            )
             generate_dir = os.path.join(output_dir, "export")
 
         # Test model generation
-        generate_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_{test_type}_generate.log")
+        generate_log_file = os.path.join(
+            LOG_PATH, f"{model_key}_{train_type}_{test_type}_generate.log"
+        )
         skip_generation = model_key in [
             "qwen2",
             "qwen2_moe",
@@ -588,14 +680,22 @@ class BaseTrainingTest:
             result = None
         else:
             result = self._run_generation_test(
-                model_key, generate_dir, expected_result, should_update, generate_log_file
+                model_key,
+                generate_dir,
+                expected_result,
+                should_update,
+                generate_log_file,
             )
         # Update baseline if needed
         if should_update:
             new_result = result[0] if result else None
             if new_result is None:
-                print(f"[WARN] Generation test skipped for {model_key}, updating loss only")
-                new_result = [[]]  # Use empty list as placeholder for skipped generation
+                print(
+                    f"[WARN] Generation test skipped for {model_key}, updating loss only"
+                )
+                new_result = [
+                    []
+                ]  # Use empty list as placeholder for skipped generation
             self.tester.update_baseline(
                 model_key=model_key,
                 train_type=train_type,
@@ -609,8 +709,13 @@ class BaseTrainingTest:
             raise AssertionError(errors)
 
     def _run_generation_test(
-        self, model_key: str, output_dir: str, expected_result: Any, should_update: bool, log_file: str = ""
-    ) -> List[List[int]]:
+        self,
+        model_key: str,
+        output_dir: str,
+        expected_result: Any,
+        should_update: bool,
+        log_file: str = "",
+    ) -> list[list[int]]:
         """Run model generation test with error handling and logging.
 
         Args:
@@ -628,14 +733,18 @@ class BaseTrainingTest:
         log_lines.append(f"Model: {model_key}")
         log_lines.append("-" * 50)
         try:
-            result = create_and_check_model_generate(model_key, output_dir, expected_result)
+            result = create_and_check_model_generate(
+                model_key, output_dir, expected_result
+            )
             log_lines.append("=== Execution Output(Success) ===")
             return result
         except Exception as e:
             log_lines.append("=== Execution Output (Failed) ===")
             log_lines.append(f"Error: {e}")
             if should_update:
-                print(f"[UPDATE MODE] Model generate failed but continuing: {e}")
+                print(
+                    f"[UPDATE MODE] Model generate failed but continuing: {e}"
+                )
                 return [[]]
             raise e
         finally:
@@ -670,7 +779,10 @@ class TestTrain:
         self.train_tester = TrainTester()
         self.workflow = BaseTrainingTest(self.train_tester)
 
-        subprocess.run("pkill -9 -f 'paddleformers/cli/launcher.py' 2>/dev/null || true", shell=True)
+        subprocess.run(
+            "pkill -9 -f 'paddleformers/cli/launcher.py' 2>/dev/null || true",
+            shell=True,
+        )
 
         dist_log_dir = "./paddleformers_dist_log"
         if os.path.exists(dist_log_dir):
@@ -710,7 +822,9 @@ class TestTrain:
             request: Pytest request fixture.
         """
         model_cfg = self.train_tester.load_model_config(model_key)
-        print(f"\n[INFO] Testing model={model_key}, train_type={train_type}_full")
+        print(
+            f"\n[INFO] Testing model={model_key}, train_type={train_type}_full"
+        )
         should_update = self._should_update_baseline(request, model_key)
 
         self.workflow.execute_training_workflow(
@@ -758,7 +872,9 @@ class TestTrain:
             request: Pytest request fixture.
         """
         model_cfg = self.train_tester.load_model_config(model_key)
-        print(f"\n[INFO] Testing model={model_key}, train_type={train_type}_lora")
+        print(
+            f"\n[INFO] Testing model={model_key}, train_type={train_type}_lora"
+        )
         should_update = self._should_update_baseline(request, model_key)
 
         self.workflow.execute_training_workflow(
@@ -782,7 +898,9 @@ class TestTrain:
             request: Pytest request fixture.
         """
         model_cfg = self.train_tester.load_model_config(model_key)
-        print(f"\n[INFO] Testing model={model_key}, train_type={train_type}_full_tp_pp")
+        print(
+            f"\n[INFO] Testing model={model_key}, train_type={train_type}_full_tp_pp"
+        )
         should_update = self._should_update_baseline(request, model_key)
 
         self.workflow.execute_training_workflow(
@@ -806,7 +924,9 @@ class TestTrain:
             request: Pytest request fixture.
         """
         model_cfg = self.train_tester.load_model_config(model_key)
-        print(f"\n[INFO] Testing model={model_key}, train_type={train_type}_lora_tp_pp")
+        print(
+            f"\n[INFO] Testing model={model_key}, train_type={train_type}_lora_tp_pp"
+        )
         should_update = self._should_update_baseline(request, model_key)
 
         self.workflow.execute_training_workflow(
@@ -821,7 +941,9 @@ class TestTrain:
 
     @pytest.mark.model_type("text")
     @pytest.mark.parametrize("train_type", ["sft", "dpo"])
-    def test_full_function_call(self, train_type: str, model_key: str, request) -> None:
+    def test_full_function_call(
+        self, train_type: str, model_key: str, request
+    ) -> None:
         """Test full training with function calling support for text models.
 
         Args:
@@ -830,7 +952,9 @@ class TestTrain:
             request: Pytest request fixture.
         """
         model_cfg = self.train_tester.load_model_config(model_key)
-        print(f"\n[INFO] Testing model={model_key}, train_type={train_type}_full_function_call")
+        print(
+            f"\n[INFO] Testing model={model_key}, train_type={train_type}_full_function_call"
+        )
         should_update = self._should_update_baseline(request, model_key)
 
         self.workflow.execute_training_workflow(
@@ -855,7 +979,9 @@ class TestTrain:
         """
 
         model_cfg = self.train_tester.load_model_config(model_key)
-        print(f"\n[INFO] Testing model={model_key}, train_type={train_type}_full")
+        print(
+            f"\n[INFO] Testing model={model_key}, train_type={train_type}_full"
+        )
         should_update = self._should_update_baseline(request, model_key)
 
         self.workflow.execute_training_workflow(
@@ -880,7 +1006,9 @@ class TestTrain:
         """
 
         model_cfg = self.train_tester.load_model_config(model_key)
-        print(f"\n[INFO] Testing model={model_key}, train_type={train_type}_lora")
+        print(
+            f"\n[INFO] Testing model={model_key}, train_type={train_type}_lora"
+        )
         should_update = self._should_update_baseline(request, model_key)
 
         self.workflow.execute_training_workflow(
@@ -904,7 +1032,9 @@ class TestTrain:
             request: Pytest request fixture.
         """
         model_cfg = self.train_tester.load_model_config(model_key)
-        print(f"\n[INFO] Testing model={model_key}, train_type={train_type}_full_tp")
+        print(
+            f"\n[INFO] Testing model={model_key}, train_type={train_type}_full_tp"
+        )
 
         if model_key == "paddleocr_vl":
             pytest.skip("Unsupported")
@@ -923,7 +1053,9 @@ class TestTrain:
 
     @pytest.mark.model_type("vl")
     @pytest.mark.parametrize("train_type", ["sft-vl"])
-    def test_full_fsdp_vl(self, train_type: str, model_key: str, request) -> None:
+    def test_full_fsdp_vl(
+        self, train_type: str, model_key: str, request
+    ) -> None:
         """Test full FSDP training for VL models.
 
         Args:
@@ -933,9 +1065,15 @@ class TestTrain:
         """
 
         model_cfg = self.train_tester.load_model_config(model_key)
-        print(f"\n[INFO] Testing model={model_key}, train_type={train_type}_full_fsdp")
+        print(
+            f"\n[INFO] Testing model={model_key}, train_type={train_type}_full_fsdp"
+        )
 
-        if model_key == "paddleocr_vl" or model_key == "qwen3_vl_moe" or model_key == "qwen3_vl":
+        if (
+            model_key == "paddleocr_vl"
+            or model_key == "qwen3_vl_moe"
+            or model_key == "qwen3_vl"
+        ):
             pytest.skip("Unsupported")
 
         should_update = self._should_update_baseline(request, model_key)

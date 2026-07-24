@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict
+from typing import Any
 
 from .DPODataset import IteratorDPODataset, MapDPODataset
 from .SFTDataset import IteratorSFTDataset, MapSFTDataset, TextSequence
 
 
-def create_dataset(**dataset_config: Dict[str, Any]):
+def create_dataset(**dataset_config: dict[str, Any]):
     """Create dataset based on configuration parameters.
 
     Args:
@@ -44,7 +44,9 @@ def create_dataset(**dataset_config: Dict[str, Any]):
     return train_dataset
 
 
-def create_indexed_dataset(data_file_prefix, skip_warmup=True, warmup_only_rank0=False):
+def create_indexed_dataset(
+    data_file_prefix, skip_warmup=True, warmup_only_rank0=False
+):
     """Create indexed dataset from raw data files.
 
     Args:

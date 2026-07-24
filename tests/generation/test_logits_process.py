@@ -62,19 +62,26 @@ class LogitsProcessorTest(unittest.TestCase):
         batch_size = 4
         eos_token_id = 0
 
-        min_dist_processor = MinLengthLogitsProcessor(min_length=10, eos_token_id=eos_token_id)
+        min_dist_processor = MinLengthLogitsProcessor(
+            min_length=10, eos_token_id=eos_token_id
+        )
 
         # check that min length is applied at length 5
         input_ids = ids_tensor((batch_size, 5), vocab_size=20)
         scores = self._get_uniform_logits(batch_size, vocab_size)
         scores_before_min_length = min_dist_processor(input_ids, scores)
-        self.assertListEqual(scores_before_min_length[:, eos_token_id].tolist(), 4 * [paddle.finfo(scores.dtype).min])
+        self.assertListEqual(
+            scores_before_min_length[:, eos_token_id].tolist(),
+            4 * [paddle.finfo(scores.dtype).min],
+        )
 
         # check that min length is not applied anymore at length 15
         input_ids = ids_tensor((batch_size, 15), vocab_size=20)
         scores = self._get_uniform_logits(batch_size, vocab_size)
         scores_before_min_length = min_dist_processor(input_ids, scores)
-        self.assertFalse((scores_before_min_length == paddle.finfo(scores.dtype).min).any())
+        self.assertFalse(
+            (scores_before_min_length == paddle.finfo(scores.dtype).min).any()
+        )
 
     def test_temperature_dist_warper(self):
         input_ids = None
@@ -92,12 +99,20 @@ class LogitsProcessorTest(unittest.TestCase):
         temp_dist_warper_sharper = TemperatureLogitsWarper(temperature=0.5)
         temp_dist_warper_smoother = TemperatureLogitsWarper(temperature=1.3)
 
-        warped_prob_sharp = nn.functional.softmax(temp_dist_warper_sharper(input_ids, scores.clone()), axis=-1)
-        warped_prob_smooth = nn.functional.softmax(temp_dist_warper_smoother(input_ids, scores.clone()), axis=-1)
+        warped_prob_sharp = nn.functional.softmax(
+            temp_dist_warper_sharper(input_ids, scores.clone()), axis=-1
+        )
+        warped_prob_smooth = nn.functional.softmax(
+            temp_dist_warper_smoother(input_ids, scores.clone()), axis=-1
+        )
 
         # uniform distribution stays uniform
-        self.assertTrue(paddle.allclose(probs[0, :], warped_prob_sharp[0, :], atol=1e-3))
-        self.assertTrue(paddle.allclose(probs[0, :], warped_prob_smooth[0, :], atol=1e-3))
+        self.assertTrue(
+            paddle.allclose(probs[0, :], warped_prob_sharp[0, :], atol=1e-3)
+        )
+        self.assertTrue(
+            paddle.allclose(probs[0, :], warped_prob_smooth[0, :], atol=1e-3)
+        )
 
         # sharp peaks get higher, valleys get lower
         self.assertLess(probs[1, :].max(), warped_prob_sharp[1, :].max())
@@ -133,14 +148,22 @@ class LogitsProcessorTest(unittest.TestCase):
         batch_size = 2
 
         # create ramp distribution
-        ramp_logits = paddle.arange(vocab_size).unsqueeze(0).tile((batch_size, 1))
-        ramp_logits[1:, : vocab_size // 2] = ramp_logits[1:, : vocab_size // 2] + vocab_size
+        ramp_logits = (
+            paddle.arange(vocab_size).unsqueeze(0).tile((batch_size, 1))
+        )
+        ramp_logits[1:, : vocab_size // 2] = (
+            ramp_logits[1:, : vocab_size // 2] + vocab_size
+        )
         ramp_logits = ramp_logits.astype("float32")
         scores = TopKProcess(ramp_logits, 3, 1)
 
         # check that correct tokens are filtered
-        self.assertListEqual((scores[0] == 0.0).tolist(), 7 * [True] + 3 * [False])
-        self.assertListEqual((scores[1] == 0.0).tolist(), 2 * [True] + 3 * [False] + 5 * [True])
+        self.assertListEqual(
+            (scores[0] == 0.0).tolist(), 7 * [True] + 3 * [False]
+        )
+        self.assertListEqual(
+            (scores[1] == 0.0).tolist(), 2 * [True] + 3 * [False] + 5 * [True]
+        )
 
         # check special cases
         length = 5
@@ -168,11 +191,17 @@ class LogitsProcessorTest(unittest.TestCase):
         # filtered_dist = paddle.exp(TopPProcess(dist, 0.80001, 1))
         filtered_dist = TopPProcess(dist, 0.79999, 1)
 
-        EXPECTED_FILTERED_DIST = paddle.to_tensor([[0.3, 0.0, 0.0, 0.5], [0.0, 0.3, 0.3, 0.25]])
-        self.assertTrue(paddle.allclose(filtered_dist, EXPECTED_FILTERED_DIST, atol=1e-3))
+        EXPECTED_FILTERED_DIST = paddle.to_tensor(
+            [[0.3, 0.0, 0.0, 0.5], [0.0, 0.3, 0.3, 0.25]]
+        )
+        self.assertTrue(
+            paddle.allclose(filtered_dist, EXPECTED_FILTERED_DIST, atol=1e-3)
+        )
 
         # check edge cases with negative and extreme logits
-        ramp_logits = paddle.arange(vocab_size).unsqueeze(0).tile((batch_size, 1)) - (vocab_size // 2)
+        ramp_logits = paddle.arange(vocab_size).unsqueeze(0).tile(
+            (batch_size, 1)
+        ) - (vocab_size // 2)
         ramp_logits = ramp_logits.astype("float32")
         # make ramp_logits more extreme
         ramp_logits[1] = ramp_logits[1] * 10.0
@@ -181,7 +210,9 @@ class LogitsProcessorTest(unittest.TestCase):
         filtered_dist = TopPProcess(sft_ramp_logits, 0.9, min_tokens_to_keep=2)
 
         # first batch should keep three tokens, second batch would keep only 1, but due to `min_tokens_to_keep=2` keeps 2.
-        self.assertListEqual((filtered_dist != 0.0).sum(axis=-1).tolist(), [3, 2])
+        self.assertListEqual(
+            (filtered_dist != 0.0).sum(axis=-1).tolist(), [3, 2]
+        )
 
     def test_no_repeat_ngram_dist_processor(self):
         vocab_size = 3
@@ -193,8 +224,12 @@ class LogitsProcessorTest(unittest.TestCase):
         no_repeat_proc_2_gram = NoRepeatNGramLogitsProcessor(2)
         no_repeat_proc_3_gram = NoRepeatNGramLogitsProcessor(3)
 
-        filtered_scores_2_gram = no_repeat_proc_2_gram(input_ids, scores.clone())
-        filtered_scores_3_gram = no_repeat_proc_3_gram(input_ids, scores.clone())
+        filtered_scores_2_gram = no_repeat_proc_2_gram(
+            input_ids, scores.clone()
+        )
+        filtered_scores_3_gram = no_repeat_proc_3_gram(
+            input_ids, scores.clone()
+        )
 
         # 2-gram would forbid 2nd and 3rd token (1,2) at 1st batch and 1st token (0) at 2nd batch
 
@@ -223,7 +258,9 @@ class LogitsProcessorTest(unittest.TestCase):
         scores_comp = scores.clone()
 
         # instantiate all dist processors
-        min_dist_proc = MinLengthLogitsProcessor(min_length=10, eos_token_id=eos_token_id)
+        min_dist_proc = MinLengthLogitsProcessor(
+            min_length=10, eos_token_id=eos_token_id
+        )
         temp_dist_warp = TemperatureLogitsWarper(temperature=0.5)
         rep_penalty_proc = RepetitionPenaltyLogitsProcessor(penalty=2.0)
         no_repeat_proc = NoRepeatNGramLogitsProcessor(2)
@@ -262,16 +299,28 @@ class LogitsProcessorTest(unittest.TestCase):
         current_tokens = paddle.to_tensor([0, 3, 1, 2])
 
         diversity_logits_processor = HammingDiversityLogitsProcessor(
-            diversity_rate=1.0, num_beams=num_beams, num_beam_groups=num_beam_groups
+            diversity_rate=1.0,
+            num_beams=num_beams,
+            num_beam_groups=num_beam_groups,
         )
 
-        processed_scores = diversity_logits_processor(None, scores, current_tokens, 1)
+        processed_scores = diversity_logits_processor(
+            None, scores, current_tokens, 1
+        )
 
         self.assertTrue(
-            paddle.allclose(processed_scores[0], paddle.to_tensor([-0.7500, 0.2500, 0.2500, 0.2500]), atol=1e-3)
+            paddle.allclose(
+                processed_scores[0],
+                paddle.to_tensor([-0.7500, 0.2500, 0.2500, 0.2500]),
+                atol=1e-3,
+            )
         )
         self.assertTrue(
-            paddle.allclose(processed_scores[1], paddle.to_tensor([0.2500, -0.7500, 0.2500, 0.2500]), atol=1e-3)
+            paddle.allclose(
+                processed_scores[1],
+                paddle.to_tensor([0.2500, -0.7500, 0.2500, 0.2500]),
+                atol=1e-3,
+            )
         )
 
     def test_forced_bos_token_logits_processor(self):
@@ -279,14 +328,22 @@ class LogitsProcessorTest(unittest.TestCase):
         batch_size = 4
         bos_token_id = 0
 
-        logits_processor = ForcedBOSTokenLogitsProcessor(forced_bos_token_id=bos_token_id)
+        logits_processor = ForcedBOSTokenLogitsProcessor(
+            forced_bos_token_id=bos_token_id
+        )
 
         # check that all scores are -inf except the bos_token_id score
         input_ids = ids_tensor((batch_size, 1), vocab_size=20)
         scores = self._get_uniform_logits(batch_size, vocab_size)
         scores = logits_processor(input_ids, scores)
-        self.assertTrue((scores[:, bos_token_id + 1 :] == paddle.finfo(scores.dtype).min).all())
-        self.assertListEqual(scores[:, bos_token_id].tolist(), 4 * [0])  # score for bos_token_id should be zero
+        self.assertTrue(
+            (
+                scores[:, bos_token_id + 1 :] == paddle.finfo(scores.dtype).min
+            ).all()
+        )
+        self.assertListEqual(
+            scores[:, bos_token_id].tolist(), 4 * [0]
+        )  # score for bos_token_id should be zero
 
         # check that bos_token_id is not forced if current length is greater than 1
         input_ids = ids_tensor((batch_size, 4), vocab_size=20)
@@ -300,14 +357,22 @@ class LogitsProcessorTest(unittest.TestCase):
         eos_token_id = 0
         max_length = 5
 
-        logits_processor = ForcedEOSTokenLogitsProcessor(max_length=max_length, forced_eos_token_id=eos_token_id)
+        logits_processor = ForcedEOSTokenLogitsProcessor(
+            max_length=max_length, forced_eos_token_id=eos_token_id
+        )
 
         # check that all scores are -inf except the eos_token_id when max_length-1 is reached
         input_ids = ids_tensor((batch_size, 4), vocab_size=20)
         scores = self._get_uniform_logits(batch_size, vocab_size)
         scores = logits_processor(input_ids, scores)
-        self.assertTrue((scores[:, eos_token_id + 1 :] == paddle.finfo(scores.dtype).min).all())
-        self.assertListEqual(scores[:, eos_token_id].tolist(), 4 * [0])  # score for eos_token_id should be zero
+        self.assertTrue(
+            (
+                scores[:, eos_token_id + 1 :] == paddle.finfo(scores.dtype).min
+            ).all()
+        )
+        self.assertListEqual(
+            scores[:, eos_token_id].tolist(), 4 * [0]
+        )  # score for eos_token_id should be zero
 
         # check that eos_token_id is not forced if max_length-1 is not reached
         input_ids = ids_tensor((batch_size, 3), vocab_size=20)
@@ -321,7 +386,11 @@ class LogitsProcessorTest(unittest.TestCase):
 
         input_ids = paddle.to_tensor([[0, 1, 3, 1], [0, 1, 0, 1]])
         positive_bias = {(1,): 100.0, (4,): 100.0}
-        negative_bias = {(1, 0): -100.0, (0, 1, 2): -100.0, (1, 3, 1, 3): -100.0}
+        negative_bias = {
+            (1, 0): -100.0,
+            (0, 1, 2): -100.0,
+            (1, 3, 1, 3): -100.0,
+        }
         # biases the same termination twice, to ensure we can handle overlapping terminations (it won't have an effect
         # on the test cases, though)
         negative_bias.update({(1, 3, 1, 3, 1, 3): -100.0})
@@ -330,13 +399,19 @@ class LogitsProcessorTest(unittest.TestCase):
         # scores = 0 to facilitate checks
         scores = paddle.zeros((batch_size, vocab_size))
 
-        bias_dist_proc = SequenceBiasLogitsProcessor(sequence_bias=sequence_bias)
+        bias_dist_proc = SequenceBiasLogitsProcessor(
+            sequence_bias=sequence_bias
+        )
         filtered_scores = bias_dist_proc(input_ids, scores.clone())
 
         # batch 1: positive bias: tokens (1, 4); negative bias: tokens (0, 3); neutral: tokens (2)
         # batch 2: positive bias: tokens (1, 4); negative bias: tokens (0, 2); neutral: tokens (3)
         self.assertListEqual(
-            filtered_scores.tolist(), [[-100.0, 100.0, 0.0, -100.0, 100.0], [-100.0, 100.0, -100.0, 0.0, 100.0]]
+            filtered_scores.tolist(),
+            [
+                [-100.0, 100.0, 0.0, -100.0, 100.0],
+                [-100.0, 100.0, -100.0, 0.0, 100.0],
+            ],
         )
 
     def test_no_bad_words_dist_processor(self):
@@ -348,7 +423,9 @@ class LogitsProcessorTest(unittest.TestCase):
         bad_word_tokens = [[1], [4], [1, 0], [0, 1, 2], [1, 3, 1, 3]]
         scores = self._get_uniform_logits(batch_size, vocab_size)
 
-        no_bad_words_dist_proc = NoBadWordsLogitsProcessor(bad_words_ids=bad_word_tokens, eos_token_id=eos_token_id)
+        no_bad_words_dist_proc = NoBadWordsLogitsProcessor(
+            bad_words_ids=bad_word_tokens, eos_token_id=eos_token_id
+        )
 
         filtered_scores = no_bad_words_dist_proc(input_ids, scores.clone())
 
@@ -357,13 +434,20 @@ class LogitsProcessorTest(unittest.TestCase):
         # Note that 5th element cannot be forbidden as it is EOS token
         self.assertListEqual(
             paddle.isinf(filtered_scores).tolist(),
-            [[True, True, False, True, False], [True, True, True, False, False]],
+            [
+                [True, True, False, True, False],
+                [True, True, True, False, False],
+            ],
         )
 
         # check edge case
-        no_bad_words_dist_proc = NoBadWordsLogitsProcessor(bad_words_ids=[[4]], eos_token_id=eos_token_id)
+        no_bad_words_dist_proc = NoBadWordsLogitsProcessor(
+            bad_words_ids=[[4]], eos_token_id=eos_token_id
+        )
         filtered_scores = no_bad_words_dist_proc(input_ids, scores.clone())
-        self.assertTrue(paddle.allclose(scores, filtered_scores, atol=1e-3).numpy())
+        self.assertTrue(
+            paddle.allclose(scores, filtered_scores, atol=1e-3).numpy()
+        )
 
     def test_prefix_constrained_logits_processor(self):
         vocab_size = 5
@@ -375,13 +459,22 @@ class LogitsProcessorTest(unittest.TestCase):
         def prefix_allowed_tokens_fn(batch_id, inputs_ids):
             return [[0, 1], [2, 3]][batch_id]
 
-        prefix_constrained_logits_proc = PrefixConstrainedLogitsProcessor(prefix_allowed_tokens_fn, 1)
+        prefix_constrained_logits_proc = PrefixConstrainedLogitsProcessor(
+            prefix_allowed_tokens_fn, 1
+        )
 
-        filtered_scores = prefix_constrained_logits_proc(input_ids, scores.clone())
+        filtered_scores = prefix_constrained_logits_proc(
+            input_ids, scores.clone()
+        )
 
         # batch 1: 1st, 2nd (0, 1) token are allowed
         # batch 2: 3rd, 4th (2, 3) token are allowed
         self.assertListEqual(
-            (filtered_scores == paddle.finfo(filtered_scores.dtype).min).tolist(),
-            [[False, False, True, True, True], [True, True, False, False, True]],
+            (
+                filtered_scores == paddle.finfo(filtered_scores.dtype).min
+            ).tolist(),
+            [
+                [False, False, True, True, True],
+                [True, True, False, False, True],
+            ],
         )

@@ -42,7 +42,9 @@ class ExtendDtypeNumpySafe(unittest.TestCase):
         count = 0
         weight_map = {}
         for shape, _ in self.tensors:
-            weight_map[f"weight_{count}"] = (np.random.random(shape) * 100).astype(dtype)
+            weight_map[f"weight_{count}"] = (
+                np.random.random(shape) * 100
+            ).astype(dtype)
             count += 1
         return weight_map
 
@@ -89,7 +91,13 @@ class ExtendDtypeNumpySafe(unittest.TestCase):
     @skip_platform("win32", "cygwin")
     def test_dtype_safe_open(self):
         with tempfile.TemporaryDirectory() as tmpdirname:
-            for dtype in ["float32", "int32", "bfloat16", "float8_e4m3fn", "float8_e5m2"]:
+            for dtype in [
+                "float32",
+                "int32",
+                "bfloat16",
+                "float8_e4m3fn",
+                "float8_e5m2",
+            ]:
                 weight_map = self.get_target_dtype(dtype)
                 path = os.path.join(tmpdirname, "test.safetensors")
                 save_file(weight_map, path, metadata={"format": "np"})
@@ -98,12 +106,24 @@ class ExtendDtypeNumpySafe(unittest.TestCase):
                     for key in f.keys():
                         safe_slice = f.get_slice(key)
                         # np.testing.assert_equal(self.weight_map[key][2:1, ...], safe_slice[2:1, ...])
-                        np.testing.assert_equal(weight_map[key][0, ...], safe_slice[0, ...])
-                        np.testing.assert_equal(weight_map[key][0:1, ...], safe_slice[0:1, ...])
-                        np.testing.assert_equal(weight_map[key][..., 2:], safe_slice[..., 2:])
-                        np.testing.assert_equal(weight_map[key][..., 1], safe_slice[..., 1])
-                        np.testing.assert_equal(weight_map[key][:2, ...], safe_slice[:2, ...])
-                        np.testing.assert_equal(weight_map[key][..., :4], safe_slice[..., :4])
+                        np.testing.assert_equal(
+                            weight_map[key][0, ...], safe_slice[0, ...]
+                        )
+                        np.testing.assert_equal(
+                            weight_map[key][0:1, ...], safe_slice[0:1, ...]
+                        )
+                        np.testing.assert_equal(
+                            weight_map[key][..., 2:], safe_slice[..., 2:]
+                        )
+                        np.testing.assert_equal(
+                            weight_map[key][..., 1], safe_slice[..., 1]
+                        )
+                        np.testing.assert_equal(
+                            weight_map[key][:2, ...], safe_slice[:2, ...]
+                        )
+                        np.testing.assert_equal(
+                            weight_map[key][..., :4], safe_slice[..., :4]
+                        )
 
 
 class FastSafetensors(unittest.TestCase):
@@ -120,7 +140,9 @@ class FastSafetensors(unittest.TestCase):
         ]
         count = 0
         for shape, dtype in tensors:
-            self.weight_map[f"weight_{count}"] = (np.random.random(shape) * 100).astype(dtype)
+            self.weight_map[f"weight_{count}"] = (
+                np.random.random(shape) * 100
+            ).astype(dtype)
             count += 1
 
     @skip_platform("win32", "cygwin")
@@ -144,18 +166,42 @@ class FastSafetensors(unittest.TestCase):
                 for key in f.keys():
                     safe_slice = f.get_slice(key)
                     # np.testing.assert_equal(self.weight_map[key][2:1, ...], safe_slice[2:1, ...])
-                    np.testing.assert_equal(self.weight_map[key][0, ...], safe_slice[0, ...])
-                    np.testing.assert_equal(self.weight_map[key][0:1, ...], safe_slice[0:1, ...])
-                    np.testing.assert_equal(self.weight_map[key][..., 2:], safe_slice[..., 2:])
-                    np.testing.assert_equal(self.weight_map[key][..., 1], safe_slice[..., 1])
-                    np.testing.assert_equal(self.weight_map[key][:2, ...], safe_slice[:2, ...])
-                    np.testing.assert_equal(self.weight_map[key][..., :4], safe_slice[..., :4])
+                    np.testing.assert_equal(
+                        self.weight_map[key][0, ...], safe_slice[0, ...]
+                    )
+                    np.testing.assert_equal(
+                        self.weight_map[key][0:1, ...], safe_slice[0:1, ...]
+                    )
+                    np.testing.assert_equal(
+                        self.weight_map[key][..., 2:], safe_slice[..., 2:]
+                    )
+                    np.testing.assert_equal(
+                        self.weight_map[key][..., 1], safe_slice[..., 1]
+                    )
+                    np.testing.assert_equal(
+                        self.weight_map[key][:2, ...], safe_slice[:2, ...]
+                    )
+                    np.testing.assert_equal(
+                        self.weight_map[key][..., :4], safe_slice[..., :4]
+                    )
                 for key in f.keys():
                     safe_slice = f.get_tensor(key)
                     # np.testing.assert_equal(self.weight_map[key][2:1, ...], safe_slice[2:1, ...])
-                    np.testing.assert_equal(self.weight_map[key][0, ...], safe_slice[0, ...])
-                    np.testing.assert_equal(self.weight_map[key][0:1, ...], safe_slice[0:1, ...])
-                    np.testing.assert_equal(self.weight_map[key][..., 2:], safe_slice[..., 2:])
-                    np.testing.assert_equal(self.weight_map[key][..., 1], safe_slice[..., 1])
-                    np.testing.assert_equal(self.weight_map[key][:2, ...], safe_slice[:2, ...])
-                    np.testing.assert_equal(self.weight_map[key][..., :4], safe_slice[..., :4])
+                    np.testing.assert_equal(
+                        self.weight_map[key][0, ...], safe_slice[0, ...]
+                    )
+                    np.testing.assert_equal(
+                        self.weight_map[key][0:1, ...], safe_slice[0:1, ...]
+                    )
+                    np.testing.assert_equal(
+                        self.weight_map[key][..., 2:], safe_slice[..., 2:]
+                    )
+                    np.testing.assert_equal(
+                        self.weight_map[key][..., 1], safe_slice[..., 1]
+                    )
+                    np.testing.assert_equal(
+                        self.weight_map[key][:2, ...], safe_slice[:2, ...]
+                    )
+                    np.testing.assert_equal(
+                        self.weight_map[key][..., :4], safe_slice[..., :4]
+                    )

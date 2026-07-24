@@ -18,7 +18,10 @@ try:
     import triton
     import triton.language as tl
 except:
-    raise RuntimeError("Triton is not installed" "Please run 'python -m pip install triton>=3.1' to install Triton.")
+    raise RuntimeError(
+        "Triton is not installed"
+        "Please run 'python -m pip install triton>=3.1' to install Triton."
+    )
 
 try:
     import use_triton_in_paddle
@@ -200,7 +203,9 @@ def adamw_triton(
             master_weight,
             N,
             skip_update_param,
-            tl.float32 if skip_update_param else DTYPE_MAPPING[param.dtype],  # no meaning for tl.float32
+            tl.float32
+            if skip_update_param
+            else DTYPE_MAPPING[param.dtype],  # no meaning for tl.float32
             DTYPE_MAPPING[moment1.dtype],
             BLOCK_SIZE,
         )

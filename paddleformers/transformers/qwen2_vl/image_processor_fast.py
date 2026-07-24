@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 # Copyright 2024 The Qwen team, Alibaba Group and the HuggingFace Inc. team. All rights reserved.
 #
@@ -19,6 +18,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Fast image processor class for Qwen2-VL."""
+
 from typing import Optional, Union
 
 import paddle
@@ -81,7 +81,12 @@ class Qwen2VLImageProcessorFast(BaseImageProcessorFast):
     min_pixels = None
     max_pixels = None
     valid_kwargs = Qwen2VLFastImageProcessorKwargs
-    model_input_names = ["pixel_values", "image_grid_thw", "pixel_values_videos", "video_grid_thw"]
+    model_input_names = [
+        "pixel_values",
+        "image_grid_thw",
+        "pixel_values_videos",
+        "video_grid_thw",
+    ]
 
     def __init__(self, **kwargs: Unpack[Qwen2VLFastImageProcessorKwargs]):
         size = kwargs.pop("size", None)
@@ -96,9 +101,13 @@ class Qwen2VLImageProcessorFast(BaseImageProcessorFast):
             size["longest_edge"] = max_pixels
             size.pop("max_pixels", None)
         if "shortest_edge" not in size or "longest_edge" not in size:
-            raise ValueError("size must contain 'shortest_edge' and 'longest_edge' keys.")
+            raise ValueError(
+                "size must contain 'shortest_edge' and 'longest_edge' keys."
+            )
 
-        super().__init__(size=size, min_pixels=min_pixels, max_pixels=max_pixels, **kwargs)
+        super().__init__(
+            size=size, min_pixels=min_pixels, max_pixels=max_pixels, **kwargs
+        )
 
     def _further_process_kwargs(
         self,
@@ -115,13 +124,17 @@ class Qwen2VLImageProcessorFast(BaseImageProcessorFast):
             size = {"shortest_edge": min_pixels, "longest_edge": max_pixels}
         elif size is not None:
             if "shortest_edge" not in size or "longest_edge" not in size:
-                raise ValueError("size must contain 'shortest_edge' and 'longest_edge' keys.")
+                raise ValueError(
+                    "size must contain 'shortest_edge' and 'longest_edge' keys."
+                )
             min_pixels = size["shortest_edge"]
             max_pixels = size["longest_edge"]
         else:
             size = {**self.size}
 
-        return super()._further_process_kwargs(size=size, min_pixels=min_pixels, max_pixels=max_pixels, **kwargs)
+        return super()._further_process_kwargs(
+            size=size, min_pixels=min_pixels, max_pixels=max_pixels, **kwargs
+        )
 
     def preprocess(
         self,
@@ -149,7 +162,10 @@ class Qwen2VLImageProcessorFast(BaseImageProcessorFast):
         batch_feature = BatchFeature()
         if images is not None:
             images = self._prepare_image_like_inputs(
-                images=images, do_convert_rgb=do_convert_rgb, input_data_format=input_data_format, device=device
+                images=images,
+                do_convert_rgb=do_convert_rgb,
+                input_data_format=input_data_format,
+                device=device,
             )
             batch_feature = self._preprocess(images, **kwargs)
         if videos is not None:
@@ -160,12 +176,19 @@ class Qwen2VLImageProcessorFast(BaseImageProcessorFast):
             # Can't change _prepare_images_structure to work with videos because it also needs to work with images.
             videos = make_batched_videos(videos)
             videos = [
-                paddle.stack(self._prepare_image_like_inputs(video, do_convert_rgb, input_data_format, device))
+                paddle.stack(
+                    self._prepare_image_like_inputs(
+                        video, do_convert_rgb, input_data_format, device
+                    )
+                )
                 for video in videos
             ]
             video_outputs = self._preprocess(videos, **kwargs)
             batch_feature.update(
-                {"pixel_values_videos": video_outputs.pixel_values, "video_grid_thw": video_outputs.image_grid_thw}
+                {
+                    "pixel_values_videos": video_outputs.pixel_values,
+                    "video_grid_thw": video_outputs.image_grid_thw,
+                }
             )
         return batch_feature
 
@@ -178,17 +201,19 @@ class Qwen2VLImageProcessorFast(BaseImageProcessorFast):
         do_rescale: bool,
         rescale_factor: float,
         do_normalize: bool,
-        image_mean: Optional[Union[float, list[float]]],
-        image_std: Optional[Union[float, list[float]]],
+        image_mean: Optional[float | list[float]],
+        image_std: Optional[float | list[float]],
         patch_size: int,
         temporal_patch_size: int,
         merge_size: int,
         disable_grouping: Optional[bool],
-        return_tensors: Optional[Union[str, TensorType]],
+        return_tensors: Optional[str | TensorType],
         **kwargs,
     ):
         # Group images by size for batched resizing
-        grouped_images, grouped_images_index = group_images_by_shape(images, disable_grouping=disable_grouping)
+        grouped_images, grouped_images_index = group_images_by_shape(
+            images, disable_grouping=disable_grouping
+        )
         resized_images_grouped = {}
         for shape, stacked_images in grouped_images.items():
             height, width = stacked_images.shape[-2:]
@@ -206,28 +231,42 @@ class Qwen2VLImageProcessorFast(BaseImageProcessorFast):
                     interpolation=interpolation,
                 )
             resized_images_grouped[shape] = stacked_images
-        resized_images = reorder_images(resized_images_grouped, grouped_images_index)
+        resized_images = reorder_images(
+            resized_images_grouped, grouped_images_index
+        )
 
         # Group images by size for further processing
         # Needed in case do_resize is False, or resize returns images with different sizes
-        grouped_images, grouped_images_index = group_images_by_shape(resized_images, disable_grouping=disable_grouping)
+        grouped_images, grouped_images_index = group_images_by_shape(
+            resized_images, disable_grouping=disable_grouping
+        )
         processed_images_grouped = {}
         processed_grids = {}
         for shape, stacked_images in grouped_images.items():
             resized_height, resized_width = stacked_images.shape[-2:]
             # Fused rescale and normalize
             patches = self.rescale_and_normalize(
-                stacked_images, do_rescale, rescale_factor, do_normalize, image_mean, image_std
+                stacked_images,
+                do_rescale,
+                rescale_factor,
+                do_normalize,
+                image_mean,
+                image_std,
             )
             if patches.ndim == 4:
                 # add a temporal dimension if we have images
                 patches = patches.unsqueeze(1)
             if patches.shape[1] % temporal_patch_size != 0:
-                repeats = patches[:, -1:].repeat(1, temporal_patch_size - 1, 1, 1, 1)
+                repeats = patches[:, -1:].repeat(
+                    1, temporal_patch_size - 1, 1, 1, 1
+                )
                 patches = paddle.cat([patches, repeats], dim=1)
             batch_size, grid_t, channel = patches.shape[:3]
             grid_t = grid_t // temporal_patch_size
-            grid_h, grid_w = resized_height // patch_size, resized_width // patch_size
+            grid_h, grid_w = (
+                resized_height // patch_size,
+                resized_width // patch_size,
+            )
 
             patches = patches.view(
                 batch_size * grid_t,
@@ -254,16 +293,24 @@ class Qwen2VLImageProcessorFast(BaseImageProcessorFast):
             processed_images_grouped[shape] = flatten_patches
             processed_grids[shape] = [[grid_t, grid_h, grid_w]] * batch_size
 
-        processed_images = reorder_images(processed_images_grouped, grouped_images_index)
+        processed_images = reorder_images(
+            processed_images_grouped, grouped_images_index
+        )
         processed_grids = reorder_images(processed_grids, grouped_images_index)
         pixel_values = paddle.cat(processed_images, dim=0)
         image_grid_thw = paddle.to_tensor(processed_grids)
 
         return BatchFeature(
-            data={"pixel_values": pixel_values, "image_grid_thw": image_grid_thw}, tensor_type=return_tensors
+            data={
+                "pixel_values": pixel_values,
+                "image_grid_thw": image_grid_thw,
+            },
+            tensor_type=return_tensors,
         )
 
-    def get_number_of_image_patches(self, height: int, width: int, images_kwargs=None):
+    def get_number_of_image_patches(
+        self, height: int, width: int, images_kwargs=None
+    ):
         """
         A utility that returns number of image patches for a given image size.
 
@@ -280,8 +327,16 @@ class Qwen2VLImageProcessorFast(BaseImageProcessorFast):
         Returns:
             `int`: Number of image patches per image.
         """
-        min_pixels = images_kwargs["min_pixels"] if "min_pixels" in images_kwargs else self.size["shortest_edge"]
-        max_pixels = images_kwargs["max_pixels"] if "max_pixels" in images_kwargs else self.size["longest_edge"]
+        min_pixels = (
+            images_kwargs["min_pixels"]
+            if "min_pixels" in images_kwargs
+            else self.size["shortest_edge"]
+        )
+        max_pixels = (
+            images_kwargs["max_pixels"]
+            if "max_pixels" in images_kwargs
+            else self.size["longest_edge"]
+        )
         patch_size = images_kwargs.get("patch_size", self.patch_size)
         merge_size = images_kwargs.get("merge_size", self.merge_size)
 
@@ -289,7 +344,10 @@ class Qwen2VLImageProcessorFast(BaseImageProcessorFast):
         resized_height, resized_width = smart_resize(
             height, width, factor, min_pixels=min_pixels, max_pixels=max_pixels
         )
-        grid_h, grid_w = resized_height // patch_size, resized_width // patch_size
+        grid_h, grid_w = (
+            resized_height // patch_size,
+            resized_width // patch_size,
+        )
         return grid_h * grid_w
 
 

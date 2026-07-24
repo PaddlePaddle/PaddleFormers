@@ -15,7 +15,7 @@
 from typing import Optional
 
 import paddle
-import paddle.nn as nn
+from paddle import nn
 from paddle.nn.functional.flash_attention import flashmask_attention
 
 from .sink_impl import sink_attention_forward
@@ -31,7 +31,7 @@ def flashmask_attention_forward(
     sink: Optional[paddle.Tensor] = None,
     scaling: Optional[float] = None,
     is_causal: Optional[bool] = None,
-    **kwargs
+    **kwargs,
 ):
     # [b, h, l, d] -> [b, l, h, d]
     query = query.transpose(1, 2)
@@ -40,16 +40,33 @@ def flashmask_attention_forward(
 
     # NOTE: flashmask_v2 currently does not support the configuration where headdim_q != headdim_v.
     if paddle.base.core.is_compiled_with_cuda():
-        fa_version = paddle.base.framework.get_flags(["FLAGS_flash_attn_version"])["FLAGS_flash_attn_version"]
-        if query.shape[-1] != value.shape[-1] and attn_mask_startend_row_indices is not None and fa_version == 3:
+        fa_version = paddle.base.framework.get_flags(
+            ["FLAGS_flash_attn_version"]
+        )["FLAGS_flash_attn_version"]
+        if (
+            query.shape[-1] != value.shape[-1]
+            and attn_mask_startend_row_indices is not None
+            and fa_version == 3
+        ):
             paddle.set_flags({"FLAGS_flash_attn_version": 2})
     if is_causal is None and attn_mask_startend_row_indices is None:
         is_causal = query.shape[1] > 1 and getattr(module, "is_causal", True)
-    if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.ndim == 3:
-        attn_mask_startend_row_indices = attn_mask_startend_row_indices.unsqueeze(-1)
-    if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.shape[-1] == 1:
+    if (
+        attn_mask_startend_row_indices is not None
+        and attn_mask_startend_row_indices.ndim == 3
+    ):
+        attn_mask_startend_row_indices = (
+            attn_mask_startend_row_indices.unsqueeze(-1)
+        )
+    if (
+        attn_mask_startend_row_indices is not None
+        and attn_mask_startend_row_indices.shape[-1] == 1
+    ):
         is_causal = True
-    if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.shape[-1] == 4:
+    if (
+        attn_mask_startend_row_indices is not None
+        and attn_mask_startend_row_indices.shape[-1] == 4
+    ):
         is_causal = False
 
     if sink is None:

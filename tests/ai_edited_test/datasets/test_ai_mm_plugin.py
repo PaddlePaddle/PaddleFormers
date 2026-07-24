@@ -62,24 +62,39 @@ class TestMakeBatchedImages(unittest.TestCase):
 class TestMMPluginMixin(unittest.TestCase):
     """Tests for MMPluginMixin class."""
 
-    def _make_plugin(self, image_token="<image>", video_token="<video>", audio_token="<audio>"):
-        return MMPluginMixin(image_token=image_token, video_token=video_token, audio_token=audio_token)
+    def _make_plugin(
+        self,
+        image_token="<image>",
+        video_token="<video>",
+        audio_token="<audio>",
+    ):
+        return MMPluginMixin(
+            image_token=image_token,
+            video_token=video_token,
+            audio_token=audio_token,
+        )
 
     def test_validate_input_no_images_with_image_token(self):
         """Test validation when images provided but image_token is None."""
-        plugin = self._make_plugin(image_token=None, video_token=None, audio_token=None)
+        plugin = self._make_plugin(
+            image_token=None, video_token=None, audio_token=None
+        )
         with self.assertRaises(ValueError):
             plugin._validate_input(MagicMock(), [MagicMock()], [], [])
 
     def test_validate_input_no_videos_with_video_token(self):
         """Test validation when videos provided but video_token is None."""
-        plugin = self._make_plugin(image_token=None, video_token=None, audio_token=None)
+        plugin = self._make_plugin(
+            image_token=None, video_token=None, audio_token=None
+        )
         with self.assertRaises(ValueError):
             plugin._validate_input(MagicMock(), [], [MagicMock()], [])
 
     def test_validate_input_no_audios_with_audio_token(self):
         """Test validation when audios provided but audio_token is None."""
-        plugin = self._make_plugin(image_token=None, video_token=None, audio_token=None)
+        plugin = self._make_plugin(
+            image_token=None, video_token=None, audio_token=None
+        )
         with self.assertRaises(ValueError):
             plugin._validate_input(MagicMock(), [], [], [MagicMock()])
 
@@ -131,7 +146,9 @@ class TestMMPluginMixin(unittest.TestCase):
 
         plugin = self._make_plugin()
         large_image = Image.new("RGB", (2000, 2000))
-        result = plugin._preprocess_image(large_image, image_max_pixels=1000 * 1000, image_min_pixels=32 * 32)
+        result = plugin._preprocess_image(
+            large_image, image_max_pixels=1000 * 1000, image_min_pixels=32 * 32
+        )
         self.assertLessEqual(result.width * result.height, 1000 * 1000)
 
     def test_preprocess_image_resize_small(self):
@@ -140,7 +157,9 @@ class TestMMPluginMixin(unittest.TestCase):
 
         plugin = self._make_plugin()
         small_image = Image.new("RGB", (10, 10))
-        result = plugin._preprocess_image(small_image, image_max_pixels=768 * 768, image_min_pixels=32 * 32)
+        result = plugin._preprocess_image(
+            small_image, image_max_pixels=768 * 768, image_min_pixels=32 * 32
+        )
         self.assertGreaterEqual(result.width * result.height, 32 * 32)
 
     def test_preprocess_image_convert_mode(self):
@@ -149,7 +168,9 @@ class TestMMPluginMixin(unittest.TestCase):
 
         plugin = self._make_plugin()
         rgba_image = Image.new("RGBA", (100, 100))
-        result = plugin._preprocess_image(rgba_image, image_max_pixels=768 * 768, image_min_pixels=32 * 32)
+        result = plugin._preprocess_image(
+            rgba_image, image_max_pixels=768 * 768, image_min_pixels=32 * 32
+        )
         self.assertEqual(result.mode, "RGB")
 
     def test_file_download_invalid(self):
@@ -185,6 +206,7 @@ class TestGetMMPlugin(unittest.TestCase):
 
     def test_register_and_get_plugin(self):
         """Test registering and getting a custom plugin."""
+
         # Create a new plugin class
         class CustomPlugin(MMPluginMixin):
             pass

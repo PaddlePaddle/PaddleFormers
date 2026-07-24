@@ -29,8 +29,8 @@ Pattern follows glm45_provider.py exactly.
 """
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional, Union
 
 import paddle
 import paddle.nn.functional as F
@@ -104,7 +104,9 @@ class DeepSeekV3_2BaseProvider(GPTModelProvider):
     # KL loss trains wq_b/wk/weights_proj via KL(true_attn_dist || indexer_dist)
     # Coefficient ~0.01 matches Megatron-Core default; set to None to disable
     indexer_loss_coeff: float = 0.01
-    indexer_use_sparse_loss: bool = False  # use full-sequence KL (denser gradients)
+    indexer_use_sparse_loss: bool = (
+        False  # use full-sequence KL (denser gradients)
+    )
 
     # ---- RoPE ----
     position_embedding_type: str = "rope"
@@ -124,7 +126,9 @@ class DeepSeekV3_2BaseProvider(GPTModelProvider):
     num_experts_per_tok: int = 8  # n_activated_experts
     n_group: int = 8  # n_expert_groups: 256 experts / 8 groups = 32 per group
     topk_group: int = 4  # n_limited_groups: select top-4 groups
-    routed_scaling_factor: float = 2.5  # route_scale: scale selected expert weights
+    routed_scaling_factor: float = (
+        2.5  # route_scale: scale selected expert weights
+    )
     topk_method: str = "group_limited_greedy"  # group-limited top-k routing
     norm_topk_prob: bool = True  # normalize expert weights to sum to 1
     moe_token_dispatcher_type: str = "deepep"
@@ -138,7 +142,7 @@ class DeepSeekV3_2BaseProvider(GPTModelProvider):
 
     # ---- MTP: Multi-Token Prediction ----
     # 1 MTP layer for auxiliary next-token prediction loss
-    num_nextn_predict_layers: Optional[int] = 1
+    num_nextn_predict_layers: int | None = 1
     mtp_loss_scaling_factor: float = 0.1  # MTP loss weight
 
     # ---- Optimization ----
@@ -167,13 +171,17 @@ class DeepSeekV3_2_671BProvider(DeepSeekV3_2BaseProvider):
 
     # ---- FFN dimensions ----
     intermediate_size: int = 18432  # inter_dim: dense MLP hidden size
-    moe_intermediate_size: int = 2048  # moe_inter_dim: per-expert MLP hidden size
+    moe_intermediate_size: int = (
+        2048  # moe_inter_dim: per-expert MLP hidden size
+    )
 
     # ---- MoE architecture ----
     n_routed_experts: int = 256
     n_shared_experts: int = 1
     # Layer pattern: first 3 layers dense (0), then 58 MoE (1)
-    moe_layer_freq: Union[int, List[int]] = field(default_factory=lambda: [0] * 3 + [1] * 58)
+    moe_layer_freq: int | list[int] = field(
+        default_factory=lambda: [0] * 3 + [1] * 58
+    )
 
 
 @dataclass
@@ -214,10 +222,12 @@ class DeepSeekV3_2_671BDebugProvider(DeepSeekV3_2_671BProvider):
     # ---- Reduced MoE ----
     n_routed_experts: int = 8
     n_shared_experts: int = 1
-    moe_layer_freq: Union[int, List[int]] = field(default_factory=lambda: [0] * 1 + [1] * 3)
+    moe_layer_freq: int | list[int] = field(
+        default_factory=lambda: [0] * 1 + [1] * 3
+    )
 
     # ---- Disable MTP for simplicity ----
-    num_nextn_predict_layers: Optional[int] = 0
+    num_nextn_predict_layers: int | None = 0
 
     # ---- Short sequence for debug ----
     seq_length: int = 512
@@ -276,10 +286,12 @@ class DeepSeekV3_2_8GPUDebugProvider(DeepSeekV3_2BaseProvider):
     # ---- Reduced MoE ----
     n_routed_experts: int = 16  # divisible by EP=1/2/4/8
     n_shared_experts: int = 1
-    moe_layer_freq: Union[int, List[int]] = field(default_factory=lambda: [0] * 2 + [1] * 6)
+    moe_layer_freq: int | list[int] = field(
+        default_factory=lambda: [0] * 2 + [1] * 6
+    )
 
     # ---- Disable MTP for simplicity ----
-    num_nextn_predict_layers: Optional[int] = 0
+    num_nextn_predict_layers: int | None = 0
 
     # ---- Moderate sequence length ----
     seq_length: int = 1024

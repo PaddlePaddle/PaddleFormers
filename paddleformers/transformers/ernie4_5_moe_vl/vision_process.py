@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -56,11 +55,15 @@ def get_filename(url=None):
     tid = threading.get_ident()
 
     # Remove the suffix to prevent save-jpg from reporting errors
-    image_filname = f"{t.year}-{t.month:02d}-{t.day:02d}-{pid}-{tid}-{md5_hash}"
-    return image_filname
+    image_filename = (
+        f"{t.year}-{t.month:02d}-{t.day:02d}-{pid}-{tid}-{md5_hash}"
+    )
+    return image_filename
 
 
-def file_download(url, download_dir, save_to_disk=False, retry=0, retry_interval=3):
+def file_download(
+    url, download_dir, save_to_disk=False, retry=0, retry_interval=3
+):
     """
     Description: Download url, if url is PIL, return directly
     Args:
@@ -90,7 +93,13 @@ def file_download(url, download_dir, save_to_disk=False, retry=0, retry_interval
     return download_path
 
 
-def get_downloadable(url, download_dir=RAW_VIDEO_DIR, save_to_disk=False, retry=0, retry_interval=3):
+def get_downloadable(
+    url,
+    download_dir=RAW_VIDEO_DIR,
+    save_to_disk=False,
+    retry=0,
+    retry_interval=3,
+):
     """download video and store it in the disk
 
     return downloaded **path** if save_to_disk is set to true
@@ -109,7 +118,9 @@ def get_downloadable(url, download_dir=RAW_VIDEO_DIR, save_to_disk=False, retry=
     return downloaded_path
 
 
-def get_downloadable_image(download_path, need_exif_info, retry_max_time=0, retry_interval=3):
+def get_downloadable_image(
+    download_path, need_exif_info, retry_max_time=0, retry_interval=3
+):
     """
     Get downloadable with exif info and image processing
     """
@@ -125,7 +136,9 @@ def get_downloadable_image(download_path, need_exif_info, retry_max_time=0, retr
 
     def has_transparent_background(img):
         """has_transparent_background"""
-        if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+        if img.mode in ("RGBA", "LA") or (
+            img.mode == "P" and "transparency" in img.info
+        ):
             # Check for any pixel with alpha channel less than 255 (fully opaque)
             alpha = img.convert("RGBA").split()[-1]
             if alpha.getextrema()[0] < 255:
@@ -201,7 +214,9 @@ def _load_paddlecodec_decoder(video_src):
         )
         raise
     PADDLECODEC_NUM_THREADS = int(os.environ.get("PADDLECODEC_NUM_THREADS", 0))
-    decoder = VideoDecoder(video_src, num_ffmpeg_threads=PADDLECODEC_NUM_THREADS)
+    decoder = VideoDecoder(
+        video_src, num_ffmpeg_threads=PADDLECODEC_NUM_THREADS
+    )
     return decoder
 
 
@@ -215,7 +230,11 @@ def read_video_paddlecodec(video_path, save_to_disk):
     fps = decoder.metadata.average_fps
     duration = decoder.metadata.duration_seconds
 
-    video_meta = {"fps": fps, "duration": duration, "num_of_frame": total_frames}
+    video_meta = {
+        "fps": fps,
+        "duration": duration,
+        "num_of_frame": total_frames,
+    }
 
     return decoder, video_meta, video_path
 
@@ -231,7 +250,9 @@ def get_frame_indices(
     """get_frame_indices"""
     assert frames_sample in ["rand", "middle", "leading"]
     if target_frames > 0:
-        assert target_fps <= 0, "target_fps must be negative if target_frames is given."
+        assert target_fps <= 0, (
+            "target_fps must be negative if target_frames is given."
+        )
         if target_frames > vlen:
             acc_samples = vlen
             logger.info(
@@ -240,16 +261,22 @@ def get_frame_indices(
             )
         else:
             acc_samples = target_frames
-            logger.debug(f"sampling at target_frames={target_frames}, frames_sample={frames_sample}")
+            logger.debug(
+                f"sampling at target_frames={target_frames}, frames_sample={frames_sample}"
+            )
 
         # split the video into `acc_samples` intervals, and sample from each interval.
-        intervals = np.linspace(start=0, stop=vlen, num=acc_samples + 1).astype(int)
+        intervals = np.linspace(start=0, stop=vlen, num=acc_samples + 1).astype(
+            int
+        )
         ranges = []
         for idx, interv in enumerate(intervals[:-1]):
             ranges.append((interv, intervals[idx + 1] - 1))
         if frames_sample == "rand":
             try:
-                frame_indices = [random.choice(range(x[0], x[1])) for x in ranges]
+                frame_indices = [
+                    random.choice(range(x[0], x[1])) for x in ranges
+                ]
             except Exception:
                 frame_indices = np.random.permutation(vlen)[:acc_samples]
                 frame_indices.sort()
@@ -264,24 +291,38 @@ def get_frame_indices(
             raise NotImplementedError
 
     elif target_fps > 0:
-        assert target_frames <= 0, "target_frames must be negative if target_fps is given."
-        assert input_fps > 0, "input_fps must be provided if target_fps is given."
-        logger.info(f"sampling at fps={target_fps}, frames_sample={frames_sample}")
+        assert target_frames <= 0, (
+            "target_frames must be negative if target_fps is given."
+        )
+        assert input_fps > 0, (
+            "input_fps must be provided if target_fps is given."
+        )
+        logger.info(
+            f"sampling at fps={target_fps}, frames_sample={frames_sample}"
+        )
         duration = float(vlen) / input_fps
-        delta = 1 / target_fps  # gap between frames, this is also the clip length each frame represents
+        delta = (
+            1 / target_fps
+        )  # gap between frames, this is also the clip length each frame represents
         if frames_sample == "middle":
-            frame_seconds = np.arange(0 + delta / 2, duration + delta / 2, delta)
+            frame_seconds = np.arange(
+                0 + delta / 2, duration + delta / 2, delta
+            )
         elif frames_sample == "leading":
             frame_seconds = np.arange(0, duration, delta)
         if frames_sample == "rand":
-            frame_seconds = np.arange(0 + delta / 2, duration + delta / 2, delta)
+            frame_seconds = np.arange(
+                0 + delta / 2, duration + delta / 2, delta
+            )
             rand_offset = np.random.rand(*(frame_seconds.shape)) - 0.5
             frame_seconds += rand_offset * delta
         frame_indices = np.around(frame_seconds * input_fps).astype(int)
         frame_indices = [e for e in frame_indices if e < vlen]
 
     else:
-        raise ValueError("Must provide either positive target_fps or positive target_frames.")
+        raise ValueError(
+            "Must provide either positive target_fps or positive target_frames."
+        )
 
     return frame_indices
 
@@ -311,27 +352,36 @@ def read_frames_paddlecodec(
 
     frames = []
     try:
-        tensor = video_reader.get_frames_at(indices=list(frame_indices)).data.contiguous()
+        tensor = video_reader.get_frames_at(
+            indices=list(frame_indices)
+        ).data.contiguous()
         # tensor: [N, C, H, W] uint8 on CPU; convert to [N, H, W, C] numpy
         frames = tensor.cpu().numpy().transpose(0, 2, 3, 1)
         paddle.disable_compat()
     except Exception as exc:
         logger.info(f"get {frame_indices} frames error: {exc}")
 
-    assert len(frames) == len(frame_indices), f"len(frames): {len(frames)} != len(frame_indices): {len(frame_indices)}"
+    assert len(frames) == len(frame_indices), (
+        f"len(frames): {len(frames)} != len(frame_indices): {len(frame_indices)}"
+    )
 
     ret = []
     for frame in frames:
         ret.append(Image.fromarray(frame, "RGB"))
 
-    time_stamps = [frame_idx * video_meta["duration"] / video_meta["num_of_frame"] for frame_idx in frame_indices]
+    time_stamps = [
+        frame_idx * video_meta["duration"] / video_meta["num_of_frame"]
+        for frame_idx in frame_indices
+    ]
 
     del frame_indices
     assert len(time_stamps) == len(ret)
     return ret, time_stamps
 
 
-def render_single_image_with_timestamp(image: Image, number: str, rate: float, font_path: str = FONT_PATH):
+def render_single_image_with_timestamp(
+    image: Image, number: str, rate: float, font_path: str = FONT_PATH
+):
     """
     Function: Renders a timestamp to the image of pil.image
     The timestamp size is the rate of min(width, height)

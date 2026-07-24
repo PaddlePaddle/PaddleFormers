@@ -1,3 +1,90 @@
+[build-system]
+requires = ["setuptools>=66.1.0", "wheel"]
+build-backend = "build_backend"
+backend-path = ["."]
+
+[project]
+name = "paddleformers"
+dynamic = ["version"]
+description = "Easy-to-use and powerful NLP library with Awesome model zoo, supporting wide-range of NLP tasks from research to industrial applications."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "Apache 2.0" }
+authors = [{ name = "PaddleFormers Team", email = "paddleformers@baidu.com" }]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "colorlog>=6.10.1",
+    "paddlepaddle-gpu==3.4.0.post20260723+6ec1dc38ef0",
+    "tilelang-paddle",
+    "scikit-learn",
+    "multiprocess",
+    "datasets>=3.0.0",
+    "tqdm",
+    "sentencepiece",
+    "huggingface_hub>=0.19.2",
+    "protobuf>=3.20.2",
+    "visualdl",
+    "safetensors",
+    "paddlecodec>=0.2,<0.3; sys_platform == 'linux'",
+    "fast_dataindex>=0.1.1; platform_system == 'Linux'",
+    "aistudio-sdk>=0.3.0",
+    "jinja2",
+    "regex",
+    "numpy",
+    "tiktoken",
+    "ml_dtypes",
+    "omegaconf",
+    "modelscope",
+    "transformers>=5.0.0,<5.4.0",
+    "GPUtil",
+    "importlib_metadata",
+    "librosa",
+    "binpacking",
+    "orjson",
+]
+
+[project.urls]
+Homepage = "https://github.com/PaddlePaddle/PaddleFormers"
+
+[project.scripts]
+paddleformers-cli = "paddleformers.cli.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["paddleformers*"]
+exclude = ["examples*", "tests*", "applications*", "fast_generation*", "model_zoo*", "build*"]
+
+[tool.setuptools.package-data]
+paddleformers = ["datasets/reader/data_info.json"]
+
+[tool.setuptools.dynamic]
+version = { attr = "paddleformers._version.__version__" }
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+paddlefleet-ops = { workspace = true }
+
+[[tool.uv.index]]
+name = "paddlepaddle-gpu"
+url = "https://www.paddlepaddle.org.cn/packages/nightly/cu129/"
+
+[[tool.uv.index]]
+name = "paddlepaddle-cu13"
+url = "https://www.paddlepaddle.org.cn/packages/nightly/cu130/"
+
+[[tool.uv.index]]
+name = "paddlepaddle-xpu"
+url = "https://www.paddlepaddle.org.cn/packages/nightly/xpu-p800/"
+
 [tool.isort]
 profile = 'black'
 known_third_party = ["paddle"]
@@ -10,7 +97,6 @@ target_version = ['py35', 'py36', 'py37', 'py38', 'py39', 'py310']
 [tool.pytest.ini_options]
 minversion = "6.0"
 addopts = "-ra -q "
-pythonpath = ["."]
 testpaths = [
     "tests/data",
     "tests/dataset",
@@ -21,6 +107,7 @@ testpaths = [
     "tests/trainer",
     "tests/transformers",
     "tests/utils",
+    "tests/fleet",
     "tests/ai_edited_test/cli",
     "tests/ai_edited_test/data",
     "tests/ai_edited_test/datasets",
@@ -39,3 +126,122 @@ filterwarnings = [
     "ignore::UserWarning",
     'ignore::DeprecationWarning',
 ]
+
+[tool.ruff]
+exclude = [
+    "packages/paddlefleet_ops/third_party",
+    "third_party",
+]
+line-length = 80
+target-version = "py310"
+
+[tool.ruff.format]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "W",
+    "F",
+    "I",
+    "C4",
+    "T100",
+    "UP",
+    "PYI",
+    "NPY001",
+    "NPY003",
+    "NPY201",
+    "B002",
+    "B003",
+    "B004",
+    "B005",
+    "B009",
+    "B010",
+    "B011",
+    "B012",
+    "B013",
+    "B014",
+    "B015",
+    "B016",
+    "B017",
+    "B018",
+    "B019",
+    "B020",
+    "B021",
+    "B022",
+    "B025",
+    "B029",
+    "B032",
+    "PLE",
+    "PLC3002",
+    "PLR0206",
+    "PLR0402",
+    "PLR1711",
+    "PLR1722",
+    "PLW3301",
+    "SIM101",
+    "SIM117",
+    "PGH004",
+    "TC",
+    "RUF005",
+    "RUF008",
+    "RUF009",
+    "RUF010",
+    "RUF013",
+    "RUF015",
+    "RUF016",
+    "RUF017",
+    "RUF018",
+    "RUF019",
+    "RUF020",
+    "RUF024",
+    "RUF026",
+    "RUF100",
+    "RSE",
+    "Q003",
+    "Q004",
+    "FURB",
+    "FA",
+]
+unfixable = ["NPY001"]
+ignore = [
+    "UP035",
+    "UP007",
+    "E203",
+    "B017",
+    "B022",
+    "B025",
+    "B011",
+    "B015",
+    "B018",
+    "B019",
+    "T100",
+    "PLR1722",
+    "SIM101",
+    "SIM117",
+    "UP008",
+    "UP031",
+    "UP045",
+    "TC001",
+    "TC003",
+    "E402",
+    "E501",
+    "E721",
+    "E722",
+    "E731",
+    "E741",
+    "F405",
+    "F841",
+    "UP015",
+    "PYI024",
+    "PYI056",
+    "RUF005",
+]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+known-first-party = ["paddleformers", "paddlefleet_ops"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/__init__.py" = ["F401", "F403", "PLC0414"]
+"tests/**" = ["SIM117"]
+"paddleformers/cli/train/dpo/dpo_trainer.py" = ["SIM117"]

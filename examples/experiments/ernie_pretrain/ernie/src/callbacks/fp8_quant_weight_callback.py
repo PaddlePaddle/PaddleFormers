@@ -19,7 +19,9 @@ import os
 from paddleformers.trainer.trainer_callback import TrainerCallback
 
 logger = logging.getLogger(__name__)
-g_shard_bypass_dygraph_optimizer = int(os.environ.get("FLAGS_shard_bypass_dygraph_optimizer", 0))
+g_shard_bypass_dygraph_optimizer = int(
+    os.environ.get("FLAGS_shard_bypass_dygraph_optimizer", 0)
+)
 
 
 def enable_in_dict_config(config, key):
@@ -36,7 +38,9 @@ class FP8QuantWeightCallback(TrainerCallback):
         global skip_count
 
         # offline quant fp8 weight
-        if enable_in_dict_config(model.config.fp8_mem_configs, "offline_quant_expert_weight"):
+        if enable_in_dict_config(
+            model.config.fp8_mem_configs, "offline_quant_expert_weight"
+        ):
             logger.info("offline quant expert weight from bf16 to fp8.")
 
             if not g_shard_bypass_dygraph_optimizer or skip_count == 0:

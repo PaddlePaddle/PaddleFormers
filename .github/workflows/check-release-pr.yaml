@@ -1,5 +1,4 @@
 name: Check Release PR
-
 on:
   pull_request:
     branches:
@@ -8,7 +7,6 @@ on:
       - opened
       - edited
       - synchronize
-
 jobs:
   validate:
     runs-on: 'ernie-cpu'
@@ -24,7 +22,6 @@ jobs:
             exit 1
           fi
           echo "Dev PR link found"
-
       - name: Check the referenced PR is merged into dev
         env:
           GH_TOKEN: ${{ github.token }}

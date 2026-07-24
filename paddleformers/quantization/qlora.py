@@ -26,50 +26,92 @@ def qlora_weight_quantize(
     linear_name=None,
     return_dict=True,
 ):
-    quant_weight, weight_scale = quant_blockwise(weight, None, blocksize=block_size, quant_type=quant_algo)
+    quant_weight, weight_scale = quant_blockwise(
+        weight, None, blocksize=block_size, quant_type=quant_algo
+    )
     if double_quant:
         quant_sacle_offset = weight_scale.mean()
         weight_scale -= quant_sacle_offset
         qweight_scale, double_weight_scale = quantize_8bit(
-            weight_scale, None, double_quant_block_size, quant_type="dynamic_fp8"
+            weight_scale,
+            None,
+            double_quant_block_size,
+            quant_type="dynamic_fp8",
         )
         if not return_dict:
-            return quant_weight, (qweight_scale, double_weight_scale, quant_sacle_offset)
-        qweight_scale_name = f"{linear_name}.qweight_scale" if linear_name else "qweight_scale"
-        double_weight_scale_name = f"{linear_name}.double_weight_scale" if linear_name else "double_weight_scale"
-        quant_sacle_offset_name = f"{linear_name}.weight_scale_offset" if linear_name else "weight_scale_offset"
+            return quant_weight, (
+                qweight_scale,
+                double_weight_scale,
+                quant_sacle_offset,
+            )
+        qweight_scale_name = (
+            f"{linear_name}.qweight_scale" if linear_name else "qweight_scale"
+        )
+        double_weight_scale_name = (
+            f"{linear_name}.double_weight_scale"
+            if linear_name
+            else "double_weight_scale"
+        )
+        quant_sacle_offset_name = (
+            f"{linear_name}.weight_scale_offset"
+            if linear_name
+            else "weight_scale_offset"
+        )
         qlora_state_dict = {
             qweight_scale_name: qweight_scale,
             double_weight_scale_name: double_weight_scale,
             quant_sacle_offset_name: quant_sacle_offset,
         }
     else:
-        weight_scale_name = f"{linear_name}.weight_scale" if linear_name else "weight_scale"
+        weight_scale_name = (
+            f"{linear_name}.weight_scale" if linear_name else "weight_scale"
+        )
         qlora_state_dict = {weight_scale_name: weight_scale}
         if not return_dict:
             return quant_weight, (weight_scale)
-    quant_weight_name = f"{linear_name}.quant_weight" if linear_name else "quant_weight"
+    quant_weight_name = (
+        f"{linear_name}.quant_weight" if linear_name else "quant_weight"
+    )
     qlora_state_dict[quant_weight_name] = quant_weight
     return qlora_state_dict
 
 
 def qlora_weight_dequantize(
-    quant_weight, quant_algo, state, double_quant=False, block_size=64, double_quant_block_size=256
+    quant_weight,
+    quant_algo,
+    state,
+    double_quant=False,
+    block_size=64,
+    double_quant_block_size=256,
 ):
     if double_quant:
         qweight_scale, double_weight_scale, quant_sacle_offset = state
         weight_scale = dequantize_8bit(
-            qweight_scale, None, double_weight_scale, double_quant_block_size, quant_type="dynamic_fp8"
+            qweight_scale,
+            None,
+            double_weight_scale,
+            double_quant_block_size,
+            quant_type="dynamic_fp8",
         )
         weight_scale += quant_sacle_offset
     else:
         weight_scale = state
-    out = dequant_blockwise(quant_weight, None, weight_scale, blocksize=block_size, quant_type=quant_algo)
+    out = dequant_blockwise(
+        quant_weight,
+        None,
+        weight_scale,
+        blocksize=block_size,
+        quant_type=quant_algo,
+    )
     return out
 
 
 def qlora_weight_quantize_dequantize(
-    weight, quant_algo="nf4", double_quant=False, block_size=64, double_quant_block_size=256
+    weight,
+    quant_algo="nf4",
+    double_quant=False,
+    block_size=64,
+    double_quant_block_size=256,
 ):
     dtype = weight.dtype
     quant_weight, state = qlora_weight_quantize(
@@ -107,7 +149,14 @@ def qlora_weight_linear(
     bias=None,
 ):
     weight = (
-        qlora_weight_dequantize(quant_weight, quant_algo, state, double_quant, block_size, double_quant_block_size)
+        qlora_weight_dequantize(
+            quant_weight,
+            quant_algo,
+            state,
+            double_quant,
+            block_size,
+            double_quant_block_size,
+        )
         .cast(dtype)
         .reshape([x.shape[-1], -1])
     )

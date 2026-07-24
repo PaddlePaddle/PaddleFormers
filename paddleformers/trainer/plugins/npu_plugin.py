@@ -30,7 +30,9 @@ def npu_accelerate_plugin(optimizer):
         optimizer (`paddle.optimizer.Optimizer`):
             The Optimizer whose `step` method will be modified.
     """
-    optimizer.step = types.MethodType(_optimizer_step_with_flatten_param_grads, optimizer)
+    optimizer.step = types.MethodType(
+        _optimizer_step_with_flatten_param_grads, optimizer
+    )
 
 
 def _optimizer_step_with_flatten_param_grads(optimizer):
@@ -45,7 +47,9 @@ def _optimizer_step_with_flatten_param_grads(optimizer):
 
         # currently, only support ClipGradByGlobalNorm and without regularization.
         if isinstance(params_grads, list) and optimizer.regularization is None:
-            if optimizer._grad_clip is None or isinstance(optimizer._grad_clip, paddle.nn.ClipGradByGlobalNorm):
+            if optimizer._grad_clip is None or isinstance(
+                optimizer._grad_clip, paddle.nn.ClipGradByGlobalNorm
+            ):
                 params_grads = _flatten_param_grads(optimizer, params_grads)
 
         optimizer._apply_optimize(
@@ -55,7 +59,9 @@ def _optimizer_step_with_flatten_param_grads(optimizer):
             param_group_idx=0,
         )
     else:
-        raise RuntimeError("flatten_param_grads is not supported when _param_groups[0] is dict.")
+        raise RuntimeError(
+            "flatten_param_grads is not supported when _param_groups[0] is dict."
+        )
 
 
 def _flatten_param_grads(optimizer, params_grads):
@@ -66,7 +72,10 @@ def _flatten_param_grads(optimizer, params_grads):
         if g is None:
             continue
         g.persistable = True
-        if getattr(p, "need_clip", True) is False or getattr(p, "regularizer", None) is not None:
+        if (
+            getattr(p, "need_clip", True) is False
+            or getattr(p, "regularizer", None) is not None
+        ):
             logger.warning(
                 f"flatten_param_grads=True will be discarded since parameter {p.name}'s need_clip is False or "
                 "the regularizer is set."

@@ -101,15 +101,23 @@ def is_need_master_weight(optimizer, is_fp16_or_bp16):
         return False
 
 
-def update_master_weight_status(args, optimizer, has_master_weight, safe_serialization):
-    if is_need_master_weight(optimizer, is_fp16_or_bp16=(args.fp16 or args.bf16)):
+def update_master_weight_status(
+    args, optimizer, has_master_weight, safe_serialization
+):
+    if is_need_master_weight(
+        optimizer, is_fp16_or_bp16=(args.fp16 or args.bf16)
+    ):
         if not has_master_weight:
             if (
-                UnifiedCheckpointOption.REMOVE_MASTER_WEIGHT.value in args.unified_checkpoint_config
-                or UnifiedCheckpointOption.MASTER_WEIGHT_COMPATIBLE.value in args.unified_checkpoint_config
+                UnifiedCheckpointOption.REMOVE_MASTER_WEIGHT.value
+                in args.unified_checkpoint_config
+                or UnifiedCheckpointOption.MASTER_WEIGHT_COMPATIBLE.value
+                in args.unified_checkpoint_config
             ):
                 index_filename_master_weights = (
-                    PADDLE_WEIGHTS_INDEX_NAME if not safe_serialization else SAFE_WEIGHTS_INDEX_NAME
+                    PADDLE_WEIGHTS_INDEX_NAME
+                    if not safe_serialization
+                    else SAFE_WEIGHTS_INDEX_NAME
                 )
                 has_master_weight = True
                 logger.warning(
@@ -126,11 +134,18 @@ def update_master_weight_status(args, optimizer, has_master_weight, safe_seriali
         else:
             has_master_weight = True
             index_filename_master_weights = (
-                PADDLE_MASTER_WEIGHTS_INDEX_NAME if not safe_serialization else SAFE_MASTER_WEIGHTS_INDEX_NAME
+                PADDLE_MASTER_WEIGHTS_INDEX_NAME
+                if not safe_serialization
+                else SAFE_MASTER_WEIGHTS_INDEX_NAME
             )
-            if UnifiedCheckpointOption.SKIP_SAVE_MODEL_WEIGHT.value in args.unified_checkpoint_config:
+            if (
+                UnifiedCheckpointOption.SKIP_SAVE_MODEL_WEIGHT.value
+                in args.unified_checkpoint_config
+            ):
                 index_filename_master_weights = (
-                    PADDLE_WEIGHTS_INDEX_NAME if not safe_serialization else SAFE_WEIGHTS_INDEX_NAME
+                    PADDLE_WEIGHTS_INDEX_NAME
+                    if not safe_serialization
+                    else SAFE_WEIGHTS_INDEX_NAME
                 )
     else:
         has_master_weight = False
@@ -160,16 +175,26 @@ def reduce_master_weights_status(has_master_weights=False):
     return data.item() > 0
 
 
-def select_model_weight_index(model, resume_from_checkpoint, safe_serialization, local=True):
+def select_model_weight_index(
+    model, resume_from_checkpoint, safe_serialization, local=True
+):
     """
     try select model weight index from model weight or master weight index.
     """
 
     # find model weight index file
     if isinstance(model, LoRAModel):
-        index_filename = SAFE_PEFT_WEIGHTS_INDEX_NAME if safe_serialization else PADDLE_PEFT_WEIGHTS_INDEX_NAME
+        index_filename = (
+            SAFE_PEFT_WEIGHTS_INDEX_NAME
+            if safe_serialization
+            else PADDLE_PEFT_WEIGHTS_INDEX_NAME
+        )
     else:
-        index_filename = SAFE_WEIGHTS_INDEX_NAME if safe_serialization else PADDLE_WEIGHTS_INDEX_NAME
+        index_filename = (
+            SAFE_WEIGHTS_INDEX_NAME
+            if safe_serialization
+            else PADDLE_WEIGHTS_INDEX_NAME
+        )
 
     index_filename_path = os.path.join(resume_from_checkpoint, index_filename)
     identify_func = os.path.isfile if local else distributed_isfile
@@ -177,13 +202,21 @@ def select_model_weight_index(model, resume_from_checkpoint, safe_serialization,
     if identify_func(index_filename_path):
         return index_filename
     else:
-        index_filename = PADDLE_MASTER_WEIGHTS_INDEX_NAME if not safe_serialization else SAFE_MASTER_WEIGHTS_INDEX_NAME
-        index_filename_path = os.path.join(resume_from_checkpoint, index_filename)
+        index_filename = (
+            PADDLE_MASTER_WEIGHTS_INDEX_NAME
+            if not safe_serialization
+            else SAFE_MASTER_WEIGHTS_INDEX_NAME
+        )
+        index_filename_path = os.path.join(
+            resume_from_checkpoint, index_filename
+        )
 
         if identify_func(index_filename_path):
             return index_filename
         else:
-            raise ValueError("Can't find a valid unified model or master weight checkpoint to load.")
+            raise ValueError(
+                "Can't find a valid unified model or master weight checkpoint to load."
+            )
 
 
 def mapping_optimizer_tp_actions(tp_actions, optimizer_loaded_keys):
@@ -214,14 +247,22 @@ def get_expected_state_dict(model_to_save, **kwargs):
     if isinstance(model_to_save, PretrainedModel):
         state_dict = model_to_save.state_dict()
     elif isinstance(model_to_save, LoRAModel):
-        concat_additional_adapter = kwargs.get("concat_additional_adapter", False)
-        concat_init_lora = model_to_save.lora_config.loraga and concat_additional_adapter
-        state_dict = model_to_save.get_trainable_state_dict(concat_init_lora=concat_init_lora)
+        concat_additional_adapter = kwargs.get(
+            "concat_additional_adapter", False
+        )
+        concat_init_lora = (
+            model_to_save.lora_config.loraga and concat_additional_adapter
+        )
+        state_dict = model_to_save.get_trainable_state_dict(
+            concat_init_lora=concat_init_lora
+        )
 
     return state_dict
 
 
-def get_expected_keys(args, sharded_metadata, model, optimizer, is_master_weights=False):
+def get_expected_keys(
+    args, sharded_metadata, model, optimizer, is_master_weights=False
+):
     hcg = fleet.get_hybrid_communicate_group()
     sharding_group = hcg.get_sharding_parallel_group()
     sharding_rank = sharding_group.rank
@@ -230,16 +271,24 @@ def get_expected_keys(args, sharded_metadata, model, optimizer, is_master_weight
         params2rank = optimizer._param2rank
 
     model_state_dict = get_expected_state_dict(model)
-    struct2static_name_mappings = {k: v.name for k, v in model_state_dict.items()}
+    struct2static_name_mappings = {
+        k: v.name for k, v in model_state_dict.items()
+    }
 
     expected_keys = []
     for key in list(sharded_metadata["all_optimizer_keys"]):
         key_name = key.split("/")[0]
-        if is_master_weights and key_name in model_state_dict and model_state_dict[key_name].dtype == paddle.float32:
+        if (
+            is_master_weights
+            and key_name in model_state_dict
+            and model_state_dict[key_name].dtype == paddle.float32
+        ):
             continue
 
         if args.use_expert_parallel and args.data_parallel_rank > 0:
-            if key_name in model_state_dict and not getattr(model_state_dict[key_name], "no_sync", False):
+            if key_name in model_state_dict and not getattr(
+                model_state_dict[key_name], "no_sync", False
+            ):
                 continue
 
         static_name = struct2static_name_mappings.get(key_name, None)
@@ -274,7 +323,9 @@ def get_optimizer_shard_files(optimizer_path, index_filename):
     import json
 
     if not os.path.isfile(index_filename):
-        raise ValueError(f"Can't find a optimizer index ({index_filename}) in {optimizer_path}.")
+        raise ValueError(
+            f"Can't find a optimizer index ({index_filename}) in {optimizer_path}."
+        )
 
     with open(index_filename, "r") as f:
         index = json.loads(f.read())
@@ -294,7 +345,9 @@ def get_optimizer_shard_files(optimizer_path, index_filename):
     # First, let's deal with local folder.
     # TODO: if optimizer_path is a folder, we should check if the optimizer is already cached or not.
     if os.path.isdir(optimizer_path):
-        shard_filenames = [os.path.join(optimizer_path, f) for f in shard_filenames]
+        shard_filenames = [
+            os.path.join(optimizer_path, f) for f in shard_filenames
+        ]
         return shard_filenames, sharded_metadata
 
 
@@ -328,7 +381,9 @@ def merge_large_tensor_parallel(tensor, tp_group, tp_action, dst_rank, is_dst):
     for i in range(num_splits):
         if get_env_device() == "xpu":
             ret = distributed_allgather(
-                tensor[split_parts[i] : split_parts[i + 1], :].contiguous(), group=tp_group, offload=False
+                tensor[split_parts[i] : split_parts[i + 1], :].contiguous(),
+                group=tp_group,
+                offload=False,
             )
         else:
             ret = distributed_gather(
@@ -364,7 +419,7 @@ def merge_tensor_parallel_with_shard(state_dict, tp_actions, all_filter_keys):
 
     # filter actions for pipeline mode
     if hcg.get_pipe_parallel_group().nranks > 1:
-        filter_keys = set([y for x in all_filter_keys for y in x])
+        filter_keys = {y for x in all_filter_keys for y in x}
         for key in list(tp_actions.keys()):
             if key not in filter_keys:
                 tp_actions.pop(key)
@@ -383,19 +438,38 @@ def merge_tensor_parallel_with_shard(state_dict, tp_actions, all_filter_keys):
             mp_moe = getattr(tensor, "mp_moe", False)
             if key in tp_actions and not mp_moe:
                 # Get tensor size
-                tensor_bytes = tensor.numel().item() * dtype_byte_size(tensor.dtype) * tp_group.nranks
-                if tensor_bytes >= 5 * 1024 * 1024 * 1024:  # temporarily set 5GB as threshold
-                    tensor = merge_large_tensor_parallel(tensor, tp_group, tp_actions[key], j, is_dst)
+                tensor_bytes = (
+                    tensor.numel().item()
+                    * dtype_byte_size(tensor.dtype)
+                    * tp_group.nranks
+                )
+                if (
+                    tensor_bytes >= 5 * 1024 * 1024 * 1024
+                ):  # temporarily set 5GB as threshold
+                    tensor = merge_large_tensor_parallel(
+                        tensor, tp_group, tp_actions[key], j, is_dst
+                    )
                 else:
                     if get_env_device() == "xpu":
-                        ret = distributed_allgather(tensor.contiguous(), group=tp_group, offload=False)
+                        ret = distributed_allgather(
+                            tensor.contiguous(), group=tp_group, offload=False
+                        )
                     else:
-                        ret = distributed_gather(tensor.contiguous(), dst=j, group=tp_group, offload=False)
+                        ret = distributed_gather(
+                            tensor.contiguous(),
+                            dst=j,
+                            group=tp_group,
+                            offload=False,
+                        )
                     action = tp_actions.pop(key)
                     tensor = action(ret) if is_dst else None
             else:
                 if is_dst:
-                    tensor = tensor._copy_to(DEST_PLACE, False) if tensor.place.is_cpu_place() else tensor
+                    tensor = (
+                        tensor._copy_to(DEST_PLACE, False)
+                        if tensor.place.is_cpu_place()
+                        else tensor
+                    )
                 else:
                     tensor = None
 
@@ -404,12 +478,16 @@ def merge_tensor_parallel_with_shard(state_dict, tp_actions, all_filter_keys):
 
     if len(tp_actions) > 0:
         for x in tp_actions.keys():
-            logger.debug(f"key <{x}> need to merge tensor parallel but we can't find in model state.")
+            logger.debug(
+                f"key <{x}> need to merge tensor parallel but we can't find in model state."
+            )
 
     return state_dict_to_save
 
 
-def merge_tensor_parallel_for_optimizer(state_dict, model_state_dict, tp_actions, all_filter_keys):
+def merge_tensor_parallel_for_optimizer(
+    state_dict, model_state_dict, tp_actions, all_filter_keys
+):
     """
     Merge tensor parallel according to tp_actions, used for master_weight and optimizer weight.
     """
@@ -434,24 +512,49 @@ def merge_tensor_parallel_for_optimizer(state_dict, model_state_dict, tp_actions
                 # for example: beta1, beta2
                 if tensor.numel().item() == 1:
                     if is_dst:
-                        tensor = tensor._copy_to(DEST_PLACE, False) if not tensor.place.is_cpu_place() else tensor
+                        tensor = (
+                            tensor._copy_to(DEST_PLACE, False)
+                            if not tensor.place.is_cpu_place()
+                            else tensor
+                        )
                     else:
                         tensor = None
                 else:
                     # Get tensor size
-                    tensor_bytes = tensor.numel().item() * dtype_byte_size(tensor.dtype) * tp_group.nranks
-                    if tensor_bytes >= 5 * 1024 * 1024 * 1024:  # temporarily set 5GB as threshold
-                        tensor = merge_large_tensor_parallel(tensor, tp_group, tp_actions[model_key], j, is_dst)
+                    tensor_bytes = (
+                        tensor.numel().item()
+                        * dtype_byte_size(tensor.dtype)
+                        * tp_group.nranks
+                    )
+                    if (
+                        tensor_bytes >= 5 * 1024 * 1024 * 1024
+                    ):  # temporarily set 5GB as threshold
+                        tensor = merge_large_tensor_parallel(
+                            tensor, tp_group, tp_actions[model_key], j, is_dst
+                        )
                     else:
                         if get_env_device() == "xpu":
-                            ret = distributed_allgather(tensor.contiguous(), group=tp_group, offload=False)
+                            ret = distributed_allgather(
+                                tensor.contiguous(),
+                                group=tp_group,
+                                offload=False,
+                            )
                         else:
-                            ret = distributed_gather(tensor.contiguous(), dst=j, group=tp_group, offload=False)
+                            ret = distributed_gather(
+                                tensor.contiguous(),
+                                dst=j,
+                                group=tp_group,
+                                offload=False,
+                            )
                         action = tp_actions[model_key]
                         tensor = action(ret) if is_dst else None
             else:
                 if is_dst:
-                    tensor = tensor._copy_to(DEST_PLACE, False) if not tensor.place.is_cpu_place() else tensor
+                    tensor = (
+                        tensor._copy_to(DEST_PLACE, False)
+                        if not tensor.place.is_cpu_place()
+                        else tensor
+                    )
                 else:
                     tensor = None
 
@@ -485,7 +588,7 @@ def filter_params(model_to_save, state_dict, args, is_optimizer=False):
         if args.ckpt_quant_stage != "O0":
             quant = True
         tensor_bytes_dict = {}
-        for (k, v) in state_dict.items():
+        for k, v in state_dict.items():
             # master weight has same key as model weight
             if not is_master_weights and k in model_state_dict:
                 is_master_weights = True
@@ -496,31 +599,54 @@ def filter_params(model_to_save, state_dict, args, is_optimizer=False):
             no_sync = getattr(model_v, "no_sync", False)
             if not mp_moe or no_sync:
                 if not quant or not is_optimizer:
-                    if hasattr(model_v, "is_distributed") and model_v.is_distributed:
-                        tensor_bytes_dict[k] = v.numel().item() * tp_size * dtype_byte_size(v.dtype)
+                    if (
+                        hasattr(model_v, "is_distributed")
+                        and model_v.is_distributed
+                    ):
+                        tensor_bytes_dict[k] = (
+                            v.numel().item()
+                            * tp_size
+                            * dtype_byte_size(v.dtype)
+                        )
                     else:
-                        tensor_bytes_dict[k] = v.numel().item() * dtype_byte_size(v.dtype)
+                        tensor_bytes_dict[k] = (
+                            v.numel().item() * dtype_byte_size(v.dtype)
+                        )
                 else:
                     if weight_key not in tensor_bytes_dict:
                         tensor_bytes_dict[weight_key] = 0
 
-                    if hasattr(model_v, "is_distributed") and model_v.is_distributed:
-                        tensor_bytes_dict[weight_key] += v.numel().item() * tp_size * dtype_byte_size(v.dtype)
+                    if (
+                        hasattr(model_v, "is_distributed")
+                        and model_v.is_distributed
+                    ):
+                        tensor_bytes_dict[weight_key] += (
+                            v.numel().item()
+                            * tp_size
+                            * dtype_byte_size(v.dtype)
+                        )
                     else:
-                        tensor_bytes_dict[weight_key] += v.numel().item() * dtype_byte_size(v.dtype)
+                        tensor_bytes_dict[weight_key] += (
+                            v.numel().item() * dtype_byte_size(v.dtype)
+                        )
 
         filter_tensor_list = []
         current_block = []
         current_block_size = 0
         total_size = 0
 
-        max_shard_size = (sum(tensor_bytes_dict.values()) + tp_size - 1) // tp_size
+        max_shard_size = (
+            sum(tensor_bytes_dict.values()) + tp_size - 1
+        ) // tp_size
 
         for index, (key, weight_size) in enumerate(tensor_bytes_dict.items()):
             # If this weight is going to tip up over the maximal size, we split.
             # if current_block_size + weight_size > max_shard_size:
-            if total_size + weight_size > max_shard_size * (len(filter_tensor_list) + 1) or (
-                len(tensor_bytes_dict) - index < (tp_size - len(filter_tensor_list))
+            if total_size + weight_size > max_shard_size * (
+                len(filter_tensor_list) + 1
+            ) or (
+                len(tensor_bytes_dict) - index
+                < (tp_size - len(filter_tensor_list))
             ):
                 # fix if the first param is large than max_shard_size
                 if len(current_block) > 0:
@@ -541,7 +667,9 @@ def filter_params(model_to_save, state_dict, args, is_optimizer=False):
 
         filter_tensor_list.append(current_block)
         if len(filter_tensor_list) < tp_size:
-            filter_tensor_list.extend([[] for i in range(tp_size - len(filter_tensor_list))])
+            filter_tensor_list.extend(
+                [[] for i in range(tp_size - len(filter_tensor_list))]
+            )
 
     dist.broadcast_object_list(
         filter_tensor_list,
@@ -550,7 +678,7 @@ def filter_params(model_to_save, state_dict, args, is_optimizer=False):
     )
 
     # deal with expert parameters in model parallel group.
-    for (k, v) in state_dict.items():
+    for k, v in state_dict.items():
         weight_key = k.split("/")[0]
         model_v = model_state_dict[weight_key] if is_optimizer else v
         mp_moe = getattr(model_v, "mp_moe", False)
@@ -561,7 +689,9 @@ def filter_params(model_to_save, state_dict, args, is_optimizer=False):
             filter_tensor_list[tp_rank].append(k)
 
     final_filter_tensor_list = []
-    dist.all_gather_object(final_filter_tensor_list, filter_tensor_list[tp_rank], group=tp_group)
+    dist.all_gather_object(
+        final_filter_tensor_list, filter_tensor_list[tp_rank], group=tp_group
+    )
 
     return final_filter_tensor_list
 
@@ -571,7 +701,7 @@ def get_sharded_file_name(args, file_name, is_optimizer=False):
     Get safetensors file name for saving.
     """
     if not is_optimizer:
-        sd_degree = args.sharding_parallel_size if args.sharding_parallel_size > 1 else 1
+        sd_degree = max(1, args.sharding_parallel_size)
         if args.use_expert_parallel:
             if args.expert_model_parallel_size > 1:
                 size = dist.get_world_size() // args.moe_sharding_parallel_size
@@ -592,14 +722,16 @@ def get_sharded_file_name(args, file_name, is_optimizer=False):
         dp_group = hcg.get_data_parallel_group()
         size = dp_group.nranks if not args.use_expert_parallel else 1
         shard_file = file_name.replace(
-            ".pdparams", f"-{args.logical_process_index + 1:05d}-of-{args.world_size // size:05d}.pdparams"
+            ".pdparams",
+            f"-{args.logical_process_index + 1:05d}-of-{args.world_size // size:05d}.pdparams",
         )
         shard_file = shard_file.replace(
             ".safetensors",
             f"-{args.logical_process_index + 1:05d}-of-{args.world_size // size:05d}.safetensors",
         )
         shard_file = shard_file.replace(
-            ".pdopt", f"-{args.logical_process_index + 1:05d}-of-{args.world_size // size:05d}.pdopt"
+            ".pdopt",
+            f"-{args.logical_process_index + 1:05d}-of-{args.world_size // size:05d}.pdopt",
         )
     return shard_file
 
@@ -628,7 +760,11 @@ def get_sharded_index(
 
 
 def gather_sharded_object(
-    index_file, total_size, is_optimizer=False, use_expert_parallel=False, expert_model_parallel_size=1
+    index_file,
+    total_size,
+    is_optimizer=False,
+    use_expert_parallel=False,
+    expert_model_parallel_size=1,
 ):
     """
     All gather sharded files list across different groups.
@@ -650,10 +786,14 @@ def gather_sharded_object(
         pp_index_file_list = []
         pp_total_size_list = []
         dist.all_gather_object(
-            pp_index_file_list, index_file_list if len(index_file_list) > 0 else index_file, pp_group
+            pp_index_file_list,
+            index_file_list if len(index_file_list) > 0 else index_file,
+            pp_group,
         )
         dist.all_gather_object(
-            pp_total_size_list, total_size_list if len(total_size_list) > 0 else total_size, pp_group
+            pp_total_size_list,
+            total_size_list if len(total_size_list) > 0 else total_size,
+            pp_group,
         )
         index_file_list = pp_index_file_list
         total_size_list = pp_total_size_list
@@ -671,8 +811,12 @@ def gather_sharded_object(
         if data_group.nranks > 1:
             data_index_file_list = []
             data_total_size_list = []
-            dist.all_gather_object(data_index_file_list, index_file_list, data_group)
-            dist.all_gather_object(data_total_size_list, total_size_list, data_group)
+            dist.all_gather_object(
+                data_index_file_list, index_file_list, data_group
+            )
+            dist.all_gather_object(
+                data_total_size_list, total_size_list, data_group
+            )
             index_file_list = flatten_list(data_index_file_list)
             total_size_list = flatten_list(data_total_size_list)
 
@@ -681,8 +825,12 @@ def gather_sharded_object(
         if sharding_group.nranks > 1:
             sharding_index_file_list = []
             sharding_total_size_list = []
-            dist.all_gather_object(sharding_index_file_list, index_file_list, sharding_group)
-            dist.all_gather_object(sharding_total_size_list, total_size_list, sharding_group)
+            dist.all_gather_object(
+                sharding_index_file_list, index_file_list, sharding_group
+            )
+            dist.all_gather_object(
+                sharding_total_size_list, total_size_list, sharding_group
+            )
             index_file_list = flatten_list(sharding_index_file_list)
             total_size_list = flatten_list(sharding_total_size_list)
 
@@ -693,7 +841,9 @@ def rename_shard_file(args, shard_file, file_name):
     """
     Rename shard file when using expert_parallel.
     """
-    assert args.use_expert_parallel, "only expert_parallel need to use this function"
+    assert args.use_expert_parallel, (
+        "only expert_parallel need to use this function"
+    )
 
     shard_file_list = []
 
@@ -707,18 +857,22 @@ def rename_shard_file(args, shard_file, file_name):
     if pp_group.nranks > 1:
         pp_shard_file_list = []
         dist.all_gather_object(
-            pp_shard_file_list, shard_file_list if len(shard_file_list) > 0 else shard_file, pp_group
+            pp_shard_file_list,
+            shard_file_list if len(shard_file_list) > 0 else shard_file,
+            pp_group,
         )
         shard_file_list = flatten_list(pp_shard_file_list)
     if data_group.nranks > 1:
         data_shard_file_list = []
         dist.all_gather_object(
-            data_shard_file_list, shard_file_list if len(shard_file_list) > 0 else shard_file, data_group
+            data_shard_file_list,
+            shard_file_list if len(shard_file_list) > 0 else shard_file,
+            data_group,
         )
         shard_file_list = flatten_list(data_shard_file_list)
 
     new_index = shard_file_list.index(shard_file)
-    sd_degree = args.sharding_parallel_size if args.sharding_parallel_size > 1 else 1
+    sd_degree = max(1, args.sharding_parallel_size)
     shard_file = file_name.replace(
         ".pdparams",
         f"-{new_index + 1:05d}-of-{args.world_size // sd_degree:05d}.pdparams",
@@ -731,7 +885,11 @@ def rename_shard_file(args, shard_file, file_name):
 
 
 def is_sharding_split_param_mode(args):
-    return args.sharding_parallel_size > 1 and ShardingOption.SHARD_OP in args.sharding and args.split_param
+    return (
+        args.sharding_parallel_size > 1
+        and ShardingOption.SHARD_OP in args.sharding
+        and args.split_param
+    )
 
 
 def save_model_config(model_to_save, save_directory, save_safetensors=False):
@@ -758,11 +916,17 @@ def save_model_config(model_to_save, save_directory, save_safetensors=False):
     config_to_save = save_config(model_to_save)
     # Attach architecture to the config
     if isinstance(model_to_save, LoRAModel):
-        config_to_save.architectures = [clean_model_class_name(model_to_save.model.__class__.__name__)]
+        config_to_save.architectures = [
+            clean_model_class_name(model_to_save.model.__class__.__name__)
+        ]
     else:
-        config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
+        config_to_save.architectures = [
+            clean_model_class_name(model_to_save.__class__.__name__)
+        ]
 
-    config_to_save.save_pretrained(save_directory, save_safetensors=save_safetensors)
+    config_to_save.save_pretrained(
+        save_directory, save_safetensors=save_safetensors
+    )
     # save generation config
     if model_to_save.can_generate():
         model_to_save.generation_config.save_pretrained(save_directory)
@@ -795,10 +959,16 @@ def filter_sync_parameters(
         for key in list(model_state_dict.keys()):
             if use_expert_parallel:
                 if expert_model_parallel_size > 1:
-                    if ep_rank > 0 and sharding_rank > 0 and not getattr(model_state_dict[key], "no_sync", False):
+                    if (
+                        ep_rank > 0
+                        and sharding_rank > 0
+                        and not getattr(model_state_dict[key], "no_sync", False)
+                    ):
                         model_state_dict.pop(key)
                 else:
-                    if dp_rank > 0 and not getattr(model_state_dict[key], "no_sync", False):
+                    if dp_rank > 0 and not getattr(
+                        model_state_dict[key], "no_sync", False
+                    ):
                         model_state_dict.pop(key)
     else:
         if use_expert_parallel and expert_model_parallel_size == 1:

@@ -51,8 +51,14 @@ class TestDefaultToolUtils(unittest.TestCase):
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "location": {"type": "string", "description": "City name"},
-                            "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
+                            "location": {
+                                "type": "string",
+                                "description": "City name",
+                            },
+                            "unit": {
+                                "type": "string",
+                                "enum": ["celsius", "fahrenheit"],
+                            },
                         },
                         "required": ["location"],
                     },
@@ -136,7 +142,13 @@ class TestQwenToolUtils(unittest.TestCase):
         self.assertIn("test", result)
 
     def test_tool_formatter_no_type_key(self):
-        tools = [{"name": "test", "description": "test func", "parameters": {"type": "object", "properties": {}}}]
+        tools = [
+            {
+                "name": "test",
+                "description": "test func",
+                "parameters": {"type": "object", "properties": {}},
+            }
+        ]
         result = QwenToolUtils.tool_formatter(tools)
         # Should wrap the tool in a type:function dict
         self.assertIn("test", result)
@@ -312,7 +324,17 @@ class TestGetToolUtils(unittest.TestCase):
     """Tests for get_tool_utils function."""
 
     def test_get_existing_tool(self):
-        for name in ["default", "ernie", "ernie_vl", "qwen", "qwen3_5", "glm4", "glm4_moe", "glm_moe_dsa", "llama3"]:
+        for name in [
+            "default",
+            "ernie",
+            "ernie_vl",
+            "qwen",
+            "qwen3_5",
+            "glm4",
+            "glm4_moe",
+            "glm_moe_dsa",
+            "llama3",
+        ]:
             result = get_tool_utils(name)
             self.assertIsNotNone(result)
 

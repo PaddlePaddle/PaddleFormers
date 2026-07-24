@@ -63,7 +63,9 @@ class TestAllgatherAsync(unittest.TestCase):
 
     @patch("paddleformers.nn.moe.all_gather.dist.stream.all_gather")
     @patch("paddleformers.nn.moe.all_gather.fleet")
-    def test_multi_rank_returns_correct_shape(self, mock_fleet, mock_all_gather):
+    def test_multi_rank_returns_correct_shape(
+        self, mock_fleet, mock_all_gather
+    ):
         """Test that multi-rank returns expanded output shape."""
         func = self._get_func()
         mock_group = MagicMock()
@@ -159,8 +161,12 @@ class TestAllGatherAsyncPyLayer(unittest.TestCase):
         return AllGatherAsync
 
     @patch("paddleformers.nn.moe.all_gather.manual_backward")
-    @patch("paddleformers.nn.moe.all_gather.dist.get_world_size", return_value=1)
-    def test_forward_single_world_manual_backward_called(self, mock_ws, mock_mb):
+    @patch(
+        "paddleformers.nn.moe.all_gather.dist.get_world_size", return_value=1
+    )
+    def test_forward_single_world_manual_backward_called(
+        self, mock_ws, mock_mb
+    ):
         """Test forward with world_size=1 calls manual_backward."""
         cls = self._get_cls()
         mock_fn = MagicMock()
@@ -174,7 +180,9 @@ class TestAllGatherAsyncPyLayer(unittest.TestCase):
 
     @patch("paddleformers.nn.moe.all_gather.reduce_scatter_async")
     @patch("paddleformers.nn.moe.all_gather.manual_backward")
-    @patch("paddleformers.nn.moe.all_gather.dist.get_world_size", return_value=1)
+    @patch(
+        "paddleformers.nn.moe.all_gather.dist.get_world_size", return_value=1
+    )
     def test_backward_single_world(self, mock_ws, mock_mb, mock_rs):
         """Test backward with world_size=1."""
         cls = self._get_cls()
@@ -187,8 +195,12 @@ class TestAllGatherAsyncPyLayer(unittest.TestCase):
 
     @patch("paddleformers.nn.moe.all_gather.allgather_async")
     @patch("paddleformers.nn.moe.all_gather.manual_backward")
-    @patch("paddleformers.nn.moe.all_gather.dist.get_world_size", return_value=4)
-    def test_forward_multi_world_allgather_called(self, mock_ws, mock_mb, mock_ag):
+    @patch(
+        "paddleformers.nn.moe.all_gather.dist.get_world_size", return_value=4
+    )
+    def test_forward_multi_world_allgather_called(
+        self, mock_ws, mock_mb, mock_ag
+    ):
         """Test forward with world_size>1 calls allgather_async."""
         cls = self._get_cls()
         mock_task = MagicMock()
@@ -261,7 +273,9 @@ class TestAlltoAllSmart(unittest.TestCase):
     @patch("paddleformers.nn.moe.all_gather.dist.get_rank")
     @patch("paddleformers.nn.moe.all_gather.dist.get_world_size")
     @patch("paddleformers.nn.moe.all_gather._get_global_group")
-    def test_forward_basic_single_rank(self, mock_gg, mock_ws, mock_rank, mock_alltoall, mock_mb):
+    def test_forward_basic_single_rank(
+        self, mock_gg, mock_ws, mock_rank, mock_alltoall, mock_mb
+    ):
         """Test forward with single rank."""
         cls = self._get_cls()
         mock_group = MagicMock()
@@ -275,7 +289,10 @@ class TestAlltoAllSmart(unittest.TestCase):
 
         mock_bwf = MagicMock()
         mock_mb.side_effect = [
-            (None, (paddle.randn([4, 8]),)),  # forward_func_dict is None, no bwf
+            (
+                None,
+                (paddle.randn([4, 8]),),
+            ),  # forward_func_dict is None, no bwf
             (mock_bwf, (paddle.randn([2, 4]),)),
         ]
 
@@ -308,7 +325,9 @@ class TestAlltoAllSmart(unittest.TestCase):
     @patch("paddleformers.nn.moe.all_gather.dist.get_rank")
     @patch("paddleformers.nn.moe.all_gather.dist.get_world_size")
     @patch("paddleformers.nn.moe.all_gather._get_global_group")
-    def test_forward_with_forward_func_dict(self, mock_gg, mock_ws, mock_rank, mock_alltoall, mock_mb):
+    def test_forward_with_forward_func_dict(
+        self, mock_gg, mock_ws, mock_rank, mock_alltoall, mock_mb
+    ):
         """Test forward with forward_func_dict (expert computation)."""
         cls = self._get_cls()
         mock_group = MagicMock()
@@ -358,7 +377,9 @@ class TestAlltoAllSmart(unittest.TestCase):
     @patch("paddleformers.nn.moe.all_gather.dist.get_rank")
     @patch("paddleformers.nn.moe.all_gather.dist.get_world_size")
     @patch("paddleformers.nn.moe.all_gather._get_global_group")
-    def test_forward_no_padding_branch(self, mock_gg, mock_ws, mock_rank, mock_alltoall, mock_mb):
+    def test_forward_no_padding_branch(
+        self, mock_gg, mock_ws, mock_rank, mock_alltoall, mock_mb
+    ):
         """Test forward with use_padding=False."""
         cls = self._get_cls()
         mock_group = MagicMock()
@@ -407,7 +428,9 @@ class TestAlltoAllSmart(unittest.TestCase):
     @patch("paddleformers.nn.moe.all_gather.dist.get_rank")
     @patch("paddleformers.nn.moe.all_gather.dist.get_world_size")
     @patch("paddleformers.nn.moe.all_gather._get_global_group")
-    def test_forward_with_multi_experts(self, mock_gg, mock_ws, mock_rank, mock_alltoall, mock_mb):
+    def test_forward_with_multi_experts(
+        self, mock_gg, mock_ws, mock_rank, mock_alltoall, mock_mb
+    ):
         """Test forward with multiple local experts."""
         cls = self._get_cls()
         mock_group = MagicMock()
@@ -465,7 +488,9 @@ class TestAlltoAllSmartXPU(unittest.TestCase):
     @patch("paddleformers.nn.moe.all_gather.dist.get_rank")
     @patch("paddleformers.nn.moe.all_gather.dist.get_world_size")
     @patch("paddleformers.nn.moe.all_gather._get_global_group")
-    def test_forward_all_none_inputs_with_func(self, mock_gg, mock_ws, mock_rank, mock_alltoall, mock_mb):
+    def test_forward_all_none_inputs_with_func(
+        self, mock_gg, mock_ws, mock_rank, mock_alltoall, mock_mb
+    ):
         """Test forward with all None inputs and forward_func_dict=None raises TypeError."""
         cls = self._get_cls()
         mock_group = MagicMock()
@@ -511,7 +536,9 @@ class TestAlltoAllSmartXPU(unittest.TestCase):
     @patch("paddleformers.nn.moe.all_gather.dist.get_rank")
     @patch("paddleformers.nn.moe.all_gather.dist.get_world_size")
     @patch("paddleformers.nn.moe.all_gather._get_global_group")
-    def test_forward_with_valid_inputs(self, mock_gg, mock_ws, mock_rank, mock_alltoall, mock_mb):
+    def test_forward_with_valid_inputs(
+        self, mock_gg, mock_ws, mock_rank, mock_alltoall, mock_mb
+    ):
         """Test forward with valid inputs."""
         cls = self._get_cls()
         mock_group = MagicMock()
@@ -558,7 +585,9 @@ class TestAlltoAllSmartXPU(unittest.TestCase):
     @patch("paddleformers.nn.moe.all_gather.dist.get_rank")
     @patch("paddleformers.nn.moe.all_gather.dist.get_world_size")
     @patch("paddleformers.nn.moe.all_gather._get_global_group")
-    def test_forward_no_padding(self, mock_gg, mock_ws, mock_rank, mock_alltoall, mock_mb):
+    def test_forward_no_padding(
+        self, mock_gg, mock_ws, mock_rank, mock_alltoall, mock_mb
+    ):
         """Test forward with use_padding=False."""
         cls = self._get_cls()
         mock_group = MagicMock()
@@ -607,7 +636,9 @@ class TestAlltoAllSmartXPU(unittest.TestCase):
     @patch("paddleformers.nn.moe.all_gather.dist.get_rank")
     @patch("paddleformers.nn.moe.all_gather.dist.get_world_size")
     @patch("paddleformers.nn.moe.all_gather._get_global_group")
-    def test_forward_mixed_zero_and_nonzero_experts(self, mock_gg, mock_ws, mock_rank, mock_alltoall, mock_mb):
+    def test_forward_mixed_zero_and_nonzero_experts(
+        self, mock_gg, mock_ws, mock_rank, mock_alltoall, mock_mb
+    ):
         """Test forward with multiple experts each having tokens (simpler case)."""
         cls = self._get_cls()
         mock_group = MagicMock()
@@ -673,7 +704,9 @@ class TestAlltoAllSmartBackward(unittest.TestCase):
     @patch("paddleformers.nn.moe.all_gather.dist.get_rank")
     @patch("paddleformers.nn.moe.all_gather.dist.get_world_size")
     @patch("paddleformers.nn.moe.all_gather._get_global_group")
-    def test_backward_basic(self, mock_gg, mock_ws, mock_rank, mock_alltoall, mock_mb):
+    def test_backward_basic(
+        self, mock_gg, mock_ws, mock_rank, mock_alltoall, mock_mb
+    ):
         """Test backward pass execution."""
         cls = self._get_cls()
         mock_group = MagicMock()
@@ -730,7 +763,9 @@ class TestAlltoAllSmartXPUBackward(unittest.TestCase):
     @patch("paddleformers.nn.moe.all_gather.dist.get_rank")
     @patch("paddleformers.nn.moe.all_gather.dist.get_world_size")
     @patch("paddleformers.nn.moe.all_gather._get_global_group")
-    def test_backward_basic(self, mock_gg, mock_ws, mock_rank, mock_alltoall, mock_mb):
+    def test_backward_basic(
+        self, mock_gg, mock_ws, mock_rank, mock_alltoall, mock_mb
+    ):
         """Test backward pass execution."""
         cls = self._get_cls()
         mock_group = MagicMock()

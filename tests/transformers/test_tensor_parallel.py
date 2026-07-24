@@ -57,7 +57,9 @@ def prepare_config(config):
 def common_test_load(model_class, tempdir):
     paddle.distributed.barrier()
     if model_class is not None:
-        model_class.from_pretrained(tempdir, convert_from_hf=False, load_checkpoint_format="")
+        model_class.from_pretrained(
+            tempdir, convert_from_hf=False, load_checkpoint_format=""
+        )
         paddle.distributed.barrier()
         if paddle.distributed.get_rank() == 0:
             files = glob.glob(tempdir + "/*")
@@ -71,7 +73,9 @@ def common_test_merge(model, model_class=None):
     is_main_process = rank == 0
     object_list = []
     with tempfile.TemporaryDirectory() as tempdir:
-        paddle.distributed.all_gather_object(object_list, tempdir, group=mp_group)
+        paddle.distributed.all_gather_object(
+            object_list, tempdir, group=mp_group
+        )
         tempdir = object_list[0]
         # test merge one
         model.save_pretrained(

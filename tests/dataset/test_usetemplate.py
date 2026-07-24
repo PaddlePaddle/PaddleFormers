@@ -17,7 +17,9 @@ import unittest
 
 from paddleformers.cli.utils.process import add_new_special_tokens
 from paddleformers.datasets.loader import create_dataset as create_dataset_sft
-from paddleformers.datasets.template.template import get_template_and_fix_tokenizer
+from paddleformers.datasets.template.template import (
+    get_template_and_fix_tokenizer,
+)
 from paddleformers.transformers import (
     AutoProcessor,
     AutoTokenizer,
@@ -53,7 +55,9 @@ class TestUseTemplate(unittest.TestCase):
         if isinstance(tokenizer, (LlamaTokenizer, Llama3Tokenizer)):
             tokenizer.pad_token_id = tokenizer.eos_token_id
 
-        processor = AutoProcessor.from_pretrained(MODEL_NAME_OR_PATH, use_fast=None)
+        processor = AutoProcessor.from_pretrained(
+            MODEL_NAME_OR_PATH, use_fast=None
+        )
 
         dataset_config = {
             "tokenizer": tokenizer,
@@ -104,9 +108,15 @@ class TestUseTemplate(unittest.TestCase):
 
         data_sample = next(iter(train_dataset))
         decoded_input = tokenizer.decode(data_sample[0].token_ids)
-        decoded_label = tokenizer.decode([item for item in data_sample[0].labels if item != -100])
+        decoded_label = tokenizer.decode(
+            [item for item in data_sample[0].labels if item != -100]
+        )
         position_ids = data_sample[0].position_ids
-        return {"input": decoded_input, "label": decoded_label, "position_ids": position_ids}
+        return {
+            "input": decoded_input,
+            "label": decoded_label,
+            "position_ids": position_ids,
+        }
 
     def test_use_no_template(self):
         result = self._build_dataset(use_template=False)

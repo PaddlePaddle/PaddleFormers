@@ -23,7 +23,11 @@ from ..metrics import SpanEvaluator
 from .image_utils import NormalizeImage, Permute, ResizeImage
 
 resize_func = ResizeImage(target_size=224, interp=1)
-norm_func = NormalizeImage(is_channel_first=False, mean=[123.675, 116.280, 103.530], std=[58.395, 57.120, 57.375])
+norm_func = NormalizeImage(
+    is_channel_first=False,
+    mean=[123.675, 116.280, 103.530],
+    std=[58.395, 57.120, 57.375],
+)
 permute_func = Permute(to_bgr=False)
 
 
@@ -60,7 +64,7 @@ def unify_prompt_name(prompt):
     if re.search(r"\[.*?\]$", prompt):
         prompt_prefix = prompt[: prompt.find("[", 1)]
         cls_options = re.search(r"\[.*?\]$", prompt).group()[1:-1].split(",")
-        cls_options = sorted(list(set(cls_options)))
+        cls_options = sorted(set(cls_options))
         cls_options = ",".join(cls_options)
         prompt = prompt_prefix + "[" + cls_options + "]"
         return prompt
@@ -93,14 +97,22 @@ def get_relation_type_dict(relation_data, schema_lang="ch"):
         added = False
         if relation_data[i][0] not in added_list:
             for j in range(i + 1, len(relation_data)):
-                match = compare(relation_data[i][0], relation_data[j][0], schema_lang=schema_lang)
+                match = compare(
+                    relation_data[i][0],
+                    relation_data[j][0],
+                    schema_lang=schema_lang,
+                )
                 if match != "":
                     match = unify_prompt_name(match)
                     if relation_data[i][0] not in added_list:
                         added_list.append(relation_data[i][0])
-                        relation_type_dict.setdefault(match, []).append(relation_data[i][1])
+                        relation_type_dict.setdefault(match, []).append(
+                            relation_data[i][1]
+                        )
                     added_list.append(relation_data[j][0])
-                    relation_type_dict.setdefault(match, []).append(relation_data[j][1])
+                    relation_type_dict.setdefault(match, []).append(
+                        relation_data[j][1]
+                    )
                     added = True
             if not added:
                 added_list.append(relation_data[i][0])
@@ -112,7 +124,9 @@ def get_relation_type_dict(relation_data, schema_lang="ch"):
                     prefix = relation_data[i][0].split(" of ", 1)[0]
                     prefix = unify_prompt_name(prefix)
                     relation_type = prefix
-                relation_type_dict.setdefault(relation_type, []).append(relation_data[i][1])
+                relation_type_dict.setdefault(relation_type, []).append(
+                    relation_data[i][1]
+                )
     return relation_type_dict
 
 
@@ -134,7 +148,9 @@ def compute_metrics(p):
     start_ids, end_ids = p.label_ids
     metric.reset()
 
-    num_correct, num_infer, num_label = metric.compute(start_prob, end_prob, start_ids, end_ids)
+    num_correct, num_infer, num_label = metric.compute(
+        start_prob, end_prob, start_ids, end_ids
+    )
     metric.update(num_correct, num_infer, num_label)
     precision, recall, f1 = metric.accumulate()
     metric.reset()

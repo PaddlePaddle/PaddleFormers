@@ -15,7 +15,7 @@
 """Paddle Ernie model."""
 
 import math
-from typing import Optional, Tuple
+from typing import Optional
 
 import paddle
 from paddle import nn
@@ -24,7 +24,9 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import (
     ScatterOp,
     mark_as_sequence_parallel_parameter,
 )
-from paddle.incubate.nn.functional import fused_rotary_position_embedding as fused_rope
+from paddle.incubate.nn.functional import (
+    fused_rotary_position_embedding as fused_rope,
+)
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
@@ -85,8 +87,12 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     cos = cos[..., : cos.shape[-1] // 2].repeat_interleave(2, axis=-1)
     sin = sin[..., : sin.shape[-1] // 2].repeat_interleave(2, axis=-1)
 
-    q_embed = (q.astype("float32") * cos) + (rotate_half(q).astype("float32") * sin)
-    k_embed = (k.astype("float32") * cos) + (rotate_half(k).astype("float32") * sin)
+    q_embed = (q.astype("float32") * cos) + (
+        rotate_half(q).astype("float32") * sin
+    )
+    k_embed = (k.astype("float32") * cos) + (
+        rotate_half(k).astype("float32") * sin
+    )
 
     return q_embed.astype(original_dtype), k_embed.astype(original_dtype)
 
@@ -98,8 +104,12 @@ def apply_fused_rope(query_states, key_states, rope_theta):
     _, _, num_heads, _ = query_states.shape
     _, kv_seq_len, num_key_value_heads, _ = key_states.shape
     if num_heads != num_key_value_heads:
-        query_states, _, _ = fused_rope(query_states, None, None, rotary_emb_base=rope_theta)
-        key_states, _, _ = fused_rope(key_states, None, None, rotary_emb_base=rope_theta)
+        query_states, _, _ = fused_rope(
+            query_states, None, None, rotary_emb_base=rope_theta
+        )
+        key_states, _, _ = fused_rope(
+            key_states, None, None, rotary_emb_base=rope_theta
+        )
     else:
         query_states, key_states, _ = fused_rope(
             query_states,
@@ -119,7 +129,9 @@ class Ernie4_5RotaryEmbedding(nn.Layer):
         self.head_dim = config.head_dim
         self.base = config.rope_theta
         rope_parameters = config.rope_parameters
-        self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
+        self.rope_type = rope_parameters.get(
+            "rope_type", rope_parameters.get("type", "default")
+        )
         rope_init_fn = self.compute_default_rope_parameters
         if self.rope_type != "default":
             rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
@@ -148,13 +160,22 @@ class Ernie4_5RotaryEmbedding(nn.Layer):
             post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
         """
         base = config.rope_parameters["rope_theta"]
-        dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+        dim = (
+            getattr(config, "head_dim", None)
+            or config.hidden_size // config.num_attention_heads
+        )
 
         attention_factor = 1.0  # Unused in this type of RoPE
 
         # Compute the inverse frequencies
         inv_freq = 1.0 / (
-            base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32).to(device) / dim)
+            base
+            ** (
+                paddle.arange(0, dim, 2, dtype=paddle.int64)
+                .astype(dtype=paddle.float32)
+                .to(device)
+                / dim
+            )
         )
         return inv_freq, attention_factor
 
@@ -171,11 +192,17 @@ class Ernie4_5RotaryEmbedding(nn.Layer):
             Tensor: Rotary position embeddings of shape [1, 1, seq_length, head_dim]
         """
         with paddle.amp.auto_cast(enable=False):
-            inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
+            inv_freq_expanded = (
+                self.inv_freq[None, :, None]
+                .float()
+                .expand([position_ids.shape[0], -1, 1])
+            )
 
             position_ids_expanded = position_ids[:, None, :].float()
 
-            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+            freqs = (
+                inv_freq_expanded.float() @ position_ids_expanded.float()
+            ).transpose(1, 2)
 
             emb = paddle.concat((freqs, freqs), axis=-1)
 
@@ -202,23 +229,32 @@ class Ernie4_5Attention(nn.Layer):
         self.num_key_value_heads = config.num_key_value_heads
         self.head_dim = config.head_dim
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads
-        self.gqa_or_mqa = config.num_attention_heads != config.num_key_value_heads
+        self.gqa_or_mqa = (
+            config.num_attention_heads != config.num_key_value_heads
+        )
 
         if config.tensor_model_parallel_size > 1:
-            assert (
-                self.num_heads % config.tensor_model_parallel_size == 0
-            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            assert self.num_heads % config.tensor_model_parallel_size == 0, (
+                f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            )
             self.num_heads = self.num_heads // config.tensor_model_parallel_size
 
             assert (
-                self.num_key_value_heads % config.tensor_model_parallel_size == 0
-            ), f"num_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
-            self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
+                self.num_key_value_heads % config.tensor_model_parallel_size
+                == 0
+            ), (
+                f"num_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            )
+            self.num_key_value_heads = (
+                self.num_key_value_heads // config.tensor_model_parallel_size
+            )
 
-        logger.warning_once(f"use GQA - num_heads: {self.num_heads}- num_key_value_heads: {self.num_key_value_heads}")
-        assert (
-            self.num_heads % self.num_key_value_heads == 0
-        ), f"num_heads: {self.num_heads}, num_key_value_heads: {self.num_key_value_heads}"
+        logger.warning_once(
+            f"use GQA - num_heads: {self.num_heads}- num_key_value_heads: {self.num_key_value_heads}"
+        )
+        assert self.num_heads % self.num_key_value_heads == 0, (
+            f"num_heads: {self.num_heads}, num_key_value_heads: {self.num_key_value_heads}"
+        )
         kv_hidden_size = self.head_dim * config.num_key_value_heads
         q_hidden_size = self.head_dim * config.num_attention_heads
 
@@ -248,10 +284,12 @@ class Ernie4_5Attention(nn.Layer):
         past_key_values: Optional[Cache] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
-        position_embeddings: Optional[Tuple[paddle.Tensor]] = None,
+        position_embeddings: Optional[tuple[paddle.Tensor]] = None,
         output_attentions: bool = False,
         use_cache: bool = False,
-    ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
+    ) -> tuple[
+        paddle.Tensor, Optional[paddle.Tensor], Optional[tuple[paddle.Tensor]]
+    ]:
         """Compute attention outputs.
 
         Args:
@@ -272,7 +310,11 @@ class Ernie4_5Attention(nn.Layer):
         mix_layer = self.qkv_proj(hidden_states)
         if self.config.sequence_parallel:
             max_sequence_length = self.config.max_sequence_length
-            bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
+            bsz = (
+                hidden_states.shape[0]
+                * self.config.tensor_model_parallel_size
+                // max_sequence_length
+            )
             q_len = max_sequence_length
             target_shape = [
                 bsz,
@@ -281,15 +323,26 @@ class Ernie4_5Attention(nn.Layer):
                 (self.num_key_value_groups + 2) * self.head_dim,
             ]
         else:
-            target_shape = [0, 0, self.num_key_value_heads, (self.num_key_value_groups + 2) * self.head_dim]
+            target_shape = [
+                0,
+                0,
+                self.num_key_value_heads,
+                (self.num_key_value_groups + 2) * self.head_dim,
+            ]
         mix_layer = paddle.reshape_(mix_layer, target_shape)
         query_states, key_states, value_states = paddle.split(
             mix_layer,
-            num_or_sections=[self.num_key_value_groups * self.head_dim, self.head_dim, self.head_dim],
+            num_or_sections=[
+                self.num_key_value_groups * self.head_dim,
+                self.head_dim,
+                self.head_dim,
+            ],
             axis=-1,
         )
         if self.gqa_or_mqa:
-            query_states = paddle.reshape_(query_states, [0, 0, self.num_heads, self.head_dim])
+            query_states = paddle.reshape_(
+                query_states, [0, 0, self.num_heads, self.head_dim]
+            )
 
         # b l h d -> b h l d
         query_states = query_states.transpose(1, 2)
@@ -299,13 +352,19 @@ class Ernie4_5Attention(nn.Layer):
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.attn_implementation]
 
         if self.config.apply_rope_fusion:
-            query_states, key_states = apply_fused_rope(query_states, key_states, self.config.rope_theta)
+            query_states, key_states = apply_fused_rope(
+                query_states, key_states, self.config.rope_theta
+            )
         else:
             cos, sin = position_embeddings
-            query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+            query_states, key_states = apply_rotary_pos_emb(
+                query_states, key_states, cos, sin
+            )
 
         if past_key_values is not None:
-            key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
+            key_states, value_states = past_key_values.update(
+                key_states, value_states, self.layer_idx
+            )
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -314,7 +373,9 @@ class Ernie4_5Attention(nn.Layer):
             value=value_states,
             attention_mask=attention_mask,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-            dropout=self.config.get("attention_dropout_prob", 0.0) if self.training else 0.0,
+            dropout=self.config.get("attention_dropout_prob", 0.0)
+            if self.training
+            else 0.0,
             scaling=self.scaling,
         )
 
@@ -364,13 +425,17 @@ class Ernie4_5DecoderLayer(nn.Layer):
             input_is_parallel=config.sequence_parallel,
         )
 
-        self.hidden_dropout = nn.Dropout(p=config.hidden_dropout_prob, mode="upscale_in_train")
+        self.hidden_dropout = nn.Dropout(
+            p=config.hidden_dropout_prob, mode="upscale_in_train"
+        )
 
         if config.sequence_parallel:
             if not hasattr(config, "disable_ffn_model_parallel"):
                 self.input_layernorm.enable_sequence_parallel()
                 if config.use_bias:
-                    mark_as_sequence_parallel_parameter(self.self_attn.o_proj.bias)
+                    mark_as_sequence_parallel_parameter(
+                        self.self_attn.o_proj.bias
+                    )
                     mark_as_sequence_parallel_parameter(self.mlp.down_proj.bias)
 
     def forward(
@@ -383,7 +448,7 @@ class Ernie4_5DecoderLayer(nn.Layer):
         output_attentions: Optional[bool] = False,
         past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
-    ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
+    ) -> tuple[paddle.Tensor, Optional[tuple[paddle.Tensor, paddle.Tensor]]]:
         """Forward pass through the decoder layer.
 
         Args:
@@ -444,7 +509,15 @@ class Ernie4_5PretrainedModel(PretrainedModel):
 
     config_class = Ernie4_5Config
     base_model_prefix = "model"
-    transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+    transpose_weight_keys = [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+    ]
 
     @classmethod
     def _gen_aoa_config(cls, config: Ernie4_5Config):
@@ -476,7 +549,9 @@ class Ernie4_5PretrainedModel(PretrainedModel):
 
         # lm_head
         if config.tie_word_embeddings:
-            aoa_config["aoa_statements"] += ["model.embed_tokens.weight -> lm_head.weight"]
+            aoa_config["aoa_statements"] += [
+                "model.embed_tokens.weight -> lm_head.weight"
+            ]
 
         return aoa_config
 
@@ -537,9 +612,16 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
         self.hidden_size = config.hidden_size
         self.config = config
         self.embed_tokens = GeneralEmbedding.create(
-            config=config, num_embeddings=config.vocab_size, embedding_dim=config.hidden_size
+            config=config,
+            num_embeddings=config.vocab_size,
+            embedding_dim=config.hidden_size,
         )
-        self.layers = nn.LayerList([Ernie4_5DecoderLayer(config, i) for i in range(config.num_hidden_layers)])
+        self.layers = nn.LayerList(
+            [
+                Ernie4_5DecoderLayer(config, i)
+                for i in range(config.num_hidden_layers)
+            ]
+        )
         self.norm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
@@ -635,30 +717,52 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
                 - hidden_states: All hidden states if output_hidden_states=True
                 - attentions: Attention weights if output_attentions=True
         """
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
         )
-        use_cache = use_cache if use_cache is not None else self.config.use_cache
+        output_hidden_states = (
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
+        )
+        use_cache = (
+            use_cache if use_cache is not None else self.config.use_cache
+        )
 
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict
+            if return_dict is not None
+            else self.config.use_return_dict
+        )
 
         # retrieve input_ids and inputs_embeds
         if input_ids is not None and inputs_embeds is not None:
-            raise ValueError("You cannot specify both decoder_input_ids and decoder_inputs_embeds at the same time")
+            raise ValueError(
+                "You cannot specify both decoder_input_ids and decoder_inputs_embeds at the same time"
+            )
         elif input_ids is not None:
             bsz, seq_length = input_ids.shape
         elif inputs_embeds is not None:
             bsz, seq_length, _ = inputs_embeds.shape
         else:
-            raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
+            raise ValueError(
+                "You have to specify either decoder_input_ids or decoder_inputs_embeds"
+            )
 
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache(config=self.config)
-        kv_seq_len = past_key_values.get_seq_length() if past_key_values is not None else 0
+        kv_seq_len = (
+            past_key_values.get_seq_length()
+            if past_key_values is not None
+            else 0
+        )
 
         if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
+            inputs_embeds = self.embed_tokens(input_ids).astype(
+                self.embed_tokens.weight.dtype
+            )
 
         if self.config.sequence_parallel:
             inputs_embeds = inputs_embeds.reshape([-1, inputs_embeds.shape[-1]])
@@ -677,13 +781,21 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
         }
 
-        causal_attention_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
+        causal_attention_mask, attn_mask_startend_row_indices = (
+            create_causal_mask_and_row_indices(**mask_kwargs)
+        )
 
         if position_ids is None:
-            position_ids = paddle.arange(kv_seq_len, seq_length).unsqueeze(0).tile((bsz, 1))
+            position_ids = (
+                paddle.arange(kv_seq_len, seq_length)
+                .unsqueeze(0)
+                .tile((bsz, 1))
+            )
 
         if not self.config.apply_rope_fusion:
-            position_embeddings = self.rotary_emb(hidden_states, position_ids)  # cos and sin
+            position_embeddings = self.rotary_emb(
+                hidden_states, position_ids
+            )  # cos and sin
         else:
             position_embeddings = None
 
@@ -777,7 +889,9 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
         # initialize-trick for big model,
         # see https://github.com/bigscience-workshop/bigscience/blob/master/train/tr11-176B-ml/README.md#std-init
         new_initializer_range = math.sqrt(0.3333 / config.hidden_size)
-        logger.info(f"change initializer-range from {config.initializer_range} to {new_initializer_range}")
+        logger.info(
+            f"change initializer-range from {config.initializer_range} to {new_initializer_range}"
+        )
         config.initializer_range = new_initializer_range
         self.config = config
         self.model = Ernie4_5Model(config)
@@ -785,11 +899,15 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
         self.criterion = CriterionLayer(config)
         self.tie_weights()
 
-    def prepare_attention_mask_for_generation(self, input_ids, pad_token_id, eos_token_id):
+    def prepare_attention_mask_for_generation(
+        self, input_ids, pad_token_id, eos_token_id
+    ):
         """Avoid using attention_mask with flash_attn on generation."""
         if self.config._attn_implementation == "sdpa":
             return None
-        return super().prepare_attention_mask_for_generation(input_ids, pad_token_id, eos_token_id)
+        return super().prepare_attention_mask_for_generation(
+            input_ids, pad_token_id, eos_token_id
+        )
 
     def forward(
         self,
@@ -827,14 +945,29 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
         Returns:
             Union[tuple, CausalLMOutputWithCrossAttentions]: Model outputs.
         """
-        if kwargs.get("attn_mask_start_row_indices", None) is not None and attn_mask_startend_row_indices is None:
-            attn_mask_startend_row_indices = kwargs.pop("attn_mask_start_row_indices")
+        if (
+            kwargs.get("attn_mask_start_row_indices", None) is not None
+            and attn_mask_startend_row_indices is None
+        ):
+            attn_mask_startend_row_indices = kwargs.pop(
+                "attn_mask_start_row_indices"
+            )
 
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
         )
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        output_hidden_states = (
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
+        )
+        return_dict = (
+            return_dict
+            if return_dict is not None
+            else self.config.use_return_dict
+        )
 
         if attention_mask is not None and attention_mask.dtype != paddle.bool:
             attention_mask = paddle.cast(attention_mask, paddle.bool)
@@ -855,7 +988,7 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
         hidden_states = outputs.last_hidden_state
 
         # if labels is None，means we need full output, instead of tensor_parallel_output
-        # tensor_parallel_output is togather with ParallelCrossEntropy
+        # tensor_parallel_output is together with ParallelCrossEntropy
         logits = self.lm_head(hidden_states)
 
         if return_dict:  # aka Generate Decoding

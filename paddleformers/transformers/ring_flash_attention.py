@@ -32,8 +32,12 @@ class RingCommunicator:
 
         self.group = group
         self.group_rank = group.rank
-        self.send_rank = self.group.ranks[(self.group_rank + 1) % self.group.world_size]
-        self.recv_rank = self.group.ranks[(self.group_rank - 1) % self.group.world_size]
+        self.send_rank = self.group.ranks[
+            (self.group_rank + 1) % self.group.world_size
+        ]
+        self.recv_rank = self.group.ranks[
+            (self.group_rank - 1) % self.group.world_size
+        ]
 
         self._reqs = []
 
@@ -43,20 +47,46 @@ class RingCommunicator:
 
     def add_to_buffers(self, key, value):
         if key.shape != self._k_buffer[self._next_buffer_idx].shape:
-            self._k_buffer[self._next_buffer_idx][:, : key.shape[1], :, :].add_(key)
-            self._v_buffer[self._next_buffer_idx][:, : key.shape[1], :, :].add_(value)
+            self._k_buffer[self._next_buffer_idx][:, : key.shape[1], :, :].add_(
+                key
+            )
+            self._v_buffer[self._next_buffer_idx][:, : key.shape[1], :, :].add_(
+                value
+            )
         else:
             self._k_buffer[self._next_buffer_idx].add_(key)
             self._v_buffer[self._next_buffer_idx].add_(value)
 
     def get_buffers(self):
-        return self._k_buffer[self._next_buffer_idx], self._v_buffer[self._next_buffer_idx]
+        return self._k_buffer[self._next_buffer_idx], self._v_buffer[
+            self._next_buffer_idx
+        ]
 
     def send_recv(self):
-        send_k_op = dist.P2POp(dist.isend, self._k_buffer[self._next_buffer_idx], self.send_rank, self.group)
-        send_v_op = dist.P2POp(dist.isend, self._v_buffer[self._next_buffer_idx], self.send_rank, self.group)
-        recv_k_op = dist.P2POp(dist.irecv, self._k_buffer[(self._next_buffer_idx + 1) % 2], self.recv_rank, self.group)
-        recv_v_op = dist.P2POp(dist.irecv, self._v_buffer[(self._next_buffer_idx + 1) % 2], self.recv_rank, self.group)
+        send_k_op = dist.P2POp(
+            dist.isend,
+            self._k_buffer[self._next_buffer_idx],
+            self.send_rank,
+            self.group,
+        )
+        send_v_op = dist.P2POp(
+            dist.isend,
+            self._v_buffer[self._next_buffer_idx],
+            self.send_rank,
+            self.group,
+        )
+        recv_k_op = dist.P2POp(
+            dist.irecv,
+            self._k_buffer[(self._next_buffer_idx + 1) % 2],
+            self.recv_rank,
+            self.group,
+        )
+        recv_v_op = dist.P2POp(
+            dist.irecv,
+            self._v_buffer[(self._next_buffer_idx + 1) % 2],
+            self.recv_rank,
+            self.group,
+        )
 
         self._next_buffer_idx = (self._next_buffer_idx + 1) % 2
 
@@ -65,7 +95,9 @@ class RingCommunicator:
         self._reqs = dist.batch_isend_irecv(ops)
 
 
-def update_out_and_lse(old_out, old_lse, block_out, block_lse, second_chunk_only=False):
+def update_out_and_lse(
+    old_out, old_lse, block_out, block_lse, second_chunk_only=False
+):
     if second_chunk_only:
         second_chunk_out = old_out[:, old_out.shape[1] // 2 :, :, :]
         second_chunk_lse = old_lse[:, old_lse.shape[1] // 2 :, :, :]
@@ -76,11 +108,14 @@ def update_out_and_lse(old_out, old_lse, block_out, block_lse, second_chunk_only
         old_lse[:, old_lse.shape[1] // 2 :, :, :] = second_chunk_lse
         return old_out, old_lse
     else:
-        block_out, block_lse = paddle.cast(block_out, "float32"), paddle.cast(block_lse, "float32")
+        block_out, block_lse = (
+            paddle.cast(block_out, "float32"),
+            paddle.cast(block_lse, "float32"),
+        )
         with paddle.amp.auto_cast(enable=False):
-            return old_out - (old_out - block_out) * F.sigmoid(block_lse - old_lse), old_lse - F.log_sigmoid(
-                old_lse - block_lse
-            )
+            return old_out - (old_out - block_out) * F.sigmoid(
+                block_lse - old_lse
+            ), old_lse - F.log_sigmoid(old_lse - block_lse)
 
 
 def get_chunk_id(rank, cp_size):
@@ -90,7 +125,10 @@ def get_chunk_id(rank, cp_size):
 def concat_masks(attn_masks_list, rank, cp_size):
     assert len(attn_masks_list) == 2 * cp_size
     first_chunk_id, second_chunk_id = get_chunk_id(rank, cp_size)
-    return paddle.cat([attn_masks_list[first_chunk_id], attn_masks_list[second_chunk_id]], axis=3)
+    return paddle.cat(
+        [attn_masks_list[first_chunk_id], attn_masks_list[second_chunk_id]],
+        axis=3,
+    )
 
 
 def balanced_ring_flash_attention_fwd_func(
@@ -111,7 +149,9 @@ def balanced_ring_flash_attention_fwd_func(
     local_q_seq_len = local_query.shape[1]
 
     if attn_mask is not None:
-        attn_masks_list = paddle.split(attn_mask, num_or_sections=cp_size * 2, axis=3)
+        attn_masks_list = paddle.split(
+            attn_mask, num_or_sections=cp_size * 2, axis=3
+        )
     if is_causal:
         local_query_second_chunk = local_query[:, local_q_seq_len // 2 :, :, :]
     for step in range(cp_size):
@@ -128,7 +168,11 @@ def balanced_ring_flash_attention_fwd_func(
                 block_k,
                 block_v,
                 fixed_seed_offset,
-                None if attn_mask is None else concat_masks(attn_masks_list, (group.rank - step) % cp_size, cp_size),
+                None
+                if attn_mask is None
+                else concat_masks(
+                    attn_masks_list, (group.rank - step) % cp_size, cp_size
+                ),
                 dropout,
                 False,
                 False,
@@ -144,9 +188,20 @@ def balanced_ring_flash_attention_fwd_func(
         else:
             if step == 0:
                 block_out, _, block_lse, _ = _C_ops.flash_attn(
-                    local_query, block_k, block_v, fixed_seed_offset, None, dropout, True, False, not training, ""
+                    local_query,
+                    block_k,
+                    block_v,
+                    fixed_seed_offset,
+                    None,
+                    dropout,
+                    True,
+                    False,
+                    not training,
+                    "",
                 )
-                paddle.unsqueeze_(paddle.transpose_(block_lse, [0, 2, 1]), axis=-1)
+                paddle.unsqueeze_(
+                    paddle.transpose_(block_lse, [0, 2, 1]), axis=-1
+                )
                 out, lse = block_out, block_lse
             elif step > rank:
                 block_out, _, block_lse, _ = _C_ops.flash_attn(
@@ -162,8 +217,12 @@ def balanced_ring_flash_attention_fwd_func(
                     "",
                 )
                 block_lse = block_lse[:, :, 0 : (local_q_seq_len // 2)]
-                paddle.unsqueeze_(paddle.transpose_(block_lse, [0, 2, 1]), axis=-1)
-                out, lse = update_out_and_lse(out, lse, block_out, block_lse, True)
+                paddle.unsqueeze_(
+                    paddle.transpose_(block_lse, [0, 2, 1]), axis=-1
+                )
+                out, lse = update_out_and_lse(
+                    out, lse, block_out, block_lse, True
+                )
             else:
                 block_out, _, block_lse, _ = _C_ops.flash_attn(
                     local_query,
@@ -177,7 +236,9 @@ def balanced_ring_flash_attention_fwd_func(
                     not training,
                     "",
                 )
-                paddle.unsqueeze_(paddle.transpose_(block_lse, [0, 2, 1]), axis=-1)
+                paddle.unsqueeze_(
+                    paddle.transpose_(block_lse, [0, 2, 1]), axis=-1
+                )
                 out, lse = update_out_and_lse(out, lse, block_out, block_lse)
 
         # TODO(zhangyuqin1998)：batch_isend_irecv异步流下，无法wait，需要修复。对性能有影响。
@@ -185,7 +246,9 @@ def balanced_ring_flash_attention_fwd_func(
         #     comm_buffer.wait()
         paddle.device.synchronize()
 
-    return paddle.cast(out, local_query.dtype), paddle.transpose_(paddle.squeeze(lse, axis=-1), [0, 2, 1])
+    return paddle.cast(out, local_query.dtype), paddle.transpose_(
+        paddle.squeeze(lse, axis=-1), [0, 2, 1]
+    )
 
 
 def balanced_ring_flash_attention_bwd_func(
@@ -210,7 +273,9 @@ def balanced_ring_flash_attention_bwd_func(
     value_grad_buffer = paddle.zeros_like(local_value)
 
     kv_comm_buffer = RingCommunicator(group, local_key, local_value)
-    grad_comm_buffer = RingCommunicator(group, key_grad_buffer, value_grad_buffer)
+    grad_comm_buffer = RingCommunicator(
+        group, key_grad_buffer, value_grad_buffer
+    )
 
     if is_causal:
         local_query_second_chunk = local_query[:, local_q_seq_len // 2 :, :, :]
@@ -219,7 +284,9 @@ def balanced_ring_flash_attention_bwd_func(
         out_grad_second_chunk = out_grad[:, local_q_seq_len // 2 :, :, :]
 
     if attn_mask is not None:
-        attn_masks_list = paddle.split(attn_mask, num_or_sections=cp_size * 2, axis=3)
+        attn_masks_list = paddle.split(
+            attn_mask, num_or_sections=cp_size * 2, axis=3
+        )
 
     try:
         from paddlenlp_ops import flash_attn_bwd
@@ -246,7 +313,11 @@ def balanced_ring_flash_attention_bwd_func(
                 local_out,
                 lse,
                 fixed_seed_offset,
-                None if attn_mask is None else concat_masks(attn_masks_list, (group.rank - step) % cp_size, cp_size),
+                None
+                if attn_mask is None
+                else concat_masks(
+                    attn_masks_list, (group.rank - step) % cp_size, cp_size
+                ),
                 out_grad,
                 dropout,
                 False,
@@ -255,7 +326,16 @@ def balanced_ring_flash_attention_bwd_func(
         else:
             if step == 0:
                 block_q_grad, block_k_grad, block_v_grad = flash_attn_bwd(
-                    local_query, block_k, block_v, local_out, lse, fixed_seed_offset, None, out_grad, dropout, True
+                    local_query,
+                    block_k,
+                    block_v,
+                    local_out,
+                    lse,
+                    fixed_seed_offset,
+                    None,
+                    out_grad,
+                    dropout,
+                    True,
                 )
                 query_grad_buffer.add_(block_q_grad)
             elif step > rank:
@@ -271,7 +351,9 @@ def balanced_ring_flash_attention_bwd_func(
                     dropout,
                     False,
                 )
-                query_grad_buffer[:, local_q_seq_len // 2 :, :, :].add_(block_q_grad)
+                query_grad_buffer[:, local_q_seq_len // 2 :, :, :].add_(
+                    block_q_grad
+                )
             else:
                 block_q_grad, block_k_grad, block_v_grad = flash_attn_bwd(
                     local_query,
@@ -317,14 +399,24 @@ class RingFlashAttention(PyLayer):
         training=True,
     ):
         if dropout > 0.0:
-            raise NotImplementedError("Dropout is not supported in ring attention yet.")
+            raise NotImplementedError(
+                "Dropout is not supported in ring attention yet."
+            )
         if group is None:
             group = dist.fleet.get_hybrid_communicate_group().get_sep_parallel_group()
         if attn_mask is not None:
             is_causal = False
 
         out, lse = balanced_ring_flash_attention_fwd_func(
-            group, query, key, value, fixed_seed_offset, attn_mask, dropout, is_causal, training
+            group,
+            query,
+            key,
+            value,
+            fixed_seed_offset,
+            attn_mask,
+            dropout,
+            is_causal,
+            training,
         )
         ctx.save_for_backward(query, key, value, out, lse, attn_mask)
         ctx.group = group
@@ -342,10 +434,24 @@ class RingFlashAttention(PyLayer):
         is_causal = ctx.is_causal
 
         if fixed_seed_offset is None:
-            fixed_seed_offset = paddle.to_tensor([0, 0], place=paddle.CPUPlace(), dtype=paddle.int64)
+            fixed_seed_offset = paddle.to_tensor(
+                [0, 0], place=paddle.CPUPlace(), dtype=paddle.int64
+            )
 
-        query_grad, key_grad, value_grad = balanced_ring_flash_attention_bwd_func(
-            group, out_grad, query, key, value, out, lse, fixed_seed_offset, attn_mask, dropout, is_causal
+        query_grad, key_grad, value_grad = (
+            balanced_ring_flash_attention_bwd_func(
+                group,
+                out_grad,
+                query,
+                key,
+                value,
+                out,
+                lse,
+                fixed_seed_offset,
+                attn_mask,
+                dropout,
+                is_causal,
+            )
         )
         if attn_mask is not None and not attn_mask.stop_gradient:
             return query_grad, key_grad, value_grad, None

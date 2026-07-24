@@ -35,7 +35,9 @@ from tests.transformers.test_modeling_common import (
 )
 
 try:
-    from paddleformers.quantization.quantization_linear import QuantizationLinear
+    from paddleformers.quantization.quantization_linear import (
+        QuantizationLinear,
+    )
 except:
     QuantizationLinear = None
 
@@ -126,7 +128,9 @@ class Ernie4_5_VLModelTester:
         self.moe_layer_end_index = moe_layer_end_index
         self.moe_layer_interval = moe_layer_interval
         self.moe_layer_start_index = moe_layer_start_index
-        self.moe_multimodal_dispatch_use_allgather = moe_multimodal_dispatch_use_allgather
+        self.moe_multimodal_dispatch_use_allgather = (
+            moe_multimodal_dispatch_use_allgather
+        )
         self.moe_num_experts = moe_num_experts
         self.moe_num_shared_experts = moe_num_shared_experts
         self.moe_use_aux_free = moe_use_aux_free
@@ -152,7 +156,10 @@ class Ernie4_5_VLModelTester:
         self.vision_config = vision_config
 
     def prepare_config_and_inputs(self):
-        input_ids = paddle.to_tensor([[100273, 2969, 93963, 93919, 100295, 23, 351, 93951, 8, 100272]], dtype="int64")
+        input_ids = paddle.to_tensor(
+            [[100273, 2969, 93963, 93919, 100295, 23, 351, 93951, 8, 100272]],
+            dtype="int64",
+        )
         position_ids = paddle.to_tensor(
             [
                 [
@@ -172,13 +179,18 @@ class Ernie4_5_VLModelTester:
         )
         # attention_mask = paddle.ones([self.batch_size, 1, 10, 10], dtype="int32")
         attention_mask = None
-        labels = paddle.to_tensor([[-100, -100, -100, -100, -100, -100, 351, 93951, 8, 100272]], dtype="int64")
+        labels = paddle.to_tensor(
+            [[-100, -100, -100, -100, -100, -100, 351, 93951, 8, 100272]],
+            dtype="int64",
+        )
         images = paddle.randn([4, 588], dtype="bfloat16")
         grid_thw = paddle.to_tensor([[1, 2, 2]], dtype="int32")
         image_position_ids = paddle.to_tensor([[0]], dtype="int32")
         # image_attention_mask = paddle.to_tensor([1], dtype="int32")
         image_attention_mask = None
-        token_type_ids = paddle.to_tensor([[0, 0, 0, 0, 1, 0, 0, 0, 0, 0]], dtype="int64")
+        token_type_ids = paddle.to_tensor(
+            [[0, 0, 0, 0, 1, 0, 0, 0, 0, 0]], dtype="int64"
+        )
         token_type_ids = paddle.concat(
             [
                 token_type_ids,
@@ -203,18 +215,31 @@ class Ernie4_5_VLModelTester:
 
         input_mask = None
         if self.use_input_mask:
-            input_mask = random_attention_mask([self.batch_size, self.seq_length])
+            input_mask = random_attention_mask(
+                [self.batch_size, self.seq_length]
+            )
 
         sequence_labels = None
         token_labels = None
         choice_labels = None
         if self.use_labels:
-            sequence_labels = ids_tensor([self.batch_size], self.type_sequence_label_size)
-            token_labels = ids_tensor([self.batch_size, self.seq_length], self.num_labels)
+            sequence_labels = ids_tensor(
+                [self.batch_size], self.type_sequence_label_size
+            )
+            token_labels = ids_tensor(
+                [self.batch_size, self.seq_length], self.num_labels
+            )
             choice_labels = ids_tensor([self.batch_size], self.num_choices)
 
         config = self.get_config()
-        return config, tokenized_out, input_mask, sequence_labels, token_labels, choice_labels
+        return (
+            config,
+            tokenized_out,
+            input_mask,
+            sequence_labels,
+            token_labels,
+            choice_labels,
+        )
 
     def prepare_config_and_inputs_for_common(self):
         config_and_inputs = self.prepare_config_and_inputs()
@@ -234,7 +259,9 @@ class Ernie4_5_VLModelTester:
             "images": tokenized_out["images"].astype("bfloat16"),
             "grid_thw": tokenized_out["grid_thw"].astype("int32"),
             "image_attention_mask": tokenized_out["image_attention_mask"],
-            "image_position_ids": tokenized_out["image_position_ids"].astype("int64"),
+            "image_position_ids": tokenized_out["image_position_ids"].astype(
+                "int64"
+            ),
             "token_type_ids": tokenized_out["token_type_ids"].astype("int32"),
             "image_type_ids": tokenized_out["image_type_ids"].astype("int32"),
         }
@@ -281,9 +308,17 @@ class Ernie4_5_VLModelTester:
         )
 
     def create_and_check_model(
-        self, config: Ernie4_5_VLConfig, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        self,
+        config: Ernie4_5_VLConfig,
+        input_ids,
+        input_mask,
+        sequence_labels,
+        token_labels,
+        choice_labels,
     ):
-        model = Ernie4_5_VLMoeForConditionalGenerationModel.from_config(config, dtype="bfloat16")
+        model = Ernie4_5_VLMoeForConditionalGenerationModel.from_config(
+            config, dtype="bfloat16"
+        )
         paddle.amp.decorate(
             models=model,
             level="O2",
@@ -293,7 +328,10 @@ class Ernie4_5_VLModelTester:
         )
         model.eval()
         result = model(**input_ids)
-        self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.hidden_size])
+        self.parent.assertEqual(
+            result[0].shape,
+            [self.batch_size, self.seq_length, self.hidden_size],
+        )
 
     def create_and_check_model_as_decoder(
         self,
@@ -305,7 +343,9 @@ class Ernie4_5_VLModelTester:
         choice_labels,
     ):
         config.add_cross_attention = True
-        model = Ernie4_5_VLMoeForConditionalGenerationModel.from_config(config, dtype="bfloat16")
+        model = Ernie4_5_VLMoeForConditionalGenerationModel.from_config(
+            config, dtype="bfloat16"
+        )
         paddle.amp.decorate(
             models=model,
             level="O2",
@@ -315,7 +355,10 @@ class Ernie4_5_VLModelTester:
         )
         model.eval()
         result = model(**input_ids)
-        self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.hidden_size])
+        self.parent.assertEqual(
+            result[0].shape,
+            [self.batch_size, self.seq_length, self.hidden_size],
+        )
 
     def create_and_check_for_causal_lm(
         self,
@@ -326,7 +369,9 @@ class Ernie4_5_VLModelTester:
         token_labels,
         choice_labels,
     ):
-        model = Ernie4_5_VLMoeForConditionalGenerationModel.from_config(config, dtype="bfloat16")
+        model = Ernie4_5_VLMoeForConditionalGenerationModel.from_config(
+            config, dtype="bfloat16"
+        )
         paddle.amp.decorate(
             models=model,
             level="O2",
@@ -336,10 +381,15 @@ class Ernie4_5_VLModelTester:
         )
         model.eval()
         result = model(**input_ids, return_dict=True)
-        self.parent.assertEqual(result.logits.shape, [self.batch_size, self.seq_length, self.vocab_size])
+        self.parent.assertEqual(
+            result.logits.shape,
+            [self.batch_size, self.seq_length, self.vocab_size],
+        )
 
 
-class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
+class Ernie4_5_VLModelTest(
+    ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
+):
     base_model_class = Ernie4_5_VLMoeForConditionalGenerationModel
     return_dict = False
     use_labels = False
@@ -347,7 +397,10 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
 
     all_model_classes = (Ernie4_5_VLMoeForConditionalGenerationModel,)
     all_generative_model_classes = {
-        Ernie4_5_VLMoeForConditionalGenerationModel: {Ernie4_5_VLMoeForConditionalGenerationModel, "ernie4_5_vl"}
+        Ernie4_5_VLMoeForConditionalGenerationModel: {
+            Ernie4_5_VLMoeForConditionalGenerationModel,
+            "ernie4_5_vl",
+        }
     }
     pipeline_model_mapping = {
         "feature-extraction": Ernie4_5_VLMoeForConditionalGenerationModel,
@@ -363,7 +416,9 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
         elif model_class == self.base_model_class:
             model = model_class.from_config(**config, dtype="bfloat16")
         else:
-            model = model_class.from_config(self.base_model_class(**config), dtype="bfloat16")
+            model = model_class.from_config(
+                self.base_model_class(**config), dtype="bfloat16"
+            )
 
         paddle.amp.decorate(
             models=model,
@@ -378,7 +433,9 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
     def setUp(self):
         super().setUp()
         self.model_tester = Ernie4_5_VLModelTester(self)
-        self.config_tester = ConfigTester(self, config_class=Ernie4_5_VLConfig, hidden_size=37)
+        self.config_tester = ConfigTester(
+            self, config_class=Ernie4_5_VLConfig, hidden_size=37
+        )
 
     def test_init(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
@@ -390,7 +447,9 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
             token_labels,
             choice_labels,
         ) = config_and_inputs
-        Ernie4_5_VLMoeForConditionalGenerationModel.from_config(config, dtype="bfloat16")
+        Ernie4_5_VLMoeForConditionalGenerationModel.from_config(
+            config, dtype="bfloat16"
+        )
         self.model_tester.parent.assertTrue([1])
 
     def test_model_causal_lm(self):
@@ -398,7 +457,9 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
         self.model_tester.create_and_check_for_causal_lm(*config_and_inputs)
 
     @staticmethod
-    def _get_beam_scorer_and_kwargs(batch_size, max_length, num_return_sequences=1):
+    def _get_beam_scorer_and_kwargs(
+        batch_size, max_length, num_return_sequences=1
+    ):
         beam_kwargs = {
             "early_stopping": False,
             "length_penalty": 2.0,
@@ -432,10 +493,13 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
         if isinstance(encoder_outputs, (list, tuple)):
             encoder_outputs = encoder_outputs[0]
 
-        encoder_outputs = encoder_outputs.repeat_interleave(num_interleave, axis=0)
+        encoder_outputs = encoder_outputs.repeat_interleave(
+            num_interleave, axis=0
+        )
 
         input_ids["input_ids"] = (
-            paddle.zeros_like(input_ids["input_ids"][:, :1], dtype="int64") + model.get_decoder_start_token_id()
+            paddle.zeros_like(input_ids["input_ids"][:, :1], dtype="int64")
+            + model.get_decoder_start_token_id()
         )
         return encoder_outputs, input_ids, attention_mask
 
@@ -448,12 +512,26 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
     ):
         if self.is_encoder_decoder:
             max_length = 4
-        logits_process_kwargs, logits_processor = self._get_logits_processor_and_kwargs(
-            eos_token_id=getattr(model, model.base_model_prefix).config["eos_token_id"],
-            forced_bos_token_id=getattr(getattr(model, model.base_model_prefix).config, "forced_bos_token_id", None),
-            forced_eos_token_id=getattr(getattr(model, model.base_model_prefix).config, "forced_eos_token_id", None),
-            max_length=max_length,
-            plus_length=1 if self.is_encoder_decoder else input_ids["input_ids"].shape[-1],
+        logits_process_kwargs, logits_processor = (
+            self._get_logits_processor_and_kwargs(
+                eos_token_id=getattr(model, model.base_model_prefix).config[
+                    "eos_token_id"
+                ],
+                forced_bos_token_id=getattr(
+                    getattr(model, model.base_model_prefix).config,
+                    "forced_bos_token_id",
+                    None,
+                ),
+                forced_eos_token_id=getattr(
+                    getattr(model, model.base_model_prefix).config,
+                    "forced_eos_token_id",
+                    None,
+                ),
+                max_length=max_length,
+                plus_length=1
+                if self.is_encoder_decoder
+                else input_ids["input_ids"].shape[-1],
+            )
         )
 
         kwargs = {}
@@ -469,10 +547,12 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
             )
 
         if self.is_encoder_decoder:
-            encoder_outputs, input_ids, attention_mask = self._get_encoder_outputs(
-                model,
-                input_ids,
-                attention_mask,
+            encoder_outputs, input_ids, attention_mask = (
+                self._get_encoder_outputs(
+                    model,
+                    input_ids,
+                    attention_mask,
+                )
             )
             kwargs["encoder_output"] = encoder_outputs
 
@@ -484,14 +564,20 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
                 else max_length + input_ids["input_ids"].shape[-1],
                 # attention_mask=attention_mask,
                 logits_processors=logits_processor,
-                pad_token_id=getattr(model, model.base_model_prefix).config["pad_token_id"],
-                eos_token_id=getattr(model, model.base_model_prefix).config["eos_token_id"],
+                pad_token_id=getattr(model, model.base_model_prefix).config[
+                    "pad_token_id"
+                ],
+                eos_token_id=getattr(model, model.base_model_prefix).config[
+                    "eos_token_id"
+                ],
                 **kwargs,
             )
         return output_greedy, output_generate
 
     def _get_input_ids_and_config(self):
-        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+        config, inputs_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
 
         input_ids = inputs_dict[self.input_name]
         attention_mask = paddle.ones_like(input_ids, dtype=paddle.int64)
@@ -523,16 +609,23 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
     def test_greedy_generate(self):
         # check `generate()` and `greedy_search()` are equal
         for model_class in self.all_generative_model_classes.keys():
-            config, input_ids, attention_mask, max_length = self._get_input_ids_and_config()
+            config, input_ids, attention_mask, max_length = (
+                self._get_input_ids_and_config()
+            )
             paddle.seed(124)
             model = self._make_model_instance(config, model_class)
             model.eval()
 
             output_greedy, output_generate = self._greedy_generate(
-                model=model, input_ids=input_ids, attention_mask=attention_mask, max_length=max_length
+                model=model,
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                max_length=max_length,
             )
 
-            self.assertListEqual(output_greedy[0].tolist(), output_generate[0].tolist())
+            self.assertListEqual(
+                output_greedy[0].tolist(), output_generate[0].tolist()
+            )
 
     def test_sample_generate(self):
         pass
@@ -551,9 +644,9 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
             if isinstance(config, PretrainedConfig):
                 model = model_class.from_config(config, dtype="bfloat16")
             else:
-                pretrained_model = self.all_generative_model_classes[model_class][0].from_config(
-                    **config, dtype="bfloat16"
-                )
+                pretrained_model = self.all_generative_model_classes[
+                    model_class
+                ][0].from_config(**config, dtype="bfloat16")
                 model = model_class(pretrained_model)
             model.eval()
             output_ids_generate = model.generate(
@@ -571,7 +664,9 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
         pass
 
     def test_save_load(self):
-        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+        config, inputs_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
 
         def check_save_load(out1, out2):
             # make sure we don't have nans
@@ -587,13 +682,21 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
             model = self._make_model_instance(config, model_class)
             model.eval()
             with paddle.no_grad():
-                first = model(**self._prepare_for_class(inputs_dict, model_class))[0]
+                first = model(
+                    **self._prepare_for_class(inputs_dict, model_class)
+                )[0]
 
             with tempfile.TemporaryDirectory() as tmpdirname:
-                model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
-                config = self.config_tester.config_class.from_pretrained(tmpdirname)
+                model.save_pretrained(
+                    tmpdirname, save_checkpoint_format="flex_checkpoint"
+                )
+                config = self.config_tester.config_class.from_pretrained(
+                    tmpdirname
+                )
                 config["moe_group"] = "dummy"
-                config["moe_multimodal_dispatch_use_allgather"] = "v2-alltoall-unpad-text"
+                config["moe_multimodal_dispatch_use_allgather"] = (
+                    "v2-alltoall-unpad-text"
+                )
                 model = model_class.from_pretrained(
                     tmpdirname,
                     config=config,
@@ -609,7 +712,9 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
                 )
                 model.eval()
                 with paddle.no_grad():
-                    second = model(**self._prepare_for_class(inputs_dict, model_class))[0]
+                    second = model(
+                        **self._prepare_for_class(inputs_dict, model_class)
+                    )[0]
 
             # support tuple of tensor
             if isinstance(first, tuple) and isinstance(second, tuple):
@@ -631,10 +736,13 @@ class Ernie4_5_MoE_VLIntegrationTest(unittest.TestCase):
         pass
 
     def test_model_tiny_logits(self):
-
-        config = Ernie4_5_VLConfig.from_pretrained("PaddleFormers/tiny_random_ernie4_5_vl", download_hub="aistudio")
+        config = Ernie4_5_VLConfig.from_pretrained(
+            "PaddleFormers/tiny_random_ernie4_5_vl", download_hub="aistudio"
+        )
         config["moe_group"] = "dummy"
-        config["moe_multimodal_dispatch_use_allgather"] = "v2-alltoall-unpad-text"
+        config["moe_multimodal_dispatch_use_allgather"] = (
+            "v2-alltoall-unpad-text"
+        )
         model = Ernie4_5_VLMoeForConditionalGenerationModel.from_pretrained(
             "PaddleFormers/tiny_random_ernie4_5_vl",
             config=config,
@@ -651,7 +759,10 @@ class Ernie4_5_MoE_VLIntegrationTest(unittest.TestCase):
             excluded_layers=QuantizationLinear,
         )
 
-        input_ids = paddle.to_tensor([[100273, 2969, 93963, 93919, 100295, 23, 351, 93951, 8, 100272]], dtype="int64")
+        input_ids = paddle.to_tensor(
+            [[100273, 2969, 93963, 93919, 100295, 23, 351, 93951, 8, 100272]],
+            dtype="int64",
+        )
         position_ids = paddle.to_tensor(
             [
                 [
@@ -670,12 +781,17 @@ class Ernie4_5_MoE_VLIntegrationTest(unittest.TestCase):
             dtype="int32",
         )
         attention_mask = None
-        labels = paddle.to_tensor([[-100, -100, -100, -100, -100, -100, 351, 93951, 8, 100272]], dtype="int64")
+        labels = paddle.to_tensor(
+            [[-100, -100, -100, -100, -100, -100, 351, 93951, 8, 100272]],
+            dtype="int64",
+        )
         images = paddle.ones([4, 588], dtype="bfloat16")
         grid_thw = paddle.to_tensor([[1, 2, 2]], dtype="int32")
         image_position_ids = paddle.to_tensor([[0]], dtype="int32")
         image_attention_mask = None
-        token_type_ids = paddle.to_tensor([[0, 0, 0, 0, 1, 0, 0, 0, 0, 0]], dtype="int64")
+        token_type_ids = paddle.to_tensor(
+            [[0, 0, 0, 0, 1, 0, 0, 0, 0, 0]], dtype="int64"
+        )
         token_type_ids = paddle.concat(
             [
                 token_type_ids,
@@ -719,7 +835,9 @@ class Ernie4_5_MoE_VLIntegrationTest(unittest.TestCase):
                 ]
             ]
         )
-        self.assertTrue(paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-3, rtol=1e-3))
+        self.assertTrue(
+            paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-3, rtol=1e-3)
+        )
 
         # slicing logits[0, 0, 0:30]
         EXPECTED_SLICE = paddle.to_tensor(
@@ -756,4 +874,8 @@ class Ernie4_5_MoE_VLIntegrationTest(unittest.TestCase):
                 0.04882812,
             ]
         )
-        self.assertTrue(paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
+        self.assertTrue(
+            paddle.allclose(
+                out[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3
+            )
+        )

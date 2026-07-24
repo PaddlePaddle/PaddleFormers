@@ -66,13 +66,16 @@ def write_loss_file(loss_dict, file_path, steps=None):
     if steps is None:
         steps = sorted(loss_dict)
     with open(file_path, "w") as f:
-        for step in steps:
-            f.write(f"{step} {loss_dict[step]}\n")
+        f.writelines(f"{step} {loss_dict[step]}\n" for step in steps)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Check loss values in log against ground truth.")
-    parser.add_argument("--log_file", type=str, required=True, help="Path to the log file.")
+    parser = argparse.ArgumentParser(
+        description="Check loss values in log against ground truth."
+    )
+    parser.add_argument(
+        "--log_file", type=str, required=True, help="Path to the log file."
+    )
     parser.add_argument(
         "--gt_file",
         type=str,
@@ -113,17 +116,23 @@ def main():
     log_dict = parse_log_file(args.log_file)
     if args.extract_loss_only:
         if args.log_loss_file is None:
-            print("\033[91mError: --log_loss_file is required when --extract_loss_only is set.\033[0m")
+            print(
+                "\033[91mError: --log_loss_file is required when --extract_loss_only is set.\033[0m"
+            )
             sys.exit(1)
         if not log_dict:
-            print(f"\033[91mError: No loss values found in {args.log_file}.\033[0m")
+            print(
+                f"\033[91mError: No loss values found in {args.log_file}.\033[0m"
+            )
             sys.exit(1)
         write_loss_file(log_dict, args.log_loss_file)
         print(f"\033[92mExtracted loss values to {args.log_loss_file}.\033[0m")
         return
 
     if args.gt_file is None:
-        print("\033[91mError: --gt_file is required unless --extract_loss_only is set.\033[0m")
+        print(
+            "\033[91mError: --gt_file is required unless --extract_loss_only is set.\033[0m"
+        )
         sys.exit(1)
 
     gt_dict = parse_ground_truth(args.gt_file)
@@ -132,10 +141,14 @@ def main():
         target_step = args.compare_step
 
         if target_step not in log_dict:
-            print(f"\033[91mError: Step {target_step} not found in log file.\033[0m")
+            print(
+                f"\033[91mError: Step {target_step} not found in log file.\033[0m"
+            )
             sys.exit(1)
         if target_step not in gt_dict:
-            print(f"\033[91mError: Step {target_step} not found in ground truth file.\033[0m")
+            print(
+                f"\033[91mError: Step {target_step} not found in ground truth file.\033[0m"
+            )
             sys.exit(1)
 
         log_loss = log_dict[target_step]
@@ -155,7 +168,9 @@ def main():
         common_steps = sorted(set(log_dict.keys()) & set(gt_dict.keys()))
 
         if not common_steps:
-            print("\033[91mError: No common steps found between log and ground truth.\033[0m")
+            print(
+                "\033[91mError: No common steps found between log and ground truth.\033[0m"
+            )
             sys.exit(1)
 
         print(f"\nExtracted {len(common_steps)} common steps for comparison.")
@@ -167,7 +182,11 @@ def main():
             write_loss_file(log_dict, args.log_loss_file, common_steps)
 
         print("\nLog values (step loss):")
-        print("\n".join([f"{s} {l:.8f}" for s, l in zip(common_steps, actual_losses)]))
+        print(
+            "\n".join(
+                [f"{s} {l:.8f}" for s, l in zip(common_steps, actual_losses)]
+            )
+        )
 
     try:
         np.testing.assert_allclose(

@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Callable, Optional
+from collections.abc import Callable
+from typing import Optional
 
 import paddle
 
@@ -40,7 +41,9 @@ def prepare_sliding_window_startend_row_indices(
     if startend_row_indices is None:
         return None
     batch_size, num_head, seq_length, bound_num = startend_row_indices.shape
-    assert bound_num <= 2, f"bound_num should be <= 2 when using sliding window, but got {bound_num}"
+    assert bound_num <= 2, (
+        f"bound_num should be <= 2 when using sliding window, but got {bound_num}"
+    )
     sliding_window_startend_row_indices = startend_row_indices.clone()
     for bi in range(batch_size):
         for hi in range(num_head):
@@ -103,19 +106,25 @@ def create_causal_masks_and_row_indices(
     sliding_window_val = getattr(config, "sliding_window", None)
     layer_types_val = getattr(config, "layer_types", [])
 
-    has_sliding_layers = (sliding_window_val is not None) and ("sliding_attention" in layer_types_val)
+    has_sliding_layers = (sliding_window_val is not None) and (
+        "sliding_attention" in layer_types_val
+    )
 
     if attn_mask_startend_row_indices is not None:
         attention_mask = None
         causal_mask = None
 
         if return_mapping:
-            causal_mask_mapping = {"full_attention": None, "sliding_attention": None}
+            causal_mask_mapping = {
+                "full_attention": None,
+                "sliding_attention": None,
+            }
             attn_mask_startend_row_indices_mapping = {
                 "full_attention": attn_mask_startend_row_indices,
                 "sliding_attention": (
                     prepare_sliding_window_startend_row_indices(
-                        attn_mask_startend_row_indices, window_size=config.sliding_window
+                        attn_mask_startend_row_indices,
+                        window_size=config.sliding_window,
                     )
                     if has_sliding_layers
                     else None
@@ -124,8 +133,11 @@ def create_causal_masks_and_row_indices(
             return causal_mask_mapping, attn_mask_startend_row_indices_mapping
         else:
             if has_sliding_layers:
-                attn_mask_startend_row_indices = prepare_sliding_window_startend_row_indices(
-                    attn_mask_startend_row_indices, window_size=config.sliding_window
+                attn_mask_startend_row_indices = (
+                    prepare_sliding_window_startend_row_indices(
+                        attn_mask_startend_row_indices,
+                        window_size=config.sliding_window,
+                    )
                 )
             return causal_mask, attn_mask_startend_row_indices
 
@@ -134,11 +146,19 @@ def create_causal_masks_and_row_indices(
     # for third-party attention registered via _attn_implementation, default to bypass mask generation.
     _attn_implementation = getattr(config, "_attn_implementation", "eager")
     is_flash_backend = _attn_implementation != "eager"
-    is_fully_attended = attention_mask is None or (attention_mask is not None and attention_mask.cast("bool").all())
+    is_fully_attended = attention_mask is None or (
+        attention_mask is not None and attention_mask.cast("bool").all()
+    )
     if is_flash_backend and is_fully_attended:
         if return_mapping:
-            causal_mask_mapping = {"full_attention": None, "sliding_attention": None}
-            attn_mask_startend_row_indices_mapping = {"full_attention": None, "sliding_attention": None}
+            causal_mask_mapping = {
+                "full_attention": None,
+                "sliding_attention": None,
+            }
+            attn_mask_startend_row_indices_mapping = {
+                "full_attention": None,
+                "sliding_attention": None,
+            }
             return causal_mask_mapping, attn_mask_startend_row_indices_mapping
         else:
             return None, None
@@ -174,7 +194,10 @@ def create_causal_masks_and_row_indices(
                 else None
             ),
         }
-        attn_mask_startend_row_indices_mapping = {"full_attention": None, "sliding_attention": None}
+        attn_mask_startend_row_indices_mapping = {
+            "full_attention": None,
+            "sliding_attention": None,
+        }
         return causal_mask_mapping, attn_mask_startend_row_indices_mapping
     else:
         causal_mask = (
@@ -257,7 +280,9 @@ def create_causal_mask_and_row_indices(
         else:
             seq_length_with_past = seq_length + cache_length
             attention_mask = (
-                paddle.ones((batch_size, seq_length_with_past), dtype=paddle.bool)
+                paddle.ones(
+                    (batch_size, seq_length_with_past), dtype=paddle.bool
+                )
                 if attention_mask is None
                 else attention_mask
             )

@@ -153,8 +153,13 @@ class TestGetMultimodelLoraTargetModules(unittest.TestCase):
         model = MagicMock()
         model.config.model_type = "unknown_model_xyz"
 
-        target_modules = ["model.layers.0.self_attn", "model.layers.1.self_attn"]
-        result = get_multimodel_lora_target_modules(model, target_modules, "freeze_vision")
+        target_modules = [
+            "model.layers.0.self_attn",
+            "model.layers.1.self_attn",
+        ]
+        result = get_multimodel_lora_target_modules(
+            model, target_modules, "freeze_vision"
+        )
         self.assertEqual(result, target_modules)
 
     def test_registered_model_filters_modules(self):
@@ -166,7 +171,9 @@ class TestGetMultimodelLoraTargetModules(unittest.TestCase):
             "model.language_model.layers.0.self_attn.weight",
             "lm_head.weight",
         ]
-        result = get_multimodel_lora_target_modules(model, target_modules, "freeze_vision")
+        result = get_multimodel_lora_target_modules(
+            model, target_modules, "freeze_vision"
+        )
         # "model.visual" matches vision, so "model.visual.patch_embed.weight" should be removed
         self.assertNotIn("model.visual.patch_embed.weight", result)
         self.assertIn("model.language_model.layers.0.self_attn.weight", result)
@@ -180,7 +187,9 @@ class TestGetMultimodelLoraTargetModules(unittest.TestCase):
             "model.visual.merger.weight",
             "model.language_model.layers.0.self_attn.weight",
         ]
-        result = get_multimodel_lora_target_modules(model, target_modules, "freeze_aligner")
+        result = get_multimodel_lora_target_modules(
+            model, target_modules, "freeze_aligner"
+        )
         # "model.visual.merger" matches aligner prefix
         self.assertNotIn("model.visual.merger.weight", result)
         self.assertIn("model.language_model.layers.0.self_attn.weight", result)
@@ -205,9 +214,13 @@ class TestGetMultimodelLoraTargetModules(unittest.TestCase):
             "model.visual.merger.weight",
             "lm_head.weight",
         ]
-        result = get_multimodel_lora_target_modules(model, target_modules, "freeze_llm")
+        result = get_multimodel_lora_target_modules(
+            model, target_modules, "freeze_llm"
+        )
         # Both "model.language_model" and "lm_head" are llm modules
-        self.assertNotIn("model.language_model.layers.0.self_attn.weight", result)
+        self.assertNotIn(
+            "model.language_model.layers.0.self_attn.weight", result
+        )
         self.assertNotIn("lm_head.weight", result)
         self.assertIn("model.visual.merger.weight", result)
 
@@ -230,7 +243,9 @@ class TestFreezeModelParameters(unittest.TestCase):
     def test_unregistered_model_type(self):
         model = MagicMock()
         model.config.model_type = "unknown_model_xyz"
-        model.config.__class__ = type("Config", (), {"model_type": "unknown_model_xyz"})
+        model.config.__class__ = type(
+            "Config", (), {"model_type": "unknown_model_xyz"}
+        )
         model.named_parameters = MagicMock(return_value=[])
         freeze_model_parameters(model, "freeze_vision")
         # Should not raise any error

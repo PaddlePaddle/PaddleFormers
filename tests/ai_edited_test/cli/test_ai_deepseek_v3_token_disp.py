@@ -23,7 +23,14 @@ import paddle
 
 # Direct import to avoid __init__.py triggering workflow.py which requires AutoTokenizer
 _MODULE_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "..", "..", "paddleformers", "cli", "train", "deepseek_v3_pretrain"
+    os.path.dirname(__file__),
+    "..",
+    "..",
+    "..",
+    "paddleformers",
+    "cli",
+    "train",
+    "deepseek_v3_pretrain",
 )
 _MODULE_DIR = os.path.abspath(_MODULE_DIR)
 
@@ -49,10 +56,14 @@ if _pkg_name not in sys.modules:
     sys.modules[_pkg_name] = _pkg_mod
 
 # Pre-load moe_utils (dependency of token_dispatcher)
-_moe_utils_mod = _load_module("moe_utils", os.path.join(_MODULE_DIR, "moe_utils.py"))
+_moe_utils_mod = _load_module(
+    "moe_utils", os.path.join(_MODULE_DIR, "moe_utils.py")
+)
 
 # Load the token_dispatcher module directly
-_td_mod = _load_module("token_dispatcher", os.path.join(_MODULE_DIR, "token_dispatcher.py"))
+_td_mod = _load_module(
+    "token_dispatcher", os.path.join(_MODULE_DIR, "token_dispatcher.py")
+)
 MoETokenDispatcher = _td_mod.MoETokenDispatcher
 PreDispatchNode = _td_mod.PreDispatchNode
 
@@ -182,7 +193,9 @@ class TestDeepepManagerIndicesToMultihot(unittest.TestCase):
         indices = paddle.to_tensor([[0, 1], [1, 2], [0, -1]])
         probs = paddle.to_tensor([[0.5, 0.3], [0.4, 0.6], [0.7, 0.0]])
 
-        routing_map, multihot_probs = manager._indices_to_multihot(indices, probs)
+        routing_map, multihot_probs = manager._indices_to_multihot(
+            indices, probs
+        )
         self.assertEqual(routing_map.shape, [3, 4])
         self.assertEqual(multihot_probs.shape, [3, 4])
         self.assertEqual(routing_map.dtype, paddle.bool)
@@ -206,7 +219,9 @@ class TestDeepepManagerIndicesToMultihot(unittest.TestCase):
         indices = paddle.to_tensor([[-1, -1]])
         probs = paddle.to_tensor([[0.0, 0.0]])
 
-        routing_map, multihot_probs = manager._indices_to_multihot(indices, probs)
+        routing_map, multihot_probs = manager._indices_to_multihot(
+            indices, probs
+        )
         self.assertEqual(routing_map.shape, [1, 4])
         self.assertFalse(routing_map.any())
 

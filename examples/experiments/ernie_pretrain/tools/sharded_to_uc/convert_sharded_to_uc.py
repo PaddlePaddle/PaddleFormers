@@ -56,9 +56,13 @@ def convert_ckpt(args):
     assert os.path.exists(sharded_path), f"{sharded_path} not exist"
     assert not os.path.exists(uc_path), f"{uc_path} already exist"
     os.makedirs(f"{uc_path}")
-    print(f"Convert sharded ckpt {sharded_path} to unified checkpoint {uc_path}")
+    print(
+        f"Convert sharded ckpt {sharded_path} to unified checkpoint {uc_path}"
+    )
     for file in USEFUL_FILES:
-        assert os.path.exists(f"{sharded_path}/{file}"), f"{sharded_path}/{file} not exist, please check"
+        assert os.path.exists(f"{sharded_path}/{file}"), (
+            f"{sharded_path}/{file} not exist, please check"
+        )
         print(f"Copying {sharded_path}/{file}")
         subprocess.run(
             ["cp", f"{sharded_path}/{file}", uc_path],
@@ -66,9 +70,9 @@ def convert_ckpt(args):
             text=True,
         )
 
-    assert os.path.exists(
-        f"{sharded_path}/model_state.pdparams"
-    ), f"{sharded_path}/model_state.pdparams not exist, please check"
+    assert os.path.exists(f"{sharded_path}/model_state.pdparams"), (
+        f"{sharded_path}/model_state.pdparams not exist, please check"
+    )
     print(f"Loading sharded ckpt {sharded_path}/model_state.pdparams")
 
     sharded_name_to_uc_name = {

@@ -123,7 +123,9 @@ class TestAddProfilerStep(unittest.TestCase):
 
                 # This should create the profiler
                 with patch.object(sys, "exit"):
-                    add_profiler_step("batch_range=[1,3];profile_path=/tmp/test_profile")
+                    add_profiler_step(
+                        "batch_range=[1,3];profile_path=/tmp/test_profile"
+                    )
 
                 # Check that options were created
                 self.assertIsNotNone(profiler_module._profiler_options)

@@ -21,7 +21,11 @@ from ...utils.lazy_import import _LazyModule
 import_structure = {
     "auto_lora_model": ["LoRAAutoModel"],
     "lora_config": ["LoRAAutoConfig", "LoRAConfig"],
-    "lora_layers": ["ColumnParallelLoRALinear", "LoRALinear", "RowParallelLoRALinear"],
+    "lora_layers": [
+        "ColumnParallelLoRALinear",
+        "LoRALinear",
+        "RowParallelLoRALinear",
+    ],
     "lora_model": ["LoRAModel"],
     "lora_quantization_layers": ["QuantizationLoRABaseLinear"],
 }
@@ -29,7 +33,11 @@ import_structure = {
 if TYPE_CHECKING:
     from .auto_lora_model import LoRAAutoModel
     from .lora_config import LoRAAutoConfig, LoRAConfig
-    from .lora_layers import ColumnParallelLoRALinear, LoRALinear, RowParallelLoRALinear
+    from .lora_layers import (
+        ColumnParallelLoRALinear,
+        LoRALinear,
+        RowParallelLoRALinear,
+    )
     from .lora_model import LoRAModel
     from .lora_quantization_layers import QuantizationLoRABaseLinear
 else:

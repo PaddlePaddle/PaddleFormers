@@ -189,7 +189,10 @@ class Glm4vMoeModelTester:
                 "topk_group": topk_group,
                 "use_cache": use_cache,
                 "use_qk_norm": use_qk_norm,
-                "rope_scaling": {"rope_type": "default", "mrope_section": [2, 1, 1]},
+                "rope_scaling": {
+                    "rope_type": "default",
+                    "mrope_section": [2, 1, 1],
+                },
             }
 
     def get_config(self) -> Glm4vMoeConfig:
@@ -215,11 +218,17 @@ class Glm4vMoeModelTester:
                 self.num_channels * (patch_size**2) * temporal_patch_size,
             ]
         )
-        input_ids = ids_tensor([self.batch_size, self.seq_length], self.vocab_size, dtype=paddle.int64)
+        input_ids = ids_tensor(
+            [self.batch_size, self.seq_length],
+            self.vocab_size,
+            dtype=paddle.int64,
+        )
         # attention mask
         input_mask = None
         if self.use_input_mask:
-            input_mask = random_attention_mask([self.batch_size, self.seq_length])
+            input_mask = random_attention_mask(
+                [self.batch_size, self.seq_length]
+            )
         return config, input_ids, input_mask, pixel_values
 
     def prepare_config_and_inputs_for_common(self):
@@ -232,7 +241,9 @@ class Glm4vMoeModelTester:
         input_ids[input_ids == self.image_token_id] = self.pad_token_id
         input_ids[input_ids == self.video_end_token_id] = self.pad_token_id
         input_ids[:, self.num_image_tokens] = self.image_token_id
-        input_ids[:, self.num_image_tokens - 1] = paddle.to_tensor(self.video_end_token_id, dtype="int64")
+        input_ids[:, self.num_image_tokens - 1] = paddle.to_tensor(
+            self.video_end_token_id, dtype="int64"
+        )
         inputs_dict = {
             "pixel_values": pixel_values,
             "image_grid_thw": paddle.to_tensor([[1, 1, 1]] * self.batch_size),
@@ -243,29 +254,50 @@ class Glm4vMoeModelTester:
         config = self.get_config()
         return config, inputs_dict
 
-    def create_and_check_model(self, config: Glm4vMoeConfig, input_ids, input_mask, *args):
+    def create_and_check_model(
+        self, config: Glm4vMoeConfig, input_ids, input_mask, *args
+    ):
         model = Glm4vMoeModel(config=config)
         model.eval()
         result = model(input_ids, attention_mask=input_mask)
         result = model(input_ids)
-        self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.hidden_size])
+        self.parent.assertEqual(
+            result[0].shape,
+            [self.batch_size, self.seq_length, self.hidden_size],
+        )
 
-    def create_and_check_model_attention_mask(self, config: Glm4vMoeConfig, input_ids, input_mask, *args):
+    def create_and_check_model_attention_mask(
+        self, config: Glm4vMoeConfig, input_ids, input_mask, *args
+    ):
         model = Glm4vMoeModel(config)
         model.eval()
         attn_mask_2d = random_attention_mask([self.batch_size, self.seq_length])
         result_2d = model(input_ids, attention_mask=attn_mask_2d)[0]
         result_no_attention_mask = model(input_ids, attention_mask=None)[0]
         # Assert non-padding tokens have the same logits with different attention_mask shape
-        self.parent.assertTrue((result_2d[attn_mask_2d] == result_no_attention_mask[attn_mask_2d]).all())
+        self.parent.assertTrue(
+            (
+                result_2d[attn_mask_2d]
+                == result_no_attention_mask[attn_mask_2d]
+            ).all()
+        )
 
-    def create_and_check_model_past_large_inputs(self, config: Glm4vMoeConfig, input_ids, input_mask, *args):
+    def create_and_check_model_past_large_inputs(
+        self, config: Glm4vMoeConfig, input_ids, input_mask, *args
+    ):
         model = Glm4vMoeModel(config)
         model.eval()
 
         # first forward pass
-        outputs = model(input_ids, attention_mask=input_mask, use_cache=True, return_dict=self.return_dict)
-        past_key_values = outputs.past_key_values if self.return_dict else outputs[2]
+        outputs = model(
+            input_ids,
+            attention_mask=input_mask,
+            use_cache=True,
+            return_dict=self.return_dict,
+        )
+        past_key_values = (
+            outputs.past_key_values if self.return_dict else outputs[2]
+        )
 
         # create hypothetical multiple next token and extent to next_input_ids
         next_tokens = ids_tensor((self.batch_size, 3), self.vocab_size)
@@ -276,7 +308,10 @@ class Glm4vMoeModelTester:
         next_attention_mask = paddle.cat([input_mask, next_mask], axis=-1)
 
         outputs = model(
-            next_input_ids, attention_mask=next_attention_mask, output_hidden_states=True, return_dict=self.return_dict
+            next_input_ids,
+            attention_mask=next_attention_mask,
+            output_hidden_states=True,
+            return_dict=self.return_dict,
         )
 
         output_from_no_past = outputs[2][0]
@@ -293,15 +328,27 @@ class Glm4vMoeModelTester:
 
         # select random slice
         random_slice_idx = ids_tensor((1,), output_from_past.shape[-1]).item()
-        output_from_no_past_slice = output_from_no_past[:, -3:, random_slice_idx].detach()
-        output_from_past_slice = output_from_past[:, :, random_slice_idx].detach()
+        output_from_no_past_slice = output_from_no_past[
+            :, -3:, random_slice_idx
+        ].detach()
+        output_from_past_slice = output_from_past[
+            :, :, random_slice_idx
+        ].detach()
 
-        self.parent.assertTrue(output_from_past_slice.shape[1] == next_tokens.shape[1])
+        self.parent.assertTrue(
+            output_from_past_slice.shape[1] == next_tokens.shape[1]
+        )
 
         # test that outputs are equal for slice
-        self.parent.assertTrue(paddle.allclose(output_from_past_slice, output_from_no_past_slice, atol=1e-3))
+        self.parent.assertTrue(
+            paddle.allclose(
+                output_from_past_slice, output_from_no_past_slice, atol=1e-3
+            )
+        )
 
-    def create_and_check_lm_head_model(self, config, input_ids, input_mask, *args):
+    def create_and_check_lm_head_model(
+        self, config, input_ids, input_mask, *args
+    ):
         model = Glm4vMoeForConditionalGeneration(config)
         model.eval()
 
@@ -311,7 +358,9 @@ class Glm4vMoeModelTester:
             labels=None,
             return_dict=self.parent.return_dict,
         )
-        self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
+        self.parent.assertEqual(
+            result[0].shape, [self.batch_size, self.seq_length, self.vocab_size]
+        )
 
     def check_model_position_ids(self, config, input_ids, input_mask, *args):
         model = Glm4vMoeForConditionalGeneration(config)
@@ -330,7 +379,9 @@ class Glm4vMoeModelTester:
             labels=None,
             return_dict=self.parent.return_dict,
         )
-        self.parent.assertTrue((result_position_id[0] == result_no_position_id[0]).all())
+        self.parent.assertTrue(
+            (result_position_id[0] == result_no_position_id[0]).all()
+        )
 
     def create_and_check_gqa_model(self, config, input_ids, input_mask, *args):
         model = Glm4vMoeForConditionalGeneration(config)
@@ -344,7 +395,9 @@ class Glm4vMoeModelTester:
             labels=None,
             return_dict=self.parent.return_dict,
         )
-        self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
+        self.parent.assertEqual(
+            result[0].shape, [self.batch_size, self.seq_length, self.vocab_size]
+        )
 
     def create_and_check_tp_failed(self, config, input_ids, input_mask, *args):
         config.text_config.tensor_model_parallel_size = 2
@@ -370,25 +423,35 @@ class Glm4vMoeModelTester:
             labels=None,
             return_dict=self.parent.return_dict,
         )
-        self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
+        self.parent.assertEqual(
+            result[0].shape, [self.batch_size, self.seq_length, self.vocab_size]
+        )
 
 
-class Glm4vMoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
+class Glm4vMoeModelTest(
+    ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
+):
     base_model_class = Glm4vMoeModel
     return_dict = False
     use_labels = False
 
     all_model_classes = (Glm4vMoeModel, Glm4vMoeForConditionalGeneration)
-    all_generative_model_classes = {Glm4vMoeForConditionalGeneration: {Glm4vMoeModel, "glm4v_moe"}}
+    all_generative_model_classes = {
+        Glm4vMoeForConditionalGeneration: {Glm4vMoeModel, "glm4v_moe"}
+    }
 
     @gpu_device_initializer(log_prefix="Glm4vMoeModelTest")
     def setUp(self):
         super().setUp()
         self.model_tester = Glm4vMoeModelTester(self)
-        self.config_tester = ConfigTester(self, config_class=Glm4vMoeConfig, vocab_size=256, hidden_size=24)
+        self.config_tester = ConfigTester(
+            self, config_class=Glm4vMoeConfig, vocab_size=256, hidden_size=24
+        )
 
     def _get_input_ids_and_config(self):
-        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+        config, inputs_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
 
         input_ids = inputs_dict[self.input_name]
         attention_mask = paddle.ones_like(input_ids, dtype=paddle.int64)
@@ -407,7 +470,9 @@ class Glm4vMoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
 
     def test_model_attention_mask(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
-        self.model_tester.create_and_check_model_attention_mask(*config_and_inputs)
+        self.model_tester.create_and_check_model_attention_mask(
+            *config_and_inputs
+        )
 
     def test_model_position_ids(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
@@ -491,7 +556,10 @@ class Glm4vMoeIntegrationTest(unittest.TestCase):
     @classmethod
     def setUpClass(self):
         self.model = Glm4vMoeForConditionalGeneration.from_pretrained(
-            self.model_path, download_hub="aistudio", convert_from_hf=True, dtype=self.test_dtype
+            self.model_path,
+            download_hub="aistudio",
+            convert_from_hf=True,
+            dtype=self.test_dtype,
         )
         self.processor = AutoProcessor.from_pretrained(self.model_path)
         self.messages = [
@@ -526,7 +594,9 @@ class Glm4vMoeIntegrationTest(unittest.TestCase):
 
     def test_inference_no_attention(self):
         self.model.eval()
-        input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
+        input_ids = paddle.to_tensor(
+            [[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]]
+        )
         with paddle.no_grad():
             output = self.model(input_ids)[0]
         expected_shape = [1, 11, 151552]
@@ -549,12 +619,24 @@ class Glm4vMoeIntegrationTest(unittest.TestCase):
                 ]
             ]
         )
-        expected_slice = expected_slice_fp32 if self.test_dtype == "float32" else expected_slice_bf16
-        self.assertTrue(paddle.allclose(output[:, 1:4, 1:4].cast(paddle.float32), expected_slice, atol=1e-4))
+        expected_slice = (
+            expected_slice_fp32
+            if self.test_dtype == "float32"
+            else expected_slice_bf16
+        )
+        self.assertTrue(
+            paddle.allclose(
+                output[:, 1:4, 1:4].cast(paddle.float32),
+                expected_slice,
+                atol=1e-4,
+            )
+        )
 
     def test_inference_with_attention(self):
         self.model.eval()
-        input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
+        input_ids = paddle.to_tensor(
+            [[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]]
+        )
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
         with paddle.no_grad():
             output = self.model(input_ids, attention_mask=attention_mask)[0]
@@ -578,17 +660,47 @@ class Glm4vMoeIntegrationTest(unittest.TestCase):
                 ]
             ]
         )
-        expected_slice = expected_slice_fp32 if self.test_dtype == "float32" else expected_slice_bf16
-        self.assertTrue(paddle.allclose(output[:, 1:4, 1:4].cast(paddle.float32), expected_slice, atol=1e-4))
+        expected_slice = (
+            expected_slice_fp32
+            if self.test_dtype == "float32"
+            else expected_slice_bf16
+        )
+        self.assertTrue(
+            paddle.allclose(
+                output[:, 1:4, 1:4].cast(paddle.float32),
+                expected_slice,
+                atol=1e-4,
+            )
+        )
 
     def test_model_logits(self):
-        text = self.processor.apply_chat_template(self.messages, tokenize=False, add_generation_prompt=True)
-        inputs = self.processor(text=[text], images=self.image, return_tensors="pd")
+        text = self.processor.apply_chat_template(
+            self.messages, tokenize=False, add_generation_prompt=True
+        )
+        inputs = self.processor(
+            text=[text], images=self.image, return_tensors="pd"
+        )
 
         EXPECTED_INPUT_IDS = paddle.to_tensor(
-            [151331, 151333, 151336, 198, 151339, 151363, 151340, 74198, 419, 2168, 13, 151337, 198]
+            [
+                151331,
+                151333,
+                151336,
+                198,
+                151339,
+                151363,
+                151340,
+                74198,
+                419,
+                2168,
+                13,
+                151337,
+                198,
+            ]
         )
-        self.assertTrue(paddle.allclose(EXPECTED_INPUT_IDS, inputs.input_ids[0][:13]))
+        self.assertTrue(
+            paddle.allclose(EXPECTED_INPUT_IDS, inputs.input_ids[0][:13])
+        )
 
         EXPECTED_PIXEL_SLICE = paddle.to_tensor(
             [
@@ -598,7 +710,14 @@ class Glm4vMoeIntegrationTest(unittest.TestCase):
                 [0.48406041, 0.48406041, 0.48406041, 0.48406041],
             ],
         )
-        self.assertTrue(paddle.allclose(EXPECTED_PIXEL_SLICE, inputs.pixel_values[:, 60:64], atol=5e-4, rtol=1e-5))
+        self.assertTrue(
+            paddle.allclose(
+                EXPECTED_PIXEL_SLICE,
+                inputs.pixel_values[:, 60:64],
+                atol=5e-4,
+                rtol=1e-5,
+            )
+        )
 
         output = self.model(**inputs)["logits"].astype(paddle.float32)
         EXPECTED_SLICE_BF16 = paddle.to_tensor(
@@ -670,13 +789,27 @@ class Glm4vMoeIntegrationTest(unittest.TestCase):
             ]
         )
         logger.info(f"Output logits slice1:\n{output[0, 0, :30]}")
-        EXPECTED_SLICE = EXPECTED_SLICE_FP32 if self.test_dtype == "float32" else EXPECTED_SLICE_BF16
-        self.assertTrue(paddle.allclose(output[0, 0, :30], EXPECTED_SLICE, atol=5e-4, rtol=1e-5))
+        EXPECTED_SLICE = (
+            EXPECTED_SLICE_FP32
+            if self.test_dtype == "float32"
+            else EXPECTED_SLICE_BF16
+        )
+        self.assertTrue(
+            paddle.allclose(
+                output[0, 0, :30], EXPECTED_SLICE, atol=5e-4, rtol=1e-5
+            )
+        )
 
     def test_model_logits_with_video(self):
-        text = self.processor.apply_chat_template(self.messages_with_video, tokenize=False, add_generation_prompt=True)
+        text = self.processor.apply_chat_template(
+            self.messages_with_video, tokenize=False, add_generation_prompt=True
+        )
         inputs = self.processor(
-            text=[text], videos=self.video, return_tensors="pd", do_normalize=False, do_sample_frames=False
+            text=[text],
+            videos=self.video,
+            return_tensors="pd",
+            do_normalize=False,
+            do_sample_frames=False,
         )  # Disable normalize and frame sampling to avoid unit test issues
 
         output = self.model(**inputs).logits.astype(paddle.float32)
@@ -748,16 +881,27 @@ class Glm4vMoeIntegrationTest(unittest.TestCase):
                 0.06690788,
             ]
         )
-        EXPECTED_SLICE = EXPECTED_SLICE_FP32 if self.test_dtype == "float32" else EXPECTED_SLICE_BF16
+        EXPECTED_SLICE = (
+            EXPECTED_SLICE_FP32
+            if self.test_dtype == "float32"
+            else EXPECTED_SLICE_BF16
+        )
         logger.info(f"Output logits slice5:\n{output[0, 10, 50000:50030]}")
-        self.assertTrue(paddle.allclose(output[0, 10, 50000:50030], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
+        self.assertTrue(
+            paddle.allclose(
+                output[0, 10, 50000:50030], EXPECTED_SLICE, atol=1e-3, rtol=1e-3
+            )
+        )
 
 
 class Glm4vMoeCompatibilityTest(unittest.TestCase):
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
-        from transformers import Glm4vMoeConfig, Glm4vMoeForConditionalGeneration
+        from transformers import (
+            Glm4vMoeConfig,
+            Glm4vMoeForConditionalGeneration,
+        )
 
         # when python application is done, `TemporaryDirectory` will be free
         cls.torch_model_path = tempfile.TemporaryDirectory().name
@@ -793,7 +937,11 @@ class Glm4vMoeCompatibilityTest(unittest.TestCase):
         )
 
         input_ids = np.random.randint(0, 200, [1, 20]).astype("int64")
-        visual_token_ids = [config.video_end_token_id] + [config.image_token_id] * 2 + [config.video_end_token_id]
+        visual_token_ids = (
+            [config.video_end_token_id]
+            + [config.image_token_id] * 2
+            + [config.video_end_token_id]
+        )
         input_ids[:, 10 : 10 + len(visual_token_ids)] = visual_token_ids
 
         attention_mask = np.ones([1, 20], dtype="int64")
@@ -846,13 +994,14 @@ class Glm4vMoeCompatibilityTest(unittest.TestCase):
     @require_package("transformers", "torch")
     def test_Glm4vMoe_converter_from_local_dir(self):
         with tempfile.TemporaryDirectory() as tempdir:
-
             # 1. forward the torch model
             import torch
             from transformers import Glm4vMoeModel
 
             torch_inputs = {k: torch.tensor(v) for k, v in self.inputs.items()}
-            torch_model = Glm4vMoeModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model = Glm4vMoeModel.from_pretrained(
+                self.torch_model_path, torch_dtype=torch.float32
+            )
             torch_model.eval()
             torch_model.save_pretrained(tempdir)
             torch_logit = torch_model(**torch_inputs)[0]
@@ -860,34 +1009,51 @@ class Glm4vMoeCompatibilityTest(unittest.TestCase):
             # 2. forward the paddle model
             from paddleformers.transformers import Glm4vMoeModel
 
-            paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
-            paddle_model = Glm4vMoeModel.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
+            paddle_inputs = {
+                k: paddle.to_tensor(v) for k, v in self.inputs.items()
+            }
+            paddle_model = Glm4vMoeModel.from_pretrained(
+                tempdir, convert_from_hf=True, dtype="float32"
+            )
             paddle_model.eval()
             paddle_logit = paddle_model(**paddle_inputs)[0]
 
             # 3. compare the result between paddle and torch
             self.assertTrue(
                 np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
+                    paddle_logit.detach()
+                    .cpu()
+                    .reshape([-1])[:9]
+                    .astype("float32")
+                    .numpy(),
+                    torch_logit.detach()
+                    .cpu()
+                    .reshape([-1])[:9]
+                    .float()
+                    .numpy(),
                     atol=1e-2,
                     rtol=1e-2,
                 )
             )
 
-    @parameterized.expand([("Glm4vMoeModel",), ("Glm4vMoeForConditionalGeneration",)])
+    @parameterized.expand(
+        [("Glm4vMoeModel",), ("Glm4vMoeForConditionalGeneration",)]
+    )
     @require_package("transformers", "torch")
-    def test_Glm4vMoe_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
+    def test_Glm4vMoe_classes_from_local_dir(
+        self, class_name, pytorch_class_name: str | None = None
+    ):
         pytorch_class_name = pytorch_class_name or class_name
         with tempfile.TemporaryDirectory() as tempdir:
-
             # 1. forward the torch model
             import torch
             import transformers
 
             torch_inputs = {k: torch.tensor(v) for k, v in self.inputs.items()}
             torch_model_class = getattr(transformers, pytorch_class_name)
-            torch_model = torch_model_class.from_pretrained(self.torch_model_path, torch_dtype=torch.float32).eval()
+            torch_model = torch_model_class.from_pretrained(
+                self.torch_model_path, torch_dtype=torch.float32
+            ).eval()
             torch_model.eval()
             torch_model.save_pretrained(tempdir)
             torch_logit = torch_model(**torch_inputs)[0]
@@ -896,10 +1062,14 @@ class Glm4vMoeCompatibilityTest(unittest.TestCase):
             from paddleformers import transformers
 
             paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
+            paddle_model = paddle_model_class.from_pretrained(
+                tempdir, convert_from_hf=True, dtype="float32"
+            )
             paddle_model.eval()
 
-            paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
+            paddle_inputs = {
+                k: paddle.to_tensor(v) for k, v in self.inputs.items()
+            }
             if class_name == "Glm4vMoeModel":
                 paddle_logit = paddle_model(**paddle_inputs)[0]
             else:
@@ -908,8 +1078,16 @@ class Glm4vMoeCompatibilityTest(unittest.TestCase):
             # 3. compare the result between paddle and torch
             self.assertTrue(
                 np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
+                    paddle_logit.detach()
+                    .cpu()
+                    .reshape([-1])[:9]
+                    .astype("float32")
+                    .numpy(),
+                    torch_logit.detach()
+                    .cpu()
+                    .reshape([-1])[:9]
+                    .float()
+                    .numpy(),
                     atol=1e-2,
                     rtol=1e-2,
                 )

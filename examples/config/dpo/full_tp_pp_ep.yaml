@@ -11,11 +11,9 @@ packing: true
 mix_strategy: concat
 template_backend: custom
 template: qwen3
-
 ### model
 model_name_or_path: Qwen/Qwen3-0.6B-Base
 _attn_implementation: flashmask
-
 ### finetuning
 # base
 stage: DPO
@@ -38,22 +36,18 @@ logging_dir: ./vdl_log
 output_dir: ./checkpoints/qwen3-dpo-full-tp-pp-ep
 disable_tqdm: true
 eval_accumulation_steps: 16
-
 # train
 warmup_steps: 20
 learning_rate: 1.0e-6
-loss_type: sigmoid  # choices: [sigmoid (dpo), hinge, simpo, ipo, dpop, kto_pair, sppo_hard, nca_pair, or, orpo]
-reference_free: false  # True only supports loss types of or, orpo, simpo, sigmoid, hinge, and ipo. When loss_type is or, orpo and simpo, automatically set to True.
-
+loss_type: sigmoid # choices: [sigmoid (dpo), hinge, simpo, ipo, dpop, kto_pair, sppo_hard, nca_pair, or, orpo]
+reference_free: false # True only supports loss types of or, orpo, simpo, sigmoid, hinge, and ipo. When loss_type is or, orpo and simpo, automatically set to True.
 # performance
 tensor_model_parallel_size: 2
 pipeline_model_parallel_size: 2
-
 # pipeline_parallel_config
 clear_every_step_cache: true
 partial_send_recv: false
 batch_p2p_comm: false
-
 sequence_parallel: true
 sharding: stage1
 recompute_granularity: full
@@ -63,15 +57,11 @@ bf16: true
 fp16_opt_level: O2
 use_expert_parallel: true
 expert_model_parallel_size: 4
-
 # sharding_parallel_config
 split_param: true
-
 amp_master_grad: true
-
 # tensor_parallel_config
 tp_sync_param: true
 sync_grad: true
-
 save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint

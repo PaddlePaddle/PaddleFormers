@@ -1,13 +1,12 @@
 name: PaddleFormers Code Clone
 description: "PaddleFormers clone and upload"
-
 on:
   workflow_call:
     inputs:
-        bos_dir:
-          type: string
-          required: false
-          default: 'PaddleFormers'
+      bos_dir:
+        type: string
+        required: false
+        default: 'PaddleFormers'
     outputs:
       repo_archive_url:
         description: "Compressed source code archive."
@@ -22,12 +21,9 @@ jobs:
       - name: Clone PaddleFormers
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request'
-                && github.event.pull_request.base.ref
-                || github.ref_name }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || github.ref_name }}
           submodules: 'recursive'
           fetch-depth: 1000
-
       - name: Merge PR (if needed)
         if: ${{ github.event_name == 'pull_request' }}
         run: |
@@ -38,6 +34,10 @@ jobs:
           git merge --no-ff pr/${{ github.event.pull_request.number }}
           echo "PR Branch log "
           git log --oneline -n 5 pr/${{ github.event.pull_request.number }}
+      - name: Init submodules
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
@@ -47,9 +47,9 @@ jobs:
           AK: paddle
           SK: paddle
         run: |
-          git config --unset http.https://github.com/.extraheader
-          git submodule foreach --recursive sh -c "git config --local --unset-all 'http.https://github.com/.extraheader'"
-          git submodule foreach --recursive sh -c "git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'"
+          git config --unset-all http.https://github.com/.extraheader || true
+          git submodule foreach --recursive sh -c "git config --local --unset-all 'http.https://github.com/.extraheader' || true"
+          git submodule foreach --recursive sh -c "git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*' || true"
           echo "Current HEAD Log:"
           git log --oneline -n 5
           ls

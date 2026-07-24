@@ -23,8 +23,9 @@ import paddle
 from parameterized import parameterized
 
 from paddleformers.peft.lora import LoRAConfig, LoRALinear, LoRAModel
-from paddleformers.transformers import AutoModelForCausalLM, Glm4MoeModel
 from paddleformers.transformers import (
+    AutoModelForCausalLM,
+    Glm4MoeModel,
     Qwen3VLMoeForConditionalGenerationDeprecated as Qwen3VLMoeForConditionalGeneration,
 )
 
@@ -38,10 +39,18 @@ class TestLoraLayer(unittest.TestCase):
 
     def test_r_raise_exception(self):
         with self.assertRaises(ValueError):
-            LoRALinear(in_features=16, out_features=8, r=0, lora_dropout=0.1, lora_alpha=8)
+            LoRALinear(
+                in_features=16,
+                out_features=8,
+                r=0,
+                lora_dropout=0.1,
+                lora_alpha=8,
+            )
 
     def test_forward(self):
-        lora_layer = LoRALinear(in_features=16, out_features=8, r=4, lora_dropout=0.1, lora_alpha=8)
+        lora_layer = LoRALinear(
+            in_features=16, out_features=8, r=4, lora_dropout=0.1, lora_alpha=8
+        )
         x = paddle.randn([2, 4, 16], "float32")
         output = lora_layer(x)
         self.assertFalse(lora_layer.lora_A.stop_gradient)
@@ -55,7 +64,9 @@ class TestLoraLayer(unittest.TestCase):
         lora_layer = LoRALinear(in_features=16, out_features=8, r=4)
         lora_layer.train()
         train_result = lora_layer(x)
-        train_weight = copy.deepcopy(lora_layer.weight)  # deep copy since this is a pointer.
+        train_weight = copy.deepcopy(
+            lora_layer.weight
+        )  # deep copy since this is a pointer.
         lora_layer.eval()
         eval_result = lora_layer(x)
         eval_weight = lora_layer.weight
@@ -85,8 +96,12 @@ class TestLoraLayer(unittest.TestCase):
             lora_layer_r8.set_dict(state_dict)
             lora_layer_r4.set_dict(state_dict)
             x = paddle.randn([2, 4, 16], "float32")
-            self.assertTrue(paddle.allclose(lora_layer_r8(x), regular_linear(x)))
-            self.assertTrue(paddle.allclose(lora_layer_r4(x), regular_linear(x)))
+            self.assertTrue(
+                paddle.allclose(lora_layer_r8(x), regular_linear(x))
+            )
+            self.assertTrue(
+                paddle.allclose(lora_layer_r4(x), regular_linear(x))
+            )
 
 
 class TestLoraModel(unittest.TestCase):
@@ -108,7 +123,10 @@ class TestLoraModel(unittest.TestCase):
         lora_model = LoRAModel(model, lora_config)
         lora_model.mark_only_lora_as_trainable()
         for name, weight in lora_model.state_dict().items():
-            if any([re.fullmatch(target_module, name) for target_module in lora_config.target_modules]):
+            if any(
+                re.fullmatch(target_module, name)
+                for target_module in lora_config.target_modules
+            ):
                 if "lora" in name:
                     self.assertFalse(weight.stop_gradient)
                 elif "bias" in name and bias in ["lora", "all"]:
@@ -128,7 +146,9 @@ class TestLoraModel(unittest.TestCase):
         lora_model.eval()
         eval_forward_results = lora_model(inputs)
         self.assertIsNotNone(eval_forward_results)
-        self.assertTrue(paddle.allclose(train_forward_results[0], eval_forward_results[0]))
+        self.assertTrue(
+            paddle.allclose(train_forward_results[0], eval_forward_results[0])
+        )
 
     def test_lora_model_save_load(self):
         with TemporaryDirectory() as tempdir:
@@ -139,23 +159,35 @@ class TestLoraModel(unittest.TestCase):
                 r=4,
                 lora_alpha=8,
             )
-            model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
+            model = AutoModelForCausalLM.from_pretrained(
+                "PaddleFormers/tiny-random-qwen3", convert_from_hf=True
+            )
             lora_model = LoRAModel(model, lora_config)
             lora_model.eval()
             original_results = lora_model(inputs)
             lora_model.save_pretrained(tempdir)
 
-            model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
+            model = AutoModelForCausalLM.from_pretrained(
+                "PaddleFormers/tiny-random-qwen3", convert_from_hf=True
+            )
             loaded_lora_model = LoRAModel.from_pretrained(model, tempdir)
             loaded_lora_model.eval()
             loaded_results = loaded_lora_model(inputs)
-            self.assertTrue(paddle.allclose(original_results[0], loaded_results[0]))
+            self.assertTrue(
+                paddle.allclose(original_results[0], loaded_results[0])
+            )
 
-            model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
-            config_loaded_lora_model = LoRAModel.from_pretrained(model, tempdir, lora_config=lora_config)
+            model = AutoModelForCausalLM.from_pretrained(
+                "PaddleFormers/tiny-random-qwen3", convert_from_hf=True
+            )
+            config_loaded_lora_model = LoRAModel.from_pretrained(
+                model, tempdir, lora_config=lora_config
+            )
             config_loaded_lora_model.eval()
             config_loaded_results = config_loaded_lora_model(inputs)
-            self.assertTrue(paddle.allclose(original_results[0], config_loaded_results[0]))
+            self.assertTrue(
+                paddle.allclose(original_results[0], config_loaded_results[0])
+            )
 
     @unittest.skip("TODO: Temporarily skipped")
     def test_lora_module_raise_exception(self):
@@ -165,22 +197,34 @@ class TestLoraModel(unittest.TestCase):
             lora_alpha=8,
             enable_lora_list=None,
         )
-        model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
+        model = AutoModelForCausalLM.from_pretrained(
+            "PaddleFormers/tiny-random-qwen3", convert_from_hf=True
+        )
         with self.assertRaises(ValueError):
             LoRAModel(model, lora_config)
 
     def test_lora_get_merge_state_dict(self):
-        lora_config = LoRAConfig(target_modules=[".*qkv_proj.*"], r=4, lora_alpha=8)
-        model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
+        lora_config = LoRAConfig(
+            target_modules=[".*qkv_proj.*"], r=4, lora_alpha=8
+        )
+        model = AutoModelForCausalLM.from_pretrained(
+            "PaddleFormers/tiny-random-qwen3", convert_from_hf=True
+        )
         model.eval()
         lora_model = LoRAModel(model, lora_config)
         lora_model.model._set_pipeline_name_mapping()
 
-        original_state_dict = {k: v.clone() for k, v in model.state_dict().items() if "lora" not in k}
+        original_state_dict = {
+            k: v.clone()
+            for k, v in model.state_dict().items()
+            if "lora" not in k
+        }
 
         merge_state_dict = lora_model.get_merge_state_dict(offload=False)
 
-        self.assertEqual(set(merge_state_dict.keys()), set(original_state_dict.keys()))
+        self.assertEqual(
+            set(merge_state_dict.keys()), set(original_state_dict.keys())
+        )
 
         scaling = lora_config.lora_alpha / lora_config.r
 
@@ -196,22 +240,30 @@ class TestLoraModel(unittest.TestCase):
 
                 lora_A_tensor = lora_model.model.state_dict()[lora_A_key]
                 lora_B_tensor = lora_model.model.state_dict()[lora_B_key]
-                expected_merged = orig_weight + lora_A_tensor @ lora_B_tensor * scaling
+                expected_merged = (
+                    orig_weight + lora_A_tensor @ lora_B_tensor * scaling
+                )
 
                 self.assertTrue(
-                    paddle.allclose(merged_weight, expected_merged, atol=1e-5), f"Merged weight mismatch in {k}"
+                    paddle.allclose(merged_weight, expected_merged, atol=1e-5),
+                    f"Merged weight mismatch in {k}",
                 )
             else:
                 self.assertTrue(
-                    paddle.equal_all(merged_weight, orig_weight).item(), f"Non-LoRA weight should be unchanged in {k}"
+                    paddle.equal_all(merged_weight, orig_weight).item(),
+                    f"Non-LoRA weight should be unchanged in {k}",
                 )
 
         try:
-            merge_state_dict_offload = lora_model.get_merge_state_dict(offload=True)
+            merge_state_dict_offload = lora_model.get_merge_state_dict(
+                offload=True
+            )
             for tensor in merge_state_dict_offload.values():
                 self.assertIsInstance(tensor, paddle.Tensor)
         except Exception as e:
-            self.fail(f"get_merge_state_dict(offload=True) raised an exception: {e}")
+            self.fail(
+                f"get_merge_state_dict(offload=True) raised an exception: {e}"
+            )
 
     def test_fuse_moe_lora(self):
         lora_config = LoRAConfig(
@@ -239,18 +291,30 @@ class TestLoraModel(unittest.TestCase):
             loaded_lora_model = LoRAModel.from_pretrained(model, tempdir)
             loaded_lora_model.eval()
             loaded_results = loaded_lora_model(input_ids)
-            self.assertTrue(paddle.allclose(original_results[0], loaded_results[0]))
+            self.assertTrue(
+                paddle.allclose(original_results[0], loaded_results[0])
+            )
 
-            config_loaded_lora_model = LoRAModel.from_pretrained(model, tempdir, lora_config=lora_config)
+            config_loaded_lora_model = LoRAModel.from_pretrained(
+                model, tempdir, lora_config=lora_config
+            )
             config_loaded_lora_model.eval()
             config_loaded_results = config_loaded_lora_model(input_ids)
-            self.assertTrue(paddle.allclose(original_results[0], config_loaded_results[0]))
+            self.assertTrue(
+                paddle.allclose(original_results[0], config_loaded_results[0])
+            )
 
-        original_state_dict = {k: v.clone() for k, v in model.state_dict().items() if "lora" not in k}
+        original_state_dict = {
+            k: v.clone()
+            for k, v in model.state_dict().items()
+            if "lora" not in k
+        }
 
         merge_state_dict = lora_model.get_merge_state_dict(offload=False)
 
-        self.assertEqual(set(merge_state_dict.keys()), set(original_state_dict.keys()))
+        self.assertEqual(
+            set(merge_state_dict.keys()), set(original_state_dict.keys())
+        )
 
         scaling = lora_config.lora_alpha / lora_config.r
 
@@ -266,28 +330,38 @@ class TestLoraModel(unittest.TestCase):
 
                 lora_A_tensor = lora_model.model.state_dict()[lora_A_key]
                 lora_B_tensor = lora_model.model.state_dict()[lora_B_key]
-                expected_merged = orig_weight + lora_A_tensor @ lora_B_tensor * scaling
+                expected_merged = (
+                    orig_weight + lora_A_tensor @ lora_B_tensor * scaling
+                )
 
                 self.assertTrue(
-                    paddle.allclose(merged_weight, expected_merged, atol=1e-5), f"Merged weight mismatch in {k}"
+                    paddle.allclose(merged_weight, expected_merged, atol=1e-5),
+                    f"Merged weight mismatch in {k}",
                 )
             else:
                 self.assertTrue(
-                    paddle.equal_all(merged_weight, orig_weight).item(), f"Non-LoRA weight should be unchanged in {k}"
+                    paddle.equal_all(merged_weight, orig_weight).item(),
+                    f"Non-LoRA weight should be unchanged in {k}",
                 )
 
         try:
-            merge_state_dict_offload = lora_model.get_merge_state_dict(offload=True)
+            merge_state_dict_offload = lora_model.get_merge_state_dict(
+                offload=True
+            )
             for tensor in merge_state_dict_offload.values():
                 self.assertIsInstance(tensor, paddle.Tensor)
         except Exception as e:
-            self.fail(f"get_merge_state_dict(offload=True) raised an exception: {e}")
+            self.fail(
+                f"get_merge_state_dict(offload=True) raised an exception: {e}"
+            )
 
 
 class TestLoraModelFC(unittest.TestCase):
     def test_lora_model_save_load_fc(self):
         with TemporaryDirectory() as tempdir:
-            input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
+            input_ids = paddle.to_tensor(
+                [[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]]
+            )
             lora_config = LoRAConfig(
                 target_modules=[".*qkv_proj.*"],
                 r=4,
@@ -303,17 +377,27 @@ class TestLoraModelFC(unittest.TestCase):
             lora_model = LoRAModel(model, lora_config)
             lora_model.eval()
             original_results = lora_model(input_ids)
-            lora_model.save_pretrained(tempdir, is_main_process=True, save_checkpoint_format="flex_checkpoint")
+            lora_model.save_pretrained(
+                tempdir,
+                is_main_process=True,
+                save_checkpoint_format="flex_checkpoint",
+            )
 
             loaded_lora_model = LoRAModel.from_pretrained(model, tempdir)
             loaded_lora_model.eval()
             loaded_results = loaded_lora_model(input_ids)
-            self.assertTrue(paddle.allclose(original_results[0], loaded_results[0]))
+            self.assertTrue(
+                paddle.allclose(original_results[0], loaded_results[0])
+            )
 
-            config_loaded_lora_model = LoRAModel.from_pretrained(model, tempdir, lora_config=lora_config)
+            config_loaded_lora_model = LoRAModel.from_pretrained(
+                model, tempdir, lora_config=lora_config
+            )
             config_loaded_lora_model.eval()
             config_loaded_results = config_loaded_lora_model(input_ids)
-            self.assertTrue(paddle.allclose(original_results[0], config_loaded_results[0]))
+            self.assertTrue(
+                paddle.allclose(original_results[0], config_loaded_results[0])
+            )
 
 
 class TestLoRAConfig(unittest.TestCase):

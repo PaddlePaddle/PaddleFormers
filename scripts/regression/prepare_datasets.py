@@ -58,7 +58,9 @@ DPO_VL_IMAGES_URL = "https://paddle-qa.bj.bcebos.com/paddleformers/images.tar"
 DPO_VL_DATA_DIR = "tests/fixtures/dummy/dpo-vl"
 
 
-def download_file(url: str, target_dir: str, filename: str = None) -> str:
+def download_file(
+    url: str, target_dir: str, filename: str | None = None
+) -> str:
     """Download a file from URL to target directory.
 
     Args:
@@ -106,23 +108,39 @@ def download_vl_datasets(force: bool = False) -> None:
 
         if config["extract_cmd"]:
             # Download archive to target directory and extract with full path
-            archive_name = config.get("archive_name", os.path.basename(config["url"]))
+            archive_name = config.get(
+                "archive_name", os.path.basename(config["url"])
+            )
             archive_path = os.path.join(VL_DATA_DIR, archive_name)
-            subprocess.run(f"wget -q {config['url']} -O {archive_path}", shell=True, check=True)
             subprocess.run(
-                config["extract_cmd"].format(archive_path=archive_path, target_dir=VL_DATA_DIR), shell=True, check=True
+                f"wget -q {config['url']} -O {archive_path}",
+                shell=True,
+                check=True,
+            )
+            subprocess.run(
+                config["extract_cmd"].format(
+                    archive_path=archive_path, target_dir=VL_DATA_DIR
+                ),
+                shell=True,
+                check=True,
             )
             # Cleanup archive
             if os.path.exists(archive_path):
                 os.remove(archive_path)
         else:
             # Direct download to target directory
-            subprocess.run(f"wget -q {config['url']} -P {VL_DATA_DIR}/", shell=True, check=True)
+            subprocess.run(
+                f"wget -q {config['url']} -P {VL_DATA_DIR}/",
+                shell=True,
+                check=True,
+            )
 
         print(f"[INFO] {name} downloaded successfully.")
 
 
-def prepare_datasets_for_train_type(train_type: str, force: bool = False) -> None:
+def prepare_datasets_for_train_type(
+    train_type: str, force: bool = False
+) -> None:
     """Prepare datasets based on training type.
 
     Args:
@@ -171,16 +189,26 @@ def prepare_all_datasets(force: bool = False) -> None:
 
 def main():
     """Main entry point for dataset preparation."""
-    parser = argparse.ArgumentParser(description="Prepare datasets for model training regression tests")
+    parser = argparse.ArgumentParser(
+        description="Prepare datasets for model training regression tests"
+    )
     parser.add_argument(
         "--train-type",
         type=str,
         default=None,
         help="Training type (e.g., 'sft-vl', 'dpo-vl'). If not specified, downloads all.",
     )
-    parser.add_argument("--vl", action="store_true", help="Download VL datasets")
-    parser.add_argument("--all", action="store_true", help="Download all datasets")
-    parser.add_argument("--force", action="store_true", help="Force re-download even if files exist")
+    parser.add_argument(
+        "--vl", action="store_true", help="Download VL datasets"
+    )
+    parser.add_argument(
+        "--all", action="store_true", help="Download all datasets"
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force re-download even if files exist",
+    )
 
     args = parser.parse_args()
 
@@ -190,9 +218,15 @@ def main():
         download_vl_datasets(force=args.force)
     else:
         print("Usage:")
-        print("  python prepare_datasets.py --vl           # Download VL datasets")
-        print("  python prepare_datasets.py --all          # Download all datasets")
-        print("  python prepare_datasets.py --train-type sft-vl  # Download datasets for specific train type")
+        print(
+            "  python prepare_datasets.py --vl           # Download VL datasets"
+        )
+        print(
+            "  python prepare_datasets.py --all          # Download all datasets"
+        )
+        print(
+            "  python prepare_datasets.py --train-type sft-vl  # Download datasets for specific train type"
+        )
         print("  python prepare_datasets.py --force        # Force re-download")
 
 

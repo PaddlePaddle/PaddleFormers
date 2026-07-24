@@ -1,5 +1,4 @@
 name: Post Analysis Comment
-
 on:
   workflow_run:
     workflows:
@@ -11,10 +10,8 @@ on:
       - "Unittest GPU CE"
     types:
       - completed
-
 permissions:
   contents: read
-
 jobs:
   check-and-collect:
     runs-on:
@@ -23,23 +20,22 @@ jobs:
       pull-requests: read
       actions: read
     outputs:
-      skip:            ${{ steps.check.outputs.skip }}
-      is_schedule:     ${{ steps.check.outputs.is_schedule }}
-      pr_number:       ${{ steps.check.outputs.pr_number }}
+      skip: ${{ steps.check.outputs.skip }}
+      is_schedule: ${{ steps.check.outputs.is_schedule }}
+      pr_number: ${{ steps.check.outputs.pr_number }}
       failed_job_urls: ${{ steps.check.outputs.failed_job_urls }}
-      failed_run_ids:  ${{ steps.check.outputs.failed_run_ids }}
+      failed_run_ids: ${{ steps.check.outputs.failed_run_ids }}
     steps:
       - name: Cleanup
         run: |
           rm -rf * .[^.]*
-
       - name: Check all workflows done and collect failed job URLs
         id: check
         env:
-          GITHUB_TOKEN:      ${{ secrets.GITHUB_TOKEN }}
-          REPO:              ${{ github.repository }}
-          HEAD_SHA:          ${{ github.event.workflow_run.head_sha }}
-          TRIGGER_EVENT:     ${{ github.event.workflow_run.event }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          TRIGGER_EVENT: ${{ github.event.workflow_run.event }}
           TRIGGERING_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           python3 - <<'PYEOF'
@@ -182,7 +178,6 @@ jobs:
               f.write(f"failed_job_urls={' '.join(failed_job_urls)}\n")
               f.write(f"failed_run_ids={' '.join(failed_run_ids)}\n")
           PYEOF
-
   analyze:
     needs: check-and-collect
     if: needs.check-and-collect.outputs.skip == 'false'
@@ -191,17 +186,16 @@ jobs:
       contents: read
       actions: read
     env:
-      PATH:    /home/paddle-1/.nvm/versions/node/v20.20.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      PATH: /home/paddle-1/.nvm/versions/node/v20.20.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       TASK_ID: ${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Run formers bot
         env:
-          GITHUB_TOKEN:    ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FAILED_JOB_URLS: ${{ needs.check-and-collect.outputs.failed_job_urls }}
         run: |
           PROMPT="Please analyze the failed CI job logs from these URLs: ${FAILED_JOB_URLS}"
           python /home/paddle-1/paddle_ci_bot/paddle_ci_bot.py --prompt "$PROMPT" --task-id "$TASK_ID"
-
       - name: Write summary
         if: always()
         run: |
@@ -213,16 +207,29 @@ jobs:
             echo "## PaddleFormers Bot Log Analysis" >> $GITHUB_STEP_SUMMARY
             echo "No analysis result generated." >> $GITHUB_STEP_SUMMARY
           fi
-
       - name: Post or update PR comment
         # 定时触发时无 PR，跳过评论；schedule 仅写 Summary
         if: always() && needs.check-and-collect.outputs.is_schedule == 'false'
-        id: post_comment                          # ← 加 id，供下一步读 output
+        id: post_comment # ← 加 id，供下一步读 output
         env:
-          BOT_TOKEN:   ${{ secrets.BOT_TOKEN }}
-          REPO:        ${{ github.repository }}
-          PR_NUMBER:   ${{ needs.check-and-collect.outputs.pr_number }}
-          RUN_ID:      ${{ github.run_id }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ needs.check-and-collect.outputs.pr_number }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RESULT_FILE: /tmp/bot_results/bot_result_paddleformers_${{ env.TASK_ID }}.md
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, urllib.request, urllib.error, sys
+      - name: Post or update PR comment
+        # 定时触发时无 PR，跳过评论；schedule 仅写 Summary
+        if: always() && needs.check-and-collect.outputs.is_schedule == 'false'
+        id: post_comment # ← 加 id，供下一步读 output
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ needs.check-and-collect.outputs.pr_number }}
+          RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
           RESULT_FILE: /tmp/bot_results/bot_result_paddleformers_${{ env.TASK_ID }}.md
         run: |
@@ -252,7 +259,7 @@ jobs:
               f"## PaddleFormers Log Analysis\n\n"
               f"> Run [`#{run_id}`]({run_url}) · Attempt `{run_attempt}`\n\n"
               f"{body}\n\n"
-              f"---\n"       
+              f"---\n"
               f"> 🔍 **准确性记录**：请点击评论底部 😊 图标，"
               f"选择 👍（准确）或 👎（有误），将自动记录到 CI 监控系统\n\n"
               f"<sub>🔄 每次 Re-run 后自动更新</sub>"
@@ -300,13 +307,12 @@ jobs:
               with open(gh_output, "a") as f:
                   f.write(f"comment_id={comment_id}\n")
           PYEOF
-
       - name: Report to monitor
         # 无论评论是否成功都上报，comment_id 可能为空（schedule 场景）
         if: always()
         env:
-          PR_NUMBER:      ${{ needs.check-and-collect.outputs.pr_number }}
-          GITHUB_RUN_ID:  ${{ github.run_id }}
+          PR_NUMBER: ${{ needs.check-and-collect.outputs.pr_number }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
           FAILED_RUN_IDS: ${{ needs.check-and-collect.outputs.failed_run_ids }}
           # post_comment 步骤成功时才有值；schedule/失败时为空字符串，脚本内兜底
           BOT_COMMENT_ID: ${{ steps.post_comment.outputs.comment_id }}

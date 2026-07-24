@@ -78,15 +78,23 @@ class TestDequantUnifiedOptimizer(unittest.TestCase):
             "param1/" + MOMENT2_KEYNAME: m2,
         }
 
-        quant_result = quant_unified_optimizer(dict(state_dict), "optimizer_weight", "O1")
+        quant_result = quant_unified_optimizer(
+            dict(state_dict), "optimizer_weight", "O1"
+        )
 
         # Extract scales
         scale_dict = {}
         for k in list(quant_result.keys()):
-            if SYMMETRY_QUANT_SCALE in k or ASYMMETRY_QUANT_SCALE_MIN in k or ASYMMETRY_QUANT_SCALE_MAX in k:
+            if (
+                SYMMETRY_QUANT_SCALE in k
+                or ASYMMETRY_QUANT_SCALE_MIN in k
+                or ASYMMETRY_QUANT_SCALE_MAX in k
+            ):
                 scale_dict[k] = quant_result.pop(k)
 
-        dequant_result = dequant_unified_optimizer(quant_result, "O1", scale_dict)
+        dequant_result = dequant_unified_optimizer(
+            quant_result, "O1", scale_dict
+        )
         self.assertIn("param1/" + MOMENT1_KEYNAME, dequant_result)
         self.assertIn("param1/" + MOMENT2_KEYNAME, dequant_result)
 

@@ -43,7 +43,15 @@ class AlltoAll(PyLayer):
             return x
         output = paddle.empty_like(x)
         output.stop_gradient = False
-        task = stream.alltoall_single(output, x, None, None, group, sync_op=sync_op, use_calc_stream=sync_op)
+        task = stream.alltoall_single(
+            output,
+            x,
+            None,
+            None,
+            group,
+            sync_op=sync_op,
+            use_calc_stream=sync_op,
+        )
         if not sync_op:
             return output, task
         else:

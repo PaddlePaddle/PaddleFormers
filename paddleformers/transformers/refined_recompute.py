@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import functools
 import inspect
+import operator
 import queue
 import random
 import uuid
@@ -30,9 +32,11 @@ from paddle.distributed.fleet.layers.mpu import mp_layers, mp_ops
 from paddle.distributed.fleet.meta_parallel.parallel_layers.random import (
     get_rng_state_tracker,
 )
-from paddle.distributed.fleet.recompute.recompute import check_recompute_necessary
-from paddle.distributed.fleet.recompute.recompute import recompute as original_recompute
-from paddle.distributed.fleet.recompute.recompute import switch_rng_state_tracker
+from paddle.distributed.fleet.recompute.recompute import (
+    check_recompute_necessary,
+    recompute as original_recompute,
+    switch_rng_state_tracker,
+)
 from paddle.distributed.fleet.utils import sequence_parallel_utils
 
 from .linear_utils import (
@@ -178,7 +182,11 @@ def no_recompute(function, *args, **kwargs):
     """
     recompute_id_with_suffix = get_recompute_id()
     # enable kwargs, in no recompute context, has grad
-    enable = kwargs.pop("enable", True) and recompute_id_with_suffix != "-1" and framework._dygraph_tracer()._has_grad
+    enable = (
+        kwargs.pop("enable", True)
+        and recompute_id_with_suffix != "-1"
+        and framework._dygraph_tracer()._has_grad
+    )
     keys_ignore_to_save = kwargs.pop("keys_ignore_to_save", [])
     if not enable:
         return function(*args, **kwargs)
@@ -262,11 +270,16 @@ def share_buffer_to_tensor_or_param(inner_x):
     """share buffer to tensor or param"""
     if hasattr(inner_x, "main_grad"):
         # do not deepcopy the `main_grad` to save memory
-        state = copy.deepcopy({k: v for k, v in inner_x.__dict__.items() if k != "main_grad"})
-        tmp_tensor = framework.EagerParamBase(
-            shape=inner_x.shape, dtype=inner_x.dtype, name=inner_x.name + "cpy", **state
+        state = copy.deepcopy(
+            {k: v for k, v in inner_x.__dict__.items() if k != "main_grad"}
         )
-        setattr(tmp_tensor, "main_grad", inner_x.main_grad)
+        tmp_tensor = framework.EagerParamBase(
+            shape=inner_x.shape,
+            dtype=inner_x.dtype,
+            name=inner_x.name + "cpy",
+            **state,
+        )
+        tmp_tensor.main_grad = inner_x.main_grad
         inner_x._unsafe_share_buffer_to(tmp_tensor)
     else:
         if inner_x.is_dist():
@@ -294,7 +307,9 @@ def share_buffer_to_tensor_or_param(inner_x):
     return tmp_tensor
 
 
-def _recompute_without_reentrant(function, preserve_rng_state=True, *args, **kwargs):
+def _recompute_without_reentrant(
+    function, preserve_rng_state=True, *args, **kwargs
+):
     """
     recompute without reentrant, that means use hook to implement the recompute function rather than re-entrant autograd.
     """
@@ -307,11 +322,18 @@ def _recompute_without_reentrant(function, preserve_rng_state=True, *args, **kwa
             fw_cuda_rng_state = paddle.get_rng_state()
         elif "xpu:" in cur_device:
             fw_cuda_rng_state = paddle.get_rng_state()
-        elif cur_device.split(":")[0] in paddle.device.get_all_custom_device_type():
+        elif (
+            cur_device.split(":")[0]
+            in paddle.device.get_all_custom_device_type()
+        ):
             fw_cuda_rng_state = paddle.get_rng_state(cur_device)
         else:
-            raise RuntimeError(f"Recompute with RNG preserve is not support current device: {cur_device}.")
-        fwd_cuda_rng_state_tracker = get_rng_state_tracker().get_states_tracker()
+            raise RuntimeError(
+                f"Recompute with RNG preserve is not support current device: {cur_device}."
+            )
+        fwd_cuda_rng_state_tracker = (
+            get_rng_state_tracker().get_states_tracker()
+        )
         fwd_numpy_state = np.random.get_state()
         fwd_random_state = random.getstate()
     tracer = framework._dygraph_tracer()
@@ -338,7 +360,11 @@ def _recompute_without_reentrant(function, preserve_rng_state=True, *args, **kwa
 
     def pack(x):
         # [PACK] in no recompute context or input tensor no need recompute, return the input tensor directly
-        if x is not None and x.persistable or (in_no_recompute_ctx() and not x.name.endswith(recompute_suffix)):
+        if (
+            x is not None
+            and x.persistable
+            or (in_no_recompute_ctx() and not x.name.endswith(recompute_suffix))
+        ):
             return share_buffer_to_tensor_or_param(x)
 
         # remove the recompute suffix
@@ -373,7 +399,9 @@ def _recompute_without_reentrant(function, preserve_rng_state=True, *args, **kwa
                     storage[holder_list[unpack_counter - 1]()] = None
                     return
 
-                storage[holder_list[unpack_counter - 1]()] = share_buffer_to_tensor_or_param(inner_x)
+                storage[holder_list[unpack_counter - 1]()] = (
+                    share_buffer_to_tensor_or_param(inner_x)
+                )
                 return
 
             def inner_unpack(inner_x):
@@ -383,21 +411,25 @@ def _recompute_without_reentrant(function, preserve_rng_state=True, *args, **kwa
                 contextlib.nullcontext()
                 if not preserve_rng_state
                 else switch_rng_state_tracker(
-                    fw_cuda_rng_state, fwd_cuda_rng_state_tracker, fwd_numpy_state, fwd_random_state
+                    fw_cuda_rng_state,
+                    fwd_cuda_rng_state_tracker,
+                    fwd_numpy_state,
+                    fwd_random_state,
                 )
             )
-            with rng_cxt_manager:
-                with paddle.set_grad_enabled(True):
-                    with paddle.amp.auto_cast(
-                        enable=is_fw_autocast,
-                        custom_white_list=amp_white_list,
-                        custom_black_list=amp_black_list,
-                        level=amp_level,
-                        dtype=amp_dtype,
-                    ):
-                        with switch_recompute_id_ctx(recompute_id + "@second"):
-                            with paddle.autograd.saved_tensors_hooks(inner_pack, inner_unpack):
-                                function(*args, **kwargs)
+            with rng_cxt_manager, paddle.set_grad_enabled(True):
+                with paddle.amp.auto_cast(
+                    enable=is_fw_autocast,
+                    custom_white_list=amp_white_list,
+                    custom_black_list=amp_black_list,
+                    level=amp_level,
+                    dtype=amp_dtype,
+                ):
+                    with switch_recompute_id_ctx(recompute_id + "@second"):
+                        with paddle.autograd.saved_tensors_hooks(
+                            inner_pack, inner_unpack
+                        ):
+                            function(*args, **kwargs)
 
         if x not in storage:
             raise Exception(
@@ -445,7 +477,9 @@ def recompute(function, *args, **kwargs):
         return static_auto_recompute(function)(*args, **kwargs)
 
     if not use_reentrant:
-        _ = kwargs.pop("offload_indices", [])  # currently not support offload_indices
+        _ = kwargs.pop(
+            "offload_indices", []
+        )  # currently not support offload_indices
         if framework._dygraph_tracer()._has_grad:
             check_args = list(args)
             check_args.extend(list(kwargs.values()))
@@ -471,7 +505,8 @@ def get_pp_vp_split_layers(layer_num, pp_size, vp_size, skip_recompute_num=-1):
     """
 
     assert pp_size > 1, (
-        "Only support pipeline parallel, " f"pp_size must be greater than 1, but got pp_size: {pp_size}"
+        "Only support pipeline parallel, "
+        f"pp_size must be greater than 1, but got pp_size: {pp_size}"
     )
 
     if skip_recompute_num == -1:
@@ -496,7 +531,10 @@ def get_pp_vp_split_layers(layer_num, pp_size, vp_size, skip_recompute_num=-1):
     )
 
     chunk_size = layer_num // (pp_size * vp_size)
-    chunk_list = [list(range(i * chunk_size, (i + 1) * chunk_size)) for i in range(pp_size * vp_size)]
+    chunk_list = [
+        list(range(i * chunk_size, (i + 1) * chunk_size))
+        for i in range(pp_size * vp_size)
+    ]
 
     stage_chunk_list = [[] for _ in range(pp_size)]
     for i in range(pp_size * vp_size):
@@ -506,7 +544,7 @@ def get_pp_vp_split_layers(layer_num, pp_size, vp_size, skip_recompute_num=-1):
         no_recompute_layer_num.extend(stage_chunk_list[i][-skip_recompute_num:])
 
     # Convert to 1D list
-    return set(sum(no_recompute_layer_num, []))
+    return set(functools.reduce(operator.iadd, no_recompute_layer_num, []))
 
 
 def get_skip_recompute_ops(config, layer_idx):
@@ -526,8 +564,10 @@ def get_skip_recompute_ops(config, layer_idx):
               the original configuration file is returned.
 
     """
-    skip_recompute_ops = dict()
-    if config.recompute_granularity is not None or not isinstance(config.recompute_modules, dict):
+    skip_recompute_ops = {}
+    if config.recompute_granularity is not None or not isinstance(
+        config.recompute_modules, dict
+    ):
         return skip_recompute_ops
 
     try:
@@ -535,7 +575,11 @@ def get_skip_recompute_ops(config, layer_idx):
         pp_size = max(hcg.get_pipe_parallel_world_size(), 1)
     except:
         pp_size = 1
-    layer_num = config.num_layers if hasattr(config, "num_layers") else config.num_hidden_layers
+    layer_num = (
+        config.num_layers
+        if hasattr(config, "num_layers")
+        else config.num_hidden_layers
+    )
     if hasattr(config, "add_tail_layer") and config.add_tail_layer:
         layer_num += 1
 
@@ -550,7 +594,9 @@ def get_skip_recompute_ops(config, layer_idx):
         # is pp model
         if pp_size > 1:
             vp_size = max(config.virtual_pipeline_model_parallel_size, 1)
-            no_recompute_layers = get_pp_vp_split_layers(layer_num, pp_size, vp_size, skip_num)
+            no_recompute_layers = get_pp_vp_split_layers(
+                layer_num, pp_size, vp_size, skip_num
+            )
             if layer_idx in no_recompute_layers:
                 skip_recompute_ops[op_name] = True
             else:
@@ -561,7 +607,9 @@ def get_skip_recompute_ops(config, layer_idx):
             elif skip_num < 0:  # < 0 means all skip recompute
                 skip_recompute_ops[op_name] = True
             else:
-                if layer_idx < skip_num:  # < the number of layers to skip recompute
+                if (
+                    layer_idx < skip_num
+                ):  # < the number of layers to skip recompute
                     skip_recompute_ops[op_name] = True
                 else:
                     skip_recompute_ops[op_name] = False
@@ -596,12 +644,16 @@ class RRColumnParallelLinear(ColumnParallelLinear):
                 input_parallel = x
 
             def fwd(input_parallel):
-                return self.linear(input_parallel, self.weight, self.bias, name=self._name)
+                return self.linear(
+                    input_parallel, self.weight, self.bias, name=self._name
+                )
 
             output_parallel = no_recompute(fwd, input_parallel)
 
         if self.gather_output and self.is_mp:
-            output = mp_ops._c_concat(output_parallel, group=self.model_parallel_group)
+            output = mp_ops._c_concat(
+                output_parallel, group=self.model_parallel_group
+            )
         else:
             output = output_parallel
         return output
@@ -622,7 +674,9 @@ class RRRowParallelLinear(RowParallelLinear):
                 bias = None
 
             def fwd(input_parallel):
-                output_parallel = self.linear(input_parallel, self.weight, bias, name=self._name)
+                output_parallel = self.linear(
+                    input_parallel, self.weight, bias, name=self._name
+                )
                 output_ = mp_ops._mp_allreduce(
                     output_parallel,
                     group=self.model_parallel_group,
@@ -639,7 +693,9 @@ class RRRowParallelLinear(RowParallelLinear):
             else:
                 output = output_
         else:
-            output = self.linear(input_parallel, self.weight, self.bias, name=self._name)
+            output = self.linear(
+                input_parallel, self.weight, self.bias, name=self._name
+            )
 
         return output
 
@@ -659,10 +715,16 @@ class RRColumnSequenceParallelLinear(ColumnSequenceParallelLinear):
                 self.model_parallel_group,
             )
         else:
-            input_parallel = sequence_parallel_utils.AllGatherOp.apply(x) if self.is_mp else x
+            input_parallel = (
+                sequence_parallel_utils.AllGatherOp.apply(x)
+                if self.is_mp
+                else x
+            )
 
             def fwd(input_parallel):
-                output = self.linear(input_parallel, self.weight, self.bias, name=self._name)
+                output = self.linear(
+                    input_parallel, self.weight, self.bias, name=self._name
+                )
                 return output
 
             # create a dummpy fwd function
@@ -682,8 +744,12 @@ class RRRowSequenceParallelLinear(RowSequenceParallelLinear):
                 bias = None
 
             def fwd(input_parallel):
-                output_parallel = self.linear(input_parallel, self.weight, bias, name=self._name)
-                output_ = sequence_parallel_utils.ReduceScatterOp.apply(output_parallel)
+                output_parallel = self.linear(
+                    input_parallel, self.weight, bias, name=self._name
+                )
+                output_ = sequence_parallel_utils.ReduceScatterOp.apply(
+                    output_parallel
+                )
                 return output_
 
             # create a dummpy fwd function
@@ -694,7 +760,9 @@ class RRRowSequenceParallelLinear(RowSequenceParallelLinear):
             else:
                 output = output_
         else:
-            output = self.linear(input_parallel, self.weight, self.bias, name=self._name)
+            output = self.linear(
+                input_parallel, self.weight, self.bias, name=self._name
+            )
         return output
 
 

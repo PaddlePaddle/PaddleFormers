@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2022 PaddlePaddle Authors. All Rights Reserved.
 # Copyright 2022 The HuggingFace Inc. team.
 #
@@ -17,24 +16,28 @@
 import json
 import os
 from functools import wraps
-from typing import Any, Union
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import paddle
-from transformers.feature_extraction_utils import BatchFeature as BatchFeature_hf
-from transformers.image_processing_base import IMAGE_PROCESSOR_NAME
 from transformers.image_processing_base import (
+    IMAGE_PROCESSOR_NAME,
     ImageProcessingMixin as ImageProcessingMixin_hf,
 )
 from transformers.image_processing_utils import (
     BaseImageProcessor as BaseImageProcessor_hf,
+    get_size_dict,  # noqa: F401
 )
-from transformers.image_processing_utils import get_size_dict  # noqa: F401
 from transformers.utils import PROCESSOR_NAME
 
 from ..utils.download import resolve_file_path
 from ..utils.log import logger
 from .feature_extraction_utils import BatchFeature
+
+if TYPE_CHECKING:
+    from transformers.feature_extraction_utils import (
+        BatchFeature as BatchFeature_hf,
+    )
 
 
 class PaddleImageProcessingMixin:
@@ -129,7 +132,7 @@ class PaddleImageProcessingMixin:
                 return paddle.to_tensor(inputs)
             elif isinstance(inputs, np.ndarray):
                 return paddle.to_tensor(inputs)
-            elif isinstance(inputs, BatchFeature) or isinstance(inputs, dict):
+            elif isinstance(inputs, (BatchFeature, dict)):
                 for key, value in inputs.items():
                     inputs[key] = convert_to_paddle(value)
                 return inputs
@@ -149,22 +152,28 @@ class PaddleImageProcessingMixin:
         setattr(self, method_name, wrapper)
 
     def __call__(self, images, *args, **kwargs) -> BatchFeature:
-        original_output: BatchFeature_hf = super().__call__(images, *args, **kwargs)
-        return BatchFeature(data=original_output.data, tensor_type=kwargs["return_tensors"])
+        original_output: BatchFeature_hf = super().__call__(
+            images, *args, **kwargs
+        )
+        return BatchFeature(
+            data=original_output.data, tensor_type=kwargs["return_tensors"]
+        )
 
     @classmethod
     def from_pretrained(
         cls,
-        pretrained_model_name_or_path: Union[str, os.PathLike],
+        pretrained_model_name_or_path: str | os.PathLike,
         *args,
         **kwargs,
     ):
-        image_processor_dict, kwargs = cls.get_image_processor_dict(pretrained_model_name_or_path, **kwargs)
+        image_processor_dict, kwargs = cls.get_image_processor_dict(
+            pretrained_model_name_or_path, **kwargs
+        )
         return cls.from_dict(image_processor_dict, **kwargs)
 
     @classmethod
     def get_image_processor_dict(
-        cls, pretrained_model_name_or_path: Union[str, os.PathLike], **kwargs
+        cls, pretrained_model_name_or_path: str | os.PathLike, **kwargs
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """
         From a `pretrained_model_name_or_path`, resolve to a dictionary of parameters, to be used for instantiating a
@@ -191,12 +200,16 @@ class PaddleImageProcessingMixin:
 
         cache_dir = kwargs.pop("cache_dir", None)
         subfolder = kwargs.pop("subfolder", "")
-        image_processor_filename = kwargs.pop("image_processor_filename", IMAGE_PROCESSOR_NAME)
+        image_processor_filename = kwargs.pop(
+            "image_processor_filename", IMAGE_PROCESSOR_NAME
+        )
 
         pretrained_model_name_or_path = str(pretrained_model_name_or_path)
         is_local = os.path.isdir(pretrained_model_name_or_path)
         if os.path.isdir(pretrained_model_name_or_path):
-            image_processor_file = os.path.join(pretrained_model_name_or_path, image_processor_filename)
+            image_processor_file = os.path.join(
+                pretrained_model_name_or_path, image_processor_filename
+            )
         if os.path.isfile(pretrained_model_name_or_path):
             resolved_image_processor_file = pretrained_model_name_or_path
             is_local = True
@@ -212,9 +225,13 @@ class PaddleImageProcessingMixin:
                     local_files_only=local_files_only,
                 )
             except Exception:
-                hf_link = f"https://huggingface.co/{pretrained_model_name_or_path}"
+                hf_link = (
+                    f"https://huggingface.co/{pretrained_model_name_or_path}"
+                )
                 modelscope_link = f"https://modelscope.cn/models/{pretrained_model_name_or_path}"
-                encoded_model_name = pretrained_model_name_or_path.replace("/", "%2F")
+                encoded_model_name = pretrained_model_name_or_path.replace(
+                    "/", "%2F"
+                )
                 aistudio_link = f"https://aistudio.baidu.com/modelsoverview?sortBy=weight&q={encoded_model_name}"
 
                 raise ValueError(
@@ -234,10 +251,14 @@ class PaddleImageProcessingMixin:
 
         try:
             # Load image_processor dict
-            with open(resolved_image_processor_file, encoding="utf-8") as reader:
+            with open(
+                resolved_image_processor_file, encoding="utf-8"
+            ) as reader:
                 text = reader.read()
             image_processor_dict = json.loads(text)
-            image_processor_dict = image_processor_dict.get("image_processor", image_processor_dict)
+            image_processor_dict = image_processor_dict.get(
+                "image_processor", image_processor_dict
+            )
 
         except json.JSONDecodeError:
             raise OSError(
@@ -245,7 +266,9 @@ class PaddleImageProcessingMixin:
             )
 
         if is_local:
-            logger.info(f"loading configuration file {resolved_image_processor_file}")
+            logger.info(
+                f"loading configuration file {resolved_image_processor_file}"
+            )
         else:
             logger.info(
                 f"loading configuration file {image_processor_file} from cache at {resolved_image_processor_file}"
@@ -311,15 +334,23 @@ class PaddleImageProcessingMixin:
         return output
 
 
-def warp_image_processormixin(hf_image_processormixin_class: ImageProcessingMixin_hf):
+def warp_image_processormixin(
+    hf_image_processormixin_class: ImageProcessingMixin_hf,
+):
     return type(
-        hf_image_processormixin_class.__name__, (PaddleImageProcessingMixin, hf_image_processormixin_class), {}
+        hf_image_processormixin_class.__name__,
+        (PaddleImageProcessingMixin, hf_image_processormixin_class),
+        {},
     )
 
 
-def warp_base_image_processor(hf_base_image_processor_class: BaseImageProcessor_hf):
+def warp_base_image_processor(
+    hf_base_image_processor_class: BaseImageProcessor_hf,
+):
     return type(
-        hf_base_image_processor_class.__name__, (PaddleImageProcessingMixin, hf_base_image_processor_class), {}
+        hf_base_image_processor_class.__name__,
+        (PaddleImageProcessingMixin, hf_base_image_processor_class),
+        {},
     )
 
 

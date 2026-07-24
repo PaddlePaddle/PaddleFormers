@@ -61,12 +61,21 @@ if is_mc2_valid():
             hcom_name = ctx.group.process_group.get_comm_name(rank)
 
             d_weight = (
-                paddle.matmul(input_.reshape([-1, input_.shape[-1]]), sub_grad, transpose_x=True)
+                paddle.matmul(
+                    input_.reshape([-1, input_.shape[-1]]),
+                    sub_grad,
+                    transpose_x=True,
+                )
                 if not weight.stop_gradient
                 else None
             )
             d_input = paddle_custom_device.npu.fused_mm_allreduce(
-                sub_grad, weight.t(), bias=None, hcom=hcom_name, reduce_op="sum", comm_turn=0
+                sub_grad,
+                weight.t(),
+                bias=None,
+                hcom=hcom_name,
+                reduce_op="sum",
+                comm_turn=0,
             )
 
             if d_weight is not None:
@@ -82,9 +91,16 @@ if is_mc2_valid():
             hcom_name = group.process_group.get_comm_name(rank)
             x = input_.reshape([-1, input_.shape[-1]])
             out = paddle_custom_device.npu.fused_mm_allreduce(
-                x, weight, bias=None, hcom=hcom_name, reduce_op="sum", comm_turn=0
+                x,
+                weight,
+                bias=None,
+                hcom=hcom_name,
+                reduce_op="sum",
+                comm_turn=0,
             )
-            output = out.reshape([input_.shape[0], input_.shape[1], weight.shape[1]])
+            output = out.reshape(
+                [input_.shape[0], input_.shape[1], weight.shape[1]]
+            )
             ctx.ring_id = group.id
             return output
 
@@ -98,7 +114,9 @@ if is_mc2_valid():
                 return input_grad.reshape(input_.shape), None
             else:
                 input_reshape = input_.reshape([-1, input_.shape[-1]])
-                weight_grad = paddle.matmul(input_reshape, sub_grad, transpose_x=True)
+                weight_grad = paddle.matmul(
+                    input_reshape, sub_grad, transpose_x=True
+                )
                 return input_grad.reshape(input_.shape), weight_grad
 
     class MC2ColumnSeqParallelCoreLinear(PyLayer):
@@ -136,7 +154,9 @@ if is_mc2_valid():
                 dim_size[0] = dim_size[0] * ctx.world_size
                 all_gather_output = paddle.empty(dim_size, dtype=input_.dtype)
                 all_gather_output.stop_gradient = True
-                all_gather_work = dist.stream.all_gather(all_gather_output, input_, group=ctx.group, sync_op=False)
+                all_gather_work = dist.stream.all_gather(
+                    all_gather_output, input_, group=ctx.group, sync_op=False
+                )
             else:
                 all_gather_output = ctx.all_gather_output
 
@@ -188,15 +208,17 @@ if is_mc2_valid():
             hcomm_info = ctx.hcomm_info
             world_size = ctx.world_size
 
-            grad_input, all_gather_grad_output = paddle_custom_device.npu.fused_allgather_mm(
-                grad_output,
-                weight.t(),
-                bias=None,
-                hcom=hcomm_info,
-                world_size=world_size,
-                gather_index=0,
-                gather_output=True,
-                comm_turn=0,
+            grad_input, all_gather_grad_output = (
+                paddle_custom_device.npu.fused_allgather_mm(
+                    grad_output,
+                    weight.t(),
+                    bias=None,
+                    hcom=hcomm_info,
+                    world_size=world_size,
+                    gather_index=0,
+                    gather_output=True,
+                    comm_turn=0,
+                )
             )
             grad_weight = (
                 paddle.matmul(input_, all_gather_grad_output, transpose_x=True)
@@ -208,13 +230,17 @@ if is_mc2_valid():
 
     class MC2ColumnSeqParallelLinear(ColumnSequenceParallelLinear):
         def forward(self, x):
-            output = MC2ColumnSeqParallelCoreLinear.apply(x, self.weight, self.model_parallel_group)
+            output = MC2ColumnSeqParallelCoreLinear.apply(
+                x, self.weight, self.model_parallel_group
+            )
             output = output + self.bias if self.bias is not None else output
             return output
 
     class MC2RowSeqParallelLinear(RowSequenceParallelLinear):
         def forward(self, x):
-            output = MC2RowSeqParallelCoreLinear.apply(x, self.weight, self.model_parallel_group)
+            output = MC2RowSeqParallelCoreLinear.apply(
+                x, self.weight, self.model_parallel_group
+            )
             output = output + self.bias if self.bias is not None else output
             return output
 

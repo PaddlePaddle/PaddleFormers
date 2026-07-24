@@ -151,8 +151,13 @@ class TestDataProto(unittest.TestCase):
 
     def _make_data_proto(self, batch_size=4):
         tensors = {"input_ids": paddle.randint(0, 100, [batch_size, 10])}
-        non_tensors = {"labels": np.array(["a", "b", "c", "d"][:batch_size], dtype=object)}
-        return DataProto(batch=TensorDict(source=tensors, batch_size=(batch_size,)), non_tensor_batch=non_tensors)
+        non_tensors = {
+            "labels": np.array(["a", "b", "c", "d"][:batch_size], dtype=object)
+        }
+        return DataProto(
+            batch=TensorDict(source=tensors, batch_size=(batch_size,)),
+            non_tensor_batch=non_tensors,
+        )
 
     def test_len(self):
         dp = self._make_data_proto(batch_size=4)
@@ -172,12 +177,18 @@ class TestDataProto(unittest.TestCase):
             DataProto.from_single_dict(data)
 
     def test_from_dict(self):
-        dp = DataProto.from_dict(tensors={"x": paddle.randn([4, 3])}, non_tensors={}, meta_info={})
+        dp = DataProto.from_dict(
+            tensors={"x": paddle.randn([4, 3])}, non_tensors={}, meta_info={}
+        )
         self.assertEqual(len(dp), 4)
 
     def test_from_dict_non_tensors(self):
         non_tensors = {"labels": np.array(["a", "b", "c", "d"], dtype=object)}
-        dp = DataProto.from_dict(tensors={"x": paddle.randn([4, 3])}, non_tensors=non_tensors, meta_info={})
+        dp = DataProto.from_dict(
+            tensors={"x": paddle.randn([4, 3])},
+            non_tensors=non_tensors,
+            meta_info={},
+        )
         self.assertEqual(len(dp), 4)
 
     def test_repeat_interleave(self):
@@ -210,8 +221,16 @@ class TestDataProto(unittest.TestCase):
         self.assertIs(result, dp)
 
     def test_union(self):
-        dp1 = DataProto.from_dict(tensors={"x": paddle.randn([2, 3])}, non_tensors={}, meta_info={"m1": 1})
-        dp2 = DataProto.from_dict(tensors={"y": paddle.randn([2, 3])}, non_tensors={}, meta_info={"m2": 2})
+        dp1 = DataProto.from_dict(
+            tensors={"x": paddle.randn([2, 3])},
+            non_tensors={},
+            meta_info={"m1": 1},
+        )
+        dp2 = DataProto.from_dict(
+            tensors={"y": paddle.randn([2, 3])},
+            non_tensors={},
+            meta_info={"m2": 2},
+        )
         dp1.union(dp2)
         self.assertIn("x", dp1.batch.keys())
         self.assertIn("y", dp1.batch.keys())
@@ -224,7 +243,9 @@ class TestPadDataProtoToDivisor(unittest.TestCase):
 
     def test_already_divisible(self):
         """Test when batch size is already divisible."""
-        dp = DataProto.from_dict(tensors={"x": paddle.randn([4, 3])}, non_tensors={}, meta_info={})
+        dp = DataProto.from_dict(
+            tensors={"x": paddle.randn([4, 3])}, non_tensors={}, meta_info={}
+        )
         # When already divisible, no slicing is needed
         result, pad_size = pad_dataproto_to_divisor(dp, 2)
         self.assertEqual(pad_size, 0)
@@ -236,7 +257,9 @@ class TestUnpadDataProto(unittest.TestCase):
 
     def test_no_padding(self):
         """Test with pad_size=0 returns same object."""
-        dp = DataProto.from_dict(tensors={"x": paddle.randn([4, 3])}, non_tensors={}, meta_info={})
+        dp = DataProto.from_dict(
+            tensors={"x": paddle.randn([4, 3])}, non_tensors={}, meta_info={}
+        )
         result = unpad_dataproto(dp, pad_size=0)
         self.assertEqual(len(result), 4)
 

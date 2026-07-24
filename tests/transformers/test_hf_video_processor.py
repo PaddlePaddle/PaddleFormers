@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,7 +28,9 @@ class TestHFMultiSourceVideoProcessor(unittest.TestCase):
 
         IMAGE_URL = "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_images/example1.jpg"
         response = requests.get(IMAGE_URL, stream=True)
-        cls.video = [Image.open(response.raw).convert("RGB")] * 5  # load by img_list
+        cls.video = [
+            Image.open(response.raw).convert("RGB")
+        ] * 5  # load by img_list
 
         VIDEO_URL = "http://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4"
         cls.video_url = VIDEO_URL  # load by url (only for ce)
@@ -44,7 +45,9 @@ class TestHFMultiSourceVideoProcessor(unittest.TestCase):
         self.assertIsInstance(inputs["video_grid_thw"], paddle.Tensor)
         self.assertEqual(inputs["pixel_values_videos"].shape, [17112, 1176])
         self.assertEqual(inputs["pixel_values_videos"].dtype, paddle.float32)
-        self.assertEqual(inputs["video_grid_thw"].tolist(), EXPECTED_IMAGE_GRID_THW)
+        self.assertEqual(
+            inputs["video_grid_thw"].tolist(), EXPECTED_IMAGE_GRID_THW
+        )
         self.assertTrue(
             paddle.allclose(
                 paddle.to_tensor(paddle.mean(inputs["pixel_values_videos"])),
@@ -66,16 +69,22 @@ class TestHFMultiSourceVideoProcessor(unittest.TestCase):
 
     @skip_for_none_ce_case
     def test_model_scope(self):
-        video_processor = AutoVideoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", download_hub="modelscope")
+        video_processor = AutoVideoProcessor.from_pretrained(
+            "Qwen/Qwen2.5-VL-3B-Instruct", download_hub="modelscope"
+        )
         self.preprocess(video_processor)
 
     @skip_for_none_ce_case
     def test_hf_hub(self):
-        video_processor = AutoVideoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", download_hub="huggingface")
+        video_processor = AutoVideoProcessor.from_pretrained(
+            "Qwen/Qwen2.5-VL-3B-Instruct", download_hub="huggingface"
+        )
         self.preprocess(video_processor)
 
     def test_preprocess_consistency_with_hf_static(self):
-        video_processor = AutoVideoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen25vlv2")
+        video_processor = AutoVideoProcessor.from_pretrained(
+            "PaddleFormers/tiny-random-qwen25vlv2"
+        )
         self.preprocess(video_processor)
 
     @skip_for_none_ce_case
@@ -85,13 +94,17 @@ class TestHFMultiSourceVideoProcessor(unittest.TestCase):
         video_processor_pd = AutoVideoProcessor.from_pretrained(
             "Qwen/Qwen2.5-VL-3B-Instruct", download_hub="huggingface"
         )
-        video_processor_hf = AutoVideoProcessor_hf.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", device="cuda")
+        video_processor_hf = AutoVideoProcessor_hf.from_pretrained(
+            "Qwen/Qwen2.5-VL-3B-Instruct", device="cuda"
+        )
         inputs_pd = video_processor_pd(self.video_url, return_tensors="pd")
         inputs_hf = video_processor_hf(self.video_url, return_tensors="pt")
 
         self.assertTrue(
             paddle.allclose(
-                paddle.to_tensor(inputs_hf["pixel_values_videos"].cpu().numpy()),
+                paddle.to_tensor(
+                    inputs_hf["pixel_values_videos"].cpu().numpy()
+                ),
                 inputs_pd["pixel_values_videos"],
                 atol=3e-1,
                 rtol=1e-5,

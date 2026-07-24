@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 # Copyright 2025 The ZhipuAI Inc. team and HuggingFace Inc. team. All rights reserved.
 #
@@ -20,7 +19,7 @@
 # limitations under the License.
 """processor class for GLM4.5-VL."""
 
-from typing import Optional, Union
+from typing import Optional
 
 import numpy as np
 
@@ -39,7 +38,7 @@ from ..video_utils import VideoInput
 
 
 class Glm4vVideosProcessorKwargs(VideosKwargs, total=False):
-    fps: Union[list[float], float, int]
+    fps: list[float] | float | int
 
 
 class Glm4vProcessorKwargs(ProcessingKwargs, total=False):
@@ -74,10 +73,30 @@ class Glm4vProcessor(ProcessorMixin):
     video_processor_class = "AutoVideoProcessor"
     tokenizer_class = "PreTrainedTokenizer"
 
-    def __init__(self, image_processor=None, tokenizer=None, video_processor=None, chat_template=None, **kwargs):
-        super().__init__(image_processor, tokenizer, video_processor, chat_template=chat_template)
-        self.image_token = "<|image|>" if not hasattr(tokenizer, "image_token") else tokenizer.image_token
-        self.video_token = "<|video|>" if not hasattr(tokenizer, "video_token") else tokenizer.video_token
+    def __init__(
+        self,
+        image_processor=None,
+        tokenizer=None,
+        video_processor=None,
+        chat_template=None,
+        **kwargs,
+    ):
+        super().__init__(
+            image_processor,
+            tokenizer,
+            video_processor,
+            chat_template=chat_template,
+        )
+        self.image_token = (
+            "<|image|>"
+            if not hasattr(tokenizer, "image_token")
+            else tokenizer.image_token
+        )
+        self.video_token = (
+            "<|video|>"
+            if not hasattr(tokenizer, "video_token")
+            else tokenizer.video_token
+        )
         self.image_token_id = (
             tokenizer.image_token_id
             if getattr(tokenizer, "image_token_id", None)
@@ -92,7 +111,10 @@ class Glm4vProcessor(ProcessorMixin):
     def __call__(
         self,
         images: Optional[ImageInput] = None,
-        text: Union[TextInput, PreTokenizedInput, list[TextInput], list[PreTokenizedInput]] = None,
+        text: TextInput
+        | PreTokenizedInput
+        | list[TextInput]
+        | list[PreTokenizedInput] = None,
         videos: Optional[VideoInput] = None,
         **kwargs: Unpack[Glm4vProcessorKwargs],
     ) -> BatchFeature:
@@ -135,14 +157,18 @@ class Glm4vProcessor(ProcessorMixin):
             **kwargs,
         )
         if images is not None:
-            image_inputs = self.image_processor(images=images, **output_kwargs["images_kwargs"])
+            image_inputs = self.image_processor(
+                images=images, **output_kwargs["images_kwargs"]
+            )
             image_grid_thw = image_inputs["image_grid_thw"]
         else:
             image_inputs = {}
             image_grid_thw = None
 
         if videos is not None:
-            videos_inputs = self.video_processor(videos=videos, **output_kwargs["videos_kwargs"])
+            videos_inputs = self.video_processor(
+                videos=videos, **output_kwargs["videos_kwargs"]
+            )
             # If user has not requested video metadata, pop it
             if not kwargs.get("return_metadata"):
                 video_metadata = videos_inputs.pop("video_metadata")
@@ -162,8 +188,14 @@ class Glm4vProcessor(ProcessorMixin):
             index = 0
             for i in range(len(text)):
                 while self.image_token in text[i]:
-                    num_image_tokens = image_grid_thw[index].prod() // merge_length
-                    text[i] = text[i].replace(self.image_token, "<|placeholder|>" * num_image_tokens, 1)
+                    num_image_tokens = (
+                        image_grid_thw[index].prod() // merge_length
+                    )
+                    text[i] = text[i].replace(
+                        self.image_token,
+                        "<|placeholder|>" * num_image_tokens,
+                        1,
+                    )
                     index += 1
                 text[i] = text[i].replace("<|placeholder|>", self.image_token)
 
@@ -191,37 +223,62 @@ class Glm4vProcessor(ProcessorMixin):
 
                     selected_timestamps = unique_timestamps[:num_frames]
                     while len(selected_timestamps) < num_frames:
-                        selected_timestamps.append(selected_timestamps[-1] if selected_timestamps else 0)
+                        selected_timestamps.append(
+                            selected_timestamps[-1]
+                            if selected_timestamps
+                            else 0
+                        )
 
                     for frame_idx in range(num_frames):
                         timestamp_sec = selected_timestamps[frame_idx]
-                        frame_structure = self.replace_frame_token_id(timestamp_sec)
+                        frame_structure = self.replace_frame_token_id(
+                            timestamp_sec
+                        )
                         video_structure += frame_structure
 
-                    text[i] = text[i].replace(self.video_token, video_structure, 1)
+                    text[i] = text[i].replace(
+                        self.video_token, video_structure, 1
+                    )
                     num_image_tokens = (
-                        video_grid_thw[video_index].prod() // merge_length // video_grid_thw[video_index][0]
+                        video_grid_thw[video_index].prod()
+                        // merge_length
+                        // video_grid_thw[video_index][0]
                     )
                     for frame_idx in range(num_frames):
                         if self.image_token in text[i]:
-                            text[i] = text[i].replace(self.image_token, "<|placeholder|>" * num_image_tokens, 1)
+                            text[i] = text[i].replace(
+                                self.image_token,
+                                "<|placeholder|>" * num_image_tokens,
+                                1,
+                            )
 
                     video_index += 1
 
                 text[i] = text[i].replace("<|placeholder|>", self.image_token)
-        return_tensors = output_kwargs["text_kwargs"].pop("return_tensors", None)
-        return_mm_token_type_ids = output_kwargs["text_kwargs"].pop("return_mm_token_type_ids", False)
+        return_tensors = output_kwargs["text_kwargs"].pop(
+            "return_tensors", None
+        )
+        return_mm_token_type_ids = output_kwargs["text_kwargs"].pop(
+            "return_mm_token_type_ids", False
+        )
         text_inputs = self.tokenizer(text, **output_kwargs["text_kwargs"])
-        self._check_special_mm_tokens(text, text_inputs, modalities=["image", "video"])
+        self._check_special_mm_tokens(
+            text, text_inputs, modalities=["image", "video"]
+        )
 
         if return_mm_token_type_ids:
             array_ids = np.array(text_inputs["input_ids"])
             mm_token_type_ids = np.zeros_like(text_inputs["input_ids"])
             mm_token_type_ids[array_ids == self.image_token_id] = 1
             text_inputs["mm_token_type_ids"] = mm_token_type_ids.tolist()
-        return BatchFeature(data={**text_inputs, **image_inputs, **videos_inputs}, tensor_type=return_tensors)
+        return BatchFeature(
+            data={**text_inputs, **image_inputs, **videos_inputs},
+            tensor_type=return_tensors,
+        )
 
-    def _get_num_multimodal_tokens(self, image_sizes=None, video_sizes=None, **kwargs):
+    def _get_num_multimodal_tokens(
+        self, image_sizes=None, video_sizes=None, **kwargs
+    ):
         """
         Computes the number of placeholder tokens needed for multimodal inputs with the given sizes.
         Args:
@@ -236,31 +293,57 @@ class Glm4vProcessor(ProcessorMixin):
 
         vision_data = {}
         if image_sizes is not None:
-            images_kwargs = Glm4vProcessorKwargs._defaults.get("images_kwargs", {})
+            images_kwargs = Glm4vProcessorKwargs._defaults.get(
+                "images_kwargs", {}
+            )
             images_kwargs.update(kwargs)
-            merge_size = images_kwargs.get("merge_size", None) or self.image_processor.merge_size
+            merge_size = (
+                images_kwargs.get("merge_size", None)
+                or self.image_processor.merge_size
+            )
 
             num_image_patches = [
-                self.image_processor.get_number_of_image_patches(*image_size, images_kwargs)
+                self.image_processor.get_number_of_image_patches(
+                    *image_size, images_kwargs
+                )
                 for image_size in image_sizes
             ]
-            num_image_tokens = [(num_patches // merge_size**2) for num_patches in num_image_patches]
-            vision_data.update({"num_image_tokens": num_image_tokens, "num_image_patches": num_image_patches})
+            num_image_tokens = [
+                (num_patches // merge_size**2)
+                for num_patches in num_image_patches
+            ]
+            vision_data.update(
+                {
+                    "num_image_tokens": num_image_tokens,
+                    "num_image_patches": num_image_patches,
+                }
+            )
 
         if video_sizes is not None:
-            videos_kwargs = Glm4vProcessorKwargs._defaults.get("videos_kwargs", {})
+            videos_kwargs = Glm4vProcessorKwargs._defaults.get(
+                "videos_kwargs", {}
+            )
             videos_kwargs.update(kwargs)
             num_video_patches = [
-                self.video_processor.get_number_of_video_patches(*video_size, videos_kwargs)
+                self.video_processor.get_number_of_video_patches(
+                    *video_size, videos_kwargs
+                )
                 for video_size in video_sizes
             ]
-            num_video_tokens = [(num_patches // merge_size**2) for num_patches in num_video_patches]
+            num_video_tokens = [
+                (num_patches // merge_size**2)
+                for num_patches in num_video_patches
+            ]
             vision_data["num_video_tokens"] = num_video_tokens
 
         return MultiModalData(**vision_data)
 
     def post_process_image_text_to_text(
-        self, generated_outputs, skip_special_tokens=True, clean_up_tokenization_spaces=False, **kwargs
+        self,
+        generated_outputs,
+        skip_special_tokens=True,
+        clean_up_tokenization_spaces=False,
+        **kwargs,
     ):
         """
         Post-process the output of the model to decode the text.

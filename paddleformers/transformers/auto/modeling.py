@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import importlib
-import io
 import json
 import os
 from collections import OrderedDict
@@ -22,7 +21,7 @@ from copy import deepcopy
 from ...utils.download import resolve_file_path
 from ...utils.log import logger
 
-# from .. import *  # noqa
+# from .. import *
 from ..configuration_utils import is_standard_config
 from .configuration import (
     CONFIG_MAPPING_NAMES,
@@ -93,7 +92,10 @@ MAPPING_NAMES = OrderedDict(
 )
 
 MAPPING_SPACIAL_KEY = OrderedDict(
-    [("Gemma3", "Gemma3Text"), ("Ernie4_5_VLMoe", "Ernie4_5_VLMoeForConditionalGeneration")]
+    [
+        ("Gemma3", "Gemma3Text"),
+        ("Ernie4_5_VLMoe", "Ernie4_5_VLMoeForConditionalGeneration"),
+    ]
 )
 CONFIGURATION_MODEL_MAPPING = OrderedDict([((), "Gemma3TextModel")])
 
@@ -114,7 +116,10 @@ MAPPING_TASKS = OrderedDict(
         ("Generator", "AutoGenerator"),
         ("Discriminator", "AutoDiscriminator"),
         ("ForConditionalGeneration", "AutoModelForConditionalGeneration"),
-        ("ForConditionalGenerationPipe", "AutoModelForConditionalGenerationPipe"),
+        (
+            "ForConditionalGenerationPipe",
+            "AutoModelForConditionalGenerationPipe",
+        ),
     ]
 )
 
@@ -161,51 +166,80 @@ class _BaseAutoModelClass:
     legacy_model_config_file = "model_config.json"
 
     def __init__(self, *args, **kwargs):
-        raise EnvironmentError(
+        raise OSError(
             f"{self.__class__.__name__} is designed to be instantiated "
             f"using the `{self.__class__.__name__}.from_pretrained(pretrained_model_name_or_path).`"
         )
 
     # TODO: Refactor into AutoConfig when available
     @classmethod
-    def _get_model_class_from_config(cls, pretrained_model_name_or_path, config_file_path, config=None, is_lora=False):
+    def _get_model_class_from_config(
+        cls,
+        pretrained_model_name_or_path,
+        config_file_path,
+        config=None,
+        is_lora=False,
+    ):
         if config is None:
-            with io.open(config_file_path, encoding="utf-8") as f:
+            with open(config_file_path, encoding="utf-8") as f:
                 config = json.load(f)
 
         # Get class name corresponds to this configuration
         if is_standard_config(config):
             architectures = deepcopy(config["architectures"])
-            init_class = architectures.pop() if architectures is not None and len(architectures) > 0 else None
+            init_class = (
+                architectures.pop()
+                if architectures is not None and len(architectures) > 0
+                else None
+            )
         else:
             init_class = config.pop("init_class", None)
-        init_class = init_class[:-5] if init_class is not None and init_class.endswith("Model") else init_class
+        init_class = (
+            init_class[:-5]
+            if init_class is not None and init_class.endswith("Model")
+            else init_class
+        )
 
         # Sort the MAPPING_NAMES to reorder the model class names with longest-first rule
         # thus the names with same prefix can be correctly inferred
         # such as QWen and QWen2MOE, QWen2MOE is the longest prefix of QWen2MOEModel
         model_name = None
-        SORTED_MAPPING_NAMES = dict(sorted(MAPPING_NAMES.items(), key=lambda x: len(x[0]), reverse=True))
+        SORTED_MAPPING_NAMES = dict(
+            sorted(MAPPING_NAMES.items(), key=lambda x: len(x[0]), reverse=True)
+        )
         if init_class:
             for model_flag, name in SORTED_MAPPING_NAMES.items():
                 if model_flag in init_class:
                     model_name = model_flag + "Model"
                     break
-            if model_name is None and init_class == "PaliGemmaForConditionalGeneration":
+            if (
+                model_name is None
+                and init_class == "PaliGemmaForConditionalGeneration"
+            ):
                 model_name = "PaliGemma2ForConditionalGenerationModel"
         else:
             # From pretrained_model_name_or_path
             for model_flag, name in SORTED_MAPPING_NAMES.items():
-                if type(pretrained_model_name_or_path) is str and name in pretrained_model_name_or_path.lower():
+                if (
+                    type(pretrained_model_name_or_path) is str
+                    and name in pretrained_model_name_or_path.lower()
+                ):
                     model_name = model_flag + "Model"
                     break
         if init_class == "PaliGemmaForConditionalGeneration":
-            import_class = importlib.import_module("paddleformers.transformers.paligemma2.modeling")
-            return getattr(import_class, "PaliGemma2ForConditionalGeneration")
+            import_class = importlib.import_module(
+                "paddleformers.transformers.paligemma2.modeling"
+            )
+            return import_class.PaliGemma2ForConditionalGeneration
         if model_name is None:
             # Try to get model class from config class
-            if not isinstance(config, PretrainedConfig) and pretrained_model_name_or_path is not None:
-                config = AutoConfig.from_pretrained(pretrained_model_name_or_path)
+            if (
+                not isinstance(config, PretrainedConfig)
+                and pretrained_model_name_or_path is not None
+            ):
+                config = AutoConfig.from_pretrained(
+                    pretrained_model_name_or_path
+                )
             if type(config) in MODEL_MAPPING.keys():
                 model_class = MODEL_MAPPING[type(config)]
                 if not isinstance(model_class, (list, tuple)):
@@ -215,7 +249,9 @@ class _BaseAutoModelClass:
             )
         init_class = cls._name_mapping[model_name + "_Import_Class"]
         class_name = cls._name_mapping[init_class]
-        import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.modeling")
+        import_class = importlib.import_module(
+            f"paddleformers.transformers.{class_name}.modeling"
+        )
         try:
             model_class = getattr(import_class, init_class)
             return model_class
@@ -224,29 +260,41 @@ class _BaseAutoModelClass:
             return model_class
         except AttributeError as err:
             try:
-                new_import_class = importlib.import_module(f"paddleformers.transformers.{class_name}")
+                new_import_class = importlib.import_module(
+                    f"paddleformers.transformers.{class_name}"
+                )
                 model_class = getattr(new_import_class, init_class)
                 return model_class
             except AttributeError:
                 logger.error(err)
                 all_model_classes = import_class.__all__
-                all_tasks = {get_task_name(m) for m in all_model_classes if get_task_name(m) is not None}
+                all_tasks = {
+                    get_task_name(m)
+                    for m in all_model_classes
+                    if get_task_name(m) is not None
+                }
                 raise AttributeError(
                     f"module '{import_class.__name__}' only supports the following classes: "
                     + ", ".join(m for m in all_model_classes)
                     + "\n"
                     "Hint: you can use interface "
-                    + " or ".join(task + ".from_pretrained" for task in all_tasks)
+                    + " or ".join(
+                        task + ".from_pretrained" for task in all_tasks
+                    )
                     + f" to load '{pretrained_model_name_or_path}'\n"
                 )
 
     @classmethod
     def from_config(cls, config, **kwargs):
-        model_class = cls._get_model_class_from_config(None, None, config, is_lora=config.get("is_lora", False))
+        model_class = cls._get_model_class_from_config(
+            None, None, config, is_lora=config.get("is_lora", False)
+        )
         return model_class._from_config(config, **kwargs)
 
     @classmethod
-    def _from_pretrained(cls, pretrained_model_name_or_path, task=None, *model_args, **kwargs):
+    def _from_pretrained(
+        cls, pretrained_model_name_or_path, task=None, *model_args, **kwargs
+    ):
         if task:
             if cls._task_choice:
                 cls._name_mapping = get_name_mapping(task)
@@ -260,41 +308,62 @@ class _BaseAutoModelClass:
         kwargs["cache_dir"] = cache_dir
         kwargs["subfolder"] = subfolder
         all_model_names = []
-        for pretrained_model_names, model_name in cls._pretrained_model_dict.items():
+        for (
+            pretrained_model_names,
+            model_name,
+        ) in cls._pretrained_model_dict.items():
             for name in pretrained_model_names:
                 all_model_names.append(name)
 
         # From built-in pretrained models
         if pretrained_model_name_or_path in all_model_names:
-            for pretrained_model_names, model_name in cls._pretrained_model_dict.items():
+            for (
+                pretrained_model_names,
+                model_name,
+            ) in cls._pretrained_model_dict.items():
                 # From built-in pretrained models
                 for pattern in pretrained_model_names:
                     if pattern == pretrained_model_name_or_path:
-                        init_class = cls._name_mapping[model_name + "_Import_Class"]
+                        init_class = cls._name_mapping[
+                            model_name + "_Import_Class"
+                        ]
                         class_name = cls._name_mapping[init_class]
-                        import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.modeling")
+                        import_class = importlib.import_module(
+                            f"paddleformers.transformers.{class_name}.modeling"
+                        )
                         try:
                             model_class = getattr(import_class, init_class)
                         except AttributeError as err:
                             try:
-                                import_class2 = importlib.import_module(f"paddleformers.transformers.{class_name}")
+                                import_class2 = importlib.import_module(
+                                    f"paddleformers.transformers.{class_name}"
+                                )
                                 model_class = getattr(import_class2, init_class)
                             except AttributeError:
                                 logger.error(err)
                                 all_model_classes = import_class.__all__
                                 all_tasks = {
-                                    get_task_name(m) for m in all_model_classes if get_task_name(m) is not None
+                                    get_task_name(m)
+                                    for m in all_model_classes
+                                    if get_task_name(m) is not None
                                 }
                                 raise AttributeError(
                                     f"module '{import_class.__name__}' only supports the following classes: "
                                     + ", ".join(m for m in all_model_classes)
                                     + "\n"
                                     "Hint: you can use interface "
-                                    + " or ".join(task + ".from_pretrained" for task in all_tasks)
+                                    + " or ".join(
+                                        task + ".from_pretrained"
+                                        for task in all_tasks
+                                    )
                                     + f" to load '{pretrained_model_name_or_path}'\n"
                                 )
-                        logger.info(f"We are using {model_class} to load '{pretrained_model_name_or_path}'.")
-                        return model_class.from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+                        logger.info(
+                            f"We are using {model_class} to load '{pretrained_model_name_or_path}'."
+                        )
+                        return model_class.from_pretrained(
+                            pretrained_model_name_or_path, *model_args, **kwargs
+                        )
 
         config_file = resolve_file_path(
             pretrained_model_name_or_path,
@@ -309,9 +378,15 @@ class _BaseAutoModelClass:
                 is_lora = kwargs.get("config").get("is_lora", False)
             else:
                 is_lora = False
-            model_class = cls._get_model_class_from_config(pretrained_model_name_or_path, config_file, is_lora=is_lora)
-            logger.info(f"We are using {model_class} to load '{pretrained_model_name_or_path}'.")
-            return model_class.from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+            model_class = cls._get_model_class_from_config(
+                pretrained_model_name_or_path, config_file, is_lora=is_lora
+            )
+            logger.info(
+                f"We are using {model_class} to load '{pretrained_model_name_or_path}'."
+            )
+            return model_class.from_pretrained(
+                pretrained_model_name_or_path, *model_args, **kwargs
+            )
         else:
             raise RuntimeError(
                 f"Can't load model for '{pretrained_model_name_or_path}'.\n"
@@ -331,7 +406,10 @@ class _BaseAutoModelClass:
             model_class ([`PreTrainedModel`]):
                 The model to register.
         """
-        if hasattr(model_class, "config_class") and model_class.config_class.__name__ != config_class.__name__:
+        if (
+            hasattr(model_class, "config_class")
+            and model_class.config_class.__name__ != config_class.__name__
+        ):
             raise ValueError(
                 "The model class you are passing has a `config_class` attribute that is not consistent with the "
                 f"config class you passed (model has {model_class.config_class} and you passed {config_class}. Fix "
@@ -349,7 +427,9 @@ class AutoBackbone(_BaseAutoModelClass):
     _name_mapping = get_name_mapping("Backbone")
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+    def from_pretrained(
+        cls, pretrained_model_name_or_path, *model_args, **kwargs
+    ):
         """
         Creates an instance of `AutoBackbone`. Model weights are loaded
         by specifying name of a built-in pretrained model, or a community contributed model,
@@ -379,7 +459,9 @@ class AutoBackbone(_BaseAutoModelClass):
                 print(type(model))
                 # <class 'paddleformers.transformers.bit.modeling.BitBackbone'>
         """
-        return cls._from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+        return cls._from_pretrained(
+            pretrained_model_name_or_path, *model_args, **kwargs
+        )
 
 
 class AutoModel(_BaseAutoModelClass):
@@ -395,7 +477,9 @@ class AutoModel(_BaseAutoModelClass):
     _task_choice = True
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, task=None, *model_args, **kwargs):
+    def from_pretrained(
+        cls, pretrained_model_name_or_path, task=None, *model_args, **kwargs
+    ):
         """
         Creates an instance of `AutoModel`. Model weights are loaded
         by specifying name of a built-in pretrained model, a pretrained model on HF, a community contributed model,
@@ -450,7 +534,9 @@ class AutoModel(_BaseAutoModelClass):
                 print(type(model))
                 # <class 'paddleformers.transformers.bert.modeling.BertForPretraining'>
         """
-        return cls._from_pretrained(pretrained_model_name_or_path, task, *model_args, **kwargs)
+        return cls._from_pretrained(
+            pretrained_model_name_or_path, task, *model_args, **kwargs
+        )
 
 
 class AutoModelForPretraining(_BaseAutoModelClass):
@@ -462,7 +548,9 @@ class AutoModelForPretraining(_BaseAutoModelClass):
     _name_mapping = get_name_mapping("ForPretraining")
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+    def from_pretrained(
+        cls, pretrained_model_name_or_path, *model_args, **kwargs
+    ):
         """
         Creates an instance of `AutoModelForPretraining`. Model weights are loaded
         by specifying name of a built-in pretrained model, or a community contributed model,
@@ -496,7 +584,9 @@ class AutoModelForPretraining(_BaseAutoModelClass):
                 print(type(model))
                 # <class 'paddleformers.transformers.bert.modeling.BertModelForPretraining'>
         """
-        return cls._from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+        return cls._from_pretrained(
+            pretrained_model_name_or_path, *model_args, **kwargs
+        )
 
 
 class AutoModelForSequenceClassification(_BaseAutoModelClass):
@@ -508,7 +598,9 @@ class AutoModelForSequenceClassification(_BaseAutoModelClass):
     _name_mapping = get_name_mapping("ForSequenceClassification")
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+    def from_pretrained(
+        cls, pretrained_model_name_or_path, *model_args, **kwargs
+    ):
         """
         Creates an instance of `AutoModelForSequenceClassification`. Model weights are loaded
         by specifying name of a built-in pretrained model, or a community contributed model,
@@ -542,7 +634,9 @@ class AutoModelForSequenceClassification(_BaseAutoModelClass):
                 print(type(model))
                 # <class 'paddleformers.transformers.bert.modeling.BertModelForSequenceClassification'>
         """
-        return cls._from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+        return cls._from_pretrained(
+            pretrained_model_name_or_path, *model_args, **kwargs
+        )
 
 
 class AutoModelForTokenClassification(_BaseAutoModelClass):
@@ -554,7 +648,9 @@ class AutoModelForTokenClassification(_BaseAutoModelClass):
     _name_mapping = get_name_mapping("ForTokenClassification")
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+    def from_pretrained(
+        cls, pretrained_model_name_or_path, *model_args, **kwargs
+    ):
         """
         Creates an instance of `AutoModelForTokenClassification`. Model weights are loaded
         by specifying name of a built-in pretrained model, or a community contributed model,
@@ -588,7 +684,9 @@ class AutoModelForTokenClassification(_BaseAutoModelClass):
                 print(type(model))
                 # <class 'paddleformers.transformers.bert.modeling.BertModelForTokenClassification'>
         """
-        return cls._from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+        return cls._from_pretrained(
+            pretrained_model_name_or_path, *model_args, **kwargs
+        )
 
 
 class AutoModelForQuestionAnswering(_BaseAutoModelClass):
@@ -600,7 +698,9 @@ class AutoModelForQuestionAnswering(_BaseAutoModelClass):
     _name_mapping = get_name_mapping("ForQuestionAnswering")
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+    def from_pretrained(
+        cls, pretrained_model_name_or_path, *model_args, **kwargs
+    ):
         """
         Creates an instance of `AutoModelForQuestionAnswering`. Model weights are loaded
         by specifying name of a built-in pretrained model, or a community contributed model,
@@ -634,7 +734,9 @@ class AutoModelForQuestionAnswering(_BaseAutoModelClass):
                 print(type(model))
                 # <class 'paddleformers.transformers.bert.modeling.BertModelForQuestionAnswering'>
         """
-        return cls._from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+        return cls._from_pretrained(
+            pretrained_model_name_or_path, *model_args, **kwargs
+        )
 
 
 class AutoModelForMultipleChoice(_BaseAutoModelClass):
@@ -646,7 +748,9 @@ class AutoModelForMultipleChoice(_BaseAutoModelClass):
     _name_mapping = get_name_mapping("ForMultipleChoice")
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+    def from_pretrained(
+        cls, pretrained_model_name_or_path, *model_args, **kwargs
+    ):
         """
         Creates an instance of `AutoModelForMultipleChoice`. Model weights are loaded
         by specifying name of a built-in pretrained model, or a community contributed model,
@@ -680,7 +784,9 @@ class AutoModelForMultipleChoice(_BaseAutoModelClass):
                 print(type(model))
                 # <class 'paddleformers.transformers.bert.modeling.BertModelForMultipleChoice'>
         """
-        return cls._from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+        return cls._from_pretrained(
+            pretrained_model_name_or_path, *model_args, **kwargs
+        )
 
 
 class AutoModelForMaskedLM(_BaseAutoModelClass):
@@ -692,7 +798,9 @@ class AutoModelForMaskedLM(_BaseAutoModelClass):
     _name_mapping = get_name_mapping("ForMaskedLM")
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+    def from_pretrained(
+        cls, pretrained_model_name_or_path, *model_args, **kwargs
+    ):
         """
         Creates an instance of `AutoModelForMaskedLM`. Model weights are loaded
         by specifying name of a built-in pretrained model, or a community contributed model,
@@ -726,7 +834,9 @@ class AutoModelForMaskedLM(_BaseAutoModelClass):
                 print(type(model))
                 # <class 'paddleformers.transformers.bert.modeling.BertModelForMaskedLM'>
         """
-        return cls._from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+        return cls._from_pretrained(
+            pretrained_model_name_or_path, *model_args, **kwargs
+        )
 
 
 class AutoModelForCausalLM(_BaseAutoModelClass):
@@ -738,7 +848,9 @@ class AutoModelForCausalLM(_BaseAutoModelClass):
     _name_mapping = get_name_mapping("ForCausalLM")
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+    def from_pretrained(
+        cls, pretrained_model_name_or_path, *model_args, **kwargs
+    ):
         """
         Creates an instance of `AutoModelForCausalLM`. Model weights are loaded
         by specifying name of a built-in pretrained model, or a community contributed model,
@@ -772,7 +884,9 @@ class AutoModelForCausalLM(_BaseAutoModelClass):
                 print(type(model))
                 # <class 'paddleformers.transformers.gpt.modeling.GPTLMHeadModel'>
         """
-        return cls._from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+        return cls._from_pretrained(
+            pretrained_model_name_or_path, *model_args, **kwargs
+        )
 
 
 class AutoModelForCausalLMPipe(_BaseAutoModelClass):
@@ -784,8 +898,12 @@ class AutoModelForCausalLMPipe(_BaseAutoModelClass):
     _name_mapping = get_name_mapping("ForCausalLMPipe")
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
-        return cls._from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+    def from_pretrained(
+        cls, pretrained_model_name_or_path, *model_args, **kwargs
+    ):
+        return cls._from_pretrained(
+            pretrained_model_name_or_path, *model_args, **kwargs
+        )
 
 
 class AutoEncoder(_BaseAutoModelClass):
@@ -797,7 +915,9 @@ class AutoEncoder(_BaseAutoModelClass):
     _name_mapping = get_name_mapping("Encoder")
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+    def from_pretrained(
+        cls, pretrained_model_name_or_path, *model_args, **kwargs
+    ):
         """
         Creates an instance of `AutoEncoder`. Model weights are loaded
         by specifying name of a built-in pretrained model, or a community contributed model,
@@ -826,7 +946,9 @@ class AutoEncoder(_BaseAutoModelClass):
                 print(type(model))
                 # <class 'paddleformers.transformers.bart.modeling.BartEncoder'>
         """
-        return cls._from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+        return cls._from_pretrained(
+            pretrained_model_name_or_path, *model_args, **kwargs
+        )
 
 
 class AutoDecoder(_BaseAutoModelClass):
@@ -838,7 +960,9 @@ class AutoDecoder(_BaseAutoModelClass):
     _name_mapping = get_name_mapping("Decoder")
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+    def from_pretrained(
+        cls, pretrained_model_name_or_path, *model_args, **kwargs
+    ):
         """
         Creates an instance of `AutoDecoder`. Model weights are loaded
         by specifying name of a built-in pretrained model, or a community contributed model,
@@ -867,7 +991,9 @@ class AutoDecoder(_BaseAutoModelClass):
                 print(type(model))
                 # <class 'paddleformers.transformers.bart.modeling.BartEncoder'>
         """
-        return cls._from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+        return cls._from_pretrained(
+            pretrained_model_name_or_path, *model_args, **kwargs
+        )
 
 
 class AutoGenerator(_BaseAutoModelClass):
@@ -879,7 +1005,9 @@ class AutoGenerator(_BaseAutoModelClass):
     _name_mapping = get_name_mapping("Generator")
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+    def from_pretrained(
+        cls, pretrained_model_name_or_path, *model_args, **kwargs
+    ):
         """
         Creates an instance of `AutoGenerator`. Model weights are loaded
         by specifying name of a built-in pretrained model, or a community contributed model,
@@ -913,7 +1041,9 @@ class AutoGenerator(_BaseAutoModelClass):
                 print(type(model))
                 # <class 'paddleformers.transformers.electra.modeling.ElectraGenerator'>
         """
-        return cls._from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+        return cls._from_pretrained(
+            pretrained_model_name_or_path, *model_args, **kwargs
+        )
 
 
 class AutoDiscriminator(_BaseAutoModelClass):
@@ -925,7 +1055,9 @@ class AutoDiscriminator(_BaseAutoModelClass):
     _name_mapping = get_name_mapping("Discriminator")
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+    def from_pretrained(
+        cls, pretrained_model_name_or_path, *model_args, **kwargs
+    ):
         """
         Creates an instance of `AutoDiscriminator`. Model weights are loaded
         by specifying name of a built-in pretrained model, or a community contributed model,
@@ -959,7 +1091,9 @@ class AutoDiscriminator(_BaseAutoModelClass):
                 print(type(model))
                 # <class 'paddleformers.transformers.electra.modeling.ElectraDiscriminator'>
         """
-        return cls._from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+        return cls._from_pretrained(
+            pretrained_model_name_or_path, *model_args, **kwargs
+        )
 
 
 class AutoModelForConditionalGeneration(_BaseAutoModelClass):
@@ -971,7 +1105,9 @@ class AutoModelForConditionalGeneration(_BaseAutoModelClass):
     _name_mapping = get_name_mapping("ForConditionalGeneration")
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+    def from_pretrained(
+        cls, pretrained_model_name_or_path, *model_args, **kwargs
+    ):
         """
         Creates an instance of `AutoModelForConditionalGeneration`. Model weights are loaded
         by specifying name of a built-in pretrained model, or a community contributed model,
@@ -1001,7 +1137,9 @@ class AutoModelForConditionalGeneration(_BaseAutoModelClass):
                 print(type(model))
                 # <class 'paddleformers.transformers.bart.modeling.BartForConditionalGeneration'>
         """
-        return cls._from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+        return cls._from_pretrained(
+            pretrained_model_name_or_path, *model_args, **kwargs
+        )
 
 
 class AutoModelForConditionalGenerationPipe(_BaseAutoModelClass):
@@ -1013,5 +1151,9 @@ class AutoModelForConditionalGenerationPipe(_BaseAutoModelClass):
     _name_mapping = get_name_mapping("ForConditionalGenerationPipe")
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
-        return cls._from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+    def from_pretrained(
+        cls, pretrained_model_name_or_path, *model_args, **kwargs
+    ):
+        return cls._from_pretrained(
+            pretrained_model_name_or_path, *model_args, **kwargs
+        )

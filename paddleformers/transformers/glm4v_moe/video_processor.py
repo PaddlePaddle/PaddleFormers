@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 # Copyright 2025 The ZhipuAI Inc. team and HuggingFace Inc. team. All rights reserved.
 #
@@ -21,7 +20,7 @@
 """video processor class for GLM-4.1V."""
 
 import math
-from typing import Optional, Union
+from typing import Optional
 
 import numpy as np
 import paddle
@@ -73,9 +72,12 @@ class Glm4vVideoProcessor(BaseVideoProcessor):
     def __init__(self, **kwargs: Unpack[Glm4vVideoProcessorInitKwargs]):
         super().__init__(**kwargs)
         if self.size is not None and (
-            self.size.get("shortest_edge", None) is None or self.size.get("longest_edge", None) is None
+            self.size.get("shortest_edge", None) is None
+            or self.size.get("longest_edge", None) is None
         ):
-            raise ValueError("size must contain 'shortest_edge' and 'longest_edge' keys.")
+            raise ValueError(
+                "size must contain 'shortest_edge' and 'longest_edge' keys."
+            )
 
     def _further_process_kwargs(
         self,
@@ -86,15 +88,19 @@ class Glm4vVideoProcessor(BaseVideoProcessor):
         Update kwargs that need further processing before being validated
         Can be overridden by subclasses to customize the processing of kwargs.
         """
-        if size is not None and ("shortest_edge" not in size or "longest_edge" not in size):
-            raise ValueError("size must contain 'shortest_edge' and 'longest_edge' keys.")
+        if size is not None and (
+            "shortest_edge" not in size or "longest_edge" not in size
+        ):
+            raise ValueError(
+                "size must contain 'shortest_edge' and 'longest_edge' keys."
+            )
 
         return super()._further_process_kwargs(size=size, **kwargs)
 
     def sample_frames(
         self,
         metadata: VideoMetadata,
-        fps: Optional[Union[int, float]] = None,
+        fps: Optional[int | float] = None,
         **kwargs,
     ):
         """
@@ -121,14 +127,25 @@ class Glm4vVideoProcessor(BaseVideoProcessor):
 
         if duration <= self.max_duration:
             n = int(math.floor(duration * requested_fps))
-            frame_indices = [min(max_frame_idx, int(math.ceil(i * metadata.fps / requested_fps))) for i in range(n)]
+            frame_indices = [
+                min(
+                    max_frame_idx,
+                    int(math.ceil(i * metadata.fps / requested_fps)),
+                )
+                for i in range(n)
+            ]
         else:
             num_samples = int(self.max_duration * requested_fps)
             if num_samples >= total_frames:
                 frame_indices = list(range(total_frames))
             else:
-                target_seconds = np.linspace(0, duration, num_samples, endpoint=True)
-                frame_indices = [min(max_frame_idx, int(math.ceil(t * metadata.fps))) for t in target_seconds]
+                target_seconds = np.linspace(
+                    0, duration, num_samples, endpoint=True
+                )
+                frame_indices = [
+                    min(max_frame_idx, int(math.ceil(t * metadata.fps)))
+                    for t in target_seconds
+                ]
 
         seen, uniq = set(), []
         for idx in frame_indices:
@@ -151,8 +168,8 @@ class Glm4vVideoProcessor(BaseVideoProcessor):
         do_rescale: bool = True,
         rescale_factor: float = 1 / 255.0,
         do_normalize: bool = True,
-        image_mean: Optional[Union[float, list[float]]] = None,
-        image_std: Optional[Union[float, list[float]]] = None,
+        image_mean: Optional[float | list[float]] = None,
+        image_std: Optional[float | list[float]] = None,
         patch_size: Optional[int] = None,
         temporal_patch_size: Optional[int] = None,
         merge_size: Optional[int] = None,
@@ -183,29 +200,45 @@ class Glm4vVideoProcessor(BaseVideoProcessor):
                 )
                 # stacked_videos = stacked_videos.view(B, T, C, resized_height, resized_width)
             resized_videos_grouped[shape] = stacked_videos
-        resized_videos = reorder_videos(resized_videos_grouped, grouped_videos_index)
+        resized_videos = reorder_videos(
+            resized_videos_grouped, grouped_videos_index
+        )
 
         # Group videos by size for further processing
         # Needed in case do_resize is False, or resize returns videos with different sizes
-        grouped_videos, grouped_videos_index = group_videos_by_shape(resized_videos)
+        grouped_videos, grouped_videos_index = group_videos_by_shape(
+            resized_videos
+        )
         processed_videos_grouped = {}
         processed_grids = {}
         for shape, stacked_videos in grouped_videos.items():
-            resized_height, resized_width = get_image_size(stacked_videos[0], channel_dim=ChannelDimension.FIRST)
+            resized_height, resized_width = get_image_size(
+                stacked_videos[0], channel_dim=ChannelDimension.FIRST
+            )
 
             # Fused rescale and normalize
             stacked_videos = self.rescale_and_normalize(
-                stacked_videos, do_rescale, rescale_factor, do_normalize, image_mean, image_std
+                stacked_videos,
+                do_rescale,
+                rescale_factor,
+                do_normalize,
+                image_mean,
+                image_std,
             )
             patches = stacked_videos
 
             # Check that videos have `num_frames` divisible by `temporal_patch_size`
             if patches.shape[1] % temporal_patch_size != 0:
-                repeats = patches[:, -1:].repeat(1, temporal_patch_size - 1, 1, 1, 1)
+                repeats = patches[:, -1:].repeat(
+                    1, temporal_patch_size - 1, 1, 1, 1
+                )
                 patches = paddle.cat([patches, repeats], dim=1)
             batch_size, grid_t, channel = patches.shape[:3]
             grid_t = grid_t // temporal_patch_size
-            grid_h, grid_w = resized_height // patch_size, resized_width // patch_size
+            grid_h, grid_w = (
+                resized_height // patch_size,
+                resized_width // patch_size,
+            )
 
             patches = patches.view(
                 batch_size * grid_t,
@@ -230,7 +263,9 @@ class Glm4vVideoProcessor(BaseVideoProcessor):
             processed_videos_grouped[shape] = flatten_patches
             processed_grids[shape] = [[grid_t, grid_h, grid_w]] * batch_size
 
-        processed_videos = reorder_videos(processed_videos_grouped, grouped_videos_index)
+        processed_videos = reorder_videos(
+            processed_videos_grouped, grouped_videos_index
+        )
         processed_grids = reorder_videos(processed_grids, grouped_videos_index)
         pixel_values_videos = paddle.cat(processed_videos, dim=0)
         video_grid_thw = paddle.to_tensor(processed_grids)

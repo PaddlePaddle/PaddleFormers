@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 # Copyright 2025 Hugging Face inc.
 #
@@ -24,7 +23,9 @@ from paddleformers.transformers import AutoVideoProcessor, Qwen2VLVideoProcessor
 
 class AutoVideoProcessorTest(unittest.TestCase):
     def test_video_processor_from_pretrained(self):
-        processor = AutoVideoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen25vlv2")
+        processor = AutoVideoProcessor.from_pretrained(
+            "PaddleFormers/tiny-random-qwen25vlv2"
+        )
         self.assertIsInstance(processor, Qwen2VLVideoProcessor)
 
     def test_video_processor_from_local_directory_from_key(self):
@@ -75,7 +76,9 @@ class AutoVideoProcessorTest(unittest.TestCase):
             self.assertIsInstance(config, Qwen2VLVideoProcessor)
 
     def test_video_processor_save_pretrained(self):
-        config_dict = AutoVideoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen25vlv2").to_dict()
+        config_dict = AutoVideoProcessor.from_pretrained(
+            "PaddleFormers/tiny-random-qwen25vlv2"
+        ).to_dict()
         config_dict.pop("video_processor_type")
         config = Qwen2VLVideoProcessor(**config_dict)
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -83,4 +86,6 @@ class AutoVideoProcessorTest(unittest.TestCase):
             video_processor = AutoVideoProcessor.from_pretrained(tmpdir)
             dict_as_saved = json.loads(video_processor.to_json_string())
             self.assertTrue("_processor_class" not in dict_as_saved)
-            self.assertEqual(video_processor.__class__.__name__, "Qwen2VLVideoProcessor")
+            self.assertEqual(
+                video_processor.__class__.__name__, "Qwen2VLVideoProcessor"
+            )

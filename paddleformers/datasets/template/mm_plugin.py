@@ -1,3 +1,17 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # Copyright 2025 HuggingFace Inc. and the LlamaFactory team.
 #
 # This code is inspired by the HuggingFace's Transformers library.
@@ -39,7 +53,10 @@ from PIL.Image import Image as ImageObject
 from transformers.image_utils import is_valid_image
 from typing_extensions import override
 
-from paddleformers.transformers.qwen2_vl.vision_process import fetch_image, fetch_video
+from paddleformers.transformers.qwen2_vl.vision_process import (
+    fetch_image,
+    fetch_video,
+)
 from paddleformers.transformers.qwen3_omni_moe.processor import (
     Qwen3OmniMoeProcessorKwargs,
 )
@@ -94,7 +111,9 @@ def _make_batched_images(images, imglens: list[int]):
 
 def _check_video_is_nested_images(video) -> bool:
     r"""Check if the video is nested images."""
-    return isinstance(video, list) and all(isinstance(frame, (str, BinaryIO, dict, ImageObject)) for frame in video)
+    return isinstance(video, list) and all(
+        isinstance(frame, (str, BinaryIO, dict, ImageObject)) for frame in video
+    )
 
 
 @dataclass
@@ -113,7 +132,11 @@ class MMPluginMixin:
     ) -> None:
         r"""Validate if this model accepts the input modalities."""
         image_processor = getattr(processor, "image_processor", None)
-        video_processor = getattr(processor, "video_processor", getattr(processor, "image_processor", None))
+        video_processor = getattr(
+            processor,
+            "video_processor",
+            getattr(processor, "image_processor", None),
+        )
         feature_extractor = getattr(processor, "feature_extractor", None)
         if len(images) != 0 and self.image_token is None:
             raise ValueError(
@@ -131,16 +154,24 @@ class MMPluginMixin:
             )
 
         if self.image_token is not None and processor is None:
-            raise ValueError("Processor was not found, please check and update your model file.")
+            raise ValueError(
+                "Processor was not found, please check and update your model file."
+            )
 
         if self.image_token is not None and image_processor is None:
-            raise ValueError("Image processor was not found, please check and update your model file.")
+            raise ValueError(
+                "Image processor was not found, please check and update your model file."
+            )
 
         if self.video_token is not None and video_processor is None:
-            raise ValueError("Video processor was not found, please check and update your model file.")
+            raise ValueError(
+                "Video processor was not found, please check and update your model file."
+            )
 
         if self.audio_token is not None and feature_extractor is None:
-            raise ValueError("Audio feature extractor was not found, please check and update your model file.")
+            raise ValueError(
+                "Audio feature extractor was not found, please check and update your model file."
+            )
 
     def _validate_messages(
         self,
@@ -195,19 +226,33 @@ class MMPluginMixin:
             return _create_video_decoder(url)
         # For URLs, download bytes and pass as paddle tensor (raw encoded bytes)
         response = requests.get(url)
-        video_tensor = paddle.to_tensor(np.frombuffer(response.content, dtype="uint8"))
+        video_tensor = paddle.to_tensor(
+            np.frombuffer(response.content, dtype="uint8")
+        )
         return _create_video_decoder(video_tensor)
 
-    def _preprocess_image(self, image, image_max_pixels, image_min_pixels, **kwargs):
+    def _preprocess_image(
+        self, image, image_max_pixels, image_min_pixels, **kwargs
+    ):
         r"""Pre-process a single image."""
         if (image.width * image.height) > image_max_pixels:
-            resize_factor = math.sqrt(image_max_pixels / (image.width * image.height))
-            width, height = int(image.width * resize_factor), int(image.height * resize_factor)
+            resize_factor = math.sqrt(
+                image_max_pixels / (image.width * image.height)
+            )
+            width, height = (
+                int(image.width * resize_factor),
+                int(image.height * resize_factor),
+            )
             image = image.resize((width, height))
 
         if (image.width * image.height) < image_min_pixels:
-            resize_factor = math.sqrt(image_min_pixels / (image.width * image.height))
-            width, height = int(image.width * resize_factor), int(image.height * resize_factor)
+            resize_factor = math.sqrt(
+                image_min_pixels / (image.width * image.height)
+            )
+            width, height = (
+                int(image.width * resize_factor),
+                int(image.height * resize_factor),
+            )
             image = image.resize((width, height))
 
         if image.mode != "RGB":
@@ -215,16 +260,28 @@ class MMPluginMixin:
 
         return image
 
-    def _get_video_sample_indices(self, video_reader, video_fps, video_maxlen, **kwargs):
+    def _get_video_sample_indices(
+        self, video_reader, video_fps, video_maxlen, **kwargs
+    ):
         r"""Compute video sample indices according to fps."""
         total_frames = video_reader.metadata.num_frames
         if total_frames == 0:  # infinite video
-            return np.linspace(0, video_maxlen - 1, video_maxlen).astype(np.int32)
+            return np.linspace(0, video_maxlen - 1, video_maxlen).astype(
+                np.int32
+            )
 
-        sample_frames = max(1, math.floor(float(total_frames / video_reader.metadata.average_fps) * video_fps))
+        sample_frames = max(
+            1,
+            math.floor(
+                float(total_frames / video_reader.metadata.average_fps)
+                * video_fps
+            ),
+        )
         sample_frames = min(total_frames, video_maxlen, sample_frames)
         start_frame, end_frame = 0, total_frames - 1
-        frame_indices = np.linspace(start_frame, end_frame, sample_frames).round()
+        frame_indices = np.linspace(
+            start_frame, end_frame, sample_frames
+        ).round()
 
         return frame_indices
 
@@ -244,15 +301,23 @@ class MMPluginMixin:
             frames = []
             if _check_video_is_nested_images(video):
                 for frame in video:
-                    if not is_valid_image(frame) and not isinstance(frame, dict) and not os.path.exists(frame):
+                    if (
+                        not is_valid_image(frame)
+                        and not isinstance(frame, dict)
+                        and not os.path.exists(frame)
+                    ):
                         raise ValueError("Invalid image found in video frames.")
                 frames = video
             else:
                 video_reader = self._video_download(video)
-                sample_indices = self._get_video_sample_indices(video_reader, **kwargs)
+                sample_indices = self._get_video_sample_indices(
+                    video_reader, **kwargs
+                )
                 try:
                     frames = (
-                        video_reader.get_frames_at(indices=[int(i) for i in sample_indices])
+                        video_reader.get_frames_at(
+                            indices=[int(i) for i in sample_indices]
+                        )
                         .data.contiguous()
                         .cpu()
                         .numpy()
@@ -264,7 +329,9 @@ class MMPluginMixin:
 
             regularized_frames = []
             for frame in frames:
-                regularized_frames.append(self._preprocess_image(frame, **kwargs))
+                regularized_frames.append(
+                    self._preprocess_image(frame, **kwargs)
+                )
             results.append(regularized_frames)
 
         return {"videos": results}
@@ -293,26 +360,47 @@ class MMPluginMixin:
             image_processor = getattr(processor, "image_processor", None)
             images = self._regularize_images(
                 images,
-                image_max_pixels=getattr(processor, "image_max_pixels", 768 * 768),
-                image_min_pixels=getattr(processor, "image_min_pixels", 32 * 32),
+                image_max_pixels=getattr(
+                    processor, "image_max_pixels", 768 * 768
+                ),
+                image_min_pixels=getattr(
+                    processor, "image_min_pixels", 32 * 32
+                ),
             )["images"]
             imglens = kwargs.get("imglens", None)
-            if imglens is not None:  # if imglens are provided, make batched images
+            if (
+                imglens is not None
+            ):  # if imglens are provided, make batched images
                 images = _make_batched_images(images, imglens)
 
             mm_inputs.update(image_processor(images, return_tensors="pd"))
 
         if len(videos) != 0:
-            video_processor = getattr(processor, "video_processor", getattr(processor, "image_processor", None))
+            video_processor = getattr(
+                processor,
+                "video_processor",
+                getattr(processor, "image_processor", None),
+            )
             videos = self._regularize_videos(
                 videos,
-                image_max_pixels=getattr(processor, "video_max_pixels", 256 * 256),
-                image_min_pixels=getattr(processor, "video_min_pixels", 16 * 16),
+                image_max_pixels=getattr(
+                    processor, "video_max_pixels", 256 * 256
+                ),
+                image_min_pixels=getattr(
+                    processor, "video_min_pixels", 16 * 16
+                ),
                 video_fps=getattr(processor, "video_fps", 2.0),
                 video_maxlen=getattr(processor, "video_maxlen", 128),
             )["videos"]
-            if "videos" in inspect.signature(video_processor.preprocess).parameters:  # for qwen2_vl and video_llava
-                mm_inputs.update(video_processor(images=None, videos=videos, return_tensors="pd"))
+            if (
+                "videos"
+                in inspect.signature(video_processor.preprocess).parameters
+            ):  # for qwen2_vl and video_llava
+                mm_inputs.update(
+                    video_processor(
+                        images=None, videos=videos, return_tensors="pd"
+                    )
+                )
             else:  # for llava_next_video
                 mm_inputs.update(video_processor(videos, return_tensors="pd"))
 
@@ -325,13 +413,17 @@ class MMPluginMixin:
             mm_inputs.update(
                 feature_extractor(
                     audios,
-                    sampling_rate=getattr(processor, "audio_sampling_rate", 16000),
+                    sampling_rate=getattr(
+                        processor, "audio_sampling_rate", 16000
+                    ),
                     return_attention_mask=True,
                     padding="max_length",
                     return_tensors="pd",
                 )
             )
-            mm_inputs["feature_attention_mask"] = mm_inputs.pop("attention_mask", None)  # prevent conflicts
+            mm_inputs["feature_attention_mask"] = mm_inputs.pop(
+                "attention_mask", None
+            )  # prevent conflicts
 
         return mm_inputs
 
@@ -356,7 +448,7 @@ class BasePlugin(MMPluginMixin):
 
         labels = deepcopy(tokens)
 
-        tokenizer = getattr(processor, "tokenizer")
+        tokenizer = processor.tokenizer
 
         masked_tokens = getattr(self, "masked_tokens", None)
         if masked_tokens:
@@ -423,7 +515,6 @@ class PaddleOCRVLPlugin(BasePlugin):
         jpeg_quality_range=(40, 90),
         jpeg_p=0.5,
     ):
-
         augmentations = []
 
         if scale_p > 0:
@@ -431,15 +522,23 @@ class PaddleOCRVLPlugin(BasePlugin):
             augmentations.append(RandomApply([scale_transform], p=scale_p))
 
         if padding_p > 0:
-            padding_transform = RandomSingleSidePadding(padding_range=padding_range, fill="white")
+            padding_transform = RandomSingleSidePadding(
+                padding_range=padding_range, fill="white"
+            )
             augmentations.append(RandomApply([padding_transform], p=padding_p))
 
         if rotation_p > 0 and rotation_degrees:
-            rotation_transform = RandomDiscreteRotation(degrees=rotation_degrees, interpolation="nearest", expand=True)
-            augmentations.append(RandomApply([rotation_transform], p=rotation_p))
+            rotation_transform = RandomDiscreteRotation(
+                degrees=rotation_degrees, interpolation="nearest", expand=True
+            )
+            augmentations.append(
+                RandomApply([rotation_transform], p=rotation_p)
+            )
 
         if color_jitter_p > 0:
-            color_jitter = transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2, hue=0.1)
+            color_jitter = transforms.ColorJitter(
+                brightness=0.3, contrast=0.3, saturation=0.2, hue=0.1
+            )
             augmentations.append(RandomApply([color_jitter], p=color_jitter_p))
 
         if jpeg_p > 0:
@@ -450,7 +549,6 @@ class PaddleOCRVLPlugin(BasePlugin):
 
     @override
     def _preprocess_image(self, image, **kwargs):
-
         width, height = image.size
         image_max_pixels = kwargs["image_max_pixels"]
         image_min_pixels = kwargs["image_min_pixels"]
@@ -485,7 +583,9 @@ class PaddleOCRVLPlugin(BasePlugin):
         if len(images) != 0:
             images = self._regularize_images(
                 images,
-                image_max_pixels=getattr(image_processor, "max_pixels", 2822400),
+                image_max_pixels=getattr(
+                    image_processor, "max_pixels", 2822400
+                ),
                 image_min_pixels=getattr(image_processor, "min_pixels", 147384),
                 image_processor=image_processor,
             )["images"]
@@ -507,9 +607,9 @@ class PaddleOCRVLPlugin(BasePlugin):
         self._validate_messages(messages, images, videos, audios)
         num_image_tokens = 0
         messages = deepcopy(messages)
-        image_processor = getattr(processor, "image_processor")
+        image_processor = processor.image_processor
 
-        merge_length = getattr(image_processor, "merge_size") ** 2
+        merge_length = image_processor.merge_size**2
         if self.expand_mm_tokens:
             image_grid_thw = mm_inputs.get("image_grid_thw", [])
         else:
@@ -519,7 +619,10 @@ class PaddleOCRVLPlugin(BasePlugin):
             content = message["content"]
             while IMAGE_PLACEHOLDER in content:
                 image_seqlen = (
-                    image_grid_thw[num_image_tokens].prod().item() // merge_length if self.expand_mm_tokens else 1
+                    image_grid_thw[num_image_tokens].prod().item()
+                    // merge_length
+                    if self.expand_mm_tokens
+                    else 1
                 )
                 content = content.replace(
                     IMAGE_PLACEHOLDER,
@@ -530,7 +633,11 @@ class PaddleOCRVLPlugin(BasePlugin):
 
             message["content"] = content
 
-        self.masked_tokens = [self.image_token, self.image_bos_token, self.image_eos_token]
+        self.masked_tokens = [
+            self.image_token,
+            self.image_bos_token,
+            self.image_eos_token,
+        ]
 
         return messages
 
@@ -545,7 +652,9 @@ class ErnieVLPlugin(BasePlugin):
     def convert_to_rgb(self, image: Image.Image) -> Image.Image:
         def has_transparent_background(img):
             """has_transparent_background"""
-            if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+            if img.mode in ("RGBA", "LA") or (
+                img.mode == "P" and "transparency" in img.info
+            ):
                 # Check for any pixel with alpha channel less than 255 (fully opaque)
                 alpha = img.convert("RGBA").split()[-1]
                 if alpha.getextrema()[0] < 255:
@@ -588,27 +697,37 @@ class ErnieVLPlugin(BasePlugin):
         return image
 
     @override
-    def _get_video_sample_indices(self, video_reader, video_fps, video_maxlen, frames_sample, **kwargs):
+    def _get_video_sample_indices(
+        self, video_reader, video_fps, video_maxlen, frames_sample, **kwargs
+    ):
         r"""Compute video sample indices according to fps."""
         total_frames = video_reader.metadata.num_frames
         duration = total_frames / video_reader.metadata.average_fps
         if total_frames == 0:  # infinite video
-            return np.linspace(0, video_maxlen - 1, video_maxlen).astype(np.int32)
+            return np.linspace(0, video_maxlen - 1, video_maxlen).astype(
+                np.int32
+            )
 
         sample_frames = max(1, math.floor(float(duration) * video_fps))
         sample_frames = min(total_frames, video_maxlen, sample_frames)
 
         assert frames_sample in ["rand", "middle", "leading"]
-        intervals = np.linspace(start=0, stop=total_frames, num=sample_frames + 1).astype(int)
+        intervals = np.linspace(
+            start=0, stop=total_frames, num=sample_frames + 1
+        ).astype(int)
 
         ranges = []
         for idx, interv in enumerate(intervals[:-1]):
             ranges.append((interv, intervals[idx + 1] - 1))
         if frames_sample == "rand":
             try:
-                frame_indices = [random.choice(range(x[0], x[1])) for x in ranges]
+                frame_indices = [
+                    random.choice(range(x[0], x[1])) for x in ranges
+                ]
             except Exception:
-                frame_indices = np.random.permutation(total_frames)[:sample_frames]
+                frame_indices = np.random.permutation(total_frames)[
+                    :sample_frames
+                ]
                 frame_indices.sort()
                 frame_indices = list(frame_indices)
         elif frames_sample == "leading":
@@ -617,7 +736,9 @@ class ErnieVLPlugin(BasePlugin):
             frame_indices = [(x[0] + x[1]) // 2 for x in ranges]
         else:
             raise NotImplementedError
-        time_stamps = [frame_idx * duration / total_frames for frame_idx in frame_indices]
+        time_stamps = [
+            frame_idx * duration / total_frames for frame_idx in frame_indices
+        ]
 
         return frame_indices, time_stamps
 
@@ -629,17 +750,28 @@ class ErnieVLPlugin(BasePlugin):
             frames = []
             if _check_video_is_nested_images(video):
                 for frame in video:
-                    if not is_valid_image(frame) and not isinstance(frame, dict) and not os.path.exists(frame):
+                    if (
+                        not is_valid_image(frame)
+                        and not isinstance(frame, dict)
+                        and not os.path.exists(frame)
+                    ):
                         raise ValueError("Invalid image found in video frames.")
 
                 frames = video
-                time_stamps = [idx / kwargs.get("video_fps", 2.0) for idx in range(len(frames))]
+                time_stamps = [
+                    idx / kwargs.get("video_fps", 2.0)
+                    for idx in range(len(frames))
+                ]
             else:
                 video_reader = self._video_download(video)
-                sample_indices, time_stamps = self._get_video_sample_indices(video_reader, **kwargs)
+                sample_indices, time_stamps = self._get_video_sample_indices(
+                    video_reader, **kwargs
+                )
                 try:
                     frames = (
-                        video_reader.get_frames_at(indices=[int(i) for i in sample_indices])
+                        video_reader.get_frames_at(
+                            indices=[int(i) for i in sample_indices]
+                        )
                         .data.contiguous()
                         .cpu()
                         .numpy()
@@ -652,7 +784,9 @@ class ErnieVLPlugin(BasePlugin):
             if len(frames) % 2 != 0:
                 padded_image = copy.deepcopy(frames[-1])
                 padded_stamp = copy.deepcopy(time_stamps[-1])
-                frames = np.concatenate([frames, padded_image[np.newaxis, ...]], axis=0)
+                frames = np.concatenate(
+                    [frames, padded_image[np.newaxis, ...]], axis=0
+                )
                 time_stamps.append(padded_stamp)
 
             rendered_frames = []
@@ -683,22 +817,32 @@ class ErnieVLPlugin(BasePlugin):
         if len(images) != 0:
             images = self._regularize_images(
                 images,
-                image_max_pixels=getattr(processor, "max_pixels", 28 * 28 * 1280),
+                image_max_pixels=getattr(
+                    processor, "max_pixels", 28 * 28 * 1280
+                ),
                 image_min_pixels=getattr(processor, "min_pixels", 56 * 56),
             )["images"]
-            mm_inputs.update(image_processor(images=images, return_tensors="pd"))
+            mm_inputs.update(
+                image_processor(images=images, return_tensors="pd")
+            )
 
         if len(videos) != 0:
             videos = self._regularize_videos(
                 videos,
-                image_max_pixels=getattr(processor, "video_max_pixels", 28 * 28 * 1280),
-                image_min_pixels=getattr(processor, "video_min_pixels", 56 * 56),
+                image_max_pixels=getattr(
+                    processor, "video_max_pixels", 28 * 28 * 1280
+                ),
+                image_min_pixels=getattr(
+                    processor, "video_min_pixels", 56 * 56
+                ),
                 video_fps=getattr(processor, "video_fps", 2.0),
                 video_maxlen=getattr(processor, "video_maxlen", 180),
                 frames_sample=getattr(processor, "frames_sample", "middle"),
                 processor=processor,
             )["videos"]
-            mm_inputs.update(image_processor(images=None, videos=videos, return_tensors="pd"))
+            mm_inputs.update(
+                image_processor(images=None, videos=videos, return_tensors="pd")
+            )
 
         return mm_inputs
 
@@ -716,10 +860,10 @@ class ErnieVLPlugin(BasePlugin):
         self._validate_messages(messages, images, videos, audios)
         num_image_tokens, num_video_tokens = 0, 0
         messages = deepcopy(messages)
-        image_processor = getattr(processor, "image_processor")
+        image_processor = processor.image_processor
 
-        merge_length = getattr(image_processor, "merge_size") ** 2
-        temporal_conv_size = getattr(image_processor, "temporal_conv_size")
+        merge_length = image_processor.merge_size**2
+        temporal_conv_size = image_processor.temporal_conv_size
         if self.expand_mm_tokens:
             image_grid_thw = mm_inputs.get("image_grid_thw", [])
             video_grid_thw = mm_inputs.get("video_grid_thw", [])
@@ -731,7 +875,10 @@ class ErnieVLPlugin(BasePlugin):
             content = message["content"]
             while IMAGE_PLACEHOLDER in content:
                 image_seqlen = (
-                    image_grid_thw[num_image_tokens].prod().item() // merge_length if self.expand_mm_tokens else 1
+                    image_grid_thw[num_image_tokens].prod().item()
+                    // merge_length
+                    if self.expand_mm_tokens
+                    else 1
                 )
                 content = content.replace(
                     IMAGE_PLACEHOLDER,
@@ -742,7 +889,9 @@ class ErnieVLPlugin(BasePlugin):
 
             while VIDEO_PLACEHOLDER in content:
                 video_seqlen = (
-                    video_grid_thw[num_video_tokens].prod().item() // merge_length // temporal_conv_size
+                    video_grid_thw[num_video_tokens].prod().item()
+                    // merge_length
+                    // temporal_conv_size
                     if self.expand_mm_tokens
                     else 1
                 )
@@ -787,17 +936,25 @@ class Qwen2VLPlugin(BasePlugin):
             frames = []
             if _check_video_is_nested_images(video):
                 for frame in video:
-                    if not is_valid_image(frame) and not isinstance(frame, dict) and not os.path.exists(frame):
+                    if (
+                        not is_valid_image(frame)
+                        and not isinstance(frame, dict)
+                        and not os.path.exists(frame)
+                    ):
                         raise ValueError("Invalid image found in video frames.")
 
                 frames = video
                 fps_per_video.append(kwargs.get("video_fps", 2.0))
             else:
                 video_reader = self._video_download(video)
-                sample_indices = self._get_video_sample_indices(video_reader, **kwargs)
+                sample_indices = self._get_video_sample_indices(
+                    video_reader, **kwargs
+                )
                 try:
                     frames = (
-                        video_reader.get_frames_at(indices=[int(i) for i in sample_indices])
+                        video_reader.get_frames_at(
+                            indices=[int(i) for i in sample_indices]
+                        )
                         .data.contiguous()
                         .cpu()
                         .numpy()
@@ -814,13 +971,17 @@ class Qwen2VLPlugin(BasePlugin):
 
             if len(frames) % 2 != 0:
                 padded_image = copy.deepcopy(frames[-1])
-                frames = np.concatenate([frames, padded_image[np.newaxis, ...]], axis=0)
+                frames = np.concatenate(
+                    [frames, padded_image[np.newaxis, ...]], axis=0
+                )
 
             regularized_frames = []
             for frame in frames:
                 if isinstance(frame, np.ndarray):
                     frame = Image.fromarray(frame, "RGB")
-                regularized_frames.append(self._preprocess_image(frame, **kwargs))
+                regularized_frames.append(
+                    self._preprocess_image(frame, **kwargs)
+                )
             results.append(regularized_frames)
 
         return {"videos": results, "fps_per_video": fps_per_video}
@@ -839,23 +1000,42 @@ class Qwen2VLPlugin(BasePlugin):
         if len(images) != 0:
             images = self._regularize_images(
                 images,
-                image_max_pixels=getattr(processor, "image_max_pixels", 768 * 768),
-                image_min_pixels=getattr(processor, "image_min_pixels", 32 * 32),
+                image_max_pixels=getattr(
+                    processor, "image_max_pixels", 768 * 768
+                ),
+                image_min_pixels=getattr(
+                    processor, "image_min_pixels", 32 * 32
+                ),
             )["images"]
             mm_inputs.update(image_processor(images, return_tensors="pd"))
 
         if len(videos) != 0:
             video_data = self._regularize_videos(
                 videos,
-                image_max_pixels=getattr(processor, "video_max_pixels", 256 * 256),
-                image_min_pixels=getattr(processor, "video_min_pixels", 16 * 16),
+                image_max_pixels=getattr(
+                    processor, "video_max_pixels", 256 * 256
+                ),
+                image_min_pixels=getattr(
+                    processor, "video_min_pixels", 16 * 16
+                ),
                 video_fps=getattr(processor, "video_fps", 2.0),
                 video_maxlen=getattr(processor, "video_maxlen", 128),
             )
-            mm_inputs.update(image_processor(images=None, videos=video_data["videos"], return_tensors="pd"))
-            temporal_patch_size: int = getattr(image_processor, "temporal_patch_size", 2)
+            mm_inputs.update(
+                image_processor(
+                    images=None,
+                    videos=video_data["videos"],
+                    return_tensors="pd",
+                )
+            )
+            temporal_patch_size: int = getattr(
+                image_processor, "temporal_patch_size", 2
+            )
             if "second_per_grid_ts" in processor.model_input_names:
-                mm_inputs["second_per_grid_ts"] = [temporal_patch_size / fps for fps in video_data["fps_per_video"]]
+                mm_inputs["second_per_grid_ts"] = [
+                    temporal_patch_size / fps
+                    for fps in video_data["fps_per_video"]
+                ]
 
         return mm_inputs
 
@@ -873,9 +1053,9 @@ class Qwen2VLPlugin(BasePlugin):
         self._validate_messages(messages, images, videos, audios)
         num_image_tokens, num_video_tokens = 0, 0
         messages = deepcopy(messages)
-        image_processor = getattr(processor, "image_processor")
+        image_processor = processor.image_processor
 
-        merge_length = getattr(image_processor, "merge_size") ** 2
+        merge_length = image_processor.merge_size**2
         if self.expand_mm_tokens:
             image_grid_thw = mm_inputs.get("image_grid_thw", [])
             video_grid_thw = mm_inputs.get("video_grid_thw", [])
@@ -887,7 +1067,10 @@ class Qwen2VLPlugin(BasePlugin):
             content = message["content"]
             while IMAGE_PLACEHOLDER in content:
                 image_seqlen = (
-                    image_grid_thw[num_image_tokens].prod().item() // merge_length if self.expand_mm_tokens else 1
+                    image_grid_thw[num_image_tokens].prod().item()
+                    // merge_length
+                    if self.expand_mm_tokens
+                    else 1
                 )
                 content = content.replace(
                     IMAGE_PLACEHOLDER,
@@ -898,7 +1081,10 @@ class Qwen2VLPlugin(BasePlugin):
 
             while VIDEO_PLACEHOLDER in content:
                 video_seqlen = (
-                    video_grid_thw[num_video_tokens].prod().item() // merge_length if self.expand_mm_tokens else 1
+                    video_grid_thw[num_video_tokens].prod().item()
+                    // merge_length
+                    if self.expand_mm_tokens
+                    else 1
                 )
                 content = content.replace(
                     VIDEO_PLACEHOLDER,
@@ -926,7 +1112,6 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
         processor,
         **kwargs,
     ) -> None:
-
         image_processor = getattr(processor, "image_processor", None)
         video_processor = getattr(processor, "video_processor", None)
         feature_extractor = getattr(processor, "feature_extractor", None)
@@ -936,34 +1121,59 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
         if len(images) != 0:
             processed_images = []
             for image in images:
-                _image = fetch_image({"image": image}, image_patch_size=patch_size)
+                _image = fetch_image(
+                    {"image": image}, image_patch_size=patch_size
+                )
                 processed_images.append(_image)
-            mm_inputs.update(image_processor(processed_images, return_tensors="pd"))
+            mm_inputs.update(
+                image_processor(processed_images, return_tensors="pd")
+            )
 
         if len(videos) != 0:
-            if processor.__class__.__name__ == "Qwen3OmniMoeProcessor":  # for qwen3omni
-                videos_kwargs = Qwen3OmniMoeProcessorKwargs._defaults.get("videos_kwargs")
+            if (
+                processor.__class__.__name__ == "Qwen3OmniMoeProcessor"
+            ):  # for qwen3omni
+                videos_kwargs = Qwen3OmniMoeProcessorKwargs._defaults.get(
+                    "videos_kwargs"
+                )
                 fps = videos_kwargs.get("fps", 1.0)
                 processed_videos = []
                 for video in videos:
-                    _video = fetch_video({"video": video}, image_patch_size=patch_size)
+                    _video = fetch_video(
+                        {"video": video}, image_patch_size=patch_size
+                    )
                     if isinstance(_video, paddle.Tensor):
                         _video = paddle.cast(_video, "uint8")
                     processed_videos.append(_video)
-                video_inputs = video_processor(videos=processed_videos, **videos_kwargs, return_tensors="pd")
+                video_inputs = video_processor(
+                    videos=processed_videos,
+                    **videos_kwargs,
+                    return_tensors="pd",
+                )
                 mm_inputs.update(video_inputs)
                 fps = [fps] * len(processed_videos)
             else:
                 video_data = self._regularize_videos(
                     videos,
-                    image_max_pixels=getattr(processor, "video_max_pixels", 256 * 256),
-                    image_min_pixels=getattr(processor, "video_min_pixels", 16 * 16),
+                    image_max_pixels=getattr(
+                        processor, "video_max_pixels", 256 * 256
+                    ),
+                    image_min_pixels=getattr(
+                        processor, "video_min_pixels", 16 * 16
+                    ),
                     video_fps=getattr(processor, "video_fps", 2.0),
                     video_maxlen=getattr(processor, "video_maxlen", 128),
                 )
-                mm_inputs.update(video_processor(videos=video_data["videos"], return_tensors="pd"))
+                mm_inputs.update(
+                    video_processor(
+                        videos=video_data["videos"], return_tensors="pd"
+                    )
+                )
             mm_inputs["video_second_per_grid"] = paddle.to_tensor(
-                [video_processor.temporal_patch_size / fps[i] for i in range(len(fps))]
+                [
+                    video_processor.temporal_patch_size / fps[i]
+                    for i in range(len(fps))
+                ]
             )
         if len(audios) != 0:
             audios = self._regularize_audios(
@@ -973,13 +1183,17 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
             mm_inputs.update(
                 feature_extractor(
                     audios,
-                    sampling_rate=getattr(processor, "audio_sampling_rate", 16000),
+                    sampling_rate=getattr(
+                        processor, "audio_sampling_rate", 16000
+                    ),
                     return_attention_mask=True,
                     padding=False,
                     return_tensors="pd",
                 )
             )
-            mm_inputs["feature_attention_mask"] = mm_inputs.pop("attention_mask", None)
+            mm_inputs["feature_attention_mask"] = mm_inputs.pop(
+                "attention_mask", None
+            )
 
         # Convert floating point tensors to target dtype if specified
         target_dtype = kwargs.get("dtype", None)
@@ -1004,11 +1218,21 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
             return data
 
         if isinstance(data, dict):
-            return {k: Qwen2OmniPlugin._to_float_dtype(v, dtype) for k, v in data.items()}
+            return {
+                k: Qwen2OmniPlugin._to_float_dtype(v, dtype)
+                for k, v in data.items()
+            }
         elif isinstance(data, (list, tuple)):
-            return type(data)(Qwen2OmniPlugin._to_float_dtype(v, dtype) for v in data)
+            return type(data)(
+                Qwen2OmniPlugin._to_float_dtype(v, dtype) for v in data
+            )
         elif isinstance(data, paddle.Tensor):
-            if data.dtype in [paddle.float32, paddle.float64, paddle.float16, paddle.bfloat16]:
+            if data.dtype in [
+                paddle.float32,
+                paddle.float64,
+                paddle.float16,
+                paddle.bfloat16,
+            ]:
                 return paddle.cast(data, dtype)
         return data
 
@@ -1026,22 +1250,30 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
         self._validate_messages(messages, images, videos, audios)
         num_image_tokens, num_video_tokens, num_audio_tokens = 0, 0, 0
         messages = deepcopy(messages)
-        image_processor = getattr(processor, "image_processor")
+        image_processor = processor.image_processor
 
-        merge_length = getattr(image_processor, "merge_size") ** 2
+        merge_length = image_processor.merge_size**2
         use_audio_in_video = getattr(processor, "use_audio_in_video", False)
 
         if self.expand_mm_tokens:
             image_grid_thw = mm_inputs.get("image_grid_thw", [])
             video_grid_thw = mm_inputs.get("video_grid_thw", [])
             if "feature_attention_mask" in mm_inputs:
-                if processor.__class__.__name__ == "Qwen3OmniMoeProcessor":  # for qwen3omni
+                if (
+                    processor.__class__.__name__ == "Qwen3OmniMoeProcessor"
+                ):  # for qwen3omni
                     input_lengths = mm_inputs["feature_attention_mask"].sum(-1)
                     input_lengths_leave = input_lengths % 100
                     feature_lengths = (input_lengths_leave - 1) // 2 + 1
-                    audio_lengths = ((feature_lengths - 1) // 2 + 1 - 1) // 2 + 1 + (input_lengths // 100) * 13
+                    audio_lengths = (
+                        ((feature_lengths - 1) // 2 + 1 - 1) // 2
+                        + 1
+                        + (input_lengths // 100) * 13
+                    )
                 else:
-                    input_lengths = (mm_inputs["feature_attention_mask"].sum(-1).numpy() - 1) // 2 + 1
+                    input_lengths = (
+                        mm_inputs["feature_attention_mask"].sum(-1).numpy() - 1
+                    ) // 2 + 1
                     audio_lengths = (input_lengths - 2) // 2 + 1
         else:
             image_grid_thw = [None] * len(images)
@@ -1052,7 +1284,10 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
             content = message["content"]
             while IMAGE_PLACEHOLDER in content:
                 image_seqlen = (
-                    image_grid_thw[num_image_tokens].prod().item() // merge_length if self.expand_mm_tokens else 1
+                    image_grid_thw[num_image_tokens].prod().item()
+                    // merge_length
+                    if self.expand_mm_tokens
+                    else 1
                 )
                 content = content.replace(
                     IMAGE_PLACEHOLDER,
@@ -1064,7 +1299,11 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
                 raise NotImplementedError
             else:
                 while AUDIO_PLACEHOLDER in content:
-                    audio_seqlen = audio_lengths[num_audio_tokens].prod().item() if self.expand_mm_tokens else 1
+                    audio_seqlen = (
+                        audio_lengths[num_audio_tokens].prod().item()
+                        if self.expand_mm_tokens
+                        else 1
+                    )
                     content = content.replace(
                         AUDIO_PLACEHOLDER,
                         f"{self.audio_bos_token}{self.audio_token * audio_seqlen}{self.audio_eos_token}",
@@ -1074,7 +1313,10 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
 
                 while VIDEO_PLACEHOLDER in content:
                     video_seqlen = (
-                        video_grid_thw[num_video_tokens].prod().item() // merge_length if self.expand_mm_tokens else 1
+                        video_grid_thw[num_video_tokens].prod().item()
+                        // merge_length
+                        if self.expand_mm_tokens
+                        else 1
                     )
                     content = content.replace(
                         VIDEO_PLACEHOLDER,
@@ -1105,29 +1347,49 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
         if len(images) != 0:
             images = self._regularize_images(
                 images,
-                image_max_pixels=getattr(processor, "image_max_pixels", 768 * 768),
-                image_min_pixels=getattr(processor, "image_min_pixels", 32 * 32),
+                image_max_pixels=getattr(
+                    processor, "image_max_pixels", 768 * 768
+                ),
+                image_min_pixels=getattr(
+                    processor, "image_min_pixels", 32 * 32
+                ),
             )["images"]
             mm_inputs.update(image_processor(images, return_tensors="pd"))
 
         if len(videos) != 0:
             videos = self._regularize_videos(
                 videos,
-                image_max_pixels=getattr(processor, "video_max_pixels", 256 * 256),
-                image_min_pixels=getattr(processor, "video_min_pixels", 16 * 16),
+                image_max_pixels=getattr(
+                    processor, "video_max_pixels", 256 * 256
+                ),
+                image_min_pixels=getattr(
+                    processor, "video_min_pixels", 16 * 16
+                ),
                 video_fps=getattr(processor, "video_fps", 2.0),
                 video_maxlen=getattr(processor, "video_maxlen", 128),
             )
             video_metadata = [
-                {"fps": getattr(processor, "video_fps", 24.0), "duration": len(video), "total_num_frames": len(video)}
+                {
+                    "fps": getattr(processor, "video_fps", 24.0),
+                    "duration": len(video),
+                    "total_num_frames": len(video),
+                }
                 for video in videos["videos"]
             ]
             mm_inputs.update(
-                video_processor(videos=videos["videos"], video_metadata=video_metadata, return_metadata=True)
+                video_processor(
+                    videos=videos["videos"],
+                    video_metadata=video_metadata,
+                    return_metadata=True,
+                )
             )
-            temporal_patch_size = getattr(image_processor, "temporal_patch_size", 2)
+            temporal_patch_size = getattr(
+                image_processor, "temporal_patch_size", 2
+            )
             if "second_per_grid_ts" in processor.model_input_names:
-                mm_inputs["second_per_grid_ts"] = [temporal_patch_size / fps for fps in videos["fps_per_video"]]
+                mm_inputs["second_per_grid_ts"] = [
+                    temporal_patch_size / fps for fps in videos["fps_per_video"]
+                ]
 
         return mm_inputs
 
@@ -1145,11 +1407,11 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
         self._validate_messages(messages, images, videos, audios)
         num_image_tokens, num_video_tokens = 0, 0
         messages = deepcopy(messages)
-        image_processor = getattr(processor, "image_processor")
-        video_processor = getattr(processor, "video_processor")
+        image_processor = processor.image_processor
+        video_processor = processor.video_processor
 
-        image_merge_length = getattr(image_processor, "merge_size") ** 2
-        video_merge_length = getattr(video_processor, "merge_size") ** 2
+        image_merge_length = image_processor.merge_size**2
+        video_merge_length = video_processor.merge_size**2
         if self.expand_mm_tokens:
             image_grid_thw = mm_inputs.get("image_grid_thw", [])
             video_grid_thw = mm_inputs.get("video_grid_thw", [])
@@ -1166,10 +1428,13 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
             content = message["content"]
             while IMAGE_PLACEHOLDER in content:
                 if num_image_tokens >= len(image_grid_thw):
-                    raise ValueError(f"Found more {IMAGE_PLACEHOLDER} tags than actual images provided.")
+                    raise ValueError(
+                        f"Found more {IMAGE_PLACEHOLDER} tags than actual images provided."
+                    )
 
                 image_seqlen = (
-                    image_grid_thw[num_image_tokens].prod().item() // image_merge_length
+                    image_grid_thw[num_image_tokens].prod().item()
+                    // image_merge_length
                     if self.expand_mm_tokens
                     else 1
                 )
@@ -1182,7 +1447,9 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
 
             while VIDEO_PLACEHOLDER in content:
                 if num_video_tokens >= len(video_grid_thw):
-                    raise ValueError(f"Found more {VIDEO_PLACEHOLDER} tags than actual videos provided.")
+                    raise ValueError(
+                        f"Found more {VIDEO_PLACEHOLDER} tags than actual videos provided."
+                    )
 
                 metadata = video_metadata[idx]
                 timestamps = processor._calculate_timestamps(
@@ -1193,7 +1460,8 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
                 video_structure = ""
                 for frame_index in range(num_frames):
                     video_seqlen = (
-                        video_grid_thw[num_video_tokens][1:].prod().item() // video_merge_length
+                        video_grid_thw[num_video_tokens][1:].prod().item()
+                        // video_merge_length
                         if self.expand_mm_tokens
                         else 1
                     )
@@ -1232,24 +1500,39 @@ class GLM4VPlugin(Qwen2VLPlugin):
         if len(images) != 0:
             images = self._regularize_images(
                 images,
-                image_max_pixels=getattr(processor, "image_max_pixels", 768 * 768),
-                image_min_pixels=getattr(processor, "image_min_pixels", 32 * 32),
+                image_max_pixels=getattr(
+                    processor, "image_max_pixels", 768 * 768
+                ),
+                image_min_pixels=getattr(
+                    processor, "image_min_pixels", 32 * 32
+                ),
             )["images"]
             mm_inputs.update(image_processor(images, return_tensors="pd"))
 
         if len(videos) != 0:
             video_data = self._regularize_videos(
                 videos,
-                image_max_pixels=getattr(processor, "video_max_pixels", 256 * 256),
-                image_min_pixels=getattr(processor, "video_min_pixels", 16 * 16),
+                image_max_pixels=getattr(
+                    processor, "video_max_pixels", 256 * 256
+                ),
+                image_min_pixels=getattr(
+                    processor, "video_min_pixels", 16 * 16
+                ),
                 video_fps=getattr(processor, "video_fps", 2.0),
                 video_maxlen=getattr(processor, "video_maxlen", 128),
             )
             # prepare video metadata
             video_metadata = [
-                {"fps": 2, "duration": len(video), "total_frames": len(video)} for video in video_data["videos"]
+                {"fps": 2, "duration": len(video), "total_frames": len(video)}
+                for video in video_data["videos"]
             ]
-            mm_inputs.update(video_processor(images=None, videos=video_data["videos"], video_metadata=video_metadata))
+            mm_inputs.update(
+                video_processor(
+                    images=None,
+                    videos=video_data["videos"],
+                    video_metadata=video_metadata,
+                )
+            )
 
         return mm_inputs
 
@@ -1267,13 +1550,15 @@ class GLM4VPlugin(Qwen2VLPlugin):
         self._validate_messages(messages, images, videos, audios)
         num_image_tokens, num_video_tokens = 0, 0
         messages = deepcopy(messages)
-        image_processor = getattr(processor, "image_processor")
+        image_processor = processor.image_processor
 
-        merge_length = getattr(image_processor, "merge_size") ** 2
+        merge_length = image_processor.merge_size**2
         if self.expand_mm_tokens:
             image_grid_thw = mm_inputs.get("image_grid_thw", [])
             video_grid_thw = mm_inputs.get("video_grid_thw", [])
-            num_frames = video_grid_thw[0][0] if len(video_grid_thw) > 0 else 0  # hard code for now
+            num_frames = (
+                video_grid_thw[0][0] if len(video_grid_thw) > 0 else 0
+            )  # hard code for now
             timestamps = mm_inputs.get("timestamps", [])
 
             if hasattr(timestamps, "tolist"):
@@ -1289,7 +1574,9 @@ class GLM4VPlugin(Qwen2VLPlugin):
             unique_timestamps = timestamps_list.copy()
             selected_timestamps = unique_timestamps[:num_frames]
             while len(selected_timestamps) < num_frames:
-                selected_timestamps.append(selected_timestamps[-1] if selected_timestamps else 0)
+                selected_timestamps.append(
+                    selected_timestamps[-1] if selected_timestamps else 0
+                )
 
         else:
             image_grid_thw = [None] * len(images)
@@ -1301,10 +1588,15 @@ class GLM4VPlugin(Qwen2VLPlugin):
             content = message["content"]
             while IMAGE_PLACEHOLDER in content:
                 image_seqlen = (
-                    image_grid_thw[num_image_tokens].prod().item() // merge_length if self.expand_mm_tokens else 1
+                    image_grid_thw[num_image_tokens].prod().item()
+                    // merge_length
+                    if self.expand_mm_tokens
+                    else 1
                 )
                 content = content.replace(
-                    IMAGE_PLACEHOLDER, f"<|begin_of_image|>{self.image_token * image_seqlen}<|end_of_image|>", 1
+                    IMAGE_PLACEHOLDER,
+                    f"<|begin_of_image|>{self.image_token * image_seqlen}<|end_of_image|>",
+                    1,
                 )
                 num_image_tokens += 1
 
@@ -1312,20 +1604,23 @@ class GLM4VPlugin(Qwen2VLPlugin):
                 video_structure = ""
                 for frame_index in range(num_frames):
                     video_seqlen = (
-                        video_grid_thw[num_video_tokens][1:].prod().item() // merge_length
+                        video_grid_thw[num_video_tokens][1:].prod().item()
+                        // merge_length
                         if self.expand_mm_tokens
                         else 1
                     )
                     timestamp_sec = selected_timestamps[frame_index]
-                    frame_structure = (
-                        f"<|begin_of_image|>{self.image_token * video_seqlen}<|end_of_image|>{timestamp_sec}"
-                    )
+                    frame_structure = f"<|begin_of_image|>{self.image_token * video_seqlen}<|end_of_image|>{timestamp_sec}"
                     video_structure += frame_structure
 
                 if not self.expand_mm_tokens:
                     video_structure = self.video_token
 
-                content = content.replace(VIDEO_PLACEHOLDER, f"<|begin_of_video|>{video_structure}<|end_of_video|>", 1)
+                content = content.replace(
+                    VIDEO_PLACEHOLDER,
+                    f"<|begin_of_video|>{video_structure}<|end_of_video|>",
+                    1,
+                )
                 num_video_tokens += 1
 
             message["content"] = content
@@ -1342,7 +1637,9 @@ class GLM4VPlugin(Qwen2VLPlugin):
         **kwargs,
     ):
         self._validate_input(processor, images, videos, audios)
-        mm_inputs = self._get_mm_inputs(images, videos, audios, processor, **kwargs)
+        mm_inputs = self._get_mm_inputs(
+            images, videos, audios, processor, **kwargs
+        )
         mm_inputs.pop("timestamps", None)
         return mm_inputs
 
@@ -1363,8 +1660,8 @@ class Gemma3Plugin(BasePlugin):
         self._validate_messages(messages, images, videos, audios)
         num_image_tokens = 0
         messages = deepcopy(messages)
-        boi_token = getattr(processor, "boi_token")
-        full_image_sequence = getattr(processor, "full_image_sequence")
+        boi_token = processor.boi_token
+        full_image_sequence = processor.full_image_sequence
         image_str = full_image_sequence if self.expand_mm_tokens else boi_token
 
         do_pan_and_scan = getattr(processor, "image_do_pan_and_scan", False)
@@ -1375,12 +1672,17 @@ class Gemma3Plugin(BasePlugin):
                 if do_pan_and_scan:
                     image_placeholder_str = (
                         "Here is the original image {{image}} and here are some crops to help you see better "
-                        + " ".join(["{{image}}"] * mm_inputs["num_crops"][0][num_image_tokens])
+                        + " ".join(
+                            ["{{image}}"]
+                            * mm_inputs["num_crops"][0][num_image_tokens]
+                        )
                     )
                 else:
                     image_placeholder_str = "{{image}}"
 
-                content = content.replace(IMAGE_PLACEHOLDER, image_placeholder_str, 1)
+                content = content.replace(
+                    IMAGE_PLACEHOLDER, image_placeholder_str, 1
+                )
                 num_image_tokens += 1
 
             message["content"] = content.replace("{{image}}", image_str)
@@ -1397,7 +1699,9 @@ class Gemma3Plugin(BasePlugin):
         **kwargs,
     ):
         self._validate_input(processor, images, videos, audios)
-        mm_inputs = self._get_mm_inputs(images, videos, audios, processor, **kwargs)
+        mm_inputs = self._get_mm_inputs(
+            images, videos, audios, processor, **kwargs
+        )
         mm_inputs.pop("num_crops", None)
         return mm_inputs
 
@@ -1454,7 +1758,9 @@ class GlmOcrPlugin(BasePlugin):
         # 4) 展开：把每个 <image> 依次替换为 BOS + N*image_token + EOS
         # 关键点：IMAGE_PLACEHOLDER 必须 != self.image_token，否则会死循环
         if self.image_token is None:
-            raise ValueError("GlmOcrPlugin requires image_token to be set (e.g., '<|image|>').")
+            raise ValueError(
+                "GlmOcrPlugin requires image_token to be set (e.g., '<|image|>')."
+            )
 
         if IMAGE_PLACEHOLDER == self.image_token:
             raise ValueError(
@@ -1473,13 +1779,16 @@ class GlmOcrPlugin(BasePlugin):
                 if num_image_tokens >= len(images):
                     raise ValueError(
                         f"Found more {IMAGE_PLACEHOLDER} placeholders than provided images: "
-                        f"placeholders_so_far={num_image_tokens+1}, len(images)={len(images)}"
+                        f"placeholders_so_far={num_image_tokens + 1}, len(images)={len(images)}"
                     )
 
                 if self.expand_mm_tokens:
                     # image_grid_thw shape: [num_images, 3]
                     # 每张图的 token 数 = prod(thw) // (merge_size**2)
-                    seqlen = int(image_grid_thw[num_image_tokens].prod().item()) // merge_length
+                    seqlen = (
+                        int(image_grid_thw[num_image_tokens].prod().item())
+                        // merge_length
+                    )
                     seqlen = max(1, seqlen)
                 else:
                     seqlen = 1
@@ -1490,7 +1799,11 @@ class GlmOcrPlugin(BasePlugin):
 
             msg["content"] = content
         # 5) mask：这些 token 不参与 loss（和你原先 PaddleOCRVLPlugin 一致）
-        self.masked_tokens = [self.image_token, self.image_bos_token, self.image_eos_token]
+        self.masked_tokens = [
+            self.image_token,
+            self.image_bos_token,
+            self.image_eos_token,
+        ]
         return messages
 
 

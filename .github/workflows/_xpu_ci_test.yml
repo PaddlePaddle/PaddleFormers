@@ -1,5 +1,4 @@
 name: xpu_ci_test
-
 on:
   workflow_call:
     inputs:
@@ -22,7 +21,6 @@ on:
         required: true
         type: string
         default: ""
-
 jobs:
   run_xpu_cases:
     runs-on: [self-hosted, XPU-P800-8Cards]
@@ -38,49 +36,48 @@ jobs:
           formers_archive_url: ${{ inputs.PADDLEFORMERS_ARCHIVE_URL }}
           model_path: ${{ inputs.MODEL_PATH }}
         run: |
-            set -x
-            REPO="https://github.com/${{ github.repository }}.git"
-            FULL_REPO="${{ github.repository }}"
-            REPO_NAME="${FULL_REPO##*/}"
-            BASE_BRANCH="${{ github.base_ref }}"
-            # 由于ci机器网络问题 暂时屏蔽pull命令
-            # docker pull ${docker_image}
-            # Clean the repository directory before starting
-            docker run --rm --net=host -v $(pwd):/workspace -w /workspace \
-            -e "REPO_NAME=${REPO_NAME}" \
-            ${docker_image} /bin/bash -c '
-              CLEAN_RETRIES=3
-              CLEAN_COUNT=0
+          set -x
+          REPO="https://github.com/${{ github.repository }}.git"
+          FULL_REPO="${{ github.repository }}"
+          REPO_NAME="${FULL_REPO##*/}"
+          BASE_BRANCH="${{ github.base_ref }}"
+          # 由于ci机器网络问题 暂时屏蔽pull命令
+          # docker pull ${docker_image}
+          # Clean the repository directory before starting
+          docker run --rm --net=host -v $(pwd):/workspace -w /workspace \
+          -e "REPO_NAME=${REPO_NAME}" \
+          ${docker_image} /bin/bash -c '
+            CLEAN_RETRIES=3
+            CLEAN_COUNT=0
 
-              while [ $CLEAN_COUNT -lt $CLEAN_RETRIES ]; do
-                echo "Attempt $((CLEAN_COUNT+1)) to remove ${REPO_NAME}* ..."
-                rm -rf "${REPO_NAME}"* || true
-                sleep 2
+            while [ $CLEAN_COUNT -lt $CLEAN_RETRIES ]; do
+              echo "Attempt $((CLEAN_COUNT+1)) to remove ${REPO_NAME}* ..."
+              rm -rf "${REPO_NAME}"* || true
+              sleep 2
 
-                # Check if anything matching ${REPO_NAME}* still exists
-                if ! ls "${REPO_NAME}"* >/dev/null 2>&1; then
-                  echo "All ${REPO_NAME}* removed successfully"
-                  break
-                fi
-
-                CLEAN_COUNT=$((CLEAN_COUNT + 1))
-              done
-
-              if ls "${REPO_NAME}"* >/dev/null 2>&1; then
-                echo "ERROR: Failed to clean ${REPO_NAME}* after multiple attempts"
-                ls -ld "${REPO_NAME}"*
-                exit 1
+              # Check if anything matching ${REPO_NAME}* still exists
+              if ! ls "${REPO_NAME}"* >/dev/null 2>&1; then
+                echo "All ${REPO_NAME}* removed successfully"
+                break
               fi
-            '
 
-            wget -q --no-proxy ${formers_archive_url}
-            tar -xf PaddleFormers.tar.gz
-            rm -rf PaddleFormers.tar.gz
-            cd PaddleFormers
-            git config --global user.name "PaddleFormersCI"
-            git config --global user.email "paddleformers_ci@example.com"
-            git log -n 3 --oneline
+              CLEAN_COUNT=$((CLEAN_COUNT + 1))
+            done
 
+            if ls "${REPO_NAME}"* >/dev/null 2>&1; then
+              echo "ERROR: Failed to clean ${REPO_NAME}* after multiple attempts"
+              ls -ld "${REPO_NAME}"*
+              exit 1
+            fi
+          '
+
+          wget -q --no-proxy ${formers_archive_url}
+          tar -xf PaddleFormers.tar.gz
+          rm -rf PaddleFormers.tar.gz
+          cd PaddleFormers
+          git config --global user.name "PaddleFormersCI"
+          git config --global user.email "paddleformers_ci@example.com"
+          git log -n 3 --oneline
       - name: Run CI unittest
         env:
           docker_image: ${{ inputs.DOCKER_IMAGE }}
@@ -128,7 +125,9 @@ jobs:
           python -m pip uninstall librosa -y
           python -m pip install --pre paddlepaddle-xpu -i https://www.paddlepaddle.org.cn/packages/nightly/xpu-p800/
           echo "安装PaddleFormers..."
-          python -m pip install -e .
+          python -m pip install uv
+          uv build --wheel --package paddleformers --out-dir dist --clear -v
+          python -m pip install dist/paddleformers-*.whl
           echo "============================安装测试依赖============================"
           python -m pip install pytest
           python -m pip install pytest-timeout

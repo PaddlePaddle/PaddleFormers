@@ -20,7 +20,9 @@ import tempfile
 
 import paddle
 
-input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
+input_ids = paddle.to_tensor(
+    [[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]]
+)
 
 
 def prepare_default_config(config):
@@ -58,7 +60,10 @@ def common_test_load(model_class, model_first, config_second, tempdir):
         first = model_first(input_ids)[0]
 
     model_second = model_class.from_pretrained(
-        tempdir, config=config_second, convert_from_hf=False, load_checkpoint_format=""
+        tempdir,
+        config=config_second,
+        convert_from_hf=False,
+        load_checkpoint_format="",
     )
     model_second.eval()
     with paddle.no_grad():
@@ -77,22 +82,36 @@ def common_test_save_and_load(config_first, config_second, model_class):
 
     with tempfile.TemporaryDirectory() as tempdir:
         # test load pdparams: model.pdparams
-        model_first.save_pretrained(save_dir=tempdir, save_safetensors=False, save_checkpoint_format="")
+        model_first.save_pretrained(
+            save_dir=tempdir, save_safetensors=False, save_checkpoint_format=""
+        )
         common_test_load(model_class, model_first, config_second, tempdir)
 
         # test load shard pdparams: model-001-0f-008.pdparams
-        model_first.save_pretrained(tempdir, max_shard_size="5MB", save_safetensors=False, save_checkpoint_format="")
+        model_first.save_pretrained(
+            tempdir,
+            max_shard_size="5MB",
+            save_safetensors=False,
+            save_checkpoint_format="",
+        )
         common_test_load(model_class, model_first, config_second, tempdir)
 
         # test save safetensors: model.safetensors
         model_first.save_pretrained(
-            tempdir, safe_serialization=True, save_safetensors=False, save_checkpoint_format=""
+            tempdir,
+            safe_serialization=True,
+            save_safetensors=False,
+            save_checkpoint_format="",
         )
         common_test_load(model_class, model_first, config_second, tempdir)
 
         # test load shard safetensors: model-001-0f-008.safetensors
         model_first.save_pretrained(
-            tempdir, max_shard_size="5MB", safe_serialization=True, save_safetensors=False, save_checkpoint_format=""
+            tempdir,
+            max_shard_size="5MB",
+            safe_serialization=True,
+            save_safetensors=False,
+            save_checkpoint_format="",
         )
         common_test_load(model_class, model_first, config_second, tempdir)
 
@@ -137,7 +156,9 @@ def _test_fast_ffn():
             super().__init__()
             self.config = config
             self.hidden_size = config.hidden_size
-            self.gate_up_fused_proj = nn.Linear(self.hidden_size, self.hidden_size * 2, bias_attr=True)
+            self.gate_up_fused_proj = nn.Linear(
+                self.hidden_size, self.hidden_size * 2, bias_attr=True
+            )
 
         def forward(self, hidden_state):
             hidden_state = self.gate_up_fused_proj(hidden_state)
@@ -152,8 +173,9 @@ def _test_fast_ffn():
         config_class = TestConfig
 
         @classmethod
-        def _get_fuse_or_split_param_mappings(cls, config: TestConfig, is_fuse=False):
-
+        def _get_fuse_or_split_param_mappings(
+            cls, config: TestConfig, is_fuse=False
+        ):
             #  user defined function to get convert param mappings
             def convert_fast_ffn_fn(fuse_params, convert_fast_ffn=False):
                 import numpy as np
@@ -192,22 +214,47 @@ def _test_fast_ffn():
                 # convert when use_fast_ffn is False
                 if convert_fast_ffn:
                     for i in range(config.num_hidden_layers):
-                        for keys in [convert_fast_ffn_keys, convert_fast_ffn_bias_keys]:
-                            keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in keys])
-                            final_actions[keys] = partial(fn, convert_fast_ffn=convert_fast_ffn)
+                        for keys in [
+                            convert_fast_ffn_keys,
+                            convert_fast_ffn_bias_keys,
+                        ]:
+                            keys = tuple(
+                                [
+                                    key.replace("layers.0.", f"layers.{i}.")
+                                    for key in keys
+                                ]
+                            )
+                            final_actions[keys] = partial(
+                                fn, convert_fast_ffn=convert_fast_ffn
+                            )
             return final_actions
 
         def _init_weights(self, layer):
             if isinstance(layer, (nn.Linear, nn.Embedding)):
                 if isinstance(layer.weight, paddle.Tensor):
-                    layer.weight.set_value(paddle.tensor.normal(mean=0.0, std=1.0, shape=layer.weight.shape))
-                if hasattr(layer, "bias") and isinstance(layer.bias, paddle.Tensor):
-                    layer.bias.set_value(paddle.tensor.normal(mean=0.0, std=1.0, shape=layer.bias.shape))
+                    layer.weight.set_value(
+                        paddle.tensor.normal(
+                            mean=0.0, std=1.0, shape=layer.weight.shape
+                        )
+                    )
+                if hasattr(layer, "bias") and isinstance(
+                    layer.bias, paddle.Tensor
+                ):
+                    layer.bias.set_value(
+                        paddle.tensor.normal(
+                            mean=0.0, std=1.0, shape=layer.bias.shape
+                        )
+                    )
 
     class TestModel(TestPretrainedModel):
         def __init__(self, config):
             super().__init__(config)
-            self.layers = nn.LayerList([TestMLP(config=config) for i in range(config.num_hidden_layers)])
+            self.layers = nn.LayerList(
+                [
+                    TestMLP(config=config)
+                    for i in range(config.num_hidden_layers)
+                ]
+            )
 
         def forward(self, hidden_state):
             for idx, (decoder_layer) in enumerate(self.layers):
@@ -236,4 +283,6 @@ def _test_fast_ffn():
     config_fast_ffn.fast_ffn_state = False
     config_fast_ffn.convert_fast_ffn = True
 
-    common_test_save_and_load(config_no_fast_ffn, config_fast_ffn, TestForCausalLM)
+    common_test_save_and_load(
+        config_no_fast_ffn, config_fast_ffn, TestForCausalLM
+    )

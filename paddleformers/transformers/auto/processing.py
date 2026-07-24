@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
 # Copyright 2021 The HuggingFace Inc. team.
 #
@@ -61,7 +60,9 @@ PROCESSOR_MAPPING_NAMES = OrderedDict(
     ]
 )
 
-PROCESSOR_MAPPING = _LazyAutoMapping(CONFIG_MAPPING_NAMES, PROCESSOR_MAPPING_NAMES)
+PROCESSOR_MAPPING = _LazyAutoMapping(
+    CONFIG_MAPPING_NAMES, PROCESSOR_MAPPING_NAMES
+)
 
 
 def processor_class_from_name(class_name: str):
@@ -70,7 +71,9 @@ def processor_class_from_name(class_name: str):
             module_name = model_type_to_module_name(module_name)
 
             try:
-                module = importlib.import_module(f".{module_name}", "paddleformers.transformers")
+                module = importlib.import_module(
+                    f".{module_name}", "paddleformers.transformers"
+                )
                 return getattr(module, class_name)
             except (ModuleNotFoundError, AttributeError):
                 continue
@@ -118,9 +121,13 @@ class AutoProcessor:
         processor_auto_map = None
 
         resolve_file_path_kwargs = {
-            key: kwargs[key] for key in inspect.signature(resolve_file_path).parameters if key in kwargs
+            key: kwargs[key]
+            for key in inspect.signature(resolve_file_path).parameters
+            if key in kwargs
         }
-        resolve_file_path_kwargs.update({"force_return": True})  # do not raise error when file not found
+        resolve_file_path_kwargs.update(
+            {"force_return": True}
+        )  # do not raise error when file not found
 
         # Checking whether the processor class is saved in a processor config
         processor_config_file = resolve_file_path(
@@ -129,9 +136,14 @@ class AutoProcessor:
             **resolve_file_path_kwargs,
         )
         if processor_config_file is not None:
-            config_dict, _ = ProcessorMixin.get_processor_dict(pretrained_model_name_or_path, **kwargs)
+            config_dict, _ = ProcessorMixin.get_processor_dict(
+                pretrained_model_name_or_path, **kwargs
+            )
             processor_class = config_dict.get("processor_class")
-            if processor_auto_map is None and "AutoProcessor" in config_dict.get("auto_map", {}):
+            if (
+                processor_auto_map is None
+                and "AutoProcessor" in config_dict.get("auto_map", {})
+            ):
                 processor_auto_map = config_dict["auto_map"]["AutoProcessor"]
 
         if processor_class is None:
@@ -142,10 +154,17 @@ class AutoProcessor:
                 **resolve_file_path_kwargs,
             )
             if preprocessor_config_file is not None:
-                config_dict, _ = ImageProcessingMixin.get_image_processor_dict(pretrained_model_name_or_path, **kwargs)
+                config_dict, _ = ImageProcessingMixin.get_image_processor_dict(
+                    pretrained_model_name_or_path, **kwargs
+                )
                 processor_class = config_dict.get("processor_class", None)
-                if processor_auto_map is None and "AutoProcessor" in config_dict.get("auto_map", {}):
-                    processor_auto_map = config_dict["auto_map"]["AutoProcessor"]
+                if (
+                    processor_auto_map is None
+                    and "AutoProcessor" in config_dict.get("auto_map", {})
+                ):
+                    processor_auto_map = config_dict["auto_map"][
+                        "AutoProcessor"
+                    ]
 
             # Saved as video processor
             if preprocessor_config_file is None:
@@ -155,12 +174,19 @@ class AutoProcessor:
                     **resolve_file_path_kwargs,
                 )
                 if preprocessor_config_file is not None:
-                    config_dict, _ = BaseVideoProcessor.get_video_processor_dict(
-                        pretrained_model_name_or_path, **kwargs
+                    config_dict, _ = (
+                        BaseVideoProcessor.get_video_processor_dict(
+                            pretrained_model_name_or_path, **kwargs
+                        )
                     )
                     processor_class = config_dict.get("processor_class", None)
-                    if processor_auto_map is None and "AutoProcessor" in config_dict.get("auto_map", {}):
-                        processor_auto_map = config_dict["auto_map"]["AutoProcessor"]
+                    if (
+                        processor_auto_map is None
+                        and "AutoProcessor" in config_dict.get("auto_map", {})
+                    ):
+                        processor_auto_map = config_dict["auto_map"][
+                            "AutoProcessor"
+                        ]
 
         if processor_class is None:
             # Checking whether the processor class is saved in a tokenizer
@@ -174,27 +200,39 @@ class AutoProcessor:
                     config_dict = json.load(reader)
 
                 processor_class = config_dict.get("processor_class", None)
-                if processor_auto_map is None and "AutoProcessor" in config_dict.get("auto_map", {}):
-                    processor_auto_map = config_dict["auto_map"]["AutoProcessor"]
+                if (
+                    processor_auto_map is None
+                    and "AutoProcessor" in config_dict.get("auto_map", {})
+                ):
+                    processor_auto_map = config_dict["auto_map"][
+                        "AutoProcessor"
+                    ]
 
         if processor_class is None and processor_auto_map is None:
             # Otherwise, load config, if it can be loaded.
             if not isinstance(config, PretrainedConfig):
                 # NOTE: Use local AutoConfig to decouple transformers version dependency (Processor only).
                 config = AutoConfig.from_pretrained(
-                    pretrained_model_name_or_path, trust_remote_code=trust_remote_code, **kwargs
+                    pretrained_model_name_or_path,
+                    trust_remote_code=trust_remote_code,
+                    **kwargs,
                 )
 
             # And check if the config contains the processor class.
             processor_class = getattr(config, "processor_class", None)
-            if hasattr(config, "auto_map") and "AutoProcessor" in config.auto_map:
+            if (
+                hasattr(config, "auto_map")
+                and "AutoProcessor" in config.auto_map
+            ):
                 processor_auto_map = config.auto_map["AutoProcessor"]
 
         if processor_class is not None:
             processor_class = processor_class_from_name(processor_class)
 
         has_remote_code = processor_auto_map is not None
-        has_local_code = processor_class is not None or type(config) in PROCESSOR_MAPPING
+        has_local_code = (
+            processor_class is not None or type(config) in PROCESSOR_MAPPING
+        )
 
         if has_remote_code:
             if "--" in processor_auto_map:
@@ -202,11 +240,17 @@ class AutoProcessor:
             else:
                 upstream_repo = None
 
-            processor_class = processor_class_from_name(processor_auto_map.rsplit(".", 1)[-1])
+            processor_class = processor_class_from_name(
+                processor_auto_map.rsplit(".", 1)[-1]
+            )
 
             if processor_class is None:
                 trust_remote_code = resolve_trust_remote_code(
-                    trust_remote_code, pretrained_model_name_or_path, has_local_code, has_remote_code, upstream_repo
+                    trust_remote_code,
+                    pretrained_model_name_or_path,
+                    has_local_code,
+                    has_remote_code,
+                    upstream_repo,
                 )
 
         if has_remote_code and trust_remote_code:
@@ -216,26 +260,36 @@ class AutoProcessor:
             _ = kwargs.pop("code_revision", None)
             processor_class.register_for_auto_class()
             return processor_class.from_pretrained(
-                pretrained_model_name_or_path, trust_remote_code=trust_remote_code, **kwargs
+                pretrained_model_name_or_path,
+                trust_remote_code=trust_remote_code,
+                **kwargs,
             )
         elif processor_class is not None:
             return processor_class.from_pretrained(
-                pretrained_model_name_or_path, trust_remote_code=trust_remote_code, **kwargs
+                pretrained_model_name_or_path,
+                trust_remote_code=trust_remote_code,
+                **kwargs,
             )
         # Last try: we use the PROCESSOR_MAPPING.
         elif type(config) in PROCESSOR_MAPPING:
-            return PROCESSOR_MAPPING[type(config)].from_pretrained(pretrained_model_name_or_path, **kwargs)
+            return PROCESSOR_MAPPING[type(config)].from_pretrained(
+                pretrained_model_name_or_path, **kwargs
+            )
 
         # At this stage, there doesn't seem to be a `Processor` class available for this model, so let's try a
         # tokenizer.
         try:
             return AutoTokenizer.from_pretrained(
-                pretrained_model_name_or_path, trust_remote_code=trust_remote_code, **kwargs
+                pretrained_model_name_or_path,
+                trust_remote_code=trust_remote_code,
+                **kwargs,
             )
         except Exception:
             try:
                 return AutoImageProcessor.from_pretrained(
-                    pretrained_model_name_or_path, trust_remote_code=trust_remote_code, **kwargs
+                    pretrained_model_name_or_path,
+                    trust_remote_code=trust_remote_code,
+                    **kwargs,
                 )
             except Exception:
                 pass

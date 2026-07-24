@@ -26,7 +26,9 @@
 
 
 import paddle
-from paddle.distributed.auto_parallel.ring_attention import shard_seq_load_balance
+from paddle.distributed.auto_parallel.ring_attention import (
+    shard_seq_load_balance,
+)
 from paddle.distributed.fleet import fleet
 
 
@@ -35,19 +37,26 @@ def split_inputs_sequence_dim_load_balance(inputs, rank=None, degree=None):
         _hcg = fleet.get_hybrid_communicate_group()
         degree = _hcg.get_sep_parallel_world_size()
         rank = _hcg.get_sep_parallel_rank()
-    assert isinstance(degree, int) and isinstance(
-        rank, int
-    ), f"degree:{type(degree)} and rank:{type(rank)} must be int"
+    assert isinstance(degree, int) and isinstance(rank, int), (
+        f"degree:{type(degree)} and rank:{type(rank)} must be int"
+    )
     if degree <= 1:
         return inputs
 
     def do_split_sequence_dim_load_balance(data, rank, degree):
         if data is None:
             return None
-        assert isinstance(data, paddle.Tensor), f"data should be paddle.Tensor, but is type:{type(data)}"
-        assert len(data.shape) == 2, f"data dims should be 2, but shaped: {data.shape}"
+        assert isinstance(data, paddle.Tensor), (
+            f"data should be paddle.Tensor, but is type:{type(data)}"
+        )
+        assert len(data.shape) == 2, (
+            f"data dims should be 2, but shaped: {data.shape}"
+        )
         sliced_datas = paddle.split(data, num_or_sections=degree * 2, axis=-1)
-        sliced_data0, sliced_data1 = sliced_datas[rank], sliced_datas[degree * 2 - 1 - rank]
+        sliced_data0, sliced_data1 = (
+            sliced_datas[rank],
+            sliced_datas[degree * 2 - 1 - rank],
+        )
         return paddle.cat([sliced_data0, sliced_data1], axis=-1)
 
     if isinstance(inputs, paddle.Tensor):
@@ -61,7 +70,9 @@ def split_inputs_sequence_dim_load_balance(inputs, rank=None, degree=None):
         for tensor in inputs:
             res.append(do_split_sequence_dim_load_balance(tensor, rank, degree))
     else:
-        raise ValueError(f"the inputs should be a list or a dict, but is type: {type(inputs)}")
+        raise ValueError(
+            f"the inputs should be a list or a dict, but is type: {type(inputs)}"
+        )
     return res
 
 
@@ -80,5 +91,7 @@ def auto_split_sequence_dim_load_balance(inputs):
         for tensor in inputs:
             res.append(shard_seq_load_balance(tensor, 1))
     else:
-        raise ValueError(f"the inputs should be a list or a dict, but is type: {type(inputs)}")
+        raise ValueError(
+            f"the inputs should be a list or a dict, but is type: {type(inputs)}"
+        )
     return res

@@ -212,7 +212,9 @@ class TestModelArguments(unittest.TestCase):
 
     def test_moe_multimodal_dispatch(self):
         args = ModelArguments()
-        self.assertEqual(args.moe_multimodal_dispatch_use_allgather, "v2-alltoall-unpad")
+        self.assertEqual(
+            args.moe_multimodal_dispatch_use_allgather, "v2-alltoall-unpad"
+        )
 
 
 if __name__ == "__main__":

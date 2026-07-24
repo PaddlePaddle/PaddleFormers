@@ -1,10 +1,10 @@
 ### 🏞️ Image Processor
 
-`Image Processor` is an image preprocessing tool responsible for preparing input features for vision or multimodal models. It provides various transformations, such as resizing and normalization, and supports returning outpus in Paddle Tensor.
+`Image Processor` is an image preprocessing tool responsible for preparing input features for vision or multimodal models. It provides various transformations, such as resizing and normalization, and supports returning outputs in Paddle Tensor.
 
 It acts as a bridge between raw image data and the model, ensuring that input features are optimized for VLMs (Vision-Language Models.
 
-Using the `[~BaseImageProcessor.from_pretrained]` method, you can easily load the processor configuration associated with a pretrained model (e.g., target image size, normalization settings). When loading, the Image Processor automatically reads the `preprocessor_config.json` file from the model directory to ensure the preprocessing steps are identical to those used during model trainging or inference.
+Using the `[~BaseImageProcessor.from_pretrained]` method, you can easily load the processor configuration associated with a pretrained model (e.g., target image size, normalization settings). When loading, the Image Processor automatically reads the `preprocessor_config.json` file from the model directory to ensure the preprocessing steps are identical to those used during model training or inference.
 
 The method supports loading from a **local directory** or **multiple download sources**:
 - [huggingface](https://huggingface.co) (**Default**)

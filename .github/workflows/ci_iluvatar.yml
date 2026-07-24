@@ -1,5 +1,4 @@
 name: CI_ILUVATAR
-
 on:
   pull_request:
     types: [opened, synchronize]
@@ -10,11 +9,9 @@ permissions:
   actions: read
   id-token: write
   checks: read
-
 concurrency:
   group: ${{ github.event.pull_request.number }}-${{ github.workflow }}
   cancel-in-progress: true
-
 jobs:
   iluvatar_test:
     name: iluvatar_test
@@ -27,23 +24,18 @@ jobs:
         LIBRARY_PATH: /usr/local/corex/lib
         http_proxy: http://oversea-website-proxy.aistudio.public:8888
         https_proxy: http://oversea-website-proxy.aistudio.public:8888
-
     steps:
       - name: Print current runner name
         run: |
           echo "Current runner name: ${{ runner.name }}"
           env
           curl -v --proxy http://oversea-website-proxy.aistudio.public:8888 https://www.github.com
-
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request'
-                && github.event.pull_request.base.ref
-                || github.ref_name }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || github.ref_name }}
           submodules: 'recursive'
           fetch-depth: 1000
-
       - name: Merge PR (if needed)
         if: ${{ github.event_name == 'pull_request' }}
         run: |
@@ -55,14 +47,13 @@ jobs:
           git merge --no-ff pr/${{ github.event.pull_request.number }}
           echo "PR Branch log "
           git log --oneline -n 5 pr/${{ github.event.pull_request.number }}
-
       - name: Run CI unittest
         env:
           MODEL_PATH: /aistudio/paddle_ci
         run: |
           set -e
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          
+
           unset http_proxy
           unset https_proxy
 
@@ -94,7 +85,7 @@ jobs:
           retry_count=0
           max_retries=3
           while [ $retry_count -lt $max_retries ]; do
-            if python -m pip install -e .; then
+            if python -m pip install uv && uv build --wheel --package paddleformers --out-dir dist --clear -v && python -m pip install dist/paddleformers-*.whl; then
               echo "PaddleFormers installation successful"
               break
             else

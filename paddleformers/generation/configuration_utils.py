@@ -11,13 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-""" Generation configuration class and utilities."""
+"""Generation configuration class and utilities."""
 
 import copy
 import json
 import os
 import warnings
-from typing import Any, Dict, Optional, Union
+from typing import Any, Optional
 
 from huggingface_hub import hf_hub_download
 from paddle.common_ops_import import convert_dtype
@@ -33,7 +33,9 @@ from ..utils.log import logger
 DEFAULT_MAX_NEW_TOKENS = 20
 
 
-def resolve_hf_generation_config_path(repo_id: str, cache_dir: str, subfolder=None) -> str:
+def resolve_hf_generation_config_path(
+    repo_id: str, cache_dir: str, subfolder=None
+) -> str:
     """resolve config file from hf hub
 
     Args:
@@ -44,10 +46,14 @@ def resolve_hf_generation_config_path(repo_id: str, cache_dir: str, subfolder=No
     Returns:
         str: the downloaded config file
     """
-    if hf_file_exists(repo_id=repo_id, filename=GENERATION_CONFIG_NAME, subfolder=subfolder):
+    if hf_file_exists(
+        repo_id=repo_id, filename=GENERATION_CONFIG_NAME, subfolder=subfolder
+    ):
         file_name = GENERATION_CONFIG_NAME
     else:
-        raise ValueError(f"can not find the paddle/pytorch config file from: https://huggingface.co/{repo_id}")
+        raise ValueError(
+            f"can not find the paddle/pytorch config file from: https://huggingface.co/{repo_id}"
+        )
 
     return hf_hub_download(
         repo_id=repo_id,
@@ -141,10 +147,14 @@ class GenerationConfig:
 
     def __init__(self, **kwargs):
         # Parameters that control the length of the output
-        self.max_new_tokens = kwargs.get("max_new_tokens", DEFAULT_MAX_NEW_TOKENS)
+        self.max_new_tokens = kwargs.get(
+            "max_new_tokens", DEFAULT_MAX_NEW_TOKENS
+        )
 
         if "min_new_token" in kwargs:
-            logger.warning("<min_new_token> field is deprecated. Please use <min_new_tokens> instead.")
+            logger.warning(
+                "<min_new_token> field is deprecated. Please use <min_new_tokens> instead."
+            )
             kwargs["min_new_tokens"] = kwargs.pop("min_new_token")
 
         self.min_new_tokens = kwargs.pop("min_new_tokens", 0)
@@ -181,7 +191,9 @@ class GenerationConfig:
         self.fast_ptq_sampling = kwargs.pop("fast_ptq_sampling", False)
         self.decoder_start_token_id = kwargs.pop("decoder_start_token_id", None)
         self._from_model_config = kwargs.pop("_from_model_config", False)
-        self.paddleformers_version = kwargs.pop("paddleformers_version", __version__)
+        self.paddleformers_version = kwargs.pop(
+            "paddleformers_version", __version__
+        )
 
         # Additional attributes without default values
         if not self._from_model_config:
@@ -191,7 +203,9 @@ class GenerationConfig:
                 try:
                     setattr(self, key, value)
                 except AttributeError as err:
-                    logger.error(f"Can't set {key} with value {value} for {self}")
+                    logger.error(
+                        f"Can't set {key} with value {value} for {self}"
+                    )
                     raise err
 
         # Parameters that control the generation strategy used
@@ -229,7 +243,9 @@ class GenerationConfig:
 
         # Validation of individual attributes
         if self.early_stopping not in {True, False, "never"}:
-            raise ValueError(f"`early_stopping` must be a boolean or 'never', but is {self.early_stopping}.")
+            raise ValueError(
+                f"`early_stopping` must be a boolean or 'never', but is {self.early_stopping}."
+            )
 
         # Validation of attribute relations:
         fix_location = ""
@@ -248,12 +264,16 @@ class GenerationConfig:
             )
             if self.temperature != 1.0:
                 warnings.warn(
-                    greedy_wrong_parameter_msg.format(flag_name="temperature", flag_value=self.temperature),
+                    greedy_wrong_parameter_msg.format(
+                        flag_name="temperature", flag_value=self.temperature
+                    ),
                     UserWarning,
                 )
             if self.top_p != 1.0:
                 warnings.warn(
-                    greedy_wrong_parameter_msg.format(flag_name="top_p", flag_value=self.top_p),
+                    greedy_wrong_parameter_msg.format(
+                        flag_name="top_p", flag_value=self.top_p
+                    ),
                     UserWarning,
                 )
 
@@ -261,23 +281,31 @@ class GenerationConfig:
         if self.decode_strategy != "beam_search":
             single_beam_wrong_parameter_msg = (
                 "`num_beams` is set to 1. However, `{flag_name}` is set to `{flag_value}` -- this flag is only used "
-                "in beam-based generation modes. You should set `num_beams>1` or unset `{flag_name}`." + fix_location
+                "in beam-based generation modes. You should set `num_beams>1` or unset `{flag_name}`."
+                + fix_location
             )
             if self.early_stopping is not False:
                 warnings.warn(
-                    single_beam_wrong_parameter_msg.format(flag_name="early_stopping", flag_value=self.early_stopping),
+                    single_beam_wrong_parameter_msg.format(
+                        flag_name="early_stopping",
+                        flag_value=self.early_stopping,
+                    ),
                     UserWarning,
                 )
             if self.num_beam_groups != 1:
                 warnings.warn(
                     single_beam_wrong_parameter_msg.format(
-                        flag_name="num_beam_groups", flag_value=self.num_beam_groups
+                        flag_name="num_beam_groups",
+                        flag_value=self.num_beam_groups,
                     ),
                     UserWarning,
                 )
             if self.length_penalty != 1.0:
                 warnings.warn(
-                    single_beam_wrong_parameter_msg.format(flag_name="length_penalty", flag_value=self.length_penalty),
+                    single_beam_wrong_parameter_msg.format(
+                        flag_name="length_penalty",
+                        flag_value=self.length_penalty,
+                    ),
                     UserWarning,
                 )
 
@@ -291,8 +319,8 @@ class GenerationConfig:
 
     def save_pretrained(
         self,
-        save_directory: Union[str, os.PathLike],
-        config_file_name: Optional[Union[str, os.PathLike]] = None,
+        save_directory: str | os.PathLike,
+        config_file_name: Optional[str | os.PathLike] = None,
         **kwargs,
     ):
         r"""
@@ -321,10 +349,16 @@ class GenerationConfig:
             )
             return
 
-        config_file_name = config_file_name if config_file_name is not None else GENERATION_CONFIG_NAME
+        config_file_name = (
+            config_file_name
+            if config_file_name is not None
+            else GENERATION_CONFIG_NAME
+        )
 
         if os.path.isfile(save_directory):
-            raise AssertionError(f"Provided path ({save_directory}) should be a directory, not a file")
+            raise AssertionError(
+                f"Provided path ({save_directory}) should be a directory, not a file"
+            )
 
         os.makedirs(save_directory, exist_ok=True)
 
@@ -336,10 +370,10 @@ class GenerationConfig:
     @classmethod
     def from_pretrained(
         cls,
-        pretrained_model_name_or_path: Union[str, os.PathLike],
+        pretrained_model_name_or_path: str | os.PathLike,
         download_hub: DownloadSource = None,
-        config_file_name: Optional[Union[str, os.PathLike]] = None,
-        cache_dir: Optional[Union[str, os.PathLike]] = None,
+        config_file_name: Optional[str | os.PathLike] = None,
+        cache_dir: Optional[str | os.PathLike] = None,
         force_download: bool = False,
         **kwargs,
     ) -> "GenerationConfig":
@@ -404,7 +438,11 @@ class GenerationConfig:
         >>> unused_kwargs
         {'foo': False}
         ```"""
-        config_file_name = config_file_name if config_file_name is not None else GENERATION_CONFIG_NAME
+        config_file_name = (
+            config_file_name
+            if config_file_name is not None
+            else GENERATION_CONFIG_NAME
+        )
 
         subfolder = kwargs.pop("subfolder", "")
         if subfolder is None:
@@ -418,25 +456,27 @@ class GenerationConfig:
             force_download=force_download,
             download_hub=download_hub,
         )
-        assert (
-            resolved_config_file is not None
-        ), f"please make sure {config_file_name} under {pretrained_model_name_or_path}"
+        assert resolved_config_file is not None, (
+            f"please make sure {config_file_name} under {pretrained_model_name_or_path}"
+        )
         try:
             logger.info(f"Loading configuration file {resolved_config_file}")
             # Load config dict
             config_dict = cls._dict_from_json_file(resolved_config_file)
         except (json.JSONDecodeError, UnicodeDecodeError):
-            raise EnvironmentError(f"Config file<'{resolved_config_file}'> is not a valid JSON file.")
+            raise OSError(
+                f"Config file<'{resolved_config_file}'> is not a valid JSON file."
+            )
 
         return cls.from_dict(config_dict, **kwargs)
 
     @classmethod
-    def _dict_from_json_file(cls, json_file: Union[str, os.PathLike]):
+    def _dict_from_json_file(cls, json_file: str | os.PathLike):
         with open(json_file, "r", encoding="utf-8") as reader:
             text = reader.read()
         return json.loads(text)
 
-    def dict_paddle_dtype_to_str(self, d: Dict[str, Any]) -> None:
+    def dict_paddle_dtype_to_str(self, d: dict[str, Any]) -> None:
         """
         Checks whether the passed dictionary and its nested dicts have a *paddle_dtype* key and if it's not None,
         converts paddle.dtype to a string of just the type. For example, `paddle.float32` get converted into *"float32"*
@@ -449,7 +489,9 @@ class GenerationConfig:
                 self.dict_paddle_dtype_to_str(value)
 
     @classmethod
-    def from_dict(cls, config_dict: Dict[str, Any], **kwargs) -> "GenerationConfig":
+    def from_dict(
+        cls, config_dict: dict[str, Any], **kwargs
+    ) -> "GenerationConfig":
         """
         Instantiates a [`GenerationConfig`] from a Python dictionary of parameters.
 
@@ -473,7 +515,7 @@ class GenerationConfig:
         else:
             return config
 
-    def to_diff_dict(self) -> Dict[str, Any]:
+    def to_diff_dict(self) -> dict[str, Any]:
         """
         Removes all attributes from config which correspond to the default config attributes for better readability and
         serializes to a Python dictionary.
@@ -490,13 +532,17 @@ class GenerationConfig:
 
         # only serialize values that differ from the default config
         for key, value in config_dict.items():
-            if key not in default_config_dict or key == "transformers_version" or value != default_config_dict[key]:
+            if (
+                key not in default_config_dict
+                or key == "transformers_version"
+                or value != default_config_dict[key]
+            ):
                 serializable_config_dict[key] = value
 
         self.dict_paddle_dtype_to_str(serializable_config_dict)
         return serializable_config_dict
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """
         Serializes this instance to a Python dictionary.
 
@@ -529,7 +575,9 @@ class GenerationConfig:
             config_dict = self.to_dict()
         return json.dumps(config_dict, indent=2, sort_keys=True) + "\n"
 
-    def to_json_file(self, json_file_path: Union[str, os.PathLike], use_diff: bool = True):
+    def to_json_file(
+        self, json_file_path: str | os.PathLike, use_diff: bool = True
+    ):
         """
         Save this instance to a JSON file.
 
@@ -544,7 +592,9 @@ class GenerationConfig:
             writer.write(self.to_json_string(use_diff=use_diff))
 
     @classmethod
-    def from_model_config(cls, model_config: PretrainedConfig) -> "GenerationConfig":
+    def from_model_config(
+        cls, model_config: PretrainedConfig
+    ) -> "GenerationConfig":
         """
         Instantiates a [`GenerationConfig`] from a [`PretrainedConfig`]. This function is useful to convert legacy
         [`PretrainedConfig`] objects, which may contain generation parameters, into a stand-alone [`GenerationConfig`].
@@ -558,7 +608,9 @@ class GenerationConfig:
         """
         config_dict = model_config.to_dict()
         config_dict.pop("_from_model_config", None)
-        config = cls.from_dict(config_dict, return_unused_kwargs=False, _from_model_config=True)
+        config = cls.from_dict(
+            config_dict, return_unused_kwargs=False, _from_model_config=True
+        )
 
         # Special case: some models have generation attributes set in the decoder. Use them if still unset in the
         # generation config.
@@ -567,7 +619,9 @@ class GenerationConfig:
                 default_generation_config = GenerationConfig()
                 decoder_config = config_dict[decoder_name]
                 for attr in config.to_dict().keys():
-                    if attr in decoder_config and getattr(config, attr) == getattr(default_generation_config, attr):
+                    if attr in decoder_config and getattr(
+                        config, attr
+                    ) == getattr(default_generation_config, attr):
                         setattr(config, attr, decoder_config[attr])
 
         return config
@@ -591,5 +645,7 @@ class GenerationConfig:
                 to_remove.append(key)
 
         # remove all the attributes that were updated, without modifying the input dict
-        unused_kwargs = {key: value for key, value in kwargs.items() if key not in to_remove}
+        unused_kwargs = {
+            key: value for key, value in kwargs.items() if key not in to_remove
+        }
         return unused_kwargs

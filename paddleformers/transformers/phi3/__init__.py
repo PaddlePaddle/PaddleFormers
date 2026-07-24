@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Package"""
+
 import sys
 from typing import TYPE_CHECKING
 
@@ -20,7 +21,12 @@ from ...utils.lazy_import import _LazyModule
 import_structure = {
     "tokenizer": ["Phi3Tokenizer"],
     "configuration": ["Phi3Config"],
-    "modeling": ["Phi3PreTrainedModel", "Phi3Model", "Phi3ForCausalLM", "Phi3ForCausalLMPipe"],
+    "modeling": [
+        "Phi3PreTrainedModel",
+        "Phi3Model",
+        "Phi3ForCausalLM",
+        "Phi3ForCausalLMPipe",
+    ],
 }
 
 if TYPE_CHECKING:

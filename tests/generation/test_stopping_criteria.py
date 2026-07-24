@@ -86,15 +86,23 @@ class StoppingCriteriaTestCase(unittest.TestCase):
         criteria = MaxTimeCriteria(max_time=0.1)
         self.assertFalse(criteria(input_ids, scores))
 
-        criteria = MaxTimeCriteria(max_time=0.1, initial_timestamp=time.time() - 0.2)
+        criteria = MaxTimeCriteria(
+            max_time=0.1, initial_timestamp=time.time() - 0.2
+        )
         self.assertTrue(criteria(input_ids, scores))
 
     def test_validate_stopping_criteria(self):
-        validate_stopping_criteria(StoppingCriteriaList([MaxLengthCriteria(10)]), 10)
+        validate_stopping_criteria(
+            StoppingCriteriaList([MaxLengthCriteria(10)]), 10
+        )
 
         with self.assertWarns(UserWarning):
-            validate_stopping_criteria(StoppingCriteriaList([MaxLengthCriteria(10)]), 11)
+            validate_stopping_criteria(
+                StoppingCriteriaList([MaxLengthCriteria(10)]), 11
+            )
 
-        stopping_criteria = validate_stopping_criteria(StoppingCriteriaList(), 11)
+        stopping_criteria = validate_stopping_criteria(
+            StoppingCriteriaList(), 11
+        )
 
         self.assertEqual(len(stopping_criteria), 1)

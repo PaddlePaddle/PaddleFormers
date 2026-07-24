@@ -71,22 +71,40 @@ class MultiSourceDataset(IterableDataset):
 
         # arguments process
         task_dataset_path = [
-            path for path in str(dataset_config["task_group"]).replace(" ", "").split(",") if path != ""
+            path
+            for path in str(dataset_config["task_group"])
+            .replace(" ", "")
+            .split(",")
+            if path != ""
         ]
         task_dataset_prob = [
-            float(prob) for prob in str(dataset_config["task_group_prob"]).replace(" ", "").split(",") if prob != ""
+            float(prob)
+            for prob in str(dataset_config["task_group_prob"])
+            .replace(" ", "")
+            .split(",")
+            if prob != ""
         ]
         task_dataset_type = [
-            type_ for type_ in str(dataset_config["sub_dataset_type"]).replace(" ", "").split(",") if type_ != ""
+            type_
+            for type_ in str(dataset_config["sub_dataset_type"])
+            .replace(" ", "")
+            .split(",")
+            if type_ != ""
         ]
 
-        if not (len(task_dataset_path) == len(task_dataset_prob) == len(task_dataset_type)):
+        if not (
+            len(task_dataset_path)
+            == len(task_dataset_prob)
+            == len(task_dataset_type)
+        ):
             raise ValueError(
                 f"The len of dataset path, prob, type are inconsistent, get task_dataset_path : {task_dataset_path}, task_dataset_prob : {task_dataset_prob}, task_dataset_type : {task_dataset_type}"
             )
 
         if len(task_dataset_path) == 0:
-            raise ValueError("The len of dataset path is zero, please check the configuration.")
+            raise ValueError(
+                "The len of dataset path is zero, please check the configuration."
+            )
 
         task_dataset_samplenum = []
         for i in range(len(task_dataset_path)):
@@ -126,27 +144,41 @@ class MultiSourceDataset(IterableDataset):
                     file_path=task["filepath"],
                     file_type=task["type"],
                     file_samplenum=task["sampling_number"],
-                    split_multi_turn=dataset_config.get("split_multi_turn", False),
-                    template_backend=dataset_config.get("template_backend", "jinja"),
+                    split_multi_turn=dataset_config.get(
+                        "split_multi_turn", False
+                    ),
+                    template_backend=dataset_config.get(
+                        "template_backend", "jinja"
+                    ),
                 )
             elif os.path.isdir(task["filepath"]):
                 task["dataset"] = FileListReader(
                     file_path=task["filepath"],
                     file_type=task["type"],
                     file_samplenum=task["sampling_number"],
-                    split_multi_turn=dataset_config.get("split_multi_turn", False),
-                    template_backend=dataset_config.get("template_backend", "jinja"),
+                    split_multi_turn=dataset_config.get(
+                        "split_multi_turn", False
+                    ),
+                    template_backend=dataset_config.get(
+                        "template_backend", "jinja"
+                    ),
                 )
             elif task["type"] in supported_type:
                 task["dataset"] = FileReader(
                     file_path=task["filepath"],
                     file_type=task["type"],
                     file_samplenum=task["sampling_number"],
-                    split_multi_turn=dataset_config.get("split_multi_turn", False),
-                    template_backend=dataset_config.get("template_backend", "jinja"),
+                    split_multi_turn=dataset_config.get(
+                        "split_multi_turn", False
+                    ),
+                    template_backend=dataset_config.get(
+                        "template_backend", "jinja"
+                    ),
                 )
             else:
-                raise NotImplementedError(f"Cannot support {task['type']} now, only support types: {supported_type}")
+                raise NotImplementedError(
+                    f"Cannot support {task['type']} now, only support types: {supported_type}"
+                )
         sum_prob = sum([task["prob"] for task in self._task_group])
         for task in self._task_group:
             task["prob_origin"] = task["prob"]

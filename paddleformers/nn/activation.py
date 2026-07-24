@@ -14,7 +14,7 @@
 
 from collections import OrderedDict
 
-import paddle.nn as nn
+from paddle import nn
 
 
 class ClassInstantier(OrderedDict):

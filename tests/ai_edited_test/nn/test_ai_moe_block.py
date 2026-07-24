@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import paddle
-import paddle.nn as nn
+from paddle import nn
 
 
 class TestCreateMoeBlock(unittest.TestCase):
@@ -182,7 +182,9 @@ class TestMoEStatics(unittest.TestCase):
         mock_gen.return_value = "corr_bias"
         statics = cls(config, layer_idx=0)
         self.assertIsNotNone(statics.e_score_correction_bias)
-        self.assertEqual(statics.e_score_correction_bias.shape[0], 3)  # num_experts_groups
+        self.assertEqual(
+            statics.e_score_correction_bias.shape[0], 3
+        )  # num_experts_groups
 
     @patch("paddle.utils.unique_name.generate")
     def test_init_multimodel_experts_different_sizes_raises(self, mock_gen):

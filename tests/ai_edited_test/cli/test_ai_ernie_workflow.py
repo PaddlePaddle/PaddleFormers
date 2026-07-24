@@ -30,7 +30,13 @@ class TestUpdateModelConfigFromArgs(unittest.TestCase):
     def test_update_existing_keys(self, mock_logger):
         """Test updating config with existing keys."""
         mock_config = MagicMock()
-        mock_config.has.side_effect = lambda k: k in ["hidden_size", "num_layers"]
+        mock_config.has.side_effect = lambda k: (
+            k
+            in [
+                "hidden_size",
+                "num_layers",
+            ]
+        )
         mock_config.hidden_size = 768
         mock_config.num_layers = 2
         model_args = {"hidden_size": 1024, "num_layers": 4}
@@ -38,7 +44,9 @@ class TestUpdateModelConfigFromArgs(unittest.TestCase):
         result = update_model_config_from_args(mock_config, model_args)
         self.assertIs(result, mock_config)
         # Check setattr was called
-        mock_config.__setattr__.call_args_list if hasattr(mock_config.__setattr__, "call_args_list") else []
+        mock_config.__setattr__.call_args_list if hasattr(
+            mock_config.__setattr__, "call_args_list"
+        ) else []
 
     @patch("paddleformers.cli.train.ernie_pretrain.workflow.logger")
     def test_update_with_nonexistent_keys(self, mock_logger):
@@ -108,7 +116,9 @@ class TestExpConfig(unittest.TestCase):
 
     def test_creation(self):
         """Test creating ExpConfig."""
-        config = ExpConfig(max_steps=1000, name="test_exp", config={"key": "value"})
+        config = ExpConfig(
+            max_steps=1000, name="test_exp", config={"key": "value"}
+        )
         self.assertEqual(config.max_steps, 1000)
         self.assertEqual(config.name, "test_exp")
         self.assertEqual(config.config, {"key": "value"})

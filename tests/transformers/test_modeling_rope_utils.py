@@ -44,11 +44,17 @@ class LlamaRotaryEmbeddingForwardWithLayerType(LlamaRotaryEmbedding):
     @dynamic_rope_update
     def forward(self, x, position_ids, layer_type=None):
         with paddle.amp.auto_cast(enable=False):
-            inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
+            inv_freq_expanded = (
+                self.inv_freq[None, :, None]
+                .float()
+                .expand([position_ids.shape[0], -1, 1])
+            )
 
             position_ids_expanded = position_ids[:, None, :].float()
 
-            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose([0, 2, 1])
+            freqs = (
+                inv_freq_expanded.float() @ position_ids_expanded.float()
+            ).transpose([0, 2, 1])
 
             emb = paddle.concat((freqs, freqs), axis=-1)
 
@@ -98,22 +104,36 @@ class RoPEUtilsTest(unittest.TestCase):
         self.assertEqual(config.rope_parameters["rope_theta"], 10000.0)
         self.assertEqual(config.rope_parameters["rope_type"], "default")
 
-    def test_standardize_rope_params_with_dict_per_layer_without_rope_parameters(self):
+    def test_standardize_rope_params_with_dict_per_layer_without_rope_parameters(
+        self,
+    ):
         config = FakePretrainedConfig(
             layer_types=["full_attention", "sliding_attention"],
-            rope_theta={"full_attention": 10000.0, "sliding_attention": 15000.0},
+            rope_theta={
+                "full_attention": 10000.0,
+                "sliding_attention": 15000.0,
+            },
             hidden_size=256,
             num_attention_heads=4,
         )
         standardize_rope_params(config)
         self.assertIn("rope_parameters", config.__dict__)
-        self.assertEqual(config.rope_parameters["full_attention"]["rope_theta"], 10000.0)
-        self.assertEqual(config.rope_parameters["sliding_attention"]["rope_theta"], 15000.0)
+        self.assertEqual(
+            config.rope_parameters["full_attention"]["rope_theta"], 10000.0
+        )
+        self.assertEqual(
+            config.rope_parameters["sliding_attention"]["rope_theta"], 15000.0
+        )
 
-    def test_standardize_rope_params_with_dict_per_layer_not_in_new_format(self):
+    def test_standardize_rope_params_with_dict_per_layer_not_in_new_format(
+        self,
+    ):
         config = FakePretrainedConfig(
             layer_types=["full_attention", "sliding_attention"],
-            rope_theta={"full_attention": 10000.0, "sliding_attention": 15000.0},
+            rope_theta={
+                "full_attention": 10000.0,
+                "sliding_attention": 15000.0,
+            },
             hidden_size=256,
             num_attention_heads=4,
             rope_parameters={
@@ -122,25 +142,47 @@ class RoPEUtilsTest(unittest.TestCase):
         )
         standardize_rope_params(config)
         self.assertIn("rope_parameters", config.__dict__)
-        self.assertEqual(config.rope_parameters["full_attention"]["rope_theta"], 10000.0)
-        self.assertEqual(config.rope_parameters["full_attention"]["rope_type"], "default")
-        self.assertEqual(config.rope_parameters["sliding_attention"]["rope_theta"], 15000.0)
-        self.assertEqual(config.rope_parameters["sliding_attention"]["rope_type"], "default")
+        self.assertEqual(
+            config.rope_parameters["full_attention"]["rope_theta"], 10000.0
+        )
+        self.assertEqual(
+            config.rope_parameters["full_attention"]["rope_type"], "default"
+        )
+        self.assertEqual(
+            config.rope_parameters["sliding_attention"]["rope_theta"], 15000.0
+        )
+        self.assertEqual(
+            config.rope_parameters["sliding_attention"]["rope_type"], "default"
+        )
 
     def test_standardize_rope_params_with_dict_per_layer_in_new_format(self):
         config = FakePretrainedConfig(
             layer_types=["full_attention", "sliding_attention"],
-            rope_theta={"full_attention": 10000.0, "sliding_attention": 15000.0},
+            rope_theta={
+                "full_attention": 10000.0,
+                "sliding_attention": 15000.0,
+            },
             hidden_size=256,
             num_attention_heads=4,
-            rope_parameters={"full_attention": {"rope_type": "default"}, "sliding_attention": {"rope_type": "linear"}},
+            rope_parameters={
+                "full_attention": {"rope_type": "default"},
+                "sliding_attention": {"rope_type": "linear"},
+            },
         )
         standardize_rope_params(config)
         self.assertIn("rope_parameters", config.__dict__)
-        self.assertEqual(config.rope_parameters["full_attention"]["rope_theta"], 10000.0)
-        self.assertEqual(config.rope_parameters["full_attention"]["rope_type"], "default")
-        self.assertEqual(config.rope_parameters["sliding_attention"]["rope_theta"], 15000.0)
-        self.assertEqual(config.rope_parameters["sliding_attention"]["rope_type"], "linear")
+        self.assertEqual(
+            config.rope_parameters["full_attention"]["rope_theta"], 10000.0
+        )
+        self.assertEqual(
+            config.rope_parameters["full_attention"]["rope_type"], "default"
+        )
+        self.assertEqual(
+            config.rope_parameters["sliding_attention"]["rope_theta"], 15000.0
+        )
+        self.assertEqual(
+            config.rope_parameters["sliding_attention"]["rope_type"], "linear"
+        )
 
     def test_compute_linear_scaling_rope_parameters(self):
         config = FakePretrainedConfig(
@@ -149,11 +191,22 @@ class RoPEUtilsTest(unittest.TestCase):
             num_attention_heads=4,
             max_position_embeddings=2048,
             partial_rotary_factor=0.8,
-            rope_parameters={"rope_type": "linear", "factor": 2.0, "rope_theta": 10000.0},
+            rope_parameters={
+                "rope_type": "linear",
+                "factor": 2.0,
+                "rope_theta": 10000.0,
+            },
         )
         inv_freq, attn_factor = _compute_linear_scaling_rope_parameters(config)
         self.assertIsInstance(inv_freq, paddle.Tensor)
-        expected_dim = int((config.hidden_size // config.num_attention_heads) * config.partial_rotary_factor + 1) // 2
+        expected_dim = (
+            int(
+                (config.hidden_size // config.num_attention_heads)
+                * config.partial_rotary_factor
+                + 1
+            )
+            // 2
+        )
         self.assertEqual(inv_freq.shape, [expected_dim])
         self.assertEqual(attn_factor, 1.0)
         self.assertTrue((inv_freq > 0).all())
@@ -166,21 +219,43 @@ class RoPEUtilsTest(unittest.TestCase):
             num_attention_heads=4,
             max_position_embeddings=2048,
             partial_rotary_factor=1.0,
-            rope_parameters={"rope_type": "dynamic", "factor": 2.0, "rope_theta": 10000.0},
+            rope_parameters={
+                "rope_type": "dynamic",
+                "factor": 2.0,
+                "rope_theta": 10000.0,
+            },
         )
-        inv_freq, attn_factor = _compute_dynamic_ntk_parameters(config, seq_len=4096)
+        inv_freq, attn_factor = _compute_dynamic_ntk_parameters(
+            config, seq_len=4096
+        )
         self.assertIsInstance(inv_freq, paddle.Tensor)
-        expected_dim = int((config.hidden_size // config.num_attention_heads) * config.partial_rotary_factor + 1) // 2
+        expected_dim = (
+            int(
+                (config.hidden_size // config.num_attention_heads)
+                * config.partial_rotary_factor
+                + 1
+            )
+            // 2
+        )
         self.assertEqual(inv_freq.shape, [expected_dim])
         self.assertTrue((inv_freq > 0).all())
         self.assertEqual(attn_factor, 1.0)
 
         # test with seq_len <= max_position_embeddings
-        inv_freq_no_scale, _ = _compute_dynamic_ntk_parameters(config, seq_len=1024)
+        inv_freq_no_scale, _ = _compute_dynamic_ntk_parameters(
+            config, seq_len=1024
+        )
         base_no_scale = config.rope_theta
         dim = config.hidden_size // config.num_attention_heads
-        expected_inv_freq_no_scale = 1.0 / (base_no_scale ** (paddle.arange(0, dim, 2, dtype=paddle.float32) / dim))
-        self.assertTrue(paddle.allclose(inv_freq_no_scale, expected_inv_freq_no_scale, atol=1e-6))
+        expected_inv_freq_no_scale = 1.0 / (
+            base_no_scale
+            ** (paddle.arange(0, dim, 2, dtype=paddle.float32) / dim)
+        )
+        self.assertTrue(
+            paddle.allclose(
+                inv_freq_no_scale, expected_inv_freq_no_scale, atol=1e-6
+            )
+        )
 
         # test with seq_len None
         inv_freq, attn_factor = _compute_dynamic_ntk_parameters(config)
@@ -190,7 +265,9 @@ class RoPEUtilsTest(unittest.TestCase):
         self.assertEqual(attn_factor, 1.0)
 
         # test with seq_len paddle.Tensor
-        inv_freq, attn_factor = _compute_dynamic_ntk_parameters(config, seq_len=paddle.to_tensor(1024))
+        inv_freq, attn_factor = _compute_dynamic_ntk_parameters(
+            config, seq_len=paddle.to_tensor(1024)
+        )
         self.assertIsInstance(inv_freq, paddle.Tensor)
         self.assertEqual(inv_freq.shape, [expected_dim])
         self.assertTrue((inv_freq > 0).all())
@@ -216,7 +293,14 @@ class RoPEUtilsTest(unittest.TestCase):
         )
         inv_freq, attn_factor = _compute_yarn_parameters(config)
         self.assertIsInstance(inv_freq, paddle.Tensor)
-        expected_dim = int((config.hidden_size // config.num_attention_heads) * config.partial_rotary_factor + 1) // 2
+        expected_dim = (
+            int(
+                (config.hidden_size // config.num_attention_heads)
+                * config.partial_rotary_factor
+                + 1
+            )
+            // 2
+        )
         self.assertEqual(inv_freq.shape, [expected_dim])
         self.assertTrue((inv_freq > 0).all())
         self.assertAlmostEqual(attn_factor, 1.0, places=6)
@@ -238,7 +322,14 @@ class RoPEUtilsTest(unittest.TestCase):
         )
         inv_freq, attn_factor = _compute_yarn_parameters(config)
         self.assertIsInstance(inv_freq, paddle.Tensor)
-        expected_dim = int((config.hidden_size // config.num_attention_heads) * config.partial_rotary_factor + 1) // 2
+        expected_dim = (
+            int(
+                (config.hidden_size // config.num_attention_heads)
+                * config.partial_rotary_factor
+                + 1
+            )
+            // 2
+        )
         self.assertEqual(inv_freq.shape, [expected_dim])
         self.assertTrue((inv_freq > 0).all())
         expected_attention_factor = 0.1 * 1 * math.log(2.0) + 1.0
@@ -262,7 +353,14 @@ class RoPEUtilsTest(unittest.TestCase):
         )
         inv_freq, attn_factor = _compute_yarn_parameters(config)
         self.assertIsInstance(inv_freq, paddle.Tensor)
-        expected_dim = int((config.hidden_size // config.num_attention_heads) * config.partial_rotary_factor + 1) // 2
+        expected_dim = (
+            int(
+                (config.hidden_size // config.num_attention_heads)
+                * config.partial_rotary_factor
+                + 1
+            )
+            // 2
+        )
         self.assertEqual(inv_freq.shape, [expected_dim])
         self.assertTrue((inv_freq > 0).all())
 
@@ -285,25 +383,47 @@ class RoPEUtilsTest(unittest.TestCase):
             },
         )
         # test with seq_len >original_max_position_embeddings -> use long_factor
-        inv_freq_long, attn_factor = _compute_longrope_parameters(config, seq_len=3000)
+        inv_freq_long, attn_factor = _compute_longrope_parameters(
+            config, seq_len=3000
+        )
         self.assertIsInstance(inv_freq_long, paddle.Tensor)
-        expected_dim = int((config.hidden_size // config.num_attention_heads) * config.partial_rotary_factor + 1) // 2
+        expected_dim = (
+            int(
+                (config.hidden_size // config.num_attention_heads)
+                * config.partial_rotary_factor
+                + 1
+            )
+            // 2
+        )
         self.assertEqual(inv_freq_long.shape, [expected_dim])
         self.assertTrue((inv_freq_long > 0).all())
 
-        factor = config.max_position_embeddings / config.original_max_position_embeddings  # 4096 / 2048 = 2.0
-        expected_attn_factor = math.sqrt(1 + math.log(factor) / math.log(config.original_max_position_embeddings))
+        factor = (
+            config.max_position_embeddings
+            / config.original_max_position_embeddings
+        )  # 4096 / 2048 = 2.0
+        expected_attn_factor = math.sqrt(
+            1
+            + math.log(factor)
+            / math.log(config.original_max_position_embeddings)
+        )
         self.assertAlmostEqual(attn_factor, expected_attn_factor, places=6)
 
         # test with seq_len <= original_max_position_embeddings -> use short_factor
-        inv_freq_short, attn_factor_short = _compute_longrope_parameters(config, seq_len=1000)
+        inv_freq_short, attn_factor_short = _compute_longrope_parameters(
+            config, seq_len=1000
+        )
         self.assertEqual(inv_freq_short.shape, [expected_dim])
         self.assertTrue((inv_freq_short > 0).all())
-        self.assertAlmostEqual(attn_factor_short, expected_attn_factor, places=6)
+        self.assertAlmostEqual(
+            attn_factor_short, expected_attn_factor, places=6
+        )
 
         self.assertTrue((inv_freq_long < inv_freq_short).all())
 
-    def test_compute_longrope_parameters_without_original_max_position_embeddings(self):
+    def test_compute_longrope_parameters_without_original_max_position_embeddings(
+        self,
+    ):
         dim_half = 32
         config = FakePretrainedConfig(
             rope_theta=10000.0,
@@ -320,9 +440,18 @@ class RoPEUtilsTest(unittest.TestCase):
             },
         )
         # test with seq_len >original_max_position_embeddings -> use long_factor
-        inv_freq_long, attn_factor = _compute_longrope_parameters(config, seq_len=5000)
+        inv_freq_long, attn_factor = _compute_longrope_parameters(
+            config, seq_len=5000
+        )
         self.assertIsInstance(inv_freq_long, paddle.Tensor)
-        expected_dim = int((config.hidden_size // config.num_attention_heads) * config.partial_rotary_factor + 1) // 2
+        expected_dim = (
+            int(
+                (config.hidden_size // config.num_attention_heads)
+                * config.partial_rotary_factor
+                + 1
+            )
+            // 2
+        )
         self.assertEqual(inv_freq_long.shape, [expected_dim])
         self.assertTrue((inv_freq_long > 0).all())
 
@@ -330,10 +459,14 @@ class RoPEUtilsTest(unittest.TestCase):
         self.assertAlmostEqual(attn_factor, expected_attn_factor, places=6)
 
         # test with seq_len <= original_max_position_embeddings -> use short_factor
-        inv_freq_short, attn_factor_short = _compute_longrope_parameters(config, seq_len=1000)
+        inv_freq_short, attn_factor_short = _compute_longrope_parameters(
+            config, seq_len=1000
+        )
         self.assertEqual(inv_freq_short.shape, [expected_dim])
         self.assertTrue((inv_freq_short > 0).all())
-        self.assertAlmostEqual(attn_factor_short, expected_attn_factor, places=6)
+        self.assertAlmostEqual(
+            attn_factor_short, expected_attn_factor, places=6
+        )
 
         self.assertTrue((inv_freq_long < inv_freq_short).all())
 
@@ -354,16 +487,29 @@ class RoPEUtilsTest(unittest.TestCase):
         )
         inv_freq, attn_factor = _compute_llama3_parameters(config)
         self.assertIsInstance(inv_freq, paddle.Tensor)
-        expected_dim = int((config.hidden_size // config.num_attention_heads) * config.partial_rotary_factor + 1) // 2
+        expected_dim = (
+            int(
+                (config.hidden_size // config.num_attention_heads)
+                * config.partial_rotary_factor
+                + 1
+            )
+            // 2
+        )
         self.assertEqual(inv_freq.shape, [expected_dim])
         self.assertTrue((inv_freq > 0).all())
         self.assertEqual(attn_factor, 1.0)
 
         # High-frequency (first dim) should be unchanged
         base = config.rope_theta
-        dim = int(config.hidden_size // config.num_attention_heads * config.partial_rotary_factor)
+        dim = int(
+            config.hidden_size
+            // config.num_attention_heads
+            * config.partial_rotary_factor
+        )
         expected_inv_freq_0 = 1.0 / (base ** (0 / dim))
-        self.assertAlmostEqual(inv_freq[0].item(), expected_inv_freq_0, places=6)
+        self.assertAlmostEqual(
+            inv_freq[0].item(), expected_inv_freq_0, places=6
+        )
 
         # Low-frequency (last dim): should be divided by factor=8
         freq_idx = dim - 2
@@ -381,17 +527,29 @@ class RoPEUtilsTest(unittest.TestCase):
         config = FakePretrainedConfig(
             layer_types=["full_attention", "sliding_attention"],
             rope_parameters={
-                "full_attention": {"rope_type": "default", "rope_theta": 10000.0},
-                "sliding_attention": {"rope_type": "linear", "rope_theta": 15000.0, "factor": 1.0},
+                "full_attention": {
+                    "rope_type": "default",
+                    "rope_theta": 10000.0,
+                },
+                "sliding_attention": {
+                    "rope_type": "linear",
+                    "rope_theta": 15000.0,
+                    "factor": 1.0,
+                },
             },
         )
         rope_config_validation(config)
 
     def test_rope_config_validation_missing_validation_func_mapping(self):
-        config = FakePretrainedConfig(rope_parameters={"rope_type": "defaulttt", "rope_theta": 10000.0})
+        config = FakePretrainedConfig(
+            rope_parameters={"rope_type": "defaulttt", "rope_theta": 10000.0}
+        )
         with self.assertLogs(logger="PaddleFormers", level="WARNING") as cm:
             rope_config_validation(config)
-        self.assertIn("Missing validation function mapping in `ROPE_VALIDATION_FUNCTIONS`", cm.output[0])
+        self.assertIn(
+            "Missing validation function mapping in `ROPE_VALIDATION_FUNCTIONS`",
+            cm.output[0],
+        )
 
     def test_rope_config_validation_default(self):
         config = FakePretrainedConfig(
@@ -407,12 +565,20 @@ class RoPEUtilsTest(unittest.TestCase):
         self.assertIn("Unrecognized keys in `rope_parameters`", cm.output[0])
 
     def test_rope_config_validation_linear_scaling_missing_key(self):
-        config = FakePretrainedConfig(rope_parameters={"rope_type": "linear", "rope_theta": 10000.0})
+        config = FakePretrainedConfig(
+            rope_parameters={"rope_type": "linear", "rope_theta": 10000.0}
+        )
         with self.assertRaises(KeyError):
             rope_config_validation(config)
 
     def test_rope_config_validation_linear_scaling_invalid_factor(self):
-        config = FakePretrainedConfig(rope_parameters={"rope_type": "linear", "rope_theta": 10000.0, "factor": 0.5})
+        config = FakePretrainedConfig(
+            rope_parameters={
+                "rope_type": "linear",
+                "rope_theta": 10000.0,
+                "factor": 0.5,
+            }
+        )
         with self.assertLogs(logger="PaddleFormers", level="WARNING") as cm:
             rope_config_validation(config)
         self.assertIn("factor field must be a float >= 1", cm.output[0])
@@ -448,15 +614,34 @@ class RoPEUtilsTest(unittest.TestCase):
             rope_config_validation(config)
         messages = [record.getMessage() for record in cm.records]
 
-        self.assertTrue(any("factor field must be a float >= 1" in msg for msg in messages))
-        self.assertTrue(any("attention_factor field must be a float greater than 0" in msg for msg in messages))
-        self.assertTrue(any("beta_fast field must be a float" in msg for msg in messages))
-        self.assertTrue(any("beta_slow field must be a float" in msg for msg in messages))
         self.assertTrue(
-            any("`rope_parameters`'s beta_fast field must be greater than beta_slow" in msg for msg in messages)
+            any("factor field must be a float >= 1" in msg for msg in messages)
         )
         self.assertTrue(
-            any("please correct the 'max_position_embeddings' fields in the model config" in msg for msg in messages)
+            any(
+                "attention_factor field must be a float greater than 0" in msg
+                for msg in messages
+            )
+        )
+        self.assertTrue(
+            any("beta_fast field must be a float" in msg for msg in messages)
+        )
+        self.assertTrue(
+            any("beta_slow field must be a float" in msg for msg in messages)
+        )
+        self.assertTrue(
+            any(
+                "`rope_parameters`'s beta_fast field must be greater than beta_slow"
+                in msg
+                for msg in messages
+            )
+        )
+        self.assertTrue(
+            any(
+                "please correct the 'max_position_embeddings' fields in the model config"
+                in msg
+                for msg in messages
+            )
         )
 
     def test_rope_config_validation_llama3_invalid_params(self):
@@ -475,14 +660,39 @@ class RoPEUtilsTest(unittest.TestCase):
             rope_config_validation(config)
         messages = [record.getMessage() for record in cm.records]
 
-        self.assertTrue(any("factor field must be a float >= 1" in msg for msg in messages))
-        self.assertTrue(any("low_freq_factor field must be a float" in msg for msg in messages))
-        self.assertTrue(any("high_freq_factor field must be a float" in msg for msg in messages))
-        self.assertTrue(any("high_freq_factor field must be greater than low_freq_factor" in msg for msg in messages))
-        self.assertTrue(any("original_max_position_embeddings field must be an integer" in msg for msg in messages))
+        self.assertTrue(
+            any("factor field must be a float >= 1" in msg for msg in messages)
+        )
         self.assertTrue(
             any(
-                "original_max_position_embeddings field must be less than max_position_embeddings" in msg
+                "low_freq_factor field must be a float" in msg
+                for msg in messages
+            )
+        )
+        self.assertTrue(
+            any(
+                "high_freq_factor field must be a float" in msg
+                for msg in messages
+            )
+        )
+        self.assertTrue(
+            any(
+                "high_freq_factor field must be greater than low_freq_factor"
+                in msg
+                for msg in messages
+            )
+        )
+        self.assertTrue(
+            any(
+                "original_max_position_embeddings field must be an integer"
+                in msg
+                for msg in messages
+            )
+        )
+        self.assertTrue(
+            any(
+                "original_max_position_embeddings field must be less than max_position_embeddings"
+                in msg
                 for msg in messages
             )
         )
@@ -504,12 +714,30 @@ class RoPEUtilsTest(unittest.TestCase):
         )
         with self.assertLogs(logger="PaddleFormers", level="WARNING") as cm:
             rope_config_validation(config)
-        dim = int(config.hidden_size // config.num_attention_heads * config.partial_rotary_factor)
+        dim = int(
+            config.hidden_size
+            // config.num_attention_heads
+            * config.partial_rotary_factor
+        )
         messages = [record.getMessage() for record in cm.records]
-        self.assertTrue(any(f"long_factor field must have length {dim // 2}" in msg for msg in messages))
-        self.assertTrue(any(f"short_factor field must have length {dim // 2}" in msg for msg in messages))
         self.assertTrue(
-            any("This model has set a `original_max_position_embeddings` field" in msg for msg in messages)
+            any(
+                f"long_factor field must have length {dim // 2}" in msg
+                for msg in messages
+            )
+        )
+        self.assertTrue(
+            any(
+                f"short_factor field must have length {dim // 2}" in msg
+                for msg in messages
+            )
+        )
+        self.assertTrue(
+            any(
+                "This model has set a `original_max_position_embeddings` field"
+                in msg
+                for msg in messages
+            )
         )
 
     def test_rope_config_validation_longrope_invalid_short_factor_type(self):
@@ -528,9 +756,24 @@ class RoPEUtilsTest(unittest.TestCase):
         with self.assertLogs(logger="PaddleFormers", level="WARNING") as cm:
             rope_config_validation(config)
         messages = [record.getMessage() for record in cm.records]
-        self.assertTrue(any("short_factor field must be a list of numbers" in msg for msg in messages))
-        self.assertTrue(any("long_factor field must be a list of numbers" in msg for msg in messages))
-        self.assertTrue(any("Missing required keys in `rope_parameters`: 'factor'" in msg for msg in messages))
+        self.assertTrue(
+            any(
+                "short_factor field must be a list of numbers" in msg
+                for msg in messages
+            )
+        )
+        self.assertTrue(
+            any(
+                "long_factor field must be a list of numbers" in msg
+                for msg in messages
+            )
+        )
+        self.assertTrue(
+            any(
+                "Missing required keys in `rope_parameters`: 'factor'" in msg
+                for msg in messages
+            )
+        )
 
     def test_rope_config_validation_longrope_invalid_factor(self):
         config = FakePretrainedConfig(
@@ -550,9 +793,18 @@ class RoPEUtilsTest(unittest.TestCase):
         with self.assertLogs(logger="PaddleFormers", level="WARNING") as cm:
             rope_config_validation(config)
         messages = [record.getMessage() for record in cm.records]
-        self.assertTrue(any("rope_parameters`'s factor field must be a float >= 1" in msg for msg in messages))
         self.assertTrue(
-            any("`rope_parameters`'s attention_factor field must be a float greater than 0" in msg for msg in messages)
+            any(
+                "rope_parameters`'s factor field must be a float >= 1" in msg
+                for msg in messages
+            )
+        )
+        self.assertTrue(
+            any(
+                "`rope_parameters`'s attention_factor field must be a float greater than 0"
+                in msg
+                for msg in messages
+            )
         )
 
     def test_default_rope_numerically(self):
@@ -586,8 +838,12 @@ class RoPEUtilsTest(unittest.TestCase):
         rope_fn = LlamaRotaryEmbedding.compute_default_rope_parameters
         inv_freq, attention_scale = rope_fn(config=config)
 
-        self.assertEqual(attention_scale, 1.0)  # attention scale is always 1 for default RoPE
-        self.assertTrue(paddle.allclose(inv_freq, EXPECTED_INV_FREQ, rtol=1e-4, atol=1e-6))
+        self.assertEqual(
+            attention_scale, 1.0
+        )  # attention scale is always 1 for default RoPE
+        self.assertTrue(
+            paddle.allclose(inv_freq, EXPECTED_INV_FREQ, rtol=1e-4, atol=1e-6)
+        )
 
     def test_linear_rope_numerically(self):
         config = FakePretrainedConfig(
@@ -602,10 +858,20 @@ class RoPEUtilsTest(unittest.TestCase):
 
         rope_fn = ROPE_INIT_FUNCTIONS["linear"]
         for factor in (2.0, 10.0, 20.0):
-            config.rope_parameters = {"rope_type": "linear", "rope_theta": 10000.0, "factor": factor}
+            config.rope_parameters = {
+                "rope_type": "linear",
+                "rope_theta": 10000.0,
+                "factor": factor,
+            }
             inv_freq, attention_scale = rope_fn(config=config)
-            self.assertEqual(attention_scale, 1.0)  # attention scale is always 1 for linear RoPE
-            self.assertTrue(paddle.allclose(inv_freq, default_inv_freq / factor, rtol=1e-4, atol=1e-6))
+            self.assertEqual(
+                attention_scale, 1.0
+            )  # attention scale is always 1 for linear RoPE
+            self.assertTrue(
+                paddle.allclose(
+                    inv_freq, default_inv_freq / factor, rtol=1e-4, atol=1e-6
+                )
+            )
 
     def test_dynamic_rope_numerically(self):
         # fmt: off
@@ -638,23 +904,53 @@ class RoPEUtilsTest(unittest.TestCase):
 
         rope_fn = ROPE_INIT_FUNCTIONS["dynamic"]
         for factor in (2.0, 10.0, 20.0):
-            config.rope_parameters = {"rope_type": "dynamic", "rope_theta": 10000.0, "factor": factor}
+            config.rope_parameters = {
+                "rope_type": "dynamic",
+                "rope_theta": 10000.0,
+                "factor": factor,
+            }
             inv_freq, attention_scale = rope_fn(config=config)
-            self.assertEqual(attention_scale, 1.0)  # attention scale is always 1 for dynamic RoPE
-            self.assertTrue(paddle.allclose(inv_freq, default_inv_freq, rtol=1e-4, atol=1e-6))
+            self.assertEqual(
+                attention_scale, 1.0
+            )  # attention scale is always 1 for dynamic RoPE
+            self.assertTrue(
+                paddle.allclose(
+                    inv_freq, default_inv_freq, rtol=1e-4, atol=1e-6
+                )
+            )
 
             inv_freq, _ = rope_fn(config=config, seq_len=1)
-            self.assertTrue(paddle.allclose(inv_freq, default_inv_freq, rtol=1e-4, atol=1e-6))
+            self.assertTrue(
+                paddle.allclose(
+                    inv_freq, default_inv_freq, rtol=1e-4, atol=1e-6
+                )
+            )
 
-            inv_freq, _ = rope_fn(config=config, seq_len=paddle.to_tensor(1, dtype=paddle.int64))
-            self.assertTrue(paddle.allclose(inv_freq, default_inv_freq, rtol=1e-4, atol=1e-6))
+            inv_freq, _ = rope_fn(
+                config=config, seq_len=paddle.to_tensor(1, dtype=paddle.int64)
+            )
+            self.assertTrue(
+                paddle.allclose(
+                    inv_freq, default_inv_freq, rtol=1e-4, atol=1e-6
+                )
+            )
 
         factor = 10.0
-        config.rope_parameters = {"rope_type": "dynamic", "rope_theta": 10000.0, "factor": factor}
+        config.rope_parameters = {
+            "rope_type": "dynamic",
+            "rope_theta": 10000.0,
+            "factor": factor,
+        }
         inv_freq, _ = rope_fn(config=config, seq_len=16384)
         with self.assertRaises(AssertionError):  # It is NOT a linear factor
-            self.assertTrue(paddle.allclose(inv_freq, default_inv_freq / factor, rtol=1e-4, atol=1e-6))
-        self.assertTrue(paddle.allclose(inv_freq, EXPECTED_INV_FREQ, rtol=1e-4, atol=1e-6))
+            self.assertTrue(
+                paddle.allclose(
+                    inv_freq, default_inv_freq / factor, rtol=1e-4, atol=1e-6
+                )
+            )
+        self.assertTrue(
+            paddle.allclose(inv_freq, EXPECTED_INV_FREQ, rtol=1e-4, atol=1e-6)
+        )
 
     def test_yarn_rope_numerically(self):
         # fmt: off
@@ -688,7 +984,11 @@ class RoPEUtilsTest(unittest.TestCase):
 
         rope_fn = ROPE_INIT_FUNCTIONS["yarn"]
         for factor in (2.0, 10.0, 20.0):
-            config.rope_parameters = {"rope_type": "yarn", "rope_theta": 10000.0, "factor": factor}
+            config.rope_parameters = {
+                "rope_type": "yarn",
+                "rope_theta": 10000.0,
+                "factor": factor,
+            }
             _, attention_scale = rope_fn(config=config)
             self.assertEqual(attention_scale, 0.1 * math.log(factor) + 1.0)
 
@@ -712,7 +1012,9 @@ class RoPEUtilsTest(unittest.TestCase):
         }
         inv_freq, _ = rope_fn(config=config)
         is_bounded_by_factor = [
-            ((default_inv_freq[idx] / factor) - margin) <= yarn_inv_freq_value <= (default_inv_freq[idx] + margin)
+            ((default_inv_freq[idx] / factor) - margin)
+            <= yarn_inv_freq_value
+            <= (default_inv_freq[idx] + margin)
             for idx, yarn_inv_freq_value in enumerate(inv_freq)
         ]
         self.assertTrue(all(is_bounded_by_factor))
@@ -726,11 +1028,19 @@ class RoPEUtilsTest(unittest.TestCase):
         }
         inv_freq, _ = rope_fn(config=config)
         is_interpolating = [
-            yarn_inv_freq_value < (default_inv_freq[idx] + margin) for idx, yarn_inv_freq_value in enumerate(inv_freq)
+            yarn_inv_freq_value < (default_inv_freq[idx] + margin)
+            for idx, yarn_inv_freq_value in enumerate(inv_freq)
         ]
         self.assertFalse(is_interpolating[0])
         self.assertTrue(all(is_interpolating[1:]))
-        self.assertTrue(paddle.allclose(inv_freq[-20:], default_inv_freq[-20:] / factor, rtol=1e-4, atol=1e-6))
+        self.assertTrue(
+            paddle.allclose(
+                inv_freq[-20:],
+                default_inv_freq[-20:] / factor,
+                rtol=1e-4,
+                atol=1e-6,
+            )
+        )
 
         config.rope_parameters = {
             "rope_type": "yarn",
@@ -740,7 +1050,9 @@ class RoPEUtilsTest(unittest.TestCase):
             "beta_slow": 1,
         }
         inv_freq, _ = rope_fn(config=config)
-        self.assertTrue(paddle.allclose(inv_freq, EXPECTED_INV_FREQ, rtol=1e-4, atol=1e-6))
+        self.assertTrue(
+            paddle.allclose(inv_freq, EXPECTED_INV_FREQ, rtol=1e-4, atol=1e-6)
+        )
 
     def test_longrope_rope_numerically(self):
         config = FakePretrainedConfig(
@@ -753,7 +1065,9 @@ class RoPEUtilsTest(unittest.TestCase):
 
         # longrope applies scaling on EACH inv frequency, `short_factor` or `long_factor`, depending on the seq_len
         dim = config.hidden_size // config.num_attention_heads
-        short_factor = [2.0] * (dim // 2)  # scaling applied when seq_len <= max_position_embeddings
+        short_factor = [2.0] * (
+            dim // 2
+        )  # scaling applied when seq_len <= max_position_embeddings
         long_factor = (
             paddle.ones(dim // 2).cumsum(0).tolist()
         )  # scaling applied when seq_len > max_position_embeddings
@@ -772,7 +1086,12 @@ class RoPEUtilsTest(unittest.TestCase):
                 "long_factor": long_factor,
             }
             _, attention_scale = rope_fn(config=config)
-            self.assertEqual(attention_scale, math.sqrt(1 + math.log(factor) / math.log(max_position_embeddings)))
+            self.assertEqual(
+                attention_scale,
+                math.sqrt(
+                    1 + math.log(factor) / math.log(max_position_embeddings)
+                ),
+            )
 
             config.rope_parameters = {
                 "rope_type": "longrope",
@@ -792,7 +1111,9 @@ class RoPEUtilsTest(unittest.TestCase):
                 "short_factor": short_factor,
                 "long_factor": long_factor,
             }
-            self.assertEqual(config.rope_parameters.get("attention_factor"), None)
+            self.assertEqual(
+                config.rope_parameters.get("attention_factor"), None
+            )
             # Verify that "TypeError: '<' not supported between instances of 'NoneType' and 'int'" is not raised.
             rope_config_validation(config)
 
@@ -805,12 +1126,24 @@ class RoPEUtilsTest(unittest.TestCase):
         }
         inv_freq, _ = rope_fn(config=config, seq_len=0)
         self.assertTrue(
-            paddle.allclose(inv_freq, default_inv_freq / paddle.to_tensor(short_factor), rtol=1e-4, atol=1e-6)
+            paddle.allclose(
+                inv_freq,
+                default_inv_freq / paddle.to_tensor(short_factor),
+                rtol=1e-4,
+                atol=1e-6,
+            )
         )
 
-        inv_freq, _ = rope_fn(config=config, seq_len=config.max_position_embeddings + 1)
+        inv_freq, _ = rope_fn(
+            config=config, seq_len=config.max_position_embeddings + 1
+        )
         self.assertTrue(
-            paddle.allclose(inv_freq, default_inv_freq / paddle.to_tensor(long_factor), rtol=1e-4, atol=1e-6)
+            paddle.allclose(
+                inv_freq,
+                default_inv_freq / paddle.to_tensor(long_factor),
+                rtol=1e-4,
+                atol=1e-6,
+            )
         )
 
     def test_llama3_rope_numerically(self):
@@ -867,7 +1200,9 @@ class RoPEUtilsTest(unittest.TestCase):
         }
         inv_freq, _ = rope_fn(config=config)
         is_bounded_by_factor = [
-            (default_inv_freq[idx] / factor) <= llama3_inv_freq_value <= default_inv_freq[idx]
+            (default_inv_freq[idx] / factor)
+            <= llama3_inv_freq_value
+            <= default_inv_freq[idx]
             for idx, llama3_inv_freq_value in enumerate(inv_freq)
         ]
         self.assertTrue(all(is_bounded_by_factor))
@@ -881,7 +1216,10 @@ class RoPEUtilsTest(unittest.TestCase):
             "high_freq_factor": 1000,
         }
         inv_freq, _ = rope_fn(config=config)
-        is_scaled = [yarn_inv_freq_value < default_inv_freq[idx] for idx, yarn_inv_freq_value in enumerate(inv_freq)]
+        is_scaled = [
+            yarn_inv_freq_value < default_inv_freq[idx]
+            for idx, yarn_inv_freq_value in enumerate(inv_freq)
+        ]
         self.assertTrue(all(is_scaled))
 
         config.rope_parameters = {
@@ -893,7 +1231,9 @@ class RoPEUtilsTest(unittest.TestCase):
             "high_freq_factor": 4,
         }
         inv_freq, _ = rope_fn(config=config)
-        self.assertTrue(paddle.allclose(inv_freq, EXPECTED_INV_FREQ, rtol=1e-4, atol=1e-6))
+        self.assertTrue(
+            paddle.allclose(inv_freq, EXPECTED_INV_FREQ, rtol=1e-4, atol=1e-6)
+        )
 
     def test_dynamic_rope_grows_cache(self):
         config = FakePretrainedConfig(
@@ -918,7 +1258,10 @@ class RoPEUtilsTest(unittest.TestCase):
         pos_ids_long = paddle.arange(100).unsqueeze(0)  # [1, 100]
         cos2, sin2 = model(x, pos_ids_long)
 
-        self.assertFalse(paddle.allclose(cos1, cos2[:1, :10, :]), msg="Dynamic RoPE should change output for long seq")
+        self.assertFalse(
+            paddle.allclose(cos1, cos2[:1, :10, :]),
+            msg="Dynamic RoPE should change output for long seq",
+        )
 
     def test_longrope_switches_freq(self):
         config = FakePretrainedConfig(
@@ -927,7 +1270,11 @@ class RoPEUtilsTest(unittest.TestCase):
             rope_theta=10000.0,
             max_position_embeddings=256,
             original_max_position_embeddings=64,
-            rope_parameters={"rope_type": "longrope", "long_factor": [1.0] * 32, "short_factor": [2.0] * 32},
+            rope_parameters={
+                "rope_type": "longrope",
+                "long_factor": [1.0] * 32,
+                "short_factor": [2.0] * 32,
+            },
         )
         standardize_rope_params(config)
         model = LlamaRotaryEmbedding(config)
@@ -942,10 +1289,16 @@ class RoPEUtilsTest(unittest.TestCase):
         cos2, _ = model(x, pos_ids_long)
 
         self.assertTrue(hasattr(model, "long_inv_freq"))
-        self.assertFalse(paddle.allclose(model.inv_freq, original_inv_freq_copy))
+        self.assertFalse(
+            paddle.allclose(model.inv_freq, original_inv_freq_copy)
+        )
 
         cos3, _ = model(x, pos_ids_short)
-        self.assertTrue(paddle.allclose(model.inv_freq, original_inv_freq_copy.to(model.inv_freq.place)))
+        self.assertTrue(
+            paddle.allclose(
+                model.inv_freq, original_inv_freq_copy.to(model.inv_freq.place)
+            )
+        )
 
     def test_rope_with_layer_type(self):
         config = FakePretrainedConfig(
@@ -955,14 +1308,21 @@ class RoPEUtilsTest(unittest.TestCase):
             max_position_embeddings=64,
             rope_parameters={
                 "full_attention": {"rope_theta": 10000.0, "factor": 2.0},
-                "sliding_attention": {"rope_theta": 15000.0, "long_factor": [2.0] * 32, "short_factor": [2.0] * 32},
+                "sliding_attention": {
+                    "rope_theta": 15000.0,
+                    "long_factor": [2.0] * 32,
+                    "short_factor": [2.0] * 32,
+                },
             },
         )
         standardize_rope_params(config)
         model = LlamaRotaryEmbeddingForwardWithLayerType(config)
         model.max_seq_len_cached = 32
         model.original_max_seq_len = 64
-        model.rope_type = {"full_attention": "dynamic", "sliding_attention": "longrope"}
+        model.rope_type = {
+            "full_attention": "dynamic",
+            "sliding_attention": "longrope",
+        }
         model.full_attention_original_inv_freq = model.inv_freq.clone()
         model.sliding_attention_original_inv_freq = model.inv_freq.clone()
 
@@ -972,7 +1332,9 @@ class RoPEUtilsTest(unittest.TestCase):
         cos, sin = model(x, pos_ids, layer_type="full_attention")
 
         self.assertTrue(hasattr(model, "full_attention_inv_freq"))
-        self.assertGreater(getattr(model, "full_attention_max_seq_len_cached", 0), 32)
+        self.assertGreater(
+            getattr(model, "full_attention_max_seq_len_cached", 0), 32
+        )
 
         cos, sin = model(x, pos_ids, layer_type="sliding_attention")
         self.assertTrue(hasattr(model, "sliding_attention_inv_freq"))

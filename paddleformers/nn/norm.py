@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import paddle
-import paddle.nn as nn
+from paddle import nn
 from paddle.distributed.fleet.utils.sequence_parallel_utils import (
     mark_as_sequence_parallel_parameter,
 )
@@ -34,10 +34,14 @@ class LayerNorm(nn.LayerNorm):
         norm_eps=None,
         has_bias=None,
         input_is_parallel=False,
-        **kwargs
+        **kwargs,
     ):
-        self.hidden_size = config.hidden_size if hidden_size is None else hidden_size
-        self.norm_eps = config.get("norm_eps", 1e-5) if norm_eps is None else norm_eps
+        self.hidden_size = (
+            config.hidden_size if hidden_size is None else hidden_size
+        )
+        self.norm_eps = (
+            config.get("norm_eps", 1e-5) if norm_eps is None else norm_eps
+        )
         super().__init__(self.hidden_size, epsilon=self.norm_eps)
         self.config = config
 
@@ -52,10 +56,21 @@ class LayerNorm(nn.LayerNorm):
 
 @paddle.jit.marker.unified
 class RMSNorm(nn.Layer):
-    def __init__(self, config: PretrainedConfig, hidden_size=None, norm_eps=None, input_is_parallel=False, **kwargs):
+    def __init__(
+        self,
+        config: PretrainedConfig,
+        hidden_size=None,
+        norm_eps=None,
+        input_is_parallel=False,
+        **kwargs,
+    ):
         super().__init__()
-        self.hidden_size = config.hidden_size if hidden_size is None else hidden_size
-        self.variance_epsilon = config.rms_norm_eps if norm_eps is None else norm_eps
+        self.hidden_size = (
+            config.hidden_size if hidden_size is None else hidden_size
+        )
+        self.variance_epsilon = (
+            config.rms_norm_eps if norm_eps is None else norm_eps
+        )
         self.weight = paddle.create_parameter(
             shape=[self.hidden_size],
             dtype=paddle.get_default_dtype(),
@@ -68,12 +83,21 @@ class RMSNorm(nn.Layer):
 
     def forward(self, hidden_states):
         current_device = detect_device()
-        if self.config.get("fuse_rms_norm", True) and current_device != "iluvatar_gpu":
-            return fused_rms_norm_ext(hidden_states, self.weight, self.variance_epsilon)[0].astype(self.weight.dtype)
+        if (
+            self.config.get("fuse_rms_norm", True)
+            and current_device != "iluvatar_gpu"
+        ):
+            return fused_rms_norm_ext(
+                hidden_states, self.weight, self.variance_epsilon
+            )[0].astype(self.weight.dtype)
 
         with paddle.amp.auto_cast(False):
-            variance = hidden_states.astype("float32").pow(2).mean(-1, keepdim=True)
-            hidden_states = paddle.rsqrt(variance + self.variance_epsilon) * hidden_states
+            variance = (
+                hidden_states.astype("float32").pow(2).mean(-1, keepdim=True)
+            )
+            hidden_states = (
+                paddle.rsqrt(variance + self.variance_epsilon) * hidden_states
+            )
 
         if self.weight.dtype in [paddle.float16, paddle.bfloat16]:
             hidden_states = paddle.cast(hidden_states, self.weight.dtype)
@@ -88,7 +112,14 @@ class Norm(GeneralInterface):
 
     @classmethod
     def create(
-        self, config, hidden_size=None, has_bias=None, norm_eps=None, norm_type=None, input_is_parallel=False, **kwargs
+        self,
+        config,
+        hidden_size=None,
+        has_bias=None,
+        norm_eps=None,
+        norm_type=None,
+        input_is_parallel=False,
+        **kwargs,
     ):
         if norm_type is None:
             norm_type = "rms_norm"
@@ -96,5 +127,10 @@ class Norm(GeneralInterface):
             has_bias = config.get("use_bias", False)
         norm_cls = self._global_mapping[norm_type]
         return norm_cls(
-            config, hidden_size, has_bias=has_bias, norm_eps=norm_eps, input_is_parallel=input_is_parallel, **kwargs
+            config,
+            hidden_size,
+            has_bias=has_bias,
+            norm_eps=norm_eps,
+            input_is_parallel=input_is_parallel,
+            **kwargs,
         )

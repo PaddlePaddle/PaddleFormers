@@ -27,7 +27,9 @@ def regitser_extract_layer_name_func(func):
 
 def get_extract_layer_name_func():
     global _GLOBAL_EXTRACT_LAYER_NAME_FUNC
-    assert _GLOBAL_EXTRACT_LAYER_NAME_FUNC is not None, "extract layer func is not registered yet"
+    assert _GLOBAL_EXTRACT_LAYER_NAME_FUNC is not None, (
+        "extract layer func is not registered yet"
+    )
     return _GLOBAL_EXTRACT_LAYER_NAME_FUNC
 
 
@@ -41,7 +43,9 @@ def register_index_layer_func(func):
 
 def get_index_layer_func():
     global _GLOBAL_INDEX_LAYER_FUNC
-    assert _GLOBAL_INDEX_LAYER_FUNC is not None, "index layer func is not registered yet"
+    assert _GLOBAL_INDEX_LAYER_FUNC is not None, (
+        "index layer func is not registered yet"
+    )
     return _GLOBAL_INDEX_LAYER_FUNC
 
 
@@ -60,7 +64,9 @@ def has_register_sname_to_tname_func():
 
 def get_sname_to_tname_func():
     global _GLOBAL_SNAME_TO_TNAME_FUNC
-    assert _GLOBAL_SNAME_TO_TNAME_FUNC is not None, "sname to tname func is not registered yet"
+    assert _GLOBAL_SNAME_TO_TNAME_FUNC is not None, (
+        "sname to tname func is not registered yet"
+    )
     return _GLOBAL_SNAME_TO_TNAME_FUNC
 
 
@@ -93,7 +99,10 @@ class LayerNameScope:
             cls.registered_layers.sort(key=lambda x: len(x), reverse=True)
 
     def get_next_scope(self, layer_id, old_layer_name):
-        if old_layer_name != self.last_old_layer_name or layer_id != self.last_layer_id:
+        if (
+            old_layer_name != self.last_old_layer_name
+            or layer_id != self.last_layer_id
+        ):
             self.index = self.index + 1
             self.last_old_layer_name = old_layer_name
             self.last_layer_id = layer_id
@@ -139,7 +148,7 @@ def extract_param_names_groupby_layer(
         assert suffix in sharding_metas
         assert "structure_name_mapping" in sharding_metas[suffix]
         name_mapping = sharding_metas[suffix]["structure_name_mapping"]
-        for (k, v) in name_mapping.items():
+        for k, v in name_mapping.items():
             layer_name = get_extract_layer_name_func()(k)
             if layer_name not in param_names_by_layer:
                 param_names_by_layer[layer_name] = []
@@ -163,7 +172,9 @@ class LayerReNamingManager:
         self.top_layer_name_scope = LayerNameScope(None, None)
 
     def get_new_layer_name(self, layer_id: str, old_name: str):
-        name_scope = self.top_layer_name_scope.get_sub_scope(old_name).get_next_scope(layer_id, old_name)
+        name_scope = self.top_layer_name_scope.get_sub_scope(
+            old_name
+        ).get_next_scope(layer_id, old_name)
         return name_scope.get_layer_name()
 
     def get_new_param_name(self, layer_id, old_name: str):
@@ -186,7 +197,7 @@ class PipeLinelayer:
 
         param_names = sorted(param_names, key=sort_key)
         self._params = OrderedDict()
-        for (k, v) in param_names:
+        for k, v in param_names:
             self._params[k] = v
 
     @property
@@ -238,15 +249,19 @@ class PipeLineStage:
         segment.add_layer(layer_name, param_names)
 
     def build_name_mapping(self, sname_to_tname=None):
-        for (k, segment) in self._segments.items():
-            for (i, layer) in segment.layers.items():
+        for k, segment in self._segments.items():
+            for i, layer in segment.layers.items():
                 for param in layer.params.items():
                     (param_name, tensor_name) = param
                     # map to a new name
-                    n_name = self._rename_mgr.get_new_param_name(layer.name, tensor_name)
+                    n_name = self._rename_mgr.get_new_param_name(
+                        layer.name, tensor_name
+                    )
                     if sname_to_tname is not None:
                         if param_name in sname_to_tname.keys():
-                            self._wname_to_rname[param_name] = sname_to_tname[param_name]
+                            self._wname_to_rname[param_name] = sname_to_tname[
+                                param_name
+                            ]
                     # logger.info(f"{param_name} {tensor_name}=>{n_name}")
                     self._param_to_tname[param_name] = (tensor_name, n_name)
 
@@ -259,7 +274,7 @@ class PipeLineStage:
         return n_name
 
     def print_name_mapping(self):
-        for (name, mapping) in self._param_to_tname.items():
+        for name, mapping in self._param_to_tname.items():
             logger.info(f"{name} mapping {mapping[0]} => {mapping[1]}\n")
 
 
@@ -290,7 +305,7 @@ class PipeLineSegmentContext:
         else:
             self._sname_to_tname = None
 
-        for (i, stage_seg) in enumerate(stage_segments):
+        for i, stage_seg in enumerate(stage_segments):
             pipe_stage = PipeLineStage()
             self._stages.append(pipe_stage)
             for seg in stage_seg:
@@ -299,7 +314,11 @@ class PipeLineSegmentContext:
                     if j in self._layer_index_to_name:
                         layer_name = self._layer_index_to_name[j]
                         assert layer_name in self._param_names_by_layer
-                        pipe_stage.add_layer(j, layer_name, self._param_names_by_layer[layer_name])
+                        pipe_stage.add_layer(
+                            j,
+                            layer_name,
+                            self._param_names_by_layer[layer_name],
+                        )
                     self._layer_index_to_stage[j] = i
                     self._layer_name_to_stage[layer_name] = i
 
@@ -315,9 +334,13 @@ class PipeLineSegmentContext:
     def _segment(self):
         index_segments = [[] for _ in range(self._pp_degree)]
         segment_parts = self._pp_model._layers.segment_parts
-        for i in range(self._pp_model._layers._total_stages_with_virtual_stages):
+        for i in range(
+            self._pp_model._layers._total_stages_with_virtual_stages
+        ):
             stage = i % self._pp_degree
-            index_segments[stage].append((segment_parts[i], segment_parts[i + 1]))
+            index_segments[stage].append(
+                (segment_parts[i], segment_parts[i + 1])
+            )
         print(f"segment results {index_segments}")
         return index_segments
 
@@ -337,8 +360,8 @@ class PipeLineSegmentContext:
         return stage_index
 
     def print_name_mapping(self):
-        for (i, stage) in enumerate(self._stages):
-            print(f"{'='*30}stage {i} {'='*30}")
+        for i, stage in enumerate(self._stages):
+            print(f"{'=' * 30}stage {i} {'=' * 30}")
             stage.print_name_mapping()
 
 

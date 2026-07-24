@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,20 +35,30 @@ class TestHFMultiSourceProcessor(unittest.TestCase):
         cls.messages_with_image = [
             {
                 "role": "user",
-                "content": [{"type": "text", "text": "Describe this image."}, {"type": "image", "image": cls.image}],
+                "content": [
+                    {"type": "text", "text": "Describe this image."},
+                    {"type": "image", "image": cls.image},
+                ],
             }
         ]
 
         cls.messages_with_video = [
             {
                 "role": "user",
-                "content": [{"type": "text", "text": "Describe this video."}, {"type": "video", "video": cls.video}],
+                "content": [
+                    {"type": "text", "text": "Describe this video."},
+                    {"type": "video", "video": cls.video},
+                ],
             }
         ]
 
     def preprocess_image(self, processor):
-        text = processor.apply_chat_template(self.messages_with_image, tokenize=False, add_generation_prompt=True)
-        image_inputs, video_inputs = process_vision_info(self.messages_with_image)
+        text = processor.apply_chat_template(
+            self.messages_with_image, tokenize=False, add_generation_prompt=True
+        )
+        image_inputs, video_inputs = process_vision_info(
+            self.messages_with_image
+        )
         inputs = processor(
             text=[text],
             images=image_inputs,
@@ -57,7 +66,9 @@ class TestHFMultiSourceProcessor(unittest.TestCase):
             padding=True,
             return_tensors="pd",
         )
-        EXPECTED_INPUT_IDS = paddle.to_tensor([151644, 8948, 198, 2610, 525, 264, 10950, 17847, 13, 151645])
+        EXPECTED_INPUT_IDS = paddle.to_tensor(
+            [151644, 8948, 198, 2610, 525, 264, 10950, 17847, 13, 151645]
+        )
         EXPECTED_PIXEL_VALUES_MEAN = paddle.to_tensor(0.29226744)
         EXPECTED_PIXEL_VALUES_MAX = paddle.to_tensor(2.14589691)
         EXPECTED_IMAGE_GRID_THW = [[1, 62, 92]]
@@ -69,7 +80,9 @@ class TestHFMultiSourceProcessor(unittest.TestCase):
         self.assertEqual(inputs["attention_mask"].shape, [1, 1451])
         self.assertEqual(inputs["pixel_values"].shape, [5704, 1176])
         self.assertEqual(inputs["pixel_values"].dtype, paddle.float32)
-        self.assertEqual(inputs["image_grid_thw"].tolist(), EXPECTED_IMAGE_GRID_THW)
+        self.assertEqual(
+            inputs["image_grid_thw"].tolist(), EXPECTED_IMAGE_GRID_THW
+        )
         self.assertTrue(
             paddle.allclose(
                 inputs["input_ids"][0, :10],
@@ -94,8 +107,12 @@ class TestHFMultiSourceProcessor(unittest.TestCase):
         )
 
     def preprocess_video(self, processor):
-        text = processor.apply_chat_template(self.messages_with_video, tokenize=False, add_generation_prompt=True)
-        image_inputs, video_inputs = process_vision_info(self.messages_with_video)
+        text = processor.apply_chat_template(
+            self.messages_with_video, tokenize=False, add_generation_prompt=True
+        )
+        image_inputs, video_inputs = process_vision_info(
+            self.messages_with_video
+        )
         inputs = processor(
             text=[text],
             images=image_inputs,
@@ -103,7 +120,9 @@ class TestHFMultiSourceProcessor(unittest.TestCase):
             padding=True,
             return_tensors="pd",
         )
-        EXPECTED_INPUT_IDS = paddle.to_tensor([151644, 8948, 198, 2610, 525, 264, 10950, 17847, 13, 151645])
+        EXPECTED_INPUT_IDS = paddle.to_tensor(
+            [151644, 8948, 198, 2610, 525, 264, 10950, 17847, 13, 151645]
+        )
         EXPECTED_PIXEL_VALUES_MEAN = paddle.to_tensor(0.29228371)
         EXPECTED_PIXEL_VALUES_MAX = paddle.to_tensor(2.11745691)
         EXPECTED_VIDEO_GRID_THW = [[3, 46, 66]]
@@ -116,8 +135,12 @@ class TestHFMultiSourceProcessor(unittest.TestCase):
         self.assertEqual(inputs["attention_mask"].shape, [1, 2302])
         self.assertEqual(inputs["pixel_values_videos"].shape, [9108, 1176])
         self.assertEqual(inputs["pixel_values_videos"].dtype, paddle.float32)
-        self.assertEqual(inputs["video_grid_thw"].tolist(), EXPECTED_VIDEO_GRID_THW)
-        self.assertEqual(inputs["second_per_grid_ts"].tolist(), EXPECTED_SECOND_PER_GRID_TS)
+        self.assertEqual(
+            inputs["video_grid_thw"].tolist(), EXPECTED_VIDEO_GRID_THW
+        )
+        self.assertEqual(
+            inputs["second_per_grid_ts"].tolist(), EXPECTED_SECOND_PER_GRID_TS
+        )
         self.assertTrue(
             paddle.allclose(
                 inputs["input_ids"][0, :10],
@@ -149,12 +172,16 @@ class TestHFMultiSourceProcessor(unittest.TestCase):
 
     @skip_for_none_ce_case
     def test_model_scope(self):
-        processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", download_hub="modelscope")
+        processor = AutoProcessor.from_pretrained(
+            "Qwen/Qwen2.5-VL-3B-Instruct", download_hub="modelscope"
+        )
         self.preprocess_image(processor)
         self.preprocess_video(processor)
 
     @skip_for_none_ce_case
     def test_hf_hub(self):
-        processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", download_hub="huggingface")
+        processor = AutoProcessor.from_pretrained(
+            "Qwen/Qwen2.5-VL-3B-Instruct", download_hub="huggingface"
+        )
         self.preprocess_image(processor)
         self.preprocess_video(processor)

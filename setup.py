@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import errno
-import io
 import os
 import re
 import subprocess
@@ -47,17 +46,23 @@ def have_git() -> bool:
 
 def git_revision(dir: str) -> bytes:
     """Get the SHA-1 of the HEAD of a git repository."""
-    return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=dir).strip()
+    return subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=dir
+    ).strip()
 
 
 def git_checkout(dir: str, filename: str) -> bytes:
     """Get the SHA-1 of the HEAD of a git repository."""
-    return subprocess.check_output(["git", "checkout", filename], cwd=dir).strip()
+    return subprocess.check_output(
+        ["git", "checkout", filename], cwd=dir
+    ).strip()
 
 
 def is_dirty(dir: str) -> bool:
     """Check whether a git repository has uncommitted changes."""
-    output = subprocess.check_output(["git", "status", "-uno", "--porcelain"], cwd=dir)
+    output = subprocess.check_output(
+        ["git", "status", "-uno", "--porcelain"], cwd=dir
+    )
     return output.strip() != b""
 
 
@@ -119,7 +124,7 @@ if os.getenv(PADDLEFORMERS_STABLE_VERSION):
     __version__ = __version__.replace(".dev", "")
 else:
     formatted_date = datetime.now().date().strftime("%Y%m%d")
-    __version__ = __version__.replace(".dev", ".dev{}".format(formatted_date))
+    __version__ = __version__.replace(".dev", f".dev{formatted_date}")
 
 
 # write the version information for the develop version
@@ -130,7 +135,12 @@ def append_version_py(filename="paddleformers/__init__.py"):
         file_content = file.read()
 
     pattern = r"^# \[VERSION_INFO\].*$"
-    modified_content = re.sub(pattern, f'\n__version__ = "{__version__}"\n\n', file_content, flags=re.MULTILINE)
+    modified_content = re.sub(
+        pattern,
+        f'\n__version__ = "{__version__}"\n\n',
+        file_content,
+        flags=re.MULTILINE,
+    )
     with open(filename, "w") as file:
         file.write(modified_content)
 
@@ -142,7 +152,10 @@ REQUIRED_PACKAGES = read_requirements_file("requirements.txt")
 
 
 def read(*names, **kwargs):
-    with io.open(os.path.join(os.path.dirname(__file__), *names), encoding=kwargs.get("encoding", "utf8")) as fp:
+    with open(
+        os.path.join(os.path.dirname(__file__), *names),
+        encoding=kwargs.get("encoding", "utf8"),
+    ) as fp:
         return fp.read()
 
 
@@ -195,7 +208,13 @@ try:
         license_files=("LICENSE",),
         packages=setuptools.find_packages(
             where=".",
-            exclude=("examples*", "tests*", "applications*", "fast_generation*", "model_zoo*"),
+            exclude=(
+                "examples*",
+                "tests*",
+                "applications*",
+                "fast_generation*",
+                "model_zoo*",
+            ),
         ),
         package_data={
             "paddleformers": ["datasets/reader/data_info.json"],
@@ -218,9 +237,17 @@ try:
         license="Apache 2.0",
     )
 except Exception as e:
-    git_checkout(paddleformers_dir, "paddleformers/version/__init__.py") if commit != "unknown" else None
-    git_checkout(paddleformers_dir, "paddleformers/__init__.py") if commit != "unknown" else None
+    git_checkout(
+        paddleformers_dir, "paddleformers/version/__init__.py"
+    ) if commit != "unknown" else None
+    git_checkout(
+        paddleformers_dir, "paddleformers/__init__.py"
+    ) if commit != "unknown" else None
     raise e
 
-git_checkout(paddleformers_dir, "paddleformers/version/__init__.py") if commit != "unknown" else None
-git_checkout(paddleformers_dir, "paddleformers/__init__.py") if commit != "unknown" else None
+git_checkout(
+    paddleformers_dir, "paddleformers/version/__init__.py"
+) if commit != "unknown" else None
+git_checkout(
+    paddleformers_dir, "paddleformers/__init__.py"
+) if commit != "unknown" else None

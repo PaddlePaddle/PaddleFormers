@@ -19,7 +19,7 @@ import os
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, List, Literal, Optional, TypedDict
+from typing import Any, Literal, Optional, TypedDict
 
 import numpy as np
 import paddle
@@ -59,7 +59,7 @@ class ImageInput(TypedDict):
 
 class VideoChunkInput(TypedDict):
     type: Literal["video_chunk"]
-    video_chunk: List[Image.Image | np.ndarray | paddle.Tensor]
+    video_chunk: list[Image.Image | np.ndarray | paddle.Tensor]
     prompt: Optional[str] = None
 
 
@@ -69,7 +69,7 @@ MediaInput = ImageInput | VideoChunkInput
 def _read_video_paddlecodec(
     video_src: str | bytes | os.PathLike,
     num_threads: int = 0,
-    sample_indices: list = None,
+    sample_indices: list | None = None,
     return_video: bool = False,
 ) -> dict:
     """read video using torchcodec.decoders.VideoDecoder(via Paddle Proxy)
@@ -110,12 +110,16 @@ def _read_video_paddlecodec(
         raise
 
     logger.info("Loading video with paddlecodec backend.")
-    PADDLECODEC_NUM_THREADS = int(os.environ.get("PADDLECODEC_NUM_THREADS", num_threads))
+    PADDLECODEC_NUM_THREADS = int(
+        os.environ.get("PADDLECODEC_NUM_THREADS", num_threads)
+    )
     logger.info(
         f"set PADDLECODEC_NUM_THREADS: {PADDLECODEC_NUM_THREADS if PADDLECODEC_NUM_THREADS != 0 else '0 (Auto)'}"
     )
     st = time.time()
-    decoder = VideoDecoder(video_src, num_ffmpeg_threads=PADDLECODEC_NUM_THREADS)
+    decoder = VideoDecoder(
+        video_src, num_ffmpeg_threads=PADDLECODEC_NUM_THREADS
+    )
     video_fps = decoder.metadata.average_fps
     total_frames = decoder.metadata.num_frames
 
@@ -130,11 +134,17 @@ def _read_video_paddlecodec(
     key_indices = list(range(0, total_frames, estimated_frame))
 
     video = (
-        decoder.get_frames_at(indices=sample_indices if sample_indices is not None else key_indices)
+        decoder.get_frames_at(
+            indices=sample_indices
+            if sample_indices is not None
+            else key_indices
+        )
         .data.contiguous()
         .to("cuda")
     )
-    logger.info(f"paddlecodec:  {video_src=}, {total_frames=}, {video_fps=}, time={time.time() - st:.3f}s")
+    logger.info(
+        f"paddlecodec:  {video_src=}, {total_frames=}, {video_fps=}, time={time.time() - st:.3f}s"
+    )
     paddle.disable_compat()
 
     frame_time_info = {
@@ -161,24 +171,34 @@ VIDEO_READER_BACKENDS = {
 }
 
 
-def get_video_meta(video_src: bytes | str | os.PathLike, accurate: bool = True, **kwargs) -> dict:
+def get_video_meta(
+    video_src: bytes | str | os.PathLike, accurate: bool = True, **kwargs
+) -> dict:
     """Get the dimensions of a video."""
     if isinstance(video_src, os.PathLike):
         video_src = str(video_src)
     # if b64 string, decode to bytes
-    if isinstance(video_src, str) and video_src.startswith("data:video/mp4;base64,"):
+    if isinstance(video_src, str) and video_src.startswith(
+        "data:video/mp4;base64,"
+    ):
         video_src = base64.b64decode(video_src.split(",")[1])
 
     video_backend = kwargs.get("video_backend", "paddlecodec")
 
-    return VIDEO_READER_BACKENDS[video_backend](video_src, num_threads=1, return_video=False)
+    return VIDEO_READER_BACKENDS[video_backend](
+        video_src, num_threads=1, return_video=False
+    )
 
 
-def timestamp_as_str(timestamp: float, timestamp_mode: str = "hh:mm:ss.fff") -> str:
+def timestamp_as_str(
+    timestamp: float, timestamp_mode: str = "hh:mm:ss.fff"
+) -> str:
     """Convert a timestamp to a string in the format of HH:MM:SS.mmm."""
     if timestamp_mode == "hh:mm:ss.fff":
         return (
-            datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%H:%M:%S")
+            datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime(
+                "%H:%M:%S"
+            )
             + f".{int((timestamp % 1) * 1000):03d}"
         )
     elif timestamp_mode == "mm:ss.fff":
@@ -187,7 +207,9 @@ def timestamp_as_str(timestamp: float, timestamp_mode: str = "hh:mm:ss.fff") -> 
             + f".{int((timestamp % 1) * 1000):03d}"
         )
     elif timestamp_mode == "mm:ss":
-        return datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%M:%S")
+        return datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime(
+            "%M:%S"
+        )
     else:
         raise ValueError(f"Invalid timestamp mode: {timestamp_mode}")
 
@@ -202,7 +224,10 @@ def navit_resize_image(
     fixed_output_tokens: int | None,
 ):
     # Apply the patch limits.
-    s1 = math.sqrt(in_patch_limit / (max(1.0, width // patch_size) * max(1.0, height // patch_size)))
+    s1 = math.sqrt(
+        in_patch_limit
+        / (max(1.0, width // patch_size) * max(1.0, height // patch_size))
+    )
     s2 = patch_limit_on_one_side * patch_size / width
     s3 = patch_limit_on_one_side * patch_size / height
     scale = min(1.0, s1, s2, s3)
@@ -223,12 +248,12 @@ def navit_resize_image(
         token_height = (new_h + pad_height) // factor
         token_width = (new_w + pad_width) // factor
 
-        assert (
-            token_height * merge_kernel_size <= patch_limit_on_one_side
-        ), f"token_height {token_height} * merge_kernel_size {merge_kernel_size} > patch_limit_on_one_side {patch_limit_on_one_side}"
-        assert (
-            token_width * merge_kernel_size <= patch_limit_on_one_side
-        ), f"token_width {token_width} * merge_kernel_size {merge_kernel_size} > patch_limit_on_one_side {patch_limit_on_one_side}"
+        assert token_height * merge_kernel_size <= patch_limit_on_one_side, (
+            f"token_height {token_height} * merge_kernel_size {merge_kernel_size} > patch_limit_on_one_side {patch_limit_on_one_side}"
+        )
+        assert token_width * merge_kernel_size <= patch_limit_on_one_side, (
+            f"token_width {token_width} * merge_kernel_size {merge_kernel_size} > patch_limit_on_one_side {patch_limit_on_one_side}"
+        )
 
         num_tokens = token_height * token_width
     return {
@@ -262,7 +287,10 @@ def navit_resize_video(
         sampled_nframes = min(sampled_nframes, max_num_frames_each_video)
 
     if in_patch_limit_total is not None:
-        in_patch_limit_each_frame = min(round(in_patch_limit_total / sampled_nframes), in_patch_limit_each_frame)
+        in_patch_limit_each_frame = min(
+            round(in_patch_limit_total / sampled_nframes),
+            in_patch_limit_each_frame,
+        )
 
     ret = navit_resize_image(
         width,
@@ -294,12 +322,13 @@ def real_sample_fps_and_max_num_frames(
 
 def _to_pil(data: str | bytes):
     if isinstance(data, Image.Image):
-
         return data.convert("RGB")
     elif isinstance(data, str):
         if data.startswith("data:"):
             raw_base64 = data.split(",")[1]
-            return Image.open(io.BytesIO(base64.b64decode(raw_base64))).convert("RGB")
+            return Image.open(io.BytesIO(base64.b64decode(raw_base64))).convert(
+                "RGB"
+            )
         else:
             return Image.open(data).convert("RGB")
     elif isinstance(data, bytes):
@@ -315,7 +344,9 @@ def ensure_media_type(media: MediaInput) -> MediaInput:
     elif media["type"] == "video_chunk":
         if isinstance(media["video_chunk"], np.ndarray):
             video_chunk = media["video_chunk"]
-            media["video_chunk"] = paddle.to_tensor(video_chunk).permute(0, 3, 1, 2)
+            media["video_chunk"] = paddle.to_tensor(video_chunk).permute(
+                0, 3, 1, 2
+            )
 
         return media
     else:
@@ -353,7 +384,9 @@ def image_in_tensor(
                         f"Invalid resize to: {resize_to}, from image size: {image.shape[1], image.shape[2]}"
                     )
                 else:
-                    return paddle.zeros((3, resize_to[0], resize_to[1]), dtype="uint8")
+                    return paddle.zeros(
+                        (3, resize_to[0], resize_to[1]), dtype="uint8"
+                    )
 
             image = resize(image, (new_width, new_height), resample="bicubic")
             padding_left = (resize_to[0] - new_width) // 2
@@ -362,7 +395,12 @@ def image_in_tensor(
             padding_bottom = resize_to[1] - new_height - padding_top
             image = pad(
                 image,
-                padding=[padding_left, padding_top, padding_right, padding_bottom],
+                padding=[
+                    padding_left,
+                    padding_top,
+                    padding_right,
+                    padding_bottom,
+                ],
                 fill=0,
                 padding_mode="constant",
             )
@@ -378,7 +416,9 @@ def image_in_tensor(
                         f"Invalid resize to: {resize_to}, from image size: {image.shape[1], image.shape[2]}"
                     )
                 else:
-                    return paddle.zeros((3, resize_to[0], resize_to[1]), dtype="uint8")
+                    return paddle.zeros(
+                        (3, resize_to[0], resize_to[1]), dtype="uint8"
+                    )
 
             image = resize(image, (new_width, new_height), resample="bicubic")
             padding_right = resize_to[0] - new_width
@@ -417,16 +457,24 @@ def image_to_np(
             image = image.resize(resize_to, resample=Image.Resampling.BICUBIC)
 
         elif mode == "rescale_and_pad_to_center":
-            scale = min(resize_to[0] / image.width, resize_to[1] / image.height, 1.0)
+            scale = min(
+                resize_to[0] / image.width, resize_to[1] / image.height, 1.0
+            )
             new_width = round(image.width * scale)
             new_height = round(image.height * scale)
             if new_width == 0 or new_height == 0:
                 if raise_error_for_ill_resize:
-                    raise ValueError(f"Invalid resize to: {resize_to}, from image size: {image.size}")
+                    raise ValueError(
+                        f"Invalid resize to: {resize_to}, from image size: {image.size}"
+                    )
                 else:
-                    return np.zeros((resize_to[1], resize_to[0], 3), dtype=np.uint8)
+                    return np.zeros(
+                        (resize_to[1], resize_to[0], 3), dtype=np.uint8
+                    )
 
-            image = image.resize((new_width, new_height), resample=Image.Resampling.BICUBIC)
+            image = image.resize(
+                (new_width, new_height), resample=Image.Resampling.BICUBIC
+            )
             padding_left = (resize_to[0] - new_width) // 2
             padding_right = resize_to[0] - new_width - padding_left
             padding_top = (resize_to[1] - new_height) // 2
@@ -434,23 +482,35 @@ def image_to_np(
             image = np.asarray(image)
             image = np.pad(
                 image,
-                ((padding_top, padding_bottom), (padding_left, padding_right), (0, 0)),
+                (
+                    (padding_top, padding_bottom),
+                    (padding_left, padding_right),
+                    (0, 0),
+                ),
                 mode="constant",
                 constant_values=0,
             )
             assert image.shape == (resize_to[1], resize_to[0], 3)
 
         elif mode == "rescale_and_pad_to_rightbottom":
-            scale = min(resize_to[0] / image.width, resize_to[1] / image.height, 1.0)
+            scale = min(
+                resize_to[0] / image.width, resize_to[1] / image.height, 1.0
+            )
             new_width = round(image.width * scale)
             new_height = round(image.height * scale)
             if new_width == 0 or new_height == 0:
                 if raise_error_for_ill_resize:
-                    raise ValueError(f"Invalid resize to: {resize_to}, from image size: {image.size}")
+                    raise ValueError(
+                        f"Invalid resize to: {resize_to}, from image size: {image.size}"
+                    )
                 else:
-                    return np.zeros((resize_to[1], resize_to[0], 3), dtype=np.uint8)
+                    return np.zeros(
+                        (resize_to[1], resize_to[0], 3), dtype=np.uint8
+                    )
 
-            image = image.resize((new_width, new_height), resample=Image.Resampling.BICUBIC)
+            image = image.resize(
+                (new_width, new_height), resample=Image.Resampling.BICUBIC
+            )
             padding_right = resize_to[0] - new_width
             padding_bottom = resize_to[1] - new_height
             image = np.asarray(image)
@@ -471,7 +531,9 @@ def image_to_np(
         return image
 
 
-def navit_patchify(pixel_values: paddle.Tensor, patch_size: int) -> dict[str, paddle.tensor]:
+def navit_patchify(
+    pixel_values: paddle.Tensor, patch_size: int
+) -> dict[str, paddle.tensor]:
     """Reshape the pixel values to a navit shape.
     Args:
         pixel_values: paddle.Tensor, shape (b, t, h, w, c)
@@ -484,7 +546,9 @@ def navit_patchify(pixel_values: paddle.Tensor, patch_size: int) -> dict[str, pa
     B, T, C, H, W = pixel_values.shape
     assert C == 3, "pixel_values must have 3 channels"
 
-    patches = pixel_values.reshape([B * T, C, H // patch_size, patch_size, W // patch_size, patch_size])
+    patches = pixel_values.reshape(
+        [B * T, C, H // patch_size, patch_size, W // patch_size, patch_size]
+    )
     # (T, H//patch_size, W//patch_size, C, patch_size, patch_size)
     patches = patches.transpose(0, 2, 4, 1, 3, 5)
     patches = patches.reshape(-1, C, patch_size, patch_size)

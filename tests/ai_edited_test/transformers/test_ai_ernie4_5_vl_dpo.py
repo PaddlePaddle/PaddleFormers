@@ -16,9 +16,11 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 import paddle
-import paddle.nn as nn
+from paddle import nn
 
-from paddleformers.transformers.ernie4_5_moe_vl.model.loss.dpo import ErnieDPOCriterion
+from paddleformers.transformers.ernie4_5_moe_vl.model.loss.dpo import (
+    ErnieDPOCriterion,
+)
 
 
 class TestErnieDPOCriterion(unittest.TestCase):
@@ -74,7 +76,11 @@ class TestErnieDPOCriterion(unittest.TestCase):
         score_deltas = paddle.ones([4])
 
         loss = criterion.dpo_loss(
-            policy_chosen_logps, policy_rejected_logps, reference_chosen_logps, reference_rejected_logps, score_deltas
+            policy_chosen_logps,
+            policy_rejected_logps,
+            reference_chosen_logps,
+            reference_rejected_logps,
+            score_deltas,
         )
         self.assertEqual(loss.shape, [])  # loss.mean() returns scalar
 
@@ -87,7 +93,11 @@ class TestErnieDPOCriterion(unittest.TestCase):
         score_deltas = paddle.ones([4])
 
         loss = criterion.dpo_loss(
-            policy_chosen_logps, policy_rejected_logps, reference_chosen_logps, reference_rejected_logps, score_deltas
+            policy_chosen_logps,
+            policy_rejected_logps,
+            reference_chosen_logps,
+            reference_rejected_logps,
+            score_deltas,
         )
         self.assertEqual(loss.shape, [])
 
@@ -100,12 +110,18 @@ class TestErnieDPOCriterion(unittest.TestCase):
         score_deltas = paddle.ones([4])
 
         loss = criterion.dpo_loss(
-            policy_chosen_logps, policy_rejected_logps, reference_chosen_logps, reference_rejected_logps, score_deltas
+            policy_chosen_logps,
+            policy_rejected_logps,
+            reference_chosen_logps,
+            reference_rejected_logps,
+            score_deltas,
         )
         self.assertEqual(loss.shape, [])
 
     def test_dpo_loss_simpo(self):
-        criterion = self._make_criterion(loss_type="simpo", beta=0.1, simpo_gamma=0.5)
+        criterion = self._make_criterion(
+            loss_type="simpo", beta=0.1, simpo_gamma=0.5
+        )
         policy_chosen_logps = paddle.randn([4])
         policy_rejected_logps = paddle.randn([4])
         reference_chosen_logps = paddle.randn([4])
@@ -113,7 +129,11 @@ class TestErnieDPOCriterion(unittest.TestCase):
         score_deltas = paddle.ones([4])
 
         loss = criterion.dpo_loss(
-            policy_chosen_logps, policy_rejected_logps, reference_chosen_logps, reference_rejected_logps, score_deltas
+            policy_chosen_logps,
+            policy_rejected_logps,
+            reference_chosen_logps,
+            reference_rejected_logps,
+            score_deltas,
         )
         self.assertEqual(loss.shape, [])
 
@@ -126,7 +146,11 @@ class TestErnieDPOCriterion(unittest.TestCase):
         score_deltas = paddle.ones([4])
 
         loss = criterion.dpo_loss(
-            policy_chosen_logps, policy_rejected_logps, reference_chosen_logps, reference_rejected_logps, score_deltas
+            policy_chosen_logps,
+            policy_rejected_logps,
+            reference_chosen_logps,
+            reference_rejected_logps,
+            score_deltas,
         )
         # KTO applies loss.mean() which returns a scalar
         self.assertEqual(loss.shape, [])
@@ -140,7 +164,11 @@ class TestErnieDPOCriterion(unittest.TestCase):
         score_deltas = paddle.ones([4])
 
         loss = criterion.dpo_loss(
-            policy_chosen_logps, policy_rejected_logps, reference_chosen_logps, reference_rejected_logps, score_deltas
+            policy_chosen_logps,
+            policy_rejected_logps,
+            reference_chosen_logps,
+            reference_rejected_logps,
+            score_deltas,
         )
         self.assertEqual(loss.shape, [])
 
@@ -153,7 +181,11 @@ class TestErnieDPOCriterion(unittest.TestCase):
         score_deltas = paddle.ones([4])
 
         loss = criterion.dpo_loss(
-            policy_chosen_logps, policy_rejected_logps, reference_chosen_logps, reference_rejected_logps, score_deltas
+            policy_chosen_logps,
+            policy_rejected_logps,
+            reference_chosen_logps,
+            reference_rejected_logps,
+            score_deltas,
         )
         self.assertEqual(loss.shape, [])
 
@@ -166,12 +198,18 @@ class TestErnieDPOCriterion(unittest.TestCase):
         score_deltas = paddle.ones([4])
 
         loss = criterion.dpo_loss(
-            policy_chosen_logps, policy_rejected_logps, reference_chosen_logps, reference_rejected_logps, score_deltas
+            policy_chosen_logps,
+            policy_rejected_logps,
+            reference_chosen_logps,
+            reference_rejected_logps,
+            score_deltas,
         )
         self.assertEqual(loss.shape, [])
 
     def test_dpo_loss_dpop(self):
-        criterion = self._make_criterion(loss_type="dpop", beta=0.1, dpop_lambda=1.0)
+        criterion = self._make_criterion(
+            loss_type="dpop", beta=0.1, dpop_lambda=1.0
+        )
         policy_chosen_logps = paddle.randn([4])
         policy_rejected_logps = paddle.randn([4])
         reference_chosen_logps = paddle.randn([4])
@@ -179,7 +217,11 @@ class TestErnieDPOCriterion(unittest.TestCase):
         score_deltas = paddle.ones([4])
 
         loss = criterion.dpo_loss(
-            policy_chosen_logps, policy_rejected_logps, reference_chosen_logps, reference_rejected_logps, score_deltas
+            policy_chosen_logps,
+            policy_rejected_logps,
+            reference_chosen_logps,
+            reference_rejected_logps,
+            score_deltas,
         )
         self.assertEqual(loss.shape, [])
 
@@ -209,7 +251,11 @@ class TestErnieDPOCriterion(unittest.TestCase):
         rejected_logps = paddle.randn([4])
         sft_loss = paddle.randn([])
 
-        with patch.object(criterion, "dpo_logps", return_value=(chosen_logps, rejected_logps, sft_loss)):
+        with patch.object(
+            criterion,
+            "dpo_logps",
+            return_value=(chosen_logps, rejected_logps, sft_loss),
+        ):
             logits = (paddle.randn([4, 10]), paddle.randn([10, 5]), None, False)
             response_labels = paddle.randint(0, 10, [4, 5])
             response_indexs = paddle.tensor([[0, 1, 3, 5]])
@@ -229,15 +275,29 @@ class TestErnieDPOCriterion(unittest.TestCase):
         sft_loss = paddle.randn([])
         dpo_loss_val = paddle.randn([])
 
-        with patch.object(criterion, "dpo_logps", return_value=(chosen_logps, rejected_logps, sft_loss)):
+        with patch.object(
+            criterion,
+            "dpo_logps",
+            return_value=(chosen_logps, rejected_logps, sft_loss),
+        ):
             with patch.object(criterion, "dpo_loss", return_value=dpo_loss_val):
-                logits = (paddle.randn([4, 10]), paddle.randn([10, 5]), None, False)
+                logits = (
+                    paddle.randn([4, 10]),
+                    paddle.randn([10, 5]),
+                    None,
+                    False,
+                )
                 response_labels = paddle.randint(0, 10, [4, 5])
                 response_indexs = paddle.tensor([[0, 1, 3, 5]])
                 ref_chosen = paddle.randn([4])
                 ref_rejected = paddle.randn([4])
                 # offset_alpha=0, so labels unpack to 4 elements (no score_deltas)
-                labels = (response_labels, response_indexs, ref_chosen, ref_rejected)
+                labels = (
+                    response_labels,
+                    response_indexs,
+                    ref_chosen,
+                    ref_rejected,
+                )
 
                 result = criterion.forward(logits, labels)
                 # Should return (policy_chosen_logps, policy_rejected_logps, sft_loss, dpo_loss, loss)

@@ -60,7 +60,13 @@ class KimiK2PretrainedModel(PretrainedModel):
         ]
         # MLA
         for layer_id in range(config.num_hidden_layers):
-            for mla_atten in ["q_a_proj", "q_b_proj", "kv_a_proj_with_mqa", "kv_b_proj", "o_proj"]:
+            for mla_atten in [
+                "q_a_proj",
+                "q_b_proj",
+                "kv_a_proj_with_mqa",
+                "kv_b_proj",
+                "o_proj",
+            ]:
                 aoa_config["aoa_statements"] += [
                     f"model.layers.{layer_id}.self_attn.{mla_atten}.weight^T -> model.layers.{layer_id}.self_attn.{mla_atten}.weight",
                 ]
@@ -72,7 +78,9 @@ class KimiK2PretrainedModel(PretrainedModel):
         ]
 
         # layer 1 -> num_hidden_layers
-        for layer_id in reversed(range(config.first_k_dense_replace, config.num_hidden_layers)):
+        for layer_id in reversed(
+            range(config.first_k_dense_replace, config.num_hidden_layers)
+        ):
             for expert_id in range(config.n_routed_experts):
                 aoa_config["aoa_statements"] += [
                     f"model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight",
@@ -89,8 +97,12 @@ class KimiK2PretrainedModel(PretrainedModel):
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(config.n_routed_experts):
-                    ep_weight1.append(f"model.layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight")
-                    ep_weight2.append(f"model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight")
+                    ep_weight1.append(
+                        f"model.layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight"
+                    )
+                    ep_weight2.append(
+                        f"model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight"
+                    )
                 group_gemm1 = ",".join(ep_weight1)
                 group_gemm2 = ",".join(ep_weight2)
                 aoa_config["aoa_statements"] += [
@@ -110,7 +122,13 @@ class KimiK2PretrainedModel(PretrainedModel):
         ]
         # MLA
         for layer_id in range(config.num_hidden_layers):
-            for mla_atten in ["q_a_proj", "q_b_proj", "kv_a_proj_with_mqa", "kv_b_proj", "o_proj"]:
+            for mla_atten in [
+                "q_a_proj",
+                "q_b_proj",
+                "kv_a_proj_with_mqa",
+                "kv_b_proj",
+                "o_proj",
+            ]:
                 inv_aoa_config["aoa_statements"] += [
                     f"model.layers.{layer_id}.self_attn.{mla_atten}.weight^T -> model.layers.{layer_id}.self_attn.{mla_atten}.weight",
                 ]
@@ -129,8 +147,12 @@ class KimiK2PretrainedModel(PretrainedModel):
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(config.n_routed_experts):
-                    ep_weight1.append(f"model.layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight")
-                    ep_weight2.append(f"model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight")
+                    ep_weight1.append(
+                        f"model.layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight"
+                    )
+                    ep_weight2.append(
+                        f"model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight"
+                    )
                 group_gemm1 = ",".join(ep_weight1)
                 group_gemm2 = ",".join(ep_weight2)
                 inv_aoa_config["aoa_statements"] += [
@@ -161,11 +183,19 @@ class KimiK2ForCausalLM(KimiK2PretrainedModel):
     config_class = KimiK2Config
 
     def __new__(cls, config, have_criterion=True):
-        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
+        config.tensor_model_parallel_size = max(
+            config.tensor_model_parallel_size, 1
+        )
         config.context_parallel_size = max(config.context_parallel_size, 1)
-        config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
-        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
-        config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+        config.pipeline_model_parallel_size = max(
+            config.pipeline_model_parallel_size, 1
+        )
+        config.virtual_pipeline_model_parallel_size = max(
+            config.virtual_pipeline_model_parallel_size, 1
+        )
+        config.expert_model_parallel_size = max(
+            config.expert_model_parallel_size, 1
+        )
 
         if hasattr(config, "rope_scaling") and config.rope_scaling:
             if "type" in config.rope_scaling:
@@ -182,7 +212,9 @@ class KimiK2ForCausalLM(KimiK2PretrainedModel):
             if "mscale_all_dim" in config.rope_scaling:
                 config.mscale_all_dim = config.rope_scaling["mscale_all_dim"]
             if "original_max_position_embeddings" in config.rope_scaling:
-                config.original_max_position_embeddings = config.rope_scaling["original_max_position_embeddings"]
+                config.original_max_position_embeddings = config.rope_scaling[
+                    "original_max_position_embeddings"
+                ]
         # Check if mtp_block_spec parameter is supported
         config.multi_latent_attention = True
         config.use_qk_norm = True
@@ -203,11 +235,19 @@ class KimiK2ForCausalLMPipe(KimiK2PretrainedModel, GeneralModelForCausalLMPipe):
 
     def __new__(cls, config):
         # Hybrid parallel config convert.
-        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
+        config.tensor_model_parallel_size = max(
+            config.tensor_model_parallel_size, 1
+        )
         config.context_parallel_size = max(config.context_parallel_size, 1)
-        config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
-        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
-        config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+        config.pipeline_model_parallel_size = max(
+            config.pipeline_model_parallel_size, 1
+        )
+        config.virtual_pipeline_model_parallel_size = max(
+            config.virtual_pipeline_model_parallel_size, 1
+        )
+        config.expert_model_parallel_size = max(
+            config.expert_model_parallel_size, 1
+        )
 
         if hasattr(config, "rope_scaling") and config.rope_scaling:
             if "type" in config.rope_scaling:
@@ -224,7 +264,9 @@ class KimiK2ForCausalLMPipe(KimiK2PretrainedModel, GeneralModelForCausalLMPipe):
             if "mscale_all_dim" in config.rope_scaling:
                 config.mscale_all_dim = config.rope_scaling["mscale_all_dim"]
             if "original_max_position_embeddings" in config.rope_scaling:
-                config.original_max_position_embeddings = config.rope_scaling["original_max_position_embeddings"]
+                config.original_max_position_embeddings = config.rope_scaling[
+                    "original_max_position_embeddings"
+                ]
         # Check if mtp_block_spec parameter is supported
         config.multi_latent_attention = True
         config.use_qk_norm = True

@@ -16,7 +16,7 @@
 
 import os
 from shutil import copyfile
-from typing import Dict, Optional, Tuple
+from typing import Optional
 
 import numpy as np
 import paddle
@@ -131,7 +131,9 @@ class Ernie4_5_VLTokenizer(PreTrainedTokenizer):
 
     def get_vocab(self):
         """Return the vocabulary as a dictionary mapping tokens to IDs"""
-        vocab = {self.convert_ids_to_tokens(i): i for i in range(self.vocab_size)}
+        vocab = {
+            self.convert_ids_to_tokens(i): i for i in range(self.vocab_size)
+        }
         vocab.update(self.added_tokens_encoder)
         return vocab
 
@@ -171,7 +173,9 @@ class Ernie4_5_VLTokenizer(PreTrainedTokenizer):
             kwargs.pop("add_special_tokens")
         return super().prepare_for_model(*args, **kwargs)
 
-    def save_vocabulary(self, save_directory, filename_prefix: Optional[str] = None) -> Tuple[str]:
+    def save_vocabulary(
+        self, save_directory, filename_prefix: Optional[str] = None
+    ) -> tuple[str]:
         """
         Save the vocabulary and special tokens file to a directory.
 
@@ -183,17 +187,22 @@ class Ernie4_5_VLTokenizer(PreTrainedTokenizer):
             `Tuple(str)`: Paths to the saved files
         """
         if not os.path.isdir(save_directory):
-            logger.error(f"Vocabulary path ({save_directory}) should be a directory")
+            logger.error(
+                f"Vocabulary path ({save_directory}) should be a directory"
+            )
             return
 
         # Construct output vocabulary file path
         out_vocab_file = os.path.join(
             save_directory,
-            (filename_prefix + "-" if filename_prefix else "") + self.vocab_files_names["vocab_file"],
+            (filename_prefix + "-" if filename_prefix else "")
+            + self.vocab_files_names["vocab_file"],
         )
 
         # Copy or create vocabulary file
-        if os.path.abspath(self.vocab_file) != os.path.abspath(out_vocab_file) and os.path.isfile(self.vocab_file):
+        if os.path.abspath(self.vocab_file) != os.path.abspath(
+            out_vocab_file
+        ) and os.path.isfile(self.vocab_file):
             copyfile(self.vocab_file, out_vocab_file)
         elif not os.path.isfile(self.vocab_file):
             with open(out_vocab_file, "wb") as fi:
@@ -218,12 +227,12 @@ class Ernie4_5_VLTokenizer(PreTrainedTokenizer):
 
     def _pad(
         self,
-        encoded_inputs: Dict,
+        encoded_inputs: dict,
         max_length: Optional[int] = None,
         padding_strategy=PaddingStrategy.DO_NOT_PAD,
         pad_to_multiple_of: Optional[int] = None,
         return_attention_mask: Optional[bool] = None,
-        **kwargs
+        **kwargs,
     ) -> dict:
         """Pad the encoded inputs to the specified length"""
         if return_attention_mask is None:
@@ -234,24 +243,43 @@ class Ernie4_5_VLTokenizer(PreTrainedTokenizer):
                 max_length = len(required_input)
 
             # Adjust max_length if needed for multiple of padding
-            if max_length is not None and pad_to_multiple_of is not None and (max_length % pad_to_multiple_of != 0):
-                max_length = ((max_length // pad_to_multiple_of) + 1) * pad_to_multiple_of
+            if (
+                max_length is not None
+                and pad_to_multiple_of is not None
+                and (max_length % pad_to_multiple_of != 0)
+            ):
+                max_length = (
+                    (max_length // pad_to_multiple_of) + 1
+                ) * pad_to_multiple_of
 
             # Check if padding is needed
-            needs_to_be_padded = padding_strategy != PaddingStrategy.DO_NOT_PAD and len(required_input) != max_length
+            needs_to_be_padded = (
+                padding_strategy != PaddingStrategy.DO_NOT_PAD
+                and len(required_input) != max_length
+            )
 
             # Handle attention mask if present
-            if "attention_mask" in encoded_inputs and encoded_inputs["attention_mask"] is not None:
+            if (
+                "attention_mask" in encoded_inputs
+                and encoded_inputs["attention_mask"] is not None
+            ):
                 attention_mask = encoded_inputs.pop("attention_mask")
                 if isinstance(attention_mask, paddle.Tensor):
                     attention_mask = attention_mask.numpy()
                 elif isinstance(attention_mask, list):
                     attention_mask = np.array(attention_mask)
                 elif not isinstance(attention_mask, np.ndarray):
-                    raise ValueError(f"Unexpected type {type(attention_mask)} of attention_mask, ")
+                    raise ValueError(
+                        f"Unexpected type {type(attention_mask)} of attention_mask, "
+                    )
             else:
                 # Create default attention mask if none provided
-                attention_mask = np.tril(np.ones((len(required_input), len(required_input)), dtype=np.int64))
+                attention_mask = np.tril(
+                    np.ones(
+                        (len(required_input), len(required_input)),
+                        dtype=np.int64,
+                    )
+                )
                 attention_mask = np.expand_dims(attention_mask, axis=0)
 
             # Perform padding if needed
@@ -268,7 +296,9 @@ class Ernie4_5_VLTokenizer(PreTrainedTokenizer):
                     else:
                         pad_width = [(0, 0), (difference, 0), (difference, 0)]
                 else:
-                    raise ValueError("Invalid padding strategy:" + str(self.padding_side))
+                    raise ValueError(
+                        "Invalid padding strategy:" + str(self.padding_side)
+                    )
 
                 attention_mask = np.pad(
                     attention_mask,

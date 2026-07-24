@@ -35,7 +35,9 @@ class TestMergeConfig(unittest.TestCase):
         with self.assertRaises(ValueError):
             MergeConfig(model_path_list=["./model1"])
         with self.assertRaises(ValueError):
-            MergeConfig(model_path_list=["./model1", "./model2"], weight_list=[0.1])
+            MergeConfig(
+                model_path_list=["./model1", "./model2"], weight_list=[0.1]
+            )
         with self.assertRaises(ValueError):
             MergeConfig(reserve_p=1.1)
         with self.assertRaises(ValueError):

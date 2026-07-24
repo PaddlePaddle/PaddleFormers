@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 # Copyright 2024 The Qwen team, Alibaba Group. All rights reserved.
 #
@@ -23,7 +22,7 @@ import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional
 
 import numpy as np
 import paddle
@@ -65,8 +64,12 @@ def floor_by_factor(number: int, factor: int) -> int:
 
 
 def smart_resize(
-    height: int, width: int, factor: int, min_pixels: Optional[int] = None, max_pixels: Optional[int] = None
-) -> Tuple[int, int]:
+    height: int,
+    width: int,
+    factor: int,
+    min_pixels: Optional[int] = None,
+    max_pixels: Optional[int] = None,
+) -> tuple[int, int]:
     """
     Rescales the image so that the following conditions are met:
 
@@ -74,9 +77,19 @@ def smart_resize(
     2. The total number of pixels is within the range ['min_pixels', 'max_pixels'].
     3. The aspect ratio of the image is maintained as closely as possible.
     """
-    max_pixels = max_pixels if max_pixels is not None else (IMAGE_MAX_TOKEN_NUM * factor**2)
-    min_pixels = min_pixels if min_pixels is not None else (IMAGE_MIN_TOKEN_NUM * factor**2)
-    assert max_pixels >= min_pixels, "The max_pixels of image must be greater than or equal to min_pixels."
+    max_pixels = (
+        max_pixels
+        if max_pixels is not None
+        else (IMAGE_MAX_TOKEN_NUM * factor**2)
+    )
+    min_pixels = (
+        min_pixels
+        if min_pixels is not None
+        else (IMAGE_MIN_TOKEN_NUM * factor**2)
+    )
+    assert max_pixels >= min_pixels, (
+        "The max_pixels of image must be greater than or equal to min_pixels."
+    )
     if max(height, width) / min(height, width) > MAX_RATIO:
         raise ValueError(
             f"absolute aspect ratio must be smaller than {MAX_RATIO}, got {max(height, width) / min(height, width)}"
@@ -97,13 +110,17 @@ def smart_resize(
 def to_rgb(pil_image: Image.Image) -> Image.Image:
     if pil_image.mode == "RGBA":
         white_background = Image.new("RGB", pil_image.size, (255, 255, 255))
-        white_background.paste(pil_image, mask=pil_image.split()[3])  # Use alpha channel as mask
+        white_background.paste(
+            pil_image, mask=pil_image.split()[3]
+        )  # Use alpha channel as mask
         return white_background
     else:
         return pil_image.convert("RGB")
 
 
-def fetch_image(ele: Dict[str, Union[str, Image.Image]], image_patch_size: int = 14) -> Image.Image:
+def fetch_image(
+    ele: dict[str, str | Image.Image], image_patch_size: int = 14
+) -> Image.Image:
     if "image" in ele:
         image = ele["image"]
     else:
@@ -129,7 +146,9 @@ def fetch_image(ele: Dict[str, Union[str, Image.Image]], image_patch_size: int =
     else:
         image_obj = Image.open(image)
     if image_obj is None:
-        raise ValueError(f"Unrecognized image input, support local path, http url, base64 and PIL.Image, got {image}")
+        raise ValueError(
+            f"Unrecognized image input, support local path, http url, base64 and PIL.Image, got {image}"
+        )
     image = to_rgb(image_obj)
 
     # resize
@@ -141,8 +160,12 @@ def fetch_image(ele: Dict[str, Union[str, Image.Image]], image_patch_size: int =
         )
     else:
         width, height = image.size
-        min_pixels = ele.get("min_pixels", IMAGE_MIN_TOKEN_NUM * patch_factor**2)
-        max_pixels = ele.get("max_pixels", IMAGE_MAX_TOKEN_NUM * patch_factor**2)
+        min_pixels = ele.get(
+            "min_pixels", IMAGE_MIN_TOKEN_NUM * patch_factor**2
+        )
+        max_pixels = ele.get(
+            "max_pixels", IMAGE_MAX_TOKEN_NUM * patch_factor**2
+        )
         resized_height, resized_width = smart_resize(
             height,
             width,
@@ -155,9 +178,9 @@ def fetch_image(ele: Dict[str, Union[str, Image.Image]], image_patch_size: int =
 
 
 def smart_nframes(
-    ele: Dict[str, Any],
+    ele: dict[str, Any],
     total_frames: int,
-    video_fps: Union[int, float],
+    video_fps: float,
 ) -> int:
     """calculate the number of frames for video used for model inputs.
 
@@ -177,28 +200,39 @@ def smart_nframes(
     Returns:
         int: the number of frames for video used for model inputs.
     """
-    assert not ("fps" in ele and "nframes" in ele), "Only accept either `fps` or `nframes`"
+    assert not ("fps" in ele and "nframes" in ele), (
+        "Only accept either `fps` or `nframes`"
+    )
     if "nframes" in ele:
         nframes = round_by_factor(ele["nframes"], FRAME_FACTOR)
     else:
         fps = ele.get("fps", FPS)
-        min_frames = ceil_by_factor(ele.get("min_frames", FPS_MIN_FRAMES), FRAME_FACTOR)
-        max_frames = floor_by_factor(ele.get("max_frames", min(FPS_MAX_FRAMES, total_frames)), FRAME_FACTOR)
+        min_frames = ceil_by_factor(
+            ele.get("min_frames", FPS_MIN_FRAMES), FRAME_FACTOR
+        )
+        max_frames = floor_by_factor(
+            ele.get("max_frames", min(FPS_MAX_FRAMES, total_frames)),
+            FRAME_FACTOR,
+        )
         nframes = total_frames / video_fps * fps
         if nframes > total_frames:
-            logger.warning(f"smart_nframes: nframes[{nframes}] > total_frames[{total_frames}]")
-        nframes = min(min(max(nframes, min_frames), max_frames), total_frames)
+            logger.warning(
+                f"smart_nframes: nframes[{nframes}] > total_frames[{total_frames}]"
+            )
+        nframes = min(max(nframes, min_frames), max_frames, total_frames)
         nframes = floor_by_factor(nframes, FRAME_FACTOR)
     if not (FRAME_FACTOR <= nframes and nframes <= total_frames):
-        raise ValueError(f"nframes should in interval [{FRAME_FACTOR}, {total_frames}], but got {nframes}.")
+        raise ValueError(
+            f"nframes should in interval [{FRAME_FACTOR}, {total_frames}], but got {nframes}."
+        )
     return nframes
 
 
 def calculate_video_frame_range(
-    ele: Dict[str, Any],
+    ele: dict[str, Any],
     total_frames: int,
     video_fps: float,
-) -> Tuple[int, int, int]:
+) -> tuple[int, int, int]:
     """
     Calculate the start and end frame indices based on the given time range.
 
@@ -255,8 +289,8 @@ def calculate_video_frame_range(
 
 
 def _read_video_paddlecodec(
-    ele: Dict[str, Any],
-) -> Tuple[paddle.Tensor, float]:
+    ele: dict[str, Any],
+) -> tuple[paddle.Tensor, float]:
     """read video using torchcodec.decoders.VideoDecoder(via Paddle Proxy)
 
     Args:
@@ -299,7 +333,9 @@ def _read_video_paddlecodec(
     )
     video_path = ele["video"]
     st = time.time()
-    decoder = VideoDecoder(video_path, num_ffmpeg_threads=PADDLECODEC_NUM_THREADS)
+    decoder = VideoDecoder(
+        video_path, num_ffmpeg_threads=PADDLECODEC_NUM_THREADS
+    )
     video_fps = decoder.metadata.average_fps
     total_frames = decoder.metadata.num_frames
     start_frame, end_frame, total_frames = calculate_video_frame_range(
@@ -308,18 +344,22 @@ def _read_video_paddlecodec(
         video_fps,
     )
     nframes = smart_nframes(ele, total_frames=total_frames, video_fps=video_fps)
-    idx = paddle.linspace(start_frame, end_frame, nframes).round().long().tolist()
+    idx = (
+        paddle.linspace(start_frame, end_frame, nframes).round().long().tolist()
+    )
     sample_fps = nframes / max(total_frames, 1e-6) * video_fps
     video = decoder.get_frames_at(indices=idx).data.contiguous().to("cuda")
-    logger.info(f"paddlecodec:  {video_path=}, {total_frames=}, {video_fps=}, time={time.time() - st:.3f}s")
+    logger.info(
+        f"paddlecodec:  {video_path=}, {total_frames=}, {video_fps=}, time={time.time() - st:.3f}s"
+    )
     paddle.disable_compat()
 
-    video_metadata = dict(
-        fps=video_fps,
-        frames_indices=idx,
-        total_num_frames=total_frames,
-        video_backend="paddlecodec",
-    )
+    video_metadata = {
+        "fps": video_fps,
+        "frames_indices": idx,
+        "total_num_frames": total_frames,
+        "video_backend": "paddlecodec",
+    }
     return video, video_metadata, sample_fps
 
 
@@ -329,17 +369,19 @@ VIDEO_READER_BACKENDS = {
 
 
 def fetch_video(
-    ele: Dict[str, Any],
+    ele: dict[str, Any],
     image_patch_size: int = 14,
     return_video_sample_fps: bool = False,
     return_video_metadata: bool = False,
     video_backend: str = "paddlecodec",
-) -> Union[paddle.Tensor, List[Image.Image]]:
+) -> paddle.Tensor | list[Image.Image]:
     image_factor = image_patch_size * SPATIAL_MERGE_SIZE
     VIDEO_FRAME_MIN_PIXELS = VIDEO_MIN_TOKEN_NUM * image_factor * image_factor
     VIDEO_FRAME_MAX_PIXELS = VIDEO_MAX_TOKEN_NUM * image_factor * image_factor
     if isinstance(ele["video"], str):
-        video, video_metadata, sample_fps = VIDEO_READER_BACKENDS[video_backend](ele)
+        video, video_metadata, sample_fps = VIDEO_READER_BACKENDS[
+            video_backend
+        ](ele)
     else:
         # The input is a list of frames
         assert isinstance(ele["video"], (list, tuple))
@@ -350,7 +392,11 @@ def fetch_video(
         max_workers = min(MAX_NUM_WORKERS_FETCH_VIDEO, len(ele["video"]))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [
-                executor.submit(fetch_image, {"image": video_element, **process_info}, image_factor)
+                executor.submit(
+                    fetch_image,
+                    {"image": video_element, **process_info},
+                    image_factor,
+                )
                 for video_element in ele["video"]
             ]
             image_list = [future.result() for future in futures]
@@ -360,23 +406,35 @@ def fetch_video(
             image_list.extend([image_list[-1]] * (nframes - len(image_list)))
 
         sample_fps = ele.get("sample_fps", 2.0)
-        video = paddle.stack([paddle.to_tensor(np.array(image).transpose(2, 0, 1)) for image in image_list])
+        video = paddle.stack(
+            [
+                paddle.to_tensor(np.array(image).transpose(2, 0, 1))
+                for image in image_list
+            ]
+        )
 
         # fake video metadata
         raw_fps = process_info.pop("raw_fps", sample_fps)
-        video_metadata = dict(
-            fps=raw_fps,
-            frames_indices=[i for i in range(len(video))],
-            total_num_frames=(nframes / sample_fps) * raw_fps,
-        )
+        video_metadata = {
+            "fps": raw_fps,
+            "frames_indices": list(range(len(video))),
+            "total_num_frames": (nframes / sample_fps) * raw_fps,
+        }
 
     nframes, channel, height, width = video.shape
     min_pixels = ele.get("min_pixels", VIDEO_FRAME_MIN_PIXELS)
-    total_pixels = ele.get("total_pixels", MODEL_SEQ_LEN * image_factor * image_factor * 0.9)
-    max_pixels = max(min(VIDEO_FRAME_MAX_PIXELS, total_pixels / nframes * FRAME_FACTOR), int(min_pixels * 1.05))
+    total_pixels = ele.get(
+        "total_pixels", MODEL_SEQ_LEN * image_factor * image_factor * 0.9
+    )
+    max_pixels = max(
+        min(VIDEO_FRAME_MAX_PIXELS, total_pixels / nframes * FRAME_FACTOR),
+        int(min_pixels * 1.05),
+    )
     max_pixels_supposed = ele.get("max_pixels", max_pixels)
     if max_pixels_supposed > max_pixels:
-        logger.warning(f"The given max_pixels[{max_pixels_supposed}] exceeds limit[{max_pixels}].")
+        logger.warning(
+            f"The given max_pixels[{max_pixels_supposed}] exceeds limit[{max_pixels}]."
+        )
     max_pixels = min(max_pixels_supposed, max_pixels)
     if "resized_height" in ele and "resized_width" in ele:
         resized_height, resized_width = smart_resize(
@@ -406,8 +464,8 @@ def fetch_video(
 
 
 def extract_vision_info(
-    conversations: Union[List[Dict[str, Any]], List[List[Dict[str, Any]]]]
-) -> List[Dict[str, Any]]:
+    conversations: list[dict[str, Any]] | list[list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
     vision_infos = []
     if isinstance(conversations[0], dict):
         conversations = [conversations]
@@ -419,22 +477,24 @@ def extract_vision_info(
                         "image" in ele
                         or "image_url" in ele
                         or "video" in ele
-                        or ele.get("type", "text") in ("image", "image_url", "video")
+                        or ele.get("type", "text")
+                        in ("image", "image_url", "video")
                     ):
                         vision_infos.append(ele)
     return vision_infos
 
 
 def process_vision_info(
-    conversations: Union[List[Dict[str, Any]], List[List[Dict[str, Any]]]],
+    conversations: list[dict[str, Any]] | list[list[dict[str, Any]]],
     return_video_kwargs: bool = False,
     return_video_metadata: bool = False,
     image_patch_size: int = 14,
     video_backend: str = "paddlecodec",
-) -> Tuple[
-    Optional[List[Image.Image]], Optional[List[Union[paddle.Tensor, List[Image.Image]]]], Optional[Dict[str, Any]]
+) -> tuple[
+    Optional[list[Image.Image]],
+    Optional[list[paddle.Tensor | list[Image.Image]]],
+    Optional[dict[str, Any]],
 ]:
-
     vision_infos = extract_vision_info(conversations)
     # Read images or videos
     image_inputs = []
@@ -442,7 +502,9 @@ def process_vision_info(
     video_sample_fps_list = []
     for vision_info in vision_infos:
         if "image" in vision_info or "image_url" in vision_info:
-            image_inputs.append(fetch_image(vision_info, image_patch_size=image_patch_size))
+            image_inputs.append(
+                fetch_image(vision_info, image_patch_size=image_patch_size)
+            )
         elif "video" in vision_info:
             video_input, video_sample_fps = fetch_video(
                 vision_info,

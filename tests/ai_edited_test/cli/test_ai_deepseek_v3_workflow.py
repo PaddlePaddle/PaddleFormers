@@ -22,7 +22,14 @@ from unittest.mock import MagicMock
 
 # Direct import to avoid __init__.py triggering workflow.py which requires AutoTokenizer
 _MODULE_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "..", "..", "paddleformers", "cli", "train", "deepseek_v3_pretrain"
+    os.path.dirname(__file__),
+    "..",
+    "..",
+    "..",
+    "paddleformers",
+    "cli",
+    "train",
+    "deepseek_v3_pretrain",
 )
 _MODULE_DIR = os.path.abspath(_MODULE_DIR)
 
@@ -55,13 +62,19 @@ if "transformers.tokenization_utils_tokenizers" not in sys.modules:
     sys.modules["transformers.tokenization_utils_tokenizers"] = _mock_mod
 
 # Pre-load configuration module (dependency of workflow)
-_config_mod = _load_module("configuration", os.path.join(_MODULE_DIR, "configuration.py"))
+_config_mod = _load_module(
+    "configuration", os.path.join(_MODULE_DIR, "configuration.py")
+)
 
 # Pre-load moe_utils module (dependency of workflow)
-_moe_utils_mod = _load_module("moe_utils", os.path.join(_MODULE_DIR, "moe_utils.py"))
+_moe_utils_mod = _load_module(
+    "moe_utils", os.path.join(_MODULE_DIR, "moe_utils.py")
+)
 
 # Now load workflow module directly
-_workflow_mod = _load_module("workflow", os.path.join(_MODULE_DIR, "workflow.py"))
+_workflow_mod = _load_module(
+    "workflow", os.path.join(_MODULE_DIR, "workflow.py")
+)
 
 PreTrainingArguments = _workflow_mod.PreTrainingArguments
 DataArguments = _workflow_mod.DataArguments
@@ -153,7 +166,9 @@ class TestModelArguments(unittest.TestCase):
     def test_default_values(self):
         """Test default values of ModelArguments."""
         args = ModelArguments()
-        self.assertEqual(args.model_name_or_path, "__internal_testing__/tiny-random-llama")
+        self.assertEqual(
+            args.model_name_or_path, "__internal_testing__/tiny-random-llama"
+        )
         self.assertIsNone(args.tokenizer_name_or_path)
         self.assertFalse(args.use_fast_layer_norm)
         self.assertEqual(args.hidden_dropout_prob, 0.1)

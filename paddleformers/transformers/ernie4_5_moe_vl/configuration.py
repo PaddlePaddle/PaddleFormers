@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-""" Ernie4_5VL model configuration """
+"""Ernie4_5VL model configuration"""
+
 from .model.configuration import Ernie4_5_VLMoeConfig as Ernie4_5_VLConfig
 
 __all__ = [

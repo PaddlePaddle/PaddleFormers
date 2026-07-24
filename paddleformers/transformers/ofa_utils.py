@@ -14,8 +14,8 @@
 
 import numpy as np
 import paddle
-import paddle.nn as nn
 import paddle.nn.functional as F
+from paddle import nn
 
 __all__ = [
     "prepare_qkv_ofa",
@@ -29,8 +29,13 @@ __all__ = [
 
 def prepare_qkv_ofa(self, query, key, value, cache=None):
     q = self.q_proj(query)
-    if hasattr(self.q_proj, "fn") and self.q_proj.fn.cur_config["expand_ratio"] is not None:
-        self.num_heads = int(self.num_heads * self.q_proj.fn.cur_config["expand_ratio"])
+    if (
+        hasattr(self.q_proj, "fn")
+        and self.q_proj.fn.cur_config["expand_ratio"] is not None
+    ):
+        self.num_heads = int(
+            self.num_heads * self.q_proj.fn.cur_config["expand_ratio"]
+        )
     q = paddle.reshape(x=q, shape=[0, 0, self.num_heads, self.head_dim])
     q = paddle.transpose(x=q, perm=[0, 2, 1, 3])
 
@@ -69,7 +74,12 @@ def mha_ofa_forward(self, query, key, value, attn_mask=None, cache=None):
         product = product + attn_mask[0]
     weights = F.softmax(product)
     if self.dropout:
-        weights = F.dropout(weights, self.dropout, training=self.training, mode="upscale_in_train")
+        weights = F.dropout(
+            weights,
+            self.dropout,
+            training=self.training,
+            mode="upscale_in_train",
+        )
 
     if attn_mask[1] is not None:
         weights = weights * attn_mask[1]
@@ -88,8 +98,13 @@ def mha_ofa_forward(self, query, key, value, attn_mask=None, cache=None):
         outs.append(weights)
     if cache is not None:
         outs.append(cache)
-    if hasattr(self.q_proj, "fn") and self.q_proj.fn.cur_config["expand_ratio"] is not None:
-        self.num_heads = int(float(self.num_heads) / self.q_proj.fn.cur_config["expand_ratio"])
+    if (
+        hasattr(self.q_proj, "fn")
+        and self.q_proj.fn.cur_config["expand_ratio"] is not None
+    ):
+        self.num_heads = int(
+            float(self.num_heads) / self.q_proj.fn.cur_config["expand_ratio"]
+        )
     return out if len(outs) == 1 else tuple(outs)
 
 
@@ -110,10 +125,19 @@ def encoder_ofa_forward(
     if src_mask[1] is not None:
         head_mask = src_mask[1]
         if len(head_mask.shape) == 1:
-            head_mask = paddle.unsqueeze(paddle.unsqueeze(paddle.unsqueeze(paddle.unsqueeze(head_mask, 0), 0), -1), -1)
-            head_mask = paddle.expand(head_mask, shape=[self.num_layers] + head_mask.shape[1:])
+            head_mask = paddle.unsqueeze(
+                paddle.unsqueeze(
+                    paddle.unsqueeze(paddle.unsqueeze(head_mask, 0), 0), -1
+                ),
+                -1,
+            )
+            head_mask = paddle.expand(
+                head_mask, shape=[self.num_layers] + head_mask.shape[1:]
+            )
         elif len(head_mask.shape) == 2:
-            head_mask = paddle.unsqueeze(paddle.unsqueeze(paddle.unsqueeze(head_mask, 1), -1), -1)
+            head_mask = paddle.unsqueeze(
+                paddle.unsqueeze(paddle.unsqueeze(head_mask, 1), -1), -1
+            )
     else:
         head_mask = [None] * self.num_layers
     for i, mod in enumerate(self.layers):
@@ -124,7 +148,9 @@ def encoder_ofa_forward(
     return output
 
 
-def encoder_layer_ofa_forward(self, src, src_mask=None, cache=None, output_attentions=False):
+def encoder_layer_ofa_forward(
+    self, src, src_mask=None, cache=None, output_attentions=False
+):
     residual = src
     if self.normalize_before:
         src = self.norm1(src)
@@ -155,12 +181,18 @@ def reorder_head(layer, index):
          layer(paddle.nn.Layer): the instance of `paddle.nn.MultiHeadAttention` layer.
          index(list): the sort indices of multi-head.
     """
-    assert isinstance(
-        layer, nn.MultiHeadAttention
-    ), "layer in reorder_head must be the instance of `paddle.nn.MultiHeadAttention`."
+    assert isinstance(layer, nn.MultiHeadAttention), (
+        "layer in reorder_head must be the instance of `paddle.nn.MultiHeadAttention`."
+    )
     n, a = layer.num_heads, layer.head_dim
     idx = paddle.reshape(
-        paddle.index_select(paddle.reshape(paddle.arange(0, n * a, dtype="int64"), shape=[n, a]), index=index, axis=0),
+        paddle.index_select(
+            paddle.reshape(
+                paddle.arange(0, n * a, dtype="int64"), shape=[n, a]
+            ),
+            index=index,
+            axis=0,
+        ),
         shape=[-1],
     )
 
@@ -170,7 +202,9 @@ def reorder_head(layer, index):
             if dim == 0:
                 b = paddle.assign(linearLayer.bias).detach()
             else:
-                b = paddle.assign(paddle.index_select(linearLayer.bias, index, axis=0)).detach()
+                b = paddle.assign(
+                    paddle.index_select(linearLayer.bias, index, axis=0)
+                ).detach()
 
         linearLayer.weight.stop_gradient = True
         linearLayer.weight.set_value(W)
@@ -180,10 +214,20 @@ def reorder_head(layer, index):
             linearLayer.bias.set_value(b)
             linearLayer.bias.stop_gradient = False
 
-    reorder_head_matrix(layer.q_proj.fn if hasattr(layer.q_proj, "fn") else layer.q_proj, idx)
-    reorder_head_matrix(layer.k_proj.fn if hasattr(layer.k_proj, "fn") else layer.k_proj, idx)
-    reorder_head_matrix(layer.v_proj.fn if hasattr(layer.v_proj, "fn") else layer.v_proj, idx)
-    reorder_head_matrix(layer.out_proj.fn if hasattr(layer.out_proj, "fn") else layer.out_proj, idx, dim=0)
+    reorder_head_matrix(
+        layer.q_proj.fn if hasattr(layer.q_proj, "fn") else layer.q_proj, idx
+    )
+    reorder_head_matrix(
+        layer.k_proj.fn if hasattr(layer.k_proj, "fn") else layer.k_proj, idx
+    )
+    reorder_head_matrix(
+        layer.v_proj.fn if hasattr(layer.v_proj, "fn") else layer.v_proj, idx
+    )
+    reorder_head_matrix(
+        layer.out_proj.fn if hasattr(layer.out_proj, "fn") else layer.out_proj,
+        idx,
+        dim=0,
+    )
 
 
 def reorder_neuron(layer, index, dim=0):
@@ -200,7 +244,9 @@ def reorder_neuron(layer, index, dim=0):
         if dim == 0:
             b = paddle.assign(linearLayer.bias).detach()
         else:
-            b = paddle.assign(paddle.index_select(linearLayer.bias, index, axis=0)).detach()
+            b = paddle.assign(
+                paddle.index_select(linearLayer.bias, index, axis=0)
+            ).detach()
     linearLayer.weight.stop_gradient = True
     linearLayer.weight.set_value(W)
     linearLayer.weight.stop_gradient = False
@@ -221,10 +267,16 @@ def reorder_neuron_head(model, head_importance, neuron_importance):
         idx = paddle.argsort(head_importance[layer], descending=True)
         reorder_head(model.base_model.encoder.layers[layer].self_attn, idx)
         # Reorders neurons
-        idx = paddle.argsort(paddle.to_tensor(current_importance), descending=True)
-        reorder_neuron(model.base_model.encoder.layers[layer].linear1.fn, idx, dim=1)
+        idx = paddle.argsort(
+            paddle.to_tensor(current_importance), descending=True
+        )
+        reorder_neuron(
+            model.base_model.encoder.layers[layer].linear1.fn, idx, dim=1
+        )
 
-        reorder_neuron(model.base_model.encoder.layers[layer].linear2.fn, idx, dim=0)
+        reorder_neuron(
+            model.base_model.encoder.layers[layer].linear2.fn, idx, dim=0
+        )
 
 
 def compute_neuron_head_importance(
@@ -260,7 +312,9 @@ def compute_neuron_head_importance(
             The name of output `Linear` layer in feed-forward.
             Defaults to `linear2`.
     """
-    head_importance = paddle.zeros(shape=[num_layers, num_heads], dtype="float32")
+    head_importance = paddle.zeros(
+        shape=[num_layers, num_heads], dtype="float32"
+    )
     head_mask = paddle.ones(shape=[num_layers, num_heads], dtype="float32")
     head_mask.stop_gradient = False
 
@@ -287,7 +341,9 @@ def compute_neuron_head_importance(
         labels = None
         if isinstance(batch, list):
             input_ids, segment_ids, labels = batch
-            logits = model(input_ids, segment_ids, attention_mask=[None, head_mask])
+            logits = model(
+                input_ids, segment_ids, attention_mask=[None, head_mask]
+            )
         else:
             if label_names is not None:
                 labels = []
@@ -301,7 +357,10 @@ def compute_neuron_head_importance(
                     if key in batch:
                         batch.pop(key)
             elif "start_positions" in batch and "end_positions" in batch:
-                labels = (batch.pop("start_positions"), batch.pop("end_positions"))
+                labels = (
+                    batch.pop("start_positions"),
+                    batch.pop("end_positions"),
+                )
 
             batch["attention_mask"] = [None, head_mask]
             logits = model(**batch)
@@ -319,8 +378,16 @@ def compute_neuron_head_importance(
         loss.backward()
         head_importance += paddle.abs(paddle.to_tensor(head_mask.gradient()))
         for w1, b1, w2, current_importance in zip(
-            intermediate_weight, intermediate_bias, output_weight, neuron_importance
+            intermediate_weight,
+            intermediate_bias,
+            output_weight,
+            neuron_importance,
         ):
-            current_importance += np.abs((np.sum(w1.numpy() * w1.gradient(), axis=0) + b1.numpy() * b1.gradient()))
-            current_importance += np.abs(np.sum(w2.numpy() * w2.gradient(), axis=1))
+            current_importance += np.abs(
+                np.sum(w1.numpy() * w1.gradient(), axis=0)
+                + b1.numpy() * b1.gradient()
+            )
+            current_importance += np.abs(
+                np.sum(w2.numpy() * w2.gradient(), axis=1)
+            )
     return head_importance, neuron_importance

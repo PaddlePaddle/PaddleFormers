@@ -64,7 +64,14 @@ class TestSubbatch(unittest.TestCase):
             call_count[0] += 1
             return a + b
 
-        wrapped = subbatch(counting_fn, arg_idx=[0], axis=[0], bs=3, out_idx=0, same_arg_idx={1: 0})
+        wrapped = subbatch(
+            counting_fn,
+            arg_idx=[0],
+            axis=[0],
+            bs=3,
+            out_idx=0,
+            same_arg_idx={1: 0},
+        )
         a = paddle.ones([9, 4])
         result = wrapped(a, a)
         # Without same_arg_idx, each arg would be sliced separately but function still called 3 times
@@ -88,7 +95,9 @@ class TestSubbatch(unittest.TestCase):
         def two_arg_fn(a, b):
             return a
 
-        wrapped = subbatch(two_arg_fn, arg_idx=[0, 1], axis=[0, 0], bs=10, out_idx=0)
+        wrapped = subbatch(
+            two_arg_fn, arg_idx=[0, 1], axis=[0, 0], bs=10, out_idx=0
+        )
         a = paddle.ones([6, 4])
         b = paddle.ones([8, 4])  # Different size
         with self.assertRaises(AssertionError):
@@ -102,7 +111,14 @@ class TestSubbatch(unittest.TestCase):
             return a
 
         # same_arg_idx={0: 1} means 0 <= 1, which violates i > same_arg_idx[i]
-        wrapped = subbatch(fn, arg_idx=[0, 1], axis=[0, 0], bs=10, out_idx=0, same_arg_idx={0: 1})
+        wrapped = subbatch(
+            fn,
+            arg_idx=[0, 1],
+            axis=[0, 0],
+            bs=10,
+            out_idx=0,
+            same_arg_idx={0: 1},
+        )
         a = paddle.ones([12, 4])
         b = paddle.ones([12, 4])
         with self.assertRaises(AssertionError):
@@ -115,9 +131,18 @@ class TestSubbatch(unittest.TestCase):
         def simple_fn(x):
             return x * 2
 
-        wrapped = subbatch(simple_fn, arg_idx=[0], axis=[0], bs=3, out_idx=0, use_recompute=True)
+        wrapped = subbatch(
+            simple_fn,
+            arg_idx=[0],
+            axis=[0],
+            bs=3,
+            out_idx=0,
+            use_recompute=True,
+        )
         x = paddle.randn([9, 4])
-        with patch("paddle.distributed.fleet.utils.recompute") as mock_recompute:
+        with patch(
+            "paddle.distributed.fleet.utils.recompute"
+        ) as mock_recompute:
             mock_recompute.return_value = x[:3] * 2
             # The first batch triggers recompute, subsequent may not
             try:
@@ -134,8 +159,12 @@ class TestCalcLMHeadLogits(unittest.TestCase):
         config = MagicMock()
         config.sequence_parallel = overrides.get("sequence_parallel", False)
         config.max_sequence_length = overrides.get("max_sequence_length", 128)
-        config.tensor_parallel_output = overrides.get("tensor_parallel_output", False)
-        config.tensor_model_parallel_size = overrides.get("tensor_model_parallel_size", 1)
+        config.tensor_parallel_output = overrides.get(
+            "tensor_parallel_output", False
+        )
+        config.tensor_model_parallel_size = overrides.get(
+            "tensor_model_parallel_size", 1
+        )
         return config
 
     def test_calc_lm_head_logits_basic(self):
@@ -145,7 +174,9 @@ class TestCalcLMHeadLogits(unittest.TestCase):
         config = self._make_config()
         hidden = paddle.randn([2, 8, 64], dtype="float32")
         weight = paddle.randn([100, 64], dtype="float32")
-        with patch("paddleformers.nn.criterion.loss_utils.parallel_matmul") as mock_matmul:
+        with patch(
+            "paddleformers.nn.criterion.loss_utils.parallel_matmul"
+        ) as mock_matmul:
             mock_matmul.return_value = paddle.randn([2, 8, 100])
             calc_lm_head_logits(config, hidden, weight, None)
             mock_matmul.assert_called_once()
@@ -158,7 +189,9 @@ class TestCalcLMHeadLogits(unittest.TestCase):
         hidden = paddle.randn([2, 8, 64], dtype="float32")
         weight = paddle.randn([100, 64], dtype="float32")
         bias = paddle.randn([100], dtype="float32")
-        with patch("paddleformers.nn.criterion.loss_utils.parallel_matmul") as mock_matmul:
+        with patch(
+            "paddleformers.nn.criterion.loss_utils.parallel_matmul"
+        ) as mock_matmul:
             mock_matmul.return_value = paddle.randn([2, 8, 100])
             calc_lm_head_logits(config, hidden, weight, bias)
             call_kwargs = mock_matmul.call_args[1]
@@ -171,11 +204,17 @@ class TestCalcLMHeadLogits(unittest.TestCase):
         config = self._make_config(sequence_parallel=True)
         hidden = paddle.randn([2, 16, 64], dtype="float32")
         weight = paddle.randn([100, 64], dtype="float32")
-        with patch("paddleformers.nn.criterion.loss_utils.GatherOp") as mock_gather:
+        with patch(
+            "paddleformers.nn.criterion.loss_utils.GatherOp"
+        ) as mock_gather:
             mock_gather.apply.return_value = paddle.randn([2, 128, 64])
-            with patch("paddleformers.nn.criterion.loss_utils.parallel_matmul") as mock_matmul:
+            with patch(
+                "paddleformers.nn.criterion.loss_utils.parallel_matmul"
+            ) as mock_matmul:
                 mock_matmul.return_value = paddle.randn([2, 128, 100])
-                calc_lm_head_logits(config, hidden, weight, None, gather_hidden_states=True)
+                calc_lm_head_logits(
+                    config, hidden, weight, None, gather_hidden_states=True
+                )
                 mock_gather.apply.assert_called_once_with(hidden)
 
     def test_calc_lm_head_logits_tensor_parallel_output_override(self):
@@ -185,8 +224,12 @@ class TestCalcLMHeadLogits(unittest.TestCase):
         config = self._make_config(tensor_parallel_output=False)
         hidden = paddle.randn([2, 8, 64], dtype="float32")
         weight = paddle.randn([100, 64], dtype="float32")
-        with patch("paddleformers.nn.criterion.loss_utils.parallel_matmul") as mock_matmul:
+        with patch(
+            "paddleformers.nn.criterion.loss_utils.parallel_matmul"
+        ) as mock_matmul:
             mock_matmul.return_value = paddle.randn([2, 8, 100])
-            calc_lm_head_logits(config, hidden, weight, None, tensor_parallel_output=True)
+            calc_lm_head_logits(
+                config, hidden, weight, None, tensor_parallel_output=True
+            )
             call_kwargs = mock_matmul.call_args[1]
             self.assertTrue(call_kwargs["tensor_parallel_output"])

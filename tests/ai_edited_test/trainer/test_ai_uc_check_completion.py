@@ -20,7 +20,10 @@ class TestCheckUnifiedCheckpoint(unittest.TestCase):
         args.use_expert_parallel = False
         model = MagicMock()
 
-        with patch("paddleformers.trainer.unified_checkpoint.check_completion.distributed_isfile", return_value=False):
+        with patch(
+            "paddleformers.trainer.unified_checkpoint.check_completion.distributed_isfile",
+            return_value=False,
+        ):
             with self.assertRaises(Exception):
                 check_unified_checkpoint(args, model, "/nonexistent/path")
 
@@ -34,9 +37,14 @@ class TestCheckUnifiedOptimizer(unittest.TestCase):
         model = MagicMock()
         optimizer = MagicMock()
 
-        with patch("paddleformers.trainer.unified_checkpoint.check_completion.distributed_isfile", return_value=False):
+        with patch(
+            "paddleformers.trainer.unified_checkpoint.check_completion.distributed_isfile",
+            return_value=False,
+        ):
             with self.assertRaises(Exception):
-                check_unified_optimizer(args, model, optimizer, "/nonexistent/path")
+                check_unified_optimizer(
+                    args, model, optimizer, "/nonexistent/path"
+                )
 
 
 if __name__ == "__main__":

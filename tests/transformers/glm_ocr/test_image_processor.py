@@ -12,7 +12,9 @@ import unittest
 import paddle
 
 from paddleformers.transformers import AutoImageProcessor
-from paddleformers.transformers.glm_ocr.image_processor import Glm46VImageProcessor
+from paddleformers.transformers.glm_ocr.image_processor import (
+    Glm46VImageProcessor,
+)
 
 
 class GlmOcrImageProcessorTest(unittest.TestCase):
@@ -69,7 +71,9 @@ class GlmOcrImageProcessorTest(unittest.TestCase):
         inputs1 = processor(self.image, return_tensors="pd")
         inputs2 = processor2(self.image, return_tensors="pd")
 
-        self.assertTrue(paddle.allclose(inputs1["pixel_values"], inputs2["pixel_values"]))
+        self.assertTrue(
+            paddle.allclose(inputs1["pixel_values"], inputs2["pixel_values"])
+        )
 
     def test_auto_image_processor(self):
         """Verify that AutoImageProcessor correctly loads Glm46VImageProcessor"""

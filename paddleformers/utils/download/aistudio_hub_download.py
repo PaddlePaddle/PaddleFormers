@@ -18,10 +18,11 @@ import os
 import re
 import shutil
 import tempfile
+from collections.abc import Generator
 from contextlib import contextmanager
 from functools import partial
 from pathlib import Path
-from typing import Dict, Generator, Literal, Optional, Union
+from typing import Literal, Optional
 from urllib.parse import quote
 
 import requests
@@ -61,7 +62,9 @@ from .common import (
 VERSION = "0.1.5"
 ENDPOINT = os.getenv("AISTUDIO_ENDPOINT", "http://git.aistudio.baidu.com")
 
-AISTUDIO_URL_TEMPLATE = ENDPOINT + "/api/v1/repos/{user_name}/{repo_name}/contents/{filename}"
+AISTUDIO_URL_TEMPLATE = (
+    ENDPOINT + "/api/v1/repos/{user_name}/{repo_name}/contents/{filename}"
+)
 
 
 default_home = os.path.join(os.path.expanduser("~"), ".cache")
@@ -85,7 +88,9 @@ REGEX_COMMIT_HASH = re.compile(r"^[0-9a-f]{40}$")
 
 # TOKEN
 AISTUDIO_TOKEN_PATH = os.path.join(AISTUDIO_HOME, "token")
-AISTUDIO_HUB_DISABLE_IMPLICIT_TOKEN: bool = _is_true(os.environ.get("AISTUDIO_HUB_DISABLE_IMPLICIT_TOKEN"))
+AISTUDIO_HUB_DISABLE_IMPLICIT_TOKEN: bool = _is_true(
+    os.environ.get("AISTUDIO_HUB_DISABLE_IMPLICIT_TOKEN")
+)
 
 
 class LocalTokenNotFoundError(EnvironmentError):
@@ -103,7 +108,10 @@ def _clean_token(token: Optional[str]) -> Optional[str]:
 
 
 def _get_token_from_environment() -> Optional[str]:
-    return _clean_token(os.environ.get("AISTUDIO_ACCESS_TOKEN") or os.environ.get("AISTUDIO_TOKEN"))
+    return _clean_token(
+        os.environ.get("AISTUDIO_ACCESS_TOKEN")
+        or os.environ.get("AISTUDIO_TOKEN")
+    )
 
 
 def _get_token_from_file() -> Optional[str]:
@@ -129,7 +137,7 @@ def get_token() -> Optional[str]:
     return _get_token_from_environment() or _get_token_from_file()
 
 
-def get_token_to_send(token: Optional[Union[bool, str]]) -> Optional[str]:
+def get_token_to_send(token: Optional[bool | str]) -> Optional[str]:
     """Select the token to send from either `token` or the cache."""
     # Case token is explicitly provided
     if isinstance(token, str):
@@ -160,7 +168,9 @@ def get_token_to_send(token: Optional[Union[bool, str]]) -> Optional[str]:
     return cached_token
 
 
-def _validate_token_to_send(token: Optional[str], is_write_action: bool) -> None:
+def _validate_token_to_send(
+    token: Optional[str], is_write_action: bool
+) -> None:
     if is_write_action:
         if token is None:
             raise ValueError(
@@ -172,12 +182,12 @@ def _validate_token_to_send(token: Optional[str], is_write_action: bool) -> None
 
 def build_aistudio_headers(
     *,
-    token: Optional[Union[bool, str]] = None,
+    token: Optional[bool | str] = None,
     is_write_action: bool = False,
     library_name: Optional[str] = None,
     library_version: Optional[str] = None,
-    user_agent: Union[Dict, str, None] = None,
-) -> Dict[str, str]:
+    user_agent: dict | str | None = None,
+) -> dict[str, str]:
     # Get auth token to send
     token_to_send = get_token_to_send(token)
     _validate_token_to_send(token_to_send, is_write_action=is_write_action)
@@ -191,12 +201,12 @@ def build_aistudio_headers(
 
 def get_aistudio_file_metadata(
     url: str,
-    token: Union[bool, str, None] = None,
-    proxies: Optional[Dict] = None,
+    token: bool | str | None = None,
+    proxies: Optional[dict] = None,
     timeout: Optional[float] = DEFAULT_REQUEST_TIMEOUT,
     library_name: Optional[str] = None,
     library_version: Optional[str] = None,
-    user_agent: Union[Dict, str, None] = None,
+    user_agent: dict | str | None = None,
 ):
     """Fetch metadata of a file versioned on the Hub for a given url.
 
@@ -226,9 +236,14 @@ def get_aistudio_file_metadata(
         commit_hash.
     """
     headers = build_aistudio_headers(
-        token=token, library_name=library_name, library_version=library_version, user_agent=user_agent
+        token=token,
+        library_name=library_name,
+        library_version=library_version,
+        user_agent=user_agent,
     )
-    headers["Accept-Encoding"] = "identity"  # prevent any compression => we want to know the real size of the file
+    headers["Accept-Encoding"] = (
+        "identity"  # prevent any compression => we want to know the real size of the file
+    )
 
     # Retrieve metadata
     r = _request_wrapper(
@@ -281,7 +296,9 @@ def aistudio_hub_url(
     repo_name = repo_name.strip()
 
     url = AISTUDIO_URL_TEMPLATE.format(
-        user_name=quote(user_name, safe=""), repo_name=quote(repo_name, safe=""), filename=quote(filename)
+        user_name=quote(user_name, safe=""),
+        repo_name=quote(repo_name, safe=""),
+        filename=quote(filename),
     )
     # Update endpoint if provided
     if endpoint is not None and url.startswith(ENDPOINT):
@@ -293,20 +310,20 @@ def aistudio_hub_url(
 
 
 def aistudio_hub_download(
-    repo_id: str = None,
-    filename: str = None,
+    repo_id: str | None = None,
+    filename: str | None = None,
     subfolder: Optional[str] = None,
     repo_type: Optional[str] = None,
     revision: Optional[str] = None,
     library_name: Optional[str] = None,
     library_version: Optional[str] = None,
-    cache_dir: Union[str, Path, None] = None,
-    local_dir: Union[str, Path, None] = None,
-    local_dir_use_symlinks: Union[bool, Literal["auto"]] = "auto",
+    cache_dir: str | Path | None = None,
+    local_dir: str | Path | None = None,
+    local_dir_use_symlinks: bool | Literal["auto"] = "auto",
     # TODO
-    user_agent: Union[Dict, str, None] = None,
+    user_agent: dict | str | None = None,
     force_download: bool = False,
-    proxies: Optional[Dict] = None,
+    proxies: Optional[dict] = None,
     etag_timeout: float = DEFAULT_ETAG_TIMEOUT,
     resume_download: bool = False,
     token: Optional[str] = None,
@@ -314,7 +331,6 @@ def aistudio_hub_download(
     endpoint: Optional[str] = None,
     **kwargs,
 ):
-
     if cache_dir is None:
         cache_dir = AISTUDIO_HUB_CACHE
     if revision is None:
@@ -334,15 +350,22 @@ def aistudio_hub_download(
     if repo_type is None:
         repo_type = REPO_TYPES[-1]
     if repo_type not in REPO_TYPES:
-        raise ValueError(f"Invalid repo type: {repo_type}. Accepted repo types are: {str(REPO_TYPES)}")
+        raise ValueError(
+            f"Invalid repo type: {repo_type}. Accepted repo types are: {REPO_TYPES!s}"
+        )
 
-    storage_folder = os.path.join(cache_dir, repo_folder_name(repo_id=repo_id, repo_type=repo_type))
+    storage_folder = os.path.join(
+        cache_dir, repo_folder_name(repo_id=repo_id, repo_type=repo_type)
+    )
     os.makedirs(storage_folder, exist_ok=True)
 
     # cross platform transcription of filename, to be used as a local file path.
     relative_filename = os.path.join(*filename.split("/"))
     if os.name == "nt":
-        if relative_filename.startswith("..\\") or "\\..\\" in relative_filename:
+        if (
+            relative_filename.startswith("..\\")
+            or "\\..\\" in relative_filename
+        ):
             raise ValueError(
                 f"Invalid filename: cannot handle filename '{relative_filename}' on Windows. Please ask the repository"
                 " owner to rename this file."
@@ -352,13 +375,26 @@ def aistudio_hub_download(
     # shortcut everything.
     # TODO, 当前不支持commit id下载，因此这个肯定跑的。
     if not force_download:  # REGEX_COMMIT_HASH.match(revision)
-        pointer_path = _get_pointer_path(storage_folder, revision, relative_filename)
+        pointer_path = _get_pointer_path(
+            storage_folder, revision, relative_filename
+        )
         if os.path.exists(pointer_path):
             if local_dir is not None:
-                return _to_local_dir(pointer_path, local_dir, relative_filename, use_symlinks=local_dir_use_symlinks)
+                return _to_local_dir(
+                    pointer_path,
+                    local_dir,
+                    relative_filename,
+                    use_symlinks=local_dir_use_symlinks,
+                )
             return pointer_path
 
-    url = aistudio_hub_url(repo_id, filename, repo_type=repo_type, revision=revision, endpoint=endpoint)
+    url = aistudio_hub_url(
+        repo_id,
+        filename,
+        repo_type=repo_type,
+        revision=revision,
+        endpoint=endpoint,
+    )
 
     headers = build_aistudio_headers(
         token=token,
@@ -384,7 +420,7 @@ def aistudio_hub_download(
                     library_version=library_version,
                     user_agent=user_agent,
                 )
-            except EntryNotFoundError as http_error:  # noqa: F841
+            except EntryNotFoundError as http_error:
                 raise
             # Commit hash must exist
             # TODO，这里修改了commit hash，强迫为revision了。
@@ -471,11 +507,16 @@ def aistudio_hub_download(
 
         # Return pointer file if exists
         if commit_hash is not None:
-            pointer_path = _get_pointer_path(storage_folder, commit_hash, relative_filename)
+            pointer_path = _get_pointer_path(
+                storage_folder, commit_hash, relative_filename
+            )
             if os.path.exists(pointer_path):
                 if local_dir is not None:
                     return _to_local_dir(
-                        pointer_path, local_dir, relative_filename, use_symlinks=local_dir_use_symlinks
+                        pointer_path,
+                        local_dir,
+                        relative_filename,
+                        use_symlinks=local_dir_use_symlinks,
                     )
                 return pointer_path
 
@@ -488,7 +529,9 @@ def aistudio_hub_download(
                 "Cannot find the requested files in the disk cache and outgoing traffic has been disabled. To enable"
                 " aistudio hub look-ups and downloads online, set 'local_files_only' to False."
             )
-        elif isinstance(head_call_error, RepositoryNotFoundError) or isinstance(head_call_error, GatedRepoError):
+        elif isinstance(
+            head_call_error, (RepositoryNotFoundError, GatedRepoError)
+        ):
             # Repo not found => let's raise the actual error
             raise head_call_error
         else:
@@ -501,33 +544,53 @@ def aistudio_hub_download(
 
     # From now on, etag and commit_hash are not None.
     assert etag is not None, "etag must have been retrieved from server"
-    assert commit_hash is not None, "commit_hash must have been retrieved from server"
+    assert commit_hash is not None, (
+        "commit_hash must have been retrieved from server"
+    )
     blob_path = os.path.join(storage_folder, "blobs", etag)
-    pointer_path = _get_pointer_path(storage_folder, commit_hash, relative_filename)
+    pointer_path = _get_pointer_path(
+        storage_folder, commit_hash, relative_filename
+    )
 
     os.makedirs(os.path.dirname(blob_path), exist_ok=True)
     os.makedirs(os.path.dirname(pointer_path), exist_ok=True)
     # if passed revision is not identical to commit_hash
     # then revision has to be a branch name or tag name.
     # In that case store a ref.
-    _cache_commit_hash_for_specific_revision(storage_folder, revision, commit_hash)
+    _cache_commit_hash_for_specific_revision(
+        storage_folder, revision, commit_hash
+    )
 
     if os.path.exists(pointer_path) and not force_download:
         if local_dir is not None:
-            return _to_local_dir(pointer_path, local_dir, relative_filename, use_symlinks=local_dir_use_symlinks)
+            return _to_local_dir(
+                pointer_path,
+                local_dir,
+                relative_filename,
+                use_symlinks=local_dir_use_symlinks,
+            )
         return pointer_path
 
     if os.path.exists(blob_path) and not force_download:
         # we have the blob already, but not the pointer
         if local_dir is not None:  # to local dir
-            return _to_local_dir(blob_path, local_dir, relative_filename, use_symlinks=local_dir_use_symlinks)
+            return _to_local_dir(
+                blob_path,
+                local_dir,
+                relative_filename,
+                use_symlinks=local_dir_use_symlinks,
+            )
         else:  # or in snapshot cache
             _create_symlink(blob_path, pointer_path, new_blob=False)
             return pointer_path
 
     # Prevent parallel downloads of the same file with a lock.
     # etag could be duplicated across repos,
-    lock_path = os.path.join(locks_dir, repo_folder_name(repo_id=repo_id, repo_type=repo_type), f"{etag}.lock")
+    lock_path = os.path.join(
+        locks_dir,
+        repo_folder_name(repo_id=repo_id, repo_type=repo_type),
+        f"{etag}.lock",
+    )
 
     # Some Windows versions do not allow for paths longer than 255 characters.
     # In this case, we must specify it is an extended path by using the "\\?\" prefix.
@@ -543,14 +606,21 @@ def aistudio_hub_download(
         if os.path.exists(pointer_path) and not force_download:
             # Even if returning early like here, the lock will be released.
             if local_dir is not None:
-                return _to_local_dir(pointer_path, local_dir, relative_filename, use_symlinks=local_dir_use_symlinks)
+                return _to_local_dir(
+                    pointer_path,
+                    local_dir,
+                    relative_filename,
+                    use_symlinks=local_dir_use_symlinks,
+                )
             return pointer_path
 
         if resume_download:
             incomplete_path = blob_path + ".incomplete"
 
             @contextmanager
-            def _resumable_file_manager() -> Generator[io.BufferedWriter, None, None]:
+            def _resumable_file_manager() -> Generator[
+                io.BufferedWriter, None, None
+            ]:
                 with open(incomplete_path, "ab") as f:
                     yield f
 
@@ -561,7 +631,10 @@ def aistudio_hub_download(
                 resume_size = 0
         else:
             temp_file_manager = partial(  # type: ignore
-                tempfile.NamedTemporaryFile, mode="wb", dir=cache_dir, delete=False
+                tempfile.NamedTemporaryFile,
+                mode="wb",
+                dir=cache_dir,
+                delete=False,
             )
             resume_size = 0
 
@@ -570,9 +643,13 @@ def aistudio_hub_download(
         with temp_file_manager() as temp_file:
             logger.info("downloading %s to %s", url, temp_file.name)
 
-            if expected_size is not None:  # might be None if HTTP header not set correctly
+            if (
+                expected_size is not None
+            ):  # might be None if HTTP header not set correctly
                 # Check tmp path
-                _check_disk_space(expected_size, os.path.dirname(temp_file.name))
+                _check_disk_space(
+                    expected_size, os.path.dirname(temp_file.name)
+                )
 
                 # Check destination
                 _check_disk_space(expected_size, os.path.dirname(blob_path))
@@ -597,8 +674,13 @@ def aistudio_hub_download(
 
             # If "auto" (default) copy-paste small files to ease manual editing but symlink big files to save disk
             # In both cases, blob file is cached.
-            is_big_file = os.stat(temp_file.name).st_size > DEFALUT_LOCAL_DIR_AUTO_SYMLINK_THRESHOLD
-            if local_dir_use_symlinks is True or (local_dir_use_symlinks == "auto" and is_big_file):
+            is_big_file = (
+                os.stat(temp_file.name).st_size
+                > DEFALUT_LOCAL_DIR_AUTO_SYMLINK_THRESHOLD
+            )
+            if local_dir_use_symlinks is True or (
+                local_dir_use_symlinks == "auto" and is_big_file
+            ):
                 logger.debug(f"Storing {url} in cache at {blob_path}")
                 _chmod_and_replace(temp_file.name, blob_path)
                 logger.debug("Create symlink to local dir")
@@ -606,10 +688,14 @@ def aistudio_hub_download(
             elif local_dir_use_symlinks == "auto" and not is_big_file:
                 logger.debug(f"Storing {url} in cache at {blob_path}")
                 _chmod_and_replace(temp_file.name, blob_path)
-                logger.debug("Duplicate in local dir (small file and use_symlink set to 'auto')")
+                logger.debug(
+                    "Duplicate in local dir (small file and use_symlink set to 'auto')"
+                )
                 shutil.copyfile(blob_path, local_dir_filepath)
             else:
-                logger.debug(f"Storing {url} in local_dir at {local_dir_filepath} (not cached).")
+                logger.debug(
+                    f"Storing {url} in local_dir at {local_dir_filepath} (not cached)."
+                )
                 _chmod_and_replace(temp_file.name, local_dir_filepath)
             pointer_path = local_dir_filepath  # for return value
 
@@ -665,7 +751,11 @@ def aistudio_hub_file_exists(
     </Tip>
     """
     url = aistudio_hub_url(
-        repo_id=repo_id, repo_type=repo_type, revision=revision, filename=filename, endpoint=endpoint
+        repo_id=repo_id,
+        repo_type=repo_type,
+        revision=revision,
+        filename=filename,
+        endpoint=endpoint,
     )
     try:
         if token is None:
@@ -674,14 +764,19 @@ def aistudio_hub_file_exists(
         return True
     except GatedRepoError:  # raise specifically on gated repo
         raise
-    except (RepositoryNotFoundError, EntryNotFoundError, RevisionNotFoundError, HfHubHTTPError):
+    except (
+        RepositoryNotFoundError,
+        EntryNotFoundError,
+        RevisionNotFoundError,
+        HfHubHTTPError,
+    ):
         return False
 
 
 def aistudio_hub_try_to_load_from_cache(
     repo_id: str,
     filename: str,
-    cache_dir: Union[str, Path, None] = None,
+    cache_dir: str | Path | None = None,
     revision: Optional[str] = None,
     repo_type: Optional[str] = None,
 ):
@@ -690,7 +785,9 @@ def aistudio_hub_try_to_load_from_cache(
     if repo_type is None:
         repo_type = REPO_TYPES[-1]
     if repo_type not in REPO_TYPES:
-        raise ValueError(f"Invalid repo type: {repo_type}. Accepted repo types are: {str(REPO_TYPES)}")
+        raise ValueError(
+            f"Invalid repo type: {repo_type}. Accepted repo types are: {REPO_TYPES!s}"
+        )
     if cache_dir is None:
         cache_dir = AISTUDIO_HUB_CACHE
 

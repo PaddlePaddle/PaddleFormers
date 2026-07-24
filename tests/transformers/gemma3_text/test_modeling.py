@@ -114,22 +114,39 @@ class Gemma3TextModelTester:
         self.num_choices = num_choices
 
     def prepare_config_and_inputs(self):
-        input_ids = ids_tensor([self.batch_size, self.seq_length], self.vocab_size, dtype=paddle.int64)
+        input_ids = ids_tensor(
+            [self.batch_size, self.seq_length],
+            self.vocab_size,
+            dtype=paddle.int64,
+        )
 
         input_mask = None
         if self.use_input_mask:
-            input_mask = random_attention_mask([self.batch_size, self.seq_length])
+            input_mask = random_attention_mask(
+                [self.batch_size, self.seq_length]
+            )
 
         sequence_labels = None
         token_labels = None
         choice_labels = None
         if self.use_labels:
-            sequence_labels = ids_tensor([self.batch_size], self.type_sequence_label_size)
-            token_labels = ids_tensor([self.batch_size, self.seq_length], self.num_labels)
+            sequence_labels = ids_tensor(
+                [self.batch_size], self.type_sequence_label_size
+            )
+            token_labels = ids_tensor(
+                [self.batch_size, self.seq_length], self.num_labels
+            )
             choice_labels = ids_tensor([self.batch_size], self.num_choices)
 
         config = self.get_config()
-        return config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        return (
+            config,
+            input_ids,
+            input_mask,
+            sequence_labels,
+            token_labels,
+            choice_labels,
+        )
 
     def get_config(self) -> Gemma3TextConfig:
         return Gemma3TextConfig(
@@ -163,32 +180,60 @@ class Gemma3TextModelTester:
         )
 
     def create_and_check_model(
-        self, config: Gemma3TextConfig, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        self,
+        config: Gemma3TextConfig,
+        input_ids,
+        input_mask,
+        sequence_labels,
+        token_labels,
+        choice_labels,
     ):
         model = Gemma3TextModel(config=config)
         model.eval()
         result = model(input_ids, attention_mask=input_mask)
         result = model(input_ids)
-        self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.hidden_size])
+        self.parent.assertEqual(
+            result[0].shape,
+            [self.batch_size, self.seq_length, self.hidden_size],
+        )
 
     def create_and_check_model_attention_mask(
-        self, config: Gemma3TextConfig, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        self,
+        config: Gemma3TextConfig,
+        input_ids,
+        input_mask,
+        sequence_labels,
+        token_labels,
+        choice_labels,
     ):
         model = Gemma3TextModel(config)
         model.eval()
         attn_mask_2d = random_attention_mask([self.batch_size, self.seq_length])
         result_2d = model(input_ids, attention_mask=attn_mask_2d)[0]
         batch, seq_length = input_ids.shape
-        causal_mask = paddle.tril(paddle.ones((batch, seq_length, seq_length), dtype=attn_mask_2d.dtype))
+        causal_mask = paddle.tril(
+            paddle.ones(
+                (batch, seq_length, seq_length), dtype=attn_mask_2d.dtype
+            )
+        )
         attn_mask_3d = causal_mask & attn_mask_2d.unsqueeze(-1)
         result_3d = model(input_ids, attention_mask=attn_mask_3d)[0]
         attn_mask_4d = attn_mask_3d.unsqueeze(1)
         result_4d = model(input_ids, attention_mask=attn_mask_4d)[0]
         result_no_attention_mask = model(input_ids, attention_mask=None)[0]
         # Assert non-padding tokens have the same logits with different attention_mask shape
-        self.parent.assertTrue((result_2d[attn_mask_2d] == result_3d[attn_mask_2d]).all())
-        self.parent.assertTrue((result_2d[attn_mask_2d] == result_4d[attn_mask_2d]).all())
-        self.parent.assertTrue((result_2d[attn_mask_2d] == result_no_attention_mask[attn_mask_2d]).all())
+        self.parent.assertTrue(
+            (result_2d[attn_mask_2d] == result_3d[attn_mask_2d]).all()
+        )
+        self.parent.assertTrue(
+            (result_2d[attn_mask_2d] == result_4d[attn_mask_2d]).all()
+        )
+        self.parent.assertTrue(
+            (
+                result_2d[attn_mask_2d]
+                == result_no_attention_mask[attn_mask_2d]
+            ).all()
+        )
 
     def create_and_check_model_past_large_inputs(
         self,
@@ -203,8 +248,15 @@ class Gemma3TextModelTester:
         model.eval()
 
         # first forward pass
-        outputs = model(input_ids, attention_mask=input_mask, use_cache=True, return_dict=self.return_dict)
-        past_key_values = outputs.past_key_values if self.return_dict else outputs[2]
+        outputs = model(
+            input_ids,
+            attention_mask=input_mask,
+            use_cache=True,
+            return_dict=self.return_dict,
+        )
+        past_key_values = (
+            outputs.past_key_values if self.return_dict else outputs[2]
+        )
 
         # create hypothetical multiple next token and extent to next_input_ids
         next_tokens = ids_tensor((self.batch_size, 3), self.vocab_size)
@@ -215,7 +267,10 @@ class Gemma3TextModelTester:
         next_attention_mask = paddle.cat([input_mask, next_mask], axis=-1)
 
         outputs = model(
-            next_input_ids, attention_mask=next_attention_mask, output_hidden_states=True, return_dict=self.return_dict
+            next_input_ids,
+            attention_mask=next_attention_mask,
+            output_hidden_states=True,
+            return_dict=self.return_dict,
         )
 
         output_from_no_past = outputs[2][0]
@@ -232,13 +287,23 @@ class Gemma3TextModelTester:
 
         # select random slice
         random_slice_idx = ids_tensor((1,), output_from_past.shape[-1]).item()
-        output_from_no_past_slice = output_from_no_past[:, -3:, random_slice_idx].detach()
-        output_from_past_slice = output_from_past[:, :, random_slice_idx].detach()
+        output_from_no_past_slice = output_from_no_past[
+            :, -3:, random_slice_idx
+        ].detach()
+        output_from_past_slice = output_from_past[
+            :, :, random_slice_idx
+        ].detach()
 
-        self.parent.assertTrue(output_from_past_slice.shape[1] == next_tokens.shape[1])
+        self.parent.assertTrue(
+            output_from_past_slice.shape[1] == next_tokens.shape[1]
+        )
 
         # test that outputs are equal for slice
-        self.parent.assertTrue(paddle.allclose(output_from_past_slice, output_from_no_past_slice, atol=1e-3))
+        self.parent.assertTrue(
+            paddle.allclose(
+                output_from_past_slice, output_from_no_past_slice, atol=1e-3
+            )
+        )
 
     def prepare_config_and_inputs_for_common(self):
         config_and_inputs = self.prepare_config_and_inputs()
@@ -253,7 +318,9 @@ class Gemma3TextModelTester:
         inputs_dict = {"input_ids": input_ids, "attention_mask": input_mask}
         return config, inputs_dict
 
-    def create_and_check_lm_head_model(self, config, input_ids, input_mask, *args):
+    def create_and_check_lm_head_model(
+        self, config, input_ids, input_mask, *args
+    ):
         model = Gemma3ForCausalLM(config)
         model.eval()
 
@@ -265,9 +332,15 @@ class Gemma3TextModelTester:
         )
         if self.parent.use_labels:
             self.parent.assertIsInstance(result[0].item(), float)
-            self.parent.assertEqual(result[1].shape, [self.batch_size, self.seq_length, self.vocab_size])
+            self.parent.assertEqual(
+                result[1].shape,
+                [self.batch_size, self.seq_length, self.vocab_size],
+            )
         else:
-            self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
+            self.parent.assertEqual(
+                result[0].shape,
+                [self.batch_size, self.seq_length, self.vocab_size],
+            )
 
     def check_model_position_ids(self, config, input_ids, input_mask, *args):
         model = Gemma3ForCausalLM(config)
@@ -287,9 +360,13 @@ class Gemma3TextModelTester:
             return_dict=self.parent.return_dict,
         )
         if self.parent.use_labels:
-            self.parent.assertTrue((result_position_id[1] == result_no_position_id[1]).all())
+            self.parent.assertTrue(
+                (result_position_id[1] == result_no_position_id[1]).all()
+            )
         else:
-            self.parent.assertTrue((result_position_id[0] == result_no_position_id[0]).all())
+            self.parent.assertTrue(
+                (result_position_id[0] == result_no_position_id[0]).all()
+            )
 
     def create_and_check_gqa_model(self, config, input_ids, input_mask, *args):
         model = Gemma3ForCausalLM(config)
@@ -305,9 +382,15 @@ class Gemma3TextModelTester:
         )
         if self.parent.use_labels:
             self.parent.assertIsInstance(result[0].item(), float)
-            self.parent.assertEqual(result[1].shape, [self.batch_size, self.seq_length, self.vocab_size])
+            self.parent.assertEqual(
+                result[1].shape,
+                [self.batch_size, self.seq_length, self.vocab_size],
+            )
         else:
-            self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
+            self.parent.assertEqual(
+                result[0].shape,
+                [self.batch_size, self.seq_length, self.vocab_size],
+            )
 
     def create_and_check_tp(self, config, input_ids, input_mask, *args):
         config.tensor_model_parallel_size = 2
@@ -335,27 +418,41 @@ class Gemma3TextModelTester:
         )
         if self.parent.use_labels:
             self.parent.assertIsInstance(result[0].item(), float)
-            self.parent.assertEqual(result[1].shape, [self.batch_size, self.seq_length, self.vocab_size])
+            self.parent.assertEqual(
+                result[1].shape,
+                [self.batch_size, self.seq_length, self.vocab_size],
+            )
         else:
-            self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
+            self.parent.assertEqual(
+                result[0].shape,
+                [self.batch_size, self.seq_length, self.vocab_size],
+            )
 
 
-class Gemma3TextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
+class Gemma3TextModelTest(
+    ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
+):
     base_model_class = Gemma3TextModel
     return_dict = False
     use_labels = False
 
     all_model_classes = (Gemma3TextModel, Gemma3ForCausalLM)
-    all_generative_model_classes = {Gemma3ForCausalLM: {Gemma3TextModel, "Gemma3"}}
+    all_generative_model_classes = {
+        Gemma3ForCausalLM: {Gemma3TextModel, "Gemma3"}
+    }
 
     @gpu_device_initializer(log_prefix="Gemma3TextModelTest")
     def setUp(self):
         super().setUp()
         self.model_tester = Gemma3TextModelTester(self)
-        self.config_tester = ConfigTester(self, config_class=Gemma3TextConfig, vocab_size=256, hidden_size=24)
+        self.config_tester = ConfigTester(
+            self, config_class=Gemma3TextConfig, vocab_size=256, hidden_size=24
+        )
 
     def _get_input_ids_and_config(self):
-        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+        config, inputs_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
 
         input_ids = inputs_dict[self.input_name]
         attention_mask = paddle.ones_like(input_ids, dtype=paddle.int64)
@@ -374,7 +471,9 @@ class Gemma3TextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
 
     def test_model_attention_mask(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
-        self.model_tester.create_and_check_model_attention_mask(*config_and_inputs)
+        self.model_tester.create_and_check_model_attention_mask(
+            *config_and_inputs
+        )
 
     def test_model_position_ids(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
@@ -431,7 +530,11 @@ class Gemma3TextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
 
     def test_gemma3_text_generate(self):
         config = Gemma3TextConfig(
-            hidden_size=16, intermediate_size=1120, num_hidden_layers=2, num_attention_heads=4, num_key_value_heads=2
+            hidden_size=16,
+            intermediate_size=1120,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            num_key_value_heads=2,
         )
         model = Gemma3ForCausalLM(config)
         model.eval()
@@ -461,7 +564,9 @@ class Gemma3TextIntegrationTest(unittest.TestCase):
             load_checkpoint_format="flex_checkpoint",
         )
         model.eval()
-        input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
+        input_ids = paddle.to_tensor(
+            [[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]]
+        )
         with paddle.no_grad():
             output = model(input_ids)[0]
         expected_shape = [1, 11, 16]
@@ -484,8 +589,18 @@ class Gemma3TextIntegrationTest(unittest.TestCase):
                 ]
             ]
         )
-        expected_slice = expected_slice_fp32 if self.test_dtype == "float32" else expected_slice_bf16
-        self.assertTrue(paddle.allclose(output[:, 1:4, 1:4].cast(paddle.float32), expected_slice, atol=1e-4))
+        expected_slice = (
+            expected_slice_fp32
+            if self.test_dtype == "float32"
+            else expected_slice_bf16
+        )
+        self.assertTrue(
+            paddle.allclose(
+                output[:, 1:4, 1:4].cast(paddle.float32),
+                expected_slice,
+                atol=1e-4,
+            )
+        )
 
     def test_inference_with_attention(self):
         model = Gemma3TextModel.from_pretrained(
@@ -495,7 +610,9 @@ class Gemma3TextIntegrationTest(unittest.TestCase):
             load_checkpoint_format="flex_checkpoint",
         )
         model.eval()
-        input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
+        input_ids = paddle.to_tensor(
+            [[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]]
+        )
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
         with paddle.no_grad():
             output = model(input_ids, attention_mask=attention_mask)[0]
@@ -519,8 +636,18 @@ class Gemma3TextIntegrationTest(unittest.TestCase):
                 ]
             ]
         )
-        expected_slice = expected_slice_fp32 if self.test_dtype == "float32" else expected_slice_bf16
-        self.assertTrue(paddle.allclose(output[:, 1:4, 1:4].cast(paddle.float32), expected_slice, atol=1e-4))
+        expected_slice = (
+            expected_slice_fp32
+            if self.test_dtype == "float32"
+            else expected_slice_bf16
+        )
+        self.assertTrue(
+            paddle.allclose(
+                output[:, 1:4, 1:4].cast(paddle.float32),
+                expected_slice,
+                atol=1e-4,
+            )
+        )
 
 
 class Gemma3TextCompatibilityTest(unittest.TestCase):
@@ -532,7 +659,11 @@ class Gemma3TextCompatibilityTest(unittest.TestCase):
         # when python application is done, `TemporaryDirectory` will be free
         cls.torch_model_path = tempfile.TemporaryDirectory().name
         config = Gemma3TextConfig(
-            hidden_size=16, intermediate_size=1120, num_hidden_layers=2, num_attention_heads=4, num_key_value_heads=2
+            hidden_size=16,
+            intermediate_size=1120,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            num_key_value_heads=2,
         )
         model = Gemma3ForCausalLM(config)
         model.save_pretrained(cls.torch_model_path)
@@ -546,7 +677,9 @@ class Gemma3TextCompatibilityTest(unittest.TestCase):
         import torch
         from transformers import Gemma3ForCausalLM
 
-        torch_model = Gemma3ForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+        torch_model = Gemma3ForCausalLM.from_pretrained(
+            self.torch_model_path, torch_dtype=torch.float32
+        )
         torch_model.eval()
         torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
@@ -554,7 +687,9 @@ class Gemma3TextCompatibilityTest(unittest.TestCase):
         from paddleformers.transformers import Gemma3ForCausalLM
 
         paddle_model = Gemma3ForCausalLM.from_pretrained(
-            self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            self.torch_model_path,
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
         )
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
@@ -571,7 +706,6 @@ class Gemma3TextCompatibilityTest(unittest.TestCase):
     @require_package("transformers", "torch")
     def test_Gemma3_converter_from_local_dir(self):
         with tempfile.TemporaryDirectory() as tempdir:
-
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
@@ -579,24 +713,38 @@ class Gemma3TextCompatibilityTest(unittest.TestCase):
             import torch
             from transformers import Gemma3ForCausalLM
 
-            torch_model = Gemma3ForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model = Gemma3ForCausalLM.from_pretrained(
+                self.torch_model_path, torch_dtype=torch.float32
+            )
             torch_model.eval()
             torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+            torch_logit = torch_model(
+                torch.tensor(input_ids), return_dict=False
+            )[0]
 
             # 3. forward the paddle model
             from paddleformers.transformers import Gemma3ForCausalLM
 
             paddle_model = Gemma3ForCausalLM.from_pretrained(
-                tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
+                tempdir,
+                dtype="float32",
+                load_checkpoint_format="flex_checkpoint",
             )
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
             self.assertTrue(
                 np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
+                    paddle_logit.detach()
+                    .cpu()
+                    .reshape([-1])[:9]
+                    .astype("float32")
+                    .numpy(),
+                    torch_logit.detach()
+                    .cpu()
+                    .reshape([-1])[:9]
+                    .float()
+                    .numpy(),
                     atol=1e-2,
                     rtol=1e-2,
                 )

@@ -16,8 +16,8 @@
 # Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional, Union
 
 import paddle
 import paddle.nn.functional as F
@@ -40,7 +40,7 @@ class GLMMoEModelProvider(GPTModelProvider):
     init_method_std: int = 0.02
     hidden_dropout_prob: float = 0.0
     vocab_size: int = 151552
-    tie_word_embeddings: Optional[bool] = False
+    tie_word_embeddings: bool | None = False
     rms_norm_eps: float = 1e-5
     autocast_dtype: paddle.dtype = paddle.bfloat16
     params_dtype: paddle.dtype = paddle.bfloat16
@@ -78,10 +78,10 @@ class GLMMoEModelProvider(GPTModelProvider):
     bias_dropout_fusion: bool = True
 
     # MTP
-    num_nextn_predict_layers: Optional[int] = 1
-    mtp_loss_scaling_factor: Optional[
-        float
-    ] = 0.1  # https://arxiv.org/pdf/2508.06471 0.3 for the first 15T tokens, 0.1 for the remaining tokens.
+    num_nextn_predict_layers: int | None = 1
+    mtp_loss_scaling_factor: float | None = (
+        0.1  # https://arxiv.org/pdf/2508.06471 0.3 for the first 15T tokens, 0.1 for the remaining tokens.
+    )
 
 
 @dataclass
@@ -94,7 +94,7 @@ class GLM45ModelProvider355B(GLMMoEModelProvider):
     n_routed_experts: int = 160
     hidden_size: int = 5120
     intermediate_size: int = 12288
-    moe_layer_freq: Union[int, List[int]] = field(
+    moe_layer_freq: int | list[int] = field(
         default_factory=lambda: [0] * 3 + [1] * 89
     )  # first three layers are dense
     moe_ffn_hidden_size: int = 1536
@@ -113,7 +113,7 @@ class GLM45AirModelProvider106B(GLMMoEModelProvider):
     n_routed_experts: int = 128
     hidden_size: int = 4096
     intermediate_size: int = 10944
-    moe_layer_freq: Union[int, List[int]] = field(
+    moe_layer_freq: int | list[int] = field(
         default_factory=lambda: [0] * 1 + [1] * 45
     )  # first one layer is dense
     moe_intermediate_size: int = 1408
@@ -130,13 +130,13 @@ class GLM45AirModelDebugProvider(GLM45AirModelProvider106B):
     """
 
     num_hidden_layers: int = 10
-    moe_layer_freq: Union[int, List[int]] = field(
+    moe_layer_freq: int | list[int] = field(
         default_factory=lambda: [0] * 1 + [1] * 9
     )  # first one layer is dense
     seq_length: int = 8192  # default value is 131072
 
     # all args below will be removed when config system is ready
-    num_nextn_predict_layers: Optional[int] = 0
+    num_nextn_predict_layers: int | None = 0
     sequence_parallel: bool = True
     expert_model_parallel_size: int = 16
     tensor_model_parallel_size: int = 4
@@ -165,7 +165,7 @@ class GLM45AirModelSingleCardDebugProvider(GLMMoEModelProvider):
     hidden_size: int = 512
     act_fn: Callable = F.silu
     intermediate_size: int = 1024
-    moe_layer_freq: Union[int, List[int]] = field(
+    moe_layer_freq: int | list[int] = field(
         default_factory=lambda: [0] * 1 + [1] * 1
     )  # first one layer is dense
     n_routed_experts: int = 8
@@ -174,6 +174,6 @@ class GLM45AirModelSingleCardDebugProvider(GLMMoEModelProvider):
     n_shared_experts: int = 1
     use_qk_norm: bool = False
     routed_scaling_factor: float = 1.0
-    num_nextn_predict_layers: Optional[int] = 0
+    num_nextn_predict_layers: int | None = 0
 
     transpose_gate_weight: bool = True

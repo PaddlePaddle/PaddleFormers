@@ -1,25 +1,20 @@
 name: Deadlink CE
-
 on:
   schedule:
-    - cron: "0 8 * * 6"     # every Saturday at 16:00
-  workflow_dispatch:        # allow to manually trigger the workflow
-
+    - cron: "0 8 * * 6" # every Saturday at 16:00
+  workflow_dispatch: # allow to manually trigger the workflow
 concurrency:
   group: deadlink-${{ github.workflow }}
   cancel-in-progress: true
-
 env:
   COMMIT_ID: ${{ github.event.pull_request.head.sha }}
   TASK: PaddleFormers-CE-${{ github.event.pull_request.number }}-deadlink
   BRANCH: ${{ github.event.pull_request.base.ref }}
   CE_name: deadlink-ce
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
-
 defaults:
   run:
     shell: bash
-
 jobs:
   deadlink-ce:
     name: deadlink-ce
@@ -29,7 +24,6 @@ jobs:
       - name: Determine Image Name
         run: |
           echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev-latest" >> "$GITHUB_ENV"
-
       - name: Run Container
         env:
           work_dir: ${{ github.workspace }}
@@ -61,7 +55,6 @@ jobs:
             -e FLAGS_dynamic_static_unified_comm \
             -e python_version \
             -w /workspace --privileged $IMAGE_NAME
-            
       - name: Download Code
         run: |
           docker exec -t $container_name /bin/bash -c '
@@ -83,7 +76,6 @@ jobs:
           tar xf PaddleTest.tar.gz
           cp -r PaddleTest/models/PaddleNLP/deadlink/* ./
           '
-
       - name: Test
         run: |
           docker exec -t $container_name /bin/bash -c '
@@ -94,7 +86,6 @@ jobs:
           source $work_dir/../../../proxy
           bash run.sh PaddleFormers develop liujie44@baidu.com "PaddleFormers Broken Link Check Summary Report"
           '
-          
       - name: Upload Logs
         if: always()
         env:
@@ -115,7 +106,6 @@ jobs:
             echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/deadlink/${bos_prefix}/logs/$file"
           done
           '
-
       - name: Terminate And Delete the Container
         if: always()
         run: |

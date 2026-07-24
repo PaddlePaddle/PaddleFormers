@@ -16,13 +16,12 @@ import copy
 
 import numpy as np
 import paddle
-import paddle.nn as nn
+from paddle import nn
 
 from paddleformers.transformers import PretrainedConfig, PretrainedModel
 
 
 def get_pretrain_arguments(pretrain_arguments):
-
     configs = {}
 
     train_args = copy.deepcopy(pretrain_arguments)
@@ -34,7 +33,9 @@ def get_pretrain_arguments(pretrain_arguments):
     train_args["tensor_model_parallel_size"] = 2
     train_args["pipeline_model_parallel_size"] = 1
     train_args["sharding"] = ""
-    train_args["gradient_accumulation_steps"] = train_args["gradient_accumulation_steps"] // 4
+    train_args["gradient_accumulation_steps"] = (
+        train_args["gradient_accumulation_steps"] // 4
+    )
     configs["TP2"] = train_args
 
     train_args = copy.deepcopy(pretrain_arguments)
@@ -46,14 +47,18 @@ def get_pretrain_arguments(pretrain_arguments):
     train_args["tensor_model_parallel_size"] = 4
     train_args["pipeline_model_parallel_size"] = 1
     train_args["sharding"] = ""
-    train_args["gradient_accumulation_steps"] = train_args["gradient_accumulation_steps"] // 2
+    train_args["gradient_accumulation_steps"] = (
+        train_args["gradient_accumulation_steps"] // 2
+    )
     configs["TP4DP2"] = train_args
 
     train_args = copy.deepcopy(pretrain_arguments)
     train_args["tensor_model_parallel_size"] = 4
     train_args["pipeline_model_parallel_size"] = 1
     train_args["sharding"] = "stage1"
-    train_args["gradient_accumulation_steps"] = train_args["gradient_accumulation_steps"] // 2
+    train_args["gradient_accumulation_steps"] = (
+        train_args["gradient_accumulation_steps"] // 2
+    )
     configs["TP4Sharding2"] = train_args
 
     train_args = copy.deepcopy(pretrain_arguments)
@@ -65,7 +70,9 @@ def get_pretrain_arguments(pretrain_arguments):
     train_args["tensor_model_parallel_size"] = 2
     train_args["pipeline_model_parallel_size"] = 1
     train_args["sharding"] = "stage1"
-    train_args["gradient_accumulation_steps"] = train_args["gradient_accumulation_steps"] // 4
+    train_args["gradient_accumulation_steps"] = (
+        train_args["gradient_accumulation_steps"] // 4
+    )
     configs["TP2Sharding4"] = train_args
 
     train_args = copy.deepcopy(pretrain_arguments)
@@ -77,28 +84,36 @@ def get_pretrain_arguments(pretrain_arguments):
     train_args["tensor_model_parallel_size"] = 1
     train_args["pipeline_model_parallel_size"] = 4
     train_args["sharding"] = ""
-    train_args["gradient_accumulation_steps"] = train_args["gradient_accumulation_steps"] // 2
+    train_args["gradient_accumulation_steps"] = (
+        train_args["gradient_accumulation_steps"] // 2
+    )
     configs["PP4DP2"] = train_args
 
     train_args = copy.deepcopy(pretrain_arguments)
     train_args["tensor_model_parallel_size"] = 1
     train_args["pipeline_model_parallel_size"] = 4
     train_args["sharding"] = "stage1"
-    train_args["gradient_accumulation_steps"] = train_args["gradient_accumulation_steps"] // 2
+    train_args["gradient_accumulation_steps"] = (
+        train_args["gradient_accumulation_steps"] // 2
+    )
     configs["PP4Sharding2"] = train_args
 
     train_args = copy.deepcopy(pretrain_arguments)
     train_args["tensor_model_parallel_size"] = 1
     train_args["pipeline_model_parallel_size"] = 1
     train_args["sharding"] = "stage1"
-    train_args["gradient_accumulation_steps"] = train_args["gradient_accumulation_steps"] // 8
+    train_args["gradient_accumulation_steps"] = (
+        train_args["gradient_accumulation_steps"] // 8
+    )
     configs["Sharding8S1"] = train_args
 
     train_args = copy.deepcopy(pretrain_arguments)
     train_args["tensor_model_parallel_size"] = 1
     train_args["pipeline_model_parallel_size"] = 1
     train_args["sharding"] = "stage2"
-    train_args["gradient_accumulation_steps"] = train_args["gradient_accumulation_steps"] // 8
+    train_args["gradient_accumulation_steps"] = (
+        train_args["gradient_accumulation_steps"] // 8
+    )
     configs["Sharding8S2"] = train_args
 
     train_args = copy.deepcopy(pretrain_arguments)
@@ -106,7 +121,9 @@ def get_pretrain_arguments(pretrain_arguments):
     train_args["pipeline_model_parallel_size"] = 1
     train_args["sharding_parallel_size"] = 4
     train_args["sharding"] = "stage1"
-    train_args["gradient_accumulation_steps"] = train_args["gradient_accumulation_steps"] // 8
+    train_args["gradient_accumulation_steps"] = (
+        train_args["gradient_accumulation_steps"] // 8
+    )
     configs["Sharding4S1DP2"] = train_args
 
     train_args = copy.deepcopy(pretrain_arguments)
@@ -114,7 +131,9 @@ def get_pretrain_arguments(pretrain_arguments):
     train_args["pipeline_model_parallel_size"] = 1
     train_args["sharding_parallel_size"] = 4
     train_args["sharding"] = "stage2"
-    train_args["gradient_accumulation_steps"] = train_args["gradient_accumulation_steps"] // 8
+    train_args["gradient_accumulation_steps"] = (
+        train_args["gradient_accumulation_steps"] // 8
+    )
     configs["Sharding4S2DP2"] = train_args
 
     train_args = copy.deepcopy(pretrain_arguments)
@@ -122,7 +141,9 @@ def get_pretrain_arguments(pretrain_arguments):
     train_args["pipeline_model_parallel_size"] = 1
     train_args["sharding_parallel_size"] = 2
     train_args["sharding"] = "stage1"
-    train_args["gradient_accumulation_steps"] = train_args["gradient_accumulation_steps"] // 8
+    train_args["gradient_accumulation_steps"] = (
+        train_args["gradient_accumulation_steps"] // 8
+    )
     configs["Sharding2S1DP4"] = train_args
 
     train_args = copy.deepcopy(pretrain_arguments)
@@ -130,7 +151,9 @@ def get_pretrain_arguments(pretrain_arguments):
     train_args["pipeline_model_parallel_size"] = 1
     train_args["sharding_parallel_size"] = 2
     train_args["sharding"] = "stage2"
-    train_args["gradient_accumulation_steps"] = train_args["gradient_accumulation_steps"] // 8
+    train_args["gradient_accumulation_steps"] = (
+        train_args["gradient_accumulation_steps"] // 8
+    )
     configs["Sharding2S2DP4"] = train_args
 
     train_args = copy.deepcopy(pretrain_arguments)
@@ -138,7 +161,9 @@ def get_pretrain_arguments(pretrain_arguments):
     train_args["pipeline_model_parallel_size"] = 1
     train_args["sharding_parallel_size"] = 1
     train_args["sharding"] = "stage2"
-    train_args["gradient_accumulation_steps"] = train_args["gradient_accumulation_steps"] // 8
+    train_args["gradient_accumulation_steps"] = (
+        train_args["gradient_accumulation_steps"] // 8
+    )
     configs["DP8"] = train_args
 
     train_args = copy.deepcopy(pretrain_arguments)
@@ -146,7 +171,9 @@ def get_pretrain_arguments(pretrain_arguments):
     train_args["pipeline_model_parallel_size"] = 1
     train_args["sharding_parallel_size"] = 2
     train_args["sharding"] = "stage1"
-    train_args["gradient_accumulation_steps"] = train_args["gradient_accumulation_steps"] // 4
+    train_args["gradient_accumulation_steps"] = (
+        train_args["gradient_accumulation_steps"] // 4
+    )
     configs["TP2DP2Sharding2"] = train_args
 
     return configs
@@ -158,7 +185,10 @@ class RegressionDataset:
         self.label_names = ["labels"] if label_names is None else label_names
         self.length = length
         self.x = np.random.normal(size=(length,)).astype(np.float32)
-        self.ys = [a * self.x + b + np.random.normal(scale=0.1, size=(length,)) for _ in self.label_names]
+        self.ys = [
+            a * self.x + b + np.random.normal(scale=0.1, size=(length,))
+            for _ in self.label_names
+        ]
         self.ys = [y.astype(np.float32) for y in self.ys]
 
     def __len__(self):
@@ -171,7 +201,9 @@ class RegressionDataset:
 
 
 class RegressionModelConfig(PretrainedConfig):
-    def __init__(self, a=0, b=0, double_output=False, random_torch=True, **kwargs):
+    def __init__(
+        self, a=0, b=0, double_output=False, random_torch=True, **kwargs
+    ):
         super().__init__(**kwargs)
         self.a = a
         self.b = b

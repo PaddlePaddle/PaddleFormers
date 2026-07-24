@@ -55,7 +55,8 @@ ERNIE_VL_TOOL_PROMPT = "\n<tool_list>\n[{tool_text}]\n</tool_list>\n"
 
 
 GLM4_TOOL_PROMPT = (
-    "你是一个名为 ChatGLM 的人工智能助手。你是基于智谱 AI 公司训练的语言模型 GLM-4 模型开发的，" "你的任务是针对用户的问题和要求提供适当的答复和支持。\n\n# 可用工具{tool_text}"
+    "你是一个名为 ChatGLM 的人工智能助手。你是基于智谱 AI 公司训练的语言模型 GLM-4 模型开发的，"
+    "你的任务是针对用户的问题和要求提供适当的答复和支持。\n\n# 可用工具{tool_text}"
 )
 
 GLM4_MOE_TOOL_PROMPT = (
@@ -117,7 +118,11 @@ class DefaultToolUtils(ToolUtils):
         tool_text = ""
         tool_names = []
         for tool in tools:
-            tool = tool.get("function", "") if tool.get("type") == "function" else tool
+            tool = (
+                tool.get("function", "")
+                if tool.get("type") == "function"
+                else tool
+            )
             param_text = ""
             for name, param in tool["parameters"]["properties"].items():
                 required, enum, items = "", "", ""
@@ -125,10 +130,14 @@ class DefaultToolUtils(ToolUtils):
                     required = ", required"
 
                 if param.get("enum", None):
-                    enum = ", should be one of [{}]".format(", ".join(param["enum"]))
+                    enum = ", should be one of [{}]".format(
+                        ", ".join(param["enum"])
+                    )
 
                 if param.get("items", None):
-                    items = ", where each item should be {}".format(param["items"].get("type", ""))
+                    items = ", where each item should be {}".format(
+                        param["items"].get("type", "")
+                    )
 
                 param_text += "  - {name} ({type}{required}): {desc}{enum}{items}\n".format(
                     name=name,
@@ -140,16 +149,25 @@ class DefaultToolUtils(ToolUtils):
                 )
 
             tool_text += "> Tool Name: {name}\nTool Description: {desc}\nTool Args:\n{args}\n".format(
-                name=tool["name"], desc=tool.get("description", ""), args=param_text
+                name=tool["name"],
+                desc=tool.get("description", ""),
+                args=param_text,
             )
             tool_names.append(tool["name"])
 
-        return DEFAULT_TOOL_PROMPT.format(tool_text=tool_text, tool_names=", ".join(tool_names))
+        return DEFAULT_TOOL_PROMPT.format(
+            tool_text=tool_text, tool_names=", ".join(tool_names)
+        )
 
     @override
     @staticmethod
     def function_formatter(functions: list["FunctionCall"]) -> str:
-        return "\n".join([f"Action: {name}\nAction Input: {arguments}" for name, arguments in functions])
+        return "\n".join(
+            [
+                f"Action: {name}\nAction Input: {arguments}"
+                for name, arguments in functions
+            ]
+        )
 
 
 class QwenToolUtils(ToolUtils):
@@ -160,7 +178,11 @@ class QwenToolUtils(ToolUtils):
     def tool_formatter(tools: list[dict[str, Any]]) -> str:
         tool_text = ""
         for tool in tools:
-            wrapped_tool = tool if tool.get("type") == "function" else {"type": "function", "function": tool}
+            wrapped_tool = (
+                tool
+                if tool.get("type") == "function"
+                else {"type": "function", "function": tool}
+            )
             tool_text += "\n" + json.dumps(wrapped_tool, ensure_ascii=False)
 
         return QWEN_TOOL_PROMPT.format(tool_text=tool_text)
@@ -169,10 +191,15 @@ class QwenToolUtils(ToolUtils):
     @staticmethod
     def function_formatter(functions: list["FunctionCall"]) -> str:
         function_texts = [
-            json.dumps({"name": name, "arguments": json.loads(arguments)}, ensure_ascii=False)
+            json.dumps(
+                {"name": name, "arguments": json.loads(arguments)},
+                ensure_ascii=False,
+            )
             for name, arguments in functions
         ]
-        return "\n".join([f"<tool_call>\n{text}\n</tool_call>" for text in function_texts])
+        return "\n".join(
+            [f"<tool_call>\n{text}\n</tool_call>" for text in function_texts]
+        )
 
 
 class GLM4ToolUtils(ToolUtils):
@@ -183,9 +210,14 @@ class GLM4ToolUtils(ToolUtils):
     def tool_formatter(tools: list[dict[str, Any]]) -> str:
         tool_text = ""
         for tool in tools:
-            tool = tool.get("function", "") if tool.get("type") == "function" else tool
+            tool = (
+                tool.get("function", "")
+                if tool.get("type") == "function"
+                else tool
+            )
             tool_text += "\n\n## {name}\n\n{body}\n在调用上述函数时，请使用 Json 格式表示调用的参数。".format(
-                name=tool["name"], body=json.dumps(tool, indent=4, ensure_ascii=False)
+                name=tool["name"],
+                body=json.dumps(tool, indent=4, ensure_ascii=False),
             )
 
         return GLM4_TOOL_PROMPT.format(tool_text=tool_text)
@@ -207,7 +239,11 @@ class GLM4MOEToolUtils(QwenToolUtils):
     def tool_formatter(tools: list[dict[str, Any]]) -> str:
         tool_text = ""
         for tool in tools:
-            wrapped_tool = tool if tool.get("type") == "function" else {"type": "function", "function": tool}
+            wrapped_tool = (
+                tool
+                if tool.get("type") == "function"
+                else {"type": "function", "function": tool}
+            )
             tool_text += "\n" + json.dumps(wrapped_tool, ensure_ascii=False)
 
         return GLM4_MOE_TOOL_PROMPT.format(tool_text=tool_text)
@@ -216,7 +252,8 @@ class GLM4MOEToolUtils(QwenToolUtils):
     @staticmethod
     def function_formatter(functions: list["FunctionCall"]) -> str:
         function_json = [
-            {"func_name": name, "func_key_values": json.loads(arguments)} for name, arguments in functions
+            {"func_name": name, "func_key_values": json.loads(arguments)}
+            for name, arguments in functions
         ]
         function_texts = []
         for func in function_json:
@@ -239,7 +276,11 @@ class GLM_5ToolUtils(QwenToolUtils):
     def tool_formatter(tools: list[dict[str, Any]]) -> str:
         tool_text = ""
         for tool in tools:
-            wrapped_tool = tool if tool.get("type") == "function" else {"type": "function", "function": tool}
+            wrapped_tool = (
+                tool
+                if tool.get("type") == "function"
+                else {"type": "function", "function": tool}
+            )
             tool_text += "\n" + json.dumps(wrapped_tool, ensure_ascii=False)
 
         return GLM_5_TOOL_PROMPT.format(tool_text=tool_text)
@@ -248,7 +289,8 @@ class GLM_5ToolUtils(QwenToolUtils):
     @staticmethod
     def function_formatter(functions: list["FunctionCall"]) -> str:
         function_json = [
-            {"func_name": name, "func_key_values": json.loads(arguments)} for name, arguments in functions
+            {"func_name": name, "func_key_values": json.loads(arguments)}
+            for name, arguments in functions
         ]
         function_texts = []
         for func in function_json:
@@ -276,16 +318,30 @@ class Llama3ToolUtils(ToolUtils):
         date = datetime.now().strftime("%d %b %Y")
         tool_text = ""
         for tool in tools:
-            wrapped_tool = tool if tool.get("type") == "function" else {"type": "function", "function": tool}
-            tool_text += json.dumps(wrapped_tool, indent=4, ensure_ascii=False) + "\n\n"
+            wrapped_tool = (
+                tool
+                if tool.get("type") == "function"
+                else {"type": "function", "function": tool}
+            )
+            tool_text += (
+                json.dumps(wrapped_tool, indent=4, ensure_ascii=False) + "\n\n"
+            )
 
         return LLAMA3_TOOL_PROMPT.format(date=date, tool_text=tool_text)
 
     @override
     @staticmethod
     def function_formatter(functions: list["FunctionCall"]) -> str:
-        function_objects = [{"name": name, "parameters": json.loads(arguments)} for name, arguments in functions]
-        return json.dumps(function_objects[0] if len(function_objects) == 1 else function_objects, ensure_ascii=False)
+        function_objects = [
+            {"name": name, "parameters": json.loads(arguments)}
+            for name, arguments in functions
+        ]
+        return json.dumps(
+            function_objects[0]
+            if len(function_objects) == 1
+            else function_objects,
+            ensure_ascii=False,
+        )
 
 
 class ERNIEToolUtils(ToolUtils):
@@ -296,7 +352,11 @@ class ERNIEToolUtils(ToolUtils):
     def tool_formatter(tools: list[dict[str, Any]]) -> str:
         tool_text_list = []
         for tool in tools:
-            wrapped_tool = tool if tool.get("type") == "function" else {"type": "function", "function": tool}
+            wrapped_tool = (
+                tool
+                if tool.get("type") == "function"
+                else {"type": "function", "function": tool}
+            )
             tool_text_list.append(json.dumps(wrapped_tool, ensure_ascii=False))
         tool_text = ", ".join(tool_text_list)
 
@@ -306,10 +366,15 @@ class ERNIEToolUtils(ToolUtils):
     @staticmethod
     def function_formatter(functions: list["FunctionCall"]) -> str:
         function_texts = [
-            json.dumps({"name": name, "arguments": json.loads(arguments)}, ensure_ascii=False)
+            json.dumps(
+                {"name": name, "arguments": json.loads(arguments)},
+                ensure_ascii=False,
+            )
             for name, arguments in functions
         ]
-        return "\n".join([f"<tool_call>\n{text}\n</tool_call>\n" for text in function_texts])
+        return "\n".join(
+            [f"<tool_call>\n{text}\n</tool_call>\n" for text in function_texts]
+        )
 
 
 class ERNIEVLToolUtils(ToolUtils):
@@ -320,7 +385,11 @@ class ERNIEVLToolUtils(ToolUtils):
     def tool_formatter(tools: list[dict[str, Any]]) -> str:
         tool_text_list = []
         for tool in tools:
-            wrapped_tool = tool if tool.get("type") == "function" else {"type": "function", "function": tool}
+            wrapped_tool = (
+                tool
+                if tool.get("type") == "function"
+                else {"type": "function", "function": tool}
+            )
             tool_text_list.append(json.dumps(wrapped_tool, ensure_ascii=False))
         tool_text = ", ".join(tool_text_list)
 
@@ -330,10 +399,15 @@ class ERNIEVLToolUtils(ToolUtils):
     @staticmethod
     def function_formatter(functions: list["FunctionCall"]) -> str:
         function_texts = [
-            json.dumps({"name": name, "arguments": json.loads(arguments)}, ensure_ascii=False)
+            json.dumps(
+                {"name": name, "arguments": json.loads(arguments)},
+                ensure_ascii=False,
+            )
             for name, arguments in functions
         ]
-        return "\n".join([f"<tool_call>\n{text}\n</tool_call>" for text in function_texts])
+        return "\n".join(
+            [f"<tool_call>\n{text}\n</tool_call>" for text in function_texts]
+        )
 
 
 TOOLS = {

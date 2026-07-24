@@ -51,12 +51,18 @@ __all__ = ["load_unified_checkpoint_locally", "load_unified_optimizer_locally"]
 
 
 def load_unified_checkpoint_locally(
-    args, model, resume_from_checkpoint: str, safe_serialization=False, convert_from_hf=False
+    args,
+    model,
+    resume_from_checkpoint: str,
+    safe_serialization=False,
+    convert_from_hf=False,
 ):
     """
     Only dataset_rank == 0 or using expert parallel can enter this function.
     """
-    index_filename = select_model_weight_index(model, resume_from_checkpoint, safe_serialization, local=True)
+    index_filename = select_model_weight_index(
+        model, resume_from_checkpoint, safe_serialization, local=True
+    )
 
     resolved_archive_file, sharded_metadata = get_checkpoint_shard_files(
         pretrained_model_name_or_path=resume_from_checkpoint,
@@ -66,8 +72,10 @@ def load_unified_checkpoint_locally(
 
     model_state_dict = get_expected_state_dict(model)
     # If using expert parallel, when dp_rank > 0, need to modify the expected_keys here.
-    if not args.use_expert_parallel or (args.use_expert_parallel and args.data_parallel_rank == 0):
-        expected_keys = set(list(model_state_dict.keys()))
+    if not args.use_expert_parallel or (
+        args.use_expert_parallel and args.data_parallel_rank == 0
+    ):
+        expected_keys = set(model_state_dict.keys())
     else:
         expected_keys = set()
         for key in model_state_dict.keys():
@@ -98,15 +106,22 @@ def load_unified_checkpoint_locally(
     error_msgs = []
 
     if len(resolved_archive_file) > 1:
-        resolved_archive_file = tqdm(resolved_archive_file, desc="Loading checkpoint shards")
+        resolved_archive_file = tqdm(
+            resolved_archive_file, desc="Loading checkpoint shards"
+        )
 
     for shard_file in resolved_archive_file:
         # TODO: check if  no expected_keys in shard_file, then don't load it
-        if expected_keys.isdisjoint(sharded_metadata["file_map"][os.path.split(shard_file)[-1]]):
+        if expected_keys.isdisjoint(
+            sharded_metadata["file_map"][os.path.split(shard_file)[-1]]
+        ):
             continue
 
         pre_tensor_parallel_split = False
-        if shard_file.endswith(".safetensors") and model.config.tensor_model_parallel_size > 1:
+        if (
+            shard_file.endswith(".safetensors")
+            and model.config.tensor_model_parallel_size > 1
+        ):
             pre_tensor_parallel_split = True
             assert loaded_keys is not None, "loaded_keys is not None."
             if isinstance(model, LoRAModel):
@@ -114,7 +129,9 @@ def load_unified_checkpoint_locally(
                     set(loaded_keys), is_split=True, ignore_error=True
                 )
             else:
-                tp_actions = model.get_tensor_parallel_convert_actions(model.config, loaded_keys, ignore_error=True)
+                tp_actions = model.get_tensor_parallel_convert_actions(
+                    model.config, loaded_keys, ignore_error=True
+                )
         # Here we use expected_keys to optimize weights loading for pipeline model. Only works for safetensors
         transpose_weight_keys = getattr(model, "transpose_weight_keys", None)
         state_dict = load_state_dict(
@@ -130,15 +147,23 @@ def load_unified_checkpoint_locally(
             # Since we load all keys but we only need one of pipeline stages
             _ = _remove_unused_keys(state_dict, model_state_dict)
 
-        if model.config.tensor_model_parallel_size > 1 and not pre_tensor_parallel_split:
+        if (
+            model.config.tensor_model_parallel_size > 1
+            and not pre_tensor_parallel_split
+        ):
             logger.info("Converting state_dict to Tensor Parallel Format")
             # ignore error for multi shard, since only parts of data
             state_dict = model.convert_tensor_parallel(
-                None, model.config, state_dict=state_dict, ignore_error=len(resolved_archive_file) > 1
+                None,
+                model.config,
+                state_dict=state_dict,
+                ignore_error=len(resolved_archive_file) > 1,
             )
 
         if use_fast_set:
-            error_msgs += faster_set_state_dict(model, state_dict, strict_dtype=False)
+            error_msgs += faster_set_state_dict(
+                model, state_dict, strict_dtype=False
+            )
         else:
             error_msgs += _load_state_dict_into_model(model, state_dict, "")
 
@@ -149,20 +174,25 @@ def load_unified_checkpoint_locally(
     if len(error_msgs) > 0:
         error_msg = "\n\t".join(error_msgs)
         if " but the expected shape is" in error_msg:
-            error_msg += (
-                "\n\tYou may consider adding `ignore_mismatched_sizes=True` in the model `from_pretrained` method."
-            )
-        raise RuntimeError(f"Error(s) in loading state_dict for {model.__class__.__name__}:\n\t{error_msg}")
+            error_msg += "\n\tYou may consider adding `ignore_mismatched_sizes=True` in the model `from_pretrained` method."
+        raise RuntimeError(
+            f"Error(s) in loading state_dict for {model.__class__.__name__}:\n\t{error_msg}"
+        )
 
 
-def load_unified_optimizer_locally(args, model, optimizer, resume_from_checkpoint, safe_serialization=False):
+def load_unified_optimizer_locally(
+    args, model, optimizer, resume_from_checkpoint, safe_serialization=False
+):
     if not safe_serialization:
         index_filename, index_filename_master_weights = (
             PADDLE_OPTIMIZER_INDEX_NAME,
             PADDLE_MASTER_WEIGHTS_INDEX_NAME,
         )
     else:
-        index_filename, index_filename_master_weights = SAFE_OPTIMIZER_INDEX_NAME, SAFE_MASTER_WEIGHTS_INDEX_NAME
+        index_filename, index_filename_master_weights = (
+            SAFE_OPTIMIZER_INDEX_NAME,
+            SAFE_MASTER_WEIGHTS_INDEX_NAME,
+        )
 
     with open(os.path.join(resume_from_checkpoint, index_filename), "r") as f:
         index = json.loads(f.read())
@@ -189,7 +219,9 @@ def load_unified_optimizer_locally(args, model, optimizer, resume_from_checkpoin
 
     model_state_dict = get_expected_state_dict(model)
     model_keys = list(model_state_dict.keys())
-    struct2static_name_mappings = {k: v.name for k, v in model_state_dict.items()}  # get optimizer param mappings
+    struct2static_name_mappings = {
+        k: v.name for k, v in model_state_dict.items()
+    }  # get optimizer param mappings
 
     expected_keys = get_expected_keys(args, sharded_metadata, model, optimizer)
 
@@ -198,37 +230,55 @@ def load_unified_optimizer_locally(args, model, optimizer, resume_from_checkpoin
         resolved_archive_file = [resolved_archive_file]
 
     if len(resolved_archive_file) > 1:
-        resolved_archive_file = tqdm(resolved_archive_file, desc="Loading optimizer shards")
+        resolved_archive_file = tqdm(
+            resolved_archive_file, desc="Loading optimizer shards"
+        )
 
     # update has_master_weights and index_filename_master_weights
     # 1. if the master weight exists, only has_master_weights is set True and loaded when needed
     # 2. if master weight does not exist, convert model weight to master weight when needed
-    has_master_weights, index_filename_master_weights = update_master_weight_status(
-        args, optimizer, has_master_weights, safe_serialization
+    has_master_weights, index_filename_master_weights = (
+        update_master_weight_status(
+            args, optimizer, has_master_weights, safe_serialization
+        )
     )
 
     if has_master_weights:
         returned_optim_state_dict["master_weights"] = {}
 
-        resolved_archive_file_mw, sharded_metadata_mw = get_optimizer_shard_files(
-            optimizer_path=resume_from_checkpoint,
-            index_filename=os.path.join(resume_from_checkpoint, index_filename_master_weights),
+        resolved_archive_file_mw, sharded_metadata_mw = (
+            get_optimizer_shard_files(
+                optimizer_path=resume_from_checkpoint,
+                index_filename=os.path.join(
+                    resume_from_checkpoint, index_filename_master_weights
+                ),
+            )
         )
 
-        expected_keys_mw = get_expected_keys(args, sharded_metadata_mw, model, optimizer, is_master_weights=True)
+        expected_keys_mw = get_expected_keys(
+            args, sharded_metadata_mw, model, optimizer, is_master_weights=True
+        )
         if not isinstance(resolved_archive_file_mw, list):
             resolved_archive_file_mw = [resolved_archive_file_mw]
         if len(resolved_archive_file_mw) > 1:
-            resolved_archive_file_mw = tqdm(resolved_archive_file_mw, desc="Loading master weights shards")
+            resolved_archive_file_mw = tqdm(
+                resolved_archive_file_mw, desc="Loading master weights shards"
+            )
 
     def load_resolved_archive_file(
-        resolved_archive_file, sharded_metadata, expected_keys, is_master_weights=False, ckpt_quant_stage="O0"
+        resolved_archive_file,
+        sharded_metadata,
+        expected_keys,
+        is_master_weights=False,
+        ckpt_quant_stage="O0",
     ):
         returned_state_dict = {}
         # load optimizer
         for shard_file in resolved_archive_file:
             # TODO: check if no expected_keys in shard_file, then don't load it
-            if expected_keys.isdisjoint(sharded_metadata["file_map"][os.path.split(shard_file)[-1]]):
+            if expected_keys.isdisjoint(
+                sharded_metadata["file_map"][os.path.split(shard_file)[-1]]
+            ):
                 continue
 
             if shard_file.endswith(".safetensors"):
@@ -244,7 +294,9 @@ def load_unified_optimizer_locally(args, model, optimizer, resume_from_checkpoin
                             model.config, model_keys, ignore_error=True
                         )
                     if not is_master_weights:
-                        tp_actions = mapping_optimizer_tp_actions(tp_actions, expected_keys)
+                        tp_actions = mapping_optimizer_tp_actions(
+                            tp_actions, expected_keys
+                        )
 
                     # Here we use expected_keys to optimize weights loading for pipeline model. Only works for safetensors
                     state_dict = load_state_dict(
@@ -271,11 +323,17 @@ def load_unified_optimizer_locally(args, model, optimizer, resume_from_checkpoin
         return returned_state_dict
 
     state_dict_optim = load_resolved_archive_file(
-        resolved_archive_file, sharded_metadata, expected_keys, ckpt_quant_stage=ckpt_quant_stage
+        resolved_archive_file,
+        sharded_metadata,
+        expected_keys,
+        ckpt_quant_stage=ckpt_quant_stage,
     )
     if has_master_weights:
         state_dict_master_weight = load_resolved_archive_file(
-            resolved_archive_file_mw, sharded_metadata_mw, expected_keys_mw, is_master_weights=True
+            resolved_archive_file_mw,
+            sharded_metadata_mw,
+            expected_keys_mw,
+            is_master_weights=True,
         )
     # rename optimizer param
     for key in list(state_dict_optim.keys()):
@@ -295,12 +353,24 @@ def load_unified_optimizer_locally(args, model, optimizer, resume_from_checkpoin
     if has_master_weights:
         for key in list(state_dict_master_weight.keys()):
             static_name = struct2static_name_mappings[key]
-            returned_optim_state_dict["master_weights"][static_name] = state_dict_master_weight.pop(key)
+            returned_optim_state_dict["master_weights"][static_name] = (
+                state_dict_master_weight.pop(key)
+            )
             # master weight cast (only in remove_master_weight)
-            if returned_optim_state_dict["master_weights"][static_name].dtype != paddle.float32:
-                returned_optim_state_dict["master_weights"][static_name] = paddle.cast(
-                    returned_optim_state_dict["master_weights"][static_name], dtype=paddle.float32
+            if (
+                returned_optim_state_dict["master_weights"][static_name].dtype
+                != paddle.float32
+            ):
+                returned_optim_state_dict["master_weights"][static_name] = (
+                    paddle.cast(
+                        returned_optim_state_dict["master_weights"][
+                            static_name
+                        ],
+                        dtype=paddle.float32,
+                    )
                 )
-            returned_optim_state_dict["master_weights"][static_name].name = "_".join([static_name, FP32_MASTER])
+            returned_optim_state_dict["master_weights"][
+                static_name
+            ].name = "_".join([static_name, FP32_MASTER])
 
     return returned_optim_state_dict

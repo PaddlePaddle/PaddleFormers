@@ -95,7 +95,10 @@ class TestDistributed(unittest.TestCase):
         from paddleformers.utils.distributed import reduce_tensor
 
         x = paddle.randn([4, 8], dtype="float32")
-        with patch("paddleformers.utils.distributed.convert_file_size_to_int", return_value=1024):
+        with patch(
+            "paddleformers.utils.distributed.convert_file_size_to_int",
+            return_value=1024,
+        ):
             parts = list(reduce_tensor(x, buffer_size="32MiB"))
         # Should yield parts based on buffer size
         self.assertTrue(len(parts) >= 1)
@@ -106,7 +109,10 @@ class TestDistributed(unittest.TestCase):
         from paddleformers.utils.distributed import reduce_tensor
 
         x = paddle.randint(0, 10, [4, 8], dtype="int32")
-        with patch("paddleformers.utils.distributed.convert_file_size_to_int", return_value=1024):
+        with patch(
+            "paddleformers.utils.distributed.convert_file_size_to_int",
+            return_value=1024,
+        ):
             parts = list(reduce_tensor(x, buffer_size="32MiB"))
         self.assertTrue(len(parts) >= 1)
 

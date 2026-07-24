@@ -16,7 +16,6 @@ inputs:
   JOB_NAME:
     description: 'Job name to rerun'
     required: true
-
 runs:
   using: 'composite'
   steps:

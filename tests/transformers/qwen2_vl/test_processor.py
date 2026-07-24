@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 # Copyright 2024 The HuggingFace Team. All rights reserved.
 #
@@ -34,7 +33,10 @@ class Qwen2VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
     def setUpClass(cls):
         cls.tmpdir = tempfile.mkdtemp()
         processor = Qwen2VLProcessor.from_pretrained(
-            "PaddleFormers/tiny-random-qwen2vl", patch_size=4, max_pixels=56 * 56, min_pixels=28 * 28
+            "PaddleFormers/tiny-random-qwen2vl",
+            patch_size=4,
+            max_pixels=56 * 56,
+            min_pixels=28 * 28,
         )
         processor.save_pretrained(cls.tmpdir)
         cls.image_token = processor.image_token
@@ -48,10 +50,14 @@ class Qwen2VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         return AutoProcessor.from_pretrained(self.tmpdir, **kwargs).tokenizer
 
     def get_image_processor(self, **kwargs):
-        return AutoProcessor.from_pretrained(self.tmpdir, **kwargs).image_processor
+        return AutoProcessor.from_pretrained(
+            self.tmpdir, **kwargs
+        ).image_processor
 
     def get_video_processor(self, **kwargs):
-        return AutoProcessor.from_pretrained(self.tmpdir, **kwargs).video_processor
+        return AutoProcessor.from_pretrained(
+            self.tmpdir, **kwargs
+        ).video_processor
 
     def get_processor(self, **kwargs):
         return AutoProcessor.from_pretrained(self.tmpdir, **kwargs)
@@ -65,7 +71,9 @@ class Qwen2VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
 
         processor = self.get_processor()
 
-        output = processor._get_num_multimodal_tokens(image_sizes=[(100, 100), (300, 100), (500, 30)])
+        output = processor._get_num_multimodal_tokens(
+            image_sizes=[(100, 100), (300, 100), (500, 30)]
+        )
         self.assertTrue("num_image_tokens" in output)
         self.assertEqual(len(output["num_image_tokens"]), 3)
 
@@ -78,16 +86,29 @@ class Qwen2VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         video_processor = self.get_video_processor()
 
         processor = Qwen2VLProcessor(
-            tokenizer=tokenizer, image_processor=image_processor, video_processor=video_processor
+            tokenizer=tokenizer,
+            image_processor=image_processor,
+            video_processor=video_processor,
         )
         processor.save_pretrained(self.tmpdir)
         processor = Qwen2VLProcessor.from_pretrained(self.tmpdir)
 
         self.assertEqual(processor.tokenizer.get_vocab(), tokenizer.get_vocab())
-        self.assertEqual(processor.image_processor.to_json_string(), image_processor.to_json_string())
-        self.assertEqual(processor.tokenizer.__class__.__name__, "Qwen2Tokenizer")
-        self.assertEqual(processor.image_processor.__class__.__name__, "Qwen2VLImageProcessorFast")
-        self.assertEqual(processor.video_processor.__class__.__name__, "Qwen2VLVideoProcessor")
+        self.assertEqual(
+            processor.image_processor.to_json_string(),
+            image_processor.to_json_string(),
+        )
+        self.assertEqual(
+            processor.tokenizer.__class__.__name__, "Qwen2Tokenizer"
+        )
+        self.assertEqual(
+            processor.image_processor.__class__.__name__,
+            "Qwen2VLImageProcessorFast",
+        )
+        self.assertEqual(
+            processor.video_processor.__class__.__name__,
+            "Qwen2VLVideoProcessor",
+        )
 
     def test_image_processor(self):
         image_processor = self.get_image_processor()
@@ -95,16 +116,24 @@ class Qwen2VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         video_processor = self.get_video_processor()
 
         processor = Qwen2VLProcessor(
-            tokenizer=tokenizer, image_processor=image_processor, video_processor=video_processor
+            tokenizer=tokenizer,
+            image_processor=image_processor,
+            video_processor=video_processor,
         )
 
         image_input = self.prepare_image_inputs()
 
         input_image_proc = image_processor(image_input, return_tensors="pd")
-        input_processor = processor(images=image_input, text="dummy", return_tensors="pd")
+        input_processor = processor(
+            images=image_input, text="dummy", return_tensors="pd"
+        )
 
         for key in input_image_proc:
-            self.assertAlmostEqual(input_image_proc[key].sum(), input_processor[key].sum(), delta=1e-2)
+            self.assertAlmostEqual(
+                input_image_proc[key].sum(),
+                input_processor[key].sum(),
+                delta=1e-2,
+            )
 
     def test_processor(self):
         image_processor = self.get_image_processor()
@@ -112,14 +141,21 @@ class Qwen2VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         video_processor = self.get_video_processor()
 
         processor = Qwen2VLProcessor(
-            tokenizer=tokenizer, image_processor=image_processor, video_processor=video_processor
+            tokenizer=tokenizer,
+            image_processor=image_processor,
+            video_processor=video_processor,
         )
 
         input_str = "lower newer"
         image_input = self.prepare_image_inputs()
-        inputs = processor(text=input_str, images=image_input, return_tensors="pd")
+        inputs = processor(
+            text=input_str, images=image_input, return_tensors="pd"
+        )
 
-        self.assertListEqual(list(inputs.keys()), ["input_ids", "attention_mask", "pixel_values", "image_grid_thw"])
+        self.assertListEqual(
+            list(inputs.keys()),
+            ["input_ids", "attention_mask", "pixel_values", "image_grid_thw"],
+        )
 
         # test if it raises when no input is passed
         with self.assertRaises(ValueError):
@@ -143,7 +179,9 @@ class Qwen2VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
             self.skipTest("Processor has no chat template")
 
         if processor_name not in self.processor_class.attributes:
-            self.skipTest(f"{processor_name} attribute not present in {self.processor_class}")
+            self.skipTest(
+                f"{processor_name} attribute not present in {self.processor_class}"
+            )
 
         batch_messages = [
             [
@@ -155,21 +193,32 @@ class Qwen2VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         ] * batch_size
 
         # Test that jinja can be applied
-        formatted_prompt = processor.apply_chat_template(batch_messages, add_generation_prompt=True, tokenize=False)
+        formatted_prompt = processor.apply_chat_template(
+            batch_messages, add_generation_prompt=True, tokenize=False
+        )
         self.assertEqual(len(formatted_prompt), batch_size)
 
         # Test that tokenizing with template and directly with `self.tokenizer` gives same output
         formatted_prompt_tokenized = processor.apply_chat_template(
-            batch_messages, add_generation_prompt=True, tokenize=True, return_tensors=return_tensors
+            batch_messages,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_tensors=return_tensors,
         )
         add_special_tokens = True
-        if processor.tokenizer.bos_token is not None and formatted_prompt[0].startswith(processor.tokenizer.bos_token):
+        if processor.tokenizer.bos_token is not None and formatted_prompt[
+            0
+        ].startswith(processor.tokenizer.bos_token):
             add_special_tokens = False
         tok_output = processor.tokenizer(
-            formatted_prompt, return_tensors=return_tensors, add_special_tokens=add_special_tokens
+            formatted_prompt,
+            return_tensors=return_tensors,
+            add_special_tokens=add_special_tokens,
         )
         expected_output = tok_output.input_ids
-        self.assertListEqual(expected_output.tolist(), formatted_prompt_tokenized.tolist())
+        self.assertListEqual(
+            expected_output.tolist(), formatted_prompt_tokenized.tolist()
+        )
 
         # Test that kwargs passed to processor's `__call__` are actually used
         tokenized_prompt_100 = processor.apply_chat_template(
@@ -191,13 +240,18 @@ class Qwen2VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
             return_dict=True,
             return_tensors=return_tensors,
         )
-        self.assertTrue(all(key in out_dict_text for key in ["input_ids", "attention_mask"]))
+        self.assertTrue(
+            all(key in out_dict_text for key in ["input_ids", "attention_mask"])
+        )
         self.assertEqual(len(out_dict_text["input_ids"]), batch_size)
         self.assertEqual(len(out_dict_text["attention_mask"]), batch_size)
 
         # Test that with modality URLs and `return_dict=True`, we get modality inputs in the dict
         for idx, url in enumerate(input_data[:batch_size]):
-            batch_messages[idx][0]["content"] = [batch_messages[idx][0]["content"][0], {"type": modality, "url": url}]
+            batch_messages[idx][0]["content"] = [
+                batch_messages[idx][0]["content"][0],
+                {"type": modality, "url": url},
+            ]
 
         out_dict = processor.apply_chat_template(
             batch_messages,
@@ -221,9 +275,15 @@ class Qwen2VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
             mm_len = batch_size * 192
         self.assertEqual(len(out_dict[input_name]), mm_len)
 
-        return_tensor_to_type = {"pd": paddle.Tensor, "np": np.ndarray, None: list}
+        return_tensor_to_type = {
+            "pd": paddle.Tensor,
+            "np": np.ndarray,
+            None: list,
+        }
         for k in out_dict:
-            self.assertIsInstance(out_dict[k], return_tensor_to_type[return_tensors])
+            self.assertIsInstance(
+                out_dict[k], return_tensor_to_type[return_tensors]
+            )
 
     @unittest.skip("Skipping due to some issues with Qwen2-VL Processor")
     def test_apply_chat_template_video_frame_sampling(self):
@@ -347,15 +407,24 @@ class Qwen2VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
 
         input_str = self.prepare_text_inputs()
         image_input = self.prepare_image_inputs()
-        inputs = processor(text=input_str, images=image_input, return_tensors="pd")
+        inputs = processor(
+            text=input_str, images=image_input, return_tensors="pd"
+        )
         self.assertEqual(inputs[self.images_input_name].shape[0], 100)
-        inputs = processor(text=input_str, images=image_input, max_pixels=56 * 56 * 4, return_tensors="pd")
+        inputs = processor(
+            text=input_str,
+            images=image_input,
+            max_pixels=56 * 56 * 4,
+            return_tensors="pd",
+        )
         self.assertEqual(inputs[self.images_input_name].shape[0], 612)
 
     def test_special_mm_token_truncation(self):
         """Tests that special vision tokens do not get truncated when `truncation=True` is set."""
 
-        processor = self.get_processor(use_fast=False)  # only support with slow image processor
+        processor = self.get_processor(
+            use_fast=False
+        )  # only support with slow image processor
 
         input_str = self.prepare_text_inputs(batch_size=2, modalities="image")
         image_input = self.prepare_image_inputs(batch_size=2)

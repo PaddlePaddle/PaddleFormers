@@ -1,3 +1,17 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # Copyright 2024 Microsoft and the HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,9 +26,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-""" Phi-3 model configuration."""
+"""Phi-3 model configuration."""
+
 from ..configuration_utils import PretrainedConfig, layer_type_validation
-from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
+from ..modeling_rope_utils import (
+    rope_config_validation,
+    standardize_rope_params,
+)
 
 
 class Phi3Config(PretrainedConfig):
@@ -84,7 +102,8 @@ class Phi3Config(PretrainedConfig):
         self.layer_types = layer_types
         if self.layer_types is None:
             self.layer_types = [
-                "sliding_attention" if self.sliding_window else "full_attention" for i in range(self.num_hidden_layers)
+                "sliding_attention" if self.sliding_window else "full_attention"
+                for i in range(self.num_hidden_layers)
             ]
         layer_type_validation(self.layer_types, self.num_hidden_layers)
 
@@ -109,7 +128,10 @@ class Phi3Config(PretrainedConfig):
         rope_parameters_type = self.rope_parameters.get("rope_type", None)
 
         # For backward compatibility if previous version used "su" or "yarn"
-        if rope_parameters_type is not None and rope_parameters_type in ["su", "yarn"]:
+        if rope_parameters_type is not None and rope_parameters_type in [
+            "su",
+            "yarn",
+        ]:
             self.rope_parameters["rope_type"] = "longrope"
 
     def _rope_parameters_validation(self):
@@ -117,18 +139,33 @@ class Phi3Config(PretrainedConfig):
         Validate the `rope_parameters` configuration.
         """
         if not isinstance(self.rope_parameters, dict):
-            raise ValueError(f"`rope_parameters` must be a dictionary but got {self.rope_parameters}")
+            raise ValueError(
+                f"`rope_parameters` must be a dictionary but got {self.rope_parameters}"
+            )
         rope_parameters_type = self.rope_parameters.get("rope_type", None)
-        rope_parameters_short_factor = self.rope_parameters.get("short_factor", None)
-        rope_parameters_long_factor = self.rope_parameters.get("long_factor", None)
-        rotary_ndims = int(self.hidden_size // self.num_attention_heads * self.partial_rotary_factor)
+        rope_parameters_short_factor = self.rope_parameters.get(
+            "short_factor", None
+        )
+        rope_parameters_long_factor = self.rope_parameters.get(
+            "long_factor", None
+        )
+        rotary_ndims = int(
+            self.hidden_size
+            // self.num_attention_heads
+            * self.partial_rotary_factor
+        )
         if rope_parameters_type not in ["default", "longrope"]:
-            raise ValueError(f"`rope_parameters`'s type field must be one of ['longrope'], got {rope_parameters_type}")
+            raise ValueError(
+                f"`rope_parameters`'s type field must be one of ['longrope'], got {rope_parameters_type}"
+            )
 
         if rope_parameters_short_factor is not None:
             if not (
                 isinstance(rope_parameters_short_factor, list)
-                and all(isinstance(x, (int, float)) for x in rope_parameters_short_factor)
+                and all(
+                    isinstance(x, (int, float))
+                    for x in rope_parameters_short_factor
+                )
             ):
                 raise ValueError(
                     f"`rope_parameters`'s short_factor field must be a list of numbers, got {rope_parameters_short_factor}"
@@ -141,7 +178,10 @@ class Phi3Config(PretrainedConfig):
         if rope_parameters_long_factor is not None:
             if not (
                 isinstance(rope_parameters_long_factor, list)
-                and all(isinstance(x, (int, float)) for x in rope_parameters_long_factor)
+                and all(
+                    isinstance(x, (int, float))
+                    for x in rope_parameters_long_factor
+                )
             ):
                 raise ValueError(
                     f"`rope_parameters`'s long_factor field must be a list of numbers, got {rope_parameters_long_factor}"

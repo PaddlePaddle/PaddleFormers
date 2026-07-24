@@ -18,7 +18,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from ..configuration_utils import PretrainedConfig, layer_type_validation
-from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
+from ..modeling_rope_utils import (
+    rope_config_validation,
+    standardize_rope_params,
+)
 
 
 class Qwen3_5MoEVisionConfig(PretrainedConfig):
@@ -218,18 +221,24 @@ class Qwen3_5MoETextConfig(PretrainedConfig):
         self.moe_intermediate_size = moe_intermediate_size
         self.num_experts_per_tok = num_experts_per_tok
         self.num_experts = num_experts
-        self.mlp_only_layers = [] if mlp_only_layers is None else mlp_only_layers
+        self.mlp_only_layers = (
+            [] if mlp_only_layers is None else mlp_only_layers
+        )
 
         self.layer_types = layer_types
         if self.layer_types is None:
-            self.layer_types = ["full_attention" for i in range(self.num_hidden_layers)]
+            self.layer_types = [
+                "full_attention" for i in range(self.num_hidden_layers)
+            ]
         layer_type_validation(self.layer_types, self.num_hidden_layers)
 
         # Validate the correctness of rotary position embeddings parameters
         standardize_rope_params(self, rope_theta=rope_theta)
         if self.rope_parameters["rope_type"] == "mrope":
             self.rope_parameters["rope_type"] = "default"
-        rope_config_validation(self, ignore_keys={"mrope_section", "mrope_interleaved"})
+        rope_config_validation(
+            self, ignore_keys={"mrope_section", "mrope_interleaved"}
+        )
         super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
 
 
@@ -266,7 +275,10 @@ class Qwen3_5MoEConfig(PretrainedConfig):
     ```"""
 
     model_type = "qwen3_5_moe"
-    sub_configs = {"vision_config": Qwen3_5MoEVisionConfig, "text_config": Qwen3_5MoETextConfig}
+    sub_configs = {
+        "vision_config": Qwen3_5MoEVisionConfig,
+        "text_config": Qwen3_5MoETextConfig,
+    }
     keys_to_ignore_at_inference = ["past_key_values"]
 
     def __init__(
@@ -285,7 +297,9 @@ class Qwen3_5MoEConfig(PretrainedConfig):
         super().__init__(**kwargs)
 
         if isinstance(vision_config, dict):
-            self.vision_config = self.sub_configs["vision_config"](**vision_config)
+            self.vision_config = self.sub_configs["vision_config"](
+                **vision_config
+            )
         elif vision_config is None:
             self.vision_config = self.sub_configs["vision_config"]()
 
@@ -302,8 +316,19 @@ class Qwen3_5MoEConfig(PretrainedConfig):
 
     def __setattr__(self, key, value):
         if (
-            (text_config := super().__getattribute__("__dict__").get("text_config")) is not None
-            and key not in ["_name_or_path", "model_type", "dtype", "_attn_implementation_internal"]
+            (
+                text_config := super()
+                .__getattribute__("__dict__")
+                .get("text_config")
+            )
+            is not None
+            and key
+            not in [
+                "_name_or_path",
+                "model_type",
+                "dtype",
+                "_attn_implementation_internal",
+            ]
             and key in text_config.__dict__
         ):
             setattr(text_config, key, value)
@@ -311,7 +336,9 @@ class Qwen3_5MoEConfig(PretrainedConfig):
             super().__setattr__(key, value)
 
     def __getattribute__(self, key):
-        if "text_config" in super().__getattribute__("__dict__") and key not in [
+        if "text_config" in super().__getattribute__(
+            "__dict__"
+        ) and key not in [
             "_name_or_path",
             "model_type",
             "dtype",

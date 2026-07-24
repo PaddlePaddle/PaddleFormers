@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2022 PaddlePaddle Authors. All Rights Reserved.
 # Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
 # Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
@@ -14,7 +13,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-""" Configuration base class and utilities."""
+"""Configuration base class and utilities."""
+
 from __future__ import annotations
 
 import copy
@@ -27,7 +27,7 @@ import sys
 import warnings
 from dataclasses import field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional
 
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import EntryNotFoundError
@@ -92,7 +92,9 @@ def custom_object_save(obj, folder, config=None):
     #     shutil.copy(needed_file, dest_file)
 
 
-def attribute_map(config: PretrainedConfig, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+def attribute_map(
+    config: PretrainedConfig, kwargs: dict[str, Any]
+) -> dict[str, Any]:
     """map the <old-attr> to <new-attr> with configuration
 
     Args:
@@ -102,12 +104,16 @@ def attribute_map(config: PretrainedConfig, kwargs: Dict[str, Any]) -> Dict[str,
     for old_key, new_key in config.attribute_map.items():
         if old_key in kwargs:
             if new_key in kwargs:
-                logger.warning(f"receive param<{old_key}> and param<{new_key}>, but the first one will be adopt")
+                logger.warning(
+                    f"receive param<{old_key}> and param<{new_key}>, but the first one will be adopt"
+                )
             kwargs[new_key] = kwargs.pop(old_key)
     return kwargs
 
 
-def convert_to_legacy_config(attribute_map: Dict[str, str], config: Dict[str, Any]) -> Dict[str, Any]:
+def convert_to_legacy_config(
+    attribute_map: dict[str, str], config: dict[str, Any]
+) -> dict[str, Any]:
     """
     works when there are different fields between huggingface and paddle
     Args:
@@ -125,7 +131,9 @@ def convert_to_legacy_config(attribute_map: Dict[str, str], config: Dict[str, An
     # TODO(wj-Mcat): to improve compatibility for: old local config and new PretrainedConfig, eg:
     # { "init_args": [], "init_class": "", "num_classes": 12 }
     for standard_field, paddle_field in attribute_map.items():
-        value = config.pop(standard_field, None) or config.pop(paddle_field, None)
+        value = config.pop(standard_field, None) or config.pop(
+            paddle_field, None
+        )
         if value is not None:
             config[paddle_field] = value
     return config
@@ -163,7 +171,7 @@ def flatten_model_config(config: dict) -> dict:
     return config
 
 
-def is_standard_config(config: Union[PretrainedConfig, Dict[str, Any]]) -> bool:
+def is_standard_config(config: PretrainedConfig | dict[str, Any]) -> bool:
     """
     check whether the config is standard
     Args:
@@ -186,10 +194,14 @@ def resolve_hf_config_path(repo_id: str, cache_dir: str, subfolder=None) -> str:
     Returns:
         str: the downloaded config file
     """
-    if hf_file_exists(repo_id=repo_id, filename=CONFIG_NAME, subfolder=subfolder):
+    if hf_file_exists(
+        repo_id=repo_id, filename=CONFIG_NAME, subfolder=subfolder
+    ):
         file_name = CONFIG_NAME
     else:
-        raise EntryNotFoundError(f"can not find the paddle/pytorch config file from: https://huggingface.co/{repo_id}")
+        raise EntryNotFoundError(
+            f"can not find the paddle/pytorch config file from: https://huggingface.co/{repo_id}"
+        )
 
     return hf_hub_download(
         repo_id=repo_id,
@@ -229,7 +241,12 @@ def llmmetaclass(cls):
 class LlmMetaConfig:
     op_fusion_attributes = [
         # name, type, default_value, comment
-        ("use_fused_linear_cross_entropy", bool, False, "use fused `linear + cross_entropy` fuse op."),
+        (
+            "use_fused_linear_cross_entropy",
+            bool,
+            False,
+            "use fused `linear + cross_entropy` fuse op.",
+        ),
         ("apply_rope_fusion", bool, False, "Whether to fuse RoPE operation"),
         ("fuse_swiglu", bool, False, "Whether to fuse SwiGLU operations"),
     ]
@@ -240,24 +257,64 @@ class LlmMetaConfig:
         ("tensor_parallel_rank", int, 0, "tensor_parallel_rank"),
         ("tensor_parallel_output", bool, True, "tensor_parallel_output"),
         # pipeline_parallel
-        ("pipeline_model_parallel_size", int, 1, "pipeline_model_parallel_size"),
-        ("num_empty_layers_add_in_head", int, 0, "num_empty_layers_add_in_head"),
-        ("num_empty_layers_add_in_tail", int, 0, "num_empty_layers_add_in_tail"),
-        ("virtual_pipeline_model_parallel_size", int, 1, "Virtual pipeline degree"),
+        (
+            "pipeline_model_parallel_size",
+            int,
+            1,
+            "pipeline_model_parallel_size",
+        ),
+        (
+            "num_empty_layers_add_in_head",
+            int,
+            0,
+            "num_empty_layers_add_in_head",
+        ),
+        (
+            "num_empty_layers_add_in_tail",
+            int,
+            0,
+            "num_empty_layers_add_in_tail",
+        ),
+        (
+            "virtual_pipeline_model_parallel_size",
+            int,
+            1,
+            "Virtual pipeline degree",
+        ),
         # expert_parallel
         ("expert_model_parallel_size", int, 1, "expert_model_parallel_size"),
         # context_parallel
         ("context_parallel_size", int, 1, "context_parallel_size"),
-        ("cp_balance_mode", str, "dualchunk_allgather", "CP scatter/gather layout mode"),
+        (
+            "cp_balance_mode",
+            str,
+            "dualchunk_allgather",
+            "CP scatter/gather layout mode",
+        ),
         # pp refine recompute
-        ("no_recompute_layers", Optional[List[int]], None, "no_recompute_layers"),
-        ("num_empty_layers_add_in_tail", int, 0, "Additional layers to append at the end"),
+        (
+            "no_recompute_layers",
+            Optional[list[int]],
+            None,
+            "no_recompute_layers",
+        ),
+        (
+            "num_empty_layers_add_in_tail",
+            int,
+            0,
+            "Additional layers to append at the end",
+        ),
         # sep_parallel
         ("sep_parallel_size", int, 1, "sep_parallel_size"),
         ("context_parallel_size", int, 1, "context_parallel_size"),
         ("expert_model_parallel_size", int, 1, "expert_model_parallel_size"),
         ("sequence_parallel", bool, False, "Whether to use sequence parallel"),
-        ("fuse_sequence_parallel_allreduce", bool, False, "Whether to use fuse sequence parallel allreduce"),
+        (
+            "fuse_sequence_parallel_allreduce",
+            bool,
+            False,
+            "Whether to use fuse sequence parallel allreduce",
+        ),
     ]
 
     recompute_attributes = [
@@ -267,23 +324,58 @@ class LlmMetaConfig:
             None,
             "Recompute granularity, Choose among ['full', 'core_attn', 'full_attn']",
         ),
-        ("recompute_method", Optional[str], None, "Determines which transformer layers will be recomputed."),
+        (
+            "recompute_method",
+            Optional[str],
+            None,
+            "Determines which transformer layers will be recomputed.",
+        ),
         (
             "recompute_num_layers",
             Optional[int],
             None,
             "When recompute_method is uniform, recompute_num_layers is the number of transformer layers in each uniformly divided recompute unit.",
         ),
-        ("recompute_modules", Optional[Any], None, "List of module names to apply recomputation."),
-        ("recompute_mtp_granularity", Optional[str], None, "Recomputation granularity for MTP layers."),
-        ("recompute_mtp_method", Optional[str], None, "Recomputation method for MTP layers."),
-        ("recompute_mtp_modules", Optional[Any], None, "List of MTP module names to apply recomputation."),
+        (
+            "recompute_modules",
+            Optional[Any],
+            None,
+            "List of module names to apply recomputation.",
+        ),
+        (
+            "recompute_mtp_granularity",
+            Optional[str],
+            None,
+            "Recomputation granularity for MTP layers.",
+        ),
+        (
+            "recompute_mtp_method",
+            Optional[str],
+            None,
+            "Recomputation method for MTP layers.",
+        ),
+        (
+            "recompute_mtp_modules",
+            Optional[Any],
+            None,
+            "List of MTP module names to apply recomputation.",
+        ),
         ("recompute_use_reentrant", bool, True, "recompute_use_reentrant"),
     ]
 
     loss_attributes = [
-        ("use_fused_head_and_loss_fn", bool, False, "Whether to use fused head and loss function."),
-        ("use_filtered_label_loss", bool, False, "Whether to use filtered label loss."),
+        (
+            "use_fused_head_and_loss_fn",
+            bool,
+            False,
+            "Whether to use fused head and loss function.",
+        ),
+        (
+            "use_filtered_label_loss",
+            bool,
+            False,
+            "Whether to use filtered label loss.",
+        ),
         (
             "loss_subbatch_sequence_length",
             int,
@@ -299,8 +391,18 @@ class LlmMetaConfig:
             0,
             "The number of tokens in each subbatch for MoE model processing.",
         ),
-        ("moe_router_force_load_balancing", bool, False, "Whether to fake gate."),
-        ("moe_token_dispatcher_type", str, "deepep", 'Communication type used by MoE module "deepep" or "alltoall". '),
+        (
+            "moe_router_force_load_balancing",
+            bool,
+            False,
+            "Whether to fake gate.",
+        ),
+        (
+            "moe_token_dispatcher_type",
+            str,
+            "deepep",
+            'Communication type used by MoE module "deepep" or "alltoall". ',
+        ),
         ("use_unified_moe", bool, False, "Whether to use unified moe."),
         (
             "moe_deepep_num_sms",
@@ -356,7 +458,12 @@ class LlmMetaConfig:
             False,
             "Whether to enforce load balancing across MoE experts. Prevents overutilization of a small subset of experts. Defaults to True (critical optimization for MoE stability and efficiency).",
         ),
-        ("moe_router_load_balancing_type", str, "seq_aux_loss", "Strategy for MoE expert load balancing."),
+        (
+            "moe_router_load_balancing_type",
+            str,
+            "seq_aux_loss",
+            "Strategy for MoE expert load balancing.",
+        ),
         (
             "moe_router_bias_update_rate",
             float,
@@ -421,9 +528,19 @@ class LlmMetaConfig:
 
     mtp_attributes = [
         ("train_mtp_only", int, 0, "Whether to train MTP only."),
-        ("mtp_distillation_loss", bool, False, "Whether to use distillation MTP loss."),
+        (
+            "mtp_distillation_loss",
+            bool,
+            False,
+            "Whether to use distillation MTP loss.",
+        ),
         ("num_nextn_predict_layers", int, 0, "Number of nextn predict layers."),
-        ("mtp_num_layers", int, 0, "Whether to use Autoregressive MTP Training, activate if > 1."),
+        (
+            "mtp_num_layers",
+            int,
+            0,
+            "Whether to use Autoregressive MTP Training, activate if > 1.",
+        ),
         (
             "mtp_loss_scaling_factor",
             float,
@@ -454,15 +571,60 @@ class LlmMetaConfig:
     ]
 
     model_conf = [
-        ("num_hidden_layers", Optional[int], None, "Number of hidden layers in the model."),
-        ("num_attention_heads", Optional[int], None, "Number of attention heads in the model."),
-        ("num_key_value_heads", Optional[int], None, "Number of key/value heads in the model (for GQA/MQA)."),
-        ("num_experts_per_tok", Optional[int], None, "Number of experts to activate per token (for MoE models)."),
-        ("hidden_size", Optional[int], None, "Hidden size/dimension of the model."),
-        ("intermediate_size", Optional[int], None, "Intermediate size in the feed-forward network."),
-        ("n_routed_experts", Optional[int], None, "Number of routed experts in the model (for MoE models)."),
-        ("use_qk_norm", Optional[bool], None, "Whether to use query/key normalization."),
-        ("tie_word_embeddings", Optional[bool], None, "Whether to tie input and output embeddings."),
+        (
+            "num_hidden_layers",
+            Optional[int],
+            None,
+            "Number of hidden layers in the model.",
+        ),
+        (
+            "num_attention_heads",
+            Optional[int],
+            None,
+            "Number of attention heads in the model.",
+        ),
+        (
+            "num_key_value_heads",
+            Optional[int],
+            None,
+            "Number of key/value heads in the model (for GQA/MQA).",
+        ),
+        (
+            "num_experts_per_tok",
+            Optional[int],
+            None,
+            "Number of experts to activate per token (for MoE models).",
+        ),
+        (
+            "hidden_size",
+            Optional[int],
+            None,
+            "Hidden size/dimension of the model.",
+        ),
+        (
+            "intermediate_size",
+            Optional[int],
+            None,
+            "Intermediate size in the feed-forward network.",
+        ),
+        (
+            "n_routed_experts",
+            Optional[int],
+            None,
+            "Number of routed experts in the model (for MoE models).",
+        ),
+        (
+            "use_qk_norm",
+            Optional[bool],
+            None,
+            "Whether to use query/key normalization.",
+        ),
+        (
+            "tie_word_embeddings",
+            Optional[bool],
+            None,
+            "Whether to tie input and output embeddings.",
+        ),
     ]
 
     model_attributes = [
@@ -514,7 +676,12 @@ class LlmMetaConfig:
             True,
             "Whether to use Gated Linear Units (GLU) instead of standard Linear layers. Enhances model expressivity (common in SwiGLU). Defaults to False (compatible with basic transformer architectures).",
         ),
-        ("normalization", str, "RMSNorm", "Type of normalization layer. Defaults to RMSNorm."),
+        (
+            "normalization",
+            str,
+            "RMSNorm",
+            "Type of normalization layer. Defaults to RMSNorm.",
+        ),
         (
             "fp32_residual_connection",
             bool,
@@ -558,14 +725,24 @@ class LlmMetaConfig:
             0.02,
             "Standard deviation for embedding layer initialization (only effective if `embedding_init_method='normal'`). Defaults to 0.02 (common choice for transformer embeddings to avoid saturation).",
         ),
-        ("fa_version", int, 2, "FlashAttention or FlashMask version. Can be set to 2 or 3. Default is 2."),
+        (
+            "fa_version",
+            int,
+            2,
+            "FlashAttention or FlashMask version. Can be set to 2 or 3. Default is 2.",
+        ),
         (
             "use_accuracy_compatible",
             bool,
             False,
             "Whether to enable accuracy-compatible kernels for cross-framework numerical alignment. Defaults to False.",
         ),
-        ("experimental_dataflow", bool, False, "Whether to enable experimental dataflow in Fleet. Default is False."),
+        (
+            "experimental_dataflow",
+            bool,
+            False,
+            "Whether to enable experimental dataflow in Fleet. Default is False.",
+        ),
     ]
 
     @classmethod
@@ -838,19 +1015,22 @@ class PretrainedConfig:
             This attribute is currently not being used during model loading time, but this may change in the future
             versions. But we can already start preparing for the future by saving the dtype with save_pretrained.
     """
+
     model_type: str = ""
     base_config_key: str = ""
-    sub_configs: dict[str, type["PretrainedConfig"]] = {}
+    sub_configs: dict[str, type[PretrainedConfig]] = {}
     is_composition: bool = False
 
     pretrained_init_configuration = {}
 
     # global attribute mapping
-    attribute_map: Dict[str, str] = {"num_classes": "num_labels"}
+    attribute_map: dict[str, str] = {"num_classes": "num_labels"}
 
-    _auto_class: Optional[str] = None
+    _auto_class: str | None = None
 
-    _unsavable_keys = set()  # class-level default; each instance gets its own copy in __init__
+    _unsavable_keys = (
+        set()
+    )  # class-level default; each instance gets its own copy in __init__
 
     def __setattr__(self, key, value):
         if key in super().__getattribute__("attribute_map"):
@@ -859,7 +1039,9 @@ class PretrainedConfig:
         assert hasattr(self, key)
 
     def __getattribute__(self, key):
-        if key != "attribute_map" and key in super().__getattribute__("attribute_map"):
+        if key != "attribute_map" and key in super().__getattribute__(
+            "attribute_map"
+        ):
             key = super().__getattribute__("attribute_map")[key]
         return super().__getattribute__(key)
 
@@ -883,9 +1065,9 @@ class PretrainedConfig:
 
         kwargs = set_expected_keys(self, llm_meta, kwargs)
         if self.sequence_parallel:
-            assert (
-                self.tensor_model_parallel_size > 1
-            ), f"senquence-parallel only works in tensor parallel, got tensor parallel degree={self.tensor_model_parallel_size}"
+            assert self.tensor_model_parallel_size > 1, (
+                f"senquence-parallel only works in tensor parallel, got tensor parallel degree={self.tensor_model_parallel_size}"
+            )
 
         self.chunk_size_feed_forward = kwargs.pop("chunk_size_feed_forward", 0)
         self.return_dict = kwargs.pop("return_dict", False)
@@ -895,7 +1077,9 @@ class PretrainedConfig:
         self.tie_word_embeddings = kwargs.pop("tie_word_embeddings", True)
 
         # for run model in single card mode
-        self.use_single_model_implementation = kwargs.pop("use_single_model_implementation", False)
+        self.use_single_model_implementation = kwargs.pop(
+            "use_single_model_implementation", False
+        )
         if self.use_single_model_implementation:
             self.tensor_model_parallel_size = 1
             self.sep_parallel_size = 1
@@ -905,9 +1089,15 @@ class PretrainedConfig:
         self._attn_implementation = kwargs.pop("_attn_implementation", "eager")
         self.flashmask_use_varlen = kwargs.pop("flashmask_use_varlen", False)
 
-        if "quantization_config" in kwargs and isinstance(kwargs["quantization_config"], Dict):
-            kwargs["quantization_config"] = QuantizationConfig.from_dict(kwargs["quantization_config"])
-        self.quantization_config = kwargs.pop("quantization_config", QuantizationConfig())
+        if "quantization_config" in kwargs and isinstance(
+            kwargs["quantization_config"], dict
+        ):
+            kwargs["quantization_config"] = QuantizationConfig.from_dict(
+                kwargs["quantization_config"]
+            )
+        self.quantization_config = kwargs.pop(
+            "quantization_config", QuantizationConfig()
+        )
 
         self.pruned_heads = kwargs.pop("pruned_heads", {})
 
@@ -918,14 +1108,21 @@ class PretrainedConfig:
         # Is decoder is used in encoder-decoder models to differentiate encoder from decoder
         self.is_encoder_decoder = kwargs.pop("is_encoder_decoder", False)
         self.is_decoder = kwargs.pop("is_decoder", False)
-        self.cross_attention_hidden_size = kwargs.pop("cross_attention_hidden_size", None)
+        self.cross_attention_hidden_size = kwargs.pop(
+            "cross_attention_hidden_size", None
+        )
         self.add_cross_attention = kwargs.pop("add_cross_attention", False)
         self.tie_encoder_decoder = kwargs.pop("tie_encoder_decoder", False)
 
         # Retrocompatibility: Parameters for sequence generation. While we will keep the ability to load these
         # parameters, saving them will be deprecated. In a distant future, we won't need to load them.
-        for parameter_name, default_value in self._get_generation_defaults().items():
-            setattr(self, parameter_name, kwargs.pop(parameter_name, default_value))
+        for (
+            parameter_name,
+            default_value,
+        ) in self._get_generation_defaults().items():
+            setattr(
+                self, parameter_name, kwargs.pop(parameter_name, default_value)
+            )
 
         # Fine-tuning task arguments
         self.architectures = kwargs.pop("architectures", None)
@@ -939,7 +1136,9 @@ class PretrainedConfig:
                     f"You passed along `num_labels={num_labels}` with an incompatible id to label map: "
                     f"{self.id2label}. The number of labels will be overwritten to {self.num_labels}."
                 )
-            self.id2label = dict((int(key), value) for key, value in self.id2label.items())
+            self.id2label = {
+                int(key): value for key, value in self.id2label.items()
+            }
             # Keys are always strings in JSON so convert ids to int here.
         else:
             self.num_labels = kwargs.pop("num_labels", 2)
@@ -950,9 +1149,13 @@ class PretrainedConfig:
         self.dpo_config = kwargs.pop("dpo_config", None)
         self.kto_config = kwargs.pop("kto_config", None)
 
-        self.moe_token_dispatcher_type = kwargs.pop("moe_token_dispatcher_type", "deepep")
+        self.moe_token_dispatcher_type = kwargs.pop(
+            "moe_token_dispatcher_type", "deepep"
+        )
         self.use_unified_moe = kwargs.pop("use_unified_moe", False)
-        self.moe_router_force_load_balancing = kwargs.pop("moe_router_force_load_balancing", False)
+        self.moe_router_force_load_balancing = kwargs.pop(
+            "moe_router_force_load_balancing", False
+        )
 
         # Tokenizer arguments TODO: eventually tokenizer and models should share the same config
         self.tokenizer_class = kwargs.pop("tokenizer_class", None)
@@ -969,8 +1172,15 @@ class PretrainedConfig:
 
         # regression / multi-label classification
         self.problem_type = kwargs.pop("problem_type", None)
-        allowed_problem_types = ("regression", "single_label_classification", "multi_label_classification")
-        if self.problem_type is not None and self.problem_type not in allowed_problem_types:
+        allowed_problem_types = (
+            "regression",
+            "single_label_classification",
+            "multi_label_classification",
+        )
+        if (
+            self.problem_type is not None
+            and self.problem_type not in allowed_problem_types
+        ):
             raise ValueError(
                 f"The config parameter `problem_type` was not understood: received {self.problem_type} "
                 "but only 'regression', 'single_label_classification' and 'multi_label_classification' are valid."
@@ -1013,7 +1223,7 @@ class PretrainedConfig:
         self.label2id = dict(zip(self.id2label.values(), self.id2label.keys()))
 
     @staticmethod
-    def _get_generation_defaults() -> Dict[str, Any]:
+    def _get_generation_defaults() -> dict[str, Any]:
         return {
             "max_length": 20,
             "min_length": 0,
@@ -1046,8 +1256,14 @@ class PretrainedConfig:
         """
         Whether or not this instance holds non-default generation parameters.
         """
-        for parameter_name, default_value in self._get_generation_defaults().items():
-            if hasattr(self, parameter_name) and getattr(self, parameter_name) != default_value:
+        for (
+            parameter_name,
+            default_value,
+        ) in self._get_generation_defaults().items():
+            if (
+                hasattr(self, parameter_name)
+                and getattr(self, parameter_name) != default_value
+            ):
                 return True
         return False
 
@@ -1057,7 +1273,9 @@ class PretrainedConfig:
 
     @name_or_path.setter
     def name_or_path(self, value):
-        self._name_or_path = str(value)  # Make sure that name_or_path is a string (for JSON encoding)
+        self._name_or_path = str(
+            value
+        )  # Make sure that name_or_path is a string (for JSON encoding)
 
     @property
     def use_return_dict(self) -> bool:
@@ -1078,7 +1296,7 @@ class PretrainedConfig:
         if self.id2label is None or self.num_labels != num_labels:
             self._create_id_label_maps(num_labels)
 
-    def save_pretrained(self, save_directory: Union[str, os.PathLike], **kwargs):
+    def save_pretrained(self, save_directory: str | os.PathLike, **kwargs):
         """
         Save a configuration object to the directory `save_directory`, so that it can be re-loaded using the
         [`~PretrainedConfig.from_pretrained`] class method.
@@ -1090,7 +1308,9 @@ class PretrainedConfig:
                 Additional key word arguments passed along to the [`~utils.PushToHubMixin.push_to_hub`] method.
         """
         if os.path.isfile(save_directory):
-            raise AssertionError(f"Provided path ({save_directory}) should be a directory, not a file")
+            raise AssertionError(
+                f"Provided path ({save_directory}) should be a directory, not a file"
+            )
 
         os.makedirs(save_directory, exist_ok=True)
 
@@ -1113,7 +1333,9 @@ class PretrainedConfig:
         logger.info(f"Configuration saved in {output_config_file}")
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path: Union[str, os.PathLike], **kwargs) -> PretrainedConfig:
+    def from_pretrained(
+        cls, pretrained_model_name_or_path: str | os.PathLike, **kwargs
+    ) -> PretrainedConfig:
         r"""
         Instantiate a [`PretrainedConfig`] (or a derived class) from a pretrained model configuration.
 
@@ -1161,15 +1383,24 @@ class PretrainedConfig:
         assert config.output_attentions == True
         assert unused_kwargs == {"foo": False}
         ```"""
-        config_dict, kwargs = cls.get_config_dict(pretrained_model_name_or_path, **kwargs)
+        config_dict, kwargs = cls.get_config_dict(
+            pretrained_model_name_or_path, **kwargs
+        )
         if cls.base_config_key and cls.base_config_key in config_dict:
             config_dict = config_dict[cls.base_config_key]
 
-        if "model_type" in config_dict and hasattr(cls, "model_type") and config_dict["model_type"] != cls.model_type:
+        if (
+            "model_type" in config_dict
+            and hasattr(cls, "model_type")
+            and config_dict["model_type"] != cls.model_type
+        ):
             # sometimes the config has no `base_config_key` if the config is used in several composite models
             # e.g. LlamaConfig. In that case we try to see if there is match in `model_type` before raising a warning
             for v in config_dict.values():
-                if isinstance(v, dict) and v.get("model_type") == cls.model_type:
+                if (
+                    isinstance(v, dict)
+                    and v.get("model_type") == cls.model_type
+                ):
                     config_dict = v
 
             # raise warning only if we still can't see a match in `model_type`
@@ -1183,8 +1414,8 @@ class PretrainedConfig:
 
     @classmethod
     def get_config_dict(
-        cls, pretrained_model_name_or_path: Union[str, os.PathLike], **kwargs
-    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        cls, pretrained_model_name_or_path: str | os.PathLike, **kwargs
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         """
         From a `pretrained_model_name_or_path`, resolve to a dictionary of parameters, to be used for instantiating a
         [`PretrainedConfig`] using `from_dict`.
@@ -1207,23 +1438,31 @@ class PretrainedConfig:
         kwargs["subfolder"] = subfolder
 
         # Get config dict associated with the base config file
-        config_dict, kwargs = cls._get_config_dict(pretrained_model_name_or_path, **kwargs)
+        config_dict, kwargs = cls._get_config_dict(
+            pretrained_model_name_or_path, **kwargs
+        )
         if config_dict is None:
             return {}, kwargs
         # That config file may point us toward another config file to use.
         if "configuration_files" in config_dict:
-            original_kwargs["cache_dir"] = os.path.join(cache_dir, pretrained_model_name_or_path, subfolder)
-            configuration_file = get_configuration_file(config_dict["configuration_files"])
+            original_kwargs["cache_dir"] = os.path.join(
+                cache_dir, pretrained_model_name_or_path, subfolder
+            )
+            configuration_file = get_configuration_file(
+                config_dict["configuration_files"]
+            )
             config_dict, kwargs = cls._get_config_dict(
-                pretrained_model_name_or_path, _configuration_file=configuration_file, **original_kwargs
+                pretrained_model_name_or_path,
+                _configuration_file=configuration_file,
+                **original_kwargs,
             )
 
         return config_dict, kwargs
 
     @classmethod
     def _get_config_dict(
-        cls, pretrained_model_name_or_path: Union[str, os.PathLike], **kwargs
-    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        cls, pretrained_model_name_or_path: str | os.PathLike, **kwargs
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         cache_dir = kwargs.pop("cache_dir", None)
         download_hub = kwargs.pop("download_hub", None)
         subfolder = kwargs.pop("subfolder", "")
@@ -1237,19 +1476,29 @@ class PretrainedConfig:
         # 0. init from pretrained_init_configuration
         if pretrained_model_name_or_path in cls.pretrained_init_configuration:
             # which can be: dict or url
-            pretrained_model_name_or_path_ = cls.pretrained_init_configuration[pretrained_model_name_or_path]
+            pretrained_model_name_or_path_ = cls.pretrained_init_configuration[
+                pretrained_model_name_or_path
+            ]
 
             if isinstance(pretrained_model_name_or_path_, dict):
                 # save config file
                 if cache_dir is not None:
-                    config_path = os.path.join(cache_dir, pretrained_model_name_or_path, "config.json")
+                    config_path = os.path.join(
+                        cache_dir, pretrained_model_name_or_path, "config.json"
+                    )
                 else:
                     from ..utils.env import MODEL_HOME
 
-                    config_path = os.path.join(MODEL_HOME, pretrained_model_name_or_path, "config.json")
+                    config_path = os.path.join(
+                        MODEL_HOME, pretrained_model_name_or_path, "config.json"
+                    )
                 if not os.path.exists(config_path):
                     os.makedirs(os.path.dirname(config_path), exist_ok=True)
-                    json.dump(pretrained_model_name_or_path_, open(config_path, "w"), indent=2)
+                    json.dump(
+                        pretrained_model_name_or_path_,
+                        open(config_path, "w"),
+                        indent=2,
+                    )
 
                 return pretrained_model_name_or_path_, kwargs
 
@@ -1274,12 +1523,16 @@ class PretrainedConfig:
             # Load config dict
             config_dict = cls._dict_from_json_file(resolved_config_file)
         except (json.JSONDecodeError, UnicodeDecodeError):
-            raise EnvironmentError(f"Config file<'{resolved_config_file}'> is not a valid JSON file.")
+            raise OSError(
+                f"Config file<'{resolved_config_file}'> is not a valid JSON file."
+            )
 
         return config_dict, kwargs
 
     @classmethod
-    def from_dict(cls, config_dict: Dict[str, Any], **kwargs) -> "PretrainedConfig":
+    def from_dict(
+        cls, config_dict: dict[str, Any], **kwargs
+    ) -> PretrainedConfig:
         """
         Instantiates a [`PretrainedConfig`] from a Python dictionary of parameters.
 
@@ -1300,7 +1553,11 @@ class PretrainedConfig:
 
         config_dict = flatten_model_config(config_dict)
 
-        if "model_type" in config_dict and hasattr(cls, "model_type") and config_dict["model_type"] != cls.model_type:
+        if (
+            "model_type" in config_dict
+            and hasattr(cls, "model_type")
+            and config_dict["model_type"] != cls.model_type
+        ):
             logger.warning(
                 f"You are using a model of type {config_dict['model_type']} to instantiate a model of type "
                 f"{cls.model_type}. This is not supported for all configurations of models and can yield errors."
@@ -1309,12 +1566,16 @@ class PretrainedConfig:
         config = cls(**config_dict)
 
         if hasattr(config, "pruned_heads"):
-            config.pruned_heads = dict((int(key), value) for key, value in config.pruned_heads.items())
+            config.pruned_heads = {
+                int(key): value for key, value in config.pruned_heads.items()
+            }
 
         # Update config with kwargs if needed
         if "num_labels" in kwargs and "id2label" in kwargs:
             num_labels = kwargs["num_labels"]
-            id2label = kwargs["id2label"] if kwargs["id2label"] is not None else []
+            id2label = (
+                kwargs["id2label"] if kwargs["id2label"] is not None else []
+            )
             if len(id2label) != num_labels:
                 raise ValueError(
                     f"You passed along `num_labels={num_labels}` with an incompatible id to label map: "
@@ -1323,7 +1584,7 @@ class PretrainedConfig:
                 )
         to_remove = []
         for key, value in kwargs.items():
-            if key == "quantization_config" and isinstance(value, Dict):
+            if key == "quantization_config" and isinstance(value, dict):
                 for q_key in value:
                     setattr(config.quantization_config, q_key, value[q_key])
                 to_remove.append(key)
@@ -1341,7 +1602,7 @@ class PretrainedConfig:
             return config
 
     @classmethod
-    def from_json_file(cls, json_file: Union[str, os.PathLike]) -> "PretrainedConfig":
+    def from_json_file(cls, json_file: str | os.PathLike) -> PretrainedConfig:
         """
         Instantiates a [`PretrainedConfig`] from the path to a JSON file of parameters.
 
@@ -1357,7 +1618,7 @@ class PretrainedConfig:
         return cls(**config_dict)
 
     @classmethod
-    def _dict_from_json_file(cls, json_file: Union[str, os.PathLike]):
+    def _dict_from_json_file(cls, json_file: str | os.PathLike):
         with open(json_file, "r", encoding="utf-8") as reader:
             text = reader.read()
         return json.loads(text)
@@ -1368,7 +1629,7 @@ class PretrainedConfig:
     def __repr__(self):
         return f"{self.__class__.__name__} {self.to_json_string()}"
 
-    def to_diff_dict(self, saving_file=False) -> Dict[str, Any]:
+    def to_diff_dict(self, saving_file=False) -> dict[str, Any]:
         """
         Removes all attributes from config which correspond to the default config attributes for better readability and
         serializes to a Python dictionary.
@@ -1379,10 +1640,16 @@ class PretrainedConfig:
         config_dict = self.to_dict(saving_file=saving_file)
 
         # get the default config dict
-        default_config_dict = PretrainedConfig().to_dict(saving_file=saving_file)
+        default_config_dict = PretrainedConfig().to_dict(
+            saving_file=saving_file
+        )
 
         # get class specific config dict
-        class_config_dict = self.__class__().to_dict(saving_file=saving_file) if not self.is_composition else {}
+        class_config_dict = (
+            self.__class__().to_dict(saving_file=saving_file)
+            if not self.is_composition
+            else {}
+        )
 
         serializable_config_dict = {}
 
@@ -1404,7 +1671,11 @@ class PretrainedConfig:
                 or key in self.sub_configs
             ):
                 # For nested configs we need to clean the diff recursively
-                diff = recursive_diff_dict(value, default_config_dict, config_obj=getattr(self, key, None))
+                diff = recursive_diff_dict(
+                    value,
+                    default_config_dict,
+                    config_obj=getattr(self, key, None),
+                )
                 if "model_type" in value:
                     # Needs to be set even if it's not in the diff
                     diff["model_type"] = value["model_type"]
@@ -1414,7 +1685,9 @@ class PretrainedConfig:
                 key not in default_config_dict
                 or key == "paddleformers_version"
                 or value != default_config_dict[key]
-                or (key in class_config_dict and value != class_config_dict[key])
+                or (
+                    key in class_config_dict and value != class_config_dict[key]
+                )
             ):
                 serializable_config_dict[key] = value
 
@@ -1433,7 +1706,7 @@ class PretrainedConfig:
         else:
             self._unsavable_keys.add(keys)
 
-    def to_dict(self, saving_file=False) -> Dict[str, Any]:
+    def to_dict(self, saving_file=False) -> dict[str, Any]:
         """
         Serializes this instance to a Python dictionary.
 
@@ -1481,7 +1754,9 @@ class PretrainedConfig:
             _ = output.pop("_pre_quantization_dtype", None)
         if hasattr(self, "dpo_config") and self.dpo_config is not None:
             output["dpo_config"] = (
-                self.dpo_config.__dict__ if not isinstance(self.dpo_config, dict) else self.dpo_config
+                self.dpo_config.__dict__
+                if not isinstance(self.dpo_config, dict)
+                else self.dpo_config
             )
         return output
 
@@ -1502,9 +1777,19 @@ class PretrainedConfig:
         else:
             config_dict = self.to_dict(saving_file=saving_file)
 
-        return json.dumps(config_dict, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+        return (
+            json.dumps(
+                config_dict, indent=2, sort_keys=True, ensure_ascii=False
+            )
+            + "\n"
+        )
 
-    def to_json_file(self, json_file_path: Union[str, os.PathLike], use_diff: bool = True, saving_file=True):
+    def to_json_file(
+        self,
+        json_file_path: str | os.PathLike,
+        use_diff: bool = True,
+        saving_file=True,
+    ):
         """
         Save this instance to a JSON file.
 
@@ -1519,12 +1804,14 @@ class PretrainedConfig:
         has_saving_file_arg = "saving_file" in spec.args or spec.varkw
         with open(json_file_path, "w", encoding="utf-8") as writer:
             if has_saving_file_arg:
-                s = self.to_json_string(use_diff=use_diff, saving_file=saving_file)
+                s = self.to_json_string(
+                    use_diff=use_diff, saving_file=saving_file
+                )
             else:
                 s = self.to_json_string(use_diff=use_diff)
             writer.write(s)
 
-    def update(self, config_dict: Dict[str, Any]):
+    def update(self, config_dict: dict[str, Any]):
         """
         Updates attributes of this class with attributes from `config_dict`.
 
@@ -1560,7 +1847,9 @@ class PretrainedConfig:
                 elif v.lower() in ["false", "0", "n", "no"]:
                     v = False
                 else:
-                    raise ValueError(f"can't derive true or false from {v} (key {k})")
+                    raise ValueError(
+                        f"can't derive true or false from {v} (key {k})"
+                    )
             elif isinstance(old_v, int):
                 v = int(v)
             elif isinstance(old_v, float):
@@ -1572,7 +1861,9 @@ class PretrainedConfig:
 
             setattr(self, k, v)
 
-    def _remove_keys_not_serialized(self, d: dict[str, Any], saving_file: bool = False) -> None:
+    def _remove_keys_not_serialized(
+        self, d: dict[str, Any], saving_file: bool = False
+    ) -> None:
         """
         Checks and removes if there are any keys in the dict that should not be serialized when saving the config.
         Runs recursive check on the dict, to remove from all sub configs.
@@ -1629,7 +1920,7 @@ class PretrainedConfig:
         else:
             return value
 
-    def get_text_config(self, decoder=None, encoder=None) -> "PretrainedConfig":
+    def get_text_config(self, decoder=None, encoder=None) -> PretrainedConfig:
         """
         Returns the text config related to the text input (encoder) or text output (decoder) of the model. The
         `decoder` and `encoder` input arguments can be used to specify which end of the model we are interested in,
@@ -1641,12 +1932,21 @@ class PretrainedConfig:
             encoder (`Optional[bool]`, *optional*):
                 If set to `True`, then only search for encoder config names.
         """
-        return_both = decoder == encoder  # both unset or both set -> search all possible names
+        return_both = (
+            decoder == encoder
+        )  # both unset or both set -> search all possible names
 
-        decoder_possible_text_config_names = ("decoder", "generator", "text_config")
+        decoder_possible_text_config_names = (
+            "decoder",
+            "generator",
+            "text_config",
+        )
         encoder_possible_text_config_names = ("text_encoder",)
         if return_both:
-            possible_text_config_names = encoder_possible_text_config_names + decoder_possible_text_config_names
+            possible_text_config_names = (
+                encoder_possible_text_config_names
+                + decoder_possible_text_config_names
+            )
         elif decoder:
             possible_text_config_names = decoder_possible_text_config_names
         else:
@@ -1671,13 +1971,20 @@ class PretrainedConfig:
             config_to_return = self
 
         # handle legacy models with flat config structure, when we only want one of the configs
-        if not return_both and len(valid_text_config_names) == 0 and config_to_return.is_encoder_decoder:
+        if (
+            not return_both
+            and len(valid_text_config_names) == 0
+            and config_to_return.is_encoder_decoder
+        ):
             config_to_return = copy.deepcopy(config_to_return)
             prefix_to_discard = "encoder" if decoder else "decoder"
             prefix_to_keep = "decoder" if decoder else "encoder"
             for key in config_to_return.to_dict():
                 # NOTE: We don't want to discard the key if it is mapped from a different attribute name at read time
-                if key.startswith(prefix_to_discard) and key not in config_to_return.attribute_map.values():
+                if (
+                    key.startswith(prefix_to_discard)
+                    and key not in config_to_return.attribute_map.values()
+                ):
                     delattr(config_to_return, key)
                 if key.startswith(prefix_to_keep):
                     # [encoder/decoder]_layers -> num_hidden_layers
@@ -1702,7 +2009,7 @@ class PretrainedConfig:
         return config_to_return
 
 
-def get_configuration_file(configuration_files: List[str]) -> str:
+def get_configuration_file(configuration_files: list[str]) -> str:
     """
     Get the configuration file to use for this version of paddleformers.
 
@@ -1752,8 +2059,14 @@ def recursive_diff_dict(dict_a, dict_b, config_obj=None):
     default = config_obj.__class__().to_dict() if config_obj is not None else {}
     for key, value in dict_a.items():
         obj_value = getattr(config_obj, str(key), None)
-        if isinstance(obj_value, PretrainedConfig) and key in dict_b and isinstance(dict_b[key], dict):
-            diff_value = recursive_diff_dict(value, dict_b[key], config_obj=obj_value)
+        if (
+            isinstance(obj_value, PretrainedConfig)
+            and key in dict_b
+            and isinstance(dict_b[key], dict)
+        ):
+            diff_value = recursive_diff_dict(
+                value, dict_b[key], config_obj=obj_value
+            )
             diff[key] = diff_value
         elif key not in dict_b or (value != default[key]):
             diff[key] = value
@@ -1767,10 +2080,14 @@ ALLOWED_LAYER_TYPES = (
 )
 
 
-def layer_type_validation(layer_types: List[str], num_hidden_layers: Optional[int] = None):
+def layer_type_validation(
+    layer_types: list[str], num_hidden_layers: int | None = None
+):
     """Check that `layer_types` is correctly defined."""
     if not all(layer_type in ALLOWED_LAYER_TYPES for layer_type in layer_types):
-        raise ValueError(f"The `layer_types` entries must be in {ALLOWED_LAYER_TYPES}")
+        raise ValueError(
+            f"The `layer_types` entries must be in {ALLOWED_LAYER_TYPES}"
+        )
     if num_hidden_layers is not None and num_hidden_layers != len(layer_types):
         raise ValueError(
             f"`num_hidden_layers` ({num_hidden_layers}) must be equal to the number of layer types "

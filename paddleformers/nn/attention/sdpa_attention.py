@@ -15,7 +15,7 @@
 from typing import Optional
 
 import paddle
-import paddle.nn as nn
+from paddle import nn
 
 from ...utils.masking_utils import _gen_from_sparse_attn_mask_indices
 from .sink_impl import sink_attention_forward
@@ -39,17 +39,31 @@ def sdpa_attention_forward(
     key = key.transpose(1, 2)
     value = value.transpose(1, 2)
     if is_causal is None and attn_mask_startend_row_indices is None:
-        is_causal = query.shape[1] > 1 and attention_mask is None and getattr(module, "is_causal", True)
+        is_causal = (
+            query.shape[1] > 1
+            and attention_mask is None
+            and getattr(module, "is_causal", True)
+        )
     elif attn_mask_startend_row_indices is not None:
         is_causal = False
         if attn_mask_startend_row_indices.ndim == 3:
-            attn_mask_startend_row_indices = attn_mask_startend_row_indices.unsqueeze(-1)
-        if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.shape[-1] == 1:
+            attn_mask_startend_row_indices = (
+                attn_mask_startend_row_indices.unsqueeze(-1)
+            )
+        if (
+            attn_mask_startend_row_indices is not None
+            and attn_mask_startend_row_indices.shape[-1] == 1
+        ):
             is_causal = True
-        if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.shape[-1] == 4:
+        if (
+            attn_mask_startend_row_indices is not None
+            and attn_mask_startend_row_indices.shape[-1] == 4
+        ):
             is_causal = False
 
-        attention_mask = _gen_from_sparse_attn_mask_indices(attn_mask_startend_row_indices, query.dtype, is_causal)
+        attention_mask = _gen_from_sparse_attn_mask_indices(
+            attn_mask_startend_row_indices, query.dtype, is_causal
+        )
 
     if sink is None:
         attn_output = nn.functional.scaled_dot_product_attention(
@@ -74,5 +88,7 @@ def sdpa_attention_forward(
             softmax_scale=scaling,
             causal=is_causal,
         )
-    attn_output = paddle.reshape(x=attn_output, shape=[0, 0, attn_output.shape[2] * attn_output.shape[3]])
+    attn_output = paddle.reshape(
+        x=attn_output, shape=[0, 0, attn_output.shape[2] * attn_output.shape[3]]
+    )
     return attn_output, None

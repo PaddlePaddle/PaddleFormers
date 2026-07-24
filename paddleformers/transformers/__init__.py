@@ -14,10 +14,9 @@
 
 import logging
 import sys
-from contextlib import suppress
 from typing import TYPE_CHECKING
-from ..utils.lazy_import import _LazyModule
 
+from ..utils.lazy_import import _LazyModule
 
 # from .auto.modeling import AutoModelForCausalLM
 import_structure = {
@@ -51,7 +50,11 @@ import_structure = {
     "configuration_utils": ["PretrainedConfig"],
     "processing_utils": ["ProcessorMixin"],
     "feature_extraction_utils": ["BatchFeature", "FeatureExtractionMixin"],
-    "image_processing_utils": ["PaddleImageProcessingMixin", "ImageProcessingMixin", "BaseImageProcessor"],
+    "image_processing_utils": [
+        "PaddleImageProcessingMixin",
+        "ImageProcessingMixin",
+        "BaseImageProcessor",
+    ],
     "image_processing_utils_fast": ["BaseImageProcessorFast"],
     "video_processing_utils": ["BaseVideoProcessor"],
     "audio_processing_utils": ["SequenceFeatureExtractor"],
@@ -157,7 +160,11 @@ import_structure = {
     ],
     "ernie4_5.tokenizer": ["Ernie4_5Tokenizer"],
     "ernie4_5_moe.configuration": ["Ernie4_5_MoeConfig"],
-    "ernie4_5_moe.modeling": ["Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM", "Ernie4_5_MoeForCausalLMPipe"],
+    "ernie4_5_moe.modeling": [
+        "Ernie4_5_MoeModel",
+        "Ernie4_5_MoeForCausalLM",
+        "Ernie4_5_MoeForCausalLMPipe",
+    ],
     "ernie4_5_moe_vl.configuration": ["Ernie4_5_VLConfig"],
     "ernie4_5_moe_vl.modeling": [
         "Ernie4_5_VLMoeForConditionalGenerationModel",
@@ -172,7 +179,11 @@ import_structure = {
     "paddleocr_vl.image_processor": ["PaddleOCRVLImageProcessor"],
     "paddleocr_vl.processor": ["PaddleOCRVLProcessor"],
     "gpt_oss.configuration": ["GptOssConfig"],
-    "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM", "GptOssForCausalLMPipe"],
+    "gpt_oss.modeling": [
+        "GptOssModel",
+        "GptOssForCausalLM",
+        "GptOssForCausalLMPipe",
+    ],
     "granite.configuration": ["GraniteConfig"],
     "granite.modeling": [
         "GraniteDecoderLayer",
@@ -185,14 +196,23 @@ import_structure = {
     "kimi_k25.processor": ["KimiK25Processor"],
     "kimi_k25.tokenizer": ["TikTokenTokenizer"],
     "gemma3_text.configuration": ["Gemma3Config", "Gemma3TextConfig"],
-    "gemma3_text.modeling": ["Gemma3TextModel", "Gemma3ForCausalLM", "Gemma3ForCausalLMPipe"],
+    "gemma3_text.modeling": [
+        "Gemma3TextModel",
+        "Gemma3ForCausalLM",
+        "Gemma3ForCausalLMPipe",
+    ],
     "kimi_k2.configuration": ["KimiK2Config"],
     "kimi_k2.modeling": ["KimiK2ForCausalLM", "KimiK2ForCausalLMPipe"],
     "kimi_k2.tokenizer": ["KimiK2TikTokenTokenizer"],
     "llama.configuration": [
         "LlamaConfig",
     ],
-    "llama.modeling": ["LlamaForCausalLM", "LlamaModel", "LlamaForCausalLMPipe", "LlamaRotaryEmbedding"],
+    "llama.modeling": [
+        "LlamaForCausalLM",
+        "LlamaModel",
+        "LlamaForCausalLMPipe",
+        "LlamaRotaryEmbedding",
+    ],
     "llama.tokenizer": ["LlamaTokenizer", "Llama3Tokenizer"],
     "llama.tokenizer_fast": ["LlamaTokenizerFast"],
     "optimization": [
@@ -249,7 +269,11 @@ import_structure = {
         "Qwen3VLMoePretrainedModel",
         "Qwen3VLMoeTextModel",
     ],
-    "qwen3_omni_moe.configuration": ["Qwen3OmniMoeConfig", "Qwen3OmniMoeThinkerConfig", "Qwen3OmniMoeTextConfig"],
+    "qwen3_omni_moe.configuration": [
+        "Qwen3OmniMoeConfig",
+        "Qwen3OmniMoeThinkerConfig",
+        "Qwen3OmniMoeTextConfig",
+    ],
     "qwen3_omni_moe.modeling": [
         "Qwen3OmniMoeForConditionalGeneration",
         "Qwen3OmniMoeThinkerForConditionalGeneration",
@@ -310,8 +334,16 @@ import_structure = {
     "glm_ocr": [],
     "qwen3": [],
     "deepseek_v3": [],
-    "ernie4_5": ["Ernie4_5DecoderLayer", "Ernie4_5Model", "Ernie4_5_ForCausalLM"],
-    "ernie4_5_moe": ["Ernie4_5_MoeDecoderLayer", "Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM"],
+    "ernie4_5": [
+        "Ernie4_5DecoderLayer",
+        "Ernie4_5Model",
+        "Ernie4_5_ForCausalLM",
+    ],
+    "ernie4_5_moe": [
+        "Ernie4_5_MoeDecoderLayer",
+        "Ernie4_5_MoeModel",
+        "Ernie4_5_MoeForCausalLM",
+    ],
     "ernie4_5_moe_vl": [],
     "paddleocr_vl": [],
     "qwen2_5_vl": [],
@@ -324,7 +356,12 @@ import_structure = {
     "qwen3_next": [],
     "glm4_moe.configuration": ["Glm4MoeConfig"],
     "whisper.processor": ["WhisperFeatureExtractor"],
-    "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM", "Glm4MoeForCausalLMDeprecated"],
+    "glm4_moe": [
+        "Glm4MoeForCausalLMPipe",
+        "Glm4MoeModel",
+        "Glm4MoeForCausalLM",
+        "Glm4MoeForCausalLMDeprecated",
+    ],
     "glm_moe_dsa.configuration": ["GlmMoeDsaConfig"],
     "glm_moe_dsa": ["GlmMoeDsaForCausalLMPipe", "GlmMoeDsaForCausalLM"],
     "granite": ["GraniteModel", "GranitePretrainedModel", "GraniteForCausalLM"],
@@ -348,7 +385,11 @@ import_structure = {
     "phi3.configuration": ["Phi3Config"],
     "phi3.tokenizer": ["Phi3Tokenizer"],
     "phi3.modeling": ["Phi3Model", "Phi3ForCausalLM", "Phi3ForCausalLMPipe"],
-    "glm4v_moe.configuration": ["Glm4vMoeConfig", "Glm4vMoeTextConfig", "Glm4vMoeVisionConfig"],
+    "glm4v_moe.configuration": [
+        "Glm4vMoeConfig",
+        "Glm4vMoeTextConfig",
+        "Glm4vMoeVisionConfig",
+    ],
     "glm4v_moe.modeling": [
         "Glm4vMoeForConditionalGeneration",
         "Glm4vMoeModel",
@@ -359,7 +400,11 @@ import_structure = {
     "glm4v_moe.processor": ["Glm4vProcessor"],
     "glm4v_moe.video_processor": ["Glm4vVideoProcessor"],
     "glm4v_moe": [],
-    "glm_ocr.configuration": ["GlmOcrConfig", "GlmOcrTextConfig", "GlmOcrVisionConfig"],
+    "glm_ocr.configuration": [
+        "GlmOcrConfig",
+        "GlmOcrTextConfig",
+        "GlmOcrVisionConfig",
+    ],
     "glm_ocr.modeling": [
         "GlmOcrForConditionalGeneration",
         "GlmOcrModel",
@@ -368,7 +413,12 @@ import_structure = {
     "glm_ocr.processor": ["Glm46VProcessor"],
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
     "olmo2.configuration": ["Olmo2Config"],
-    "olmo2.modeling": ["Olmo2DecoderLayer", "Olmo2Model", "Olmo2ForCausalLM", "Olmo2ForCausalLMPipe"],
+    "olmo2.modeling": [
+        "Olmo2DecoderLayer",
+        "Olmo2Model",
+        "Olmo2ForCausalLM",
+        "Olmo2ForCausalLMPipe",
+    ],
     "olmo2": [],
     "intern_lm3.configuration": ["InternLM3Config"],
     "intern_lm3.modeling": [
@@ -407,41 +457,50 @@ import_structure = {
 }
 
 if TYPE_CHECKING:
-    from .configuration_utils import PretrainedConfig
-    from .model_utils import PretrainedModel, register_base_model
-    from .tokenizer_utils import (
-        PretrainedTokenizer,
-        PreTrainedTokenizer,
-        PreTrainedTokenizerBase,
-        PreTrainedTokenizerFast,
-        BPETokenizer,
-        tokenize_chinese_chars,
-        is_chinese_char,
-        AddedToken,
-        normalize_chars,
-        tokenize_special_chars,
-        convert_to_unicode,
-    )
-    from .processing_utils import ProcessorMixin
-    from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
-    from .audio_processing_utils import SequenceFeatureExtractor
-    from .image_processing_utils import PaddleImageProcessingMixin, ImageProcessingMixin, BaseImageProcessor
-    from .image_processing_utils_fast import BaseImageProcessorFast
-    from .video_processing_utils import BaseVideoProcessor
+    from contextlib import suppress
+
     from .attention_utils import create_bigbird_rand_mask_idx_list
-    from .sequence_parallel_utils import AllGatherVarlenOp, sequence_parallel_sparse_mask_labels
-    from .tensor_parallel_utils import parallel_matmul, fused_head_and_loss_fn
+    from .audio_processing_utils import SequenceFeatureExtractor
+    from .configuration_utils import PretrainedConfig
+    from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
+    from .image_processing_utils import (
+        BaseImageProcessor,
+        ImageProcessingMixin,
+        PaddleImageProcessingMixin,
+    )
+    from .image_processing_utils_fast import BaseImageProcessorFast
+    from .model_utils import PretrainedModel, register_base_model
     from .moe_gate import *
     from .moe_layer import *
+    from .processing_utils import ProcessorMixin
+    from .sequence_parallel_utils import (
+        AllGatherVarlenOp,
+        sequence_parallel_sparse_mask_labels,
+    )
+    from .tensor_parallel_utils import fused_head_and_loss_fn, parallel_matmul
+    from .tokenizer_utils import (
+        AddedToken,
+        BPETokenizer,
+        PreTrainedTokenizer,
+        PretrainedTokenizer,
+        PreTrainedTokenizerBase,
+        PreTrainedTokenizerFast,
+        convert_to_unicode,
+        is_chinese_char,
+        normalize_chars,
+        tokenize_chinese_chars,
+        tokenize_special_chars,
+    )
+    from .video_processing_utils import BaseVideoProcessor
 
     with suppress(Exception):
         from paddle.distributed.fleet.utils.sequence_parallel_utils import (
-            GatherOp,
-            ScatterOp,
             AllGatherOp,
-            ReduceScatterOp,
             ColumnSequenceParallelLinear,
+            GatherOp,
+            ReduceScatterOp,
             RowSequenceParallelLinear,
+            ScatterOp,
             mark_as_sequence_parallel_parameter,
             register_sequence_parallel_allreduce_hooks,
         )
@@ -453,45 +512,43 @@ if TYPE_CHECKING:
     from .auto.processing import *
     from .auto.tokenizer import *
     from .auto.video_processing import *
-    from .diff_transformer import *
     from .deepseek_v3 import *
+    from .deepseek_v4 import *
+    from .diff_transformer import *
     from .ernie4_5 import *
     from .ernie4_5_moe import *
     from .ernie4_5_moe_vl import *
-    from .kimi_k25 import *
+    from .gemma3_text import *
+    from .gemma4_moe import *
+    from .glm4_moe import *
+    from .glm4v_moe import *
+    from .glm_moe_dsa import *
+    from .glm_ocr import *
+    from .gpt_oss import *
+    from .granite import *
+    from .intern import *
+    from .intern_lm2 import InternLM2Tokenizer
+    from .intern_lm2_5 import *
+    from .intern_lm3 import *
     from .kimi_k2 import *
-    from .paddleocr_vl import *
+    from .kimi_k25 import *
     from .llama import *
+    from .minicpm import *
+    from .minimax_m2 import *
+    from .olmo2 import *
     from .optimization import *
+    from .paddleocr_vl import *
+    from .phi3 import *
+    from .phi4 import *
     from .qwen2 import *
     from .qwen2_5_vl import *
     from .qwen2_moe import *
     from .qwen2_vl import *
     from .qwen3 import *
+    from .qwen3_5 import *
     from .qwen3_moe import *
     from .qwen3_next import *
-    from .qwen3_vl import *
-    from .qwen3_5 import *
-    from .qwen3_vl_moe import *
     from .qwen3_omni_moe import *
-    from .glm4_moe import *
-    from .glm4v_moe import *
-    from .glm_moe_dsa import *
-    from .minimax_m2 import *
-    from .minicpm import *
-    from .deepseek_v4 import *
-    from .gpt_oss import *
-    from .granite import *
-    from .phi3 import *
-    from .gemma3_text import *
-    from .glm_ocr import *
-    from .olmo2 import *
-    from .intern_lm3 import *
-    from .intern_lm2_5 import *
-    from .intern import *
-    from .intern_lm2 import InternLM2Tokenizer
-    from .gemma4_moe import *
-    from .phi4 import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
@@ -501,5 +558,8 @@ else:
     )
 
 logging.getLogger("transformers").addFilter(
-    lambda record: "None of PyTorch, TensorFlow >= 2.0, or Flax have been found." not in str(record.getMessage())
+    lambda record: (
+        "None of PyTorch, TensorFlow >= 2.0, or Flax have been found."
+        not in str(record.getMessage())
+    )
 )

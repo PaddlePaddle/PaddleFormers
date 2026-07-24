@@ -22,7 +22,11 @@ from paddleformers.cli import launcher as launcher_mod
 
 class TestLaunch(unittest.TestCase):
     def test_train_command_runs_numa_binding(self):
-        with patch.object(launcher_mod, "_maybe_bind_trainer_numa", side_effect=RuntimeError("stop")) as mock_bind:
+        with patch.object(
+            launcher_mod,
+            "_maybe_bind_trainer_numa",
+            side_effect=RuntimeError("stop"),
+        ) as mock_bind:
             with patch.object(sys, "argv", ["launcher", "train"]):
                 with self.assertRaisesRegex(RuntimeError, "stop"):
                     launcher_mod.launch()
@@ -31,7 +35,9 @@ class TestLaunch(unittest.TestCase):
 
     def test_numa_binding_disabled_by_default(self):
         with patch.dict(os.environ, {}, clear=True):
-            with patch.object(launcher_mod, "_reexec_with_numactl") as mock_reexec:
+            with patch.object(
+                launcher_mod, "_reexec_with_numactl"
+            ) as mock_reexec:
                 launcher_mod._maybe_bind_trainer_numa()
 
         mock_reexec.assert_not_called()
@@ -46,16 +52,32 @@ class TestLaunch(unittest.TestCase):
 
         for rank_env, expected_rank, expected_numa_node in cases:
             with self.subTest(rank_env=rank_env):
-                with patch.dict(os.environ, {"BIND_TRAINER_NUMA": "1", "PADDLE_LOCAL_RANK": rank_env}, clear=True):
-                    with patch.object(launcher_mod, "_reexec_with_numactl") as mock_reexec:
+                with patch.dict(
+                    os.environ,
+                    {"BIND_TRAINER_NUMA": "1", "PADDLE_LOCAL_RANK": rank_env},
+                    clear=True,
+                ):
+                    with patch.object(
+                        launcher_mod, "_reexec_with_numactl"
+                    ) as mock_reexec:
                         with patch("builtins.print"):
                             launcher_mod._maybe_bind_trainer_numa()
 
-                mock_reexec.assert_called_once_with(expected_rank, expected_numa_node)
+                mock_reexec.assert_called_once_with(
+                    expected_rank, expected_numa_node
+                )
 
-    def test_numa_binding_uses_flags_selected_gpus_when_local_rank_missing(self):
-        with patch.dict(os.environ, {"BIND_TRAINER_NUMA": "1", "FLAGS_selected_gpus": "2,3"}, clear=True):
-            with patch.object(launcher_mod, "_reexec_with_numactl") as mock_reexec:
+    def test_numa_binding_uses_flags_selected_gpus_when_local_rank_missing(
+        self,
+    ):
+        with patch.dict(
+            os.environ,
+            {"BIND_TRAINER_NUMA": "1", "FLAGS_selected_gpus": "2,3"},
+            clear=True,
+        ):
+            with patch.object(
+                launcher_mod, "_reexec_with_numactl"
+            ) as mock_reexec:
                 with patch("builtins.print"):
                     launcher_mod._maybe_bind_trainer_numa()
 
@@ -63,20 +85,36 @@ class TestLaunch(unittest.TestCase):
 
     def test_numa_binding_requires_rank_when_enabled(self):
         with patch.dict(os.environ, {"BIND_TRAINER_NUMA": "1"}, clear=True):
-            with self.assertRaisesRegex(RuntimeError, "PADDLE_LOCAL_RANK or FLAGS_selected_gpus"):
+            with self.assertRaisesRegex(
+                RuntimeError, "PADDLE_LOCAL_RANK or FLAGS_selected_gpus"
+            ):
                 launcher_mod._maybe_bind_trainer_numa()
 
     def test_numa_binding_rejects_unsupported_rank(self):
-        with patch.dict(os.environ, {"BIND_TRAINER_NUMA": "1", "PADDLE_LOCAL_RANK": "4"}, clear=True):
-            with self.assertRaisesRegex(RuntimeError, "only supports local rank 0-3"):
+        with patch.dict(
+            os.environ,
+            {"BIND_TRAINER_NUMA": "1", "PADDLE_LOCAL_RANK": "4"},
+            clear=True,
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError, "only supports local rank 0-3"
+            ):
                 launcher_mod._maybe_bind_trainer_numa()
 
     def test_reexec_with_numactl_builds_command_and_env(self):
         with patch.dict(os.environ, {"EXISTING_ENV": "1"}, clear=True):
-            with patch.object(launcher_mod.shutil, "which", return_value="/usr/bin/numactl") as mock_which:
+            with patch.object(
+                launcher_mod.shutil, "which", return_value="/usr/bin/numactl"
+            ) as mock_which:
                 with patch.object(launcher_mod.os, "execvpe") as mock_execvpe:
-                    with patch.object(launcher_mod.sys, "executable", "/usr/bin/python"):
-                        with patch.object(launcher_mod.sys, "argv", ["launcher", "train", "--config", "cfg"]):
+                    with patch.object(
+                        launcher_mod.sys, "executable", "/usr/bin/python"
+                    ):
+                        with patch.object(
+                            launcher_mod.sys,
+                            "argv",
+                            ["launcher", "train", "--config", "cfg"],
+                        ):
                             with patch("builtins.print"):
                                 launcher_mod._reexec_with_numactl(2, 1)
 
@@ -103,7 +141,9 @@ class TestLaunch(unittest.TestCase):
         self.assertEqual(env["PYTHONUNBUFFERED"], "1")
 
     def test_reexec_with_numactl_is_idempotent(self):
-        with patch.dict(os.environ, {launcher_mod.BIND_TRAINER_NUMA_EXECED: "1"}, clear=True):
+        with patch.dict(
+            os.environ, {launcher_mod.BIND_TRAINER_NUMA_EXECED: "1"}, clear=True
+        ):
             with patch.object(launcher_mod.shutil, "which") as mock_which:
                 with patch.object(launcher_mod.os, "execvpe") as mock_execvpe:
                     launcher_mod._reexec_with_numactl(0, 0)

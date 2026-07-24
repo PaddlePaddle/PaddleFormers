@@ -36,12 +36,17 @@ def get_wsd_schedule_with_warmup(
         if current_step < num_steady_steps:
             return 1.0
         num_decay_steps = num_training_steps - num_steady_steps
-        progress = float(current_step - num_steady_steps) / float(max(1, num_decay_steps))
+        progress = float(current_step - num_steady_steps) / float(
+            max(1, num_decay_steps)
+        )
 
         if decay_function == "half_life":
             ratio = base**progress
             normalize_ratio = (ratio - base) * (1 / (1 - base))
-            return normalize_ratio * (1 - min_lr / learning_rate) + min_lr / learning_rate
+            return (
+                normalize_ratio * (1 - min_lr / learning_rate)
+                + min_lr / learning_rate
+            )
         elif decay_function == "1-sqrt":
             ratio = 1 - math.sqrt(progress)
             return ratio * (1 - min_lr / learning_rate) + min_lr / learning_rate

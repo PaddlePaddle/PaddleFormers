@@ -16,9 +16,9 @@ import contextlib
 
 import paddle
 import paddle.distributed as dist
-import paddle.distributed.fleet as fleet
 import paddle.nn.functional as F
 from paddle.autograd import PyLayer
+from paddle.distributed import fleet
 from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
 from paddle.nn.layer.layers import in_declarative_mode
 
@@ -50,7 +50,9 @@ def parallel_matmul(
     """
     if get_env_device() == "xpu":
         try:
-            from paddle_xpu.layers.nn import parallel_matmul as xpu_parallel_matmul
+            from paddle_xpu.layers.nn import (
+                parallel_matmul as xpu_parallel_matmul,
+            )
 
             xpu_parallel_matmul = xpu_parallel_matmul()
             logits = xpu_parallel_matmul(
@@ -79,19 +81,31 @@ def parallel_matmul(
     if in_declarative_mode() and tensor_model_parallel_size > 1:
         is_logit_weight_distributed = True
 
-    if is_fleet_init and tensor_model_parallel_size > 1 and is_logit_weight_distributed:
-        input_parallel = paddle.distributed.collective._c_identity(lm_output, group=model_parallel_group)
+    if (
+        is_fleet_init
+        and tensor_model_parallel_size > 1
+        and is_logit_weight_distributed
+    ):
+        input_parallel = paddle.distributed.collective._c_identity(
+            lm_output, group=model_parallel_group
+        )
 
         if transpose_y:
-            logits = paddle.matmul(input_parallel, logit_weights, transpose_y=True)
+            logits = paddle.matmul(
+                input_parallel, logit_weights, transpose_y=True
+            )
         else:
             logits = F.linear(input_parallel, logit_weights, bias)
         if tensor_parallel_output:
             return logits
 
-        return paddle.distributed.collective._c_concat(logits, group=model_parallel_group)
+        return paddle.distributed.collective._c_concat(
+            logits, group=model_parallel_group
+        )
     else:
-        logits = paddle.matmul(lm_output, logit_weights, transpose_y=transpose_y)
+        logits = paddle.matmul(
+            lm_output, logit_weights, transpose_y=transpose_y
+        )
         if bias is not None:
             logits += bias
         return logits
@@ -173,7 +187,9 @@ class FusedHeadAndCrossEntropy(PyLayer):
         """
         if fused_linear:
             # print("Cannot support fused_linear while using use_fused_head_and_loss_fn now!")
-            fused_linear = False  # NOTE(hehuang): Cannot support fused_linear now
+            fused_linear = (
+                False  # NOTE(hehuang): Cannot support fused_linear now
+            )
         # initialize distributed settings
         dtype = hidden_states.dtype
         if tensor_model_parallel_size > 1:
@@ -197,7 +213,9 @@ class FusedHeadAndCrossEntropy(PyLayer):
             divisor = loss_mask.sum()
 
         n_tokens = hidden_states.shape[0]
-        n_classes = lm_head_weight.shape[0] if transpose_y else lm_head_weight.shape[1]
+        n_classes = (
+            lm_head_weight.shape[0] if transpose_y else lm_head_weight.shape[1]
+        )
 
         # cast lm_head weight & bias
         lm_head_weight_cast = lm_head_weight.astype(dtype)
@@ -214,7 +232,9 @@ class FusedHeadAndCrossEntropy(PyLayer):
                 dtype=labels.dtype,
             ).unsqueeze(0)
         else:
-            indices = paddle.arange(num_embeddings, dtype=labels.dtype).unsqueeze(0)
+            indices = paddle.arange(
+                num_embeddings, dtype=labels.dtype
+            ).unsqueeze(0)
 
         # initialize gradients
         if not return_token_loss:
@@ -239,7 +259,9 @@ class FusedHeadAndCrossEntropy(PyLayer):
             token_start_idx = i
             token_end_idx = min(i + loop_chunk_size, n_tokens)
             cur_chunk_range = paddle.arange(token_start_idx, token_end_idx)
-            hidden_states_chunk = paddle.gather(hidden_states, cur_chunk_range, axis=0)
+            hidden_states_chunk = paddle.gather(
+                hidden_states, cur_chunk_range, axis=0
+            )
             labels_chunk = paddle.gather(labels, cur_chunk_range, axis=0)
             loss_mask_chunk = paddle.gather(loss_mask, cur_chunk_range, axis=0)
 
@@ -264,7 +286,9 @@ class FusedHeadAndCrossEntropy(PyLayer):
             # log softmax
             max_logits = paddle.max(logits_chunk, axis=-1, keepdim=True)
             if tensor_model_parallel_size > 1 and tensor_parallel_output:
-                dist.all_reduce(max_logits, op=dist.ReduceOp.MAX, group=model_parallel_group)
+                dist.all_reduce(
+                    max_logits, op=dist.ReduceOp.MAX, group=model_parallel_group
+                )
             normalized_logits = logits_chunk - max_logits
             exp_logits = paddle.exp(normalized_logits)
             sum_exp_logits = paddle.sum(exp_logits, axis=-1, keepdim=True)
@@ -293,19 +317,33 @@ class FusedHeadAndCrossEntropy(PyLayer):
                     op=dist.ReduceOp.SUM,
                     group=model_parallel_group,
                 )
-            token_loss_chunk = (log_sum_exp_logits - label_logits).squeeze(1) / divisor
+            token_loss_chunk = (log_sum_exp_logits - label_logits).squeeze(
+                1
+            ) / divisor
             cond = loss_mask_chunk.astype("bool")
-            token_loss_chunk = paddle.where(cond, token_loss_chunk, paddle.zeros_like(token_loss_chunk))
-            paddle.scatter_(token_loss, cur_chunk_range, token_loss_chunk, overwrite=True)
+            token_loss_chunk = paddle.where(
+                cond, token_loss_chunk, paddle.zeros_like(token_loss_chunk)
+            )
+            paddle.scatter_(
+                token_loss, cur_chunk_range, token_loss_chunk, overwrite=True
+            )
 
             # gradients calculations
             if not return_token_loss:
-                if tensor_model_parallel_size > 1 and not tensor_parallel_output:
-                    exp_logits = exp_logits.split(model_parallel_group.nranks, axis=-1)[model_parallel_group.rank]
-                    labels_one_hot = labels_one_hot.split(model_parallel_group.nranks, axis=-1)[
-                        model_parallel_group.rank
-                    ]
-                grad_logits_chunk = (exp_logits / sum_exp_logits - labels_one_hot.astype("float32")) / divisor
+                if (
+                    tensor_model_parallel_size > 1
+                    and not tensor_parallel_output
+                ):
+                    exp_logits = exp_logits.split(
+                        model_parallel_group.nranks, axis=-1
+                    )[model_parallel_group.rank]
+                    labels_one_hot = labels_one_hot.split(
+                        model_parallel_group.nranks, axis=-1
+                    )[model_parallel_group.rank]
+                grad_logits_chunk = (
+                    exp_logits / sum_exp_logits
+                    - labels_one_hot.astype("float32")
+                ) / divisor
                 grad_logits_chunk = grad_logits_chunk.astype(dtype)
                 grad_logits_chunk = paddle.where(
                     cond.unsqueeze(1),
@@ -317,7 +355,11 @@ class FusedHeadAndCrossEntropy(PyLayer):
                     paddle.scatter_(
                         grad_hidden_states,
                         cur_chunk_range,
-                        paddle.matmul(grad_logits_chunk, lm_head_weight_cast, transpose_y=not transpose_y),
+                        paddle.matmul(
+                            grad_logits_chunk,
+                            lm_head_weight_cast,
+                            transpose_y=not transpose_y,
+                        ),
                         overwrite=True,
                     )
                 if grad_lm_head_weight is not None:
@@ -334,7 +376,11 @@ class FusedHeadAndCrossEntropy(PyLayer):
                             transpose_x=True,
                         )
                 if grad_lm_head_bias is not None:
-                    grad_lm_head_bias += grad_logits_chunk.astype("float32").sum(axis=0).astype(dtype)
+                    grad_lm_head_bias += (
+                        grad_logits_chunk.astype("float32")
+                        .sum(axis=0)
+                        .astype(dtype)
+                    )
 
         if return_token_loss:
             loss = token_loss.reshape(original_shape[:-1])
@@ -385,19 +431,25 @@ class FusedHeadAndCrossEntropy(PyLayer):
             grad_args = ctx.saved_tensor()
             idx = 0
             if ctx.hidden_states_has_grad:
-                grad_hidden_states = grad_args[idx] * grad_output.astype(grad_args[idx].dtype)
+                grad_hidden_states = grad_args[idx] * grad_output.astype(
+                    grad_args[idx].dtype
+                )
                 idx += 1
             else:
                 grad_hidden_states = None
 
             if ctx.lm_head_weight_has_grad:
-                grad_lm_head_weight = grad_args[idx] * grad_output.astype(grad_args[idx].dtype)
+                grad_lm_head_weight = grad_args[idx] * grad_output.astype(
+                    grad_args[idx].dtype
+                )
                 idx += 1
             else:
                 grad_lm_head_weight = None
 
             if ctx.lm_head_bias_has_grad:
-                grad_lm_head_bias = grad_args[idx] * grad_output.astype(grad_args[idx].dtype)
+                grad_lm_head_bias = grad_args[idx] * grad_output.astype(
+                    grad_args[idx].dtype
+                )
                 idx += 1
             else:
                 grad_lm_head_bias = None
@@ -441,7 +493,9 @@ class FusedHeadAndCrossEntropy(PyLayer):
             tensor_model_parallel_size = hcg.get_model_parallel_world_size()
 
         n_tokens = hidden_states.shape[0]
-        n_classes = lm_head_weight.shape[0] if transpose_y else lm_head_weight.shape[1]
+        n_classes = (
+            lm_head_weight.shape[0] if transpose_y else lm_head_weight.shape[1]
+        )
 
         # cast lm_head weight & bias
         lm_head_weight_cast = lm_head_weight.astype(dtype)
@@ -458,14 +512,20 @@ class FusedHeadAndCrossEntropy(PyLayer):
                 dtype=labels.dtype,
             ).unsqueeze(0)
         else:
-            indices = paddle.arange(num_embeddings, dtype=labels.dtype).unsqueeze(0)
+            indices = paddle.arange(
+                num_embeddings, dtype=labels.dtype
+            ).unsqueeze(0)
 
         # initialize gradients
         if not lm_head_weight.stop_gradient:
             grad_lm_head_weight = paddle.zeros_like(lm_head_weight)
         else:
             grad_lm_head_weight = None
-        if lm_head_weight is not None and not lm_head_weight.stop_gradient and lm_head_bias is not None:
+        if (
+            lm_head_weight is not None
+            and not lm_head_weight.stop_gradient
+            and lm_head_bias is not None
+        ):
             grad_lm_head_bias = paddle.zeros_like(lm_head_bias)
         else:
             grad_lm_head_bias = None
@@ -479,7 +539,9 @@ class FusedHeadAndCrossEntropy(PyLayer):
             token_start_idx = i
             token_end_idx = min(i + loop_chunk_size, n_tokens)
             cur_chunk_range = paddle.arange(token_start_idx, token_end_idx)
-            hidden_states_chunk = paddle.gather(hidden_states, cur_chunk_range, axis=0)
+            hidden_states_chunk = paddle.gather(
+                hidden_states, cur_chunk_range, axis=0
+            )
             labels_chunk = paddle.gather(labels, cur_chunk_range, axis=0)
             loss_mask_chunk = paddle.gather(loss_mask, cur_chunk_range, axis=0)
 
@@ -504,7 +566,9 @@ class FusedHeadAndCrossEntropy(PyLayer):
             # log softmax
             max_logits = paddle.max(logits_chunk, axis=-1, keepdim=True)
             if tensor_model_parallel_size > 1 and tensor_parallel_output:
-                dist.all_reduce(max_logits, op=dist.ReduceOp.MAX, group=model_parallel_group)
+                dist.all_reduce(
+                    max_logits, op=dist.ReduceOp.MAX, group=model_parallel_group
+                )
             normalized_logits = logits_chunk - max_logits
             exp_logits = paddle.exp(normalized_logits)
             sum_exp_logits = paddle.sum(exp_logits, axis=-1, keepdim=True)
@@ -517,11 +581,19 @@ class FusedHeadAndCrossEntropy(PyLayer):
 
             labels_one_hot = labels_chunk.unsqueeze(1) == indices
             if tensor_model_parallel_size > 1 and not tensor_parallel_output:
-                exp_logits = exp_logits.split(model_parallel_group.nranks, axis=-1)[model_parallel_group.rank]
-                labels_one_hot = labels_one_hot.split(model_parallel_group.nranks, axis=-1)[model_parallel_group.rank]
-            grad_logits_chunk = exp_logits / sum_exp_logits - labels_one_hot.astype("float32")
+                exp_logits = exp_logits.split(
+                    model_parallel_group.nranks, axis=-1
+                )[model_parallel_group.rank]
+                labels_one_hot = labels_one_hot.split(
+                    model_parallel_group.nranks, axis=-1
+                )[model_parallel_group.rank]
+            grad_logits_chunk = (
+                exp_logits / sum_exp_logits - labels_one_hot.astype("float32")
+            )
             # NOTE(hehuang): scaling grad_logits_chunk by grad_token_loss
-            grad_logits_chunk *= paddle.gather(grad_token_loss, cur_chunk_range, axis=0).unsqueeze(1)
+            grad_logits_chunk *= paddle.gather(
+                grad_token_loss, cur_chunk_range, axis=0
+            ).unsqueeze(1)
             grad_logits_chunk = grad_logits_chunk.astype(dtype)
             cond = loss_mask_chunk.astype("bool")
             grad_logits_chunk = paddle.where(
@@ -534,16 +606,28 @@ class FusedHeadAndCrossEntropy(PyLayer):
                 paddle.scatter_(
                     grad_hidden_states,
                     cur_chunk_range,
-                    paddle.matmul(grad_logits_chunk, lm_head_weight_cast, transpose_y=not transpose_y),
+                    paddle.matmul(
+                        grad_logits_chunk,
+                        lm_head_weight_cast,
+                        transpose_y=not transpose_y,
+                    ),
                     overwrite=True,
                 )
             if grad_lm_head_weight is not None:
                 if transpose_y:
-                    grad_lm_head_weight += paddle.matmul(grad_logits_chunk, hidden_states_chunk, transpose_x=True)
+                    grad_lm_head_weight += paddle.matmul(
+                        grad_logits_chunk, hidden_states_chunk, transpose_x=True
+                    )
                 else:
-                    grad_lm_head_weight += paddle.matmul(hidden_states_chunk, grad_logits_chunk, transpose_x=True)
+                    grad_lm_head_weight += paddle.matmul(
+                        hidden_states_chunk, grad_logits_chunk, transpose_x=True
+                    )
             if grad_lm_head_bias is not None:
-                grad_lm_head_bias += grad_logits_chunk.astype("float32").sum(axis=0).astype(dtype)
+                grad_lm_head_bias += (
+                    grad_logits_chunk.astype("float32")
+                    .sum(axis=0)
+                    .astype(dtype)
+                )
 
         if grad_hidden_states is not None:
             if tensor_model_parallel_size > 1:
@@ -575,7 +659,12 @@ def model_parallel_dropout(config):
     Returns:
         Context manager for dropout operation
     """
-    if config.tensor_model_parallel_size > 1 and config.hidden_dropout_prob > 0.0:
-        current_seed = "local_seed" if config.sequence_parallel else "global_seed"
+    if (
+        config.tensor_model_parallel_size > 1
+        and config.hidden_dropout_prob > 0.0
+    ):
+        current_seed = (
+            "local_seed" if config.sequence_parallel else "global_seed"
+        )
         return get_rng_state_tracker().rng_state(current_seed)
     return contextlib.nullcontext()

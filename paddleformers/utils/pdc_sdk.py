@@ -20,7 +20,6 @@ import subprocess
 import threading
 import time
 from enum import Enum
-from typing import List
 
 from .log import logger
 
@@ -120,7 +119,9 @@ class PDCTools:
             local_b3sum_hash_file = f".{time.time()}_b3sum.hash"
             with open(local_b3sum_hash_file, "w") as f:
                 f.write(b3sum_hash)
-            remote_b3sum_path = os.path.join(remote_dir, self._get_file_hash_name(tar_file_name))
+            remote_b3sum_path = os.path.join(
+                remote_dir, self._get_file_hash_name(tar_file_name)
+            )
             status = self._upload_file(local_b3sum_hash_file, remote_b3sum_path)
             if status != PDCErrorCode.Success:
                 logger.error(f"upload hash file {local_b3sum_hash_file} failed")
@@ -129,13 +130,17 @@ class PDCTools:
             # clean tmp files
             self._clean_tmp_files([local_b3sum_hash_file, tar_file_name])
 
-            logger.info(f"successfully uploaded ${local_path} to remote path ${remote_path}")
+            logger.info(
+                f"successfully uploaded ${local_path} to remote path ${remote_path}"
+            )
             return PDCErrorCode.Success
         except Exception as e:
             logger.error(f"pdc upload failed: {e}")
             raise e
 
-    def pdc_download(self, remote_path: str, local_path: str, timeout: int) -> PDCErrorCode:
+    def pdc_download(
+        self, remote_path: str, local_path: str, timeout: int
+    ) -> PDCErrorCode:
         """
         download data from afs/bos
 
@@ -154,7 +159,6 @@ class PDCTools:
                 queue.put(result)
             except Exception as e:
                 queue.put(str(e))
-            return
 
         result_queue = queue.Queue()
         thread = threading.Thread(
@@ -166,7 +170,9 @@ class PDCTools:
             ),
         )
         thread.start()
-        logger.info(f"Begin downloading object of {remote_path} to {local_path} from PDC...")
+        logger.info(
+            f"Begin downloading object of {remote_path} to {local_path} from PDC..."
+        )
         start_time = time.time()
         end_time = time.time()
         last_log_time = start_time
@@ -175,7 +181,9 @@ class PDCTools:
                 break
             if end_time - last_log_time > 30:
                 # log every 30 seconds to avoid false detection by hangWatcher
-                logger.info(f"Still waiting for download, already passed {end_time - start_time} seconds...")
+                logger.info(
+                    f"Still waiting for download, already passed {end_time - start_time} seconds..."
+                )
                 last_log_time = end_time
             time.sleep(1)
             end_time = time.time()
@@ -183,11 +191,15 @@ class PDCTools:
             return PDCErrorCode.CommandTimeout
         result = result_queue.get()
         if isinstance(result, str):
-            logger.error(f"Unknown exception occurred during download process, details: {result}")
+            logger.error(
+                f"Unknown exception occurred during download process, details: {result}"
+            )
             return PDCErrorCode.UnknownError
         return result
 
-    def pdc_download_checkpoint(self, resume_step: int, timeout: int) -> PDCErrorCode:
+    def pdc_download_checkpoint(
+        self, resume_step: int, timeout: int
+    ) -> PDCErrorCode:
         """
         download checkpoints from afs/bos
 
@@ -205,7 +217,6 @@ class PDCTools:
                 queue.put(result)
             except Exception as e:
                 queue.put(str(e))
-            return
 
         result_queue = queue.Queue()
         thread = threading.Thread(
@@ -216,7 +227,9 @@ class PDCTools:
             ),
         )
         thread.start()
-        logger.info(f"Begin downloading recovery checkpoint of step {resume_step} from PDC...")
+        logger.info(
+            f"Begin downloading recovery checkpoint of step {resume_step} from PDC..."
+        )
         start_time = time.time()
         end_time = time.time()
         last_log_time = start_time
@@ -225,7 +238,9 @@ class PDCTools:
                 break
             if end_time - last_log_time > 30:
                 # log every 30 seconds to avoid false detection by hangWatcher
-                logger.info(f"Still waiting for download, already passed {end_time - start_time} seconds...")
+                logger.info(
+                    f"Still waiting for download, already passed {end_time - start_time} seconds..."
+                )
                 last_log_time = end_time
             time.sleep(1)
             end_time = time.time()
@@ -233,11 +248,15 @@ class PDCTools:
             return PDCErrorCode.CommandTimeout
         result = result_queue.get()
         if isinstance(result, str):
-            logger.error(f"Unknown exception occurred during download process, details: {result}")
+            logger.error(
+                f"Unknown exception occurred during download process, details: {result}"
+            )
             return PDCErrorCode.UnknownError
         return result
 
-    def _pdc_download_impl(self, remote_path: str, local_path: str) -> PDCErrorCode:
+    def _pdc_download_impl(
+        self, remote_path: str, local_path: str
+    ) -> PDCErrorCode:
         """download data from afs/bos
 
         Args:
@@ -272,7 +291,9 @@ class PDCTools:
             hash_file_path = os.path.join(remote_dir, hash_file_name)
             status = self._download_file(hash_file_path, hash_file_name)
             if status != PDCErrorCode.Success:
-                logger.error(f"download remote hash file {hash_file_path} failed")
+                logger.error(
+                    f"download remote hash file {hash_file_path} failed"
+                )
                 return status
             remote_hash = ""
             with open(hash_file_name, "r") as f:
@@ -286,7 +307,9 @@ class PDCTools:
             logger.info(f"remote hash: {remote_hash}, local hash: {local_hash}")
             # check hash
             if local_hash != remote_hash:
-                logger.error(f"local b3sum hash: {local_hash}, remote b3sum hash: {remote_hash}")
+                logger.error(
+                    f"local b3sum hash: {local_hash}, remote b3sum hash: {remote_hash}"
+                )
                 return PDCErrorCode.CalculateHashFail
 
             # untar file to local_path
@@ -329,10 +352,14 @@ class PDCTools:
         ]
         try:
             self._pre_check()
-            logger.info(f"begin to download checkpoint from step {step}, config: {conf}")
+            logger.info(
+                f"begin to download checkpoint from step {step}, config: {conf}"
+            )
             res, error_code = self._exec_cmd(download_cmd_args)
             if error_code == PDCErrorCode.Success:
-                logger.info(f"download checkpoint from step {step} successfully")
+                logger.info(
+                    f"download checkpoint from step {step} successfully"
+                )
             return error_code
         except Exception as e:
             logger.error(f"exec cmd {download_cmd_args} with error: {e}")
@@ -352,7 +379,7 @@ class PDCTools:
         # TODO(@zezhao): add more check
         return PDCErrorCode.Success
 
-    def _exec_cmd(self, cmd_args: List[str]) -> (str, PDCErrorCode):
+    def _exec_cmd(self, cmd_args: list[str]) -> (str, PDCErrorCode):
         """exec user command
 
         Args:
@@ -362,9 +389,13 @@ class PDCTools:
         try:
             result = subprocess.run(cmd_args, capture_output=True, text=True)
             if result.returncode == 0:
-                logger.info(f"exec cmd {cmd_args} successfully, result: {result.stdout}; {result.stderr}")
+                logger.info(
+                    f"exec cmd {cmd_args} successfully, result: {result.stdout}; {result.stderr}"
+                )
             else:
-                logger.error(f"exec cmd {cmd_args} failed, exit code: {result.returncode}, err: {result.stderr}")
+                logger.error(
+                    f"exec cmd {cmd_args} failed, exit code: {result.returncode}, err: {result.stderr}"
+                )
                 # TODO(@zezhao): add more error code
                 error_code = PDCErrorCode.CommandFail
             return result.stdout, error_code
@@ -380,8 +411,7 @@ class PDCTools:
 
         Return:
         """
-        if file_name.endswith(".tar"):
-            file_name = file_name[:-4]
+        file_name = file_name.removesuffix(".tar")
         return f"{file_name}.b3sumhash"
 
     def _calculate_hash(self, file_path: str) -> (str, PDCErrorCode):
@@ -419,7 +449,14 @@ class PDCTools:
 
         error_code = PDCErrorCode.Success
         # tar file
-        tar_cmd_args = [self._tar_bin, "-cf", target_path, "-C", source_path, "."]
+        tar_cmd_args = [
+            self._tar_bin,
+            "-cf",
+            target_path,
+            "-C",
+            source_path,
+            ".",
+        ]
         try:
             res, error_code = self._exec_cmd(tar_cmd_args)
             if error_code == PDCErrorCode.Success:
@@ -454,7 +491,9 @@ class PDCTools:
             raise Exception(f"exec cmd {untar_cmd_args} with error: {e}")
         return error_code
 
-    def _upload_file(self, local_file_path: str, remote_path: str) -> PDCErrorCode:
+    def _upload_file(
+        self, local_file_path: str, remote_path: str
+    ) -> PDCErrorCode:
         """upload file
         Args:
         local_file_path str: local file path
@@ -464,9 +503,19 @@ class PDCTools:
             logger.error(f"{local_file_path} not exist")
             return PDCErrorCode.LocalPathNotExist
 
-        conf = json.dumps({"remote_path": remote_path, "local_path": local_file_path})
+        conf = json.dumps(
+            {"remote_path": remote_path, "local_path": local_file_path}
+        )
         # upload file to remote path
-        upload_cmd_args = [self._pdc_agent_bin, "-mode", "command", "-type", "upload", "-config", f"{conf}"]
+        upload_cmd_args = [
+            self._pdc_agent_bin,
+            "-mode",
+            "command",
+            "-type",
+            "upload",
+            "-config",
+            f"{conf}",
+        ]
         error_code = PDCErrorCode.Success
         try:
             res, error_code = self._exec_cmd(upload_cmd_args)
@@ -486,11 +535,23 @@ class PDCTools:
         """
         if os.path.exists(local_path):
             os.rename(local_path, f"{local_path}.old")
-            logger.warning(f"{local_path} already exists, backup it to {local_path}.old")
+            logger.warning(
+                f"{local_path} already exists, backup it to {local_path}.old"
+            )
 
-        conf = json.dumps({"remote_path": remote_path, "local_path": local_path})
+        conf = json.dumps(
+            {"remote_path": remote_path, "local_path": local_path}
+        )
         # download file from remote path
-        download_cmd_args = [self._pdc_agent_bin, "-mode", "command", "-type", "download", "-config", f"{conf}"]
+        download_cmd_args = [
+            self._pdc_agent_bin,
+            "-mode",
+            "command",
+            "-type",
+            "download",
+            "-config",
+            f"{conf}",
+        ]
         error_code = PDCErrorCode.Success
         try:
             logger.info(f"begin to download {remote_path}, config: {conf}")
@@ -511,7 +572,9 @@ class PDCTools:
             # Backup failed files for debug
             os.rename(path, failed_path)
 
-    def pdc_backup_to_flash_device(self, persistent_path: str, flash_device_path: str) -> PDCErrorCode:
+    def pdc_backup_to_flash_device(
+        self, persistent_path: str, flash_device_path: str
+    ) -> PDCErrorCode:
         """backup data to flash device
 
         Args:
@@ -527,15 +590,21 @@ class PDCTools:
         # step 1: generate checksum for recovery
         result = self.pdc_generate_dir_checksum(persistent_path)
         if result != PDCErrorCode.Success:
-            logger.error(f"[Error] [pdc_sdk] generating checksum for {persistent_path} failed")
+            logger.error(
+                f"[Error] [pdc_sdk] generating checksum for {persistent_path} failed"
+            )
             return result
 
         # step 2: copy persistent data to flash device
         try:
             shutil.copy_tree(persistent_path, flash_device_path)
-            logger.info(f"backup {persistent_path} to {flash_device_path} successed.")
+            logger.info(
+                f"backup {persistent_path} to {flash_device_path} succeeded."
+            )
         except Exception as e:
-            logger.error(f"[Error] [pdc_sdk] copy tree {persistent_path} to {flash_device_path} failed, error: {e}")
+            logger.error(
+                f"[Error] [pdc_sdk] copy tree {persistent_path} to {flash_device_path} failed, error: {e}"
+            )
             self._pdc_backup_failed_directory(flash_device_path)
             return PDCErrorCode.CopyTreeFailed
 
@@ -544,7 +613,9 @@ class PDCTools:
         if result == PDCErrorCode.Success:
             return result
 
-        logger.error(f"[Error] [pdc_sdk] checksum failed on {flash_device_path} after copy, backup for debug")
+        logger.error(
+            f"[Error] [pdc_sdk] checksum failed on {flash_device_path} after copy, backup for debug"
+        )
         self._pdc_backup_failed_directory(flash_device_path)
         return result
 
@@ -557,7 +628,15 @@ class PDCTools:
         if not os.path.exists(path):
             logger.error(f"pdc_generate_dir_checksum gi{path} not exist")
             return PDCErrorCode.CommandFail
-        generate_checksum_args = [self._pdc_agent_bin, "-mode", "command", "-type", "generateSum", "-path", f"{path}"]
+        generate_checksum_args = [
+            self._pdc_agent_bin,
+            "-mode",
+            "command",
+            "-type",
+            "generateSum",
+            "-path",
+            f"{path}",
+        ]
         error_code = PDCErrorCode.Success
         try:
             logger.info(f"begin to generate_sum path: {path}")
@@ -578,7 +657,15 @@ class PDCTools:
         if not os.path.exists(path):
             logger.error(f"pdc_flash_do_check {path} not exist")
             return PDCErrorCode.CommandFail
-        generate_checksum_args = [self._pdc_agent_bin, "-mode", "command", "-type", "checkSum", "-path", f"{path}"]
+        generate_checksum_args = [
+            self._pdc_agent_bin,
+            "-mode",
+            "command",
+            "-type",
+            "checkSum",
+            "-path",
+            f"{path}",
+        ]
         error_code = PDCErrorCode.Success
         try:
             logger.info(f"begin to check_sum path: {path}")
@@ -586,15 +673,19 @@ class PDCTools:
             if error_code == PDCErrorCode.Success:
                 logger.info(f"check_sum {path} successfully")
             else:
-                logger.error(f"[Error] [pdc_sdk] check_sum {path} failed, error code: {error_code}")
+                logger.error(
+                    f"[Error] [pdc_sdk] check_sum {path} failed, error code: {error_code}"
+                )
                 self._pdc_backup_failed_directory(path)
         except Exception as e:
-            logger.error(f"[Error] [pdc_sdk] exec cmd {generate_checksum_args} with error: {e}")
+            logger.error(
+                f"[Error] [pdc_sdk] exec cmd {generate_checksum_args} with error: {e}"
+            )
             self._pdc_backup_failed_directory(path)
             return PDCErrorCode.CheckSumCommandFail
         return error_code
 
-    def _clean_tmp_files(self, tmp_files: List[str]):
+    def _clean_tmp_files(self, tmp_files: list[str]):
         """clean tmp files
 
         Args:

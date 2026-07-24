@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2022 PaddlePaddle Authors. All Rights Reserved.
 # Copyright 2022 The HuggingFace Inc. team.
 #
@@ -14,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
- Processing saving/loading class for common processors.
+Processing saving/loading class for common processors.
 """
 
 import bisect
@@ -24,16 +23,16 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any, Optional, TypedDict, Union
+from typing import Annotated, Any, Optional, TypedDict
 
 import numpy as np
 from transformers.processing_utils import (
     AllKwargsForChatTemplate as AllKwargsForChatTemplate_hf,
+    ProcessingKwargs as ProcessingKwargs_hf,
+    ProcessorChatTemplateKwargs,
+    ProcessorMixin as ProcessorMixin_hf,
+    transformers_module,
 )
-from transformers.processing_utils import ProcessingKwargs as ProcessingKwargs_hf
-from transformers.processing_utils import ProcessorChatTemplateKwargs
-from transformers.processing_utils import ProcessorMixin as ProcessorMixin_hf
-from transformers.processing_utils import transformers_module
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from transformers.utils import (
     CHAT_TEMPLATE_FILE,
@@ -72,10 +71,22 @@ class _LazyAutoProcessorMapping(dict):
     """
 
     _MAPPING_NAMES = {
-        "image_processor": ("paddleformers.transformers.auto.image_processing", "AutoImageProcessor"),
-        "video_processor": ("paddleformers.transformers.auto.video_processing", "AutoVideoProcessor"),
-        "feature_extractor": ("paddleformers.transformers.auto.feature_extraction", "AutoFeatureExtractor"),
-        "tokenizer": ("paddleformers.transformers.auto.tokenizer", "AutoTokenizer"),
+        "image_processor": (
+            "paddleformers.transformers.auto.image_processing",
+            "AutoImageProcessor",
+        ),
+        "video_processor": (
+            "paddleformers.transformers.auto.video_processing",
+            "AutoVideoProcessor",
+        ),
+        "feature_extractor": (
+            "paddleformers.transformers.auto.feature_extraction",
+            "AutoFeatureExtractor",
+        ),
+        "tokenizer": (
+            "paddleformers.transformers.auto.tokenizer",
+            "AutoTokenizer",
+        ),
     }
 
     def __getitem__(self, key):
@@ -179,31 +190,40 @@ class VideosKwargs(TypedDict, total=False):
 
     do_convert_rgb: Optional[bool]
     do_resize: Optional[bool]
-    size: Annotated[Optional[Union[int, list[int], tuple[int, ...], dict[str, int]]], image_size_validator()]
+    size: Annotated[
+        Optional[int | list[int] | tuple[int, ...] | dict[str, int]],
+        image_size_validator(),
+    ]
     default_to_square: Optional[bool]
     resample: Annotated[int, resampling_validator()]
     do_rescale: Optional[bool]
     rescale_factor: Optional[float]
     do_normalize: Optional[bool]
-    image_mean: Optional[Union[float, list[float], tuple[float, ...]]]
-    image_std: Optional[Union[float, list[float], tuple[float, ...]]]
+    image_mean: Optional[float | list[float] | tuple[float, ...]]
+    image_std: Optional[float | list[float] | tuple[float, ...]]
     do_center_crop: Optional[bool]
     do_pad: Optional[bool]
-    crop_size: Annotated[Optional[Union[int, list[int], tuple[int, ...], dict[str, int]]], image_size_validator()]
-    data_format: Optional[Union[str, ChannelDimension]]
-    input_data_format: Optional[Union[str, ChannelDimension]]
+    crop_size: Annotated[
+        Optional[int | list[int] | tuple[int, ...] | dict[str, int]],
+        image_size_validator(),
+    ]
+    data_format: Optional[str | ChannelDimension]
+    input_data_format: Optional[str | ChannelDimension]
     device: Annotated[Optional[str], device_validator()]
     do_sample_frames: Optional[bool]
-    video_metadata: Annotated[Optional[VideoMetadataType], video_metadata_validator()]
-    fps: Annotated[Optional[Union[int, float]], positive_any_number()]
+    video_metadata: Annotated[
+        Optional[VideoMetadataType], video_metadata_validator()
+    ]
+    fps: Annotated[Optional[int | float], positive_any_number()]
     num_frames: Annotated[Optional[int], positive_int()]
     return_metadata: Optional[bool]
-    return_tensors: Annotated[Optional[Union[str, TensorType]], tensor_type_validator()]
+    return_tensors: Annotated[
+        Optional[str | TensorType], tensor_type_validator()
+    ]
     video_backend: Optional[str]
 
 
 class ProcessingKwargs(ProcessingKwargs_hf):
-
     videos_kwargs: VideosKwargs = {
         **VideosKwargs.__annotations__,
     }
@@ -236,11 +256,12 @@ class MultiModalData:
     def __getitem__(self, key):
         if hasattr(self, key):
             return getattr(self, key)
-        raise AttributeError(f"{self.__class__.__name__} has no attribute {key}")
+        raise AttributeError(
+            f"{self.__class__.__name__} has no attribute {key}"
+        )
 
 
 class PaddleProcessorMixin:
-
     _auto_class = None
     valid_processor_kwargs = ProcessingKwargs
 
@@ -250,12 +271,19 @@ class PaddleProcessorMixin:
     def __call__(
         self,
         images: Optional[ImageInput] = None,
-        text: Optional[Union[TextInput, PreTokenizedInput, list[TextInput], list[PreTokenizedInput]]] = None,
+        text: Optional[
+            TextInput
+            | PreTokenizedInput
+            | list[TextInput]
+            | list[PreTokenizedInput]
+        ] = None,
         videos: Optional[VideoInput] = None,
         **kwargs: Unpack[ProcessingKwargs],
     ):
         original_output = super().__call__(images, text, videos, **kwargs)
-        return BatchFeature(data=original_output.data, tensor_type=kwargs["return_tensors"])
+        return BatchFeature(
+            data=original_output.data, tensor_type=kwargs["return_tensors"]
+        )
 
     def check_argument_for_proper_class(self, argument_name, argument):
         """
@@ -268,7 +296,11 @@ class PaddleProcessorMixin:
             argument_name = _get_modality_for_attribute(argument_name)
         class_name = MODALITY_TO_BASE_CLASS_MAPPING.get(argument_name)
         if isinstance(class_name, tuple):
-            proper_class = tuple(self.get_possibly_dynamic_module(n) for n in class_name if n is not None)
+            proper_class = tuple(
+                self.get_possibly_dynamic_module(n)
+                for n in class_name
+                if n is not None
+            )
         else:
             proper_class = self.get_possibly_dynamic_module(class_name)
 
@@ -298,7 +330,9 @@ class PaddleProcessorMixin:
 
         if legacy_serialization:
             # Don't save attributes like `tokenizer`, `image processor` etc. in processor config if `legacy=True`
-            attrs_to_save = [x for x in attrs_to_save if x not in self.__class__.attributes]
+            attrs_to_save = [
+                x for x in attrs_to_save if x not in self.__class__.attributes
+            ]
 
         if "tokenizer" in output:
             del output["tokenizer"]
@@ -328,10 +362,13 @@ class PaddleProcessorMixin:
             k: v.to_dict() if isinstance(v, PushToHubMixin) else v
             for k, v in output.items()
             if (
-                k in attrs_to_save  # keep all attributes that have to be serialized
-                and v.__class__.__name__ != "BeamSearchDecoderCTC"  # remove attributes with that are objects
+                k
+                in attrs_to_save  # keep all attributes that have to be serialized
+                and v.__class__.__name__
+                != "BeamSearchDecoderCTC"  # remove attributes with that are objects
                 and (
-                    (legacy_serialization and not isinstance(v, PushToHubMixin)) or not legacy_serialization
+                    (legacy_serialization and not isinstance(v, PushToHubMixin))
+                    or not legacy_serialization
                 )  # remove `PushToHubMixin` objects
             )
         }
@@ -351,7 +388,9 @@ class PaddleProcessorMixin:
 
         return json.dumps(dictionary, indent=2, sort_keys=True) + "\n"
 
-    def to_json_file(self, json_file_path: Union[str, os.PathLike], legacy_serialization=True):
+    def to_json_file(
+        self, json_file_path: str | os.PathLike, legacy_serialization=True
+    ):
         """
         Save this instance to a JSON file.
 
@@ -360,9 +399,17 @@ class PaddleProcessorMixin:
                 Path to the JSON file in which this processor instance's parameters will be saved.
         """
         with open(json_file_path, "w", encoding="utf-8") as writer:
-            writer.write(self.to_json_string(legacy_serialization=legacy_serialization))
+            writer.write(
+                self.to_json_string(legacy_serialization=legacy_serialization)
+            )
 
-    def save_pretrained(self, save_directory, push_to_hub: bool = False, legacy_serialization: bool = True, **kwargs):
+    def save_pretrained(
+        self,
+        save_directory,
+        push_to_hub: bool = False,
+        legacy_serialization: bool = True,
+        **kwargs,
+    ):
         """
         Saves the attributes of this processor (feature extractor, tokenizer...) in the specified directory so that it
         can be reloaded using the [`~ProcessorMixin.from_pretrained`] method.
@@ -385,8 +432,14 @@ class PaddleProcessorMixin:
         os.makedirs(save_directory, exist_ok=True)
 
         if self._auto_class is not None:
-            attrs = [getattr(self, attribute_name) for attribute_name in self.attributes]
-            configs = [(a.init_kwargs if isinstance(a, PreTrainedTokenizerBase) else a) for a in attrs]
+            attrs = [
+                getattr(self, attribute_name)
+                for attribute_name in self.attributes
+            ]
+            configs = [
+                (a.init_kwargs if isinstance(a, PreTrainedTokenizerBase) else a)
+                for a in attrs
+            ]
             configs.append(self)
             custom_object_save(self, save_directory, config=configs)
 
@@ -400,7 +453,9 @@ class PaddleProcessorMixin:
                     attribute._set_processor_class(self.__class__.__name__)
 
                 # Propagate save_jinja_files to tokenizer to ensure we don't get conflicts
-                attribute.save_pretrained(save_directory, save_jinja_files=save_jinja_files)
+                attribute.save_pretrained(
+                    save_directory, save_jinja_files=save_jinja_files
+                )
             elif legacy_serialization:
                 attribute = getattr(self, attribute_name)
                 # Include the processor class in attribute config so this processor can then be reloaded with `AutoProcessor` API.
@@ -418,8 +473,12 @@ class PaddleProcessorMixin:
         # If we save using the predefined names, we can load using `from_pretrained`
         # plus we save chat_template in its own file
         output_processor_file = os.path.join(save_directory, PROCESSOR_NAME)
-        output_chat_template_file_jinja = os.path.join(save_directory, CHAT_TEMPLATE_FILE)
-        output_chat_template_file_legacy = os.path.join(save_directory, LEGACY_PROCESSOR_CHAT_TEMPLATE_FILE)
+        output_chat_template_file_jinja = os.path.join(
+            save_directory, CHAT_TEMPLATE_FILE
+        )
+        output_chat_template_file_legacy = os.path.join(
+            save_directory, LEGACY_PROCESSOR_CHAT_TEMPLATE_FILE
+        )
 
         # Save `chat_template` in its own file. We can't get it from `processor_dict` as we popped it in `to_dict`
         # to avoid serializing chat template in json config file. So let's get it from `self` directly
@@ -427,25 +486,44 @@ class PaddleProcessorMixin:
             is_single_template = isinstance(self.chat_template, str)
             if save_jinja_files and is_single_template:
                 # New format for single templates is to save them as chat_template.jinja
-                with open(output_chat_template_file_jinja, "w", encoding="utf-8") as f:
+                with open(
+                    output_chat_template_file_jinja, "w", encoding="utf-8"
+                ) as f:
                     f.write(self.chat_template)
-                logger.info(f"chat template saved in {output_chat_template_file_jinja}")
+                logger.info(
+                    f"chat template saved in {output_chat_template_file_jinja}"
+                )
             elif save_jinja_files and not is_single_template:
                 # New format for multiple templates is to save the default as chat_template.jinja
                 # and the other templates in the chat_templates/ directory
                 for template_name, template in self.chat_template.items():
                     if template_name == "default":
-                        with open(output_chat_template_file_jinja, "w", encoding="utf-8") as f:
+                        with open(
+                            output_chat_template_file_jinja,
+                            "w",
+                            encoding="utf-8",
+                        ) as f:
                             f.write(self.chat_template["default"])
-                        logger.info(f"chat template saved in {output_chat_template_file_jinja}")
+                        logger.info(
+                            f"chat template saved in {output_chat_template_file_jinja}"
+                        )
             elif is_single_template:
                 # Legacy format for single templates: Put them in chat_template.json
                 chat_template_json_string = (
-                    json.dumps({"chat_template": self.chat_template}, indent=2, sort_keys=True) + "\n"
+                    json.dumps(
+                        {"chat_template": self.chat_template},
+                        indent=2,
+                        sort_keys=True,
+                    )
+                    + "\n"
                 )
-                with open(output_chat_template_file_legacy, "w", encoding="utf-8") as writer:
+                with open(
+                    output_chat_template_file_legacy, "w", encoding="utf-8"
+                ) as writer:
                     writer.write(chat_template_json_string)
-                logger.info(f"chat template saved in {output_chat_template_file_legacy}")
+                logger.info(
+                    f"chat template saved in {output_chat_template_file_legacy}"
+                )
             elif self.chat_template is not None:
                 # At this point we have multiple templates in the legacy format, which is not supported
                 # chat template dicts are saved to chat_template.json as lists of dicts with fixed key names.
@@ -477,7 +555,7 @@ class PaddleProcessorMixin:
 
     @classmethod
     def get_processor_dict(
-        cls, pretrained_model_name_or_path: Union[str, os.PathLike], **kwargs
+        cls, pretrained_model_name_or_path: str | os.PathLike, **kwargs
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """
         From a `pretrained_model_name_or_path`, resolve to a dictionary of parameters, to be used for instantiating a
@@ -505,7 +583,9 @@ class PaddleProcessorMixin:
         pretrained_model_name_or_path = str(pretrained_model_name_or_path)
         is_local = os.path.isdir(pretrained_model_name_or_path)
         if os.path.isdir(pretrained_model_name_or_path):
-            processor_file = os.path.join(pretrained_model_name_or_path, PROCESSOR_NAME)
+            processor_file = os.path.join(
+                pretrained_model_name_or_path, PROCESSOR_NAME
+            )
 
         resolved_additional_chat_template_files = {}
         if os.path.isfile(pretrained_model_name_or_path):
@@ -551,9 +631,13 @@ class PaddleProcessorMixin:
                 )
 
             except Exception:
-                hf_link = f"https://huggingface.co/{pretrained_model_name_or_path}"
+                hf_link = (
+                    f"https://huggingface.co/{pretrained_model_name_or_path}"
+                )
                 modelscope_link = f"https://modelscope.cn/models/{pretrained_model_name_or_path}"
-                encoded_model_name = pretrained_model_name_or_path.replace("/", "%2F")
+                encoded_model_name = pretrained_model_name_or_path.replace(
+                    "/", "%2F"
+                )
                 aistudio_link = f"https://aistudio.baidu.com/modelsoverview?sortBy=weight&q={encoded_model_name}"
 
                 raise ValueError(
@@ -576,7 +660,9 @@ class PaddleProcessorMixin:
             # This is the legacy path
             with open(resolved_chat_template_file, encoding="utf-8") as reader:
                 chat_template_json = json.loads(reader.read())
-                chat_templates = {"default": chat_template_json["chat_template"]}
+                chat_templates = {
+                    "default": chat_template_json["chat_template"]
+                }
                 if resolved_additional_chat_template_files:
                     raise ValueError(
                         "Cannot load chat template due to conflicting files - this checkpoint combines "
@@ -590,10 +676,18 @@ class PaddleProcessorMixin:
                 for template_name, template_file in resolved_additional_chat_template_files.items()
             }
             if resolved_raw_chat_template_file is not None:
-                with open(resolved_raw_chat_template_file, "r", encoding="utf-8") as reader:
+                with open(
+                    resolved_raw_chat_template_file, "r", encoding="utf-8"
+                ) as reader:
                     chat_templates["default"] = reader.read()
-        if isinstance(chat_templates, dict) and "default" in chat_templates and len(chat_templates) == 1:
-            chat_templates = chat_templates["default"]  # Flatten when we just have a single template/file
+        if (
+            isinstance(chat_templates, dict)
+            and "default" in chat_templates
+            and len(chat_templates) == 1
+        ):
+            chat_templates = chat_templates[
+                "default"
+            ]  # Flatten when we just have a single template/file
 
         if chat_templates:
             kwargs["chat_template"] = chat_templates
@@ -620,9 +714,14 @@ class PaddleProcessorMixin:
         if is_local:
             logger.info(f"loading configuration file {resolved_processor_file}")
         else:
-            logger.info(f"loading configuration file {processor_file} from cache at {resolved_processor_file}")
+            logger.info(
+                f"loading configuration file {processor_file} from cache at {resolved_processor_file}"
+            )
 
-        if "chat_template" in processor_dict and processor_dict["chat_template"] is not None:
+        if (
+            "chat_template" in processor_dict
+            and processor_dict["chat_template"] is not None
+        ):
             logger.warning_once(
                 "Chat templates should be in a 'chat_template.jinja' file but found key='chat_template' "
                 "in the processor's config. Make sure to move your template to its own file."
@@ -662,11 +761,14 @@ class PaddleProcessorMixin:
         processor_dict.update(kwargs)
 
         # check if there is an overlap between args and processor_dict
-        accepted_args_and_kwargs = cls.__init__.__code__.co_varnames[: cls.__init__.__code__.co_argcount][1:]
+        accepted_args_and_kwargs = cls.__init__.__code__.co_varnames[
+            : cls.__init__.__code__.co_argcount
+        ][1:]
 
         # validate both processor_dict and given kwargs
         unused_kwargs, valid_kwargs = cls.validate_init_kwargs(
-            processor_config=processor_dict, valid_kwargs=accepted_args_and_kwargs
+            processor_config=processor_dict,
+            valid_kwargs=accepted_args_and_kwargs,
         )
 
         # update args that are already in processor_dict to avoid duplicate arguments
@@ -689,12 +791,18 @@ class PaddleProcessorMixin:
     @classmethod
     def from_pretrained(
         cls,
-        pretrained_model_name_or_path: Union[str, os.PathLike],
+        pretrained_model_name_or_path: str | os.PathLike,
         **kwargs,
     ):
-        processor_dict, instantiation_kwargs = cls.get_processor_dict(pretrained_model_name_or_path, **kwargs)
-        args = cls._get_arguments_from_pretrained(pretrained_model_name_or_path, processor_dict, **kwargs)
-        return cls.from_args_and_dict(args, processor_dict, **instantiation_kwargs)
+        processor_dict, instantiation_kwargs = cls.get_processor_dict(
+            pretrained_model_name_or_path, **kwargs
+        )
+        args = cls._get_arguments_from_pretrained(
+            pretrained_model_name_or_path, processor_dict, **kwargs
+        )
+        return cls.from_args_and_dict(
+            args, processor_dict, **instantiation_kwargs
+        )
 
     @classmethod
     def get_attributes(cls):
@@ -702,20 +810,30 @@ class PaddleProcessorMixin:
         attributes = []
         for sub_processor_type in args_in_init:
             # don't treat audio_tokenizer as an attribute
-            if any(modality in sub_processor_type for modality in MODALITY_TO_AUTOPROCESSOR_MAPPING.keys()):
+            if any(
+                modality in sub_processor_type
+                for modality in MODALITY_TO_AUTOPROCESSOR_MAPPING.keys()
+            ):
                 attributes.append(sub_processor_type)
 
         if not attributes:
             for attribute_name, _ in cls.__dict__.items():
                 inferred_attribute = attribute_name[: -len("_class")]
-                if any(modality in inferred_attribute for modality in MODALITY_TO_AUTOPROCESSOR_MAPPING.keys()):
+                if any(
+                    modality in inferred_attribute
+                    for modality in MODALITY_TO_AUTOPROCESSOR_MAPPING.keys()
+                ):
                     attributes.append(inferred_attribute)
 
         return attributes
 
     @classmethod
     def _load_tokenizer_from_pretrained(
-        cls, sub_processor_type, pretrained_model_name_or_path, subfolder="", **kwargs
+        cls,
+        sub_processor_type,
+        pretrained_model_name_or_path,
+        subfolder="",
+        **kwargs,
     ):
         auto_processor_class = MODALITY_TO_AUTOPROCESSOR_MAPPING["tokenizer"]
         is_primary = sub_processor_type == "tokenizer"
@@ -727,14 +845,22 @@ class PaddleProcessorMixin:
             )
         else:
             # Additional tokenizer: load from subfolder (e.g., "decoder_tokenizer")
-            tokenizer_subfolder = os.path.join(subfolder, sub_processor_type) if subfolder else sub_processor_type
+            tokenizer_subfolder = (
+                os.path.join(subfolder, sub_processor_type)
+                if subfolder
+                else sub_processor_type
+            )
             tokenizer = auto_processor_class.from_pretrained(
-                pretrained_model_name_or_path, subfolder=tokenizer_subfolder, **kwargs
+                pretrained_model_name_or_path,
+                subfolder=tokenizer_subfolder,
+                **kwargs,
             )
         return tokenizer
 
     @classmethod
-    def _get_arguments_from_pretrained(cls, pretrained_model_name_or_path, processor_dict=None, **kwargs):
+    def _get_arguments_from_pretrained(
+        cls, pretrained_model_name_or_path, processor_dict=None, **kwargs
+    ):
         """
         Identify and instantiate the subcomponents of Processor classes, such as image processors, tokenizers,
         and feature extractors. This method inspects the processor's `__init__` signature to identify parameters
@@ -769,12 +895,17 @@ class PaddleProcessorMixin:
             ):  # This is only necessary for the checkpoing in test_procesing_mistral3.py which has no config.json and
                 # the tokenizer_config.json references LlamaTokenizerFast. TODO: update the config on the hub.
                 tokenizer = cls._load_tokenizer_from_pretrained(
-                    sub_processor_type, pretrained_model_name_or_path, subfolder=subfolder, **kwargs
+                    sub_processor_type,
+                    pretrained_model_name_or_path,
+                    subfolder=subfolder,
+                    **kwargs,
                 )
                 args.append(tokenizer)
             elif is_primary:
                 # Primary non-tokenizer sub-processor: load via Auto class
-                auto_processor_class = MODALITY_TO_AUTOPROCESSOR_MAPPING[sub_processor_type]
+                auto_processor_class = MODALITY_TO_AUTOPROCESSOR_MAPPING[
+                    sub_processor_type
+                ]
                 sub_processor = auto_processor_class.from_pretrained(
                     pretrained_model_name_or_path, subfolder=subfolder, **kwargs
                 )
@@ -793,7 +924,9 @@ class PaddleProcessorMixin:
                             f"Cannot instantiate {sub_processor_type}: missing '{type_key}' in config. "
                             f"Config keys: {list(sub_processor_config.keys())}"
                         )
-                    processor_class = cls.get_possibly_dynamic_module(class_name)
+                    processor_class = cls.get_possibly_dynamic_module(
+                        class_name
+                    )
                     sub_processor = processor_class(**sub_processor_config)
                     args.append(sub_processor)
                 else:
@@ -823,11 +956,19 @@ class PaddleProcessorMixin:
             for custom_class in lookup_location._extra_content.values():
                 if isinstance(custom_class, tuple):
                     for custom_subclass in custom_class:
-                        if custom_subclass is not None and custom_subclass.__name__ == module_name:
+                        if (
+                            custom_subclass is not None
+                            and custom_subclass.__name__ == module_name
+                        ):
                             return custom_subclass
-                elif custom_class is not None and custom_class.__name__ == module_name:
+                elif (
+                    custom_class is not None
+                    and custom_class.__name__ == module_name
+                ):
                     return custom_class
-        raise ValueError(f"Could not find module {module_name} in `paddleformers`.")
+        raise ValueError(
+            f"Could not find module {module_name} in `paddleformers`."
+        )
 
     def batch_decode(self, *args, **kwargs):
         """
@@ -835,7 +976,9 @@ class PaddleProcessorMixin:
         refer to the docstring of this method for more information.
         """
         if not hasattr(self, "tokenizer"):
-            raise ValueError(f"Cannot batch decode text: {self.__class__.__name__} has no tokenizer.")
+            raise ValueError(
+                f"Cannot batch decode text: {self.__class__.__name__} has no tokenizer."
+            )
         return self.tokenizer.batch_decode(*args, **kwargs)
 
     def decode(self, *args, **kwargs):
@@ -844,7 +987,9 @@ class PaddleProcessorMixin:
         the docstring of this method for more information.
         """
         if not hasattr(self, "tokenizer"):
-            raise ValueError(f"Cannot decode text: {self.__class__.__name__} has no tokenizer.")
+            raise ValueError(
+                f"Cannot decode text: {self.__class__.__name__} has no tokenizer."
+            )
         return self.tokenizer.decode(*args, **kwargs)
 
     @property
@@ -852,13 +997,13 @@ class PaddleProcessorMixin:
         model_input_names = []
         for attribute_name in self.attributes:
             attribute = getattr(self, attribute_name, None)
-            attr_input_names = getattr(attribute, "model_input_names")
+            attr_input_names = attribute.model_input_names
             model_input_names.extend(attr_input_names)
         return model_input_names
 
     def apply_chat_template(
         self,
-        conversation: Union[list[dict[str, str]], list[list[dict[str, str]]]],
+        conversation: list[dict[str, str]] | list[list[dict[str, str]]],
         chat_template: Optional[str] = None,
         **kwargs: Unpack[AllKwargsForChatTemplate],
     ) -> str:
@@ -888,7 +1033,10 @@ class PaddleProcessorMixin:
                 chat template is used.
         """
         if chat_template is None:
-            if isinstance(self.chat_template, dict) and "default" in self.chat_template:
+            if (
+                isinstance(self.chat_template, dict)
+                and "default" in self.chat_template
+            ):
                 chat_template = self.chat_template["default"]
             elif isinstance(self.chat_template, dict):
                 raise ValueError(
@@ -903,7 +1051,10 @@ class PaddleProcessorMixin:
                     "Cannot use apply_chat_template because this processor does not have a chat template."
                 )
         else:
-            if isinstance(self.chat_template, dict) and chat_template in self.chat_template:
+            if (
+                isinstance(self.chat_template, dict)
+                and chat_template in self.chat_template
+            ):
                 # It's the name of a template, not a full template string
                 chat_template = self.chat_template[chat_template]
             else:
@@ -917,7 +1068,9 @@ class PaddleProcessorMixin:
                 is_tokenizers_fast = self.tokenizer.backend == "tokenizers"
             else:
                 # Fallback to class name check
-                is_tokenizers_fast = self.tokenizer.__class__.__name__.endswith("Fast")
+                is_tokenizers_fast = self.tokenizer.__class__.__name__.endswith(
+                    "Fast"
+                )
 
         if kwargs.get("continue_final_message", False):
             if kwargs.get("add_generation_prompt", False):
@@ -925,7 +1078,9 @@ class PaddleProcessorMixin:
                     "continue_final_message and add_generation_prompt are not compatible. Use continue_final_message when you want the model to continue the final message, and add_generation_prompt when you want to add a header that will prompt it to start a new assistant message instead."
                 )
             if kwargs.get("return_assistant_tokens_mask", False):
-                raise ValueError("continue_final_message is not compatible with return_assistant_tokens_mask.")
+                raise ValueError(
+                    "continue_final_message is not compatible with return_assistant_tokens_mask."
+                )
 
         if kwargs.get("return_assistant_tokens_mask", False):
             if not is_tokenizers_fast:
@@ -934,13 +1089,19 @@ class PaddleProcessorMixin:
                     "If the error persists, open an issue to support a Fast tokenizer for your model."
                 )
             else:
-                kwargs["return_offsets_mapping"] = True  # force offset mapping so we can infer token boundaries
+                kwargs["return_offsets_mapping"] = (
+                    True  # force offset mapping so we can infer token boundaries
+                )
 
         # Fill sets of kwargs that should be used by jinja template, filtering out kwargs used in `processor.__call__`
         # NOTE: we don't only filter but also set the default values here. Without default values, we can remove it
         template_kwargs = {}
-        for key in AllKwargsForChatTemplate.__annotations__["template_kwargs"].__annotations__:
-            kwarg_type_defaults = AllKwargsForChatTemplate.__annotations__["template_kwargs"]
+        for key in AllKwargsForChatTemplate.__annotations__[
+            "template_kwargs"
+        ].__annotations__:
+            kwarg_type_defaults = AllKwargsForChatTemplate.__annotations__[
+                "template_kwargs"
+            ]
             default_value = getattr(kwarg_type_defaults, key, None)
             value = kwargs.pop(key, default_value)
             if value is not None and not isinstance(value, dict):
@@ -950,7 +1111,8 @@ class PaddleProcessorMixin:
         template_kwargs.update(kwargs)
 
         if isinstance(conversation, (list, tuple)) and (
-            isinstance(conversation[0], (list, tuple)) or hasattr(conversation[0], "content")
+            isinstance(conversation[0], (list, tuple))
+            or hasattr(conversation[0], "content")
         ):
             is_batched = True
             conversations = conversation
@@ -966,7 +1128,11 @@ class PaddleProcessorMixin:
             for conversation in conversations:
                 images, videos = [], []
                 for message in conversation:
-                    visuals = [content for content in message["content"] if content["type"] in ["image", "video"]]
+                    visuals = [
+                        content
+                        for content in message["content"]
+                        if content["type"] in ["image", "video"]
+                    ]
                     image_fnames = [
                         vision_info[key]
                         for vision_info in visuals
@@ -1005,18 +1171,28 @@ class PaddleProcessorMixin:
             # special tokens in the template (consistent with tokenizers). We dont want to raise warning, it will flood command line
             # without actionable solution for users
             single_prompt = prompt[0] if is_batched else prompt
-            if self.tokenizer.bos_token is not None and single_prompt.startswith(self.tokenizer.bos_token):
+            if (
+                self.tokenizer.bos_token is not None
+                and single_prompt.startswith(self.tokenizer.bos_token)
+            ):
                 kwargs["add_special_tokens"] = False
 
             # Always sample frames by default unless explicitly set to `False` by users. If users do not pass `num_frames`/`fps`
             # sampling should not done for BC.
             if "do_sample_frames" not in kwargs and (
-                kwargs.get("fps") is not None or kwargs.get("num_frames") is not None
+                kwargs.get("fps") is not None
+                or kwargs.get("num_frames") is not None
             ):
                 kwargs["do_sample_frames"] = True
 
-            images_exist = any((im is not None) for im_list in batch_images for im in im_list)
-            videos_exist = any((vid is not None) for vid_list in batch_videos for vid in vid_list)
+            images_exist = any(
+                (im is not None) for im_list in batch_images for im in im_list
+            )
+            videos_exist = any(
+                (vid is not None)
+                for vid_list in batch_videos
+                for vid in vid_list
+            )
             out = self(
                 text=prompt,
                 images=batch_images if images_exist else None,
@@ -1033,21 +1209,35 @@ class PaddleProcessorMixin:
                         current_mask = [0] * len(input_ids[i])
                         offsets = offset_mapping[i]
                         offset_starts = [start for start, end in offsets]
-                        for assistant_start_char, assistant_end_char in generation_indices[i]:
-                            start_pos = bisect.bisect_left(offset_starts, assistant_start_char)
-                            end_pos = bisect.bisect_left(offset_starts, assistant_end_char)
+                        for (
+                            assistant_start_char,
+                            assistant_end_char,
+                        ) in generation_indices[i]:
+                            start_pos = bisect.bisect_left(
+                                offset_starts, assistant_start_char
+                            )
+                            end_pos = bisect.bisect_left(
+                                offset_starts, assistant_end_char
+                            )
 
                             if not (
                                 start_pos >= 0
-                                and offsets[start_pos][0] <= assistant_start_char < offsets[start_pos][1]
+                                and offsets[start_pos][0]
+                                <= assistant_start_char
+                                < offsets[start_pos][1]
                             ):
                                 # start_token is out of bounds maybe due to truncation.
                                 continue
-                            for token_id in range(start_pos, end_pos if end_pos else len(input_ids[i])):
+                            for token_id in range(
+                                start_pos,
+                                end_pos if end_pos else len(input_ids[i]),
+                            ):
                                 current_mask[token_id] = 1
                         assistant_masks.append(current_mask)
                     out["assistant_masks"] = assistant_masks
-                    out.convert_to_tensors(tensor_type=kwargs.get("return_tensors"))
+                    out.convert_to_tensors(
+                        tensor_type=kwargs.get("return_tensors")
+                    )
                 return out
             else:
                 return out["input_ids"]
@@ -1055,7 +1245,11 @@ class PaddleProcessorMixin:
 
 
 def warp_processormixin(hf_processormixin_class: ProcessorMixin_hf):
-    return type(hf_processormixin_class.__name__, (PaddleProcessorMixin, hf_processormixin_class), {})
+    return type(
+        hf_processormixin_class.__name__,
+        (PaddleProcessorMixin, hf_processormixin_class),
+        {},
+    )
 
 
 class ProcessorMixin(PaddleProcessorMixin, ProcessorMixin_hf):

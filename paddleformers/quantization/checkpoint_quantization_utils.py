@@ -73,12 +73,16 @@ def group_wise_quant_dequant(
     shape = inputs.shape
 
     if quant:
-        inputs_processed = inputs.reshape([shape[0] // group_size, group_size, shape[1]])
+        inputs_processed = inputs.reshape(
+            [shape[0] // group_size, group_size, shape[1]]
+        )
         if symmetry:
             bnt = (1 << (quant_bits - 1)) - 1
             scales = np.max(np.abs(inputs_processed), axis=1)
             new_scales = np.repeat(scales, repeats=group_size, axis=0)
-            quant_tensor = np.clip(np.round(inputs / new_scales * bnt), -bnt - 1, bnt)
+            quant_tensor = np.clip(
+                np.round(inputs / new_scales * bnt), -bnt - 1, bnt
+            )
             return quant_tensor.astype("int8"), scales
 
         # scales: [shape[0] // group_size, shape[1]]
@@ -89,7 +93,9 @@ def group_wise_quant_dequant(
         new_scales = np.repeat(scales, repeats=group_size, axis=0)
         new_mins = np.repeat(mins, repeats=group_size, axis=0)
         # add eps to avoid devide zero
-        quant_tensor = np.clip(np.round((inputs - new_mins) / (new_scales) * qmax), qmin, qmax)
+        quant_tensor = np.clip(
+            np.round((inputs - new_mins) / (new_scales) * qmax), qmin, qmax
+        )
         quant_tensor = np.nan_to_num(quant_tensor)
         return quant_tensor.astype("uint8"), mins, maxs
     else:
@@ -103,12 +109,19 @@ def group_wise_quant_dequant(
 
             if tp_rank == -1:
                 dequant_tensor = inputs.astype("float32") * new_scales / bnt
-            elif len(new_scales.shape) == 0 or inputs.shape[-1] == new_scales.shape[-1]:
+            elif (
+                len(new_scales.shape) == 0
+                or inputs.shape[-1] == new_scales.shape[-1]
+            ):
                 # input tensor was row parallel in tp.
                 dequant_tensor = (
                     inputs.astype("float32")
                     * new_scales[
-                        tp_rank * new_scales.shape[0] // tp_degree : (tp_rank + 1) * new_scales.shape[0] // tp_degree
+                        tp_rank * new_scales.shape[0] // tp_degree : (
+                            tp_rank + 1
+                        )
+                        * new_scales.shape[0]
+                        // tp_degree
                     ]
                     / bnt
                 )
@@ -118,9 +131,9 @@ def group_wise_quant_dequant(
                     inputs.astype("float32")
                     * new_scales[
                         :,
-                        tp_rank
-                        * new_scales.shape[-1]
-                        // tp_degree : (tp_rank + 1)
+                        tp_rank * new_scales.shape[-1] // tp_degree : (
+                            tp_rank + 1
+                        )
                         * new_scales.shape[-1]
                         // tp_degree,
                     ]
@@ -137,26 +150,43 @@ def group_wise_quant_dequant(
             new_mins = np.repeat(mins, repeats=group_size, axis=0)
 
         if tp_rank == -1:
-            dequant_tensor = (inputs.astype("float32") / qmax * new_scales) + new_mins
-        elif len(new_scales.shape) == 0 or inputs.shape[-1] == new_scales.shape[-1]:
+            dequant_tensor = (
+                inputs.astype("float32") / qmax * new_scales
+            ) + new_mins
+        elif (
+            len(new_scales.shape) == 0
+            or inputs.shape[-1] == new_scales.shape[-1]
+        ):
             # input tensor was row parallel in tp.
             dequant_tensor = (
                 inputs.astype("float32")
                 / qmax
                 * new_scales[
-                    tp_rank * new_scales.shape[0] // tp_degree : (tp_rank + 1) * new_scales.shape[0] // tp_degree
+                    tp_rank * new_scales.shape[0] // tp_degree : (tp_rank + 1)
+                    * new_scales.shape[0]
+                    // tp_degree
                 ]
-            ) + new_mins[tp_rank * new_mins.shape[0] // tp_degree : (tp_rank + 1) * new_mins.shape[0] // tp_degree]
+            ) + new_mins[
+                tp_rank * new_mins.shape[0] // tp_degree : (tp_rank + 1)
+                * new_mins.shape[0]
+                // tp_degree
+            ]
         else:
             # input tensor was column parallel in tp.
             dequant_tensor = (
                 inputs.astype("float32")
                 / qmax
                 * new_scales[
-                    :, tp_rank * new_scales.shape[-1] // tp_degree : (tp_rank + 1) * new_scales.shape[-1] // tp_degree
+                    :,
+                    tp_rank * new_scales.shape[-1] // tp_degree : (tp_rank + 1)
+                    * new_scales.shape[-1]
+                    // tp_degree,
                 ]
             ) + new_mins[
-                :, tp_rank * new_mins.shape[-1] // tp_degree : (tp_rank + 1) * new_mins.shape[-1] // tp_degree
+                :,
+                tp_rank * new_mins.shape[-1] // tp_degree : (tp_rank + 1)
+                * new_mins.shape[-1]
+                // tp_degree,
             ]
         return dequant_tensor
 
@@ -204,20 +234,34 @@ def cal_abs_min_max_channel(inputs, quant_axis=1):
             dimension where calculating inputs' abs min and max scales on.
     """
     eps = 1e-8
-    reduce_axis = tuple([i for i in range(len(inputs.shape)) if i != quant_axis])
+    reduce_axis = tuple(
+        [i for i in range(len(inputs.shape)) if i != quant_axis]
+    )
     abs_max_values = np.max(inputs, axis=reduce_axis)
     abs_min_values = np.min(inputs, axis=reduce_axis)
     abs_max_values = np.where(
-        abs_max_values == np.array(0, dtype=inputs.dtype), np.array(eps, dtype=inputs.dtype), abs_max_values
+        abs_max_values == np.array(0, dtype=inputs.dtype),
+        np.array(eps, dtype=inputs.dtype),
+        abs_max_values,
     )
     abs_min_values = np.where(
-        abs_min_values == np.array(0, dtype=inputs.dtype), np.array(eps, dtype=inputs.dtype), abs_min_values
+        abs_min_values == np.array(0, dtype=inputs.dtype),
+        np.array(eps, dtype=inputs.dtype),
+        abs_min_values,
     )
     return abs_max_values, abs_min_values
 
 
 def asymmetry_qdq_weight(
-    x, quant_bit=8, quant_axis=-1, mins=None, maxs=None, dequant=False, tp_rank=-1, tp_degree=1, use_pd=False
+    x,
+    quant_bit=8,
+    quant_axis=-1,
+    mins=None,
+    maxs=None,
+    dequant=False,
+    tp_rank=-1,
+    tp_degree=1,
+    use_pd=False,
 ):
     """
     channel-wise asymmetry quantization
@@ -262,22 +306,40 @@ def asymmetry_qdq_weight(
                 qdq_x = (
                     quant_x
                     / bnt
-                    * scales[tp_rank * scales.shape[0] // tp_degree : (tp_rank + 1) * scales.shape[0] // tp_degree]
-                ) + mins[tp_rank * mins.shape[0] // tp_degree : (tp_rank + 1) * mins.shape[0] // tp_degree]
+                    * scales[
+                        tp_rank * scales.shape[0] // tp_degree : (tp_rank + 1)
+                        * scales.shape[0]
+                        // tp_degree
+                    ]
+                ) + mins[
+                    tp_rank * mins.shape[0] // tp_degree : (tp_rank + 1)
+                    * mins.shape[0]
+                    // tp_degree
+                ]
             return qdq_x.astype(np.float32), scales
         else:
             if len(scales.shape) == 0 or quant_x.shape[-1] == scales.shape[-1]:
                 # input tensor was row parallel in tp.
-                qdq_x = (quant_x / bnt * scales.unsqueeze(0).expand(quant_x.shape)) + mins
+                qdq_x = (
+                    quant_x / bnt * scales.unsqueeze(0).expand(quant_x.shape)
+                ) + mins
             else:
                 # input tensor was column parallel in tp.
                 qdq_x = (
                     quant_x
                     / bnt
-                    * scales[tp_rank * scales.shape[0] // tp_degree : (tp_rank + 1) * scales.shape[0] // tp_degree]
+                    * scales[
+                        tp_rank * scales.shape[0] // tp_degree : (tp_rank + 1)
+                        * scales.shape[0]
+                        // tp_degree
+                    ]
                     .unsqueeze(0)
                     .expand(quant_x.shape)
-                ) + mins[tp_rank * mins.shape[0] // tp_degree : (tp_rank + 1) * mins.shape[0] // tp_degree]
+                ) + mins[
+                    tp_rank * mins.shape[0] // tp_degree : (tp_rank + 1)
+                    * mins.shape[0]
+                    // tp_degree
+                ]
             return qdq_x.astype(paddle.float32), scales
 
 
@@ -291,18 +353,31 @@ def cal_abs_max_channel(inputs, quant_axis=1):
             dimension where calculating inputs' abs max scales on.
     """
     epsilon = 1e-8
-    reduce_axis = tuple([i for i in range(len(inputs.shape)) if i != quant_axis])
+    reduce_axis = tuple(
+        [i for i in range(len(inputs.shape)) if i != quant_axis]
+    )
     abs_max_values = np.max(np.abs(inputs), axis=reduce_axis)
     # maybe all elements are zero in one group,
     # so set the scales from those group to an actual number
     # from divide 0.
     abs_max_values = np.where(
-        abs_max_values == np.array(0, dtype=inputs.dtype), np.array(epsilon, dtype=inputs.dtype), abs_max_values
+        abs_max_values == np.array(0, dtype=inputs.dtype),
+        np.array(epsilon, dtype=inputs.dtype),
+        abs_max_values,
     )
     return abs_max_values
 
 
-def qdq_weight(x, quant_bit=8, quant_axis=-1, scales=None, dequant=False, tp_rank=-1, tp_degree=1, use_pd=False):
+def qdq_weight(
+    x,
+    quant_bit=8,
+    quant_axis=-1,
+    scales=None,
+    dequant=False,
+    tp_rank=-1,
+    tp_degree=1,
+    use_pd=False,
+):
     """
     channel-wise symmetry quantization
     Args:
@@ -343,20 +418,30 @@ def qdq_weight(x, quant_bit=8, quant_axis=-1, scales=None, dequant=False, tp_ran
                 qdq_x = (
                     quant_x
                     / bnt
-                    * scales[tp_rank * scales.shape[0] // tp_degree : (tp_rank + 1) * scales.shape[0] // tp_degree]
+                    * scales[
+                        tp_rank * scales.shape[0] // tp_degree : (tp_rank + 1)
+                        * scales.shape[0]
+                        // tp_degree
+                    ]
                 )
             # fp32 , int8, int, fp32 or fp64
             return qdq_x.astype(np.float32), scales
         else:
             if len(scales.shape) == 0 or quant_x.shape[-1] == scales.shape[-1]:
                 # input tensor was row parallel in tp.
-                qdq_x = quant_x / bnt * scales.unsqueeze(0).expand(quant_x.shape)
+                qdq_x = (
+                    quant_x / bnt * scales.unsqueeze(0).expand(quant_x.shape)
+                )
             else:
                 # input tensor was column parallel in tp.
                 qdq_x = (
                     quant_x
                     / bnt
-                    * scales[tp_rank * scales.shape[0] // tp_degree : (tp_rank + 1) * scales.shape[0] // tp_degree]
+                    * scales[
+                        tp_rank * scales.shape[0] // tp_degree : (tp_rank + 1)
+                        * scales.shape[0]
+                        // tp_degree
+                    ]
                     .unsqueeze(0)
                     .expand(quant_x.shape)
                 )

@@ -50,10 +50,18 @@ class TestBaseGroundingPlugin(unittest.TestCase):
             "bbox": [[10, 20, 30, 40], [50, 60, 70, 80]],
         }
         result = self.plugin.process_messages(messages, objects)
-        self.assertIn("<|object_ref_start|>cat<|object_ref_end|>", result[0]["content"])
-        self.assertIn("<|box_start|>(10,20),(30,40)<|box_end|>", result[0]["content"])
-        self.assertIn("<|object_ref_start|>dog<|object_ref_end|>", result[1]["content"])
-        self.assertIn("<|box_start|>(50,60),(70,80)<|box_end|>", result[1]["content"])
+        self.assertIn(
+            "<|object_ref_start|>cat<|object_ref_end|>", result[0]["content"]
+        )
+        self.assertIn(
+            "<|box_start|>(10,20),(30,40)<|box_end|>", result[0]["content"]
+        )
+        self.assertIn(
+            "<|object_ref_start|>dog<|object_ref_end|>", result[1]["content"]
+        )
+        self.assertIn(
+            "<|box_start|>(50,60),(70,80)<|box_end|>", result[1]["content"]
+        )
 
     def test_process_messages_no_placeholders(self):
         messages = [{"content": "No objects here"}]

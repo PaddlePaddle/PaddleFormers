@@ -18,7 +18,9 @@ def divide_positions(m, n):
     if n == 0:
         raise ValueError("n should be greater than zero")
     if m < n:
-        raise ValueError("tensor number should be greater than or equal to processor number")
+        raise ValueError(
+            "tensor number should be greater than or equal to processor number"
+        )
     base_value = m // n
     remainder = m % n
     positions = [0]
@@ -37,7 +39,10 @@ def divide_lora_key_list(key_list, n, lora_config):
     other_key = []
     for module_name in key_list:
         if (
-            any(re.fullmatch(target_module, module_name) for target_module in lora_config.target_modules)
+            any(
+                re.fullmatch(target_module, module_name)
+                for target_module in lora_config.target_modules
+            )
             and "weight" in module_name
         ):
             lora_key.append(module_name)

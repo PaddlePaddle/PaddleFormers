@@ -35,7 +35,9 @@ class DataArguments:
     )
     split: str = field(
         default="950,50",
-        metadata={"help": "Train/Eval data split ratio (only valid in offline pretrain dataset)"},
+        metadata={
+            "help": "Train/Eval data split ratio (only valid in offline pretrain dataset)"
+        },
     )
     train_dataset_type: str = field(
         default=None,
@@ -58,7 +60,9 @@ class DataArguments:
         Multi-source dataset is supported, e.g., 0.8,0.2."
         },
     )
-    eval_dataset_type: str = field(default="erniekit", metadata={"help": "type of eval datasets."})
+    eval_dataset_type: str = field(
+        default="erniekit", metadata={"help": "type of eval datasets."}
+    )
     eval_dataset_path: str = field(
         default="examples/data/sft-eval.jsonl",
         metadata={"help": "path of eval datasets."},
@@ -77,7 +81,9 @@ class DataArguments:
     )
     random_shuffle: bool = field(
         default=True,
-        metadata={"help": "Whether to enable authorize code for privatization. Defaults to False."},
+        metadata={
+            "help": "Whether to enable authorize code for privatization. Defaults to False."
+        },
     )
     num_samples_each_epoch: int = field(
         default=6000000,
@@ -109,7 +115,9 @@ class DataArguments:
     )
     encode_one_turn: bool = field(
         default=True,
-        metadata={"help": "Whether encode each round independently in a multi-round dialogue."},
+        metadata={
+            "help": "Whether encode each round independently in a multi-round dialogue."
+        },
     )
     use_template: bool = field(
         default=True,
@@ -121,35 +129,53 @@ class DataArguments:
     )
     split_multi_turn: bool = field(
         default=False,
-        metadata={"help": "Whether to split multi-round dialogues into multiple pieces of data for training"},
+        metadata={
+            "help": "Whether to split multi-round dialogues into multiple pieces of data for training"
+        },
     )
     template_backend: str = field(
         default="custom",
-        metadata={"help": "jinja means using apply_chat_template, custom means using a custom template"},
+        metadata={
+            "help": "jinja means using apply_chat_template, custom means using a custom template"
+        },
     )
-    eval_with_do_generation: bool = field(default=False, metadata={"help": "Whether to do generation for evaluation"})
+    eval_with_do_generation: bool = field(
+        default=False,
+        metadata={"help": "Whether to do generation for evaluation"},
+    )
     share_folder: bool = field(
         default=False,
-        metadata={"help": "Use share folder for data dir and output dir on multi machine."},
+        metadata={
+            "help": "Use share folder for data dir and output dir on multi machine."
+        },
     )
 
-    data_impl: str = field(default="mmap", metadata={"help": "The format of the preprocessed data."})
+    data_impl: str = field(
+        default="mmap",
+        metadata={"help": "The format of the preprocessed data."},
+    )
     skip_warmup: bool = field(
         default=True,
         metadata={"help": "Whether to skip the warmup process of mmap files."},
     )
     warmup_only_rank0: bool = field(
         default=False,
-        metadata={"help": "Whether to warmup mmap files only on rank 0. If False, all ranks do warmup."},
+        metadata={
+            "help": "Whether to warmup mmap files only on rank 0. If False, all ranks do warmup."
+        },
     )
-    data_cache: str = field(default=None, metadata={"help": "The path of the cached dataset."})
+    data_cache: str = field(
+        default=None, metadata={"help": "The path of the cached dataset."}
+    )
     truncation_strategy: str = field(
         default="delete",
         metadata={"help": "The truncation strategy to use in data processing."},
     )
     truncate_packing: bool = field(
         default=True,
-        metadata={"help": "Whether to truncate data in packing (only valid in pretrain online dataflow)."},
+        metadata={
+            "help": "Whether to truncate data in packing (only valid in pretrain online dataflow)."
+        },
     )
     dataset_output_dir: str = field(
         default="./dataset_output",
@@ -161,7 +187,9 @@ class DataArguments:
     )
     custom_register_path: str = field(
         default=None,
-        metadata={"help": "Register python file path for custom templates and mm_plugin."},
+        metadata={
+            "help": "Register python file path for custom templates and mm_plugin."
+        },
     )
     make_offline_data: bool = field(
         default=False,

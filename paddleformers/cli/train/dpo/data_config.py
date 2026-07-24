@@ -19,8 +19,9 @@ __all__ = ["DataConfig"]
 
 @dataclass
 class DataConfig:
-
-    dataset_name_or_path: str = field(default=None, metadata={"help": "Name or path for dataset"})
+    dataset_name_or_path: str = field(
+        default=None, metadata={"help": "Name or path for dataset"}
+    )
     train_dataset_type: str = field(
         default=None,
         metadata={
@@ -42,7 +43,9 @@ class DataConfig:
         Multi-source dataset is supported, e.g., 0.8,0.2."
         },
     )
-    eval_dataset_type: str = field(default="erniekit", metadata={"help": "type of eval datasets."})
+    eval_dataset_type: str = field(
+        default="erniekit", metadata={"help": "type of eval datasets."}
+    )
     eval_dataset_path: str = field(
         default="examples/data/sft-eval.jsonl",
         metadata={"help": "path of eval datasets."},
@@ -66,7 +69,9 @@ class DataConfig:
     )
     split: str = field(
         default="950,50",
-        metadata={"help": "Train/Eval data split ratio (only valid in offline pretrain dataset)"},
+        metadata={
+            "help": "Train/Eval data split ratio (only valid in offline pretrain dataset)"
+        },
     )
     mix_strategy: str = field(
         default="concat",
@@ -80,7 +85,9 @@ class DataConfig:
     )
     encode_one_turn: bool = field(
         default=True,
-        metadata={"help": "Whether encode each round independently in a multi-round dialogue."},
+        metadata={
+            "help": "Whether encode each round independently in a multi-round dialogue."
+        },
     )
     packing: bool = field(
         default=False,
@@ -92,20 +99,33 @@ class DataConfig:
     )
     random_shuffle: bool = field(
         default=True,
-        metadata={"help": "Whether to enable authorize code for privatization. Defaults to False."},
+        metadata={
+            "help": "Whether to enable authorize code for privatization. Defaults to False."
+        },
     )
     num_samples_each_epoch: int = field(
         default=6000000,
         metadata={"help": "Number of samples per epoch. Used for SFT."},
     )
-    task_name: str = field(default=None, metadata={"help": "Additional name to select a more specific task."})
-    pad_to_multiple_of: int = field(
-        default=None, metadata={"help": "If set will pad the sequence to a multiple of the provided value."}
+    task_name: str = field(
+        default=None,
+        metadata={"help": "Additional name to select a more specific task."},
     )
-    eval_with_do_generation: bool = field(default=False, metadata={"help": "Whether to do generation for evaluation"})
+    pad_to_multiple_of: int = field(
+        default=None,
+        metadata={
+            "help": "If set will pad the sequence to a multiple of the provided value."
+        },
+    )
+    eval_with_do_generation: bool = field(
+        default=False,
+        metadata={"help": "Whether to do generation for evaluation"},
+    )
     save_generation_output: bool = field(
         default=False,
-        metadata={"help": "Whether to save generated text to file when eval_with_do_generation set to True."},
+        metadata={
+            "help": "Whether to save generated text to file when eval_with_do_generation set to True."
+        },
     )
     lazy: bool = field(
         default=False,
@@ -128,4 +148,7 @@ class DataConfig:
         metadata={"help": "Whether to use autoregressive mode."},
     )
     # Pose related parameters
-    use_pose_convert: bool = field(default=False, metadata={"help": "Whether to use PoSE data conversion function"})
+    use_pose_convert: bool = field(
+        default=False,
+        metadata={"help": "Whether to use PoSE data conversion function"},
+    )

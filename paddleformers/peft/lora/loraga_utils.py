@@ -36,7 +36,9 @@ from .lora_model import LoRAModel
 class LoRAGATrainer(Trainer):
     """A Trainer class for Lora-GA gradient estimation."""
 
-    def __init__(self, loraga_init_iters: int, gradient_offload: bool, **kwargs):
+    def __init__(
+        self, loraga_init_iters: int, gradient_offload: bool, **kwargs
+    ):
         """
         Initialize the Trainer class for Lora-GA gradient estimation.
 
@@ -46,7 +48,9 @@ class LoRAGATrainer(Trainer):
 
         """
         super().__init__(**kwargs)
-        logger.info(f"Initialization iterations for LoraGA: {loraga_init_iters}")
+        logger.info(
+            f"Initialization iterations for LoraGA: {loraga_init_iters}"
+        )
         self.loraga_init_iters = loraga_init_iters
         self.gradient_offload = gradient_offload
 
@@ -86,9 +90,14 @@ class LoRAGATrainer(Trainer):
     def _wrap_model(self, model):
         """Wrap Model without optimizer, support dp, tp and sharding"""
 
-        if self.args.tensor_model_parallel_size > 1 and self.args.sequence_parallel:
+        if (
+            self.args.tensor_model_parallel_size > 1
+            and self.args.sequence_parallel
+        ):
             register_sequence_parallel_allreduce_hooks(
-                model, self.args.gradient_accumulation_steps, self.args.fuse_sequence_parallel_allreduce
+                model,
+                self.args.gradient_accumulation_steps,
+                self.args.fuse_sequence_parallel_allreduce,
             )
 
         in_pipeline_parallel_mode = self.args.pipeline_model_parallel_size > 1
@@ -98,19 +107,24 @@ class LoRAGATrainer(Trainer):
         in_cp_parallel_mode = self.args.context_parallel_size > 1
 
         if in_pipeline_parallel_mode:
-            raise ValueError("LoRA-GA do not supported pipeline parallel currently.")
+            raise ValueError(
+                "LoRA-GA do not supported pipeline parallel currently."
+            )
 
         # Multi-gpu training
         if self.args.world_size > 1 and (not self.args.use_hybrid_parallel):
             # MOE use DDP to broadcaset parameters.
             ddp_kwargs = {}
             if self.args.ddp_find_unused_parameters is not None:
-                ddp_kwargs["find_unused_parameters"] = self.args.ddp_find_unused_parameters
+                ddp_kwargs["find_unused_parameters"] = (
+                    self.args.ddp_find_unused_parameters
+                )
             elif isinstance(model, PretrainedModel):
                 # find_unused_parameters breaks checkpointing as per
                 # https://github.com/huggingface/transformers/pull/4659#issuecomment-643356021
                 ddp_kwargs["find_unused_parameters"] = not any(
-                    hasattr(m, "enable_recompute") and m.enable_recompute for m in model.sublayers(include_self=True)
+                    hasattr(m, "enable_recompute") and m.enable_recompute
+                    for m in model.sublayers(include_self=True)
                 )
             else:
                 ddp_kwargs["find_unused_parameters"] = True
@@ -122,13 +136,22 @@ class LoRAGATrainer(Trainer):
             if self.args.tensor_model_parallel_size > 1:
                 hcg = fleet.get_hybrid_communicate_group()
                 assert (
-                    ShardingOption.SHARD_GRAD_OP in self.args.sharding or ShardingOption.SHARD_OP in self.args.sharding
-                ), "Only support tensor parallel + sharding stage1/stage2 hybrid parallel now."
-                model = paddle.distributed.fleet.meta_parallel.TensorParallel(model, hcg, strategy=None)
+                    ShardingOption.SHARD_GRAD_OP in self.args.sharding
+                    or ShardingOption.SHARD_OP in self.args.sharding
+                ), (
+                    "Only support tensor parallel + sharding stage1/stage2 hybrid parallel now."
+                )
+                model = paddle.distributed.fleet.meta_parallel.TensorParallel(
+                    model, hcg, strategy=None
+                )
             if ShardingOption.SHARD_OP in self.args.sharding:
                 model = fleet.distributed_model(model)
 
-        if not in_sharding_parallel_mode and (in_tensor_parallel_mode or in_sep_parallel_mode or in_cp_parallel_mode):
+        if not in_sharding_parallel_mode and (
+            in_tensor_parallel_mode
+            or in_sep_parallel_mode
+            or in_cp_parallel_mode
+        ):
             model = fleet.distributed_model(model)
 
         return model
@@ -162,8 +185,12 @@ def get_module_gradient(
     """
 
     rank_suffix = "_" + str(local_rank)
-    local_grad_name = ".".join(grad_name.split(".")[1:]) + ".weight" + rank_suffix
-    gradient = gradient_dict.pop(local_grad_name)._copy_to(paddle.framework._current_expected_place(), False)
+    local_grad_name = (
+        ".".join(grad_name.split(".")[1:]) + ".weight" + rank_suffix
+    )
+    gradient = gradient_dict.pop(local_grad_name)._copy_to(
+        paddle.framework._current_expected_place(), False
+    )
 
     is_fleet_init = True
     try:
@@ -176,26 +203,39 @@ def get_module_gradient(
 
     if tp_degree > 1:
         # remove prefix and suffix in name
-        model_split_key = local_grad_name.split(base_model_prefix)[-1].rsplit(rank_suffix, 1)[0]
+        model_split_key = local_grad_name.split(base_model_prefix)[-1].rsplit(
+            rank_suffix, 1
+        )[0]
         if model_split_key in base_model_split_mappings:
             merge_func = base_model_split_mappings[model_split_key]
             output_tensors = []
-            dist.all_gather(output_tensors, gradient, group=model_parallel_group)
+            dist.all_gather(
+                output_tensors, gradient, group=model_parallel_group
+            )
 
-            output_tensors = [t if len(t.shape) > 0 else t.reshape_([-1]) for t in output_tensors]
-            gradient = merge_func(output_tensors)._copy_to(paddle.framework._current_expected_place(), False)
+            output_tensors = [
+                t if len(t.shape) > 0 else t.reshape_([-1])
+                for t in output_tensors
+            ]
+            gradient = merge_func(output_tensors)._copy_to(
+                paddle.framework._current_expected_place(), False
+            )
 
     # sharding
     if sharding_degree > 1:
         if sharding_parallel_group.nranks > 1:
-            dist.all_reduce(gradient, op=dist.ReduceOp.SUM, group=sharding_parallel_group)
+            dist.all_reduce(
+                gradient, op=dist.ReduceOp.SUM, group=sharding_parallel_group
+            )
             gradient /= sharding_parallel_group.nranks
 
     # dp
     if dp_degree > 1:
         if data_parallel_group.nranks > 1:
             if is_fleet_init:
-                dist.all_reduce(gradient, op=dist.ReduceOp.SUM, group=data_parallel_group)
+                dist.all_reduce(
+                    gradient, op=dist.ReduceOp.SUM, group=data_parallel_group
+                )
             else:
                 dist.all_reduce(gradient, op=dist.ReduceOp.SUM)
             gradient /= data_parallel_group.nranks
@@ -203,7 +243,11 @@ def get_module_gradient(
 
 
 def loraga_svd_reinit(
-    model: LoRAModel, gradient_dict: dict, stable_gamma: int, training_args: TrainingArguments, **kwargs
+    model: LoRAModel,
+    gradient_dict: dict,
+    stable_gamma: int,
+    training_args: TrainingArguments,
+    **kwargs,
 ) -> None:
     """
     Perform SVD to gradients and reinitialize base model weight and lora adapter weight.
@@ -222,7 +266,9 @@ def loraga_svd_reinit(
     lora_split_mapping = None
     base_model_split_mappings = None
     if in_tensor_parallel_mode:
-        base_model_split_mappings = model.model._get_tensor_parallel_mappings(config=model.config, is_split=False)
+        base_model_split_mappings = model.model._get_tensor_parallel_mappings(
+            config=model.config, is_split=False
+        )
 
     base_model_prefix = unwrap_model(model).base_model_prefix + "."
     if in_tensor_parallel_mode:
@@ -273,7 +319,7 @@ def loraga_svd_module(
     loraga_init_dict,
     in_tensor_parallel_mode=False,
     lora_split_mapping=None,
-    **kwargs
+    **kwargs,
 ):
     with paddle.no_grad():
         lora_r = module.r
@@ -281,7 +327,9 @@ def loraga_svd_module(
         loraA_name = ".".join(name.split(".")[1:]) + ".lora_A"
         loraB_name = ".".join(name.split(".")[1:]) + ".lora_B"
         # Perform SVD to gradients
-        U, S, V = paddle.linalg.svd_lowrank(grads.astype("float32"), q=4 * lora_r, niter=4)
+        U, S, V = paddle.linalg.svd_lowrank(
+            grads.astype("float32"), q=4 * lora_r, niter=4
+        )
 
         V = V.T
         # get new low-rank adapter after SVD
@@ -359,7 +407,9 @@ class GradientOffloadHookContext:
         """Register gradient hooks for all model parameters."""
         for grad_name, param in self.model.named_parameters():
             param._register_backward_hook(
-                self.get_record_gradient_hook(self.model, self.gradient_dict, grad_name, param)
+                self.get_record_gradient_hook(
+                    self.model, self.gradient_dict, grad_name, param
+                )
             )
 
     def get_record_gradient_hook(self, model, gradient_dict, grad_name, param):
@@ -368,24 +418,33 @@ class GradientOffloadHookContext:
         def record_gradient_hook(*_):
             if get_hook_enable():
                 grad = param.grad
-                local_grad_name = grad_name.split("_layers.")[-1] + "_" + str(self.local_rank)
+                local_grad_name = (
+                    grad_name.split("_layers.")[-1] + "_" + str(self.local_rank)
+                )
                 if not param.stop_gradient and grad is not None:
                     if local_grad_name not in gradient_dict:
                         if self.gradient_offload:
-                            gradient_dict[local_grad_name] = (grad / self.loraga_init_iters).cpu()
+                            gradient_dict[local_grad_name] = (
+                                grad / self.loraga_init_iters
+                            ).cpu()
                         else:
-                            gradient_dict[local_grad_name] = grad.clone() / self.loraga_init_iters
+                            gradient_dict[local_grad_name] = (
+                                grad.clone() / self.loraga_init_iters
+                            )
                     else:
                         if self.gradient_offload:
                             new_grad = (
                                 gradient_dict[local_grad_name]._copy_to(
-                                    paddle.framework._current_expected_place(), False
+                                    paddle.framework._current_expected_place(),
+                                    False,
                                 )
                                 + grad / self.loraga_init_iters
                             )
                             gradient_dict[local_grad_name] = new_grad.cpu()
                         else:
-                            gradient_dict[local_grad_name] += grad / self.loraga_init_iters
+                            gradient_dict[local_grad_name] += (
+                                grad / self.loraga_init_iters
+                            )
                 param.clear_gradient(False)  # release gradient memory
 
         return record_gradient_hook

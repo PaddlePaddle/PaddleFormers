@@ -29,7 +29,9 @@ class MockQuantizationConfig:
         self.group_size = group_size
         self.qlora_weight_double_quant = qlora_weight_double_quant
         self.qlora_weight_blocksize = qlora_weight_blocksize
-        self.qlora_weight_double_quant_block_size = qlora_weight_double_quant_block_size
+        self.qlora_weight_double_quant_block_size = (
+            qlora_weight_double_quant_block_size
+        )
         self.llm_int8_threshold = llm_int8_threshold
         self.apply_hadamard = False
 
@@ -78,7 +80,9 @@ class TestDequantWeight(unittest.TestCase):
 
     def test_dequant_weight_basic(self):
         """Test basic weight dequantization with weight_only_int8 algo."""
-        from paddleformers.quantization.quantization_linear import dequant_weight
+        from paddleformers.quantization.quantization_linear import (
+            dequant_weight,
+        )
 
         quant_weight = paddle.randint(-127, 127, [4, 8]).astype("int8")
         scale = paddle.ones([8])

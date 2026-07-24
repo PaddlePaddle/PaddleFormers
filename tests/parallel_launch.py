@@ -57,7 +57,9 @@ def get_gpus(selected_gpus):
     return selected_gpus
 
 
-def start_local_trainers_cpu(trainer_endpoints, training_script, training_script_args, log_dir=None):
+def start_local_trainers_cpu(
+    trainer_endpoints, training_script, training_script_args, log_dir=None
+):
     current_env = copy.copy(os.environ.copy())
     current_env.pop("http_proxy", None)
     current_env.pop("https_proxy", None)
@@ -76,12 +78,14 @@ def start_local_trainers_cpu(trainer_endpoints, training_script, training_script
 
         current_env.update(proc_env)
 
-        print("trainer proc env:{}".format(current_env))
+        print(f"trainer proc env:{current_env}")
 
-        assert os.getenv("WITH_COVERAGE", "OFF") == "OFF", "Gloo don't support WITH_COVERAGE."
+        assert os.getenv("WITH_COVERAGE", "OFF") == "OFF", (
+            "Gloo don't support WITH_COVERAGE."
+        )
         cmd = "python -u " + training_script
 
-        print("start trainer proc:{} env:{}".format(cmd, proc_env))
+        print(f"start trainer proc:{cmd} env:{proc_env}")
 
         fn = None
 
@@ -99,7 +103,13 @@ def start_local_trainers_cpu(trainer_endpoints, training_script, training_script
 
 
 def start_local_trainers(
-    cluster, pod, training_script, training_script_args, log_dir=None, num_nodes=1, hack_output_dir=True
+    cluster,
+    pod,
+    training_script,
+    training_script_args,
+    log_dir=None,
+    num_nodes=1,
+    hack_output_dir=True,
 ):
     current_env = copy.copy(os.environ.copy())
     # paddle broadcast ncclUniqueId use socket, and
@@ -116,7 +126,7 @@ def start_local_trainers(
         proc_env = {
             "FLAGS_selected_gpus": "%s" % ",".join([str(g) for g in t.gpus]),
             "PADDLE_GLOBAL_SIZE": f"{len(pod.trainers)}",
-            "PADDLE_LOCAL_SIZE": f"{len(pod.trainers)//num_nodes}",
+            "PADDLE_LOCAL_SIZE": f"{len(pod.trainers) // num_nodes}",
             "PADDLE_GLOBAL_RANK": f"{idx}",
             "PADDLE_LOCAL_RANK": f"{local_rank}",
             "PADDLE_NNODES": f"{num_nodes}",
@@ -146,7 +156,9 @@ def start_local_trainers(
         fn = None
         if log_dir is not None:
             os.makedirs(log_dir, exist_ok=True)
-            fn = open("%s/workerlog.n%d.c%d" % (log_dir, node_rank, local_rank), "a")
+            fn = open(
+                "%s/workerlog.n%d.c%d" % (log_dir, node_rank, local_rank), "a"
+            )
             proc = subprocess.Popen(cmd, env=current_env, stdout=fn, stderr=fn)
         else:
             proc = subprocess.Popen(cmd, env=current_env)
@@ -166,8 +178,9 @@ def start_local_trainers(
 
 class TestMultipleWithGloo(unittest.TestCase):
     def run_2cpu(self, target_file_name):
-
-        cluster, pod = get_cluster_from_args([0, 1])  # tmp use. for getting trainer_nranks()
+        cluster, pod = get_cluster_from_args(
+            [0, 1]
+        )  # tmp use. for getting trainer_nranks()
 
         procs = start_local_trainers_cpu(
             cluster.trainers_endpoints(),
@@ -179,6 +192,6 @@ class TestMultipleWithGloo(unittest.TestCase):
             alive = watch_local_trainers(procs, cluster.trainers_nranks())
 
             if not alive:
-                print("Local procs complete, POD info:{}".format(pod))
+                print(f"Local procs complete, POD info:{pod}")
                 break
             time.sleep(3)

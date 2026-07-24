@@ -19,8 +19,14 @@ from paddleformers.version import git
 
 commit = "unknown"
 
-paddleformers_dir = os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-if commit.endswith("unknown") and git.is_git_repo(paddleformers_dir) and git.have_git():
+paddleformers_dir = os.path.abspath(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+)
+if (
+    commit.endswith("unknown")
+    and git.is_git_repo(paddleformers_dir)
+    and git.have_git()
+):
     commit = git.git_revision(paddleformers_dir).decode("utf-8")
     if git.is_dirty(paddleformers_dir):
         commit += ".dirty"

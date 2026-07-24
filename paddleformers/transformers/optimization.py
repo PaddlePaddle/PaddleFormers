@@ -27,12 +27,22 @@ def is_integer(number):
 
 
 class CosineAnnealingWithWarmupDecay(LRScheduler):
-    def __init__(self, max_lr, min_lr, warmup_step, decay_step, last_epoch=-1, verbose=False):
+    def __init__(
+        self,
+        max_lr,
+        min_lr,
+        warmup_step,
+        decay_step,
+        last_epoch=-1,
+        verbose=False,
+    ):
         self.decay_step = decay_step
         self.warmup_step = warmup_step
         self.max_lr = max_lr
         self.min_lr = min_lr
-        super(CosineAnnealingWithWarmupDecay, self).__init__(max_lr, last_epoch, verbose)
+        super(CosineAnnealingWithWarmupDecay, self).__init__(
+            max_lr, last_epoch, verbose
+        )
 
     def get_lr(self):
         if self.warmup_step > 0 and self.last_epoch <= self.warmup_step:
@@ -49,13 +59,22 @@ class CosineAnnealingWithWarmupDecay(LRScheduler):
 
 
 class LinearAnnealingWithWarmupDecay(LRScheduler):
-    def __init__(self, max_lr, min_lr, warmup_step, decay_step, last_epoch=-1, verbose=False):
-
+    def __init__(
+        self,
+        max_lr,
+        min_lr,
+        warmup_step,
+        decay_step,
+        last_epoch=-1,
+        verbose=False,
+    ):
         self.decay_step = decay_step
         self.warmup_step = warmup_step
         self.max_lr = max_lr
         self.min_lr = min_lr
-        super(LinearAnnealingWithWarmupDecay, self).__init__(max_lr, last_epoch, verbose)
+        super(LinearAnnealingWithWarmupDecay, self).__init__(
+            max_lr, last_epoch, verbose
+        )
 
     def get_lr(self):
         if self.warmup_step > 0 and self.last_epoch <= self.warmup_step:

@@ -15,7 +15,7 @@ def load_parquet(file_path):
         raise ValueError(f"file {file_path} load failed")
 ```
 
-然后在 paddleformers/datasets/reader/file_reader.py 中BaseReader 的self.loader_map 中进行注册：
+然后在 paddleformers/datasets/reader/file_reader.py 中 BaseReader 的 self.loader_map 中进行注册：
 ```python
 self.loader_map = {
     ".json": load_json,
@@ -28,7 +28,7 @@ self.loader_map = {
 
 # 当前数据格式支持
 
-当前支持 erniekit 和messages 两种格式的数据
+当前支持 erniekit 和 messages 两种格式的数据
 
 # 新增数据格式支持
 
@@ -51,7 +51,7 @@ def erniekit_convertor(item):
 ```
 
 
-然后在 paddleformers/datasets/reader/file_reader.py 中BaseReader 的self.convertor_map 中进行注册：
+然后在 paddleformers/datasets/reader/file_reader.py 中 BaseReader 的 self.convertor_map 中进行注册：
 ```python
 self.convertor_map = {
     "erniekit": erniekit_convertor,

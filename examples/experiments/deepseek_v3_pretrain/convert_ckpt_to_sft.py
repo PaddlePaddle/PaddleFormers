@@ -17,7 +17,7 @@ import json
 import re
 import shutil
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 from safetensors.torch import load_file, save_file
 
@@ -27,8 +27,12 @@ _EXPERT_W2_RE = re.compile(r"^mlp\.experts\.(\d+)\.w2(?:\.weight)?$")
 _SHARE_EXPERT_W1_RE = re.compile(r"^mlp\.shared_experts\.w1(?:\.weight)?$")
 _SHARE_EXPERT_W2_RE = re.compile(r"^mlp\.shared_experts\.w2(?:\.weight)?$")
 
-_EXPERT_W1_RE_v2 = re.compile(r"^mlp\.experts\.(\d+)\.gate_up_fused_proj(?:\.weight)?$")
-_SHARE_EXPERT_W1_RE_v2 = re.compile(r"^mlp\.shared_experts\.gate_up_fused_proj(?:\.weight)?$")
+_EXPERT_W1_RE_v2 = re.compile(
+    r"^mlp\.experts\.(\d+)\.gate_up_fused_proj(?:\.weight)?$"
+)
+_SHARE_EXPERT_W1_RE_v2 = re.compile(
+    r"^mlp\.shared_experts\.gate_up_fused_proj(?:\.weight)?$"
+)
 
 custom_name_map = {
     "self_attn.input_layernorm.weight": "input_layernorm.weight",
@@ -42,7 +46,7 @@ custom_name_map = {
 }
 
 
-def paddle_name_to_hf_names(paddle_name: str) -> List[str]:
+def paddle_name_to_hf_names(paddle_name: str) -> list[str]:
     """
     Convert Paddle model parameter names to Hugging Face format name lists
 
@@ -96,13 +100,19 @@ def paddle_name_to_hf_names(paddle_name: str) -> List[str]:
         return mlp_names
 
     if rest == "mlp.gate_up_fused_proj.weight" or rest == "mlp.w1":
-        return [hf_prefix + ".mlp.gate_proj.weight", hf_prefix + ".mlp.up_proj.weight"]
+        return [
+            hf_prefix + ".mlp.gate_proj.weight",
+            hf_prefix + ".mlp.up_proj.weight",
+        ]
 
     if rest == "mlp.w2":
         return [hf_prefix + ".mlp.down_proj.weight"]
 
     if rest == "mlp.shared_experts.gate_up_fused_proj.weight":
-        return [hf_prefix + ".mlp.shared_experts.gate_proj.weight", hf_prefix + ".mlp.shared_experts.up_proj.weight"]
+        return [
+            hf_prefix + ".mlp.shared_experts.gate_proj.weight",
+            hf_prefix + ".mlp.shared_experts.up_proj.weight",
+        ]
 
     if m := _EXPERT_W1_RE_v2.match(rest):
         expert_id = m.group(1)
@@ -123,7 +133,10 @@ def paddle_name_to_hf_names(paddle_name: str) -> List[str]:
         return [hf_prefix + ".mlp.experts." + expert_id + ".down_proj.weight"]
 
     if m := _SHARE_EXPERT_W1_RE.match(rest):
-        return [hf_prefix + ".mlp.shared_experts.gate_proj.weight", hf_prefix + ".mlp.shared_experts.up_proj.weight"]
+        return [
+            hf_prefix + ".mlp.shared_experts.gate_proj.weight",
+            hf_prefix + ".mlp.shared_experts.up_proj.weight",
+        ]
 
     if m := _SHARE_EXPERT_W2_RE.match(rest):
         return [hf_prefix + ".mlp.shared_experts.down_proj.weight"]
@@ -131,7 +144,7 @@ def paddle_name_to_hf_names(paddle_name: str) -> List[str]:
     return [paddle_name.replace("deepseek_v2", "model")]
 
 
-def _handle_expert_weights(hf_prefix: str, rest: str) -> Optional[List[str]]:
+def _handle_expert_weights(hf_prefix: str, rest: str) -> Optional[list[str]]:
     if m := _EXPERT_W1_RE.match(rest):
         expert_id = int(m.group(1))
         return [
@@ -146,7 +159,9 @@ def _handle_expert_weights(hf_prefix: str, rest: str) -> Optional[List[str]]:
     return None
 
 
-def _handle_shared_expert_weights(hf_prefix: str, rest: str) -> Optional[List[str]]:
+def _handle_shared_expert_weights(
+    hf_prefix: str, rest: str
+) -> Optional[list[str]]:
     if _SHARE_EXPERT_W1_RE.match(rest):
         return [
             f"{hf_prefix}.mlp.shared_experts.gate_proj.weight",
@@ -159,9 +174,12 @@ def _handle_shared_expert_weights(hf_prefix: str, rest: str) -> Optional[List[st
     return None
 
 
-def _handle_mlp_weights(hf_prefix: str, rest: str) -> Optional[List[str]]:
+def _handle_mlp_weights(hf_prefix: str, rest: str) -> Optional[list[str]]:
     if rest == "mlp.w1":
-        return [f"{hf_prefix}.mlp.gate_proj.weight", f"{hf_prefix}.mlp.up_proj.weight"]
+        return [
+            f"{hf_prefix}.mlp.gate_proj.weight",
+            f"{hf_prefix}.mlp.up_proj.weight",
+        ]
 
     if rest == "mlp.w2":
         return [f"{hf_prefix}.mlp.down_proj.weight"]
@@ -189,7 +207,6 @@ def _is_need_transpose(key):
 
 
 def prepare_tensor(key, value):
-
     value_size = 0
 
     new_keys = paddle_name_to_hf_names(key)
@@ -202,7 +219,10 @@ def prepare_tensor(key, value):
         new_keys_2 = new_keys[1]
         chunks = value.split(value.shape[0] // 2, dim=0)
         value_1, value_2 = chunks[0].contiguous(), chunks[1].contiguous()
-        value_size += value_1.numel() * value_1.element_size() + value_2.numel() * value_2.element_size()
+        value_size += (
+            value_1.numel() * value_1.element_size()
+            + value_2.numel() * value_2.element_size()
+        )
         return {new_keys_1: value_1, new_keys_2: value_2}, value_size
 
     elif len(new_keys) == 1:
@@ -247,7 +267,8 @@ def load_pretrained_ckpt(ckpt_path, output_path):
     shard_files = [
         p
         for p in shard_dir.glob("*.safetensors")
-        if not p.name.startswith("optimizer.") and not p.name.startswith("master_weights.")
+        if not p.name.startswith("optimizer.")
+        and not p.name.startswith("master_weights.")
     ]
 
     total_size = 0
@@ -267,9 +288,15 @@ def load_pretrained_ckpt(ckpt_path, output_path):
     weight_map["metadata"]["total_size"] = total_size
     weight_map["weight_map"] = new_map
     weight_map_path_new = Path(output_path + "/model.safetensors.index.json")
-    weight_map_path_new.write_text(json.dumps(weight_map, indent=2), encoding="utf-8")
+    weight_map_path_new.write_text(
+        json.dumps(weight_map, indent=2), encoding="utf-8"
+    )
 
-    json_files = [p for p in shard_dir.glob("*.json") if not p.name.startswith("model.safetensors.index.")]
+    json_files = [
+        p
+        for p in shard_dir.glob("*.json")
+        if not p.name.startswith("model.safetensors.index.")
+    ]
     for f in json_files:
         print("copy config file:", f, flush=True)
         shutil.copy(str(f), output_path)

@@ -28,18 +28,28 @@ class TestMergeModel(unittest.TestCase):
     def test_merge_model_np(self, merge_method):
         with TemporaryDirectory() as tempdir:
             model = AutoModelForCausalLM.from_pretrained(
-                "PaddleFormers/tiny-random-qwen3", convert_from_hf=True, dtype="bfloat16", load_checkpoint_format=""
+                "PaddleFormers/tiny-random-qwen3",
+                convert_from_hf=True,
+                dtype="bfloat16",
+                load_checkpoint_format="",
             )
             pd_path = os.path.join(tempdir, "pd_model")
-            model.save_pretrained(pd_path, save_safetensors=False, save_checkpoint_format="")
+            model.save_pretrained(
+                pd_path, save_safetensors=False, save_checkpoint_format=""
+            )
             safe_path = os.path.join(tempdir, "safe_model")
             model.save_pretrained(
-                safe_path, safe_serialization="safetensors", save_safetensors=False, save_checkpoint_format=""
+                safe_path,
+                safe_serialization="safetensors",
+                save_safetensors=False,
+                save_checkpoint_format="",
             )
 
             # test mix
             merge_config = MergeConfig(
-                merge_method=merge_method, model_path_list=[safe_path, pd_path], output_path=tempdir
+                merge_method=merge_method,
+                model_path_list=[safe_path, pd_path],
+                output_path=tempdir,
             )
             mergekit = MergeModel(merge_config)
             mergekit.merge_model()
@@ -56,7 +66,10 @@ class TestMergeModel(unittest.TestCase):
 
             # test safetensor only
             merge_config = MergeConfig(
-                merge_method=merge_method, model_path_list=[safe_path, safe_path], output_path=tempdir, n_process=2
+                merge_method=merge_method,
+                model_path_list=[safe_path, safe_path],
+                output_path=tempdir,
+                n_process=2,
             )
             mergekit = MergeModel(merge_config)
             mergekit.merge_model()
@@ -76,18 +89,29 @@ class TestMergeModel(unittest.TestCase):
     def test_merge_model_pd(self, merge_method):
         with TemporaryDirectory() as tempdir:
             model = AutoModelForCausalLM.from_pretrained(
-                "PaddleFormers/tiny-random-qwen3", convert_from_hf=True, dtype="bfloat16", load_checkpoint_format=""
+                "PaddleFormers/tiny-random-qwen3",
+                convert_from_hf=True,
+                dtype="bfloat16",
+                load_checkpoint_format="",
             )
             pd_path = os.path.join(tempdir, "pd_model")
-            model.save_pretrained(pd_path, save_safetensors=False, save_checkpoint_format="")
+            model.save_pretrained(
+                pd_path, save_safetensors=False, save_checkpoint_format=""
+            )
             safe_path = os.path.join(tempdir, "safe_model")
             model.save_pretrained(
-                safe_path, safe_serialization="safetensors", save_safetensors=False, save_checkpoint_format=""
+                safe_path,
+                safe_serialization="safetensors",
+                save_safetensors=False,
+                save_checkpoint_format="",
             )
 
             # test mix
             merge_config = MergeConfig(
-                merge_method=merge_method, model_path_list=[safe_path, pd_path], output_path=tempdir, tensor_type="pd"
+                merge_method=merge_method,
+                model_path_list=[safe_path, pd_path],
+                output_path=tempdir,
+                tensor_type="pd",
             )
             mergekit = MergeModel(merge_config)
             mergekit.merge_model()
@@ -165,7 +189,9 @@ class TestMergeModel(unittest.TestCase):
             )
             lora_model = LoRAModel(fused_base_model, lora_config)
             lora_model_path = os.path.join(tempdir, "lora_model")
-            lora_model.save_pretrained(lora_model_path, save_checkpoint_format="flex_checkpoint")
+            lora_model.save_pretrained(
+                lora_model_path, save_checkpoint_format="flex_checkpoint"
+            )
 
             # merge fused lora model
             from paddleformers.mergekit import MergeConfig, MergeModel
@@ -205,7 +231,9 @@ class TestMergeModel(unittest.TestCase):
             model.save_pretrained(model_path)
             lora_model = LoRAModel(model, lora_config)
             lora_model_path = os.path.join(tempdir, "lora_model")
-            lora_model.save_pretrained(lora_model_path, save_checkpoint_format="flex_checkpoint")
+            lora_model.save_pretrained(
+                lora_model_path, save_checkpoint_format="flex_checkpoint"
+            )
 
             # merge lora model
             from paddleformers.mergekit import MergeConfig, MergeModel
@@ -268,9 +296,13 @@ class TestMergeModel(unittest.TestCase):
                     "model.layers.1.mlp.up_gate_proj",
                     "model.layers.1.mlp.down_proj",
                 ],
-                "weight_quantize_algo": {"weight_only_int8": [".*mlp.*", ".*self_attn.*"]},
+                "weight_quantize_algo": {
+                    "weight_only_int8": [".*mlp.*", ".*self_attn.*"]
+                },
             }
-            quantization_config = QuantizationConfig.from_dict(quantization_config)
+            quantization_config = QuantizationConfig.from_dict(
+                quantization_config
+            )
             base_model.config.quantization_config = quantization_config
             base_model.save_pretrained(base_model_path)
 
@@ -286,7 +318,9 @@ class TestMergeModel(unittest.TestCase):
             )
             lora_model = LoRAModel(base_model, lora_config)
             lora_model_path = os.path.join(tempdir, "lora_model")
-            lora_model.save_pretrained(lora_model_path, save_checkpoint_format="flex_checkpoint")
+            lora_model.save_pretrained(
+                lora_model_path, save_checkpoint_format="flex_checkpoint"
+            )
 
             # merge lora model with qdq base model
             from paddleformers.mergekit import MergeConfig, MergeModel

@@ -91,7 +91,9 @@ class VisualDLCallback(TrainerCallback):
     def __init__(self, vdl_writer=None):
         has_visualdl = is_visualdl_available()
         if not has_visualdl:
-            raise RuntimeError("VisualDLCallback requires visualdl to be installed. Please install visualdl.")
+            raise RuntimeError(
+                "VisualDLCallback requires visualdl to be installed. Please install visualdl."
+            )
         if has_visualdl:
             try:
                 from visualdl import LogWriter
@@ -123,7 +125,10 @@ class VisualDLCallback(TrainerCallback):
                 model = kwargs["model"]
                 if isinstance(model, LoRAModel):
                     model = kwargs["model"].model
-                if isinstance(model, PretrainedModel) and model.constructed_from_pretrained_config():
+                if (
+                    isinstance(model, PretrainedModel)
+                    and model.constructed_from_pretrained_config()
+                ):
                     model.config.architectures = [model.__class__.__name__]
                     self.vdl_writer.add_text("model_config", str(model.config))
                 # elif hasattr(model, "init_config") and model.init_config is not None:
@@ -134,7 +139,10 @@ class VisualDLCallback(TrainerCallback):
                 # Convert bool to int for protobuf 7.x compatibility
                 # protobuf 7.x is stricter about type validation and won't auto-convert bool to int
                 sanitized_dict = args.to_sanitized_dict()
-                sanitized_dict = {k: int(v) if isinstance(v, bool) else v for k, v in sanitized_dict.items()}
+                sanitized_dict = {
+                    k: int(v) if isinstance(v, bool) else v
+                    for k, v in sanitized_dict.items()
+                }
                 self.vdl_writer.add_hparams(sanitized_dict, metrics_list=[])
 
     def on_log(self, args, state, control, logs=None, **kwargs):
@@ -176,7 +184,9 @@ class TensorBoardCallback(TrainerCallback):
     def __init__(self, tb_writer=None):
         has_tensorboard = is_tensorboardX_available()
         if not has_tensorboard:
-            raise RuntimeError("TensorBoardCallback requires tensorboardX to be installed")
+            raise RuntimeError(
+                "TensorBoardCallback requires tensorboardX to be installed"
+            )
 
         if has_tensorboard:
             try:
@@ -210,9 +220,13 @@ class TensorBoardCallback(TrainerCallback):
                 if hasattr(model, "config") and model.config is not None:
                     try:
                         model_config_json = model.config.to_json_string()
-                        self.tb_writer.add_text("model_config", model_config_json)
+                        self.tb_writer.add_text(
+                            "model_config", model_config_json
+                        )
                     except:
-                        logger.warning("PaddleFleet model config cannot be serialized to JSON string.")
+                        logger.warning(
+                            "PaddleFleet model config cannot be serialized to JSON string."
+                        )
 
     def on_log(self, args, state, control, logs=None, **kwargs):
         if not state.is_world_process_zero:
@@ -249,7 +263,9 @@ class WandbCallback(TrainerCallback):
     def __init__(self):
         has_wandb = is_wandb_available()
         if not has_wandb:
-            raise RuntimeError("WandbCallback requires wandb to be installed. Run `pip install wandb`.")
+            raise RuntimeError(
+                "WandbCallback requires wandb to be installed. Run `pip install wandb`."
+            )
         if has_wandb:
             import wandb
 
@@ -310,7 +326,9 @@ class WandbCallback(TrainerCallback):
                 init_args["name"] = trial_name
                 init_args["group"] = args.run_name
             else:
-                if not (args.run_name is None or args.run_name == args.output_dir):
+                if not (
+                    args.run_name is None or args.run_name == args.output_dir
+                ):
                     init_args["name"] = args.run_name
             init_args["dir"] = args.logging_dir
             if self._wandb.run is None:
@@ -324,12 +342,18 @@ class WandbCallback(TrainerCallback):
             # define default x-axis (for latest wandb versions)
             if getattr(self._wandb, "define_metric", None):
                 self._wandb.define_metric("train/global_step")
-                self._wandb.define_metric("*", step_metric="train/global_step", step_sync=True)
+                self._wandb.define_metric(
+                    "*", step_metric="train/global_step", step_sync=True
+                )
 
             # keep track of model topology and gradients
             _watch_model = os.getenv("WANDB_WATCH", "false")
             if _watch_model in ("all", "parameters", "gradients"):
-                self._wandb.watch(model, log=_watch_model, log_freq=max(100, state.logging_steps))
+                self._wandb.watch(
+                    model,
+                    log=_watch_model,
+                    log_freq=max(100, state.logging_steps),
+                )
             self._wandb.run._label(code="transformers_trainer")
 
     def on_train_begin(self, args, state, control, model=None, **kwargs):
@@ -338,10 +362,16 @@ class WandbCallback(TrainerCallback):
         if not self._initialized:
             self.setup(args, state, model, **kwargs)
 
-    def on_train_end(self, args, state, control, model=None, tokenizer=None, **kwargs):
+    def on_train_end(
+        self, args, state, control, model=None, tokenizer=None, **kwargs
+    ):
         if self._wandb is None:
             return
-        if self._log_model in ("end", "checkpoint") and self._initialized and state.is_world_process_zero:
+        if (
+            self._log_model in ("end", "checkpoint")
+            and self._initialized
+            and state.is_world_process_zero
+        ):
             from ..trainer import Trainer
 
             fake_trainer = Trainer(args=args, model=model, tokenizer=tokenizer)
@@ -351,7 +381,8 @@ class WandbCallback(TrainerCallback):
                     {
                         k: v
                         for k, v in dict(self._wandb.summary).items()
-                        if isinstance(v, numbers.Number) and not k.startswith("_")
+                        if isinstance(v, numbers.Number)
+                        and not k.startswith("_")
                     }
                     if not args.load_best_model_at_end
                     else {
@@ -363,10 +394,15 @@ class WandbCallback(TrainerCallback):
 
                 model_name = (
                     f"model-{self._wandb.run.id}"
-                    if (args.run_name is None or args.run_name == args.output_dir)
+                    if (
+                        args.run_name is None
+                        or args.run_name == args.output_dir
+                    )
                     else f"model-{self._wandb.run.name}"
                 )
-                artifact = self._wandb.Artifact(name=model_name, type="model", metadata=metadata)
+                artifact = self._wandb.Artifact(
+                    name=model_name, type="model", metadata=metadata
+                )
                 for f in Path(temp_dir).glob("*"):
                     if f.is_file():
                         with artifact.new_file(f.name, mode="wb") as fa:
@@ -384,7 +420,11 @@ class WandbCallback(TrainerCallback):
             self._wandb.log({**logs, "train/global_step": state.global_step})
 
     def on_save(self, args, state, control, **kwargs):
-        if self._log_model == "checkpoint" and self._initialized and state.is_world_process_zero:
+        if (
+            self._log_model == "checkpoint"
+            and self._initialized
+            and state.is_world_process_zero
+        ):
             checkpoint_metadata = {
                 k: v
                 for k, v in dict(self._wandb.summary).items()
@@ -398,9 +438,13 @@ class WandbCallback(TrainerCallback):
                 if (args.run_name is None or args.run_name == args.output_dir)
                 else f"checkpoint-{self._wandb.run.name}"
             )
-            artifact = self._wandb.Artifact(name=checkpoint_name, type="model", metadata=checkpoint_metadata)
+            artifact = self._wandb.Artifact(
+                name=checkpoint_name, type="model", metadata=checkpoint_metadata
+            )
             artifact.add_dir(artifact_path)
-            self._wandb.log_artifact(artifact, aliases=[f"checkpoint-{state.global_step}"])
+            self._wandb.log_artifact(
+                artifact, aliases=[f"checkpoint-{state.global_step}"]
+            )
 
 
 class SwanLabCallback(TrainerCallback):
@@ -410,7 +454,9 @@ class SwanLabCallback(TrainerCallback):
 
     def __init__(self):
         if not is_swanlab_available():
-            raise RuntimeError("SwanLabCallback requires swanlab to be installed. Run `pip install swanlab`.")
+            raise RuntimeError(
+                "SwanLabCallback requires swanlab to be installed. Run `pip install swanlab`."
+            )
         import swanlab
 
         self._swanlab = swanlab
@@ -460,15 +506,28 @@ class SwanLabCallback(TrainerCallback):
         self._disabled = False
 
         if state.is_world_process_zero:
-            logger.info('Automatic SwanLab logging enabled, to disable set os.environ["SWANLAB_MODE"] = "disabled"')
+            logger.info(
+                'Automatic SwanLab logging enabled, to disable set os.environ["SWANLAB_MODE"] = "disabled"'
+            )
             combined_dict = {**args.to_dict()}
 
             if hasattr(model, "config") and model.config is not None:
-                model_config = model.config if isinstance(model.config, dict) else model.config.to_dict()
+                model_config = (
+                    model.config
+                    if isinstance(model.config, dict)
+                    else model.config.to_dict()
+                )
                 combined_dict = {**model_config, **combined_dict}
             if hasattr(model, "lora_config") and model.lora_config is not None:
-                lora_config = model.lora_config if isinstance(model.lora_config, dict) else model.lora_config.to_dict()
-                combined_dict = {**{"lora_config": lora_config}, **combined_dict}
+                lora_config = (
+                    model.lora_config
+                    if isinstance(model.lora_config, dict)
+                    else model.lora_config.to_dict()
+                )
+                combined_dict = {
+                    **{"lora_config": lora_config},
+                    **combined_dict,
+                }
             trial_name = state.trial_name
             init_args = {}
             if trial_name is not None and args.run_name is not None:
@@ -485,7 +544,9 @@ class SwanLabCallback(TrainerCallback):
 
             init_args["project"] = os.getenv("SWANLAB_PROJECT", None)
             if args.logging_dir is not None:
-                init_args["logdir"] = os.getenv("SWANLAB_LOG_DIR", args.logging_dir)
+                init_args["logdir"] = os.getenv(
+                    "SWANLAB_LOG_DIR", args.logging_dir
+                )
 
             if self._swanlab.get_run() is None:
                 self._swanlab.init(
@@ -500,8 +561,14 @@ class SwanLabCallback(TrainerCallback):
         if not self._initialized:
             self.setup(args, state, model, **kwargs)
 
-    def on_train_end(self, args, state, control, model=None, processing_class=None, **kwargs):
-        if self._log_model is not None and self._initialized and state.is_world_process_zero:
+    def on_train_end(
+        self, args, state, control, model=None, processing_class=None, **kwargs
+    ):
+        if (
+            self._log_model is not None
+            and self._initialized
+            and state.is_world_process_zero
+        ):
             logger.warning(
                 "SwanLab does not currently support the save mode functionality. "
                 "This feature will be available in a future release."
@@ -523,13 +590,24 @@ class SwanLabCallback(TrainerCallback):
         if state.is_world_process_zero:
             for k, v in logs.items():
                 if k in single_value_scalars:
-                    self._swanlab.log({f"single_value/{k}": v}, step=state.global_step)
-            non_scalar_logs = {k: v for k, v in logs.items() if k not in single_value_scalars}
+                    self._swanlab.log(
+                        {f"single_value/{k}": v}, step=state.global_step
+                    )
+            non_scalar_logs = {
+                k: v for k, v in logs.items() if k not in single_value_scalars
+            }
             non_scalar_logs = rewrite_logs(non_scalar_logs)
-            self._swanlab.log({**non_scalar_logs, "train/global_step": state.global_step}, step=state.global_step)
+            self._swanlab.log(
+                {**non_scalar_logs, "train/global_step": state.global_step},
+                step=state.global_step,
+            )
 
     def on_save(self, args, state, control, **kwargs):
-        if self._log_model is not None and self._initialized and state.is_world_process_zero:
+        if (
+            self._log_model is not None
+            and self._initialized
+            and state.is_world_process_zero
+        ):
             logger.warning(
                 "SwanLab does not currently support the save mode functionality. "
                 "This feature will be available in a future release."
@@ -564,7 +642,11 @@ class AutoNLPCallback(TrainerCallback):
             return
 
         metrics = kwargs.get("metrics", None)
-        if self.tune.is_session_enabled() and metrics is not None and isinstance(metrics, dict):
+        if (
+            self.tune.is_session_enabled()
+            and metrics is not None
+            and isinstance(metrics, dict)
+        ):
             self.session.report(metrics)
 
 

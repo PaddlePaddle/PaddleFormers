@@ -43,7 +43,9 @@ class TestNpuAcceleratePlugin(unittest.TestCase):
         optimizer = MockOptimizer()
         npu_accelerate_plugin(optimizer)
         # The step method should now be _optimizer_step_with_flatten_param_grads
-        self.assertEqual(optimizer.step.__func__, _optimizer_step_with_flatten_param_grads)
+        self.assertEqual(
+            optimizer.step.__func__, _optimizer_step_with_flatten_param_grads
+        )
 
 
 class TestOptimizerStepWithFlattenParamGrads(unittest.TestCase):
@@ -56,7 +58,9 @@ class TestOptimizerStepWithFlattenParamGrads(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             _optimizer_step_with_flatten_param_grads(optimizer)
 
-    @unittest.skip("Requires _default_dict on optimizer which is set by Paddle internals")
+    @unittest.skip(
+        "Requires _default_dict on optimizer which is set by Paddle internals"
+    )
     def test_skip_stop_gradient_params(self):
         """Test that parameters with stop_gradient are skipped."""
         param = paddle.to_tensor([1.0, 2.0])

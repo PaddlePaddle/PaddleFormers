@@ -159,13 +159,19 @@ class TensorBalanceByTokenType(PyLayer):
         ctx.tensor_dtype = tensor.dtype
         ctx.token_type_ids_shape = token_type_ids.shape
         ctx.token_type_ids_dtype = token_type_ids.dtype
-        ctx.group = fleet.get_hybrid_communicate_group().get_model_parallel_group() if group is None else group
+        ctx.group = (
+            fleet.get_hybrid_communicate_group().get_model_parallel_group()
+            if group is None
+            else group
+        )
         ctx.rank = ctx.group.rank
         ctx.world_size = ctx.group.nranks
 
         if len(ctx.tensor_shape) == 1:
             if not ctx.is_tensor_sharded:
-                tensor = tensor.split(num_or_sections=ctx.world_size, axis=0)[ctx.rank]
+                tensor = tensor.split(num_or_sections=ctx.world_size, axis=0)[
+                    ctx.rank
+                ]
             tensor = tensor.reshape([-1, 1])
         else:
             if (
@@ -177,12 +183,18 @@ class TensorBalanceByTokenType(PyLayer):
                     "Do not support len(ctx.tensor_shape) == 2 and not ctx.is_tensor_sharded"
                     + " and (axis == -1 or axis == len(ctx.tensor_shape) -1)"
                 )
-            assert len(ctx.tensor_shape) <= 3, f"len(tensor.shape) must <= 3, but got {len(tensor.shape)}"
+            assert len(ctx.tensor_shape) <= 3, (
+                f"len(tensor.shape) must <= 3, but got {len(tensor.shape)}"
+            )
             if len(ctx.tensor_shape) == 3:
-                assert ctx.tensor_shape[0] == 1, "only support tensor.shape[0] == 1"
+                assert ctx.tensor_shape[0] == 1, (
+                    "only support tensor.shape[0] == 1"
+                )
 
             if not ctx.is_tensor_sharded:
-                tensor = tensor.split(num_or_sections=ctx.world_size, axis=ctx.axis)[ctx.rank]
+                tensor = tensor.split(
+                    num_or_sections=ctx.world_size, axis=ctx.axis
+                )[ctx.rank]
             tensor = tensor.reshape([-1, tensor.shape[-1]])
 
         ctx.tensor_grad_shape = tensor.shape
@@ -190,17 +202,23 @@ class TensorBalanceByTokenType(PyLayer):
         if is_token_type_ids_sharded:
             assert (
                 unique_tokens_type is not None and len(unique_tokens_type) > 0
-            ), "require len(unique_tokens_type) > 0 when is_token_type_ids_sharded=True"
+            ), (
+                "require len(unique_tokens_type) > 0 when is_token_type_ids_sharded=True"
+            )
             ctx.unique_tokens_type = unique_tokens_type
             token_type_ids_per_rank = token_type_ids.flatten()
         else:
             ctx.unique_tokens_type = token_type_ids.unique().tolist()
-            token_type_ids_per_rank = token_type_ids.flatten().split(ctx.world_size)
+            token_type_ids_per_rank = token_type_ids.flatten().split(
+                ctx.world_size
+            )
         assert tensor.shape[0] == token_type_ids_per_rank[ctx.rank].shape[0], (
             f"tensor.shape[0]:{tensor.shape[0]} != "
             + f"token_type_ids_per_rank[ctx.rank].shape[0]:{token_type_ids_per_rank[ctx.rank].shape[0]}"
         )
-        token_type_ids_per_rank_np = [chunk.numpy() for chunk in token_type_ids_per_rank]
+        token_type_ids_per_rank_np = [
+            chunk.numpy() for chunk in token_type_ids_per_rank
+        ]
         tensor_list = []
         token_type_ids_list = []
 
@@ -209,13 +227,20 @@ class TensorBalanceByTokenType(PyLayer):
         ctx.indices_per_type = {}
 
         for token_type in ctx.unique_tokens_type:
-            indices = paddle.nonzero(token_type_ids_per_rank[ctx.rank] == token_type).flatten()
+            indices = paddle.nonzero(
+                token_type_ids_per_rank[ctx.rank] == token_type
+            ).flatten()
             tensor_cur_rank = paddle.gather(tensor, indices)
-            token_type_ids_cur_rank = paddle.gather(token_type_ids_per_rank[ctx.rank], indices)
+            token_type_ids_cur_rank = paddle.gather(
+                token_type_ids_per_rank[ctx.rank], indices
+            )
 
             ctx.indices_per_type[token_type] = indices
 
-            type_counts_per_rank = [np.sum(chunk == token_type) for chunk in token_type_ids_per_rank_np]
+            type_counts_per_rank = [
+                np.sum(chunk == token_type)
+                for chunk in token_type_ids_per_rank_np
+            ]
             move_records = redistribute_tokens(type_counts_per_rank)
 
             # Under the semantics of the minimum number of moves, when the rank with tokens greater than the average value will only send tokens to other ranks, it is impossible to receive tokens
@@ -233,15 +258,29 @@ class TensorBalanceByTokenType(PyLayer):
 
             if sum(rend_recv_tokens[ctx.rank]) > 0:
                 # send
-                sections = [tensor_cur_rank.shape[0] - sum(rend_recv_tokens[ctx.rank])] + rend_recv_tokens[ctx.rank]
-                tensor_cur_rank = paddle.split(tensor_cur_rank, num_or_sections=sections, axis=0)
-                token_type_ids_cur_rank = paddle.split(token_type_ids_cur_rank, num_or_sections=sections, axis=0)
+                sections = [
+                    tensor_cur_rank.shape[0] - sum(rend_recv_tokens[ctx.rank])
+                ] + rend_recv_tokens[ctx.rank]
+                tensor_cur_rank = paddle.split(
+                    tensor_cur_rank, num_or_sections=sections, axis=0
+                )
+                token_type_ids_cur_rank = paddle.split(
+                    token_type_ids_cur_rank, num_or_sections=sections, axis=0
+                )
                 tasks = []
                 with batch_isend_irecv_coalescing_manager(ctx.group, tasks):
                     for idx, rank in enumerate(rend_recv_rank[ctx.rank]):
-                        task = dist.isend(tensor_cur_rank[idx + 1], ctx.group.ranks[rank], group=ctx.group)
+                        task = dist.isend(
+                            tensor_cur_rank[idx + 1],
+                            ctx.group.ranks[rank],
+                            group=ctx.group,
+                        )
                         tasks.append(task)
-                        task = dist.isend(token_type_ids_cur_rank[idx + 1], ctx.group.ranks[rank], group=ctx.group)
+                        task = dist.isend(
+                            token_type_ids_cur_rank[idx + 1],
+                            ctx.group.ranks[rank],
+                            group=ctx.group,
+                        )
                         tasks.append(task)
                 for task in tasks:
                     task.wait()
@@ -261,24 +300,37 @@ class TensorBalanceByTokenType(PyLayer):
                     for idx, rank in enumerate(rend_recv_rank[ctx.rank]):
                         # rend_recv_tokens[ctx.rank][idx] is a negative number, means the size of recv. So take the negative number to get the positive number
                         recv_tensor = paddle.empty(
-                            shape=[-rend_recv_tokens[ctx.rank][idx], tensor_cur_rank.shape[-1]], dtype=ctx.tensor_dtype
+                            shape=[
+                                -rend_recv_tokens[ctx.rank][idx],
+                                tensor_cur_rank.shape[-1],
+                            ],
+                            dtype=ctx.tensor_dtype,
                         )
                         recv_tensor_list.append(recv_tensor)
-                        task = dist.irecv(recv_tensor, ctx.group.ranks[rank], group=ctx.group)
+                        task = dist.irecv(
+                            recv_tensor, ctx.group.ranks[rank], group=ctx.group
+                        )
                         tasks.append(task)
 
                         recv_token_type_ids = paddle.empty(
-                            shape=[-rend_recv_tokens[ctx.rank][idx]], dtype=ctx.token_type_ids_dtype
+                            shape=[-rend_recv_tokens[ctx.rank][idx]],
+                            dtype=ctx.token_type_ids_dtype,
                         )
                         recv_token_type_ids_list.append(recv_token_type_ids)
-                        task = dist.irecv(recv_token_type_ids, ctx.group.ranks[rank], group=ctx.group)
+                        task = dist.irecv(
+                            recv_token_type_ids,
+                            ctx.group.ranks[rank],
+                            group=ctx.group,
+                        )
                         tasks.append(task)
 
                 for task in tasks:
                     task.wait()
                 if len(recv_tensor_list) > 1:
                     tensor_cur_rank = paddle.concat(recv_tensor_list, axis=0)
-                    token_type_ids_cur_rank = paddle.concat(recv_token_type_ids_list, axis=0)
+                    token_type_ids_cur_rank = paddle.concat(
+                        recv_token_type_ids_list, axis=0
+                    )
                 else:
                     tensor_cur_rank = recv_tensor_list[0]
                     token_type_ids_cur_rank = recv_token_type_ids_list[0]
@@ -307,10 +359,13 @@ class TensorBalanceByTokenType(PyLayer):
         """backward"""
 
         tensor_grad = tensor_grad.reshape_(ctx.output_shape)
-        tensor_grad_list = paddle.split(tensor_grad, num_or_sections=ctx.output_concat_sections, axis=0)
-        tensor_grad = paddle.empty(ctx.tensor_grad_shape, dtype=ctx.tensor_dtype)
+        tensor_grad_list = paddle.split(
+            tensor_grad, num_or_sections=ctx.output_concat_sections, axis=0
+        )
+        tensor_grad = paddle.empty(
+            ctx.tensor_grad_shape, dtype=ctx.tensor_dtype
+        )
         for token_type_idx, token_type in enumerate(ctx.unique_tokens_type):
-
             tensor_grad_cur_rank = tensor_grad_list[token_type_idx]
             rend_recv_tokens = ctx.rend_recv_tokens_per_type[token_type]
             rend_recv_rank = ctx.rend_recv_rank_per_type[token_type]
@@ -321,14 +376,21 @@ class TensorBalanceByTokenType(PyLayer):
                 # rend_recv_tokens[ctx.rank][idx] is a negative number, indicating the size of send
                 # Therefore tensor_grad_cur_rank.shape[0] + sum(rend_recv_tokens[ctx.rank] indicates that the remaining is the size of the card itself
                 # [-x for x in rend_recv_tokens[ctx.rank]] converts negative numbers to positive numbers
-                sections = [tensor_grad_cur_rank.shape[0] + sum(rend_recv_tokens[ctx.rank])] + [
-                    -x for x in rend_recv_tokens[ctx.rank]
-                ]
-                tensor_grad_cur_rank = paddle.split(tensor_grad_cur_rank, num_or_sections=sections, axis=0)
+                sections = [
+                    tensor_grad_cur_rank.shape[0]
+                    + sum(rend_recv_tokens[ctx.rank])
+                ] + [-x for x in rend_recv_tokens[ctx.rank]]
+                tensor_grad_cur_rank = paddle.split(
+                    tensor_grad_cur_rank, num_or_sections=sections, axis=0
+                )
                 tasks = []
                 with batch_isend_irecv_coalescing_manager(ctx.group, tasks):
                     for idx, rank in enumerate(rend_recv_rank[ctx.rank]):
-                        task = dist.isend(tensor_grad_cur_rank[idx + 1], ctx.group.ranks[rank], group=ctx.group)
+                        task = dist.isend(
+                            tensor_grad_cur_rank[idx + 1],
+                            ctx.group.ranks[rank],
+                            group=ctx.group,
+                        )
                         tasks.append(task)
                 for task in tasks:
                     task.wait()
@@ -344,17 +406,26 @@ class TensorBalanceByTokenType(PyLayer):
                 with batch_isend_irecv_coalescing_manager(ctx.group, tasks):
                     for idx, rank in enumerate(rend_recv_rank[ctx.rank]):
                         recv_tensor_grad = paddle.empty(
-                            shape=[rend_recv_tokens[ctx.rank][idx], tensor_grad_cur_rank.shape[-1]],
+                            shape=[
+                                rend_recv_tokens[ctx.rank][idx],
+                                tensor_grad_cur_rank.shape[-1],
+                            ],
                             dtype=ctx.tensor_dtype,
                         )
                         recv_tensor_grad_list.append(recv_tensor_grad)
-                        task = dist.irecv(recv_tensor_grad, ctx.group.ranks[rank], group=ctx.group)
+                        task = dist.irecv(
+                            recv_tensor_grad,
+                            ctx.group.ranks[rank],
+                            group=ctx.group,
+                        )
                         tasks.append(task)
 
                 for task in tasks:
                     task.wait()
                 if len(recv_tensor_grad_list) > 1:
-                    tensor_grad_cur_rank = paddle.concat(recv_tensor_grad_list, axis=0)
+                    tensor_grad_cur_rank = paddle.concat(
+                        recv_tensor_grad_list, axis=0
+                    )
                 else:
                     tensor_grad_cur_rank = recv_tensor_grad_list[0]
             else:
@@ -366,7 +437,9 @@ class TensorBalanceByTokenType(PyLayer):
 
         if not ctx.is_tensor_sharded:
             tensor_grad_list = []
-            dist.stream.all_gather(tensor_grad_list, tensor_grad, group=ctx.group)
+            dist.stream.all_gather(
+                tensor_grad_list, tensor_grad, group=ctx.group
+            )
             tensor_grad = paddle.concat(tensor_grad_list, axis=0)
 
         tensor_grad = tensor_grad.reshape_(ctx.tensor_shape)

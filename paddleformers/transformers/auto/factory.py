@@ -16,7 +16,9 @@
 import importlib
 from collections import OrderedDict
 
-from paddleformers.transformers.auto.configuration import model_type_to_module_name
+from paddleformers.transformers.auto.configuration import (
+    model_type_to_module_name,
+)
 
 
 def getattribute_from_module(module, attr):
@@ -34,7 +36,9 @@ def getattribute_from_module(module, attr):
         try:
             return getattribute_from_module(paddleformers_module, attr)
         except ValueError:
-            raise ValueError(f"Could not find {attr} neither in {module} nor in {paddleformers_module}!")
+            raise ValueError(
+                f"Could not find {attr} neither in {module} nor in {paddleformers_module}!"
+            )
     else:
         raise ValueError(f"Could not find {attr} in {paddleformers_module}!")
 
@@ -57,7 +61,9 @@ class _LazyAutoMapping(OrderedDict):
         self._modules = {}
 
     def __len__(self):
-        common_keys = set(self._config_mapping.keys()).intersection(self._model_mapping.keys())
+        common_keys = set(self._config_mapping.keys()).intersection(
+            self._model_mapping.keys()
+        )
         return len(common_keys) + len(self._extra_content)
 
     def __getitem__(self, key):
@@ -69,7 +75,9 @@ class _LazyAutoMapping(OrderedDict):
             return self._load_attr_from_module(model_type, model_name)
 
         # Maybe there was several model types associated with this config.
-        model_types = [k for k, v in self._config_mapping.items() if v == key.__name__]
+        model_types = [
+            k for k, v in self._config_mapping.items() if v == key.__name__
+        ]
         for mtype in model_types:
             if mtype in self._model_mapping:
                 model_name = self._model_mapping[mtype]
@@ -79,11 +87,13 @@ class _LazyAutoMapping(OrderedDict):
     def _load_attr_from_module(self, model_type, attr):
         module_name = model_type_to_module_name(model_type)
         if module_name not in self._modules:
-            self._modules[module_name] = importlib.import_module(f".{module_name}", "paddleformers.transformers")
+            self._modules[module_name] = importlib.import_module(
+                f".{module_name}", "paddleformers.transformers"
+            )
         import_from = self._modules[module_name]
-        if any(["Tokenizer" in name for name in [model_type, attr]]):
+        if any("Tokenizer" in name for name in [model_type, attr]):
             import_from = import_from.tokenizer
-        elif any(["Config" in name for name in [model_type, attr]]):
+        elif any("Config" in name for name in [model_type, attr]):
             import_from = import_from.configuration
         return getattribute_from_module(import_from, attr)
 
@@ -129,7 +139,10 @@ class _LazyAutoMapping(OrderedDict):
     def __contains__(self, item):
         if item in self._extra_content:
             return True
-        if not hasattr(item, "__name__") or item.__name__ not in self._reverse_config_mapping:
+        if (
+            not hasattr(item, "__name__")
+            or item.__name__ not in self._reverse_config_mapping
+        ):
             return False
         model_type = self._reverse_config_mapping[item.__name__]
         return model_type in self._model_mapping
@@ -138,9 +151,14 @@ class _LazyAutoMapping(OrderedDict):
         """
         Register a new model in this mapping.
         """
-        if hasattr(key, "__name__") and key.__name__ in self._reverse_config_mapping:
+        if (
+            hasattr(key, "__name__")
+            and key.__name__ in self._reverse_config_mapping
+        ):
             model_type = self._reverse_config_mapping[key.__name__]
             if model_type in self._model_mapping.keys() and not exist_ok:
-                raise ValueError(f"'{key}' is already used by a Transformers model.")
+                raise ValueError(
+                    f"'{key}' is already used by a Transformers model."
+                )
 
         self._extra_content[key] = value

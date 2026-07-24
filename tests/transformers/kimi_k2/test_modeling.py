@@ -134,7 +134,11 @@ class KimiK2ModelTester:
         self.use_labels = use_labels
 
     def prepare_config_and_inputs(self):
-        input_ids = ids_tensor([self.batch_size, self.seq_length], self.vocab_size, dtype=paddle.int64)
+        input_ids = ids_tensor(
+            [self.batch_size, self.seq_length],
+            self.vocab_size,
+            dtype=paddle.int64,
+        )
 
         input_mask = random_attention_mask([self.batch_size, self.seq_length])
 
@@ -142,8 +146,12 @@ class KimiK2ModelTester:
         token_labels = None
         choice_labels = None
         if self.use_labels:
-            sequence_labels = ids_tensor([self.batch_size], self.type_sequence_label_size)
-            token_labels = ids_tensor([self.batch_size, self.seq_length], self.num_labels)
+            sequence_labels = ids_tensor(
+                [self.batch_size], self.type_sequence_label_size
+            )
+            token_labels = ids_tensor(
+                [self.batch_size, self.seq_length], self.num_labels
+            )
             choice_labels = ids_tensor([self.batch_size], self.num_choices)
 
         config = self.get_config()
@@ -194,17 +202,24 @@ class KimiK2ModelTester:
             fp32_residual_connection=False,
         )
 
-    def create_and_check_model_attention_mask(self, config: KimiK2Config, inputs_dict):
+    def create_and_check_model_attention_mask(
+        self, config: KimiK2Config, inputs_dict
+    ):
         model = KimiK2ForCausalLM(config)
         model.eval()
         input_ids = inputs_dict["input_ids"]
         attn_mask_2d = random_attention_mask([self.batch_size, self.seq_length])
         # Use dict input for PipelineLayer compatibility
-        inputs_dict_2d = {"input_ids": input_ids, "attention_mask": attn_mask_2d}
+        inputs_dict_2d = {
+            "input_ids": input_ids,
+            "attention_mask": attn_mask_2d,
+        }
 
         result_2d = model(inputs_dict_2d)
         # Check output shapes are correct
-        self.parent.assertEqual(result_2d.shape, [self.batch_size, self.seq_length, self.vocab_size])
+        self.parent.assertEqual(
+            result_2d.shape, [self.batch_size, self.seq_length, self.vocab_size]
+        )
 
     def create_and_check_for_causal_lm(
         self,
@@ -219,14 +234,20 @@ class KimiK2ModelTester:
         input_ids = inputs_dict["input_ids"]
         seq_len = input_ids.shape[-1]
         # Create causal attention mask
-        causal_mask = paddle.tril(paddle.ones((seq_len, seq_len), dtype=paddle.int64))
-        causal_mask = causal_mask.unsqueeze(0).unsqueeze(0)  # [1, 1, seq_len, seq_len]
+        causal_mask = paddle.tril(
+            paddle.ones((seq_len, seq_len), dtype=paddle.int64)
+        )
+        causal_mask = causal_mask.unsqueeze(0).unsqueeze(
+            0
+        )  # [1, 1, seq_len, seq_len]
         # Use dict input for PipelineLayer compatibility
         inputs_dict_with_labels = dict(inputs_dict)
         inputs_dict_with_labels["attention_mask"] = causal_mask
         inputs_dict_with_labels["labels"] = token_labels
         result = model(inputs_dict_with_labels)
-        self.parent.assertEqual(result.shape, [self.batch_size, self.seq_length, self.vocab_size])
+        self.parent.assertEqual(
+            result.shape, [self.batch_size, self.seq_length, self.vocab_size]
+        )
 
     def prepare_config_and_inputs_for_common(self):
         config_and_inputs = self.prepare_config_and_inputs()
@@ -245,19 +266,31 @@ class KimiK2ModelTester:
         input_ids = inputs_dict["input_ids"]
         seq_len = input_ids.shape[-1]
         # Create causal attention mask
-        causal_mask = paddle.tril(paddle.ones((seq_len, seq_len), dtype=paddle.int64))
-        causal_mask = causal_mask.unsqueeze(0).unsqueeze(0)  # [1, 1, seq_len, seq_len]
+        causal_mask = paddle.tril(
+            paddle.ones((seq_len, seq_len), dtype=paddle.int64)
+        )
+        causal_mask = causal_mask.unsqueeze(0).unsqueeze(
+            0
+        )  # [1, 1, seq_len, seq_len]
         # Use dict input for PipelineLayer compatibility
         inputs_dict_with_cache = dict(inputs_dict)
         inputs_dict_with_cache["attention_mask"] = causal_mask
         inputs_dict_with_cache["use_cache"] = True
-        inputs_dict_with_cache["labels"] = input_ids if self.parent.use_labels else None
+        inputs_dict_with_cache["labels"] = (
+            input_ids if self.parent.use_labels else None
+        )
         result = model(inputs_dict_with_cache)
         if self.parent.use_labels:
             self.parent.assertIsInstance(result.item(), float)
-            self.parent.assertEqual(result.shape, [self.batch_size, self.seq_length, self.vocab_size])
+            self.parent.assertEqual(
+                result.shape,
+                [self.batch_size, self.seq_length, self.vocab_size],
+            )
         else:
-            self.parent.assertEqual(result.shape, [self.batch_size, self.seq_length, self.vocab_size])
+            self.parent.assertEqual(
+                result.shape,
+                [self.batch_size, self.seq_length, self.vocab_size],
+            )
 
     def check_model_position_ids(self, config, inputs_dict, *args):
         model = KimiK2ForCausalLM(config)
@@ -265,22 +298,32 @@ class KimiK2ModelTester:
         input_ids = inputs_dict["input_ids"]
         batch_size, seq_len = input_ids.shape
         # Create causal attention mask
-        causal_mask = paddle.tril(paddle.ones((seq_len, seq_len), dtype=paddle.int64))
-        causal_mask = causal_mask.unsqueeze(0).unsqueeze(0)  # [1, 1, seq_len, seq_len]
+        causal_mask = paddle.tril(
+            paddle.ones((seq_len, seq_len), dtype=paddle.int64)
+        )
+        causal_mask = causal_mask.unsqueeze(0).unsqueeze(
+            0
+        )  # [1, 1, seq_len, seq_len]
         # Use dict input for PipelineLayer compatibility
         inputs_dict_no_pos = dict(inputs_dict)
         inputs_dict_no_pos["attention_mask"] = causal_mask
-        inputs_dict_no_pos["labels"] = input_ids if self.parent.use_labels else None
+        inputs_dict_no_pos["labels"] = (
+            input_ids if self.parent.use_labels else None
+        )
         result_no_position_id = model(inputs_dict_no_pos)
 
         position_ids = paddle.arange(seq_len).expand((batch_size, seq_len))
         inputs_dict_with_pos = dict(inputs_dict)
         inputs_dict_with_pos["attention_mask"] = causal_mask
         inputs_dict_with_pos["position_ids"] = position_ids
-        inputs_dict_with_pos["labels"] = input_ids if self.parent.use_labels else None
+        inputs_dict_with_pos["labels"] = (
+            input_ids if self.parent.use_labels else None
+        )
         result_position_id = model(inputs_dict_with_pos)
 
-        self.parent.assertTrue((result_position_id == result_no_position_id).all())
+        self.parent.assertTrue(
+            (result_position_id == result_no_position_id).all()
+        )
 
 
 class KimiK2ModelTest(ModelTesterMixin, unittest.TestCase):
@@ -290,7 +333,9 @@ class KimiK2ModelTest(ModelTesterMixin, unittest.TestCase):
     input_name = "input_ids"
 
     all_model_classes = (KimiK2ForCausalLM,)
-    all_generative_model_classes = {KimiK2ForCausalLM: (KimiK2ForCausalLM, "kimi_k2")}
+    all_generative_model_classes = {
+        KimiK2ForCausalLM: (KimiK2ForCausalLM, "kimi_k2")
+    }
 
     @gpu_device_initializer(log_prefix="KimiK2ModelTest")
     def setUp(self):
@@ -298,14 +343,18 @@ class KimiK2ModelTest(ModelTesterMixin, unittest.TestCase):
         set_random_seed(seed_=42)
         # paddle.set_default_dtype("bfloat16")
         self.model_tester = KimiK2ModelTester(self)
-        self.config_tester = ConfigTester(self, config_class=KimiK2Config, vocab_size=256, hidden_size=24)
+        self.config_tester = ConfigTester(
+            self, config_class=KimiK2Config, vocab_size=256, hidden_size=24
+        )
 
     @unittest.skip(
         "TODO: Temporarily skipped because of PR https://github.com/PaddlePaddle/PaddleFormers/pull/4342 (fix later)"
     )
     def test_determinism(self):
         """Override test_determinism to use dict input for PipelineLayer compatibility."""
-        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+        config, inputs_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
 
         def check_determinism(first, second):
             out_1 = first.numpy()
@@ -330,7 +379,9 @@ class KimiK2ModelTest(ModelTesterMixin, unittest.TestCase):
                 check_determinism(first, second)
 
     def _get_input_ids_and_config(self):
-        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+        config, inputs_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
 
         input_ids = inputs_dict[self.input_name]
         attention_mask = paddle.ones_like(input_ids, dtype=paddle.int64)
@@ -351,8 +402,12 @@ class KimiK2ModelTest(ModelTesterMixin, unittest.TestCase):
         "TODO: Temporarily skipped because of PR https://github.com/PaddlePaddle/PaddleFormers/pull/4342 (fix later)"
     )
     def test_model_attention_mask(self):
-        config, input_dict = self.model_tester.prepare_config_and_inputs_for_common()
-        self.model_tester.create_and_check_model_attention_mask(config, input_dict)
+        config, input_dict = (
+            self.model_tester.prepare_config_and_inputs_for_common()
+        )
+        self.model_tester.create_and_check_model_attention_mask(
+            config, input_dict
+        )
 
     @unittest.skip(
         "TODO: Temporarily skipped because of PR https://github.com/PaddlePaddle/PaddleFormers/pull/4342 (fix later)"

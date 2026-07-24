@@ -28,8 +28,15 @@ class TestCriterionLayer(unittest.TestCase):
         self.batch_size = 2
         self.seq_len = 4
         self.vocab_size = self.config.vocab_size
-        self.logits = paddle.randn([self.batch_size, self.seq_len, self.vocab_size], dtype="float32")
-        self.labels = paddle.randint(0, self.vocab_size, shape=[self.batch_size, self.seq_len], dtype="int64")
+        self.logits = paddle.randn(
+            [self.batch_size, self.seq_len, self.vocab_size], dtype="float32"
+        )
+        self.labels = paddle.randint(
+            0,
+            self.vocab_size,
+            shape=[self.batch_size, self.seq_len],
+            dtype="int64",
+        )
 
     def test_forward_default_sft(self):
         layer = CriterionLayer(config=self.config)
@@ -76,7 +83,9 @@ class TestCriterionLayer(unittest.TestCase):
         self.assertEqual(layer.loss_type, "dpo")
 
         config_kto = copy.deepcopy(self.config)
-        config_kto.kto_config = SimpleNamespace(beta=0.1, desirable_weight=1.0, undesirable_weight=1.0, lora=False)
+        config_kto.kto_config = SimpleNamespace(
+            beta=0.1, desirable_weight=1.0, undesirable_weight=1.0, lora=False
+        )
         layer = CriterionLayer(config=config_kto)
         self.assertEqual(layer.loss_type, "kto")
         layer = CriterionLayer(config=self.config)

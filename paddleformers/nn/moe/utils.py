@@ -16,11 +16,11 @@
 Common distributed utils.
 """
 
-from typing import Any, Callable, List, Union
+from collections.abc import Callable
+from typing import Any
 
 import paddle
-from paddle import distributed as dist
-from paddle import framework
+from paddle import distributed as dist, framework
 from paddle.autograd import PyLayer
 from paddle.distributed import fleet
 from paddle.distributed.communication.group import _get_global_group
@@ -58,10 +58,16 @@ def scatter_axis(input, group=None, axis=0):
     rank = group.rank
     seq_len = input.shape[axis]
     assert seq_len % parallelism == 0, (
-        f"Input sequence length {seq_len} can't be divided exactly" f" by sequence parallelism {parallelism}"
+        f"Input sequence length {seq_len} can't be divided exactly"
+        f" by sequence parallelism {parallelism}"
     )
     interval = seq_len // parallelism
-    input = paddle.slice(input, axes=[axis], starts=[interval * rank], ends=[interval * (rank + 1)])
+    input = paddle.slice(
+        input,
+        axes=[axis],
+        starts=[interval * rank],
+        ends=[interval * (rank + 1)],
+    )
     # slice uses stride, so we maintain the memory of whole input, use assign to free the whole input
     # which can avoid OOM.
     input = paddle.assign(input)
@@ -181,7 +187,10 @@ def all_gather_group(input, group=None, axis=0):
         output = paddle.empty(shape=output_shape, dtype=input.dtype)
         dist.stream.all_gather(output, input, group=group, use_calc_stream=True)
         return output
-    outputs = [paddle.empty(output_shape, dtype=input.dtype) for _ in range(parallelism)]
+    outputs = [
+        paddle.empty(output_shape, dtype=input.dtype)
+        for _ in range(parallelism)
+    ]
     dist.stream.all_gather(outputs, input, group=group, use_calc_stream=True)
     output = paddle.cat(outputs, axis=axis)
     return output
@@ -209,12 +218,14 @@ def reduce_scatter_group(input, group=None):
     if parallelism == 1:
         return input.clone()
     output_shape = input.shape
-    assert (
-        input.shape[0] % parallelism == 0
-    ), f"Input sequence length {input.shape[0]} can't be divided exactly by sequence parallelism {parallelism}"
+    assert input.shape[0] % parallelism == 0, (
+        f"Input sequence length {input.shape[0]} can't be divided exactly by sequence parallelism {parallelism}"
+    )
     output_shape[0] = output_shape[0] // parallelism
     output = paddle.empty(shape=output_shape, dtype=input.dtype)
-    dist.stream.reduce_scatter(output, input, op=dist.ReduceOp.SUM, group=group, use_calc_stream=True)
+    dist.stream.reduce_scatter(
+        output, input, op=dist.ReduceOp.SUM, group=group, use_calc_stream=True
+    )
     return output
 
 
@@ -297,7 +308,7 @@ class FakeClone(paddle.autograd.PyLayer):
         return grad_output
 
 
-def manual_backward(f: Callable, is_first_fwd: bool, *args: List[Any]):
+def manual_backward(f: Callable, is_first_fwd: bool, *args: list[Any]):
     """
     Perform manual backward pass with gradient tracing control.
 
@@ -315,7 +326,9 @@ def manual_backward(f: Callable, is_first_fwd: bool, *args: List[Any]):
         tracer._has_grad = True  # turn on grad trace so we can manual backward
 
     detached_args = detach_and_requires_grad_(*args)
-    detached_args_clone = [FakeClone.apply(a) if a is not None else None for a in detached_args]
+    detached_args_clone = [
+        FakeClone.apply(a) if a is not None else None for a in detached_args
+    ]
     out = f(*detached_args_clone)
     if isinstance(out, list):
         out = tuple(out)
@@ -326,7 +339,9 @@ def manual_backward(f: Callable, is_first_fwd: bool, *args: List[Any]):
         tracer._has_grad = orig
         return None, out
 
-    out_cached = [FakeClone.apply(o) for o in out if o is not None]  # do not cache stop_gradient output
+    out_cached = [
+        FakeClone.apply(o) for o in out if o is not None
+    ]  # do not cache stop_gradient output
 
     for o in out_cached:
         o._clear_dataptr()  # free mem
@@ -338,7 +353,9 @@ def manual_backward(f: Callable, is_first_fwd: bool, *args: List[Any]):
         grad = [g for g in grad if g is not None]
         assert grad and out_cached, (len(grad), len(out_cached))
         # out 中的 stop_graident 参数，也会收到 gradient，在这里过滤掉
-        grad, out_cached = zip(*[(g, o) for g, o in zip(grad, out_cached) if not o.stop_gradient])
+        grad, out_cached = zip(
+            *[(g, o) for g, o in zip(grad, out_cached) if not o.stop_gradient]
+        )
 
         assert len(grad) == len(out_cached), (len(grad), len(out_cached), f)
         # out, grad = zip(*[(o, g) for o, g in zip(out, grad) if g is not None])
@@ -350,7 +367,7 @@ def manual_backward(f: Callable, is_first_fwd: bool, *args: List[Any]):
 
 def _parse_moe_group(
     moe_group: str,
-) -> Union[str, paddle.distributed.communication.group.Group]:
+) -> str | paddle.distributed.communication.group.Group:
     """Parse and initialize the MoE (Mixture of Experts) communication group.
 
     Converts string representation of MoE group into actual process group
@@ -383,17 +400,25 @@ def _parse_moe_group(
     }, f"moe-group not supported, got: {moe_group}"
     logger.info(f"using moe-group: {moe_group}")
     if moe_group in {"data", "dp"}:
-        moe_group = fleet.get_hybrid_communicate_group().get_data_parallel_group()
+        moe_group = (
+            fleet.get_hybrid_communicate_group().get_data_parallel_group()
+        )
     elif moe_group in {"mp", "model", "tp"}:
         try:
-            moe_group = fleet.get_hybrid_communicate_group().get_model_parallel_group()
+            moe_group = (
+                fleet.get_hybrid_communicate_group().get_model_parallel_group()
+            )
             # (LiuTing): multi-gpu but tp=1
             # need use dummy group for `moe_gate_dispatch_partial_nosoftmaxtopk` kernel.
             if moe_group.nranks <= 1:
-                moe_group = paddle.distributed.communication.group.Group(0, None, [0])
+                moe_group = paddle.distributed.communication.group.Group(
+                    0, None, [0]
+                )
         except:
             # (LiuTing): just single-gpu
-            moe_group = paddle.distributed.communication.group.Group(0, None, [0])
+            moe_group = paddle.distributed.communication.group.Group(
+                0, None, [0]
+            )
 
     elif moe_group in {"dummy"}:
         dummy_group = paddle.distributed.communication.group.Group(0, None, [0])

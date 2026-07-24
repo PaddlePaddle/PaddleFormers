@@ -19,7 +19,7 @@ import math
 import numpy as np
 
 
-class SamplerHelper(object):
+class SamplerHelper:
     """
     The class is to help construct iterable sampler used for
     :class:`paddle.io.DataLoader`. It wraps a dataset and uses its
@@ -58,7 +58,10 @@ class SamplerHelper(object):
         elif callable(self.iterable):
             return self.iterable()
         else:
-            raise ValueError("`iterable` should be None, instance of Iterable or callable " "producing generator.")
+            raise ValueError(
+                "`iterable` should be None, instance of Iterable or callable "
+                "producing generator."
+            )
 
     def __len__(self):
         # Allow some samplers have different length with `len(data_source)`,
@@ -224,7 +227,9 @@ class SamplerHelper(object):
         if key:
             key_wrapper = lambda x: key(x, self.data_source)
         elif cmp:
-            key_wrapper = functools.cmp_to_key(lambda x, y: cmp(x, y, self.data_source))
+            key_wrapper = functools.cmp_to_key(
+                lambda x, y: cmp(x, y, self.data_source)
+            )
         else:
             key_wrapper = lambda x: len(self.data_source[x])
 
@@ -310,7 +315,9 @@ class SamplerHelper(object):
             minibatch, size_so_far = [], 0
             for idx in iter(self):
                 minibatch.append(idx)
-                size_so_far = batch_size_fn(idx, len(minibatch), size_so_far, data_source)
+                size_so_far = batch_size_fn(
+                    idx, len(minibatch), size_so_far, data_source
+                )
                 if key(size_so_far, len(minibatch)) == batch_size:
                     yield minibatch
                     minibatch, size_so_far = [], 0
@@ -320,13 +327,18 @@ class SamplerHelper(object):
                             "Please increase the value of `batch_size`, or limit the max length of batch."
                         )
                     yield minibatch[:-1]
-                    minibatch, size_so_far = minibatch[-1:], batch_size_fn(idx, 1, 0, data_source)
+                    minibatch, size_so_far = (
+                        minibatch[-1:],
+                        batch_size_fn(idx, 1, 0, data_source),
+                    )
             if minibatch and not drop_last:
                 yield minibatch
 
         sampler = type(self)(self.data_source, _impl)
         if ori_batch_size_fn is None and self.length is not None:
-            sampler.length = (self.length + int(not drop_last) * (batch_size - 1)) // batch_size
+            sampler.length = (
+                self.length + int(not drop_last) * (batch_size - 1)
+            ) // batch_size
         else:
             sampler.length = None
 

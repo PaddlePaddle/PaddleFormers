@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 # Copyright 2025 The ZhipuAI Inc. team and HuggingFace Inc. team. All rights reserved.
 #
@@ -19,8 +18,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Fast Image processor class for GLM-4.1V."""
+
 import math
-from typing import Optional, Union
+from typing import Optional
 
 import paddle
 from transformers.image_utils import (
@@ -52,9 +52,13 @@ def smart_resize(
     max_pixels: int = 14 * 14 * 2 * 2 * 2 * 6144,
 ):
     if num_frames < temporal_factor:
-        raise ValueError(f"t:{num_frames} must be larger than temporal_factor:{temporal_factor}")
+        raise ValueError(
+            f"t:{num_frames} must be larger than temporal_factor:{temporal_factor}"
+        )
     if height < factor or width < factor:
-        raise ValueError(f"height:{height} or width:{width} must be larger than factor:{factor}")
+        raise ValueError(
+            f"height:{height} or width:{width} must be larger than factor:{factor}"
+        )
     elif max(height, width) / min(height, width) > 200:
         raise ValueError(
             f"absolute aspect ratio must be smaller than 200, got {max(height, width) / min(height, width)}"
@@ -108,9 +112,12 @@ class Glm4vImageProcessorFast(BaseImageProcessorFast):
     def __init__(self, **kwargs: Unpack[Glm4vFastImageProcessorKwargs]):
         super().__init__(**kwargs)
         if self.size is not None and (
-            self.size.get("shortest_edge", None) is None or self.size.get("longest_edge", None) is None
+            self.size.get("shortest_edge", None) is None
+            or self.size.get("longest_edge", None) is None
         ):
-            raise ValueError("size must contain 'shortest_edge' and 'longest_edge' keys.")
+            raise ValueError(
+                "size must contain 'shortest_edge' and 'longest_edge' keys."
+            )
 
     def _further_process_kwargs(
         self,
@@ -121,8 +128,12 @@ class Glm4vImageProcessorFast(BaseImageProcessorFast):
         Update kwargs that need further processing before being validated
         Can be overridden by subclasses to customize the processing of kwargs.
         """
-        if size is not None and ("shortest_edge" not in size or "longest_edge" not in size):
-            raise ValueError("size must contain 'shortest_edge' and 'longest_edge' keys.")
+        if size is not None and (
+            "shortest_edge" not in size or "longest_edge" not in size
+        ):
+            raise ValueError(
+                "size must contain 'shortest_edge' and 'longest_edge' keys."
+            )
 
         return super()._further_process_kwargs(size=size, **kwargs)
 
@@ -135,20 +146,22 @@ class Glm4vImageProcessorFast(BaseImageProcessorFast):
         do_rescale: bool,
         rescale_factor: float,
         do_normalize: bool,
-        image_mean: Optional[Union[float, list[float]]],
-        image_std: Optional[Union[float, list[float]]],
+        image_mean: Optional[float | list[float]],
+        image_std: Optional[float | list[float]],
         patch_size: int,
         temporal_patch_size: int,
         merge_size: int,
         disable_grouping: Optional[bool],
-        return_tensors: Optional[Union[str, TensorType]],
+        return_tensors: Optional[str | TensorType],
         **kwargs,
     ) -> BatchFeature:
         """
         Preprocess an image or batch of images. Copy of the `preprocess` method from `CLIPImageProcessor`.
         """
 
-        grouped_images, grouped_images_index = group_images_by_shape(images, disable_grouping=disable_grouping)
+        grouped_images, grouped_images_index = group_images_by_shape(
+            images, disable_grouping=disable_grouping
+        )
         resized_images_grouped = {}
         for shape, stacked_images in grouped_images.items():
             height, width = stacked_images.shape[-2:]
@@ -169,9 +182,13 @@ class Glm4vImageProcessorFast(BaseImageProcessorFast):
                 )
             resized_images_grouped[shape] = stacked_images
 
-        resized_images = reorder_images(resized_images_grouped, grouped_images_index)
+        resized_images = reorder_images(
+            resized_images_grouped, grouped_images_index
+        )
 
-        grouped_images, grouped_images_index = group_images_by_shape(resized_images, disable_grouping=disable_grouping)
+        grouped_images, grouped_images_index = group_images_by_shape(
+            resized_images, disable_grouping=disable_grouping
+        )
         processed_images_grouped = {}
         processed_grids = {}
 
@@ -179,20 +196,33 @@ class Glm4vImageProcessorFast(BaseImageProcessorFast):
             resized_height, resized_width = stacked_images.shape[-2:]
 
             patches = self.rescale_and_normalize(
-                stacked_images, do_rescale, rescale_factor, do_normalize, image_mean, image_std
+                stacked_images,
+                do_rescale,
+                rescale_factor,
+                do_normalize,
+                image_mean,
+                image_std,
             )
             if patches.ndim == 4:  # (B, C, H, W)
                 patches = patches.unsqueeze(1)  # (B, T=1, C, H, W)
 
             if patches.shape[1] % temporal_patch_size != 0:
                 repeats = patches[:, -1:].repeat(
-                    1, temporal_patch_size - (patches.shape[1] % temporal_patch_size), 1, 1, 1
+                    1,
+                    temporal_patch_size
+                    - (patches.shape[1] % temporal_patch_size),
+                    1,
+                    1,
+                    1,
                 )
                 patches = paddle.cat([patches, repeats], dim=1)
 
             batch_size, t_len, channel = patches.shape[:3]
             grid_t = t_len // temporal_patch_size
-            grid_h, grid_w = resized_height // patch_size, resized_width // patch_size
+            grid_h, grid_w = (
+                resized_height // patch_size,
+                resized_width // patch_size,
+            )
 
             patches = patches.view(
                 batch_size * grid_t,
@@ -219,14 +249,20 @@ class Glm4vImageProcessorFast(BaseImageProcessorFast):
             processed_images_grouped[shape] = flatten_patches
             processed_grids[shape] = [[grid_t, grid_h, grid_w]] * batch_size
 
-        processed_images = reorder_images(processed_images_grouped, grouped_images_index)
+        processed_images = reorder_images(
+            processed_images_grouped, grouped_images_index
+        )
         processed_grids = reorder_images(processed_grids, grouped_images_index)
 
         pixel_values = paddle.cat(processed_images, dim=0)
         image_grid_thw = paddle.to_tensor(processed_grids)
 
         return BatchFeature(
-            data={"pixel_values": pixel_values, "image_grid_thw": image_grid_thw}, tensor_type=return_tensors
+            data={
+                "pixel_values": pixel_values,
+                "image_grid_thw": image_grid_thw,
+            },
+            tensor_type=return_tensors,
         )
 
     def preprocess(

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import paddle
-import paddle.nn as nn
+from paddle import nn
 from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
     build_sharded_state_dict,
 )
@@ -38,7 +38,10 @@ class LMHead(nn.Layer):
                 f"(vocab_size={config.vocab_size} % tp_degree={config.tensor_model_parallel_size} != 0)."
             )
 
-        if config.tensor_model_parallel_size > 1 and config.vocab_size % config.tensor_model_parallel_size == 0:
+        if (
+            config.tensor_model_parallel_size > 1
+            and config.vocab_size % config.tensor_model_parallel_size == 0
+        ):
             vocab_size = config.vocab_size // config.tensor_model_parallel_size
             self.vocab_parallel = True
         else:
@@ -57,7 +60,9 @@ class LMHead(nn.Layer):
             self.bias = self.create_parameter(
                 shape=[vocab_size],
                 dtype=paddle.get_default_dtype(),
-                attr=paddle.ParamAttr(initializer=paddle.nn.initializer.constant.Constant(0.0)),
+                attr=paddle.ParamAttr(
+                    initializer=paddle.nn.initializer.constant.Constant(0.0)
+                ),
             )
 
             # setting distributed attr for tensor parallel
@@ -123,5 +128,7 @@ class LMHead(nn.Layer):
 
         if self.config.tensor_model_parallel_size > 1:
             state_dict = self.state_dict(structured_name_prefix="")
-            return build_sharded_state_dict(state_dict, {"weight": 0, "bias": 0}, structured_name_prefix)
+            return build_sharded_state_dict(
+                state_dict, {"weight": 0, "bias": 0}, structured_name_prefix
+            )
         return super().sharded_state_dict(structured_name_prefix)

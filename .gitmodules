@@ -1,3 +1,31 @@
 [submodule "third_party/llm-internal-medicine"]
 	path = third_party/llm-internal-medicine
 	url = https://github.com/bo-ke/llm-internal-medicine.git
+
+[submodule "packages/paddlefleet_ops/third_party/DeepGEMM"]
+	path = packages/paddlefleet_ops/third_party/DeepGEMM
+	url = https://github.com/PFCCLab/DeepGEMM.git
+[submodule "packages/paddlefleet_ops/third_party/DeepEP"]
+	path = packages/paddlefleet_ops/third_party/DeepEP
+	url = https://github.com/PFCCLab/DeepEP.git
+[submodule "packages/paddlefleet_ops/third_party/quack"]
+	path = packages/paddlefleet_ops/third_party/quack
+	url = https://github.com/PFCCLab/quack.git
+[submodule "packages/paddlefleet_ops/third_party/sonic-moe"]
+	path = packages/paddlefleet_ops/third_party/sonic-moe
+	url = https://github.com/PFCCLab/supersonic-moe.git
+[submodule "packages/paddlefleet_ops/third_party/flash-attention"]
+	path = packages/paddlefleet_ops/third_party/flash-attention
+	url = https://github.com/PaddlePaddle/flash-attention.git
+[submodule "packages/paddlefleet_ops/third_party/HybridEP"]
+	path = packages/paddlefleet_ops/third_party/HybridEP
+	url = https://github.com/PFCCLab/DeepEP.git
+[submodule "packages/paddlefleet_ops/third_party/cudnn-frontend"]
+	path = packages/paddlefleet_ops/third_party/cudnn-frontend
+	url = https://github.com/PFCCLab/cudnn-frontend.git
+[submodule "packages/paddlefleet_ops/third_party/FlashMLA"]
+	path = packages/paddlefleet_ops/third_party/FlashMLA
+	url = https://github.com/PFCCLab/FlashMLA.git
+[submodule "packages/paddlefleet_ops/third_party/dlpack"]
+	path = packages/paddlefleet_ops/third_party/dlpack
+	url = https://github.com/dmlc/dlpack

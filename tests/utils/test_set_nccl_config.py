@@ -53,22 +53,64 @@ class TestNcclConfig(unittest.TestCase):
         # paddle version does not match
         if create_nccl_config is None:
             return
-        args_dict = {"output_dir": self.output_path, "nccl_comm_group_config": self.nccl_config_path, "bf16": True}
+        args_dict = {
+            "output_dir": self.output_path,
+            "nccl_comm_group_config": self.nccl_config_path,
+            "bf16": True,
+        }
 
         parser = PdArgumentParser((TrainingArguments,))
         (args,) = parser.parse_dict(args_dict)
         strategy = fleet.DistributedStrategy()
-        strategy.hybrid_configs = {"dp_degree": 2, "mp_degree": 2, "pp_degree": 2}
+        strategy.hybrid_configs = {
+            "dp_degree": 2,
+            "mp_degree": 2,
+            "pp_degree": 2,
+        }
 
         strategy = init_nccl_config(self.nccl_config_path, strategy)
-        assert strategy.hybrid_configs["default_comm_group_configs"].nccl_config.protoStr == "ll"
-        assert strategy.hybrid_configs["default_comm_group_configs"].nccl_config.nchannels == 1
-        assert strategy.hybrid_configs["default_comm_group_configs"].nccl_config.buffsize_align == 1024
-        assert strategy.hybrid_configs["mp_configs"].nccl_config.protoStr == "ll,ll128"
-        assert strategy.hybrid_configs["mp_configs"].nccl_config.buffsize_align == 1024
-        assert strategy.hybrid_configs["pp_configs"].coll_nccl_config.ll_buffsize == 131072
-        assert strategy.hybrid_configs["pp_configs"].coll_nccl_config.ll128_buffsize == 134217728
-        assert strategy.hybrid_configs["pp_configs"].coll_nccl_config.simple_buffsize == 134217728
+        assert (
+            strategy.hybrid_configs[
+                "default_comm_group_configs"
+            ].nccl_config.protoStr
+            == "ll"
+        )
+        assert (
+            strategy.hybrid_configs[
+                "default_comm_group_configs"
+            ].nccl_config.nchannels
+            == 1
+        )
+        assert (
+            strategy.hybrid_configs[
+                "default_comm_group_configs"
+            ].nccl_config.buffsize_align
+            == 1024
+        )
+        assert (
+            strategy.hybrid_configs["mp_configs"].nccl_config.protoStr
+            == "ll,ll128"
+        )
+        assert (
+            strategy.hybrid_configs["mp_configs"].nccl_config.buffsize_align
+            == 1024
+        )
+        assert (
+            strategy.hybrid_configs["pp_configs"].coll_nccl_config.ll_buffsize
+            == 131072
+        )
+        assert (
+            strategy.hybrid_configs[
+                "pp_configs"
+            ].coll_nccl_config.ll128_buffsize
+            == 134217728
+        )
+        assert (
+            strategy.hybrid_configs[
+                "pp_configs"
+            ].coll_nccl_config.simple_buffsize
+            == 134217728
+        )
 
     def tearDown(self):
         file_path = Path(self.nccl_config_path)

@@ -1,6 +1,6 @@
 ### 🎬 Video Processor
 
-`Video Processor` is a video preprocessing tool responsible for preparing input features for multimodal models and processing their outputs. It provides various transformations, such as resizing and normalization, and supports returning outpus in Paddle Tensor.
+`Video Processor` is a video preprocessing tool responsible for preparing input features for multimodal models and processing their outputs. It provides various transformations, such as resizing and normalization, and supports returning outputs in Paddle Tensor.
 
 The Video Processor extends the functionality of an image processor to handle video inputs, allowing models to process videos using a different set of parameters than images. It acts as a bridge between raw video data and the model, ensuring that input features are optimized for VLM (Vision-Language Model).
 

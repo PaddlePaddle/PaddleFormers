@@ -20,7 +20,10 @@ class TestRngCtx(unittest.TestCase):
         mock_rng_state = MagicMock()
         mock_tracker.rng_state.return_value = mock_rng_state
 
-        with patch("paddleformers.peft.lora.utils.get_rng_state_tracker", return_value=mock_tracker):
+        with patch(
+            "paddleformers.peft.lora.utils.get_rng_state_tracker",
+            return_value=mock_tracker,
+        ):
             ctx = rng_ctx(is_mp=True, in_dynamic_mode=True)
             # Should return the rng_state context manager, not nullcontext
             self.assertEqual(ctx, mock_rng_state)
@@ -30,7 +33,9 @@ class TestRngCtx(unittest.TestCase):
         """Test rng_ctx returns nullcontext when is_mp=False."""
         from paddleformers.peft.lora.utils import rng_ctx
 
-        with patch("paddleformers.peft.lora.utils.get_rng_state_tracker") as mock_get_tracker:
+        with patch(
+            "paddleformers.peft.lora.utils.get_rng_state_tracker"
+        ) as mock_get_tracker:
             ctx = rng_ctx(is_mp=False, in_dynamic_mode=True)
             self.assertIsInstance(ctx, nullcontext)
             mock_get_tracker.assert_not_called()
@@ -39,7 +44,9 @@ class TestRngCtx(unittest.TestCase):
         """Test rng_ctx returns nullcontext when in_dynamic_mode=False."""
         from paddleformers.peft.lora.utils import rng_ctx
 
-        with patch("paddleformers.peft.lora.utils.get_rng_state_tracker") as mock_get_tracker:
+        with patch(
+            "paddleformers.peft.lora.utils.get_rng_state_tracker"
+        ) as mock_get_tracker:
             ctx = rng_ctx(is_mp=True, in_dynamic_mode=False)
             self.assertIsInstance(ctx, nullcontext)
             mock_get_tracker.assert_not_called()
@@ -48,7 +55,9 @@ class TestRngCtx(unittest.TestCase):
         """Test rng_ctx returns nullcontext when both flags are False."""
         from paddleformers.peft.lora.utils import rng_ctx
 
-        with patch("paddleformers.peft.lora.utils.get_rng_state_tracker") as mock_get_tracker:
+        with patch(
+            "paddleformers.peft.lora.utils.get_rng_state_tracker"
+        ) as mock_get_tracker:
             ctx = rng_ctx(is_mp=False, in_dynamic_mode=False)
             self.assertIsInstance(ctx, nullcontext)
             mock_get_tracker.assert_not_called()
@@ -63,7 +72,10 @@ class TestRngCtx(unittest.TestCase):
         mock_rng_state.__enter__ = MagicMock(return_value=None)
         mock_rng_state.__exit__ = MagicMock(return_value=False)
 
-        with patch("paddleformers.peft.lora.utils.get_rng_state_tracker", return_value=mock_tracker):
+        with patch(
+            "paddleformers.peft.lora.utils.get_rng_state_tracker",
+            return_value=mock_tracker,
+        ):
             ctx = rng_ctx(is_mp=True, in_dynamic_mode=True)
             with ctx:
                 pass

@@ -81,7 +81,9 @@ class TestScatterAxis(unittest.TestCase):
     def test_default_group_uses_model_parallel(self):
         """Test with group=None uses model parallel group from fleet."""
         x = _randn([8, 4])
-        with patch("paddleformers.nn.moe.utils.fleet.get_hybrid_communicate_group") as mock_get:
+        with patch(
+            "paddleformers.nn.moe.utils.fleet.get_hybrid_communicate_group"
+        ) as mock_get:
             mock_hcg = MagicMock()
             mock_group = _make_fake_group(nranks=1)
             mock_hcg.get_model_parallel_group.return_value = mock_group
@@ -247,7 +249,9 @@ class TestAllGatherGroup(unittest.TestCase):
     def test_default_group_uses_model_parallel(self):
         """Test with group=None uses model parallel group."""
         x = _randn([4, 4])
-        with patch("paddleformers.nn.moe.utils.fleet.get_hybrid_communicate_group") as mock_get:
+        with patch(
+            "paddleformers.nn.moe.utils.fleet.get_hybrid_communicate_group"
+        ) as mock_get:
             mock_hcg = MagicMock()
             mock_group = _make_fake_group(nranks=1)
             mock_hcg.get_model_parallel_group.return_value = mock_group
@@ -303,7 +307,9 @@ class TestReduceScatterGroup(unittest.TestCase):
     def test_default_group_uses_model_parallel(self):
         """Test with group=None uses model parallel group."""
         x = _randn([4, 4])
-        with patch("paddleformers.nn.moe.utils.fleet.get_hybrid_communicate_group") as mock_get:
+        with patch(
+            "paddleformers.nn.moe.utils.fleet.get_hybrid_communicate_group"
+        ) as mock_get:
             mock_hcg = MagicMock()
             mock_group = _make_fake_group(nranks=1)
             mock_hcg.get_model_parallel_group.return_value = mock_group
@@ -372,7 +378,9 @@ class TestParseMoeGroup(unittest.TestCase):
 
     def test_dp_group(self):
         """Test 'dp' group type."""
-        with patch("paddleformers.nn.moe.utils.fleet.get_hybrid_communicate_group") as mock_get:
+        with patch(
+            "paddleformers.nn.moe.utils.fleet.get_hybrid_communicate_group"
+        ) as mock_get:
             mock_hcg = MagicMock()
             mock_group = _make_fake_group()
             mock_hcg.get_data_parallel_group.return_value = mock_group
@@ -382,7 +390,9 @@ class TestParseMoeGroup(unittest.TestCase):
 
     def test_data_group(self):
         """Test 'data' group type."""
-        with patch("paddleformers.nn.moe.utils.fleet.get_hybrid_communicate_group") as mock_get:
+        with patch(
+            "paddleformers.nn.moe.utils.fleet.get_hybrid_communicate_group"
+        ) as mock_get:
             mock_hcg = MagicMock()
             mock_group = _make_fake_group()
             mock_hcg.get_data_parallel_group.return_value = mock_group
@@ -392,7 +402,9 @@ class TestParseMoeGroup(unittest.TestCase):
 
     def test_mp_group(self):
         """Test 'mp' group type."""
-        with patch("paddleformers.nn.moe.utils.fleet.get_hybrid_communicate_group") as mock_get:
+        with patch(
+            "paddleformers.nn.moe.utils.fleet.get_hybrid_communicate_group"
+        ) as mock_get:
             mock_hcg = MagicMock()
             mock_group = _make_fake_group(nranks=4)
             mock_hcg.get_model_parallel_group.return_value = mock_group
@@ -402,7 +414,9 @@ class TestParseMoeGroup(unittest.TestCase):
 
     def test_model_group(self):
         """Test 'model' group type."""
-        with patch("paddleformers.nn.moe.utils.fleet.get_hybrid_communicate_group") as mock_get:
+        with patch(
+            "paddleformers.nn.moe.utils.fleet.get_hybrid_communicate_group"
+        ) as mock_get:
             mock_hcg = MagicMock()
             mock_group = _make_fake_group(nranks=4)
             mock_hcg.get_model_parallel_group.return_value = mock_group
@@ -412,7 +426,9 @@ class TestParseMoeGroup(unittest.TestCase):
 
     def test_tp_group(self):
         """Test 'tp' group type."""
-        with patch("paddleformers.nn.moe.utils.fleet.get_hybrid_communicate_group") as mock_get:
+        with patch(
+            "paddleformers.nn.moe.utils.fleet.get_hybrid_communicate_group"
+        ) as mock_get:
             mock_hcg = MagicMock()
             mock_group = _make_fake_group(nranks=4)
             mock_hcg.get_model_parallel_group.return_value = mock_group
@@ -422,7 +438,9 @@ class TestParseMoeGroup(unittest.TestCase):
 
     def test_mp_group_single_rank(self):
         """Test 'mp' group with single rank falls back to dummy."""
-        with patch("paddleformers.nn.moe.utils.fleet.get_hybrid_communicate_group") as mock_get:
+        with patch(
+            "paddleformers.nn.moe.utils.fleet.get_hybrid_communicate_group"
+        ) as mock_get:
             mock_hcg = MagicMock()
             mock_group = _make_fake_group(nranks=1)
             mock_hcg.get_model_parallel_group.return_value = mock_group
@@ -432,9 +450,13 @@ class TestParseMoeGroup(unittest.TestCase):
 
     def test_mp_group_exception(self):
         """Test 'mp' group when get_model_parallel_group raises exception."""
-        with patch("paddleformers.nn.moe.utils.fleet.get_hybrid_communicate_group") as mock_get:
+        with patch(
+            "paddleformers.nn.moe.utils.fleet.get_hybrid_communicate_group"
+        ) as mock_get:
             mock_hcg = MagicMock()
-            mock_hcg.get_model_parallel_group.side_effect = Exception("no mp group")
+            mock_hcg.get_model_parallel_group.side_effect = Exception(
+                "no mp group"
+            )
             mock_get.return_value = mock_hcg
             result = self._parse_moe_group("mp")
         self.assertIsNotNone(result)
@@ -446,7 +468,9 @@ class TestParseMoeGroup(unittest.TestCase):
 
     def test_world_group(self):
         """Test 'world' group type."""
-        with patch("paddleformers.nn.moe.utils._get_global_group") as mock_global:
+        with patch(
+            "paddleformers.nn.moe.utils._get_global_group"
+        ) as mock_global:
             mock_group = _make_fake_group()
             mock_global.return_value = mock_group
             result = self._parse_moe_group("world")
@@ -454,7 +478,9 @@ class TestParseMoeGroup(unittest.TestCase):
 
     def test_none_group(self):
         """Test 'none' group type."""
-        with patch("paddleformers.nn.moe.utils._get_global_group") as mock_global:
+        with patch(
+            "paddleformers.nn.moe.utils._get_global_group"
+        ) as mock_global:
             mock_group = _make_fake_group()
             mock_global.return_value = mock_group
             result = self._parse_moe_group("none")
@@ -462,7 +488,9 @@ class TestParseMoeGroup(unittest.TestCase):
 
     def test_all_group(self):
         """Test 'all' group type."""
-        with patch("paddleformers.nn.moe.utils._get_global_group") as mock_global:
+        with patch(
+            "paddleformers.nn.moe.utils._get_global_group"
+        ) as mock_global:
             mock_group = _make_fake_group()
             mock_global.return_value = mock_group
             result = self._parse_moe_group("all")
@@ -470,7 +498,9 @@ class TestParseMoeGroup(unittest.TestCase):
 
     def test_case_insensitive(self):
         """Test that group types are case-insensitive."""
-        with patch("paddleformers.nn.moe.utils.fleet.get_hybrid_communicate_group") as mock_get:
+        with patch(
+            "paddleformers.nn.moe.utils.fleet.get_hybrid_communicate_group"
+        ) as mock_get:
             mock_hcg = MagicMock()
             mock_group = _make_fake_group()
             mock_hcg.get_data_parallel_group.return_value = mock_group
@@ -500,7 +530,9 @@ class TestGetAsyncLoader(unittest.TestCase):
 
     def test_with_hcg_creates_loader(self):
         """Test that loader is created on HCG when HCG exists."""
-        with patch("paddleformers.nn.moe.utils.fleet.fleet", new_callable=PropertyMock) as _:
+        with patch(
+            "paddleformers.nn.moe.utils.fleet.fleet", new_callable=PropertyMock
+        ) as _:
             mock_f = MagicMock()
             mock_f._hcg = True
             type(mock_f).fleet = mock_f
@@ -508,7 +540,9 @@ class TestGetAsyncLoader(unittest.TestCase):
             del mock_hcg.async_loader
             with patch("paddleformers.nn.moe.utils.get_hcg") as mock_get_hcg:
                 mock_get_hcg.return_value = mock_hcg
-                with patch("paddleformers.nn.moe.utils.create_async_load") as mock_create:
+                with patch(
+                    "paddleformers.nn.moe.utils.create_async_load"
+                ) as mock_create:
                     mock_loader = MagicMock()
                     mock_create.return_value = mock_loader
                     result = self.get_async_loader()

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import logging
-from typing import List, Optional, Union
+from typing import Optional
 
 import numpy as np
 import paddle
@@ -101,20 +101,35 @@ class WhisperFeatureExtractor(SequenceFeatureExtractor):
             mel_scale="slaney",
         )
 
-    def _paddle_extract_fbank_features(self, waveform: np.array, device: str = "cpu") -> np.ndarray:
+    def _paddle_extract_fbank_features(
+        self, waveform: np.array, device: str = "cpu"
+    ) -> np.ndarray:
         waveform = paddle.to_tensor(data=waveform).to(device, "float32")
-        window = paddle.audio.functional.get_window(win_length=self.n_fft, dtype="float32", window="hann")
+        window = paddle.audio.functional.get_window(
+            win_length=self.n_fft, dtype="float32", window="hann"
+        )
         if self.dither != 0.0:
-            waveform += self.dither * paddle.randn(shape=tuple(waveform.shape), dtype=waveform.dtype)
+            waveform += self.dither * paddle.randn(
+                shape=tuple(waveform.shape), dtype=waveform.dtype
+            )
 
-        stft = paddle.signal.stft(n_fft=self.n_fft, hop_length=self.hop_length, window=window, x=waveform)
+        stft = paddle.signal.stft(
+            n_fft=self.n_fft,
+            hop_length=self.hop_length,
+            window=window,
+            x=waveform,
+        )
         magnitudes = stft[..., :-1].abs() ** 2
-        mel_filters = paddle.to_tensor(data=self.mel_filters).to(device, "float32")
+        mel_filters = paddle.to_tensor(data=self.mel_filters).to(
+            device, "float32"
+        )
         mel_spec = mel_filters.T @ magnitudes
         log_spec = paddle.clip(x=mel_spec, min=1e-10).log10()
 
         if waveform.dim() == 2:
-            max_val = paddle.max(paddle.max(log_spec, axis=2, keepdim=True), axis=1, keepdim=True)
+            max_val = paddle.max(
+                paddle.max(log_spec, axis=2, keepdim=True), axis=1, keepdim=True
+            )
             log_spec = paddle.maximum(x=log_spec, y=max_val - 8.0)
         else:
             log_spec = paddle.maximum(x=log_spec, y=log_spec.max_func() - 8.0)
@@ -124,7 +139,9 @@ class WhisperFeatureExtractor(SequenceFeatureExtractor):
             log_spec = log_spec.detach().cpu()
         return log_spec.numpy()
 
-    def _np_extract_fbank_features(self, waveform_batch: np.array, device: str) -> np.ndarray:
+    def _np_extract_fbank_features(
+        self, waveform_batch: np.array, device: str
+    ) -> np.ndarray:
         """
         Compute the log-mel spectrogram of the provided audio, gives similar results to Whisper's original torch
         implementation with 1e-5 tolerance.
@@ -157,8 +174,10 @@ class WhisperFeatureExtractor(SequenceFeatureExtractor):
     @staticmethod
     # Copied from transformers.models.wav2vec2.feature_extraction_wav2vec2.Wav2Vec2FeatureExtractor.zero_mean_unit_var_norm
     def zero_mean_unit_var_norm(
-        input_values: List[np.ndarray], attention_mask: List[np.ndarray], padding_value: float = 0.0
-    ) -> List[np.ndarray]:
+        input_values: list[np.ndarray],
+        attention_mask: list[np.ndarray],
+        padding_value: float = 0.0,
+    ) -> list[np.ndarray]:
         """
         Every array in the list is normalized to have zero mean and unit variance
         """
@@ -167,22 +186,29 @@ class WhisperFeatureExtractor(SequenceFeatureExtractor):
             normed_input_values = []
 
             for vector, length in zip(input_values, attention_mask.sum(-1)):
-                normed_slice = (vector - vector[:length].mean()) / np.sqrt(vector[:length].var() + 1e-7)
+                normed_slice = (vector - vector[:length].mean()) / np.sqrt(
+                    vector[:length].var() + 1e-7
+                )
                 if length < normed_slice.shape[0]:
                     normed_slice[length:] = padding_value
 
                 normed_input_values.append(normed_slice)
         else:
-            normed_input_values = [(x - x.mean()) / np.sqrt(x.var() + 1e-7) for x in input_values]
+            normed_input_values = [
+                (x - x.mean()) / np.sqrt(x.var() + 1e-7) for x in input_values
+            ]
 
         return normed_input_values
 
     def __call__(
         self,
-        raw_speech: Union[np.ndarray, List[float], List[np.ndarray], List[List[float]]],
+        raw_speech: np.ndarray
+        | list[float]
+        | list[np.ndarray]
+        | list[list[float]],
         truncation: bool = True,
         pad_to_multiple_of: Optional[int] = None,
-        return_tensors: Optional[Union[str, TensorType]] = None,
+        return_tensors: Optional[str | TensorType] = None,
         return_attention_mask: Optional[bool] = None,
         padding: Optional[str] = "max_length",
         max_length: Optional[int] = None,
@@ -250,19 +276,29 @@ class WhisperFeatureExtractor(SequenceFeatureExtractor):
             logger.warning(
                 f"It is strongly recommended to pass the `sampling_rate` argument to `{self.__class__.__name__}()`. Failing to do so can result in silent errors that might be hard to debug."
             )
-        is_batched_numpy = isinstance(raw_speech, np.ndarray) and len(tuple(raw_speech.shape)) > 1
+        is_batched_numpy = (
+            isinstance(raw_speech, np.ndarray)
+            and len(tuple(raw_speech.shape)) > 1
+        )
         if is_batched_numpy and len(tuple(raw_speech.shape)) > 2:
-            raise ValueError(f"Only mono-channel audio is supported for input to {self}")
+            raise ValueError(
+                f"Only mono-channel audio is supported for input to {self}"
+            )
         is_batched = (
             is_batched_numpy
             or isinstance(raw_speech, (list, tuple))
             and isinstance(raw_speech[0], (np.ndarray, tuple, list))
         )
         if is_batched:
-            raw_speech = [np.asarray([speech], dtype=np.float32).T for speech in raw_speech]
+            raw_speech = [
+                np.asarray([speech], dtype=np.float32).T
+                for speech in raw_speech
+            ]
         elif not is_batched and not isinstance(raw_speech, np.ndarray):
             raw_speech = np.asarray(raw_speech, dtype=np.float32)
-        elif isinstance(raw_speech, np.ndarray) and raw_speech.dtype is np.dtype(np.float64):
+        elif isinstance(
+            raw_speech, np.ndarray
+        ) and raw_speech.dtype is np.dtype(np.float64):
             raw_speech = raw_speech.astype(np.float32)
         if not is_batched:
             raw_speech = [np.asarray([raw_speech]).T]
@@ -284,22 +320,36 @@ class WhisperFeatureExtractor(SequenceFeatureExtractor):
                 attention_mask=padded_inputs["attention_mask"],
                 padding_value=self.padding_value,
             )
-            padded_inputs["input_features"] = np.stack(padded_inputs["input_features"], axis=0)
+            padded_inputs["input_features"] = np.stack(
+                padded_inputs["input_features"], axis=0
+            )
 
         input_features = padded_inputs.get("input_features").transpose(2, 0, 1)
 
-        input_features = self._paddle_extract_fbank_features(input_features[0], device="cpu")
+        input_features = self._paddle_extract_fbank_features(
+            input_features[0], device="cpu"
+        )
 
-        if isinstance(input_features[0], List):
-            padded_inputs["input_features"] = [np.asarray(feature, dtype=np.float32) for feature in input_features]
+        if isinstance(input_features[0], list):
+            padded_inputs["input_features"] = [
+                np.asarray(feature, dtype=np.float32)
+                for feature in input_features
+            ]
         else:
             padded_inputs["input_features"] = input_features
         if return_attention_mask:
-            padded_inputs["attention_mask"] = padded_inputs["attention_mask"][:, :: self.hop_length]
+            padded_inputs["attention_mask"] = padded_inputs["attention_mask"][
+                :, :: self.hop_length
+            ]
             if padded_inputs["attention_mask"].shape[1] % self.hop_length != 0:
-                padded_inputs["attention_mask"] = padded_inputs["attention_mask"][:, :-1]
+                padded_inputs["attention_mask"] = padded_inputs[
+                    "attention_mask"
+                ][:, :-1]
         if return_token_timestamps is not None:
-            padded_inputs["num_frames"] = [(len(raw_speech_i) // self.hop_length) for raw_speech_i in raw_speech]
+            padded_inputs["num_frames"] = [
+                (len(raw_speech_i) // self.hop_length)
+                for raw_speech_i in raw_speech
+            ]
         if return_tensors is not None:
             padded_inputs = padded_inputs.convert_to_tensors(return_tensors)
         return padded_inputs

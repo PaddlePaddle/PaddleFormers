@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Callable, Optional, cast
+from collections.abc import Callable
+from typing import Optional, cast
 
 import paddle
 from paddle import nn
@@ -62,8 +63,12 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
 
     original_dtype = q.dtype
 
-    q_embed = (q.astype("float32") * cos) + (rotate_half(q).astype("float32") * sin)
-    k_embed = (k.astype("float32") * cos) + (rotate_half(k).astype("float32") * sin)
+    q_embed = (q.astype("float32") * cos) + (
+        rotate_half(q).astype("float32") * sin
+    )
+    k_embed = (k.astype("float32") * cos) + (
+        rotate_half(k).astype("float32") * sin
+    )
 
     return q_embed.astype(original_dtype), k_embed.astype(original_dtype)
 
@@ -77,13 +82,16 @@ class LLamaAttention(nn.Layer):
         self.num_key_value_heads = config.num_key_value_heads
         if hasattr(config, "head_dim"):
             assert (
-                config.hidden_size == config.num_attention_heads * config.head_dim
-            ), f"hidden_size must be divisible by num_attention_heads if head_dim is set. Found {config.hidden_size} and {config.num_attention_heads} * {config.head_dim}"
+                config.hidden_size
+                == config.num_attention_heads * config.head_dim
+            ), (
+                f"hidden_size must be divisible by num_attention_heads if head_dim is set. Found {config.hidden_size} and {config.num_attention_heads} * {config.head_dim}"
+            )
             self.head_dim = config.head_dim
         else:
-            assert (
-                config.hidden_size % config.num_attention_heads == 0
-            ), f"hidden_size must be divisible by num_attention_heads. Found {config.hidden_size} and {config.num_attention_heads}"
+            assert config.hidden_size % config.num_attention_heads == 0, (
+                f"hidden_size must be divisible by num_attention_heads. Found {config.hidden_size} and {config.num_attention_heads}"
+            )
             self.head_dim = config.hidden_size // config.num_attention_heads
 
         assert config.num_attention_heads % config.num_key_value_heads == 0, (
@@ -91,17 +99,24 @@ class LLamaAttention(nn.Layer):
             f"Found {config.num_attention_heads} and {config.num_key_value_heads}"
         )
         if config.tensor_model_parallel_size > 1:
-            assert (
-                self.num_heads % config.tensor_model_parallel_size == 0
-            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            assert self.num_heads % config.tensor_model_parallel_size == 0, (
+                f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            )
             self.num_heads = self.num_heads // config.tensor_model_parallel_size
 
             assert (
-                self.num_key_value_heads % config.tensor_model_parallel_size == 0
-            ), f"num_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
-            self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
+                self.num_key_value_heads % config.tensor_model_parallel_size
+                == 0
+            ), (
+                f"num_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            )
+            self.num_key_value_heads = (
+                self.num_key_value_heads // config.tensor_model_parallel_size
+            )
 
-        self.num_key_value_groups = config.num_attention_heads // config.num_key_value_heads
+        self.num_key_value_groups = (
+            config.num_attention_heads // config.num_key_value_heads
+        )
         self.scaling = self.head_dim**-0.5
         self.attention_dropout = config.attention_dropout
 
@@ -149,26 +164,42 @@ class LLamaAttention(nn.Layer):
     ) -> tuple[paddle.Tensor, list[paddle.Tensor] | None]:
         if self.config.sequence_parallel:
             seq_len = self.config.max_sequence_length
-            batch_size = hidden_states.shape[0] * self.config.tensor_model_parallel_size // seq_len
+            batch_size = (
+                hidden_states.shape[0]
+                * self.config.tensor_model_parallel_size
+                // seq_len
+            )
         else:
             batch_size, seq_len = hidden_states.shape[:2]
 
         q_shape = (batch_size, seq_len, -1, self.head_dim)
         kv_shape = (batch_size, seq_len, -1, self.head_dim)
 
-        query_states = self.q_proj(hidden_states).reshape(q_shape).transpose(1, 2)
-        key_states = self.k_proj(hidden_states).reshape(kv_shape).transpose(1, 2)
-        value_states = self.v_proj(hidden_states).reshape(kv_shape).transpose(1, 2)
+        query_states = (
+            self.q_proj(hidden_states).reshape(q_shape).transpose(1, 2)
+        )
+        key_states = (
+            self.k_proj(hidden_states).reshape(kv_shape).transpose(1, 2)
+        )
+        value_states = (
+            self.v_proj(hidden_states).reshape(kv_shape).transpose(1, 2)
+        )
 
         cos, sin = position_embeddings
-        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+        query_states, key_states = apply_rotary_pos_emb(
+            query_states, key_states, cos, sin
+        )
 
         if past_key_values is not None:
-            key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
+            key_states, value_states = past_key_values.update(
+                key_states, value_states, self.layer_idx
+            )
 
         attention_interface: Callable = ALL_ATTENTION_FUNCTIONS["sdpa"]
         if self.config._attn_implementation != "sdpa":
-            attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+            attention_interface = ALL_ATTENTION_FUNCTIONS[
+                self.config._attn_implementation
+            ]
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -219,7 +250,7 @@ class LlamaDecoderLayer(nn.Layer):
         position_embeddings: tuple[paddle.Tensor, paddle.Tensor] | None = None,
         past_key_values: Cache | None = None,
         use_cache: bool = False,
-    ) -> (tuple[paddle.Tensor] | tuple[paddle.Tensor, paddle.Tensor]):
+    ) -> tuple[paddle.Tensor] | tuple[paddle.Tensor, paddle.Tensor]:
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
         hidden_states, _ = self.self_attn(
@@ -251,10 +282,14 @@ class LlamaRotaryEmbedding(nn.Layer):
         self.max_seq_len_cached = config.max_position_embeddings
         self.original_max_seq_len = config.max_position_embeddings
         self.config = config
-        self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
+        self.head_dim = getattr(
+            config, "head_dim", config.hidden_size // config.num_attention_heads
+        )
 
         self.rope_type = "default"
-        if hasattr(config, "rope_parameters") and isinstance(config.rope_parameters, dict):
+        if hasattr(config, "rope_parameters") and isinstance(
+            config.rope_parameters, dict
+        ):
             self.rope_type = config.rope_parameters.get("rope_type", "default")
 
         rope_init_fn = self.compute_default_rope_parameters
@@ -282,22 +317,39 @@ class LlamaRotaryEmbedding(nn.Layer):
             post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
         """
         base = config.rope_parameters["rope_theta"]
-        dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+        dim = (
+            getattr(config, "head_dim", None)
+            or config.hidden_size // config.num_attention_heads
+        )
 
         attention_factor = 1.0  # Unused in this type of RoPE
 
         # Compute the inverse frequencies
-        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        inv_freq = 1.0 / (
+            base
+            ** (
+                paddle.arange(0, dim, 2, dtype=paddle.int64).astype(
+                    dtype=paddle.float32
+                )
+                / dim
+            )
+        )
         return inv_freq, attention_factor
 
     @dynamic_rope_update
     def forward(self, x, position_ids):
         with paddle.amp.auto_cast(enable=False):
-            inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
+            inv_freq_expanded = (
+                self.inv_freq[None, :, None]
+                .float()
+                .expand([position_ids.shape[0], -1, 1])
+            )
 
             position_ids_expanded = position_ids[:, None, :].float()
 
-            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+            freqs = (
+                inv_freq_expanded.float() @ position_ids_expanded.float()
+            ).transpose(1, 2)
 
             emb = paddle.concat((freqs, freqs), axis=-1)
 
@@ -322,7 +374,9 @@ class LlamaPretrainedModel(PretrainedModel):
 
     @classmethod
     def _gen_aoa_config(cls, config: LlamaConfig):
-        model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
+        model_prefix = (
+            cls.base_model_prefix + "." if cls != cls.base_model_class else ""
+        )
 
         aoa_statements = [
             f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
@@ -346,7 +400,9 @@ class LlamaPretrainedModel(PretrainedModel):
         )
         if cls != cls.base_model_class:
             if config.tie_word_embeddings:
-                aoa_statements.append("model.embed_tokens.weight -> lm_head.weight")
+                aoa_statements.append(
+                    "model.embed_tokens.weight -> lm_head.weight"
+                )
             else:
                 aoa_statements.append("lm_head.weight -> lm_head.weight")
 
@@ -354,7 +410,9 @@ class LlamaPretrainedModel(PretrainedModel):
 
     @classmethod
     def _gen_inv_aoa_config(cls, config: LlamaConfig):
-        model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
+        model_prefix = (
+            cls.base_model_prefix + "." if cls != cls.base_model_class else ""
+        )
 
         aoa_statements = [
             f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
@@ -399,7 +457,10 @@ class LlamaModel(LlamaPretrainedModel):
             padding_idx=self.padding_idx,
         )
         self.layers = nn.LayerList(
-            [LlamaDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
+            [
+                LlamaDecoderLayer(config, layer_idx)
+                for layer_idx in range(config.num_hidden_layers)
+            ]
         )
         self.norm = GeneralNorm.create(
             config=config,
@@ -424,16 +485,28 @@ class LlamaModel(LlamaPretrainedModel):
         return_dict: bool | None = False,
     ):
         output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
         )
-        use_cache = use_cache if use_cache is not None else self.config.use_cache
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        use_cache = (
+            use_cache if use_cache is not None else self.config.use_cache
+        )
+        return_dict = (
+            return_dict
+            if return_dict is not None
+            else self.config.use_return_dict
+        )
 
         if not ((input_ids is None) ^ (inputs_embeds is None)):
-            raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
+            raise ValueError(
+                "You must specify exactly one of input_ids or inputs_embeds"
+            )
         if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
-        inputs_embeds = cast(paddle.Tensor, inputs_embeds)  # for type check
+            inputs_embeds = self.embed_tokens(input_ids).astype(
+                self.embed_tokens.weight.dtype
+            )
+        inputs_embeds = cast("paddle.Tensor", inputs_embeds)  # for type check
         bsz, seq_length, _ = inputs_embeds.shape
 
         if self.config.sequence_parallel:
@@ -442,11 +515,19 @@ class LlamaModel(LlamaPretrainedModel):
 
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache(config=self.config)
-        kv_seq_len = past_key_values.get_seq_length() if past_key_values is not None else 0
+        kv_seq_len = (
+            past_key_values.get_seq_length()
+            if past_key_values is not None
+            else 0
+        )
 
         if position_ids is None:
             position_ids = (
-                paddle.arange(kv_seq_len, seq_length + kv_seq_len, dtype=paddle.int64).unsqueeze(0).tile((bsz, 1))
+                paddle.arange(
+                    kv_seq_len, seq_length + kv_seq_len, dtype=paddle.int64
+                )
+                .unsqueeze(0)
+                .tile((bsz, 1))
             )
 
         # TODO(littleherozzzx): check self.config.apply_rope_fusion
@@ -460,7 +541,9 @@ class LlamaModel(LlamaPretrainedModel):
             "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
         }
-        causal_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
+        causal_mask, attn_mask_startend_row_indices = (
+            create_causal_mask_and_row_indices(**mask_kwargs)
+        )
         position_embeddings = self.rotary_emb(inputs_embeds, position_ids)
         all_hidden_states = [] if output_hidden_states else None
 
@@ -496,7 +579,11 @@ class LlamaModel(LlamaPretrainedModel):
                     use_cache=use_cache,
                 )
 
-            hidden_states = layer_outputs[0] if isinstance(layer_outputs, tuple | list) else layer_outputs
+            hidden_states = (
+                layer_outputs[0]
+                if isinstance(layer_outputs, tuple | list)
+                else layer_outputs
+            )
 
         hidden_states = self.norm(hidden_states)
         if output_hidden_states:
@@ -504,7 +591,9 @@ class LlamaModel(LlamaPretrainedModel):
                 hidden_states,
             )
 
-        all_hidden_states = tuple(all_hidden_states) if all_hidden_states else None
+        all_hidden_states = (
+            tuple(all_hidden_states) if all_hidden_states else None
+        )
 
         if not return_dict:
             outputs = []
@@ -576,17 +665,31 @@ class LlamaForCausalLM(LlamaPretrainedModel):
         return_dict: bool = False,  # true when decode, false when pretrain & eval
         **kwargs,
     ):
-        if kwargs.get("attn_mask_start_row_indices", None) is not None and attn_mask_startend_row_indices is None:
-            attn_mask_startend_row_indices = kwargs.pop("attn_mask_start_row_indices")
+        if (
+            kwargs.get("attn_mask_start_row_indices", None) is not None
+            and attn_mask_startend_row_indices is None
+        ):
+            attn_mask_startend_row_indices = kwargs.pop(
+                "attn_mask_start_row_indices"
+            )
         output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
         )
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict
+            if return_dict is not None
+            else self.config.use_return_dict
+        )
 
         if attention_mask is not None and attention_mask.dtype != paddle.bool:
             attention_mask = paddle.cast(attention_mask, paddle.bool)
 
-        if attn_mask_startend_row_indices is not None and attention_mask is not None:
+        if (
+            attn_mask_startend_row_indices is not None
+            and attention_mask is not None
+        ):
             logger.warning(
                 "You have provided both attn_mask_startend_row_indices and attention_mask. "
                 "The attn_mask_startend_row_indices will be used."
@@ -626,7 +729,9 @@ class LlamaForCausalLM(LlamaPretrainedModel):
         )
 
     def auto_dist_config(self, prefix=""):
-        assert self.config.use_single_model_implementation, "Use `get_dist_config` only in single card mode."
+        assert self.config.use_single_model_implementation, (
+            "Use `get_dist_config` only in single card mode."
+        )
         return get_dist_config(self, prefix)
 
 

@@ -24,10 +24,14 @@ class TestPhi3Tokenizer(unittest.TestCase):
         """Phi3Tokenizer should be a class (wrapped via warp_tokenizer)."""
         self.assertTrue(callable(Phi3Tokenizer))
 
-    @unittest.skip("issubclass check fails due to different module identity in CI")
+    @unittest.skip(
+        "issubclass check fails due to different module identity in CI"
+    )
     def test_is_subclass_of_mixin(self):
         """Should be a subclass that includes PaddleTokenizerMixin."""
-        from paddleformers.transformers.tokenizer_utils import PaddleTokenizerMixin
+        from paddleformers.transformers.tokenizer_utils import (
+            PaddleTokenizerMixin,
+        )
 
         self.assertTrue(issubclass(Phi3Tokenizer, PaddleTokenizerMixin))
 

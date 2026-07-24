@@ -17,7 +17,8 @@
 
 import abc
 import os
-from typing import Callable, Generic, TypeVar, Union
+from collections.abc import Callable
+from typing import Generic, TypeVar
 
 try:
     from typing import Unpack
@@ -32,23 +33,23 @@ except ImportError:
 import paddle
 import paddle.distributed as dist
 
-from ..utils.import_utils import is_paddlefleet_available
+from ..utils.import_utils import is_paddleformers_available
 
-# This module requires paddlefleet to be installed
-if not is_paddlefleet_available():
+# This module requires paddleformers.fleet to be installed
+if not is_paddleformers_available():
     raise ImportError(
-        "paddlefleet is required for model_provider. "
-        "Please install paddlefleet to use this module. "
-        "You can install it with: pip install paddlefleet"
+        "paddleformers.fleet is required for model_provider. "
+        "Please install paddleformers.fleet to use this module. "
+        "You can install it with: pip install paddleformers.fleet"
     )
 
-from paddlefleet import parallel_state, tensor_parallel
-from paddlefleet.transformer.enums import ModelType
-from paddlefleet.transformer.layer import FleetLayer
-from paddlefleet.utils import get_model_config
+from paddleformers.fleet import parallel_state, tensor_parallel
+from paddleformers.fleet.transformer.enums import ModelType
+from paddleformers.fleet.transformer.layer import FleetLayer
+from paddleformers.fleet.utils import get_model_config
 
 try:
-    from paddlefleet.fp8_utils import correct_amax_history_if_needed
+    from paddleformers.fleet.fp8_utils import correct_amax_history_if_needed
 except ImportError:
     correct_amax_history_if_needed = None
 
@@ -81,7 +82,10 @@ class ModelProviderMixin(abc.ABC, Generic[ModelT]):
 
     @abc.abstractmethod
     def provide(
-        self, pre_process: bool | None = None, post_process: bool | None = None, vp_stage: int | None = None
+        self,
+        pre_process: bool | None = None,
+        post_process: bool | None = None,
+        vp_stage: int | None = None,
     ) -> ModelT:
         """Abstract method to provide the model instance.
 
@@ -112,12 +116,11 @@ class ModelProviderMixin(abc.ABC, Generic[ModelT]):
         data_parallel_random_init: bool = True,
         use_cpu_initialization: None | bool = False,
         init_model_with_meta_device: bool | None = None,
-        pre_wrap_hook: Union[
-            Callable[[list[FleetLayer]], list[FleetLayer]],
-            list[Callable[[list[FleetLayer]], list[FleetLayer]]],
-        ]
+        pre_wrap_hook: Callable[[list[FleetLayer]], list[FleetLayer]]
+        | list[Callable[[list[FleetLayer]], list[FleetLayer]]]
         | None = None,
-        post_wrap_hook: Callable[[list[FleetLayer]], list[FleetLayer]] | None = None,
+        post_wrap_hook: Callable[[list[FleetLayer]], list[FleetLayer]]
+        | None = None,
     ) -> list[ModelT]:
         """Instantiate and wrap the model for distributed training.
 
@@ -148,12 +151,16 @@ class ModelProviderMixin(abc.ABC, Generic[ModelT]):
             A list containing the wrapped model instance.
         """
         if wrap_with_ddp and not ddp_config:
-            raise ValueError("ddp_config is required when wrap_with_ddp is True")
+            raise ValueError(
+                "ddp_config is required when wrap_with_ddp is True"
+            )
 
         if not paddle.distributed.is_initialized():
             os.environ["RANK"] = os.environ.get("RANK", "0")
             os.environ["WORLD_SIZE"] = os.environ.get("WORLD_SIZE", "1")
-            os.environ["MASTER_ADDR"] = os.environ.get("MASTER_ADDR", "localhost")
+            os.environ["MASTER_ADDR"] = os.environ.get(
+                "MASTER_ADDR", "localhost"
+            )
             os.environ["MASTER_PORT"] = os.environ.get("MASTER_PORT", "12355")
             paddle.cuda.set_device(dist.get_rank())
             paddle.distributed.init_process_group("nccl")
@@ -165,7 +172,9 @@ class ModelProviderMixin(abc.ABC, Generic[ModelT]):
         # Convert list of hooks to a single composed callable
         if isinstance(pre_wrap_hook, list):
 
-            def composed_pre_wrap_hook(model: list[FleetLayer]) -> list[FleetLayer]:
+            def composed_pre_wrap_hook(
+                model: list[FleetLayer],
+            ) -> list[FleetLayer]:
                 for hook in pre_wrap_hook:
                     model = hook(model)
                 return model
@@ -199,7 +208,10 @@ class ModelProviderMixin(abc.ABC, Generic[ModelT]):
         return model
 
     def initialize_model_parallel(
-        self, seed: int | None = None, seed_kwargs: dict | None = None, **model_parallel_kwargs
+        self,
+        seed: int | None = None,
+        seed_kwargs: dict | None = None,
+        **model_parallel_kwargs,
     ) -> None:
         """Initializes model parallelism and sets the random seed.
 
@@ -216,12 +228,24 @@ class ModelProviderMixin(abc.ABC, Generic[ModelT]):
             paddle.distributed.init_process_group("nccl")
 
         parallel_state.initialize_model_parallel(
-            tensor_model_parallel_size=getattr(self, "tensor_model_parallel_size", 1),
-            pipeline_model_parallel_size=getattr(self, "pipeline_model_parallel_size", 1),
-            virtual_pipeline_model_parallel_size=getattr(self, "virtual_pipeline_model_parallel_size", None),
-            context_parallel_size=getattr(self, "context_parallel_size", 1) or 1,
-            expert_model_parallel_size=getattr(self, "expert_model_parallel_size", 1) or 1,
-            expert_tensor_parallel_size=getattr(self, "expert_tensor_parallel_size", None),
+            tensor_model_parallel_size=getattr(
+                self, "tensor_model_parallel_size", 1
+            ),
+            pipeline_model_parallel_size=getattr(
+                self, "pipeline_model_parallel_size", 1
+            ),
+            virtual_pipeline_model_parallel_size=getattr(
+                self, "virtual_pipeline_model_parallel_size", None
+            ),
+            context_parallel_size=getattr(self, "context_parallel_size", 1)
+            or 1,
+            expert_model_parallel_size=getattr(
+                self, "expert_model_parallel_size", 1
+            )
+            or 1,
+            expert_tensor_parallel_size=getattr(
+                self, "expert_tensor_parallel_size", None
+            ),
             **model_parallel_kwargs,
         )
         # TODO(pkuzyc): Support model_parallel_cuda_manual_seed for PaddleFleet
@@ -238,7 +262,9 @@ class ModelProviderMixin(abc.ABC, Generic[ModelT]):
         return self(wrap_with_ddp=False, init_model_with_meta_device=True)
 
     @property
-    def pre_wrap_hook(self) -> Callable[[list[FleetLayer]], list[FleetLayer]] | None:
+    def pre_wrap_hook(
+        self,
+    ) -> Callable[[list[FleetLayer]], list[FleetLayer]] | None:
         """A composed callable of all registered pre-wrap hooks.
 
         This read-only property returns a single function that executes all registered
@@ -284,7 +310,9 @@ class ModelProviderMixin(abc.ABC, Generic[ModelT]):
             self._pre_wrap_hooks.append(hook)
 
     @property
-    def post_wrap_hook(self) -> Callable[[list[FleetLayer]], list[FleetLayer]] | None:
+    def post_wrap_hook(
+        self,
+    ) -> Callable[[list[FleetLayer]], list[FleetLayer]] | None:
         """A composed callable of all registered post-wrap hooks.
 
         This read-only property returns a single function that executes all registered
@@ -343,10 +371,8 @@ def get_model(
     data_parallel_random_init: bool = True,
     use_cpu_initialization: None | bool = False,
     init_model_with_meta_device: bool | None = None,
-    pre_wrap_hook: Union[
-        Callable[[list[FleetLayer]], list[FleetLayer]],
-        list[Callable[[list[FleetLayer]], list[FleetLayer]]],
-    ]
+    pre_wrap_hook: Callable[[list[FleetLayer]], list[FleetLayer]]
+    | list[Callable[[list[FleetLayer]], list[FleetLayer]]]
     | None = None,
 ) -> list[FleetLayer]:
     """Create and configure a model for distributed training.
@@ -388,7 +414,9 @@ def get_model(
     if bf16:
         model_provider.bf16 = bf16
 
-    model_provider.use_cpu_initialization = use_cpu_initialization if use_cpu_initialization else False
+    model_provider.use_cpu_initialization = (
+        use_cpu_initialization if use_cpu_initialization else False
+    )
     if init_model_with_meta_device:
         model_provider.init_model_with_meta_device = True
         with paddle.device("meta"):
@@ -401,13 +429,17 @@ def get_model(
             # Execute hooks in order
             for hook in pre_wrap_hook:
                 if not callable(hook):
-                    raise RuntimeError("All elements in pre_wrap_hook list must be callable")
+                    raise RuntimeError(
+                        "All elements in pre_wrap_hook list must be callable"
+                    )
                 _model = hook(model)
                 if _model is not None:
                     model = _model
         else:
             if not callable(pre_wrap_hook):
-                raise RuntimeError("pre_wrap_hook must be a callable or a list of callables")
+                raise RuntimeError(
+                    "pre_wrap_hook must be a callable or a list of callables"
+                )
             _model = pre_wrap_hook(model)
             if _model is not None:
                 model = _model
@@ -416,7 +448,9 @@ def get_model(
     # In case pre_wrap_hook augmented the model (e.g. adding PEFT adapters)
     for model_module in model:
         for param in model_module.parameters():
-            tensor_parallel.set_defaults_if_not_set_tensor_model_parallel_attributes(param)
+            tensor_parallel.set_defaults_if_not_set_tensor_model_parallel_attributes(
+                param
+            )
 
     _print_num_params(model)
 
@@ -475,15 +509,22 @@ def _create_model(
 
     if (
         parallel_state.get_pipeline_model_parallel_world_size() > 1
-        and parallel_state.get_virtual_pipeline_model_parallel_world_size() is not None
+        and parallel_state.get_virtual_pipeline_model_parallel_world_size()
+        is not None
     ):
-        assert (
-            model_type != ModelType.encoder_and_decoder
-        ), "Interleaved schedule not supported for model with both encoder and decoder"
+        assert model_type != ModelType.encoder_and_decoder, (
+            "Interleaved schedule not supported for model with both encoder and decoder"
+        )
         model = []
-        for i in range(parallel_state.get_virtual_pipeline_model_parallel_world_size()):
-            pre_process = parallel_state.is_pipeline_first_stage(ignore_virtual=False, vp_stage=i)
-            post_process = parallel_state.is_pipeline_last_stage(ignore_virtual=False, vp_stage=i)
+        for i in range(
+            parallel_state.get_virtual_pipeline_model_parallel_world_size()
+        ):
+            pre_process = parallel_state.is_pipeline_first_stage(
+                ignore_virtual=False, vp_stage=i
+            )
+            post_process = parallel_state.is_pipeline_last_stage(
+                ignore_virtual=False, vp_stage=i
+            )
             this_model = model_provider.provide(
                 pre_process=pre_process,
                 post_process=post_process,
@@ -497,10 +538,16 @@ def _create_model(
         if model_type == ModelType.encoder_and_decoder:
             if parallel_state.get_pipeline_model_parallel_world_size() > 1:
                 rank = parallel_state.get_pipeline_model_parallel_rank()
-                first_decoder_rank = parallel_state.get_pipeline_model_parallel_decoder_start()
-                world_size = parallel_state.get_pipeline_model_parallel_world_size()
+                first_decoder_rank = (
+                    parallel_state.get_pipeline_model_parallel_decoder_start()
+                )
+                world_size = (
+                    parallel_state.get_pipeline_model_parallel_world_size()
+                )
                 pre_process = rank == 0 or rank == first_decoder_rank
-                post_process = (rank == (first_decoder_rank - 1)) or (rank == (world_size - 1))
+                post_process = (rank == (first_decoder_rank - 1)) or (
+                    rank == (world_size - 1)
+                )
             model = model_provider.provide()
         else:
             model = model_provider.provide(
@@ -518,7 +565,9 @@ def _create_model(
     # are set for all params so the optimizer can use them.
     for model_module in model:
         for param in model_module.parameters():
-            tensor_parallel.set_defaults_if_not_set_tensor_model_parallel_attributes(param)
+            tensor_parallel.set_defaults_if_not_set_tensor_model_parallel_attributes(
+                param
+            )
 
     return model
 
@@ -532,12 +581,11 @@ def _print_num_params(model: list[FleetLayer]) -> None:
     Args:
         model: List of model modules to count parameters from
     """
-    if parallel_state.get_data_parallel_rank() == 0 and parallel_state.get_context_parallel_rank() == 0:
+    if (
+        parallel_state.get_data_parallel_rank() == 0
+        and parallel_state.get_context_parallel_rank() == 0
+    ):
         print(
-            " > number of parameters on (tensor, pipeline) model parallel rank ({}, {}): {}".format(
-                parallel_state.get_tensor_model_parallel_rank(),
-                parallel_state.get_pipeline_model_parallel_rank(),
-                sum([sum([p.nelement() for p in model_module.parameters()]) for model_module in model]),
-            ),
+            f" > number of parameters on (tensor, pipeline) model parallel rank ({parallel_state.get_tensor_model_parallel_rank()}, {parallel_state.get_pipeline_model_parallel_rank()}): {sum([sum([p.nelement() for p in model_module.parameters()]) for model_module in model])}",
             flush=True,
         )

@@ -14,7 +14,7 @@
 
 import numpy as np
 import paddle
-import paddle.distributed.fleet as fleet
+from paddle.distributed import fleet
 from paddle.distributed.communication.reduce import ReduceOp
 from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer import (
     HybridParallelOptimizer,
@@ -38,9 +38,13 @@ def shard(node_model_state, model, optimizer):
     def split_func(k, v):
         param_name = k[1]
         opt_name = k[-1]
-        assert param_name in split_infos, f"param_name {param_name}, split_infos{split_infos}"
+        assert param_name in split_infos, (
+            f"param_name {param_name}, split_infos{split_infos}"
+        )
         is_beta = is_bata(opt_name)
-        index, padded_size, buffer_size, has_slice_grad = split_infos[param_name]
+        index, padded_size, buffer_size, has_slice_grad = split_infos[
+            param_name
+        ]
 
         if not is_beta:
             v = pad_tensor(k, v, padded_size)
@@ -50,7 +54,9 @@ def shard(node_model_state, model, optimizer):
                 return v
             return slice_tensor(v, begin, end)
 
-        assert buffer_size % group.nranks == 0, f"buffer_size {buffer_size} group.nranks {group.nranks}"
+        assert buffer_size % group.nranks == 0, (
+            f"buffer_size {buffer_size} group.nranks {group.nranks}"
+        )
         buffer_slice = buffer_size // group.nranks
 
         # has slice grad in cur rank
@@ -60,7 +66,9 @@ def shard(node_model_state, model, optimizer):
 
         offset = buffer_slice - index % buffer_slice
         tensors = []
-        tensors.append((index // buffer_slice, get_slice(v, 0, min(offset, padded_size))))
+        tensors.append(
+            (index // buffer_slice, get_slice(v, 0, min(offset, padded_size)))
+        )
 
         left_size = padded_size - offset
 
@@ -68,7 +76,12 @@ def shard(node_model_state, model, optimizer):
             for _ in range((left_size + buffer_slice - 1) // buffer_slice):
                 end = min(offset + buffer_slice, padded_size)
                 assert end <= buffer_size
-                tensors.append(((offset + index) // buffer_slice, get_slice(v, offset, end)))
+                tensors.append(
+                    (
+                        (offset + index) // buffer_slice,
+                        get_slice(v, offset, end),
+                    )
+                )
                 offset = end
 
         return tensors
@@ -115,7 +128,9 @@ def merge_tensors(k, tensor_list, shape):
         t = paddle.cat(x=tensor_list, axis=0)
     tensor_size = np.prod(shape)
     padded_size = t._numel()
-    assert padded_size >= tensor_size, f"{k} padded_size {padded_size} tensor_size {tensor_size}"
+    assert padded_size >= tensor_size, (
+        f"{k} padded_size {padded_size} tensor_size {tensor_size}"
+    )
     t = t._slice(0, tensor_size)
     t.get_tensor()._set_dims(shape)
     return t
@@ -124,7 +139,9 @@ def merge_tensors(k, tensor_list, shape):
 def pad_tensor(k, tensor, padded_size):
     tensor_shape = tensor.shape
     tensor_size = np.prod(tensor_shape)
-    assert tensor_size <= padded_size, f"{k} tensor_size {tensor_size} padded_size {padded_size}"
+    assert tensor_size <= padded_size, (
+        f"{k} tensor_size {tensor_size} padded_size {padded_size}"
+    )
     t = paddle.zeros([padded_size], dtype=tensor.dtype)
     tensor.flatten_()
     t[0:tensor_size] = tensor
@@ -140,7 +157,7 @@ def collect_split_info(optimizer, model, only_return_lengths=False):
     split_infos = {}
 
     def gather_infos(comm_buffer):
-        for (k, v) in comm_buffer._sharding_param_grad_view.items():
+        for k, v in comm_buffer._sharding_param_grad_view.items():
             index = v._index
             padded_size = v._padded_size
             buffer_size = v._param_buffer._numel()
@@ -151,14 +168,19 @@ def collect_split_info(optimizer, model, only_return_lengths=False):
                 else:
                     split_infos[k] = None
             else:
-                split_infos[k] = (index, padded_size, buffer_size, has_slice_grad)
+                split_infos[k] = (
+                    index,
+                    padded_size,
+                    buffer_size,
+                    has_slice_grad,
+                )
 
     if isinstance(model, PipelineParallel) and model._sharding_comm_overlap > 0:
         optimizer = unwrap_optimizer(optimizer, HybridParallelOptimizer)
         assert optimizer is not None
         # dalayed comm_overlap_hook register
         model.register_sharding_comm_overlap_hook(optimizer)
-        for (k, v) in model._chunk_2_comm_buffers.items():
+        for k, v in model._chunk_2_comm_buffers.items():
             for comm_buffer in v:
                 gather_infos(comm_buffer)
 
@@ -172,7 +194,9 @@ def collect_split_info(optimizer, model, only_return_lengths=False):
     return split_infos
 
 
-def is_matched_optimizer_state_dict(opt_state_dict, optimizer, model, hcg=None, need_allgather=True):
+def is_matched_optimizer_state_dict(
+    opt_state_dict, optimizer, model, hcg=None, need_allgather=True
+):
     split_infos = collect_split_info(optimizer, model, only_return_lengths=True)
     master_weights = opt_state_dict.get("master_weights", None)
 
@@ -210,20 +234,32 @@ def is_matched_optimizer_state_dict(opt_state_dict, optimizer, model, hcg=None, 
             if group is not None and group.nranks > 1:
                 x = paddle.to_tensor([is_matched], dtype=paddle.int32)
                 paddle.distributed.stream.all_reduce(
-                    x, op=ReduceOp.MIN, group=group, sync_op=True, use_calc_stream=True
+                    x,
+                    op=ReduceOp.MIN,
+                    group=group,
+                    sync_op=True,
+                    use_calc_stream=True,
                 )
                 is_matched = int(x.numpy()[0])
         global_is_matched = is_matched
         group = hcg.get_sharding_parallel_group()
         if group is not None and group.nranks > 1:
             x = paddle.to_tensor([is_matched], dtype=paddle.int32)
-            paddle.distributed.stream.all_reduce(x, op=ReduceOp.MIN, group=group, sync_op=True, use_calc_stream=True)
+            paddle.distributed.stream.all_reduce(
+                x,
+                op=ReduceOp.MIN,
+                group=group,
+                sync_op=True,
+                use_calc_stream=True,
+            )
             global_is_matched = int(x.numpy()[0])
     else:
         global_is_matched = is_matched
 
     global_is_matched = True if global_is_matched else False
-    logger.info(f"Sharding reshard checkpoint: local_match = {is_matched} , global_match = {global_is_matched}")
+    logger.info(
+        f"Sharding reshard checkpoint: local_match = {is_matched} , global_match = {global_is_matched}"
+    )
     return global_is_matched
 
 

@@ -27,7 +27,9 @@ class TestLoadUnifiedCheckpointLocally(unittest.TestCase):
             side_effect=ValueError("Can't find index"),
         ):
             with self.assertRaises(ValueError):
-                load_unified_checkpoint_locally(args, model, "/nonexistent/path")
+                load_unified_checkpoint_locally(
+                    args, model, "/nonexistent/path"
+                )
 
 
 class TestLoadUnifiedOptimizerLocally(unittest.TestCase):

@@ -12,11 +12,9 @@ mix_strategy: concat
 dataloader_shuffle: false
 dataloader_num_workers: 4
 prefetch_factor: 24
-
 ### modelv
 model_name_or_path: /home/.cache/glm45/GLM-4.5-Air
 _attn_implementation: flashmask
-
 ### finetuning
 # base
 stage: PT
@@ -39,11 +37,9 @@ logging_dir: ./vdl_log
 output_dir: ./checkpoints
 disable_tqdm: true
 eval_accumulation_steps: 16
-
 # train
 warmup_steps: 0
 learning_rate: 1.0e-5
-
 # performance
 recompute_granularity: full
 recompute_method: block
@@ -51,19 +47,13 @@ recompute_num_layers: 1
 sharding: stage1
 split_param: true
 stage1_overlap: true
-
-
 # tp
-
-
 amp_master_grad: true
 bf16: true
 fp16_opt_level: O2
-
 save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint
 continue_training: false
-
 moe_router_force_load_balancing: true
 moe_token_dispatcher_type: "deepep"
 gated_linear_unit: true
@@ -72,7 +62,6 @@ apply_rope_fusion: true
 fp32_residual_connection: false
 moe_router_fusion: True
 router_aux_loss_coef: 1e-4
-
 num_attention_heads: 8
 num_key_value_heads: 8
 # seq_length: 8192

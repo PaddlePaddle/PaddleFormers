@@ -6,8 +6,8 @@
 
 .PHONY: all
 all : lint test
-check_dirs := paddleformers scripts tests 
-# # # # # # # # # # # # # # # Format Block # # # # # # # # # # # # # # # 
+check_dirs := paddleformers scripts tests
+# # # # # # # # # # # # # # # Format Block # # # # # # # # # # # # # # #
 
 format:
 	pre-commit run isort
@@ -15,21 +15,21 @@ format:
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-# # # # # # # # # # # # # # # Lint Block # # # # # # # # # # # # # # # 
+# # # # # # # # # # # # # # # Lint Block # # # # # # # # # # # # # # #
 
 .PHONY: lint
 lint:
-	$(eval modified_py_files := $(shell python scripts/codestyle/get_modified_files.py $(check_dirs)))
-	@if test -n "$(modified_py_files)"; then \
-		echo ${modified_py_files}; \
-		pre-commit run --files ${modified_py_files}; \
+	@modified_py_files="$$(python scripts/codestyle/get_modified_files.py $(check_dirs))"; \
+	if test -n "$$modified_py_files"; then \
+		echo "$$modified_py_files"; \
+		printf '%s\n' $$modified_py_files | xargs -n 100 pre-commit run --files; \
 	else \
 		echo "No library .py files were modified"; \
-	fi	
+	fi
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-# # # # # # # # # # # # # # # Test Block # # # # # # # # # # # # # # # 
+# # # # # # # # # # # # # # # Test Block # # # # # # # # # # # # # # #
 
 .PHONY: test
 test: unit-test
@@ -82,6 +82,7 @@ deploy-paddleformers:
 	# install related package
 	make install
 	# build
-	python3 setup.py sdist bdist_wheel
+	python3 -m pip install uv
+	uv build --package paddleformers --out-dir dist --clear -v
 	# upload
 	twine upload --skip-existing dist/*

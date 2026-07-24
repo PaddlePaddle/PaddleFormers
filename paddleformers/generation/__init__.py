@@ -35,7 +35,10 @@ import_structure = {
         "validate_stopping_criteria",
     ],
     "model_outputs": ["ModelOutput"],
-    "configuration_utils": ["GenerationConfig", "resolve_hf_generation_config_path"],
+    "configuration_utils": [
+        "GenerationConfig",
+        "resolve_hf_generation_config_path",
+    ],
     "logits_process": [
         "MinLengthLogitsProcessor",
         "SequenceBiasLogitsProcessor",

@@ -53,8 +53,12 @@ class TestLoggingModule(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             setup_logger_output_file(tmpdir, 0)
             setup_logger_output_file(tmpdir, 1)
-            self.assertTrue(os.path.exists(os.path.join(tmpdir, "log", "workerlog.0")))
-            self.assertTrue(os.path.exists(os.path.join(tmpdir, "log", "workerlog.1")))
+            self.assertTrue(
+                os.path.exists(os.path.join(tmpdir, "log", "workerlog.0"))
+            )
+            self.assertTrue(
+                os.path.exists(os.path.join(tmpdir, "log", "workerlog.1"))
+            )
 
     def test_bce_log_disabled(self):
         """Test that baidubce logger has no handlers and doesn't propagate."""

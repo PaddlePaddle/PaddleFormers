@@ -105,7 +105,9 @@ def _get_feat_extract_output_lengths(input_lengths):
 
     input_lengths_leave = input_lengths % 100
     feat_lengths = (input_lengths_leave - 1) // 2 + 1
-    output_lengths = ((feat_lengths - 1) // 2 + 1 - 1) // 2 + 1 + (input_lengths // 100) * 13
+    output_lengths = (
+        ((feat_lengths - 1) // 2 + 1 - 1) // 2 + 1 + (input_lengths // 100) * 13
+    )
     return output_lengths
 
 
@@ -116,16 +118,32 @@ def _get_feat_extract_output_lengths(input_lengths):
     """
 )
 class Qwen3OmniMoeProcessor(ProcessorMixin):
-    attributes = ["image_processor", "video_processor", "feature_extractor", "tokenizer"]
+    attributes = [
+        "image_processor",
+        "video_processor",
+        "feature_extractor",
+        "tokenizer",
+    ]
     image_processor_class = "AutoImageProcessor"
     video_processor_class = "AutoVideoProcessor"
     feature_extractor_class = "AutoFeatureExtractor"
     tokenizer_class = ("Qwen2Tokenizer", "Qwen2TokenizerFast")
 
     def __init__(
-        self, image_processor=None, video_processor=None, feature_extractor=None, tokenizer=None, chat_template=None
+        self,
+        image_processor=None,
+        video_processor=None,
+        feature_extractor=None,
+        tokenizer=None,
+        chat_template=None,
     ):
-        super().__init__(image_processor, video_processor, feature_extractor, tokenizer, chat_template=chat_template)
+        super().__init__(
+            image_processor,
+            video_processor,
+            feature_extractor,
+            tokenizer,
+            chat_template=chat_template,
+        )
         self.image_token = self.tokenizer.image_token
         self.audio_token = self.tokenizer.audio_token
         self.video_token = self.tokenizer.video_token
@@ -149,7 +167,9 @@ class Qwen3OmniMoeProcessor(ProcessorMixin):
         **kwargs,
     ) -> BatchFeature:
         if text is None:
-            raise ValueError("You need to specify either a `text` input to process.")
+            raise ValueError(
+                "You need to specify either a `text` input to process."
+            )
 
         output_kwargs = self._merge_kwargs(
             Qwen3OmniMoeProcessorKwargs,
@@ -157,26 +177,40 @@ class Qwen3OmniMoeProcessor(ProcessorMixin):
             **kwargs,
         )
 
-        seconds_per_chunk = output_kwargs["videos_kwargs"].pop("seconds_per_chunk")
-        position_id_per_seconds = output_kwargs["videos_kwargs"].pop("position_id_per_seconds")
-        use_audio_in_video = output_kwargs["videos_kwargs"].pop("use_audio_in_video")
+        seconds_per_chunk = output_kwargs["videos_kwargs"].pop(
+            "seconds_per_chunk"
+        )
+        position_id_per_seconds = output_kwargs["videos_kwargs"].pop(
+            "position_id_per_seconds"
+        )
+        use_audio_in_video = output_kwargs["videos_kwargs"].pop(
+            "use_audio_in_video"
+        )
         fps = output_kwargs["videos_kwargs"].get("fps", 1.0)
 
         if audio is not None:
-            audio_inputs = self.feature_extractor(audio, **output_kwargs["audio_kwargs"])
+            audio_inputs = self.feature_extractor(
+                audio, **output_kwargs["audio_kwargs"]
+            )
             audio_inputs["feature_attention_mask"] = audio_inputs.pop(
                 "attention_mask"
             )  # rename feature_attention_mask to prevent conflicts later on
             audio_inputs["input_features"] = audio_inputs.pop(
                 "input_features"
             )  # rename input_features to prevent conflicts later on
-            audio_lengths = iter(_get_feat_extract_output_lengths(audio_inputs["feature_attention_mask"].sum(-1)))
+            audio_lengths = iter(
+                _get_feat_extract_output_lengths(
+                    audio_inputs["feature_attention_mask"].sum(-1)
+                )
+            )
         else:
             audio_inputs = {}
             audio_lengths = iter([])
 
         if images is not None:
-            images_inputs = self.image_processor(images=images, **output_kwargs["images_kwargs"])
+            images_inputs = self.image_processor(
+                images=images, **output_kwargs["images_kwargs"]
+            )
             image_grid_thw = iter(images_inputs["image_grid_thw"])
         else:
             images_inputs = {}
@@ -184,10 +218,13 @@ class Qwen3OmniMoeProcessor(ProcessorMixin):
 
         if videos is not None:
             videos = make_batched_videos(videos)
-            videos_inputs = self.video_processor(videos=videos, **output_kwargs["videos_kwargs"])
+            videos_inputs = self.video_processor(
+                videos=videos, **output_kwargs["videos_kwargs"]
+            )
             fps = [fps] * len(videos)
             videos_inputs["video_second_per_grid"] = [
-                self.video_processor.temporal_patch_size / fps[i] for i in range(len(fps))
+                self.video_processor.temporal_patch_size / fps[i]
+                for i in range(len(fps))
             ]
             video_grid_thw = iter(videos_inputs["video_grid_thw"])
             video_second_per_grid = iter(videos_inputs["video_second_per_grid"])
@@ -213,7 +250,12 @@ class Qwen3OmniMoeProcessor(ProcessorMixin):
         texts_inputs = self.tokenizer(text, **output_kwargs["text_kwargs"])
 
         return BatchFeature(
-            data={**texts_inputs, **images_inputs, **videos_inputs, **audio_inputs},
+            data={
+                **texts_inputs,
+                **images_inputs,
+                **videos_inputs,
+                **audio_inputs,
+            },
             tensor_type=kwargs.get("return_tensors"),
         )
 
@@ -235,40 +277,85 @@ class Qwen3OmniMoeProcessor(ProcessorMixin):
         processed_text = []
         for sample in text:
             positions = []
-            special_tokens = [re.escape(tok) for tok in [self.audio_token, self.image_token, self.video_token]]
+            special_tokens = [
+                re.escape(tok)
+                for tok in [
+                    self.audio_token,
+                    self.image_token,
+                    self.video_token,
+                ]
+            ]
             pattern = "|".join(special_tokens)
-            positions = sorted([(match.start(), match.group()) for match in re.finditer(pattern, sample)])
+            positions = sorted(
+                [
+                    (match.start(), match.group())
+                    for match in re.finditer(pattern, sample)
+                ]
+            )
             positions.sort(key=lambda x: x[0])
 
             for _, special_token in positions:
                 if special_token == self.audio_token:
-                    sample = sample.replace(self.audio_token, "<|audio_placeholder|>" * next(audio_lengths), 1)
+                    sample = sample.replace(
+                        self.audio_token,
+                        "<|audio_placeholder|>" * next(audio_lengths),
+                        1,
+                    )
                 elif special_token == self.image_token:
-                    image_seq_length = next(image_grid_thw).prod().item() // merge_length_image
-                    sample = sample.replace(self.image_token, "<|image_placeholder|>" * image_seq_length, 1)
+                    image_seq_length = (
+                        next(image_grid_thw).prod().item() // merge_length_image
+                    )
+                    sample = sample.replace(
+                        self.image_token,
+                        "<|image_placeholder|>" * image_seq_length,
+                        1,
+                    )
                 elif special_token == self.video_token:
                     if not use_audio_in_video:
-                        video_seq_length = next(video_grid_thw).prod().item() // merge_length_video
-                        sample = sample.replace(self.video_token, "<|video_placeholder|>" * video_seq_length, 1)
+                        video_seq_length = (
+                            next(video_grid_thw).prod().item()
+                            // merge_length_video
+                        )
+                        sample = sample.replace(
+                            self.video_token,
+                            "<|video_placeholder|>" * video_seq_length,
+                            1,
+                        )
                     else:
                         audio_token_indices = np.arange(next(audio_lengths))
                         curr_video_grid_thw = next(video_grid_thw)
-                        height = curr_video_grid_thw[1] // self.video_processor.merge_size
-                        width = curr_video_grid_thw[2] // self.video_processor.merge_size
-                        video_token_indices = np.arange(curr_video_grid_thw[0]).reshape(-1, 1, 1)
+                        height = (
+                            curr_video_grid_thw[1]
+                            // self.video_processor.merge_size
+                        )
+                        width = (
+                            curr_video_grid_thw[2]
+                            // self.video_processor.merge_size
+                        )
+                        video_token_indices = np.arange(
+                            curr_video_grid_thw[0]
+                        ).reshape(-1, 1, 1)
                         video_token_indices = np.broadcast_to(
-                            video_token_indices, (video_token_indices.shape[0], height, width)
+                            video_token_indices,
+                            (video_token_indices.shape[0], height, width),
                         ).reshape(-1)
                         video_token_indices = (
-                            video_token_indices * next(video_second_per_grid) * position_id_per_seconds
+                            video_token_indices
+                            * next(video_second_per_grid)
+                            * position_id_per_seconds
                         )
 
                         video_data_index, audio_data_index = 0, 0
-                        placeholder_string = self.vision_bos_token + self.audio_bos_token
-                        while video_data_index < len(video_token_indices) and audio_data_index < len(
-                            audio_token_indices
-                        ):
-                            if video_token_indices[video_data_index] <= audio_token_indices[audio_data_index]:
+                        placeholder_string = (
+                            self.vision_bos_token + self.audio_bos_token
+                        )
+                        while video_data_index < len(
+                            video_token_indices
+                        ) and audio_data_index < len(audio_token_indices):
+                            if (
+                                video_token_indices[video_data_index]
+                                <= audio_token_indices[audio_data_index]
+                            ):
                                 placeholder_string += "<|video_placeholder|>"
                                 video_data_index += 1
                             else:
@@ -282,9 +369,13 @@ class Qwen3OmniMoeProcessor(ProcessorMixin):
                             placeholder_string += "<|audio_placeholder|>" * (
                                 len(audio_token_indices) - audio_data_index
                             )
-                        placeholder_string += self.audio_eos_token + self.vision_eos_token
+                        placeholder_string += (
+                            self.audio_eos_token + self.vision_eos_token
+                        )
                         sample = sample.replace(
-                            self.vision_bos_token + self.video_token + self.vision_eos_token,
+                            self.vision_bos_token
+                            + self.video_token
+                            + self.vision_eos_token,
                             placeholder_string,
                             1,
                         )
@@ -295,7 +386,9 @@ class Qwen3OmniMoeProcessor(ProcessorMixin):
             processed_text.append(sample)
         return processed_text
 
-    def get_chunked_index(self, token_indices: np.ndarray, tokens_per_chunk: int) -> list[tuple[int, int]]:
+    def get_chunked_index(
+        self, token_indices: np.ndarray, tokens_per_chunk: int
+    ) -> list[tuple[int, int]]:
         """
         Splits token index list into chunks based on token value ranges.
 
@@ -329,9 +422,13 @@ class Qwen3OmniMoeProcessor(ProcessorMixin):
         return list(_iter())
 
     def apply_chat_template(self, conversations, chat_template=None, **kwargs):
-        return super().apply_chat_template(conversations, chat_template, **kwargs)
+        return super().apply_chat_template(
+            conversations, chat_template, **kwargs
+        )
 
-    def post_process_image_text_to_text(self, generated_outputs, skip_special_tokens=True, **kwargs):
+    def post_process_image_text_to_text(
+        self, generated_outputs, skip_special_tokens=True, **kwargs
+    ):
         """
         Post-process the output of a vlm to decode the text.
 
@@ -347,10 +444,18 @@ class Qwen3OmniMoeProcessor(ProcessorMixin):
         Returns:
             `list[str]`: The decoded text.
         """
-        return self.tokenizer.batch_decode(generated_outputs[0], skip_special_tokens=skip_special_tokens, **kwargs)
+        return self.tokenizer.batch_decode(
+            generated_outputs[0],
+            skip_special_tokens=skip_special_tokens,
+            **kwargs,
+        )
 
     def post_process_multimodal_output(
-        self, generated_outputs, skip_special_tokens=True, generation_mode=None, **kwargs
+        self,
+        generated_outputs,
+        skip_special_tokens=True,
+        generation_mode=None,
+        **kwargs,
     ):
         """
         Post-process the output of a multimodal model to return the requested modality output.
@@ -372,7 +477,9 @@ class Qwen3OmniMoeProcessor(ProcessorMixin):
         """
         if generation_mode is None or generation_mode == "text":
             return self.post_process_image_text_to_text(
-                generated_outputs, skip_special_tokens=skip_special_tokens, **kwargs
+                generated_outputs,
+                skip_special_tokens=skip_special_tokens,
+                **kwargs,
             )
 
         elif generation_mode == "audio":

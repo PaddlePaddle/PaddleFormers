@@ -112,7 +112,6 @@ class AllGatherOp(PyLayer):
 class ReduceScatterOp(PyLayer):
     @staticmethod
     def forward(ctx, input, group=None):
-
         ctx.group = group
         return reduce_scatter(input, group=group)
 
@@ -130,7 +129,9 @@ class AllGatherVarlenOp(PyLayer):
 
         shape0 = paddle.to_tensor([input.shape[0]])
         shape0_all = paddle.empty(shape=[group.nranks], dtype=shape0.dtype)
-        dist.stream.all_gather(shape0_all, shape0, group=group, use_calc_stream=True)
+        dist.stream.all_gather(
+            shape0_all, shape0, group=group, use_calc_stream=True
+        )
         shape0_all = shape0_all.numpy()
         max_shape0 = shape0_all.max()
 
@@ -195,7 +196,9 @@ class GemmReduceScatterOp(PyLayer):
             input_grad = None
             grad_parallel = None
         else:
-            input_grad, grad_parallel = all_gather_gemm(grad, weight, group, deepcopy_input_parallel=False)
+            input_grad, grad_parallel = all_gather_gemm(
+                grad, weight, group, deepcopy_input_parallel=False
+            )
 
         if weight.stop_gradient:
             weight_grad = None
@@ -209,7 +212,9 @@ class GemmReduceScatterOp(PyLayer):
 class AllGatherGemmOp(PyLayer):
     @staticmethod
     def forward(ctx, input, weight, group):
-        output, input_parallel = all_gather_gemm(input, weight, group, deepcopy_input_parallel=True)
+        output, input_parallel = all_gather_gemm(
+            input, weight, group, deepcopy_input_parallel=True
+        )
         ctx.save_for_backward(input_parallel, weight)
         ctx.group = group
         ctx.input_stop_gradient = input.stop_gradient
@@ -244,7 +249,9 @@ def sequence_parallel_sparse_mask_labels(labels, ignore_label=-100):
         tgt_index = paddle.to_tensor([0])
 
     tgt_index = tgt_index.reshape([-1]).astype(paddle.int32)
-    labels_local_gather = paddle.take_along_axis(labels_local, tgt_index, axis=0)
+    labels_local_gather = paddle.take_along_axis(
+        labels_local, tgt_index, axis=0
+    )
     labels_all_gather = AllGatherVarlenOp.apply(labels_local_gather)
     return labels_all_gather, tgt_index.reshape([-1, 1])
 
@@ -268,7 +275,9 @@ def create_fused_allreduce_gradient_hook(parameter_list, accumulation_steps):
         step[0] += 1
         if step[0] == accumulation_steps:
             step[0] = 0
-            fused_allreduce_gradients_with_group(parameter_list, group=group, scale=1.0)
+            fused_allreduce_gradients_with_group(
+                parameter_list, group=group, scale=1.0
+            )
         return grad
 
     return __impl__
@@ -285,7 +294,7 @@ def create_non_fused_allreduce_gradient_hook(param, model, verbose=False):
         accumulation_steps = model.accumulate_steps
         if verbose:
             logger.info(
-                f'hook called: acc-step={step[0]}/{accumulation_steps}, use_main_grad={hasattr(param, "main_grad")}'
+                f"hook called: acc-step={step[0]}/{accumulation_steps}, use_main_grad={hasattr(param, 'main_grad')}"
             )
         if (step[0] % accumulation_steps) == 0:
             step[0] = 0
@@ -297,8 +306,12 @@ def create_non_fused_allreduce_gradient_hook(param, model, verbose=False):
     return __impl__
 
 
-def register_sequence_parallel_allreduce_hooks(model, fuse_sequence_parallel_allreduce=False):
-    logger.warning("DO NOT use sphook unless your PyLayer does not trigger param backward hook")
+def register_sequence_parallel_allreduce_hooks(
+    model, fuse_sequence_parallel_allreduce=False
+):
+    logger.warning(
+        "DO NOT use sphook unless your PyLayer does not trigger param backward hook"
+    )
     mp_group = get_hcg().get_model_parallel_group()
     if mp_group.nranks <= 1:
         return
@@ -316,7 +329,9 @@ def register_sequence_parallel_allreduce_hooks(model, fuse_sequence_parallel_all
         for i, p in enumerate(params):
             if p.stop_gradient:
                 continue
-            hook = create_non_fused_allreduce_gradient_hook(p, model, verbose=False)
+            hook = create_non_fused_allreduce_gradient_hook(
+                p, model, verbose=False
+            )
             p._register_backward_hook(hook)
 
 
@@ -325,11 +340,15 @@ def is_fused_matmul_bias_supported():
         try:
             from paddle.base import core
         except ModuleNotFoundError:
-            logger.warning("Unable to import paddle.base, are you using paddle latest build?")
+            logger.warning(
+                "Unable to import paddle.base, are you using paddle latest build?"
+            )
             try:
                 from paddle.fluid import core
             except ModuleNotFoundError:
-                logger.warning("Unable to import paddle.fluid, are you using paddle latest build?")
+                logger.warning(
+                    "Unable to import paddle.fluid, are you using paddle latest build?"
+                )
                 return False
         return hasattr(core.eager.ops.legacy, "fused_gemm_epilogue")
     else:
@@ -354,23 +373,31 @@ class ColumnSequenceParallelLinear(Layer):
         super(ColumnSequenceParallelLinear, self).__init__()
 
         hcg = get_hcg()
-        self.model_parallel_group = hcg.get_model_parallel_group() if mp_group is None else mp_group
-        self.world_size = hcg.get_model_parallel_group().nranks if mp_group is None else mp_group.nranks
+        self.model_parallel_group = (
+            hcg.get_model_parallel_group() if mp_group is None else mp_group
+        )
+        self.world_size = (
+            hcg.get_model_parallel_group().nranks
+            if mp_group is None
+            else mp_group.nranks
+        )
         self._name = name
         self.is_mp = self.world_size > 1
         self.use_comm = use_comm
         if not self.use_comm:
-            assert not use_rr, "The moe allgather not compatibale with rr for now."
+            assert not use_rr, (
+                "The moe allgather not compatibale with rr for now."
+            )
 
         self.use_tpsp_comm_overlap = use_tpsp_comm_overlap
         if self.use_tpsp_comm_overlap:
             assert all_gather_gemm is not None
             assert flux is not None
 
-        assert (
-            gather_output is False
-        ), "If sequence_parallel is True, \
+        assert gather_output is False, (
+            "If sequence_parallel is True, \
                                         gather_output is False"
+        )
 
         self.gather_output = gather_output
         assert out_features % self.world_size == 0, (
@@ -434,9 +461,13 @@ class ColumnSequenceParallelLinear(Layer):
             self.use_tpsp_comm_overlap
             and self.is_mp
             and (use_comm and self.use_comm)
-            and flux.all_gather_gemm_can_implement(x, self.weight, self.model_parallel_group)
+            and flux.all_gather_gemm_can_implement(
+                x, self.weight, self.model_parallel_group
+            )
         ):
-            output = AllGatherGemmOp.apply(x, self.weight, self.model_parallel_group)
+            output = AllGatherGemmOp.apply(
+                x, self.weight, self.model_parallel_group
+            )
             if self.bias is not None:
                 output += self.bias
             return output
@@ -454,7 +485,9 @@ class ColumnSequenceParallelLinear(Layer):
         structured_name_prefix: str = "",
     ):
         state_dict = self.state_dict(structured_name_prefix="")
-        return build_sharded_state_dict(state_dict, {"weight": 1}, structured_name_prefix)
+        return build_sharded_state_dict(
+            state_dict, {"weight": 1}, structured_name_prefix
+        )
 
 
 class MPScale(PyLayer):
@@ -487,10 +520,10 @@ class RowSequenceParallelLinear(Layer):
 
         self.in_features = in_features
         self.out_features = out_features
-        assert (
-            input_is_parallel is True
-        ), "If sequence_parallel is True, \
+        assert input_is_parallel is True, (
+            "If sequence_parallel is True, \
                                            input_is_parallel should be true."
+        )
 
         self.input_is_parallel = input_is_parallel
         self._weight_attr = weight_attr
@@ -498,7 +531,9 @@ class RowSequenceParallelLinear(Layer):
         self._name = name
         self.use_comm = use_comm
         if not self.use_comm:
-            assert not use_rr, "The moe allgather not compatibale with rr for now."
+            assert not use_rr, (
+                "The moe allgather not compatibale with rr for now."
+            )
 
         self.use_tpsp_comm_overlap = use_tpsp_comm_overlap
         if self.use_tpsp_comm_overlap:
@@ -506,9 +541,19 @@ class RowSequenceParallelLinear(Layer):
             assert flux is not None
 
         hcg = get_hcg()
-        self.model_parallel_group = hcg.get_model_parallel_group() if mp_group is None else mp_group
-        self.world_size = hcg.get_model_parallel_group().nranks if mp_group is None else mp_group.nranks
-        self.rank = hcg.get_model_parallel_group().rank if mp_group is None else mp_group.rank
+        self.model_parallel_group = (
+            hcg.get_model_parallel_group() if mp_group is None else mp_group
+        )
+        self.world_size = (
+            hcg.get_model_parallel_group().nranks
+            if mp_group is None
+            else mp_group.nranks
+        )
+        self.rank = (
+            hcg.get_model_parallel_group().rank
+            if mp_group is None
+            else mp_group.rank
+        )
 
         self.is_mp = self.world_size > 1
         assert in_features % self.world_size == 0, (
@@ -576,9 +621,13 @@ class RowSequenceParallelLinear(Layer):
             if (
                 self.use_tpsp_comm_overlap
                 and self.use_comm
-                and flux.gemm_reduce_scatter_can_implement(x, self.weight, self.model_parallel_group)
+                and flux.gemm_reduce_scatter_can_implement(
+                    x, self.weight, self.model_parallel_group
+                )
             ):
-                output_ = GemmReduceScatterOp.apply(x, self.weight, self.model_parallel_group)
+                output_ = GemmReduceScatterOp.apply(
+                    x, self.weight, self.model_parallel_group
+                )
                 if bias is not None:
                     output_ = output_ + bias
             else:
@@ -601,4 +650,6 @@ class RowSequenceParallelLinear(Layer):
         structured_name_prefix: str = "",
     ):
         state_dict = self.state_dict(structured_name_prefix="")
-        return build_sharded_state_dict(state_dict, {"weight": 0}, structured_name_prefix)
+        return build_sharded_state_dict(
+            state_dict, {"weight": 0}, structured_name_prefix
+        )

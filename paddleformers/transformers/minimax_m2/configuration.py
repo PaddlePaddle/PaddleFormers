@@ -13,7 +13,10 @@
 # limitations under the License.
 
 from ..configuration_utils import PretrainedConfig
-from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
+from ..modeling_rope_utils import (
+    rope_config_validation,
+    standardize_rope_params,
+)
 
 
 class MiniMaxM2Config(PretrainedConfig):
@@ -193,7 +196,9 @@ class MiniMaxM2Config(PretrainedConfig):
         self.topk_method = topk_method
         self.using_flex_token = using_flex_token
         self.use_fp8 = False
-        self.moe_subbatch_token_num_before_dispatch = moe_subbatch_token_num_before_dispatch
+        self.moe_subbatch_token_num_before_dispatch = (
+            moe_subbatch_token_num_before_dispatch
+        )
         self.use_mtp = use_mtp
         self.num_mtp_modules = num_mtp_modules
         self.mtp_transformer_layers = mtp_transformer_layers

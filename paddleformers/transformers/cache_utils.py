@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2022 PaddlePaddle Authors. All Rights Reserved.
 # Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
 # Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
@@ -26,7 +25,7 @@ from .configuration_utils import PretrainedConfig
 class CacheLayerMixin(ABC):
     """Base, abstract class for a single layer's cache."""
 
-    is_compileable = False
+    is_compilable = False
 
     def __init__(self):
         self.keys: Optional[paddle.Tensor] = None
@@ -37,26 +36,26 @@ class CacheLayerMixin(ABC):
         return f"{self.__class__.__name__}"
 
     @abstractmethod
-    def lazy_initialization(self, key_states: paddle.Tensor):
-        ...
+    def lazy_initialization(self, key_states: paddle.Tensor): ...
 
     @abstractmethod
     def update(
-        self, key_states: paddle.Tensor, value_states: paddle.Tensor, cache_kwargs: Optional[dict[str, Any]] = None
-    ) -> tuple[paddle.Tensor, paddle.Tensor]:
-        ...
+        self,
+        key_states: paddle.Tensor,
+        value_states: paddle.Tensor,
+        cache_kwargs: Optional[dict[str, Any]] = None,
+    ) -> tuple[paddle.Tensor, paddle.Tensor]: ...
 
     @abstractmethod
-    def get_mask_sizes(self, cache_position: paddle.Tensor) -> tuple[int, int]:
-        ...
+    def get_mask_sizes(
+        self, cache_position: paddle.Tensor
+    ) -> tuple[int, int]: ...
 
     @abstractmethod
-    def get_seq_length(self) -> int:
-        ...
+    def get_seq_length(self) -> int: ...
 
     @abstractmethod
-    def get_max_cache_shape(self) -> int:
-        ...
+    def get_max_cache_shape(self) -> int: ...
 
     def offload(self):
         """Offload this layer's data to CPU device."""
@@ -82,8 +81,12 @@ class CacheLayerMixin(ABC):
     def reorder_cache(self, beam_idx: paddle.LongTensor) -> None:
         """Reorders this layer's cache for beam search."""
         if self.get_seq_length() > 0:
-            self.keys = self.keys.index_select(axis=0, index=beam_idx.to(self.keys.place))
-            self.values = self.values.index_select(axis=0, index=beam_idx.to(self.values.place))
+            self.keys = self.keys.index_select(
+                axis=0, index=beam_idx.to(self.keys.place)
+            )
+            self.values = self.values.index_select(
+                axis=0, index=beam_idx.to(self.values.place)
+            )
 
 
 class DynamicLayer(CacheLayerMixin):
@@ -94,15 +97,21 @@ class DynamicLayer(CacheLayerMixin):
 
     is_sliding = False
 
-    def lazy_initialization(self, key_states: paddle.Tensor, value_states: paddle.Tensor):
+    def lazy_initialization(
+        self, key_states: paddle.Tensor, value_states: paddle.Tensor
+    ):
         self.dtype, self.place = key_states.dtype, key_states.place
         B, N, _, H_k = key_states.shape
         _, _, _, H_v = value_states.shape
         initial_keys_shape = [B, N, 0, H_k]
         initial_values_shape = [B, N, 0, H_v]
 
-        self.keys = paddle.empty(initial_keys_shape, dtype=self.dtype, device=self.place)
-        self.values = paddle.empty(initial_values_shape, dtype=self.dtype, device=self.place)
+        self.keys = paddle.empty(
+            initial_keys_shape, dtype=self.dtype, device=self.place
+        )
+        self.values = paddle.empty(
+            initial_values_shape, dtype=self.dtype, device=self.place
+        )
         self.is_initialized = True
 
     def update(
@@ -238,8 +247,9 @@ class Cache:
             layer_idx = layer_idx if layer_idx < len(self.layers) else 0
         # in case it's already on cpu
         is_cpu = False
-        if self.prefetch_stream is not None and hasattr(self.prefetch_stream, "device"):
-
+        if self.prefetch_stream is not None and hasattr(
+            self.prefetch_stream, "device"
+        ):
             is_cpu = isinstance(self.prefetch_stream.device, paddle.CPUPlace)
 
         use_stream = self.prefetch_stream is not None and not is_cpu
@@ -293,10 +303,14 @@ class Cache:
             # Note: Since current_stream can't directly recognize key_states.place,
             # we construct it as a string. However, this may cause unknown issues for other formats like xpu,
             # so attention is needed. The directly returned place format is Place(gpu:0)
-            paddle.device.current_stream(f"gpu:{key_states.place.gpu_device_id()}").wait_stream(self.prefetch_stream)
+            paddle.device.current_stream(
+                f"gpu:{key_states.place.gpu_device_id()}"
+            ).wait_stream(self.prefetch_stream)
             self.prefetch(layer_idx + 1, self.only_non_sliding)
 
-        keys, values = self.layers[layer_idx].update(key_states, value_states, cache_kwargs)
+        keys, values = self.layers[layer_idx].update(
+            key_states, value_states, cache_kwargs
+        )
 
         if self.offloading:
             self.offload(layer_idx, self.only_non_sliding)
@@ -304,7 +318,12 @@ class Cache:
         return keys, values
 
     def early_initialization(
-        self, batch_size: int, num_heads: int, head_dim: int, dtype: paddle.dtype, device: paddle.device
+        self,
+        batch_size: int,
+        num_heads: int,
+        head_dim: int,
+        dtype: paddle.dtype,
+        device: paddle.device,
     ):
         """
         Initialize all the layers in advance (it's otherwise lazily initialized on the first `update` call).
@@ -313,11 +332,15 @@ class Cache:
         # Note that the initialization needs all dimensions (except -2), as well as device and dtype, so we use
         # this fake tensor approach. It has size 0 on the -2 dimension, so it does not allocate any data (it only
         # creates an empty tensor with correct shape, dtype and device), which is very efficient and practical
-        fake_keys_tensor = paddle.zeros((batch_size, num_heads, 0, head_dim), dtype=dtype, device=device)
-        fake_valuess_tensor = paddle.zeros((batch_size, num_heads, 0, head_dim), dtype=dtype, device=device)
+        fake_keys_tensor = paddle.zeros(
+            (batch_size, num_heads, 0, head_dim), dtype=dtype, device=device
+        )
+        fake_values_tensor = paddle.zeros(
+            (batch_size, num_heads, 0, head_dim), dtype=dtype, device=device
+        )
         # Init all layers
         for layer in self.layers:
-            layer.lazy_initialization(fake_keys_tensor, fake_valuess_tensor)
+            layer.lazy_initialization(fake_keys_tensor, fake_values_tensor)
 
     def get_seq_length(self, layer_idx: int = 0) -> int:
         """Returns the sequence length of the cache for the given layer."""
@@ -325,7 +348,9 @@ class Cache:
             return 0
         return self.layers[layer_idx].get_seq_length()
 
-    def get_mask_sizes(self, cache_position: paddle.Tensor, layer_idx: int) -> tuple[int, int]:
+    def get_mask_sizes(
+        self, cache_position: paddle.Tensor, layer_idx: int
+    ) -> tuple[int, int]:
         """
         Return a tuple (kv_length, kv_offset) corresponding to the length and offset that will be returned for
         the given layer at `layer_idx`.
@@ -375,7 +400,9 @@ class Cache:
         """Return the maximum batch size of the cache"""
         values = [layer.max_batch_size for layer in self.layers]
         if len(set(values)) > 1:
-            raise ValueError(f"Max batch size is not consistent across layers: {values}")
+            raise ValueError(
+                f"Max batch size is not consistent across layers: {values}"
+            )
         return values[0]
 
     @property
@@ -385,17 +412,19 @@ class Cache:
         return max(values)
 
     @property
-    def is_compileable(self) -> bool:
-        """Return whether the cache is compileable"""
+    def is_compilable(self) -> bool:
+        """Return whether the cache is compilable"""
         # For DynamicCache dispatching the layers lazily (otherwise, all([]) is True)
         if len(self.layers) == 0:
             return False
-        return all(layer.is_compileable for layer in self.layers)
+        return all(layer.is_compilable for layer in self.layers)
 
     @property
     def is_initialized(self) -> bool:
         """Return whether the cache data is initialized"""
-        return len(self.layers) > 0 and all(layer.is_initialized for layer in self.layers)
+        return len(self.layers) > 0 and all(
+            layer.is_initialized for layer in self.layers
+        )
 
     @property
     def is_sliding(self) -> list[bool]:
@@ -456,7 +485,9 @@ class DynamicCache(Cache):
 
     def __init__(
         self,
-        ddp_cache_data: Optional[Iterable[tuple[Optional[paddle.Tensor], ...]]] = None,
+        ddp_cache_data: Optional[
+            Iterable[tuple[Optional[paddle.Tensor], ...]]
+        ] = None,
         config: Optional[PretrainedConfig] = None,
         offloading: bool = False,
         offload_only_non_sliding: bool = False,
@@ -465,24 +496,30 @@ class DynamicCache(Cache):
         # If a config is passed, use it to infer the layer types and initialize accordingly
         if config is not None:
             decoder_config = config
-            sliding_window = getattr(decoder_config, "sliding_window", None) or getattr(
-                decoder_config, "attention_chunk_size", None
-            )
+            sliding_window = getattr(
+                decoder_config, "sliding_window", None
+            ) or getattr(decoder_config, "attention_chunk_size", None)
             layer_types = getattr(decoder_config, "layer_types", None)
             if layer_types is None:
                 layer_types = [
-                    "sliding_attention" if sliding_window is not None else "full_attention"
+                    "sliding_attention"
+                    if sliding_window is not None
+                    else "full_attention"
                     for _ in range(decoder_config.num_hidden_layers)
                 ]
             # Some models have shared layers thus no cache is needed for them (e.g. Gemma3n)
             if hasattr(decoder_config, "num_kv_shared_layers"):
-                layer_types = layer_types[: -decoder_config.num_kv_shared_layers]
+                layer_types = layer_types[
+                    : -decoder_config.num_kv_shared_layers
+                ]
 
             for layer_type in layer_types:
                 # From a cache point of view, both sliding and chunked are the same in how they should behave and how many
                 # states they should return - only the mask changes to make them different at the end!
                 if layer_type in ("sliding_attention", "chunked_attention"):
-                    layers.append(DynamicSlidingWindowLayer(sliding_window=sliding_window))
+                    layers.append(
+                        DynamicSlidingWindowLayer(sliding_window=sliding_window)
+                    )
                 else:
                     layers.append(DynamicLayer())
 
@@ -494,16 +531,26 @@ class DynamicCache(Cache):
                 if config is None:
                     # kv_and_optional_sliding contains at least two elements: the key and value states. It can also
                     # contain a third element, which is an optional sliding window tensor.
-                    sliding_window_tensor = kv_and_optional_sliding[2] if len(kv_and_optional_sliding) == 3 else None
+                    sliding_window_tensor = (
+                        kv_and_optional_sliding[2]
+                        if len(kv_and_optional_sliding) == 3
+                        else None
+                    )
                     # If there is a sliding window tensor, use it to initialize the layer
                     if sliding_window_tensor is not None:
                         # Since the same layer is dispatched across replicas, sliding_window is the same for all
                         sliding_window = sliding_window_tensor[0].item()
-                        layers.append(DynamicSlidingWindowLayer(sliding_window=sliding_window))
+                        layers.append(
+                            DynamicSlidingWindowLayer(
+                                sliding_window=sliding_window
+                            )
+                        )
                     else:
                         layers.append(DynamicLayer())
                 # Update the layer with the data
-                _, _ = layers[layer_idx].update(kv_and_optional_sliding[0], kv_and_optional_sliding[1])
+                _, _ = layers[layer_idx].update(
+                    kv_and_optional_sliding[0], kv_and_optional_sliding[1]
+                )
 
         # If neither of config nor ddp_data was passed, then simply lazy init a full cache of DynamicLayer
         if len(layers) == 0:
@@ -513,11 +560,19 @@ class DynamicCache(Cache):
                 offload_only_non_sliding=offload_only_non_sliding,
             )
         else:
-            super().__init__(layers=layers, offloading=offloading, offload_only_non_sliding=offload_only_non_sliding)
+            super().__init__(
+                layers=layers,
+                offloading=offloading,
+                offload_only_non_sliding=offload_only_non_sliding,
+            )
 
     def __iter__(self):
         for layer in self.layers:
-            yield layer.keys, layer.values, getattr(layer, "_sliding_window_tensor", None)
+            yield (
+                layer.keys,
+                layer.values,
+                getattr(layer, "_sliding_window_tensor", None),
+            )
 
 
 class DynamicSlidingWindowLayer(DynamicLayer):
@@ -532,9 +587,13 @@ class DynamicSlidingWindowLayer(DynamicLayer):
         super().__init__()
         self.sliding_window = sliding_window
         self.cumulative_length = 0
-        self._sliding_window_tensor = paddle.to_tensor(self.sliding_window, dtype=paddle.int64)
+        self._sliding_window_tensor = paddle.to_tensor(
+            self.sliding_window, dtype=paddle.int64
+        )
 
-    def lazy_initialization(self, key_states: paddle.Tensor, value_states: paddle.Tensor) -> None:
+    def lazy_initialization(
+        self, key_states: paddle.Tensor, value_states: paddle.Tensor
+    ) -> None:
         super().lazy_initialization(key_states, value_states)
         self._sliding_window_tensor = self._sliding_window_tensor.to(self.place)
 

@@ -16,8 +16,8 @@ import os
 
 import paddle
 import paddle.distributed as dist
-import paddle.nn as nn
 import paddle.nn.functional as F
+from paddle import nn
 from paddle.distributed.fleet.utils.sequence_parallel_utils import AllGatherOp
 
 from ...transformers.model_outputs import CausalLMOutputWithPast
@@ -34,7 +34,12 @@ from .loss_utils import subbatch
 
 
 def kto_preprocess_inputs(self, logits, labels):
-    hidden_states, lm_head_weight, lm_head_bias, transpose_y = None, None, None, None
+    hidden_states, lm_head_weight, lm_head_bias, transpose_y = (
+        None,
+        None,
+        None,
+        None,
+    )
 
     def unpack_logits(obj):
         if isinstance(obj, tuple):
@@ -44,8 +49,17 @@ def kto_preprocess_inputs(self, logits, labels):
                 return None, *obj  # unpack logits when using fused head loss
         return obj, None, None, None, None
 
-    logits, hidden_states, lm_head_weight, lm_head_bias, transpose_y = unpack_logits(logits)
-    return logits, labels, hidden_states, lm_head_weight, lm_head_bias, transpose_y
+    logits, hidden_states, lm_head_weight, lm_head_bias, transpose_y = (
+        unpack_logits(logits)
+    )
+    return (
+        logits,
+        labels,
+        hidden_states,
+        lm_head_weight,
+        lm_head_bias,
+        transpose_y,
+    )
 
 
 def _nested_gather(self, tensors):
@@ -55,13 +69,21 @@ def _nested_gather(self, tensors):
     """
     local_rank = -1
     env_local_rank = int(os.environ.get("PADDLE_RANK_IN_NODE", -1))
-    if env_local_rank != -1 and env_local_rank != local_rank and paddle.distributed.get_world_size() > 1:
+    if (
+        env_local_rank != -1
+        and env_local_rank != local_rank
+        and paddle.distributed.get_world_size() > 1
+    ):
         local_rank = env_local_rank
     if tensors is None:
         return
     if local_rank != -1:
         output_tensors = []
-        paddle.distributed.all_gather(output_tensors, paddle.tile(tensors, repeat_times=[1, 1]), group=self.comm_group)
+        paddle.distributed.all_gather(
+            output_tensors,
+            paddle.tile(tensors, repeat_times=[1, 1]),
+            group=self.comm_group,
+        )
         tensors = paddle.cat(output_tensors, axis=0)
     return tensors
 
@@ -82,18 +104,30 @@ def kto_logps(
     labels = response_labels + response_kl_labels
 
     if self.use_filtered_label_loss:
-        if self.config.tensor_model_parallel_size > 1 and self.config.sequence_parallel and logits is None:
-            labels, sparse_tgt_idx = sequence_parallel_sparse_mask_labels(labels, self.ignored_index)
+        if (
+            self.config.tensor_model_parallel_size > 1
+            and self.config.sequence_parallel
+            and logits is None
+        ):
+            labels, sparse_tgt_idx = sequence_parallel_sparse_mask_labels(
+                labels, self.ignored_index
+            )
 
-            hidden_states = paddle.take_along_axis(hidden_states, sparse_tgt_idx, axis=0)
+            hidden_states = paddle.take_along_axis(
+                hidden_states, sparse_tgt_idx, axis=0
+            )
             hidden_states = AllGatherVarlenOp.apply(hidden_states)
         else:
             labels = labels.flatten()
-            sparse_tgt_idx = paddle.nonzero(labels != self.ignored_index).flatten()
+            sparse_tgt_idx = paddle.nonzero(
+                labels != self.ignored_index
+            ).flatten()
             labels = paddle.take_along_axis(labels, sparse_tgt_idx, axis=0)
 
             hidden_states = hidden_states.reshape([-1, hidden_states.shape[-1]])
-            hidden_states = paddle.take_along_axis(hidden_states, sparse_tgt_idx.unsqueeze(-1), axis=0)
+            hidden_states = paddle.take_along_axis(
+                hidden_states, sparse_tgt_idx.unsqueeze(-1), axis=0
+            )
             if logits is not None:
                 logits = paddle.gather(logits, sparse_tgt_idx, axis=1)
     else:
@@ -102,7 +136,11 @@ def kto_logps(
 
     # bsz,seq_len,hidden_size or seq_len,hidden_size
     seq_len = labels.shape[1] if labels.ndim == 2 else labels.shape[0]
-    if self.use_fused_head_and_loss_fn and self.use_subbatch and seq_len > self.loss_subbatch_sequence_length:
+    if (
+        self.use_fused_head_and_loss_fn
+        and self.use_subbatch
+        and seq_len > self.loss_subbatch_sequence_length
+    ):
         per_token_logps = -fused_head_and_loss_fn(
             hidden_states,
             weight,
@@ -118,7 +156,9 @@ def kto_logps(
             return_token_loss=True,
             ignore_index=self.ignored_index,
         )
-        per_token_logps = per_token_logps.reshape([1, per_token_logps.shape[-1], 1])
+        per_token_logps = per_token_logps.reshape(
+            [1, per_token_logps.shape[-1], 1]
+        )
 
     else:
         if self.use_fused_head_and_loss_fn:
@@ -165,21 +205,34 @@ def kto_logps(
             if response_index[4] == 0
         ]
         kl_logps_list = [
-            (per_token_logps[response_index[2] : response_index[3]]).sum() for response_index in response_indexs
+            (per_token_logps[response_index[2] : response_index[3]]).sum()
+            for response_index in response_indexs
         ]
     else:
         chosen_logps_list = [
-            (per_token_logps[response_index[0]][response_index[1] : response_index[2]]).sum()
+            (
+                per_token_logps[response_index[0]][
+                    response_index[1] : response_index[2]
+                ]
+            ).sum()
             for response_index in response_indexs
             if response_index[4] == 1
         ]
         rejected_logps_list = [
-            (per_token_logps[response_index[0]][response_index[1] : response_index[2]]).sum()
+            (
+                per_token_logps[response_index[0]][
+                    response_index[1] : response_index[2]
+                ]
+            ).sum()
             for response_index in response_indexs
             if response_index[4] == 0
         ]
         kl_logps_list = [
-            (per_token_logps[response_index[0]][response_index[2] : response_index[3]]).sum()
+            (
+                per_token_logps[response_index[0]][
+                    response_index[2] : response_index[3]
+                ]
+            ).sum()
             for response_index in response_indexs
         ]
 
@@ -207,17 +260,31 @@ def kto_loss(
     """KTO Loss"""
     kl = (policy_kl_logps - reference_kl_logps).mean().detach()
     if dist.get_world_size() > 1:
-        kl = _nested_gather(paddle.tile(kl, repeat_times=[1, 1])).mean().clip(min=0)
-    if policy_chosen_logps.shape[0] == 0 or reference_chosen_logps.shape[0] == 0:
+        kl = (
+            _nested_gather(paddle.tile(kl, repeat_times=[1, 1]))
+            .mean()
+            .clip(min=0)
+        )
+    if (
+        policy_chosen_logps.shape[0] == 0
+        or reference_chosen_logps.shape[0] == 0
+    ):
         chosen_losses = paddle.zeros([0])
     else:
         chosen_logratios = policy_chosen_logps - reference_chosen_logps
-        chosen_losses = 1 - F.sigmoid(self.config.kto_config.beta * (chosen_logratios - kl))
-    if policy_rejected_logps.shape[0] == 0 or reference_rejected_logps.shape[0] == 0:
+        chosen_losses = 1 - F.sigmoid(
+            self.config.kto_config.beta * (chosen_logratios - kl)
+        )
+    if (
+        policy_rejected_logps.shape[0] == 0
+        or reference_rejected_logps.shape[0] == 0
+    ):
         rejected_losses = paddle.zeros([0])
     else:
         rejected_logratios = policy_rejected_logps - reference_rejected_logps
-        rejected_losses = 1 - F.sigmoid(self.config.kto_config.beta * (kl - rejected_logratios))
+        rejected_losses = 1 - F.sigmoid(
+            self.config.kto_config.beta * (kl - rejected_logratios)
+        )
     losses = paddle.cat(
         (
             self.config.kto_config.desirable_weight * chosen_losses,
@@ -235,8 +302,8 @@ def kto_loss_forward(
     **kwargs,
 ):
     # preprocess inputs and label
-    logits, labels, hidden_states, lm_head_weight, lm_head_bias, transpose_y = kto_preprocess_inputs(
-        self, logits, labels, **kwargs
+    logits, labels, hidden_states, lm_head_weight, lm_head_bias, transpose_y = (
+        kto_preprocess_inputs(self, logits, labels, **kwargs)
     )
     (
         response_labels,
@@ -247,8 +314,16 @@ def kto_loss_forward(
         reference_kl_logps,
     ) = labels
 
-    if reference_chosen_logps is None or reference_rejected_logps is None or reference_kl_logps is None:
-        (reference_chosen_logps, reference_rejected_logps, reference_kl_logps,) = kto_logps(
+    if (
+        reference_chosen_logps is None
+        or reference_rejected_logps is None
+        or reference_kl_logps is None
+    ):
+        (
+            reference_chosen_logps,
+            reference_rejected_logps,
+            reference_kl_logps,
+        ) = kto_logps(
             self,
             logits,
             response_labels,

@@ -17,7 +17,6 @@ top2gate
 """
 
 from functools import partial
-from typing import Tuple
 
 import paddle
 import paddle.distributed as dist
@@ -54,7 +53,9 @@ def masked_fill(x, mask, value):
 
 
 @paddle.no_grad()
-def compute_optimal_transport(M, r, c, lam=1.0, epsilon=1e-8, max_iters: int = 10):
+def compute_optimal_transport(
+    M, r, c, lam=1.0, epsilon=1e-8, max_iters: int = 10
+):
     """
     Computes optimal transport matrix and Sinkhorn distance using Sinkhorn-Knopp algorithm.
 
@@ -118,7 +119,9 @@ class FusedGateDetachMatmul(paddle.autograd.PyLayer):
         """
         ctx.dtype = paddle.float32
         ctx.save_for_backward(x, w)
-        return F.linear(cast_if_needed(x, ctx.dtype), cast_if_needed(w, ctx.dtype))
+        return F.linear(
+            cast_if_needed(x, ctx.dtype), cast_if_needed(w, ctx.dtype)
+        )
 
     @staticmethod
     def backward(ctx, y_grad):
@@ -134,7 +137,13 @@ class FusedGateDetachMatmul(paddle.autograd.PyLayer):
         """
         x, w = ctx.saved_tensor()
         assert ctx.dtype == y_grad.dtype, "dtype not match"
-        x_g, w_g = _C_ops.matmul_grad(cast_if_needed(x, ctx.dtype), cast_if_needed(w, ctx.dtype), y_grad, False, False)
+        x_g, w_g = _C_ops.matmul_grad(
+            cast_if_needed(x, ctx.dtype),
+            cast_if_needed(w, ctx.dtype),
+            y_grad,
+            False,
+            False,
+        )
 
         # Especially fix for lora training.
         if w.stop_gradient:
@@ -186,7 +195,9 @@ class TopKGate(nn.Layer):
         self.use_multimodel_experts = config.get("multimodel_experts", False)
 
         self.num_experts_tensor = (
-            sum(config.moe_num_experts) if self.use_multimodel_experts else config.moe_num_experts
+            sum(config.moe_num_experts)
+            if self.use_multimodel_experts
+            else config.moe_num_experts
         )
 
         self.cap = config.moe_capacity
@@ -215,15 +226,23 @@ class TopKGate(nn.Layer):
         self.norm_gate_logits = config.moe_norm_gate_logits  # true
         self.one = paddle.ones([], dtype="float32")
 
-        self.router_aux_loss_coef = paddle.to_tensor(config.router_aux_loss_coef, dtype="float32")
-        self.router_z_loss_coef = paddle.to_tensor(config.router_z_loss_coef, dtype="float32")
-        self.moe_orthogonal_loss_lambda = paddle.to_tensor(config.moe_orthogonal_loss_lambda, dtype="float32")
+        self.router_aux_loss_coef = paddle.to_tensor(
+            config.router_aux_loss_coef, dtype="float32"
+        )
+        self.router_z_loss_coef = paddle.to_tensor(
+            config.router_z_loss_coef, dtype="float32"
+        )
+        self.moe_orthogonal_loss_lambda = paddle.to_tensor(
+            config.moe_orthogonal_loss_lambda, dtype="float32"
+        )
         if self.router_aux_loss_coef.ndim == 0:
             self.router_aux_loss_coef = self.router_aux_loss_coef.unsqueeze(0)
         if self.router_z_loss_coef.ndim == 0:
             self.router_z_loss_coef = self.router_z_loss_coef.unsqueeze(0)
         if self.moe_orthogonal_loss_lambda.ndim == 0:
-            self.moe_orthogonal_loss_lambda = self.moe_orthogonal_loss_lambda.unsqueeze(0)
+            self.moe_orthogonal_loss_lambda = (
+                self.moe_orthogonal_loss_lambda.unsqueeze(0)
+            )
 
         self.experts_type_ids = None
         if config.moe_orthogonal_loss_lambda:
@@ -232,8 +251,11 @@ class TopKGate(nn.Layer):
                 sharding_configs = strategy.hybrid_configs["sharding_configs"]
                 pp_config = strategy.hybrid_configs["pp_configs"]
                 assert (
-                    not sharding_configs.comm_overlap and not pp_config.sharding_comm_overlap
-                ), "orthogonal loss will cause twice gradient accumulate, will break pp/sharding overlap"
+                    not sharding_configs.comm_overlap
+                    and not pp_config.sharding_comm_overlap
+                ), (
+                    "orthogonal loss will cause twice gradient accumulate, will break pp/sharding overlap"
+                )
 
         self.eps = paddle.to_tensor([1e-12], dtype="float32")
         if self.use_multimodel_experts:
@@ -241,13 +263,19 @@ class TopKGate(nn.Layer):
                 self.num_experts_list = []
                 self.experts_type_mask = []
                 # hard-gate + group_experts 需要对gate_logits不同部分分开计算
-                experts_ids = paddle.zeros([sum(self.num_experts)], dtype="int64").reshape([config.moe_world_size, -1])
+                experts_ids = paddle.zeros(
+                    [sum(self.num_experts)], dtype="int64"
+                ).reshape([config.moe_world_size, -1])
                 offset = 0
                 for i, expert_num in enumerate(self.num_experts):
-                    experts_ids[:, offset : offset + expert_num // config.moe_world_size] = i
+                    experts_ids[
+                        :, offset : offset + expert_num // config.moe_world_size
+                    ] = i
                     offset += expert_num // config.moe_world_size
                 self.experts_type_ids = experts_ids.reshape([-1])
-                logger.info(f"use moe_use_hard_gate, experts_ids: {self.experts_type_ids}")
+                logger.info(
+                    f"use moe_use_hard_gate, experts_ids: {self.experts_type_ids}"
+                )
                 for i, expert_num in enumerate(self.num_experts):
                     self.experts_type_mask.append(
                         self.experts_type_ids == i,
@@ -255,14 +283,16 @@ class TopKGate(nn.Layer):
                     self.num_experts_list.append(expert_num)
             else:
                 # 非group_experts, 依赖token_type_bias实现hard-gate能力。
-                assert not config.moe_group_experts, "group_experts must use hard_gate when multimodel_experts is True"
+                assert not config.moe_group_experts, (
+                    "group_experts must use hard_gate when multimodel_experts is True"
+                )
         else:
             self.num_experts_list = [self.num_experts]
         if gate_weight is not None:
             self.weight = gate_weight
-            assert (
-                not self.config.moe_use_token_type_bias
-            ), "gate_weights is from outside, token_type_bias can't be used"
+            assert not self.config.moe_use_token_type_bias, (
+                "gate_weights is from outside, token_type_bias can't be used"
+            )
             logger.info("moe use gate_weight from outside")
             # use fp32 pecison in amp
             self._cast_to_low_precision = False
@@ -282,34 +312,50 @@ class TopKGate(nn.Layer):
         """
         if self.use_multimodel_experts:
             # support setting lambda for each expert group
-            self.router_z_loss_coef = self.router_z_loss_coef.expand(len(self.num_experts))
-            self.router_aux_loss_coef = self.router_aux_loss_coef.expand(len(self.num_experts))
-            self.moe_orthogonal_loss_lambda = self.moe_orthogonal_loss_lambda.expand(len(self.num_experts))
+            self.router_z_loss_coef = self.router_z_loss_coef.expand(
+                len(self.num_experts)
+            )
+            self.router_aux_loss_coef = self.router_aux_loss_coef.expand(
+                len(self.num_experts)
+            )
+            self.moe_orthogonal_loss_lambda = (
+                self.moe_orthogonal_loss_lambda.expand(len(self.num_experts))
+            )
 
             for i, num_experts in enumerate(self.num_experts):
                 if i == 1:
-                    with paddle.utils.unique_name.guard(f"mm_gate_{self.layer_idx}_"):
+                    with paddle.utils.unique_name.guard(
+                        f"mm_gate_{self.layer_idx}_"
+                    ):
                         p = self.create_parameter(
                             shape=[self.model_dim, num_experts],
                             dtype="float32",
-                            attr=paddle.ParamAttr(name=unique_name.generate("moe_gate")),
+                            attr=paddle.ParamAttr(
+                                name=unique_name.generate("moe_gate")
+                            ),
                         )
                 else:
                     p = self.create_parameter(
                         shape=[self.model_dim, num_experts],
                         dtype="float32",
-                        attr=paddle.ParamAttr(name=unique_name.generate("moe_gate")),
+                        attr=paddle.ParamAttr(
+                            name=unique_name.generate("moe_gate")
+                        ),
                     )
                 p.expert_type = f"expert_type_{i}"
                 self.add_parameter(
-                    "weight" if i == 0 else f"weight_{i}",  # 为了对齐原 state-dict，第一个 gate-weight 不改名.
+                    "weight"
+                    if i == 0
+                    else f"weight_{i}",  # 为了对齐原 state-dict，第一个 gate-weight 不改名.
                     p,
                 )
         else:
             self.weight = self.create_parameter(
                 shape=[self.model_dim, self.num_experts],
                 dtype="float32",
-                attr=paddle.ParamAttr(name=unique_name.generate("moe_gate")),  # for resume dense-ckpt
+                attr=paddle.ParamAttr(
+                    name=unique_name.generate("moe_gate")
+                ),  # for resume dense-ckpt
             )
         # use fp32 pecison in amp
         self._cast_to_low_precision = False
@@ -324,7 +370,11 @@ class TopKGate(nn.Layer):
             return self.weight
         if not transform_weight:
             return paddle.cat(
-                [getattr(self, "weight" if i == 0 else f"weight_{i}") for i in range(len(self.num_experts))], -1
+                [
+                    getattr(self, "weight" if i == 0 else f"weight_{i}")
+                    for i in range(len(self.num_experts))
+                ],
+                -1,
             )
         weight = paddle.zeros(
             [
@@ -336,9 +386,13 @@ class TopKGate(nn.Layer):
         )
         offset = 0
         for i, num_experts in enumerate(self.num_experts):
-            weight[:, :, offset : offset + num_experts // self.config.moe_world_size] = getattr(
-                self, "weight" if i == 0 else f"weight_{i}"
-            ).reshape([self.model_dim, self.config.moe_world_size, -1])
+            weight[
+                :,
+                :,
+                offset : offset + num_experts // self.config.moe_world_size,
+            ] = getattr(self, "weight" if i == 0 else f"weight_{i}").reshape(
+                [self.model_dim, self.config.moe_world_size, -1]
+            )
             offset += num_experts // self.config.moe_world_size
         weight = weight.reshape([self.model_dim, -1])
         return weight
@@ -348,7 +402,7 @@ class TopKGate(nn.Layer):
         input: Tensor,
         token_type_ids: Tensor = None,
         transform_weight: bool = True,
-    ) -> Tuple[Tensor, Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor, Tensor]:
         """
         Forward pass for fused gate.
 
@@ -363,12 +417,14 @@ class TopKGate(nn.Layer):
         capacity = self.get_capacity(input.shape[0])
         weight = self.get_gate_weight(transform_weight)
         with paddle.amp.auto_cast(False):
-            logits = gate_detach_matmul(input, weight, self.fuse_gate_detach_matmul)
+            logits = gate_detach_matmul(
+                input, weight, self.fuse_gate_detach_matmul
+            )
             if self.use_token_type_bias:
                 assert token_type_ids is not None
-                assert (
-                    token_type_ids.max() < self.bias.shape[0]
-                ), f"token_type_ids {token_type_ids.max()} >= bias shape {self.bias.shape[0]}"
+                assert token_type_ids.max() < self.bias.shape[0], (
+                    f"token_type_ids {token_type_ids.max()} >= bias shape {self.bias.shape[0]}"
+                )
                 bias = self.bias[token_type_ids]  # [seq]
                 logits = logits + bias
 
@@ -388,7 +444,11 @@ class TopKGate(nn.Layer):
         Returns:
             int: Calculated capacity
         """
-        num_experts = sum(self.num_experts) if self.use_multimodel_experts else self.num_experts
+        num_experts = (
+            sum(self.num_experts)
+            if self.use_multimodel_experts
+            else self.num_experts
+        )
         if cap_factor is not None:
             cap = cap_factor
         else:
@@ -400,11 +460,19 @@ class TopKGate(nn.Layer):
                 cap = self.cap[1]
         # capacity = 2S/E
         capacity = int(cap * num_tokens // num_experts)
-        assert capacity > 0, f"requires capacity to >= 0. cap={cap}, num_tokens={num_tokens}"
+        assert capacity > 0, (
+            f"requires capacity to >= 0. cap={cap}, num_tokens={num_tokens}"
+        )
         return capacity
 
     def _cal_aux_loss(
-        self, gate_prob, dispatch_mask, num_experts=None, use_group=None, tokens_mask=None, dispatch_tokens_mask=None
+        self,
+        gate_prob,
+        dispatch_mask,
+        num_experts=None,
+        use_group=None,
+        tokens_mask=None,
+        dispatch_tokens_mask=None,
     ):
         """
         Calculate auxiliary loss for router.
@@ -427,10 +495,19 @@ class TopKGate(nn.Layer):
             if tokens_mask is not None:
                 gate_prob_this_modality = gate_prob[tokens_mask.astype("bool")]
                 if gate_prob_this_modality.shape[0]:
-                    _, top_idx = gate_prob_this_modality.topk(k=self.config.moe_k, axis=-1)
-                    dispatch_mask = int_bincount(top_idx.reshape([-1]), 0, gate_prob.shape[-1], paddle.int64)
+                    _, top_idx = gate_prob_this_modality.topk(
+                        k=self.config.moe_k, axis=-1
+                    )
+                    dispatch_mask = int_bincount(
+                        top_idx.reshape([-1]),
+                        0,
+                        gate_prob.shape[-1],
+                        paddle.int64,
+                    )
                 else:
-                    dispatch_mask = paddle.zeros(gate_prob.shape[-1], dtype="int64")
+                    dispatch_mask = paddle.zeros(
+                        gate_prob.shape[-1], dtype="int64"
+                    )
                 dist.stream.all_reduce(
                     dispatch_mask,
                     group=self.group,
@@ -438,7 +515,9 @@ class TopKGate(nn.Layer):
                 )
             else:
                 _, top_idx = gate_prob.topk(k=self.config.moe_k, axis=-1)
-                dispatch_mask = int_bincount(top_idx.reshape([-1]), 0, gate_prob.shape[-1], paddle.int64)
+                dispatch_mask = int_bincount(
+                    top_idx.reshape([-1]), 0, gate_prob.shape[-1], paddle.int64
+                )
         if num_experts is None:
             num_experts = self.num_experts_tensor
         if use_group is None:
@@ -446,7 +525,10 @@ class TopKGate(nn.Layer):
 
         if (
             (tokens_mask is None or len(tokens_mask.shape) == 1)
-            and (tokens_mask is None or tokens_mask.shape[0] == gate_prob.shape[0])
+            and (
+                tokens_mask is None
+                or tokens_mask.shape[0] == gate_prob.shape[0]
+            )
             and gate_prob.shape[0] >= gate_prob.shape[1]
         ):
             if tokens_mask is not None and tokens_mask.dtype != gate_prob.dtype:
@@ -469,12 +551,17 @@ class TopKGate(nn.Layer):
         scale = None
         if dispatch_tokens_mask is not None:
             seqlen_float = dispatch_tokens_mask.astype(gate_prob.dtype).sum()
-            if tokens_mask is not None and gate_prob.shape[0] != dispatch_tokens_mask.shape[0]:
+            if (
+                tokens_mask is not None
+                and gate_prob.shape[0] != dispatch_tokens_mask.shape[0]
+            ):
                 scale = seqlen_float / paddle.clip(tokens_mask.sum(), min=1e-6)
         elif tokens_mask is not None:
             seqlen_float = tokens_mask.sum()
         else:
-            seqlen_float = gate_prob.numel().astype(gate_prob.dtype) / num_experts
+            seqlen_float = (
+                gate_prob.numel().astype(gate_prob.dtype) / num_experts
+            )
         seqlen_float = paddle.clip(seqlen_float, min=1e-6)
 
         if len(dispatch_mask.shape) == 2:
@@ -514,7 +601,9 @@ class TopKGate(nn.Layer):
 
         if loss_mask is not None:
             loss_mask = loss_mask.astype(logits.dtype)
-            l_zloss = (logits.logsumexp(1).square() * loss_mask).sum() / paddle.clip(loss_mask.sum(), min=1e-6)
+            l_zloss = (
+                logits.logsumexp(1).square() * loss_mask
+            ).sum() / paddle.clip(loss_mask.sum(), min=1e-6)
         else:
             l_zloss = logits.logsumexp(1).square().mean()
         # TODO group_experts 分group计算zloss
@@ -539,15 +628,21 @@ class TopKGate(nn.Layer):
         weight = weight / paddle.maximum(wnorm, self.eps).unsqueeze(1)
 
         if use_group:
-            weight = weight.reshape([self.config.moe_k, -1, weight.shape[1]])  # [K, E/K, H]
-            eye_matrix = paddle.eye(weight.shape[1], dtype=weight.dtype).unsqueeze(0)
+            weight = weight.reshape(
+                [self.config.moe_k, -1, weight.shape[1]]
+            )  # [K, E/K, H]
+            eye_matrix = paddle.eye(
+                weight.shape[1], dtype=weight.dtype
+            ).unsqueeze(0)
         else:
             eye_matrix = paddle.eye(weight.shape[0], dtype=weight.dtype)
 
         weight_matmul = paddle.matmul(weight, weight, transpose_y=True)
 
         orthogonal_loss = weight_matmul - eye_matrix
-        orthogonal_loss = _squared_l2_norm(orthogonal_loss) / orthogonal_loss.size
+        orthogonal_loss = (
+            _squared_l2_norm(orthogonal_loss) / orthogonal_loss.size
+        )
         return orthogonal_loss
 
     def _cal_orthogonal_loss(self, weight_id=None, use_group=None):
@@ -562,7 +657,10 @@ class TopKGate(nn.Layer):
             Tensor: Calculated orthogonal loss
         """
         if use_group is None:
-            use_group = self.config.moe_group_experts and self.config.moe_group_orthogonal_loss
+            use_group = (
+                self.config.moe_group_experts
+                and self.config.moe_group_orthogonal_loss
+            )
 
         if weight_id is not None:
             if weight_id == 0:
@@ -572,9 +670,13 @@ class TopKGate(nn.Layer):
                 w_ = getattr(self, f"weight_{weight_id}")
             return self._cal_orthogonal_loss_opt_each_weight(w_, use_group)
 
-        orthogonal_loss = self._cal_orthogonal_loss_opt_each_weight(self.weight, use_group)
+        orthogonal_loss = self._cal_orthogonal_loss_opt_each_weight(
+            self.weight, use_group
+        )
         if self.use_multimodel_experts:
             for i in range(1, len(self.config.moe_num_experts)):
                 w_ = getattr(self, f"weight_{i}")
-                orthogonal_loss += self._cal_orthogonal_loss_opt_each_weight(w_, use_group=False)
+                orthogonal_loss += self._cal_orthogonal_loss_opt_each_weight(
+                    w_, use_group=False
+                )
         return orthogonal_loss

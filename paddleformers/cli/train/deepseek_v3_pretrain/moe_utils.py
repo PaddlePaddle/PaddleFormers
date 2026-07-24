@@ -18,7 +18,7 @@ import numpy as np
 import paddle
 
 try:
-    import paddlefleet as paddlefleet
+    import paddleformers.fleet as paddlefleet
 except ImportError:
     paddlefleet = None
 
@@ -37,7 +37,7 @@ if not hasattr(paddle.Tensor, "_clear_to_zero_allocation"):
         src_t._share_data_with(dst_t)
         src_t._set_dims(old_shape)
 
-    setattr(paddle.Tensor, "_clear_to_zero_allocation", _clear_to_zero_allocation)
+    paddle.Tensor._clear_to_zero_allocation = _clear_to_zero_allocation
 
 
 if not hasattr(paddle.Tensor, "_holder_size"):
@@ -47,11 +47,13 @@ if not hasattr(paddle.Tensor, "_holder_size"):
         _holder_size
         """
         if self._is_initialized():
-            return int(np.prod(self.shape)) * paddle.core.size_of_dtype(self.dtype)
+            return int(np.prod(self.shape)) * paddle.core.size_of_dtype(
+                self.dtype
+            )
         else:
             return 0
 
-    setattr(paddle.Tensor, "_holder_size", _holder_size)
+    paddle.Tensor._holder_size = _holder_size
 
 
 def topk_to_permuted_indices(x, num_tokens_per_expert_list, topk):
@@ -183,18 +185,32 @@ class UnZipNode:
                 )
         self.unzipped_probs = unzipped_probs
         self.zipped_expertwise_rowmap = zipped_expertwise_rowmap
-        return (unzipped_tokens, zipped_expertwise_rowmap, unzipped_probs, unzipped_scale)
+        return (
+            unzipped_tokens,
+            zipped_expertwise_rowmap,
+            unzipped_probs,
+            unzipped_scale,
+        )
 
     @paddle.no_grad()
-    def backward(self, dx, total_zipped_tokens, probs_grad, dispatched_indices, num_experts):
+    def backward(
+        self,
+        dx,
+        total_zipped_tokens,
+        probs_grad,
+        dispatched_indices,
+        num_experts,
+    ):
         with paddle.amp.auto_cast(False):
-            weighted_zipped_tokens, probs_grad_zipped = paddle.nn.functional.moe_unpermute(
-                dx,
-                self.zipped_expertwise_rowmap,
-                dispatched_indices,
-                probs_grad,
-                total_zipped_tokens=total_zipped_tokens,
-                num_experts=num_experts,
+            weighted_zipped_tokens, probs_grad_zipped = (
+                paddle.nn.functional.moe_unpermute(
+                    dx,
+                    self.zipped_expertwise_rowmap,
+                    dispatched_indices,
+                    probs_grad,
+                    total_zipped_tokens=total_zipped_tokens,
+                    num_experts=num_experts,
+                )
             )
         self.reset_statue()
         return weighted_zipped_tokens, probs_grad_zipped
@@ -206,11 +222,24 @@ class ZipNode:
 
     @paddle.no_grad()
     def forward(
-        self, expert_out, zipped_expertwise_rowmap, routemap_topk, unzipped_probs, total_zipped_tokens, num_experts
+        self,
+        expert_out,
+        zipped_expertwise_rowmap,
+        routemap_topk,
+        unzipped_probs,
+        total_zipped_tokens,
+        num_experts,
     ):
         with paddle.amp.auto_cast(False):
-            expert_out_zipped, zipped_probs_topk = paddle.nn.functional.moe_unpermute(
-                expert_out, zipped_expertwise_rowmap, routemap_topk, unzipped_probs, total_zipped_tokens, num_experts
+            expert_out_zipped, zipped_probs_topk = (
+                paddle.nn.functional.moe_unpermute(
+                    expert_out,
+                    zipped_expertwise_rowmap,
+                    routemap_topk,
+                    unzipped_probs,
+                    total_zipped_tokens,
+                    num_experts,
+                )
             )
         return expert_out_zipped
 
@@ -271,18 +300,29 @@ class PermuteNode:
         self.prob_permuted_indices = None
 
     def forward(self, hidden_states, hidden_states_scale, dispatched_indices):
-        self.token_dispatcher._comm_manager.hidden_shape_before_permute = hidden_states.shape
+        self.token_dispatcher._comm_manager.hidden_shape_before_permute = (
+            hidden_states.shape
+        )
         self.hidden_shape_before_permute = hidden_states.shape
-        self.token_permuted_indices, self.prob_permuted_indices = topk_to_permuted_indices(
-            dispatched_indices,
-            self.token_dispatcher._comm_manager.tokens_per_expert,
-            self.token_dispatcher._comm_manager.router_topk,
+        self.token_permuted_indices, self.prob_permuted_indices = (
+            topk_to_permuted_indices(
+                dispatched_indices,
+                self.token_dispatcher._comm_manager.tokens_per_expert,
+                self.token_dispatcher._comm_manager.router_topk,
+            )
         )
         hidden_states = permute_fast(hidden_states, self.token_permuted_indices)
         # permute scale
-        hidden_states_scale = permute_fast(hidden_states_scale, self.token_permuted_indices)
+        hidden_states_scale = permute_fast(
+            hidden_states_scale, self.token_permuted_indices
+        )
 
-        return hidden_states, hidden_states_scale, self.token_permuted_indices, self.prob_permuted_indices
+        return (
+            hidden_states,
+            hidden_states_scale,
+            self.token_permuted_indices,
+            self.prob_permuted_indices,
+        )
 
     def backward(self, out_grad, dispatched_probs):
         input_dtype = out_grad.dtype
@@ -324,41 +364,56 @@ class UnPermuteNode:
         self.prob_permuted_indices = prob_permuted_indices
         self.dispatched_probs_shape = dispatched_probs.shape
         # permute
-        _, self.hidden = self.token_dispatcher._comm_manager.hidden_shape_before_permute
+        _, self.hidden = (
+            self.token_dispatcher._comm_manager.hidden_shape_before_permute
+        )
 
         self.faltten_dispatched_probs = dispatched_probs.flatten()
 
-        self.permuted_probs = paddle.gather(self.faltten_dispatched_probs, self.prob_permuted_indices)
+        self.permuted_probs = paddle.gather(
+            self.faltten_dispatched_probs, self.prob_permuted_indices
+        )
         permuted_tokens = self.hidden_states * self.permuted_probs.unsqueeze(-1)
         permuted_tokens = permuted_tokens.cast(self.hidden_states.dtype)
 
         # Create an output tensor filled with zeros
         output_tokens = paddle.zeros(
-            self.token_dispatcher._comm_manager.hidden_shape_before_permute, dtype=self.hidden_states.dtype
+            self.token_dispatcher._comm_manager.hidden_shape_before_permute,
+            dtype=self.hidden_states.dtype,
         )
         # Scatter add the permuted_input back to the original positions
         output_tokens.put_along_axis_(
             axis=0,
-            indices=self.token_permuted_indices.cast("int32").unsqueeze(1).expand([-1, self.hidden]),
+            indices=self.token_permuted_indices.cast("int32")
+            .unsqueeze(1)
+            .expand([-1, self.hidden]),
             values=permuted_tokens,
             reduce="add",
             include_self=True,
         )
         with paddle.base.device_guard("cpu"):
-            self.output_tokens = paddle.empty(shape=output_tokens.shape, dtype=output_tokens.dtype)
+            self.output_tokens = paddle.empty(
+                shape=output_tokens.shape, dtype=output_tokens.dtype
+            )
 
         return output_tokens.to(self.input_dtype)
 
     def backward(self, out_grad, out_grad_scale):
-        hidden_states_grad = paddle.gather(out_grad, self.token_permuted_indices)
+        hidden_states_grad = paddle.gather(
+            out_grad, self.token_permuted_indices
+        )
 
-        output_tokens_grad = FP8LinearFunctionBase.dequantize_fp8_to_fp32(out_grad, out_grad_scale)
+        output_tokens_grad = FP8LinearFunctionBase.dequantize_fp8_to_fp32(
+            out_grad, out_grad_scale
+        )
         permuted_tokens = self.hidden_states * self.permuted_probs.unsqueeze(-1)
         permuted_tokens = permuted_tokens.cast(self.hidden_states.dtype)
 
         _, permuted_tokens_grad = paddle._C_ops.put_along_axis_grad(
             self.output_tokens,
-            self.token_permuted_indices.cast("int32").unsqueeze(1).expand([-1, self.hidden]),
+            self.token_permuted_indices.cast("int32")
+            .unsqueeze(1)
+            .expand([-1, self.hidden]),
             permuted_tokens,
             self.output_tokens,
             output_tokens_grad,
@@ -367,25 +422,36 @@ class UnPermuteNode:
             True,
         )
 
-        permuted_probs_grad = (permuted_tokens_grad * self.hidden_states).sum(axis=-1)
+        permuted_probs_grad = (permuted_tokens_grad * self.hidden_states).sum(
+            axis=-1
+        )
 
         faltten_dispatched_probs_grad = paddle._C_ops.gather_grad(
-            self.faltten_dispatched_probs, self.prob_permuted_indices, permuted_probs_grad, 0
+            self.faltten_dispatched_probs,
+            self.prob_permuted_indices,
+            permuted_probs_grad,
+            0,
         )
 
         # dispatched_probs_grad = paddle._C_ops.flatten_grad(self.dispatched_probs, faltten_dispatched_probs_grad)
-        dispatched_probs_grad = faltten_dispatched_probs_grad.reshape(self.dispatched_probs_shape)
+        dispatched_probs_grad = faltten_dispatched_probs_grad.reshape(
+            self.dispatched_probs_shape
+        )
 
         self.reset_status()
         return hidden_states_grad, dispatched_probs_grad
 
 
-def tokens_zip_unique_add_with_subbatch(zipped, unzipped, index_unzipped, zipped_rows, subbatch_rows=None):
+def tokens_zip_unique_add_with_subbatch(
+    zipped, unzipped, index_unzipped, zipped_rows, subbatch_rows=None
+):
     """
     tokens_zip_unique_add_with_subbatch
     """
     if subbatch_rows is None or subbatch_rows <= 0 or zipped_rows <= 0:
-        return paddlefleet.extensions.ops.tokens_zip_unique_add(zipped, unzipped, index_unzipped, zipped_rows)
+        return paddlefleet.extensions.ops.tokens_zip_unique_add(
+            zipped, unzipped, index_unzipped, zipped_rows
+        )
     else:
         if isinstance(zipped, paddle.Tensor):
             num_split = (zipped_rows + subbatch_rows - 1) // subbatch_rows
@@ -398,7 +464,9 @@ def tokens_zip_unique_add_with_subbatch(zipped, unzipped, index_unzipped, zipped
             if zipped.shape[0] == 0:
                 dtype = zipped.dtype
                 hidden_size = zipped.shape[1]
-                zipped = [paddle.zeros([r, hidden_size], dtype=dtype) for r in rows]
+                zipped = [
+                    paddle.zeros([r, hidden_size], dtype=dtype) for r in rows
+                ]
             else:
                 zipped = paddle.split(zipped, rows, axis=0)
         return paddlefleet.extensions.ops.tokens_zip_unique_add_subbatch(

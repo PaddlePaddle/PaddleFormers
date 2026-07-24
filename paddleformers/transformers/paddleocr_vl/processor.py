@@ -12,19 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Union
 
 import paddle
 
 from ..feature_extraction_utils import BatchFeature
 from ..image_utils import ImageInput
-from ..processing_utils import ProcessingKwargs, ProcessorMixin, Unpack, VideosKwargs
+from ..processing_utils import (
+    ProcessingKwargs,
+    ProcessorMixin,
+    Unpack,
+    VideosKwargs,
+)
 from ..tokenizer_utils_base import PreTokenizedInput, TextInput
 from ..video_utils import VideoInput
 
 
 class PaddleOCRVLVideosProcessorKwargs(VideosKwargs, total=False):
-    fps: Union[List[float], float]
+    fps: list[float] | float
 
 
 class PaddleOCRVLProcessorKwargs(ProcessingKwargs, total=False):
@@ -66,15 +70,30 @@ class PaddleOCRVLProcessor(ProcessorMixin):
     image_processor_class = "AutoImageProcessor"
     tokenizer_class = "AutoTokenizer"
 
-    def __init__(self, image_processor=None, tokenizer=None, chat_template=None, **kwargs):
-        self.image_token = "<|IMAGE_PLACEHOLDER|>" if not hasattr(tokenizer, "image_token") else tokenizer.image_token
-        self.video_token = "<|video_pad|>" if not hasattr(tokenizer, "video_token") else tokenizer.video_token
-        super().__init__(image_processor, tokenizer, chat_template=chat_template)
+    def __init__(
+        self, image_processor=None, tokenizer=None, chat_template=None, **kwargs
+    ):
+        self.image_token = (
+            "<|IMAGE_PLACEHOLDER|>"
+            if not hasattr(tokenizer, "image_token")
+            else tokenizer.image_token
+        )
+        self.video_token = (
+            "<|video_pad|>"
+            if not hasattr(tokenizer, "video_token")
+            else tokenizer.video_token
+        )
+        super().__init__(
+            image_processor, tokenizer, chat_template=chat_template
+        )
 
     def __call__(
         self,
         images: ImageInput = None,
-        text: Union[TextInput, PreTokenizedInput, List[TextInput], List[PreTokenizedInput]] = None,
+        text: TextInput
+        | PreTokenizedInput
+        | list[TextInput]
+        | list[PreTokenizedInput] = None,
         videos: VideoInput = None,
         **kwargs: Unpack[PaddleOCRVLProcessorKwargs],
     ) -> BatchFeature:
@@ -120,7 +139,9 @@ class PaddleOCRVLProcessor(ProcessorMixin):
         )
 
         if images is not None:
-            image_inputs = self.image_processor(images=images, **output_kwargs["images_kwargs"])
+            image_inputs = self.image_processor(
+                images=images, **output_kwargs["images_kwargs"]
+            )
             image_grid_thw = image_inputs["image_grid_thw"]
 
         else:
@@ -129,19 +150,28 @@ class PaddleOCRVLProcessor(ProcessorMixin):
 
         if videos is not None:
             # TODO: add video processing
-            videos_inputs = self.image_processor(images=None, videos=videos, **output_kwargs["images_kwargs"])
+            videos_inputs = self.image_processor(
+                images=None, videos=videos, **output_kwargs["images_kwargs"]
+            )
             video_grid_thw = videos_inputs["video_grid_thw"]
 
             fps = output_kwargs["videos_kwargs"].pop("fps", 2.0)
             if isinstance(fps, (int, float)):
-                second_per_grid_ts = [self.image_processor.temporal_patch_size / fps] * len(video_grid_thw)
+                second_per_grid_ts = [
+                    self.image_processor.temporal_patch_size / fps
+                ] * len(video_grid_thw)
             elif hasattr(fps, "__len__") and len(fps) == len(video_grid_thw):
-                second_per_grid_ts = [self.image_processor.temporal_patch_size / tmp for tmp in fps]
+                second_per_grid_ts = [
+                    self.image_processor.temporal_patch_size / tmp
+                    for tmp in fps
+                ]
             else:
                 raise ValueError(
                     f"The length of fps ({len(fps) if hasattr(fps, '__len__') else fps}) must be equal to the length of video_grid_thw ({len(video_grid_thw)}) or fps should be a single number."
                 )
-            videos_inputs.update({"second_per_grid_ts": paddle.tensor(second_per_grid_ts)})
+            videos_inputs.update(
+                {"second_per_grid_ts": paddle.tensor(second_per_grid_ts)}
+            )
 
         else:
             videos_inputs = {}
@@ -187,7 +217,9 @@ class PaddleOCRVLProcessor(ProcessorMixin):
 
         text_inputs = self.tokenizer(text, **output_kwargs["text_kwargs"])
 
-        return BatchFeature(data={**text_inputs, **image_inputs, **videos_inputs})
+        return BatchFeature(
+            data={**text_inputs, **image_inputs, **videos_inputs}
+        )
 
     def post_process_image_text_to_text(
         self,
@@ -224,7 +256,9 @@ class PaddleOCRVLProcessor(ProcessorMixin):
     def model_input_names(self):
         tokenizer_input_names = self.tokenizer.model_input_names
         image_processor_input_names = self.image_processor.model_input_names
-        names_from_processor = list(dict.fromkeys(tokenizer_input_names + image_processor_input_names))
+        names_from_processor = list(
+            dict.fromkeys(tokenizer_input_names + image_processor_input_names)
+        )
         return names_from_processor
 
 
