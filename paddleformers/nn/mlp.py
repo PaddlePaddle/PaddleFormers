@@ -22,6 +22,7 @@ except ImportError:
         gate, value = x.chunk(2, axis=-1)
         return paddle.nn.functional.silu(gate) * value
 
+
 from ..generation.configuration_utils import PretrainedConfig
 from .activation import ACT2FN
 from .linear import Linear

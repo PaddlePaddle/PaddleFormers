@@ -51,12 +51,11 @@ from .configuration import Gemma3Config, SiglipVisionConfig
 from .multimodal_text_modeling import (
     Gemma3RMSNorm,
     Gemma3TextModel,
-    _iter_hf_tensors,
     _compute_causal_lm_loss,
+    _iter_hf_tensors,
     _restore_padding_query_rows,
     load_hf_text_state_dict,
 )
-
 
 _HF_VISION_LINEAR_WEIGHT_SUFFIXES = (
     "self_attn.q_proj.weight",

@@ -31,11 +31,11 @@ from paddleformers.transformers import (
     Gemma3ForConditionalGeneration,
     Gemma3TextModel,
 )
-from paddleformers.transformers.gemma3_text.configuration import Gemma3TextConfig
 from paddleformers.transformers.gemma3.modeling import (
     _convert_hf_vision_tensor,
     _use_high_precision_cublas_for_fp32,
 )
+from paddleformers.transformers.gemma3_text.configuration import Gemma3TextConfig
 from tests.transformers.test_configuration_common import ConfigTester
 
 
@@ -205,12 +205,8 @@ class Gemma3ModelTest(unittest.TestCase):
     def test_hf_vision_linear_weight_conversion(self):
         tensor = paddle.arange(6, dtype="float32").reshape([2, 3])
 
-        converted = _convert_hf_vision_tensor(
-            "model.vision_tower.encoder.layers.0.mlp.fc1.weight", tensor
-        )
-        unchanged = _convert_hf_vision_tensor(
-            "model.vision_tower.embeddings.position_embedding.weight", tensor
-        )
+        converted = _convert_hf_vision_tensor("model.vision_tower.encoder.layers.0.mlp.fc1.weight", tensor)
+        unchanged = _convert_hf_vision_tensor("model.vision_tower.embeddings.position_embedding.weight", tensor)
 
         self.assertTrue(paddle.equal_all(converted, tensor.transpose([1, 0])))
         self.assertIs(unchanged, tensor)
