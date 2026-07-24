@@ -509,6 +509,9 @@ class Mistral3Model(Mistral3PretrainedModel):
         if (input_ids is None) ^ (inputs_embeds is not None):
             raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
 
+        if self.training and self.config.text_config.recompute_granularity == "full":
+            use_cache = False
+
         if inputs_embeds is None:
             inputs_embeds = self.get_input_embeddings()(input_ids)
 

@@ -396,6 +396,28 @@ def get_lora_target_modules(model):
             ".*mlp_AR.*linear_1.*",
             ".*mlp_AR.*linear_2.*",
         ]
+    elif model.config.model_type == "mistral3":
+        target_modules = [
+            # Language model
+            "model.language_model.*q_proj.*",
+            "model.language_model.*k_proj.*",
+            "model.language_model.*v_proj.*",
+            "model.language_model.*o_proj.*",
+            "model.language_model.*gate_proj.*",
+            "model.language_model.*up_proj.*",
+            "model.language_model.*down_proj.*",
+            # Vision encoder
+            "model.vision_tower.*q_proj.*",
+            "model.vision_tower.*k_proj.*",
+            "model.vision_tower.*v_proj.*",
+            "model.vision_tower.*o_proj.*",
+            "model.vision_tower.*gate_proj.*",
+            "model.vision_tower.*up_proj.*",
+            "model.vision_tower.*down_proj.*",
+            # Multimodal projector
+            "model.multi_modal_projector.*linear_1.*",
+            "model.multi_modal_projector.*linear_2.*",
+        ]
     elif model.config.model_type == "phi3":
         target_modules = [
             ".*qkv_proj.*",

@@ -19,6 +19,7 @@ import unittest
 import paddle
 from paddle import nn
 
+from paddleformers.cli.utils import get_lora_target_modules, get_multimodel_lora_target_modules
 from paddleformers.transformers import (
     AutoConfig,
     AutoModel,
@@ -181,6 +182,49 @@ class Mistral3ModelTest(unittest.TestCase):
         loss_fct = nn.CrossEntropyLoss()
         expected_loss = loss_fct(outputs.logits.reshape([-1, outputs.logits.shape[-1]]), labels.reshape([-1]))
         self.assertTrue(paddle.allclose(outputs.loss, expected_loss))
+
+    def test_training_recompute_disables_cache(self):
+        config = self.model_tester.get_config()
+        config.text_config.recompute_granularity = "full"
+        config.text_config.recompute_method = "uniform"
+        config.text_config.recompute_num_layers = 1
+        config.text_config.use_cache = True
+        model = Mistral3ForConditionalGeneration(config).train()
+        inputs = self.model_tester.prepare_inputs()
+        labels = paddle.randint(0, self.model_tester.vocab_size, inputs["input_ids"].shape, dtype="int64")
+
+        outputs = model(**inputs, labels=labels)
+        outputs.loss.backward()
+
+        self.assertIsNotNone(outputs.loss)
+        self.assertIsNone(outputs.past_key_values)
+
+    def test_eval_default_cache_is_preserved(self):
+        config = self.model_tester.get_config()
+        config.text_config.recompute_granularity = "full"
+        config.text_config.use_cache = True
+        model = Mistral3ForConditionalGeneration(config).eval()
+        input_ids = paddle.randint(5, self.model_tester.vocab_size, [1, 5], dtype="int64")
+
+        with paddle.no_grad():
+            outputs = model(input_ids=input_ids)
+
+        self.assertIsNotNone(outputs.past_key_values)
+        self.assertEqual(outputs.past_key_values.get_seq_length(), input_ids.shape[1])
+
+    def test_lora_targets_respect_multimodal_freeze(self):
+        model = Mistral3ForConditionalGeneration(self.model_tester.get_config())
+        target_modules = get_lora_target_modules(model)
+        filtered_modules = get_multimodel_lora_target_modules(
+            model,
+            target_modules,
+            "freeze_vision freeze_aligner",
+        )
+
+        self.assertTrue(filtered_modules)
+        self.assertTrue(all("model.language_model" in target for target in filtered_modules))
+        self.assertFalse(any("model.vision_tower" in target for target in filtered_modules))
+        self.assertFalse(any("model.multi_modal_projector" in target for target in filtered_modules))
 
     def test_image_token_mismatch_raises(self):
         config = self.model_tester.get_config()
