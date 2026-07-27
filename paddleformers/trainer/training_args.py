@@ -548,7 +548,7 @@ class TrainingArguments:
         default=IntervalStrategy.STEPS,
         metadata={"help": "The logging strategy to use."},
     )
-    logging_first_step: bool = field(default=True, metadata={"help": "Log the first global_step"})
+    logging_first_step: bool = field(default=False, metadata={"help": "Log the first global_step"})
     logging_steps: int = field(default=5, metadata={"help": "Log every X updates steps."})
 
     save_strategy: IntervalStrategy = field(
@@ -1975,6 +1975,9 @@ class TrainingArguments:
                     raise ValueError(
                         "pipeline parallel is not compatible for sharding stage2 or stage3, please using sharding stage1"
                     )
+
+            if self.batch_p2p_comm is None:
+                self.batch_p2p_comm = not self.overlap_p2p_comm
 
             # TODO use paddle.distributed.is_initialized() after paddle 2.4rc
             if not paddle.distributed.parallel.parallel_helper._is_parallel_ctx_initialized():

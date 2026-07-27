@@ -66,6 +66,7 @@ moe_router_fusion: true
 # 
 moe_ep_barrier: false
 moe_router_force_load_balancing: false
+moe_token_dispatcher_type: deepep
 
 
 optim: adamw
@@ -88,4 +89,3 @@ moe_router_bias_update_rate: 0.0
 save_safetensors: false
 overlap_p2p_comm: false
 batch_p2p_comm: true
-mtp_loss_scaling_factor: 0.3

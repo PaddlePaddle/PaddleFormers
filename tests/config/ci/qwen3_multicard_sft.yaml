@@ -64,6 +64,7 @@ apply_rope_fusion: true
 moe_router_fusion: false
 moe_router_force_load_balancing: true
 moe_expert_fusion: true
+moe_token_dispatcher_type: deepep
 
 sharding: stage1
 split_param: true
@@ -107,4 +108,3 @@ adam_beta2: 0.999
 moe_router_bias_update_rate: 0.0
 save_safetensors: false
 batch_p2p_comm: true
-mtp_loss_scaling_factor: 0.3
