@@ -97,4 +97,3 @@ adam_beta2: 0.999
 moe_router_bias_update_rate: 0.0
 save_safetensors: false
 batch_p2p_comm: true
-mtp_loss_scaling_factor: 0.3

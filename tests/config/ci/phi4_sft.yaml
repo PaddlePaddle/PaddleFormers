@@ -45,6 +45,7 @@ tensor_model_parallel_size: 1
 pipeline_model_parallel_size: 1
 sharding: stage1
 recompute_granularity: ""
+moe_token_dispatcher_type: deepep
 bf16: true
 fp16_opt_level: O2
 amp_master_grad: false
@@ -58,4 +59,3 @@ moe_router_bias_update_rate: 0.0
 save_safetensors: false
 overlap_p2p_comm: false
 batch_p2p_comm: true
-mtp_loss_scaling_factor: 0.3
