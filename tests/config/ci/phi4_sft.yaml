@@ -50,3 +50,12 @@ fp16_opt_level: O2
 amp_master_grad: false
 save_checkpoint_format: "flex_checkpoint"
 load_checkpoint_format: "flex_checkpoint"
+
+# 显式固定历史默认值；避免新默认值改变此配置行为。
+weight_decay: 0.0
+adam_beta2: 0.999
+moe_router_bias_update_rate: 0.0
+save_safetensors: false
+overlap_p2p_comm: false
+batch_p2p_comm: true
+mtp_loss_scaling_factor: 0.3

@@ -67,3 +67,10 @@ num_empty_layers_add_in_tail: 1
 
 router_aux_loss_coef: 0.001
 moe_deep_gemm: false
+# 显式固定历史默认值；避免新默认值改变此配置行为。
+weight_decay: 0.0
+adam_beta2: 0.999
+moe_router_bias_update_rate: 0.0
+overlap_p2p_comm: false
+batch_p2p_comm: true
+mtp_loss_scaling_factor: 0.3
