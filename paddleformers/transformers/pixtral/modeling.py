@@ -372,14 +372,14 @@ class PixtralPretrainedModel(PretrainedModel):
 
         for proj_name in ["q_proj", "k_proj", "v_proj", "o_proj"]:
             aoa_statements.append(
-                f"{model_prefix}transformer.layers.$LAYER_ID.attention.{proj_name}.weight -> "
-                f"vision_encoder.transformer.layers.$LAYER_ID.attention.{proj_name}.weight^T"
+                f"{model_prefix}transformer.layers.$LAYER_ID.attention.{proj_name}.weight^T -> "
+                f"vision_encoder.transformer.layers.$LAYER_ID.attention.{proj_name}.weight"
             )
 
         for proj_name in ["gate_proj", "up_proj", "down_proj"]:
             aoa_statements.append(
-                f"{model_prefix}transformer.layers.$LAYER_ID.feed_forward.{proj_name}.weight -> "
-                f"vision_encoder.transformer.layers.$LAYER_ID.feed_forward.{proj_name}.weight^T"
+                f"{model_prefix}transformer.layers.$LAYER_ID.feed_forward.{proj_name}.weight^T -> "
+                f"vision_encoder.transformer.layers.$LAYER_ID.feed_forward.{proj_name}.weight"
             )
 
         return {"aoa_statements": aoa_statements}
@@ -495,4 +495,10 @@ class PixtralVisionModel(PixtralPretrainedModel):
         return (outputs.last_hidden_state, outputs.hidden_states)
 
 
-__all__ = ["PixtralVisionModel", "PixtralPretrainedModel"]
+# AutoModel derives ``PixtralModel`` from ``PixtralVisionModel`` in a saved
+# checkpoint's architectures field. Keep that public name model-local so a
+# vision-only checkpoint can round-trip without a special case in AutoModel.
+PixtralModel = PixtralVisionModel
+
+
+__all__ = ["PixtralModel", "PixtralVisionModel", "PixtralPretrainedModel"]

@@ -21,6 +21,7 @@ _import_structure = {
     "configuration": ["PixtralVisionConfig"],
     "image_processor": ["PixtralImageProcessor"],
     "modeling": [
+        "PixtralModel",
         "PixtralVisionModel",
         "PixtralPretrainedModel",
     ],

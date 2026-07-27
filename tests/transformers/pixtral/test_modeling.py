@@ -18,6 +18,7 @@ import unittest
 
 import paddle
 
+from paddleformers.transformers import AutoModel
 from paddleformers.transformers.pixtral import PixtralVisionConfig, PixtralVisionModel
 
 
@@ -179,6 +180,25 @@ class PixtralModelTest(unittest.TestCase):
             "patch_conv.weight -> vision_encoder.patch_conv.weight",
             inv_aoa_config["aoa_statements"],
         )
+        self.assertIn(
+            "transformer.layers.$LAYER_ID.attention.q_proj.weight^T -> "
+            "vision_encoder.transformer.layers.$LAYER_ID.attention.q_proj.weight",
+            inv_aoa_config["aoa_statements"],
+        )
+
+    def test_auto_model_save_load(self):
+        model = PixtralVisionModel(self.model_tester.get_config())
+        model.eval()
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            model.save_pretrained(tmpdirname)
+            loaded_model = AutoModel.from_pretrained(tmpdirname)
+
+        self.assertIsInstance(loaded_model, PixtralVisionModel)
+        loaded_state_dict = loaded_model.state_dict()
+        for name, value in model.state_dict().items():
+            self.assertIn(name, loaded_state_dict)
+            paddle.testing.assert_close(value, loaded_state_dict[name])
 
 
 if __name__ == "__main__":

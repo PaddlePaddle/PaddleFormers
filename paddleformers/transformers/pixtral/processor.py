@@ -2,12 +2,27 @@
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 
-import json
-import os
+from typing import Optional, Union
 
-from ..auto.tokenizer import AutoTokenizer
-from ..processing_utils import ProcessorMixin
-from .image_processor import PixtralImageProcessor
+import numpy as np
+
+from ..feature_extraction_utils import BatchFeature
+from ..image_utils import ImageInput
+from ..processing_utils import MultiModalData, ProcessingKwargs, ProcessorMixin, Unpack
+from ..tokenizer_utils_base import PreTokenizedInput, TextInput
+from .image_processor import get_resize_output_image_size
+
+
+class PixtralProcessorKwargs(ProcessingKwargs, total=False):
+    _defaults = {
+        "text_kwargs": {
+            "padding": False,
+            "return_mm_token_type_ids": False,
+        },
+        "common_kwargs": {
+            "return_tensors": "pd",
+        },
+    }
 
 
 class PixtralProcessor(ProcessorMixin):
@@ -42,42 +57,112 @@ class PixtralProcessor(ProcessorMixin):
             tokenizer.convert_tokens_to_ids(image_break_token) if tokenizer is not None else None
         )
         self.image_end_token_id = tokenizer.convert_tokens_to_ids(image_end_token) if tokenizer is not None else None
+        self.image_ids = [self.image_token_id, self.image_break_token_id, self.image_end_token_id]
         self.image_max_pixels = image_max_pixels
         self.image_min_pixels = image_min_pixels
         self.video_max_pixels = video_max_pixels
         self.video_min_pixels = video_min_pixels
 
-    @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, **kwargs):
-        tokenizer = kwargs.pop("tokenizer", None) or AutoTokenizer.from_pretrained(pretrained_model_name_or_path)
-        preprocessor_config = {}
-        preprocessor_path = os.path.join(pretrained_model_name_or_path, "preprocessor_config.json")
-        if os.path.exists(preprocessor_path):
-            with open(preprocessor_path, encoding="utf-8") as f:
-                preprocessor_config = json.load(f)
+    def __call__(
+        self,
+        images: Optional[ImageInput] = None,
+        text: Union[TextInput, PreTokenizedInput, list[TextInput], list[PreTokenizedInput]] = None,
+        **kwargs: Unpack[PixtralProcessorKwargs],
+    ) -> BatchFeature:
+        output_kwargs = self._merge_kwargs(
+            PixtralProcessorKwargs,
+            tokenizer_init_kwargs=getattr(self.tokenizer, "init_kwargs", {}),
+            **kwargs,
+        )
+        patch_size = self.patch_size * self.spatial_merge_size
 
-        processor_config = {}
-        processor_path = os.path.join(pretrained_model_name_or_path, "processor_config.json")
-        if os.path.exists(processor_path):
-            with open(processor_path, encoding="utf-8") as f:
-                processor_config = json.load(f)
+        if images is not None:
+            output_kwargs["images_kwargs"]["patch_size"] = patch_size
+            image_inputs = self.image_processor(images, **output_kwargs["images_kwargs"])
+        else:
+            image_inputs = {}
 
-        image_processor = kwargs.pop("image_processor", None) or PixtralImageProcessor(**preprocessor_config)
-        chat_template = kwargs.pop("chat_template", None)
-        chat_template_path = os.path.join(pretrained_model_name_or_path, "chat_template.json")
-        if chat_template is None and os.path.exists(chat_template_path):
-            with open(chat_template_path, encoding="utf-8") as f:
-                chat_template = json.load(f).get("chat_template")
+        if isinstance(text, str):
+            text = [text]
+        elif not isinstance(text, list) or any(not isinstance(sample, str) for sample in text):
+            raise TypeError("Invalid input text. Please provide a string or a list of strings.")
 
-        init_kwargs = {**processor_config, **kwargs}
-        init_kwargs.pop("processor_class", None)
-        return cls(image_processor=image_processor, tokenizer=tokenizer, chat_template=chat_template, **init_kwargs)
+        prompt_strings = list(text)
+        if image_inputs.get("pixel_values") is not None:
+            image_sizes = iter(image_inputs["image_sizes"])
+            prompt_strings = []
+            for sample in text:
+                parts = sample.split(self.image_token)
+                expanded_sample = parts[0]
+                for suffix in parts[1:]:
+                    try:
+                        height, width = next(image_sizes)
+                    except StopIteration as exc:
+                        raise ValueError("The number of image tokens exceeds the number of provided images.") from exc
+
+                    num_height_tokens = int(height) // patch_size
+                    num_width_tokens = int(width) // patch_size
+                    replace_tokens = (
+                        [self.image_token] * num_width_tokens + [self.image_break_token]
+                    ) * num_height_tokens
+                    replace_tokens[-1] = self.image_end_token
+                    expanded_sample += "".join(replace_tokens) + suffix
+                prompt_strings.append(expanded_sample)
+
+            try:
+                next(image_sizes)
+            except StopIteration:
+                pass
+            else:
+                raise ValueError("The number of provided images exceeds the number of image tokens in the text.")
+
+        return_tensors = output_kwargs["text_kwargs"].pop("return_tensors", None)
+        return_mm_token_type_ids = output_kwargs["text_kwargs"].pop("return_mm_token_type_ids", False)
+        output_kwargs["text_kwargs"].pop("return_token_type_ids", None)
+        text_inputs = self.tokenizer(prompt_strings, **output_kwargs["text_kwargs"], return_tensors=None)
+        self._check_special_mm_tokens(prompt_strings, text_inputs, modalities=["image"])
+
+        if return_mm_token_type_ids:
+            array_ids = np.asarray(text_inputs["input_ids"])
+            mm_token_type_ids = np.zeros_like(array_ids)
+            mm_token_type_ids[np.isin(array_ids, self.image_ids)] = 1
+            text_inputs["mm_token_type_ids"] = mm_token_type_ids.tolist()
+
+        return BatchFeature(data={**text_inputs, **image_inputs}, tensor_type=return_tensors)
+
+    def _get_num_multimodal_tokens(self, image_sizes=None, **kwargs):
+        vision_data = {}
+        if image_sizes is not None:
+            images_kwargs = dict(PixtralProcessorKwargs._defaults.get("images_kwargs", {}))
+            images_kwargs.update(kwargs)
+            size = images_kwargs.get("size") or self.image_processor.size
+            patch_size = self.patch_size * self.spatial_merge_size
+
+            num_image_tokens = []
+            for height, width in image_sizes:
+                resized_height, resized_width = get_resize_output_image_size(
+                    np.zeros((height, width, 3), dtype=np.uint8),
+                    size=(size["longest_edge"], size["longest_edge"]),
+                    patch_size=(patch_size, patch_size),
+                )
+                num_height_tokens = resized_height // patch_size
+                num_width_tokens = resized_width // patch_size
+                num_image_tokens.append((num_width_tokens + 1) * num_height_tokens)
+
+            vision_data.update(
+                {
+                    "num_image_tokens": num_image_tokens,
+                    "num_image_patches": [1] * len(image_sizes),
+                }
+            )
+
+        return MultiModalData(**vision_data)
 
     @property
     def model_input_names(self):
         tokenizer_input_names = self.tokenizer.model_input_names if self.tokenizer is not None else []
         image_input_names = self.image_processor.model_input_names if self.image_processor is not None else []
-        return tokenizer_input_names + image_input_names
+        return list(dict.fromkeys(tokenizer_input_names + image_input_names))
 
 
 __all__ = ["PixtralProcessor"]
