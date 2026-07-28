@@ -78,7 +78,6 @@ from ..transformers.model_utils import (
     _add_variant,
     replace_name_and_gen_index,
     save_full_param,
-    unwrap_model,
 )
 from ..utils.env import (  # noqa for compatibility
     PADDLE_OPTIMIZER_NAME,
@@ -1929,16 +1928,14 @@ class EMAStateAssembler:
         optimizer,
         start_step,
         memory_growth_threshold=8 * (2**30),
-        save_tokenizer=False,
-        tokenizer_path=None,
+        post_save_hook=None,
     ):
         self.output_dir = Path(output_dir)
         self.save_checkpoint_format = save_checkpoint_format
         self.save_hf_steps = save_hf_steps
         self.save_steps = save_steps
         self.memory_growth_threshold = memory_growth_threshold
-        self.save_tokenizer = save_tokenizer
-        self.tokenizer_path = tokenizer_path
+        self.post_save_hook = post_save_hook
         if save_hf_steps > 0 and save_hf_steps % save_steps != 0:
             raise ValueError("[EMAStateAssembler] save_hf_steps must be a multiple of save_steps.")
 
@@ -2319,58 +2316,8 @@ class EMAStateAssembler:
         )
         saver.save_checkpoint(str(save_path))
 
-        # Copy the inference-side HF tokenizer files (from tokenizer_path)
-        # verbatim into the EMA checkpoint so it is directly loadable by inference.
-        if self.save_tokenizer and self.rank == 0:
-            _tk_dir = self.tokenizer_path
-            if _tk_dir and os.path.isdir(_tk_dir):
-                import shutil
-
-                _tk_files = [
-                    "tokenizer.json",
-                    "tokenizer_config.json",
-                    "generation_config.json",
-                    "special_tokens_map.json",
-                    "added_tokens.json",
-                    "tokenizer.model",
-                    "vocab.json",
-                    "merges.txt",
-                    "chat_template.jinja",
-                ]
-                _copied = []
-                for _fn in _tk_files:
-                    _src = os.path.join(_tk_dir, _fn)
-                    if os.path.isfile(_src):
-                        shutil.copy2(_src, os.path.join(str(save_path), _fn))
-                        _copied.append(_fn)
-                logger.info(f"[EMAStateAssembler] Copied tokenizer files {_copied} from {_tk_dir} to {save_path}")
-            else:
-                logger.warning(
-                    f"[EMAStateAssembler] save_tokenizer=True but tokenizer_path is not a valid directory "
-                    f"({_tk_dir!r}); no tokenizer files copied."
-                )
-
-        # Save config.json for inference compatibility (mirror the regular HF save path).
-        if self.rank == 0:
-            from src.utils.hf_config_export import build_hf_config
-
-            _raw_model = unwrap_model(self.model)
-            _cfg = getattr(_raw_model, "config_to_save", None) or getattr(self.model, "config_to_save", None)
-            _src = getattr(_cfg, "_hf_export_source", None) if _cfg is not None else None
-            if _src is not None:
-                cfg_dict = build_hf_config(
-                    _src,
-                    model_type=getattr(_cfg, "hf_export_model_type", None),
-                    architectures_map=getattr(_cfg, "hf_export_architectures", None),
-                )
-                with open(os.path.join(str(save_path), "config.json"), "w", encoding="utf-8") as _f:
-                    json.dump(cfg_dict, _f, indent=4, ensure_ascii=False, sort_keys=True)
-                logger.info(f"[EMAStateAssembler] config.json saved to {save_path}")
-            else:
-                logger.warning(
-                    "[EMAStateAssembler] config_to_save/_hf_export_source not found on model; "
-                    "config.json not saved for EMA HF checkpoint."
-                )
+        if self.post_save_hook is not None:
+            self.post_save_hook(str(save_path))
 
 
 def select_flex_ckpt_comm_method():
