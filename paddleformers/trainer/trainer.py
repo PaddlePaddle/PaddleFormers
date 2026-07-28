@@ -1115,6 +1115,17 @@ class Trainer:
         )
         self.add_callback(non_zcc_ema_callback)
 
+    def _save_hf_side_files(self, output_dir):
+        """Save tokenizer / processing_class / custom files next to an EMA HF checkpoint."""
+        if not self.args.should_save:
+            return
+        if self.tokenizer is not None and self.args.save_tokenizer:
+            self.tokenizer.save_pretrained(output_dir)
+        if self.processing_class is not None:
+            self.processing_class.save_pretrained(output_dir)
+        if getattr(self.args, "copy_custom_file_list", None):
+            self.copy_custom_files(output_dir)
+
     def create_ema_state_assembler(self):
         global_steps = self.state.global_step
         memory_growth_threshold_bytes = self.args.save_hf_memory_growth_threshold * (2**30)
@@ -1128,6 +1139,7 @@ class Trainer:
             optimizer=self.optimizer,
             start_step=global_steps,
             memory_growth_threshold=memory_growth_threshold_bytes,
+            post_save_hook=self._save_hf_side_files,
         )
         callback = EMAStateAssemblerCallback(self.ema_state_assembler)
         self.add_callback(callback)
@@ -1868,6 +1880,7 @@ class Trainer:
                     optimizer=self.optimizer,
                     start_step=self.state.global_step,
                     memory_growth_threshold=memory_growth_threshold_bytes,
+                    post_save_hook=self._save_hf_side_files,
                 )
             self.add_non_zcc_ema_callback(resume_from_checkpoint, ema_state_assembler)
 
