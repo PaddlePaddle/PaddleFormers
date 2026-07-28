@@ -574,7 +574,7 @@ class Trainer:
             assert (
                 ShardingOption.FULL_SHARD not in self.args.sharding
             ), "FULL_SHARD is not supported when using zero cost checkpoint"
-            assert not self.args.save_tokenizer, "save_tokenizer is not supported when using zero cost checkpoint"
+            # assert not self.args.save_tokenizer, "save_tokenizer is not supported when using zero cost checkpoint"
 
             # init attributes for zero cost checkpoint mode
             self.zcc_manager = None
