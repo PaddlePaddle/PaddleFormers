@@ -265,6 +265,18 @@ class EmbeddingPipe(nn.Layer):
         input_ids, attention_mask, position_ids, _, nbatch_pack_offset = parse_args(
             args, num_nextn_predict_layers > 0, is_embed=True
         )
+
+        # === ALIGN LOG: 输入数据 (受 GLM_ALIGN_LOG 控制) ===
+        from paddleformers.align_dump_utils import dump_input_info
+
+        dump_input_info(
+            input_ids=input_ids,
+            position_ids=position_ids,
+            attention_mask=attention_mask,
+            tag="Paddle 输入数据",
+        )
+        # === ALIGN LOG END ===
+
         input_ids.stop_gradient = True
         emb = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
         if position_ids is None and not self.config.apply_rope_fusion:

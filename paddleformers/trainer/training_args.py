@@ -2774,6 +2774,7 @@ class TrainingArguments:
             warnings.warn("`sharding_degree` is deprecated, please use `sharding_parallel_size`")
             self.sharding_parallel_size = max(self.sharding_degree, self.sharding_parallel_size)
         self.data_parallel_size = 1
+        self.moe_sharding_parallel_size = 1
 
         try:
             delattr(self, "sharding_degree")
