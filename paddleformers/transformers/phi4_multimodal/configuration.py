@@ -14,12 +14,18 @@
 # limitations under the License.
 """Phi-4-Multimodal configuration."""
 
+import copy
+import json
 import math
+import os
+import shutil
+from pathlib import Path
 
 from ..configuration_utils import PretrainedConfig
 
 
 def _convert_phi4mm_config(config_dict, with_lora_adapters=True):
+    original_config = copy.deepcopy(config_dict)
     config = dict(config_dict)
 
     config.pop("_name_or_path", None)
@@ -70,6 +76,9 @@ def _convert_phi4mm_config(config_dict, with_lora_adapters=True):
                 "speech_lora_alpha": speech_lora.get("lora_alpha", 1),
             }
         )
+    # Keep the upstream representation so a fine-tuned checkpoint can be
+    # exported back to the format consumed by Transformers and vLLM.
+    config["_phi4mm_hf_config"] = original_config
     return config
 
 
@@ -218,6 +227,7 @@ class Phi4MultimodalConfig(PretrainedConfig):
         speech_lora_alpha=1,
         **kwargs,
     ):
+        self._phi4mm_hf_config = kwargs.pop("_phi4mm_hf_config", None)
         super().__init__(
             bos_token_id=bos_token_id,
             eos_token_id=eos_token_id if eos_token_id is not None else [199999, 200020],
@@ -252,6 +262,7 @@ class Phi4MultimodalConfig(PretrainedConfig):
         self.speech_lora_rank = speech_lora_rank
         self.speech_lora_alpha = speech_lora_alpha
         self._active_lora_adapter = None
+        self.register_unsavable_keys("_phi4mm_hf_config")
 
         if isinstance(vision_config, dict):
             self.vision_config = Phi4MultimodalVisionConfig(**vision_config)
@@ -269,6 +280,133 @@ class Phi4MultimodalConfig(PretrainedConfig):
 
         # Build rope_parameters dict for compatibility with rope utils
         self.rope_parameters = rope_parameters if rope_parameters is not None else self._build_rope_parameters()
+
+    def to_phi4mm_dict(self):
+        """Return the upstream Phi-4-MM config used by Transformers/vLLM."""
+        output = copy.deepcopy(self._phi4mm_hf_config) if self._phi4mm_hf_config is not None else {}
+
+        # Training may update these values, so always take them from the live
+        # PaddleFormers config instead of the originally loaded JSON.
+        for key in (
+            "vocab_size",
+            "hidden_size",
+            "intermediate_size",
+            "num_hidden_layers",
+            "num_attention_heads",
+            "num_key_value_heads",
+            "resid_pdrop",
+            "embd_pdrop",
+            "attention_dropout",
+            "hidden_act",
+            "max_position_embeddings",
+            "original_max_position_embeddings",
+            "initializer_range",
+            "rms_norm_eps",
+            "use_cache",
+            "tie_word_embeddings",
+            "rope_theta",
+            "rope_scaling",
+            "partial_rotary_factor",
+            "bos_token_id",
+            "eos_token_id",
+            "pad_token_id",
+            "sliding_window",
+            "attention_bias",
+            "mlp_bias",
+            "lm_head_bias",
+        ):
+            output[key] = copy.deepcopy(getattr(self, key))
+
+        audio = self.audio_config
+        vision = self.vision_config
+        output.update(
+            {
+                "model_type": "phi4mm",
+                "architectures": ["Phi4MMForCausalLM"],
+                "auto_map": {"AutoConfig": "configuration_phi4mm.Phi4MMConfig"},
+                "embd_layer": {
+                    "embedding_cls": "image_audio",
+                    "image_embd_layer": {
+                        "crop_size": vision.crop_size,
+                        "embedding_cls": "tune_image",
+                        "enable_gradient_checkpointing": True,
+                        "hd_transform_order": "sub_glb",
+                        "image_token_compression_cls": "avg_pool_2d",
+                        "projection_cls": "mlp",
+                        "use_hd_transform": True,
+                        "with_learnable_separator": True,
+                    },
+                    "audio_embd_layer": {
+                        "compression_rate": audio.time_reduction,
+                        "downsample_rate": audio.downsample_rate,
+                        "embedding_cls": "audio",
+                        "enable_gradient_checkpointing": True,
+                        "projection_cls": "mlp",
+                        "use_conv_downsample": False,
+                        "use_qformer": False,
+                    },
+                },
+                "img_processor": output.get("img_processor"),
+                "audio_processor": {
+                    "name": "cascades",
+                    "config": {
+                        "activation": audio.activation,
+                        "activation_checkpointing": {
+                            "interval": 1,
+                            "module": "transformer",
+                            "offload": False,
+                        },
+                        "attention_dim": audio.hidden_size,
+                        "attention_heads": audio.num_attention_heads,
+                        "batch_norm": False,
+                        "bias_in_glu": True,
+                        "causal": True,
+                        "chunk_size": audio.chunk_size,
+                        "cnn_layer_norm": True,
+                        "conv_activation": audio.conv_activation,
+                        "conv_glu_type": audio.conv_glu_type,
+                        "depthwise_multiplier": audio.depthwise_multiplier,
+                        "depthwise_seperable_out_channel": audio.depthwise_separable_out_channel,
+                        "dropout_rate": audio.dropout_rate,
+                        "encoder_embedding_config": {"input_size": audio.input_size},
+                        "ext_pw_kernel_size": 1,
+                        "ext_pw_out_channel": audio.ext_pw_out_channel,
+                        "input_layer": "nemo_conv",
+                        "input_size": audio.input_size,
+                        "kernel_size": audio.kernel_size,
+                        "left_chunk": audio.left_chunk,
+                        "linear_units": audio.intermediate_size,
+                        "nemo_conv_settings": {"conv_channels": audio.nemo_conv_channels},
+                        "num_blocks": audio.num_blocks,
+                        "relative_attention_bias_args": {
+                            "t5_bias_max_distance": audio.bias_max_distance,
+                            "type": "t5",
+                        },
+                        "time_reduction": audio.time_reduction,
+                    },
+                },
+                "vision_lora": {
+                    "r": self.vision_lora_rank,
+                    "lora_alpha": self.vision_lora_alpha,
+                },
+                "speech_lora": {
+                    "r": self.speech_lora_rank,
+                    "lora_alpha": self.speech_lora_alpha,
+                },
+            }
+        )
+        return output
+
+    def save_pretrained(self, save_directory, **kwargs):
+        """Save a checkpoint that remains loadable by upstream serving tools."""
+        super().save_pretrained(save_directory, **kwargs)
+        output_config = os.path.join(save_directory, "config.json")
+        with open(output_config, "w", encoding="utf-8") as writer:
+            json.dump(self.to_phi4mm_dict(), writer, indent=2, sort_keys=True, ensure_ascii=False)
+            writer.write("\n")
+
+        source = Path(__file__).with_name("configuration_phi4mm_hf.py")
+        shutil.copyfile(source, Path(save_directory) / "configuration_phi4mm.py")
 
     def _build_rope_parameters(self):
         rope_params = {
