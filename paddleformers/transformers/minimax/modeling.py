@@ -967,7 +967,9 @@ class MiniMaxPretrainedModel(PretrainedModel):
             if config.tie_word_embeddings:
                 aoa_statements.append("model.embed_tokens.weight -> lm_head.weight")
             else:
-                aoa_statements.append("lm_head.weight^T -> lm_head.weight")
+                # GeneralLMHead stores weights in [vocab_size, hidden_size],
+                # which is already the layout used by Hugging Face/vLLM.
+                aoa_statements.append("lm_head.weight -> lm_head.weight")
 
         return {"aoa_statements": aoa_statements}
 
@@ -1027,7 +1029,7 @@ class MiniMaxPretrainedModel(PretrainedModel):
                 )
 
         if not config.tie_word_embeddings and cls != cls.base_model_class:
-            aoa_statements.append("lm_head.weight^T -> lm_head.weight")
+            aoa_statements.append("lm_head.weight -> lm_head.weight")
 
         return {"aoa_statements": aoa_statements}
 

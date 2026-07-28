@@ -171,6 +171,18 @@ class MiniMaxModelTest(ModelTesterMixin, unittest.TestCase):
         config = self.model_tester.get_config()
         self.model_tester.create_and_check_auto_model(config)
 
+    def test_lm_head_aoa_keeps_hf_layout(self):
+        config = self.model_tester.get_config()
+        config.tie_word_embeddings = False
+
+        forward_statements = MiniMaxForCausalLM._gen_aoa_config(config)["aoa_statements"]
+        inverse_statements = MiniMaxForCausalLM._gen_inv_aoa_config(config)["aoa_statements"]
+
+        self.assertIn("lm_head.weight -> lm_head.weight", forward_statements)
+        self.assertIn("lm_head.weight -> lm_head.weight", inverse_statements)
+        self.assertNotIn("lm_head.weight^T -> lm_head.weight", forward_statements)
+        self.assertNotIn("lm_head.weight^T -> lm_head.weight", inverse_statements)
+
     def test_default_lora_targets_cover_all_projection_types(self):
         from paddleformers.cli.utils import get_lora_target_modules
         from paddleformers.peft import LoRAConfig, LoRAModel
