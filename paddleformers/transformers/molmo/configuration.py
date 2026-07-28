@@ -13,6 +13,9 @@
 # limitations under the License.
 """Molmo model configuration."""
 
+import shutil
+from pathlib import Path
+
 from ..configuration_utils import PretrainedConfig
 from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
@@ -172,6 +175,14 @@ class MolmoConfig(PretrainedConfig):
             tie_word_embeddings=self.weight_tying,
             **kwargs,
         )
+        self.auto_map = dict(getattr(self, "auto_map", None) or {})
+        self.auto_map["AutoConfig"] = "config_molmo.MolmoConfig"
+
+    def save_pretrained(self, save_directory, **kwargs):
+        """Save the lightweight HF config implementation with exported weights."""
+        super().save_pretrained(save_directory, **kwargs)
+        source = Path(__file__).with_name("config_molmo_hf.py")
+        shutil.copyfile(source, Path(save_directory) / "config_molmo.py")
 
     @property
     def image_num_patch(self):

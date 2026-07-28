@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 
 import paddle
@@ -306,8 +307,10 @@ class MolmoModelTest(ModelTesterMixin, unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdirname:
             config.save_pretrained(tmpdirname)
             loaded_config = MolmoConfig.from_pretrained(tmpdirname)
+            self.assertTrue((Path(tmpdirname) / "config_molmo.py").is_file())
 
         self.assertEqual(loaded_config.model_type, "molmo")
+        self.assertEqual(loaded_config.auto_map["AutoConfig"], "config_molmo.MolmoConfig")
         self.assertEqual(loaded_config.hidden_size, config.hidden_size)
         self.assertEqual(loaded_config.vocab_size, config.vocab_size)
         self.assertEqual(loaded_config.vision_backbone["image_emb_dim"], config.vision_backbone["image_emb_dim"])
