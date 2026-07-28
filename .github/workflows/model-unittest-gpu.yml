@@ -56,8 +56,19 @@ defaults:
     shell: bash
 
 jobs:
+  check-bypass:
+    name: Check bypass
+    if: ${{ inputs.can-skip != 'true' }}
+    uses: ./.github/workflows/check-bypass.yml
+    with:
+      workflow-name: 'formers-model'
+    secrets:
+      github-token: ${{ secrets.GITHUB_TOKEN }}
+
   check_skip:
     name: Check skip-models-ci label
+    needs: check-bypass
+    if: ${{ needs.check-bypass.outputs.can-skip == 'false' }}
     runs-on: 'ernie-cpu'
 
     outputs:
