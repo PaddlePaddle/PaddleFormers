@@ -638,7 +638,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     f"{comp_src}.wgate.weight^T -> {comp_tgt}.linear_wgate.weight",
                     f"{comp_src}.wkv.weight^T -> {comp_tgt}.linear_wkv.weight",
                 ]
-                if csa_compress_ratios[L] > 0 and csa_compress_ratios[L] <= 4 and not dense_mode:
+                if csa_compress_ratios[mtp_layer_idx] <= 4 and not dense_mode:
                     idx_src = f"{mtp_src}.attn.indexer"
                     idx_tgt = f"{tl}.self_attn.core_attention.indexer"
                     stmts += [
