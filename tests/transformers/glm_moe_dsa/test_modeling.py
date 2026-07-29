@@ -220,9 +220,7 @@ class GlmMoeDsaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
         self.assertTrue(config.rotary_interleaved)
 
     def test_nested_rope_theta_maps_to_paddlefleet_name(self):
-        config = GlmMoeDsaConfig(
-            rope_parameters={"rope_type": "default", "rope_theta": 8_000_000}
-        )
+        config = GlmMoeDsaConfig(rope_parameters={"rope_type": "default", "rope_theta": 8_000_000})
         self.assertEqual(config.rope_parameters["rope_theta"], 8_000_000)
         self.assertEqual(config.rope_theta, 8_000_000)
         self.assertEqual(config.rotary_base, 8_000_000)

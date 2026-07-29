@@ -187,9 +187,7 @@ class GlmMoeDsaConfig(PretrainedConfig):
         self.rope_theta = rope_theta
         self.rope_scaling = rope_scaling
         self.rope_interleave = rope_interleave
-        self.rotary_interleaved = (
-            False if rotary_interleaved is None else rotary_interleaved
-        )
+        self.rotary_interleaved = False if rotary_interleaved is None else rotary_interleaved
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
         self.sliding_window = sliding_window

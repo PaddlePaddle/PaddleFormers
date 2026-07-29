@@ -384,8 +384,7 @@ class MoEAOAConfigGenerator:
             )
             if indexer_type not in {"full", "shared"}:
                 raise ValueError(
-                    f"Unsupported indexer type {indexer_type!r} for layer {layer_idx}; "
-                    "expected 'full' or 'shared'"
+                    f"Unsupported indexer type {indexer_type!r} for layer {layer_idx}; " "expected 'full' or 'shared'"
                 )
             if indexer_type == "shared":
                 return statements
@@ -770,8 +769,7 @@ class MoEAOAConfigGenerator:
             )
             if indexer_type not in {"full", "shared"}:
                 raise ValueError(
-                    f"Unsupported indexer type {indexer_type!r} for layer {layer_idx}; "
-                    "expected 'full' or 'shared'"
+                    f"Unsupported indexer type {indexer_type!r} for layer {layer_idx}; " "expected 'full' or 'shared'"
                 )
             if indexer_type == "shared":
                 return statements
