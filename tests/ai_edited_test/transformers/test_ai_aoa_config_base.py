@@ -255,12 +255,8 @@ class TestMoEAOAConfigGeneratorAttention(unittest.TestCase):
             index_n_heads=32,
             indexer_types=["full", "shared"],
         )
-        full_stmts = MoEAOAConfigGenerator._get_attention_statements(
-            params, 0, "model.layers.0", "model.layers.0"
-        )
-        shared_stmts = MoEAOAConfigGenerator._get_attention_statements(
-            params, 1, "model.layers.1", "model.layers.1"
-        )
+        full_stmts = MoEAOAConfigGenerator._get_attention_statements(params, 0, "model.layers.0", "model.layers.0")
+        shared_stmts = MoEAOAConfigGenerator._get_attention_statements(params, 1, "model.layers.1", "model.layers.1")
         self.assertIn("self_attn.indexer.wq_b.weight", "\n".join(full_stmts))
         self.assertNotIn("self_attn.indexer", "\n".join(shared_stmts))
         self.assertEqual(len(shared_stmts), 4)
@@ -276,9 +272,7 @@ class TestMoEAOAConfigGeneratorAttention(unittest.TestCase):
             index_n_heads=32,
             indexer_types=["full", "shared"],
         )
-        full_stmts = MoEAOAConfigGenerator._get_inv_attention_statements(
-            params, 0, "model.layers.0", "model.layers.0"
-        )
+        full_stmts = MoEAOAConfigGenerator._get_inv_attention_statements(params, 0, "model.layers.0", "model.layers.0")
         shared_stmts = MoEAOAConfigGenerator._get_inv_attention_statements(
             params, 1, "model.layers.1", "model.layers.1"
         )
@@ -298,9 +292,7 @@ class TestMoEAOAConfigGeneratorAttention(unittest.TestCase):
             indexer_types=["unknown"],
         )
         with self.assertRaisesRegex(ValueError, "Unsupported indexer type"):
-            MoEAOAConfigGenerator._get_attention_statements(
-                params, 0, "model.layers.0", "model.layers.0"
-            )
+            MoEAOAConfigGenerator._get_attention_statements(params, 0, "model.layers.0", "model.layers.0")
 
 
 class TestMoEAOAConfigGeneratorMoELayers(unittest.TestCase):

@@ -21,11 +21,11 @@ import numpy as np
 import paddle
 
 from paddleformers.transformers import Glm4MoeConfig
-from paddleformers.transformers.glm4_moe.modeling import GLMMoEModelProvider
 from paddleformers.transformers import (
     Glm4MoeForCausalLMDeprecated as Glm4MoeForCausalLM,
 )
 from paddleformers.transformers import Glm4MoeModel
+from paddleformers.transformers.glm4_moe.modeling import GLMMoEModelProvider
 from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
