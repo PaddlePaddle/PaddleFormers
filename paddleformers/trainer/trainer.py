@@ -361,6 +361,9 @@ class Trainer:
             args = TrainingArguments(output_dir=output_dir)
 
         self.args = args
+        _model_config = getattr(model, "config", None)
+        if getattr(_model_config, "use_accuracy_compatible", False) and getattr(self.args, "max_grad_norm", 0) > 0:
+            self.args.max_grad_norm = 0.0
         self.is_in_train = False
         # self.do_grad_scaling = args.fp16
 
