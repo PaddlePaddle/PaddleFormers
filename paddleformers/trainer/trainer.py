@@ -588,6 +588,11 @@ class Trainer:
         if self.args.use_async_save:
             self._async_optimizer_saver = AsyncSaver()
 
+        if self.args.use_flex_async_save:
+            from .utils.flex_async_save import FlexAsyncSaver
+
+            self._flex_async_saver = FlexAsyncSaver()
+
         if args.max_steps > 0:
             logger.info("max_steps is given, it will override any value given in num_train_epochs")
 
@@ -1131,6 +1136,15 @@ class Trainer:
         )
         callback = EMAStateAssemblerCallback(self.ema_state_assembler)
         self.add_callback(callback)
+
+    def _wait_flex_async_save(self):
+        """Wait for any in-progress flex async checkpoint save to complete.
+
+        Should be called before optimizer.step() to ensure CPU pinned memory
+        is no longer being read by the background write thread.
+        """
+        if hasattr(self, "_flex_async_saver") and self._flex_async_saver.is_saving:
+            self._flex_async_saver.wait_for_completion()
 
     def _save_flex_model_state(self, output_dir):
         model_sharded_state_dict = self.model.sharded_state_dict()
@@ -2064,6 +2078,10 @@ class Trainer:
             self.optimizer.clear_grad()
             return
 
+        # Wait for any in-progress flex async save before optimizer.step(),
+        # because reload_optim will read from CPU pinned memory.
+        self._wait_flex_async_save()
+
         if parameters_list is None:
             parameters_list = []
 
@@ -2676,6 +2694,9 @@ class Trainer:
         metrics["train_loss"] = train_loss
 
         self.is_in_train = False
+
+        # Ensure the last flex async checkpoint save is fully written before exiting.
+        self._wait_flex_async_save()
 
         self._memory_tracker.stop_and_update_metrics(metrics)
 
@@ -4454,7 +4475,8 @@ class Trainer:
                                 self.args.optim_shard_num,
                             )
                         elif self.args.save_checkpoint_format == "flex_checkpoint":
-                            self._save_flex_optimizer_state(output_dir)
+                            if not self.args.use_flex_async_save:
+                                self._save_flex_optimizer_state(output_dir)
                         else:
                             if self.dp_group.rank > 0:  # this should only work for MoE saving
                                 self._save_ckpt_func(
@@ -4506,8 +4528,9 @@ class Trainer:
                                 signal_dir,
                             )
                         elif self.args.save_checkpoint_format == "flex_checkpoint":
-                            self._save_flex_model_state(output_dir)
-                            self._save_flex_optimizer_state(output_dir)
+                            if not self.args.use_flex_async_save:
+                                self._save_flex_model_state(output_dir)
+                                self._save_flex_optimizer_state(output_dir)
                         else:
                             if self.args.data_parallel_rank > 0 and self.args.use_expert_parallel:
                                 self._save_ckpt_func(
@@ -4745,6 +4768,10 @@ class Trainer:
 
                 return
             if self.args.save_checkpoint_format == "flex_checkpoint":
+                if self.args.use_flex_async_save and not last_fc_to_hf:
+                    # Async mode: model + optimizer saved together in background
+                    self._flex_async_saver.save_async(self, output_dir)
+                    return
                 if last_fc_to_hf:
                     is_main_process = paddle.distributed.get_rank() == 0
                     # Convert user-configured GB value to bytes for HFFormatFullParamSaver
