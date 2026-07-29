@@ -64,6 +64,7 @@ class GLMMoEModelProvider(GPTModelProvider):
     transform_rules = {
         **GPTModelProvider.transform_rules,
         "dtype": "params_dtype",
+        "expert_tensor_model_parallel_size": "expert_tensor_parallel_size",
     }
 
     # (@peiziliang) hard code
