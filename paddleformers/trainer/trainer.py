@@ -3582,6 +3582,9 @@ class Trainer:
             logger.info("Creating Muon optimizer")
             muon_kwargs = {
                 **adam_kwargs,
+                "adam_beta1": args.adam_beta1,
+                "adam_beta2": args.adam_beta2,
+                "adam_epsilon": args.adam_epsilon,
                 "momentum": args.muon_momentum,
                 "muon_version": args.muon_version,
                 "muon_exclude_patterns": args.muon_exclude_patterns,
