@@ -47,12 +47,12 @@ function run_tools_test() {
 }
 
 
-PRECISION_APPROVERS1="XieYunshen From00 risemeup1 tianlef zjjlivein SigureMo"
+PRECISION_APPROVERS1="XieYunshen From00 risemeup1 tianlef zjjlivein SigureMo swgu98"
 echo_line="You must be approved by one of ${PRECISION_APPROVERS1} for changing precision.\n"
 APPROVER_LIST1=(${PRECISION_APPROVERS1})
 check_approval 1 "${APPROVER_LIST1[@]}"
 
-PRECISION_APPROVERS2="lugimzzz zjjlivein tianlef risemeup1 SigureMo"
+PRECISION_APPROVERS2="lugimzzz zjjlivein tianlef risemeup1 SigureMo swgu98"
 echo_line="You must be approved by one of ${PRECISION_APPROVERS2} for changing precision.\n"
 APPROVER_LIST2=(${PRECISION_APPROVERS2})
 check_approval 1 "${APPROVER_LIST2[@]}"
