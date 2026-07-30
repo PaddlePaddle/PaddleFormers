@@ -3411,6 +3411,70 @@ class Trainer:
         self.create_scheduler(num_training_steps=num_training_steps)
         self.create_optimizer(self.lr_scheduler)
 
+    def _build_muon_slice_config(self):
+        """Build the Muon slice-config by walking the module tree.
+
+        Each weight-holding submodule declares how to Muon-slice its own
+        parameters via ``muon_slice_specs(muon_configs)`` which returns
+        ``{relative_param_path: (slice_fn, kwargs)}``. We prepend each
+        submodule's name so only parameters that actually exist on this rank
+        get a slice spec (layer/MTP/SWA enumeration is implicit). Adding a new
+        model therefore needs no per-model Muon slice function here.
+        """
+        model = self.model
+        muon_configs = model.config.muon_configs
+        slice_config = {}
+        for name, sub in model.named_sublayers():
+            fn = getattr(sub, "muon_slice_specs", None)
+            if fn is None:
+                continue
+            for rel, spec in fn(muon_configs).items():
+                slice_config[f"{name}.{rel}"] = spec
+        return slice_config
+
+    def _build_muon_param_info_map(self):
+        """Build the per-parameter Muon metadata map for module-walk models.
+
+        Used for models that declare their slice specs on the submodules
+        themselves; ``_build_muon_slice_config`` keys are pp-local names and so
+        match ``named_parameters()`` directly. Models that still implement
+        ``build_muon_param_info_map`` keep using their own implementation.
+        """
+        from functools import partial
+
+        from paddle.optimizer.muon import MuonParamInfo, _default_should_use_muon
+
+        model = self.model
+        exclude_patterns = model.config.muon_configs["muon_exclude_patterns"]
+        slice_config = self._build_muon_slice_config()
+
+        info_map = {}
+        for pp_name, param in model.named_parameters():
+            use_muon = _default_should_use_muon(pp_name, param.shape, exclude_patterns) and _default_should_use_muon(
+                param.name, param.shape, exclude_patterns
+            )
+
+            if pp_name in slice_config:
+                slice_fn, slice_kwargs = slice_config[pp_name]
+                split_concat_func = partial(slice_fn, **slice_kwargs)
+            else:
+                split_concat_func = None
+
+            info_map[param.name] = MuonParamInfo(
+                use_muon=use_muon,
+                split_concat_func=split_concat_func,
+            )
+
+            sc_func = split_concat_func
+            logger.info(
+                f"name: {pp_name}, param.name: {param.name}, shape: {param.shape}, "
+                f"use_muon: {use_muon}, "
+                f"split_concat_func: {sc_func.func.__name__ if sc_func else None}, "
+                f"split_concat_func_kwargs: {sc_func.keywords if sc_func else {}}"
+            )
+
+        return info_map
+
     def create_optimizer(self, lr_scheduler=None):
         """
         Setup the optimizer.
@@ -3454,15 +3518,18 @@ class Trainer:
             if hasattr(optimizer_cls, "_create_master_weight") and self.args.fp16_opt_level == "O2":
                 optimizer_kwargs["multi_precision"] = True
 
-            if self.args.optim == OptimizerNames.MUON and hasattr(self.model, "build_muon_param_info_map"):
+            if self.args.optim == OptimizerNames.MUON:
                 self.model.config.muon_configs = {
                     "muon_qkv_update_mode": self.args.muon_qkv_update_mode,
                     "muon_ffn_split": self.args.muon_ffn_split,
                     "muon_exclude_patterns": self.args.muon_exclude_patterns,
                 }
-                optimizer_kwargs["muon_param_info_map"] = self.model.build_muon_param_info_map(
-                    self.model, self.model.config
-                )
+                if hasattr(self.model, "build_muon_param_info_map"):
+                    optimizer_kwargs["muon_param_info_map"] = self.model.build_muon_param_info_map(
+                        self.model, self.model.config
+                    )
+                else:
+                    optimizer_kwargs["muon_param_info_map"] = self._build_muon_param_info_map()
                 logger.info(f"muon_param_info_map: {optimizer_kwargs['muon_param_info_map']}")
 
             self.optimizer = optimizer_cls(
