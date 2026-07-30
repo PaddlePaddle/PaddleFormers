@@ -24,7 +24,18 @@ on:
         default: ""
 
 jobs:
+  check-bypass:
+    name: Check bypass
+    if: ${{ inputs.can-skip != 'true' }}
+    uses: ./.github/workflows/check-bypass.yml
+    with:
+      workflow-name: 'formers-xpu'
+    secrets:
+      github-token: ${{ secrets.GITHUB_TOKEN }}
+    
   run_xpu_cases:
+    needs: check-bypass
+    if: ${{ needs.check-bypass.outputs.can-skip == 'false' }}
     runs-on: [self-hosted, XPU-P800-8Cards]
     timeout-minutes: 60
     steps:
