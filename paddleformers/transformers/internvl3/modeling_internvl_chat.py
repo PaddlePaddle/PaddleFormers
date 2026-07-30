@@ -301,7 +301,7 @@ class InternVLChatModel(PretrainedModel):
             raise ValueError("input_ids must be provided for InternVLChatModel.")
 
         input_embeds = self.language_model.get_input_embeddings()(input_ids).clone()
-        if pixel_values is not None:
+        if pixel_values is not None and past_key_values is None:
             self._ensure_img_context_token_id(input_ids)
             vit_embeds = self.extract_feature(pixel_values)
             if image_flags is not None:
