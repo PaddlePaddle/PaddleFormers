@@ -126,7 +126,6 @@ SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
         ("qwen2_5_vl_text", "qwen2_5_vl"),
         ("qwen3_vl_text", "qwen3_vl"),
         ("qwen3_vl_moe_text", "qwen3_vl_moe"),
-        ("minicpm", "minicpm4"),
         ("internlm3", "intern_lm3"),
         ("internlm2", "intern"),
         # TODO(VL): Remove these when Gemma4 VL module (gemma4/) is created

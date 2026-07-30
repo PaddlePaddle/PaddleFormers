@@ -17,14 +17,14 @@ import logging
 from ..configuration_utils import PretrainedConfig
 from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
-""" MiniCPM model configuration"""
+""" MiniCPM4 model configuration"""
 logger = logging.getLogger(name=__name__)
 MINICPM_PRETRAINED_CONFIG_ARCHIVE_MAP = {}
 
 
-class MiniCPMConfig(PretrainedConfig):
+class MiniCPM4Config(PretrainedConfig):
     """
-    This is the configuration class to store the configuration of a [`MiniCPMModel`]. It is used to instantiate an MiniCPM
+    This is the configuration class to store the configuration of a [`MiniCPM4Model`]. It is used to instantiate an MiniCPM4
     model according to the specified arguments, defining the model architecture. Instantiating a configuration with the
     defaults will yield a similar configuration to that of the MiniCPM-7B.
 
@@ -34,8 +34,8 @@ class MiniCPMConfig(PretrainedConfig):
 
     Args:
         vocab_size (`int`, *optional*, defaults to 32000):
-            Vocabulary size of the MiniCPM model. Defines the number of different tokens that can be represented by the
-            `inputs_ids` passed when calling [`MiniCPMModel`]
+            Vocabulary size of the MiniCPM4 model. Defines the number of different tokens that can be represented by the
+            `inputs_ids` passed when calling [`MiniCPM4Model`]
         hidden_size (`int`, *optional*, defaults to 4096):
             Dimension of the hidden representations.
         intermediate_size (`int`, *optional*, defaults to 11008):
@@ -93,19 +93,19 @@ class MiniCPMConfig(PretrainedConfig):
             The dropout ratio for the attention probabilities.
 
     ```python
-    >>> from transformers import MiniCPMModel, MiniCPMConfig
+    >>> from transformers import MiniCPM4Model, MiniCPM4Config
 
-    >>> # Initializing a MiniCPM minicpm-7b style configuration
-    >>> configuration = MiniCPMConfig()
+    >>> # Initializing a MiniCPM4 minicpm-7b style configuration
+    >>> configuration = MiniCPM4Config()
 
     >>> # Initializing a model from the minicpm-7b style configuration
-    >>> model = MiniCPMModel(configuration)
+    >>> model = MiniCPM4Model(configuration)
 
     >>> # Accessing the model configuration
     >>> configuration = model.config
     ```"""
 
-    model_type = "minicpm"
+    model_type = "minicpm4"
 
     def __init__(
         self,
@@ -234,4 +234,4 @@ class MiniCPMConfig(PretrainedConfig):
             raise ValueError(f"`rope_scaling`'s factor field must be a float > 1, got {rope_scaling_factor}")
 
 
-__all__ = ["MiniCPMConfig"]
+__all__ = ["MiniCPM4Config"]

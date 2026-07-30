@@ -25,7 +25,7 @@ from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
-from ...nn.mlp import MLP as MiniCPMMLP
+from ...nn.mlp import MLP as MiniCPM4MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...trainer.utils.doc import (
@@ -41,13 +41,13 @@ from ..model_outputs import (
 )
 from ..model_utils import PretrainedModel, register_base_model
 
-""" PyTorch MiniCPM model."""
+""" PyTorch MiniCPM4 model."""
 import math
 import re
 import warnings
 from typing import Dict, List, Optional, Tuple, Union
 
-from .configuration import MiniCPMConfig
+from .configuration import MiniCPM4Config
 
 try:
     pass
@@ -492,7 +492,7 @@ class InfLLMv2Cache(DynamicCache):
 #         pass
 
 logger = logging.getLogger(name=__name__)
-_CONFIG_FOR_DOC = "MiniCPMConfig"
+_CONFIG_FOR_DOC = "MiniCPM4Config"
 
 
 def _get_unpad_data(attention_mask):
@@ -510,10 +510,10 @@ def rms_layernorm(hidden: paddle.Tensor, weight: paddle.Tensor, eps: float):
     return hidden * weight
 
 
-class MiniCPMRMSNorm(nn.Layer):
+class MiniCPM4RMSNorm(nn.Layer):
     def __init__(self, hidden_size, eps=1e-06):
         """
-        MiniCPMRMSNorm is equivalent to T5LayerNorm
+        MiniCPM4RMSNorm is equivalent to T5LayerNorm
         """
         super().__init__()
         self.weight = paddle.nn.Parameter(paddle.ones(hidden_size))
@@ -523,7 +523,7 @@ class MiniCPMRMSNorm(nn.Layer):
         return rms_layernorm(hidden_states, self.weight, self.variance_epsilon)
 
 
-class MiniCPMRotaryEmbedding(nn.Layer):
+class MiniCPM4RotaryEmbedding(nn.Layer):
     def __init__(self, dim, max_position_embeddings=2048, base=10000, device=None):
         super().__init__()
         self.dim = dim
@@ -560,8 +560,8 @@ class MiniCPMRotaryEmbedding(nn.Layer):
         )
 
 
-class MiniCPMLongRoPE(MiniCPMRotaryEmbedding):
-    """MiniCPMRotaryEmbedding extended with Dynamic NTK scaling. Credits to the Reddit users /u/bloc97 and /u/emozilla"""
+class MiniCPM4LongRoPE(MiniCPM4RotaryEmbedding):
+    """MiniCPM4RotaryEmbedding extended with Dynamic NTK scaling. Credits to the Reddit users /u/bloc97 and /u/emozilla"""
 
     def __init__(
         self,
@@ -596,8 +596,8 @@ class MiniCPMLongRoPE(MiniCPMRotaryEmbedding):
         self.register_buffer("sin_cached", emb.sin().to(dtype) * self.scaling_factor, persistable=False)
 
 
-class MiniCPMLinearScalingRotaryEmbedding(MiniCPMRotaryEmbedding):
-    """MiniCPMRotaryEmbedding extended with linear scaling. Credits to the Reddit user /u/kaiokendev"""
+class MiniCPM4LinearScalingRotaryEmbedding(MiniCPM4RotaryEmbedding):
+    """MiniCPM4RotaryEmbedding extended with linear scaling. Credits to the Reddit user /u/kaiokendev"""
 
     def __init__(
         self,
@@ -620,8 +620,8 @@ class MiniCPMLinearScalingRotaryEmbedding(MiniCPMRotaryEmbedding):
         self.register_buffer("sin_cached", emb.sin().to(dtype), persistable=False)
 
 
-class MiniCPMDynamicNTKScalingRotaryEmbedding(MiniCPMRotaryEmbedding):
-    """MiniCPMRotaryEmbedding extended with Dynamic NTK scaling. Credits to the Reddit users /u/bloc97 and /u/emozilla"""
+class MiniCPM4DynamicNTKScalingRotaryEmbedding(MiniCPM4RotaryEmbedding):
+    """MiniCPM4RotaryEmbedding extended with Dynamic NTK scaling. Credits to the Reddit users /u/bloc97 and /u/emozilla"""
 
     def __init__(
         self,
@@ -709,10 +709,10 @@ def repeat_kv(hidden_states: paddle.Tensor, n_rep: int) -> paddle.Tensor:
     return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
 
 
-class MiniCPMAttention(nn.Layer):
+class MiniCPM4Attention(nn.Layer):
     """Multi-headed attention from 'Attention Is All You Need' paper"""
 
-    def __init__(self, config: MiniCPMConfig, layer_idx: Optional[int] = None):
+    def __init__(self, config: MiniCPM4Config, layer_idx: Optional[int] = None):
         super().__init__()
         self.config = config
         self.layer_idx = layer_idx
@@ -780,7 +780,7 @@ class MiniCPMAttention(nn.Layer):
 
     def _init_rope(self):
         if self.config.rope_scaling is None:
-            self.rotary_emb = MiniCPMRotaryEmbedding(
+            self.rotary_emb = MiniCPM4RotaryEmbedding(
                 self.head_dim,
                 max_position_embeddings=self.max_position_embeddings,
                 base=self.rope_theta,
@@ -789,21 +789,21 @@ class MiniCPMAttention(nn.Layer):
             scaling_type = self.config.rope_scaling["rope_type"]
             scaling_factor = self.config.rope_scaling.get("factor", None)
             if scaling_type == "linear":
-                self.rotary_emb = MiniCPMLinearScalingRotaryEmbedding(
+                self.rotary_emb = MiniCPM4LinearScalingRotaryEmbedding(
                     self.head_dim,
                     max_position_embeddings=self.max_position_embeddings,
                     scaling_factor=scaling_factor,
                     base=self.rope_theta,
                 )
             elif scaling_type == "dynamic":
-                self.rotary_emb = MiniCPMDynamicNTKScalingRotaryEmbedding(
+                self.rotary_emb = MiniCPM4DynamicNTKScalingRotaryEmbedding(
                     self.head_dim,
                     max_position_embeddings=self.max_position_embeddings,
                     scaling_factor=scaling_factor,
                     base=self.rope_theta,
                 )
             elif scaling_type == "longrope":
-                self.rotary_emb = MiniCPMLongRoPE(
+                self.rotary_emb = MiniCPM4LongRoPE(
                     self.head_dim,
                     max_position_embeddings=self.max_position_embeddings,
                     short_factor=self.config.rope_scaling["short_factor"],
@@ -927,10 +927,10 @@ class MiniCPMAttention(nn.Layer):
         return attn_output, attn_weights, past_key_value
 
 
-class MiniCPMSdpaAttention(MiniCPMAttention):
+class MiniCPM4SdpaAttention(MiniCPM4Attention):
     """
-    MiniCPM attention module using torch.nn.functional.scaled_dot_product_attention. This module inherits from
-    `MiniCPMAttention` as the weights of the module stays untouched. The only changes are on the forward pass to adapt to
+    MiniCPM4 attention module using torch.nn.functional.scaled_dot_product_attention. This module inherits from
+    `MiniCPM4Attention` as the weights of the module stays untouched. The only changes are on the forward pass to adapt to
     SDPA API.
     """
 
@@ -945,7 +945,7 @@ class MiniCPMSdpaAttention(MiniCPMAttention):
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
         if output_attentions:
             logger.warning_once(
-                'MiniCPMModel is using MiniCPMSdpaAttention, but `torch.nn.functional.scaled_dot_product_attention` does not support `output_attentions=True`. Falling back to the manual attention implementation, but specifying the manual implementation will be required from Transformers version v5.0.0 onwards. This warning can be removed using the argument `attn_implementation="eager"` when loading the model.'
+                'MiniCPM4Model is using MiniCPM4SdpaAttention, but `torch.nn.functional.scaled_dot_product_attention` does not support `output_attentions=True`. Falling back to the manual attention implementation, but specifying the manual implementation will be required from Transformers version v5.0.0 onwards. This warning can be removed using the argument `attn_implementation="eager"` when loading the model.'
             )
             return super().forward(
                 hidden_states=hidden_states,
@@ -996,18 +996,18 @@ class MiniCPMSdpaAttention(MiniCPMAttention):
 
 
 MINICPM_ATTENTION_CLASSES = {
-    "eager": MiniCPMAttention,
-    "sdpa": MiniCPMSdpaAttention,
+    "eager": MiniCPM4Attention,
+    "sdpa": MiniCPM4SdpaAttention,
 }
 
 
-class MiniCPMDecoderLayer(nn.Layer):
-    def __init__(self, config: MiniCPMConfig, layer_idx: int):
+class MiniCPM4DecoderLayer(nn.Layer):
+    def __init__(self, config: MiniCPM4Config, layer_idx: int):
         super().__init__()
         self.hidden_size = config.hidden_size
         # if config.sparse_config is not None and paddle.cuda.is_available():
         # if config.sparse_config is not None :
-        #     self.self_attn = MiniCPMInfLLMv2Attention(
+        #     self.self_attn = MiniCPM4InfLLMv2Attention(
         #         config=config, layer_idx=layer_idx
         #     )
         # else:
@@ -1017,8 +1017,8 @@ class MiniCPMDecoderLayer(nn.Layer):
         # self.self_attn = MINICPM_ATTENTION_CLASSES[config._attn_implementation](
         #     config=config, layer_idx=layer_idx
         # )
-        self.self_attn = MiniCPMAttention(config, layer_idx)
-        self.mlp = MiniCPMMLP(config, fuse_up_gate=getattr(config, "fuse_attention_ffn", False))
+        self.self_attn = MiniCPM4Attention(config, layer_idx)
+        self.mlp = MiniCPM4MLP(config, fuse_up_gate=getattr(config, "fuse_attention_ffn", False))
         self.config = config
         self.input_layernorm = GeneralNorm.create(
             config=config,
@@ -1028,10 +1028,10 @@ class MiniCPMDecoderLayer(nn.Layer):
             norm_eps=self.config.rms_norm_eps,
             input_is_parallel=config.sequence_parallel,
         )
-        # self.input_layernorm = MiniCPMRMSNorm(
+        # self.input_layernorm = MiniCPM4RMSNorm(
         #     config.hidden_size, eps=config.rms_norm_eps
         # )
-        # self.post_attention_layernorm = MiniCPMRMSNorm(
+        # self.post_attention_layernorm = MiniCPM4RMSNorm(
         #     config.hidden_size, eps=config.rms_norm_eps
         # )
         self.post_attention_layernorm = GeneralNorm.create(
@@ -1123,7 +1123,7 @@ MINICPM_START_DOCSTRING = """
     and behavior.
 
     Parameters:
-        config ([`MiniCPMConfig`]):
+        config ([`MiniCPM4Config`]):
             Model configuration class with all the parameters of the model. Initializing with a config file does not
             load the weights associated with the model, only the configuration. Check out the
             [`~PreTrainedModel.from_pretrained`] method to load the model weights.
@@ -1131,11 +1131,11 @@ MINICPM_START_DOCSTRING = """
 
 
 @add_start_docstrings(
-    "The bare MiniCPM Model outputting raw hidden-states without any specific head on top.",
+    "The bare MiniCPM4 Model outputting raw hidden-states without any specific head on top.",
     MINICPM_START_DOCSTRING,
 )
-class MiniCPMPreTrainedModel(PretrainedModel):
-    config_class = MiniCPMConfig
+class MiniCPM4PreTrainedModel(PretrainedModel):
+    config_class = MiniCPM4Config
     base_model_prefix = "model"
     transpose_weight_keys = [
         "q_proj",
@@ -1149,7 +1149,7 @@ class MiniCPMPreTrainedModel(PretrainedModel):
         "down_proj",
     ]
     supports_gradient_checkpointing = True
-    _no_split_modules = ["MiniCPMDecoderLayer"]
+    _no_split_modules = ["MiniCPM4DecoderLayer"]
     _skip_keys_device_placement = "past_key_values"
     _supports_flash_attn_2 = True
     _supports_sdpa = True
@@ -1239,7 +1239,7 @@ class MiniCPMPreTrainedModel(PretrainedModel):
         return mappings
 
     @classmethod
-    def _gen_aoa_config(cls, config: MiniCPMConfig):
+    def _gen_aoa_config(cls, config: MiniCPM4Config):
         model_prefix = "" if cls == cls.base_model_class else "model."
         aoa_config = {
             "aoa_statements": [
@@ -1285,7 +1285,7 @@ class MiniCPMPreTrainedModel(PretrainedModel):
         return aoa_config
 
     @classmethod
-    def _gen_inv_aoa_config(cls, config: MiniCPMConfig):
+    def _gen_inv_aoa_config(cls, config: MiniCPM4Config):
         model_prefix = "" if cls == cls.base_model_class else "model."
         aoa_statements = [
             f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
@@ -1408,30 +1408,30 @@ MINICPM_INPUTS_DOCSTRING = """
 
 
 @add_start_docstrings(
-    "The bare MiniCPM Model outputting raw hidden-states without any specific head on top.",
+    "The bare MiniCPM4 Model outputting raw hidden-states without any specific head on top.",
     MINICPM_START_DOCSTRING,
 )
 @register_base_model
-class MiniCPMModel(MiniCPMPreTrainedModel):
+class MiniCPM4Model(MiniCPM4PreTrainedModel):
     """
-    Transformer decoder consisting of *config.num_hidden_layers* layers. Each layer is a [`MiniCPMDecoderLayer`]
+    Transformer decoder consisting of *config.num_hidden_layers* layers. Each layer is a [`MiniCPM4DecoderLayer`]
 
     Args:
-        config: MiniCPMConfig
+        config: MiniCPM4Config
     """
 
-    def __init__(self, config: MiniCPMConfig):
+    def __init__(self, config: MiniCPM4Config):
         super().__init__(config)
         self.config = config
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
         self.layers = nn.LayerList(
-            [MiniCPMDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
+            [MiniCPM4DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
         self._use_sdpa = config._attn_implementation == "sdpa"
         self._use_flash_attention_2 = config._attn_implementation == "flash_attention_2"
-        # self.norm = MiniCPMRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        # self.norm = MiniCPM4RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.norm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
@@ -1444,7 +1444,7 @@ class MiniCPMModel(MiniCPMPreTrainedModel):
         self.num_heads = config.num_attention_heads
         self.head_dim = config.hidden_size // self.num_heads
         # rope_base = getattr(config, "rope_theta", 10000.0)
-        self.rotary_emb = MiniCPMRotaryEmbedding(
+        self.rotary_emb = MiniCPM4RotaryEmbedding(
             self.head_dim,
             max_position_embeddings=config.max_position_embeddings,
             base=config.rope_theta,
@@ -1648,13 +1648,13 @@ class MiniCPMModel(MiniCPMPreTrainedModel):
         )
 
 
-class MiniCPMForCausalLM(MiniCPMPreTrainedModel):
+class MiniCPM4ForCausalLM(MiniCPM4PreTrainedModel):
     _keys_to_ignore_on_load_missing = [r"lm_head.weight"]
 
     def __init__(self, config):
         super().__init__(config)
         self.config = config
-        self.model = MiniCPMModel(config)
+        self.model = MiniCPM4Model(config)
         self.vocab_size = config.vocab_size
         self.lm_head = GeneralLMHead(config)
         self.criterion = CriterionLayer(config)
@@ -1709,9 +1709,9 @@ class MiniCPMForCausalLM(MiniCPMPreTrainedModel):
         Example:
 
         ```python
-        >>> from transformers import AutoTokenizer, MiniCPMForCausalLM
+        >>> from transformers import AutoTokenizer, MiniCPM4ForCausalLM
 
-        >>> model = MiniCPMForCausalLM.from_pretrained(PATH_TO_CONVERTED_WEIGHTS)
+        >>> model = MiniCPM4ForCausalLM.from_pretrained(PATH_TO_CONVERTED_WEIGHTS)
         >>> tokenizer = AutoTokenizer.from_pretrained(PATH_TO_CONVERTED_TOKENIZER)
 
         >>> prompt = "Hey, are you conscious? Can you talk to me?"
@@ -1901,9 +1901,9 @@ class MiniCPMForCausalLM(MiniCPMPreTrainedModel):
 
 @add_start_docstrings(
     """
-    The MiniCPM Model transformer with a sequence classification head on top (linear layer).
+    The MiniCPM4 Model transformer with a sequence classification head on top (linear layer).
 
-    [`MiniCPMForSequenceClassification`] uses the last token in order to do the classification, as other causal models
+    [`MiniCPM4ForSequenceClassification`] uses the last token in order to do the classification, as other causal models
     (e.g. GPT-2) do.
 
     Since it does classification on the last token, it requires to know the position of the last token. If a
@@ -1914,11 +1914,11 @@ class MiniCPMForCausalLM(MiniCPMPreTrainedModel):
     """,
     MINICPM_START_DOCSTRING,
 )
-class MiniCPMForSequenceClassification(MiniCPMPreTrainedModel):
+class MiniCPM4ForSequenceClassification(MiniCPM4PreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.num_labels = config.num_labels
-        self.model = MiniCPMModel(config)
+        self.model = MiniCPM4Model(config)
         self.score = nn.Linear(config.hidden_size, self.num_labels, bias_attr=False)
 
     def get_input_embeddings(self):
@@ -2008,16 +2008,16 @@ class MiniCPMForSequenceClassification(MiniCPMPreTrainedModel):
         )
 
 
-class MiniCPMForCausalLMPipe(GeneralModelForCausalLMPipe):
-    config_class = MiniCPMConfig
-    _decoder_layer_cls = MiniCPMDecoderLayer
-    _get_tensor_parallel_mappings = MiniCPMModel._get_tensor_parallel_mappings
-    _init_weights = MiniCPMModel._init_weights
-    _keep_in_fp32_modules = MiniCPMModel._keep_in_fp32_modules
+class MiniCPM4ForCausalLMPipe(GeneralModelForCausalLMPipe):
+    config_class = MiniCPM4Config
+    _decoder_layer_cls = MiniCPM4DecoderLayer
+    _get_tensor_parallel_mappings = MiniCPM4Model._get_tensor_parallel_mappings
+    _init_weights = MiniCPM4Model._init_weights
+    _keep_in_fp32_modules = MiniCPM4Model._keep_in_fp32_modules
     _tied_weights_keys = ["lm_head.weight"]
-    transpose_weight_keys = MiniCPMModel.transpose_weight_keys
-    _gen_aoa_config = MiniCPMForCausalLM._gen_aoa_config
-    _gen_inv_aoa_config = MiniCPMForCausalLM._gen_inv_aoa_config
+    transpose_weight_keys = MiniCPM4Model.transpose_weight_keys
+    _gen_aoa_config = MiniCPM4ForCausalLM._gen_aoa_config
+    _gen_inv_aoa_config = MiniCPM4ForCausalLM._gen_inv_aoa_config
 
 
-__all__ = ["MiniCPMModel", "MiniCPMForCausalLM", "MiniCPMForCausalLMPipe"]
+__all__ = ["MiniCPM4Model", "MiniCPM4ForCausalLM", "MiniCPM4ForCausalLMPipe"]
