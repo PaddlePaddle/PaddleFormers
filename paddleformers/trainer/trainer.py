@@ -1295,8 +1295,27 @@ class Trainer:
                 else:
                     opt_states[k] = v
 
-            # use filtered AOA for master_weight (excludes FP32-only params)
-            master_weight_aoa = getattr(self.args, "aoa_config_master_weight", None) or self.args.aoa_config
+            # Native FlexCheckpoint optimizer states are saved with Fleet
+            # structural names and must be loaded without the model's AOA
+            # rules.  Conversion checkpoints are the only case where those
+            # names need translating.
+            is_checkpoint_conversion = os.getenv("HACK_CONVERT_CKPT", "0").lower() in [
+                "true",
+                "1",
+            ]
+            optimizer_aoa = self.args.aoa_config if is_checkpoint_conversion else None
+            master_weight_aoa = (
+                getattr(self.args, "aoa_config_master_weight", None)
+                or self.args.aoa_config
+                if is_checkpoint_conversion
+                else None
+            )
+            logger.info(
+                "FlexCheckpoint optimizer restore: "
+                f"checkpoint_conversion={is_checkpoint_conversion}, "
+                f"optimizer_aoa={optimizer_aoa is not None}, "
+                f"master_weight_aoa={master_weight_aoa is not None}"
+            )
             dist.load_state_dict(
                 master_weights,
                 master_weights_path,
@@ -1307,12 +1326,76 @@ class Trainer:
             )
 
             if not self.args.ignore_load_lr_and_optim:
+                # Keep this diagnostic close to the load call: FlexCheckpoint
+                # otherwise reports every global checkpoint key as unexpected,
+                # obscuring the local descriptor that prevented fast resume.
+                from dataclasses import replace
+
+                from paddle.distributed.flex_checkpoint.dcp.metadata import (
+                    LocalTensorIndex,
+                )
+                from paddle.distributed.flex_checkpoint.dcp.utils import (
+                    extract_tensor_metadata,
+                )
+
+                optimizer_metadata = paddle.load(
+                    os.path.join(
+                        opt_states_path,
+                        get_metadata_file_name(opt_states_path),
+                    )
+                )
+                optimizer_checkpoint_file = f"{dist.get_rank()}_0.distcp"
+                local_storage = {
+                    replace(index, replica_id=None)
+                    for index, filename in optimizer_metadata.storage_metadata.items()
+                    if filename == optimizer_checkpoint_file
+                }
+                missing_local_descriptors = []
+                for key, value in opt_states.items():
+                    _, tensor_metadata = extract_tensor_metadata(value)
+                    if tensor_metadata is None:
+                        continue
+                    index = LocalTensorIndex(
+                        tensor_key=key,
+                        global_offset=tensor_metadata.global_offset,
+                        is_flattened=tensor_metadata.is_flattened,
+                        flattened_range=tensor_metadata.flattened_range,
+                        local_shape=tensor_metadata.local_shape,
+                        replica_id=None,
+                    )
+                    if index not in local_storage:
+                        missing_local_descriptors.append(index)
+                logger.info(
+                    "FlexCheckpoint optimizer local-layout check: "
+                    f"target_entries={len(opt_states)}, "
+                    f"checkpoint_entries={len(local_storage)}, "
+                    f"missing={len(missing_local_descriptors)}, "
+                    f"first_missing={missing_local_descriptors[:8]}"
+                )
+                replica_scalar_suffixes = (
+                    ".beta1_pow_acc_0",
+                    ".beta2_pow_acc_0",
+                )
+                replica_only_mismatch = bool(missing_local_descriptors) and all(
+                    index.tensor_key.endswith(replica_scalar_suffixes)
+                    for index in missing_local_descriptors
+                )
+                optimizer_comm_method = flex_ckpt_comm_method
+                if (
+                    replica_only_mismatch
+                    and optimizer_comm_method == "parallel_broadcast"
+                ):
+                    optimizer_comm_method = "broadcast"
+                    logger.info(
+                        "FlexCheckpoint optimizer restore: using broadcast for "
+                        "deduplicated replicated beta-power scalars"
+                    )
                 dist.load_state_dict(
                     opt_states,
                     opt_states_path,
-                    aoa_config=self.args.aoa_config,
+                    aoa_config=optimizer_aoa,
                     offload=self.args.load_via_cpu,
-                    comm_method=flex_ckpt_comm_method,
+                    comm_method=optimizer_comm_method,
                     worker_groups=worker_groups,
                 )
                 self._load_scheduler(resume_from_checkpoint)
@@ -1388,12 +1471,23 @@ class Trainer:
             else:
                 aoa_config = self.args.aoa_config
 
+            model_state_comm_method = flex_ckpt_comm_method
+            if (
+                enable_bf16_opt
+                and not is_checkpoint_conversion
+                and model_state_comm_method == "parallel_broadcast"
+            ):
+                model_state_comm_method = "broadcast"
+                logger.info(
+                    "FlexCheckpoint model restore: using broadcast for the "
+                    "FP32 state remaining after BF16 master-weight restore"
+                )
             dist.load_state_dict(
                 model_sharded_state_dict,
                 model_states_path,
                 aoa_config=aoa_config,
                 offload=self.args.load_via_cpu,
-                comm_method=flex_ckpt_comm_method,
+                comm_method=model_state_comm_method,
                 worker_groups=worker_groups,
             )
 
