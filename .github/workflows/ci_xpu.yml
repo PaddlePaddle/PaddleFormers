@@ -25,13 +25,12 @@ jobs:
 
   clone:
     name: Clone-Linux
-    needs: check-bypass
-    if: ${{ needs.check-bypass.outputs.can-skip == 'false' }}
     uses: ./.github/workflows/_clone_linux.yml
 
   xpu_test:
     name: xpu_test
-    needs: [clone]
+    needs: [clone, check-bypass]
+    if: ${{ needs.check-bypass.outputs.can-skip == 'false' }}
     uses: ./.github/workflows/_xpu_ci_test.yml
     with:
       PADDLEFORMERS_ARCHIVE_URL: ${{ needs.clone.outputs.repo_archive_url }}
