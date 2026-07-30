@@ -22,10 +22,16 @@ on:
         required: true
         type: string
         default: ""
+      can-skip:
+        description: "Whether to skip some slow test"
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   run_xpu_cases:
     runs-on: [self-hosted, XPU-P800-8Cards]
+    if: ${{ inputs.can-skip == 'true' }}
     timeout-minutes: 60
     steps:
       - name: Print current runner name
