@@ -22,16 +22,21 @@ on:
         required: true
         type: string
         default: ""
-      can-skip:
-        description: "Whether to skip some slow test"
-        required: false
-        type: boolean
-        default: false
 
 jobs:
+  check-bypass:
+    name: Check bypass
+    if: ${{ inputs.can-skip != 'true' }}
+    uses: ./.github/workflows/check-bypass.yml
+    with:
+      workflow-name: 'formers-xpu'
+    secrets:
+      github-token: ${{ secrets.GITHUB_TOKEN }}
+    
   run_xpu_cases:
+    needs: check-bypass
+    if: ${{ needs.check-bypass.outputs.can-skip == 'false' }}
     runs-on: [self-hosted, XPU-P800-8Cards]
-    if: ${{ inputs.can-skip == 'true' }}
     timeout-minutes: 60
     steps:
       - name: Print current runner name

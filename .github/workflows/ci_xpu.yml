@@ -14,28 +14,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check-bypass:
-    name: Check bypass
-    if: ${{ inputs.can-skip != 'true' }}
-    uses: ./.github/workflows/check-bypass.yml
-    with:
-      workflow-name: 'formers-xpu'
-    secrets:
-      github-token: ${{ secrets.GITHUB_TOKEN }}
-
   clone:
     name: Clone-Linux
     uses: ./.github/workflows/_clone_linux.yml
 
   xpu_test:
     name: xpu_test
-    needs: [clone, check-bypass]
+    needs: [clone]
     uses: ./.github/workflows/_xpu_ci_test.yml
     with:
       PADDLEFORMERS_ARCHIVE_URL: ${{ needs.clone.outputs.repo_archive_url }}
       DOCKER_IMAGE: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddleqa:xpu-ubuntu2204-x86_64-gcc123-py310
       MODEL_PATH: /ssd3/model
-      can-skip: ${{ needs.check-bypass.outputs.can-skip }}
   # xpu_4cards_case_test:
   #   name: xpu_4cards_case_test
   #   needs: [clone, xpu_build_test]
