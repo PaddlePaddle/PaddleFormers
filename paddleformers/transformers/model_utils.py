@@ -3584,11 +3584,14 @@ class PipelinePretrainedModel(PretrainedModel):
                             single_name = [prefixes[idx]]
                             single_name.extend(name_splited[2:])
                         else:
-                            single_name = [prefixes[str(len(prefixes) - 1)]]
-                            single_name.extend(name_splited[2:])
-                            logger.warning(
-                                f"Please check! we treat this key as last layer, get {k}, set origin name as {'.'.join(single_name)}"
-                            )
+                            # Layers directly added to the PipelineLayer under VPP (e.g. lm_head) are
+                            # named `{global_idx}.rest` instead of `{chunk_start}.{local_idx}.rest`, so
+                            # the first segment is already the global index. Resolve them per layer like
+                            # the non-VPP branch, otherwise every such key collapses onto the last layer
+                            # prefix, drops its submodule name and collides with its siblings.
+                            idx = name_splited[0]
+                            single_name = [] if prefixes[idx] == "" else [prefixes[idx]]
+                            single_name.extend(name_splited[1:])
                     elif name_splited[0] == "shared_layers":
                         single_name = [self.get_shardlayer_prefix(name_splited, SharedLayerDesc)]
                         single_name.extend(name_splited[2:])
