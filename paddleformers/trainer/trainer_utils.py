@@ -1916,12 +1916,14 @@ class EMAStateAssembler:
         optimizer,
         start_step,
         memory_growth_threshold=8 * (2**30),
+        post_save_hook=None,
     ):
         self.output_dir = Path(output_dir)
         self.save_checkpoint_format = save_checkpoint_format
         self.save_hf_steps = save_hf_steps
         self.save_steps = save_steps
         self.memory_growth_threshold = memory_growth_threshold
+        self.post_save_hook = post_save_hook
         if save_hf_steps > 0 and save_hf_steps % save_steps != 0:
             raise ValueError("[EMAStateAssembler] save_hf_steps must be a multiple of save_steps.")
 
@@ -2301,6 +2303,9 @@ class EMAStateAssembler:
             memory_growth_threshold=self.memory_growth_threshold,
         )
         saver.save_checkpoint(str(save_path))
+
+        if self.post_save_hook is not None:
+            self.post_save_hook(str(save_path))
 
 
 def select_flex_ckpt_comm_method():
