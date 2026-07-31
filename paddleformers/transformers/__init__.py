@@ -198,6 +198,16 @@ import_structure = {
         "Gemma3Model",
         "Gemma3ForConditionalGeneration",
     ],
+    "shieldgemma2.configuration": ["ShieldGemma2Config", "ShieldGemma2VisionConfig"],
+    "shieldgemma2.modeling": [
+        "ShieldGemma2ForImageClassification",
+        "ShieldGemma2ImageClassifierOutputWithNoAttention",
+    ],
+    "shieldgemma2.processor": [
+        "DEFAULT_SHIELDGEMMA2_POLICIES",
+        "ShieldGemma2Processor",
+        "ShieldGemma2ProcessorKwargs",
+    ],
     "kimi_k2.configuration": ["KimiK2Config"],
     "kimi_k2.modeling": ["KimiK2ForCausalLM", "KimiK2ForCausalLMPipe"],
     "kimi_k2.tokenizer": ["KimiK2TikTokenTokenizer"],
@@ -497,6 +507,7 @@ if TYPE_CHECKING:
     from .phi3 import *
     from .gemma3_text import *
     from .gemma3 import *
+    from .shieldgemma2 import *
     from .glm_ocr import *
     from .olmo2 import *
     from .intern_lm3 import *

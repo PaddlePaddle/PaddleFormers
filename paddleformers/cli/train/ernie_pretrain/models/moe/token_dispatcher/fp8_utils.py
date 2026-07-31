@@ -936,7 +936,7 @@ class ExpertsGroupGemmContiguousNode:
                     (x_fp8, x_scale),
                     (w1_t_quant, w1_t_scale),
                     o1,
-                    m_indices=self.m_indices,
+                    self.m_indices,
                 )
 
         if self.dequant_input:
@@ -1012,7 +1012,7 @@ class ExpertsGroupGemmContiguousNode:
                     (o2_fp8, o2_scale),
                     (w2_quant, w2_scale),
                     o3,
-                    m_indices=self.m_indices,
+                    self.m_indices,
                 )
         return o3, unzipped_probs
 
@@ -1077,7 +1077,7 @@ class ExpertsGroupGemmContiguousNode:
                     (unzipped_grad_fp8, unzipped_grad_scale),
                     (bw_w2_quant, bw_w2_scale),
                     do2_s,
-                    m_indices=self.m_indices,
+                    self.m_indices,
                 )
 
         if has_config(self.fp8_fused_ops_configs, "swiglu_probs_bwd"):
@@ -1149,7 +1149,7 @@ class ExpertsGroupGemmContiguousNode:
                     (do1_fp8, do1_scale),
                     (bw_w1_quant, bw_w1_scale),
                     dx,
-                    m_indices=self.m_indices,
+                    self.m_indices,
                 )
 
         return dx
