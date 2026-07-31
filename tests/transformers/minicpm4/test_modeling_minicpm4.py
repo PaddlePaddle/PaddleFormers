@@ -21,7 +21,11 @@ import paddle
 
 import paddleformers.transformers as transformers
 from paddleformers.transformers import AutoConfig, AutoModelForCausalLM
-from paddleformers.transformers.minicpm4 import MiniCPM4Config, MiniCPM4ForCausalLM, MiniCPM4Model
+from paddleformers.transformers.minicpm4 import (
+    MiniCPM4Config,
+    MiniCPM4ForCausalLM,
+    MiniCPM4Model,
+)
 
 # from tests.testing_utils import slow
 from tests.transformers.test_configuration_common import ConfigTester
