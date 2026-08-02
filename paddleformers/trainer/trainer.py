@@ -445,9 +445,13 @@ class Trainer:
             set_timers()
         self.timers = get_timers()
         if is_paddlefleet_available():
-            from paddlefleet.training.global_vars import set_profile_timers
+            try:
+                from paddlefleet.training.global_vars import set_profile_timers
+            except ImportError:
+                set_profile_timers = None
 
-            set_profile_timers(self.timers)
+            if set_profile_timers is not None:
+                set_profile_timers(self.timers)
         self.runtime_timer = RuntimeTimer("RuntimeTimer")
 
         self.model_wrapped = model

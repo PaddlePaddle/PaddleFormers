@@ -42,7 +42,11 @@ from transformers.models.encoder_decoder.configuration_encoder_decoder import (
     EncoderDecoderConfig,
 )
 from transformers.tokenization_utils_base import TOKENIZER_CONFIG_FILE
-from transformers.tokenization_utils_tokenizers import TokenizersBackend
+
+try:
+    from transformers.tokenization_utils_tokenizers import TokenizersBackend
+except ModuleNotFoundError:
+    from transformers import PreTrainedTokenizerFast as TokenizersBackend
 from transformers.utils import cached_file
 
 from ...utils.download import DownloadSource, resolve_file_path
@@ -310,8 +314,12 @@ class AutoTokenizer(hf.AutoTokenizer):
             if hasattr(config, "auto_map") and "AutoTokenizer" in config.auto_map:
                 tokenizer_auto_map = config.auto_map["AutoTokenizer"]
 
+        config_model_type = None
         if config:
-            config_model_type = config.get("model_type", None)
+            if hasattr(config, "get"):
+                config_model_type = config.get("model_type", None)
+            else:
+                config_model_type = getattr(config, "model_type", None)
 
         # if there is a config, we can check that the tokenizer class != than model class and can thus assume we need to use TokenizersBackend
         # Skip this early exit if auto_map is present (custom tokenizer with trust_remote_code)

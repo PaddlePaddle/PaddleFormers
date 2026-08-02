@@ -219,6 +219,26 @@ def get_lora_target_modules(model):
             "model.visual.deepstack_merger_list.*.linear_fc1.*",
             "model.visual.deepstack_merger_list.*.linear_fc2.*",
         ]
+    elif model.config.model_type == "llavaonevision1_5":
+        target_modules = [
+            # Language Model
+            "model.language_model.*qkv_proj.*",
+            "model.language_model.*up_gate_proj.*",
+            "model.language_model.*q_proj.*",
+            "model.language_model.*k_proj.*",
+            "model.language_model.*v_proj.*",
+            "model.language_model.*o_proj.*",
+            "model.language_model.*gate_proj.*",
+            "model.language_model.*up_proj.*",
+            "model.language_model.*down_proj.*",
+            # Rice Vision Encoder
+            "model.visual.*attn.qkv.*",
+            "model.visual.*attn.proj.*",
+            "model.visual.*mlp.fc1.*",
+            "model.visual.*mlp.fc2.*",
+            # Multimodal Projector
+            "model.multi_modal_projector.*",
+        ]
     elif model.config.model_type == "qwen2_moe":
         target_modules = [
             ".*qkv_proj.*",

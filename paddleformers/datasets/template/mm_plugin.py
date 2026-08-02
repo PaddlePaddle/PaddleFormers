@@ -30,7 +30,6 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, BinaryIO, Optional
 
-import librosa
 import numpy as np
 import paddle
 import requests
@@ -38,6 +37,11 @@ from PIL import Image
 from PIL.Image import Image as ImageObject
 from transformers.image_utils import is_valid_image
 from typing_extensions import override
+
+try:
+    import librosa
+except ImportError:
+    librosa = None
 
 from paddleformers.transformers.qwen2_vl.vision_process import fetch_image, fetch_video
 from paddleformers.transformers.qwen3_omni_moe.processor import (
@@ -274,6 +278,8 @@ class MMPluginMixin:
         results, sampling_rates = [], []
         for audio in audios:
             if not isinstance(audio, np.ndarray):
+                if librosa is None:
+                    raise ImportError("librosa is required when loading audio inputs from file paths.")
                 audio, _ = librosa.load(audio, sr=sampling_rate, mono=True)
             results.append(audio)
             sampling_rates.append(sampling_rate)
@@ -1215,6 +1221,63 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
         return messages
 
 
+class LLaVAOneVision1_5Plugin(Qwen3VLPlugin):
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        mm_inputs,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        num_image_tokens, num_video_tokens = 0, 0
+        messages = deepcopy(messages)
+        image_processor = getattr(processor, "image_processor")
+        video_processor = getattr(processor, "video_processor", image_processor)
+
+        image_merge_length = getattr(image_processor, "merge_size", 1) ** 2
+        video_merge_length = getattr(video_processor, "merge_size", 1) ** 2
+        if self.expand_mm_tokens:
+            image_grid_thw = mm_inputs.get("image_grid_thw", [])
+            video_grid_thw = mm_inputs.get("video_grid_thw", [])
+        else:
+            image_grid_thw = [None] * len(images)
+            video_grid_thw = [None] * len(videos)
+
+        for message in messages:
+            content = message["content"]
+            while IMAGE_PLACEHOLDER in content:
+                if num_image_tokens >= len(image_grid_thw):
+                    raise ValueError(f"Found more {IMAGE_PLACEHOLDER} tags than actual images provided.")
+                image_seqlen = (
+                    image_grid_thw[num_image_tokens].prod().item() // image_merge_length
+                    if self.expand_mm_tokens
+                    else 1
+                )
+                content = content.replace(IMAGE_PLACEHOLDER, self.image_token * image_seqlen, 1)
+                num_image_tokens += 1
+
+            while VIDEO_PLACEHOLDER in content:
+                if num_video_tokens >= len(video_grid_thw):
+                    raise ValueError(f"Found more {VIDEO_PLACEHOLDER} tags than actual videos provided.")
+                video_seqlen = (
+                    video_grid_thw[num_video_tokens].prod().item() // video_merge_length
+                    if self.expand_mm_tokens
+                    else 1
+                )
+                content = content.replace(VIDEO_PLACEHOLDER, self.video_token * video_seqlen, 1)
+                num_video_tokens += 1
+
+            message["content"] = content
+
+        self.masked_tokens = [self.image_token, self.video_token]
+        return messages
+
+
 @dataclass
 class GLM4VPlugin(Qwen2VLPlugin):
     @override
@@ -1498,6 +1561,7 @@ PLUGINS = {
     "base": BasePlugin,
     "ernie_vl": ErnieVLPlugin,
     "qwen2_vl": Qwen2VLPlugin,
+    "llavaonevision1_5": LLaVAOneVision1_5Plugin,
     "paddleocr_vl": PaddleOCRVLPlugin,
     "qwen3_vl": Qwen3VLPlugin,
     "glm4v": GLM4VPlugin,

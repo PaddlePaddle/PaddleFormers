@@ -13,10 +13,24 @@
 # limitations under the License.
 
 import csv
+import json
 import os
 import time
 
-import orjson
+try:
+    import orjson
+except ImportError:
+
+    class _OrjsonCompat:
+        JSONDecodeError = json.JSONDecodeError
+
+        @staticmethod
+        def loads(data):
+            if isinstance(data, bytes):
+                data = data.decode("utf-8")
+            return json.loads(data)
+
+    orjson = _OrjsonCompat()
 import pyarrow.parquet as pq
 
 
