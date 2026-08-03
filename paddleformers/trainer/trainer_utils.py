@@ -2257,13 +2257,17 @@ class EMAStateAssembler:
                     # Frozen parameters are not in the optimizer, so they have no master weight
                     # and nothing to recover from (Phase 2 freezes the whole backbone and trains
                     # only the Indexer). Their value never changes, so the frozen fallback at the
-                    # end of this function copies the parameter itself. A *trainable* parameter
-                    # missing here is a real bug, so keep failing loudly for that case.
-                    print(f"[ghz] {ema_key=} skip")
-                    assert v.local_tensor.stop_gradient, (
-                        f"{k} is trainable but has no EMA master weight to recover from; "
-                        "the EMA state is incomplete."
-                    )
+                    # end of this function copies the parameter itself.
+                    #
+                    # A *trainable* parameter missing here is a real bug: the frozen fallback
+                    # only refills stop_gradient=True entries, so continuing would leave it out
+                    # of the EMA state and the EMA HF checkpoint silently. Raise instead of
+                    # assert so `python -O` cannot strip the check.
+                    if not v.local_tensor.stop_gradient:
+                        raise RuntimeError(
+                            f"{k} is trainable but has no EMA master weight to recover from; "
+                            "the EMA state is incomplete."
+                        )
                     continue
                 ema_tensor = ema_params_recovered[ema_key]
                 expected_shape = v.local_shape
