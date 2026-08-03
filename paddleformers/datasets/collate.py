@@ -46,7 +46,7 @@ def calc_padding_size(seq_len: int, training_args) -> int:
     return math.ceil(seq_len / padding_to_size) * padding_to_size
 
 
-def _pad_and_concat_multimodal_tensors(tensors):
+def _pad_and_concat_multimodal_tensors(tensors, pad_value=0):
     """Pad non-batch dimensions to a common shape before concatenating."""
     tensors = [paddle.to_tensor(tensor) for tensor in tensors]
     if not tensors:
@@ -64,7 +64,7 @@ def _pad_and_concat_multimodal_tensors(tensors):
             padded_tensors.append(tensor)
             continue
 
-        padded_tensor = paddle.zeros(target_shape, dtype=tensor.dtype)
+        padded_tensor = paddle.full(target_shape, pad_value, dtype=tensor.dtype)
         padded_tensor[tuple(slice(0, size) for size in tensor.shape)] = tensor
         padded_tensors.append(padded_tensor)
 
@@ -862,7 +862,7 @@ def mm_collate_fn(
         if len(image_sizes) > 0:
             image_sizes = paddle.concat(image_sizes, axis=0)
         if len(image_attention_mask) > 0:
-            image_attention_mask = _pad_and_concat_multimodal_tensors(image_attention_mask)
+            image_attention_mask = _pad_and_concat_multimodal_tensors(image_attention_mask, pad_value=True)
         if len(audio_input_features) > 0:
             audio_input_features = _pad_and_concat_multimodal_tensors(audio_input_features)
         if len(audio_embed_sizes) > 0:
@@ -973,12 +973,9 @@ def mm_collate_fn(
         if filtered_tensors:
             if key == "position_ids":
                 value = paddle.concat(filtered_tensors, axis=bs_idx_in_rope)
-            elif key in {
-                "image_pixel_values",
-                "image_attention_mask",
-                "audio_input_features",
-                "audio_attention_mask",
-            }:
+            elif key == "image_attention_mask":
+                value = _pad_and_concat_multimodal_tensors(filtered_tensors, pad_value=True)
+            elif key in {"image_pixel_values", "audio_input_features", "audio_attention_mask"}:
                 value = _pad_and_concat_multimodal_tensors(filtered_tensors)
             else:
                 value = paddle.concat(filtered_tensors, axis=0)

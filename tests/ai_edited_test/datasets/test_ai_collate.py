@@ -276,7 +276,7 @@ class TestMMCollateFn(unittest.TestCase):
             token_ids=[1, 2],
             mm_inputs={
                 "image_pixel_values": paddle.ones([1, 2, 3, 2, 2]),
-                "image_attention_mask": paddle.ones([1, 2], dtype="bool"),
+                "image_attention_mask": paddle.ones([1, 2, 2, 2], dtype="bool"),
                 "audio_input_features": paddle.ones([1, 3, 80]),
                 "audio_embed_sizes": paddle.to_tensor([1], dtype="int64"),
                 "input_mode": paddle.to_tensor([3], dtype="int64"),
@@ -287,7 +287,7 @@ class TestMMCollateFn(unittest.TestCase):
             token_ids=[3, 4],
             mm_inputs={
                 "image_pixel_values": paddle.ones([1, 4, 3, 2, 2]),
-                "image_attention_mask": paddle.ones([1, 4], dtype="bool"),
+                "image_attention_mask": paddle.ones([1, 4, 2, 2], dtype="bool"),
                 "audio_input_features": paddle.ones([1, 5, 80]),
                 "audio_embed_sizes": paddle.to_tensor([1], dtype="int64"),
                 "input_mode": paddle.to_tensor([3], dtype="int64"),
@@ -320,10 +320,10 @@ class TestMMCollateFn(unittest.TestCase):
         )
 
         self.assertEqual(result["image_pixel_values"].shape, [2, 4, 3, 2, 2])
-        self.assertEqual(result["image_attention_mask"].shape, [2, 4])
+        self.assertEqual(result["image_attention_mask"].shape, [2, 4, 2, 2])
         self.assertEqual(result["audio_input_features"].shape, [2, 5, 80])
         self.assertEqual(result["audio_attention_mask"].shape, [2, 5])
-        self.assertEqual(result["image_attention_mask"][0, 2:].sum().item(), 0)
+        self.assertTrue(result["image_attention_mask"][0, 2:].all().item())
         self.assertEqual(result["audio_attention_mask"][0, 3:].sum().item(), 0)
 
     def test_adds_text_input_mode_when_batch_contains_multimodal_sample(self):
