@@ -35,7 +35,6 @@ def _convert_phi4mm_config(config_dict, with_lora_adapters=True):
     speech_lora = config.pop("speech_lora", None) or {}
     config.pop("transformers_version", None)
     config.pop("_attn_implementation", None)
-    config.pop("torch_dtype", None)
     config.pop("model_type", None)
 
     embd_layer = config.pop("embd_layer")
@@ -316,6 +315,9 @@ class Phi4MultimodalConfig(PretrainedConfig):
             "lm_head_bias",
         ):
             output[key] = copy.deepcopy(getattr(self, key))
+
+        if self.dtype is not None:
+            output["torch_dtype"] = str(self.dtype).split(".")[-1]
 
         audio = self.audio_config
         vision = self.vision_config

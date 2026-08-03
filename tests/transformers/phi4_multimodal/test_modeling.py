@@ -36,6 +36,7 @@ class Phi4MultimodalModelingTest(unittest.TestCase):
             num_hidden_layers=0,
             num_attention_heads=4,
             num_key_value_heads=2,
+            dtype="bfloat16",
         )
         with tempfile.TemporaryDirectory() as tmpdir:
             config.save_pretrained(tmpdir)
@@ -44,11 +45,13 @@ class Phi4MultimodalModelingTest(unittest.TestCase):
             self.assertEqual(exported["model_type"], "phi4mm")
             self.assertEqual(exported["architectures"], ["Phi4MMForCausalLM"])
             self.assertEqual(exported["auto_map"]["AutoConfig"], "configuration_phi4mm.Phi4MMConfig")
+            self.assertEqual(exported["torch_dtype"], "bfloat16")
             self.assertTrue((Path(tmpdir) / "configuration_phi4mm.py").is_file())
 
             reloaded = AutoConfig.from_pretrained(tmpdir)
             self.assertIsInstance(reloaded, Phi4MultimodalConfig)
             self.assertEqual(reloaded.hidden_size, config.hidden_size)
+            self.assertEqual(reloaded.dtype, config.dtype)
 
     def test_lora_targets_only_language_projection_layers(self):
         model = SimpleNamespace(config=SimpleNamespace(model_type="phi4_multimodal"))
