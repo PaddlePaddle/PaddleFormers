@@ -3292,7 +3292,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         if dtype is not None:
             model_to_save.config.dtype = str(dtype).split(".")[1]
         if config_to_save is None:
-            config_to_save = copy.deepcopy(model_to_save.config)
+            config_to_save = copy.deepcopy(getattr(model_to_save, "config_to_save", model_to_save.config))
 
         # Save the model
         if state_dict is None:

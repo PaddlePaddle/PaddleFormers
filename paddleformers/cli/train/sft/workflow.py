@@ -45,6 +45,7 @@ from paddleformers.trainer import (
     MoECorrectionBiasAdjustCallback,
     MoeExpertsGradScaleCallback,
     MoEGateSpGradSyncCallBack,
+    MoEQuantileBalancingCallback,
     RuntimeTimer,
     get_last_checkpoint,
     set_random_seed,
@@ -539,7 +540,7 @@ def run_sft(
                     count += 1
                     if count % 1000 == 0:
                         logger.info(
-                            f"Processed {count} samples in {time.time()-start_time:.2f} seconds, average speed: {count/(time.time()-start_time):.2f} samples/second"
+                            f"Processed {count} samples in {time.time() - start_time:.2f} seconds, average speed: {count / (time.time() - start_time):.2f} samples/second"
                         )
             train_builder.finalize(train_output_idx_files)
             logger.info(f"{runtime_timer.log()}")
@@ -707,8 +708,10 @@ def run_sft(
         training_args.logging_steps = int(training_args.max_steps / training_args.num_train_epochs)
 
     callbacks = []
-    if getattr(model_config, "topk_method", None) == "noaux_tc":
+    if getattr(model_config.get_text_config(), "topk_method", None) == "noaux_tc":
         callbacks += [MoECorrectionBiasAdjustCallback(lr=training_args.moe_router_bias_update_rate)]
+    elif getattr(model_config.get_text_config(), "topk_method", None) == "quantile_balancing":
+        callbacks += [MoEQuantileBalancingCallback()]
 
     if training_args.use_expert_parallel:
         callbacks += [MoeExpertsGradScaleCallback(training_args)]
