@@ -347,11 +347,12 @@ def main():
     if getattr(config.trainer_args, "dp_comm_overlap", False):
         logger.warning("Pipeline dp_comm_overlap and FusedLinearWithGradAdd can not be used at the same time.")
 
-    from paddle.distributed.fleet.meta_parallel.pipeline_parallel import (
-        PipelineParallel,
-    )
+    if getattr(config.trainer_args, "timer", False):
+        from paddle.distributed.fleet.meta_parallel.pipeline_parallel import (
+            PipelineParallel,
+        )
 
-    PipelineParallel.timer_printer = lambda _: None
+        PipelineParallel.timer_printer = lambda _: None
 
     def formatv(v):
         if isinstance(v, ListConfig):
@@ -603,7 +604,7 @@ def main():
         load_huggingface_checkpoint(model, args)
 
     # We must use non-huggingface format to save intermediate checkpoints during training.
-    args.save_to_hf = False
+    args.save_safetensors = False
     args.load_checkpoint_format = "unified_checkpoint"
     args.save_checkpoint_format = "sharding_io"
 
@@ -686,7 +687,7 @@ def main():
         metrics = train_result.metrics
 
         # After training, we use unified huggingface format to export the model.
-        trainer.args.save_to_hf = True
+        trainer.args.save_safetensors = True
         trainer.args.save_checkpoint_format = "unified_checkpoint"
         unified_checkpoint.get_expected_state_dict = get_expected_state_dict
 

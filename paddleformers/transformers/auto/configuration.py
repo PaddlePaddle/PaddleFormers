@@ -34,6 +34,10 @@ __all__ = [
 CONFIG_MAPPING_NAMES = OrderedDict(
     [
         ("deepseek_v3", "DeepseekV3Config"),
+        ("deepseek_v32", "DeepseekV32Config"),
+        ("paligemma", "PaliGemma2Config"),
+        ("paligemma2", "PaliGemma2Config"),
+        ("diff_transformer", "DiffTransformerConfig"),
         ("ernie4_5", "Ernie4_5Config"),
         ("ernie4_5_moe", "Ernie4_5_MoeConfig"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLConfig"),
@@ -54,13 +58,26 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("glm4_moe", "Glm4MoeConfig"),
         ("glm_moe_dsa", "GlmMoeDsaConfig"),
         ("minimax_m2", "MiniMaxM2Config"),
+        ("minicpm", "MiniCPMConfig"),
+        ("deepseek_v4", "DeepseekV4Config"),
         ("gpt_oss", "GptOssConfig"),
         ("phi3", "Phi3Config"),
+        ("granite", "GraniteConfig"),
+        ("gemma3", "Gemma3Config"),
         ("gemma3_text", "Gemma3TextConfig"),
+        ("shieldgemma2", "ShieldGemma2Config"),
         ("glm4v_moe", "Glm4vMoeConfig"),
         ("glm_ocr", "GlmOcrConfig"),
         ("qwen3_5", "Qwen3_5Config"),
         ("qwen3_5_moe", "Qwen3_5MoEConfig"),
+        ("olmo2", "Olmo2Config"),
+        ("internlm3", "InternLM3Config"),
+        ("internlm2", "InternLM2Config"),
+        # TODO(VL): When Gemma4 VL is implemented, "gemma4" should point to Gemma4Config (VL wrapper)
+        ("gemma4_text", "Gemma4MoeConfig"),
+        ("gemma4", "Gemma4MoeConfig"),  # Temporary: no standalone text ckpt, extract text_config in from_dict
+        ("phi4", "Phi4Config"),
+        ("phi4flash", "Phi4Config"),
     ]
 )
 
@@ -70,6 +87,9 @@ MODEL_NAMES_MAPPING = OrderedDict(
     [
         ("deepseek_v2", "DeepseekV2"),
         ("deepseek_v3", "DeepseekV3"),
+        ("paligemma", "PaliGemma2"),
+        ("paligemma2", "PaliGemma2"),
+        ("diff_transformer", "DiffTransformer"),
         ("ernie4_5", "Ernie4_5"),
         ("ernie4_5_moe", "Ernie4_5_Moe"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLMoeForConditionalGeneration"),
@@ -87,8 +107,21 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("qwen3_vl_moe", "Qwen3VLMoe"),
         ("qwen3_vl_moe_text", "Qwen3VLMoeText"),
         ("glm_ocr", "GlmOcrForConditionalGeneration"),
+        ("minicpm", "MiniCPM"),
+        ("granite", "Granite"),
+        ("gemma3", "Gemma3ForConditionalGeneration"),
+        ("gemma3_text", "Gemma3TextModel"),
+        ("shieldgemma2", "ShieldGemma2ForImageClassification"),
         ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
         ("qwen3_5", "Qwen3_5ForConditionalGeneration"),
+        ("olmo2", "Olmo2ForCausalLM"),
+        ("internlm3", "InternLM3ForCausalLM"),
+        ("internlm2", "InternLM2"),
+        ("gemma4_moe", "Gemma4MoeForCausalLM"),
+        ("gemma4_text", "Gemma4MoeForCausalLM"),
+        ("gemma4", "Gemma4MoeForCausalLM"),
+        ("phi4", "Phi4ForCausalLM"),
+        ("phi4flash", "Phi4ForCausalLM"),
     ]
 )
 
@@ -99,9 +132,17 @@ MULTI_MODELS_MAPPING = OrderedDict(
 
 SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
     [
+        ("paligemma", "paligemma2"),
+        ("gemma3", "gemma3"),
         ("qwen2_5_vl_text", "qwen2_5_vl"),
         ("qwen3_vl_text", "qwen3_vl"),
         ("qwen3_vl_moe_text", "qwen3_vl_moe"),
+        ("internlm3", "intern_lm3"),
+        ("internlm2", "intern"),
+        # TODO(VL): Remove these when Gemma4 VL module (gemma4/) is created
+        ("gemma4_text", "gemma4_moe"),
+        ("gemma4", "gemma4_moe"),
+        ("phi4flash", "phi4"),
     ]
 )
 

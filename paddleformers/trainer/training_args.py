@@ -36,7 +36,7 @@ from ..utils.env import PREFIX_CHECKPOINT_DIR
 from ..utils.import_utils import is_paddlefleet_available
 from ..utils.log import logger
 from ..utils.pdc_sdk import FLASH_DEVICE
-from ..utils.tools import get_env_device, paddle_device
+from ..utils.tools import paddle_device
 from .trainer_utils import (
     IntervalStrategy,
     OptimizerNames,
@@ -691,7 +691,7 @@ class TrainingArguments:
         },
     )
 
-    dsa_indexer_loss_coeff: bool = field(
+    dsa_indexer_loss_coeff: float = field(
         default=0.01,
         metadata={"help": "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term."},
     )
@@ -792,6 +792,10 @@ class TrainingArguments:
                 "data parallel, sharding stage1, tensor parallel and pipeline parallel strategy. "
             )
         },
+    )
+    cp_balance_mode: str = field(
+        default="dualchunk_allgather",
+        metadata={"help": "CP scatter/gather layout mode: 'dualchunk_allgather' or 'contiguous_allgather'."},
     )
     expert_model_parallel_size: int = field(
         default=-1,
@@ -1072,6 +1076,17 @@ class TrainingArguments:
         default=False,
         metadata={"help": "Whether to use async_save instead of paddle.save."},
     )
+    use_flex_async_save: Optional[bool] = field(
+        default=False,
+        metadata={
+            "help": (
+                "Enable async checkpoint saving for flex_checkpoint format. "
+                "Requires save_checkpoint_format='flex_checkpoint' and tensorwise_offload_optimizer=True. "
+                "Optimizer state is saved via zero-copy from CPU pinned memory in a background thread, "
+                "with the wait point deferred to before the next optimizer.step()."
+            )
+        },
+    )
     ordered_save_group_size: int = field(
         default=0,
         metadata={
@@ -1228,7 +1243,7 @@ class TrainingArguments:
         default=True,
         metadata={"help": "Load model from HuggingFace safetensors."},
     )
-    save_to_hf: Optional[bool] = field(
+    save_safetensors: Optional[bool] = field(
         default=True,
         metadata={"help": "Save model to HuggingFace safetensors."},
     )
@@ -1528,6 +1543,12 @@ class TrainingArguments:
             "help": "Enable splitting backward pass into stages to balance computation and reduce peak memory usage in model parallelism."
         },
     )
+    timer: bool = field(
+        default=False,
+        metadata={
+            "help": "Enable timing for pipeline parallel stages to profile and optimize communication/computation overlap."
+        },
+    )
     stage1_tensor_fusion: bool = field(
         default=False,
         metadata={
@@ -1690,6 +1711,11 @@ class TrainingArguments:
         metadata={
             "help": "When enabled, the computation part of the moelayer will use the implementation provided by SonicMoE."
         },
+    )
+
+    dsa_indexer_loss_coeff: float = field(
+        default=0.01,
+        metadata={"help": "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term."},
     )
 
     online_merge_ema: bool = field(
@@ -1894,6 +1920,17 @@ class TrainingArguments:
                 f"Optimizer offload is not supported under data parallel. Please use sharding by setting --sharding stage1 --sharding_parallel_size {self.sharding_parallel_size * self.data_parallel_size}."
             )
 
+        if self.use_flex_async_save:
+            if self.save_checkpoint_format != "flex_checkpoint":
+                raise ValueError("use_flex_async_save requires save_checkpoint_format='flex_checkpoint'")
+            if not self.tensorwise_offload_optimizer:
+                raise ValueError(
+                    "use_flex_async_save requires tensorwise_offload_optimizer=True "
+                    "(optimizer state must reside in CPU pinned memory)"
+                )
+            if self.use_async_save:
+                raise ValueError("use_flex_async_save and use_async_save are mutually exclusive")
+
         if self.to_static:
             assert world_size == 1 or self.enable_auto_parallel, (
                 "It's not supported for training in static mode except the following cases : "
@@ -1945,6 +1982,7 @@ class TrainingArguments:
                                 "enable_delay_scale_loss",
                                 "enable_dp_comm_overlap",
                                 "enable_sharding_comm_overlap",
+                                "enable_timer",
                                 "enable_release_grads",
                                 "enable_clear_every_step_cache",
                                 "enable_overlap_p2p_comm",
@@ -1997,7 +2035,7 @@ class TrainingArguments:
                         "delay_scale_loss": True,  # TODO[Waynezee]: remove this config in the future
                         "dp_comm_overlap": enable_dp_comm_overlap,
                         "sharding_comm_overlap": self.enable_sharding_comm_overlap,
-                        "enable_timer": get_env_device() != "xpu",
+                        "enable_timer": self.timer,
                         "release_gradients": self.pp_release_grads or self.release_grads,
                         "overlap_p2p_comm": self.overlap_p2p_comm,
                         "clear_every_step_cache": self.clear_every_step_cache,
@@ -2428,6 +2466,7 @@ class TrainingArguments:
                             "enable_delay_scale_loss",
                             # "enable_dp_comm_overlap",       # no implementation for auto_parallel
                             # "enable_sharding_comm_overlap", # no implementation for auto_parallel
+                            # "enable_timer",                 # no implementation for auto_parallel
                             # "disable_batch_p2p_comm",       # no implementation for auto_parallel
                             "enable_split_backward",
                             "auto_parallel_sync_shared_params",

@@ -965,16 +965,54 @@ register_template(
     template_class=Llama2Template,
 )
 
+register_template(
+    name="granite",
+    format_user=StringFormatter(
+        slots=[
+            "<|start_of_role|>user<|end_of_role|>{{content}}<|end_of_text|>\n<|start_of_role|>assistant<|end_of_role|>"
+        ]
+    ),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|start_of_role|>system<|end_of_role|>{{content}}<|end_of_text|>\n"]),
+    format_observation=StringFormatter(
+        slots=[
+            "<|start_of_role|>tool_response<|end_of_role|>{{content}}<|end_of_text|>\n<|start_of_role|>assistant<|end_of_role|>"
+        ]
+    ),
+    default_system="You are Granite, developed by IBM. You are a helpful AI assistant.",
+    suffix=["<|end_of_text|>"],
+    chat_sep="<|end_of_text|>\n",
+)
+
 
 register_template(
     name="phi4",
-    format_user=StringFormatter(
-        slots=["<|im_start|>user<|im_sep|>{{content}}<|im_end|><|im_start|>assistant<|im_sep|>"]
-    ),
+    format_user=StringFormatter(slots=["<|user|>{{content}}<|end|><|assistant|>"]),
     format_assistant=StringFormatter(slots=["{{content}}"]),
-    format_system=StringFormatter(slots=["<|im_start|>system<|im_sep|>{{content}}<|im_end|>"]),
-    suffix=["<|im_end|>"],
-    chat_sep="<|im_end|>",
+    format_system=StringFormatter(slots=["<|system|>{{content}}<|end|>"]),
+    chat_sep="<|end|>",
+    suffix=["<|end|>"],
+    template_class=ReasoningTemplate,
+)
+
+register_template(
+    name="phi4_nothink",
+    format_user=StringFormatter(slots=["<|user|>{{content}}<|end|><|assistant|>"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|system|>{{content}}<|end|>"]),
+    chat_sep="<|end|>",
+    suffix=["<|end|>"],
+    enable_thinking=None,
+)
+
+# copied from deepseekv3 template
+register_template(
+    name="deepseek_v32",
+    format_system=StringFormatter(slots=["{{content}}\n\n"]),
+    format_user=StringFormatter(slots=["<｜User｜>{{content}}\n\n<｜Assistant｜>"]),
+    format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    chat_sep="<｜end▁of▁sentence｜>",
 )
 
 register_template(
@@ -984,4 +1022,38 @@ register_template(
     format_prefix=EmptyFormatter(slots=["[gMASK]<sop>"]),
     chat_sep="<|assistant|>\n",
     mm_plugin=get_mm_plugin(name="glm_ocr", image_token="<|image|>"),
+)
+register_template(
+    name="internlm2_5",
+    format_user=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n<|im_start|>assistant\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}<|im_end|>\n"]),
+    format_system=StringFormatter(slots=["<|im_start|>system\n{{content}}<|im_end|>\n"]),
+    format_prefix=EmptyFormatter(slots=["<s>"]),
+    chat_sep="<|im_end|>\n",
+    suffix=["<|im_end|>\n"],
+    enable_thinking=None,
+)
+
+register_template(
+    name="internlm3",
+    format_user=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n<|im_start|>assistant\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|im_start|>system\n{{content}}<|im_end|>\n"]),
+    format_prefix=EmptyFormatter(slots=["<s>"]),
+    chat_sep="<|im_end|>\n",
+    suffix=["<|im_end|>\n"],
+)
+
+register_template(
+    name="gemma4",
+    format_user=StringFormatter(slots=["<|turn>user\n{{content}}<turn|>\n<|turn>model\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|turn>system\n{{content}}<turn|>\n"]),
+    format_observation=StringFormatter(slots=["<|turn>tool\n{{content}}<turn|>\n<|turn>model\n"]),
+    format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
+    chat_sep="<turn|>\n",
+    suffix=["<turn|>"],
+    stop_words=["<turn|>"],
+    thought_words=("<|channel>thought\n", "\n<channel|>"),
+    template_class=Llama2Template,
 )

@@ -78,54 +78,54 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
         def _qkv_per_head(matrix_2d_global, ortho_fn, kv_head_num=None, num_key_value_groups=None):
             import paddle
 
-            head_dim = matrix_2d_global.shape[1] // (num_key_value_groups * kv_head_num + 2 * kv_head_num)
-            groups = paddle.split(matrix_2d_global, kv_head_num, axis=1)
+            head_dim = matrix_2d_global.shape[-1] // (num_key_value_groups * kv_head_num + 2 * kv_head_num)
+            groups = paddle.split(matrix_2d_global, kv_head_num, axis=-1)
 
             processed_groups = []
             for group in groups:
                 q_part, k_head, v_head = paddle.split(
                     group,
                     [num_key_value_groups * head_dim, head_dim, head_dim],
-                    axis=1,
+                    axis=-1,
                 )
-                q_heads = paddle.split(q_part, num_key_value_groups, axis=1)
-                q_ortho = paddle.concat([ortho_fn(h) for h in q_heads], axis=1)
-                processed_groups.append(paddle.concat([q_ortho, ortho_fn(k_head), ortho_fn(v_head)], axis=1))
+                q_heads = paddle.split(q_part, num_key_value_groups, axis=-1)
+                q_ortho = paddle.concat([ortho_fn(h) for h in q_heads], axis=-1)
+                processed_groups.append(paddle.concat([q_ortho, ortho_fn(k_head), ortho_fn(v_head)], axis=-1))
 
-            return paddle.concat(processed_groups, axis=1)
+            return paddle.concat(processed_groups, axis=-1)
 
         def _qkv_sep(matrix_2d, ortho_fn, kv_head_num=None, num_key_value_groups=None):
             import paddle
 
-            head_dim = matrix_2d.shape[1] // (num_key_value_groups * kv_head_num + 2 * kv_head_num)
+            head_dim = matrix_2d.shape[-1] // (num_key_value_groups * kv_head_num + 2 * kv_head_num)
             q_group_size = num_key_value_groups * head_dim
 
-            groups = paddle.split(matrix_2d, kv_head_num, axis=1)
+            groups = paddle.split(matrix_2d, kv_head_num, axis=-1)
             q_parts, k_parts, v_parts = [], [], []
             for group in groups:
-                q_p, k_p, v_p = paddle.split(group, [q_group_size, head_dim, head_dim], axis=1)
+                q_p, k_p, v_p = paddle.split(group, [q_group_size, head_dim, head_dim], axis=-1)
                 q_parts.append(q_p)
                 k_parts.append(k_p)
                 v_parts.append(v_p)
 
-            q_ortho = ortho_fn(paddle.concat(q_parts, axis=1))
-            k_ortho = ortho_fn(paddle.concat(k_parts, axis=1))
-            v_ortho = ortho_fn(paddle.concat(v_parts, axis=1))
+            q_ortho = ortho_fn(paddle.concat(q_parts, axis=-1))
+            k_ortho = ortho_fn(paddle.concat(k_parts, axis=-1))
+            v_ortho = ortho_fn(paddle.concat(v_parts, axis=-1))
 
-            q_groups = paddle.split(q_ortho, kv_head_num, axis=1)
-            k_groups = paddle.split(k_ortho, kv_head_num, axis=1)
-            v_groups = paddle.split(v_ortho, kv_head_num, axis=1)
+            q_groups = paddle.split(q_ortho, kv_head_num, axis=-1)
+            k_groups = paddle.split(k_ortho, kv_head_num, axis=-1)
+            v_groups = paddle.split(v_ortho, kv_head_num, axis=-1)
 
             return paddle.concat(
-                [paddle.concat([q_groups[i], k_groups[i], v_groups[i]], axis=1) for i in range(kv_head_num)],
-                axis=1,
+                [paddle.concat([q_groups[i], k_groups[i], v_groups[i]], axis=-1) for i in range(kv_head_num)],
+                axis=-1,
             )
 
         def _ffn_gate_up(matrix, ortho_fn, intermediate_size=None):
-            """Slice FFN gate_up, orthogonalise gate and up independently."""
             import paddle
 
             assert matrix.ndim == 2 or matrix.ndim == 3, "FFN gate_up split expects 2D or 3D tensor"
+
             gate, up = paddle.split(matrix, [intermediate_size, intermediate_size], axis=-1)
             return paddle.concat([ortho_fn(gate), ortho_fn(up)], axis=-1)
 
@@ -137,6 +137,12 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
             processed_groups = [ortho_fn(group) for group in groups]
             return paddle.concat(processed_groups, axis=axis)
 
+        def _moe_experts(matrix_3d_global, ortho_fn):
+            if matrix_3d_global.ndim != 3:
+                raise ValueError(f"MoE expert split expects 3D tensor, got shape {matrix_3d_global.shape}")
+
+            return ortho_fn(matrix_3d_global)
+
         slice_config = {}
 
         muon_configs = config.muon_configs
@@ -146,6 +152,7 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
         num_key_value_heads = config.num_key_value_heads
         num_key_value_groups = num_attention_head // num_key_value_heads
         use_mla = getattr(config, "q_lora_rank", None) and config.q_lora_rank > 0
+        moe_expert_fusion = getattr(config, "moe_expert_fusion", False)
         use_gated_attn = getattr(config, "use_gated_attn", False)
 
         muon_qkv_update_mode = muon_configs.get("muon_qkv_update_mode", "split_head")
@@ -161,6 +168,8 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
             qkv_kwargs = {"kv_head_num": num_key_value_heads, "num_key_value_groups": num_key_value_groups}
 
         ffn_slice_fn = _ffn_gate_up if muon_ffn_split else None
+
+        fused_moe_fn = _moe_experts if moe_expert_fusion else None
 
         mla_slice_fn = None
         if use_mla and muon_qkv_update_mode == "split_head":
@@ -195,6 +204,10 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
                             {"intermediate_size": moe_intermediate_size},
                         )
 
+            if moe_expert_fusion and fused_moe_fn is not None:
+                slice_config[f"{prefix}.mlp.experts.down_proj.weight"] = (fused_moe_fn, {})
+                slice_config[f"{prefix}.mlp.grouped_gemm_experts.weight2"] = (fused_moe_fn, {})
+
             if use_mla and mla_slice_fn is not None:
                 assert (
                     hasattr(config, "qk_nope_head_dim")
@@ -207,21 +220,21 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
                     mla_slice_fn,
                     {
                         "head_num": num_attention_head,
-                        "axis": 1,
+                        "axis": -1,
                         "head_split_sizes": [config.qk_nope_head_dim, config.qk_rope_head_dim],
                     },
                 )
 
                 slice_config[f"{prefix}.self_attn.kv_a_proj_with_mqa.weight"] = (
                     mla_slice_fn,
-                    {"head_num": 1, "axis": 1, "head_split_sizes": [config.kv_lora_rank, config.qk_rope_head_dim]},
+                    {"head_num": 1, "axis": -1, "head_split_sizes": [config.kv_lora_rank, config.qk_rope_head_dim]},
                 )
 
                 slice_config[f"{prefix}.self_attn.kv_b_proj.weight"] = (
                     mla_slice_fn,
                     {
                         "head_num": num_attention_head,
-                        "axis": 1,
+                        "axis": -1,
                         "head_split_sizes": [config.qk_nope_head_dim, config.v_head_dim],
                     },
                 )
@@ -229,7 +242,7 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
             if use_gated_attn and mla_slice_fn is not None:
                 slice_config[f"{prefix}.self_attn.gate_proj.weight"] = (
                     mla_slice_fn,
-                    {"head_num": num_attention_head, "axis": 1},
+                    {"head_num": num_attention_head, "axis": -1},
                 )
 
         for layer_idx in range(num_hidden_layers):

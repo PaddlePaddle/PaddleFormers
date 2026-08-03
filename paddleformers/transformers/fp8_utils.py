@@ -177,6 +177,22 @@ class FP8LinearFunctionBase:
     def kitchen_gemm(
         x_fp8, x_scale, w_fp8, w_scale, is_a_1d_scaled, is_b_1d_scaled, out=None, rtn_dtype=paddle.bfloat16
     ):
+        if paddle.cuda.is_available() and paddle.cuda.get_device_capability()[0] >= 10:
+            if out is not None:
+                c = out
+            else:
+                c = paddle.empty([x_fp8.shape[0], w_fp8.shape[0]], rtn_dtype)
+            if numpy.prod(x_fp8.shape) != 0 and numpy.prod(w_fp8.shape) != 0:
+                recipe = (1, 1, 128) if (is_a_1d_scaled and is_b_1d_scaled) else None
+                deep_gemm.fp8_gemm_nt(
+                    (x_fp8, x_scale.t()),
+                    (w_fp8, w_scale.t()),
+                    c,
+                    c=out,
+                    recipe=recipe,
+                    compiled_dims="mn",
+                )
+            return c
         if out is not None:
             accumulate = True
             out_dtype = out.dtype
@@ -934,7 +950,7 @@ class FP8GroupGemmMlpFunctionNode:
                     (x_fp8, x_scale),
                     (w1_t_quant, w1_t_scale),
                     o1,
-                    m_indices=self.m_indices if m_indices is None else m_indices,
+                    self.m_indices if m_indices is None else m_indices,
                 )
 
         if m_indices is None:
@@ -987,7 +1003,7 @@ class FP8GroupGemmMlpFunctionNode:
                     (o2_fp8, o2_scale),
                     (w2_quant, w2_scale),
                     o3,
-                    m_indices=m_indices if self.fwd_subbatch else self.m_indices,
+                    m_indices if self.fwd_subbatch else self.m_indices,
                 )
 
         return o3
@@ -1027,7 +1043,7 @@ class FP8GroupGemmMlpFunctionNode:
                     (unzipped_grad_fp8, unzipped_grad_scale),
                     (bw_w2_quant, bw_w2_scale),
                     do2_s,
-                    m_indices=m_indices if self.bwd_subbatch else self.m_indices,
+                    m_indices if self.bwd_subbatch else self.m_indices,
                 )
 
         with paddle.amp.auto_cast(False):
@@ -1072,7 +1088,7 @@ class FP8GroupGemmMlpFunctionNode:
                     (do1_fp8, do1_scale),
                     (bw_w1_quant, bw_w1_scale),
                     dx,
-                    m_indices=m_indices if self.bwd_subbatch else self.m_indices,
+                    m_indices if self.bwd_subbatch else self.m_indices,
                 )
 
         return dx
