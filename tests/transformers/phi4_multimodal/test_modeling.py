@@ -18,16 +18,35 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+import paddle
+
 from paddleformers.cli.utils.llm_utils import get_lora_target_modules
 from paddleformers.transformers import (
     AutoConfig,
     Phi4MultimodalConfig,
     Phi4MultimodalForCausalLM,
 )
-from paddleformers.transformers.phi4_multimodal.modeling import adaptive_enc_mask
+from paddleformers.transformers.phi4_multimodal.modeling import (
+    Phi4MultimodalAudioAttention,
+    Phi4MultimodalAudioModel,
+    _lora_adapter_from_input_mode,
+    adaptive_enc_mask,
+)
 
 
 class Phi4MultimodalModelingTest(unittest.TestCase):
+    def test_top_level_exports_pipe_and_phi4mm_aliases(self):
+        from paddleformers.transformers import (
+            Phi4MMForCausalLM,
+            Phi4MMForCausalLMPipe,
+            Phi4MMForConditionalGeneration,
+            Phi4MultimodalForCausalLMPipe,
+        )
+
+        self.assertIs(Phi4MMForCausalLM, Phi4MultimodalForCausalLM)
+        self.assertIs(Phi4MMForConditionalGeneration, Phi4MultimodalForCausalLM)
+        self.assertIs(Phi4MMForCausalLMPipe, Phi4MultimodalForCausalLMPipe)
+
     def test_saved_config_uses_upstream_phi4mm_metadata(self):
         config = Phi4MultimodalConfig(
             vocab_size=101,
@@ -66,6 +85,10 @@ class Phi4MultimodalModelingTest(unittest.TestCase):
             ],
         )
 
+    def test_mixed_vision_and_speech_batch_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "mixing vision and speech"):
+            _lora_adapter_from_input_mode(paddle.to_tensor([1, 2], dtype=paddle.int64))
+
     def test_adaptive_enc_mask_uses_chunk_windows(self):
         mask = adaptive_enc_mask(6, [2, 4])
         self.assertEqual(
@@ -92,6 +115,16 @@ class Phi4MultimodalModelingTest(unittest.TestCase):
                 [False, False, True, True, True, True],
             ],
         )
+
+    def test_audio_attention_mask_sets_forbidden_weights_to_zero(self):
+        hs_mask = paddle.to_tensor([[[True, False], [True, True]]])
+        relative_attention_bias = paddle.zeros([1, 1, 2, 2], dtype=paddle.float32)
+
+        attention_mask = Phi4MultimodalAudioModel._prepare_attention_mask(hs_mask, relative_attention_bias)
+        attention_weights = Phi4MultimodalAudioAttention._masked_softmax(attention_mask)
+
+        self.assertEqual(attention_weights[0, 0, 0, 1].item(), 0.0)
+        self.assertGreater(attention_weights[0, 0, 0, 0].item(), 0.0)
 
     def test_aoa_lm_head_mapping_respects_tied_embeddings(self):
         untied_config = Phi4MultimodalConfig(num_hidden_layers=0, tie_word_embeddings=False)

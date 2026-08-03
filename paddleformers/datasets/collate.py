@@ -46,6 +46,31 @@ def calc_padding_size(seq_len: int, training_args) -> int:
     return math.ceil(seq_len / padding_to_size) * padding_to_size
 
 
+def _pad_and_concat_multimodal_tensors(tensors):
+    """Pad non-batch dimensions to a common shape before concatenating."""
+    tensors = [paddle.to_tensor(tensor) for tensor in tensors]
+    if not tensors:
+        return paddle.to_tensor([])
+
+    rank = len(tensors[0].shape)
+    if any(len(tensor.shape) != rank for tensor in tensors):
+        raise ValueError("Multimodal tensors in the same batch must have the same rank.")
+
+    max_shape = [max(tensor.shape[axis] for tensor in tensors) for axis in range(1, rank)]
+    padded_tensors = []
+    for tensor in tensors:
+        target_shape = [tensor.shape[0], *max_shape]
+        if list(tensor.shape) == target_shape:
+            padded_tensors.append(tensor)
+            continue
+
+        padded_tensor = paddle.zeros(target_shape, dtype=tensor.dtype)
+        padded_tensor[tuple(slice(0, size) for size in tensor.shape)] = tensor
+        padded_tensors.append(padded_tensor)
+
+    return paddle.concat(padded_tensors, axis=0)
+
+
 def dpo_collate_fn(
     batch,
     tokenizer,
@@ -827,17 +852,17 @@ def mm_collate_fn(
         if len(feature_attention_mask) > 0:
             feature_attention_mask = paddle.concat(feature_attention_mask, axis=0)
         if len(image_pixel_values) > 0:
-            image_pixel_values = paddle.concat(image_pixel_values, axis=0)
+            image_pixel_values = _pad_and_concat_multimodal_tensors(image_pixel_values)
         if len(image_sizes) > 0:
             image_sizes = paddle.concat(image_sizes, axis=0)
         if len(image_attention_mask) > 0:
-            image_attention_mask = paddle.concat(image_attention_mask, axis=0)
+            image_attention_mask = _pad_and_concat_multimodal_tensors(image_attention_mask)
         if len(audio_input_features) > 0:
-            audio_input_features = paddle.concat(audio_input_features, axis=0)
+            audio_input_features = _pad_and_concat_multimodal_tensors(audio_input_features)
         if len(audio_embed_sizes) > 0:
             audio_embed_sizes = paddle.concat(audio_embed_sizes, axis=0)
         if len(audio_attention_mask) > 0:
-            audio_attention_mask = paddle.concat(audio_attention_mask, axis=0)
+            audio_attention_mask = _pad_and_concat_multimodal_tensors(audio_attention_mask)
         if len(input_mode) > 0:
             input_mode = paddle.concat(input_mode, axis=0)
         if get_token_type_func is not None:  # ernie45vl
@@ -942,6 +967,13 @@ def mm_collate_fn(
         if filtered_tensors:
             if key == "position_ids":
                 value = paddle.concat(filtered_tensors, axis=bs_idx_in_rope)
+            elif key in {
+                "image_pixel_values",
+                "image_attention_mask",
+                "audio_input_features",
+                "audio_attention_mask",
+            }:
+                value = _pad_and_concat_multimodal_tensors(filtered_tensors)
             else:
                 value = paddle.concat(filtered_tensors, axis=0)
         else:

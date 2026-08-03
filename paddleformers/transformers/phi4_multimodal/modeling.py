@@ -99,7 +99,12 @@ def _active_lora_adapter(config):
 def _lora_adapter_from_input_mode(input_mode, image_pixel_values=None, audio_input_features=None):
     if input_mode is not None:
         if isinstance(input_mode, paddle.Tensor):
-            input_mode = int(input_mode.flatten()[0].item())
+            input_modes = paddle.unique(input_mode.flatten()).tolist()
+            if len(input_modes) != 1:
+                raise ValueError(
+                    "Phi-4 multimodal does not support mixing vision and speech input modes in the same batch."
+                )
+            input_mode = int(input_modes[0])
         if input_mode in (1, 3):
             return "vision"
         if input_mode == 2:
@@ -547,6 +552,14 @@ class Phi4MultimodalAudioAttention(nn.Layer):
         self.v_proj = nn.Linear(config.hidden_size, config.num_attention_heads * self.head_dim)
         self.o_proj = nn.Linear(config.num_attention_heads * self.head_dim, config.hidden_size)
 
+    @staticmethod
+    def _masked_softmax(attn_weights):
+        blocked_positions = paddle.isinf(attn_weights) & (attn_weights < 0)
+        attn_weights = F.softmax(attn_weights, axis=-1, dtype=paddle.float32)
+        attn_weights = paddle.where(blocked_positions, paddle.zeros_like(attn_weights), attn_weights)
+        normalizer = attn_weights.sum(axis=-1, keepdim=True)
+        return attn_weights / paddle.clip(normalizer, min=1e-9)
+
     def forward(
         self,
         hidden_states: paddle.Tensor,
@@ -563,7 +576,7 @@ class Phi4MultimodalAudioAttention(nn.Layer):
         if attention_mask is not None:
             attn_weights = attn_weights + attention_mask
 
-        attn_weights = F.softmax(attn_weights, axis=-1, dtype=paddle.float32).astype(query_states.dtype)
+        attn_weights = self._masked_softmax(attn_weights).astype(query_states.dtype)
         if self.training and self.attention_dropout > 0:
             attn_weights = F.dropout(attn_weights, p=self.attention_dropout, training=self.training)
         attn_output = paddle.matmul(attn_weights, value_states)
@@ -833,6 +846,23 @@ class Phi4MultimodalAudioModel(nn.Layer):
         pad_mask = pad_mask.astype("bool") & enc_streaming_mask.astype("bool")
         return pad_mask
 
+    @staticmethod
+    def _prepare_attention_mask(hs_mask, relative_attention_bias):
+        if hs_mask is None:
+            return relative_attention_bias
+
+        hs_mask = hs_mask.unsqueeze(1)
+        additive_mask = paddle.where(
+            hs_mask,
+            paddle.zeros_like(hs_mask, dtype=relative_attention_bias.dtype),
+            paddle.full_like(
+                hs_mask,
+                float("-inf"),
+                dtype=relative_attention_bias.dtype,
+            ),
+        )
+        return additive_mask + relative_attention_bias
+
     def forward(self, hidden_states: paddle.Tensor, mask: Optional[paddle.Tensor] = None, **kwargs):
         hidden_states = self.encoder_embedding(hidden_states)
         hidden_states, hs_mask, mask = self.forward_embeddings(hidden_states, mask)
@@ -860,10 +890,7 @@ class Phi4MultimodalAudioModel(nn.Layer):
             hs_mask = self.calculate_hs_mask(hidden_states, masks_unfold)
 
         relative_attention_bias = self.relative_attention_bias_layer(hidden_states)
-        if hs_mask is not None:
-            attention_mask = hs_mask.unsqueeze(1).astype(hidden_states.dtype) + relative_attention_bias
-        else:
-            attention_mask = relative_attention_bias
+        attention_mask = self._prepare_attention_mask(hs_mask, relative_attention_bias)
 
         for layer in self.encoders:
             hidden_states = layer(hidden_states, attention_mask)

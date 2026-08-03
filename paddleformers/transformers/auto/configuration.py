@@ -35,6 +35,8 @@ CONFIG_MAPPING_NAMES = OrderedDict(
     [
         ("deepseek_v3", "DeepseekV3Config"),
         ("deepseek_v32", "DeepseekV32Config"),
+        ("paligemma", "PaliGemma2Config"),
+        ("paligemma2", "PaliGemma2Config"),
         ("diff_transformer", "DiffTransformerConfig"),
         ("ernie4_5", "Ernie4_5Config"),
         ("ernie4_5_moe", "Ernie4_5_MoeConfig"),
@@ -65,7 +67,9 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("phi4_multimodal_audio", "Phi4MultimodalAudioConfig"),
         ("phi4_multimodal_vision", "Phi4MultimodalVisionConfig"),
         ("granite", "GraniteConfig"),
+        ("gemma3", "Gemma3Config"),
         ("gemma3_text", "Gemma3TextConfig"),
+        ("shieldgemma2", "ShieldGemma2Config"),
         ("glm4v_moe", "Glm4vMoeConfig"),
         ("glm_ocr", "GlmOcrConfig"),
         ("qwen3_5", "Qwen3_5Config"),
@@ -87,6 +91,8 @@ MODEL_NAMES_MAPPING = OrderedDict(
     [
         ("deepseek_v2", "DeepseekV2"),
         ("deepseek_v3", "DeepseekV3"),
+        ("paligemma", "PaliGemma2"),
+        ("paligemma2", "PaliGemma2"),
         ("diff_transformer", "DiffTransformer"),
         ("ernie4_5", "Ernie4_5"),
         ("ernie4_5_moe", "Ernie4_5_Moe"),
@@ -108,6 +114,9 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("phi4_multimodal", "Phi4MultimodalModel"),
         ("minicpm", "MiniCPM"),
         ("granite", "Granite"),
+        ("gemma3", "Gemma3ForConditionalGeneration"),
+        ("gemma3_text", "Gemma3TextModel"),
+        ("shieldgemma2", "ShieldGemma2ForImageClassification"),
         ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
         ("qwen3_5", "Qwen3_5ForConditionalGeneration"),
         ("olmo2", "Olmo2ForCausalLM"),
@@ -128,6 +137,8 @@ MULTI_MODELS_MAPPING = OrderedDict(
 
 SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
     [
+        ("paligemma", "paligemma2"),
+        ("gemma3", "gemma3"),
         ("qwen2_5_vl_text", "qwen2_5_vl"),
         ("phi4_multimodal_audio", "phi4_multimodal"),
         ("phi4_multimodal_vision", "phi4_multimodal"),

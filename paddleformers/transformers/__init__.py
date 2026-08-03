@@ -92,6 +92,8 @@ import_structure = {
         "TruncationStrategy",
     ],
     "auto.processing": ["AutoProcessor"],
+    "paligemma2.image_processor": ["PaliGemmaImageProcessor"],
+    "paligemma2.processor": ["PaliGemmaProcessor"],
     "auto.tokenizer": ["AutoTokenizer", "TOKENIZER_MAPPING"],
     "auto.video_processing": ["AutoVideoProcessor", "VIDEO_PROCESSOR_MAPPING"],
     "auto.feature_extraction": ["AutoFeatureExtractor"],
@@ -184,6 +186,28 @@ import_structure = {
     "kimi_k25.tokenizer": ["TikTokenTokenizer"],
     "gemma3_text.configuration": ["Gemma3Config", "Gemma3TextConfig"],
     "gemma3_text.modeling": ["Gemma3TextModel", "Gemma3ForCausalLM", "Gemma3ForCausalLMPipe"],
+    "gemma3.configuration": ["Gemma3Config"],
+    "gemma3.image_processor": ["Gemma3ImageProcessor", "Gemma3ImageProcessorKwargs"],
+    "gemma3.image_processor_fast": ["Gemma3ImageProcessorFast"],
+    "gemma3.processor": ["Gemma3Processor", "Gemma3ProcessorKwargs"],
+    "gemma3.modeling": [
+        "Gemma3ModelOutputWithPast",
+        "Gemma3CausalLMOutputWithPast",
+        "Gemma3MultiModalProjector",
+        "Gemma3PreTrainedModel",
+        "Gemma3Model",
+        "Gemma3ForConditionalGeneration",
+    ],
+    "shieldgemma2.configuration": ["ShieldGemma2Config", "ShieldGemma2VisionConfig"],
+    "shieldgemma2.modeling": [
+        "ShieldGemma2ForImageClassification",
+        "ShieldGemma2ImageClassifierOutputWithNoAttention",
+    ],
+    "shieldgemma2.processor": [
+        "DEFAULT_SHIELDGEMMA2_POLICIES",
+        "ShieldGemma2Processor",
+        "ShieldGemma2ProcessorKwargs",
+    ],
     "kimi_k2.configuration": ["KimiK2Config"],
     "kimi_k2.modeling": ["KimiK2ForCausalLM", "KimiK2ForCausalLMPipe"],
     "kimi_k2.tokenizer": ["KimiK2TikTokenTokenizer"],
@@ -354,8 +378,12 @@ import_structure = {
     "phi4_multimodal.feature_extraction": ["Phi4MultimodalFeatureExtractor"],
     "phi4_multimodal.image_processor": ["Phi4MultimodalImageProcessor"],
     "phi4_multimodal.modeling": [
+        "Phi4MMForCausalLM",
+        "Phi4MMForCausalLMPipe",
+        "Phi4MMForConditionalGeneration",
         "Phi4MultimodalAudioModel",
         "Phi4MultimodalForCausalLM",
+        "Phi4MultimodalForCausalLMPipe",
         "Phi4MultimodalForConditionalGeneration",
         "Phi4MultimodalModel",
         "Phi4MultimodalPreTrainedModel",
@@ -499,6 +527,8 @@ if TYPE_CHECKING:
     from .phi3 import *
     from .phi4_multimodal import *
     from .gemma3_text import *
+    from .gemma3 import *
+    from .shieldgemma2 import *
     from .glm_ocr import *
     from .olmo2 import *
     from .intern_lm3 import *

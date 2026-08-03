@@ -55,6 +55,7 @@ MAPPING_NAMES = OrderedDict(
     [
         ("DeepseekV3", "deepseek_v3"),
         ("DeepseekV32", "deepseek_v32"),
+        ("PaliGemma2", "paligemma2"),
         ("DiffTransformer", "diff_transformer"),
         ("Ernie4_5", "ernie4_5"),
         ("Ernie4_5_Moe", "ernie4_5_moe"),
@@ -85,7 +86,8 @@ MAPPING_NAMES = OrderedDict(
         ("Phi4MultimodalAudio", "phi4_multimodal"),
         ("Phi4MultimodalVision", "phi4_multimodal"),
         ("Phi4", "phi4"),
-        ("Gemma3", "gemma3_text"),
+        ("Gemma3", "gemma3"),
+        ("Gemma3Text", "gemma3_text"),
         ("Gemma4Moe", "gemma4_moe"),
         ("Glm4vMoe", "glm4v_moe"),
         ("GlmOcr", "glm_ocr"),
@@ -97,12 +99,12 @@ MAPPING_NAMES = OrderedDict(
 
 MAPPING_SPACIAL_KEY = OrderedDict(
     [
-        ("Gemma3", "Gemma3Text"),
+        ("Gemma3", "Gemma3"),
         ("Ernie4_5_VLMoe", "Ernie4_5_VLMoeForConditionalGeneration"),
         ("Phi4MM", "Phi4Multimodal"),
     ]
 )
-CONFIGURATION_MODEL_MAPPING = OrderedDict([((), "Gemma3TextModel")])
+CONFIGURATION_MODEL_MAPPING = OrderedDict([((), "Gemma3ForConditionalGeneration")])
 
 MAPPING_TASKS = OrderedDict(
     [
@@ -198,12 +200,17 @@ class _BaseAutoModelClass:
                 if model_flag in init_class:
                     model_name = model_flag + "Model"
                     break
+            if model_name is None and init_class == "PaliGemmaForConditionalGeneration":
+                model_name = "PaliGemma2ForConditionalGenerationModel"
         else:
             # From pretrained_model_name_or_path
             for model_flag, name in SORTED_MAPPING_NAMES.items():
                 if type(pretrained_model_name_or_path) is str and name in pretrained_model_name_or_path.lower():
                     model_name = model_flag + "Model"
                     break
+        if init_class == "PaliGemmaForConditionalGeneration":
+            import_class = importlib.import_module("paddleformers.transformers.paligemma2.modeling")
+            return getattr(import_class, "PaliGemma2ForConditionalGeneration")
         if model_name is None:
             # Try to get model class from config class
             if not isinstance(config, PretrainedConfig) and pretrained_model_name_or_path is not None:
