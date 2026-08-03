@@ -55,6 +55,7 @@ IMAGE_PROCESSOR_MAPPING_NAMES.update(
         "glm4v_moe": ("Glm4vImageProcessor", "Glm4vImageProcessorFast"),
         "kimi_k25": ("KimiK25VisionProcessor"),
         "paddleocr_vl": ("PaddleOCRVLImageProcessor"),
+        "gemma3": ("Gemma3ImageProcessor", "Gemma3ImageProcessorFast"),
         "qwen2_5_vl": ("Qwen2VLImageProcessor", "Qwen2VLImageProcessorFast"),
         "qwen2_vl": ("Qwen2VLImageProcessor", "Qwen2VLImageProcessorFast"),
         "qwen3_vl": ("Qwen3VLImageProcessor", "Qwen3VLImageProcessorFast"),
