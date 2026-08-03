@@ -1403,7 +1403,7 @@ class Trainer:
             def bf16_filtered_sharded_state_dict(sharded_state_dict):
                 new_state_dict = {}
                 for k, v in sharded_state_dict.items():
-                    if v.local_tensor.dtype == paddle.bfloat16:
+                    if v.local_tensor.dtype == paddle.bfloat16 and not v.local_tensor.stop_gradient:
                         continue
                     new_state_dict[k] = v
                 return new_state_dict

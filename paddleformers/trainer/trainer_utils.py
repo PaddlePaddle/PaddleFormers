@@ -2239,7 +2239,25 @@ class EMAStateAssembler:
 
         for k, v in model_sharded_state_dict.items():
             if v.local_tensor.dtype == paddle.bfloat16:
-                ema_tensor = ema_params_recovered[self._rename(k, False)]
+                ema_key = self._rename(k, False)
+                if ema_key not in ema_params_recovered:
+                    # A bf16 parameter is reconstructed from its fp32 optimizer master weight.
+                    # Frozen parameters are not in the optimizer, so they have no master weight
+                    # and nothing to recover from (Phase 2 freezes the whole backbone and trains
+                    # only the Indexer). Their value never changes, so the frozen fallback at the
+                    # end of this function copies the parameter itself.
+                    #
+                    # A *trainable* parameter missing here is a real bug: the frozen fallback
+                    # only refills stop_gradient=True entries, so continuing would leave it out
+                    # of the EMA state and the EMA HF checkpoint silently. Raise instead of
+                    # assert so `python -O` cannot strip the check.
+                    if not v.local_tensor.stop_gradient:
+                        raise RuntimeError(
+                            f"{k} is trainable but has no EMA master weight to recover from; "
+                            "the EMA state is incomplete."
+                        )
+                    continue
+                ema_tensor = ema_params_recovered[ema_key]
                 expected_shape = v.local_shape
                 # Handle grouped_gemm_experts: reshape 3D [num_experts, hidden, intermediate] to 2D [num_experts*hidden, intermediate]
                 group_gemm_param_name_pattern = [
