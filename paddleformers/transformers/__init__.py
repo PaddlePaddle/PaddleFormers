@@ -379,11 +379,9 @@ import_structure = {
     "phi4_multimodal.image_processor": ["Phi4MultimodalImageProcessor"],
     "phi4_multimodal.modeling": [
         "Phi4MMForCausalLM",
-        "Phi4MMForCausalLMPipe",
         "Phi4MMForConditionalGeneration",
         "Phi4MultimodalAudioModel",
         "Phi4MultimodalForCausalLM",
-        "Phi4MultimodalForCausalLMPipe",
         "Phi4MultimodalForConditionalGeneration",
         "Phi4MultimodalModel",
         "Phi4MultimodalPreTrainedModel",

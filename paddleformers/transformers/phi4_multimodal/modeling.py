@@ -28,7 +28,6 @@ from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
-from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..activations import ACT2FN
 from ..cache_utils import Cache, DynamicCache
@@ -101,9 +100,7 @@ def _lora_adapter_from_input_mode(input_mode, image_pixel_values=None, audio_inp
         if isinstance(input_mode, paddle.Tensor):
             input_modes = paddle.unique(input_mode.flatten()).tolist()
             if len(input_modes) != 1:
-                raise ValueError(
-                    "Phi-4 multimodal does not support mixing vision and speech input modes in the same batch."
-                )
+                raise ValueError("Phi-4 multimodal does not support mixing different input modes in the same batch.")
             input_mode = int(input_modes[0])
         if input_mode in (1, 3):
             return "vision"
@@ -1598,9 +1595,16 @@ class Phi4MultimodalModel(Phi4MultimodalPreTrainedModel):
 
     @paddle.jit.not_to_static
     def recompute_training_full(self, layer_module, hidden_states, *args):
+        active_lora_adapter = getattr(self.config, "_active_lora_adapter", None)
+
         def create_custom_forward(module):
             def custom_forward(*inputs):
-                return module(*inputs)
+                previous_adapter = getattr(self.config, "_active_lora_adapter", None)
+                self.config._active_lora_adapter = active_lora_adapter
+                try:
+                    return module(*inputs)
+                finally:
+                    self.config._active_lora_adapter = previous_adapter
 
             return custom_forward
 
@@ -1955,11 +1959,3 @@ class Phi4MultimodalForCausalLM(Phi4MultimodalPreTrainedModel):
 Phi4MultimodalForConditionalGeneration = Phi4MultimodalForCausalLM
 Phi4MMForCausalLM = Phi4MultimodalForCausalLM
 Phi4MMForConditionalGeneration = Phi4MultimodalForCausalLM
-
-
-class Phi4MultimodalForCausalLMPipe(GeneralModelForCausalLMPipe):
-    config_class = Phi4MultimodalConfig
-    _gen_aoa_config = Phi4MultimodalForCausalLM._gen_aoa_config
-
-
-Phi4MMForCausalLMPipe = Phi4MultimodalForCausalLMPipe

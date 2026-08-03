@@ -25,6 +25,7 @@ from paddleformers.transformers import (
     AutoConfig,
     Phi4MultimodalConfig,
     Phi4MultimodalForCausalLM,
+    Phi4MultimodalModel,
 )
 from paddleformers.transformers.phi4_multimodal.modeling import (
     Phi4MultimodalAudioAttention,
@@ -35,17 +36,14 @@ from paddleformers.transformers.phi4_multimodal.modeling import (
 
 
 class Phi4MultimodalModelingTest(unittest.TestCase):
-    def test_top_level_exports_pipe_and_phi4mm_aliases(self):
+    def test_top_level_exports_phi4mm_aliases(self):
         from paddleformers.transformers import (
             Phi4MMForCausalLM,
-            Phi4MMForCausalLMPipe,
             Phi4MMForConditionalGeneration,
-            Phi4MultimodalForCausalLMPipe,
         )
 
         self.assertIs(Phi4MMForCausalLM, Phi4MultimodalForCausalLM)
         self.assertIs(Phi4MMForConditionalGeneration, Phi4MultimodalForCausalLM)
-        self.assertIs(Phi4MMForCausalLMPipe, Phi4MultimodalForCausalLMPipe)
 
     def test_saved_config_uses_upstream_phi4mm_metadata(self):
         config = Phi4MultimodalConfig(
@@ -85,9 +83,45 @@ class Phi4MultimodalModelingTest(unittest.TestCase):
             ],
         )
 
-    def test_mixed_vision_and_speech_batch_is_rejected(self):
-        with self.assertRaisesRegex(ValueError, "mixing vision and speech"):
-            _lora_adapter_from_input_mode(paddle.to_tensor([1, 2], dtype=paddle.int64))
+    def test_mixed_input_modes_are_rejected(self):
+        for input_modes in ([1, 2], [0, 1]):
+            with self.subTest(input_modes=input_modes):
+                with self.assertRaisesRegex(ValueError, "mixing different input modes"):
+                    _lora_adapter_from_input_mode(paddle.to_tensor(input_modes, dtype=paddle.int64))
+
+    def test_recompute_preserves_lora_adapter_during_backward(self):
+        config = SimpleNamespace(_active_lora_adapter="vision")
+
+        class AdapterLayer(paddle.nn.Layer):
+            def __init__(self):
+                super().__init__()
+                self.vision_lora = self.create_parameter(
+                    shape=[1], default_initializer=paddle.nn.initializer.Constant(2.0)
+                )
+
+            def forward(self, hidden_states):
+                if config._active_lora_adapter == "vision":
+                    return hidden_states * self.vision_lora
+                return hidden_states
+
+        layer = AdapterLayer()
+        reference_input = paddle.to_tensor([3.0], stop_gradient=False)
+        reference_output = layer(reference_input)
+        reference_output.sum().backward()
+        reference_input_grad = reference_input.grad.clone()
+        reference_lora_grad = layer.vision_lora.grad.clone()
+        layer.clear_gradients()
+
+        recompute_input = paddle.to_tensor([3.0], stop_gradient=False)
+        recompute_output = Phi4MultimodalModel.recompute_training_full(
+            SimpleNamespace(config=config), layer, recompute_input
+        )
+        config._active_lora_adapter = None
+        recompute_output.sum().backward()
+
+        self.assertEqual(recompute_output.tolist(), reference_output.tolist())
+        self.assertEqual(recompute_input.grad.tolist(), reference_input_grad.tolist())
+        self.assertEqual(layer.vision_lora.grad.tolist(), reference_lora_grad.tolist())
 
     def test_adaptive_enc_mask_uses_chunk_windows(self):
         mask = adaptive_enc_mask(6, [2, 4])

@@ -752,6 +752,7 @@ def mm_collate_fn(
     if padding_free:
         batch = [sum(batch, [])]
         max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
+    uses_input_mode = any("input_mode" in seq.mm_inputs for sequence in batch for seq in sequence)
     if not max_seq_len:
         max_seq_len = max(sum(len(item.token_ids) for item in sequence) for sequence in batch)
     max_seq_len = calc_padding_size(max_seq_len, training_args)
@@ -799,13 +800,18 @@ def mm_collate_fn(
             if "image_attention_mask" in mm_inputs:
                 image_attention_mask.append(mm_inputs["image_attention_mask"])
             if "audio_input_features" in mm_inputs:
-                audio_input_features.append(mm_inputs["audio_input_features"])
+                current_audio_features = mm_inputs["audio_input_features"]
+                audio_input_features.append(current_audio_features)
+                if "audio_attention_mask" in mm_inputs:
+                    audio_attention_mask.append(mm_inputs["audio_attention_mask"])
+                else:
+                    audio_attention_mask.append(paddle.ones(current_audio_features.shape[:2], dtype=paddle.bool))
             if "audio_embed_sizes" in mm_inputs:
                 audio_embed_sizes.append(mm_inputs["audio_embed_sizes"])
-            if "audio_attention_mask" in mm_inputs:
+            if "audio_attention_mask" in mm_inputs and "audio_input_features" not in mm_inputs:
                 audio_attention_mask.append(mm_inputs["audio_attention_mask"])
-            if "input_mode" in mm_inputs:
-                input_mode.append(mm_inputs["input_mode"])
+            if uses_input_mode:
+                input_mode.append(mm_inputs.get("input_mode", paddle.zeros([1], dtype=paddle.int64)))
             if get_rope_func is not None:
                 filtered_args = {k: paddle.to_tensor(mm_inputs[k]) for k in func_params if k in mm_inputs}
                 total_input_ids = paddle.to_tensor([seq.token_ids])

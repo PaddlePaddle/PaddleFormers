@@ -30,10 +30,8 @@ import_structure = {
         "Phi4MultimodalModel",
         "Phi4MultimodalForCausalLM",
         "Phi4MultimodalForConditionalGeneration",
-        "Phi4MultimodalForCausalLMPipe",
         "Phi4MMForCausalLM",
         "Phi4MMForConditionalGeneration",
-        "Phi4MMForCausalLMPipe",
     ],
     "processor": ["Phi4MultimodalProcessor"],
 }
