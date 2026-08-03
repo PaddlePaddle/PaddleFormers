@@ -96,13 +96,11 @@ MAPPING_NAMES = OrderedDict(
 
 MAPPING_SPACIAL_KEY = OrderedDict(
     [
-        ("Gemma3", "Gemma3Text"),
+        ("Gemma3", "Gemma3"),
         ("Ernie4_5_VLMoe", "Ernie4_5_VLMoeForConditionalGeneration"),
         ("Llama4", "Llama4Text"),
     ]
 )
-CONFIGURATION_MODEL_MAPPING = OrderedDict([((), "Gemma3TextModel")])
-MAPPING_SPACIAL_KEY = OrderedDict([("Gemma3", "Gemma3"), ("Ernie4_5_VLMoe", "Ernie4_5_VLMoeForConditionalGeneration")])
 CONFIGURATION_MODEL_MAPPING = OrderedDict([((), "Gemma3ForConditionalGeneration")])
 
 MAPPING_TASKS = OrderedDict(
