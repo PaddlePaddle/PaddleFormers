@@ -16,7 +16,7 @@ import unittest
 
 import paddle
 
-from paddleformers.transformers import MiniCPMConfig, MiniCPMForCausalLM, MiniCPMModel
+from paddleformers.transformers import MiniCPM4_1Config, MiniCPM4_1ForCausalLM, MiniCPM4_1Model
 
 # from tests.testing_utils import slow
 from tests.transformers.test_configuration_common import ConfigTester
@@ -29,7 +29,7 @@ from tests.transformers.test_modeling_common import (
 )
 
 
-class MiniCPMModelTester:
+class MiniCPM4_1ModelTester:
     def __init__(
         self,
         parent,
@@ -61,7 +61,7 @@ class MiniCPMModelTester:
         use_labels: bool = False,
         return_dict=False,
     ):
-        self.parent: MiniCPMModelTest = parent
+        self.parent: MiniCPM4_1ModelTest = parent
         self.vocab_size = vocab_size
         self.hidden_size = hidden_size
         self.num_hidden_layers = num_hidden_layers
@@ -110,8 +110,8 @@ class MiniCPMModelTester:
         config = self.get_config()
         return config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
 
-    def get_config(self) -> MiniCPMConfig:
-        return MiniCPMConfig(
+    def get_config(self) -> MiniCPM4_1Config:
+        return MiniCPM4_1Config(
             vocab_size=self.vocab_size,
             hidden_size=self.hidden_size,
             num_hidden_layers=self.num_hidden_layers,
@@ -131,17 +131,17 @@ class MiniCPMModelTester:
         )
 
     def create_and_check_model(
-        self, config: MiniCPMConfig, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        self, config: MiniCPM4_1Config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
     ):
-        model = MiniCPMModel(config)
+        model = MiniCPM4_1Model(config)
         model.eval()
         result = model(input_ids)
         self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.hidden_size])
 
     def create_and_check_model_attention_mask(
-        self, config: MiniCPMConfig, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        self, config: MiniCPM4_1Config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
     ):
-        model = MiniCPMModel(config)
+        model = MiniCPM4_1Model(config)
         model.eval()
         attn_mask_2d = random_attention_mask([self.batch_size, self.seq_length])
         result_2d = model(input_ids, attention_mask=attn_mask_2d)[0]
@@ -159,14 +159,14 @@ class MiniCPMModelTester:
 
     def create_and_check_model_past_large_inputs(
         self,
-        config: MiniCPMConfig,
+        config: MiniCPM4_1Config,
         input_ids,
         input_mask,
         sequence_labels,
         token_labels,
         choice_labels,
     ):
-        model = MiniCPMModel(config)
+        model = MiniCPM4_1Model(config)
         model.eval()
 
         # first forward pass
@@ -221,7 +221,7 @@ class MiniCPMModelTester:
         return config, inputs_dict
 
     def create_and_check_lm_head_model(self, config, input_ids, input_mask, *args):
-        model = MiniCPMForCausalLM(config)
+        model = MiniCPM4_1ForCausalLM(config)
         model.eval()
 
         result = model(
@@ -237,7 +237,7 @@ class MiniCPMModelTester:
             self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
 
     def check_model_position_ids(self, config, input_ids, input_mask, *args):
-        model = MiniCPMForCausalLM(config)
+        model = MiniCPM4_1ForCausalLM(config)
         model.eval()
 
         result_no_position_id = model(
@@ -259,7 +259,7 @@ class MiniCPMModelTester:
             self.parent.assertTrue((result_position_id[0] == result_no_position_id[0]).all())
 
     def create_and_check_gqa_model(self, config, input_ids, input_mask, *args):
-        model = MiniCPMForCausalLM(config)
+        model = MiniCPM4_1ForCausalLM(config)
         config.num_key_value_heads = 8  # gqa
         config.apply_rope_fusion = True
         model.eval()
@@ -277,19 +277,19 @@ class MiniCPMModelTester:
             self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
 
 
-class MiniCPMModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
-    base_model_class = MiniCPMModel
+class MiniCPM4_1ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
+    base_model_class = MiniCPM4_1Model
     return_dict = False
     use_labels = False
 
-    all_model_classes = (MiniCPMModel, MiniCPMForCausalLM)
-    all_generative_model_classes = {MiniCPMForCausalLM: (MiniCPMModel, "MiniCPM")}
+    all_model_classes = (MiniCPM4_1Model, MiniCPM4_1ForCausalLM)
+    all_generative_model_classes = {MiniCPM4_1ForCausalLM: (MiniCPM4_1Model, "MiniCPM4_1")}
 
     def setUp(self):
         super().setUp()
 
-        self.model_tester = MiniCPMModelTester(self)
-        self.config_tester = ConfigTester(self, config_class=MiniCPMConfig, vocab_size=256, hidden_size=24)
+        self.model_tester = MiniCPM4_1ModelTester(self)
+        self.config_tester = ConfigTester(self, config_class=MiniCPM4_1Config, vocab_size=256, hidden_size=24)
 
     def _get_input_ids_and_config(self):
         config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
@@ -320,17 +320,17 @@ class MiniCPMModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     def test_generate_without_input_ids(self):
         pass
 
-    def test_MiniCPM_lm_head_model(self):
+    def test_MiniCPM4_1_lm_head_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_lm_head_model(*config_and_inputs)
 
-    def test_MiniCPM_gqa_model(self):
+    def test_MiniCPM4_1_gqa_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_gqa_model(*config_and_inputs)
 
 
-class MiniCPMGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
-    internal_testing_model = "__internal_testing__/micro-random-MiniCPM"
+class MiniCPM4_1GenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
+    internal_testing_model = "__internal_testing__/micro-random-MiniCPM4_1"
 
 
 if __name__ == "__main__":

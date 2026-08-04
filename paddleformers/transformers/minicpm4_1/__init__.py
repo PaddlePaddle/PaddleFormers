@@ -18,13 +18,13 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "configuration": ["MiniCPMConfig"],
+    "configuration": ["MiniCPM4_1Config"],
     "modeling": [
-        "MiniCPMDecoderLayer",
-        "MiniCPMModel",
-        "MiniCPMForCausalLM",
-        "MiniCPMForCausalLMPipe",
-        "MiniCPMForSequenceClassification",
+        "MiniCPM4_1DecoderLayer",
+        "MiniCPM4_1Model",
+        "MiniCPM4_1ForCausalLM",
+        "MiniCPM4_1ForCausalLMPipe",
+        "MiniCPM4_1ForSequenceClassification",
     ],
 }
 

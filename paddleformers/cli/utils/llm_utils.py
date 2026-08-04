@@ -308,7 +308,7 @@ def get_lora_target_modules(model):
             ".*up_proj.*",
             ".*down_proj.*",
         ]
-    elif model.config.model_type == "minicpm":
+    elif model.config.model_type == "minicpm4_1":
         target_modules = [
             ".*qkv_proj.*",
             ".*q_proj.*",
