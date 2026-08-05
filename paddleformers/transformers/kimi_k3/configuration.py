@@ -221,6 +221,8 @@ class KimiK3TextConfig(PretrainedConfig):
 
         # KDA/MLA hybrid attention schedule
         self.linear_attn_config = linear_attn_config
+        self.layer_types = self._build_layer_types()
+        self._flatten_linear_attn_config()
         self.attn_res_block_size = attn_res_block_size
 
         # MLA
@@ -296,6 +298,66 @@ class KimiK3TextConfig(PretrainedConfig):
             router_aux_loss_coef=router_aux_loss_coef,
             **kwargs,
         )
+
+    def _build_layer_types(self):
+        """Turn the one-based KDA/MLA schedule into a per-layer type list.
+
+        Shared by the model provider (Fleet build) and the checkpoint AOA
+        rules so both derive the KDA/MLA layout from a single source.
+        """
+        if not isinstance(self.linear_attn_config, dict):
+            raise ValueError("Kimi-K3 requires layer_types or linear_attn_config.")
+        kda_layers = self._layer_numbers("kda_layers")
+        full_attn_layers = self._layer_numbers("full_attn_layers")
+        overlap = kda_layers & full_attn_layers
+        if overlap:
+            raise ValueError(
+                "Kimi-K3 kda_layers and full_attn_layers must be disjoint; " f"overlap={sorted(overlap)}."
+            )
+        expected_layers = set(range(1, self.num_hidden_layers + 1))
+        actual_layers = kda_layers | full_attn_layers
+        if actual_layers != expected_layers:
+            raise ValueError(
+                "Kimi-K3 attention schedule must cover every decoder layer "
+                f"exactly once; missing={sorted(expected_layers - actual_layers)}, "
+                f"out_of_range={sorted(actual_layers - expected_layers)}."
+            )
+        return [
+            "kimi_delta_attention" if layer_number in kda_layers else "multi_latent_attention"
+            for layer_number in range(1, self.num_hidden_layers + 1)
+        ]
+
+    def _layer_numbers(self, name):
+        """Parse and validate a list of one-based layer numbers."""
+        values = self.linear_attn_config.get(name)
+        if not isinstance(values, (list, tuple)):
+            raise ValueError(f"Kimi-K3 {name} must be a list of layer numbers.")
+        if any(type(value) is not int for value in values):
+            raise ValueError(f"Kimi-K3 {name} must contain only integers.")
+        if len(values) != len(set(values)):
+            raise ValueError(f"Kimi-K3 {name} contains duplicate layer numbers.")
+        return set(values)
+
+    def _flatten_linear_attn_config(self):
+        """Expose the nested KDA config as flat ``linear_*`` fields.
+
+        The model provider forwards these to the Fleet ``TransformerConfig``
+        and the checkpoint AOA rules read them back, so keep them on the config
+        as the single source of the KDA layout.
+        """
+        cfg = self.linear_attn_config
+        if not isinstance(cfg, dict):
+            raise ValueError("Kimi-K3 requires linear_attn_config to expose KDA fields.")
+        head_dim = cfg["head_dim"]
+        num_heads = cfg["num_heads"]
+        self.linear_conv_kernel_dim = cfg["short_conv_kernel_size"]
+        self.linear_key_head_dim = head_dim
+        self.linear_value_head_dim = head_dim
+        self.linear_num_key_heads = num_heads
+        self.linear_num_value_heads = num_heads
+        self.linear_gate_lora_rank = head_dim
+        self.linear_use_full_rank_gate = cfg.get("use_full_rank_gate", False)
+        self.linear_gate_lower_bound = cfg.get("gate_lower_bound")
 
 
 class KimiK3VisionConfig(PretrainedConfig):
@@ -466,6 +528,7 @@ class KimiK3Config(PretrainedConfig):
 
     model_type = "kimi_k3"
     sub_configs = {"text_config": KimiK3TextConfig, "vision_config": KimiK3VisionConfig}
+    is_composition = True
     keys_to_ignore_at_inference = ["past_key_values"]
 
     def __init__(
