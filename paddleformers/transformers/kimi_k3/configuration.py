@@ -298,49 +298,212 @@ class KimiK3TextConfig(PretrainedConfig):
         )
 
 
+class KimiK3VisionConfig(PretrainedConfig):
+    r"""
+    Configuration class for the Kimi-K3 MoonViT3d vision tower.
+
+    Field names follow the official `vision_config` block in
+    `Kimi-K3/config.json`. The `vt_*` names are the HuggingFace spelling of the
+    encoder geometry; `_HF_TO_FLEET_FIELD_MAP` translates them to the
+    PaddleFleet `TransformerConfig` names consumed by
+    `paddlefleet.models.kimi_k3.build_kimi_k3_vision_config`.
+
+    Args:
+        patch_size (`int`, *optional*, defaults to 14):
+            Spatial size of each square image patch.
+        in_channels (`int`, *optional*, defaults to 3):
+            Number of input image channels.
+        vt_hidden_size (`int`, *optional*, defaults to 1024):
+            Hidden size of the vision encoder.
+        vt_intermediate_size (`int`, *optional*, defaults to 4096):
+            Feed-forward size of the vision encoder.
+        vt_num_hidden_layers (`int`, *optional*, defaults to 27):
+            Number of vision encoder layers.
+        vt_num_attention_heads (`int`, *optional*, defaults to 12):
+            Number of vision attention heads.
+        qkv_hidden_size (`int`, *optional*, defaults to 1536):
+            Packed QKV projection width. Note this is not
+            `vt_hidden_size`, so the per-head dim is
+            `qkv_hidden_size // vt_num_attention_heads` (K3: 1536/12 = 128).
+        init_pos_emb_height (`int`, *optional*, defaults to 64):
+            Height of the learnable absolute position embedding table.
+        init_pos_emb_width (`int`, *optional*, defaults to 64):
+            Width of the learnable absolute position embedding table.
+        init_pos_emb_time (`int`, *optional*, defaults to 4):
+            Length of the time position embedding table.
+        pos_emb_type (`str`, *optional*, defaults to `"divided_fixed"`):
+            Position embedding variant; `divided_fixed` keeps the spatial and
+            time tables separate.
+        pos_emb_interpolation_mode (`str`, *optional*, defaults to `"bilinear"`):
+            Interpolation used when resizing the spatial table to the actual grid.
+        patch_embed_proj_bias (`bool`, *optional*, defaults to `False`):
+            Whether the patch-embedding convolution has a bias.
+        merge_kernel_size (`tuple`, *optional*, defaults to `(2, 2)`):
+            Spatial merge kernel of `sd2_tpool`. One 2x2 merge means the LLM
+            sees `(H/2) * (W/2)` visual tokens per media, with the time axis
+            mean-pooled away.
+        mm_hidden_size (`int`, *optional*, defaults to 1024):
+            Per-patch width entering the projector; the projector consumes
+            `merge_kernel_size[0] * merge_kernel_size[1] * mm_hidden_size`.
+        text_hidden_size (`int`, *optional*, defaults to 7168):
+            Output width of the projector. Must equal the text backbone
+            `hidden_size`, otherwise the merged visual tokens cannot be spliced
+            into the text embedding stream.
+        projector_ln_eps (`float`, *optional*, defaults to 1e-5):
+            Epsilon of the projector post-RMSNorm.
+        max_height (`int`, *optional*, defaults to 512):
+            Upper bound of the interpolated position grid height.
+        max_width (`int`, *optional*, defaults to 512):
+            Upper bound of the interpolated position grid width.
+    """
+
+    model_type = "kimi_k3_vision"
+
+    # HuggingFace vision_config field name -> PaddleFleet TransformerConfig name.
+    _HF_TO_FLEET_FIELD_MAP = {
+        "vt_hidden_size": "hidden_size",
+        "vt_intermediate_size": "intermediate_size",
+        "vt_num_hidden_layers": "num_hidden_layers",
+        "vt_num_attention_heads": "num_attention_heads",
+    }
+
+    def __init__(
+        self,
+        patch_size=14,
+        in_channels=3,
+        vt_hidden_size=1024,
+        vt_intermediate_size=4096,
+        vt_num_hidden_layers=27,
+        vt_num_attention_heads=12,
+        qkv_hidden_size=1536,
+        init_pos_emb_height=64,
+        init_pos_emb_width=64,
+        init_pos_emb_time=4,
+        pos_emb_type="divided_fixed",
+        pos_emb_interpolation_mode="bilinear",
+        patch_embed_proj_bias=False,
+        merge_kernel_size=(2, 2),
+        mm_hidden_size=1024,
+        text_hidden_size=7168,
+        projector_ln_eps=1e-5,
+        max_height=512,
+        max_width=512,
+        **kwargs,
+    ):
+        self.patch_size = patch_size
+        self.in_channels = in_channels
+        self.vt_hidden_size = vt_hidden_size
+        self.vt_intermediate_size = vt_intermediate_size
+        self.vt_num_hidden_layers = vt_num_hidden_layers
+        self.vt_num_attention_heads = vt_num_attention_heads
+        self.qkv_hidden_size = qkv_hidden_size
+        self.init_pos_emb_height = init_pos_emb_height
+        self.init_pos_emb_width = init_pos_emb_width
+        self.init_pos_emb_time = init_pos_emb_time
+        self.pos_emb_type = pos_emb_type
+        self.pos_emb_interpolation_mode = pos_emb_interpolation_mode
+        self.patch_embed_proj_bias = patch_embed_proj_bias
+        self.merge_kernel_size = tuple(merge_kernel_size)
+        self.mm_hidden_size = mm_hidden_size
+        self.text_hidden_size = text_hidden_size
+        self.projector_ln_eps = projector_ln_eps
+        self.max_height = max_height
+        self.max_width = max_width
+
+        super().__init__(**kwargs)
+
+    def to_fleet_vision_overrides(self):
+        """Keyword arguments for `build_kimi_k3_vision_config`."""
+        overrides = {
+            "patch_size": self.patch_size,
+            "in_channels": self.in_channels,
+            "qkv_hidden_size": self.qkv_hidden_size,
+            "init_pos_emb_height": self.init_pos_emb_height,
+            "init_pos_emb_width": self.init_pos_emb_width,
+            "init_pos_emb_time": self.init_pos_emb_time,
+            "pos_emb_type": self.pos_emb_type,
+            "pos_emb_interpolation_mode": self.pos_emb_interpolation_mode,
+            "patch_embed_proj_bias": self.patch_embed_proj_bias,
+            "merge_kernel_size": self.merge_kernel_size,
+            "mm_hidden_size": self.mm_hidden_size,
+            "text_hidden_size": self.text_hidden_size,
+            "projector_ln_eps": self.projector_ln_eps,
+            "max_height": self.max_height,
+            "max_width": self.max_width,
+        }
+        for hf_name, fleet_name in self._HF_TO_FLEET_FIELD_MAP.items():
+            overrides[fleet_name] = getattr(self, hf_name)
+        return overrides
+
+
 class KimiK3Config(PretrainedConfig):
     r"""
     Configuration class for the Kimi-K3 model wrapper.
 
     This class preserves the official nested configuration layout while
-    exposing the Kimi-K3 text backbone through [`KimiK3TextConfig`]. It can be
-    used with [`KimiK3Model`] or [`KimiK3ForCausalLM`].
+    exposing the Kimi-K3 text backbone through [`KimiK3TextConfig`] and the
+    MoonViT3d vision tower through [`KimiK3VisionConfig`].
 
-    Configuration objects inherit from [`PretrainedConfig`] and can be used to
-    control model outputs. See [`PretrainedConfig`] for the common configuration
-    fields.
+    Without `vision_config` the model is text-only ([`KimiK3Model`] /
+    [`KimiK3ForCausalLM`]); with `vision_config` it is the full multimodal
+    model ([`KimiK3ForConditionalGeneration`]).
 
     Args:
         text_config (`KimiK3TextConfig` or `dict`, *optional*):
             Configuration of the Kimi-K3 text backbone. A dictionary is
             converted to [`KimiK3TextConfig`]. When omitted, the default text
             configuration is created.
+        vision_config (`KimiK3VisionConfig` or `dict`, *optional*):
+            Configuration of the MoonViT3d vision tower. When omitted the model
+            is text-only.
+        media_placeholder_token_id (`int`, *optional*, defaults to 163605):
+            Token id of the single media placeholder. Unlike Qwen-style models
+            the processor emits exactly one placeholder per media; the model
+            expands it to the actual number of visual tokens.
+        image_placeholder (`str`, *optional*, defaults to `"<|kimi_image_placeholder|>"`):
+            Textual form of the media placeholder.
     """
 
     model_type = "kimi_k3"
+    sub_configs = {"text_config": KimiK3TextConfig, "vision_config": KimiK3VisionConfig}
     keys_to_ignore_at_inference = ["past_key_values"]
 
     def __init__(
         self,
         text_config=None,
+        vision_config=None,
+        media_placeholder_token_id=163605,
+        image_placeholder="<|kimi_image_placeholder|>",
         **kwargs,
     ):
-        # TODO: Kimi-K3 currently supports pure-text training only; add multimodal support.
-        kwargs.pop("vision_config", None)
-        kwargs.pop("media_placeholder_token_id", None)
-        kwargs.pop("image_placeholder", None)
         if text_config is None:
             text_config = KimiK3TextConfig()
         elif isinstance(text_config, dict):
             text_config = KimiK3TextConfig(**text_config)
 
-        self.text_config = text_config
+        if isinstance(vision_config, dict):
+            vision_config = KimiK3VisionConfig(**vision_config)
 
-        kwargs["architectures"] = ["KimiK3ForCausalLM"]
+        self.text_config = text_config
+        self.vision_config = vision_config
+        self.media_placeholder_token_id = media_placeholder_token_id
+        self.image_placeholder = image_placeholder
+
+        if vision_config is None:
+            kwargs["architectures"] = ["KimiK3ForCausalLM"]
+        else:
+            # Coerced, not validated: the projector output has to land in the text
+            # embedding space, and a reduced text_config is a legitimate setup
+            # (the official value is 7168). This is the single source of truth for
+            # the field, so downstream assembly does not re-check it.
+            vision_config.text_hidden_size = text_config.hidden_size
+            kwargs["architectures"] = ["KimiK3ForConditionalGeneration"]
+
         super().__init__(**kwargs)
 
 
 __all__ = [
     "KimiK3Config",
     "KimiK3TextConfig",
+    "KimiK3VisionConfig",
 ]

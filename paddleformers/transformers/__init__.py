@@ -214,13 +214,18 @@ import_structure = {
     "kimi_k3.configuration": [
         "KimiK3Config",
         "KimiK3TextConfig",
+        "KimiK3VisionConfig",
     ],
     "kimi_k3.modeling": [
         "KimiK3Model",
         "KimiK3ForCausalLM",
         "KimiK3ForCausalLMPipe",
+        "KimiK3ForConditionalGeneration",
         "KimiK3ModelProvider",
     ],
+    "kimi_k3.tokenizer": ["KimiK3TikTokenTokenizer"],
+    "kimi_k3.vision_processor": ["KimiK3VisionProcessor"],
+    "kimi_k3.processor": ["KimiK3Processor"],
     "llama.configuration": [
         "LlamaConfig",
     ],

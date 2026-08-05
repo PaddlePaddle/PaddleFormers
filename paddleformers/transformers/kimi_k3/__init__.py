@@ -21,18 +21,32 @@ import_structure = {
     "configuration": [
         "KimiK3Config",
         "KimiK3TextConfig",
+        "KimiK3VisionConfig",
     ],
     "modeling": [
         "KimiK3Model",
         "KimiK3ForCausalLM",
         "KimiK3ForCausalLMPipe",
+        "KimiK3ForConditionalGeneration",
         "KimiK3ModelProvider",
+    ],
+    "tokenizer": [
+        "KimiK3TikTokenTokenizer",
+    ],
+    "vision_processor": [
+        "KimiK3VisionProcessor",
+    ],
+    "processor": [
+        "KimiK3Processor",
     ],
 }
 
 if TYPE_CHECKING:
     from .configuration import *  # noqa: F403
     from .modeling import *  # noqa: F403
+    from .processor import *  # noqa: F403
+    from .tokenizer import *  # noqa: F403
+    from .vision_processor import *  # noqa: F403
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
