@@ -24,8 +24,9 @@ from .configuration import KimiK3Config, KimiK3TextConfig
 class KimiK3ModelProvider(GPTModelProvider):
     """Kimi-K3 configuration provider for PaddleFleet GPTModel.
 
-    Derives the mixed KDA and gated MLA attention schedule, block attention
-    residuals, and flattened KDA fields required by PaddleFleet.
+    Consumes the KDA/MLA schedule and flat ``linear_*`` KDA fields resolved by
+    ``KimiK3TextConfig`` and adapts the block attention residual size to the
+    per-sublayer count Fleet expects.
     """
 
     # === Kimi-K3 required defaults ===
@@ -49,72 +50,481 @@ class KimiK3ModelProvider(GPTModelProvider):
     }
 
     def __post_init__(self):
-        if not isinstance(self.linear_attn_config, dict):
-            raise ValueError("Kimi-K3 requires linear_attn_config.")
-        self._build_layer_types()
-        self._expand_attn_res_block_size()
-        self._flatten_linear_attn_config()
-        super().__post_init__()
-
-    def _build_layer_types(self):
-        """Turn the one-based KDA/MLA schedule into a per-layer type list."""
-        kda_layers = self._layer_numbers("kda_layers")
-        full_attn_layers = self._layer_numbers("full_attn_layers")
-        overlap = kda_layers & full_attn_layers
-        if overlap:
-            raise ValueError(
-                "Kimi-K3 kda_layers and full_attn_layers must be disjoint; " f"overlap={sorted(overlap)}."
-            )
-        expected_layers = set(range(1, self.num_hidden_layers + 1))
-        actual_layers = kda_layers | full_attn_layers
-        if actual_layers != expected_layers:
-            raise ValueError(
-                "Kimi-K3 attention schedule must cover every decoder layer "
-                f"exactly once; missing={sorted(expected_layers - actual_layers)}, "
-                f"out_of_range={sorted(actual_layers - expected_layers)}."
-            )
-        self.layer_types = [
-            "kimi_delta_attention" if layer_number in kda_layers else "multi_latent_attention"
-            for layer_number in range(1, self.num_hidden_layers + 1)
-        ]
-
-    def _layer_numbers(self, name):
-        """Parse and validate a list of one-based layer numbers."""
-        values = self.linear_attn_config.get(name)
-        if not isinstance(values, (list, tuple)):
-            raise ValueError(f"Kimi-K3 {name} must be a list of layer numbers.")
-        if any(type(value) is not int for value in values):
-            raise ValueError(f"Kimi-K3 {name} must contain only integers.")
-        if len(values) != len(set(values)):
-            raise ValueError(f"Kimi-K3 {name} contains duplicate layer numbers.")
-        return set(values)
-
-    def _expand_attn_res_block_size(self):
-        """Fleet counts attention and MLP as two residual sublayers; the source
-        value counts decoder layers, so double it."""
         if self.attn_res_block_size is None or self.attn_res_block_size <= 0:
             raise ValueError("Kimi-K3 attn_res_block_size must be a positive integer.")
         self.block_attention_residuals = True
+        # Fleet counts attention and MLP as two residual sublayers, while the
+        # source value counts decoder layers, so double it.
         self.attn_res_block_size *= 2
-
-    def _flatten_linear_attn_config(self):
-        """Flatten the nested KDA config into Fleet TransformerConfig fields."""
-        cfg = self.linear_attn_config
-        head_dim = cfg["head_dim"]
-        num_heads = cfg["num_heads"]
-        self.linear_conv_kernel_dim = cfg["short_conv_kernel_size"]
-        self.linear_key_head_dim = head_dim
-        self.linear_value_head_dim = head_dim
-        self.linear_num_key_heads = num_heads
-        self.linear_num_value_heads = num_heads
-        self.linear_gate_lora_rank = head_dim
-        self.linear_use_full_rank_gate = cfg.get("use_full_rank_gate", False)
-        self.linear_gate_lower_bound = cfg.get("gate_lower_bound")
+        super().__post_init__()
 
 
 class KimiK3PretrainedModel(PretrainedModel):
     config_class = KimiK3Config
     base_model_prefix = "model"
+
+    @staticmethod
+    def _is_moe_layer(config, layer_idx):
+        """Whether decoder layer ``layer_idx`` (zero-based) uses a MoE MLP."""
+        frequency = getattr(config, "moe_layer_freq", 1)
+        if isinstance(frequency, (list, tuple)):
+            return bool(frequency[layer_idx])
+        first_dense = getattr(config, "first_k_dense_replace", 0) or 0
+        if layer_idx < first_dense:
+            return False
+        if first_dense:
+            return not frequency or (layer_idx - first_dense + 1) % frequency == 0
+        return layer_idx % frequency == 0
+
+    @classmethod
+    def _gen_aoa_config(cls, config):
+        """Map the official Kimi-K3 HuggingFace checkpoint to Fleet GPT."""
+        if hasattr(config, "get_text_config"):
+            config = config.get_text_config()
+
+        num_layers = config.num_hidden_layers
+        num_experts = config.n_routed_experts
+        num_mtp_layers = getattr(config, "num_nextn_predict_layers", 0) or 0
+        params_dtype = getattr(config, "params_dtype", getattr(config, "dtype", "bfloat16"))
+        layer_types = config.layer_types
+
+        src_model = "language_model.model"
+        statements = [
+            f"{src_model}.embed_tokens.weight -> model.embedding.embed_tokens.weight",
+            f"{src_model}.norm.weight -> model.norm.weight",
+            "language_model.lm_head.weight -> model.lm_head.weight",
+            f"{src_model}.output_attn_res_proj.weight -> model.output_attn_res.block_attn_res.proj_weight",
+            f"{src_model}.output_attn_res_norm.weight -> model.output_attn_res.block_attn_res.norm.weight",
+        ]
+
+        def add_attention(src, dst, attention_type):
+            statements.extend(
+                [
+                    f"{src}.input_layernorm.weight -> {dst}.input_layernorm.weight",
+                    f"{src}.post_attention_layernorm.weight -> {dst}.post_attention_layernorm.weight",
+                ]
+            )
+            if attention_type == "kimi_delta_attention":
+                in_proj_sources = [
+                    f"{src}.self_attn.q_proj.weight^T",
+                    f"{src}.self_attn.k_proj.weight^T",
+                    f"{src}.self_attn.v_proj.weight^T",
+                    f"{src}.self_attn.b_proj.weight^T",
+                ]
+                if config.linear_use_full_rank_gate:
+                    in_proj_sources.append(f"{src}.self_attn.g_proj.weight^T")
+                else:
+                    statements.extend(
+                        [
+                            f"{src}.self_attn.g_a_proj.weight^T -> {dst}.self_attn.g_a_proj.weight",
+                            f"{src}.self_attn.g_b_proj.weight^T -> {dst}.self_attn.g_b_proj.weight",
+                        ]
+                    )
+                statements.extend(
+                    [
+                        f"{','.join(in_proj_sources)} -> {dst}.self_attn.in_proj.weight, axis=1",
+                        f"{src}.self_attn.f_a_proj.weight^T -> {dst}.self_attn.f_a_proj.weight",
+                        f"{src}.self_attn.f_b_proj.weight^T -> {dst}.self_attn.f_b_proj.weight",
+                        f"{src}.self_attn.q_conv1d.weight,{src}.self_attn.k_conv1d.weight,"
+                        f"{src}.self_attn.v_conv1d.weight -> {src}.self_attn.conv1d_fused, axis=0",
+                        f"{src}.self_attn.conv1d_fused -> {dst}.self_attn.conv1d.weight, dtype='float32'",
+                        f"{src}.self_attn.A_log -> {dst}.self_attn.A_log, dtype='float32'",
+                        f"{src}.self_attn.dt_bias -> {dst}.self_attn.dt_bias, dtype='float32'",
+                        f"{src}.self_attn.o_norm.weight -> {dst}.self_attn.out_norm.weight, dtype='{params_dtype}'",
+                        f"{src}.self_attn.o_proj.weight^T -> {dst}.self_attn.out_proj.weight",
+                    ]
+                )
+            elif attention_type == "multi_latent_attention":
+                statements.extend(
+                    [
+                        f"{src}.self_attn.q_a_proj.weight^T -> {dst}.self_attn.q_a_proj.weight",
+                        f"{src}.self_attn.q_b_proj.weight^T -> {dst}.self_attn.q_b_proj.weight",
+                        f"{src}.self_attn.kv_a_proj_with_mqa.weight^T -> {dst}.self_attn.kv_a_proj_with_mqa.weight",
+                        f"{src}.self_attn.kv_b_proj.weight^T -> {dst}.self_attn.kv_b_proj.weight",
+                        f"{src}.self_attn.q_a_layernorm.weight -> {dst}.self_attn.q_a_layernorm.weight",
+                        f"{src}.self_attn.kv_a_layernorm.weight -> {dst}.self_attn.kv_a_layernorm.weight",
+                        f"{src}.self_attn.g_proj.weight^T -> {dst}.self_attn.gate_proj.weight",
+                        f"{src}.self_attn.o_proj.weight^T -> {dst}.self_attn.o_proj.weight",
+                    ]
+                )
+            else:
+                raise ValueError(f"Unsupported Kimi-K3 attention layer type: {attention_type}")
+
+        def add_attention_residual(src, dst):
+            statements.extend(
+                [
+                    f"{src}.self_attention_res_proj.weight -> {dst}.block_attn_res_before_attention.proj_weight",
+                    f"{src}.self_attention_res_norm.weight -> {dst}.block_attn_res_before_attention.norm.weight",
+                    f"{src}.mlp_res_proj.weight -> {dst}.block_attn_res_before_mlp.proj_weight",
+                    f"{src}.mlp_res_norm.weight -> {dst}.block_attn_res_before_mlp.norm.weight",
+                ]
+            )
+
+        def add_dense_mlp(src, dst):
+            statements.extend(
+                [
+                    f"{src}.mlp.gate_proj.weight^T,{src}.mlp.up_proj.weight^T "
+                    f"-> {dst}.mlp.up_gate_proj.weight, fused_ffn",
+                    f"{src}.mlp.down_proj.weight^T -> {dst}.mlp.down_proj.weight",
+                ]
+            )
+
+        def add_moe(src, dst):
+            src_moe = f"{src}.block_sparse_moe"
+            dst_moe = f"{dst}.mlp"
+            statements.extend(
+                [
+                    f"{src_moe}.gate.weight -> {dst_moe}.gate.weight, dtype='float32'",
+                    f"{src_moe}.gate.e_score_correction_bias -> {dst_moe}.gate.e_score_correction_bias",
+                    f"{src_moe}.routed_expert_down_proj.weight^T -> {dst_moe}.fc1_latent_proj.weight",
+                    f"{src_moe}.routed_expert_up_proj.weight^T -> {dst_moe}.fc2_latent_proj.weight",
+                    f"{src_moe}.routed_expert_norm.weight -> {dst_moe}.latent_norm.weight",
+                ]
+            )
+            if getattr(config, "topk_method", None) == "quantile_balancing":
+                statements.extend(
+                    [
+                        f"_ -> {dst_moe}.gate.qb_bin_min",
+                        f"_ -> {dst_moe}.gate.qb_bin_max",
+                    ]
+                )
+            for expert_idx in range(num_experts):
+                src_expert = f"{src_moe}.experts.{expert_idx}"
+                dst_expert = f"{dst_moe}.experts.{expert_idx}"
+                statements.extend(
+                    [
+                        f"{src_expert}.w1.weight^T,{src_expert}.w3.weight^T "
+                        f"-> {dst_expert}.up_gate_proj.weight, axis=1",
+                        f"{src_expert}.w2.weight^T -> {dst_expert}.down_proj.weight",
+                    ]
+                )
+            if getattr(config, "n_shared_experts", 0) > 0:
+                statements.extend(
+                    [
+                        f"{src_moe}.shared_experts.gate_proj.weight^T,"
+                        f"{src_moe}.shared_experts.up_proj.weight^T "
+                        f"-> {dst_moe}.shared_experts.up_gate_proj.weight, fused_ffn",
+                        f"{src_moe}.shared_experts.down_proj.weight^T -> {dst_moe}.shared_experts.down_proj.weight",
+                    ]
+                )
+            if getattr(config, "moe_expert_fusion", False):
+                weight1 = ",".join(
+                    f"{dst_moe}.experts.{expert_idx}.up_gate_proj.weight" for expert_idx in range(num_experts)
+                )
+                weight2 = ",".join(
+                    f"{dst_moe}.experts.{expert_idx}.down_proj.weight" for expert_idx in range(num_experts)
+                )
+                statements.extend(
+                    [
+                        f"{weight1} -> {dst_moe}.grouped_gemm_experts.weight1, axis=0",
+                        f"{weight2} -> {dst_moe}.grouped_gemm_experts.weight2, axis=0",
+                    ]
+                )
+
+        for layer_idx, attention_type in enumerate(layer_types):
+            src = f"{src_model}.layers.{layer_idx}"
+            dst = f"model.layers.{layer_idx}"
+            add_attention(src, dst, attention_type)
+            add_attention_residual(src, dst)
+            if cls._is_moe_layer(config, layer_idx):
+                add_moe(src, dst)
+            else:
+                add_dense_mlp(src, dst)
+
+        # The released HF checkpoint has no MTP weights. Initialise its
+        # projection/norms normally and seed compatible transformer weights
+        # from the final decoder layer. Fleet builds the MTP attention from
+        # the global attention setting, so a hybrid Kimi config may produce a
+        # regular self-attention block that has no compatible HF source.
+        if num_mtp_layers:
+            src = f"{src_model}.layers.{num_layers - 1}"
+            for mtp_idx in range(num_mtp_layers):
+                layer_idx = num_layers + mtp_idx
+                mtp = f"model.layers.{layer_idx}"
+                dst = f"{mtp}.transformer_layer"
+                statements.extend(
+                    [
+                        f"_ -> {mtp}.enorm.weight",
+                        f"_ -> {mtp}.hnorm.weight",
+                        f"_ -> {mtp}.eh_proj.weight",
+                        f"_ -> {mtp}.norm.weight",
+                    ]
+                )
+                if getattr(config, "multi_latent_attention", False):
+                    add_attention(src, dst, "multi_latent_attention")
+                else:
+                    statements.extend(
+                        [
+                            f"{src}.input_layernorm.weight -> {dst}.input_layernorm.weight",
+                            f"{src}.post_attention_layernorm.weight -> {dst}.post_attention_layernorm.weight",
+                            f"_ -> {dst}.self_attn.qkv_proj.weight",
+                            f"_ -> {dst}.self_attn.q_norm.weight",
+                            f"_ -> {dst}.self_attn.k_norm.weight",
+                            f"_ -> {dst}.self_attn.o_proj.weight",
+                        ]
+                    )
+                if cls._is_moe_layer(config, num_layers - 1):
+                    add_moe(src, dst)
+                else:
+                    add_dense_mlp(src, dst)
+
+        return {"aoa_statements": statements}
+
+    @classmethod
+    def _gen_inv_aoa_config(cls, config):
+        """Map Fleet GPT weights back to the official Kimi-K3 HF schema."""
+        if hasattr(config, "get_text_config"):
+            config = config.get_text_config()
+
+        num_layers = config.num_hidden_layers
+        num_experts = config.n_routed_experts
+        num_mtp_layers = getattr(config, "num_nextn_predict_layers", 0) or 0
+        layer_types = config.layer_types
+        if getattr(config, "moe_expert_fusion", False):
+            raise ValueError("Kimi-K3 HF export does not support fused expert weights.")
+
+        hf_model = "language_model.model"
+        statements = [
+            f"model.embedding.embed_tokens.weight -> {hf_model}.embed_tokens.weight",
+            f"model.norm.weight -> {hf_model}.norm.weight",
+            "model.lm_head.weight -> language_model.lm_head.weight",
+            f"model.output_attn_res.block_attn_res.proj_weight -> {hf_model}.output_attn_res_proj.weight",
+            f"model.output_attn_res.block_attn_res.norm.weight -> {hf_model}.output_attn_res_norm.weight",
+        ]
+
+        def add_kda(src, dst):
+            head_dim = config.linear_key_head_dim
+            use_full_rank_gate = config.linear_use_full_rank_gate
+            num_chunks = (4 if use_full_rank_gate else 3) * head_dim + 1
+            chunks = [f"aoa_tmp.kda.{src}.in_proj.{idx}" for idx in range(num_chunks)]
+            statements.append(f"{src}.self_attn.in_proj.weight -> {','.join(chunks)}, axis=1")
+
+            offset = 0
+            for name in ("q", "k", "v"):
+                component = f"aoa_tmp.kda.{src}.{name}_proj.weight"
+                statements.extend(
+                    [
+                        f"{','.join(chunks[offset : offset + head_dim])} -> {component}, axis=1",
+                        f"{component}^T -> {dst}.self_attn.{name}_proj.weight",
+                    ]
+                )
+                offset += head_dim
+            statements.append(f"{chunks[offset]}^T -> {dst}.self_attn.b_proj.weight")
+            offset += 1
+            if use_full_rank_gate:
+                component = f"aoa_tmp.kda.{src}.g_proj.weight"
+                statements.extend(
+                    [
+                        f"{','.join(chunks[offset:])} -> {component}, axis=1",
+                        f"{component}^T -> {dst}.self_attn.g_proj.weight",
+                    ]
+                )
+            else:
+                statements.extend(
+                    [
+                        f"{src}.self_attn.g_a_proj.weight^T -> {dst}.self_attn.g_a_proj.weight",
+                        f"{src}.self_attn.g_b_proj.weight^T -> {dst}.self_attn.g_b_proj.weight",
+                    ]
+                )
+
+            conv_parts = [f"aoa_tmp.kda.{src}.{name}_conv1d.weight" for name in ("q", "k", "v")]
+            statements.extend(
+                [
+                    f"{src}.self_attn.f_a_proj.weight^T -> {dst}.self_attn.f_a_proj.weight",
+                    f"{src}.self_attn.f_b_proj.weight^T -> {dst}.self_attn.f_b_proj.weight",
+                    f"{src}.self_attn.conv1d.weight -> {','.join(conv_parts)}, axis=0",
+                    f"{conv_parts[0]} -> {dst}.self_attn.q_conv1d.weight",
+                    f"{conv_parts[1]} -> {dst}.self_attn.k_conv1d.weight",
+                    f"{conv_parts[2]} -> {dst}.self_attn.v_conv1d.weight",
+                    f"{src}.self_attn.A_log -> {dst}.self_attn.A_log, dtype='float32'",
+                    f"{src}.self_attn.dt_bias -> {dst}.self_attn.dt_bias, dtype='float32'",
+                    f"{src}.self_attn.out_norm.weight -> {dst}.self_attn.o_norm.weight, dtype='float32'",
+                    f"{src}.self_attn.out_proj.weight^T -> {dst}.self_attn.o_proj.weight",
+                ]
+            )
+
+        def add_attention(src, dst, attention_type):
+            statements.extend(
+                [
+                    f"{src}.input_layernorm.weight -> {dst}.input_layernorm.weight",
+                    f"{src}.post_attention_layernorm.weight -> {dst}.post_attention_layernorm.weight",
+                ]
+            )
+            if attention_type == "kimi_delta_attention":
+                add_kda(src, dst)
+            elif attention_type == "multi_latent_attention":
+                statements.extend(
+                    [
+                        f"{src}.self_attn.q_a_proj.weight^T -> {dst}.self_attn.q_a_proj.weight",
+                        f"{src}.self_attn.q_b_proj.weight^T -> {dst}.self_attn.q_b_proj.weight",
+                        f"{src}.self_attn.kv_a_proj_with_mqa.weight^T -> {dst}.self_attn.kv_a_proj_with_mqa.weight",
+                        f"{src}.self_attn.kv_b_proj.weight^T -> {dst}.self_attn.kv_b_proj.weight",
+                        f"{src}.self_attn.q_a_layernorm.weight -> {dst}.self_attn.q_a_layernorm.weight",
+                        f"{src}.self_attn.kv_a_layernorm.weight -> {dst}.self_attn.kv_a_layernorm.weight",
+                        f"{src}.self_attn.gate_proj.weight^T -> {dst}.self_attn.g_proj.weight",
+                        f"{src}.self_attn.o_proj.weight^T -> {dst}.self_attn.o_proj.weight",
+                    ]
+                )
+            else:
+                raise ValueError(f"Unsupported Kimi-K3 attention layer type: {attention_type}")
+
+        def add_attention_residual(src, dst):
+            statements.extend(
+                [
+                    f"{src}.block_attn_res_before_attention.proj_weight -> {dst}.self_attention_res_proj.weight",
+                    f"{src}.block_attn_res_before_attention.norm.weight -> {dst}.self_attention_res_norm.weight",
+                    f"{src}.block_attn_res_before_mlp.proj_weight -> {dst}.mlp_res_proj.weight",
+                    f"{src}.block_attn_res_before_mlp.norm.weight -> {dst}.mlp_res_norm.weight",
+                ]
+            )
+
+        def add_dense_mlp(src, dst):
+            gate = f"aoa_tmp.dense.{src}.gate_proj.weight"
+            up = f"aoa_tmp.dense.{src}.up_proj.weight"
+            statements.extend(
+                [
+                    f"{src}.mlp.up_gate_proj.weight -> {gate},{up}, axis=1",
+                    f"{gate}^T -> {dst}.mlp.gate_proj.weight",
+                    f"{up}^T -> {dst}.mlp.up_proj.weight",
+                    f"{src}.mlp.down_proj.weight^T -> {dst}.mlp.down_proj.weight",
+                ]
+            )
+
+        def add_moe(src, dst):
+            src_moe = f"{src}.mlp"
+            dst_moe = f"{dst}.block_sparse_moe"
+            statements.extend(
+                [
+                    f"{src_moe}.gate.weight -> {dst_moe}.gate.weight, dtype='bfloat16'",
+                    f"{src_moe}.gate.e_score_correction_bias -> {dst_moe}.gate.e_score_correction_bias",
+                    f"{src_moe}.fc1_latent_proj.weight^T -> {dst_moe}.routed_expert_down_proj.weight",
+                    f"{src_moe}.fc2_latent_proj.weight^T -> {dst_moe}.routed_expert_up_proj.weight",
+                    f"{src_moe}.latent_norm.weight -> {dst_moe}.routed_expert_norm.weight",
+                ]
+            )
+            if getattr(config, "topk_method", None) == "quantile_balancing":
+                statements.extend(
+                    [
+                        f"{src_moe}.gate.qb_bin_min -> _",
+                        f"{src_moe}.gate.qb_bin_max -> _",
+                    ]
+                )
+            for expert_idx in range(num_experts):
+                src_expert = f"{src_moe}.experts.{expert_idx}"
+                dst_expert = f"{dst_moe}.experts.{expert_idx}"
+                w1 = f"aoa_tmp.moe.{src_expert}.w1.weight"
+                w3 = f"aoa_tmp.moe.{src_expert}.w3.weight"
+                statements.extend(
+                    [
+                        f"{src_expert}.up_gate_proj.weight -> {w1},{w3}, axis=1",
+                        f"{w1}^T -> {dst_expert}.w1.weight",
+                        f"{w3}^T -> {dst_expert}.w3.weight",
+                        f"{src_expert}.down_proj.weight^T -> {dst_expert}.w2.weight",
+                    ]
+                )
+            if getattr(config, "n_shared_experts", 0) > 0:
+                shared = f"{src_moe}.shared_experts"
+                gate = f"aoa_tmp.moe.{shared}.gate_proj.weight"
+                up = f"aoa_tmp.moe.{shared}.up_proj.weight"
+                statements.extend(
+                    [
+                        f"{shared}.up_gate_proj.weight -> {gate},{up}, axis=1",
+                        f"{gate}^T -> {dst_moe}.shared_experts.gate_proj.weight",
+                        f"{up}^T -> {dst_moe}.shared_experts.up_proj.weight",
+                        f"{shared}.down_proj.weight^T -> {dst_moe}.shared_experts.down_proj.weight",
+                    ]
+                )
+
+        for layer_idx, attention_type in reversed(list(enumerate(layer_types))):
+            src = f"model.layers.{layer_idx}"
+            dst = f"{hf_model}.layers.{layer_idx}"
+            add_attention(src, dst, attention_type)
+            add_attention_residual(src, dst)
+            if cls._is_moe_layer(config, layer_idx):
+                add_moe(src, dst)
+            else:
+                add_dense_mlp(src, dst)
+
+        # MTP is a training-only extension for this integration; the released
+        # Kimi-K3 HF schema has no MTP tensors, so do not leak Fleet names into
+        # an otherwise reloadable HF checkpoint.
+        for mtp_idx in range(num_mtp_layers):
+            layer_idx = num_layers + mtp_idx
+            mtp = f"model.layers.{layer_idx}"
+            transformer = f"{mtp}.transformer_layer"
+            mtp_keys = [
+                f"{mtp}.enorm.weight",
+                f"{mtp}.hnorm.weight",
+                f"{mtp}.eh_proj.weight",
+                f"{mtp}.norm.weight",
+                f"{transformer}.input_layernorm.weight",
+                f"{transformer}.post_attention_layernorm.weight",
+                f"{transformer}.block_attn_res_before_attention.proj_weight",
+                f"{transformer}.block_attn_res_before_attention.norm.weight",
+                f"{transformer}.block_attn_res_before_mlp.proj_weight",
+                f"{transformer}.block_attn_res_before_mlp.norm.weight",
+            ]
+            if getattr(config, "multi_latent_attention", False):
+                mtp_keys.extend(
+                    f"{transformer}.self_attn.{name}"
+                    for name in (
+                        "q_a_proj.weight",
+                        "q_b_proj.weight",
+                        "kv_a_proj_with_mqa.weight",
+                        "kv_b_proj.weight",
+                        "q_a_layernorm.weight",
+                        "kv_a_layernorm.weight",
+                        "gate_proj.weight",
+                        "o_proj.weight",
+                    )
+                )
+            else:
+                mtp_keys.extend(
+                    f"{transformer}.self_attn.{name}"
+                    for name in ("qkv_proj.weight", "q_norm.weight", "k_norm.weight", "o_proj.weight")
+                )
+            if cls._is_moe_layer(config, num_layers - 1):
+                mlp = f"{transformer}.mlp"
+                mtp_keys.extend(
+                    [
+                        f"{mlp}.gate.weight",
+                        f"{mlp}.gate.e_score_correction_bias",
+                        f"{mlp}.fc1_latent_proj.weight",
+                        f"{mlp}.fc2_latent_proj.weight",
+                        f"{mlp}.latent_norm.weight",
+                    ]
+                )
+                if getattr(config, "topk_method", None) == "quantile_balancing":
+                    mtp_keys.extend(
+                        [
+                            f"{mlp}.gate.qb_bin_min",
+                            f"{mlp}.gate.qb_bin_max",
+                        ]
+                    )
+                for expert_idx in range(num_experts):
+                    mtp_keys.extend(
+                        [
+                            f"{mlp}.experts.{expert_idx}.up_gate_proj.weight",
+                            f"{mlp}.experts.{expert_idx}.down_proj.weight",
+                        ]
+                    )
+                if getattr(config, "n_shared_experts", 0) > 0:
+                    mtp_keys.extend(
+                        [
+                            f"{mlp}.shared_experts.up_gate_proj.weight",
+                            f"{mlp}.shared_experts.down_proj.weight",
+                        ]
+                    )
+            else:
+                mtp_keys.extend(
+                    [
+                        f"{transformer}.mlp.up_gate_proj.weight",
+                        f"{transformer}.mlp.down_proj.weight",
+                    ]
+                )
+            statements.extend(f"{key} -> _" for key in mtp_keys)
+
+        return {"aoa_statements": statements}
 
 
 def _build_text_model(model_class, config):
@@ -133,6 +543,8 @@ def _build_text_model(model_class, config):
     gpt_model = model_provider.provide()
     gpt_model.config_to_save = config
     gpt_model.is_fleet = model_class.is_fleet
+    gpt_model._gen_aoa_config = model_class._gen_aoa_config
+    gpt_model._gen_inv_aoa_config = model_class._gen_inv_aoa_config
     return gpt_model
 
 
