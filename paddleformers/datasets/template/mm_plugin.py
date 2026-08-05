@@ -1592,10 +1592,7 @@ class KimiK3Plugin(BasePlugin):
             image_min_pixels=getattr(processor, "image_min_pixels", 32 * 32),
         )["images"]
         medias = [{"type": "image", "image": image} for image in pil_images]
-        mm_inputs = dict(image_processor.preprocess(medias, return_tensors="pd"))
-        # Rename to the framework-standard key the shared collate path expects.
-        mm_inputs["image_grid_thw"] = mm_inputs.pop("grid_thws")
-        return mm_inputs
+        return dict(image_processor.preprocess(medias, return_tensors="pd"))
 
 
 PLUGINS = {

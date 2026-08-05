@@ -80,7 +80,7 @@ class KimiK3VisionProcessor(BaseImageProcessor):
             return_tensors: Desired output format ('pd', 'np', or None for numpy arrays).
 
         Returns:
-            BatchFeature containing 'pixel_values' and 'grid_thws' tensors.
+            BatchFeature containing 'pixel_values' and 'image_grid_thw' tensors.
         """
         image_std_inv = 1.0 / np.array(self.media_proc_cfg["image_std"])
         image_mean = np.array(self.media_proc_cfg["image_mean"])
@@ -101,7 +101,7 @@ class KimiK3VisionProcessor(BaseImageProcessor):
 
         data = {
             "pixel_values": np.concatenate([item["pixel_values"] for item in patchified]),
-            "grid_thws": np.stack([np.asarray(item["grid_thw"], dtype=np.int64) for item in patchified]),
+            "image_grid_thw": np.stack([np.asarray(item["grid_thw"], dtype=np.int64) for item in patchified]),
         }
         return BatchFeature(data=data, tensor_type=return_tensors)
 

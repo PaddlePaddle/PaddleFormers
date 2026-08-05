@@ -46,4 +46,4 @@ class KimiK3Processor(ProcessorMixin):
 
     @property
     def model_input_names(self):
-        return ["input_ids", "attention_mask", "pixel_values", "grid_thws"]
+        return ["input_ids", "attention_mask", "pixel_values", "image_grid_thw"]
