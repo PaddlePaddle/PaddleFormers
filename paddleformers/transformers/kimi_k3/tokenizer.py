@@ -23,7 +23,6 @@ from transformers.convert_slow_tokenizer import bytes_to_unicode
 
 from ...utils.log import logger
 from ..tokenizer_utils import AddedToken, PreTrainedTokenizer
-from .encoding_k3 import build_chat_segments, is_batched_conversation
 
 __all__ = ["KimiK3TikTokenTokenizer"]
 
@@ -257,55 +256,6 @@ class KimiK3TikTokenTokenizer(PreTrainedTokenizer):
                     current_slice_len = 1
         yield s[slice_start:]
 
-    def _encode_chat_segments(self, segments) -> List[int]:
-        token_ids: List[int] = []
-        for segment in segments:
-            token_ids.extend(
-                self._encode_text_piece(
-                    segment.text,
-                    allow_special_tokens=segment.allow_special,
-                )
-            )
-        return token_ids
-
-    @staticmethod
-    def _truncate(ids: List[int], truncation: bool = False, max_length: Optional[int] = None) -> List[int]:
-        if truncation and max_length is not None:
-            return ids[:max_length]
-        return ids
-
-    def _format_chat_token_output(
-        self,
-        encoded_inputs: List[List[int]],
-        *,
-        is_batched: bool,
-        padding=False,
-        truncation: bool = False,
-        max_length: Optional[int] = None,
-        return_tensors=None,
-        return_dict: bool = False
-    ):
-        encoded_inputs = [self._truncate(ids, truncation=truncation, max_length=max_length) for ids in encoded_inputs]
-
-        needs_batch_encoding = is_batched or padding or return_tensors is not None or return_dict
-        if not needs_batch_encoding:
-            return encoded_inputs[0]
-
-        features = [{"input_ids": ids, "attention_mask": [1] * len(ids)} for ids in encoded_inputs]
-        batch = self.pad(
-            features,
-            padding=padding,
-            max_length=max_length if padding else None,
-            return_attention_mask=True,
-            return_tensors=return_tensors,
-        )
-
-        if return_dict:
-            return batch
-        if is_batched:
-            return batch["input_ids"]
-        return batch["input_ids"][0] if return_tensors is None else batch["input_ids"]
-
     """ ----- Below are the abstract methods required by PreTrainedTokenizer ----- """
 
     @property
@@ -344,56 +294,3 @@ class KimiK3TikTokenTokenizer(PreTrainedTokenizer):
             copyfile(self.vocab_file, out_vocab_file)
 
         return (out_vocab_file,)
-
-    def apply_chat_template(
-        self,
-        conversation,
-        tools: Optional[list[dict]] = None,
-        tokenize: bool = False,
-        add_generation_prompt: bool = True,
-        thinking: bool = True,
-        padding=False,
-        truncation: bool = False,
-        max_length: Optional[int] = None,
-        return_tensors=None,
-        return_dict: bool = False,
-        **kwargs
-    ):
-        # Tokenizer-level rendering reorders tool result messages to match
-        # assistant tool_calls, normalizes per-call arguments and response
-        # schema, then encodes the resulting XTML structure segment-by-segment.
-        is_batched = is_batched_conversation(conversation)
-        conversations = conversation if is_batched else [conversation]
-        image_prompts = kwargs.pop("image_prompts", None)
-        if is_batched and image_prompts is not None:
-            raise ValueError("image_prompts is only supported for one chat.")
-
-        # by default set thinking effort to max
-        kwargs.setdefault("thinking_effort", "max")
-
-        segment_batches = [
-            build_chat_segments(
-                messages,
-                tools=tools,
-                add_generation_prompt=add_generation_prompt,
-                thinking=thinking,
-                image_prompts=image_prompts,
-                **kwargs,
-            )
-            for messages in conversations
-        ]
-
-        if not tokenize:
-            rendered = ["".join(segment.text for segment in segments) for segments in segment_batches]
-            return rendered if is_batched else rendered[0]
-
-        encoded_inputs = [self._encode_chat_segments(segments) for segments in segment_batches]
-        return self._format_chat_token_output(
-            encoded_inputs,
-            is_batched=is_batched,
-            padding=padding,
-            truncation=truncation,
-            max_length=max_length,
-            return_tensors=return_tensors,
-            return_dict=return_dict,
-        )

@@ -457,9 +457,9 @@ class KimiK3Config(PretrainedConfig):
             Configuration of the MoonViT3d vision tower. When omitted the model
             is text-only.
         media_placeholder_token_id (`int`, *optional*, defaults to 163605):
-            Token id of the single media placeholder. Unlike Qwen-style models
-            the processor emits exactly one placeholder per media; the model
-            expands it to the actual number of visual tokens.
+            Token id of the single media placeholder. Exactly one placeholder is
+            emitted per media; the model expands it to the actual number of
+            visual tokens.
         image_placeholder (`str`, *optional*, defaults to `"<|kimi_image_placeholder|>"`):
             Textual form of the media placeholder.
     """

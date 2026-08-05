@@ -181,8 +181,8 @@ def build_kimi_k3_vision_tower(vision_config, params_dtype=None):
     """Build the MoonViT3d tower from a :class:`KimiK3VisionConfig`.
 
     ``params_dtype`` must match the text backbone: the projector output is
-    spliced straight into the text embedding stream, and the patch-embed conv
-    would otherwise fail on a dtype mismatch against ``pixel_values``.
+    spliced into the text embedding stream, and the patch-embed conv would
+    otherwise hit a dtype mismatch against ``pixel_values``.
     """
     overrides = vision_config.to_fleet_vision_overrides()
     if params_dtype is not None:
@@ -199,15 +199,11 @@ def build_kimi_k3_vision_tower(vision_config, params_dtype=None):
 class KimiK3VLModel(FleetLayer):
     """Vision tower + text backbone with the K3 dynamic-expansion fusion.
 
-    Two K3 specifics distinguish this from the Qwen3.5 VL assembly:
-
-    * the processor emits exactly one ``media_placeholder_token_id`` per media,
-      and the model expands it into the real number of visual tokens, so the
-      sequence length grows inside ``forward`` and ``attention_mask`` /
-      ``labels`` / ``position_ids`` must be rebuilt (Qwen3.5 pre-expands and
-      uses an equal-length ``masked_scatter``);
-    * visual tokens then use ordinary one-dimensional position ids continuous
-      with the text, not a three-axis MRoPE.
+    The text stream carries exactly one placeholder token per media and the model
+    expands it into the real visual token count, so the sequence grows inside
+    ``forward`` and ``attention_mask`` / ``labels`` / ``position_ids`` must be
+    rebuilt. Visual tokens then use plain 1-D position ids continuous with the
+    text, not a three-axis MRoPE.
     """
 
     def __init__(
@@ -232,9 +228,9 @@ class KimiK3VLModel(FleetLayer):
         self.language_backbone = self._find_language_backbone()
         self.language_lm_head = self._find_lm_head()
 
-        # Hard requirement, not optional: ``forward`` embeds ``input_ids`` through
-        # it and then feeds the merged sequence back in as ``decoder_input``.
-        # ``language_lm_head`` stays optional (see ``forward``).
+        # ``forward`` embeds ``input_ids`` here and feeds the merged sequence back
+        # in as ``decoder_input``, so the embedding is required. The lm head is
+        # optional: a non-last pipeline stage has none.
         if self.language_embedding is None:
             raise RuntimeError(
                 "no GPTEmbedding found in the Kimi-K3 language backbone; the "
@@ -279,27 +275,30 @@ class KimiK3VLModel(FleetLayer):
 
         Media inputs make the sequence longer, so ``attention_mask`` / ``labels``
         / ``position_ids`` are rewritten in ``dict_args`` for the caller to read
-        back after this returns. Yields the lm-head output, or the raw backbone
-        dict when the model has no lm head.
+        back after this returns.
         """
-        input_ids = dict_args.get("input_ids", None)
-        inputs_embeds = dict_args.get("inputs_embeds", None)
+        input_ids = dict_args["input_ids"]
         pixel_values = dict_args.get("pixel_values", None)
-        grid_thws = dict_args.get("grid_thws", dict_args.get("image_grid_thw", None))
+        grid_thws = dict_args.get("image_grid_thw", None)
         attention_mask = dict_args.get("attention_mask", None)
         labels = dict_args.get("labels", None)
 
-        if inputs_embeds is None:
-            if input_ids is None:
-                raise ValueError("either input_ids or inputs_embeds must be provided")
-            inputs_embeds = self.language_embedding.embedding.embed_tokens(input_ids)
+        # Without the grid the vision tower cannot run; fail loudly rather than
+        # silently falling back to text-only training.
+        if pixel_values is not None and grid_thws is None:
+            raise ValueError(
+                "pixel_values were provided without `image_grid_thw`; the Kimi-K3 "
+                "vision tower needs the per-image [T, H, W] patch grid."
+            )
 
-        if pixel_values is not None and grid_thws is not None:
+        inputs_embeds = self.language_embedding.embedding.embed_tokens(input_ids)
+
+        if pixel_values is not None:
             image_features = [f.astype(inputs_embeds.dtype) for f in self.get_image_features(pixel_values, grid_thws)]
             if attention_mask is None:
                 attention_mask = paddle.ones(input_ids.shape, dtype="int64")
-            # K3 expands one placeholder per media, so the sequence length and
-            # every per-position tensor change here.
+            # One placeholder expands into many visual tokens, so every
+            # per-position tensor changes length here.
             inputs_embeds, attention_mask, labels, position_ids = merge_input_ids_with_image_features(
                 image_features,
                 inputs_embeds,
@@ -338,40 +337,39 @@ class FleetKimiK3ForConditionalGeneration(FleetLayer, PretrainedModel):
         self.criterion = criterion
 
     def forward(self, dict_args=None, **kwargs):
-        """Run the multimodal model; returns the training loss, or logits when
-        no ``labels`` are given (e.g. inference / ``generate``).
+        """Run the multimodal model and return the scalar training loss.
 
-        Accepts either a single ``dict_args`` mapping or plain keyword arguments,
-        because ``Trainer.compute_loss`` calls ``model(**inputs)`` for models it
-        does not recognise as a Fleet ``GPTModel``.
+        Training only: ``generate()`` is unsupported because the fusion rewrites
+        the sequence length and this wrapper has no KV-cache contract, so
+        ``labels`` is required. ``dict_args`` may also arrive as plain keyword
+        arguments, because ``Trainer.compute_loss`` calls ``model(**inputs)`` for
+        models it does not recognise as a Fleet ``GPTModel``.
         """
         if dict_args is None:
             dict_args = kwargs
         logits = self.model(dict_args)
-        # Read labels only after the inner forward: the K3 fusion rebuilds them
-        # at the expanded sequence length.
+        # Read labels only after the inner forward, which rebuilds them at the
+        # expanded sequence length.
         labels = dict_args.get("labels", None)
         if labels is None:
-            return logits[0] if isinstance(logits, list) else logits
+            raise ValueError(
+                "KimiK3ForConditionalGeneration supports training only and requires "
+                "`labels`; generation is not implemented yet."
+            )
+        # With num_nextn_predict_layers > 0 the lm head emits the main logits
+        # plus one per MTP layer.
         if isinstance(logits, list):
-            loss = self.criterion(logits[0], labels, mtp_logits=logits[1:])
-        else:
-            loss = self.criterion(logits, labels)
-        return loss
+            return self.criterion(logits[0], labels, mtp_logits=logits[1:])
+        return self.criterion(logits, labels)
 
 
 def _build_vl_model(config, criterion):
-    """Assemble the full Kimi-K3 multimodal model.
-
-    The vision tower and the fusion helper both live in PaddleFleet
-    (``paddlefleet.models.kimi_k3``); this only wires them to the text backbone
-    built by :class:`KimiK3ModelProvider`.
+    """Wire the PaddleFleet vision tower and fusion helper
+    (``paddlefleet.models.kimi_k3``) to the :class:`KimiK3ModelProvider` backbone.
     """
     text_config = config.get_text_config()
     vision_config = config.vision_config
 
-    # text_hidden_size is coerced to text_config.hidden_size in
-    # KimiK3Config.__init__, so it is not re-checked here.
     for name in (
         "tensor_model_parallel_size",
         "context_parallel_size",

@@ -1498,8 +1498,8 @@ class GlmOcrPlugin(BasePlugin):
 class KimiK3Plugin(BasePlugin):
     """Kimi-K3 plugin.
 
-    Kimi-K3 keeps exactly one `<|media_pad|>` per image in the text stream and expands
-    it inside the model (`expand_mm_tokens=False`), so the placeholder is replaced by
+    One `<|media_pad|>` per image stays in the text stream and is expanded inside
+    the model (`expand_mm_tokens=False`), so the placeholder becomes
     `<|media_begin|>image WxH<|media_content|><|media_pad|><|media_end|>`.
     """
 
@@ -1593,8 +1593,7 @@ class KimiK3Plugin(BasePlugin):
         )["images"]
         medias = [{"type": "image", "image": image} for image in pil_images]
         mm_inputs = dict(image_processor.preprocess(medias, return_tensors="pd"))
-        # Emit the framework-standard key so the shared collate path works as-is;
-        # KimiK3VLModel accepts `image_grid_thw` as an alias of `grid_thws`.
+        # Rename to the framework-standard key the shared collate path expects.
         mm_inputs["image_grid_thw"] = mm_inputs.pop("grid_thws")
         return mm_inputs
 

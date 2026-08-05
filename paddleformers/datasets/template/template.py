@@ -1024,9 +1024,8 @@ register_template(
     mm_plugin=get_mm_plugin(name="glm_ocr", image_token="<|image|>"),
 )
 
-# Kimi-K3 XTML chat format (non-thinking channel). Kimi-K3 emits exactly one
-# <|media_pad|> per image and expands it inside the model, hence
-# expand_mm_tokens=False.
+# Kimi-K3 XTML chat format, non-thinking channel. One <|media_pad|> per image is
+# expanded inside the model, hence expand_mm_tokens=False.
 register_template(
     name="kimi_k3",
     format_system=StringFormatter(
