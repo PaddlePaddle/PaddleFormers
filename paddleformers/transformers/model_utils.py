@@ -3575,6 +3575,9 @@ class PipelinePretrainedModel(PretrainedModel):
             use_virtual_pipeline_model_parallel_size = first_key[0].isdigit() and first_key[1].isdigit()
 
             prefixes = self.get_sequential_name_prefixes()
+            shared_layer_names = {
+                layer.layer_name for layer in self._layers_desc if isinstance(layer, SharedLayerDesc)
+            }
             for k in state_dict_keys:
                 name_splited = k.split(".")
                 if use_virtual_pipeline_model_parallel_size:
@@ -3582,6 +3585,13 @@ class PipelinePretrainedModel(PretrainedModel):
                         if name_splited[1].isdigit():
                             idx = str(int(name_splited[0]) + int(name_splited[1]))
                             single_name = [prefixes[idx]]
+                            single_name.extend(name_splited[2:])
+                        elif name_splited[1] in shared_layer_names:
+                            # A SharedLayerDesc with `forward_func` is registered on the chunk
+                            # itself under VPP, so its key is `{chunk_start}.{shared_name}.rest`.
+                            # It aliases the same parameter as `shared_layers.{shared_name}.rest`
+                            # and must resolve to the same single card name.
+                            single_name = [self.get_shardlayer_prefix(name_splited, SharedLayerDesc)]
                             single_name.extend(name_splited[2:])
                         else:
                             # Layers directly added to the PipelineLayer under VPP (e.g. lm_head) are
