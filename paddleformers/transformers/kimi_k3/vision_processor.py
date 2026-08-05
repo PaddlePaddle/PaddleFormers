@@ -18,7 +18,6 @@ import json
 from typing import Any, Dict, Optional, Union
 
 import numpy as np
-import paddle
 from PIL import Image
 
 from ..image_processing_utils import BaseImageProcessor, BatchFeature
@@ -26,7 +25,6 @@ from ..tokenizer_utils_base import TensorType
 from .media_utils import (
     MediaInput,
     TransparentBgConfig,
-    _to_tensor,
     ensure_media_type,
     image_to_np,
     navit_patchify,
@@ -119,7 +117,7 @@ class KimiK3VisionProcessor(BaseImageProcessor):
 
         Args:
             medias: List of MediaInput.
-            return_tensors: Desired output format ('pt', 'np', 'tf', or None).
+            return_tensors: Desired output format ('pd', 'np', or None for numpy arrays).
 
         Returns:
             BatchFeature containing 'pixel_values' and 'grid_thws' tensors.
@@ -158,14 +156,9 @@ class KimiK3VisionProcessor(BaseImageProcessor):
                 )
                 normalized_pixel_values.append(pixels_and_thw)
 
-            pixel_values = paddle.concat(
-                [_to_tensor(pixel_value["pixel_values"]) for pixel_value in normalized_pixel_values]
-            )
-            grid_thws = paddle.concat(
-                [
-                    _to_tensor(pixel_value["grid_thw"], dtype="int64").unsqueeze(0)
-                    for pixel_value in normalized_pixel_values
-                ]
+            pixel_values = np.concatenate([pixel_value["pixel_values"] for pixel_value in normalized_pixel_values])
+            grid_thws = np.stack(
+                [np.asarray(pixel_value["grid_thw"], dtype=np.int64) for pixel_value in normalized_pixel_values]
             )
 
             data = {
@@ -176,7 +169,7 @@ class KimiK3VisionProcessor(BaseImageProcessor):
         else:
             data = {}
 
-        return BatchFeature(data=data, tensor_type="pd")
+        return BatchFeature(data=data, tensor_type=return_tensors)
 
     def __repr__(self):
         return f"KimiK3VisionProcessor(media_proc_cfg={self.media_proc_cfg})"

@@ -338,7 +338,8 @@ class FleetKimiK3ForConditionalGeneration(FleetLayer, PretrainedModel):
         self.criterion = criterion
 
     def forward(self, dict_args=None, **kwargs):
-        """Run the multimodal model and return the scalar training loss.
+        """Run the multimodal model; returns the training loss, or logits when
+        no ``labels`` are given (e.g. inference / ``generate``).
 
         Accepts either a single ``dict_args`` mapping or plain keyword arguments,
         because ``Trainer.compute_loss`` calls ``model(**inputs)`` for models it
@@ -350,6 +351,8 @@ class FleetKimiK3ForConditionalGeneration(FleetLayer, PretrainedModel):
         # Read labels only after the inner forward: the K3 fusion rebuilds them
         # at the expanded sequence length.
         labels = dict_args.get("labels", None)
+        if labels is None:
+            return logits[0] if isinstance(logits, list) else logits
         if isinstance(logits, list):
             loss = self.criterion(logits[0], labels, mtp_logits=logits[1:])
         else:

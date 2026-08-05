@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 # Copyright 2026 The Moonshot AI Inc. team and HuggingFace Inc. team. All rights reserved.
 #
