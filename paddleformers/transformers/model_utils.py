@@ -3564,15 +3564,15 @@ class PipelinePretrainedModel(PretrainedModel):
             pp_to_single_mapping = {}
 
             state_dict_keys = list(super().state_dict().keys())
-            first_key = ""
-            for k in state_dict_keys:
-                if "shared_layers" not in k:
-                    first_key = k
-                    break
-            first_key = first_key.split(".")
-            # if use virtual pp_degree, the prefix is like 0.0.xxx
-            # else it will be like 0.xxx
-            use_virtual_pipeline_model_parallel_size = first_key[0].isdigit() and first_key[1].isdigit()
+            # Under VPP the layers of a chunk are named `{chunk_start}.{local_idx}.xxx`,
+            # otherwise they are named `{global_idx}.xxx`. A single key of the former shape
+            # settles it; looking at the first key only is not enough, because it can be a
+            # shared layer alias or a directly added layer, and both keep a non digit second
+            # segment under VPP as well.
+            use_virtual_pipeline_model_parallel_size = any(
+                len(parts) > 2 and parts[0].isdigit() and parts[1].isdigit()
+                for parts in (k.split(".") for k in state_dict_keys)
+            )
 
             prefixes = self.get_sequential_name_prefixes()
             shared_layer_names = {
