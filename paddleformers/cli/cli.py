@@ -14,7 +14,6 @@
 """cli
 """
 import os
-import shlex
 import subprocess
 import sys
 from copy import deepcopy
@@ -52,6 +51,39 @@ USAGE = (
 
 
 WELCOME = "-" * 60 + "\n" + "Welcome to PaddleFormers Cli" + "\n" + "-" * 60
+
+
+def build_distributed_command(
+    *,
+    current_device: str,
+    visible_cards: str,
+    master_ip: str,
+    master_port: str,
+    nnodes: str,
+    rank: str,
+    log_dir: str,
+    launcher_path: str,
+    launcher_args: list[str],
+) -> list[str]:
+    """Build a distributed command pinned to the active Python interpreter."""
+    return [
+        sys.executable,
+        "-m",
+        "paddle.distributed.launch",
+        "--log_dir",
+        log_dir,
+        f"--{current_device}s",
+        visible_cards,
+        "--master",
+        f"{master_ip}:{master_port}",
+        "--nnodes",
+        nnodes,
+        "--rank",
+        rank,
+        "--run_mode=collective",
+        launcher_path,
+        *launcher_args,
+    ]
 
 
 def main():
@@ -153,15 +185,19 @@ def main():
 
         # launch distributed training
         env = deepcopy(os.environ)
-        args_to_pass = " ".join(shlex.quote(arg) for arg in sys.argv[1:])
         if current_device == "iluvatar_gpu" or current_device == "musa":
             current_device = "gpu"
-        command = (
-            f"python -m paddle.distributed.launch --log_dir {paddleformers_dist_log} "
-            f"--{current_device}s {visible_cards} --master {master_ip}:{master_port} "
-            f"--nnodes {nnodes} --rank {rank} --run_mode=collective {launcher.__file__} {args_to_pass}"
+        command = build_distributed_command(
+            current_device=current_device,
+            visible_cards=visible_cards,
+            master_ip=master_ip,
+            master_port=master_port,
+            nnodes=nnodes,
+            rank=rank,
+            log_dir=paddleformers_dist_log,
+            launcher_path=launcher.__file__,
+            launcher_args=sys.argv[1:],
         )
-        command = shlex.split(command)
         process = subprocess.Popen(
             command,
             env=env,

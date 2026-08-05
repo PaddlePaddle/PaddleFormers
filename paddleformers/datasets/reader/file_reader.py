@@ -29,6 +29,17 @@ DATASET_WORKROOT = os.getenv("DATASET_WORKROOT", "/root/.cache/paddleformers")
 DATASET_DOWNLOAD_ROOT = os.path.join(DATASET_WORKROOT, "download")
 
 
+def _resolve_media_path(value, base_dir):
+    """Resolve media paths recursively so videos may be lists of image frames."""
+    if isinstance(value, list):
+        return [_resolve_media_path(item, base_dir) for item in value]
+    if not isinstance(value, str):
+        raise TypeError(f"Media path must be a string or nested list of strings, got {type(value).__name__}.")
+    if value.startswith("http") or os.path.isabs(value):
+        return value
+    return os.path.join(base_dir, value)
+
+
 class BaseReader(IterableDataset):
     """Basic data reader implement."""
 
@@ -195,25 +206,11 @@ class FileReader(BaseReader):
             data["messages"] = data["messages"][1:]
         data["system"] = system
 
-        # Convert the relative paths of multimode data into absolute paths
-        if "images" in data:
-            for idx in range(len(data["images"])):
-                if data["images"][idx].startswith("http") or os.path.isabs(data["images"][idx]):
-                    pass
-                else:
-                    data["images"][idx] = os.path.join(os.path.dirname(self._file_path), data["images"][idx])
-        if "videos" in data:
-            for idx in range(len(data["videos"])):
-                if data["videos"][idx].startswith("http") or os.path.isabs(data["videos"][idx]):
-                    pass
-                else:
-                    data["videos"][idx] = os.path.join(os.path.dirname(self._file_path), data["videos"][idx])
-        if "audios" in data:
-            for idx in range(len(data["audios"])):
-                if data["audios"][idx].startswith("http") or os.path.isabs(data["audios"][idx]):
-                    pass
-                else:
-                    data["audios"][idx] = os.path.join(os.path.dirname(self._file_path), data["audios"][idx])
+        # Convert relative multimodal paths into paths anchored at the dataset file.
+        media_base_dir = os.path.dirname(self._file_path)
+        for key in ("images", "videos", "audios"):
+            if key in data:
+                data[key] = [_resolve_media_path(item, media_base_dir) for item in data[key]]
 
         return data
 

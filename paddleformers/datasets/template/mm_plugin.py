@@ -215,13 +215,19 @@ class MMPluginMixin:
 
         return image
 
-    def _get_video_sample_indices(self, video_reader, video_fps, video_maxlen, **kwargs):
-        r"""Compute video sample indices according to fps."""
+    def _get_video_sample_indices(
+        self, video_reader, video_fps, video_maxlen, video_target_frames=-1, **kwargs
+    ):
+        r"""Compute deterministic video sample indices from a target count or fps."""
         total_frames = video_reader.metadata.num_frames
         if total_frames == 0:  # infinite video
-            return np.linspace(0, video_maxlen - 1, video_maxlen).astype(np.int32)
+            sample_frames = video_target_frames if video_target_frames > 0 else video_maxlen
+            return np.linspace(0, sample_frames - 1, sample_frames).astype(np.int32)
 
-        sample_frames = max(1, math.floor(float(total_frames / video_reader.metadata.average_fps) * video_fps))
+        if video_target_frames > 0:
+            sample_frames = video_target_frames
+        else:
+            sample_frames = max(1, math.floor(float(total_frames / video_reader.metadata.average_fps) * video_fps))
         sample_frames = min(total_frames, video_maxlen, sample_frames)
         start_frame, end_frame = 0, total_frames - 1
         frame_indices = np.linspace(start_frame, end_frame, sample_frames).round()
@@ -310,6 +316,7 @@ class MMPluginMixin:
                 image_min_pixels=getattr(processor, "video_min_pixels", 16 * 16),
                 video_fps=getattr(processor, "video_fps", 2.0),
                 video_maxlen=getattr(processor, "video_maxlen", 128),
+                video_target_frames=getattr(processor, "video_target_frames", -1),
             )["videos"]
             if "videos" in inspect.signature(video_processor.preprocess).parameters:  # for qwen2_vl and video_llava
                 mm_inputs.update(video_processor(images=None, videos=videos, return_tensors="pd"))
@@ -813,12 +820,15 @@ class Qwen2VLPlugin(BasePlugin):
                     fps_per_video.append(kwargs.get("video_fps", 2.0))
 
             if len(frames) % 2 != 0:
-                padded_image = copy.deepcopy(frames[-1])
-                frames = np.concatenate([frames, padded_image[np.newaxis, ...]], axis=0)
+                frames = list(frames) + [copy.deepcopy(frames[-1])]
 
             regularized_frames = []
             for frame in frames:
-                if isinstance(frame, np.ndarray):
+                if isinstance(frame, str):
+                    frame = self._img_download(frame)
+                elif isinstance(frame, dict):
+                    frame = fetch_image(frame)
+                elif isinstance(frame, np.ndarray):
                     frame = Image.fromarray(frame, "RGB")
                 regularized_frames.append(self._preprocess_image(frame, **kwargs))
             results.append(regularized_frames)
@@ -1113,10 +1123,19 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
         if len(videos) != 0:
             videos = self._regularize_videos(
                 videos,
-                image_max_pixels=getattr(processor, "video_max_pixels", 256 * 256),
-                image_min_pixels=getattr(processor, "video_min_pixels", 16 * 16),
+                image_max_pixels=getattr(
+                    processor,
+                    "video_frame_max_pixels",
+                    getattr(processor, "video_max_pixels", 256 * 256),
+                ),
+                image_min_pixels=getattr(
+                    processor,
+                    "video_frame_min_pixels",
+                    getattr(processor, "video_min_pixels", 16 * 16),
+                ),
                 video_fps=getattr(processor, "video_fps", 2.0),
                 video_maxlen=getattr(processor, "video_maxlen", 128),
+                video_target_frames=getattr(processor, "video_target_frames", -1),
             )
             video_metadata = [
                 {"fps": getattr(processor, "video_fps", 24.0), "duration": len(video), "total_num_frames": len(video)}
@@ -1204,7 +1223,9 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
                     )
                     video_structure += frame_structure
 
-                if not self.expand_mm_tokens:
+                if self.expand_mm_tokens:
+                    video_structure = f"{self.vision_bos_token}{video_structure}{self.vision_eos_token}"
+                else:
                     video_structure = f"{self.vision_bos_token}{self.video_token}{self.vision_eos_token}"
 
                 content = content.replace(VIDEO_PLACEHOLDER, video_structure, 1)

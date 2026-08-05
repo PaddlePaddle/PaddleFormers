@@ -2853,7 +2853,10 @@ class Trainer:
             if num_steps == 0:
                 logs["loss"] = 0.0
             else:
-                logs["loss"] = round(tr_loss_scalar / num_steps, 8)
+                raw_loss = tr_loss_scalar / num_steps
+                logs["loss"] = round(raw_loss, 8)
+                if getattr(self.args, "repro_receipt", False):
+                    logs["repro_raw_loss"] = float(raw_loss)
 
             logs["learning_rate"] = float("{0:.3e}".format(self._get_learning_rate()))
             logs["global_step"] = int(self.state.global_step)
@@ -4171,6 +4174,10 @@ class Trainer:
         else:
             labels = None
 
+        self.callback_handler.on_model_inputs(
+            self.args, self.state, self.control, inputs=inputs, labels=labels, phase="pre_model"
+        )
+
         if is_paddle_cuda_available() and self.using_fleet_model:
             outputs = model(inputs)
         else:
@@ -4301,6 +4308,17 @@ class Trainer:
 
         model.optimizer = None  # we do not use `PipelineParallel` to handler optimizer step
         model.lr_scheduler = None
+
+        # Fleet's native path bypasses compute_loss; capture the first collated
+        # model-facing batch here, immediately before Fleet prepares pipeline
+        # inputs. The callback is opt-in and self-disables after one receipt.
+        buffered = self._pp_data_buffer[0] if self._pp_data_buffer else inputs
+        if isinstance(buffered, dict):
+            labels = buffered.get("labels")
+            model_inputs = {key: value for key, value in buffered.items() if key != "labels"}
+            self.callback_handler.on_model_inputs(
+                self.args, self.state, self.control, inputs=model_inputs, labels=labels, phase="pre_model"
+            )
 
         def _dataset_process_function():
             # Pass a local function to forward_backward_pipeline instead of the dataset itself.

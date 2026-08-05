@@ -21,9 +21,12 @@ from unittest.mock import MagicMock
 if "transformers.tokenization_utils_tokenizers" not in sys.modules:
     _mock_mod = types.ModuleType("transformers.tokenization_utils_tokenizers")
     _mock_mod.TokenizersBackend = type("TokenizersBackend", (), {})
+    _mock_mod.PreTrainedTokenizerFast = type("PreTrainedTokenizerFast", (), {})
     sys.modules["transformers.tokenization_utils_tokenizers"] = _mock_mod
 
 from paddleformers.cli.train.sft.workflow import (
+    _apply_runtime_args_to_vision_config,
+    _disable_mtp_on_vision_config,
     create_peft_model,
     freeze_param_except_mtp,
 )
@@ -93,6 +96,34 @@ class TestCreatePeftModel(unittest.TestCase):
 
 class TestSFTWorkflowValidation(unittest.TestCase):
     """Tests for SFT workflow validation logic"""
+
+    def test_vision_config_does_not_inherit_language_mtp(self):
+        vision_config = types.SimpleNamespace(
+            num_nextn_predict_layers=1,
+            mtp_num_layers=1,
+            mtp_num_hidden_layers=1,
+            add_mtp_loss=True,
+        )
+
+        _disable_mtp_on_vision_config(vision_config)
+
+        self.assertEqual(vision_config.num_nextn_predict_layers, 0)
+        self.assertEqual(vision_config.mtp_num_layers, 0)
+        self.assertEqual(vision_config.mtp_num_hidden_layers, 0)
+        self.assertFalse(vision_config.add_mtp_loss)
+
+    def test_vision_layernorm_survives_language_runtime_defaults(self):
+        vision_config = types.SimpleNamespace(normalization="LayerNorm")
+        training_args = types.SimpleNamespace(
+            normalization="RMSNorm",
+            num_nextn_predict_layers=1,
+        )
+
+        _apply_runtime_args_to_vision_config(vision_config, training_args)
+
+        self.assertEqual(vision_config.normalization, "LayerNorm")
+        self.assertEqual(vision_config.num_nextn_predict_layers, 0)
+        self.assertEqual(vision_config.mtp_num_layers, 0)
 
     def test_compute_type_mapping(self):
         type_map = {"bf16": "bfloat16", "fp16": "float16"}

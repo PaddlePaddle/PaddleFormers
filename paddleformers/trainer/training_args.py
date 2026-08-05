@@ -452,6 +452,14 @@ class TrainingArguments:
     output_dir: str = field(
         metadata={"help": "The output directory where the model predictions and checkpoints will be written."},
     )
+    repro_receipt: bool = field(
+        default=False,
+        metadata={"help": "Write fail-closed raw-loss, runtime, and safetensors reproduction receipts."},
+    )
+    repro_save_initial_checkpoint: bool = field(
+        default=False,
+        metadata={"help": "Save a validated pre-step checkpoint for parameter-alignment experiments."},
+    )
     overwrite_output_dir: bool = field(
         default=False,
         metadata={

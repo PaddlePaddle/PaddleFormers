@@ -13,7 +13,9 @@
 # limitations under the License.
 
 import unittest
+from types import SimpleNamespace
 
+from paddleformers.transformers.qwen3_5.modeling import _normalize_parallel_subconfigs
 from paddleformers.transformers.qwen3_5_moe.modeling import (
     Qwen3_5MoEForConditionalGeneration,
 )
@@ -41,6 +43,25 @@ class TestQwen3_5MoEForConditionalGeneration(unittest.TestCase):
         # Qwen3_5MoEForConditionalGeneration uses __new__ to pass have_criterion
         # Can't fully instantiate without a real config, but test the class structure
         self.assertTrue(hasattr(Qwen3_5MoEForConditionalGeneration, "__new__"))
+
+    def test_parallel_degrees_propagate_to_subconfigs(self):
+        text_config = SimpleNamespace()
+        vision_config = SimpleNamespace()
+        config = SimpleNamespace(
+            text_config=text_config,
+            vision_config=vision_config,
+            tensor_model_parallel_size=-1,
+            context_parallel_size=-1,
+            pipeline_model_parallel_size=-1,
+            virtual_pipeline_model_parallel_size=-1,
+            expert_model_parallel_size=4,
+        )
+
+        _normalize_parallel_subconfigs(config)
+
+        self.assertEqual(text_config.tensor_model_parallel_size, 1)
+        self.assertEqual(vision_config.pipeline_model_parallel_size, 1)
+        self.assertEqual(text_config.expert_model_parallel_size, 4)
 
 
 if __name__ == "__main__":

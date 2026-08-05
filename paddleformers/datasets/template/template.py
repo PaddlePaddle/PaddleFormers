@@ -550,7 +550,10 @@ def get_template_and_fix_tokenizer(dataset_config) -> "Template":
         if dataset_config["template"] not in TEMPLATES:
             raise ValueError(f"Template {dataset_config['template']} does not exist.")
 
-        template = TEMPLATES[dataset_config["template"]]
+        template = deepcopy(TEMPLATES[dataset_config["template"]])
+
+    if dataset_config.get("enable_thinking") is not None:
+        template.enable_thinking = dataset_config["enable_thinking"]
 
     if dataset_config["tool_format"] is not None:
         default_slots = ["{{content}}"] if template.efficient_eos else ["{{content}}", {"eos_token"}]
@@ -708,6 +711,7 @@ register_template(
     ),
     format_tools=ToolFormatter(tool_format="qwen3_5"),
     stop_words=["<|im_end|>"],
+    suffix=[""],
     mm_plugin=get_mm_plugin(name="qwen3_vl", image_token="<|image_pad|>", video_token="<|video_pad|>"),
     template_class=ReasoningTemplate,
 )
@@ -724,6 +728,7 @@ register_template(
     ),
     format_tools=ToolFormatter(tool_format="qwen3_5"),
     stop_words=["<|im_end|>"],
+    suffix=[""],
     mm_plugin=get_mm_plugin(name="qwen3_vl", image_token="<|image_pad|>", video_token="<|video_pad|>"),
 )
 

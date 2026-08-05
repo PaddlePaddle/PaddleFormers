@@ -314,6 +314,9 @@ class TrainerCallback:
         """
         pass
 
+    def on_model_inputs(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        pass
+
     def on_load_data_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
         pass
 
@@ -451,6 +454,9 @@ class CallbackHandler(TrainerCallback):
 
     def on_load_data_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, inputs: Dict):
         return self.call_event("on_load_data_end", args, state, control, inputs=inputs)
+
+    def on_model_inputs(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        return self.call_event("on_model_inputs", args, state, control, **kwargs)
 
     def on_optimizer_begin(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, scaler):
         return self.call_event("on_optimizer_begin", args, state, control, scaler=scaler)

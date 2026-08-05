@@ -314,6 +314,24 @@ class TestGetTemplateAndFixTokenizer(unittest.TestCase):
         result = get_template_and_fix_tokenizer(config)
         self.assertIsNotNone(result)
 
+    def test_enable_thinking_override_is_isolated(self):
+        tokenizer = MagicMock()
+        disabled = {
+            "tokenizer": tokenizer,
+            "template": "qwen3_5",
+            "tool_format": None,
+            "default_system": None,
+            "enable_thinking": False,
+        }
+        default = {**disabled, "enable_thinking": None}
+
+        disabled_template = get_template_and_fix_tokenizer(disabled)
+        default_template = get_template_and_fix_tokenizer(default)
+
+        self.assertFalse(disabled_template.enable_thinking)
+        self.assertTrue(default_template.enable_thinking)
+        self.assertIsNot(disabled_template, default_template)
+
     def test_with_tool_format(self):
         """Test with a tool_format specified."""
         tokenizer = MagicMock()

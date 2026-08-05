@@ -27,6 +27,10 @@ from ...nn.criterion.interface import CriterionLayer
 from ..model_outputs import BaseModelOutputWithPooling
 from ..model_utils import PretrainedModel
 from ..qwen3_vl.modeling import Qwen3VLVisionModel
+from .checkpoint_conversion import (
+    finalize_grouped_expert_checkpoint,
+    prepare_nonfused_expert_checkpoint,
+)
 from .configuration import Qwen3_5VisionConfig
 from .modeling_fleet import build_qwen3_5_model
 
@@ -199,6 +203,24 @@ class Qwen3_5VisionModel(Qwen3VLVisionModel):
         )
 
 
+def _normalize_parallel_subconfigs(config):
+    """Normalize disabled-degree sentinels and propagate topology to model subconfigs."""
+    parallel_attributes = (
+        "tensor_model_parallel_size",
+        "context_parallel_size",
+        "pipeline_model_parallel_size",
+        "virtual_pipeline_model_parallel_size",
+        "expert_model_parallel_size",
+    )
+    subconfigs = (getattr(config, "text_config", None), getattr(config, "vision_config", None))
+    for attr in parallel_attributes:
+        value = max(getattr(config, attr, 1), 1)
+        setattr(config, attr, value)
+        for subconfig in subconfigs:
+            if subconfig is not None:
+                setattr(subconfig, attr, value)
+
+
 class Qwen3_5ForConditionalGeneration(PretrainedModel):
     _checkpoint_conversion_mapping = {
         "^visual": "model.visual",
@@ -206,6 +228,36 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
     }
     _tied_weights_keys = {"lm_head.weight": "model.language_model.embed_tokens.weight"}
     is_fleet = True
+
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+        config = kwargs.get("config")
+        if config is None:
+            raise ValueError("Qwen3.5 Fleet loading requires the parsed model config")
+        checkpoint_path, conversion_receipt = prepare_nonfused_expert_checkpoint(
+            pretrained_model_name_or_path, config
+        )
+        model = super().from_pretrained(checkpoint_path, *model_args, **kwargs)
+        model._official_weight_conversion_receipt = conversion_receipt
+        if conversion_receipt is not None:
+            # Generic loading may reconstruct/clone the composite config. Carry
+            # the validated runtime layout onto the model-owned config so the
+            # later inverse AOA save cannot fall back to grouped-gemm names.
+            model.config._checkpoint_source_layout = "qwen3_5-per-expert-hf/v1"
+            model.config.moe_expert_fusion = False
+            model.config.text_config._checkpoint_source_layout = (
+                "qwen3_5-per-expert-hf/v1"
+            )
+            model.config.text_config.moe_expert_fusion = False
+        return model
+
+    def finalize_saved_checkpoint(self, save_dir):
+        if getattr(self, "_official_weight_conversion_receipt", None) is None:
+            return None
+        self._grouped_checkpoint_conversion_receipt = (
+            finalize_grouped_expert_checkpoint(save_dir, self.config)
+        )
+        return self._grouped_checkpoint_conversion_receipt
 
     @classmethod
     def _gen_aoa_config(cls, config):
@@ -217,6 +269,7 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
 
         text_config = config.text_config
         vision_config = config.vision_config
+        router_load_dtype = "" if getattr(text_config, "use_accuracy_compatible", False) else ", dtype='float32'"
 
         layer_types = getattr(text_config, "layer_types", None)
         if layer_types is None:
@@ -390,28 +443,44 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
         if is_moe and num_experts > 0:
             # MoE — router gate
             aoa_config["aoa_statements"] += [
-                f"model.language_model.layers.{i}.mlp.gate.weight -> {llm_prefix}layers.{i}.mlp.gate.weight, dtype='float32'"
+                f"model.language_model.layers.{i}.mlp.gate.weight -> {llm_prefix}layers.{i}.mlp.gate.weight{router_load_dtype}"
                 for i in range(text_config.num_hidden_layers)
             ]
-            # MoE — routed experts
+            # MoE — routed experts. Runtime construction consumes the language
+            # subconfig, while generic save code may omit training-only fields
+            # from the composite root. The validated source-layout marker is
+            # therefore authoritative for a converted non-fused checkpoint.
+            source_layout = getattr(
+                text_config,
+                "_checkpoint_source_layout",
+                getattr(config, "_checkpoint_source_layout", None),
+            )
+            moe_expert_fusion = getattr(
+                text_config,
+                "moe_expert_fusion",
+                getattr(config, "moe_expert_fusion", True),
+            )
+            use_grouped_experts = (
+                moe_expert_fusion and source_layout != "qwen3_5-per-expert-hf/v1"
+            )
             for i in range(text_config.num_hidden_layers):
-                if getattr(config, "moe_expert_fusion", True):
+                if use_grouped_experts:
                     aoa_config["aoa_statements"] += [
                         f'model.language_model.layers.{i}.mlp.experts.gate_up_proj -> {llm_prefix}layers.{i}.mlp.grouped_gemm_experts.weight1, permute="[0, 2, 1]"',
                         f'model.language_model.layers.{i}.mlp.experts.down_proj -> {llm_prefix}layers.{i}.mlp.grouped_gemm_experts.weight2, permute="[0, 2, 1]"',
                     ]
                 else:
-                    split_experts_up_gate = ""
-                    split_experts_down = ""
+                    if source_layout != "qwen3_5-per-expert-hf/v1":
+                        raise ValueError(
+                            "non-fused Qwen3.5 experts require the validated per-expert official-weight layout"
+                        )
                     for expert_id in range(num_experts):
-                        split_experts_up_gate += f"{llm_prefix}layers.{i}.mlp.experts.{expert_id}.up_gate_proj.weight,"
-                        split_experts_down += f"{llm_prefix}layers.{i}.mlp.experts.{expert_id}.down_proj.weight,"
-                    split_experts_down += "axis=0"
-                    split_experts_up_gate += "axis=0"
-                    aoa_config["aoa_statements"] += [
-                        f"model.language_model.layers.{i}.mlp.experts.gate_up_proj -> {split_experts_up_gate}",
-                        f"model.language_model.layers.{i}.mlp.experts.down_proj -> {split_experts_down}",
-                    ]
+                        hf_expert = f"model.language_model.layers.{i}.mlp.experts.{expert_id}"
+                        fleet_expert = f"{llm_prefix}layers.{i}.mlp.experts.{expert_id}"
+                        aoa_config["aoa_statements"] += [
+                            f"{hf_expert}.gate_proj.weight^T, {hf_expert}.up_proj.weight^T -> {fleet_expert}.up_gate_proj.weight, axis=1",
+                            f"{hf_expert}.down_proj.weight^T -> {fleet_expert}.down_proj.weight",
+                        ]
             # MoE — shared experts
             shared_expert_intermediate_size = getattr(text_config, "shared_expert_intermediate_size", 0)
             if shared_expert_intermediate_size and shared_expert_intermediate_size > 0:
@@ -499,7 +568,7 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
 
                 # MTP transformer layer — MoE router
                 aoa_config["aoa_statements"].append(
-                    f"{hf_mtp_pre}.mlp.gate.weight -> {fleet_mtp_pre}.transformer_layer.mlp.gate.weight, dtype='float32'"
+                    f"{hf_mtp_pre}.mlp.gate.weight -> {fleet_mtp_pre}.transformer_layer.mlp.gate.weight{router_load_dtype}"
                 )
 
                 # MTP transformer layer — MoE routed experts
@@ -585,6 +654,7 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
 
         text_config = config.text_config
         vision_config = config.vision_config
+        router_save_dtype = "" if getattr(text_config, "use_accuracy_compatible", False) else ", dtype='bfloat16'"
 
         layer_types = getattr(text_config, "layer_types", None)
         if layer_types is None:
@@ -739,7 +809,10 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
                     src_offset_in_rank = sum(per_rank_sizes[:dst_idx]) // unit_size
                     start = rank_offset + src_offset_in_rank
                     rank_chunks.extend(chunk_names[start : start + n_chunks_for_src])
-                stmts.append(f"{','.join(rank_chunks)} -> {dst_key}, axis=0")
+                if len(rank_chunks) == 1:
+                    stmts.append(f"{rank_chunks[0]} -> {dst_key}")
+                else:
+                    stmts.append(f"{','.join(rank_chunks)} -> {dst_key}, axis=0")
 
             return stmts
 
@@ -798,19 +871,51 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
         ]
 
         # ── MoE — routed experts (all layers) ──
-        # Fleet grouped_gemm [num_experts, in_features, out_features] -> HF [num_experts, out_features, in_features]
-        aoa_config["aoa_statements"] += [
-            state
-            for i in range(text_config.num_hidden_layers)
-            for state in (
-                f'{llm_prefix}layers.{i}.mlp.grouped_gemm_experts.weight1 -> model.language_model.layers.{i}.mlp.experts.gate_up_proj, permute="[0, 2, 1]"',
-                f'{llm_prefix}layers.{i}.mlp.grouped_gemm_experts.weight2 -> model.language_model.layers.{i}.mlp.experts.down_proj, permute="[0, 2, 1]"',
+        source_layout = getattr(
+            text_config,
+            "_checkpoint_source_layout",
+            getattr(config, "_checkpoint_source_layout", None),
+        )
+        moe_expert_fusion = getattr(
+            text_config,
+            "moe_expert_fusion",
+            getattr(config, "moe_expert_fusion", True),
+        )
+        use_grouped_experts = (
+            moe_expert_fusion and source_layout != "qwen3_5-per-expert-hf/v1"
+        )
+        if use_grouped_experts:
+            # Fleet grouped_gemm [E, in, out] -> HF [E, out, in].
+            aoa_config["aoa_statements"] += [
+                state
+                for i in range(text_config.num_hidden_layers)
+                for state in (
+                    f'{llm_prefix}layers.{i}.mlp.grouped_gemm_experts.weight1 -> model.language_model.layers.{i}.mlp.experts.gate_up_proj, permute="[0, 2, 1]"',
+                    f'{llm_prefix}layers.{i}.mlp.grouped_gemm_experts.weight2 -> model.language_model.layers.{i}.mlp.experts.down_proj, permute="[0, 2, 1]"',
+                )
+            ]
+        else:
+            # The accuracy-compatible model owns independent 2-D expert
+            # parameters. Emit the normalized per-expert HF view; the
+            # checkpoint finalizer then losslessly restores the two official
+            # grouped tensors per decoder layer.
+            num_experts = getattr(text_config, "num_experts", 0) or getattr(
+                text_config, "n_routed_experts", 0
             )
-        ]
+            for i in range(text_config.num_hidden_layers):
+                fleet_prefix = f"{llm_prefix}layers.{i}.mlp.experts"
+                hf_prefix = f"model.language_model.layers.{i}.mlp.experts"
+                for expert_id in range(num_experts):
+                    aoa_config["aoa_statements"] += [
+                        f"{fleet_prefix}.{expert_id}.up_gate_proj.weight -> {hf_prefix}.{expert_id}.gate_proj._t, {hf_prefix}.{expert_id}.up_proj._t, axis=1",
+                        f"{hf_prefix}.{expert_id}.gate_proj._t^T -> {hf_prefix}.{expert_id}.gate_proj.weight",
+                        f"{hf_prefix}.{expert_id}.up_proj._t^T -> {hf_prefix}.{expert_id}.up_proj.weight",
+                        f"{fleet_prefix}.{expert_id}.down_proj.weight^T -> {hf_prefix}.{expert_id}.down_proj.weight",
+                    ]
 
         # ── MoE — router gate (all layers) ──
         aoa_config["aoa_statements"] += [
-            f"{llm_prefix}layers.{i}.mlp.gate.weight -> model.language_model.layers.{i}.mlp.gate.weight, dtype='bfloat16'"
+            f"{llm_prefix}layers.{i}.mlp.gate.weight -> model.language_model.layers.{i}.mlp.gate.weight{router_save_dtype}"
             for i in range(text_config.num_hidden_layers)
         ]
 
@@ -907,7 +1012,7 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
 
                 # MTP transformer layer — MoE router
                 aoa_config["aoa_statements"].append(
-                    f"{fleet_mtp_pre}.transformer_layer.mlp.gate.weight -> {hf_mtp_pre}.mlp.gate.weight, dtype='bfloat16'"
+                    f"{fleet_mtp_pre}.transformer_layer.mlp.gate.weight -> {hf_mtp_pre}.mlp.gate.weight{router_save_dtype}"
                 )
 
                 # MTP transformer layer — MoE routed experts
@@ -985,11 +1090,7 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
         return aoa_config
 
     def __new__(cls, config, have_criterion=True):
-        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
-        config.context_parallel_size = max(config.context_parallel_size, 1)
-        config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
-        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
-        config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+        _normalize_parallel_subconfigs(config)
 
         criterion = None
         if have_criterion:
@@ -1001,6 +1102,9 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
         qwen3_5_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         qwen3_5_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
         qwen3_5_model.get_hardware_flops = types.MethodType(cls.get_hardware_flops, qwen3_5_model)
+        qwen3_5_model.finalize_saved_checkpoint = types.MethodType(
+            cls.finalize_saved_checkpoint, qwen3_5_model
+        )
         qwen3_5_model.config_to_save = config
 
         return qwen3_5_model

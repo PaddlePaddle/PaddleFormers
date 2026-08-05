@@ -16,10 +16,12 @@ import os
 import shutil
 import tempfile
 import unittest
+from types import SimpleNamespace
 from typing import Dict, Optional
 
 from paddleformers.transformers import Qwen3Config
 from paddleformers.transformers.configuration_utils import (
+    LlmMetaConfig,
     PretrainedConfig,
     attribute_map,
 )
@@ -124,6 +126,15 @@ class ConfigurationUtilsTest(unittest.TestCase):
         assert config.get("a", None) == 10
         assert config.get("a", None) == config.a
         assert config.get("no_name", 0) == 0
+
+    def test_llm_meta_propagates_accuracy_controls(self):
+        config = FakeSimplePretrainedModelConfig()
+        args = SimpleNamespace(deterministic_mode=True, bias_activation_fusion=False)
+
+        LlmMetaConfig.set_llm_config(config, args)
+
+        self.assertTrue(config.deterministic_mode)
+        self.assertFalse(config.bias_activation_fusion)
 
 
 class StandardConfigMappingTest(unittest.TestCase):

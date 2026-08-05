@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from dataclasses import dataclass, field
+from typing import Optional
 
 
 @dataclass
@@ -126,6 +127,12 @@ class DataArguments:
     template_backend: str = field(
         default="custom",
         metadata={"help": "jinja means using apply_chat_template, custom means using a custom template"},
+    )
+    template_enable_thinking: Optional[bool] = field(
+        default=None,
+        metadata={
+            "help": "Whether reasoning templates include an implicit empty thought prefix in the supervised response."
+        },
     )
     eval_with_do_generation: bool = field(default=False, metadata={"help": "Whether to do generation for evaluation"})
     share_folder: bool = field(

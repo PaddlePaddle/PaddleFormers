@@ -23,6 +23,8 @@ import numpy as np
 import paddle
 from transformers.feature_extraction_utils import BatchFeature as BatchFeature_hf
 from transformers.image_processing_base import IMAGE_PROCESSOR_NAME
+from transformers.image_transforms import normalize as hf_normalize
+from transformers.image_transforms import rescale as hf_rescale
 from transformers.image_processing_base import (
     ImageProcessingMixin as ImageProcessingMixin_hf,
 )
@@ -59,6 +61,61 @@ class PaddleImageProcessingMixin:
         "normalize",
         "center_crop",
     ]
+
+    def rescale(
+        self,
+        image: np.ndarray,
+        scale: float,
+        data_format=None,
+        input_data_format=None,
+        **kwargs,
+    ) -> np.ndarray:
+        """Keep rescaling in float64 for accuracy-compatible image preprocessing."""
+        if getattr(self, "accuracy_compatible_rescale_normalize", False):
+            return hf_rescale(
+                image,
+                scale=scale,
+                data_format=data_format,
+                input_data_format=input_data_format,
+                dtype=np.float64,
+                **kwargs,
+            )
+        return super().rescale(
+            image,
+            scale=scale,
+            data_format=data_format,
+            input_data_format=input_data_format,
+            **kwargs,
+        )
+
+    def normalize(
+        self,
+        image: np.ndarray,
+        mean,
+        std,
+        data_format=None,
+        input_data_format=None,
+        **kwargs,
+    ) -> np.ndarray:
+        """Downcast only after normalization in accuracy-compatible mode."""
+        if getattr(self, "accuracy_compatible_rescale_normalize", False):
+            normalized = hf_normalize(
+                image.astype(np.float64, copy=False),
+                mean=mean,
+                std=std,
+                data_format=data_format,
+                input_data_format=input_data_format,
+                **kwargs,
+            )
+            return normalized.astype(np.float32)
+        return super().normalize(
+            image,
+            mean=mean,
+            std=std,
+            data_format=data_format,
+            input_data_format=input_data_format,
+            **kwargs,
+        )
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

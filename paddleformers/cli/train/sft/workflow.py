@@ -18,9 +18,11 @@ import gc
 import math
 import os
 import re
+import shutil
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import fields
 from functools import partial
+from typing import Optional
 
 import numpy as np
 import paddle
@@ -65,6 +67,7 @@ from paddleformers.transformers.configuration_utils import (
     LlmMetaConfig,
     QuantizationConfig,
 )
+from paddleformers.trainer.repro_receipt import ReproReceiptCallback
 from paddleformers.utils.log import logger
 
 from .make_data_utils import DataGenerator
@@ -79,11 +82,29 @@ from paddleformers.cli.hparams import (
     GeneratingArguments,
     ModelArguments,
 )
+from paddleformers.cli.hparams.preprocess_args import End2EndProcessorArguments
 from paddleformers.cli.utils import (
     freeze_model_parameters,
     get_lora_target_modules,
     get_multimodel_lora_target_modules,
 )
+
+
+def _disable_mtp_on_vision_config(vision_config):
+    """Keep language MTP enabled without applying decoder lookahead to vision blocks."""
+    vision_config.num_nextn_predict_layers = 0
+    vision_config.mtp_num_layers = 0
+    vision_config.mtp_num_hidden_layers = 0
+    vision_config.add_mtp_loss = False
+
+
+def _apply_runtime_args_to_vision_config(vision_config, training_args):
+    """Apply runtime controls without replacing the vision architecture's norm."""
+    normalization = getattr(vision_config, "normalization", None)
+    LlmMetaConfig.set_llm_config(vision_config, training_args)
+    if normalization is not None:
+        vision_config.normalization = normalization
+    _disable_mtp_on_vision_config(vision_config)
 
 
 def freeze_param_except_mtp(model, config):
@@ -188,11 +209,75 @@ def create_pretrained_dataset(training_args, data_args, model_args):
     return train_dataset, valid_dataset, test_dataset, _collate_data
 
 
+def _apply_preprocess_args_to_processor(
+    processor,
+    preprocess_args: Optional["End2EndProcessorArguments"],
+    *,
+    accuracy_compatible: bool = False,
+):
+    """Propagate native CLI preprocessing controls to multimodal processors."""
+    if preprocess_args is None:
+        return
+
+    processor_arg_map = {
+        "image_max_pixels": "max_pixels",
+        "image_min_pixels": "min_pixels",
+        "video_max_pixels": "video_max_pixels",
+        "video_min_pixels": "video_min_pixels",
+        "video_fps": "video_fps",
+        "video_maxlen": "video_max_frames",
+        "video_target_frames": "video_target_frames",
+    }
+    applied = {}
+    for processor_attr, arg_name in processor_arg_map.items():
+        value = getattr(preprocess_args, arg_name, None)
+        if value is not None:
+            setattr(processor, processor_attr, value)
+            applied[processor_attr] = value
+
+    video_frame_count = max(applied.get("video_target_frames", 1), 1)
+    component_sizes = (
+        ("image_processor", applied.get("image_min_pixels"), applied.get("image_max_pixels")),
+        (
+            "video_processor",
+            applied.get("video_min_pixels") * video_frame_count if applied.get("video_min_pixels") else None,
+            applied.get("video_max_pixels") * video_frame_count if applied.get("video_max_pixels") else None,
+        ),
+    )
+    for component_name, min_pixels, max_pixels in component_sizes:
+        component = getattr(processor, component_name, None)
+        if component is None or min_pixels is None or max_pixels is None:
+            continue
+        component.size = {"shortest_edge": min_pixels, "longest_edge": max_pixels}
+        if hasattr(component, "min_pixels"):
+            component.min_pixels = min_pixels
+        if hasattr(component, "max_pixels"):
+            component.max_pixels = max_pixels
+
+    if accuracy_compatible:
+        image_processor = getattr(processor, "image_processor", None)
+        if image_processor is not None:
+            image_processor.accuracy_compatible_rescale_normalize = True
+            # qwen-vl-utils pre-resizes list-of-frame videos through fetch_image.
+            # Its nested spatial-merge factor is applied once more than for images.
+            merge_size = int(getattr(image_processor, "merge_size", 2))
+            frame_pixel_factor = merge_size**2
+            if applied.get("image_min_pixels") is not None:
+                processor.video_frame_min_pixels = applied["image_min_pixels"] * frame_pixel_factor
+            if applied.get("image_max_pixels") is not None:
+                processor.video_frame_max_pixels = applied["image_max_pixels"] * frame_pixel_factor
+        processor.accuracy_compatible_preprocessing = True
+
+    if applied:
+        logger.info(f"Applied multimodal processor arguments: {applied}")
+
+
 def run_sft(
     model_args: "ModelArguments",
     data_args: "DataArguments",
     generating_args: "GeneratingArguments",
     finetuning_args: "FinetuningArguments",
+    preprocess_args: Optional["End2EndProcessorArguments"] = None,
 ):
     """_summary_
 
@@ -339,6 +424,7 @@ def run_sft(
         if hasattr(model_config.text_config, "mtp_num_hidden_layers"):
             model_config.text_config.mtp_num_hidden_layers = getattr(training_args, "num_nextn_predict_layers", 0)
     if getattr(model_config, "vision_config", None) is not None:
+        _apply_runtime_args_to_vision_config(model_config.vision_config, training_args)
         model_config.vision_config._attn_implementation = model_args._attn_implementation
         model_config.vision_config.recompute_granularity = model_config.recompute_granularity
         model_config.vision_config.recompute_method = model_config.recompute_method
@@ -420,6 +506,11 @@ def run_sft(
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
     processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
+    _apply_preprocess_args_to_processor(
+        processor,
+        preprocess_args,
+        accuracy_compatible=training_args.use_accuracy_compatible,
+    )
 
     type_map = {"bf16": "bfloat16", "fp16": "float16"}
     compute_type = type_map.get(training_args.compute_type, "float32")
@@ -452,6 +543,7 @@ def run_sft(
         "template": data_args.template,
         "tool_format": None,
         "default_system": None,
+        "enable_thinking": data_args.template_enable_thinking,
         "truncation_strategy": data_args.truncation_strategy,
         "skip_warmup": data_args.skip_warmup,
     }
@@ -707,6 +799,10 @@ def run_sft(
         training_args.logging_steps = int(training_args.max_steps / training_args.num_train_epochs)
 
     callbacks = []
+    repro_receipt_callback = None
+    if training_args.repro_receipt:
+        repro_receipt_callback = ReproReceiptCallback(model_args.model_name_or_path)
+        callbacks.append(repro_receipt_callback)
     if getattr(model_config, "topk_method", None) == "noaux_tc":
         callbacks += [MoECorrectionBiasAdjustCallback(lr=training_args.moe_router_bias_update_rate)]
 
@@ -743,6 +839,24 @@ def run_sft(
     ]
     trainer.set_optimizer_grouped_parameters(trainable_parameters)
 
+    if training_args.repro_save_initial_checkpoint:
+        if repro_receipt_callback is None:
+            raise ValueError("repro_save_initial_checkpoint requires repro_receipt")
+        initial_checkpoint_dir = os.path.join(training_args.output_dir, "initial_checkpoint")
+        if paddle.distributed.get_rank() == 0:
+            shutil.rmtree(initial_checkpoint_dir, ignore_errors=True)
+        if paddle.distributed.get_world_size() > 1:
+            paddle.distributed.barrier()
+        trainer.save_model(
+            output_dir=initial_checkpoint_dir,
+            merge_tensor_parallel=training_args.tensor_model_parallel_size > 1,
+            last_fc_to_hf=True,
+        )
+        checkpoint_finalizer = getattr(model, "finalize_saved_checkpoint", None)
+        if callable(checkpoint_finalizer):
+            checkpoint_finalizer(initial_checkpoint_dir)
+        repro_receipt_callback.record_initial_checkpoint(training_args, initial_checkpoint_dir)
+
     # Train
     if training_args.do_train:
         checkpoint = None
@@ -766,6 +880,11 @@ def run_sft(
         logger.info(f"Total_Tokens_per_second_per_gpu: {total_tokens_per_second_per_gpu} ")
         if not training_args.autotuner_benchmark:
             trainer.save_model(merge_tensor_parallel=training_args.tensor_model_parallel_size > 1, last_fc_to_hf=True)
+            checkpoint_finalizer = getattr(model, "finalize_saved_checkpoint", None)
+            if callable(checkpoint_finalizer):
+                checkpoint_finalizer(training_args.output_dir)
+            if repro_receipt_callback is not None:
+                repro_receipt_callback.finalize_checkpoint(training_args, trainer.state)
             trainer.log_metrics("train", train_result.metrics)
             trainer.save_metrics("train", train_result.metrics)
             trainer.save_state()

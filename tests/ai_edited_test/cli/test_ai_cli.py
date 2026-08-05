@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import sys
 import unittest
 from functools import partial
 from unittest.mock import MagicMock, patch
 
-from paddleformers.cli.cli import USAGE, WELCOME
+from paddleformers.cli.cli import USAGE, WELCOME, build_distributed_command
 
 
 class TestCliConstants(unittest.TestCase):
@@ -108,6 +109,24 @@ class TestCliArgvHandling(unittest.TestCase):
         """Version command should not be in distributed_funcs."""
         distributed_funcs = ["train", "export"]
         self.assertNotIn("version", distributed_funcs)
+
+    def test_distributed_command_uses_active_interpreter(self):
+        command = build_distributed_command(
+            current_device="gpu",
+            visible_cards="0,4,5,6",
+            master_ip="127.0.0.1",
+            master_port="8080",
+            nnodes="1",
+            rank="0",
+            log_dir="logs",
+            launcher_path="launcher.py",
+            launcher_args=["train", "config.yaml"],
+        )
+
+        self.assertEqual(command[0], sys.executable)
+        self.assertEqual(command[1:3], ["-m", "paddle.distributed.launch"])
+        self.assertEqual(command[-3:], ["launcher.py", "train", "config.yaml"])
+        self.assertNotIn("python", command)
 
 
 if __name__ == "__main__":

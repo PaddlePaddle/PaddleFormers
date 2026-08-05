@@ -15,7 +15,7 @@
 import os
 import unittest
 
-from paddleformers.datasets.reader.file_reader import FileListReader, FileReader
+from paddleformers.datasets.reader.file_reader import FileListReader, FileReader, _resolve_media_path
 from tests.testing_utils import get_tests_dir
 
 output_data = {
@@ -29,6 +29,11 @@ output_data = {
 
 
 class TestDatasetFileReader(unittest.TestCase):
+    def test_nested_video_frame_paths_are_resolved(self):
+        resolved = _resolve_media_path([["frames/000.png", "frames/001.png"]], "/dataset")
+
+        self.assertEqual(resolved, [["/dataset/frames/000.png", "/dataset/frames/001.png"]])
+
     def test_file_reader(self):
         dataset_dir = get_tests_dir(os.path.join("fixtures", "dummy"))
         dataset_path = os.path.join(dataset_dir, "io", "train.jsonl")

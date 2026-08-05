@@ -14,6 +14,7 @@
 
 import io
 import unittest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from paddleformers.datasets.template.mm_plugin import (
@@ -151,6 +152,66 @@ class TestMMPluginMixin(unittest.TestCase):
         rgba_image = Image.new("RGBA", (100, 100))
         result = plugin._preprocess_image(rgba_image, image_max_pixels=768 * 768, image_min_pixels=32 * 32)
         self.assertEqual(result.mode, "RGB")
+
+    def test_video_target_frames_overrides_fps_sampling(self):
+        plugin = self._make_plugin()
+        reader = MagicMock()
+        reader.metadata.num_frames = 8
+        reader.metadata.average_fps = 24
+
+        indices = plugin._get_video_sample_indices(
+            reader,
+            video_fps=2,
+            video_maxlen=8,
+            video_target_frames=2,
+        )
+
+        self.assertEqual(indices.tolist(), [0.0, 7.0])
+
+    def test_qwen_video_plugin_loads_nested_frame_paths(self):
+        from PIL import Image
+
+        plugin = get_mm_plugin(name="qwen3_vl", video_token="<video>")
+        frame = Image.new("RGB", (64, 64))
+        with (
+            patch("paddleformers.datasets.template.mm_plugin.os.path.exists", return_value=True),
+            patch.object(plugin, "_img_download", side_effect=[frame, frame]) as download,
+        ):
+            result = plugin._regularize_videos(
+                [["frames/000.png", "frames/001.png"]],
+                image_max_pixels=4096,
+                image_min_pixels=4096,
+                video_fps=2,
+                video_maxlen=2,
+                video_target_frames=2,
+            )
+
+        self.assertEqual(download.call_count, 2)
+        self.assertEqual(len(result["videos"][0]), 2)
+
+    def test_qwen3_video_plugin_uses_accuracy_compatible_frame_bounds(self):
+        plugin = get_mm_plugin(name="qwen3_vl", video_token="<video>")
+        video_processor = MagicMock(temporal_patch_size=2, merge_size=2)
+        video_processor.return_value = {}
+        processor = SimpleNamespace(
+            image_processor=SimpleNamespace(temporal_patch_size=2),
+            video_processor=video_processor,
+            video_frame_max_pixels=16384,
+            video_frame_min_pixels=16384,
+            video_max_pixels=4096,
+            video_min_pixels=4096,
+            video_fps=2,
+            video_maxlen=2,
+            video_target_frames=2,
+            model_input_names=[],
+        )
+        regularized = {"videos": [[MagicMock(), MagicMock()]], "fps_per_video": [2]}
+
+        with patch.object(plugin, "_regularize_videos", return_value=regularized) as regularize:
+            plugin._get_mm_inputs([], [["frames/000.png", "frames/001.png"]], [], processor)
+
+        self.assertEqual(regularize.call_args.kwargs["image_min_pixels"], 16384)
+        self.assertEqual(regularize.call_args.kwargs["image_max_pixels"], 16384)
 
     def test_file_download_invalid(self):
         """Test _file_download with invalid URL/path."""

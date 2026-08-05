@@ -232,6 +232,23 @@ class LlmMetaConfig:
         ("use_fused_linear_cross_entropy", bool, False, "use fused `linear + cross_entropy` fuse op."),
         ("apply_rope_fusion", bool, False, "Whether to fuse RoPE operation"),
         ("fuse_swiglu", bool, False, "Whether to fuse SwiGLU operations"),
+        ("bias_activation_fusion", bool, False, "Whether to fuse bias addition and activation."),
+        ("masked_softmax_fusion", bool, False, "Whether to use fused masked softmax."),
+        ("qk_norm_fusion", bool, False, "Whether to use fused Q/K normalization."),
+        ("bias_dropout_fusion", bool, False, "Whether to fuse bias addition and dropout."),
+        ("sigmoid_gate_fusion", bool, False, "Whether to use a fused sigmoid gate."),
+        (
+            "attention_softmax_in_fp32",
+            bool,
+            True,
+            "Whether to evaluate attention masking and softmax in float32.",
+        ),
+        (
+            "gradient_accumulation_fusion",
+            bool,
+            False,
+            "Whether to fuse weight-gradient accumulation into GEMMs.",
+        ),
     ]
 
     hybrid_parallel_attributes = [
@@ -380,6 +397,12 @@ class LlmMetaConfig:
             bool,
             False,
             "Whether to fuse experts. Default to True.",
+        ),
+        (
+            "moe_permute_fusion",
+            bool,
+            False,
+            "Whether to use fused MoE token permutation and unpermutation.",
         ),
         (
             "moe_router_fusion",
@@ -565,6 +588,12 @@ class LlmMetaConfig:
             False,
             "Whether to enable accuracy-compatible kernels for cross-framework numerical alignment. Defaults to False.",
         ),
+        (
+            "deterministic_mode",
+            bool,
+            False,
+            "Whether to select deterministic model kernels and implementations. Defaults to False.",
+        ),
         ("experimental_dataflow", bool, False, "Whether to enable experimental dataflow in Fleet. Default is False."),
     ]
 
@@ -614,6 +643,7 @@ class LlmMetaConfig:
             cls.recompute_attributes,
             cls.loss_attributes,
             cls.moe_attributes,
+            cls.mtp_attributes,
             cls.fp8_attributes,
             cls.model_attributes,
             cls.model_conf,
