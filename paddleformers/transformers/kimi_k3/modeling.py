@@ -934,6 +934,11 @@ class KimiK3ForConditionalGeneration(KimiK3PretrainedModel):
                 sources.append(f"{name}^T" if transposed else name)
             aoa_config["aoa_statements"].append(f"{','.join(sources)} -> {targets.strip()}")
 
+        aoa_config["aoa_statements"] += [
+            "model.language_embedding.embedding.embed_tokens.weight -> _",
+            "model.language_lm_head.weight -> _",
+        ]
+
         # visual model
         aoa_config["aoa_statements"] += [
             f"{visual_prefix}0.embedding.proj.weight -> vision_tower.patch_embed.proj.weight",
