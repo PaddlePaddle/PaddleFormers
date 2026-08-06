@@ -2414,6 +2414,17 @@ class Trainer:
 
                 for inputs in inputs_list:
                     if step_control % args.gradient_accumulation_steps == 0:
+                        # The ZCC snapshot of the previous step reads GPU buffers over CUDA IPC
+                        # from a separate process. It must be finished before any callback or
+                        # optimizer mutates those buffers, and the earliest mutator is
+                        # `on_step_begin` (FP8 expert quantization clears the bf16 param storage),
+                        # which runs before `on_optimizer_begin`. Sync here, not there.
+                        if (
+                            not args.enable_auto_parallel
+                            and self.args.enable_zero_cost_checkpoint
+                            and self.zcc_manager is not None
+                        ):
+                            self.zcc_manager.maybe_sync_offload_status()
                         self.control = self.callback_handler.on_step_begin(args, self.state, self.control)
                         self.timers and self.timers("forward-backward").start()
 
