@@ -16,7 +16,11 @@ import unittest
 
 import paddle
 
-from paddleformers.transformers import MiniCPM4_1Config, MiniCPM4_1ForCausalLM, MiniCPM4_1Model
+from paddleformers.transformers import (
+    MiniCPM4_1Config,
+    MiniCPM4_1ForCausalLM,
+    MiniCPM4_1Model,
+)
 
 # from tests.testing_utils import slow
 from tests.transformers.test_configuration_common import ConfigTester
