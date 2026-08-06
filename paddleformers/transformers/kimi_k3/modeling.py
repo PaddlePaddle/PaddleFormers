@@ -807,13 +807,32 @@ def _build_vl_model(config, criterion):
         ignore_index=getattr(config, "ignore_index", -100),
     )
     model.config_to_save = config
-    return FleetKimiK3ForConditionalGeneration(config, model, criterion)
+    wrapper = FleetKimiK3ForConditionalGeneration(config, model, criterion)
+    wrapper._gen_aoa_config = KimiK3ForConditionalGeneration._gen_aoa_config
+    wrapper._gen_inv_aoa_config = KimiK3ForConditionalGeneration._gen_inv_aoa_config
+    return wrapper
 
 
 class KimiK3ForConditionalGeneration(KimiK3PretrainedModel):
     """Kimi-K3 multimodal model: MoonViT3d vision tower + KDA/MLA text backbone."""
 
     is_fleet = True
+
+    @staticmethod
+    def _vl_language_name(name, num_layers):
+        prefix = "model.language_model._layers."
+        if name == "model.embedding.embed_tokens.weight":
+            return f"{prefix}0.embedding.embed_tokens.weight"
+        if name.startswith("model.layers."):
+            index, _, tail = name[len("model.layers.") :].partition(".")
+            return f"{prefix}{int(index) + 1}.{tail}"
+        if name.startswith("model.output_attn_res."):
+            return f"{prefix}{num_layers + 1}.{name[len('model.output_attn_res.') :]}"
+        if name == "model.norm.weight":
+            return f"{prefix}{num_layers + 2}.norm.weight"
+        if name == "model.lm_head.weight":
+            return f"{prefix}{num_layers + 3}.weight"
+        return name
 
     @classmethod
     def _gen_aoa_config(cls, config):
@@ -829,27 +848,11 @@ class KimiK3ForConditionalGeneration(KimiK3PretrainedModel):
         num_layers = text_config.num_hidden_layers
         vt_layers = vision_config.vt_num_hidden_layers
         vt_heads = vision_config.vt_num_attention_heads
-        llm_prefix = "model.language_model._layers."
         visual_prefix = "model.visual._layers."
 
-        # language model: the text-only targets name a flat model.layers.{i} backbone, while
-        # the VL wrapper nests it in a NoPipelineParallel whose children are numbered
-        # positionally: embedding, decoder layers, output attention residual, norm, lm head.
-        # The embedding and the lm head appear twice in sharded_state_dict(), hence aliases.
-        def to_vl_target(name):
-            if name == "model.embedding.embed_tokens.weight":
-                return f"{llm_prefix}0.embedding.embed_tokens.weight"
-            if name.startswith("model.layers."):
-                index, _, tail = name[len("model.layers.") :].partition(".")
-                return f"{llm_prefix}{int(index) + 1}.{tail}"
-            if name.startswith("model.output_attn_res."):
-                return f"{llm_prefix}{num_layers + 1}.{name[len('model.output_attn_res.') :]}"
-            if name == "model.norm.weight":
-                return f"{llm_prefix}{num_layers + 2}.norm.weight"
-            if name == "model.lm_head.weight":
-                return f"{llm_prefix}{num_layers + 3}.weight"
-            return name
-
+        # language model: the text-only targets name a flat model.layers.{i} backbone, which
+        # _vl_language_name maps onto the VL layout. The embedding and the lm head appear
+        # twice in sharded_state_dict(), hence aliases.
         aliases = {
             "model.embedding.embed_tokens.weight": "model.language_embedding.embedding.embed_tokens.weight",
             "model.lm_head.weight": "model.language_lm_head.weight",
@@ -860,7 +863,8 @@ class KimiK3ForConditionalGeneration(KimiK3PretrainedModel):
             target, comma, options = target_part.strip().partition(",")
             target = target.strip()
             options = f",{options}" if comma else ""
-            aoa_config["aoa_statements"].append(f"{sources.strip()} -> {to_vl_target(target)}{options}")
+            vl_target = cls._vl_language_name(target, num_layers)
+            aoa_config["aoa_statements"].append(f"{sources.strip()} -> {vl_target}{options}")
             if target in aliases:
                 aoa_config["aoa_statements"].append(f"{sources.strip()} -> {aliases[target]}{options}")
 
@@ -904,6 +908,63 @@ class KimiK3ForConditionalGeneration(KimiK3PretrainedModel):
                 f"k3vqkv{layer_id}q^T,k3vqkv{layer_id}k^T,k3vqkv{layer_id}v^T -> "
                 f"{visual_prefix}{layer_id + 1}.self_attn.qkv_proj.weight, fused_qkv, "
                 f"num_heads={vt_heads}, num_key_value_groups={vt_heads}",
+            )
+        ]
+        return aoa_config
+
+    @classmethod
+    def _gen_inv_aoa_config(cls, config):
+        """Inverse of :meth:`_gen_aoa_config`: VL weights back to the official HF schema."""
+        text_config = config.get_text_config()
+        vision_config = config.vision_config
+        num_layers = text_config.num_hidden_layers
+        vt_layers = vision_config.vt_num_hidden_layers
+        vt_heads = vision_config.vt_num_attention_heads
+        visual_prefix = "model.visual._layers."
+
+        # language model: here the Fleet names are the sources, so rewrite the left side.
+        aoa_config = {"aoa_statements": []}
+        for statement in KimiK3PretrainedModel._gen_inv_aoa_config(config)["aoa_statements"]:
+            source_part, _, targets = statement.partition("->")
+            sources = []
+            for source in source_part.split(","):
+                source = source.strip()
+                transposed = source.endswith("^T")
+                name = cls._vl_language_name(source[:-2] if transposed else source, num_layers)
+                sources.append(f"{name}^T" if transposed else name)
+            aoa_config["aoa_statements"].append(f"{','.join(sources)} -> {targets.strip()}")
+
+        # visual model
+        aoa_config["aoa_statements"] += [
+            f"{visual_prefix}0.embedding.proj.weight -> vision_tower.patch_embed.proj.weight",
+            f"{visual_prefix}0.embedding.pos_emb.weight -> vision_tower.patch_embed.pos_emb.weight",
+            f"{visual_prefix}{vt_layers + 1}.norm.weight -> vision_tower.encoder.final_layernorm.weight",
+            f"{visual_prefix}{vt_layers + 3}.proj.up_gate_proj.weight^T -> mm_projector.proj.0.weight",
+            f"{visual_prefix}{vt_layers + 3}.proj.down_proj.weight^T -> mm_projector.proj.2.weight",
+            f"{visual_prefix}{vt_layers + 3}.post_norm.weight -> mm_projector.post_norm.weight",
+        ]
+        aoa_config["aoa_statements"] += [
+            f"{visual_prefix}{layer_id + 1}.{fleet}{'^T' if transpose else ''} -> "
+            f"vision_tower.encoder.blocks.{layer_id}.{hf}"
+            for layer_id in range(vt_layers)
+            for hf, fleet, transpose in (
+                ("norm0.weight", "input_layernorm.weight", False),
+                ("wo.weight", "self_attn.o_proj.weight", True),
+                ("norm1.weight", "post_attention_layernorm.weight", False),
+                ("mlp.fc0.weight", "mlp.up_gate_proj.weight", True),
+                ("mlp.fc1.weight", "mlp.down_proj.weight", True),
+            )
+        ]
+        # visual attention qkv: unfuse the interleaved layout, then concatenate as HF stores it
+        aoa_config["aoa_statements"] += [
+            stmt
+            for layer_id in range(vt_layers)
+            for stmt in (
+                f"{visual_prefix}{layer_id + 1}.self_attn.qkv_proj.weight -> "
+                f"k3vqkv{layer_id}q,k3vqkv{layer_id}k,k3vqkv{layer_id}v, fused_qkv, "
+                f"num_heads={vt_heads}, num_key_value_groups={vt_heads}",
+                f"k3vqkv{layer_id}q^T,k3vqkv{layer_id}k^T,k3vqkv{layer_id}v^T -> "
+                f"vision_tower.encoder.blocks.{layer_id}.wqkv.weight, axis=0",
             )
         ]
         return aoa_config
