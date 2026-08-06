@@ -12,11 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# 统一集成测试入口脚本。用于替代 tests/integration_test/ 下按模型/模式拆分的
-# glm45_*.sh / qwen*.sh / qwen3vl_*.sh 等脚本，合并训练执行、失败重试检查、
-# loss 精度比对、精度审批兜底流程等公共逻辑，通过 <model> <mode> [machine]
-# 三个参数驱动具体 case。
-#
 # 用法:
 #   run_fleet_cice.sh <model> <mode> [machine]
 #
@@ -99,7 +94,10 @@ run_training() {
 check_precision() {
   local log_file=$1
   local use_compare_step=$2
-  local gt_loss_file=${log_file%.*}_gt_loss.txt
+  # gt_loss 文件名必须与 CDN 上已上传的 baseline 保持一致（沿用拆分脚本时代的命名），
+  # 不能由新的 ${model}_${mode}_${machine} 日志名推导，否则一律 404。
+  # 具体映射见下方 gt_loss_file 赋值处。
+  local gt_loss_file=${gt_loss_file:-${log_file%.*}_gt_loss.txt}
 
   export repo_name=PaddleFleet
   export REPO_NAME=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
@@ -287,6 +285,14 @@ case "$model" in
       rm -rf DoclingMatix.tar.gz
     fi
     ;;
+  gemma4)
+    if [[ "$mode" != "pt" ]]; then
+      echo -e "::error:: unsupported mode '$mode' for model '$model'"
+      exit 1
+    fi
+    config_yaml=$config_ci_dir/gemma4_moe_pt.yaml
+    data_dir=$CACHE_DIR/gemma4
+    ;;
   *)
     echo -e "::error:: \033[31munsupported model '$model'\033[0m"
     exit 1
@@ -443,6 +449,31 @@ if [[ "$model" == qwen3vl* ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Gemma4 MoE pt：train/eval 共用同一份 jsonl，base 模型（49G）需预置在 CACHE_DIR 下，
+# 下载方式见 $CACHE_DIR/full-gemma-4-26B-A4B/download.sh
+# ---------------------------------------------------------------------------
+if [[ "$model" == "gemma4" ]]; then
+  if [[ ! -f $data_dir/train.jsonl ]]; then
+    mkdir -p $data_dir
+    wget -q --tries=5 --no-proxy --no-check-certificate \
+      -O $data_dir/train.jsonl https://paddle-qa.bj.bcebos.com/paddleformers/gemma4/train.jsonl
+  fi
+  model_name_or_path=$CACHE_DIR/full-gemma-4-26B-A4B
+  if [[ ! -d "$model_name_or_path" ]]; then
+    echo -e "::error:: \033[31m[$model/$mode] base 模型不存在: $model_name_or_path\033[0m"
+    echo -e "\033[31m请先在该机器的 CACHE_DIR 下预置 full-gemma-4-26B-A4B（约 49G）。\033[0m"
+    exit 1
+  fi
+  output_dir=$root_dir/checkpoints/gemma4-pt
+  export data_dir model_name_or_path output_dir
+  yq_write "$config_yaml" '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
+    | .eval_dataset_path = strenv(data_dir) + "/train.jsonl"
+    | .model_name_or_path = strenv(model_name_or_path)
+    | .logging_dir = strenv(output_dir) + "/gemma4_log"
+    | .output_dir = strenv(output_dir)'
+fi
+
+# ---------------------------------------------------------------------------
 # glm45_single / qwen_single 不需要任何 yq 覆盖，直接使用 config 文件里的固定值
 # （与原 glm45_pt_single_card.sh / qwen3_single_card.sh 行为一致）
 # ---------------------------------------------------------------------------
@@ -474,5 +505,32 @@ unset http_proxy https_proxy
 
 log_file=${model}_${mode}_${machine}.txt
 
+# ---------------------------------------------------------------------------
+# gt_loss baseline 文件名：沿用拆分脚本时代的命名，与 CDN 上
+# PaddleFleet/precision/${REPO_NAME}_latest/ 下已有的 baseline 一一对应。
+# 新增 case 时若 CDN 上没有对应 baseline，联系 swgu98 上传。
+# ---------------------------------------------------------------------------
+a100_suffix=""
+if [[ "$machine" == "a100" ]]; then
+  a100_suffix="_a100"
+fi
+
+case "$model.$mode" in
+  glm45.*)                    gt_loss_file=glm45_${mode}_multi_card${a100_suffix}_gt_loss.txt ;;
+  glm45_ep4.pt)               gt_loss_file=glm45_pt_ep4_multi_card_gt_loss.txt ;;
+  glm45_fp8.pt)               gt_loss_file=glm45_multi_cards_fp8_gt_loss.txt ;;
+  glm45_grouped_gemm.pt)      gt_loss_file=glm45_multi_cards_grouped_gemm_gt_loss.txt ;;
+  glm45_single.single_pt)     gt_loss_file=glm45_single_card_gt_loss.txt ;;
+  qwen.*)                     gt_loss_file=qwen_${mode}_multi_card${a100_suffix}_gt_loss.txt ;;
+  qwen_single.single_pt)      gt_loss_file=qwen3_single_card_gt_loss.txt ;;
+  qwen3vl.sft)                gt_loss_file=qwen3vl_sft_${machine}_tp8_multi_card_gt_loss.txt ;;
+  qwen3vl.lora)               gt_loss_file=qwen3vl_lora_${machine}_multi_card_gt_loss.txt ;;
+  qwen3vl_moe.sft)            gt_loss_file=qwen3vl_sft_${machine}_moe_multi_card_gt_loss.txt ;;
+  qwen3vl_fsdp.sft)           gt_loss_file=qwen3vl_sft_${machine}_fsdp_multi_card_gt_loss.txt ;;
+  qwen3vl_single.single_sft)  gt_loss_file=qwen3vl_sft_single_card_gt_loss.txt ;;
+  gemma4.pt)                  gt_loss_file=gemma4_pt_multi_card_gt_loss.txt ;;
+esac
+
 run_training "$config_yaml" "$log_file" "$check_string"
 check_precision "$log_file" "$use_compare_step"
+
