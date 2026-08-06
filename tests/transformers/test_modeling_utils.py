@@ -81,10 +81,12 @@ class TestVirtualPipelineNameMapping(unittest.TestCase):
         "3": "model.lm_head",
     }
 
-    def _build_mapping(self, pp_keys, layers_desc=(), stage_id=0, index_to_stage=None):
+    def _build_mapping(self, pp_keys, layers_desc=(), stage_id=0, index_to_stage=None, num_virtual_pipeline_stages=2):
         model = PipelinePretrainedModel.__new__(PipelinePretrainedModel)
         model._layers_desc = list(layers_desc)
         model._stage_id = stage_id
+        model._num_virtual_pipeline_stages = num_virtual_pipeline_stages
+        model._use_dualpipev = False
         model.get_stage_from_index = lambda idx: (index_to_stage or {}).get(idx, stage_id)
         with mock.patch.object(
             PretrainedModel, "state_dict", return_value={k: None for k in pp_keys}
@@ -156,12 +158,11 @@ class TestVirtualPipelineNameMapping(unittest.TestCase):
             },
         )
 
-    def test_vpp_detected_when_shared_key_comes_first(self):
+    def test_mapping_when_shared_key_comes_first(self):
         # If the first chunk registers the SharedLayerDesc with `forward_func`, the first
         # non `shared_layers` key is `{chunk_start}.{name}.rest`, whose second segment is
-        # not a digit. VPP must still be detected, otherwise the
-        # `{chunk_start}.{local_idx}.rest` keys of the ordinary chunks would be resolved
-        # against `prefixes[chunk_start]`.
+        # not a digit. The `{chunk_start}.{local_idx}.rest` keys of the other chunks must
+        # still be resolved as chunk keys.
         shared = SharedLayerDesc(
             "embed_weight_share", nn.Linear, forward_func=lambda layer, x: x, shared_weight_attr="weight"
         )
@@ -182,5 +183,22 @@ class TestVirtualPipelineNameMapping(unittest.TestCase):
                 "shared_layers.embed_weight_share.weight": "model.embed_tokens.weight",
                 "0.embed_weight_share.weight": "model.embed_tokens.weight",
                 "2.0.self_attn.o_proj.weight": "model.layers.1.self_attn.o_proj.weight",
+            },
+        )
+
+    def test_ordinary_pp_keeps_numeric_sublayer_names(self):
+        # Without chunking, `LayerDesc(nn.Sequential, ...)` yields
+        # `{global_idx}.{sublayer_idx}.rest`, which looks exactly like a chunk key. The
+        # numeric sublayer name has to survive, so the chunked form must not be inferred
+        # from the key shape.
+        pp_keys = ["1.0.weight", "1.1.bias", "2.self_attn.o_proj.weight"]
+        mapping = self._build_mapping(pp_keys, num_virtual_pipeline_stages=1)
+
+        self.assertEqual(
+            mapping,
+            {
+                "1.0.weight": "model.layers.0.0.weight",
+                "1.1.bias": "model.layers.0.1.bias",
+                "2.self_attn.o_proj.weight": "model.layers.1.self_attn.o_proj.weight",
             },
         )

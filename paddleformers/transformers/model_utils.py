@@ -3564,15 +3564,14 @@ class PipelinePretrainedModel(PretrainedModel):
             pp_to_single_mapping = {}
 
             state_dict_keys = list(super().state_dict().keys())
-            # Under VPP the layers of a chunk are named `{chunk_start}.{local_idx}.xxx`,
-            # otherwise they are named `{global_idx}.xxx`. A single key of the former shape
-            # settles it; looking at the first key only is not enough, because it can be a
-            # shared layer alias or a directly added layer, and both keep a non digit second
-            # segment under VPP as well.
-            use_virtual_pipeline_model_parallel_size = any(
-                len(parts) > 2 and parts[0].isdigit() and parts[1].isdigit()
-                for parts in (k.split(".") for k in state_dict_keys)
-            )
+            # Whether the layers are chunked is a property of the model, not something the
+            # key shapes can tell: a chunk key is `{chunk_start}.{local_idx}.xxx`, but an
+            # ordinary PP `LayerDesc(nn.Sequential, ...)` also yields
+            # `{global_idx}.{sublayer_idx}.xxx`, and conversely the first key of a chunked
+            # stage may be a shared layer alias or a directly added layer, both of which
+            # keep a non digit second segment. Ask the pipeline layer itself; dualpipev
+            # chunks the layers as well.
+            use_virtual_pipeline_model_parallel_size = self._num_virtual_pipeline_stages > 1 or self._use_dualpipev
 
             prefixes = self.get_sequential_name_prefixes()
             shared_layer_names = {
