@@ -221,8 +221,11 @@ class KimiK3TextConfig(PretrainedConfig):
 
         # KDA/MLA hybrid attention schedule
         self.linear_attn_config = linear_attn_config
-        self.layer_types = self._build_layer_types()
-        self._flatten_linear_attn_config()
+        self.layer_types = kwargs.pop("layer_types", None)
+        if isinstance(linear_attn_config, dict):
+            if self.layer_types is None:
+                self.layer_types = self._build_layer_types()
+            self._flatten_linear_attn_config()
         self.attn_res_block_size = attn_res_block_size
 
         # MLA

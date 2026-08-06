@@ -815,6 +815,99 @@ class KimiK3ForConditionalGeneration(KimiK3PretrainedModel):
 
     is_fleet = True
 
+    @classmethod
+    def _gen_aoa_config(cls, config):
+        """Vision statements plus the text statements of the base class, retargeted for VL.
+
+        Shadows the text-only mapping of :class:`KimiK3PretrainedModel` so both halves load
+        from one checkpoint.
+        """
+        text_config = config.get_text_config()
+        vision_config = config.vision_config
+        dtype = getattr(text_config, "dtype", None) or getattr(config, "dtype", None)
+        cast = f", dtype='{dtype}'" if dtype else ""
+        num_layers = text_config.num_hidden_layers
+        vt_layers = vision_config.vt_num_hidden_layers
+        vt_heads = vision_config.vt_num_attention_heads
+        llm_prefix = "model.language_model._layers."
+        visual_prefix = "model.visual._layers."
+
+        # language model: the text-only targets name a flat model.layers.{i} backbone, while
+        # the VL wrapper nests it in a NoPipelineParallel whose children are numbered
+        # positionally: embedding, decoder layers, output attention residual, norm, lm head.
+        # The embedding and the lm head appear twice in sharded_state_dict(), hence aliases.
+        def to_vl_target(name):
+            if name == "model.embedding.embed_tokens.weight":
+                return f"{llm_prefix}0.embedding.embed_tokens.weight"
+            if name.startswith("model.layers."):
+                index, _, tail = name[len("model.layers.") :].partition(".")
+                return f"{llm_prefix}{int(index) + 1}.{tail}"
+            if name.startswith("model.output_attn_res."):
+                return f"{llm_prefix}{num_layers + 1}.{name[len('model.output_attn_res.') :]}"
+            if name == "model.norm.weight":
+                return f"{llm_prefix}{num_layers + 2}.norm.weight"
+            if name == "model.lm_head.weight":
+                return f"{llm_prefix}{num_layers + 3}.weight"
+            return name
+
+        aliases = {
+            "model.embedding.embed_tokens.weight": "model.language_embedding.embedding.embed_tokens.weight",
+            "model.lm_head.weight": "model.language_lm_head.weight",
+        }
+        aoa_config = {"aoa_statements": []}
+        for statement in KimiK3PretrainedModel._gen_aoa_config(config)["aoa_statements"]:
+            sources, _, target_part = statement.partition("->")
+            target, comma, options = target_part.strip().partition(",")
+            target = target.strip()
+            options = f",{options}" if comma else ""
+            aoa_config["aoa_statements"].append(f"{sources.strip()} -> {to_vl_target(target)}{options}")
+            if target in aliases:
+                aoa_config["aoa_statements"].append(f"{sources.strip()} -> {aliases[target]}{options}")
+
+        # visual model: patch-embed, the encoder blocks, the final norm, the sd2_tpool merger
+        # (no parameters) and the projector are consecutive children, so vt_layers + 2 is
+        # skipped. Pipeline-parallel vision would re-number them.
+        if (getattr(vision_config, "pipeline_model_parallel_size", 1) or 1) != 1:
+            raise NotImplementedError(
+                "Kimi-K3 vision AOA statements only cover the single-stage tower; "
+                "pipeline-parallel vision re-numbers the child layers."
+            )
+        aoa_config["aoa_statements"] += [
+            f"vision_tower.patch_embed.proj.weight -> {visual_prefix}0.embedding.proj.weight{cast}",
+            f"vision_tower.patch_embed.pos_emb.weight -> {visual_prefix}0.embedding.pos_emb.weight{cast}",
+            f"vision_tower.encoder.final_layernorm.weight -> {visual_prefix}{vt_layers + 1}.norm.weight{cast}",
+            f"mm_projector.proj.0.weight^T -> {visual_prefix}{vt_layers + 3}.proj.up_gate_proj.weight{cast}",
+            f"mm_projector.proj.2.weight^T -> {visual_prefix}{vt_layers + 3}.proj.down_proj.weight{cast}",
+            f"mm_projector.post_norm.weight -> {visual_prefix}{vt_layers + 3}.post_norm.weight{cast}",
+        ]
+        # HF block i maps to child i + 1, so $LAYER_ID cannot express it.
+        aoa_config["aoa_statements"] += [
+            f"vision_tower.encoder.blocks.{layer_id}.{hf}{'^T' if transpose else ''} -> "
+            f"{visual_prefix}{layer_id + 1}.{fleet}{cast}"
+            for layer_id in range(vt_layers)
+            for hf, fleet, transpose in (
+                ("norm0.weight", "input_layernorm.weight", False),
+                ("wo.weight", "self_attn.o_proj.weight", True),
+                ("norm1.weight", "post_attention_layernorm.weight", False),
+                ("mlp.fc0.weight", "mlp.up_gate_proj.weight", True),
+                ("mlp.fc1.weight", "mlp.down_proj.weight", True),
+            )
+        ]
+        # visual attention qkv: HF fuses as [all Q | all K | all V] while Fleet expects the
+        # interleaved [q0 k0 v0 ...] layout, so a plain ^T would load and compute garbage.
+        aoa_config["aoa_statements"] += [
+            stmt
+            for layer_id in range(vt_layers)
+            for stmt in (
+                f"vision_tower.encoder.blocks.{layer_id}.wqkv.weight -> k3vqkv{layer_id}{cast}",
+                f"k3vqkv{layer_id} -> k3vqkv{layer_id}q,k3vqkv{layer_id}k,k3vqkv{layer_id}v, axis=0",
+                f"k3vqkv{layer_id}q^T,k3vqkv{layer_id}k^T,k3vqkv{layer_id}v^T -> "
+                f"{visual_prefix}{layer_id + 1}.self_attn.qkv_proj.weight, fused_qkv, "
+                f"num_heads={vt_heads}, num_key_value_groups={vt_heads}",
+            )
+        ]
+        return aoa_config
+
     def __new__(cls, config, have_criterion=True):
         if getattr(config, "vision_config", None) is None:
             raise ValueError(
