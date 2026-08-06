@@ -47,11 +47,13 @@ class KimiK3ModelProvider(GPTModelProvider):
     multi_latent_attention: bool = True
     gated_attention: bool = True
     use_qk_norm: bool = True
+    qk_norm_eps: float = 1e-6
     gated_linear_unit: bool = True
     normalization: str = "RMSNorm"
 
     # KDA/MLA hybrid attention schedule
     linear_attn_config: dict | None = None
+    block_attention_residuals: bool = True
 
     # General defaults
     share_embeddings_and_output_weights: bool = False
@@ -62,15 +64,6 @@ class KimiK3ModelProvider(GPTModelProvider):
         # HF config.json -> Fleet TransformerConfig field mappings
         **KimiK3TextConfig._HF_TO_FLEET_FIELD_MAP,
     }
-
-    def __post_init__(self):
-        if self.attn_res_block_size is None or self.attn_res_block_size <= 0:
-            raise ValueError("Kimi-K3 attn_res_block_size must be a positive integer.")
-        self.block_attention_residuals = True
-        # Fleet counts attention and MLP as two residual sublayers, while the
-        # source value counts decoder layers, so double it.
-        self.attn_res_block_size *= 2
-        super().__post_init__()
 
 
 class KimiK3PretrainedModel(PretrainedModel):
