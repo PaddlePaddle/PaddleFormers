@@ -1329,8 +1329,58 @@ class Trainer:
                 else:
                     opt_states[k] = v
 
+            # When a checkpoint dumped under one MoE dispatcher layout is loaded
+            # under another (e.g. allgather N-D experts vs deepep flattened 2-D),
+            # grouped-gemm expert tensors have matching element counts but a
+            # different global_shape, which the flex-checkpoint resharder rejects
+            # with "Global shapes must be the same". Inject AOA reshape statements
+            # so the source is reshaped to the target layout during load.
+            # Restricted to grouped-gemm keys, and only when the two shapes form a
+            # valid canonical(N-D) <-> flattened([d0*d1, prod(rest)]) pair, so it
+            # is a no-op whenever the layouts already agree.
+            grouped_gemm_structs = {
+                k for k, v in model_sharded_state_dict.items() if getattr(v, "grouped_gemm_param", False)
+            }
+
+            def _grouped_gemm_reshape_statements(target_state_dict):
+                statements = []
+                seen = set()
+                for k, sw in target_state_dict.items():
+                    struct_name = re.sub(r"\.(w_0|moment1_0|moment2_0)$", "", k)
+                    if struct_name not in grouped_gemm_structs or struct_name in seen:
+                        continue
+                    meta = state_dict_metadata.get(k)
+                    if meta is None:
+                        continue
+                    meta = meta[0] if isinstance(meta, (list, tuple)) else meta
+                    src_shape = tuple(meta.global_shape)
+                    dst_shape = tuple(sw.global_shape)
+                    if src_shape == dst_shape:
+                        continue
+                    canonical = src_shape if len(src_shape) >= len(dst_shape) else dst_shape
+                    if len(canonical) < 3:
+                        continue
+                    flattened = (canonical[0] * canonical[1], math.prod(canonical[2:]))
+                    if {src_shape, dst_shape} != {canonical, flattened}:
+                        continue
+                    # AOA keys weights by the base model-state name (the optimizer
+                    # suffix is stripped internally), so the statement must use the
+                    # suffix-free struct name on both sides.
+                    seen.add(struct_name)
+                    statements.append(f"{struct_name} -> {struct_name}, reshape = '{list(canonical)}'")
+                return statements
+
+            def _merge_reshape_aoa(aoa_config, statements):
+                if not statements:
+                    return aoa_config
+                merged = dict(aoa_config or {})
+                existing = list(merged.get("aoa_statements", []))
+                merged["aoa_statements"] = existing + [s for s in statements if s not in existing]
+                return merged
+
             # use filtered AOA for master_weight (excludes FP32-only params)
             master_weight_aoa = getattr(self.args, "aoa_config_master_weight", None) or self.args.aoa_config
+            master_weight_aoa = _merge_reshape_aoa(master_weight_aoa, _grouped_gemm_reshape_statements(master_weights))
             dist.load_state_dict(
                 master_weights,
                 master_weights_path,
@@ -1344,7 +1394,7 @@ class Trainer:
                 dist.load_state_dict(
                     opt_states,
                     opt_states_path,
-                    aoa_config=self.args.aoa_config,
+                    aoa_config=_merge_reshape_aoa(self.args.aoa_config, _grouped_gemm_reshape_statements(opt_states)),
                     offload=self.args.load_via_cpu,
                     comm_method=flex_ckpt_comm_method,
                     worker_groups=worker_groups,
@@ -1434,6 +1484,17 @@ class Trainer:
         if enable_bf16_opt:
             opt_state_dict = self.optimizer.state_dict()
 
+            # Structure names of grouped-gemm MoE experts, identified by the
+            # `grouped_gemm_param` attribute on the sharded tensor (same signal
+            # used by the ZCC worker in zero_cost_checkpoint.py). Their saved
+            # master weight can be flattened 2-D while the live param is N-D
+            # (or vice versa) depending on the dispatcher layout, so only these
+            # keys are allowed to reshape on an element-count match. Every other
+            # bf16 param keeps the exact shape check.
+            grouped_gemm_keys = {
+                k for k, v in self.model.sharded_state_dict().items() if getattr(v, "grouped_gemm_param", False)
+            }
+
             def _assign_master_weights_to_model(master_weights):
                 model_state_dict = self.model.state_dict()
                 for key, param in model_state_dict.items():
@@ -1443,9 +1504,13 @@ class Trainer:
                             f"shape {master_weights[param.name].shape} to param "
                             f"{param.name} shape{param.shape}"
                         )
-                        assert (
-                            param.shape == master_weights[param.name].shape
-                        ), f"got {param.shape} vs {master_weights[param.name].shape}"
+                        mw_shape = master_weights[param.name].shape
+                        if key in grouped_gemm_keys:
+                            assert math.prod(param.shape) == math.prod(
+                                mw_shape
+                            ), f"grouped-gemm element count mismatch: {param.shape} vs {mw_shape}"
+                        else:
+                            assert param.shape == mw_shape, f"shape mismatch: {param.shape} vs {mw_shape}"
                         master_weight = paddle.reshape(master_weights[param.name], param.shape)
                         paddle.assign(paddle.cast(to_device(master_weight), paddle.bfloat16), model_state_dict[key])
 
@@ -1527,9 +1592,13 @@ class Trainer:
                             logger.debug(
                                 f"key {key}, convert master weights {param.name} shape {master_weights[param.name].shape} to param {param.name} shape{param.shape}"
                             )
-                            assert (
-                                param.shape == master_weights[param.name].shape
-                            ), f"got {param.shape} vs {master_weights[param.name].shape}"
+                            mw_shape = master_weights[param.name].shape
+                            if key in grouped_gemm_keys:
+                                assert math.prod(param.shape) == math.prod(
+                                    mw_shape
+                                ), f"grouped-gemm element count mismatch: {param.shape} vs {mw_shape}"
+                            else:
+                                assert param.shape == mw_shape, f"shape mismatch: {param.shape} vs {mw_shape}"
                             master_weight = paddle.reshape(master_weights[param.name], param.shape)
                             paddle.assign(
                                 paddle.cast(to_device(master_weight), paddle.bfloat16), model_state_dict[key]
