@@ -3565,17 +3565,19 @@ class PipelinePretrainedModel(PretrainedModel):
             pp_to_single_mapping = {}
 
             state_dict_keys = list(super().state_dict().keys())
-            first_key = ""
-            for k in state_dict_keys:
-                if "shared_layers" not in k:
-                    first_key = k
-                    break
-            first_key = first_key.split(".")
-            # if use virtual pp_degree, the prefix is like 0.0.xxx
-            # else it will be like 0.xxx
-            use_virtual_pipeline_model_parallel_size = first_key[0].isdigit() and first_key[1].isdigit()
+            # Whether the layers are chunked is a property of the model, not something the
+            # key shapes can tell: a chunk key is `{chunk_start}.{local_idx}.xxx`, but an
+            # ordinary PP `LayerDesc(nn.Sequential, ...)` also yields
+            # `{global_idx}.{sublayer_idx}.xxx`, and conversely the first key of a chunked
+            # stage may be a shared layer alias or a directly added layer, both of which
+            # keep a non digit second segment. Ask the pipeline layer itself; dualpipev
+            # chunks the layers as well.
+            use_virtual_pipeline_model_parallel_size = self._num_virtual_pipeline_stages > 1 or self._use_dualpipev
 
             prefixes = self.get_sequential_name_prefixes()
+            shared_layer_names = {
+                layer.layer_name for layer in self._layers_desc if isinstance(layer, SharedLayerDesc)
+            }
             for k in state_dict_keys:
                 name_splited = k.split(".")
                 if use_virtual_pipeline_model_parallel_size:
@@ -3584,12 +3586,22 @@ class PipelinePretrainedModel(PretrainedModel):
                             idx = str(int(name_splited[0]) + int(name_splited[1]))
                             single_name = [prefixes[idx]]
                             single_name.extend(name_splited[2:])
-                        else:
-                            single_name = [prefixes[str(len(prefixes) - 1)]]
+                        elif name_splited[1] in shared_layer_names:
+                            # A SharedLayerDesc with `forward_func` is registered on the chunk
+                            # itself under VPP, so its key is `{chunk_start}.{shared_name}.rest`.
+                            # It aliases the same parameter as `shared_layers.{shared_name}.rest`
+                            # and must resolve to the same single card name.
+                            single_name = [self.get_shardlayer_prefix(name_splited, SharedLayerDesc)]
                             single_name.extend(name_splited[2:])
-                            logger.warning(
-                                f"Please check! we treat this key as last layer, get {k}, set origin name as {'.'.join(single_name)}"
-                            )
+                        else:
+                            # Layers directly added to the PipelineLayer under VPP (e.g. lm_head) are
+                            # named `{global_idx}.rest` instead of `{chunk_start}.{local_idx}.rest`, so
+                            # the first segment is already the global index. Resolve them per layer like
+                            # the non-VPP branch, otherwise every such key collapses onto the last layer
+                            # prefix, drops its submodule name and collides with its siblings.
+                            idx = name_splited[0]
+                            single_name = [] if prefixes[idx] == "" else [prefixes[idx]]
+                            single_name.extend(name_splited[1:])
                     elif name_splited[0] == "shared_layers":
                         single_name = [self.get_shardlayer_prefix(name_splited, SharedLayerDesc)]
                         single_name.extend(name_splited[2:])
