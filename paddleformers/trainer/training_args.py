@@ -760,9 +760,11 @@ class TrainingArguments:
         metadata={
             "help": (
                 "Only used when use_reshard_bucketed_broadcast is True. Max size (in GB, 1024**3 bytes) of a "
-                "broadcast chunk kept resident on GPU at once; this is the peak-memory knob for the bucketed "
-                "path. Lower it to reduce peak GPU memory (at the cost of more, smaller coalesced broadcasts). "
-                "Values below the 128MiB bucket size are floored to it. Default 2.0."
+                "broadcast chunk kept resident on GPU at once. Values below the 128MiB bucket size are floored "
+                "to it. Default 2.0. NOTE: this only caps the AGGREGATION of multiple buckets into one chunk; "
+                "it does not split a single tensor/bucket. A tensor larger than this cap is still transmitted "
+                "whole (one bucket), exactly like the non-bucketed path, so peak is not reduced for such tensors "
+                "(bucketing is no worse than per-tensor here, just not better)."
             )
         },
     )

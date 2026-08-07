@@ -35,6 +35,20 @@ try:
 except (ImportError, ModuleNotFoundError):
     _coalescing_manager = None
 
+try:
+    from paddle.device.cuda import _annotate_memory_history
+except (ImportError, ModuleNotFoundError):
+    _annotate_memory_history = None
+
+
+def _mark_mem(message):
+    # Drop a named marker into the GPU memory history so the bucketed-broadcast
+    # chunk residency/peak is visible in memory-viz timelines. No-op when the
+    # API (or CUDA) is unavailable. Difers
+    if _annotate_memory_history is not None:
+        _annotate_memory_history(message)
+
+
 from paddle.distributed.fleet.utils.log_util import logger
 
 from paddleformers.utils.tools import get_env_device
@@ -633,6 +647,18 @@ def _dtype_itemsize(dtype):
     return paddle.empty([0], dtype=dtype, device="cpu").element_size()
 
 
+def _normalize_np_dtype_str(dtype_str):
+    # Paddle has no numpy-native bf16, so it stores BF16 as numpy uint16 (e.g.
+    # Tensor.numpy() / paddle.load(return_numpy=True)) and paddle.to_tensor maps
+    # that uint16 back to bfloat16. Record the *paddle-effective* dtype so the
+    # meta string matches the reconstructed tensor's dtype; otherwise the pack
+    # assert compares a numpy-domain name ("uint16") against a paddle-domain name
+    # ("bfloat16") and wrongly fails on BF16 reshard. Difers
+    if dtype_str == "uint16":
+        return "bfloat16"
+    return dtype_str
+
+
 def _build_state_dict_broadcast_buckets(meta_list, bucket_size_bytes):
     assert bucket_size_bytes > 0
 
@@ -688,6 +714,12 @@ def _build_state_dict_broadcast_buckets(meta_list, bucket_size_bytes):
 
 
 def _iter_state_dict_bucket_chunks(buckets, chunk_size, max_chunk_bytes):
+    # max_chunk_bytes only caps the AGGREGATION of multiple buckets into one
+    # chunk; it does not split a bucket. A single bucket larger than the cap
+    # (an oversized tensor kept whole by _build_state_dict_broadcast_buckets) is
+    # still emitted as its own chunk and transmitted whole, exactly like the
+    # per-tensor path. So the cap bounds peak for many small tensors, not for a
+    # single tensor bigger than the cap. Difers
     assert chunk_size > 0
     assert max_chunk_bytes > 0
 
@@ -892,7 +924,7 @@ def _all_gather_state_dict_bucketed(state_dict, filter_func, group):
             meta_dict[k] = (str(v.dtype).split(".")[-1], list(v.shape), group_rank)
             state_dict[k] = v.numpy()
         else:
-            meta_dict[k] = (str(v.dtype), list(v.shape), group_rank)
+            meta_dict[k] = (_normalize_np_dtype_str(str(v.dtype)), list(v.shape), group_rank)
 
     meta_dict_list = all_gather_simple_object(meta_dict, group)
 
@@ -925,6 +957,10 @@ def _all_gather_state_dict_bucketed(state_dict, filter_func, group):
             f"nranks={group.nranks}, group_id={group.id}"
         )
 
+    _mark_mem(
+        f"reshard/bucketed begin: {len(meta_list)} tensors, {len(buckets)} buckets, "
+        f"max_chunk={_broadcast_max_chunk_bytes // (1024 * 1024)}MiB, group_id={group.id}"
+    )
     bucket_chunks = _iter_state_dict_bucket_chunks(
         buckets,
         _STATE_DICT_BROADCAST_CHUNK_SIZE,
@@ -939,6 +975,11 @@ def _all_gather_state_dict_bucketed(state_dict, filter_func, group):
     done_chunks = 0
     for chunk in bucket_chunks:
         t0 = time.time()
+        chunk_nbytes = sum(b["nbytes"] for b in chunk)
+        _mark_mem(
+            f"reshard/bucketed chunk{done_chunks} pack: {len(chunk)} buckets, "
+            f"{chunk_nbytes // (1024 * 1024)}MiB, group_id={group.id}"
+        )
         gpu_buckets = []
         for bucket in chunk:
             if bucket["rank"] == group_rank:
@@ -956,6 +997,7 @@ def _all_gather_state_dict_bucketed(state_dict, filter_func, group):
         # Release the chunk before packing the next one; keeping the list alive
         # would hold every bucket of this chunk in device memory.
         del gpu_buckets
+        _mark_mem(f"reshard/bucketed chunk{done_chunks} released, group_id={group.id}")
 
         t3 = time.time()
         pack_seconds += t1 - t0
@@ -989,6 +1031,7 @@ def _all_gather_state_dict_bucketed(state_dict, filter_func, group):
         )
 
     assert not state_dict
+    _mark_mem(f"reshard/bucketed done: {len(buckets)} buckets, group_id={group.id}")
     return OrderedDict((k, gathered[k]) for k, _ in meta_list if k in selected_keys)
 
 

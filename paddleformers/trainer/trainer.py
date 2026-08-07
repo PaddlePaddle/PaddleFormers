@@ -361,6 +361,14 @@ class Trainer:
             args = TrainingArguments(output_dir=output_dir)
 
         self.args = args
+        # Apply the reshard broadcast toggle once here: Trainer.__init__ is the
+        # single point every reshard/EMA path runs after, so all_gather_state_dict
+        # need not thread the flag and no construction site is missed (incl. the
+        # non-ZCC EMA assembler that bypasses create_ema_state_assembler). Difers
+        reshard_util.set_bucketed_broadcast(getattr(self.args, "use_reshard_bucketed_broadcast", False))
+        reshard_util.set_broadcast_max_chunk_bytes(
+            int(getattr(self.args, "reshard_bucketed_broadcast_max_chunk_gb", 2.0) * (1024**3))
+        )
         self.is_in_train = False
         # self.do_grad_scaling = args.fp16
 
@@ -1132,12 +1140,6 @@ class Trainer:
             self.copy_custom_files(output_dir)
 
     def create_ema_state_assembler(self):
-        # EMA assembly reshards master weights without going through ShardingIO,
-        # so apply the reshard broadcast toggle here as well. Difers
-        reshard_util.set_bucketed_broadcast(self.args.use_reshard_bucketed_broadcast)
-        reshard_util.set_broadcast_max_chunk_bytes(
-            int(self.args.reshard_bucketed_broadcast_max_chunk_gb * (1024**3))
-        )
         global_steps = self.state.global_step
         memory_growth_threshold_bytes = self.args.save_hf_memory_growth_threshold * (2**30)
         self.ema_state_assembler = EMAStateAssembler(
@@ -1208,13 +1210,6 @@ class Trainer:
             f.write("1")
 
     def _load_flex_checkpoint(self, resume_from_checkpoint):
-        # ShardingIO is only built for sharding-stage1 paths, so apply the
-        # reshard broadcast toggle here too for the flex-checkpoint path. Difers
-        reshard_util.set_bucketed_broadcast(self.args.use_reshard_bucketed_broadcast)
-        reshard_util.set_broadcast_max_chunk_bytes(
-            int(self.args.reshard_bucketed_broadcast_max_chunk_gb * (1024**3))
-        )
-
         def get_metadata_file_name(path):
             files = os.listdir(path)
             metadata_files = [f for f in files if f.endswith(".metadata")]
