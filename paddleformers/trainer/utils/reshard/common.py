@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import time
 from collections import OrderedDict
 
 import numpy as np
@@ -29,6 +30,25 @@ try:
 except (ImportError, ModuleNotFoundError):
     MuonShardingOptimizer = None
 
+try:
+    from paddle.distributed.communication.batch_isend_irecv import _coalescing_manager
+except (ImportError, ModuleNotFoundError):
+    _coalescing_manager = None
+
+try:
+    from paddle.device.cuda import _annotate_memory_history
+except (ImportError, ModuleNotFoundError):
+    _annotate_memory_history = None
+
+
+def _mark_mem(message):
+    # Drop a named marker into the GPU memory history so the bucketed-broadcast
+    # chunk residency/peak is visible in memory-viz timelines. No-op when the
+    # API (or CUDA) is unavailable. Difers
+    if _annotate_memory_history is not None:
+        _annotate_memory_history(message)
+
+
 from paddle.distributed.fleet.utils.log_util import logger
 
 from paddleformers.utils.tools import get_env_device
@@ -37,6 +57,17 @@ from ....transformers.model_utils import unwrap_optimizer
 
 SHARDING_STRATEGY_V1 = "ShardingV1"
 SHARDING_STRATEGY_V2 = "ShardingV2"
+
+_STATE_DICT_BROADCAST_BUCKET_SIZE_BYTES = 128 * 1024 * 1024
+_STATE_DICT_BROADCAST_CHUNK_SIZE = 256
+_STATE_DICT_BROADCAST_MAX_CHUNK_BYTES = 2 * 1024 * 1024 * 1024
+_STATE_DICT_BROADCAST_LOG_INTERVAL_SECONDS = 10
+
+# Mutable peak-memory knob for the bucketed broadcast path: the max bytes of a
+# chunk kept resident on GPU at once. Sourced from TrainingArguments
+# .reshard_bucketed_broadcast_max_chunk_gb via set_broadcast_max_chunk_bytes()
+# at the reshard entry points; defaults to the constant above. Difers
+_broadcast_max_chunk_bytes = _STATE_DICT_BROADCAST_MAX_CHUNK_BYTES
 
 
 def is_sharding_opt(optimizer):
@@ -606,7 +637,217 @@ def all_gather_simple_object(obj, group):
     return res
 
 
+def _shape_numel(shape):
+    if len(shape) == 0:
+        return 1
+    return int(np.prod(shape, dtype=np.int64))
+
+
+def _dtype_itemsize(dtype):
+    return paddle.empty([0], dtype=dtype, device="cpu").element_size()
+
+
+def _normalize_np_dtype_str(dtype_str):
+    # Paddle has no numpy-native bf16, so it stores BF16 as numpy uint16 (e.g.
+    # Tensor.numpy() / paddle.load(return_numpy=True)) and paddle.to_tensor maps
+    # that uint16 back to bfloat16. Record the *paddle-effective* dtype so the
+    # meta string matches the reconstructed tensor's dtype; otherwise the pack
+    # assert compares a numpy-domain name ("uint16") against a paddle-domain name
+    # ("bfloat16") and wrongly fails on BF16 reshard. Difers
+    if dtype_str == "uint16":
+        return "bfloat16"
+    return dtype_str
+
+
+def _build_state_dict_broadcast_buckets(meta_list, bucket_size_bytes):
+    assert bucket_size_bytes > 0
+
+    grouped_items = OrderedDict()
+    empty_items = []
+    for k, (dtype, shape, rank) in meta_list:
+        numel = _shape_numel(shape)
+        item = (k, shape, numel)
+        if numel == 0:
+            empty_items.append((k, (dtype, shape, rank)))
+            continue
+        grouped_items.setdefault((rank, dtype), []).append(item)
+
+    buckets = []
+    for (rank, dtype), items in grouped_items.items():
+        itemsize = _dtype_itemsize(dtype)
+        bucket_items = []
+        bucket_numel = 0
+
+        def flush_bucket():
+            nonlocal bucket_items, bucket_numel
+            if not bucket_items:
+                return
+            buckets.append(
+                {
+                    "rank": rank,
+                    "dtype": dtype,
+                    "numel": bucket_numel,
+                    "nbytes": bucket_numel * itemsize,
+                    "items": bucket_items,
+                }
+            )
+            bucket_items = []
+            bucket_numel = 0
+
+        for k, shape, numel in items:
+            item_nbytes = numel * itemsize
+            if bucket_items and (bucket_numel * itemsize + item_nbytes > bucket_size_bytes):
+                flush_bucket()
+
+            begin = bucket_numel
+            bucket_items.append((k, shape, begin, begin + numel))
+            bucket_numel += numel
+
+            # Oversized tensors stay in their own bucket instead of increasing
+            # the peak memory of neighboring tensors.
+            if item_nbytes >= bucket_size_bytes:
+                flush_bucket()
+
+        flush_bucket()
+
+    return buckets, empty_items
+
+
+def _iter_state_dict_bucket_chunks(buckets, chunk_size, max_chunk_bytes):
+    # max_chunk_bytes only caps the AGGREGATION of multiple buckets into one
+    # chunk; it does not split a bucket. A single bucket larger than the cap
+    # (an oversized tensor kept whole by _build_state_dict_broadcast_buckets) is
+    # still emitted as its own chunk and transmitted whole, exactly like the
+    # per-tensor path. So the cap bounds peak for many small tensors, not for a
+    # single tensor bigger than the cap. Difers
+    assert chunk_size > 0
+    assert max_chunk_bytes > 0
+
+    chunk = []
+    chunk_bytes = 0
+    for bucket in buckets:
+        bucket_bytes = bucket["nbytes"]
+        if chunk and (len(chunk) >= chunk_size or chunk_bytes + bucket_bytes > max_chunk_bytes):
+            yield chunk
+            chunk = []
+            chunk_bytes = 0
+        chunk.append(bucket)
+        chunk_bytes += bucket_bytes
+    if chunk:
+        yield chunk
+
+
+def _pack_state_dict_bucket(bucket, state_dict):
+    items = bucket["items"]
+    first_key = items[0][0]
+    assert first_key in state_dict
+    np_dtype = np.asarray(state_dict[first_key]).dtype
+
+    # Scatter the whole bucket on the host first so it takes a single
+    # host-to-device copy instead of one small copy per state tensor.
+    staged = np.empty([bucket["numel"]], dtype=np_dtype)
+    for k, _, begin, end in items:
+        assert k in state_dict
+        value = np.asarray(state_dict.pop(k)).reshape([-1])
+        assert value.shape[0] == end - begin
+        assert value.dtype == np_dtype
+        staged[begin:end] = value
+        del value
+
+    tensor = paddle.to_tensor(staged)
+    assert tensor.shape[0] == bucket["numel"]
+    assert str(tensor.dtype).split(".")[-1] == bucket["dtype"]
+    return tensor
+
+
+def _unpack_state_dict_bucket(bucket, tensor, selected_keys, gathered):
+    selected_items = [item for item in bucket["items"] if item[0] in selected_keys]
+    if not selected_items:
+        return
+
+    if len(selected_items) == len(bucket["items"]):
+        cpu_tensor = tensor.cpu()
+        for k, shape, begin, end in selected_items:
+            # Every item of the bucket is selected, so the slices exactly cover
+            # the bucket storage. Hand out views instead of per-item copies:
+            # cloning here would duplicate the whole bucket for no gain.
+            gathered[k] = cpu_tensor[begin:end].reshape(shape)
+        del cpu_tensor
+        return
+
+    # Sharded restore normally keeps only a small subset of each bucket on a
+    # rank. Copy just those slices instead of staging the complete bucket on
+    # every rank. ``.cpu()`` already allocates fresh host storage sized to the
+    # slice, so no extra clone is needed.
+    for k, shape, begin, end in selected_items:
+        gathered[k] = tensor[begin:end].cpu().reshape(shape)
+
+
+def _broadcast_state_dict_chunk(gpu_buckets, group):
+    if group.nranks < 2:
+        return
+
+    if _coalescing_manager is None:
+        for bucket, tensor in gpu_buckets:
+            paddle.distributed.broadcast(
+                tensor,
+                src=group.ranks[bucket["rank"]],
+                group=group,
+                sync_op=True,
+            )
+        return
+
+    # Every bucket has its own broadcast root, so a chunk is a batch of small
+    # multi-root messages. At large nranks the per-call launch and rendezvous
+    # cost dominates the payload, so aggregate the whole chunk into a single
+    # ncclGroupStart/End instead of paying it once per bucket.
+    tasks = []
+    with _coalescing_manager(group, tasks):
+        for bucket, tensor in gpu_buckets:
+            paddle.distributed.stream.broadcast(
+                tensor,
+                src=group.ranks[bucket["rank"]],
+                group=group,
+                sync_op=True,
+                use_calc_stream=True,
+            )
+
+
+# The bucketed path packs many small state tensors into large buckets and
+# coalesces their broadcasts, cutting NCCL/H2D calls from O(#tensors) to
+# O(#buckets). The tradeoff is that a whole ~2GiB chunk must stay resident on
+# GPU at once, so it raises peak device memory for small-tensor-heavy reshards
+# (see _STATE_DICT_BROADCAST_MAX_CHUNK_BYTES). Default to the original
+# per-tensor path. The value is driven by TrainingArguments
+# .use_reshard_bucketed_broadcast, applied via set_bucketed_broadcast() at the
+# reshard entry points that hold args, so the deep all_gather_state_dict call
+# chain does not have to thread the flag through every function. Difers
+_USE_BUCKETED_BROADCAST = False
+
+
+def set_bucketed_broadcast(enabled):
+    global _USE_BUCKETED_BROADCAST
+    _USE_BUCKETED_BROADCAST = bool(enabled)
+
+
+def set_broadcast_max_chunk_bytes(nbytes):
+    global _broadcast_max_chunk_bytes
+    nbytes = int(nbytes)
+    if nbytes <= 0:
+        _broadcast_max_chunk_bytes = _STATE_DICT_BROADCAST_MAX_CHUNK_BYTES
+        return
+    # A chunk must hold at least one full bucket, otherwise every bucket lands in
+    # its own chunk and the broadcast coalescing is lost. Floor at bucket size.
+    _broadcast_max_chunk_bytes = max(nbytes, _STATE_DICT_BROADCAST_BUCKET_SIZE_BYTES)
+
+
 def all_gather_state_dict(state_dict, filter_func, group):
+    if _USE_BUCKETED_BROADCAST:
+        return _all_gather_state_dict_bucketed(state_dict, filter_func, group)
+    return _all_gather_state_dict_legacy(state_dict, filter_func, group)
+
+
+def _all_gather_state_dict_legacy(state_dict, filter_func, group):
     res = OrderedDict()
 
     group_rank = max(group.rank, 0)
@@ -670,6 +911,128 @@ def all_gather_state_dict(state_dict, filter_func, group):
             del tensor
 
     return res
+
+
+def _all_gather_state_dict_bucketed(state_dict, filter_func, group):
+    group_rank = max(group.rank, 0)
+
+    # Convert source tensors to numpy first so packing does not retain their
+    # original GPU allocations.
+    meta_dict = {}
+    for (k, v) in state_dict.items():
+        if isinstance(v, paddle.Tensor):
+            meta_dict[k] = (str(v.dtype).split(".")[-1], list(v.shape), group_rank)
+            state_dict[k] = v.numpy()
+        else:
+            meta_dict[k] = (_normalize_np_dtype_str(str(v.dtype)), list(v.shape), group_rank)
+
+    meta_dict_list = all_gather_simple_object(meta_dict, group)
+
+    total_meta_dict = {}
+    for meta_dict in meta_dict_list:
+        for (k, v) in meta_dict.items():
+            assert k not in total_meta_dict
+            total_meta_dict[k] = v
+
+    meta_list = list(total_meta_dict.items())
+    meta_list = sorted(meta_list, key=lambda x: (x[1][2], x[0]))
+    selected_keys = {k for k, _ in meta_list if filter_func(k)}
+    buckets, empty_items = _build_state_dict_broadcast_buckets(meta_list, _STATE_DICT_BROADCAST_BUCKET_SIZE_BYTES)
+    gathered = {}
+
+    for k, (dtype, shape, rank) in empty_items:
+        if rank == group_rank:
+            assert k in state_dict
+            del state_dict[k]
+        if k in selected_keys:
+            gathered[k] = paddle.empty(shape, dtype=dtype, device="cpu")
+
+    if group_rank == 0:
+        logger.info(
+            f"broadcast {len(meta_list)} state tensors in {len(buckets)} buckets, "
+            f"bucket_size={_STATE_DICT_BROADCAST_BUCKET_SIZE_BYTES // (1024 * 1024)} MiB, "
+            f"chunk_size={_STATE_DICT_BROADCAST_CHUNK_SIZE}, "
+            f"max_chunk={_broadcast_max_chunk_bytes // (1024 * 1024)} MiB, "
+            f"coalescing={_coalescing_manager is not None}, "
+            f"nranks={group.nranks}, group_id={group.id}"
+        )
+
+    _mark_mem(
+        f"reshard/bucketed begin: {len(meta_list)} tensors, {len(buckets)} buckets, "
+        f"max_chunk={_broadcast_max_chunk_bytes // (1024 * 1024)}MiB, group_id={group.id}"
+    )
+    bucket_chunks = _iter_state_dict_bucket_chunks(
+        buckets,
+        _STATE_DICT_BROADCAST_CHUNK_SIZE,
+        _broadcast_max_chunk_bytes,
+    )
+    start = time.time()
+    last_log = start
+    pack_seconds = 0.0
+    bcast_seconds = 0.0
+    unpack_seconds = 0.0
+    done_buckets = 0
+    done_chunks = 0
+    for chunk in bucket_chunks:
+        t0 = time.time()
+        chunk_nbytes = sum(b["nbytes"] for b in chunk)
+        _mark_mem(
+            f"reshard/bucketed chunk{done_chunks} pack: {len(chunk)} buckets, "
+            f"{chunk_nbytes // (1024 * 1024)}MiB, group_id={group.id}"
+        )
+        gpu_buckets = []
+        for bucket in chunk:
+            if bucket["rank"] == group_rank:
+                tensor = _pack_state_dict_bucket(bucket, state_dict)
+            else:
+                tensor = paddle.empty([bucket["numel"]], dtype=bucket["dtype"])
+            gpu_buckets.append((bucket, tensor))
+
+        t1 = time.time()
+        _broadcast_state_dict_chunk(gpu_buckets, group)
+
+        t2 = time.time()
+        for bucket, tensor in gpu_buckets:
+            _unpack_state_dict_bucket(bucket, tensor, selected_keys, gathered)
+        # Release the chunk before packing the next one; keeping the list alive
+        # would hold every bucket of this chunk in device memory.
+        del gpu_buckets
+        _mark_mem(f"reshard/bucketed chunk{done_chunks} released, group_id={group.id}")
+
+        t3 = time.time()
+        pack_seconds += t1 - t0
+        bcast_seconds += t2 - t1
+        unpack_seconds += t3 - t2
+        done_buckets += len(chunk)
+        done_chunks += 1
+
+        # This loop can run for minutes without emitting anything at large
+        # nranks, which is indistinguishable from a hang. Report progress.
+        if group_rank == 0 and (
+            done_buckets == len(buckets) or t3 - last_log >= _STATE_DICT_BROADCAST_LOG_INTERVAL_SECONDS
+        ):
+            last_log = t3
+            elapsed = t3 - start
+            logger.info(
+                f"broadcast progress {done_buckets}/{len(buckets)} buckets "
+                f"({100.0 * done_buckets / len(buckets):.1f}%), chunks={done_chunks}, "
+                f"elapsed={elapsed:.1f}s, "
+                f"eta={elapsed * (len(buckets) - done_buckets) / done_buckets:.1f}s, "
+                f"pack={pack_seconds:.1f}s, bcast={bcast_seconds:.1f}s, "
+                f"unpack={unpack_seconds:.1f}s, group_id={group.id}"
+            )
+
+    if group_rank == 0 and buckets:
+        logger.info(
+            f"broadcast done: {len(buckets)} buckets, {len(meta_list)} tensors, "
+            f"total={time.time() - start:.1f}s, pack={pack_seconds:.1f}s, "
+            f"bcast={bcast_seconds:.1f}s, unpack={unpack_seconds:.1f}s, "
+            f"nranks={group.nranks}, group_id={group.id}"
+        )
+
+    assert not state_dict
+    _mark_mem(f"reshard/bucketed done: {len(buckets)} buckets, group_id={group.id}")
+    return OrderedDict((k, gathered[k]) for k, _ in meta_list if k in selected_keys)
 
 
 def _all_gather_state_dict(state_dict, filter_func, group):
