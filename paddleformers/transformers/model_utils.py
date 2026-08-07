@@ -2765,6 +2765,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         subfolder = kwargs.pop("subfolder", None)
         load_via_cpu = kwargs.pop("load_via_cpu", False)
         load_checkpoint_format = kwargs.pop("load_checkpoint_format", "flex_checkpoint")
+        flex_ckpt_comm_method = kwargs.pop("flex_ckpt_comm_method", None)
         if subfolder is None:
             subfolder = ""
         variant = kwargs.pop("variant", None)
@@ -2929,12 +2930,43 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     else:
                         aoa_config["aoa_statements"].append(f"{key} -> {key}, dtype='{dtype}'")
 
+            hcg = dist.fleet.get_hybrid_communicate_group()
+            try:
+                pp_group = hcg.get_pipe_parallel_group()
+                if pp_group is None or pp_group.nranks < 1:
+                    raise NotImplementedError("Only support when pp_group is not None.")
+            except Exception:
+                raise RuntimeError("Only support when pp_group is not None.")
+
+            try:
+                moe_group = hcg.get_expert_parallel_group()
+                if moe_group is None or moe_group.nranks < 1:
+                    raise NotImplementedError("Only support when moe_group is not None.")
+            except Exception:
+                raise RuntimeError("Only support when moe_group is not None.")
+
+            try:
+                moe_sharding_group = hcg.get_moe_sharding_parallel_group()
+            except Exception:
+                moe_sharding_group = None
+
+            if pp_group.nranks > 1:
+                worker_groups = [moe_group, pp_group, moe_sharding_group]
+            else:
+                worker_groups = [moe_group, moe_sharding_group, pp_group]
+
+            from ..trainer.trainer_utils import select_flex_ckpt_comm_method
+
+            if flex_ckpt_comm_method is None:
+                flex_ckpt_comm_method = select_flex_ckpt_comm_method()
             dist.load_state_dict(
                 sharded_state_dict,
                 path=ckpt_path,
                 aoa_config=aoa_config,
                 safetensors=True,
                 offload=load_via_cpu,
+                comm_method=flex_ckpt_comm_method,
+                worker_groups=worker_groups,
             )
 
             for v in sharded_state_dict.values():
@@ -3246,9 +3278,43 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     model_to_save, aoa_config, memory_growth_threshold=memory_growth_threshold
                 ).save_checkpoint(save_dir, max_shard_size)
             else:
-                HFFormatFullParamSaver(
-                    model_to_save, aoa_config, memory_growth_threshold=memory_growth_threshold
-                ).save_checkpoint(save_dir, max_shard_size)
+                hcg = dist.fleet.get_hybrid_communicate_group()
+                try:
+                    pp_group = hcg.get_pipe_parallel_group()
+                except Exception:
+                    pp_group = None
+                try:
+                    moe_group = hcg.get_expert_parallel_group()
+                except Exception:
+                    moe_group = None
+                try:
+                    moe_sharding_group = hcg.get_moe_sharding_parallel_group()
+                except Exception:
+                    moe_sharding_group = None
+
+                use_parallel_save = (
+                    pp_group is not None
+                    and pp_group.nranks > 1
+                    and moe_group is not None
+                    and moe_group.nranks > 1
+                    and moe_sharding_group is not None
+                )
+
+                if use_parallel_save:
+                    moe_sharding_rank = moe_sharding_group.rank if moe_sharding_group.nranks > 1 else 0
+                    HFFormatFullParamSaver(
+                        model=model_to_save,
+                        aoa_config=aoa_config,
+                        h_group=moe_group,
+                        v_group=pp_group,
+                        num_splits=moe_sharding_group.nranks,
+                        shard_idx=moe_sharding_rank,
+                        memory_growth_threshold=memory_growth_threshold,
+                    ).save_checkpoint(save_dir, max_shard_size)
+                else:
+                    HFFormatFullParamSaver(
+                        model_to_save, aoa_config, memory_growth_threshold=memory_growth_threshold
+                    ).save_checkpoint(save_dir, max_shard_size)
 
             dtype = get_parameter_dtype(model_to_save)
             if dtype is not None:
