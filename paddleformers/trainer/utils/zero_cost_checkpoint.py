@@ -596,6 +596,11 @@ class ZeroCostCheckpointCallback(TrainerCallback):
     on_optimizer_begin: call sync_offload_status, unset set manager.current_worker
         maybe optimizer reload
         maybe optimizer offload
+
+    NOTE: the offload handshake is additionally synced at the beginning of the next step
+    (`Trainer._inner_training_loop` -> `manager.maybe_sync_offload_status`), because
+    `on_step_begin` callbacks may already mutate the GPU buffers that the worker is
+    still reading over CUDA IPC.
     """
 
     def __init__(self, args, zcc_manager, timer, sharding_io):
@@ -624,10 +629,17 @@ class ZeroCostCheckpointCallback(TrainerCallback):
         if not control.should_save:
             if args.zcc_save_ema_coef is not None and state.global_step % self.zcc_ema_interval == 0:
                 self.maybe_update_zcc_worker(args, model, optimizer, state.global_step)
+                # `maybe_update_zcc_worker` only reaches `update_zcc_workers` (which assigns
+                # `manager.global_step`) on the very first save of a run, because the
+                # `fused_buffer_version == cache_version` guard short-circuits afterwards.
+                # Refresh it here so `sync_offload_status` compares against the step that is
+                # actually being offloaded instead of a permanently frozen value.
+                self.manager.global_step = state.global_step
                 self.manager.get_idle_worker_for_saving(((None, None), (None, state, None)))  # prepare for dumping
         else:
             self.runtime_timer.start("checkpoint saving time")
             self.maybe_update_zcc_worker(args, model, optimizer, state.global_step)
+            self.manager.global_step = state.global_step  # see comment above
             checkpoint_folder = f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}"
             save_infos = self._get_save_infos_based_on_steps(state, args, checkpoint_folder)
             non_cached_objects = (lr_scheduler.state_dict(), state, self.get_rng_states(args))
@@ -956,6 +968,28 @@ class ZeroCostCheckpointManager:
         logger.info(
             f"[ZCC manager] after putting task for prepare, dumping={save_infos_and_non_cached_objects is not None}"
         )
+
+    def maybe_sync_offload_status(self):
+        """Idempotent variant of `sync_offload_status`, safe to call at the beginning of a step.
+
+        The ZCC worker is a separate process that reads the trainer's fused GPU buffers
+        through CUDA IPC on its own stream, so there is no CUDA stream ordering between
+        the trainer's compute stream and the worker's copy stream. The only ordering is
+        this handshake. It therefore has to be reached before *any* mutation of those
+        buffers in the next step, which happens earlier than `on_optimizer_begin`
+        (e.g. FP8 expert-weight quantization / `clear_param_storage` in `on_step_begin`).
+        """
+        if self.current_worker is None:
+            return
+        if self.current_pipeline_hook_step != self.pipeline_hooks_steps:
+            # The offload is still being sliced across pipeline hooks (PP > 1, or
+            # gradient_accumulation_steps > 1). The remaining chunks are only dispatched
+            # during this step's forward/backward, so waiting here would deadlock. Those
+            # configurations keep synchronizing at `on_optimizer_begin` as before.
+            return
+        logger.info("[ZCC manager] Start syncing checkpoints (step begin)")
+        self.sync_offload_status()
+        logger.info("[ZCC manager] Synced checkpoints (step begin).")
 
     def sync_offload_status(self):
         self.report_error_worker()
