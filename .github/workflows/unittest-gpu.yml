@@ -77,8 +77,14 @@ jobs:
           echo "skip-unittest-ci label found"
           echo "Downstream GPU jobs will be skipped"
 
-  unittest-gpu-ci:
+  clone:
+    name: Clone PaddleFormers
     needs: check_skip
+    if: needs.check_skip.outputs.skip == 'false'
+    uses: ./.github/workflows/_clone_linux.yml
+
+  unittest-gpu-ci:
+    needs: [check_skip, clone]
     if: needs.check_skip.outputs.skip == 'false'
     name: unittest-gpu-ci
     runs-on: 'ernie-unittest'
@@ -132,27 +138,13 @@ jobs:
         run: |
           docker exec -t $container_name /bin/bash -c '
             rm -rf * .[^.]*
-            echo "Downloading PaddleFormers.tar"
-            wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
-            echo "Extracting PaddleFormers.tar"
+            echo "Downloading PaddleFormers.tar.gz"
+            wget -q --no-proxy --no-check-certificate "${{ needs.clone.outputs.repo_archive_url }}" -O PaddleFormers.tar.gz
+            echo "Extracting PaddleFormers.tar.gz"
             rm -rf PaddleFormers
-            tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
-            source $work_dir/../../../proxy
+            tar -xf PaddleFormers.tar.gz && rm -rf PaddleFormers.tar.gz
             cd PaddleFormers
-            git config --global user.name "PaddleCI"
-            git config --global user.email "paddle_ci@example.com"
-            git pull
-            git submodule update --init --recursive --force
-            if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
-              git fetch origin pull/${PR_ID}/head
-              git checkout -b PR_${PR_ID} FETCH_HEAD
-              git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
-              git fetch upstream ${BRANCH}:${BRANCH}
-              git merge ${BRANCH} --no-edit
-              git diff --numstat ${BRANCH} -- | awk "{print \$NF}"
-            else
-              echo "Not in a pull_request event. Skipping PR-specific operations."
-            fi
+            git config --global --add safe.directory /workspace/PaddleFormers
             git log --pretty=oneline -10
             '
       - name: Change python version
@@ -192,8 +184,17 @@ jobs:
           file_success=${{ github.workspace }}/PaddleFormers/unittest_logs/unittest.log
           file_failed=${{ github.workspace }}/PaddleFormers/unittest_logs/unittest_FAIL.log
           if [[ "${{ steps.test.outcome }}" == "success" ]]; then
-            echo "✅ Test passed successfully"
-            tail -n 1 ${file_success} || true
+            if [[ ! -f "${file_success}" ]]; then
+              echo "::error::Expected success log not found: ${file_success}"
+              exit 1
+            fi
+            summary=$(tail -n 1 "${file_success}")
+            if [[ "${summary}" == SKIPPED:* ]]; then
+              echo "${summary}"
+            else
+              echo "✅ Test passed successfully"
+              echo "${summary}"
+            fi
           else
             echo "❌ Test failed with status: ${{ steps.test.outcome }}"
             grep "^FAILED tests" ${file_failed} | awk '{print $2}' | sort -u || true

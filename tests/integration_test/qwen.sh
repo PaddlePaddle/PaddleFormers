@@ -14,10 +14,12 @@
 
 set -exo pipefail
 export root_dir=$(pwd)
+export CACHE_DIR=${CACHE_DIR:-/home/.cache}
 
 step=$1
 
 if [[ ! -d $CACHE_DIR/Qwen3-30B-A3B ]]; then
+    mkdir -p $CACHE_DIR
     pushd $CACHE_DIR
     wget -q --tries=5 --no-proxy https://xly-devops.cdn.bcebos.com/PaddleFleet/Qwen/Qwen3-30B-A3B.tar.gz --no-check-certificate
     tar xf Qwen3-30B-A3B.tar.gz

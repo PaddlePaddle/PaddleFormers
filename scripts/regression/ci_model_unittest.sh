@@ -39,7 +39,7 @@ init_env() {
 
     if echo "${FLAGS_enable_CE}" | grep -q "CE_Release"; then
         echo "CE_Release: install paddle release + fleet release + formers release"
-        bash ./scripts/regression/install_requirements.sh "${FLAGS_enable_CE}"
+        bash ./scripts/regression/install_requirements.sh "${FLAGS_enable_CE}" "${BRANCH}"
         cd ./scripts/regression
         wget https://paddle-qa.bj.bcebos.com/paddleformers/ce_release_config/config.yaml
         python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml --output config.yaml 2>&1 | tee /tmp/merge_output.txt
@@ -48,7 +48,7 @@ init_env() {
     elif echo "${FLAGS_enable_CE}" | grep -q "CE_Develop"; then
 
         echo "CE_Develop: install paddle develop + fleet develop + formers develop"
-        bash ./scripts/regression/install_requirements.sh "${FLAGS_enable_CE}"
+        bash ./scripts/regression/install_requirements.sh "${FLAGS_enable_CE}" "${BRANCH}"
         # donwload configs
         cd ./scripts/regression
         wget https://paddle-qa.bj.bcebos.com/paddleformers/ce_develop_config/config.yaml
@@ -56,7 +56,7 @@ init_env() {
         cd -
     elif [[ "${FLAGS_enable_CI}" == "True" ]] && [[ "${BRANCH}" == "develop" ]];then
         echo "CI: install paddle stable + fleet stable + develop formers"
-        bash ./scripts/regression/install_requirements.sh ${FLAGS_enable_CI}
+        bash ./scripts/regression/install_requirements.sh ${FLAGS_enable_CI} "${BRANCH}"
         # donwload configs
         cd ./scripts/regression
         wget https://paddle-qa.bj.bcebos.com/paddleformers/ci_develop_config/config.yaml
@@ -65,7 +65,7 @@ init_env() {
     else
         # CI Release
         echo "CI: install paddle stable + fleet stable + release formers"
-        bash ./scripts/regression/install_requirements.sh ${FLAGS_enable_CI}
+        bash ./scripts/regression/install_requirements.sh ${FLAGS_enable_CI} "${BRANCH}"
         cd ./scripts/regression
         wget https://paddle-qa.bj.bcebos.com/paddleformers/ci_release_config/config.yaml
         python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml --output config.yaml 2>&1 | tee /tmp/merge_output.txt
@@ -188,6 +188,7 @@ if [[ ${FLAGS_enable_CI} == "True" ]] || [[ ${FLAGS_enable_CE} != "False" ]];the
     fi
 else
     echo -e "\033[32m Changed Not CI case, Skips \033[0m"
+    echo "SKIPPED: No CI-relevant changes detected" > "${log_path}/model_unittest.log"
     exit_code=0
 fi
 exit $exit_code

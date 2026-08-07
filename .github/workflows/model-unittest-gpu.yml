@@ -95,8 +95,22 @@ jobs:
           echo "skip-models-ci label found"
           echo "Downstream GPU jobs will be skipped"
 
-  model-unittest-gpu-ci:
+  clone:
+    name: Clone PaddleFormers
     needs: check_skip
+    if: needs.check_skip.outputs.skip == 'false'
+    uses: ./.github/workflows/_clone_linux.yml
+
+  build_whl:
+    name: Build Formers and paddlefleet_ops whl
+    needs: [check_skip, clone]
+    if: needs.check_skip.outputs.skip == 'false'
+    uses: ./.github/workflows/_build_whl_linux.yml
+    with:
+      repo_archive_url: ${{ needs.clone.outputs.repo_archive_url }}
+
+  model-unittest-gpu-ci:
+    needs: [check_skip, clone, build_whl]
     if: needs.check_skip.outputs.skip == 'false'
     name: model-unittest-gpu-ci
     runs-on: 'ernie-8gpu'
@@ -126,11 +140,13 @@ jobs:
             -e "PR_ID=$PR_ID" \
             -e "BRANCH=$BRANCH" \
             -e "COMMIT_ID=$COMMIT_ID" \
+            -e "AGILE_COMPILE_BRANCH=$BRANCH" \
             -e "no_proxy=$no_proxy" \
             -e "CI_JOB_NAME=$CI_JOB_NAME" \
             -e "python_version=$python_version" \
             -e "paddle_whl=$paddle_whl" \
             -e "FLAGS_dynamic_static_unified_comm=$FLAGS_dynamic_static_unified_comm" \
+            -e "USE_PREBUILT_WHEELS=true" \
             -e HF_PROXY_PATH=${work_dir}/../../../proxy_huggingface \
             -e AISTUDIO_PROXY_PATH=${work_dir}/../../../proxy_aistudio \
             -e PF_HOME=/home/models/ \
@@ -138,34 +154,18 @@ jobs:
             -w /workspace --privileged ${IMAGE_NAME}
       - name: Download Code
         run: |
-          work_dir="${{ github.workspace }}"
-          docker exec -i -e work_dir="$work_dir" -e PR_ID="$PR_ID" -e BRANCH="$BRANCH" $container_name /bin/bash <<-DOCKER_EOF
-          rm -rf * .[^.]*
-          echo "Downloading PaddleFormers.tar"
-          wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
-          echo "Extracting PaddleFormers.tar"
-          rm -rf PaddleFormers
-          tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
-          echo "work_dir = ${work_dir}"
-          source ${work_dir}/../../../proxy
-          cd PaddleFormers
-          git config --global user.name "PaddleCI"
-          git config --global user.email "paddle_ci@example.com"
-          git pull
-          git submodule update --init --recursive --force
-          if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
-            git fetch origin pull/${PR_ID}/head
-            git checkout -b PR_${PR_ID} FETCH_HEAD
-            git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
-            echo "Checking out ${BRANCH}..."
-            git fetch upstream ${BRANCH}:${BRANCH}
-            git merge ${BRANCH} --no-edit
-            git diff --numstat ${BRANCH} -- | awk "{print \$NF}"
-          else
-            echo "Not in a pull_request event. Skipping PR-specific operations."
-          fi
-          git log --pretty=oneline -10
-          DOCKER_EOF
+          docker exec -t $container_name /bin/bash -c '
+            rm -rf * .[^.]*
+            echo "Downloading PaddleFormers.tar.gz"
+            wget -q --no-proxy --no-check-certificate "${{ needs.build_whl.outputs.package_archive_url }}" -O PaddleFormers.tar.gz
+            echo "Extracting PaddleFormers.tar.gz"
+            rm -rf PaddleFormers
+            mkdir PaddleFormers
+            tar -xf PaddleFormers.tar.gz -C PaddleFormers --strip-components=1 && rm -rf PaddleFormers.tar.gz
+            cd PaddleFormers
+            git config --global --add safe.directory /workspace/PaddleFormers
+            git log --pretty=oneline -10
+          '
       - name: Determine trigger mode
         id: trigger_mode
         env:
@@ -256,8 +256,17 @@ jobs:
           file_success=${{ github.workspace }}/PaddleFormers/model_unittest_logs/model_unittest.log
           file_failed=${{ github.workspace }}/PaddleFormers/model_unittest_logs/model_unittest_FAIL.log
           if [[ "${{ steps.test.outcome }}" == "success" ]]; then
-            echo "✅ Test passed successfully"
-            tail -n 1 ${file_success} || true
+            if [[ ! -f "${file_success}" ]]; then
+              echo "::error::Expected success log not found: ${file_success}"
+              exit 1
+            fi
+            summary=$(tail -n 1 "${file_success}")
+            if [[ "${summary}" == SKIPPED:* ]]; then
+              echo "${summary}"
+            else
+              echo "✅ Test passed successfully"
+              echo "${summary}"
+            fi
           else
             echo "❌ Test failed with status: ${{ steps.test.outcome }}"
             grep "^FAILED scripts/regression" ${file_failed} | awk '{print $2}' | sort -u || true

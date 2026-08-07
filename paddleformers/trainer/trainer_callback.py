@@ -39,12 +39,12 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import (
 
 from ..utils.import_utils import is_paddlefleet_available
 
-# Conditionally import paddlefleet modules
+# Conditionally import paddleformers.fleet as fleet modules
 if is_paddlefleet_available():
-    from paddlefleet.models.gpt import GPTModel
-    from paddlefleet.transformer.moe.moe_expert import SonicMoEExpert
-    from paddlefleet.transformer.moe.moe_layer import MoELayer
-    from paddlefleet.transformer.moe.moe_router import StandardMoERouter
+    from paddleformers.fleet.models.gpt import GPTModel
+    from paddleformers.fleet.transformer.moe.moe_expert import SonicMoEExpert
+    from paddleformers.fleet.transformer.moe.moe_layer import MoELayer
+    from paddleformers.fleet.transformer.moe.moe_router import StandardMoERouter
 else:
 
     class GPTModel:

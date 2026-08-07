@@ -38,63 +38,32 @@ install_requirements() {
     start_ts=$(date +%s)
     python -m pip config --user set global.trusted-host pypi.org
     python -m pip config --user set global.index-url https://pypi.org/simple
-    python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
+    python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet paddleformers paddlefleet_ops -y
     python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple  > /dev/null
     cd /home/models/my_packages && dpkg -i *.deb > /dev/null
     cd -
     # python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
     # echo "paddlepaddle-gpu @ https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/cbf3469113cd76b7d5f4cba7b8d7d5f55d9e9911/paddlepaddle_gpu-3.3.0-cp310-cp310-linux_x86_64.whl" >> requirements.txt
-    python setup.py bdist_wheel > /dev/null
+    if [[ "${USE_PREBUILT_WHEELS:-false}" == "true" ]]; then
+        echo "USE_PREBUILT_WHEELS=true, install prebuilt wheels from dist"
+        python -m pip install "$(ls -t dist/paddleformers-*.whl | head -1)" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+        python -m pip install "$(ls -t dist/paddlefleet_ops-*.whl | head -1)" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+    else
+        python -m pip install uv
+        uv build --wheel --out-dir dist --clear -vv
+        python -m pip install "$(ls -t dist/paddleformers-*.whl | head -1)" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+        bash scripts/install_or_build_ops_wheel.sh ${AGILE_COMPILE_BRANCH:-HEAD^} -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+    fi
     if [ $FLAGS_enable_CE == "true" ];then
-        python -m pip install dist/*.whl 
-        #fleet develop
-        python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ 
-        #paddlefleet_ops develop
-        echo "Download PaddleFleet form https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFleet.tar"
-        wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFleet.tar --no-check-certificate
-        rm -rf PaddleFleet && tar xf PaddleFleet.tar && rm -rf PaddleFleet.tar
-        local commit=$(python -c "import paddlefleet; print(paddlefleet.version.commit)" 2>/dev/null || echo "")
-        if [[ -z "${commit}" ]]; then
-            echo "Warning: failed to get paddlefleet commit from env, skip git reset"
-        else
-            echo "Reset PaddleFleet to commit: ${commit}"
-        fi
-        cd PaddleFleet
-        if [[ -n "${commit}" ]]; then
-            git reset --hard ${commit}
-        fi
-        bash scripts/install_ops_wheel.sh
-        cd -
         #paddle develop
         python -m pip uninstall paddlepaddle-gpu -y
         wget -q $paddle
-        python -m pip install paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ 
-    else
-        # fleet_locked paddle_locked
-        pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
-        #paddlefleet_ops for fleet_locked
-        echo "Download PaddleFleet form https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFleet.tar"
-        wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFleet.tar --no-check-certificate
-        rm -rf PaddleFleet && tar xf PaddleFleet.tar && rm -rf PaddleFleet.tar
-        local commit=$(python -c "import paddlefleet; print(paddlefleet.version.commit)" 2>/dev/null || echo "")
-        if [[ -z "${commit}" ]]; then
-            echo "Warning: failed to get paddlefleet commit from env, skip git reset"
-        else
-            echo "Reset PaddleFleet to commit: ${commit}"
-        fi
-        cd PaddleFleet
-        if [[ -n "${commit}" ]]; then
-            git reset --hard ${commit}
-        fi
-        bash scripts/install_ops_wheel.sh
-        cd -
+        python -m pip install paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
     fi
     pip install -r tests/requirements.txt -i https://pypi.org/simple 
 
     echo "paddle commit:"
     python -c "import paddle; print(paddle.version.commit)"
-    echo "paddlefleet commit:"
-    python -c "import paddlefleet; print(paddlefleet.version.commit)"
     echo "paddlefleet_ops commit:"
     python -c "from paddlefleet_ops import __version__; print(__version__)"
     echo "paddleformers commit:"
@@ -105,7 +74,6 @@ install_requirements() {
     python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
     python -c "from paddlefleet_ops import __version__; print('paddlefleet_ops version:', __version__)" >> ${log_path}/commit_info.txt
-    python -c "import paddlefleet; print('paddlefleet commit:',paddlefleet.version.commit)" >> ${log_path}/commit_info.txt
     python -m pip list >> ${log_path}/commit_info.txt
     end_ts=$(date +%s)
     echo -e "\033[32m install requirements cost $((end_ts - start_ts))s \033[0m"
@@ -153,7 +121,7 @@ else
         ext="${file_name##*.}"
         echo "file_name: ${file_name}, ext: ${file_name##*.}"
         [[ -f "$file_name" ]] || continue
-        if [[ "$ext" == "py" ]] || [[ "$ext" == "yml" ]] || [[ "$file_name" == "requirements.txt" ]]; then
+        if [[ "$ext" == "py" ]] || [[ "$ext" == "yml" ]] || [[ "$file_name" == "requirements.txt" ]] || [[ "$file_name" == packages/* ]]; then
             FLAGS_enable_CI=true
             break
         fi
@@ -188,6 +156,7 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     touch ${PYTEST_EXECUTE_FLAG_FILE}
 else
     echo -e "\033[32m Changed Not CI case, Skips \033[0m"
+    echo "SKIPPED: No CI-relevant changes detected" > "${log_path}/unittest.log"
     exit_code=0
 fi
 exit $exit_code

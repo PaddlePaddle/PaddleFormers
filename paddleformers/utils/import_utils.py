@@ -296,12 +296,12 @@ def is_transformers_available() -> bool:
 
 
 def is_paddlefleet_available() -> bool:
-    """check if `paddlefleet` package is installed and can be imported
+    """check if built-in `paddleformers.fleet` can be imported.
 
     Returns:
-        bool: if `paddlefleet` is available
+        bool: if `paddleformers.fleet` is available
     """
-    return is_package_available("paddlefleet")
+    return importlib.util.find_spec("paddleformers.fleet") is not None
 
 
 def install_package(

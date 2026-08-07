@@ -20,7 +20,7 @@ interface used by PaddleFormers with the PaddleFleet provider system.
 
 Pattern follows glm_moe_dsa/modeling.py (GLM5 PR #3940) exactly:
   - DeepseekV32ForCausalLM.__new__() calls DeepSeekV3_2BaseProvider.from_config(config)
-  - provider.provide() calls paddlefleet.gpt_builders.gpt_builder()
+  - provider.provide() calls fleet.gpt_builders.gpt_builder()
   - Returns a PaddleFleet GPT model (Megatron-style)
 """
 
