@@ -743,6 +743,30 @@ class TrainingArguments:
         metadata={"help": "Whether to load sharded model from EMA."},
     )
 
+    use_reshard_bucketed_broadcast: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "During checkpoint reshard, pack many small state tensors into large buckets and "
+                "coalesce their broadcasts, reducing NCCL/H2D calls from O(#tensors) to O(#buckets). "
+                "This speeds up reshard at large sharding degree but raises peak GPU memory, since a "
+                "chunk (~2GiB) stays resident on device during broadcast. Default False (per-tensor path)."
+            )
+        },
+    )
+
+    reshard_bucketed_broadcast_max_chunk_gb: float = field(
+        default=2.0,
+        metadata={
+            "help": (
+                "Only used when use_reshard_bucketed_broadcast is True. Max size (in GB, 1024**3 bytes) of a "
+                "broadcast chunk kept resident on GPU at once; this is the peak-memory knob for the bucketed "
+                "path. Lower it to reduce peak GPU memory (at the cost of more, smaller coalesced broadcasts). "
+                "Values below the 128MiB bucket size are floored to it. Default 2.0."
+            )
+        },
+    )
+
     tensor_model_parallel_size: int = field(
         default=-1,
         metadata={
