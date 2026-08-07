@@ -244,7 +244,6 @@ class KimiK3PretrainedModel(PretrainedModel):
         # the global attention setting, so a hybrid Kimi config may produce a
         # regular self-attention block that has no compatible HF source.
         if num_mtp_layers:
-            src = f"{src_model}.layers.{num_layers - 1}"
             for mtp_idx in range(num_mtp_layers):
                 layer_idx = num_layers + mtp_idx
                 mtp = f"model.layers.{layer_idx}"
@@ -257,13 +256,32 @@ class KimiK3PretrainedModel(PretrainedModel):
                         f"_ -> {mtp}.norm.weight",
                     ]
                 )
+                # MTP layers have no HF checkpoint source — cold-init everything.
+                # DO NOT reuse the last decoder layer's source keys here, because
+                # AOA does not support 1-to-many (same source -> multiple dests).
+                # Reusing would silently break the main layer's loading.
+                statements.extend(
+                    [
+                        f"_ -> {dst}.input_layernorm.weight",
+                        f"_ -> {dst}.post_attention_layernorm.weight",
+                    ]
+                )
                 if getattr(config, "multi_latent_attention", False):
-                    add_attention(src, dst, "multi_latent_attention")
+                    statements.extend(
+                        [
+                            f"_ -> {dst}.self_attn.q_a_proj.weight",
+                            f"_ -> {dst}.self_attn.q_b_proj.weight",
+                            f"_ -> {dst}.self_attn.kv_a_proj_with_mqa.weight",
+                            f"_ -> {dst}.self_attn.kv_b_proj.weight",
+                            f"_ -> {dst}.self_attn.q_a_layernorm.weight",
+                            f"_ -> {dst}.self_attn.kv_a_layernorm.weight",
+                            f"_ -> {dst}.self_attn.gate_proj.weight",
+                            f"_ -> {dst}.self_attn.o_proj.weight",
+                        ]
+                    )
                 else:
                     statements.extend(
                         [
-                            f"{src}.input_layernorm.weight -> {dst}.input_layernorm.weight",
-                            f"{src}.post_attention_layernorm.weight -> {dst}.post_attention_layernorm.weight",
                             f"_ -> {dst}.self_attn.qkv_proj.weight",
                             f"_ -> {dst}.self_attn.q_norm.weight",
                             f"_ -> {dst}.self_attn.k_norm.weight",
@@ -271,9 +289,45 @@ class KimiK3PretrainedModel(PretrainedModel):
                         ]
                     )
                 if cls._is_moe_layer(config, num_layers - 1):
-                    add_moe(src, dst)
+                    dst_moe = f"{dst}.mlp"
+                    statements.extend(
+                        [
+                            f"_ -> {dst_moe}.gate.weight",
+                            f"_ -> {dst_moe}.gate.e_score_correction_bias",
+                            f"_ -> {dst_moe}.fc1_latent_proj.weight",
+                            f"_ -> {dst_moe}.fc2_latent_proj.weight",
+                            f"_ -> {dst_moe}.latent_norm.weight",
+                        ]
+                    )
+                    if getattr(config, "topk_method", None) == "quantile_balancing":
+                        statements.extend(
+                            [
+                                f"_ -> {dst_moe}.gate.qb_bin_min",
+                                f"_ -> {dst_moe}.gate.qb_bin_max",
+                            ]
+                        )
+                    for expert_idx in range(num_experts):
+                        dst_expert = f"{dst_moe}.experts.{expert_idx}"
+                        statements.extend(
+                            [
+                                f"_ -> {dst_expert}.up_gate_proj.weight",
+                                f"_ -> {dst_expert}.down_proj.weight",
+                            ]
+                        )
+                    if getattr(config, "n_shared_experts", 0) > 0:
+                        statements.extend(
+                            [
+                                f"_ -> {dst_moe}.shared_experts.up_gate_proj.weight",
+                                f"_ -> {dst_moe}.shared_experts.down_proj.weight",
+                            ]
+                        )
                 else:
-                    add_dense_mlp(src, dst)
+                    statements.extend(
+                        [
+                            f"_ -> {dst}.mlp.up_gate_proj.weight",
+                            f"_ -> {dst}.mlp.down_proj.weight",
+                        ]
+                    )
 
         return {"aoa_statements": statements}
 
