@@ -1,0 +1,12 @@
+[run]
+source = paddleformers
+parallel = true
+branch = true
+omit =
+    */tests/*
+    */examples/*
+    */third_party/*
+
+[report]
+show_missing = true
+skip_empty = true

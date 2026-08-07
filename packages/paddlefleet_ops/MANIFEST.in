@@ -1,0 +1,32 @@
+# Header files needed to compile the CUDA extension
+include src/paddlefleet_ops/_extensions/*.h
+
+# Build helper modules that live alongside setup.py
+include backends.py
+include build_backend.py
+include build_utils.py
+
+# Version file lives at the workspace root, two levels up
+include ../../version.txt
+
+# Bundle all third-party submodule sources
+graft third_party
+graft third_party/DeepGEMM/third-party/cutlass/include
+
+# Exclude build artefacts from third-party submodules
+prune third_party/DeepGEMM/deep_gemm_cpp.egg-info
+prune third_party/DeepGEMM/build
+prune third_party/DeepEP/deep_ep.egg-info
+prune third_party/DeepEP/build
+prune third_party/HybridEP/deep_ep.egg-info
+prune third_party/HybridEP/build
+prune third_party/quack/quack_kernels.egg-info
+prune third_party/quack/build
+prune third_party/sonic-moe/build
+prune third_party/sonic-moe/sonicmoe.egg-info
+prune third_party/flash-attention/flashmask/build
+prune third_party/flash-attention/flashmask/flash_mask.egg-info
+
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude __pycache__

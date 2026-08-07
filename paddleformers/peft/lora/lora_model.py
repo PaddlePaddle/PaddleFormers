@@ -38,18 +38,18 @@ from ...nn.experts import MoeExpertsBase
 from ...transformers.model_utils import VLMS
 from ...utils.import_utils import is_paddlefleet_available
 
-# Conditionally import paddlefleet modules
+# Conditionally import paddleformers.fleet as fleet modules
 if is_paddlefleet_available():
-    from paddlefleet.models.gpt import GPTModel as FleetGPTModel
-    from paddlefleet.parallel_state import (
+    from paddleformers.fleet.models.gpt import GPTModel as FleetGPTModel
+    from paddleformers.fleet.parallel_state import (
         get_tensor_model_parallel_group,
         get_tensor_model_parallel_world_size,
     )
-    from paddlefleet.tensor_parallel import (
+    from paddleformers.fleet.tensor_parallel import (
         ColumnParallelLinear as FleetColumnParallelLinear,
     )
-    from paddlefleet.tensor_parallel import RowParallelLinear as FleetRowParallelLinear
-    from paddlefleet.transformer.moe.moe_expert import GroupedMLPExpert
+    from paddleformers.fleet.tensor_parallel import RowParallelLinear as FleetRowParallelLinear
+    from paddleformers.fleet.transformer.moe.moe_expert import GroupedMLPExpert
 else:
     # Define mock objects or alternative implementations when paddlefleet is not available
     def get_tensor_model_parallel_group():
@@ -537,7 +537,7 @@ class LoRAModel(nn.Layer):
         if self.use_paddlefleet:
             if not is_paddlefleet_available():
                 raise ImportError(
-                    "paddlefleet is required for _merge_trainable_tensor_parallel with paddlefleet. Please install paddlefleet."
+                    "paddlefleet is required for _merge_trainable_tensor_parallel with fleet. Please install fleet."
                 )
             mp_group = get_tensor_model_parallel_group()
             is_dst = get_tensor_model_parallel_world_size() > 1

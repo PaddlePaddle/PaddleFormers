@@ -56,9 +56,9 @@ except:
 
 from ..utils.import_utils import is_paddlefleet_available
 
-# Conditionally import paddlefleet modules
+# Conditionally import paddleformers.fleet as fleet modules
 if is_paddlefleet_available():
-    from paddlefleet.models.gpt import GPTModel as FleetGPTModel
+    from paddleformers.fleet.models.gpt import GPTModel as FleetGPTModel
 
     from paddleformers.transformers.gpt_provider import GPTModel
 else:
@@ -109,7 +109,7 @@ from ..quantization.quantization_linear import (
 )
 
 if is_paddlefleet_available():
-    from paddlefleet.utils import get_batch_on_this_cp_rank
+    from paddleformers.fleet.utils import get_batch_on_this_cp_rank
 else:
     get_batch_on_this_cp_rank = None
 if TYPE_CHECKING:
@@ -453,7 +453,7 @@ class Trainer:
             set_timers()
         self.timers = get_timers()
         if is_paddlefleet_available():
-            from paddlefleet.training.global_vars import set_profile_timers
+            from paddleformers.fleet.training.global_vars import set_profile_timers
 
             set_profile_timers(self.timers)
         self.runtime_timer = RuntimeTimer("RuntimeTimer")
@@ -664,7 +664,7 @@ class Trainer:
 
     def _register_fleet_moe_training_logs(self):
         try:
-            from paddlefleet.training.global_vars import set_global_training_logs
+            from paddleformers.fleet.training.global_vars import set_global_training_logs
         except ImportError:
             return
         set_global_training_logs(FleetTrainingLogs(self))
@@ -3000,7 +3000,7 @@ class Trainer:
 
             # Add MTP loss metrics if available
             try:
-                from paddlefleet.models.common.language_loss.language_loss import (
+                from paddleformers.fleet.models.common.language_loss.language_loss import (
                     LanguageLoss,
                 )
 
@@ -3058,7 +3058,7 @@ class Trainer:
 
             # Add DSA indexer loss metrics if available
             try:
-                from paddlefleet.transformer.dsa_attention import (
+                from paddleformers.fleet.transformer.dsa_attention import (
                     DSAIndexerLossLoggingHelper,
                 )
 
@@ -5878,9 +5878,9 @@ class Trainer:
         logger.debug("{:30}: {}".format("paddle commit id", paddle.version.commit))
         logger.debug("{:30}: {}".format("paddleformers commit id", paddleformers.version.commit))
         if is_paddlefleet_available():
-            import paddlefleet
+            import paddleformers.fleet as fleet
 
-            logger.debug("{:30}: {}".format("paddlefleet commit id", paddlefleet.version.commit))
+            logger.debug("{:30}: {}".format("paddlefleet commit id", fleet.version.commit))
 
         for a in dir(args):
             if a[:2] != "__":  # don't print double underscore methods

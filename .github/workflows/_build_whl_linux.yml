@@ -1,0 +1,188 @@
+name: PaddleFormers Wheel Build
+
+on:
+  workflow_call:
+    inputs:
+      repo_archive_url:
+        type: string
+        required: true
+    outputs:
+      root_whl_name:
+        description: "Built paddleformers wheel file name."
+        value: ${{ jobs.build-whl.outputs.root_whl_name }}
+      ops_whl_name:
+        description: "Built or downloaded paddlefleet_ops wheel file name."
+        value: ${{ jobs.build-whl.outputs.ops_whl_name }}
+      package_archive_url:
+        description: "Source package archive with prebuilt wheels under dist/."
+        value: ${{ jobs.build-whl.outputs.package_archive_url }}
+
+jobs:
+  build-whl:
+    name: Build Formers and paddlefleet_ops whl
+    runs-on:
+      group: GZ_BD-CPU
+    outputs:
+      root_whl_name: ${{ steps.save_whl_names.outputs.root_whl }}
+      ops_whl_name: ${{ steps.save_whl_names.outputs.ops_whl }}
+      package_archive_url: ${{ steps.upload_package.outputs.package_archive_url }}
+    env:
+      PR_ID: ${{ github.event.pull_request.number || github.run_id }}
+      COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
+      BRANCH: ${{ github.event.pull_request.base.ref || github.ref_name }}
+      TASK: fleet-ci-paddle-release-build-whl-${{ github.event.pull_request.number || github.run_id }}
+      PIP_CACHE_DIR: /home/.cache/pip
+      CACHE_DIR: /home/.cache
+      CCACHE_DIR: "/home/data/shared/.ccache/l1"
+      CCACHE_SECONDARY_STORAGE: "file:///home/data/cfs/.ccache/l2"
+      CCACHE_MAXSIZE: 50G
+      CCACHE_LIMIT_MULTIPLE: 0.8
+      UV_HTTP_TIMEOUT: 600
+      no_proxy: ".bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
+      build_image: "ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle_manylinux_devel:cuda12.9-cudnn9.9-trt10.5-gcc11"
+    steps:
+      - name: Check docker image and run container
+        run: |
+          container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
+          echo "container_name=${container_name}" >> ${{ github.env }}
+          docker pull $build_image
+          docker run -d -t --name ${container_name} \
+            -v "/home/data/cfs:/home/data/cfs" \
+            -v "/home/data/cfs/.cache:/home/.cache" \
+            -v "/home/data/shared:/home/data/shared" \
+            -v ${{ github.workspace }}/../../..:/root \
+            -v ${{ github.workspace }}/../../../proxy:/root/proxy \
+            -v ${{ github.workspace }}:/paddle \
+            -e no_proxy \
+            -e CACHE_DIR \
+            -e PIP_CACHE_DIR \
+            -e CCACHE_DIR \
+            -e CCACHE_SECONDARY_STORAGE \
+            -e CCACHE_MAXSIZE \
+            -e CCACHE_LIMIT_MULTIPLE \
+            -e UV_HTTP_TIMEOUT \
+            -e PR_ID \
+            -e COMMIT_ID \
+            -e PADDLE_CUDA_ARCH_LIST="8.0;9.0" \
+            -e BRANCH \
+            -e GITHUB_TOKEN="${{ github.token }}" \
+            -e GITHUB_REPO_NAME="${{ github.repository }}" \
+            -w /paddle --network=host $build_image
+      - name: uv build whl
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          rm -rf * .[^.]*
+          set -x
+          source /root/proxy
+          wget --tries=5 --no-proxy --no-check-certificate "${{ inputs.repo_archive_url }}" -O PaddleFormers.tar.gz
+          tar -xf PaddleFormers.tar.gz --strip-components=1
+          rm PaddleFormers.tar.gz
+          git config --global --add safe.directory /paddle
+          find /paddle -name .gitmodules -print | while read -r gitmodules_file; do
+            module_root=$(dirname "${gitmodules_file}")
+            git config --file "${gitmodules_file}" --get-regexp '"'"'submodule\..*\.path'"'"' | while read -r _ submodule_path; do
+              git config --global --add safe.directory "${module_root}/${submodule_path}"
+            done
+          done
+          git log -1
+          export UV_HTTP_TIMEOUT=300
+          echo "uv build"
+          export LD_LIBRARY_PATH=/opt/_internal/cpython-3.12.0/lib/:${LD_LIBRARY_PATH}
+          export PATH=/opt/_internal/cpython-3.12.0/bin/:${PATH}
+          export UV_PYTHON=3.12
+          export IS_NVIDIA=True
+          mkdir -p /root/.cache/pip
+          pip cache dir
+          pip install --upgrade pip
+          pip install uv coverage==7.13.0 bce-python-sdk==0.8.74 wrapt
+          uv build --wheel --package paddleformers --out-dir dist --clear -v
+          ROOT_WHL=$(ls dist/paddleformers-*.whl | head -n1)
+          echo "ROOT_WHL=$(basename $ROOT_WHL)" > dist/whl_names.txt
+          ls -lh dist
+          cat dist/whl_names.txt
+          '
+      - name: Check packages directory changes
+        id: check_packages_changes
+        run: |
+          PACKAGES_CHANGED=$(docker exec -t ${{ env.container_name }} /bin/bash -c '
+            if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+              if git diff --name-only "origin/${BRANCH}...HEAD" -- packages/ 2>/dev/null | grep -q .; then
+                echo true
+              else
+                echo false
+              fi
+            else
+              echo false
+            fi
+          ' | tr -d '\r')
+          echo "packages_changed=${PACKAGES_CHANGED}" >> $GITHUB_OUTPUT
+          echo "packages_changed=${PACKAGES_CHANGED}"
+      - name: uv build ops whl
+        if: steps.check_packages_changes.outputs.packages_changed == 'true'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          set -x
+          source /root/proxy
+          export LD_LIBRARY_PATH=/opt/_internal/cpython-3.12.0/lib/:${LD_LIBRARY_PATH}
+          export PATH=/opt/_internal/cpython-3.12.0/bin/:${PATH}
+          export UV_PYTHON=3.12
+          export IS_NVIDIA=True
+          export UV_HTTP_TIMEOUT=300
+          pip install dist/paddleformers-*.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
+          python -c "import paddle; print(paddle.__version__); print(paddle.version.commit)"
+          uv pip install --system --group paddlefleet-ops-build
+          pip install "paddle-nvidia-nvshmem-cu12>=3.3.9,<3.5" --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          uv build --wheel --package paddlefleet-ops --out-dir dist --no-build-isolation -v
+          OPS_WHL=$(ls dist/paddlefleet_ops-*.whl | head -n1)
+          echo "OPS_WHL=$(basename $OPS_WHL)" >> dist/whl_names.txt
+          ls -lh dist
+          cat dist/whl_names.txt
+          '
+      - name: download ops whl from latest
+        if: steps.check_packages_changes.outputs.packages_changed != 'true'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          set -x
+          export PADDLEFLEET_OPS_DOWNLOAD_DIR=dist
+          bash scripts/install_ops_wheel.sh
+          OPS_WHL=$(ls dist/paddlefleet_ops-*.whl | head -n1)
+          echo "OPS_WHL=$(basename $OPS_WHL)" >> dist/whl_names.txt
+          ls -lh dist
+          cat dist/whl_names.txt
+          '
+      - name: Save wheel file names as outputs
+        id: save_whl_names
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c 'cat /paddle/dist/whl_names.txt'
+          ROOT_WHL=$(docker exec -t ${{ env.container_name }} /bin/bash -c 'grep ROOT_WHL /paddle/dist/whl_names.txt | cut -d= -f2' | tr -d '\r')
+          OPS_WHL=$(docker exec -t ${{ env.container_name }} /bin/bash -c 'grep OPS_WHL /paddle/dist/whl_names.txt 2>/dev/null | cut -d= -f2' | tr -d '\r')
+          echo "ROOT_WHL: $ROOT_WHL"
+          echo "OPS_WHL: $OPS_WHL"
+          echo "root_whl=$ROOT_WHL" >> $GITHUB_OUTPUT
+          echo "ops_whl=$OPS_WHL" >> $GITHUB_OUTPUT
+      - name: upload whl to BOS
+        id: upload_package
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          export AK=paddle
+          export SK=paddle
+          export LD_LIBRARY_PATH=/opt/_internal/cpython-3.12.0/lib/:${LD_LIBRARY_PATH}
+          export PATH=/opt/_internal/cpython-3.12.0/bin/:${PATH}
+          export UV_PYTHON=3.12
+          cd /
+          if [ ! -f "/bos/BosClient.py" ]; then
+            wget --no-proxy -O bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
+            mkdir -p bos
+            tar xf bos_new.tar.gz -C bos
+          fi
+          target_path="paddle-github-action/PaddleFormers/PR/${PR_ID}/${COMMIT_ID}/${BRANCH}"
+          tar zcf paddleformers.tar.gz paddle
+          python /bos/BosClient.py paddleformers.tar.gz ${target_path}
+          '
+          echo "package_archive_url=https://paddle-github-action.bj.bcebos.com/PaddleFormers/PR/${{ env.PR_ID }}/${{ env.COMMIT_ID }}/${{ env.BRANCH }}/paddleformers.tar.gz" >> $GITHUB_OUTPUT
+      - name: Terminate and delete the container
+        if: ${{ always() }}
+        run: |
+          set +e
+          docker exec -t ${{ env.container_name }} /bin/bash -c 'bash scripts/fleet_ci/clean_uv_cache.sh; rm -rf * .[^.]*'
+          docker rm -f ${{ env.container_name }}
