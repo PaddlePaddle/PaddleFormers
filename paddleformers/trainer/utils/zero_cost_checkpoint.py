@@ -2024,6 +2024,30 @@ class DistInfoCollectorValidator:
         return True, None
 
 
+def _zcc_lookup_local_shape(ckpt_meta, key, numel):
+    """Return the per-rank local_shape recorded in ckpt_meta for `key` whose
+    element count matches `numel`, else None. Used to reshape grouped-GEMM
+    optimizer tensors to the N-D shape their metadata declares, so the saved
+    bytes and the recorded metadata stay consistent (fixes allgather SonicMoE
+    experts whose sharded descriptor is N-D [E, io, 2, I_local] while the muon
+    fused buffer is flattened 2-D)."""
+    sdm = getattr(ckpt_meta, "state_dict_metadata", None)
+    if not sdm or key not in sdm:
+        return None
+    entry = sdm[key]
+    cands = entry if isinstance(entry, (list, tuple)) else [entry]
+    for m in cands:
+        ls = getattr(m, "local_shape", None)
+        if ls is None:
+            continue
+        n = 1
+        for s in ls:
+            n *= int(s)
+        if n == int(numel):
+            return list(ls)
+    return None
+
+
 def saved_ckptmeta(state_dict, ckpt_file_name, process_group=None, replicate_saved_into_local=False):
     with paddle.base.dygraph.guard():
         assert isinstance(state_dict, dict), "The state_dict should be a dictionary."
@@ -2604,7 +2628,8 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
                     struct_name = _extract_struct_name(k)
                     if struct_name is not None and struct_name in self.grouped_gemm_params:
                         origin_shape = v.shape
-                        opt_state_dict[k] = v.reshape((-1, v.shape[-1]))
+                        tgt = _zcc_lookup_local_shape(self.opt_ckpt_meta, k, int(v.numel()))
+                        opt_state_dict[k] = v.reshape(tgt) if tgt else v.reshape((-1, v.shape[-1]))
                         logger.info(
                             f"[ZCC worker] {k} with shape {origin_shape} is reshaped to {opt_state_dict[k].shape}."
                         )
@@ -2612,7 +2637,8 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
                     struct_name = _extract_struct_name(k)
                     if struct_name is not None and struct_name in self.grouped_gemm_params:
                         origin_shape = v.shape
-                        master_weights[k] = v.reshape((-1, v.shape[-1]))
+                        tgt = _zcc_lookup_local_shape(self.master_weight_ckpt_meta, k, int(v.numel()))
+                        master_weights[k] = v.reshape(tgt) if tgt else v.reshape((-1, v.shape[-1]))
                         logger.info(
                             f"[ZCC worker] {k} with shape {origin_shape} is reshaped to {master_weights[k].shape}."
                         )
@@ -2667,7 +2693,8 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
                     struct_name = struct_name.group(1) if struct_name else None
                     if struct_name is not None and struct_name in self.grouped_gemm_params:
                         origin_shape = v.shape
-                        master_weights[k] = v.reshape((-1, v.shape[-1]))
+                        tgt = _zcc_lookup_local_shape(self.ema_master_weight_ckpt_meta, k, int(v.numel()))
+                        master_weights[k] = v.reshape(tgt) if tgt else v.reshape((-1, v.shape[-1]))
                         logger.info(
                             f"[ZCC worker] EMA master_weight {k} with shape {origin_shape} "
                             f"is reshaped to {master_weights[k].shape}."
