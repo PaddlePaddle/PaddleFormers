@@ -1339,6 +1339,12 @@ class Trainer:
 
             # use filtered AOA for master_weight (excludes FP32-only params)
             master_weight_aoa = getattr(self.args, "aoa_config_master_weight", None) or self.args.aoa_config
+            if os.getenv("HACK_CONVERT_CKPT", "0").lower() in ["true", "1"] and os.getenv(
+                "HACK_CONVERT_CKPT_NOPP_TO_PP", "0"
+            ).lower() in ["true", "1"]:
+                logger.info("[AOAConfig] generate master_weight_aoa by _gen_ckpt_convert_aoa !")
+                master_weight_aoa = self.model._gen_ckpt_convert_aoa(self.model.config)
+
             dist.load_state_dict(
                 master_weights,
                 master_weights_path,
@@ -1349,10 +1355,17 @@ class Trainer:
             )
 
             if not self.args.ignore_load_lr_and_optim:
+                opt_stat_aoa = self.args.aoa_config
+                if os.getenv("HACK_CONVERT_CKPT", "0").lower() in ["true", "1"] and os.getenv(
+                    "HACK_CONVERT_CKPT_NOPP_TO_PP", "0"
+                ).lower() in ["true", "1"]:
+                    logger.info("[AOAConfig] generate opt_stat_aoa by _gen_ckpt_convert_aoa !")
+                    opt_stat_aoa = self.model._gen_ckpt_convert_aoa(self.model.config, target="opt_state")
+
                 dist.load_state_dict(
                     opt_states,
                     opt_states_path,
-                    aoa_config=self.args.aoa_config,
+                    aoa_config=opt_stat_aoa,
                     offload=self.args.load_via_cpu,
                     comm_method=flex_ckpt_comm_method,
                     worker_groups=worker_groups,
@@ -1424,6 +1437,10 @@ class Trainer:
                 if enable_bf16_opt:
                     model_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
                 aoa_config = getattr(self.args, "aoa_config_model_state", None)
+                if os.getenv("HACK_CONVERT_CKPT_NOPP_TO_PP", "0").lower() in ["true", "1"]:
+                    logger.info("[AOAConfig] generate model_state_aoa by _gen_ckpt_convert_aoa_model_state !")
+                    aoa_config = self.model._gen_ckpt_convert_aoa_model_state(self.model.config)
+
             elif enable_bf16_opt:
                 model_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
                 aoa_config = None
