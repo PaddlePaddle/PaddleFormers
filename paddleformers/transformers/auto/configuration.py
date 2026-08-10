@@ -44,6 +44,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("paddleocr_vl", "PaddleOCRVLConfig"),
         ("llama", "LlamaConfig"),
         ("kimi_k2", "KimiK2Config"),
+        ("minicpm", "MiniCPMConfig"),
         ("kimi_k3", "KimiK3Config"),
         ("qwen2", "Qwen2Config"),
         ("qwen2_5_vl", "Qwen2_5_VLConfig"),
@@ -59,7 +60,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("glm4_moe", "Glm4MoeConfig"),
         ("glm_moe_dsa", "GlmMoeDsaConfig"),
         ("minimax_m2", "MiniMaxM2Config"),
-        ("minicpm", "MiniCPMConfig"),
+        ("minicpm4", "MiniCPM4Config"),
         ("deepseek_v4", "DeepseekV4Config"),
         ("gpt_oss", "GptOssConfig"),
         ("phi3", "Phi3Config"),
@@ -96,6 +97,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("ernie4_5_moe_vl", "Ernie4_5_VLMoeForConditionalGeneration"),
         ("paddleocr_vl", "PaddleOCRVLForConditionalGeneration"),
         ("llama", "Llama"),
+        ("minicpm", "MiniCPMModel"),
         ("kimi_k3", "KimiK3"),
         ("qwen2", "Qwen2"),
         ("qwen2_5_vl", "Qwen2_5_VL"),
@@ -109,7 +111,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("qwen3_vl_moe", "Qwen3VLMoe"),
         ("qwen3_vl_moe_text", "Qwen3VLMoeText"),
         ("glm_ocr", "GlmOcrForConditionalGeneration"),
-        ("minicpm", "MiniCPM"),
+        ("minicpm4", "MiniCPM4Model"),
         ("granite", "Granite"),
         ("gemma3", "Gemma3ForConditionalGeneration"),
         ("gemma3_text", "Gemma3TextModel"),
@@ -219,6 +221,26 @@ class _LazyConfigMapping(OrderedDict):
 
 
 CONFIG_MAPPING = _LazyConfigMapping(CONFIG_MAPPING_NAMES)
+
+
+def resolve_minicpm4_model_type(config_dict, model_type_override=None):
+    """Resolve upstream MiniCPM4 configs to the PaddleFormers registration key."""
+    if model_type_override is not None:
+        if model_type_override != "minicpm4":
+            raise ValueError(
+                f"Unsupported model_type_override={model_type_override!r}. " "Only 'minicpm4' is supported."
+            )
+        return model_type_override
+
+    if not isinstance(config_dict, dict) or config_dict.get("model_type") not in {None, "minicpm"}:
+        return None
+
+    original_name = str(config_dict.get("_name_or_path", ""))
+    normalized_name = original_name.lower().replace(".", "_").replace("-", "_")
+    if "minicpm4" in normalized_name and "minicpm4_1" not in normalized_name:
+        return "minicpm4"
+
+    return None
 
 
 def get_configurations() -> Dict[str, List[Type[PretrainedConfig]]]:
@@ -390,7 +412,11 @@ class AutoConfig(PretrainedConfig):
             cache_dir=cache_dir,
             download_hub=download_hub,
         )
+        model_type_override = kwargs.pop("model_type_override", None)
         config_dict, unused_kwargs = PretrainedConfig.get_config_dict(pretrained_model_name_or_path, **kwargs)
+        resolved_model_type = resolve_minicpm4_model_type(config_dict, model_type_override)
+        if resolved_model_type is not None:
+            config_dict["model_type"] = resolved_model_type
         if "model_type" in config_dict:
             try:
                 config_class = CONFIG_MAPPING[config_dict["model_type"]]
