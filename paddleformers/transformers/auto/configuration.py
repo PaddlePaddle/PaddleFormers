@@ -221,6 +221,27 @@ class _LazyConfigMapping(OrderedDict):
 CONFIG_MAPPING = _LazyConfigMapping(CONFIG_MAPPING_NAMES)
 
 
+def resolve_minicpm4_1_model_type(config_dict, model_type_override=None):
+    """Resolve upstream MiniCPM4.1 configs to the PaddleFormers registration key."""
+    if model_type_override is not None:
+        if model_type_override != "minicpm4_1":
+            raise ValueError(
+                f"Unsupported model_type_override={model_type_override!r}. "
+                "Only 'minicpm4_1' is supported."
+            )
+        return model_type_override
+
+    if not isinstance(config_dict, dict) or config_dict.get("model_type") != "minicpm":
+        return None
+
+    original_name = str(config_dict.get("_name_or_path", ""))
+    normalized_name = original_name.lower().replace(".", "_").replace("-", "_")
+    if "minicpm4_1" in normalized_name:
+        return "minicpm4_1"
+
+    return None
+
+
 def get_configurations() -> Dict[str, List[Type[PretrainedConfig]]]:
     """load the configurations of PretrainedConfig mapping: {<model-name>: [<class-name>, <class-name>, ...], }
 
@@ -390,7 +411,11 @@ class AutoConfig(PretrainedConfig):
             cache_dir=cache_dir,
             download_hub=download_hub,
         )
+        model_type_override = kwargs.pop("model_type_override", None)
         config_dict, unused_kwargs = PretrainedConfig.get_config_dict(pretrained_model_name_or_path, **kwargs)
+        resolved_model_type = resolve_minicpm4_1_model_type(config_dict, model_type_override)
+        if resolved_model_type is not None:
+            config_dict["model_type"] = resolved_model_type
         if "model_type" in config_dict:
             try:
                 config_class = CONFIG_MAPPING[config_dict["model_type"]]
