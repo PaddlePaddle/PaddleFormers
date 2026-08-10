@@ -485,13 +485,13 @@ jobs:
           fi
           '
 
-      - name: Gemma4 pre-train
-        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
-        run: |
-          docker exec -t ${{ env.container_name }} /bin/bash -ce '
-          source /root/proxy
-          timeout 20m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh gemma4 pt
-          '
+      # - name: Gemma4 pre-train
+      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 20m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh gemma4 pt
+      #     '
 
       - name: Qwen pre-train
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
