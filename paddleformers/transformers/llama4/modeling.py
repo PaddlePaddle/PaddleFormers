@@ -684,7 +684,7 @@ class Llama4TextModel(Llama4TextPretrainedModel):
         }
         full_causal_mask, full_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
 
-        if self.config._attn_implementation == "eager":
+        if self.config._attn_implementation == "eager" and self.config.attention_chunk_size is not None:
             chunked_causal_mask = self._create_chunked_causal_mask(
                 bsz,
                 seq_length,

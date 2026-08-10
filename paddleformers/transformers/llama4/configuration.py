@@ -16,6 +16,56 @@ from ..configuration_utils import PretrainedConfig
 from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
 
+class Llama4VisionConfig(PretrainedConfig):
+    model_type = "llama4_vision_model"
+    base_config_key = "vision_config"
+
+    def __init__(
+        self,
+        hidden_size=768,
+        hidden_act="gelu",
+        num_hidden_layers=34,
+        num_attention_heads=16,
+        num_channels=3,
+        intermediate_size=5632,
+        vision_output_dim=7680,
+        image_size=448,
+        patch_size=14,
+        norm_eps=1e-5,
+        vision_feature_select_strategy="default",
+        initializer_range=0.02,
+        pixel_shuffle_ratio=0.5,
+        projector_input_dim=4096,
+        projector_output_dim=4096,
+        multi_modal_projector_bias=False,
+        projector_dropout=0.0,
+        attention_dropout=0.0,
+        rope_theta=10000.0,
+        **kwargs,
+    ):
+        self.hidden_size = hidden_size
+        self.hidden_act = hidden_act
+        self.num_hidden_layers = num_hidden_layers
+        self.num_attention_heads = num_attention_heads
+        self.num_channels = num_channels
+        self.intermediate_size = intermediate_size
+        self.vision_output_dim = vision_output_dim
+        self.image_size = image_size
+        self.patch_size = patch_size
+        self.norm_eps = norm_eps
+        self.vision_feature_select_strategy = vision_feature_select_strategy
+        self.initializer_range = initializer_range
+        self.pixel_shuffle_ratio = pixel_shuffle_ratio
+        self.projector_input_dim = projector_input_dim
+        self.projector_output_dim = projector_output_dim
+        self.multi_modal_projector_bias = multi_modal_projector_bias
+        self.projector_dropout = projector_dropout
+        self.attention_dropout = attention_dropout
+        self.rope_theta = rope_theta
+        kwargs.setdefault("_attn_implementation", "eager")
+        super().__init__(**kwargs)
+
+
 class Llama4TextConfig(PretrainedConfig):
     model_type = "llama4_text"
 
@@ -125,3 +175,34 @@ class Llama4TextConfig(PretrainedConfig):
             tie_word_embeddings=tie_word_embeddings,
             **kwargs,
         )
+
+
+class Llama4Config(PretrainedConfig):
+    model_type = "llama4"
+    sub_configs = {"text_config": Llama4TextConfig, "vision_config": Llama4VisionConfig}
+    attribute_map = {
+        "image_token_id": "image_token_index",
+        "boi_token_id": "boi_token_index",
+        "eoi_token_id": "eoi_token_index",
+    }
+
+    def __init__(
+        self,
+        vision_config=None,
+        text_config=None,
+        boi_token_index=200080,
+        eoi_token_index=200081,
+        image_token_index=200092,
+        tie_word_embeddings=False,
+        **kwargs,
+    ):
+        self.vision_config = (
+            Llama4VisionConfig(**vision_config) if isinstance(vision_config, dict) else vision_config
+        ) or Llama4VisionConfig()
+        self.text_config = (
+            Llama4TextConfig(**text_config) if isinstance(text_config, dict) else text_config
+        ) or Llama4TextConfig()
+        self.boi_token_index = boi_token_index
+        self.eoi_token_index = eoi_token_index
+        self.image_token_index = image_token_index
+        super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)

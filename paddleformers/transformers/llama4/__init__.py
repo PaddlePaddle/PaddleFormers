@@ -18,23 +18,25 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "configuration": ["Llama4TextConfig"],
+    "configuration": ["Llama4Config", "Llama4TextConfig", "Llama4VisionConfig"],
     "modeling": [
         "Llama4TextDecoderLayer",
         "Llama4TextModel",
         "Llama4ForCausalLM",
         "Llama4TextPretrainedModel",
     ],
+    "multimodal": ["Llama4ForConditionalGeneration", "Llama4VisionEncoderLayer", "Llama4VisionModel"],
 }
 
 if TYPE_CHECKING:
-    from .configuration import Llama4TextConfig
+    from .configuration import Llama4Config, Llama4TextConfig, Llama4VisionConfig
     from .modeling import (
         Llama4ForCausalLM,
         Llama4TextDecoderLayer,
         Llama4TextModel,
         Llama4TextPretrainedModel,
     )
+    from .multimodal import Llama4ForConditionalGeneration, Llama4VisionEncoderLayer, Llama4VisionModel
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
