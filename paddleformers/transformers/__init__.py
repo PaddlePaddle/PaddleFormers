@@ -367,6 +367,14 @@ import_structure = {
     "granite": ["GraniteModel", "GranitePretrainedModel", "GraniteForCausalLM"],
     "minimax_m2.configuration": ["MiniMaxM2Config"],
     "minimax_m2": ["MiniMaxM2ForCausalLMPipe", "MiniMaxM2ForCausalLM"],
+    "minicpm.configuration": ["MiniCPMConfig"],
+    "minicpm.modeling": [
+        "MiniCPMModel",
+        "MiniCPMForCausalLM",
+        "MiniCPMForCausalLMPipe",
+        "MiniCPMForSequenceClassification",
+    ],
+    "minicpm": [],
     "minicpm4_1.configuration": ["MiniCPM4_1Config"],
     "minicpm4_1.modeling": [
         "MiniCPM4_1Model",
@@ -516,6 +524,7 @@ if TYPE_CHECKING:
     from .glm4v_moe import *
     from .glm_moe_dsa import *
     from .minimax_m2 import *
+    from .minicpm import *
     from .minicpm4_1 import *
     from .deepseek_v4 import *
     from .gpt_oss import *
