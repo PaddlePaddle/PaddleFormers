@@ -71,10 +71,7 @@ class MiniCPMConfig(PretrainedConfig):
         eos_token_id (`int`, *optional*, defaults to 2):
             End of stream token id.
         pretraining_tp (`int`, *optional*, defaults to 1):
-            Experimental feature. Tensor parallelism rank used during pretraining. Please refer to [this
-            document](https://huggingface.co/docs/transformers/parallelism) to understand more about it. This value is
-            necessary to ensure exact reproducibility of the pretraining results. Please refer to [this
-            issue](https://github.com/pytorch/pytorch/issues/76232).
+            Tensor-parallel factor used by some pretrained checkpoints to split attention and lm head weights.
         tie_word_embeddings (`bool`, *optional*, defaults to `False`):
             Whether to tie weight embeddings
         rope_theta (`float`, *optional*, defaults to 10000.0):
@@ -112,8 +109,7 @@ class MiniCPMConfig(PretrainedConfig):
         vocab_size=32000,
         hidden_size=4096,
         intermediate_size=11008,
-        num_hidden_layers=4,
-        # num_hidden_layers=32,
+        num_hidden_layers=32,
         num_attention_heads=32,
         num_key_value_heads=None,
         hidden_act="silu",
@@ -136,6 +132,8 @@ class MiniCPMConfig(PretrainedConfig):
         scale_depth=1,
         mup_denominator=32,
         sparse_config=None,
+        fuse_attention_qkv=False,
+        fuse_attention_ffn=False,
         attention_dropout_prob=0.0,
         hidden_dropout_prob=0.0,
         recompute_granularity=None,
@@ -171,9 +169,10 @@ class MiniCPMConfig(PretrainedConfig):
         self.scale_depth = scale_depth
         self.mup_denominator = mup_denominator
         self.sparse_config = sparse_config
+        self.fuse_attention_qkv = fuse_attention_qkv
+        self.fuse_attention_ffn = fuse_attention_ffn
         self.attention_dropout_prob = attention_dropout_prob
         self.hidden_dropout_prob = hidden_dropout_prob
-        self.recompute_granularity = None
         self.recompute_granularity = None
         self.recompute_method = None
         self.recompute_modules = None
@@ -210,12 +209,6 @@ class MiniCPMConfig(PretrainedConfig):
             tie_word_embeddings=tie_word_embeddings,
             **kwargs,
         )
-        try:
-            pass
-            # self._attn_implementation = "flash_attention_2"
-            self._attn_implementation = "eager"
-        except:
-            pass
         standardize_rope_params(self, rope_theta=rope_theta)
         rope_config_validation(self)
 

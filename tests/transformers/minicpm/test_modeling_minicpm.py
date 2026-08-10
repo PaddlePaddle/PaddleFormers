@@ -1,6 +1,4 @@
-# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2020 The HuggingFace Team. All rights reserved.
-#
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -40,7 +38,6 @@ class MiniCPMModelTester:
         num_hidden_layers=32,
         num_attention_heads=32,
         num_key_value_heads=2,
-        masked_softmax_fusion=True,
         layer_norm_epsilon=1e-5,
         initializer_range=0.02,
         is_training=True,
@@ -50,10 +47,8 @@ class MiniCPMModelTester:
         apply_residual_connection_post_layernorm=False,
         hidden_dropout=0.0,
         attention_dropout=0.0,
-        attention_softmax_in_fp32=True,
-        pretraining_tp=1,  # TP rank used when training with megatron
+        pretraining_tp=1,
         dtype="bfloat16",
-        slow_but_exact=False,
         batch_size: int = 2,
         seq_length: int = 10,
         type_sequence_label_size=2,
@@ -72,7 +67,6 @@ class MiniCPMModelTester:
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
         self.num_key_value_heads = num_key_value_heads
-        self.masked_softmax_fusion = masked_softmax_fusion
         self.layer_norm_epsilon = layer_norm_epsilon
         self.initializer_range = initializer_range
         self.is_training = is_training
@@ -82,10 +76,8 @@ class MiniCPMModelTester:
         self.apply_residual_connection_post_layernorm = apply_residual_connection_post_layernorm
         self.hidden_dropout = hidden_dropout
         self.attention_dropout = attention_dropout
-        self.attention_softmax_in_fp32 = attention_softmax_in_fp32
         self.pretraining_tp = pretraining_tp
         self.dtype = dtype
-        self.slow_but_exact = slow_but_exact
 
         self.batch_size = batch_size
         self.seq_length = seq_length
@@ -125,7 +117,6 @@ class MiniCPMModelTester:
             num_hidden_layers=self.num_hidden_layers,
             num_attention_heads=self.num_attention_heads,
             num_key_value_heads=self.num_key_value_heads,
-            masked_softmax_fusion=self.masked_softmax_fusion,
             layer_norm_epsilon=self.layer_norm_epsilon,
             initializer_range=self.initializer_range,
             use_cache=self.use_cache,
@@ -134,10 +125,8 @@ class MiniCPMModelTester:
             apply_residual_connection_post_layernorm=self.apply_residual_connection_post_layernorm,
             hidden_dropout=self.hidden_dropout,
             attention_dropout=self.attention_dropout,
-            attention_softmax_in_fp32=self.attention_softmax_in_fp32,
             pretraining_tp=self.pretraining_tp,
             dtype=self.dtype,
-            slow_but_exact=self.slow_but_exact,
             activation_function=self.activation_function,
         )
 
@@ -260,7 +249,7 @@ class MiniCPMModelTester:
         position_ids = paddle.arange(seq_len).expand((batch_size, seq_len))
         result_position_id = model(
             input_ids,
-            position_ids,
+            position_ids=position_ids,
             labels=input_ids if self.parent.use_labels else None,
             return_dict=self.parent.return_dict,
         )
