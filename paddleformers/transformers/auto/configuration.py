@@ -112,7 +112,6 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("qwen3_vl_moe_text", "Qwen3VLMoeText"),
         ("glm_ocr", "GlmOcrForConditionalGeneration"),
         ("minicpm4", "MiniCPM4Model"),
-        ("minicpm", "MiniCPM"),
         ("granite", "Granite"),
         ("gemma3", "Gemma3ForConditionalGeneration"),
         ("gemma3_text", "Gemma3TextModel"),

@@ -21,6 +21,7 @@ import paddle
 
 import paddleformers.transformers as transformers
 from paddleformers.transformers import AutoConfig, AutoModelForCausalLM
+from paddleformers.transformers.auto.modeling import MODEL_MAPPING
 from paddleformers.transformers.minicpm4 import (
     MiniCPM4Config,
     MiniCPM4ForCausalLM,
@@ -315,6 +316,10 @@ class MiniCPM4ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
         self.assertIs(transformers.MiniCPM4Config, MiniCPM4Config)
         self.assertIs(transformers.MiniCPM4Model, MiniCPM4Model)
         self.assertIs(transformers.MiniCPM4ForCausalLM, MiniCPM4ForCausalLM)
+
+    def test_base_model_auto_mappings(self):
+        self.assertIs(MODEL_MAPPING[transformers.MiniCPMConfig], transformers.MiniCPMModel)
+        self.assertIs(MODEL_MAPPING[MiniCPM4Config], MiniCPM4Model)
 
     def test_auto_mappings(self):
         with tempfile.TemporaryDirectory() as temp_dir:
