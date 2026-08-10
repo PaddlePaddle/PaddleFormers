@@ -1496,12 +1496,7 @@ class GlmOcrPlugin(BasePlugin):
 
 @dataclass
 class KimiK3Plugin(BasePlugin):
-    """Kimi-K3 plugin.
-
-    One `<|media_pad|>` per image stays in the text stream and is expanded inside
-    the model (`expand_mm_tokens=False`), so the placeholder becomes
-    `<|media_begin|>image WxH<|media_content|><|media_pad|><|media_end|>`.
-    """
+    """Kimi-K3 plugin."""
 
     image_bos_token: str = "<|media_begin|>"
     image_content_token: str = "<|media_content|>"
@@ -1544,6 +1539,11 @@ class KimiK3Plugin(BasePlugin):
 
         num_image_tokens = 0
         messages = deepcopy(messages)
+        if self.expand_mm_tokens:
+            image_grid_thw = mm_inputs.get("image_grid_thw", [])
+            merge_kernel_size = int(image_processor.media_proc_cfg["merge_kernel_size"])
+        else:
+            image_grid_thw = [None] * len(pil_images)
         for msg in messages:
             content = msg["content"]
             while IMAGE_PLACEHOLDER in content:
@@ -1553,9 +1553,14 @@ class KimiK3Plugin(BasePlugin):
                         f"placeholders_so_far={num_image_tokens + 1}, len(images)={len(pil_images)}"
                     )
                 width, height = pil_images[num_image_tokens].size
+                if self.expand_mm_tokens:
+                    _, grid_h, grid_w = (int(x) for x in image_grid_thw[num_image_tokens])
+                    image_seqlen = (grid_h // merge_kernel_size) * (grid_w // merge_kernel_size)
+                else:
+                    image_seqlen = 1
                 repl = (
                     f"{self.image_bos_token}image {width}x{height}"
-                    f"{self.image_content_token}{self.image_token}{self.image_eos_token}"
+                    f"{self.image_content_token}{self.image_token * image_seqlen}{self.image_eos_token}"
                 )
                 content = content.replace(IMAGE_PLACEHOLDER, repl, 1)
                 num_image_tokens += 1
