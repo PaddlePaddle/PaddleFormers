@@ -228,8 +228,7 @@ def resolve_minicpm4_1_model_type(config_dict, model_type_override=None):
     if model_type_override is not None:
         if model_type_override != "minicpm4_1":
             raise ValueError(
-                f"Unsupported model_type_override={model_type_override!r}. "
-                "Only 'minicpm4_1' is supported."
+                f"Unsupported model_type_override={model_type_override!r}. " "Only 'minicpm4_1' is supported."
             )
         return model_type_override
 
