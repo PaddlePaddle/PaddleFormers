@@ -56,6 +56,15 @@ def tiny_minicpm3_config(**kwargs):
 
 
 class MiniCPM3ModelingTest(unittest.TestCase):
+    def test_tied_lm_head_aoa_config(self):
+        config = tiny_minicpm3_config(tie_word_embeddings=True)
+
+        aoa_statements = MiniCPM3ForCausalLM._gen_aoa_config(config)["aoa_statements"]
+        inv_aoa_statements = MiniCPM3ForCausalLM._gen_inv_aoa_config(config)["aoa_statements"]
+
+        self.assertIn("model.embed_tokens.weight -> lm_head.weight", aoa_statements)
+        self.assertIn("lm_head.weight -> _", inv_aoa_statements)
+
     def test_causal_lm_forward_and_loss(self):
         config = tiny_minicpm3_config()
         model = MiniCPM3ForCausalLM(config)

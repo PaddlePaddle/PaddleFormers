@@ -1275,7 +1275,9 @@ class MiniCPM3PreTrainedModel(paddleformers.transformers.PretrainedModel):
                 ]
             )
 
-        if not config.tie_word_embeddings and cls.__name__ != "MiniCPM3Model":
+        if config.tie_word_embeddings:
+            aoa_statements.append("model.embed_tokens.weight -> lm_head.weight")
+        elif cls.__name__ != "MiniCPM3Model":
             aoa_statements.append("lm_head.weight -> lm_head.weight")
 
         return {"aoa_statements": aoa_statements}
@@ -1309,7 +1311,9 @@ class MiniCPM3PreTrainedModel(paddleformers.transformers.PretrainedModel):
                 ]
             )
 
-        if not config.tie_word_embeddings and cls.__name__ != "MiniCPM3Model":
+        if config.tie_word_embeddings:
+            aoa_statements.append("lm_head.weight -> _")
+        elif cls.__name__ != "MiniCPM3Model":
             aoa_statements.append("lm_head.weight -> lm_head.weight")
 
         return {"aoa_statements": aoa_statements}
