@@ -1928,12 +1928,14 @@ class EMAStateAssembler:
         optimizer,
         start_step,
         memory_growth_threshold=8 * (2**30),
+        post_save_hook=None,
     ):
         self.output_dir = Path(output_dir)
         self.save_checkpoint_format = save_checkpoint_format
         self.save_hf_steps = save_hf_steps
         self.save_steps = save_steps
         self.memory_growth_threshold = memory_growth_threshold
+        self.post_save_hook = post_save_hook
         if save_hf_steps > 0 and save_hf_steps % save_steps != 0:
             raise ValueError("[EMAStateAssembler] save_hf_steps must be a multiple of save_steps.")
 
@@ -1943,7 +1945,6 @@ class EMAStateAssembler:
         self.optimizer_name_suffix = optimizer_name_suffix
         self.model = model
         self.optimizer = optimizer
-        self.model_sharded_state_dict = self.model.sharded_state_dict()
         self.is_gpt_model = GPTModel is not None and isinstance(self.model, GPTModel)
         n_routed_experts = self.model.config.n_routed_experts
 
@@ -2246,9 +2247,29 @@ class EMAStateAssembler:
 
         ema_sharded_state_dict = {}
 
-        for k, v in self.model_sharded_state_dict.items():
+        model_sharded_state_dict = self.model.sharded_state_dict()
+
+        for k, v in model_sharded_state_dict.items():
             if v.local_tensor.dtype == paddle.bfloat16:
-                ema_tensor = ema_params_recovered[self._rename(k, False)]
+                ema_key = self._rename(k, False)
+                if ema_key not in ema_params_recovered:
+                    # A bf16 parameter is reconstructed from its fp32 optimizer master weight.
+                    # Frozen parameters are not in the optimizer, so they have no master weight
+                    # and nothing to recover from (Phase 2 freezes the whole backbone and trains
+                    # only the Indexer). Their value never changes, so the frozen fallback at the
+                    # end of this function copies the parameter itself.
+                    #
+                    # A *trainable* parameter missing here is a real bug: the frozen fallback
+                    # only refills stop_gradient=True entries, so continuing would leave it out
+                    # of the EMA state and the EMA HF checkpoint silently. Raise instead of
+                    # assert so `python -O` cannot strip the check.
+                    if not v.local_tensor.stop_gradient:
+                        raise RuntimeError(
+                            f"{k} is trainable but has no EMA master weight to recover from; "
+                            "the EMA state is incomplete."
+                        )
+                    continue
+                ema_tensor = ema_params_recovered[ema_key]
                 expected_shape = v.local_shape
                 # Handle grouped_gemm_experts: reshape 3D [num_experts, hidden, intermediate] to 2D [num_experts*hidden, intermediate]
                 group_gemm_param_name_pattern = [
@@ -2283,15 +2304,14 @@ class EMAStateAssembler:
             extra_params = ema_state_dict
 
         for k, v in extra_params.items():
-            assert k in self.model_sharded_state_dict, f"[EMAStateAssembler] {k} not in model_sharded_state_dict"
-            ref_tensor = self.model_sharded_state_dict[k]
+            assert k in model_sharded_state_dict, f"[EMAStateAssembler] {k} not in model_sharded_state_dict"
+            ref_tensor = model_sharded_state_dict[k]
             expected_shape = ref_tensor.local_shape
             if "grouped_gemm_experts" in k:
                 v = paddle.reshape(v, expected_shape)
             ema_sharded_state_dict[k] = create_sharded_weight_with_new_local(k, v, ref_tensor)
 
-        sharded_state_dict = self.model.sharded_state_dict()
-        for k, v in sharded_state_dict.items():
+        for k, v in model_sharded_state_dict.items():
             if v.local_tensor.stop_gradient and k not in ema_sharded_state_dict:
                 ema_sharded_state_dict[k] = v
         return ema_sharded_state_dict
@@ -2313,6 +2333,9 @@ class EMAStateAssembler:
             memory_growth_threshold=self.memory_growth_threshold,
         )
         saver.save_checkpoint(str(save_path))
+
+        if self.post_save_hook is not None:
+            self.post_save_hook(str(save_path))
 
 
 def select_flex_ckpt_comm_method():

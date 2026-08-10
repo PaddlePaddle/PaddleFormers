@@ -743,6 +743,32 @@ class TrainingArguments:
         metadata={"help": "Whether to load sharded model from EMA."},
     )
 
+    use_reshard_bucketed_broadcast: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "During checkpoint reshard, pack many small state tensors into large buckets and "
+                "coalesce their broadcasts, reducing NCCL/H2D calls from O(#tensors) to O(#buckets). "
+                "This speeds up reshard at large sharding degree but raises peak GPU memory, since a "
+                "chunk (~2GiB) stays resident on device during broadcast. Default False (per-tensor path)."
+            )
+        },
+    )
+
+    reshard_bucketed_broadcast_max_chunk_gb: float = field(
+        default=2.0,
+        metadata={
+            "help": (
+                "Only used when use_reshard_bucketed_broadcast is True. Max size (in GB, 1024**3 bytes) of a "
+                "broadcast chunk kept resident on GPU at once. Values below the 128MiB bucket size are floored "
+                "to it. Default 2.0. NOTE: this only caps the AGGREGATION of multiple buckets into one chunk; "
+                "it does not split a single tensor/bucket. A tensor larger than this cap is still transmitted "
+                "whole (one bucket), exactly like the non-bucketed path, so peak is not reduced for such tensors "
+                "(bucketing is no worse than per-tensor here, just not better)."
+            )
+        },
+    )
+
     tensor_model_parallel_size: int = field(
         default=-1,
         metadata={
@@ -1076,6 +1102,17 @@ class TrainingArguments:
         default=False,
         metadata={"help": "Whether to use async_save instead of paddle.save."},
     )
+    use_flex_async_save: Optional[bool] = field(
+        default=False,
+        metadata={
+            "help": (
+                "Enable async checkpoint saving for flex_checkpoint format. "
+                "Requires save_checkpoint_format='flex_checkpoint' and tensorwise_offload_optimizer=True. "
+                "Optimizer state is saved via zero-copy from CPU pinned memory in a background thread, "
+                "with the wait point deferred to before the next optimizer.step()."
+            )
+        },
+    )
     ordered_save_group_size: int = field(
         default=0,
         metadata={
@@ -1232,7 +1269,7 @@ class TrainingArguments:
         default=True,
         metadata={"help": "Load model from HuggingFace safetensors."},
     )
-    save_to_hf: Optional[bool] = field(
+    save_safetensors: Optional[bool] = field(
         default=True,
         metadata={"help": "Save model to HuggingFace safetensors."},
     )
@@ -1908,6 +1945,17 @@ class TrainingArguments:
             raise NotImplementedError(
                 f"Optimizer offload is not supported under data parallel. Please use sharding by setting --sharding stage1 --sharding_parallel_size {self.sharding_parallel_size * self.data_parallel_size}."
             )
+
+        if self.use_flex_async_save:
+            if self.save_checkpoint_format != "flex_checkpoint":
+                raise ValueError("use_flex_async_save requires save_checkpoint_format='flex_checkpoint'")
+            if not self.tensorwise_offload_optimizer:
+                raise ValueError(
+                    "use_flex_async_save requires tensorwise_offload_optimizer=True "
+                    "(optimizer state must reside in CPU pinned memory)"
+                )
+            if self.use_async_save:
+                raise ValueError("use_flex_async_save and use_async_save are mutually exclusive")
 
         if self.to_static:
             assert world_size == 1 or self.enable_auto_parallel, (
