@@ -2302,6 +2302,9 @@ class EMAStateAssembler:
         for k, v in model_sharded_state_dict.items():
             if v.local_tensor.stop_gradient and k not in ema_sharded_state_dict:
                 ema_sharded_state_dict[k] = v
+
+        if hasattr(self.model, "_hf_flatten_sharded_state_dict"):
+            ema_sharded_state_dict = self.model._hf_flatten_sharded_state_dict(ema_sharded_state_dict)
         return ema_sharded_state_dict
 
     def _save_full_ema_states(self, step, ema_sharded_state_dict):
