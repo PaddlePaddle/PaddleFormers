@@ -21,6 +21,7 @@ from paddleformers.transformers import (
     MiniCPM4_1ForCausalLM,
     MiniCPM4_1Model,
 )
+from paddleformers.transformers.cache_utils import DynamicCache
 
 # from tests.testing_utils import slow
 from tests.transformers.test_configuration_common import ConfigTester
@@ -320,6 +321,42 @@ class MiniCPM4_1ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
     def test_model_position_ids(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.check_model_position_ids(*config_and_inputs)
+
+    def test_dynamic_cache_two_step_decode(self):
+        config = MiniCPM4_1Config(
+            vocab_size=32,
+            hidden_size=16,
+            intermediate_size=32,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            fuse_rms_norm=False,
+        )
+        model = MiniCPM4_1ForCausalLM(config)
+        model.eval()
+
+        input_ids = paddle.to_tensor([[1, 5, 9, 2, 7, 3, 4]], dtype=paddle.int64)
+        prefix_length = 4
+        cache = DynamicCache(config=config)
+
+        with paddle.no_grad():
+            full_logits = model(input_ids, use_cache=False, return_dict=True).logits
+            prefill_outputs = model(
+                input_ids[:, :prefix_length],
+                past_key_values=cache,
+                use_cache=True,
+                return_dict=True,
+            )
+            decode_outputs = model(
+                input_ids[:, prefix_length:],
+                past_key_values=prefill_outputs.past_key_values,
+                use_cache=True,
+                return_dict=True,
+            )
+
+        self.assertIsInstance(prefill_outputs.past_key_values, DynamicCache)
+        self.assertEqual(decode_outputs.past_key_values.get_seq_length(), input_ids.shape[1])
+        self.assertTrue(paddle.allclose(decode_outputs.logits, full_logits[:, prefix_length:], atol=1e-5, rtol=1e-5))
 
     def test_generate_without_input_ids(self):
         pass

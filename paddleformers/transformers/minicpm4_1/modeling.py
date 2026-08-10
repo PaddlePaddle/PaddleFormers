@@ -1580,9 +1580,7 @@ class MiniCPM4_1Model(MiniCPM4_1PreTrainedModel):
                 raise ValueError(
                     "You must use the new past_key_values format, such as the Cache class, instead of the old tuple format."
                 )
-            past_key_values_length = (
-                past_key_values.get_seq_length() if isinstance(past_key_values, InfLLMv2Cache) else 0
-            )
+            past_key_values_length = past_key_values.get_seq_length()
             if self.config.sparse_config is not None and paddle.cuda.is_available() and past_key_values_length == 0:
                 past_key_values = InfLLMv2Cache(config=self.config, num_hidden_layers=self.config.num_hidden_layers)
         if inputs_embeds is None:
