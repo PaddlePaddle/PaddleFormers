@@ -151,9 +151,14 @@ class Llama4TextConfig(PretrainedConfig):
 
         self.layer_types = kwargs.pop("layer_types", None)
         if self.layer_types is None:
-            self.layer_types = [
-                "chunked_attention" if self.no_rope_layers[i] else "full_attention" for i in range(num_hidden_layers)
-            ]
+            self.layer_types = (
+                ["full_attention"] * num_hidden_layers
+                if attention_chunk_size is None
+                else [
+                    "chunked_attention" if self.no_rope_layers[i] else "full_attention"
+                    for i in range(num_hidden_layers)
+                ]
+            )
 
         self.rope_theta = kwargs.get("rope_theta", 500000.0)
         self.rope_scaling = kwargs.pop("rope_scaling", None)

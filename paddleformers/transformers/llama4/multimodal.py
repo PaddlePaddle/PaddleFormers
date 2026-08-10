@@ -334,6 +334,52 @@ class Llama4ForConditionalGeneration(PretrainedModel):
         "router.linear",
     ]
 
+    @classmethod
+    def _gen_aoa_config(cls, config):
+        """Map the nested Transformers Llama4 checkpoint into Paddle layers."""
+        text_statements = Llama4ForCausalLM._gen_aoa_config(config.text_config)["aoa_statements"]
+        statements = []
+        for statement in text_statements:
+            source, destination = statement.split(" -> ")
+            statements.append(f"language_model.{source} -> language_model.{destination}")
+
+        statements.extend(
+            [
+                f"vision_model.{name} -> vision_model.{name}"
+                for name in [
+                    "class_embedding",
+                    "positional_embedding_vlm",
+                    "layernorm_pre.weight",
+                    "layernorm_pre.bias",
+                    "layernorm_post.weight",
+                    "layernorm_post.bias",
+                ]
+            ]
+        )
+        statements.extend(
+            [
+                "vision_model.patch_embedding.linear.weight^T -> vision_model.patch_embedding.linear.weight",
+                "vision_model.vision_adapter.mlp.fc1.weight^T -> vision_model.vision_adapter.mlp.fc1.weight",
+                "vision_model.vision_adapter.mlp.fc2.weight^T -> vision_model.vision_adapter.mlp.fc2.weight",
+                "multi_modal_projector.linear_1.weight^T -> multi_modal_projector.linear_1.weight",
+            ]
+        )
+        for layer_id in range(config.vision_config.num_hidden_layers):
+            prefix = f"vision_model.model.layers.{layer_id}"
+            for norm_name in ["input_layernorm", "post_attention_layernorm"]:
+                for parameter in ["weight", "bias"]:
+                    name = f"{prefix}.{norm_name}.{parameter}"
+                    statements.append(f"{name} -> {name}")
+            for projection in ["q_proj", "k_proj", "v_proj", "o_proj"]:
+                weight = f"{prefix}.self_attn.{projection}.weight"
+                bias = f"{prefix}.self_attn.{projection}.bias"
+                statements.extend([f"{weight}^T -> {weight}", f"{bias} -> {bias}"])
+            for projection in ["fc1", "fc2"]:
+                weight = f"{prefix}.mlp.{projection}.weight"
+                bias = f"{prefix}.mlp.{projection}.bias"
+                statements.extend([f"{weight}^T -> {weight}", f"{bias} -> {bias}"])
+        return {"aoa_statements": statements}
+
     def __init__(self, config):
         super().__init__(config)
         self.config = config

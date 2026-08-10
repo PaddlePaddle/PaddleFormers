@@ -93,6 +93,15 @@ class Llama4MultimodalModelTest(unittest.TestCase):
             second = model(input_ids=input_ids, pixel_values=self.pixel_values).logits
         self.assertLessEqual(float(paddle.max(paddle.abs(first - second))), 1e-6)
 
+    def test_generation_without_attention_chunks(self):
+        self.assertEqual(self.config.text_config.layer_types, ["full_attention", "full_attention"])
+        model = Llama4ForConditionalGeneration(self.config)
+        model.eval()
+        input_ids = paddle.to_tensor([[1, 2, 3]], dtype="int64")
+        with paddle.no_grad():
+            generated = model.generate(input_ids=input_ids, max_new_tokens=2)[0]
+        self.assertEqual(generated.shape[-1], 2)
+
 
 if __name__ == "__main__":
     unittest.main()
