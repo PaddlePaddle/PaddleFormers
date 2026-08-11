@@ -87,9 +87,7 @@ class InternVLChatConfig(PretrainedConfig):
         if llm_config is None:
             llm_config = {"architectures": ["Qwen3ForCausalLM"]}
 
-        self.vision_config = (
-            InternVisionConfig(**vision_config) if isinstance(vision_config, dict) else vision_config
-        )
+        self.vision_config = InternVisionConfig(**vision_config) if isinstance(vision_config, dict) else vision_config
         self.llm_config = Qwen3Config(**llm_config) if isinstance(llm_config, dict) else llm_config
 
         self.use_backbone_lora = use_backbone_lora

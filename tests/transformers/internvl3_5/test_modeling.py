@@ -8,9 +8,8 @@ import unittest
 import paddle
 import paddle.nn.functional as F
 
-from tests.transformers.test_configuration_common import ConfigTester
-
 from paddleformers.transformers import InternVLChatConfig, InternVLChatModel
+from tests.transformers.test_configuration_common import ConfigTester
 
 
 class InternVLModelTest(unittest.TestCase):
@@ -79,7 +78,6 @@ class InternVLModelTest(unittest.TestCase):
     def test_forward_and_loss(self):
         model = InternVLChatModel(self.get_config()).eval()
         inputs = self.get_inputs()
-        input_ids = inputs["input_ids"]
         labels = paddle.to_tensor([[-100, -100, 11, 12]], dtype="int64")
         with paddle.no_grad():
             outputs = model(**inputs, labels=labels, use_cache=False)
@@ -141,19 +139,19 @@ class InternVLModelTest(unittest.TestCase):
     def test_greedy_generate(self):
         model = InternVLChatModel(self.get_config()).eval()
         with paddle.no_grad():
-            output_ids = model.generate(**self.get_inputs(), max_new_tokens=2)
+            output_ids, _ = model.generate(**self.get_inputs(), max_new_tokens=2)
         self.assertEqual(list(output_ids.shape), [1, 2])
 
     def test_beam_search_generate(self):
         model = InternVLChatModel(self.get_config()).eval()
         with paddle.no_grad():
-            output_ids = model.generate(**self.get_inputs(), max_new_tokens=2, num_beams=2)
+            output_ids, _ = model.generate(**self.get_inputs(), max_new_tokens=2, num_beams=2)
         self.assertEqual(list(output_ids.shape), [1, 2])
 
     def test_sample_generate(self):
         model = InternVLChatModel(self.get_config()).eval()
         with paddle.no_grad():
-            output_ids = model.generate(**self.get_inputs(), max_new_tokens=2, do_sample=True, top_k=10)
+            output_ids, _ = model.generate(**self.get_inputs(), max_new_tokens=2, do_sample=True, top_k=10)
         self.assertEqual(list(output_ids.shape), [1, 2])
 
     def test_mismatching_image_tokens(self):

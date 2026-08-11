@@ -4,14 +4,19 @@
 # Licensed under the Apache License, Version 2.0 (the "License");
 
 import math
-from typing import Optional, Tuple, Union
+from typing import Optional
 
 import paddle
 import paddle.nn.functional as F
 from paddle import nn
 
 from ..activations import ACT2FN
-from ..model_outputs import BaseModelOutput, BaseModelOutputWithPast, BaseModelOutputWithPooling, CausalLMOutputWithPast
+from ..model_outputs import (
+    BaseModelOutput,
+    BaseModelOutputWithPast,
+    BaseModelOutputWithPooling,
+    CausalLMOutputWithPast,
+)
 from ..model_utils import PretrainedModel
 from .configuration import InternVisionConfig, InternVLChatConfig
 
@@ -69,9 +74,7 @@ class InternVLQwen3Attention(nn.Layer):
         self.o_proj = nn.Linear(self.num_heads * self.head_dim, self.hidden_size, bias_attr=config.attention_bias)
         self.q_norm = Qwen3RMSNorm(self.head_dim, eps=config.rms_norm_eps)
         self.k_norm = Qwen3RMSNorm(self.head_dim, eps=config.rms_norm_eps)
-        inv_freq = 1.0 / (
-            self.rope_theta ** (paddle.arange(0, self.head_dim, 2, dtype="float32") / self.head_dim)
-        )
+        inv_freq = 1.0 / (self.rope_theta ** (paddle.arange(0, self.head_dim, 2, dtype="float32") / self.head_dim))
         self.register_buffer("inv_freq", inv_freq, persistable=False)
 
     def _get_cos_sin(self, position_ids, dtype):
@@ -115,7 +118,9 @@ class InternVLQwen3Attention(nn.Layer):
         attn_weights = F.softmax(attn_weights.astype("float32"), axis=-1).astype(query_states.dtype)
         attn_weights = F.dropout(attn_weights, p=self.attention_dropout, training=self.training)
         attn_output = paddle.matmul(attn_weights, value_states)
-        attn_output = attn_output.transpose([0, 2, 1, 3]).reshape([batch_size, seq_len, self.num_heads * self.head_dim])
+        attn_output = attn_output.transpose([0, 2, 1, 3]).reshape(
+            [batch_size, seq_len, self.num_heads * self.head_dim]
+        )
         return self.o_proj(attn_output), None, None
 
 
@@ -206,7 +211,9 @@ class InternVLQwen3Model(nn.Layer):
             all_hidden_states += (hidden_states,)
         if not return_dict:
             return tuple(v for v in [hidden_states, None, all_hidden_states] if v is not None)
-        return BaseModelOutputWithPast(last_hidden_state=hidden_states, past_key_values=None, hidden_states=all_hidden_states)
+        return BaseModelOutputWithPast(
+            last_hidden_state=hidden_states, past_key_values=None, hidden_states=all_hidden_states
+        )
 
 
 class InternVLQwen3ForCausalLM(nn.Layer):
@@ -262,7 +269,7 @@ class InternVLQwen3ForCausalLM(nn.Layer):
             token_loss = token_loss * valid_mask.astype(token_loss.dtype)
             loss = token_loss.sum() / valid_mask.astype(token_loss.dtype).sum()
         if not return_dict:
-            return ((loss, logits) if loss is not None else (logits,))
+            return (loss, logits) if loss is not None else (logits,)
         return CausalLMOutputWithPast(
             loss=loss,
             logits=logits,
@@ -370,9 +377,7 @@ class InternAttention(nn.Layer):
 
     def forward(self, hidden_states):
         batch_size, seq_len, channels = hidden_states.shape
-        qkv = self.qkv(hidden_states).reshape(
-            [batch_size, seq_len, 3, self.num_heads, channels // self.num_heads]
-        )
+        qkv = self.qkv(hidden_states).reshape([batch_size, seq_len, 3, self.num_heads, channels // self.num_heads])
         q, k, v = paddle.unbind(qkv.transpose([2, 0, 3, 1, 4]), axis=0)
 
         if self.qk_normalization:
@@ -431,7 +436,9 @@ class InternVisionEncoder(nn.Layer):
         super().__init__()
         self.config = config
         dpr = paddle.linspace(0, config.drop_path_rate, config.num_hidden_layers).tolist()
-        self.layers = nn.LayerList([InternVisionEncoderLayer(config, dpr[idx]) for idx in range(config.num_hidden_layers)])
+        self.layers = nn.LayerList(
+            [InternVisionEncoderLayer(config, dpr[idx]) for idx in range(config.num_hidden_layers)]
+        )
 
     def forward(self, inputs_embeds, output_hidden_states=False, return_dict=True):
         encoder_states = () if output_hidden_states else None
@@ -532,7 +539,9 @@ class InternVLChatModel(InternVLChatPretrainedModel):
         self.img_context_token_id = config.img_context_token_id
 
         self.vision_model = vision_model if vision_model is not None else InternVisionModel(config.vision_config)
-        self.language_model = language_model if language_model is not None else InternVLQwen3ForCausalLM(config.llm_config)
+        self.language_model = (
+            language_model if language_model is not None else InternVLQwen3ForCausalLM(config.llm_config)
+        )
 
         vit_hidden_size = config.vision_config.hidden_size
         llm_hidden_size = config.llm_config.hidden_size
@@ -589,6 +598,23 @@ class InternVLChatModel(InternVLChatPretrainedModel):
         flat_embeds = paddle.scatter(flat_embeds, selected, vit_embeds, overwrite=True)
         return flat_embeds.reshape([batch_size, seq_len, hidden_size])
 
+    def _expand_visual_features_for_generation(self, visual_features, input_ids, expand_size):
+        if visual_features is None:
+            return None
+
+        context_token_counts = paddle.sum((input_ids == self.img_context_token_id).astype("int64"), axis=-1)
+        feature_counts = (context_token_counts // self.num_image_token).numpy().tolist()
+        chunks = []
+        offset = 0
+        for feature_count in feature_counts:
+            feature_count = int(feature_count)
+            sample_features = visual_features[offset : offset + feature_count]
+            offset += feature_count
+            if feature_count == 0:
+                continue
+            chunks.extend([sample_features] * expand_size)
+        return paddle.concat(chunks, axis=0) if chunks else visual_features
+
     def forward(
         self,
         pixel_values: Optional[paddle.Tensor] = None,
@@ -596,6 +622,7 @@ class InternVLChatModel(InternVLChatPretrainedModel):
         attention_mask: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
         image_flags: Optional[paddle.Tensor] = None,
+        visual_features: Optional[paddle.Tensor] = None,
         past_key_values=None,
         labels: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
@@ -606,8 +633,8 @@ class InternVLChatModel(InternVLChatPretrainedModel):
         return_dict = True if return_dict is None else return_dict
         input_embeds = self.language_model.get_input_embeddings()(input_ids)
 
-        if pixel_values is not None:
-            vit_embeds = self.extract_feature(pixel_values)
+        if pixel_values is not None or visual_features is not None:
+            vit_embeds = visual_features if visual_features is not None else self.extract_feature(pixel_values)
             if image_flags is not None:
                 image_flags = image_flags.squeeze(-1).astype("bool")
                 vit_embeds = vit_embeds[image_flags]
@@ -635,35 +662,69 @@ class InternVLChatModel(InternVLChatPretrainedModel):
             attentions=getattr(outputs, "attentions", None),
         )
 
+    def prepare_inputs_for_generation(
+        self,
+        input_ids,
+        past_key_values=None,
+        attention_mask=None,
+        position_ids=None,
+        visual_features=None,
+        use_cache=True,
+        **kwargs,
+    ):
+        model_inputs = super().prepare_inputs_for_generation(
+            input_ids,
+            past_key_values=past_key_values,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            visual_features=visual_features,
+            use_cache=use_cache,
+            **kwargs,
+        )
+        if past_key_values is not None and use_cache:
+            model_inputs["visual_features"] = None
+        return model_inputs
+
+    def expand_inputs_for_generation(self, input_ids, expand_size, attention_mask=None, **model_kwargs):
+        visual_features = model_kwargs.pop("visual_features", None)
+        expanded_input_ids, model_kwargs = super().expand_inputs_for_generation(
+            input_ids,
+            expand_size,
+            attention_mask=attention_mask,
+            **model_kwargs,
+        )
+        model_kwargs["visual_features"] = self._expand_visual_features_for_generation(
+            visual_features,
+            input_ids,
+            expand_size,
+        )
+        return expanded_input_ids, model_kwargs
+
     def generate(
         self,
         pixel_values: Optional[paddle.Tensor] = None,
         input_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
+        image_flags: Optional[paddle.Tensor] = None,
         visual_features: Optional[paddle.Tensor] = None,
-        max_new_tokens: int = 20,
-        eos_token_id: Optional[int] = None,
         **generate_kwargs,
     ):
-        input_embeds = self.language_model.get_input_embeddings()(input_ids)
-        if pixel_values is not None:
-            vit_embeds = visual_features if visual_features is not None else self.extract_feature(pixel_values)
-            input_embeds = self._merge_visual_embeds(input_ids, input_embeds, vit_embeds)
-        eos_token_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
-        generated = []
-        current_embeds = input_embeds
-        current_mask = attention_mask
-        for _ in range(max_new_tokens):
-            outputs = self.language_model(inputs_embeds=current_embeds, attention_mask=current_mask, use_cache=False)
-            next_token = paddle.argmax(outputs.logits[:, -1, :], axis=-1, keepdim=True)
-            generated.append(next_token)
-            next_embed = self.language_model.get_input_embeddings()(next_token)
-            current_embeds = paddle.concat([current_embeds, next_embed], axis=1)
-            if current_mask is not None:
-                current_mask = paddle.concat([current_mask, paddle.ones_like(next_token)], axis=1)
-            if eos_token_id is not None and bool(paddle.all(next_token == eos_token_id).item()):
-                break
-        return paddle.concat(generated, axis=1) if generated else paddle.empty([input_ids.shape[0], 0], dtype="int64")
+        if visual_features is None and pixel_values is not None:
+            visual_features = self.extract_feature(pixel_values)
+            if image_flags is not None:
+                image_flags = image_flags.squeeze(-1).astype("bool")
+                visual_features = visual_features[image_flags]
+        if "decode_strategy" not in generate_kwargs:
+            if generate_kwargs.get("num_beams", 1) > 1:
+                generate_kwargs["decode_strategy"] = "beam_search"
+            elif generate_kwargs.get("do_sample", False):
+                generate_kwargs["decode_strategy"] = "sampling"
+        return super().generate(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            visual_features=visual_features,
+            **generate_kwargs,
+        )
 
     @property
     def lm_head(self):
