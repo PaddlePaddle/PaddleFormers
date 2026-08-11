@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import ast
 import copy
 import math
+import numbers
 import os
 import re
 from abc import ABC
@@ -996,15 +998,76 @@ def re_match(text):
 
 
 def extract_coordinates_and_label(ref_text, image_width, image_height):
-
     try:
         label_type = ref_text[1]
-        cor_list = eval(ref_text[2])
-    except Exception as e:
-        print(e)
+        cor_list = ast.literal_eval(ref_text[2])
+        if not isinstance(label_type, str) or not isinstance(cor_list, (list, tuple)):
+            raise ValueError("Detection output must contain a label and a list of boxes")
+        validated_boxes = []
+        for box in cor_list:
+            if not isinstance(box, (list, tuple)) or len(box) != 4:
+                raise ValueError("Each detection box must contain four coordinates")
+            if any(
+                isinstance(value, bool)
+                or not isinstance(value, numbers.Real)
+                or not math.isfinite(float(value))
+                or not 0 <= float(value) <= 999
+                for value in box
+            ):
+                raise ValueError("Detection coordinates must be finite numbers in [0, 999]")
+            x1, y1, x2, y2 = (float(value) for value in box)
+            if x1 > x2 or y1 > y2:
+                raise ValueError("Detection box minimum coordinates must not exceed maximum coordinates")
+            validated_boxes.append((x1, y1, x2, y2))
+    except (SyntaxError, ValueError, TypeError):
         return None
 
-    return (label_type, cor_list)
+    return label_type, validated_boxes
+
+
+def _parse_finite_point(value):
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        raise ValueError("A line point must contain exactly two coordinates")
+    if any(
+        isinstance(coordinate, bool)
+        or not isinstance(coordinate, numbers.Real)
+        or not math.isfinite(float(coordinate))
+        for coordinate in value
+    ):
+        raise ValueError("Line coordinates must be finite numbers")
+    return tuple(float(coordinate) for coordinate in value)
+
+
+def _parse_line_result(text):
+    """Safely parse and validate the optional geometry result emitted by the model."""
+    value = ast.literal_eval(text)
+    if not isinstance(value, dict) or not isinstance(value.get("Line"), dict):
+        raise ValueError("Geometry output must be a dictionary containing Line")
+    line_data = value["Line"]
+    lines = line_data.get("line")
+    line_types = line_data.get("line_type")
+    endpoints = line_data.get("line_endpoint")
+    if not all(isinstance(item, list) for item in (lines, line_types, endpoints)):
+        raise ValueError("Line, line_type, and line_endpoint must be lists")
+    if len(lines) != len(line_types) or not all(isinstance(item, str) for item in line_types):
+        raise ValueError("Each line must have one string line_type")
+
+    parsed_lines = []
+    for line in lines:
+        if not isinstance(line, str) or " -- " not in line:
+            raise ValueError("Each line must use the 'point -- point' format")
+        start, end = line.split(" -- ", 1)
+        parsed_lines.append((_parse_finite_point(ast.literal_eval(start)), _parse_finite_point(ast.literal_eval(end))))
+
+    parsed_endpoints = []
+    for endpoint in endpoints:
+        if not isinstance(endpoint, str) or ": " not in endpoint:
+            raise ValueError("Each endpoint must use the 'label: point' format")
+        label, point = endpoint.split(": ", 1)
+        if not label:
+            raise ValueError("Endpoint label must not be empty")
+        parsed_endpoints.append((label, _parse_finite_point(ast.literal_eval(point))))
+    return parsed_lines, line_types, parsed_endpoints
 
 
 def draw_bounding_boxes(image, refs, ouput_path):
@@ -1275,6 +1338,14 @@ class NoEOSTextStreamer(TextStreamer):
 class DeepseekOCR2Model(DeepseekV3Model):
     config_class = DeepseekOCR2Config
 
+    @classmethod
+    def _gen_aoa_config(cls, config):
+        return DeepseekOCR2ForCausalLM._gen_aoa_config.__func__(cls, config)
+
+    @classmethod
+    def _gen_inv_aoa_config(cls, config):
+        return DeepseekOCR2ForCausalLM._gen_inv_aoa_config.__func__(cls, config)
+
     def __init__(self, config: DeepseekOCR2Config):
         super(DeepseekOCR2Model, self).__init__(config)
 
@@ -1399,9 +1470,13 @@ class DeepseekOCR2Model(DeepseekV3Model):
         )
 
 
+DeepseekOCR2Model.base_model_class = DeepseekOCR2Model
+
+
 class DeepseekOCR2ForCausalLM(DeepseekV3ForCausalLM):
 
     config_class = DeepseekOCR2Config
+    base_model_class = DeepseekOCR2Model
 
     # DeepseekV3 LLM keys + SAM + Qwen2 decoder + projector + lm_head
     # Each entry is a regex pattern matched via re.search(rf"\.{key}\.weight$", name)
@@ -1533,9 +1608,8 @@ class DeepseekOCR2ForCausalLM(DeepseekV3ForCausalLM):
         ]
 
         # ---- lm_head ----
-        aoa_config["aoa_statements"] += [
-            "lm_head.weight -> lm_head.weight",
-        ]
+        if cls != cls.base_model_class:
+            aoa_config["aoa_statements"] += ["lm_head.weight -> lm_head.weight"]
 
         return aoa_config
 
@@ -1646,14 +1720,13 @@ class DeepseekOCR2ForCausalLM(DeepseekV3ForCausalLM):
         ]
 
         # ---- lm_head ----
-        aoa_config["aoa_statements"] += [
-            "lm_head.weight -> lm_head.weight",
-        ]
+        if cls != cls.base_model_class:
+            aoa_config["aoa_statements"] += ["lm_head.weight -> lm_head.weight"]
 
         return aoa_config
 
     def __init__(self, config):
-        super(DeepseekOCR2ForCausalLM, self).__init__(config)
+        DeepseekV3PretrainedModel.__init__(self, config)
         self.model = DeepseekOCR2Model(config)
 
         self.vocab_size = config.vocab_size
@@ -1854,10 +1927,9 @@ class DeepseekOCR2ForCausalLM(DeepseekV3ForCausalLM):
         valid_img_tokens = 0
         ratio = 1
 
-        image_draw = images[0].copy()
-
-        w, h = image_draw.size
-        ratio = 1 - ((max(w, h) - min(w, h)) / (max(w, h)))
+        image_draw = images[0].copy() if images else None
+        w, h = image_draw.size if image_draw is not None else (0, 0)
+        ratio = 1 - ((max(w, h) - min(w, h)) / max(w, h)) if image_draw is not None else 1
 
         image_transform = BasicImageTransform(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5), normalize=True)
         images_seq_mask = []
@@ -2128,35 +2200,22 @@ class DeepseekOCR2ForCausalLM(DeepseekV3ForCausalLM):
             if "line_type" in outputs:
                 import matplotlib.pyplot as plt
 
-                lines = eval(outputs)["Line"]["line"]
-
-                line_type = eval(outputs)["Line"]["line_type"]
-
-                endpoints = eval(outputs)["Line"]["line_endpoint"]
+                try:
+                    lines, line_type, endpoints = _parse_line_result(outputs)
+                except (SyntaxError, ValueError, TypeError):
+                    lines, line_type, endpoints = [], [], []
 
                 fig, ax = plt.subplots(figsize=(3, 3), dpi=200)
                 ax.set_xlim(-15, 15)
                 ax.set_ylim(-15, 15)
 
-                for idx, line in enumerate(lines):
-                    try:
-                        p0 = eval(line.split(" -- ")[0])
-                        p1 = eval(line.split(" -- ")[-1])
+                for idx, (p0, p1) in enumerate(lines):
+                    linestyle = "--" if line_type[idx] == "--" else "-"
+                    ax.plot([p0[0], p1[0]], [p0[1], p1[1]], linewidth=0.8, color="k", linestyle=linestyle)
+                    ax.scatter(p0[0], p0[1], s=5, color="k")
+                    ax.scatter(p1[0], p1[1], s=5, color="k")
 
-                        if line_type[idx] == "--":
-                            ax.plot([p0[0], p1[0]], [p0[1], p1[1]], linewidth=0.8, color="k")
-                        else:
-                            ax.plot([p0[0], p1[0]], [p0[1], p1[1]], linewidth=0.8, color="k")
-
-                        ax.scatter(p0[0], p0[1], s=5, color="k")
-                        ax.scatter(p1[0], p1[1], s=5, color="k")
-                    except:
-                        pass
-
-                for endpoint in endpoints:
-
-                    label = endpoint.split(": ")[0]
-                    (x, y) = eval(endpoint.split(": ")[1])
+                for label, (x, y) in endpoints:
                     ax.annotate(
                         label, (x, y), xytext=(1, 1), textcoords="offset points", fontsize=5, fontweight="light"
                     )

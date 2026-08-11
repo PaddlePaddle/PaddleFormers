@@ -17,15 +17,23 @@ from __future__ import annotations
 import tempfile
 import unittest
 from io import BytesIO
+from types import SimpleNamespace
+from unittest import mock
 
 import paddle
 import requests
 from PIL import Image
 
 from paddleformers.transformers import (
+    AutoModel,
     AutoTokenizer,
     DeepseekOCR2Config,
     DeepseekOCR2ForConditionalGeneration,
+)
+from paddleformers.transformers.deepseek_ocr2.modeling import (
+    DeepseekOCR2Model,
+    _parse_line_result,
+    extract_coordinates_and_label,
 )
 from tests.testing_utils import gpu_device_initializer
 from tests.transformers.test_configuration_common import ConfigTester
@@ -325,6 +333,83 @@ class DeepseekOCR2ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Te
             result.logits.shape,
             [self.model_tester.batch_size, self.model_tester.seq_length, self.model_tester.vocab_size],
         )
+
+    def test_auto_model_from_config(self):
+        model = AutoModel.from_config(self.model_tester.get_config())
+        self.assertIsInstance(model, DeepseekOCR2Model)
+
+    def test_auto_model_flex_checkpoint_round_trip(self):
+        model = DeepseekOCR2Model(self.model_tester.get_config())
+        with tempfile.TemporaryDirectory() as save_dir:
+            model.save_pretrained(save_dir, save_checkpoint_format="flex_checkpoint")
+            loaded = AutoModel.from_pretrained(save_dir, load_checkpoint_format="flex_checkpoint")
+        self.assertIsInstance(loaded, DeepseekOCR2Model)
+        for name, tensor in model.state_dict().items():
+            reloaded = loaded.state_dict()[name]
+            if name.endswith("mlp.gate.weight"):
+                self.assertTrue(paddle.allclose(tensor, reloaded, rtol=1e-2, atol=1e-2), name)
+            else:
+                self.assertEqual(tensor._md5sum(), reloaded._md5sum(), name)
+
+    def test_detection_parser_rejects_code_and_invalid_coordinates(self):
+        malicious = ("", "text", "__import__('os').system('false')")
+        self.assertIsNone(extract_coordinates_and_label(malicious, 100, 100))
+        invalid_box = ("", "text", "[[-1, 0, 10, 10]]")
+        self.assertIsNone(extract_coordinates_and_label(invalid_box, 100, 100))
+        valid_box = ("", "text", "[[0, 1, 998, 999]]")
+        self.assertEqual(extract_coordinates_and_label(valid_box, 100, 100)[1], [(0.0, 1.0, 998.0, 999.0)])
+        with self.assertRaises((SyntaxError, ValueError)):
+            _parse_line_result("__import__('os').system('false')")
+
+    def test_prepare_inputs_for_infer_text_only(self):
+        config = self.model_tester.get_config()
+        model = DeepseekOCR2ForConditionalGeneration(config)
+        tokenizer = mock.Mock()
+        tokenizer.encode.return_value = [11, 12]
+        conversation = model._build_conversation("hello", image_file="")
+        inputs = model.prepare_inputs_for_infer(
+            tokenizer,
+            conversation,
+            base_size=config.vision_config.image_size,
+            image_size=64,
+            crop_mode=False,
+        )
+        self.assertEqual(inputs["images_seq_mask"].astype("int64").sum().item(), 0)
+        self.assertIsNone(inputs["image_draw"])
+
+    def test_text_only_dataset_sequence_collation(self):
+        from paddleformers.datasets.collate import mm_collate_fn_ds_ocr2
+        from paddleformers.datasets.SFTDataset import Sequence
+
+        sequence = Sequence(
+            token_ids=[3, 4, 5],
+            position_ids=[0, 1, 2],
+            labels=[-100, 4, 5],
+            num_examples=1,
+            mm_inputs={},
+        )
+        tokenizer = mock.Mock(pad_token_id=0)
+        tokenizer.encode.return_value = [128815]
+        result = mm_collate_fn_ds_ocr2(
+            [[sequence]],
+            SimpleNamespace(mm_plugin=SimpleNamespace(image_token="<image>")),
+            processor=None,
+            tokenizer=tokenizer,
+            training_args=SimpleNamespace(
+                num_nextn_predict_layers=0,
+                context_parallel_size=1,
+                tensor_model_parallel_size=1,
+                sequence_parallel=False,
+                fp8=False,
+            ),
+            model_args=SimpleNamespace(use_attn_mask_startend_row_indices=False, use_global_causal_attn=False),
+            max_seq_len=8,
+            padding_free=False,
+            model=mock.Mock(),
+        )
+        self.assertNotIn("images", result)
+        self.assertNotIn("images_spatial_crop", result)
+        self.assertEqual(result["input_ids"].shape, [1, 8])
 
     def test_model_forward_with_images(self):
         """Test forward pass with image inputs (vision branch active)."""

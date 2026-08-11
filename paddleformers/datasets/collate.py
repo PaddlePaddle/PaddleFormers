@@ -963,10 +963,11 @@ def mm_collate_fn_ds_ocr2(
             original_position_ids.append(seq.position_ids)
             mm_inputs = seq.mm_inputs
 
-            cur_image = mm_inputs["images"]
-            cur_images_crop = mm_inputs["images_crop"]
-            images_list.extend((cur_images_crop, cur_image))
-            images_spatial_crop_list.extend(mm_inputs["images_spatial_crop"])
+            cur_image = mm_inputs.get("images")
+            cur_images_crop = mm_inputs.get("images_crop")
+            if cur_image is not None and cur_images_crop is not None:
+                images_list.extend((cur_images_crop, cur_image))
+                images_spatial_crop_list.extend(mm_inputs.get("images_spatial_crop", []))
             images_seq_mask = (
                 paddle.to_tensor(seq.token_ids)
                 == tokenizer.encode(template.mm_plugin.image_token, add_special_tokens=False)[0]
@@ -1032,7 +1033,8 @@ def mm_collate_fn_ds_ocr2(
             value = paddle.to_tensor([])
         if len(value) > 0:
             input_dict[key] = value
-    input_dict["images"] = return_images_list
+    if any(return_images_list):
+        input_dict["images"] = return_images_list
     return input_dict
 
 

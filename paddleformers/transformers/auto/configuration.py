@@ -90,7 +90,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
     [
         ("deepseek_v2", "DeepseekV2"),
         ("deepseek_v3", "DeepseekV3"),
-        ("deepseek_ocr2", "DeepseekOCR2"),
+        ("deepseek_ocr2", "DeepseekOCR2Model"),
         ("paligemma", "PaliGemma2"),
         ("paligemma2", "PaliGemma2"),
         ("diff_transformer", "DiffTransformer"),
