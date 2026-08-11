@@ -767,6 +767,14 @@ class Florence2LanguageForConditionalGeneration(Florence2LanguagePretrainedModel
             "return_dict": True,
         }
 
+    def update_model_kwargs_for_generation(self, outputs, model_kwargs, is_encoder_decoder=False):
+        model_kwargs = GenerationMixin.update_model_kwargs_for_generation(
+            outputs, model_kwargs, is_encoder_decoder=is_encoder_decoder
+        )
+        if isinstance(outputs, Seq2SeqLMOutput) and outputs.past_key_values is not None:
+            model_kwargs["past_key_values"] = outputs.past_key_values
+        return model_kwargs
+
     @staticmethod
     def _expand_encoder_output_for_generation(encoder_output, index):
         if isinstance(encoder_output, BaseModelOutput):
@@ -887,8 +895,10 @@ class Florence2ForConditionalGeneration(Florence2PretrainedModel, GenerationMixi
         x = paddle.concat([features[source] for source in self.image_feature_source], axis=1)
         return self.image_proj_norm(paddle.matmul(x, self.image_projection))
 
-    def _merge_image_features(self, image_features, inputs_embeds, attention_mask=None):
-        image_mask = paddle.ones(image_features.shape[:2], dtype=inputs_embeds.dtype)
+    def _merge_image_features(self, image_features, inputs_embeds=None, attention_mask=None):
+        image_mask = paddle.ones(image_features.shape[:2], dtype=image_features.dtype)
+        if inputs_embeds is None:
+            return image_features, image_mask
         text_mask = (
             attention_mask.astype(inputs_embeds.dtype)
             if attention_mask is not None
@@ -942,7 +952,8 @@ class Florence2ForConditionalGeneration(Florence2PretrainedModel, GenerationMixi
             input_ids, labels, attention_mask = self._split_sft_inputs(input_ids, labels, attention_mask)
         image_features = None
         if encoder_output is None and encoder_outputs is None and inputs_embeds is None:
-            inputs_embeds = self.get_input_embeddings()(input_ids)
+            if input_ids is not None:
+                inputs_embeds = self.get_input_embeddings()(input_ids)
             if pixel_values is not None:
                 image_features = self._encode_image(pixel_values)
                 inputs_embeds, attention_mask = self._merge_image_features(
@@ -969,7 +980,8 @@ class Florence2ForConditionalGeneration(Florence2PretrainedModel, GenerationMixi
 
     def generate(self, input_ids=None, pixel_values=None, inputs_embeds=None, attention_mask=None, **kwargs):
         if inputs_embeds is None:
-            inputs_embeds = self.get_input_embeddings()(input_ids)
+            if input_ids is not None:
+                inputs_embeds = self.get_input_embeddings()(input_ids)
             if pixel_values is not None:
                 inputs_embeds, attention_mask = self._merge_image_features(
                     self._encode_image(pixel_values), inputs_embeds, attention_mask

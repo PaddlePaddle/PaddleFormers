@@ -2,6 +2,7 @@
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 
+import os
 import tempfile
 import unittest
 
@@ -12,11 +13,11 @@ from paddleformers.transformers import (
     Florence2Config,
     Florence2ForConditionalGeneration,
 )
+from tests.testing_utils import require_package, slow
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
     ModelTesterMixin,
-    ModelTesterPretrainedMixin,
     floats_tensor,
     ids_tensor,
 )
@@ -239,9 +240,91 @@ class Florence2ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
         self.assertEqual(generated.shape[0], input_ids.shape[0])
         self.assertGreaterEqual(generated.shape[1], 1)
 
+    def test_forward_without_input_ids(self):
+        config, _, _, decoder_input_ids, _, pixel_values = self.model_tester.prepare_config_and_inputs()
+        model = Florence2ForConditionalGeneration(config)
+        model.eval()
+
+        with paddle.no_grad():
+            outputs = model(
+                pixel_values=pixel_values[:1],
+                decoder_input_ids=decoder_input_ids[:1],
+                use_cache=False,
+            )
+
+        self.assertEqual(list(outputs.logits.shape), [1, self.model_tester.decoder_seq_length, config.vocab_size])
+
     def test_generate_without_input_ids(self):
-        # Florence2 needs either image-conditioned embeddings or explicit text ids.
-        pass
+        config, _, _, pixel_values = self._get_generation_inputs()
+        model = Florence2ForConditionalGeneration(config)
+        model.eval()
+
+        with paddle.no_grad():
+            generated = model.generate(
+                pixel_values=pixel_values,
+                max_new_tokens=3,
+                decode_strategy="greedy_search",
+            )[0]
+
+        self.assertEqual(generated.shape[0], pixel_values.shape[0])
+        self.assertGreaterEqual(generated.shape[1], 1)
+
+    def test_generation_cache_updates_and_matches_full_decode(self):
+        (
+            config,
+            input_ids,
+            attention_mask,
+            decoder_input_ids,
+            _,
+            pixel_values,
+        ) = self.model_tester.prepare_config_and_inputs()
+        model = Florence2ForConditionalGeneration(config)
+        model.eval()
+        input_ids = input_ids[:1]
+        attention_mask = attention_mask[:1]
+        pixel_values = pixel_values[:1]
+        decoder_input_ids = decoder_input_ids[:1, :2]
+
+        with paddle.no_grad():
+            full_outputs = model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                pixel_values=pixel_values,
+                decoder_input_ids=decoder_input_ids,
+                use_cache=True,
+            )
+            first_outputs = model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                pixel_values=pixel_values,
+                decoder_input_ids=decoder_input_ids[:, :1],
+                use_cache=True,
+            )
+
+            model_kwargs = model.language_model.update_model_kwargs_for_generation(
+                first_outputs,
+                {},
+                is_encoder_decoder=True,
+            )
+            prepared = model.language_model.prepare_inputs_for_generation(
+                decoder_input_ids,
+                encoder_output=first_outputs.encoder_last_hidden_state,
+                attention_mask=paddle.ones(first_outputs.encoder_last_hidden_state.shape[:2], dtype="int64"),
+                **model_kwargs,
+            )
+            cached_outputs = model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                pixel_values=pixel_values,
+                decoder_input_ids=decoder_input_ids[:, 1:],
+                past_key_values=first_outputs.past_key_values,
+                use_cache=True,
+            )
+
+        self.assertIsNotNone(first_outputs.past_key_values)
+        self.assertIs(model_kwargs["past_key_values"], first_outputs.past_key_values)
+        self.assertEqual(list(prepared["decoder_input_ids"].shape), [1, 1])
+        paddle.testing.assert_close(cached_outputs.logits[:, -1], full_outputs.logits[:, -1], atol=1e-5, rtol=1e-5)
 
     def test_group_beam_search_generate(self):
         # Group beam search coverage is not required for Florence2.
@@ -257,22 +340,72 @@ class Florence2ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
         self.assertEqual(source_mask.tolist(), [[1, 1, 1]])
 
 
-class Florence2ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
-    base_model_class = Florence2ForConditionalGeneration
-    hf_remote_test_model_path = None
-    paddlehub_remote_test_model_path = None
+class Florence2ModelIntegrationTest(unittest.TestCase):
+    @slow
+    @require_package("PIL", "torch", "transformers")
+    def test_pretrained_hf_logits_and_generation_parity(self):
+        import torch
+        from PIL import Image
+        from transformers import AutoModelForCausalLM, AutoProcessor
 
-    @unittest.skip("Florence2 tiny pretrained checkpoint is not available yet.")
-    def test_model_from_pretrained_paddle_hub(self):
-        pass
+        model_name_or_path = os.environ.get("FLORENCE2_PRETRAINED_MODEL", "microsoft/Florence-2-base")
+        image = Image.new("RGB", (32, 32), color=(64, 128, 192))
+        prompt = "<CAPTION>"
 
-    @unittest.skip("Florence2 tiny pretrained checkpoint is not available yet.")
-    def test_model_from_config_paddle_hub(self):
-        pass
+        torch_processor = AutoProcessor.from_pretrained(model_name_or_path, trust_remote_code=True)
+        torch_model = AutoModelForCausalLM.from_pretrained(
+            model_name_or_path,
+            torch_dtype=torch.float32,
+            trust_remote_code=True,
+        ).eval()
+        torch_inputs = torch_processor(text=prompt, images=image, return_tensors="pt")
+        torch_decoder_input_ids = torch.tensor([[torch_model.config.decoder_start_token_id]], dtype=torch.long)
+        with torch.no_grad():
+            torch_logits = torch_model(
+                **torch_inputs,
+                decoder_input_ids=torch_decoder_input_ids,
+                return_dict=True,
+            ).logits
+            torch_tokens = torch_model.generate(**torch_inputs, max_new_tokens=4, do_sample=False, num_beams=1)
 
-    @unittest.skip("Florence2 tiny pretrained checkpoint is not available yet.")
-    def test_pretrained_save_and_load(self):
-        pass
+        paddle_model = Florence2ForConditionalGeneration.from_pretrained(
+            model_name_or_path,
+            download_hub="huggingface",
+            convert_from_hf=True,
+            dtype="float32",
+            load_checkpoint_format="",
+        ).eval()
+        paddle_inputs = {
+            key: paddle.to_tensor(value.detach().cpu().numpy())
+            for key, value in torch_inputs.items()
+            if key in {"input_ids", "attention_mask", "pixel_values"}
+        }
+        paddle_decoder_input_ids = paddle.to_tensor([[paddle_model.config.decoder_start_token_id]], dtype="int64")
+        with paddle.no_grad():
+            paddle_logits = paddle_model(
+                **paddle_inputs,
+                decoder_input_ids=paddle_decoder_input_ids,
+                return_dict=True,
+            ).logits
+            paddle_tokens = paddle_model.generate(
+                **paddle_inputs,
+                max_new_tokens=4,
+                decode_strategy="greedy_search",
+            )[0]
+
+        self.assertLessEqual(
+            np.max(
+                np.abs(
+                    paddle_logits.detach().cpu().reshape([-1])[:16].astype("float32").numpy()
+                    - torch_logits.detach().cpu().reshape(-1)[:16].float().numpy()
+                )
+            ),
+            1e-2,
+        )
+        self.assertEqual(
+            paddle_tokens.detach().cpu().numpy().tolist()[0][:4],
+            torch_tokens.detach().cpu().numpy().tolist()[0][:4],
+        )
 
 
 class Florence2ModelLocalPretrainedTest(unittest.TestCase):

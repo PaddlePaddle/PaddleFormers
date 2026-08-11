@@ -162,6 +162,30 @@ class Florence2Processor(ProcessorMixin):
         width, height = image_size
         return [(value + 0.5) * (width if index % 2 == 0 else height) / 1000 for index, value in enumerate(values)]
 
+    def _parse_polygons(self, text, image_size):
+        polygons, labels = [], []
+        pattern = r"([^<]*)(?:<poly>)?((?:<loc_\d+>|<sep>)+)(?:</poly>)?"
+        for phrase, encoded_polygons in re.findall(pattern, text):
+            instance = []
+            for encoded_polygon in encoded_polygons.split("<sep>"):
+                values = [int(value) for value in re.findall(r"<loc_(\d+)>", encoded_polygon)]
+                if len(values) >= 6 and len(values) % 2 == 0:
+                    instance.append(self._dequantize(values, image_size))
+            if instance:
+                polygons.append(instance)
+                labels.append(phrase.strip())
+        return {"polygons": polygons, "labels": labels}
+
+    def _parse_bboxes(self, text, image_size):
+        phrase_pattern = r"([^<]+)((?:<loc_\d+>){4,})"
+        box_pattern = r"<loc_(\d+)><loc_(\d+)><loc_(\d+)><loc_(\d+)>"
+        bboxes, labels = [], []
+        for phrase, encoded_boxes in re.findall(phrase_pattern, text):
+            for box in re.findall(box_pattern, encoded_boxes):
+                bboxes.append(self._dequantize([int(value) for value in box], image_size))
+                labels.append(phrase.strip())
+        return {"bboxes": bboxes, "labels": labels}
+
     def post_process_generation(self, text, task, image_size):
         clean_text = text.replace("<s>", "").replace("</s>", "").replace("<pad>", "")
         if task in {
@@ -186,30 +210,14 @@ class Florence2Processor(ProcessorMixin):
                 }
             }
         if task in {"<REFERRING_EXPRESSION_SEGMENTATION>", "<REGION_TO_SEGMENTATION>"}:
-            polygons, labels = [], []
-            pattern = r"([^<]*)(?:<poly>)?((?:<loc_\d+>|<sep>)+)(?:</poly>)?"
-            for phrase, encoded_polygons in re.findall(pattern, clean_text):
-                instance = []
-                for encoded_polygon in encoded_polygons.split("<sep>"):
-                    values = [int(value) for value in re.findall(r"<loc_(\d+)>", encoded_polygon)]
-                    if len(values) >= 6 and len(values) % 2 == 0:
-                        instance.append(self._dequantize(values, image_size))
-                if instance:
-                    polygons.append(instance)
-                    labels.append(phrase.strip())
-            return {task: {"polygons": polygons, "labels": labels}}
+            return {task: self._parse_polygons(clean_text, image_size)}
         if task == "<REGION_PROPOSAL>":
             values = [int(value) for value in re.findall(r"<loc_(\d+)>", clean_text)]
             bboxes = [
                 self._dequantize(values[index : index + 4], image_size) for index in range(0, len(values) - 3, 4)
             ]
             return {task: {"bboxes": bboxes, "labels": [""] * len(bboxes)}}
+        if task == "<OPEN_VOCABULARY_DETECTION>" and "<poly>" in clean_text:
+            return {task: self._parse_polygons(clean_text, image_size)}
 
-        phrase_pattern = r"([^<]+)((?:<loc_\d+>){4,})"
-        box_pattern = r"<loc_(\d+)><loc_(\d+)><loc_(\d+)><loc_(\d+)>"
-        bboxes, labels = [], []
-        for phrase, encoded_boxes in re.findall(phrase_pattern, clean_text):
-            for box in re.findall(box_pattern, encoded_boxes):
-                bboxes.append(self._dequantize([int(value) for value in box], image_size))
-                labels.append(phrase.strip())
-        return {task: {"bboxes": bboxes, "labels": labels}}
+        return {task: self._parse_bboxes(clean_text, image_size)}

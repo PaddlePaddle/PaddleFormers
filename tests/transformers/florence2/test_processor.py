@@ -24,6 +24,26 @@ class Florence2ProcessorTest(unittest.TestCase):
         self.assertEqual(result["<OD>"]["labels"], ["cat"])
         self.assertEqual(len(result["<OD>"]["bboxes"][0]), 4)
 
+    def test_post_process_open_vocabulary_detection_bbox(self):
+        result = self.processor.post_process_generation(
+            "cat<loc_0><loc_1><loc_998><loc_999>",
+            "<OPEN_VOCABULARY_DETECTION>",
+            (100, 200),
+        )
+        self.assertEqual(result["<OPEN_VOCABULARY_DETECTION>"]["labels"], ["cat"])
+        self.assertEqual(len(result["<OPEN_VOCABULARY_DETECTION>"]["bboxes"][0]), 4)
+
+    def test_post_process_open_vocabulary_detection_polygon(self):
+        result = self.processor.post_process_generation(
+            "cat<poly><loc_0><loc_1><loc_500><loc_501><loc_998><loc_999></poly>",
+            "<OPEN_VOCABULARY_DETECTION>",
+            (100, 200),
+        )
+        self.assertEqual(result["<OPEN_VOCABULARY_DETECTION>"]["labels"], ["cat"])
+        self.assertIn("polygons", result["<OPEN_VOCABULARY_DETECTION>"])
+        self.assertNotIn("bboxes", result["<OPEN_VOCABULARY_DETECTION>"])
+        self.assertEqual(len(result["<OPEN_VOCABULARY_DETECTION>"]["polygons"][0][0]), 6)
+
     def test_post_process_segmentation(self):
         result = self.processor.post_process_generation(
             "cat<poly><loc_0><loc_1><loc_500><loc_501><loc_998><loc_999></poly>",
