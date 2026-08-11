@@ -35,7 +35,7 @@ from paddleformers.transformers.deepseek_ocr2.modeling import (
     _parse_line_result,
     extract_coordinates_and_label,
 )
-from tests.testing_utils import gpu_device_initializer
+from tests.testing_utils import gpu_device_initializer, slow
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -663,6 +663,7 @@ class DeepseekOCR2IntegrationTest(unittest.TestCase):
         )
         return inputs
 
+    @slow
     def test_model_tiny_image_logits(self):
         """Test tiny model forward pass with a real image input."""
         inputs = self._build_inputs()
