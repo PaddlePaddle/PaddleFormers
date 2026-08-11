@@ -2885,10 +2885,8 @@ class Trainer:
             # reset tr_loss to zero
             tr_loss.subtract_(tr_loss)
             # set loss to zero if all steps are skipped since last log
-            if num_steps == 0:
-                logs["loss"] = 0.0
-            else:
-                logs["loss"] = round(tr_loss_scalar / num_steps, 8)
+            raw_loss = 0.0 if num_steps == 0 else tr_loss_scalar / num_steps
+            logs["loss"] = round(raw_loss, 8)
 
             logs["learning_rate"] = float("{0:.3e}".format(self._get_learning_rate()))
             logs["global_step"] = int(self.state.global_step)
@@ -3057,7 +3055,7 @@ class Trainer:
                             "gpu_max_memory_reserved": paddle_device.max_memory_reserved() >> 20,
                         }
                     )
-            self.log(logs, **kwargs)
+            self.log(logs, raw_loss=raw_loss, **kwargs)
 
         metrics = None
         if self.control.should_evaluate:

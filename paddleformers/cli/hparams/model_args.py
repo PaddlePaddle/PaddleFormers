@@ -125,6 +125,10 @@ class ModelArguments:
         default=False,
         metadata={"help": "GPT3 model, use fast layernorm"},
     )
+    persist_layer_norm: Optional[bool] = field(
+        default=None,
+        metadata={"help": "Override the Fleet provider persistent layer-norm implementation."},
+    )
     _attn_implementation: str = field(default="flashmask", metadata={"help": "Attention implementation"})
     fuse_gate_detach_matmul: bool = field(
         default=True,

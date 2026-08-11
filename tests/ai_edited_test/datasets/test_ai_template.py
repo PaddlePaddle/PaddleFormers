@@ -22,6 +22,7 @@ from paddleformers.datasets.template.formatter import (
     ToolFormatter,
 )
 from paddleformers.datasets.template.template import (
+    TEMPLATES,
     GLM5ReasoningTemplate,
     ReasoningTemplate,
     Role,
@@ -265,6 +266,10 @@ class TestGLM5ReasoningTemplate(unittest.TestCase):
         template.get_thought_word_ids(tokenizer)
         # Should only encode the closing tag
         tokenizer.encode.assert_called_with("\n</think\n", add_special_tokens=False)
+
+    def test_glm5_2_uses_complete_empty_thought_pair(self):
+        self.assertEqual(TEMPLATES["glm_moe_dsa"].add_thought("hello"), "</think>hello")
+        self.assertEqual(TEMPLATES["glm5_2"].add_thought("hello"), "<think></think>hello")
 
 
 class TestGetTemplateAndFixTokenizer(unittest.TestCase):

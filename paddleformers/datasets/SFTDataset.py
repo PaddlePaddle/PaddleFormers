@@ -443,8 +443,6 @@ class BaseSFTDataset:
                             # Set flag to False and yield empty list to signal the end of estimation
                             self.estimate = False
                             yield []
-                if len(batch_sequence) > 0:
-                    yield batch_sequence
                 self.iter_all_examples = True
             else:
                 if self.binpacking:
