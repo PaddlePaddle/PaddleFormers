@@ -902,6 +902,140 @@ def mm_collate_fn(
     return input_dict
 
 
+def mm_collate_fn_ds_ocr2(
+    batch: List[List[Sequence]],
+    template,
+    processor,
+    tokenizer,
+    training_args,
+    model_args,
+    max_seq_len: int,
+    padding_free: bool,
+    model,
+):
+    """Convert batch of sequences into training tensors.
+
+    Args:
+        batch (List[List[Sequence]]): Batch of input sequences
+        tokenizer: Tokenizer for text conversion
+        model_args: Model configuration parameters
+        max_seq_len (int): Maximum sequence length for padding
+        padding_free (bool): Whether to flatten the data within a batch to avoid padding
+
+    Returns:
+        dict: Dictionary containing:
+            - input_ids: Padded token IDs
+            - labels: Shifted labels for prediction
+            - loss_mask: Mask for computing loss
+    """
+
+    if isinstance(model, LoRAModel):
+        model = model.model.base_model
+
+    input_keys = ["input_ids", "labels", "position_ids", "images_spatial_crop", "images_seq_mask"]
+
+    if training_args.num_nextn_predict_layers > 0:
+        input_keys.append("nbatch_pack_offset")
+    if model_args.use_attn_mask_startend_row_indices:
+        input_keys.append("attn_mask_startend_row_indices")
+    else:
+        input_keys.append("attention_mask")
+
+    return_list = []
+    return_images_list = []
+    if padding_free:
+        batch = [sum(batch, [])]
+        max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
+    if not max_seq_len:
+        max_seq_len = max(sum(len(item.token_ids) for item in sequence) for sequence in batch)
+    max_seq_len = calc_padding_size(max_seq_len, training_args)
+    if training_args.num_nextn_predict_layers > 0:
+        max_seq_len += training_args.num_nextn_predict_layers
+
+    for batch_sequence in batch:
+        original_token_ids = []
+        original_position_ids = []
+        images_list = []
+        images_spatial_crop_list = []
+        images_seq_mask_list = []
+        for seq in batch_sequence:
+            original_token_ids.append(seq.token_ids)
+            original_position_ids.append(seq.position_ids)
+            mm_inputs = seq.mm_inputs
+
+            cur_image = mm_inputs["images"]
+            cur_images_crop = mm_inputs["images_crop"]
+            images_list.extend((cur_images_crop, cur_image))
+            images_spatial_crop_list.extend(mm_inputs["images_spatial_crop"])
+            images_seq_mask = (
+                paddle.to_tensor(seq.token_ids)
+                == tokenizer.encode(template.mm_plugin.image_token, add_special_tokens=False)[0]
+            )
+            images_seq_mask_list.append(images_seq_mask)
+
+        if original_position_ids:
+            position_ids = [np.concatenate(original_position_ids)]
+            padded_position_ids = pad_batch_data(position_ids, pad_idx=0, max_seq_len=max_seq_len)
+        else:
+            padded_position_ids = []
+
+        token_ids = [np.concatenate(original_token_ids)]
+        labels = [np.concatenate([seq.labels for seq in batch_sequence])]
+        # padding
+        padded_token_ids = pad_batch_data(token_ids, pad_idx=tokenizer.pad_token_id, max_seq_len=max_seq_len)
+        padded_labels = pad_batch_data(labels, pad_idx=-100, max_seq_len=max_seq_len)
+        return_list.append(
+            [
+                padded_token_ids,
+                padded_labels,
+            ]
+        )
+
+        images_seq_mask_list = [np.concatenate(images_seq_mask_list)]
+        padded_images_seq_mask = pad_batch_data(images_seq_mask_list, pad_idx=False, max_seq_len=max_seq_len)
+        return_list[-1].extend(
+            [
+                padded_position_ids,
+                images_spatial_crop_list,
+                padded_images_seq_mask,
+            ]
+        )
+        return_images_list.append(images_list)
+
+        if training_args.num_nextn_predict_layers > 0:
+            # each sequence end index
+            batch_sequence_len = [len(sequence) for sequence in original_token_ids]
+            nbatch_pack_offset = [0] * sum(batch_sequence_len)
+            prefix_sum = 0
+            for sequence_len in batch_sequence_len[:-1]:
+                prefix_sum += sequence_len
+                nbatch_pack_offset[prefix_sum - 1] = 1
+            padded_nbatch_pack_offset = pad_batch_data([nbatch_pack_offset], pad_idx=0, max_seq_len=max_seq_len)
+            return_list[-1].append(padded_nbatch_pack_offset)
+
+        if model_args.use_attn_mask_startend_row_indices:
+            return_list[-1].append(
+                gen_attn_mask_startend_row_indices(original_token_ids, max_seq_len, model_args.use_global_causal_attn)
+            )
+        else:
+            return_list[-1].append(
+                gen_self_attn_mask(original_token_ids, max_seq_len, model_args.use_global_causal_attn)
+            )
+
+    transposed_list = list(zip(*return_list))
+    input_dict = {}
+    for key, tensors in zip(input_keys, transposed_list):
+        filtered_tensors = [paddle.to_tensor(x) for x in tensors if x is not None and len(x) > 0]
+        if filtered_tensors:
+            value = paddle.concat(filtered_tensors, axis=0)
+        else:
+            value = paddle.to_tensor([])
+        if len(value) > 0:
+            input_dict[key] = value
+    input_dict["images"] = return_images_list
+    return input_dict
+
+
 def pad_batch_data(
     insts,
     pad_idx=0,
