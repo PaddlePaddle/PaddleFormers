@@ -6,7 +6,9 @@
 """Paddle implementation of LFM2-VL and its SigLIP2 NaFlex vision tower."""
 
 import inspect
+import json
 import os
+from collections import defaultdict
 from dataclasses import dataclass
 
 import paddle
@@ -16,6 +18,7 @@ from safetensors import safe_open
 
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.lm_head import LMHead
+from ...utils.download import resolve_file_path
 from ...utils.log import logger
 from ..activations import ACT2FN
 from ..configuration_utils import PretrainedConfig
@@ -25,8 +28,54 @@ from ..model_outputs import (
     ModelOutput,
 )
 from ..model_utils import PretrainedModel, dtype_guard, register_base_model
+from ..utils import get_checkpoint_shard_files
 from .configuration import Lfm2VlConfig
 from .modeling_lfm2 import Lfm2Model
+
+
+def _resolve_hf_checkpoint_dir(pretrained_model_name_or_path, **kwargs):
+    if os.path.isdir(pretrained_model_name_or_path):
+        return pretrained_model_name_or_path
+    subfolder = kwargs.get("subfolder", "")
+    resolved_file = resolve_file_path(
+        pretrained_model_name_or_path,
+        ["model.safetensors.index.json", "model.safetensors"],
+        subfolder=subfolder,
+        revision=kwargs.get("revision"),
+        cache_dir=kwargs.get("cache_dir"),
+        force_download=kwargs.get("force_download", False),
+        token=kwargs.get("token"),
+        local_files_only=kwargs.get("local_files_only", False),
+        download_hub=kwargs.get("download_hub"),
+    )
+    if resolved_file.endswith(".index.json"):
+        get_checkpoint_shard_files(
+            pretrained_model_name_or_path,
+            resolved_file,
+            cache_dir=kwargs.get("cache_dir"),
+            subfolder=subfolder,
+            download_hub=kwargs.get("download_hub"),
+        )
+    return os.path.dirname(resolved_file)
+
+
+def _iter_hf_tensors(model_dir):
+    index_path = os.path.join(model_dir, "model.safetensors.index.json")
+    if os.path.exists(index_path):
+        with open(index_path, "r", encoding="utf-8") as file:
+            weight_map = json.load(file)["weight_map"]
+        file_to_keys = defaultdict(list)
+        for key, filename in weight_map.items():
+            file_to_keys[filename].append(key)
+    else:
+        checkpoint_path = os.path.join(model_dir, "model.safetensors")
+        if not os.path.exists(checkpoint_path):
+            raise FileNotFoundError(f"No safetensors checkpoint found under {model_dir}")
+        file_to_keys = {"model.safetensors": None}
+    for filename, keys in sorted(file_to_keys.items()):
+        with safe_open(os.path.join(model_dir, filename), framework="np") as checkpoint:
+            for name in sorted(keys if keys is not None else checkpoint.keys()):
+                yield name, paddle.to_tensor(checkpoint.get_tensor(name))
 
 
 @dataclass
@@ -239,6 +288,8 @@ class Lfm2VlModel(Lfm2VlPreTrainedModel):
             inputs_embeds = self.get_input_embeddings()(input_ids)
         image_features = None
         if pixel_values is not None:
+            if input_ids is None:
+                raise ValueError("input_ids must be provided with pixel_values to locate LFM2-VL image tokens")
             image_features_list = self.get_image_features(
                 pixel_values, spatial_shapes, pixel_attention_mask
             ).pooler_output
@@ -275,12 +326,32 @@ class Lfm2VlForConditionalGeneration(Lfm2VlPreTrainedModel):
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path, *args, **kwargs):
-        checkpoint_path = (
-            os.path.join(pretrained_model_name_or_path, "model.safetensors")
-            if isinstance(pretrained_model_name_or_path, str)
-            else ""
-        )
-        if not os.path.isfile(checkpoint_path):
+        if not isinstance(pretrained_model_name_or_path, (str, os.PathLike)):
+            return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
+
+        native_path = os.path.join(pretrained_model_name_or_path, "model_state.pdparams")
+        if os.path.isfile(native_path):
+            dtype = kwargs.pop("dtype", None)
+            config = kwargs.pop("config", None)
+            if not isinstance(config, PretrainedConfig):
+                config_path = config if config is not None else pretrained_model_name_or_path
+                config, _ = cls.config_class.from_pretrained(config_path, return_unused_kwargs=True, **kwargs)
+            if dtype is not None:
+                config.dtype = dtype
+                config.text_config.dtype = dtype
+                config.vision_config.dtype = dtype
+            with dtype_guard(dtype or paddle.get_default_dtype()):
+                model = cls(config, *args)
+            missing_keys, unexpected_keys = model.set_state_dict(paddle.load(native_path))
+            if missing_keys or unexpected_keys:
+                raise ValueError(
+                    f"Native LFM2-VL checkpoint is incomplete; missing={missing_keys}, unexpected={unexpected_keys}"
+                )
+            return model
+
+        try:
+            checkpoint_dir = _resolve_hf_checkpoint_dir(str(pretrained_model_name_or_path), **kwargs)
+        except (EnvironmentError, FileNotFoundError, ValueError):
             return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
 
         accepted_init_kwargs = {
@@ -317,12 +388,10 @@ class Lfm2VlForConditionalGeneration(Lfm2VlPreTrainedModel):
             ".fc2.weight",
         )
         state_dict = {}
-        with safe_open(checkpoint_path, framework="np") as checkpoint:
-            for name in checkpoint.keys():
-                tensor = paddle.to_tensor(checkpoint.get_tensor(name))
-                if name.endswith(linear_weight_suffixes):
-                    tensor = tensor.transpose([1, 0]).contiguous()
-                state_dict[name] = tensor
+        for name, tensor in _iter_hf_tensors(checkpoint_dir):
+            if name.endswith(linear_weight_suffixes):
+                tensor = tensor.transpose([1, 0]).contiguous()
+            state_dict[name] = tensor
         if config.tie_word_embeddings and "lm_head.weight" not in state_dict:
             state_dict["lm_head.weight"] = state_dict["model.language_model.embed_tokens.weight"].clone()
 
@@ -342,6 +411,11 @@ class Lfm2VlForConditionalGeneration(Lfm2VlPreTrainedModel):
             raise ValueError(f"LFM2-VL load failed: missing={missing_keys}, unexpected={unexpected_keys}")
         logger.info(f"Loaded and converted Hugging Face LFM2-VL checkpoint from {pretrained_model_name_or_path}")
         return model
+
+    def save_pretrained(self, save_dir, *args, **kwargs):
+        kwargs.setdefault("save_checkpoint_format", "paddle")
+        kwargs.setdefault("save_safetensors", False)
+        return super().save_pretrained(save_dir, *args, **kwargs)
 
     def get_input_embeddings(self):
         return self.model.get_input_embeddings()

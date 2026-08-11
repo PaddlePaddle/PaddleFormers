@@ -51,6 +51,8 @@ class Lfm2VlProcessor(ProcessorMixin):
             raise ValueError("Lfm2VlProcessor requires text.")
         texts = [text] if isinstance(text, str) else list(text)
         image_list = [] if images is None else (list(images) if isinstance(images, (list, tuple)) else [images])
+        if not image_list and any(self.image_token in prompt for prompt in texts):
+            raise ValueError("An image must be supplied for each LFM2-VL <image> token.")
         if image_list and len(image_list) != len(texts):
             raise ValueError("LFM2-VL currently expects one image per prompt.")
         image_inputs = {}
