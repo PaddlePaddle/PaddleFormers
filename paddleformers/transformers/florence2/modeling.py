@@ -767,6 +767,41 @@ class Florence2LanguageForConditionalGeneration(Florence2LanguagePretrainedModel
             "return_dict": True,
         }
 
+    @staticmethod
+    def _expand_encoder_output_for_generation(encoder_output, index):
+        if isinstance(encoder_output, BaseModelOutput):
+            return BaseModelOutput(
+                last_hidden_state=paddle.gather(encoder_output.last_hidden_state, index),
+                hidden_states=(
+                    tuple(paddle.gather(state, index) for state in encoder_output.hidden_states)
+                    if encoder_output.hidden_states is not None
+                    else None
+                ),
+                attentions=(
+                    tuple(paddle.gather(state, index) for state in encoder_output.attentions)
+                    if encoder_output.attentions is not None
+                    else None
+                ),
+            )
+        if isinstance(encoder_output, tuple):
+            return tuple(paddle.gather(state, index) if state is not None else None for state in encoder_output)
+        return paddle.gather(encoder_output, index)
+
+    def expand_inputs_for_generation(self, input_ids, expand_size, attention_mask=None, **model_kwargs):
+        encoder_output = model_kwargs.pop("encoder_output", None)
+        index = paddle.tile(paddle.arange(input_ids.shape[0], dtype="int64").unsqueeze(-1), [1, expand_size]).reshape(
+            [-1]
+        )
+        input_ids, model_kwargs = super().expand_inputs_for_generation(
+            input_ids,
+            expand_size,
+            attention_mask=attention_mask,
+            **model_kwargs,
+        )
+        if encoder_output is not None:
+            model_kwargs["encoder_output"] = self._expand_encoder_output_for_generation(encoder_output, index)
+        return input_ids, model_kwargs
+
     def _reorder_cache(self, past_key_values, beam_idx):
         return tuple(
             tuple(paddle.index_select(state, beam_idx, axis=0) for state in layer) for layer in past_key_values

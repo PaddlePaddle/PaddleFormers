@@ -8,12 +8,10 @@ import unittest
 import numpy as np
 import paddle
 
-from paddleformers.generation import BeamSearchScorer, LogitsProcessorList
 from paddleformers.transformers import (
     Florence2Config,
     Florence2ForConditionalGeneration,
 )
-from paddleformers.transformers.model_outputs import BaseModelOutput
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -210,37 +208,13 @@ class Florence2ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
         model.eval()
 
         with paddle.no_grad():
-            inputs_embeds = model.get_input_embeddings()(input_ids)
-            image_features = model._encode_image(pixel_values)
-            inputs_embeds, encoder_attention_mask = model._merge_image_features(
-                image_features, inputs_embeds, attention_mask
-            )
-            encoder_output = model.get_encoder()(
-                input_ids=None,
-                attention_mask=encoder_attention_mask,
-                inputs_embeds=inputs_embeds,
-            ).last_hidden_state
-            num_beams = 2
-            decoder_input_ids = paddle.full(
-                [input_ids.shape[0] * num_beams, 1],
-                config.decoder_start_token_id,
-                dtype=input_ids.dtype,
-            )
-            beam_scorer = BeamSearchScorer(
-                batch_size=input_ids.shape[0],
-                max_length=4,
-                num_beams=num_beams,
-            )
-            generated = model.language_model.beam_search(
-                decoder_input_ids,
-                beam_scorer,
-                logits_processors=LogitsProcessorList(),
-                max_length=4,
-                diversity_rate=0.0,
-                pad_token_id=config.pad_token_id,
-                eos_token_id=config.eos_token_id,
-                encoder_output=BaseModelOutput(last_hidden_state=encoder_output.repeat_interleave(num_beams, axis=0)),
-                attention_mask=encoder_attention_mask.repeat_interleave(num_beams, axis=0),
+            generated = model.generate(
+                input_ids=input_ids,
+                pixel_values=pixel_values,
+                attention_mask=attention_mask,
+                max_new_tokens=3,
+                decode_strategy="beam_search",
+                num_beams=2,
             )[0]
 
         self.assertEqual(generated.shape[0], input_ids.shape[0])
