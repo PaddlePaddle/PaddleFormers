@@ -7,6 +7,7 @@ import unittest
 
 import paddle
 import paddle.nn.functional as F
+from safetensors.numpy import save_file
 
 from paddleformers.transformers import (
     InternVisionModel,
@@ -19,6 +20,21 @@ from tests.transformers.test_configuration_common import ConfigTester
 
 
 class InternVLModelTest(unittest.TestCase):
+    @staticmethod
+    def _to_hf_layout_state_dict(model):
+        hf_transpose_keys = set(model.transpose_weight_keys)
+        hf_transpose_keys.add("gate")
+        state_dict = {}
+        for key, value in model.state_dict().items():
+            array = value.numpy()
+            if array.ndim == 2 and any(
+                key.endswith(f".{transpose_key}.weight") or key == f"{transpose_key}.weight"
+                for transpose_key in hf_transpose_keys
+            ):
+                array = array.T.copy()
+            state_dict[key] = array
+        return state_dict
+
     def get_config(self):
         return InternVLChatConfig(
             vision_config={
@@ -166,6 +182,25 @@ class InternVLModelTest(unittest.TestCase):
             config.save_pretrained(tmpdir)
             reloaded_config = InternVLChatConfig.from_pretrained(tmpdir, local_files_only=True)
         self.assertIsInstance(reloaded_config.llm_config, Qwen3MoeConfig)
+
+    def test_qwen3_moe_hf_checkpoint_transposes_router_gate(self):
+        config = self.get_moe_config()
+        model = InternVLChatModel(config).eval()
+        gate_key = "language_model.model.layers.0.mlp.gate.weight"
+        expected_gate = model.state_dict()[gate_key]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config.save_pretrained(tmpdir)
+            save_file(
+                self._to_hf_layout_state_dict(model),
+                f"{tmpdir}/model.safetensors",
+                metadata={"format": "pt"},
+            )
+            reloaded = InternVLChatModel.from_pretrained(tmpdir, load_checkpoint_format="").eval()
+
+        actual_gate = reloaded.state_dict()[gate_key]
+        self.assertEqual(list(actual_gate.shape), list(expected_gate.shape))
+        paddle.testing.assert_close(actual_gate, expected_gate, atol=0.0, rtol=0.0)
 
     def test_save_load(self):
         paddle.seed(42)

@@ -267,6 +267,7 @@ class InternVLChatPretrainedModel(PretrainedModel):
         "gate_proj",
         "up_proj",
         "down_proj",
+        "gate",
         "mlp1.1",
         "mlp1.3",
     ]
