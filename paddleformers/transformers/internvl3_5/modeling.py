@@ -89,6 +89,7 @@ class InternVisionEmbeddings(nn.Layer):
 
     def forward(self, pixel_values):
         target_dtype = self.patch_embedding.weight.dtype
+        pixel_values = pixel_values.astype(target_dtype)
         patch_embeds = self.patch_embedding(pixel_values)
         batch_size, _, height, width = patch_embeds.shape
         patch_embeds = patch_embeds.flatten(2).transpose([0, 2, 1])

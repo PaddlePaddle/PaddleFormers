@@ -143,6 +143,31 @@ class InternVLProcessorTest(unittest.TestCase):
         self.assertIsNotNone(processor.chat_template)
         self.assertIn("Describe the image shortly.", rendered)
 
+    def test_processor_output_excludes_num_patches_metadata(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self._save_tiny_tokenizer(tmpdir)
+            with open(os.path.join(tmpdir, "processor_config.json"), "w", encoding="utf-8") as config_file:
+                json.dump({"processor_class": "InternVLProcessor", "image_seq_length": 4}, config_file)
+            with open(os.path.join(tmpdir, "preprocessor_config.json"), "w", encoding="utf-8") as config_file:
+                json.dump(
+                    {
+                        "image_processor_type": "InternVLImageProcessor",
+                        "size": {"height": 28, "width": 28},
+                        "max_patches": 1,
+                        "use_thumbnail": False,
+                    },
+                    config_file,
+                )
+            processor = AutoProcessor.from_pretrained(tmpdir, download_hub="huggingface", local_files_only=True)
+            image = Image.new("RGB", (28, 28), (127, 64, 32))
+
+            outputs = processor(images=image, text="<image>\nDescribe the image shortly.", return_tensors="pd")
+
+        self.assertNotIn("num_patches_list", outputs)
+        self.assertIn("pixel_values", outputs)
+        self.assertIn("image_flags", outputs)
+        self.assertIn("input_ids", outputs)
+
     def test_expand_image_tokens(self):
         processor = InternVLProcessor.__new__(InternVLProcessor)
         processor.image_seq_length = 4

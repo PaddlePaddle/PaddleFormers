@@ -8,7 +8,11 @@ import unittest
 import paddle
 import paddle.nn.functional as F
 
-from paddleformers.transformers import InternVLChatConfig, InternVLChatModel
+from paddleformers.transformers import (
+    InternVisionModel,
+    InternVLChatConfig,
+    InternVLChatModel,
+)
 from tests.transformers.test_configuration_common import ConfigTester
 
 
@@ -92,6 +96,16 @@ class InternVLModelTest(unittest.TestCase):
             token_loss.dtype
         ).sum()
         paddle.testing.assert_close(outputs.loss, expected_loss)
+
+    def test_bfloat16_vision_model_accepts_float32_pixel_values(self):
+        model = InternVisionModel(self.get_config().vision_config).eval()
+        model.to(dtype="bfloat16")
+        pixel_values = paddle.randn([1, 3, 28, 28], dtype="float32")
+
+        with paddle.no_grad():
+            outputs = model(pixel_values=pixel_values)
+
+        self.assertEqual(outputs.last_hidden_state.dtype, paddle.bfloat16)
 
     def test_save_load(self):
         paddle.seed(42)

@@ -94,6 +94,7 @@ class InternVLProcessor(ProcessorMixin):
                 **output_kwargs["images_kwargs"],
             )
             num_patches_list = image_inputs["num_patches_list"]
+            image_inputs.pop("num_patches_list", None)
 
         if text is None:
             data = dict(image_inputs)
