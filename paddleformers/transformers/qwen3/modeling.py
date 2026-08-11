@@ -595,10 +595,14 @@ class Qwen3Model(Qwen3PretrainedModel):
         past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         attn_mask_startend_row_indices=None,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
 
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
@@ -658,8 +662,11 @@ class Qwen3Model(Qwen3PretrainedModel):
 
         # create position embeddings to be shared across the decoder layers
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
+        all_hidden_states = [] if output_hidden_states else None
 
         for idx, (decoder_layer) in enumerate(self.layers):
+            if output_hidden_states:
+                all_hidden_states.append(hidden_states)
             has_gradient = not hidden_states.stop_gradient
             if (
                 self.config.recompute_granularity == "full"
@@ -693,11 +700,16 @@ class Qwen3Model(Qwen3PretrainedModel):
                 )
 
         hidden_states = self.norm(hidden_states)
+        if output_hidden_states:
+            all_hidden_states.append(hidden_states)
+            all_hidden_states = tuple(all_hidden_states)
+
         if not return_dict:
-            return tuple(v for v in [hidden_states, past_key_values] if v is not None)
+            return tuple(v for v in [hidden_states, past_key_values, all_hidden_states] if v is not None)
         return BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
             past_key_values=past_key_values,
+            hidden_states=all_hidden_states,
         )
 
 
@@ -752,6 +764,7 @@ class Qwen3ForCausalLMDeprecated(Qwen3PretrainedModel):
         inputs_embeds: Optional[paddle.Tensor] = None,
         labels: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
         loss_mask: Optional[paddle.Tensor] = None,
         return_dict: Optional[bool] = None,
         attn_mask_startend_row_indices=None,
@@ -783,6 +796,9 @@ class Qwen3ForCausalLMDeprecated(Qwen3PretrainedModel):
         ```"""
 
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
 
         if attn_mask_startend_row_indices is not None and attention_mask is not None:
             logger.warning(
@@ -799,6 +815,7 @@ class Qwen3ForCausalLMDeprecated(Qwen3PretrainedModel):
             past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,
             use_cache=use_cache,
+            output_hidden_states=output_hidden_states,
             return_dict=return_dict,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
         )

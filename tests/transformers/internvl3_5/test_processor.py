@@ -9,6 +9,10 @@ import unittest
 from unittest.mock import patch
 
 from PIL import Image
+from tokenizers import Tokenizer
+from tokenizers.models import WordLevel
+from tokenizers.pre_tokenizers import Whitespace
+from transformers import PreTrainedTokenizerFast
 
 from paddleformers.transformers import (
     AutoImageProcessor,
@@ -17,10 +21,38 @@ from paddleformers.transformers import (
     InternVLProcessor,
 )
 
-LOCAL_CHECKPOINT = "/sda/housaijie/code/InternVL3_5-1B"
-
 
 class InternVLProcessorTest(unittest.TestCase):
+    def _save_tiny_tokenizer(self, tmpdir):
+        tokenizer = Tokenizer(
+            WordLevel(
+                {
+                    "<unk>": 0,
+                    "<IMG_CONTEXT>": 1,
+                    "<image>": 2,
+                    "Describe": 3,
+                    "the": 4,
+                    "image": 5,
+                    "shortly.": 6,
+                },
+                unk_token="<unk>",
+            )
+        )
+        tokenizer.pre_tokenizer = Whitespace()
+        fast_tokenizer = PreTrainedTokenizerFast(
+            tokenizer_object=tokenizer,
+            unk_token="<unk>",
+            additional_special_tokens=["<IMG_CONTEXT>", "<image>"],
+        )
+        fast_tokenizer.save_pretrained(tmpdir)
+
+        tokenizer_config_path = os.path.join(tmpdir, "tokenizer_config.json")
+        with open(tokenizer_config_path, encoding="utf-8") as tokenizer_config_file:
+            tokenizer_config = json.load(tokenizer_config_file)
+        tokenizer_config["tokenizer_class"] = "Qwen2TokenizerFast"
+        with open(tokenizer_config_path, "w", encoding="utf-8") as tokenizer_config_file:
+            json.dump(tokenizer_config, tokenizer_config_file)
+
     def test_dynamic_image_preprocess(self):
         image_processor = InternVLImageProcessor(size={"height": 28, "width": 28}, max_patches=2)
         image = Image.new("RGB", (40, 20), (127, 64, 32))
@@ -81,12 +113,31 @@ class InternVLProcessorTest(unittest.TestCase):
             tmpdir, trust_remote_code=None, download_hub="huggingface", _from_auto=True, local_files_only=True
         )
 
-    @unittest.skipUnless(os.path.isdir(LOCAL_CHECKPOINT), "requires local InternVL3_5-1B checkpoint")
-    def test_auto_processor_real_checkpoint_chat_template(self):
-        processor = AutoProcessor.from_pretrained(LOCAL_CHECKPOINT, local_files_only=True)
-        messages = [{"role": "user", "content": "<image>\nDescribe the image shortly."}]
+    def test_auto_processor_checkpoint_chat_template(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self._save_tiny_tokenizer(tmpdir)
+            with open(os.path.join(tmpdir, "processor_config.json"), "w", encoding="utf-8") as config_file:
+                json.dump({"processor_class": "InternVLProcessor", "image_seq_length": 4}, config_file)
+            with open(os.path.join(tmpdir, "preprocessor_config.json"), "w", encoding="utf-8") as config_file:
+                json.dump(
+                    {
+                        "image_processor_type": "InternVLImageProcessor",
+                        "size": {"height": 28, "width": 28},
+                    },
+                    config_file,
+                )
+            with open(os.path.join(tmpdir, "chat_template.jinja"), "w", encoding="utf-8") as template_file:
+                template_file.write(
+                    "{% for message in messages %}"
+                    "{{ message['role'] }}: {{ message['content'] }}"
+                    "{% endfor %}"
+                    "{% if add_generation_prompt %}assistant: {% endif %}"
+                )
 
-        rendered = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            processor = AutoProcessor.from_pretrained(tmpdir, download_hub="huggingface", local_files_only=True)
+            messages = [{"role": "user", "content": "<image>\nDescribe the image shortly."}]
+
+            rendered = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
         self.assertIsInstance(processor, InternVLProcessor)
         self.assertIsNotNone(processor.chat_template)
