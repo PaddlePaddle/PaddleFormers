@@ -20,14 +20,14 @@ import paddle.nn.functional as F
 from paddle import nn
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
-from ..model_outputs import BaseModelOutputWithPooling, ModelOutput
+from ..model_outputs import BaseModelOutputWithPooling, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel
 from .configuration import Llama4Config, Llama4VisionConfig
 from .modeling import Llama4ForCausalLM
 
 
 @dataclass
-class Llama4CausalLMOutputWithPast(ModelOutput):
+class Llama4CausalLMOutputWithPast(CausalLMOutputWithPast):
     loss: paddle.Tensor | None = None
     logits: paddle.Tensor | None = None
     past_key_values: object | None = None
@@ -396,6 +396,34 @@ class Llama4ForConditionalGeneration(PretrainedModel):
 
     def get_image_features(self, pixel_values, **kwargs):
         return self.vision_model(pixel_values, **{key: value for key, value in kwargs.items() if value is not None})
+
+    def prepare_inputs_for_generation(
+        self,
+        input_ids,
+        past_key_values=None,
+        attention_mask=None,
+        pixel_values=None,
+        inputs_embeds=None,
+        **kwargs,
+    ):
+        if past_key_values is not None:
+            input_ids = input_ids[:, -1:]
+            inputs_embeds = None
+            # Image embeddings are already represented in the KV cache after
+            # prefill. Re-encoding them would also leave no image placeholder
+            # in the one-token decode input.
+            pixel_values = None
+        model_inputs = {
+            "input_ids": input_ids,
+            "past_key_values": past_key_values,
+            "attention_mask": attention_mask,
+            "pixel_values": pixel_values,
+            "use_cache": kwargs.get("use_cache", True),
+        }
+        if inputs_embeds is not None and past_key_values is None:
+            model_inputs["inputs_embeds"] = inputs_embeds
+            model_inputs["input_ids"] = None
+        return model_inputs
 
     def forward(
         self,

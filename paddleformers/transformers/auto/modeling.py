@@ -198,8 +198,8 @@ class _BaseAutoModelClass:
                 if model_flag in init_class:
                     model_name = model_flag + "Model"
                     break
-            if model_name is None and init_class == "PaliGemmaForConditionalGeneration":
-                model_name = "PaliGemma2ForConditionalGenerationModel"
+        if model_name is None and init_class == "PaliGemmaForConditionalGeneration":
+            model_name = "PaliGemma2ForConditionalGenerationModel"
         else:
             # From pretrained_model_name_or_path
             for model_flag, name in SORTED_MAPPING_NAMES.items():
@@ -209,6 +209,9 @@ class _BaseAutoModelClass:
         if init_class == "PaliGemmaForConditionalGeneration":
             import_class = importlib.import_module("paddleformers.transformers.paligemma2.modeling")
             return getattr(import_class, "PaliGemma2ForConditionalGeneration")
+        if init_class == "Llama4ForConditionalGeneration":
+            import_class = importlib.import_module("paddleformers.transformers.llama4.multimodal")
+            return getattr(import_class, "Llama4ForConditionalGeneration")
         if model_name is None:
             # Try to get model class from config class
             if not isinstance(config, PretrainedConfig) and pretrained_model_name_or_path is not None:

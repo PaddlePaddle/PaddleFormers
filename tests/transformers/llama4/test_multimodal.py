@@ -13,10 +13,12 @@
 # limitations under the License.
 
 import unittest
+from unittest import mock
 
 import paddle
 
 from paddleformers.transformers import (
+    AutoModel,
     Llama4Config,
     Llama4ForConditionalGeneration,
     Llama4VisionModel,
@@ -72,6 +74,10 @@ class Llama4MultimodalModelTest(unittest.TestCase):
             output = model(self.pixel_values, return_dict=True)
         self.assertEqual(output.last_hidden_state.shape, [1, 1, 64])
 
+    def test_auto_model_from_multimodal_config(self):
+        model = AutoModel.from_config(self.config)
+        self.assertIsInstance(model, Llama4ForConditionalGeneration)
+
     def test_multimodal_forward_and_loss(self):
         model = Llama4ForConditionalGeneration(self.config)
         model.eval()
@@ -105,6 +111,21 @@ class Llama4MultimodalModelTest(unittest.TestCase):
         with paddle.no_grad():
             generated = model.generate(input_ids=input_ids, max_new_tokens=2)[0]
         self.assertEqual(generated.shape[-1], 2)
+
+    def test_multimodal_generation_advances_cache_without_reencoding_image(self):
+        model = Llama4ForConditionalGeneration(self.config)
+        model.eval()
+        input_ids = paddle.to_tensor([[1, 100, 2]], dtype="int64")
+        with mock.patch.object(model, "get_image_features", wraps=model.get_image_features) as encode_image:
+            with paddle.no_grad():
+                generated = model.generate(
+                    input_ids=input_ids,
+                    pixel_values=self.pixel_values,
+                    max_new_tokens=2,
+                    use_cache=True,
+                )[0]
+        self.assertEqual(generated.shape[-1], 2)
+        self.assertEqual(encode_image.call_count, 1)
 
 
 if __name__ == "__main__":
