@@ -13,7 +13,6 @@ import paddle
 from PIL import Image
 from tokenizers import Tokenizer
 from tokenizers.models import WordLevel
-from transformers import PretrainedConfig as TransformersPretrainedConfig
 from transformers import PreTrainedTokenizerFast
 
 from paddleformers.transformers import AutoModelForConditionalGeneration, AutoProcessor
@@ -109,10 +108,11 @@ class FastVLMModelTest(unittest.TestCase):
             unk_token="<unk>",
             eos_token="<eos>",
         )
-        auto_config = TransformersPretrainedConfig()
-        auto_config.processor_class = "FastVLMProcessor"
         with (
             mock.patch("paddleformers.transformers.auto.processing.resolve_file_path", return_value=None),
+            mock.patch(
+                "paddleformers.transformers.auto.processing.AutoConfig.from_pretrained", return_value=self.config
+            ),
             mock.patch.object(FastVLMProcessor, "get_processor_dict", return_value=({}, {})),
             mock.patch(
                 "paddleformers.transformers.fastvlm.processor.AutoTokenizer.from_pretrained",
@@ -120,14 +120,14 @@ class FastVLMModelTest(unittest.TestCase):
             ),
             mock.patch(
                 "paddleformers.transformers.fastvlm.processor.FastVLMImageProcessor.from_pretrained",
-                side_effect=OSError("preprocessor_config.json is absent"),
+                side_effect=TypeError("preprocessor_config.json resolved to None"),
             ),
             mock.patch(
                 "paddleformers.transformers.fastvlm.processor.FastVLMConfig.from_pretrained",
                 return_value=self.config,
             ),
         ):
-            processor = AutoProcessor.from_pretrained("apple/FastVLM-0.5B", config=auto_config)
+            processor = AutoProcessor.from_pretrained("apple/FastVLM-0.5B")
         self.assertIsInstance(processor, FastVLMProcessor)
         self.assertIs(processor.tokenizer, tokenizer)
         self.assertEqual(processor.image_processor.crop_size, {"height": 64, "width": 64})

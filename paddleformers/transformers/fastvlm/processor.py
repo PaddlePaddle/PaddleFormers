@@ -36,7 +36,7 @@ class FastVLMProcessor(ProcessorMixin):
             image_processor = FastVLMImageProcessor.from_pretrained(
                 pretrained_model_name_or_path, subfolder=subfolder, **kwargs
             )
-        except (EnvironmentError, OSError, ValueError):
+        except (EnvironmentError, OSError, TypeError, ValueError):
             config = FastVLMConfig.from_pretrained(pretrained_model_name_or_path, subfolder=subfolder, **kwargs)
             image_size = int(config.mm_vision_tower.rsplit("_", 1)[-1])
             image_processor = FastVLMImageProcessor(image_size=image_size)
