@@ -19,6 +19,7 @@ import inspect
 import json
 import os
 from collections import defaultdict
+from functools import partial
 from typing import Optional, Tuple, Union
 
 import paddle
@@ -28,6 +29,7 @@ from safetensors import safe_open
 
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.lm_head import LMHead
+from ...utils.download import resolve_file_path
 from ...utils.log import logger
 from ..cache_utils import Cache
 from ..configuration_utils import PretrainedConfig
@@ -38,10 +40,54 @@ from ..qwen2.modeling import (
     Qwen2Model,
     Qwen2PretrainedModel,
 )
+from ..utils import get_checkpoint_shard_files
 from .configuration import FastVLMConfig
 from .modeling_vision import FastVLMVisionModel
 
 IGNORE_INDEX = -100
+
+
+def _resolve_hf_checkpoint_dir(pretrained_model_name_or_path, **kwargs):
+    """Resolve a local directory containing every Hugging Face safetensors shard."""
+    if os.path.isdir(pretrained_model_name_or_path):
+        return pretrained_model_name_or_path
+
+    subfolder = kwargs.get("subfolder", "")
+    resolved_file = resolve_file_path(
+        pretrained_model_name_or_path,
+        ["model.safetensors.index.json", "model.safetensors"],
+        subfolder=subfolder,
+        revision=kwargs.get("revision"),
+        cache_dir=kwargs.get("cache_dir"),
+        force_download=kwargs.get("force_download", False),
+        token=kwargs.get("token"),
+        local_files_only=kwargs.get("local_files_only", False),
+        download_hub=kwargs.get("download_hub"),
+    )
+    if resolved_file.endswith(".index.json"):
+        get_checkpoint_shard_files(
+            pretrained_model_name_or_path,
+            resolved_file,
+            cache_dir=kwargs.get("cache_dir"),
+            subfolder=subfolder,
+            download_hub=kwargs.get("download_hub"),
+        )
+    return os.path.dirname(resolved_file)
+
+
+def _is_hf_fastvlm_checkpoint(model_dir):
+    """Distinguish original FastVLM files from Paddle safetensors round trips."""
+    index_path = os.path.join(model_dir, "model.safetensors.index.json")
+    checkpoint_path = os.path.join(model_dir, "model.safetensors")
+    if os.path.exists(index_path):
+        with open(index_path, "r", encoding="utf-8") as file:
+            keys = json.load(file).get("weight_map", {}).keys()
+    elif os.path.exists(checkpoint_path):
+        with safe_open(checkpoint_path, framework="np") as shard:
+            keys = list(shard.keys())
+    else:
+        return False
+    return any(key.startswith("model.vision_tower.vision_tower.model.") for key in keys)
 
 
 class FastVLMQKVLinear(nn.Linear):
@@ -207,8 +253,12 @@ class FastVLMModel(Qwen2Model):
     def __init__(self, config: FastVLMConfig):
         config.fuse_rms_norm = False
         super().__init__(config)
-        for layer in self.layers:
-            layer.self_attn.qkv_proj = FastVLMQKVLinear(config)
+        # The custom layer reproduces the three Hugging Face BF16 GEMMs on one
+        # device. Under tensor parallelism Qwen2's ColumnParallelLinear must be
+        # retained so each rank owns only its QKV shard.
+        if config.tensor_model_parallel_size == 1:
+            for layer in self.layers:
+                layer.self_attn.qkv_proj = FastVLMQKVLinear(config)
         image_size = int(config.mm_vision_tower.rsplit("_", 1)[-1])
         self.vision_tower = FastVLMVisionModel(
             image_size=image_size,
@@ -243,15 +293,35 @@ class FastVLMForConditionalGeneration(Qwen2PretrainedModel):
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path, *args, **kwargs):
-        is_hf_safetensors = (
-            isinstance(pretrained_model_name_or_path, str)
-            and os.path.isdir(pretrained_model_name_or_path)
-            and (
-                os.path.exists(os.path.join(pretrained_model_name_or_path, "model.safetensors"))
-                or os.path.exists(os.path.join(pretrained_model_name_or_path, "model.safetensors.index.json"))
-            )
+        if not isinstance(pretrained_model_name_or_path, (str, os.PathLike)):
+            return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
+
+        is_native_checkpoint = os.path.isdir(pretrained_model_name_or_path) and os.path.exists(
+            os.path.join(pretrained_model_name_or_path, "model_state.pdparams")
         )
-        if not is_hf_safetensors:
+        if is_native_checkpoint:
+            dtype = kwargs.pop("dtype", None)
+            config = kwargs.pop("config", None)
+            if not isinstance(config, PretrainedConfig):
+                config_path = config if config is not None else pretrained_model_name_or_path
+                config, _ = cls.config_class.from_pretrained(config_path, return_unused_kwargs=True, **kwargs)
+            if dtype is not None:
+                config.dtype = dtype
+            with dtype_guard(dtype or paddle.get_default_dtype()):
+                model = cls(config, *args)
+            state_dict = paddle.load(os.path.join(pretrained_model_name_or_path, "model_state.pdparams"))
+            missing_keys, unexpected_keys = model.set_state_dict(state_dict)
+            if missing_keys or unexpected_keys:
+                raise ValueError(
+                    f"Native FastVLM checkpoint is incomplete; missing={missing_keys}, unexpected={unexpected_keys}"
+                )
+            return model
+
+        try:
+            checkpoint_dir = _resolve_hf_checkpoint_dir(str(pretrained_model_name_or_path), **kwargs)
+        except (EnvironmentError, FileNotFoundError, ValueError):
+            return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
+        if not _is_hf_fastvlm_checkpoint(checkpoint_dir):
             return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
 
         accepted_init_kwargs = {
@@ -276,7 +346,9 @@ class FastVLMForConditionalGeneration(Qwen2PretrainedModel):
                 if isinstance(layer, paddle.compat.nn.BatchNorm2d):
                     layer.float()
 
-        state_dict = _load_hf_fastvlm_state_dict(pretrained_model_name_or_path, config)
+        state_dict = _load_hf_fastvlm_state_dict(checkpoint_dir, config)
+        if config.tensor_model_parallel_size > 1:
+            state_dict = cls.convert_tensor_parallel(None, config, state_dict=state_dict)
         target_state_dict = model.state_dict()
         unknown_keys = sorted(set(state_dict) - set(target_state_dict))
         if unknown_keys:
@@ -296,6 +368,38 @@ class FastVLMForConditionalGeneration(Qwen2PretrainedModel):
             )
         logger.info(f"Loaded and converted Hugging Face FastVLM checkpoint from {pretrained_model_name_or_path}")
         return model
+
+    @classmethod
+    def _get_tensor_parallel_mappings(cls, config, is_split=True):
+        """Tensor-parallel actions for FastVLM's fused QKV and FFN layout."""
+        from ..conversion_utils import split_or_merge_func
+
+        fn = split_or_merge_func(
+            is_split=is_split,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
+            tensor_parallel_rank=config.tensor_parallel_rank,
+            num_attention_heads=config.num_attention_heads,
+        )
+        actions = {
+            "embed_tokens.weight": partial(fn, is_column=False),
+            "lm_head.weight": partial(fn, is_column=False),
+        }
+        for layer_idx in range(config.num_hidden_layers):
+            prefix = f"layers.{layer_idx}"
+            actions[f"{prefix}.self_attn.qkv_proj.weight"] = partial(fn, is_column=True)
+            actions[f"{prefix}.self_attn.qkv_proj.bias"] = partial(fn, is_column=True)
+            actions[f"{prefix}.self_attn.o_proj.weight"] = partial(fn, is_column=False)
+            actions[f"{prefix}.mlp.up_gate_proj.weight"] = partial(fn, is_column=True, is_naive_2fuse=True)
+            actions[f"{prefix}.mlp.down_proj.weight"] = partial(fn, is_column=False)
+        return actions
+
+    def save_pretrained(self, save_dir, *args, **kwargs):
+        # FastVLM's vision tower does not use Hugging Face parameter names.
+        # Default to the native Paddle checkpoint so a saved model is always
+        # losslessly reloadable; callers can still explicitly request flex.
+        kwargs.setdefault("save_checkpoint_format", "paddle")
+        kwargs.setdefault("save_safetensors", False)
+        return super().save_pretrained(save_dir, *args, **kwargs)
 
     def get_input_embeddings(self):
         return self.model.embed_tokens

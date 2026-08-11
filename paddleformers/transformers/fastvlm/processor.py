@@ -6,8 +6,11 @@
 
 import numpy as np
 
+from ..auto.tokenizer import AutoTokenizer
 from ..feature_extraction_utils import BatchFeature
 from ..processing_utils import ProcessorMixin
+from .configuration import FastVLMConfig
+from .image_processor import FastVLMImageProcessor
 
 IMAGE_TOKEN = "<image>"
 IMAGE_TOKEN_INDEX = -200
@@ -22,6 +25,22 @@ class FastVLMProcessor(ProcessorMixin):
         self.image_token = IMAGE_TOKEN
         self.image_token_id = IMAGE_TOKEN_INDEX
         super().__init__(image_processor, tokenizer, chat_template=chat_template, **kwargs)
+
+    @classmethod
+    def _get_arguments_from_pretrained(cls, pretrained_model_name_or_path, processor_dict=None, **kwargs):
+        """Load official FastVLM repos, which do not ship preprocessing JSON."""
+        kwargs = kwargs.copy()
+        subfolder = kwargs.pop("subfolder", "")
+        tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path, subfolder=subfolder, **kwargs)
+        try:
+            image_processor = FastVLMImageProcessor.from_pretrained(
+                pretrained_model_name_or_path, subfolder=subfolder, **kwargs
+            )
+        except (EnvironmentError, OSError, ValueError):
+            config = FastVLMConfig.from_pretrained(pretrained_model_name_or_path, subfolder=subfolder, **kwargs)
+            image_size = int(config.mm_vision_tower.rsplit("_", 1)[-1])
+            image_processor = FastVLMImageProcessor(image_size=image_size)
+        return [image_processor, tokenizer]
 
     def _encode_prompt(self, prompt):
         chunks = prompt.split(self.image_token)

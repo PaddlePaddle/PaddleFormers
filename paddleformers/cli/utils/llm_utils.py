@@ -109,7 +109,7 @@ def get_lora_target_modules(model):
             ".*mlp.w2.*",
             ".*mlp.c_proj.*",
         ]
-    elif model.config.model_type == "qwen2":
+    elif model.config.model_type in ["qwen2", "llava_qwen2"]:
         target_modules = [
             ".*qkv_proj.*",
             ".*up_gate_proj.*",
