@@ -200,7 +200,7 @@ class _BaseAutoModelClass:
                     break
         if model_name is None and init_class == "PaliGemmaForConditionalGeneration":
             model_name = "PaliGemma2ForConditionalGenerationModel"
-        else:
+        if model_name is None and init_class is None:
             # From pretrained_model_name_or_path
             for model_flag, name in SORTED_MAPPING_NAMES.items():
                 if type(pretrained_model_name_or_path) is str and name in pretrained_model_name_or_path.lower():

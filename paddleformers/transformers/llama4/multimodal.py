@@ -404,25 +404,29 @@ class Llama4ForConditionalGeneration(PretrainedModel):
         attention_mask=None,
         pixel_values=None,
         inputs_embeds=None,
+        position_ids=None,
         **kwargs,
     ):
+        model_inputs = super().prepare_inputs_for_generation(
+            input_ids,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            **kwargs,
+        )
+
+        cache_length = 0
         if past_key_values is not None:
-            input_ids = input_ids[:, -1:]
-            inputs_embeds = None
-            # Image embeddings are already represented in the KV cache after
-            # prefill. Re-encoding them would also leave no image placeholder
-            # in the one-token decode input.
-            pixel_values = None
-        model_inputs = {
-            "input_ids": input_ids,
-            "past_key_values": past_key_values,
-            "attention_mask": attention_mask,
-            "pixel_values": pixel_values,
-            "use_cache": kwargs.get("use_cache", True),
-        }
-        if inputs_embeds is not None and past_key_values is None:
-            model_inputs["inputs_embeds"] = inputs_embeds
-            model_inputs["input_ids"] = None
+            if hasattr(past_key_values, "get_seq_length"):
+                cache_length = past_key_values.get_seq_length()
+            elif isinstance(past_key_values, tuple) and past_key_values and past_key_values[0] is not None:
+                cache_length = past_key_values[0][0].shape[-2]
+
+        # Image embeddings are represented in the KV cache only after prefill.
+        # An allocated but empty cache must still keep the complete prompt and
+        # image inputs for the first forward pass.
+        model_inputs["pixel_values"] = None if cache_length > 0 else pixel_values
         return model_inputs
 
     def forward(

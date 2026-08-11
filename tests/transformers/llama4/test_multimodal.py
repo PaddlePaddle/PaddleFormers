@@ -23,6 +23,7 @@ from paddleformers.transformers import (
     Llama4ForConditionalGeneration,
     Llama4VisionModel,
 )
+from paddleformers.transformers.cache_utils import DynamicCache
 from tests.testing_utils import gpu_device_initializer
 
 
@@ -126,6 +127,44 @@ class Llama4MultimodalModelTest(unittest.TestCase):
                 )[0]
         self.assertEqual(generated.shape[-1], 2)
         self.assertEqual(encode_image.call_count, 1)
+
+    def test_generation_preserves_inputs_with_empty_cache(self):
+        model = Llama4ForConditionalGeneration(self.config)
+        input_ids = paddle.to_tensor([[1, 100, 2]], dtype="int64")
+        position_ids = paddle.to_tensor([[4, 5, 6]], dtype="int64")
+        empty_cache = DynamicCache(config=self.config.text_config)
+
+        model_inputs = model.prepare_inputs_for_generation(
+            input_ids,
+            past_key_values=empty_cache,
+            pixel_values=self.pixel_values,
+            position_ids=position_ids,
+            use_cache=True,
+        )
+
+        self.assertTrue(paddle.equal_all(model_inputs["input_ids"], input_ids))
+        self.assertTrue(paddle.equal_all(model_inputs["position_ids"], position_ids))
+        self.assertIs(model_inputs["pixel_values"], self.pixel_values)
+
+    def test_generation_slices_inputs_only_after_cache_advances(self):
+        model = Llama4ForConditionalGeneration(self.config)
+        input_ids = paddle.to_tensor([[1, 100, 2, 3]], dtype="int64")
+        position_ids = paddle.to_tensor([[4, 5, 6, 7]], dtype="int64")
+        cache = DynamicCache(config=self.config.text_config)
+        cached_states = paddle.zeros([1, 2, 3, 16], dtype="float32")
+        cache.update(cached_states, cached_states, 0)
+
+        model_inputs = model.prepare_inputs_for_generation(
+            input_ids,
+            past_key_values=cache,
+            pixel_values=self.pixel_values,
+            position_ids=position_ids,
+            use_cache=True,
+        )
+
+        self.assertTrue(paddle.equal_all(model_inputs["input_ids"], input_ids[:, -1:]))
+        self.assertTrue(paddle.equal_all(model_inputs["position_ids"], position_ids[:, -1:]))
+        self.assertIsNone(model_inputs["pixel_values"])
 
 
 if __name__ == "__main__":
