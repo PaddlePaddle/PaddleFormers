@@ -260,7 +260,7 @@ load_checkpoint_format: "flex_checkpoint"
 
 ```shell
 CUDA_VISIBLE_DEVICES=0 \
-paddleformers-cli train examples/best_practices/DeepSeek-OCR-2/deepseek_ocr2_full_8k_config.yaml.yaml \
+paddleformers-cli train examples/best_practices/DeepSeek-OCR-2/deepseek_ocr2_full_8k_config.yaml \
                         model_name_or_path=deepseek-ai/DeepSeek-OCR-2 \
                         train_dataset_path=./ocr_vl_sft-train_Bengali.jsonl \
                         eval_dataset_path=./ocr_vl_sft-test_Bengali.jsonl \
@@ -302,7 +302,7 @@ visualdl --logdir ./Deepseek-OCR2-SFT-Bengali/visualdl_logs/ --port 8084
 
 ```shell
 CUDA_VISIBLE_DEVICES=0 \
-paddleformers-cli train examples/best_practices/DeepSeek-OCR-2/deepseek_ocr2_lora_8k_config.yaml.yaml \
+paddleformers-cli train examples/best_practices/DeepSeek-OCR-2/deepseek_ocr2_lora_8k_config.yaml \
                         model_name_or_path=deepseek-ai/DeepSeek-OCR-2 \
                         train_dataset_path=./ocr_vl_sft-train_Bengali.jsonl \
                         eval_dataset_path=./ocr_vl_sft-test_Bengali.jsonl\
