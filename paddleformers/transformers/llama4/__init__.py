@@ -36,7 +36,11 @@ if TYPE_CHECKING:
         Llama4TextModel,
         Llama4TextPretrainedModel,
     )
-    from .multimodal import Llama4ForConditionalGeneration, Llama4VisionEncoderLayer, Llama4VisionModel
+    from .multimodal import (
+        Llama4ForConditionalGeneration,
+        Llama4VisionEncoderLayer,
+        Llama4VisionModel,
+    )
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

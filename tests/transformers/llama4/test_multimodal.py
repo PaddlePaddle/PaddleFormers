@@ -16,7 +16,11 @@ import unittest
 
 import paddle
 
-from paddleformers.transformers import Llama4Config, Llama4ForConditionalGeneration, Llama4VisionModel
+from paddleformers.transformers import (
+    Llama4Config,
+    Llama4ForConditionalGeneration,
+    Llama4VisionModel,
+)
 from tests.testing_utils import gpu_device_initializer
 
 
