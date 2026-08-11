@@ -248,16 +248,16 @@ class InternVLModelTest(unittest.TestCase):
 
     def test_output_hidden_states(self):
         config = self.get_config()
-        model = InternVLChatModel(config).eval()
-        inputs = self.get_inputs()
+        model = InternVisionModel(config.vision_config).eval()
+        pixel_values = self.get_inputs()["pixel_values"]
 
         with paddle.no_grad():
-            outputs = model(**inputs, use_cache=False, output_hidden_states=True)
+            outputs = model(pixel_values=pixel_values, output_hidden_states=True)
 
         self.assertIsNotNone(outputs.hidden_states)
-        self.assertEqual(len(outputs.hidden_states), config.llm_config.num_hidden_layers + 1)
-        self.assertEqual(list(outputs.hidden_states[0].shape), [1, 4, config.llm_config.hidden_size])
-        self.assertEqual(list(outputs.hidden_states[-1].shape), [1, 4, config.llm_config.hidden_size])
+        self.assertEqual(len(outputs.hidden_states), config.vision_config.num_hidden_layers + 1)
+        self.assertEqual(list(outputs.hidden_states[0].shape), [1, 5, config.vision_config.hidden_size])
+        self.assertEqual(list(outputs.hidden_states[-1].shape), [1, 5, config.vision_config.hidden_size])
 
     def test_resize_tokens_embeddings(self):
         model = InternVLChatModel(self.get_config()).eval()

@@ -527,8 +527,6 @@ class InternVLChatModel(InternVLChatPretrainedModel):
             "use_cache": use_cache,
             "return_dict": return_dict,
         }
-        if not isinstance(self.config.llm_config, Qwen3MoeConfig):
-            language_model_kwargs["output_hidden_states"] = output_hidden_states
         outputs = self.language_model(**language_model_kwargs)
 
         if not return_dict:
