@@ -47,15 +47,6 @@ class InternVLProcessor(ProcessorMixin):
         )
         super().__init__(image_processor, tokenizer, chat_template=chat_template)
 
-    @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, **kwargs):
-        from ..auto.tokenizer import AutoTokenizer
-        from .image_processor import InternVLImageProcessor
-
-        tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path, **kwargs)
-        image_processor = InternVLImageProcessor.from_pretrained(pretrained_model_name_or_path, **kwargs)
-        return cls(image_processor=image_processor, tokenizer=tokenizer)
-
     def _expand_image_tokens(self, text, num_patches_list):
         if num_patches_list is None:
             return text

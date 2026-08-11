@@ -4,278 +4,26 @@
 # Licensed under the Apache License, Version 2.0 (the "License");
 
 import math
+from functools import partial
 from typing import Optional
 
 import paddle
 import paddle.nn.functional as F
 from paddle import nn
 
+from ...nn.lm_head import LMHead as GeneralLMHead
 from ..activations import ACT2FN
+from ..conversion_utils import fuse_param_func
 from ..model_outputs import (
     BaseModelOutput,
-    BaseModelOutputWithPast,
     BaseModelOutputWithPooling,
     CausalLMOutputWithPast,
 )
 from ..model_utils import PretrainedModel
+from ..qwen3.modeling import Qwen3ForCausalLMDeprecated
 from .configuration import InternVisionConfig, InternVLChatConfig
 
 __all__ = ["InternVisionModel", "InternVLChatModel"]
-
-
-def rotate_half(x):
-    x1 = x[..., : x.shape[-1] // 2]
-    x2 = x[..., x.shape[-1] // 2 :]
-    return paddle.concat([-x2, x1], axis=-1)
-
-
-def repeat_kv(hidden_states, n_rep):
-    if n_rep == 1:
-        return hidden_states
-    batch, num_key_value_heads, seq_len, head_dim = hidden_states.shape
-    hidden_states = hidden_states[:, :, None, :, :].expand([batch, num_key_value_heads, n_rep, seq_len, head_dim])
-    return hidden_states.reshape([batch, num_key_value_heads * n_rep, seq_len, head_dim])
-
-
-class Qwen3RMSNorm(nn.Layer):
-    def __init__(self, hidden_size, eps=1e-6):
-        super().__init__()
-        self.weight = self.create_parameter([hidden_size], default_initializer=nn.initializer.Constant(1.0))
-        self.variance_epsilon = eps
-
-    def forward(self, hidden_states):
-        input_dtype = hidden_states.dtype
-        hidden_states = hidden_states.astype("float32")
-        variance = hidden_states.pow(2).mean(axis=-1, keepdim=True)
-        hidden_states = hidden_states * paddle.rsqrt(variance + self.variance_epsilon)
-        return self.weight.astype(input_dtype) * hidden_states.astype(input_dtype)
-
-
-class InternVLQwen3Attention(nn.Layer):
-    def __init__(self, config, layer_idx=0):
-        super().__init__()
-        self.layer_idx = layer_idx
-        self.hidden_size = config.hidden_size
-        self.num_heads = config.num_attention_heads
-        self.num_key_value_heads = config.num_key_value_heads
-        self.num_key_value_groups = self.num_heads // self.num_key_value_heads
-        self.head_dim = getattr(config, "head_dim", self.hidden_size // self.num_heads)
-        self.scaling = self.head_dim**-0.5
-        self.attention_dropout = config.attention_dropout
-        self.rope_theta = config.rope_theta
-
-        self.q_proj = nn.Linear(self.hidden_size, self.num_heads * self.head_dim, bias_attr=config.attention_bias)
-        self.k_proj = nn.Linear(
-            self.hidden_size, self.num_key_value_heads * self.head_dim, bias_attr=config.attention_bias
-        )
-        self.v_proj = nn.Linear(
-            self.hidden_size, self.num_key_value_heads * self.head_dim, bias_attr=config.attention_bias
-        )
-        self.o_proj = nn.Linear(self.num_heads * self.head_dim, self.hidden_size, bias_attr=config.attention_bias)
-        self.q_norm = Qwen3RMSNorm(self.head_dim, eps=config.rms_norm_eps)
-        self.k_norm = Qwen3RMSNorm(self.head_dim, eps=config.rms_norm_eps)
-        inv_freq = 1.0 / (self.rope_theta ** (paddle.arange(0, self.head_dim, 2, dtype="float32") / self.head_dim))
-        self.register_buffer("inv_freq", inv_freq, persistable=False)
-
-    def _get_cos_sin(self, position_ids, dtype):
-        freqs = paddle.einsum("bi,j->bij", position_ids.astype("float32"), self.inv_freq)
-        emb = paddle.concat([freqs, freqs], axis=-1)
-        return paddle.cos(emb).astype(dtype), paddle.sin(emb).astype(dtype)
-
-    def forward(self, hidden_states, attention_mask=None, position_ids=None, **kwargs):
-        batch_size, seq_len, _ = hidden_states.shape
-        if position_ids is None:
-            position_ids = paddle.arange(seq_len, dtype="int64").unsqueeze(0).expand([batch_size, seq_len])
-
-        query_states = self.q_proj(hidden_states)
-        key_states = self.k_proj(hidden_states)
-        value_states = self.v_proj(hidden_states)
-
-        query_states = query_states.reshape([batch_size, seq_len, self.num_heads, self.head_dim]).transpose(
-            [0, 2, 1, 3]
-        )
-        key_states = key_states.reshape([batch_size, seq_len, self.num_key_value_heads, self.head_dim]).transpose(
-            [0, 2, 1, 3]
-        )
-        value_states = value_states.reshape([batch_size, seq_len, self.num_key_value_heads, self.head_dim]).transpose(
-            [0, 2, 1, 3]
-        )
-
-        query_states = self.q_norm(query_states)
-        key_states = self.k_norm(key_states)
-        cos, sin = self._get_cos_sin(position_ids, query_states.dtype)
-        cos = cos.unsqueeze(1)
-        sin = sin.unsqueeze(1)
-        query_states = (query_states * cos) + (rotate_half(query_states) * sin)
-        key_states = (key_states * cos) + (rotate_half(key_states) * sin)
-
-        key_states = repeat_kv(key_states, self.num_key_value_groups)
-        value_states = repeat_kv(value_states, self.num_key_value_groups)
-
-        attn_weights = paddle.matmul(query_states * self.scaling, key_states.transpose([0, 1, 3, 2]))
-        if attention_mask is not None:
-            attn_weights = attn_weights + attention_mask
-        attn_weights = F.softmax(attn_weights.astype("float32"), axis=-1).astype(query_states.dtype)
-        attn_weights = F.dropout(attn_weights, p=self.attention_dropout, training=self.training)
-        attn_output = paddle.matmul(attn_weights, value_states)
-        attn_output = attn_output.transpose([0, 2, 1, 3]).reshape(
-            [batch_size, seq_len, self.num_heads * self.head_dim]
-        )
-        return self.o_proj(attn_output), None, None
-
-
-class InternVLQwen3MLP(nn.Layer):
-    def __init__(self, config):
-        super().__init__()
-        self.gate_proj = nn.Linear(config.hidden_size, config.intermediate_size, bias_attr=False)
-        self.up_proj = nn.Linear(config.hidden_size, config.intermediate_size, bias_attr=False)
-        self.down_proj = nn.Linear(config.intermediate_size, config.hidden_size, bias_attr=False)
-        self.act_fn = ACT2FN[config.hidden_act]
-
-    def forward(self, x):
-        return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
-
-
-class InternVLQwen3DecoderLayer(nn.Layer):
-    def __init__(self, config, layer_idx):
-        super().__init__()
-        self.self_attn = InternVLQwen3Attention(config, layer_idx)
-        self.mlp = InternVLQwen3MLP(config)
-        self.input_layernorm = Qwen3RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = Qwen3RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-
-    def forward(self, hidden_states, attention_mask=None, position_ids=None, **kwargs):
-        residual = hidden_states
-        hidden_states = self.input_layernorm(hidden_states)
-        hidden_states, _, _ = self.self_attn(hidden_states, attention_mask=attention_mask, position_ids=position_ids)
-        hidden_states = residual + hidden_states
-        residual = hidden_states
-        hidden_states = self.post_attention_layernorm(hidden_states)
-        hidden_states = self.mlp(hidden_states)
-        return residual + hidden_states
-
-
-class InternVLQwen3Model(nn.Layer):
-    def __init__(self, config):
-        super().__init__()
-        self.config = config
-        self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=config.pad_token_id)
-        self.layers = nn.LayerList(
-            [InternVLQwen3DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
-        )
-        self.norm = Qwen3RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-
-    def _prepare_attention_mask(self, attention_mask, batch_size, seq_len, dtype):
-        causal = paddle.triu(paddle.ones([seq_len, seq_len], dtype="bool"), diagonal=1)
-        causal = paddle.where(
-            causal,
-            paddle.full([seq_len, seq_len], paddle.finfo(dtype).min, dtype=dtype),
-            paddle.zeros([seq_len, seq_len], dtype=dtype),
-        )
-        causal = causal.reshape([1, 1, seq_len, seq_len]).expand([batch_size, 1, seq_len, seq_len])
-        if attention_mask is not None:
-            expanded = attention_mask[:, None, None, :].astype(dtype)
-            padding = paddle.where(
-                expanded > 0,
-                paddle.zeros_like(expanded),
-                paddle.full_like(expanded, paddle.finfo(dtype).min),
-            )
-            causal = causal + padding
-        return causal
-
-    def forward(
-        self,
-        input_ids=None,
-        attention_mask=None,
-        position_ids=None,
-        inputs_embeds=None,
-        use_cache=None,
-        output_hidden_states=None,
-        return_dict=True,
-        **kwargs,
-    ):
-        if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(input_ids)
-        batch_size, seq_len, _ = inputs_embeds.shape
-        if position_ids is None:
-            position_ids = paddle.arange(seq_len, dtype="int64").unsqueeze(0).expand([batch_size, seq_len])
-        causal_mask = self._prepare_attention_mask(attention_mask, batch_size, seq_len, inputs_embeds.dtype)
-        hidden_states = inputs_embeds
-        all_hidden_states = () if output_hidden_states else None
-        for layer in self.layers:
-            if output_hidden_states:
-                all_hidden_states += (hidden_states,)
-            hidden_states = layer(hidden_states, attention_mask=causal_mask, position_ids=position_ids)
-        hidden_states = self.norm(hidden_states)
-        if output_hidden_states:
-            all_hidden_states += (hidden_states,)
-        if not return_dict:
-            return tuple(v for v in [hidden_states, None, all_hidden_states] if v is not None)
-        return BaseModelOutputWithPast(
-            last_hidden_state=hidden_states, past_key_values=None, hidden_states=all_hidden_states
-        )
-
-
-class InternVLQwen3ForCausalLM(nn.Layer):
-    def __init__(self, config):
-        super().__init__()
-        self.config = config
-        self.model = InternVLQwen3Model(config)
-        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias_attr=False)
-
-    def get_input_embeddings(self):
-        return self.model.embed_tokens
-
-    def set_input_embeddings(self, value):
-        self.model.embed_tokens = value
-
-    def get_output_embeddings(self):
-        return self.lm_head
-
-    def set_output_embeddings(self, value):
-        self.lm_head = value
-
-    def forward(
-        self,
-        input_ids=None,
-        attention_mask=None,
-        position_ids=None,
-        inputs_embeds=None,
-        labels=None,
-        use_cache=None,
-        output_hidden_states=None,
-        return_dict=True,
-        **kwargs,
-    ):
-        outputs = self.model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            inputs_embeds=inputs_embeds,
-            use_cache=use_cache,
-            output_hidden_states=output_hidden_states,
-            return_dict=True,
-        )
-        logits = self.lm_head(outputs.last_hidden_state)
-        loss = None
-        if labels is not None:
-            shift_logits = logits[..., :-1, :]
-            shift_labels = labels[..., 1:]
-            flat_logits = shift_logits.reshape([-1, self.config.vocab_size])
-            flat_labels = shift_labels.reshape([-1])
-            valid_mask = flat_labels != -100
-            safe_labels = paddle.where(valid_mask, flat_labels, paddle.zeros_like(flat_labels))
-            token_loss = F.cross_entropy(flat_logits, safe_labels, reduction="none")
-            token_loss = token_loss * valid_mask.astype(token_loss.dtype)
-            loss = token_loss.sum() / valid_mask.astype(token_loss.dtype).sum()
-        if not return_dict:
-            return (loss, logits) if loss is not None else (logits,)
-        return CausalLMOutputWithPast(
-            loss=loss,
-            logits=logits,
-            past_key_values=None,
-            hidden_states=outputs.hidden_states,
-        )
 
 
 class DropPath(nn.Layer):
@@ -517,10 +265,90 @@ class InternVLChatPretrainedModel(PretrainedModel):
         "gate_proj",
         "up_proj",
         "down_proj",
-        "lm_head",
         "mlp1.1",
         "mlp1.3",
     ]
+
+    @classmethod
+    def _get_fuse_or_split_param_mappings(cls, config: InternVLChatConfig, is_fuse=True):
+        if not is_fuse:
+            return {}
+        mappings = {}
+        llm_config = config.llm_config
+        qkv_action = partial(
+            fuse_param_func(),
+            is_qkv=True,
+            num_heads=llm_config.num_attention_heads,
+            num_key_value_heads=llm_config.num_key_value_heads,
+        )
+        ffn_action = fuse_param_func()
+        for layer_id in range(llm_config.num_hidden_layers):
+            prefix = f"language_model.model.layers.{layer_id}"
+            mappings[
+                (
+                    f"{prefix}.self_attn.q_proj.weight",
+                    f"{prefix}.self_attn.k_proj.weight",
+                    f"{prefix}.self_attn.v_proj.weight",
+                    f"{prefix}.self_attn.qkv_proj.weight",
+                )
+            ] = qkv_action
+            mappings[
+                (
+                    f"{prefix}.mlp.gate_proj.weight",
+                    f"{prefix}.mlp.up_proj.weight",
+                    f"{prefix}.mlp.up_gate_proj.weight",
+                )
+            ] = ffn_action
+        return mappings
+
+    @classmethod
+    def _gen_aoa_config(cls, config: InternVLChatConfig):
+        llm_config = config.llm_config
+        statements = [
+            "vision_model.embeddings.class_embedding -> vision_model.embeddings.class_embedding",
+            "vision_model.embeddings.position_embedding -> vision_model.embeddings.position_embedding",
+            "vision_model.embeddings.patch_embedding.weight -> vision_model.embeddings.patch_embedding.weight",
+            "vision_model.embeddings.patch_embedding.bias -> vision_model.embeddings.patch_embedding.bias",
+            "vision_model.encoder.layers.$LAYER_ID.attn.qkv.weight^T -> vision_model.encoder.layers.$LAYER_ID.attn.qkv.weight",
+            "vision_model.encoder.layers.$LAYER_ID.attn.qkv.bias -> vision_model.encoder.layers.$LAYER_ID.attn.qkv.bias",
+            "vision_model.encoder.layers.$LAYER_ID.attn.proj.weight^T -> vision_model.encoder.layers.$LAYER_ID.attn.proj.weight",
+            "vision_model.encoder.layers.$LAYER_ID.attn.proj.bias -> vision_model.encoder.layers.$LAYER_ID.attn.proj.bias",
+            "vision_model.encoder.layers.$LAYER_ID.mlp.fc1.weight^T -> vision_model.encoder.layers.$LAYER_ID.mlp.fc1.weight",
+            "vision_model.encoder.layers.$LAYER_ID.mlp.fc1.bias -> vision_model.encoder.layers.$LAYER_ID.mlp.fc1.bias",
+            "vision_model.encoder.layers.$LAYER_ID.mlp.fc2.weight^T -> vision_model.encoder.layers.$LAYER_ID.mlp.fc2.weight",
+            "vision_model.encoder.layers.$LAYER_ID.mlp.fc2.bias -> vision_model.encoder.layers.$LAYER_ID.mlp.fc2.bias",
+            "vision_model.encoder.layers.$LAYER_ID.norm1.weight -> vision_model.encoder.layers.$LAYER_ID.norm1.weight",
+            "vision_model.encoder.layers.$LAYER_ID.norm1.bias -> vision_model.encoder.layers.$LAYER_ID.norm1.bias",
+            "vision_model.encoder.layers.$LAYER_ID.norm2.weight -> vision_model.encoder.layers.$LAYER_ID.norm2.weight",
+            "vision_model.encoder.layers.$LAYER_ID.norm2.bias -> vision_model.encoder.layers.$LAYER_ID.norm2.bias",
+            "vision_model.encoder.layers.$LAYER_ID.ls1 -> vision_model.encoder.layers.$LAYER_ID.ls1",
+            "vision_model.encoder.layers.$LAYER_ID.ls2 -> vision_model.encoder.layers.$LAYER_ID.ls2",
+            "mlp1.0.weight -> mlp1.0.weight",
+            "mlp1.0.bias -> mlp1.0.bias",
+            "mlp1.1.weight^T -> mlp1.1.weight",
+            "mlp1.1.bias -> mlp1.1.bias",
+            "mlp1.3.weight^T -> mlp1.3.weight",
+            "mlp1.3.bias -> mlp1.3.bias",
+            "language_model.model.embed_tokens.weight -> language_model.model.embed_tokens.weight",
+            "language_model.model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> language_model.model.layers.$LAYER_ID.self_attn.o_proj.weight",
+            "language_model.model.layers.$LAYER_ID.self_attn.q_norm.weight -> language_model.model.layers.$LAYER_ID.self_attn.q_norm.weight",
+            "language_model.model.layers.$LAYER_ID.self_attn.k_norm.weight -> language_model.model.layers.$LAYER_ID.self_attn.k_norm.weight",
+            "language_model.model.layers.$LAYER_ID.input_layernorm.weight -> language_model.model.layers.$LAYER_ID.input_layernorm.weight",
+            "language_model.model.layers.$LAYER_ID.post_attention_layernorm.weight -> language_model.model.layers.$LAYER_ID.post_attention_layernorm.weight",
+            "language_model.model.layers.$LAYER_ID.mlp.down_proj.weight^T -> language_model.model.layers.$LAYER_ID.mlp.down_proj.weight",
+            "language_model.model.norm.weight -> language_model.model.norm.weight",
+            f"language_model.model.layers.$LAYER_ID.self_attn.q_proj.weight^T, language_model.model.layers.$LAYER_ID.self_attn.k_proj.weight^T, language_model.model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> language_model.model.layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={llm_config.num_attention_heads}, num_key_value_groups={llm_config.num_key_value_heads}",
+            "language_model.model.layers.$LAYER_ID.mlp.gate_proj.weight^T, language_model.model.layers.$LAYER_ID.mlp.up_proj.weight^T -> language_model.model.layers.$LAYER_ID.mlp.up_gate_proj.weight, fused_ffn",
+        ]
+        if llm_config.attention_bias:
+            statements.append(
+                f"language_model.model.layers.$LAYER_ID.self_attn.q_proj.bias, language_model.model.layers.$LAYER_ID.self_attn.k_proj.bias, language_model.model.layers.$LAYER_ID.self_attn.v_proj.bias -> language_model.model.layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={llm_config.num_attention_heads}, num_key_value_groups={llm_config.num_key_value_heads}, axis=0"
+            )
+        if llm_config.tie_word_embeddings:
+            statements.append("language_model.model.embed_tokens.weight -> language_model.lm_head.weight")
+        else:
+            statements.append("language_model.lm_head.weight -> language_model.lm_head.weight")
+        return {"aoa_statements": statements}
 
 
 class InternVLChatModel(InternVLChatPretrainedModel):
@@ -540,7 +368,7 @@ class InternVLChatModel(InternVLChatPretrainedModel):
 
         self.vision_model = vision_model if vision_model is not None else InternVisionModel(config.vision_config)
         self.language_model = (
-            language_model if language_model is not None else InternVLQwen3ForCausalLM(config.llm_config)
+            language_model if language_model is not None else Qwen3ForCausalLMDeprecated(config.llm_config)
         )
 
         vit_hidden_size = config.vision_config.hidden_size
@@ -648,7 +476,6 @@ class InternVLChatModel(InternVLChatPretrainedModel):
             inputs_embeds=input_embeds,
             labels=labels,
             use_cache=use_cache,
-            output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
 
@@ -748,16 +575,15 @@ class InternVLChatModel(InternVLChatPretrainedModel):
         if new_num_tokens is None:
             return new_input_embeddings
 
-        old_num_tokens = old_output_embeddings.weight.shape[1]
-        hidden_size = old_output_embeddings.weight.shape[0]
-        new_output_embeddings = nn.Linear(hidden_size, new_num_tokens, bias_attr=False)
+        old_num_tokens = old_output_embeddings.weight.shape[0]
+        self.config.vocab_size = new_num_tokens
+        self.config.llm_config.vocab_size = new_num_tokens
+        self.language_model.config.vocab_size = new_num_tokens
+        new_output_embeddings = GeneralLMHead(self.language_model.config)
         if new_output_embeddings.weight.dtype != old_output_embeddings.weight.dtype:
             new_output_embeddings.to(dtype=old_output_embeddings.weight.dtype)
         n = min(old_num_tokens, new_num_tokens)
         with paddle.no_grad():
-            new_output_embeddings.weight[:, :n] = old_output_embeddings.weight[:, :n]
+            new_output_embeddings.weight[:n] = old_output_embeddings.weight[:n]
         self.set_output_embeddings(new_output_embeddings)
-        self.config.vocab_size = new_num_tokens
-        self.config.llm_config.vocab_size = new_num_tokens
-        self.language_model.config.vocab_size = new_num_tokens
         return new_input_embeddings

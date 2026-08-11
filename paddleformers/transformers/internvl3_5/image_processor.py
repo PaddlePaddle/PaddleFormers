@@ -141,14 +141,18 @@ class InternVLImageProcessor(BaseImageProcessor):
 
         pixel_values = []
         num_patches_list = []
+        min_patches = kwargs.pop("min_patches", self.min_patches)
+        max_patches = kwargs.pop("max_patches", self.max_patches)
+        image_size = kwargs.pop("image_size", self.size["height"])
+        use_thumbnail = kwargs.pop("use_thumbnail", self.use_thumbnail)
         for image in images:
             pil_image = _to_pil_image(image)
             tiles = self.dynamic_preprocess(
                 pil_image,
-                min_num=kwargs.pop("min_patches", self.min_patches),
-                max_num=kwargs.pop("max_patches", self.max_patches),
-                image_size=kwargs.pop("image_size", self.size["height"]),
-                use_thumbnail=kwargs.pop("use_thumbnail", self.use_thumbnail),
+                min_num=min_patches,
+                max_num=max_patches,
+                image_size=image_size,
+                use_thumbnail=use_thumbnail,
             )
             num_patches_list.append(len(tiles))
             pixel_values.extend([self._preprocess_tile(tile) for tile in tiles])

@@ -83,11 +83,11 @@ class InternVLModelTest(unittest.TestCase):
             outputs = model(**inputs, labels=labels, use_cache=False)
         self.assertEqual(list(outputs.logits.shape), [1, 4, 200])
         self.assertEqual(outputs.loss.ndim, 0)
-        shift_logits = outputs.logits[..., :-1, :].reshape([-1, 200])
-        shift_labels = labels[..., 1:].reshape([-1])
-        valid_mask = shift_labels != -100
-        safe_labels = paddle.where(valid_mask, shift_labels, paddle.zeros_like(shift_labels))
-        token_loss = F.cross_entropy(shift_logits, safe_labels, reduction="none")
+        flat_logits = outputs.logits.reshape([-1, 200])
+        flat_labels = labels.reshape([-1])
+        valid_mask = flat_labels != -100
+        safe_labels = paddle.where(valid_mask, flat_labels, paddle.zeros_like(flat_labels))
+        token_loss = F.cross_entropy(flat_logits, safe_labels, reduction="none")
         expected_loss = (token_loss * valid_mask.astype(token_loss.dtype)).sum() / valid_mask.astype(
             token_loss.dtype
         ).sum()
@@ -115,12 +115,27 @@ class InternVLModelTest(unittest.TestCase):
             second = model(**inputs, use_cache=False).logits
         paddle.testing.assert_close(second, first, atol=0.0, rtol=0.0)
 
-    def test_hidden_states_output(self):
+    def test_cache_is_reused_for_generation_steps(self):
         model = InternVLChatModel(self.get_config()).eval()
+        inputs = self.get_inputs()
         with paddle.no_grad():
-            outputs = model(**self.get_inputs(), output_hidden_states=True, use_cache=False)
-        self.assertEqual(len(outputs.hidden_states), self.get_config().llm_config.num_hidden_layers + 1)
-        self.assertEqual(list(outputs.hidden_states[-1].shape), [1, 4, 16])
+            outputs = model(**inputs, use_cache=True)
+        self.assertIsNotNone(outputs.past_key_values)
+        self.assertEqual(outputs.past_key_values.get_seq_length(), inputs["input_ids"].shape[1])
+
+        next_input_ids = paddle.concat([inputs["input_ids"], paddle.to_tensor([[13]], dtype="int64")], axis=-1)
+        attention_mask = paddle.ones_like(next_input_ids)
+        prepared = model.prepare_inputs_for_generation(
+            next_input_ids,
+            past_key_values=outputs.past_key_values,
+            attention_mask=attention_mask,
+            visual_features=paddle.randn([1, 1, 16]),
+            use_cache=True,
+        )
+
+        self.assertEqual(list(prepared["input_ids"].shape), [1, 1])
+        self.assertIsNone(prepared["visual_features"])
+        self.assertIs(prepared["past_key_values"], outputs.past_key_values)
 
     def test_resize_tokens_embeddings(self):
         model = InternVLChatModel(self.get_config()).eval()
@@ -132,9 +147,9 @@ class InternVLModelTest(unittest.TestCase):
         self.assertEqual(model.config.vocab_size, 205)
         self.assertEqual(model.config.llm_config.vocab_size, 205)
         self.assertEqual(list(model.get_input_embeddings().weight.shape), [205, 16])
-        self.assertEqual(list(model.get_output_embeddings().weight.shape), [16, 205])
+        self.assertEqual(list(model.get_output_embeddings().weight.shape), [205, 16])
         paddle.testing.assert_close(model.get_input_embeddings().weight[:200], old_input_embeddings)
-        paddle.testing.assert_close(model.get_output_embeddings().weight[:, :200], old_output_embeddings)
+        paddle.testing.assert_close(model.get_output_embeddings().weight[:200], old_output_embeddings)
 
     def test_greedy_generate(self):
         model = InternVLChatModel(self.get_config()).eval()
