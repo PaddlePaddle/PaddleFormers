@@ -31,19 +31,7 @@ from paddle import Tensor, nn
 from paddle.distributed.fleet.recompute.recompute import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
-try:
-    from paddleformers.transformers.gpt_provider import GPTModelProvider
-except ModuleNotFoundError as exc:
-    _GPT_PROVIDER_IMPORT_ERROR = exc
-
-    class GPTModelProvider:
-        @classmethod
-        def from_config(cls, *args, **kwargs):
-            raise ModuleNotFoundError(
-                "Qwen3ForCausalLM requires PaddleFleet runtime dependencies. "
-                "Use Qwen3ForCausalLMDeprecated for the standard single-card implementation."
-            ) from _GPT_PROVIDER_IMPORT_ERROR
-
+from paddleformers.transformers.gpt_provider import GPTModelProvider
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
