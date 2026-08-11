@@ -596,6 +596,11 @@ class ZeroCostCheckpointCallback(TrainerCallback):
     on_optimizer_begin: call sync_offload_status, unset set manager.current_worker
         maybe optimizer reload
         maybe optimizer offload
+
+    NOTE: the offload handshake is additionally synced at the beginning of the next step
+    (`Trainer._inner_training_loop` -> `manager.maybe_sync_offload_status`), because
+    `on_step_begin` callbacks may already mutate the GPU buffers that the worker is
+    still reading over CUDA IPC.
     """
 
     def __init__(self, args, zcc_manager, timer, sharding_io):
@@ -624,10 +629,17 @@ class ZeroCostCheckpointCallback(TrainerCallback):
         if not control.should_save:
             if args.zcc_save_ema_coef is not None and state.global_step % self.zcc_ema_interval == 0:
                 self.maybe_update_zcc_worker(args, model, optimizer, state.global_step)
+                # `maybe_update_zcc_worker` only reaches `update_zcc_workers` (which assigns
+                # `manager.global_step`) on the very first save of a run, because the
+                # `fused_buffer_version == cache_version` guard short-circuits afterwards.
+                # Refresh it here so `sync_offload_status` compares against the step that is
+                # actually being offloaded instead of a permanently frozen value.
+                self.manager.global_step = state.global_step
                 self.manager.get_idle_worker_for_saving(((None, None), (None, state, None)))  # prepare for dumping
         else:
             self.runtime_timer.start("checkpoint saving time")
             self.maybe_update_zcc_worker(args, model, optimizer, state.global_step)
+            self.manager.global_step = state.global_step  # see comment above
             checkpoint_folder = f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}"
             save_infos = self._get_save_infos_based_on_steps(state, args, checkpoint_folder)
             non_cached_objects = (lr_scheduler.state_dict(), state, self.get_rng_states(args))
@@ -956,6 +968,28 @@ class ZeroCostCheckpointManager:
         logger.info(
             f"[ZCC manager] after putting task for prepare, dumping={save_infos_and_non_cached_objects is not None}"
         )
+
+    def maybe_sync_offload_status(self):
+        """Idempotent variant of `sync_offload_status`, safe to call at the beginning of a step.
+
+        The ZCC worker is a separate process that reads the trainer's fused GPU buffers
+        through CUDA IPC on its own stream, so there is no CUDA stream ordering between
+        the trainer's compute stream and the worker's copy stream. The only ordering is
+        this handshake. It therefore has to be reached before *any* mutation of those
+        buffers in the next step, which happens earlier than `on_optimizer_begin`
+        (e.g. FP8 expert-weight quantization / `clear_param_storage` in `on_step_begin`).
+        """
+        if self.current_worker is None:
+            return
+        if self.current_pipeline_hook_step != self.pipeline_hooks_steps:
+            # The offload is still being sliced across pipeline hooks (PP > 1, or
+            # gradient_accumulation_steps > 1). The remaining chunks are only dispatched
+            # during this step's forward/backward, so waiting here would deadlock. Those
+            # configurations keep synchronizing at `on_optimizer_begin` as before.
+            return
+        logger.info("[ZCC manager] Start syncing checkpoints (step begin)")
+        self.sync_offload_status()
+        logger.info("[ZCC manager] Synced checkpoints (step begin).")
 
     def sync_offload_status(self):
         self.report_error_worker()
@@ -2024,6 +2058,30 @@ class DistInfoCollectorValidator:
         return True, None
 
 
+def _zcc_lookup_local_shape(ckpt_meta, key, numel):
+    """Return the per-rank local_shape recorded in ckpt_meta for `key` whose
+    element count matches `numel`, else None. Used to reshape grouped-GEMM
+    optimizer tensors to the N-D shape their metadata declares, so the saved
+    bytes and the recorded metadata stay consistent (fixes allgather SonicMoE
+    experts whose sharded descriptor is N-D [E, io, 2, I_local] while the muon
+    fused buffer is flattened 2-D)."""
+    sdm = getattr(ckpt_meta, "state_dict_metadata", None)
+    if not sdm or key not in sdm:
+        return None
+    entry = sdm[key]
+    cands = entry if isinstance(entry, (list, tuple)) else [entry]
+    for m in cands:
+        ls = getattr(m, "local_shape", None)
+        if ls is None:
+            continue
+        n = 1
+        for s in ls:
+            n *= int(s)
+        if n == int(numel):
+            return list(ls)
+    return None
+
+
 def saved_ckptmeta(state_dict, ckpt_file_name, process_group=None, replicate_saved_into_local=False):
     with paddle.base.dygraph.guard():
         assert isinstance(state_dict, dict), "The state_dict should be a dictionary."
@@ -2300,28 +2358,32 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
 
         # EMA metadata: master_weights portion (same .w_0 suffix as optimizer master_weights)
         # Distinguished from optimizer by being saved to ema_state/ directory
+        # NOTE: saved_ckptmeta() runs all_gather_object over the whole world, so it must be
+        # entered by every rank. Gating it on a rank-local "do I own any master weight?"
+        # deadlocks as soon as the ownership is skewed (e.g. Phase 2 freezes the backbone and
+        # only the couple of sharding ranks holding the Indexer master weights have a non-empty
+        # dict). Always call it, then fall back to None when the *global* result is empty.
         ema_master_weights_sharded = master_weights
-        if ema_master_weights_sharded:
-            self.ema_master_weight_ckpt_meta, self.ema_master_weights_filter = saved_ckptmeta(
-                ema_master_weights_sharded,
-                self.ckpt_data_name,
-                replicate_saved_into_local=True,
-            )
-        else:
+        self.ema_master_weight_ckpt_meta, self.ema_master_weights_filter = saved_ckptmeta(
+            ema_master_weights_sharded,
+            self.ckpt_data_name,
+            replicate_saved_into_local=True,
+        )
+        if not self.ema_master_weight_ckpt_meta.state_dict_metadata:
             self.ema_master_weight_ckpt_meta = None
             self.ema_master_weights_filter = {}
 
         # EMA metadata: model_params portion (float32 items from manipulated_state_dict)
+        # Same collective constraint as above: unconditional call, global emptiness decides None.
         ema_model_params_sharded = {
             k: v for k, v in self.manipulated_state_dict.items() if v.local_tensor.dtype == paddle.float32
         }
-        if ema_model_params_sharded:
-            self.ema_model_params_ckpt_meta, self.ema_model_state_filter = saved_ckptmeta(
-                ema_model_params_sharded,
-                self.ckpt_data_name,
-                replicate_saved_into_local=True,
-            )
-        else:
+        self.ema_model_params_ckpt_meta, self.ema_model_state_filter = saved_ckptmeta(
+            ema_model_params_sharded,
+            self.ckpt_data_name,
+            replicate_saved_into_local=True,
+        )
+        if not self.ema_model_params_ckpt_meta.state_dict_metadata:
             self.ema_model_params_ckpt_meta = None
             self.ema_model_state_filter = {}
 
@@ -2600,7 +2662,8 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
                     struct_name = _extract_struct_name(k)
                     if struct_name is not None and struct_name in self.grouped_gemm_params:
                         origin_shape = v.shape
-                        opt_state_dict[k] = v.reshape((-1, v.shape[-1]))
+                        tgt = _zcc_lookup_local_shape(self.opt_ckpt_meta, k, int(v.numel()))
+                        opt_state_dict[k] = v.reshape(tgt) if tgt else v.reshape((-1, v.shape[-1]))
                         logger.info(
                             f"[ZCC worker] {k} with shape {origin_shape} is reshaped to {opt_state_dict[k].shape}."
                         )
@@ -2608,7 +2671,8 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
                     struct_name = _extract_struct_name(k)
                     if struct_name is not None and struct_name in self.grouped_gemm_params:
                         origin_shape = v.shape
-                        master_weights[k] = v.reshape((-1, v.shape[-1]))
+                        tgt = _zcc_lookup_local_shape(self.master_weight_ckpt_meta, k, int(v.numel()))
+                        master_weights[k] = v.reshape(tgt) if tgt else v.reshape((-1, v.shape[-1]))
                         logger.info(
                             f"[ZCC worker] {k} with shape {origin_shape} is reshaped to {master_weights[k].shape}."
                         )
@@ -2663,7 +2727,8 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
                     struct_name = struct_name.group(1) if struct_name else None
                     if struct_name is not None and struct_name in self.grouped_gemm_params:
                         origin_shape = v.shape
-                        master_weights[k] = v.reshape((-1, v.shape[-1]))
+                        tgt = _zcc_lookup_local_shape(self.ema_master_weight_ckpt_meta, k, int(v.numel()))
+                        master_weights[k] = v.reshape(tgt) if tgt else v.reshape((-1, v.shape[-1]))
                         logger.info(
                             f"[ZCC worker] EMA master_weight {k} with shape {origin_shape} "
                             f"is reshaped to {master_weights[k].shape}."

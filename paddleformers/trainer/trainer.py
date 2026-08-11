@@ -361,6 +361,14 @@ class Trainer:
             args = TrainingArguments(output_dir=output_dir)
 
         self.args = args
+        # Apply the reshard broadcast toggle once here: Trainer.__init__ is the
+        # single point every reshard/EMA path runs after, so all_gather_state_dict
+        # need not thread the flag and no construction site is missed (incl. the
+        # non-ZCC EMA assembler that bypasses create_ema_state_assembler). Difers
+        reshard_util.set_bucketed_broadcast(getattr(self.args, "use_reshard_bucketed_broadcast", False))
+        reshard_util.set_broadcast_max_chunk_bytes(
+            int(getattr(self.args, "reshard_bucketed_broadcast_max_chunk_gb", 2.0) * (1024**3))
+        )
         self.is_in_train = False
         # self.do_grad_scaling = args.fp16
 
@@ -1331,6 +1339,12 @@ class Trainer:
 
             # use filtered AOA for master_weight (excludes FP32-only params)
             master_weight_aoa = getattr(self.args, "aoa_config_master_weight", None) or self.args.aoa_config
+            if os.getenv("HACK_CONVERT_CKPT", "0").lower() in ["true", "1"] and os.getenv(
+                "HACK_CONVERT_CKPT_NOPP_TO_PP", "0"
+            ).lower() in ["true", "1"]:
+                logger.info("[AOAConfig] generate master_weight_aoa by _gen_ckpt_convert_aoa !")
+                master_weight_aoa = self.model._gen_ckpt_convert_aoa(self.model.config)
+
             dist.load_state_dict(
                 master_weights,
                 master_weights_path,
@@ -1341,10 +1355,17 @@ class Trainer:
             )
 
             if not self.args.ignore_load_lr_and_optim:
+                opt_stat_aoa = self.args.aoa_config
+                if os.getenv("HACK_CONVERT_CKPT", "0").lower() in ["true", "1"] and os.getenv(
+                    "HACK_CONVERT_CKPT_NOPP_TO_PP", "0"
+                ).lower() in ["true", "1"]:
+                    logger.info("[AOAConfig] generate opt_stat_aoa by _gen_ckpt_convert_aoa !")
+                    opt_stat_aoa = self.model._gen_ckpt_convert_aoa(self.model.config, target="opt_state")
+
                 dist.load_state_dict(
                     opt_states,
                     opt_states_path,
-                    aoa_config=self.args.aoa_config,
+                    aoa_config=opt_stat_aoa,
                     offload=self.args.load_via_cpu,
                     comm_method=flex_ckpt_comm_method,
                     worker_groups=worker_groups,
@@ -1403,7 +1424,7 @@ class Trainer:
             def bf16_filtered_sharded_state_dict(sharded_state_dict):
                 new_state_dict = {}
                 for k, v in sharded_state_dict.items():
-                    if v.local_tensor.dtype == paddle.bfloat16:
+                    if v.local_tensor.dtype == paddle.bfloat16 and not v.local_tensor.stop_gradient:
                         continue
                     new_state_dict[k] = v
                 return new_state_dict
@@ -1416,6 +1437,10 @@ class Trainer:
                 if enable_bf16_opt:
                     model_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
                 aoa_config = getattr(self.args, "aoa_config_model_state", None)
+                if os.getenv("HACK_CONVERT_CKPT_NOPP_TO_PP", "0").lower() in ["true", "1"]:
+                    logger.info("[AOAConfig] generate model_state_aoa by _gen_ckpt_convert_aoa_model_state !")
+                    aoa_config = self.model._gen_ckpt_convert_aoa_model_state(self.model.config)
+
             elif enable_bf16_opt:
                 model_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
                 aoa_config = None
@@ -2414,6 +2439,17 @@ class Trainer:
 
                 for inputs in inputs_list:
                     if step_control % args.gradient_accumulation_steps == 0:
+                        # The ZCC snapshot of the previous step reads GPU buffers over CUDA IPC
+                        # from a separate process. It must be finished before any callback or
+                        # optimizer mutates those buffers, and the earliest mutator is
+                        # `on_step_begin` (FP8 expert quantization clears the bf16 param storage),
+                        # which runs before `on_optimizer_begin`. Sync here, not there.
+                        if (
+                            not args.enable_auto_parallel
+                            and self.args.enable_zero_cost_checkpoint
+                            and self.zcc_manager is not None
+                        ):
+                            self.zcc_manager.maybe_sync_offload_status()
                         self.control = self.callback_handler.on_step_begin(args, self.state, self.control)
                         self.timers and self.timers("forward-backward").start()
 
