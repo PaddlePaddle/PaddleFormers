@@ -55,7 +55,7 @@ class DropPath(paddle.nn.Layer):
         return x * random_tensor / keep_prob
 
 
-class SEBlock(paddle.nn.Module):
+class SEBlock(paddle.nn.Layer):
     """Squeeze and Excite module.
 
     Pytorch implementation of `Squeeze-and-Excitation Networks` -
@@ -89,7 +89,7 @@ class SEBlock(paddle.nn.Module):
         return inputs * x
 
 
-class MobileOneBlock(paddle.nn.Module):
+class MobileOneBlock(paddle.nn.Layer):
     """MobileOne building block.
 
     This block has a multi-branched architecture at train-time
@@ -113,7 +113,7 @@ class MobileOneBlock(paddle.nn.Module):
         use_act: bool = True,
         use_scale_branch: bool = True,
         num_conv_branches: int = 1,
-        activation: paddle.nn.Module = paddle.nn.GELU(),
+        activation: paddle.nn.Layer = paddle.nn.GELU(),
     ) -> None:
         """Construct a MobileOneBlock module.
 
@@ -171,7 +171,7 @@ class MobileOneBlock(paddle.nn.Module):
                 rbr_conv = list()
                 for _ in range(self.num_conv_branches):
                     rbr_conv.append(self._conv_bn(kernel_size=kernel_size, padding=padding))
-                self.rbr_conv = paddle.nn.ModuleList(rbr_conv)
+                self.rbr_conv = paddle.nn.LayerList(rbr_conv)
             else:
                 self.rbr_conv = None
             self.rbr_scale = None
@@ -339,7 +339,7 @@ class MobileOneBlock(paddle.nn.Module):
         return mod_list
 
 
-class ReparamLargeKernelConv(paddle.nn.Module):
+class ReparamLargeKernelConv(paddle.nn.Layer):
     """Building Block of RepLKNet
 
     This class defines overparameterized large kernel conv block
@@ -358,7 +358,7 @@ class ReparamLargeKernelConv(paddle.nn.Module):
         small_kernel: int,
         inference_mode: bool = False,
         use_se: bool = False,
-        activation: paddle.nn.Module = paddle.nn.GELU(),
+        activation: paddle.nn.Layer = paddle.nn.GELU(),
     ) -> None:
         """Construct a ReparamLargeKernelConv module.
 
@@ -569,7 +569,7 @@ def convolutional_stem(
     )
 
 
-class LayerNormChannel(paddle.nn.Module):
+class LayerNormChannel(paddle.nn.Layer):
     """
     LayerNorm only for Channel Dimension.
     Input: tensor in shape [B, C, H, W]
@@ -589,7 +589,7 @@ class LayerNormChannel(paddle.nn.Module):
         return x
 
 
-class MHSA(paddle.nn.Module):
+class MHSA(paddle.nn.Layer):
     """Multi-headed Self Attention module.
 
     Source modified from:
@@ -637,7 +637,7 @@ class MHSA(paddle.nn.Module):
         return x
 
 
-class PatchEmbed(paddle.nn.Module):
+class PatchEmbed(paddle.nn.Layer):
     """Convolutional patch embedding layer."""
 
     def __init__(
@@ -693,7 +693,7 @@ class PatchEmbed(paddle.nn.Module):
         return x
 
 
-class RepMixer(paddle.nn.Module):
+class RepMixer(paddle.nn.Layer):
     """Reparameterizable token mixer.
 
     For more details, please refer to our paper:
@@ -799,7 +799,7 @@ class RepMixer(paddle.nn.Module):
             self.__delattr__("layer_scale")
 
 
-class ConvFFN(paddle.nn.Module):
+class ConvFFN(paddle.nn.Layer):
     """Convolutional FFN Module."""
 
     def __init__(
@@ -807,7 +807,7 @@ class ConvFFN(paddle.nn.Module):
         in_channels: int,
         hidden_channels: Optional[int] = None,
         out_channels: Optional[int] = None,
-        act_layer: paddle.nn.Module = paddle.nn.GELU,
+        act_layer: paddle.nn.Layer = paddle.nn.GELU,
         drop: float = 0.0,
     ) -> None:
         """Build convolutional FFN module.
@@ -846,7 +846,7 @@ class ConvFFN(paddle.nn.Module):
         self.drop = paddle.nn.Dropout(drop)
         self.apply(self._init_weights)
 
-    def _init_weights(self, m: paddle.nn.Module) -> None:
+    def _init_weights(self, m: paddle.nn.Layer) -> None:
         if isinstance(m, paddle.nn.Conv2d):
             paddle.nn.init.normal_(m.weight, std=0.02)
             if m.bias is not None:
@@ -875,7 +875,7 @@ class ConvFFN(paddle.nn.Module):
         return x
 
 
-class RepCPE(paddle.nn.Module):
+class RepCPE(paddle.nn.Layer):
     """Implementation of conditional positional encoding.
 
     For more details refer to paper:
@@ -970,7 +970,7 @@ class RepCPE(paddle.nn.Module):
         self.__delattr__("pe")
 
 
-class RepMixerBlock(paddle.nn.Module):
+class RepMixerBlock(paddle.nn.Layer):
     """Implementation of Metaformer block with RepMixer as token mixer.
 
     For more details on Metaformer structure, please refer to:
@@ -982,7 +982,7 @@ class RepMixerBlock(paddle.nn.Module):
         dim: int,
         kernel_size: int = 3,
         mlp_ratio: float = 4.0,
-        act_layer: paddle.nn.Module = paddle.nn.GELU,
+        act_layer: paddle.nn.Layer = paddle.nn.GELU,
         drop: float = 0.0,
         drop_path: float = 0.0,
         use_layer_scale: bool = True,
@@ -1030,7 +1030,7 @@ class RepMixerBlock(paddle.nn.Module):
         return x
 
 
-class AttentionBlock(paddle.nn.Module):
+class AttentionBlock(paddle.nn.Layer):
     """Implementation of metaformer block with MHSA as token mixer.
 
     For more details on Metaformer structure, please refer to:
@@ -1041,8 +1041,8 @@ class AttentionBlock(paddle.nn.Module):
         self,
         dim: int,
         mlp_ratio: float = 4.0,
-        act_layer: paddle.nn.Module = paddle.nn.GELU,
-        norm_layer: paddle.nn.Module = paddle.compat.nn.BatchNorm2d,
+        act_layer: paddle.nn.Layer = paddle.nn.GELU,
+        norm_layer: paddle.nn.Layer = paddle.compat.nn.BatchNorm2d,
         drop: float = 0.0,
         drop_path: float = 0.0,
         use_layer_scale: bool = True,
@@ -1098,8 +1098,8 @@ def basic_blocks(
     token_mixer_type: str,
     kernel_size: int = 3,
     mlp_ratio: float = 4.0,
-    act_layer: paddle.nn.Module = paddle.nn.GELU,
-    norm_layer: paddle.nn.Module = paddle.compat.nn.BatchNorm2d,
+    act_layer: paddle.nn.Layer = paddle.nn.GELU,
+    norm_layer: paddle.nn.Layer = paddle.compat.nn.BatchNorm2d,
     drop_rate: float = 0.0,
     drop_path_rate: float = 0.0,
     use_layer_scale: bool = True,
@@ -1162,7 +1162,7 @@ def basic_blocks(
     return blocks
 
 
-class GlobalPool2D(paddle.nn.Module):
+class GlobalPool2D(paddle.nn.Layer):
     """This class implements global pooling with linear projection."""
 
     def __init__(self, in_dim: int, out_dim: int, *args, **kwargs) -> None:
@@ -1189,7 +1189,7 @@ class GlobalPool2D(paddle.nn.Module):
         return x
 
 
-class FastViT(paddle.nn.Module):
+class FastViT(paddle.nn.Layer):
     """
     This class implements `FastViT architecture <https://arxiv.org/pdf/2303.14189.pdf>`_
     """
@@ -1203,8 +1203,8 @@ class FastViT(paddle.nn.Module):
         downsamples=None,
         se_downsamples=None,
         repmixer_kernel_size=3,
-        norm_layer: paddle.nn.Module = paddle.compat.nn.BatchNorm2d,
-        act_layer: paddle.nn.Module = paddle.nn.GELU,
+        norm_layer: paddle.nn.Layer = paddle.compat.nn.BatchNorm2d,
+        act_layer: paddle.nn.Layer = paddle.nn.GELU,
         num_classes=1000,
         pos_embs=None,
         down_patch_size=7,
@@ -1266,7 +1266,7 @@ class FastViT(paddle.nn.Module):
                         use_se=se_downsamples[i + 1],
                     )
                 )
-        self.network = paddle.nn.ModuleList(network)
+        self.network = paddle.nn.LayerList(network)
         self.conv_exp = MobileOneBlock(
             in_channels=embed_dims[-1],
             out_channels=int(embed_dims[-1] * cls_ratio),
@@ -1286,7 +1286,7 @@ class FastViT(paddle.nn.Module):
         self.apply(self.cls_init_weights)
         self.init_cfg = copy.deepcopy(init_cfg)
 
-    def cls_init_weights(self, m: paddle.nn.Module) -> None:
+    def cls_init_weights(self, m: paddle.nn.Layer) -> None:
         """Init. for classification"""
         if isinstance(m, paddle.compat.nn.Linear):
             paddle.nn.init.normal_(m.weight, std=0.02)
