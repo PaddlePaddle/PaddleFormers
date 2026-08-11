@@ -504,7 +504,6 @@ class InternVLChatModel(InternVLChatPretrainedModel):
         labels: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ):
         return_dict = True if return_dict is None else return_dict

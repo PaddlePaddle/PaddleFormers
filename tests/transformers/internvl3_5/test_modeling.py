@@ -246,7 +246,13 @@ class InternVLModelTest(unittest.TestCase):
         self.assertIsNone(prepared["visual_features"])
         self.assertIs(prepared["past_key_values"], outputs.past_key_values)
 
-    def test_output_hidden_states(self):
+    def test_chat_model_rejects_output_hidden_states(self):
+        model = InternVLChatModel(self.get_config()).eval()
+
+        with self.assertRaises(TypeError):
+            model(**self.get_inputs(), use_cache=False, output_hidden_states=True)
+
+    def test_vision_model_output_hidden_states(self):
         config = self.get_config()
         model = InternVisionModel(config.vision_config).eval()
         pixel_values = self.get_inputs()["pixel_values"]
