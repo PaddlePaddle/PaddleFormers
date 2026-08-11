@@ -12,6 +12,8 @@ from paddleformers.transformers import (
     InternVisionModel,
     InternVLChatConfig,
     InternVLChatModel,
+    Qwen3MoeConfig,
+    Qwen3MoeForCausalLMDeprecated,
 )
 from tests.transformers.test_configuration_common import ConfigTester
 
@@ -63,6 +65,30 @@ class InternVLModelTest(unittest.TestCase):
             "pixel_values": paddle.randn([1, 3, 28, 28]),
         }
 
+    def get_moe_config(self):
+        config = self.get_config()
+        llm_config = config.llm_config.to_dict()
+        llm_config.update(
+            {
+                "model_type": "qwen3_moe",
+                "architectures": ["Qwen3MoeForCausalLM"],
+                "decoder_sparse_step": 1,
+                "moe_intermediate_size": 8,
+                "num_experts_per_tok": 1,
+                "num_experts": 2,
+                "norm_topk_prob": False,
+                "output_router_logits": False,
+            }
+        )
+        return InternVLChatConfig(
+            vision_config=config.vision_config.to_dict(),
+            llm_config=llm_config,
+            force_image_size=config.force_image_size,
+            downsample_ratio=config.downsample_ratio,
+            ps_version=config.ps_version,
+            img_context_token_id=config.img_context_token_id,
+        )
+
     def test_config(self):
         config = self.get_config()
         config_tester = ConfigTester(
@@ -106,6 +132,40 @@ class InternVLModelTest(unittest.TestCase):
             outputs = model(pixel_values=pixel_values)
 
         self.assertEqual(outputs.last_hidden_state.dtype, paddle.bfloat16)
+
+    def test_qwen3_moe_config_model_and_conversion_dispatch(self):
+        config = self.get_moe_config()
+        model = InternVLChatModel(config).eval()
+
+        self.assertIsInstance(config.llm_config, Qwen3MoeConfig)
+        self.assertIsInstance(model.language_model, Qwen3MoeForCausalLMDeprecated)
+
+        mappings = InternVLChatModel._get_fuse_or_split_param_mappings(config)
+        self.assertIn(
+            (
+                "language_model.model.layers.0.mlp.experts.0.gate_proj.weight",
+                "language_model.model.layers.0.mlp.experts.0.up_proj.weight",
+                "language_model.model.layers.0.mlp.experts.0.up_gate_proj.weight",
+            ),
+            mappings,
+        )
+        aoa_statements = InternVLChatModel._gen_aoa_config(config)["aoa_statements"]
+        self.assertTrue(
+            any(
+                "language_model.model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight" in statement
+                and "up_gate_proj.weight" in statement
+                for statement in aoa_statements
+            )
+        )
+
+        with paddle.no_grad():
+            outputs = model(**self.get_inputs(), use_cache=False)
+
+        self.assertEqual(list(outputs.logits.shape), [1, 4, 200])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config.save_pretrained(tmpdir)
+            reloaded_config = InternVLChatConfig.from_pretrained(tmpdir, local_files_only=True)
+        self.assertIsInstance(reloaded_config.llm_config, Qwen3MoeConfig)
 
     def test_save_load(self):
         paddle.seed(42)

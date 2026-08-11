@@ -21,6 +21,7 @@ from ..model_outputs import (
 )
 from ..model_utils import PretrainedModel
 from ..qwen3.modeling import Qwen3ForCausalLMDeprecated
+from ..qwen3_moe.configuration import Qwen3MoeConfig
 from .configuration import InternVisionConfig, InternVLChatConfig
 
 __all__ = ["InternVisionModel", "InternVLChatModel"]
@@ -293,14 +294,46 @@ class InternVLChatPretrainedModel(PretrainedModel):
                     f"{prefix}.self_attn.qkv_proj.weight",
                 )
             ] = qkv_action
-            mappings[
-                (
-                    f"{prefix}.mlp.gate_proj.weight",
-                    f"{prefix}.mlp.up_proj.weight",
-                    f"{prefix}.mlp.up_gate_proj.weight",
-                )
-            ] = ffn_action
+            if isinstance(llm_config, Qwen3MoeConfig) and cls._is_moe_layer(llm_config, layer_id):
+                for expert_id in range(llm_config.num_experts):
+                    mappings[
+                        (
+                            f"{prefix}.mlp.experts.{expert_id}.gate_proj.weight",
+                            f"{prefix}.mlp.experts.{expert_id}.up_proj.weight",
+                            f"{prefix}.mlp.experts.{expert_id}.up_gate_proj.weight",
+                        )
+                    ] = ffn_action
+            else:
+                mappings[
+                    (
+                        f"{prefix}.mlp.gate_proj.weight",
+                        f"{prefix}.mlp.up_proj.weight",
+                        f"{prefix}.mlp.up_gate_proj.weight",
+                    )
+                ] = ffn_action
         return mappings
+
+    @classmethod
+    def _is_moe_layer(cls, llm_config, layer_id):
+        return (
+            isinstance(llm_config, Qwen3MoeConfig)
+            and layer_id not in llm_config.mlp_only_layers
+            and llm_config.num_experts > 0
+            and (layer_id + 1) % llm_config.decoder_sparse_step == 0
+        )
+
+    @classmethod
+    def _prefix_language_model_aoa_statement(cls, statement):
+        return statement.replace("model.", "language_model.model.").replace("lm_head.", "language_model.lm_head.")
+
+    @classmethod
+    def _get_qwen3_moe_aoa_statements(cls, llm_config):
+        from ..qwen3_moe.modeling import Qwen3MoeForCausalLMDeprecated
+
+        aoa_config = Qwen3MoeForCausalLMDeprecated._gen_aoa_config(llm_config)
+        return [
+            cls._prefix_language_model_aoa_statement(statement) for statement in aoa_config.get("aoa_statements", [])
+        ]
 
     @classmethod
     def _gen_aoa_config(cls, config: InternVLChatConfig):
@@ -330,17 +363,25 @@ class InternVLChatPretrainedModel(PretrainedModel):
             "mlp1.1.bias -> mlp1.1.bias",
             "mlp1.3.weight^T -> mlp1.3.weight",
             "mlp1.3.bias -> mlp1.3.bias",
-            "language_model.model.embed_tokens.weight -> language_model.model.embed_tokens.weight",
-            "language_model.model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> language_model.model.layers.$LAYER_ID.self_attn.o_proj.weight",
-            "language_model.model.layers.$LAYER_ID.self_attn.q_norm.weight -> language_model.model.layers.$LAYER_ID.self_attn.q_norm.weight",
-            "language_model.model.layers.$LAYER_ID.self_attn.k_norm.weight -> language_model.model.layers.$LAYER_ID.self_attn.k_norm.weight",
-            "language_model.model.layers.$LAYER_ID.input_layernorm.weight -> language_model.model.layers.$LAYER_ID.input_layernorm.weight",
-            "language_model.model.layers.$LAYER_ID.post_attention_layernorm.weight -> language_model.model.layers.$LAYER_ID.post_attention_layernorm.weight",
-            "language_model.model.layers.$LAYER_ID.mlp.down_proj.weight^T -> language_model.model.layers.$LAYER_ID.mlp.down_proj.weight",
-            "language_model.model.norm.weight -> language_model.model.norm.weight",
-            f"language_model.model.layers.$LAYER_ID.self_attn.q_proj.weight^T, language_model.model.layers.$LAYER_ID.self_attn.k_proj.weight^T, language_model.model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> language_model.model.layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={llm_config.num_attention_heads}, num_key_value_groups={llm_config.num_key_value_heads}",
-            "language_model.model.layers.$LAYER_ID.mlp.gate_proj.weight^T, language_model.model.layers.$LAYER_ID.mlp.up_proj.weight^T -> language_model.model.layers.$LAYER_ID.mlp.up_gate_proj.weight, fused_ffn",
         ]
+        if isinstance(llm_config, Qwen3MoeConfig):
+            statements.extend(cls._get_qwen3_moe_aoa_statements(llm_config))
+            return {"aoa_statements": statements}
+
+        statements.extend(
+            [
+                "language_model.model.embed_tokens.weight -> language_model.model.embed_tokens.weight",
+                "language_model.model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> language_model.model.layers.$LAYER_ID.self_attn.o_proj.weight",
+                "language_model.model.layers.$LAYER_ID.self_attn.q_norm.weight -> language_model.model.layers.$LAYER_ID.self_attn.q_norm.weight",
+                "language_model.model.layers.$LAYER_ID.self_attn.k_norm.weight -> language_model.model.layers.$LAYER_ID.self_attn.k_norm.weight",
+                "language_model.model.layers.$LAYER_ID.input_layernorm.weight -> language_model.model.layers.$LAYER_ID.input_layernorm.weight",
+                "language_model.model.layers.$LAYER_ID.post_attention_layernorm.weight -> language_model.model.layers.$LAYER_ID.post_attention_layernorm.weight",
+                "language_model.model.layers.$LAYER_ID.mlp.down_proj.weight^T -> language_model.model.layers.$LAYER_ID.mlp.down_proj.weight",
+                "language_model.model.norm.weight -> language_model.model.norm.weight",
+                f"language_model.model.layers.$LAYER_ID.self_attn.q_proj.weight^T, language_model.model.layers.$LAYER_ID.self_attn.k_proj.weight^T, language_model.model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> language_model.model.layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={llm_config.num_attention_heads}, num_key_value_groups={llm_config.num_key_value_heads}",
+                "language_model.model.layers.$LAYER_ID.mlp.gate_proj.weight^T, language_model.model.layers.$LAYER_ID.mlp.up_proj.weight^T -> language_model.model.layers.$LAYER_ID.mlp.up_gate_proj.weight, fused_ffn",
+            ]
+        )
         if llm_config.attention_bias:
             statements.append(
                 f"language_model.model.layers.$LAYER_ID.self_attn.q_proj.bias, language_model.model.layers.$LAYER_ID.self_attn.k_proj.bias, language_model.model.layers.$LAYER_ID.self_attn.v_proj.bias -> language_model.model.layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={llm_config.num_attention_heads}, num_key_value_groups={llm_config.num_key_value_heads}, axis=0"
@@ -368,9 +409,7 @@ class InternVLChatModel(InternVLChatPretrainedModel):
         self.img_context_token_id = config.img_context_token_id
 
         self.vision_model = vision_model if vision_model is not None else InternVisionModel(config.vision_config)
-        self.language_model = (
-            language_model if language_model is not None else Qwen3ForCausalLMDeprecated(config.llm_config)
-        )
+        self.language_model = language_model if language_model is not None else self._build_language_model(config)
 
         vit_hidden_size = config.vision_config.hidden_size
         llm_hidden_size = config.llm_config.hidden_size
@@ -381,6 +420,14 @@ class InternVLChatModel(InternVLChatPretrainedModel):
             nn.GELU(),
             nn.Linear(llm_hidden_size, llm_hidden_size),
         )
+
+    @staticmethod
+    def _build_language_model(config):
+        if isinstance(config.llm_config, Qwen3MoeConfig):
+            from ..qwen3_moe.modeling import Qwen3MoeForCausalLMDeprecated
+
+            return Qwen3MoeForCausalLMDeprecated(config.llm_config)
+        return Qwen3ForCausalLMDeprecated(config.llm_config)
 
     def pixel_shuffle(self, x, scale_factor=0.5):
         n, w, h, c = x.shape
@@ -469,17 +516,19 @@ class InternVLChatModel(InternVLChatPretrainedModel):
                 vit_embeds = vit_embeds[image_flags]
             input_embeds = self._merge_visual_embeds(input_ids, input_embeds, vit_embeds)
 
-        outputs = self.language_model(
-            input_ids=None,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_values=past_key_values,
-            inputs_embeds=input_embeds,
-            labels=labels,
-            use_cache=use_cache,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
+        language_model_kwargs = {
+            "input_ids": None,
+            "attention_mask": attention_mask,
+            "position_ids": position_ids,
+            "past_key_values": past_key_values,
+            "inputs_embeds": input_embeds,
+            "labels": labels,
+            "use_cache": use_cache,
+            "return_dict": return_dict,
+        }
+        if not isinstance(self.config.llm_config, Qwen3MoeConfig):
+            language_model_kwargs["output_hidden_states"] = output_hidden_states
+        outputs = self.language_model(**language_model_kwargs)
 
         if not return_dict:
             return outputs

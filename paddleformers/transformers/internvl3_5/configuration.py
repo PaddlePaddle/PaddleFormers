@@ -7,8 +7,19 @@ import copy
 
 from ..configuration_utils import PretrainedConfig
 from ..qwen3.configuration import Qwen3Config
+from ..qwen3_moe.configuration import Qwen3MoeConfig
 
 __all__ = ["InternVisionConfig", "InternVLChatConfig"]
+
+
+def _get_llm_config_class(llm_config):
+    if isinstance(llm_config, (Qwen3Config, Qwen3MoeConfig)):
+        return llm_config.__class__
+    model_type = llm_config.get("model_type") if isinstance(llm_config, dict) else None
+    architectures = llm_config.get("architectures", []) if isinstance(llm_config, dict) else []
+    if model_type == "qwen3_moe" or any(architecture.startswith("Qwen3Moe") for architecture in architectures):
+        return Qwen3MoeConfig
+    return Qwen3Config
 
 
 class InternVisionConfig(PretrainedConfig):
@@ -88,7 +99,8 @@ class InternVLChatConfig(PretrainedConfig):
             llm_config = {"architectures": ["Qwen3ForCausalLM"]}
 
         self.vision_config = InternVisionConfig(**vision_config) if isinstance(vision_config, dict) else vision_config
-        self.llm_config = Qwen3Config(**llm_config) if isinstance(llm_config, dict) else llm_config
+        llm_config_class = _get_llm_config_class(llm_config)
+        self.llm_config = llm_config_class(**llm_config) if isinstance(llm_config, dict) else llm_config
 
         self.use_backbone_lora = use_backbone_lora
         self.use_llm_lora = use_llm_lora
