@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,14 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .workflow import run_dpo
-
-__all__ = ["run_dpo", "run_dpo_v2"]
-
-
-def __getattr__(name):
-    if name == "run_dpo_v2":
-        from .workflow2 import run_dpo_v2
-
-        return run_dpo_v2
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+from .auto import AutoPreprocessor
+from .base import BasePreprocessor
+from .erniekit import ErnieKitPreprocessor
+from .extra import AlpacaPreprocessor, TextPreprocessor
+from .messages import MessagesPreprocessor
+from .response import ResponsePreprocessor, history_to_messages

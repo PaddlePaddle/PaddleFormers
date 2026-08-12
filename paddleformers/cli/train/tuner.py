@@ -51,9 +51,24 @@ def _training_function(config: dict[str, Any]) -> None:
     if model_args.stage in ["SFT", "PT", "VL-SFT", "VL-PT"]:
         with paddle.amp.auto_cast(enable=False):
             run_sft(model_args, data_args, generating_args, finetuning_args)
+    elif model_args.stage in ["SFT-V2", "PT-V2"]:
+        from .sft import run_sft_v2
+
+        with paddle.amp.auto_cast(enable=False):
+            run_sft_v2(model_args, data_args, generating_args, finetuning_args)
+    elif model_args.stage in ["VL-SFT-V2"]:
+        from .sft import run_vl_sft_v2
+
+        with paddle.amp.auto_cast(enable=False):
+            run_vl_sft_v2(model_args, data_args, generating_args, finetuning_args)
     elif model_args.stage == "DPO" or model_args.stage == "VL-DPO":
         with paddle.amp.auto_cast(enable=False):
             run_dpo(model_args, data_args, generating_args, finetuning_args)
+    elif model_args.stage == "DPO-V2":
+        from .dpo import run_dpo_v2
+
+        with paddle.amp.auto_cast(enable=False):
+            run_dpo_v2(model_args, data_args, generating_args, finetuning_args)
     elif model_args.stage == "dsv3_pretrain":
         from .deepseek_v3_pretrain import run_dsv3_pretrain
 

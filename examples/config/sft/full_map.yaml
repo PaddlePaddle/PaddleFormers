@@ -18,7 +18,7 @@ _attn_implementation: flashmask
 
 ### finetuning
 # base
-stage: SFT
+stage: SFT-V2
 fine_tuning: full
 seed: 23
 do_train: true

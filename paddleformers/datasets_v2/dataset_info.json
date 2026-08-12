@@ -1,0 +1,137 @@
+[
+    {
+        "name": "alpaca_en",
+        "path": "llamafactory/alpaca_en",
+        "preprocessor": "alpaca",
+        "tags": ["sft", "en"]
+    },
+    {
+        "name": "alpaca_zh",
+        "path": "llamafactory/alpaca_zh",
+        "preprocessor": "alpaca",
+        "tags": ["sft", "zh"]
+    },
+    {
+        "name": "alpaca_gpt4_en",
+        "path": "llamafactory/alpaca_gpt4_en",
+        "preprocessor": "alpaca",
+        "tags": ["sft", "en"]
+    },
+    {
+        "name": "alpaca_gpt4_zh",
+        "path": "llamafactory/alpaca_gpt4_zh",
+        "preprocessor": "alpaca",
+        "tags": ["sft", "zh"]
+    },
+    {
+        "name": "belle_2m",
+        "path": "BelleGroup/train_2M_CN",
+        "preprocessor": "alpaca",
+        "tags": ["sft", "zh"]
+    },
+    {
+        "name": "belle_1m",
+        "path": "BelleGroup/train_1M_CN",
+        "preprocessor": "alpaca",
+        "tags": ["sft", "zh"]
+    },
+    {
+        "name": "belle_0.5m",
+        "path": "BelleGroup/train_0.5M_CN",
+        "preprocessor": "alpaca",
+        "tags": ["sft", "zh"]
+    },
+    {
+        "name": "belle_chat",
+        "path": "BelleGroup/generated_chat_0.4M",
+        "preprocessor": "alpaca",
+        "tags": ["sft", "zh"]
+    },
+    {
+        "name": "belle_math",
+        "path": "BelleGroup/school_math_0.25M",
+        "preprocessor": "alpaca",
+        "tags": ["sft", "zh", "math"]
+    },
+    {
+        "name": "code_alpaca",
+        "path": "sahil2801/CodeAlpaca-20k",
+        "preprocessor": "alpaca",
+        "tags": ["sft", "en", "code"]
+    },
+    {
+        "name": "math_instruct",
+        "path": "TIGER-Lab/MathInstruct",
+        "preprocessor": "alpaca",
+        "tags": ["sft", "en", "math"]
+    },
+    {
+        "name": "firefly",
+        "path": "YeungNLP/firefly-train-1.1M",
+        "preprocessor": "response",
+        "columns": {"query": "input", "response": "target"},
+        "tags": ["sft", "zh"]
+    },
+    {
+        "name": "webqa",
+        "path": "suolyer/webqa",
+        "preprocessor": "response",
+        "columns": {"query": "input", "response": "output"},
+        "tags": ["sft", "zh"]
+    },
+    {
+        "name": "openo1_sft",
+        "path": "llamafactory/OpenO1-SFT",
+        "preprocessor": "response",
+        "tags": ["sft", "en", "reasoning"]
+    },
+    {
+        "name": "deepseek_r1_distill",
+        "path": "Congliu/Chinese-DeepSeek-R1-Distill-data-110k-SFT",
+        "preprocessor": "alpaca",
+        "tags": ["sft", "zh", "reasoning"]
+    },
+    {
+        "name": "sharegpt_gpt4",
+        "path": "shibing624/sharegpt_gpt4",
+        "preprocessor": "messages",
+        "tags": ["sft", "zh"]
+    },
+    {
+        "name": "lima",
+        "path": "llamafactory/lima",
+        "preprocessor": "messages",
+        "tags": ["sft", "en"]
+    },
+    {
+        "name": "slim_orca",
+        "path": "Open-Orca/SlimOrca",
+        "preprocessor": "messages",
+        "tags": ["sft", "en"]
+    },
+    {
+        "name": "sharegpt_hyperfiltered",
+        "path": "totally-not-an-llm/sharegpt-hyperfiltered-3k",
+        "preprocessor": "messages",
+        "tags": ["sft", "en"]
+    },
+    {
+        "name": "neo_sft",
+        "path": "m-a-p/neo_sft_phase2",
+        "preprocessor": "messages",
+        "tags": ["sft", "en"]
+    },
+    {
+        "name": "orca_dpo",
+        "path": "Intel/orca_dpo_pairs",
+        "preprocessor": "response",
+        "columns": {"query": "question"},
+        "tags": ["dpo", "en"]
+    },
+    {
+        "name": "german_rag_dpo",
+        "path": "avemio/German-RAG-DPO-ShareGPT-HESSIAN-AI",
+        "preprocessor": "messages",
+        "tags": ["dpo", "de"]
+    }
+]

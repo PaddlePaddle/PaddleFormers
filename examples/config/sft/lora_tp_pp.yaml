@@ -19,7 +19,7 @@ lora_rank: 8
 
 ### finetuning
 # base
-stage: SFT
+stage: SFT-V2
 fine_tuning: lora
 seed: 23
 do_train: true

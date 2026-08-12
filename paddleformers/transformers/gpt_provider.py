@@ -224,7 +224,7 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
 
         with model_init_device_context():
             seg_method = "layer:TransformerLayer|EmptyLayer"
-            if self.separate_mtp_headloss:
+            if getattr(self, "separate_mtp_headloss", False):
                 seg_method = "layer:TransformerLayer|EmptyLayer|MultiTokenPredictionLayer"
 
             fleet_model = gpt_builder(self, num_stages=pp_size, seg_method=seg_method, loss_fn=loss_fn)

@@ -129,6 +129,7 @@ csrc/third_party/
 dataset/
 output/
 !tests/dataset/
+!paddleformers/datasets_v2/dataset/
 
 # gen codes
 autogen/
@@ -154,6 +155,7 @@ csrc/third_party/
 dataset/
 output/
 !tests/dataset/
+!paddleformers/datasets_v2/dataset/
 
 # gen codes
 autogen/
