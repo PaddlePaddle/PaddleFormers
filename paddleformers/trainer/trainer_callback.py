@@ -1026,6 +1026,15 @@ class InternalMedicineCallback(TrainerCallback):
             if finalize is not None:
                 finalize(scaler)
 
+    def on_substep_end(self, args, state, control, **kwargs):
+        if not self._setup_done:
+            return
+
+        for monitor in self._monitor_dict.values():
+            finalize = getattr(monitor, "finalize_composite_microbatch", None)
+            if finalize is not None:
+                finalize()
+
     def on_step_end(self, args, state, control, **kwargs):
         if not self._setup_done:
             return
