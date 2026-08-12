@@ -21,9 +21,11 @@ import paddle
 
 from paddleformers.transformers import (
     AutoConfig,
+    AutoModel,
     AutoModelForCausalLM,
     MiniCPM3Config,
     MiniCPM3ForCausalLM,
+    MiniCPM3Model,
 )
 
 
@@ -56,6 +58,41 @@ def tiny_minicpm3_config(**kwargs):
 
 
 class MiniCPM3ModelingTest(unittest.TestCase):
+    def test_auto_model(self):
+        config = tiny_minicpm3_config()
+
+        auto_model = AutoModel.from_config(config)
+        self.assertIsInstance(auto_model, MiniCPM3Model)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            auto_model.save_pretrained(tmpdir)
+            auto_loaded = AutoModel.from_pretrained(tmpdir)
+
+        self.assertIsInstance(auto_loaded, MiniCPM3Model)
+
+    def test_flashmask_falls_back_to_eager(self):
+        config = tiny_minicpm3_config()
+        config._attn_implementation = "flashmask"
+
+        with self.assertLogs("paddleformers.transformers.minicpm3.modeling", level="WARNING") as logs:
+            model = MiniCPM3Model(config)
+
+        self.assertEqual(model.config._attn_implementation, "eager")
+        self.assertIn("falling back to eager attention", " ".join(logs.output))
+        input_ids = paddle.randint(low=3, high=config.vocab_size - 1, shape=[2, 8], dtype="int64")
+        outputs = model(input_ids=input_ids, return_dict=True)
+        self.assertEqual(list(outputs.last_hidden_state.shape), [2, 8, config.hidden_size])
+
+    def test_sdpa_forward(self):
+        config = tiny_minicpm3_config()
+        config._attn_implementation = "sdpa"
+        model = MiniCPM3Model(config)
+        input_ids = paddle.randint(low=3, high=config.vocab_size - 1, shape=[2, 8], dtype="int64")
+
+        outputs = model(input_ids=input_ids, return_dict=True)
+
+        self.assertEqual(list(outputs.last_hidden_state.shape), [2, 8, config.hidden_size])
+
     def test_tied_lm_head_aoa_config(self):
         config = tiny_minicpm3_config(tie_word_embeddings=True)
 

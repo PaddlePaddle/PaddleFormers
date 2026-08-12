@@ -1043,16 +1043,18 @@ class MiniCPMDecoderLayer(paddle.nn.Module):
             )
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
-        hidden_states, self_attn_weights, present_key_value = self.self_attn(
+        attention_kwargs = dict(
             hidden_states=hidden_states,
             attention_mask=attention_mask,
-            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             position_ids=position_ids,
             past_key_value=past_key_value,
             output_attentions=output_attentions,
             use_cache=use_cache,
             **kwargs,
         )
+        if not isinstance(self.self_attn, MiniCPMSdpaAttention):
+            attention_kwargs["attn_mask_startend_row_indices"] = attn_mask_startend_row_indices
+        hidden_states, self_attn_weights, present_key_value = self.self_attn(**attention_kwargs)
         hidden_states = residual + hidden_states * (self.scale_depth / math.sqrt(self.num_hidden_layers))
         residual = hidden_states
         hidden_states = self.post_attention_layernorm(hidden_states)
@@ -1284,6 +1286,9 @@ class MiniCPM3Model(MiniCPM3PreTrainedModel):
 
     def __init__(self, config: MiniCPM3Config):
         super().__init__(config)
+        if config._attn_implementation == "flashmask":
+            logger.warning("MiniCPM3 does not support flashmask attention yet; falling back to eager attention.")
+            config._attn_implementation = "eager"
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
         self.embed_tokens = paddle.nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)

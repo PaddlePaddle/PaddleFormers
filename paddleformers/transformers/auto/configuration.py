@@ -115,7 +115,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("shieldgemma2", "ShieldGemma2ForImageClassification"),
         ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
         ("qwen3_5", "Qwen3_5ForConditionalGeneration"),
-        ("minicpm3", "MiniCPM3"),
+        ("minicpm3", "MiniCPM3Model"),
         ("olmo2", "Olmo2ForCausalLM"),
         ("internlm3", "InternLM3ForCausalLM"),
         ("internlm2", "InternLM2"),
