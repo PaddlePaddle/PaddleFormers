@@ -14,6 +14,7 @@
 
 import atexit
 import copy
+import ctypes
 import functools
 import hashlib
 import json
@@ -295,6 +296,14 @@ def get_fused_param_mappings(optimizer, manipulated_state_dict):
     return param_mappings, ipc_meta_mappings
 
 
+def pin2cpu_zero_copy_fp32(t):
+    lt = t.get_tensor()
+    arr = np.ctypeslib.as_array(ctypes.cast(lt._ptr(), ctypes.POINTER(ctypes.c_float)), shape=(t._numel(),))
+    alias = core.eager.Tensor(value=arr, place=core.CPUPlace(), zero_copy=True)
+    alias._keep_alive = (t, arr)
+    return alias
+
+
 class ZeroCostCheckpointEMAProcessor:
     """
     生活在 ZCC Worker 里面的 EMA 处理模块.
@@ -357,18 +366,24 @@ class ZeroCostCheckpointEMAProcessor:
         # do update: ema = alpha * ema + (1-alpha) * model
         logger.info(f"[ZCC EMA] accumulating, buffer type:{self.ema_buffer.place} {self.ema_buffer.dtype}")
         with device_guard("cpu"):
-            cpu_master_weights = self.optimizer_fusion_storage_helper.cpu_buffer._slice(
-                self.master_min_offset, self.master_max_offset
-            ).cpu()
+            cpu_buffer = self.optimizer_fusion_storage_helper.cpu_buffer
+            if (
+                cpu_buffer.place.is_cuda_pinned_place()
+                and cpu_buffer.dtype == paddle.float32
+                and cpu_buffer.is_contiguous()
+            ):
+                cpu_master_weights = pin2cpu_zero_copy_fp32(cpu_buffer)._slice(
+                    self.master_min_offset, self.master_max_offset
+                )
+            else:
+                cpu_master_weights = cpu_buffer._slice(self.master_min_offset, self.master_max_offset).cpu()
+            logger.info(f"[ZCC EMA] cpu_master_weights in :{cpu_master_weights.place}")
             if zcc_ema_loss_threshold is None or loss < zcc_ema_loss_threshold:
-                self.ema_buffer = self.ema_coef * self.ema_buffer + (1 - self.ema_coef) * cpu_master_weights
+                self.ema_buffer.lerp_(cpu_master_weights, 1 - self.ema_coef)
                 for index, ema_buf in self.ema_buffer_model_params.items():
                     _, cpu_buf = self.param_fusion_storage_helper.inited_buffers[index]
                     updated_ema = self.ema_coef * ema_buf + (1 - self.ema_coef) * cpu_buf
                     self.ema_buffer_model_params[index] = updated_ema
-                logger.info(
-                    f"[ZCC EMA] accmulating, buffer type:{self.ema_buffer.place} {self.ema_buffer.dtype}, done"
-                )
             else:
                 logger.info(
                     f"[ZCC EMA] accmulating SKIP for global_step:{global_step}, because loss:{loss} > threshold:{zcc_ema_loss_threshold}"
