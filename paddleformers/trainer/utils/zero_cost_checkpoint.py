@@ -313,7 +313,7 @@ class ZeroCostCheckpointEMAProcessor:
     def __init__(self, optimizer_fusion_storage_helper, param_fusion_storage_helper, ema_coef):
         self.optimizer_fusion_storage_helper = optimizer_fusion_storage_helper
         self.param_fusion_storage_helper = param_fusion_storage_helper
-        self.ema_coef = ema_coef
+        self.ema_coef = None if ema_coef is None else float(ema_coef)
         (
             self.ema_buffer,
             self.ema_buffer_model_params,
