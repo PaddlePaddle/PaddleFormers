@@ -28,7 +28,7 @@ from ..model_outputs import BaseModelOutputWithPooling
 from ..model_utils import PretrainedModel
 from ..qwen3_vl.modeling import Qwen3VLVisionModel
 from .configuration import Qwen3_5VisionConfig
-from .modeling_fleet import build_qwen3_5_model
+from .modeling_fleet import Qwen3_5CriterionPipe, build_qwen3_5_model
 
 
 # ── Register custom AOA macros for linear_attention TP-aware weight mapping ──
@@ -739,7 +739,14 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
                     src_offset_in_rank = sum(per_rank_sizes[:dst_idx]) // unit_size
                     start = rank_offset + src_offset_in_rank
                     rank_chunks.extend(chunk_names[start : start + n_chunks_for_src])
-                stmts.append(f"{','.join(rank_chunks)} -> {dst_key}, axis=0")
+                if len(rank_chunks) == 1:
+                    # A 1->1 statement with `axis=0` is a no-op in AOA: the destination
+                    # aliases the chunk's TensorDesc instead of consuming it, so the
+                    # chunk gets exported under its temporary `_cN` name and the
+                    # destination key is dropped. Emit a rename instead.
+                    stmts.append(f"{rank_chunks[0]} -> {dst_key}")
+                else:
+                    stmts.append(f"{','.join(rank_chunks)} -> {dst_key}, axis=0")
 
             return stmts
 
@@ -991,9 +998,27 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
         config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
         config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
 
+        # Propagate parallel config to text_config so that language model builder sees them
+        if hasattr(config, "text_config"):
+            config.text_config.pipeline_model_parallel_size = config.pipeline_model_parallel_size
+            config.text_config.virtual_pipeline_model_parallel_size = config.virtual_pipeline_model_parallel_size
+            config.text_config.expert_model_parallel_size = config.expert_model_parallel_size
+            config.text_config.tensor_model_parallel_size = config.tensor_model_parallel_size
+            config.text_config.context_parallel_size = config.context_parallel_size
+
         criterion = None
         if have_criterion:
-            criterion = CriterionLayer(config.text_config)
+            pp_size = config.pipeline_model_parallel_size
+            # PP needs a criterion that splits the last stage's list output into
+            # (main_logits, mtp_logits) and returns a single Tensor, because the
+            # pipeline scheduler asserts that and never forwards mtp_logits.
+            # loss_type is left unset on purpose: CriterionLayer upgrades "sft"
+            # to "mtp_sft" exactly when num_nextn_predict_layers > 0, so PP and
+            # non-PP share one loss function in both MTP on and off cases.
+            if pp_size > 1:
+                criterion = Qwen3_5CriterionPipe(config.text_config, return_tuple=False)
+            else:
+                criterion = CriterionLayer(config.text_config)
 
         qwen3_5_model = build_qwen3_5_model(config, criterion)
 
@@ -1009,7 +1034,16 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
 # Alias to match HF config.json architectures: ["Qwen3_5MoeForConditionalGeneration"]
 Qwen3_5MoeForConditionalGeneration = Qwen3_5ForConditionalGeneration
 
+# Pipe variants: when pipeline_model_parallel_size > 1, the trainer loads the
+# *Pipe class. __new__ already dispatches on pipeline_model_parallel_size and
+# returns the PP model (a bare GPTModel/PipelineLayer) from build_qwen3_5_model,
+# so the Pipe aliases simply point at the same entry point.
+Qwen3_5ForConditionalGenerationPipe = Qwen3_5ForConditionalGeneration
+Qwen3_5MoeForConditionalGenerationPipe = Qwen3_5ForConditionalGeneration
+
 __all__ = [
     "Qwen3_5ForConditionalGeneration",
     "Qwen3_5MoeForConditionalGeneration",
+    "Qwen3_5ForConditionalGenerationPipe",
+    "Qwen3_5MoeForConditionalGenerationPipe",
 ]

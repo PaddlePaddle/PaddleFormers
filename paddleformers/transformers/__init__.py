@@ -211,6 +211,21 @@ import_structure = {
     "kimi_k2.configuration": ["KimiK2Config"],
     "kimi_k2.modeling": ["KimiK2ForCausalLM", "KimiK2ForCausalLMPipe"],
     "kimi_k2.tokenizer": ["KimiK2TikTokenTokenizer"],
+    "kimi_k3.configuration": [
+        "KimiK3Config",
+        "KimiK3TextConfig",
+        "KimiK3VisionConfig",
+    ],
+    "kimi_k3.modeling": [
+        "KimiK3Model",
+        "KimiK3ForCausalLM",
+        "KimiK3ForCausalLMPipe",
+        "KimiK3ForConditionalGeneration",
+        "KimiK3ModelProvider",
+    ],
+    "kimi_k3.tokenizer": ["KimiK3TikTokenTokenizer"],
+    "kimi_k3.vision_processor": ["KimiK3VisionProcessor"],
+    "kimi_k3.processor": ["KimiK3Processor"],
     "llama.configuration": [
         "LlamaConfig",
     ],
@@ -482,6 +497,7 @@ if TYPE_CHECKING:
     from .ernie4_5_moe_vl import *
     from .kimi_k25 import *
     from .kimi_k2 import *
+    from .kimi_k3 import *
     from .paddleocr_vl import *
     from .llama import *
     from .optimization import *

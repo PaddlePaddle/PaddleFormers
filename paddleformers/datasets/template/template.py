@@ -1023,6 +1023,25 @@ register_template(
     chat_sep="<|assistant|>\n",
     mm_plugin=get_mm_plugin(name="glm_ocr", image_token="<|image|>"),
 )
+
+# Kimi-K3 XTML chat format, non-thinking channel. One <|media_pad|> per image is
+# expanded inside the model, hence expand_mm_tokens=False.
+register_template(
+    name="kimi_k3",
+    format_system=StringFormatter(
+        slots=['<|open|>message role="system"<|sep|>{{content}}<|close|>message<|sep|><|end_of_msg|>']
+    ),
+    format_user=StringFormatter(
+        slots=[
+            '<|open|>message role="user"<|sep|>{{content}}<|close|>message<|sep|><|end_of_msg|>'
+            '<|open|>message role="assistant"<|sep|><|open|>response<|sep|>'
+        ]
+    ),
+    format_assistant=StringFormatter(
+        slots=["{{content}}<|close|>response<|sep|><|close|>message<|sep|><|end_of_msg|>"]
+    ),
+    mm_plugin=get_mm_plugin(name="kimi_k3", image_token="<|media_pad|>", expand_mm_tokens=False),
+)
 register_template(
     name="internlm2_5",
     format_user=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n<|im_start|>assistant\n"]),
