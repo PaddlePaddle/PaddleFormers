@@ -425,6 +425,13 @@ def run_sft(
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
     processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
+    # The multimodal plugins read the resolution bounds off the processor
+    # (falling back to a hardcoded 768*768 / 32*32), so without wiring these the
+    # CLI arguments have no way to reach image preprocessing.
+    if data_args.max_pixels is not None:
+        processor.image_max_pixels = data_args.max_pixels
+    if data_args.min_pixels is not None:
+        processor.image_min_pixels = data_args.min_pixels
 
     type_map = {"bf16": "bfloat16", "fp16": "float16"}
     compute_type = type_map.get(training_args.compute_type, "float32")
