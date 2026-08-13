@@ -80,6 +80,10 @@ from paddleformers.cli.hparams import (
     GeneratingArguments,
     ModelArguments,
 )
+
+# Imported from the submodule directly: hparams/__init__ lazily exposes only the
+# dataclasses listed in its import_structure, which does not include this one.
+from paddleformers.cli.hparams.preprocess_args import End2EndProcessorArguments
 from paddleformers.cli.utils import (
     freeze_model_parameters,
     get_lora_target_modules,
@@ -194,6 +198,7 @@ def run_sft(
     data_args: "DataArguments",
     generating_args: "GeneratingArguments",
     finetuning_args: "FinetuningArguments",
+    preprocess_args: "End2EndProcessorArguments" = None,
 ):
     """_summary_
 
@@ -202,6 +207,9 @@ def run_sft(
         data_args (DataArguments): _description_
         generating_args (GeneratingArguments): _description_
         finetuning_args (FinetuningArguments): _description_
+        preprocess_args (End2EndProcessorArguments): carries the multimodal
+            resolution bounds (``max_pixels`` / ``min_pixels``). Optional so that
+            callers that do not parse it keep working.
         callbacks (Optional[list[&quot;TrainerCallback&quot;]], optional): _description_. Defaults to None.
 
     Raises:
@@ -427,11 +435,14 @@ def run_sft(
     processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
     # The multimodal plugins read the resolution bounds off the processor
     # (falling back to a hardcoded 768*768 / 32*32), so without wiring these the
-    # CLI arguments have no way to reach image preprocessing.
-    if data_args.max_pixels is not None:
-        processor.image_max_pixels = data_args.max_pixels
-    if data_args.min_pixels is not None:
-        processor.image_min_pixels = data_args.min_pixels
+    # --max_pixels / --min_pixels arguments have no way to reach image
+    # preprocessing. They live on End2EndProcessorArguments rather than
+    # DataArguments because both dataclasses feed the same parser.
+    if preprocess_args is not None:
+        if preprocess_args.max_pixels is not None:
+            processor.image_max_pixels = preprocess_args.max_pixels
+        if preprocess_args.min_pixels is not None:
+            processor.image_min_pixels = preprocess_args.min_pixels
 
     type_map = {"bf16": "bfloat16", "fp16": "float16"}
     compute_type = type_map.get(training_args.compute_type, "float32")

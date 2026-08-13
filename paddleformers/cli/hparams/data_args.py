@@ -171,14 +171,6 @@ class DataArguments:
         default=None,
         metadata={"help": "Whether to use fast processor."},
     )
-    max_pixels: int = field(
-        default=None,
-        metadata={"help": "Upper bound on image pixels for multimodal preprocessing."},
-    )
-    min_pixels: int = field(
-        default=None,
-        metadata={"help": "Lower bound on image pixels for multimodal preprocessing."},
-    )
     binpacking: bool = field(
         default=True,
         metadata={"help": "Whether to use bin packing."},
