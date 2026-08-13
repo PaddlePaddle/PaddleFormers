@@ -26,7 +26,6 @@ from .common import (
     merge_model_state,
     merge_opt_state,
     set_broadcast_max_chunk_bytes,
-    set_bucketed_broadcast,
     split_model_state,
     split_opt_state,
     split_structure_name_mapping,

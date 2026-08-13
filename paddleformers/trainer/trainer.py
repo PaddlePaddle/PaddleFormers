@@ -361,11 +361,10 @@ class Trainer:
             args = TrainingArguments(output_dir=output_dir)
 
         self.args = args
-        # Apply the reshard broadcast toggle once here: Trainer.__init__ is the
+        # Apply the reshard broadcast chunk cap once here: Trainer.__init__ is the
         # single point every reshard/EMA path runs after, so all_gather_state_dict
-        # need not thread the flag and no construction site is missed (incl. the
-        # non-ZCC EMA assembler that bypasses create_ema_state_assembler). Difers
-        reshard_util.set_bucketed_broadcast(getattr(self.args, "use_reshard_bucketed_broadcast", False))
+        # need not thread the value and no construction site is missed (incl. the
+        # non-ZCC EMA assembler that bypasses create_ema_state_assembler).
         reshard_util.set_broadcast_max_chunk_bytes(
             int(getattr(self.args, "reshard_bucketed_broadcast_max_chunk_gb", 2.0) * (1024**3))
         )
