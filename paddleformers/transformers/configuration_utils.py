@@ -417,6 +417,27 @@ class LlmMetaConfig:
             0.01,
             "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term.",
         ),
+        (
+            "use_moh",
+            bool,
+            False,
+            "Whether to enable Mixture-of-Heads (MoH) routing over the CSA indexer heads. "
+            "Requires `num_activated_heads` to be set.",
+        ),
+        (
+            "num_activated_heads",
+            Optional[int],
+            None,
+            "Number of indexer heads kept per token by MoH routing. Only read when `use_moh=True`; "
+            "must satisfy 1 <= num_activated_heads <= dsa_index_n_heads.",
+        ),
+        (
+            "indexer_bias_update_rate",
+            float,
+            0.001,
+            "Update rate for the MoH indexer_moh_bias (used by IndexerBiasAdjustCallback). Controls the "
+            "magnitude of the per-step sign-based load-balancing adjustment. Defaults to 0.001.",
+        ),
     ]
 
     mtp_attributes = [

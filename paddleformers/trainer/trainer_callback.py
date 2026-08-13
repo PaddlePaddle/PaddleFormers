@@ -85,6 +85,7 @@ __all__ = [
     "StepFlexToken",
     "FP8QuantWeightCallback",
     "MoECorrectionBiasAdjustCallback",
+    "IndexerBiasAdjustCallback",
     "MoEQuantileBalancingCallback",
     "MoeExpertsGradScaleCallback",
     "MoEGateSpGradSyncCallBack",
@@ -862,6 +863,70 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
                     usages.pop(0).zero_()
 
         model.apply(update_bias)
+
+
+class IndexerBiasAdjustCallback(TrainerCallback):
+    """Per-step sign-based bias update for CSAIndexer MoH load balancing.
+
+    Mirrors ``MoECorrectionBiasAdjustCallback`` but targets
+    ``CSAIndexer.indexer_moh_bias`` / ``local_tokens_per_indexer_moh``.
+    """
+
+    def __init__(self, lr=0.001, use_mp=False):
+        super().__init__()
+        self.update_lr = lr
+        self.use_mp = use_mp
+
+    def on_optimizer_end(self, args, state, control, **kwargs):
+        if getattr(args, "freeze_training", False):
+            logger.warning("freeze_training is enabled! indexer_moh_bias will NOT be updated.")
+            return
+
+        model = kwargs["model"]
+        lr_ratio_fn = get_lr_ratio_fn(kwargs.get("optimizer"))
+
+        modules_with_bias = [
+            m
+            for m in model.sublayers()
+            if hasattr(m, "indexer_moh_bias") and hasattr(m, "local_tokens_per_indexer_moh")
+        ]
+        if not modules_with_bias:
+            return
+
+        usages_tensor = paddle.stack(
+            [m.local_tokens_per_indexer_moh for m in modules_with_bias], axis=0
+        )  # [num_indexers, n_heads]
+
+        if hasattr(fleet, "_hcg"):
+            hcg = fleet.get_hybrid_communicate_group()
+            mp_group = hcg.get_model_parallel_group()
+            dp_group = hcg.get_data_parallel_group()
+            sd_group = hcg.get_sharding_parallel_group()
+            if self.use_mp and mp_group.nranks > 1:
+                dist.all_reduce(usages_tensor, group=mp_group)
+            if dp_group.nranks > 1:
+                dist.all_reduce(usages_tensor, group=dp_group)
+            if sd_group.nranks > 1:
+                dist.all_reduce(usages_tensor, group=sd_group)
+        else:
+            dist.all_reduce(usages_tensor)
+
+        usages_mean = usages_tensor.mean(-1, keepdim=True)  # [num_indexers, 1]
+        update = paddle.sign(usages_mean - usages_tensor) * self.update_lr  # [num_indexers, n_heads]
+        update = update.astype(paddle.float32)
+
+        with paddle.no_grad():
+            for i, m in enumerate(modules_with_bias):
+                # Skip if the indexer weights are frozen or lr ratio is 0.
+                # Use linear_wq_b.weight as the representative trainable param.
+                ref_param = getattr(getattr(m, "linear_weights_proj", None), "weight", None)
+                if ref_param is not None:
+                    frozen = ref_param.stop_gradient or (lr_ratio_fn is not None and not float(lr_ratio_fn(ref_param)))
+                    if frozen:
+                        m.local_tokens_per_indexer_moh.zero_()
+                        continue
+                m.indexer_moh_bias.add_(update[i])
+                m.local_tokens_per_indexer_moh.zero_()
 
 
 class MoEQuantileBalancingCallback(TrainerCallback):

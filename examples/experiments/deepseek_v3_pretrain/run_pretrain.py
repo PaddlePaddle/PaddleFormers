@@ -32,6 +32,7 @@ from paddleformers.data.causal_dataset import (
 )
 from paddleformers.trainer import (
     FP8QuantWeightCallback,
+    IndexerBiasAdjustCallback,
     MoECorrectionBiasAdjustCallback,
     MoeExpertsGradScaleCallback,
     PdArgumentParser,
@@ -626,6 +627,15 @@ def main():
     if getattr(config, "topk_method", None) == "noaux_tc":
         moe_router_bias_update_rate = getattr(config, "moe_router_bias_update_rate", 0.001)
         callbacks += [MoECorrectionBiasAdjustCallback(moe_router_bias_update_rate)]
+
+    if getattr(config, "use_moh", False):
+        indexer_bias_update_rate = getattr(training_args, "indexer_bias_update_rate", 0.001)
+        callbacks += [
+            IndexerBiasAdjustCallback(
+                lr=indexer_bias_update_rate,
+                use_mp=getattr(training_args, "sequence_parallel", False),
+            )
+        ]
 
     def resume_from_custom_func(model):
         if training_args.resume_from_huggingface_ckpt:

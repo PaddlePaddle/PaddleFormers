@@ -398,6 +398,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         n_shared_experts = getattr(config, "n_shared_experts", 1)
         moe_n_hash_layers = getattr(config, "moe_n_hash_layers", 3)
         dense_mode = getattr(config, "csa_dense_mode", False)
+        use_moh = getattr(config, "use_moh", False)
         csa_compress_ratios = config.csa_compress_ratios
         num_head_empty_layers = (
             config.num_empty_layers_add_in_head
@@ -518,6 +519,12 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     f"{idx_src}.weights_proj.weight^T -> {idx_tgt}.linear_weights_proj.weight",
                     f"{idx_src}.wq_b.weight^T -> {idx_tgt}.linear_wq_b.weight",
                 ]
+                # V4_INDEXER_MOH: indexer_moh_bias (persistable buffer) is not in the pretrained checkpoint;
+                # randomly initialize them via add primitive.
+                if use_moh:
+                    stmts += [
+                        f"_ -> {idx_tgt}.indexer_moh_bias",
+                    ]
 
             # --- MoE Gate ---
             stmts += [f"{src}.ffn.gate.weight -> {tgt}.mlp.gate.weight, dtype='float32'"]
@@ -651,6 +658,12 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                         f"{idx_src}.weights_proj.weight^T -> {idx_tgt}.linear_weights_proj.weight",
                         f"{idx_src}.wq_b.weight^T -> {idx_tgt}.linear_wq_b.weight",
                     ]
+                    # V4_INDEXER_MOH: indexer_moh_bias (persistable buffer) is not in the pretrained checkpoint;
+                    # randomly initialize them via add primitive.
+                    if use_moh:
+                        stmts += [
+                            f"_ -> {idx_tgt}.indexer_moh_bias",
+                        ]
 
             # --- MoE Gate (MTP layers are always non-hash, so always have bias) ---
             stmts += [

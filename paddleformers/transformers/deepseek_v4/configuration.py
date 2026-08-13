@@ -152,6 +152,9 @@ class DeepseekV4Config(PretrainedConfig):
         dsa_index_topk=512,
         dsa_indexer_loss_coeff=0.01,
         dsa_indexer_use_sparse_loss=True,
+        # === MoH (Mixture-of-Heads) indexer routing ===
+        use_moh=False,
+        num_activated_heads=None,
         # === mHC (Hyper-Connection) ===
         enable_hyper_connections=True,
         num_residual_streams=4,
@@ -253,6 +256,13 @@ class DeepseekV4Config(PretrainedConfig):
         self.dsa_indexer_loss_coeff = dsa_indexer_loss_coeff
         self.dsa_indexer_use_sparse_loss = dsa_indexer_use_sparse_loss
 
+        # MoH (Mixture-of-Heads) indexer routing. ``num_activated_heads`` is the
+        # number of indexer heads kept per token; it is only read when
+        # ``use_moh`` is set, and PaddleFleet's TransformerConfig rejects the
+        # pair if it is missing or exceeds ``dsa_index_n_heads``.
+        self.use_moh = use_moh
+        self.num_activated_heads = num_activated_heads
+
         # mHC (Hyper-Connection)
         self.enable_hyper_connections = enable_hyper_connections
         self.num_residual_streams = num_residual_streams
@@ -318,6 +328,8 @@ class DeepseekV4Config(PretrainedConfig):
             tensor_model_parallel_size=tensor_model_parallel_size,
             pipeline_model_parallel_size=pipeline_model_parallel_size,
             context_parallel_size=context_parallel_size,
+            use_moh=use_moh,
+            num_activated_heads=num_activated_heads,
             **kwargs,
         )
 
