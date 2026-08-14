@@ -382,7 +382,7 @@ class LlmMetaConfig:
             "Whether to fuse experts. Default to True.",
         ),
         (
-            "use_fused_situ_glu",
+            "situ_glu_fusion",
             bool,
             True,
             "Whether to use fused Triton SiTU-GLU in fused BF16 MoE experts.",
