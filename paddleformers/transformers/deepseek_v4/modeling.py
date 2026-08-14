@@ -715,6 +715,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         n_shared_experts = getattr(config, "n_shared_experts", 1)
         moe_n_hash_layers = getattr(config, "moe_n_hash_layers", 3)
         dense_mode = getattr(config, "csa_dense_mode", False)
+        use_moh = getattr(config, "use_moh", False)
         csa_compress_ratios = config.csa_compress_ratios
         num_head_empty_layers = (
             config.num_empty_layers_add_in_head
@@ -837,6 +838,13 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                         f"{idx_src}.linear_weights_proj.weight^T -> {idx_tgt}.weights_proj.weight",
                         f"{idx_src}.linear_wq_b.weight^T -> {idx_tgt}.wq_b.weight",
                     ]
+                    # V4_INDEXER_MOH: same rationale as the decoder path -- the
+                    # aux-loss-free bias is persistable state and must survive a
+                    # save/load round-trip.
+                    if use_moh:
+                        stmts += [
+                            f"{idx_src}.indexer_moh_bias -> {idx_tgt}.indexer_moh_bias",
+                        ]
 
             # --- MoE Gate ---
             stmts += [
@@ -962,6 +970,15 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     f"{idx_src}.linear_weights_proj.weight^T -> {idx_tgt}.weights_proj.weight",
                     f"{idx_src}.linear_wq_b.weight^T -> {idx_tgt}.wq_b.weight",
                 ]
+                # V4_INDEXER_MOH: persist the trained aux-loss-free bias back to
+                # HF. Forward path uses ``_ -> ...indexer_moh_bias`` to zero-init
+                # on load, so if we skip this side of the round-trip the trained
+                # load-balancing state is dropped on every save_pretrained and
+                # replaced with zeros on the next from_pretrained.
+                if use_moh:
+                    stmts += [
+                        f"{idx_src}.indexer_moh_bias -> {idx_tgt}.indexer_moh_bias",
+                    ]
 
             # --- MoE Gate ---
             stmts += [f"{src}.mlp.gate.weight -> {tgt}.ffn.gate.weight,dtype='float32'"]
