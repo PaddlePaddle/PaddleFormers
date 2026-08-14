@@ -1010,7 +1010,7 @@ class InternalMedicineCallback(TrainerCallback):
             from internal_medicine.backends.paddlefleet import setup_monitors
             from internal_medicine.core.training_logs import training_logs
         except ImportError:
-            logger.exception(
+            logger.warning(
                 "[InternalMedicine/pfleet] internal_medicine_monitors is enabled, but the optional "
                 "internal_medicine package is not importable. Add third_party/llm-internal-medicine/src "
                 "to PYTHONPATH or disable internal_medicine_monitors."
@@ -1180,7 +1180,7 @@ class InternalMedicineCallback(TrainerCallback):
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
         except Exception:
             # Never let logging IO crash training.
-            logger.exception("[InternalMedicine] failed to append jsonl record")
+            logger.warning("[InternalMedicine] failed to append jsonl record")
 
 
 class EMAStateAssemblerCallback(TrainerCallback):
