@@ -918,7 +918,10 @@ class IndexerBiasAdjustCallback(TrainerCallback):
         with paddle.no_grad():
             for i, m in enumerate(modules_with_bias):
                 # Skip if the indexer weights are frozen or lr ratio is 0.
-                # Use linear_wq_b.weight as the representative trainable param.
+                # Use ``linear_weights_proj.weight`` as the representative
+                # trainable param: it is the head-scoring projection that
+                # actually drives head selection, so freezing it is what
+                # semantically means "this indexer is frozen".
                 ref_param = getattr(getattr(m, "linear_weights_proj", None), "weight", None)
                 if ref_param is not None:
                     frozen = ref_param.stop_gradient or (lr_ratio_fn is not None and not float(lr_ratio_fn(ref_param)))

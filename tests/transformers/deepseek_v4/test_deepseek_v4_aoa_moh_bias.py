@@ -85,19 +85,35 @@ def _find_indexer_lines(stmts, direction):
     return out
 
 
-def _aoa_stmts(config, direction):
+def _aoa_stmts(config, direction, checkpoint_keys=None):
     """Extract the statement list from the ``_gen_[inv_]aoa_config`` return.
 
     Both methods return ``{"aoa_statements": [...]}`` (the dict form is what
     ``PaddleFormers`` hands to ``AoAExecutor``); we only care about the flat
     statement strings for these regressions.
+
+    ``checkpoint_keys`` is forwarded to ``_gen_aoa_config`` (fwd only) so the
+    tests can exercise the "HF checkpoint carries the trained bias" branch;
+    ``None`` preserves the historical zero-init fallback. Ignored for the
+    inverse direction, which has no dependency on the loaded key set.
     """
     fn = (
         DeepseekV4PreTrainedModel._gen_aoa_config
         if direction == "fwd"
         else DeepseekV4PreTrainedModel._gen_inv_aoa_config
     )
-    out = fn(config)
+    if direction == "fwd":
+        try:
+            out = fn(config, checkpoint_keys=checkpoint_keys)
+        except TypeError:
+            # Historical classmethod without the kwarg -- covered by the
+            # ``None`` case anyway; re-raise if a real key set was passed
+            # since that means the code hasn't picked up the kwarg yet.
+            if checkpoint_keys is not None:
+                raise
+            out = fn(config)
+    else:
+        out = fn(config)
     if isinstance(out, dict):
         return out["aoa_statements"]
     # Historical form: a flat list.
@@ -108,9 +124,14 @@ class TestIndexerMoHBiasRoundTrip(unittest.TestCase):
     """Both AOA directions must carry ``indexer_moh_bias``."""
 
     def test_forward_aoa_zero_inits_bias(self):
-        """HF -> Fleet: ``_ -> ....indexer_moh_bias`` on both decoder & MTP."""
+        """HF -> Fleet: ``_ -> ....indexer_moh_bias`` on both decoder & MTP.
+
+        This is the *fresh HF release* / legacy caller path (no
+        ``checkpoint_keys`` info), so the forward AOA must still fall back
+        to the add primitive so the buffer is zero-initialized.
+        """
         cfg = _moh_config()
-        stmts = _aoa_stmts(cfg, "fwd")
+        stmts = _aoa_stmts(cfg, "fwd")  # checkpoint_keys=None (legacy path)
         bias_lines = _find_indexer_lines(stmts, "fwd")
         # One line for the decoder indexer, one for the MTP indexer.
         self.assertEqual(
@@ -121,6 +142,106 @@ class TestIndexerMoHBiasRoundTrip(unittest.TestCase):
         for line in bias_lines:
             # LHS must be the add-primitive '_'.
             self.assertRegex(line, r"^_\s*->\s*.*indexer_moh_bias\b")
+
+    def test_forward_aoa_loads_bias_when_checkpoint_carries_it(self):
+        """HF -> Fleet: ``hf_key -> fleet_key`` when the HF checkpoint has the bias.
+
+        This is the *round-trip load* path: the previous ``save_pretrained``
+        wrote ``layers.*.attn.indexer.indexer_moh_bias`` via
+        ``_gen_inv_aoa_config``, so the next ``from_pretrained`` must load
+        that trained state instead of overwriting it with zeros. Regression
+        guard for the P1 the reviewer flagged.
+        """
+        cfg = _moh_config()
+
+        # Enumerate the HF-side prefixes the inverse config exports (this is
+        # the exact key set the round-tripped checkpoint will contain).
+        inv_stmts = _aoa_stmts(cfg, "inv")
+        inv_re = re.compile(r"^[\w\.]+\.indexer_moh_bias\s*->\s*([\w\.]+\.indexer_moh_bias)\b")
+        hf_bias_keys = set()
+        for s in inv_stmts:
+            m = inv_re.match(s.strip())
+            if m:
+                hf_bias_keys.add(m.group(1))
+        self.assertGreater(
+            len(hf_bias_keys),
+            0,
+            "test setup: inverse AOA must export at least one indexer_moh_bias key",
+        )
+
+        stmts = _aoa_stmts(cfg, "fwd", checkpoint_keys=hf_bias_keys)
+        bias_lines = _find_indexer_lines(stmts, "fwd")
+        self.assertEqual(
+            len(bias_lines),
+            2,
+            f"expected 2 indexer_moh_bias entries in HF->Fleet AOA, got {bias_lines}",
+        )
+        pattern = re.compile(r"^([\w\.]+)\.indexer_moh_bias\s*->\s*([\w\.]+)\.indexer_moh_bias\b")
+        for line in bias_lines:
+            m = pattern.match(line)
+            self.assertIsNotNone(
+                m,
+                f"forward AOA with checkpoint_keys must be a named->named " f"mapping (not '_ -> ...'), got: {line!r}",
+            )
+            hf_prefix, fleet_prefix = m.group(1), m.group(2)
+            # HF side (LHS): ``layers.*.attn.indexer`` (decoder or MTP).
+            self.assertTrue(
+                hf_prefix.endswith("attn.indexer"),
+                f"unexpected HF LHS for indexer_moh_bias: {hf_prefix!r}",
+            )
+            # Fleet side (RHS): ``...self_attn.core_attention.indexer``.
+            self.assertIn("self_attn.core_attention.indexer", fleet_prefix)
+            # The '_' add primitive must NOT appear when the key is present.
+            self.assertFalse(
+                line.strip().startswith("_"),
+                f"AOA still zero-inits a bias that IS in the checkpoint: {line!r}",
+            )
+
+    def test_forward_aoa_mixed_checkpoint(self):
+        """Partial round-trip: only some indexer sites carry the trained bias.
+
+        E.g. a checkpoint saved by an older Fleet where only the decoder
+        branch had ``indexer_moh_bias`` -- the MTP branch is still fresh.
+        The forward AOA must emit named->named for the present key AND
+        ``_ -> ...`` for the missing one, not one rule for both.
+        """
+        cfg = _moh_config()
+        inv_stmts = _aoa_stmts(cfg, "inv")
+        inv_re = re.compile(r"^[\w\.]+\.indexer_moh_bias\s*->\s*([\w\.]+\.indexer_moh_bias)\b")
+        all_hf_keys = [inv_re.match(s.strip()).group(1) for s in inv_stmts if inv_re.match(s.strip())]
+        self.assertEqual(len(all_hf_keys), 2, "test setup: need exactly 2 HF bias keys")
+        # Keep only the decoder-side key (the one that does NOT contain
+        # ``transformer_layer`` on the Fleet side -- but we're keying by HF
+        # names here, so filter by MTP prefix instead).
+        mtp_key = next((k for k in all_hf_keys if "mtp" in k or k.startswith("mtp")), None)
+        # Fallback: HF-side MTP layers live at ``layers.{num_decoder+i}.attn.indexer``
+        # in this codebase, so treat the second key as MTP if the first isn't.
+        if mtp_key is None:
+            mtp_key = all_hf_keys[1]
+        decoder_key = next(k for k in all_hf_keys if k != mtp_key)
+
+        # Only the decoder-side bias is present in this "partial" checkpoint.
+        stmts = _aoa_stmts(cfg, "fwd", checkpoint_keys={decoder_key})
+        bias_lines = _find_indexer_lines(stmts, "fwd")
+        self.assertEqual(len(bias_lines), 2, f"got {bias_lines}")
+
+        named_lines = [ln for ln in bias_lines if not ln.strip().startswith("_")]
+        add_lines = [ln for ln in bias_lines if ln.strip().startswith("_")]
+        self.assertEqual(
+            len(named_lines),
+            1,
+            f"exactly one named->named line expected for the present key, got {named_lines}",
+        )
+        self.assertEqual(
+            len(add_lines),
+            1,
+            f"exactly one '_ -> ...' line expected for the missing key, got {add_lines}",
+        )
+        # The named line must use the decoder key on the LHS.
+        self.assertTrue(
+            named_lines[0].strip().startswith(decoder_key),
+            f"named line should route from {decoder_key!r}, got: {named_lines[0]!r}",
+        )
 
     def test_inverse_aoa_persists_bias(self):
         """Fleet -> HF: named -> named mapping on both decoder & MTP.
@@ -193,6 +314,74 @@ class TestIndexerMoHBiasRoundTrip(unittest.TestCase):
             len(fwd_prefixes),
             0,
             "sanity: the test config should exercise at least one indexer",
+        )
+
+    def test_save_load_round_trip_end_to_end(self):
+        """Full save-then-load: no site is zero-init'd after a round-trip.
+
+        Directly models the reviewer's P1: the previous fix only closed the
+        Fleet -> HF export side; a subsequent ``from_pretrained`` of *that*
+        checkpoint had no way to know it should load the exported bias
+        instead of zeroing it back out via the ``_ -> ...`` add primitive.
+
+        This test simulates the save/load pair:
+          1. Ask the inverse config which HF keys ``save_pretrained`` would
+             write for the bias (build ``checkpoint_keys``).
+          2. Ask the forward config what it would emit given exactly that
+             key set (i.e. the ``from_pretrained`` right after save).
+          3. Assert every emitted bias line for a site the checkpoint DID
+             persist is a named->named mapping -- NEVER ``_ -> ...``.
+
+        Failure mode this catches: bias is written by save_pretrained but
+        the load path still uses the add primitive, so ``from_pretrained``
+        of a fresh save silently resets the trained load-balancing state.
+        """
+        cfg = _moh_config()
+        inv_stmts = _aoa_stmts(cfg, "inv")
+        # Set of HF-side keys that save_pretrained will actually persist.
+        inv_re = re.compile(r"^[\w\.]+\.indexer_moh_bias\s*->\s*([\w\.]+\.indexer_moh_bias)\b")
+        persisted_hf_keys = set()
+        for s in inv_stmts:
+            m = inv_re.match(s.strip())
+            if m:
+                persisted_hf_keys.add(m.group(1))
+        self.assertGreater(len(persisted_hf_keys), 0)
+
+        # Simulate ``from_pretrained`` right after save -- pass those keys in.
+        fwd_stmts = _aoa_stmts(cfg, "fwd", checkpoint_keys=persisted_hf_keys)
+        fwd_bias_lines = _find_indexer_lines(fwd_stmts, "fwd")
+        self.assertEqual(
+            len(fwd_bias_lines),
+            len(persisted_hf_keys),
+            f"expected one forward bias line per persisted site, "
+            f"got {fwd_bias_lines} for keys {persisted_hf_keys}",
+        )
+
+        # None of them may be the zero-init add primitive.
+        offenders = [ln for ln in fwd_bias_lines if ln.strip().startswith("_")]
+        self.assertEqual(
+            offenders,
+            [],
+            "round-trip broken: save_pretrained persisted these HF keys "
+            f"{persisted_hf_keys}, but the forward AOA still zero-inits at "
+            f"least one of them: {offenders}. This is the exact regression "
+            "the reviewer flagged -- trained aux-loss-free bias is lost on "
+            "the next load.",
+        )
+
+        # Also verify every LHS is actually one of the persisted HF keys
+        # (not some fabricated name that doesn't line up with the save side).
+        pattern = re.compile(r"^([\w\.]+\.indexer_moh_bias)\s*->")
+        emitted_lhs = set()
+        for line in fwd_bias_lines:
+            m = pattern.match(line.strip())
+            self.assertIsNotNone(m, f"malformed forward bias line: {line!r}")
+            emitted_lhs.add(m.group(1))
+        self.assertEqual(
+            emitted_lhs,
+            persisted_hf_keys,
+            "forward AOA reads a different HF key set than the inverse "
+            "AOA writes; save/load will silently mismatch.",
         )
 
 

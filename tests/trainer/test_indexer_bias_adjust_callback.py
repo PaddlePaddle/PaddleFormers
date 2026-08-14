@@ -28,8 +28,8 @@ from paddleformers.trainer.trainer_callback import IndexerBiasAdjustCallback
 # ---------------------------------------------------------------------------
 
 
-class _FakeLinearWqB(nn.Layer):
-    """Minimal stand-in for CSAIndexer.linear_wq_b."""
+class _FakeLinear(nn.Layer):
+    """Minimal stand-in for a ``nn.Linear``-shaped submodule of CSAIndexer."""
 
     def __init__(self, in_size=16, out_size=16):
         super().__init__()
@@ -39,7 +39,13 @@ class _FakeLinearWqB(nn.Layer):
 
 
 class _FakeCSAIndexer(nn.Layer):
-    """Fakes the two MoH buffers and ``linear_wq_b`` for callback testing."""
+    """Fakes the two MoH buffers and the representative trainable projection.
+
+    The callback keys "is this indexer frozen?" off
+    ``linear_weights_proj.weight`` (the head-scoring projection), so that's
+    the exact attribute the fake must expose -- otherwise the freeze branch
+    is never actually taken in tests.
+    """
 
     def __init__(self, n_heads=8):
         super().__init__()
@@ -53,7 +59,10 @@ class _FakeCSAIndexer(nn.Layer):
             paddle.zeros([n_heads], dtype="float32"),
             persistable=False,
         )
-        self.linear_wq_b = _FakeLinearWqB()
+        # Must be named ``linear_weights_proj`` to match the production
+        # ``getattr(m, "linear_weights_proj", None)`` gate in
+        # ``IndexerBiasAdjustCallback``.
+        self.linear_weights_proj = _FakeLinear()
 
 
 class _NoMoHLayer(nn.Layer):
@@ -61,7 +70,7 @@ class _NoMoHLayer(nn.Layer):
 
     def __init__(self):
         super().__init__()
-        self.linear = _FakeLinearWqB()
+        self.linear = _FakeLinear()
 
 
 class _FakeModel(nn.Layer):
@@ -164,12 +173,16 @@ class TestIndexerBiasAdjustCallbackFreezeTraining(unittest.TestCase):
 
 
 class TestIndexerBiasAdjustCallbackFrozenIndexer(unittest.TestCase):
-    """A frozen indexer (linear_wq_b.weight.stop_gradient) is skipped."""
+    """A frozen indexer (linear_weights_proj.weight.stop_gradient) is skipped."""
 
     def test_stop_gradient_skips_update_but_still_zeroes_counter(self):
         model = _FakeModel(n_indexers=1, n_heads=4)
         indexer = model.indexers[0]
-        indexer.linear_wq_b.weight.stop_gradient = True
+        # Freeze the *same* param the callback keys off of. If this ever
+        # drifts (e.g. someone renames the ref_param in production), the
+        # assertion below on ``bias == before_bias`` will fail loudly instead
+        # of silently exercising the not-frozen branch.
+        indexer.linear_weights_proj.weight.stop_gradient = True
         indexer.local_tokens_per_indexer_moh.set_value(paddle.to_tensor([10.0, 0.0, 0.0, 0.0], dtype="float32"))
         before_bias = indexer.indexer_moh_bias.numpy().copy()
 
@@ -180,6 +193,30 @@ class TestIndexerBiasAdjustCallbackFrozenIndexer(unittest.TestCase):
         # callback: frozen layers should not accumulate stale usage counts).
         self.assertTrue((indexer.indexer_moh_bias.numpy() == before_bias).all())
         self.assertEqual(float(indexer.local_tokens_per_indexer_moh.sum().item()), 0.0)
+
+    def test_stop_gradient_on_non_ref_param_does_not_freeze(self):
+        """Sanity: freezing a *different* param must NOT trip the freeze branch.
+
+        Guards against the reviewer's exact complaint -- if the test freezes
+        something other than ``linear_weights_proj.weight``, ``ref_param`` is
+        untouched and the callback should proceed with the normal update.
+        This locks the ref_param contract from the other side.
+        """
+        model = _FakeModel(n_indexers=1, n_heads=4)
+        indexer = model.indexers[0]
+        # Add an unrelated sibling projection and freeze *it*; the callback
+        # must NOT interpret that as "indexer is frozen".
+        indexer.some_other_proj = _FakeLinear()
+        indexer.some_other_proj.weight.stop_gradient = True
+        indexer.local_tokens_per_indexer_moh.set_value(paddle.to_tensor([10.0, 0.0, 0.0, 0.0], dtype="float32"))
+        before_bias = indexer.indexer_moh_bias.numpy().copy()
+
+        callback = IndexerBiasAdjustCallback(lr=0.01)
+        _run_callback(callback, model)
+
+        # The bias MUST have moved -- freezing an unrelated param is not a
+        # freeze signal for the callback.
+        self.assertFalse((indexer.indexer_moh_bias.numpy() == before_bias).all())
 
 
 class TestIndexerBiasAdjustCallbackExports(unittest.TestCase):
