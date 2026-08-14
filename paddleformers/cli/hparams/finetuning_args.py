@@ -127,11 +127,10 @@ class PreTrainingArguments(TrainingArguments):
 
     def __post_init__(self):
         super().__post_init__()
-        if (
-            self.internal_medicine_monitors
-            and (self.internal_medicine_monitor_interval or 0) > 0
-            and not self.internal_medicine_log_dir
-        ):
+        # Keep the internal-medicine jsonl in its own subdirectory instead of the
+        # output_dir root, so it is not mistaken for a checkpoint artifact. Mirrors
+        # the eb pretrain path (ernie5/src/trainers/pretraining_trainer.py:1646).
+        if self.internal_medicine_monitors and (self.internal_medicine_monitor_interval or 0) > 0:
             self.internal_medicine_log_dir = os.path.join(self.output_dir, "internal_medicine")
 
     @property
