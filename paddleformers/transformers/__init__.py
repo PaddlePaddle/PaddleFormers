@@ -375,6 +375,14 @@ import_structure = {
         "MiniCPMForSequenceClassification",
     ],
     "minicpm": [],
+    "minicpm4_1.configuration": ["MiniCPM4_1Config"],
+    "minicpm4_1.modeling": [
+        "MiniCPM4_1Model",
+        "MiniCPM4_1ForCausalLM",
+        "MiniCPM4_1ForCausalLMPipe",
+        "MiniCPM4_1ForSequenceClassification",
+    ],
+    "minicpm4_1": [],
     "deepseek_v4.configuration": ["DeepseekV4Config"],
     "deepseek_v4": ["DeepseekV4ForCausalLMPipe", "DeepseekV4ForCausalLM"],
     "glm4v_moe.image_processor": ["Glm4vImageProcessor"],
@@ -517,6 +525,7 @@ if TYPE_CHECKING:
     from .glm_moe_dsa import *
     from .minimax_m2 import *
     from .minicpm import *
+    from .minicpm4_1 import *
     from .deepseek_v4 import *
     from .gpt_oss import *
     from .granite import *

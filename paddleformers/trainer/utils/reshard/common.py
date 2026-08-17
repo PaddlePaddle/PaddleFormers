@@ -813,23 +813,6 @@ def _broadcast_state_dict_chunk(gpu_buckets, group):
             )
 
 
-# The bucketed path packs many small state tensors into large buckets and
-# coalesces their broadcasts, cutting NCCL/H2D calls from O(#tensors) to
-# O(#buckets). The tradeoff is that a whole ~2GiB chunk must stay resident on
-# GPU at once, so it raises peak device memory for small-tensor-heavy reshards
-# (see _STATE_DICT_BROADCAST_MAX_CHUNK_BYTES). Default to the original
-# per-tensor path. The value is driven by TrainingArguments
-# .use_reshard_bucketed_broadcast, applied via set_bucketed_broadcast() at the
-# reshard entry points that hold args, so the deep all_gather_state_dict call
-# chain does not have to thread the flag through every function. Difers
-_USE_BUCKETED_BROADCAST = False
-
-
-def set_bucketed_broadcast(enabled):
-    global _USE_BUCKETED_BROADCAST
-    _USE_BUCKETED_BROADCAST = bool(enabled)
-
-
 def set_broadcast_max_chunk_bytes(nbytes):
     global _broadcast_max_chunk_bytes
     nbytes = int(nbytes)
@@ -842,78 +825,6 @@ def set_broadcast_max_chunk_bytes(nbytes):
 
 
 def all_gather_state_dict(state_dict, filter_func, group):
-    if _USE_BUCKETED_BROADCAST:
-        return _all_gather_state_dict_bucketed(state_dict, filter_func, group)
-    return _all_gather_state_dict_legacy(state_dict, filter_func, group)
-
-
-def _all_gather_state_dict_legacy(state_dict, filter_func, group):
-    res = OrderedDict()
-
-    group_rank = max(group.rank, 0)
-
-    # Convert tensors to numpy upfront to free GPU memory.
-    # This bounds peak GPU memory to chunk_size tensors during broadcast.
-    meta_dict = {}
-    for (k, v) in state_dict.items():
-        if isinstance(v, paddle.Tensor):
-            meta_dict[k] = (str(v.dtype).split(".")[-1], list(v.shape), group_rank)
-            state_dict[k] = v.numpy()
-        else:
-            meta_dict[k] = (str(v.dtype), list(v.shape), group_rank)
-
-    meta_dict_list = all_gather_simple_object(meta_dict, group)
-
-    total_meta_dict = {}
-    for meta_dict in meta_dict_list:
-        for (k, v) in meta_dict.items():
-            assert k not in total_meta_dict
-            total_meta_dict[k] = v
-
-    meta_list = list(total_meta_dict.items())
-    meta_list = sorted(meta_list, key=lambda x: (x[1][2], x[0]))
-
-    # Process in chunks to balance broadcast throughput and GPU memory usage.
-    # Within a chunk, all broadcasts are done first (no CPU sync in between),
-    # then results are moved to CPU together.
-    chunk_size = 8
-    for chunk_start in range(0, len(meta_list), chunk_size):
-        chunk = meta_list[chunk_start : chunk_start + chunk_size]
-
-        # Phase 1: prepare all tensors on GPU (batch CPU->GPU transfers)
-        gpu_tensors = []
-        for (k, meta) in chunk:
-            dtype, shape, rank = meta
-            if rank == group_rank:
-                assert k in state_dict
-                tensor = paddle.to_tensor(state_dict[k])
-                del state_dict[k]
-            else:
-                tensor = paddle.empty(shape=shape, dtype=dtype)
-            gpu_tensors.append((k, meta, tensor))
-
-        # Phase 2: broadcast all tensors continuously without interruption
-        for (k, meta, tensor) in gpu_tensors:
-            _, _, rank = meta
-            logger.info(f"broadcast {k} from {rank}, group {group}")
-            if group.nranks > 1:
-                paddle.distributed.broadcast(
-                    tensor,
-                    src=group.ranks[rank],
-                    group=group,
-                    sync_op=True,
-                )
-
-        # Phase 3: move to CPU and release GPU memory
-        for (k, _, tensor) in gpu_tensors:
-            if filter_func(k):
-                res[k] = tensor.cpu()
-            del tensor
-
-    return res
-
-
-def _all_gather_state_dict_bucketed(state_dict, filter_func, group):
     group_rank = max(group.rank, 0)
 
     # Convert source tensors to numpy first so packing does not retain their

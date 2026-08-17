@@ -503,11 +503,32 @@ def build_qwen3_5_model(config, criterion):
 
     # --- Build vision model via Qwen3_5VisionProvider ---
     vision_provider = Qwen3_5VisionProvider.from_config(vision_config)
+    # ``use_accuracy_compatible`` is declared on the top-level / text config, but
+    # the ViT is built from its own provider that never saw the flag, so every
+    # accuracy-compatible branch inside the vision tower (parallel linears, SDPA,
+    # MLP) silently stayed off.
+    vision_provider.use_accuracy_compatible = getattr(vision_config, "use_accuracy_compatible", False) or getattr(
+        config, "use_accuracy_compatible", False
+    )
+    # The reference vision RoPE always rotates in FP32 (``q, k = q.float(), k.float()``
+    # then casts back), which is what ``high_precision_rope`` selects — see
+    # ``_apply_rotary_pos_emb_bshd``. It has to be forced here rather than declared
+    # as a provider field default: ``from_config`` copies every attribute off the
+    # HF config, and the generic ``PretrainedConfig`` carries
+    # ``high_precision_rope=False``, which would clobber the field default.
+    vision_provider.high_precision_rope = True
     vision_provider.gated_linear_unit = False
     vision_model = vision_provider.provide()
 
     # --- Build language model via Qwen3_5TextModelProvider ---
     language_config = Qwen3_5TextModelProvider.from_config(text_config)
+    # The reference router unconditionally renormalizes the top-k weights
+    # (``router_top_value /= router_top_value.sum(-1, keepdim=True)``) and never
+    # reads ``norm_topk_prob``, so the ``norm_topk_prob=false`` carried by the
+    # official config.json does not describe this model. Honoring it would leave
+    # the routing weights unnormalized, which changes the magnitude of the routed
+    # branch output.
+    language_config.norm_topk_prob = True
     # Propagate parallelism settings
     language_config.pipeline_model_parallel_size = pp_size
     language_config.virtual_pipeline_model_parallel_size = vpp_size
