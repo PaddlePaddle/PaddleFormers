@@ -454,6 +454,40 @@ class ZeroCostCheckpointEMAProcessor:
                 self.ema_buffer[s:e] = ema_master[k].flatten()
 
 
+class OptFusionStorageHelper(FusionStorageHelper):
+    def __init__(
+        self,
+        accumulators_meta,
+        master_weights_meta,
+        merged_model_params_meta,
+        buffer_ipc_meta,
+    ):
+        super().__init__(
+            accumulators_meta,
+            master_weights_meta,
+            merged_model_params_meta,
+            buffer_ipc_meta,
+        )
+
+    @imperative_base.no_grad()
+    def restore_tensor_from_meta(self, tensor_meta):
+        shape = tensor_meta["shape"]
+        name = tensor_meta["name"]
+        start = tensor_meta["start"]
+        end = tensor_meta["end"]
+        if (
+            self.cpu_buffer.place.is_cuda_pinned_place()
+            and self.cpu_buffer.dtype == paddle.float32
+            and self.cpu_buffer.is_contiguous()
+        ):
+            tensor = pin2cpu_zero_copy_fp32(self.cpu_buffer)._slice(start, end)
+        else:
+            tensor = self.cpu_buffer._slice(start, end)
+        tensor.get_tensor()._set_dims(shape)
+        tensor.name = name
+        return tensor
+
+
 class ParamFusionStorageHelper:
     def __init__(
         self,
@@ -1432,7 +1466,7 @@ class ZeroCostCheckpointWorker:
             buffer_ipc_meta,
         ) = optimizer_states_meta
         if self.optimizer_fusion_storage_helper is None:
-            self.optimizer_fusion_storage_helper = FusionStorageHelper(
+            self.optimizer_fusion_storage_helper = OptFusionStorageHelper(
                 accumulators_meta,
                 master_weights_meta,
                 merged_model_params_meta,
