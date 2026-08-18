@@ -455,19 +455,15 @@ class ZeroCostCheckpointEMAProcessor:
 
 
 class OptFusionStorageHelper(FusionStorageHelper):
-    def __init__(
-        self,
-        accumulators_meta,
-        master_weights_meta,
-        merged_model_params_meta,
-        buffer_ipc_meta,
-    ):
-        super().__init__(
-            accumulators_meta,
-            master_weights_meta,
-            merged_model_params_meta,
-            buffer_ipc_meta,
-        )
+    """
+    A zero-copy variant of FusionStorageHelper whose `state_dict` returns
+    zero-copy views of its cpu_buffer (in pinned memory) instead of independent
+    copies.
+
+    Note: the caller MUST fully consume or persist the returned state_dict (e.g.
+    finish `paddle.save`) before starting the next `sync_param`, otherwise it
+    may silently corrupt the content in state_dict.
+    """
 
     @imperative_base.no_grad()
     def restore_tensor_from_meta(self, tensor_meta):
