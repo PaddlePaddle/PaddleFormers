@@ -536,6 +536,83 @@ class PaddleOCRVLPlugin(BasePlugin):
 
 
 @dataclass
+class InternVL3Plugin(BasePlugin):
+    image_bos_token: str = "<img>"
+    image_eos_token: str = "</img>"
+
+    def _regularize_images(self, images, **kwargs):
+        results = []
+        for image in images:
+            if isinstance(image, str):
+                image = self._img_download(image)
+            elif not isinstance(image, Image.Image):
+                raise ValueError(f"Invalid image type for InternVL3: {type(image)}.")
+
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+            results.append(image)
+
+        return {"images": results}
+
+    @override
+    def _get_mm_inputs(
+        self,
+        images,
+        videos,
+        audios,
+        processor,
+        **kwargs,
+    ):
+        image_processor = getattr(processor, "image_processor", None)
+        mm_inputs = {}
+        if len(images) != 0:
+            images = self._regularize_images(images)["images"]
+            mm_inputs.update(image_processor(images, return_tensors="pd"))
+
+        return mm_inputs
+
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        mm_inputs,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        num_image_tokens = 0
+        messages = deepcopy(messages)
+        image_processor = getattr(processor, "image_processor")
+
+        merge_length = getattr(image_processor, "merge_size") ** 2
+        if self.expand_mm_tokens:
+            image_grid_thw = mm_inputs.get("image_grid_thw", [])
+        else:
+            image_grid_thw = [None] * len(images)
+
+        for message in messages:
+            content = message["content"]
+            while IMAGE_PLACEHOLDER in content:
+                image_seqlen = (
+                    image_grid_thw[num_image_tokens].prod().item() // merge_length if self.expand_mm_tokens else 1
+                )
+                content = content.replace(
+                    IMAGE_PLACEHOLDER,
+                    f"{self.image_bos_token}{self.image_token * image_seqlen}{self.image_eos_token}",
+                    1,
+                )
+                num_image_tokens += 1
+
+            message["content"] = content
+
+        self.masked_tokens = [self.image_token, self.image_bos_token, self.image_eos_token]
+        return messages
+
+
+@dataclass
 class ErnieVLPlugin(BasePlugin):
     image_bos_token: str = "<|IMAGE_START|>"
     image_eos_token: str = "<|IMAGE_END|>"
@@ -1604,6 +1681,7 @@ PLUGINS = {
     "base": BasePlugin,
     "ernie_vl": ErnieVLPlugin,
     "qwen2_vl": Qwen2VLPlugin,
+    "internvl3": InternVL3Plugin,
     "paddleocr_vl": PaddleOCRVLPlugin,
     "qwen3_vl": Qwen3VLPlugin,
     "glm4v": GLM4VPlugin,

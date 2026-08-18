@@ -90,6 +90,8 @@ MAPPING_NAMES = OrderedDict(
         ("Gemma4Moe", "gemma4_moe"),
         ("Glm4vMoe", "glm4v_moe"),
         ("GlmOcr", "glm_ocr"),
+        ("InternVision", "internvl3"),
+        ("InternVLChat", "internvl3"),
         ("Olmo2", "olmo2"),
         ("InternLM3", "intern_lm3"),
         ("InternLM2", "intern"),
