@@ -453,7 +453,7 @@ class ZeroCostCheckpointEMAProcessor:
                     continue  # non fp32 has no `self.ema_buffer_model_params`
                 if buffer_index.startswith("unshard_"):
                     # unshard_ type tensors use the entire buffer directly
-                    tensor = self.ema_buffer_model_params[buffer_index].clone()
+                    tensor = self.ema_buffer_model_params[buffer_index]
                     tensor.get_tensor()._set_dims(shape)
                     tensor.name = name
                     ema_state_dict[k] = tensor
@@ -461,7 +461,7 @@ class ZeroCostCheckpointEMAProcessor:
                 start = tensor_meta["start"]
                 end = tensor_meta["end"]
                 cpu_buffer = self.ema_buffer_model_params[buffer_index]
-                tensor = cpu_buffer._slice(start, end).clone()  # slice 出来的 tensor 在执行`paddle.save`会异常慢，此处必须clone
+                tensor = cpu_buffer._slice(start, end)
                 tensor.get_tensor()._set_dims(shape)
                 tensor.name = name
                 ema_state_dict[k] = tensor
@@ -469,7 +469,7 @@ class ZeroCostCheckpointEMAProcessor:
             for k, meta in self.optimizer_fusion_storage_helper.master_weights_meta.items():
                 s = meta["start"] - self.master_min_offset
                 e = meta["end"] - self.master_min_offset
-                t = self.ema_buffer._slice(s, e).clone()
+                t = self.ema_buffer._slice(s, e)
                 t.get_tensor()._set_dims(meta["shape"])
                 t.name = meta["name"]
                 ema_state_dict_master_weights[k] = t
@@ -500,6 +500,36 @@ class ZeroCostCheckpointEMAProcessor:
             e = meta["end"] - self.master_min_offset
             if k in ema_master:  # state-dict is filtered
                 self.ema_buffer[s:e] = ema_master[k].flatten()
+
+
+class OptFusionStorageHelper(FusionStorageHelper):
+    """
+    A zero-copy variant of FusionStorageHelper whose `state_dict` returns
+    zero-copy views of its cpu_buffer (in pinned memory) instead of independent
+    copies.
+
+    Note: the caller MUST fully consume or persist the returned state_dict (e.g.
+    finish `paddle.save`) before starting the next `sync_param`, otherwise it
+    may silently corrupt the content in state_dict.
+    """
+
+    @imperative_base.no_grad()
+    def restore_tensor_from_meta(self, tensor_meta):
+        shape = tensor_meta["shape"]
+        name = tensor_meta["name"]
+        start = tensor_meta["start"]
+        end = tensor_meta["end"]
+        if (
+            self.cpu_buffer.place.is_cuda_pinned_place()
+            and self.cpu_buffer.dtype == paddle.float32
+            and self.cpu_buffer.is_contiguous()
+        ):
+            tensor = pin2cpu_zero_copy_fp32(self.cpu_buffer)._slice(start, end)
+        else:
+            tensor = self.cpu_buffer._slice(start, end)
+        tensor.get_tensor()._set_dims(shape)
+        tensor.name = name
+        return tensor
 
 
 class ParamFusionStorageHelper:
@@ -1504,7 +1534,7 @@ class ZeroCostCheckpointWorker:
             buffer_ipc_meta,
         ) = optimizer_states_meta
         if self.optimizer_fusion_storage_helper is None:
-            self.optimizer_fusion_storage_helper = FusionStorageHelper(
+            self.optimizer_fusion_storage_helper = OptFusionStorageHelper(
                 accumulators_meta,
                 master_weights_meta,
                 merged_model_params_meta,
