@@ -91,6 +91,7 @@ MAPPING_NAMES = OrderedDict(
         ("Glm4vMoe", "glm4v_moe"),
         ("GlmOcr", "glm_ocr"),
         ("Olmo2", "olmo2"),
+        ("InternLM", "internlm"),
         ("InternLM3", "intern_lm3"),
         ("InternLM2", "intern"),
     ]

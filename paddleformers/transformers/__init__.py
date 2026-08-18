@@ -156,6 +156,13 @@ import_structure = {
         "Ernie4_5ForCausalLMPipe",
     ],
     "ernie4_5.tokenizer": ["Ernie4_5Tokenizer"],
+    "internlm.configuration": ["InternLMConfig"],
+    "internlm.modeling": [
+        "InternLMModel",
+        "InternLMForCausalLM",
+        "InternLMForCausalLMPipe",
+    ],
+    "internlm.tokenizer": ["InternLMTokenizer"],
     "ernie4_5_moe.configuration": ["Ernie4_5_MoeConfig"],
     "ernie4_5_moe.modeling": ["Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM", "Ernie4_5_MoeForCausalLMPipe"],
     "ernie4_5_moe_vl.configuration": ["Ernie4_5_VLConfig"],
@@ -541,6 +548,7 @@ if TYPE_CHECKING:
     from .intern_lm2 import InternLM2Tokenizer
     from .gemma4_moe import *
     from .phi4 import *
+    from .internlm import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
