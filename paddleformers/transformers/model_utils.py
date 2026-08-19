@@ -4035,7 +4035,7 @@ def save_full_param(
             f"Params: {len(current_shard_state_dict)}, "
             f"Path: {save_path}"
         )
-
+        paddle.device.synchronize()
         save_file(current_shard_state_dict, save_path)
 
         # Reset for the next shard
@@ -4048,14 +4048,17 @@ def save_full_param(
     total_size = 0
 
     for i, (param_key, param) in enumerate(itr):
-        param_size_bytes = param.numel() * param.element_size()
-        total_size += param_size_bytes.item()
+        param_size_bytes = int(np.prod(param.shape)) * param.element_size()
+        total_size += param_size_bytes
         if i % num_saver_ranks == rank:
             logger.info(f"[Rank {rank}/{moe_sharding_world_size}] Assigned to store parameter {param_key}")
             if current_shard_size_bytes > 0 and (current_shard_size_bytes + param_size_bytes > max_shard_size_bytes):
                 _save_current_shard()
-            # Move tensor to CPU since we only need to save it, not compute with it
-            current_shard_state_dict[param_key] = param.cpu()
+            # Non-blocking D2H into pinned (page-locked) host memory so the copy can
+            # overlap with subsequent tensor assembly instead of blocking the host per
+            # tensor. Completion is forced by paddle.device.synchronize() in
+            # _save_current_shard() before save_file reads the data.
+            current_shard_state_dict[param_key] = param._copy_to(paddle.CUDAPinnedPlace(), False)
             current_shard_size_bytes += param_size_bytes
 
             if current_shard_size_bytes >= max_shard_size_bytes:
