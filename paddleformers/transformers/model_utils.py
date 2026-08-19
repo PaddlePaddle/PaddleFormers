@@ -4037,7 +4037,7 @@ def save_full_param(
             f"Path: {save_path}"
         )
         if is_gpu:
-            paddle.device.cuda.synchronize()
+            paddle.device.cuda.current_stream().synchronize()
         save_file(current_shard_state_dict, save_path)
 
         # Reset for the next shard
