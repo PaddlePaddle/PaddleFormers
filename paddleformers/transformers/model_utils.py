@@ -4036,7 +4036,8 @@ def save_full_param(
             f"Params: {len(current_shard_state_dict)}, "
             f"Path: {save_path}"
         )
-        paddle.device.synchronize()
+        if is_gpu:
+            paddle.device.cuda.synchronize()
         save_file(current_shard_state_dict, save_path)
 
         # Reset for the next shard
@@ -4047,7 +4048,7 @@ def save_full_param(
     logger.info(f"[Rank {rank}/{moe_sharding_world_size}] Starting to process the weight iterator...")
 
     total_size = 0
-
+    is_gpu = paddle.device.get_device().startswith("gpu")
     for i, (param_key, param) in enumerate(itr):
         param_size_bytes = math.prod(param.shape) * param.element_size()
         total_size += param_size_bytes
@@ -4055,11 +4056,15 @@ def save_full_param(
             logger.info(f"[Rank {rank}/{moe_sharding_world_size}] Assigned to store parameter {param_key}")
             if current_shard_size_bytes > 0 and (current_shard_size_bytes + param_size_bytes > max_shard_size_bytes):
                 _save_current_shard()
-            # Non-blocking D2H into pinned (page-locked) host memory so the copy can
-            # overlap with subsequent tensor assembly instead of blocking the host per
-            # tensor. Completion is forced by paddle.device.synchronize() in
-            # _save_current_shard() before save_file reads the data.
-            current_shard_state_dict[param_key] = param._copy_to(paddle.CUDAPinnedPlace(), False)
+            # CUDA: non-blocking D2H into pinned (page-locked) host memory so the
+            # copy can overlap with subsequent tensor assembly instead of blocking
+            # the host per tensor. Completion is forced by the single
+            # paddle.device.cuda.synchronize() in _save_current_shard() before
+            # save_file reads the data. XPU/CPU fall back to a blocking .cpu().
+            if is_gpu:
+                current_shard_state_dict[param_key] = param._copy_to(paddle.CUDAPinnedPlace(), False)
+            else:
+                current_shard_state_dict[param_key] = param.cpu()
             current_shard_size_bytes += param_size_bytes
 
             if current_shard_size_bytes >= max_shard_size_bytes:
