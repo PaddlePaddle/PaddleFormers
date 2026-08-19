@@ -19,6 +19,7 @@ import copy
 import gc
 import inspect
 import json
+import math
 import os
 import re
 import sys
@@ -4048,7 +4049,7 @@ def save_full_param(
     total_size = 0
 
     for i, (param_key, param) in enumerate(itr):
-        param_size_bytes = int(np.prod(param.shape)) * param.element_size()
+        param_size_bytes = math.prod(param.shape) * param.element_size()
         total_size += param_size_bytes
         if i % num_saver_ranks == rank:
             logger.info(f"[Rank {rank}/{moe_sharding_world_size}] Assigned to store parameter {param_key}")
