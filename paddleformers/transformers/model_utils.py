@@ -54,8 +54,6 @@ from paddle.distributed.fleet.meta_parallel.parallel_layers import (
     PipelineLayer,
     SharedLayerDesc,
 )
-
-# TODO(fangzeyang) Temporary fix and replace by paddle framework downloader later
 from paddle.incubate.tensor.manipulation import (
     async_offload_with_offset,
     create_async_load,
