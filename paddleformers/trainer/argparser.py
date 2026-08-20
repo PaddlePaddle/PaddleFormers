@@ -436,6 +436,12 @@ class PdArgumentParser(ArgumentParser):
                         logger.info(
                             f"init_step == 0 and user has defined resume_from_checkpoint: {user_defined_resume_from_checkpoint}"
                         )
+                        if args.get("load_from_hf", False) and not args.get("ignore_load_lr_and_optim", False):
+                            args["ignore_load_lr_and_optim"] = True
+                            logger.warning(
+                                "load_from_hf is True, will not load lr and optim state dict. "
+                                "Set ignore_load_lr_and_optim=True"
+                            )
                         return user_defined_resume_from_checkpoint
                 else:
                     # pdc_init_step > 0
@@ -452,15 +458,6 @@ class PdArgumentParser(ArgumentParser):
                     return resume_checkpoint
 
         args["resume_from_checkpoint"] = get_resume_checkpoint_path(args)
-        if (
-            args.get("load_from_hf", False)
-            and args["resume_from_checkpoint"] is not None
-            and not args.get("ignore_load_lr_and_optim", False)
-        ):
-            args["ignore_load_lr_and_optim"] = True
-            logger.warning(
-                "load_from_hf is True, will not load lr and optim state dict. Set ignore_load_lr_and_optim=True"
-            )
         args_for_json = to_regular_dict(args)
 
         json_filename = args_for_json.get("args_output_to_local")
