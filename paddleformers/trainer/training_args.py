@@ -651,9 +651,10 @@ class TrainingArguments:
         metadata={
             "help": (
                 "Whether or not to use Paddle Sharding Data Parallel training (in distributed training"
-                " only). The base option should be `stage1`, `stage2` or `stage3` and you can add"
+                " only). The base option should be `stage1`, `stage2`, `stage3` or `fsdp` and you can add"
                 " CPU-offload to `stage2` or `stage3` like this: stage2 offload` or `stage3"
-                " offload`. "
+                " offload`. `fsdp` shards parameter, gradient and optimizer state through"
+                " paddle.distributed.fsdp.fully_shard and cannot be combined with other options. "
             )
         },
     )
@@ -1976,9 +1977,14 @@ class TrainingArguments:
                 warnings.warn("`offload` is not supported NOW!")
 
             if self.pipeline_model_parallel_size > 1:
-                if ShardingOption.FULL_SHARD in self.sharding or ShardingOption.SHARD_GRAD_OP in self.sharding:
+                if (
+                    ShardingOption.FULL_SHARD in self.sharding
+                    or ShardingOption.SHARD_GRAD_OP in self.sharding
+                    or ShardingOption.FSDP in self.sharding
+                ):
                     raise ValueError(
-                        "pipeline parallel is not compatible for sharding stage2 or stage3, please using sharding stage1"
+                        "pipeline parallel is not compatible for sharding stage2, stage3 or fsdp, "
+                        "please using sharding stage1"
                     )
 
             # TODO use paddle.distributed.is_initialized() after paddle 2.4rc
@@ -2259,7 +2265,9 @@ class TrainingArguments:
                 # setter once https://github.com/PaddlePaddle/Paddle/blob/b7295120b0e78b293cd7ae29706e21769d06a3cc/python/paddle/distributed/fleet/base/distributed_strategy.py#L1692
                 strategy.hybrid_configs = hybrid_configs
 
-                if self.sharding_parallel_size > 1:
+                if self.sharding_parallel_size > 1 and ShardingOption.FSDP in self.sharding:
+                    logger.info("sharding=fsdp: skip sharding_configs, fully_shard manages sharding itself.")
+                elif self.sharding_parallel_size > 1:
                     sharding_parallel_config = split_parallel_config(self.sharding_parallel_config)
 
                     for x in sharding_parallel_config:
@@ -2804,6 +2812,19 @@ class TrainingArguments:
             )
         elif len(self.sharding) > (ShardingOption.OFFLOAD in self.sharding) + 1:
             raise ValueError("`--sharding` received too many arguments.")
+
+        if ShardingOption.FSDP in self.sharding:
+            if len(self.sharding) > 1:
+                raise ValueError(f"`--sharding fsdp` can not be combined with other options, but got {self.sharding}.")
+            if self.split_param:
+                raise ValueError("`--sharding fsdp` does not support split_param, please set split_param=False.")
+            if self.stage1_overlap or self.stage2_overlap:
+                raise ValueError(
+                    "`--sharding fsdp` does not support stage1_overlap or stage2_overlap, "
+                    "the overlap is handled inside fully_shard."
+                )
+            if not self.amp_master_grad:
+                raise ValueError("`--sharding fsdp` requires amp_master_grad=True.")
 
         if self.sharding_degree > 0:
             warnings.warn("`sharding_degree` is deprecated, please use `sharding_parallel_size`")
