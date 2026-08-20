@@ -921,7 +921,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 f"{src}.mlp_hyper_connection.alpha_post, "
                 f"{src}.mlp_hyper_connection.alpha_res "
                 f"-> {tgt}.hc_ffn_scale, axis=0",
-                f" {tgt}.hc_ffn_scale ->  {tgt}.hc_ffn_scale, dtype='float32'"
+                f"{tgt}.hc_ffn_scale ->  {tgt}.hc_ffn_scale, dtype='float32'",
                 f"{src}.mlp_hyper_connection.bias -> {tgt}.hc_ffn_base, dtype='float32'",
                 f"{src}.mlp_hyper_connection.mapping_proj.weight^T -> {tgt}.hc_ffn_fn, dtype='float32'",
             ]

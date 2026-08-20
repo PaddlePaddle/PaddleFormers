@@ -69,7 +69,7 @@ jobs:
           echo "Checking out ${BRANCH}..."
           git fetch upstream ${BRANCH}:${BRANCH}
           git checkout ${BRANCH}
-          
+          git submodule update --init --recursive --force
           git log --pretty=oneline -10
           '
 
