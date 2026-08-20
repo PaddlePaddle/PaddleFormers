@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -72,14 +73,30 @@ class PreTrainingArguments(TrainingArguments):
         metadata={"help": "the logging interval of global_training_logs"},
     )
     internal_medicine_monitors: Optional[str] = field(
-        default="",
+        default="qk_stats,moe_health,massive_act,mhc_health,vha_health",
         metadata={
-            "help": "Comma-separated list of internal medicine monitors. Options: qk_stats,moe_health,massive_act,all"
+            "help": "Comma-separated list of internal medicine monitors. Options: "
+            "qk_stats,moe_health,massive_act,mhc_health,vha_health,all. Defaults to all five. "
+            "mhc_health is a hard no-op on models without HyperConnectionTransformerLayer, "
+            "vha_health likewise on models without VHA postmix. "
+            "To disable monitoring entirely, set internal_medicine_monitor_interval to 0."
         },
     )
     internal_medicine_monitor_interval: int = field(
+        default=0,
+        metadata={
+            "help": "Step interval for internal medicine monitors. "
+            "0 = disabled (default; no collection, no viewer). "
+            "Positive integer = enable monitoring with that sampling interval."
+        },
+    )
+    internal_medicine_qk_row_stride: int = field(
         default=1,
-        metadata={"help": "Step interval for internal medicine monitors."},
+        metadata={
+            "help": "qk_stats query-row subsampling stride. 1 = exact full pass. "
+            "Larger values (e.g. 16/32) subsample query rows to cut the O(S^2) cost "
+            "on long sequences; mean/entropy/sink stay unbiased, max is a lower bound."
+        },
     )
     num_consecutive: int = field(
         default=1,
@@ -107,6 +124,11 @@ class PreTrainingArguments(TrainingArguments):
         default=False,
         metadata={"help": "shuffle num_consecutive or not"},
     )
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self.internal_medicine_monitors and (self.internal_medicine_monitor_interval or 0) > 0:
+            self.internal_medicine_log_dir = os.path.join(self.output_dir, "internal_medicine")
 
     @property
     def need_data(self):
@@ -303,9 +325,18 @@ class FinetuningArguments(
         },
     )
 
+    use_accuracy_compatible: bool = field(
+        default=False,
+        metadata={"help": ("Whether to enable accuracy alignment with the Megatron framework.")},
+    )
+
     def __post_init__(self):
-        if self.internal_medicine_monitors and self.internal_medicine_monitor_interval < 1:
-            raise ValueError("internal_medicine_monitor_interval must be greater than 0 when monitors are enabled")
+        if (
+            self.internal_medicine_monitors
+            and self.internal_medicine_monitor_interval is not None
+            and self.internal_medicine_monitor_interval < 0
+        ):
+            raise ValueError("internal_medicine_monitor_interval must be >= 0 (0 disables monitoring)")
 
         self.bf16 = True
         if self.compute_type == "bf16":

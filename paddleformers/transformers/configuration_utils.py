@@ -300,19 +300,18 @@ class LlmMetaConfig:
             "The number of tokens in each subbatch for MoE model processing.",
         ),
         ("moe_router_force_load_balancing", bool, False, "Whether to fake gate."),
-        ("moe_token_dispatcher_type", str, "deepep", 'Communication type used by MoE module "deepep" or "alltoall". '),
+        (
+            "moe_token_dispatcher_type",
+            str,
+            "alltoall",
+            'Communication type used by MoE module "deepep" or "alltoall". ',
+        ),
         ("use_unified_moe", bool, False, "Whether to use unified moe."),
         (
             "moe_deepep_num_sms",
             Optional[bool],
             None,
             "Whether to enable DeepEP (Deep Expert Pruning) with SMS (Sub-Model Selection) for MoE. Defaults to False.",
-        ),
-        (
-            "moe_token_dispatcher_type",
-            str,
-            "deepep",
-            "Type of token dispatcher for MoE (e.g., 'round_robin', 'top_k'). Defaults to None (use default dispatcher).",
         ),
         (
             "moe_use_fusion_node",
@@ -382,6 +381,12 @@ class LlmMetaConfig:
             "Whether to fuse experts. Default to True.",
         ),
         (
+            "situ_glu_fusion",
+            bool,
+            True,
+            "Whether to use fused Triton SiTU-GLU in fused BF16 MoE experts.",
+        ),
+        (
             "moe_router_fusion",
             bool,
             True,
@@ -414,7 +419,7 @@ class LlmMetaConfig:
         (
             "dsa_indexer_loss_coeff",
             float,
-            0.01,
+            0.0,
             "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term.",
         ),
     ]
@@ -445,6 +450,12 @@ class LlmMetaConfig:
             True,
             "Whether to use FP8 for gradient storage during training (only effective if `fp8=True`). Further reduces memory footprint but may introduce minor numerical error. Defaults to False.",
         ),
+        (
+            "use_ue8m0",
+            bool,
+            False,
+            "Whether to use UE8M0 packed scaling factors for FP8 on Blackwell GPUs (SM100+). Enables deep_gemm backend for weight gradient computation. Defaults to False.",
+        ),
     ]
 
     model_conf = [
@@ -467,6 +478,18 @@ class LlmMetaConfig:
             "Whether to enable multi-latent attention mechanism. Defaults to False.",
         ),
         (
+            "csa_indexer_backend",
+            str,
+            "tilelang",
+            "CSA indexer backend. One of {'unfused', 'tilelang', 'cudnn'}. Defaults to 'tilelang'.",
+        ),
+        (
+            "csa_sparse_attn_backend",
+            str,
+            "tilelang",
+            "CSA sparse attention backend. One of {'unfused', 'tilelang', 'cudnn'}. Defaults to 'tilelang'.",
+        ),
+        (
             "no_rope_freq",
             bool,
             False,
@@ -483,6 +506,12 @@ class LlmMetaConfig:
             bool,
             False,
             "Whether to use high precision ROPEs.",
+        ),
+        (
+            "swa_high_precision_norm",
+            bool,
+            False,
+            "Whether to use high precision NORMS in DSV4 SWA. ONLY support for dsv4_hybrid_attention.",
         ),
         (
             "gated_linear_unit",
@@ -517,6 +546,12 @@ class LlmMetaConfig:
             "Method to initialize weights of the output layer of both attention and MLP blocks.",
         ),
         (
+            "init_method_std",
+            float,
+            0.02,
+            "Standard deviation for initialization (Normal). Used to build the default init_method/output_layer_init_method when they are not explicitly set. Defaults to 0.02.",
+        ),
+        (
             "embedding_init_method",
             Optional[Any],
             None,
@@ -529,6 +564,12 @@ class LlmMetaConfig:
             "Standard deviation for embedding layer initialization (only effective if `embedding_init_method='normal'`). Defaults to 0.02 (common choice for transformer embeddings to avoid saturation).",
         ),
         ("fa_version", int, 2, "FlashAttention or FlashMask version. Can be set to 2 or 3. Default is 2."),
+        (
+            "use_accuracy_compatible",
+            bool,
+            False,
+            "Whether to enable accuracy-compatible kernels for cross-framework numerical alignment. Defaults to False.",
+        ),
         ("experimental_dataflow", bool, False, "Whether to enable experimental dataflow in Fleet. Default is False."),
     ]
 
@@ -761,7 +802,7 @@ class PretrainedConfig:
             `"single_label_classification"` or `"multi_label_classification"`.
         moe_subbatch_token_num_before_dispatch (`int`, *optional*, defaults to 0):
             The number of tokens in a subbatch for MoE.
-        moe_token_dispatcher_type (`str`, *optional*, defaults to `deepep`):
+        moe_token_dispatcher_type (`str`, *optional*, defaults to `alltoall`):
             Communication type for expert parallel. Can be one of `deepep`, `alltoall`.
         use_unified_moe (`bool`, *optional*, defaults to `False`):
             Whether to use unified MoE.
@@ -914,7 +955,6 @@ class PretrainedConfig:
         self.dpo_config = kwargs.pop("dpo_config", None)
         self.kto_config = kwargs.pop("kto_config", None)
 
-        self.moe_token_dispatcher_type = kwargs.pop("moe_token_dispatcher_type", "deepep")
         self.use_unified_moe = kwargs.pop("use_unified_moe", False)
         self.moe_router_force_load_balancing = kwargs.pop("moe_router_force_load_balancing", False)
 
@@ -953,8 +993,8 @@ class PretrainedConfig:
                 "Transformers. Using `model.gradient_checkpointing_enable()` instead, or if you are using the "
                 "`Trainer` API, pass `gradient_checkpointing=True` in your `TrainingArguments`."
             )
-        self._save_to_hf = kwargs.pop("save_to_hf", True)
-        self._unsavable_keys.add("_save_to_hf")
+        self._save_safetensors = kwargs.pop("save_safetensors", True)
+        self._unsavable_keys.add("_save_safetensors")
 
         # Initialize model weight for fleet model
         self.perform_initialization = kwargs.pop("perform_initialization", True)
@@ -1053,7 +1093,7 @@ class PretrainedConfig:
 
         os.makedirs(save_directory, exist_ok=True)
 
-        self._save_to_hf = kwargs.pop("save_to_hf", True)
+        self._save_safetensors = kwargs.pop("save_safetensors", True)
 
         # If we have a custom config, we copy the file defining it in the folder and set the attributes so it can be
         # loaded from the Hub.
@@ -1403,7 +1443,7 @@ class PretrainedConfig:
             del output["moe_group"]
         if "_unsavable_keys" in output:
             del output["_unsavable_keys"]
-        if self._save_to_hf and "dtype" in output:
+        if self._save_safetensors and "dtype" in output:
             output["torch_dtype"] = str(output["dtype"])
             del output["dtype"]
 

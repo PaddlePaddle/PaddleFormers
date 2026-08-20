@@ -60,6 +60,7 @@ lr_scheduler_type: cosine
 # MoE
 moe_deep_gemm: false
 moe_router_force_load_balancing: false
+moe_token_dispatcher_type: "deepep"
 
 # pp
 pp_delay_scale_loss: true
@@ -79,7 +80,7 @@ fp16_opt_level: O2
 # checkpoint
 save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint
-save_to_hf: true
+save_safetensors: true
 
 # dataloader
 dataloader_num_workers: 4
@@ -110,3 +111,6 @@ continue_training: true
 recompute_granularity: full
 recompute_method: uniform
 recompute_num_layers: 1
+# 显式固定历史默认值；避免新默认值改变此配置行为。
+moe_router_bias_update_rate: 0.0
+batch_p2p_comm: true

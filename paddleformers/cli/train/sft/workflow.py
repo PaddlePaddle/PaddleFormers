@@ -45,6 +45,7 @@ from paddleformers.trainer import (
     MoECorrectionBiasAdjustCallback,
     MoeExpertsGradScaleCallback,
     MoEGateSpGradSyncCallBack,
+    MoEQuantileBalancingCallback,
     RuntimeTimer,
     get_last_checkpoint,
     set_random_seed,
@@ -79,6 +80,10 @@ from paddleformers.cli.hparams import (
     GeneratingArguments,
     ModelArguments,
 )
+
+# Imported from the submodule directly: hparams/__init__ lazily exposes only the
+# dataclasses listed in its import_structure, which does not include this one.
+from paddleformers.cli.hparams.preprocess_args import End2EndProcessorArguments
 from paddleformers.cli.utils import (
     freeze_model_parameters,
     get_lora_target_modules,
@@ -193,6 +198,7 @@ def run_sft(
     data_args: "DataArguments",
     generating_args: "GeneratingArguments",
     finetuning_args: "FinetuningArguments",
+    preprocess_args: "End2EndProcessorArguments" = None,
 ):
     """_summary_
 
@@ -201,6 +207,9 @@ def run_sft(
         data_args (DataArguments): _description_
         generating_args (GeneratingArguments): _description_
         finetuning_args (FinetuningArguments): _description_
+        preprocess_args (End2EndProcessorArguments): carries the multimodal
+            resolution bounds (``max_pixels`` / ``min_pixels``). Optional so that
+            callers that do not parse it keep working.
         callbacks (Optional[list[&quot;TrainerCallback&quot;]], optional): _description_. Defaults to None.
 
     Raises:
@@ -268,6 +277,8 @@ def run_sft(
         dtype=dtype,
         quantization_config=quantization_config,
     )
+    if getattr(training_args, "pad_token_id", None) is not None:
+        model_config.pad_token_id = training_args.pad_token_id
 
     if (
         model_config.tie_word_embeddings
@@ -328,10 +339,12 @@ def run_sft(
     model_config.max_sequence_length = data_args.max_seq_len
     model_config._attn_implementation = model_args._attn_implementation
     model_config.is_lora = model_args.lora
+    model_config.moe_logging = model_args.moe_logging
 
     # Sync arguments to MLLM sub_config
     if getattr(model_config, "text_config", None) is not None:
         LlmMetaConfig.set_llm_config(model_config.text_config, training_args)
+        model_config.text_config._attn_implementation = model_args._attn_implementation
         model_config.text_config.max_sequence_length = data_args.max_seq_len
         if hasattr(model_config.text_config, "mtp_num_hidden_layers"):
             model_config.text_config.mtp_num_hidden_layers = getattr(training_args, "num_nextn_predict_layers", 0)
@@ -340,6 +353,9 @@ def run_sft(
         model_config.vision_config.recompute_granularity = model_config.recompute_granularity
         model_config.vision_config.recompute_method = model_config.recompute_method
         model_config.vision_config.recompute_num_layers = model_config.recompute_num_layers
+        # recompute_granularity="selective" requires recompute_modules to be set,
+        # otherwise the vision TransformerConfig.__post_init__ assertion fails.
+        model_config.vision_config.recompute_modules = getattr(model_config, "recompute_modules", None)
 
     # Sync freeze_config to model_config so that Fleet model providers can read it
     freeze_config = getattr(training_args, "freeze_config", "")
@@ -417,6 +433,16 @@ def run_sft(
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
     processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
+    # The multimodal plugins read the resolution bounds off the processor
+    # (falling back to a hardcoded 768*768 / 32*32), so without wiring these the
+    # --max_pixels / --min_pixels arguments have no way to reach image
+    # preprocessing. They live on End2EndProcessorArguments rather than
+    # DataArguments because both dataclasses feed the same parser.
+    if preprocess_args is not None:
+        if preprocess_args.max_pixels is not None:
+            processor.image_max_pixels = preprocess_args.max_pixels
+        if preprocess_args.min_pixels is not None:
+            processor.image_min_pixels = preprocess_args.min_pixels
 
     type_map = {"bf16": "bfloat16", "fp16": "float16"}
     compute_type = type_map.get(training_args.compute_type, "float32")
@@ -536,7 +562,7 @@ def run_sft(
                     count += 1
                     if count % 1000 == 0:
                         logger.info(
-                            f"Processed {count} samples in {time.time()-start_time:.2f} seconds, average speed: {count/(time.time()-start_time):.2f} samples/second"
+                            f"Processed {count} samples in {time.time() - start_time:.2f} seconds, average speed: {count / (time.time() - start_time):.2f} samples/second"
                         )
             train_builder.finalize(train_output_idx_files)
             logger.info(f"{runtime_timer.log()}")
@@ -704,8 +730,10 @@ def run_sft(
         training_args.logging_steps = int(training_args.max_steps / training_args.num_train_epochs)
 
     callbacks = []
-    if getattr(model_config, "topk_method", None) == "noaux_tc":
+    if getattr(model_config.get_text_config(), "topk_method", None) == "noaux_tc":
         callbacks += [MoECorrectionBiasAdjustCallback(lr=training_args.moe_router_bias_update_rate)]
+    elif getattr(model_config.get_text_config(), "topk_method", None) == "quantile_balancing":
+        callbacks += [MoEQuantileBalancingCallback()]
 
     if training_args.use_expert_parallel:
         callbacks += [MoeExpertsGradScaleCallback(training_args)]

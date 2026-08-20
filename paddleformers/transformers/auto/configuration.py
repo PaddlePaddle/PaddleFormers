@@ -35,12 +35,16 @@ CONFIG_MAPPING_NAMES = OrderedDict(
     [
         ("deepseek_v3", "DeepseekV3Config"),
         ("deepseek_v32", "DeepseekV32Config"),
+        ("paligemma", "PaliGemma2Config"),
+        ("paligemma2", "PaliGemma2Config"),
+        ("diff_transformer", "DiffTransformerConfig"),
         ("ernie4_5", "Ernie4_5Config"),
         ("ernie4_5_moe", "Ernie4_5_MoeConfig"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLConfig"),
         ("paddleocr_vl", "PaddleOCRVLConfig"),
         ("llama", "LlamaConfig"),
         ("kimi_k2", "KimiK2Config"),
+        ("kimi_k3", "KimiK3Config"),
         ("qwen2", "Qwen2Config"),
         ("qwen2_5_vl", "Qwen2_5_VLConfig"),
         ("qwen2_5_vl_text", "Qwen2_5_VLTextConfig"),
@@ -55,14 +59,28 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("glm4_moe", "Glm4MoeConfig"),
         ("glm_moe_dsa", "GlmMoeDsaConfig"),
         ("minimax_m2", "MiniMaxM2Config"),
+        ("minicpm", "MiniCPMConfig"),
+        ("minicpm4_1", "MiniCPM4_1Config"),
         ("deepseek_v4", "DeepseekV4Config"),
         ("gpt_oss", "GptOssConfig"),
+        ("minicpm3", "MiniCPM3Config"),
         ("phi3", "Phi3Config"),
+        ("granite", "GraniteConfig"),
+        ("gemma3", "Gemma3Config"),
         ("gemma3_text", "Gemma3TextConfig"),
+        ("shieldgemma2", "ShieldGemma2Config"),
         ("glm4v_moe", "Glm4vMoeConfig"),
         ("glm_ocr", "GlmOcrConfig"),
         ("qwen3_5", "Qwen3_5Config"),
         ("qwen3_5_moe", "Qwen3_5MoEConfig"),
+        ("olmo2", "Olmo2Config"),
+        ("internlm3", "InternLM3Config"),
+        ("internlm2", "InternLM2Config"),
+        # TODO(VL): When Gemma4 VL is implemented, "gemma4" should point to Gemma4Config (VL wrapper)
+        ("gemma4_text", "Gemma4MoeConfig"),
+        ("gemma4", "Gemma4MoeConfig"),  # Temporary: no standalone text ckpt, extract text_config in from_dict
+        ("phi4", "Phi4Config"),
+        ("phi4flash", "Phi4Config"),
     ]
 )
 
@@ -72,11 +90,15 @@ MODEL_NAMES_MAPPING = OrderedDict(
     [
         ("deepseek_v2", "DeepseekV2"),
         ("deepseek_v3", "DeepseekV3"),
+        ("paligemma", "PaliGemma2"),
+        ("paligemma2", "PaliGemma2"),
+        ("diff_transformer", "DiffTransformer"),
         ("ernie4_5", "Ernie4_5"),
         ("ernie4_5_moe", "Ernie4_5_Moe"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLMoeForConditionalGeneration"),
         ("paddleocr_vl", "PaddleOCRVLForConditionalGeneration"),
         ("llama", "Llama"),
+        ("kimi_k3", "KimiK3"),
         ("qwen2", "Qwen2"),
         ("qwen2_5_vl", "Qwen2_5_VL"),
         ("qwen2_5_vl_text", "Qwen2_5_VL"),
@@ -89,8 +111,23 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("qwen3_vl_moe", "Qwen3VLMoe"),
         ("qwen3_vl_moe_text", "Qwen3VLMoeText"),
         ("glm_ocr", "GlmOcrForConditionalGeneration"),
+        ("minicpm", "MiniCPM"),
+        ("minicpm4_1", "MiniCPM4_1"),
+        ("granite", "Granite"),
+        ("gemma3", "Gemma3ForConditionalGeneration"),
+        ("gemma3_text", "Gemma3TextModel"),
+        ("shieldgemma2", "ShieldGemma2ForImageClassification"),
         ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
         ("qwen3_5", "Qwen3_5ForConditionalGeneration"),
+        ("minicpm3", "MiniCPM3Model"),
+        ("olmo2", "Olmo2ForCausalLM"),
+        ("internlm3", "InternLM3ForCausalLM"),
+        ("internlm2", "InternLM2"),
+        ("gemma4_moe", "Gemma4MoeForCausalLM"),
+        ("gemma4_text", "Gemma4MoeForCausalLM"),
+        ("gemma4", "Gemma4MoeForCausalLM"),
+        ("phi4", "Phi4ForCausalLM"),
+        ("phi4flash", "Phi4ForCausalLM"),
     ]
 )
 
@@ -101,9 +138,17 @@ MULTI_MODELS_MAPPING = OrderedDict(
 
 SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
     [
+        ("paligemma", "paligemma2"),
+        ("gemma3", "gemma3"),
         ("qwen2_5_vl_text", "qwen2_5_vl"),
         ("qwen3_vl_text", "qwen3_vl"),
         ("qwen3_vl_moe_text", "qwen3_vl_moe"),
+        ("internlm3", "intern_lm3"),
+        ("internlm2", "intern"),
+        # TODO(VL): Remove these when Gemma4 VL module (gemma4/) is created
+        ("gemma4_text", "gemma4_moe"),
+        ("gemma4", "gemma4_moe"),
+        ("phi4flash", "phi4"),
     ]
 )
 
@@ -178,6 +223,26 @@ class _LazyConfigMapping(OrderedDict):
 
 
 CONFIG_MAPPING = _LazyConfigMapping(CONFIG_MAPPING_NAMES)
+
+
+def resolve_minicpm4_1_model_type(config_dict, model_type_override=None):
+    """Resolve upstream MiniCPM4.1 configs to the PaddleFormers registration key."""
+    if model_type_override is not None:
+        if model_type_override != "minicpm4_1":
+            raise ValueError(
+                f"Unsupported model_type_override={model_type_override!r}. " "Only 'minicpm4_1' is supported."
+            )
+        return model_type_override
+
+    if not isinstance(config_dict, dict) or config_dict.get("model_type") != "minicpm":
+        return None
+
+    original_name = str(config_dict.get("_name_or_path", ""))
+    normalized_name = original_name.lower().replace(".", "_").replace("-", "_")
+    if "minicpm4_1" in normalized_name:
+        return "minicpm4_1"
+
+    return None
 
 
 def get_configurations() -> Dict[str, List[Type[PretrainedConfig]]]:
@@ -349,7 +414,11 @@ class AutoConfig(PretrainedConfig):
             cache_dir=cache_dir,
             download_hub=download_hub,
         )
+        model_type_override = kwargs.pop("model_type_override", None)
         config_dict, unused_kwargs = PretrainedConfig.get_config_dict(pretrained_model_name_or_path, **kwargs)
+        resolved_model_type = resolve_minicpm4_1_model_type(config_dict, model_type_override)
+        if resolved_model_type is not None:
+            config_dict["model_type"] = resolved_model_type
         if "model_type" in config_dict:
             try:
                 config_class = CONFIG_MAPPING[config_dict["model_type"]]
