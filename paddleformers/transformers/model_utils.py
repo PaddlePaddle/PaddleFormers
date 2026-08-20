@@ -3997,7 +3997,8 @@ def _get_pinned_arena(nbytes):
     """
     global _PINNED_ARENA, _PINNED_ARENA_CAPACITY, _ASYNC_LOADER
     if _PINNED_ARENA is None or _PINNED_ARENA_CAPACITY < nbytes:
-        _PINNED_ARENA = paddle.empty(nbytes, dtype=paddle.uint8, pin_memory=True)
+        _host_buf = np.empty(nbytes, dtype=np.uint8)
+        _PINNED_ARENA = paddle.to_tensor(_host_buf, place=paddle.CUDAPinnedPlace())
         _PINNED_ARENA_CAPACITY = nbytes
     if _ASYNC_LOADER is None:
         _ASYNC_LOADER = create_async_load()
