@@ -1,9 +1,9 @@
 ### data
 train_dataset_type: erniekit
 eval_dataset_type: erniekit
-train_dataset_path: ../data/sft/train_Qwen_gsm8k.jsonl
+train_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/lizhenxing/model_home/data/sft/train.json
 train_dataset_prob: "1.0"
-eval_dataset_path: ../data/sft/test_gsm8k.jsonl
+eval_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/lizhenxing/model_home/data/sft/eval.jsonl
 eval_dataset_prob: "1.0"
 packing: true
 truncate_packing: true
@@ -15,22 +15,19 @@ mix_strategy: concat
 pad_token_id: 154820
 
 ### model
-model_name_or_path: ../models/GLM-5 #
-attn_impl: flashmask
+model_name_or_path: /root/paddlejob/share-storage/gpfs/system-public/lizhenxing/model_home/GLM-5 #
 
 ### finetuning
 # base
-stage: PT
-# lora: true
-# lora_rank: 32
+stage: SFT
 fine_tuning: full
 seed: 23
 do_train: true
 do_eval: false
 per_device_eval_batch_size: 1
-per_device_train_batch_size: 2
+per_device_train_batch_size: 1
 num_train_epochs: 1
-max_steps: 1
+max_steps: 10
 eval_iters: 10cd
 eval_steps: 100
 evaluation_strategy: steps
@@ -71,11 +68,9 @@ recompute_method: uniform
 recompute_num_layers: 1
 
 
-moe_grouped_gemm: false
 moe_deep_gemm: false
 
 # apply_rope_fusion: true
-fuse_rms_norm: true
 moe_router_force_load_balancing: false
 
 sequence_parallel: true
@@ -94,8 +89,6 @@ variable_seq_lengths: true
 best_unbalanced_scheduler: true
 pp_release_grads: true
 
-tp_delay_scale_loss: True
-
 amp_master_grad: true
 bf16: true
 fp16_opt_level: O2
@@ -105,14 +98,9 @@ load_checkpoint_format: flex_checkpoint
 save_safetensors: true
 continue_training: false
 dataloader_shuffle: false
-benchmark: true
 
 dataloader_num_workers: 24
 prefetch_factor: 24
-
-fuse_attention_qkv: true
-fuse_attention_ffn: true
-# loss_subbatch_sequence_length: 256
 
 tensorwise_offload_optimizer: true
 skip_profile_timer: false
@@ -122,7 +110,7 @@ fp32_residual_connection: false
 # profile: true
 # profile_step_start: 1
 # profile_step_end: 2
-# num_hidden_layers: 4
+num_hidden_layers: 4
 template_backend: custom
 template: glm_moe_dsa
 
