@@ -350,7 +350,25 @@ jobs:
           pip install coverage==7.6.1
           pip install librosa==0.11.0
           '
-      
+      - name: Gemma4 pre-train
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -c '
+          source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate python${PYTHON_VERSION}
+          mkdir -p /workspace/PaddleFleet/coveragedata-multi
+          export COVERAGE_FILE=/workspace/PaddleFleet/coveragedata-multi/.coverage
+          export COVERAGE_RCFILE=/workspace/PaddleFleet/ci/.coveragerc
+          timeout 20m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh gemma4 pt
+          gemma4_exit_code=$?
+          if [[ "$gemma4_exit_code" != "0" ]]; then
+            export case_name="gemma4_pt"
+            bash PaddleFleet/ci/check_ce_precision.sh $case_name $BASE_NAME $update_baseline
+          else
+            echo -e "\033[32mIntegration test succeeded: Gemma4 pre-train.\033[0m"
+          fi
+          '
       - name: GLM4.5 pre-train
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
         run: |
