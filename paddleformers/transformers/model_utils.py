@@ -16,14 +16,14 @@ from __future__ import annotations
 import concurrent.futures
 import contextlib
 import copy
+import ctypes
 import gc
 import inspect
 import json
+import math
 import os
 import re
 import sys
-import math
-import ctypes
 import tempfile
 import warnings
 from collections.abc import Iterator
@@ -48,19 +48,20 @@ from huggingface_hub import (
 )
 from huggingface_hub.utils import EntryNotFoundError
 from paddle import Tensor
+from paddle.base import core
 from paddle.distributed.fleet.meta_parallel import LocalSharedLayerDesc
 from paddle.distributed.fleet.meta_parallel.parallel_layers import (
     PipelineLayer,
     SharedLayerDesc,
 )
-from paddle.nn import Embedding, Layer
-from paddle.base import core
 
 # TODO(fangzeyang) Temporary fix and replace by paddle framework downloader later
 from paddle.incubate.tensor.manipulation import (
     async_offload_with_offset,
     create_async_load,
 )
+from paddle.nn import Embedding, Layer
+
 # TODO(fangzeyang) Temporary fix and replace by paddle framework downloader later
 from paddle.utils.download import is_url as is_remote_url
 from safetensors.paddle import save_file
@@ -3985,6 +3986,7 @@ _PINNED_ARENA = None
 _PINNED_ARENA_CAPACITY = 0
 _ASYNC_LOADER = None
 
+
 def _get_pinned_arena(nbytes):
     """Return a process-level (per-rank) pinned uint8 arena of at least ``nbytes`` and a
     shared async loader, both reused across checkpoints.
@@ -4002,6 +4004,7 @@ def _get_pinned_arena(nbytes):
     if _ASYNC_LOADER is None:
         _ASYNC_LOADER = create_async_load()
     return _PINNED_ARENA, _ASYNC_LOADER
+
 
 def save_full_param(
     itr: Iterator[tuple[str, Tensor]],
@@ -4070,15 +4073,12 @@ def save_full_param(
         # Wrap the pinned arena bytes as a CPUPlace zero-copy alias so save_file
         # sees is_cpu_place()==True and skips its internal per-param .cpu().
         base_ptr = arena_cpu.get_tensor()._ptr() + byte_start
-        np_u8 = np.ctypeslib.as_array(
-            ctypes.cast(base_ptr, ctypes.POINTER(ctypes.c_ubyte)), shape=(nbytes,)
-        )
+        np_u8 = np.ctypeslib.as_array(ctypes.cast(base_ptr, ctypes.POINTER(ctypes.c_ubyte)), shape=(nbytes,))
         alias_u8 = core.eager.Tensor(value=np_u8, place=core.CPUPlace(), zero_copy=True)
         alias = alias_u8.view(dtype)
         alias.get_tensor()._set_dims(shape)
         alias._keep_alive = (arena_cpu, np_u8, alias_u8)
         return alias
-
 
     def _save_current_shard():
         nonlocal sub_shard_index, current_shard_state_dict, current_shard_size_bytes
@@ -4145,9 +4145,7 @@ def save_full_param(
                 )
                 shard_tasks.append(task)
                 shard_src_refs.append(src)
-                current_shard_state_dict[param_key] = get_param(
-                    arena_offset, nbytes, param.dtype, list(param.shape)
-                )
+                current_shard_state_dict[param_key] = get_param(arena_offset, nbytes, param.dtype, list(param.shape))
                 arena_offset += nbytes
 
             current_shard_size_bytes += nbytes
