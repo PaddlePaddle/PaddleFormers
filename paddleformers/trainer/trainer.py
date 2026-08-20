@@ -4021,9 +4021,6 @@ class Trainer:
 
             assert self.optimizer is not None, "Pipeline mode need decorate optimizer, pelease init optimizer."
             if in_fsdp_mode:
-                assert (
-                    self.args.tensor_model_parallel_size == 1
-                ), "Only support sharding=fsdp with tensor_model_parallel_size=1 now."
                 fsdp_layers = model._layers if hasattr(model, "_layers") else model
                 fully_shard(fsdp_layers, enable_tensor_fusion_and_overlap=True)
                 if self.args.amp_master_grad:
@@ -4049,10 +4046,6 @@ class Trainer:
         if not in_pipeline_parallel_mode and in_sharding_parallel_mode:
             # Sharded DDP!
             if in_fsdp_mode:
-                assert self.optimizer is not None, "optimizer is empty!"
-                assert (
-                    self.args.tensor_model_parallel_size == 1
-                ), "Only support sharding=fsdp with tensor_model_parallel_size=1 now."
                 fully_shard(model, enable_tensor_fusion_and_overlap=True)
                 if self.args.amp_master_grad:
                     mix_precision_utils.MixPrecisionLayer(model, dtype=self.amp_dtype)
