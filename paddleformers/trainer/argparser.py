@@ -441,6 +441,10 @@ class PdArgumentParser(ArgumentParser):
                     # pdc_init_step > 0
                     logger.info(f"resume training process by pdc longjob with resume step: {pdc_init_step}")
                     resume_checkpoint = os.path.join(args.get("output_dir", None), f"checkpoint-{pdc_init_step}")
+                    # resuming from output_dir/checkpoint-N, which is always saved in paddle format
+                    if args.get("load_from_hf", False):
+                        args["load_from_hf"] = False
+                        logger.warning(f"resume from {resume_checkpoint} by pdc longjob, set load_from_hf=False")
                     if user_defined_resume_from_checkpoint is not None:
                         logger.warning(
                             f"pdc_init_step:{pdc_init_step} and resume_ckpt:{user_defined_resume_from_checkpoint} exist together, use resume_checkpoint:{resume_checkpoint}"
@@ -448,6 +452,15 @@ class PdArgumentParser(ArgumentParser):
                     return resume_checkpoint
 
         args["resume_from_checkpoint"] = get_resume_checkpoint_path(args)
+        if (
+            args.get("load_from_hf", False)
+            and args["resume_from_checkpoint"] is not None
+            and not args.get("ignore_load_lr_and_optim", False)
+        ):
+            args["ignore_load_lr_and_optim"] = True
+            logger.warning(
+                "load_from_hf is True, will not load lr and optim state dict. Set ignore_load_lr_and_optim=True"
+            )
         args_for_json = to_regular_dict(args)
 
         json_filename = args_for_json.get("args_output_to_local")
