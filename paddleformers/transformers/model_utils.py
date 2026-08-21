@@ -20,7 +20,6 @@ import ctypes
 import gc
 import inspect
 import json
-import math
 import os
 import re
 import sys
@@ -3997,8 +3996,10 @@ def _get_pinned_arena(nbytes):
     """
     global _PINNED_ARENA, _PINNED_ARENA_CAPACITY, _ASYNC_LOADER
     if _PINNED_ARENA is None or _PINNED_ARENA_CAPACITY < nbytes:
-        _host_buf = np.empty(nbytes, dtype=np.uint8)
-        _PINNED_ARENA = paddle.to_tensor(_host_buf, place=paddle.CUDAPinnedPlace())
+        arena = core.eager.Tensor()
+        arena.get_tensor()._set_dims([nbytes])
+        arena.get_tensor()._mutable_data(paddle.CUDAPinnedPlace(), core.VarDesc.VarType.UINT8)
+        _PINNED_ARENA = arena
         _PINNED_ARENA_CAPACITY = nbytes
     if _ASYNC_LOADER is None:
         _ASYNC_LOADER = create_async_load()
@@ -4120,15 +4121,14 @@ def save_full_param(
     total_size = 0
 
     for i, (param_key, param) in enumerate(itr):
-        param_size_bytes = math.prod(param.shape) * param.element_size()
+        param_size_bytes = param.size * param.itemsize
         total_size += param_size_bytes
         if i % num_saver_ranks == rank:
             logger.info(f"[Rank {rank}/{moe_sharding_world_size}] Assigned to store parameter {param_key}")
-            nbytes = int(param_size_bytes)
-            if current_shard_size_bytes > 0 and (current_shard_size_bytes + nbytes > max_shard_size_bytes):
+            if current_shard_size_bytes > 0 and (current_shard_size_bytes + param_size_bytes > max_shard_size_bytes):
                 _save_current_shard()
 
-            if not use_pinned_arena or nbytes > max_shard_size_bytes:
+            if not use_pinned_arena or param_size_bytes > max_shard_size_bytes:
                 # Non-GPU device, or a single param larger than the arena: synchronous copy.
                 current_shard_state_dict[param_key] = param.cpu()
             else:
@@ -4139,15 +4139,17 @@ def save_full_param(
                     dst_tensor=arena_cpu,
                     src_offset=0,
                     dst_offset=arena_offset,
-                    offload_size=nbytes,
+                    offload_size=param_size_bytes,
                     async_loader=async_loader,
                 )
                 shard_tasks.append(task)
                 shard_src_refs.append(src)
-                current_shard_state_dict[param_key] = get_param(arena_offset, nbytes, param.dtype, list(param.shape))
-                arena_offset += nbytes
+                current_shard_state_dict[param_key] = get_param(
+                    arena_offset, param_size_bytes, param.dtype, list(param.shape)
+                )
+                arena_offset += param_size_bytes
 
-            current_shard_size_bytes += nbytes
+            current_shard_size_bytes += param_size_bytes
 
             if current_shard_size_bytes >= max_shard_size_bytes:
                 _save_current_shard()
