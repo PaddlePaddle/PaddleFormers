@@ -23,12 +23,10 @@ import_structure = {
         "MiniCPMModel",
         "MiniCPMPretrainedModel",
         "MiniCPMForCausalLM",
-        "MiniCPMForCausalLMPipe",
         "MiniCPMForSequenceClassification",
         "MiniCPMForTokenClassification",
         "MiniCPMSentenceEmbedding",
         "MiniCPMForCausalLMDeprecated",
-        "MiniCPMForCausalLMPipeDeprecated",
     ],
 }
 

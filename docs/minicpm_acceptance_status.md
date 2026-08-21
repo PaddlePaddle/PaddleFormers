@@ -25,8 +25,9 @@ Direct Flex loading from the HF `.bin` checkpoint is not used for acceptance in 
   - `python -m unittest tests.transformers.minicpm.test_modeling -v`
   - Result: `Ran 33 tests ... OK (skipped=5)`
 - Tiny SFT smoke:
-  - `scripts/minicpm/create_tiny_random.py` generated a local tiny native checkpoint.
+  - `scripts/minicpm/create_tiny_random.py` deterministically generates a tiny native checkpoint and tokenizer without external model assets.
   - One-step SFT smoke completed and logged `train_loss=11.2081`.
+  - `tests/integration_test/preprocess.sh` prepares the checkpoint under `${CACHE_DIR}/minicpm/tiny-random-minicpm`, and the H20 single-card workflow runs `tests/integration_test/minicpm_sft_single_card.sh` for 10 steps.
 - GSM8K 300-step SFT:
   - Full-depth, full-width MiniCPM-1B completed 300 steps with `scripts/minicpm/run_sft_gsm8k.sh`.
   - Training used `messages` JSONL GSM8K format, `max_seq_len=1024`, global batch size 4, BF16 O2, and `save_to_hf=false` to avoid unnecessary HF-format checkpoint conversion during acceptance runs.
@@ -48,5 +49,5 @@ Direct Flex loading from the HF `.bin` checkpoint is not used for acceptance in 
 
 ## Remaining Items
 
-- Upload CE tiny checkpoint to the official tiny model location used by `tests/integration_test/minicpm_sft_single_card.sh`.
 - Rerun compiler training benchmark and confirm compiler speedup in the official acceptance environment.
+- Fleet/PP is not exposed yet because the generic GPT path does not implement MiniCPM's embedding, residual, and LM-head scaling. It should be enabled only after a MiniCPM-specific provider and ordinary-vs-Fleet/PP forward alignment test are added.

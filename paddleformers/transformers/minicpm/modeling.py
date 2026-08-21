@@ -20,9 +20,6 @@
 """Paddle MiniCPM model."""
 from __future__ import annotations
 
-import json
-import os
-from dataclasses import asdict, dataclass
 from typing import Dict, Optional, Tuple, Union
 
 import paddle
@@ -31,8 +28,6 @@ from paddle import Tensor, nn
 from paddle.distributed.fleet.recompute.recompute import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
-from paddleformers.transformers.gpt_provider import GPTModelProvider
-
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
@@ -40,7 +35,6 @@ from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as MiniCPMMLP
 from ...nn.norm import Norm as GeneralNorm
-from ...nn.pp_model import CriterionLayerPipe, GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
 from ..contrastive_loss import SimpleContrastiveLoss
@@ -58,62 +52,6 @@ from ..model_outputs import (
 from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from .configuration import MiniCPMConfig
-
-
-@dataclass
-class MiniCPMModelProvider(GPTModelProvider):
-    """Base provider for MiniCPM Models."""
-
-    model_type = "minicpm"
-
-    attention_bias: bool = False
-
-    bias_activation_fusion: bool = True
-    bias_dropout_fusion: bool = True
-
-    transform_rules = {
-        "dtype": "params_dtype",
-    }
-
-    persist_layer_norm: bool = True
-    share_embeddings_and_output_weights: bool = False
-
-    def save_pretrained(self, save_directory: Union[str, os.PathLike], **kwargs):
-        """
-        Save a configuration object to the directory `save_directory`, so that it can be re-loaded using the
-        [`~PretrainedConfig.from_pretrained`] class method.
-
-        Args:
-            save_directory (`str` or `os.PathLike`):
-                Directory where the configuration JSON file will be saved (will be created if it does not exist).
-            kwargs:
-                Additional key word arguments passed along to the [`~utils.PushToHubMixin.push_to_hub`] method.
-        """
-        if os.path.isfile(save_directory):
-            raise AssertionError(f"Provided path ({save_directory}) should be a directory, not a file")
-
-        os.makedirs(save_directory, exist_ok=True)
-
-        output_config_file = os.path.join(save_directory, self.CONFIG_NAME)
-        config_dict = asdict(self)
-
-        # Filter out non-serializable values
-        def make_serializable(obj):
-            if isinstance(obj, dict):
-                return {k: make_serializable(v) for k, v in obj.items() if make_serializable(v) is not None}
-            elif isinstance(obj, (list, tuple)):
-                return [make_serializable(item) for item in obj if make_serializable(item) is not None]
-            elif isinstance(obj, (str, int, float, bool, type(None))):
-                return obj
-            else:
-                # Skip non-serializable types like partial, function, etc.
-                return None
-
-        serializable_config = make_serializable(config_dict)
-
-        with open(output_config_file, "w", encoding="utf-8") as writer:
-            writer.write(json.dumps(serializable_config, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
-        logger.info(f"Configuration saved in {output_config_file}")
 
 
 def rotate_half(x):
@@ -598,7 +536,9 @@ class MiniCPMModel(MiniCPMPretrainedModel):
         cache_length = past_key_values.get_seq_length() if past_key_values is not None else 0
 
         if position_ids is None:
-            position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
+            position_ids = paddle.arange(cache_length, cache_length + seq_length, dtype="int64").expand(
+                (batch_size, seq_length)
+            )
 
         if self.config.sequence_parallel:
             # [bs, seq_len, num_head * head_dim] -> [bs * seq_len, num_head * head_dim]
@@ -675,30 +615,6 @@ class MiniCPMModel(MiniCPMPretrainedModel):
             last_hidden_state=hidden_states,
             past_key_values=past_key_values,
         )
-
-
-class MiniCPMForCausalLMFleet(MiniCPMPretrainedModel):
-    is_fleet = True
-
-    def __new__(cls, config):
-        # Hybrid parallel config convert.
-        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
-        config.context_parallel_size = max(config.context_parallel_size, 1)
-        config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
-        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
-        config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
-
-        model_provider_class = MiniCPMModelProvider
-        model_provider = model_provider_class.from_config(config)
-        loss_fn = None
-        if getattr(config, "dpo_config", None):
-            loss_fn = CriterionLayerPipe(config, use_infohub=True)
-        gpt_model = model_provider.provide(loss_fn=loss_fn)
-        gpt_model._gen_aoa_config = cls._gen_aoa_config
-        gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
-        gpt_model.config_to_save = config
-        gpt_model.is_fleet = cls.is_fleet
-        return gpt_model
 
 
 class MiniCPMForCausalLM(MiniCPMPretrainedModel):
@@ -1034,53 +950,12 @@ class MiniCPMSentenceEmbedding(MiniCPMPretrainedModel):
         return last_hidden_states
 
 
-class MiniCPMForCausalLMPipe(MiniCPMPretrainedModel, GeneralModelForCausalLMPipe):
-    is_fleet = True
-
-    def __new__(cls, config):
-        # Hybrid parallel config convert.
-        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
-        config.context_parallel_size = max(config.context_parallel_size, 1)
-        config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
-        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
-        config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
-
-        model_provider_class = MiniCPMModelProvider
-        model_provider = model_provider_class.from_config(config)
-        loss_fn = None
-        if getattr(config, "dpo_config", None):
-            loss_fn = CriterionLayerPipe(config, use_infohub=True)
-        gpt_model = model_provider.provide(loss_fn=loss_fn)
-        gpt_model._gen_aoa_config = cls._gen_aoa_config
-        gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
-        if not hasattr(config, "architectures"):
-            config.architectures = [cls.__name__.replace("Pipe", "")]
-        gpt_model.config_to_save = config
-        gpt_model.is_fleet = cls.is_fleet
-        return gpt_model
-
-
-class MiniCPMForCausalLMPipeDeprecated(GeneralModelForCausalLMPipe):
-    config_class = MiniCPMConfig
-    _decoder_layer_cls = MiniCPMDecoderLayer
-    _get_tensor_parallel_mappings = MiniCPMModel._get_tensor_parallel_mappings
-    _init_weights = MiniCPMModel._init_weights
-    _keep_in_fp32_modules = MiniCPMModel._keep_in_fp32_modules
-    _rotary_emb_cls = MiniCPMRotaryEmbedding
-    _tied_weights_keys = ["lm_head.weight"]
-    transpose_weight_keys = MiniCPMModel.transpose_weight_keys
-    _gen_aoa_config = MiniCPMForCausalLMDeprecated._gen_aoa_config
-    _gen_inv_aoa_config = MiniCPMForCausalLMDeprecated._gen_inv_aoa_config
-
-
 __all__ = [
     "MiniCPMModel",
     "MiniCPMPretrainedModel",
     "MiniCPMForCausalLM",
-    "MiniCPMForCausalLMPipe",
     "MiniCPMForSequenceClassification",
     "MiniCPMForTokenClassification",
     "MiniCPMSentenceEmbedding",
     "MiniCPMForCausalLMDeprecated",
-    "MiniCPMForCausalLMPipeDeprecated",
 ]

@@ -14,42 +14,39 @@
 
 set -exo pipefail
 
-root_dir=$(pwd)
-config_yaml=$root_dir/PaddleFormers/tests/config/ci/minicpm_sft_single.yaml
-data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft
-model_name_or_path=${CACHE_DIR}/minicpm/tiny-random-minicpm
-output_dir=$root_dir/checkpoints/minicpm-sft-single
+repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+config_template=$repo_dir/tests/config/ci/minicpm_sft_single.yaml
+config_yaml=$(mktemp /tmp/minicpm_sft_single.XXXXXX.yaml)
+trap 'rm -f "$config_yaml"' EXIT
+data_dir=$repo_dir/tests/fixtures/dummy/sft
+model_name_or_path=${MODEL_NAME_OR_PATH:-${CACHE_DIR}/minicpm/tiny-random-minicpm}
+output_dir=${OUTPUT_DIR:-/tmp/minicpm-sft-single}
 
 yq eval '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
     | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
     | .model_name_or_path = strenv(model_name_or_path)
     | .output_dir = strenv(output_dir)' \
-   "$config_yaml" > "${config_yaml}.tmp"
-mv "${config_yaml}.tmp" "$config_yaml"
-
-rm -rf ./outputs
-rm -rf paddleformers_dist_log
+   "$config_template" > "$config_yaml"
 
 export FLAGS_embedding_deterministic=1
 export FLAGS_cudnn_deterministic=1
 export FLAGS_use_stride_compute_kernel=False
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
 
 unset http_proxy https_proxy
 
 log_file=minicpm_sft_single_card.txt
+train_command=("$(which paddleformers-cli)" train "$config_yaml")
+if command -v coverage >/dev/null 2>&1; then
+   train_command=(coverage run "${train_command[@]}")
+fi
 
 set +e
-coverage run "$(which paddleformers-cli)" train "$config_yaml" 2>&1 | tee ./"${log_file}"
+"${train_command[@]}" 2>&1 | tee ./"${log_file}"
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
-   echo "MiniCPM single-card SFT failed, try to check the log file"
-   python "$root_dir/PaddleFormers/tests/check_log_for_exitcode.py" ./"${log_file}" "***** train metrics *****"
-   check_exit_code=$?
-   if [ $check_exit_code -ne 0 ]; then
-     echo "Failed to find train metrics in log file."
-     exit 1
-   fi
+   echo "MiniCPM single-card SFT failed, see ${log_file}."
+   exit $exit_code
 fi
 
 echo "Test passed."
