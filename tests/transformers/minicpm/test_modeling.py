@@ -258,6 +258,21 @@ class MiniCPMModelTester:
         else:
             self.parent.assertTrue((result_position_id[0] == result_no_position_id[0]).all())
 
+    def create_and_check_cached_forward(self, config, input_ids, *args):
+        model = MiniCPMForCausalLM(config)
+        model.eval()
+
+        full_logits = model(input_ids, use_cache=True, return_dict=True).logits[:, -1, :]
+        prefix_outputs = model(input_ids[:, :-1], use_cache=True, return_dict=True)
+        cached_logits = model(
+            input_ids[:, -1:],
+            past_key_values=prefix_outputs.past_key_values,
+            use_cache=True,
+            return_dict=True,
+        ).logits[:, -1, :]
+
+        self.parent.assertTrue(paddle.allclose(cached_logits, full_logits, atol=1e-5, rtol=1e-5))
+
 
 class MiniCPMModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
     base_model_class = MiniCPMModel
@@ -292,6 +307,10 @@ class MiniCPMModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     def test_model_position_ids(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.check_model_position_ids(*config_and_inputs)
+
+    def test_cached_forward_matches_full_forward(self):
+        config_and_inputs = self.model_tester.prepare_config_and_inputs()
+        self.model_tester.create_and_check_cached_forward(*config_and_inputs)
 
     def test_model_decoder_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
