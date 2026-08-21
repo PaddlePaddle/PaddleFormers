@@ -18,9 +18,9 @@ repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 config_template=$repo_dir/tests/config/ci/minicpm_sft_single.yaml
 config_yaml=$(mktemp /tmp/minicpm_sft_single.XXXXXX.yaml)
 trap 'rm -f "$config_yaml"' EXIT
-data_dir=$repo_dir/tests/fixtures/dummy/sft
-model_name_or_path=${MODEL_NAME_OR_PATH:-${CACHE_DIR}/minicpm/tiny-random-minicpm}
-output_dir=${OUTPUT_DIR:-/tmp/minicpm-sft-single}
+export data_dir=$repo_dir/tests/fixtures/dummy/sft
+export model_name_or_path=${MODEL_NAME_OR_PATH:-${CACHE_DIR}/minicpm/tiny-random-minicpm}
+export output_dir=${OUTPUT_DIR:-/tmp/minicpm-sft-single}
 
 yq eval '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
     | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"

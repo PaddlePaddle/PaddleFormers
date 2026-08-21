@@ -23,10 +23,10 @@ Direct Flex loading from the HF `.bin` checkpoint is not used for acceptance in 
   - HF and Paddle new token ids: `[11225, 72, 5, 2219, 8107, 1379, 8360, 1410, 11225, 72]`
 - Unit tests:
   - `python -m unittest tests.transformers.minicpm.test_modeling -v`
-  - Result: `Ran 33 tests ... OK (skipped=5)`
+  - Result: `Ran 34 tests ... OK (skipped=5)`
 - Tiny SFT smoke:
   - `scripts/minicpm/create_tiny_random.py` deterministically generates a tiny native checkpoint and tokenizer without external model assets.
-  - One-step SFT smoke completed and logged `train_loss=11.2081`.
+  - The complete 10-step single-card BF16 SFT smoke passed with `global_step=10` and `train_loss=3.9330`; the trained checkpoint was saved successfully.
   - `tests/integration_test/preprocess.sh` prepares the checkpoint under `${CACHE_DIR}/minicpm/tiny-random-minicpm`, and the H20 single-card workflow runs `tests/integration_test/minicpm_sft_single_card.sh` for 10 steps.
 - GSM8K 300-step SFT:
   - Full-depth, full-width MiniCPM-1B completed 300 steps with `scripts/minicpm/run_sft_gsm8k.sh`.
@@ -43,11 +43,12 @@ Direct Flex loading from the HF `.bin` checkpoint is not used for acceptance in 
   - PaddleFormers and ms-swift eval curves converge into the same range. Eval loss deltas from step 50 to step 300 are `0.0568`, `0.0229`, `0.0164`, `0.0124`, `0.0060`, and `0.0107`, respectively.
 - Inference compiler benchmark:
   - `scripts/minicpm/benchmark_inference_compile.py` compares dynamic forward with `paddle.jit.to_static(..., backend="CINN")` under the same checkpoint, dtype, input shape, and model path.
-  - Full MiniCPM-1B BF16, batch size 1, seq len 128: dynamic latency `0.0557s`, static latency `0.0655s`, speedup `-14.97%`, `max_diff=0.0`.
-  - Full MiniCPM-1B BF16, batch size 1, seq len 512: dynamic latency `0.0803s`, static latency `0.0828s`, speedup `-2.93%`, `max_diff=0.0`.
-  - Current local environment did not meet the compiler speedup target. Logs repeatedly report missing symbolic shape support for `fused_rms_norm_ext`, so this item should be rerun in the official acceptance compiler/runtime environment.
+  - The current best GPU path uses `full_graph=True` and disables fused RMSNorm for both dynamic and static runs, allowing CINN to optimize the ordinary RMSNorm graph. All timed forward passes run on GPU.
+  - Full-depth, full-width MiniCPM-1B BF16 architecture, batch size 1, seq len 128: dynamic latency `0.0737s`, static latency `0.0110s`, speedup `572.16%`, `max_diff=0.00220`.
+  - Full-depth, full-width MiniCPM-1B BF16 architecture, batch size 1, seq len 512: dynamic latency `0.0765s`, static latency `0.0364s`, speedup `109.96%`, `max_diff=0.00250`.
+  - These performance-only runs use a full-size random native checkpoint with the same `1536/3840/52` model structure and vocabulary as MiniCPM-1B. Quality and precision acceptance results above use the converted official checkpoint; random weights are not used for model-quality claims.
 
 ## Remaining Items
 
-- Rerun compiler training benchmark and confirm compiler speedup in the official acceptance environment.
+- Run the compiler-on/off training benchmark in the official acceptance environment; inference-side compiler speedup already exceeds 20% on the full MiniCPM-1B architecture.
 - Fleet/PP is not exposed yet because the generic GPT path does not implement MiniCPM's embedding, residual, and LM-head scaling. It should be enabled only after a MiniCPM-specific provider and ordinary-vs-Fleet/PP forward alignment test are added.
