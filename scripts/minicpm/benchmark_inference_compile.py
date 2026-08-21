@@ -61,6 +61,11 @@ def parse_args():
     parser.add_argument("--steps", type=int, default=20)
     parser.add_argument("--seed", type=int, default=23)
     parser.add_argument("--json-out", default=None)
+    parser.add_argument(
+        "--load-on-cpu",
+        action="store_true",
+        help="Load checkpoint weights on CPU before moving the model to the target device.",
+    )
     parser.add_argument("--full-graph", action="store_true", help="Enable full graph conversion for to_static.")
     parser.add_argument(
         "--disable-fused-rms-norm",
@@ -103,7 +108,7 @@ def time_forward(layer, input_ids, attention_mask, position_ids, warmup, steps):
 
 def main():
     args = parse_args()
-    paddle.set_device(args.device)
+    paddle.set_device("cpu" if args.load_on_cpu else args.device)
     paddle.seed(args.seed)
     np.random.seed(args.seed)
 
@@ -113,6 +118,9 @@ def main():
         load_checkpoint_format=args.load_checkpoint_format,
         convert_from_hf=False,
     )
+    if args.load_on_cpu:
+        model.to(device=args.device)
+        paddle.set_device(args.device)
     if args.disable_fused_rms_norm:
         disable_fused_rms_norm(model)
     model.eval()
@@ -146,7 +154,9 @@ def main():
         static_layer, input_ids, attention_mask, position_ids, args.warmup, args.steps
     )
 
-    diff = paddle.abs(dynamic_output.astype("float32") - static_output.astype("float32"))
+    dynamic_output_cpu = dynamic_output.cpu().astype("float32")
+    static_output_cpu = static_output.cpu().astype("float32")
+    diff = paddle.abs(dynamic_output_cpu - static_output_cpu)
     speedup_percent = (dynamic_latency / static_latency - 1.0) * 100.0
     result = {
         "model": args.model,
@@ -157,6 +167,7 @@ def main():
         "seq_len": args.seq_len,
         "warmup": args.warmup,
         "steps": args.steps,
+        "load_on_cpu": args.load_on_cpu,
         "full_graph": args.full_graph,
         "disable_fused_rms_norm": args.disable_fused_rms_norm,
         "dynamic_avg_latency_sec": dynamic_latency,
