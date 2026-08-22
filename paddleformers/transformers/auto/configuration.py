@@ -25,7 +25,6 @@ from ...utils.download import resolve_file_path
 from ...utils.import_utils import import_module
 from ...utils.log import logger
 from ..configuration_utils import PretrainedConfig
-from ..model_utils import PretrainedModel
 
 __all__ = [
     "AutoConfig",
@@ -332,6 +331,8 @@ class AutoConfig(PretrainedConfig):
                 if config_class is not PretrainedConfig:
                     model_config_class = config_class
                     return model_config_class
+
+        from ..model_utils import PretrainedModel
 
         assert inspect.isclass(model_class) and issubclass(
             model_class, PretrainedModel
