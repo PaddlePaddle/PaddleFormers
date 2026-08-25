@@ -518,7 +518,10 @@ class ParamFusionStorageHelper:
             assert isinstance(v, dict), "model_weights_metas must be a dict"
             buffer_index = v["buffer_index"]
             if buffer_index not in self.inited_buffers.keys():
-                buffer_tuple = self.init_buffer(buffer_ipc_metas[buffer_index])
+                buffer_tuple = self.init_buffer(
+                    buffer_ipc_metas[buffer_index],
+                    flatten=not buffer_index.startswith("unshard_"),
+                )
                 self.inited_buffers[buffer_index] = buffer_tuple
             if buffer_index.startswith("unshard_"):
                 self.model_weights_metas[k] = v
@@ -530,12 +533,23 @@ class ParamFusionStorageHelper:
             v["logical_end"] = self.all_param_numel
             self.model_weights_metas[k] = v
 
-    def init_buffer(self, meta):
+    def init_buffer(self, meta, flatten=False):
         if paddle.is_compiled_with_xpu():
             cuda_buffer = paddle.to_tensor(paddle.base.core.LoDTensor._new_shared_xpu(meta))
         else:
             cuda_buffer = paddle.to_tensor(paddle.base.core.LoDTensor._new_shared_cuda(meta))
         cpu_buffer = cuda_buffer.cpu()
+        if flatten and len(cuda_buffer.shape) > 1:
+            # Muon 2D params that have no master weight (i.e. fp32 params kept by
+            # _muon_manipulate_state_dict) are shared as-is in
+            # get_fused_param_mappings(), so the buffer inherits the param's own
+            # shape. Every consumer below addresses this buffer by *element*
+            # offset -- async_offload_with_offset() only accepts 1-D and _slice()
+            # counts elements -- so re-view it flat. The logical shape is carried
+            # in meta["shape"] and restored by restore_tensor_from_meta().
+            numel = int(np.prod(cuda_buffer.shape))
+            cuda_buffer.get_tensor()._set_dims([numel])
+            cpu_buffer.get_tensor()._set_dims([numel])
         return (cuda_buffer, cpu_buffer)
 
     @imperative_base.no_grad()
