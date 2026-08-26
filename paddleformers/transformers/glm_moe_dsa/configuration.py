@@ -202,6 +202,14 @@ class GlmMoeDsaConfig(PretrainedConfig):
         self.rotary_base = self.rope_theta
         rope_type = self.rope_parameters["rope_type"]
         self.rope_type = "rope" if rope_type == "default" else rope_type
+        # ConfigTester round-trips constructor kwargs. Nested
+        # rope_parameters.partial_rotary_factor is derived from the top-level
+        # field; drop it from the serialized nested dict so from_dict does not
+        # treat it as an unused constructor argument and wipe the nest.
+        if isinstance(self.rope_parameters, dict):
+            self.rope_parameters.pop("partial_rotary_factor", None)
+            if self.rope_scaling is not None:
+                self.rope_scaling.pop("partial_rotary_factor", None)
         rope_config_validation(self)
 
         # MoE arguments
@@ -228,6 +236,12 @@ class GlmMoeDsaConfig(PretrainedConfig):
         super().__init__(
             fp32_residual_connection=fp32_residual_connection,
             **kwargs,
+        )
+        # rope_parameters is derived from rope_theta / rope_scaling. Keep it
+        # off the serialized dict so ConfigTester round-trips the constructor
+        # kwargs (rope_scaling stays None when it was not provided).
+        self.register_unsavable_keys(
+            ["rope_parameters", "rotary_base", "rope_type"]
         )
 
 
