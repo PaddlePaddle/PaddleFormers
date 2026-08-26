@@ -14,6 +14,7 @@
 
 import atexit
 import copy
+import ctypes
 import functools
 import hashlib
 import json
@@ -295,6 +296,14 @@ def get_fused_param_mappings(optimizer, manipulated_state_dict):
     return param_mappings, ipc_meta_mappings
 
 
+def pin2cpu_zero_copy_fp32(t):
+    lt = t.get_tensor()
+    arr = np.ctypeslib.as_array(ctypes.cast(lt._ptr(), ctypes.POINTER(ctypes.c_float)), shape=(t._numel(),))
+    alias = core.eager.Tensor(value=arr, place=core.CPUPlace(), zero_copy=True)
+    alias._keep_alive = (t, arr)
+    return alias
+
+
 class ZeroCostCheckpointEMAProcessor:
     """
     生活在 ZCC Worker 里面的 EMA 处理模块.
@@ -304,7 +313,7 @@ class ZeroCostCheckpointEMAProcessor:
     def __init__(self, optimizer_fusion_storage_helper, param_fusion_storage_helper, ema_coef):
         self.optimizer_fusion_storage_helper = optimizer_fusion_storage_helper
         self.param_fusion_storage_helper = param_fusion_storage_helper
-        self.ema_coef = ema_coef
+        self.ema_coef = None if ema_coef is None else float(ema_coef)
         (
             self.ema_buffer,
             self.ema_buffer_model_params,
@@ -357,11 +366,19 @@ class ZeroCostCheckpointEMAProcessor:
         # do update: ema = alpha * ema + (1-alpha) * model
         logger.info(f"[ZCC EMA] accumulating, buffer type:{self.ema_buffer.place} {self.ema_buffer.dtype}")
         with device_guard("cpu"):
-            cpu_master_weights = self.optimizer_fusion_storage_helper.cpu_buffer._slice(
-                self.master_min_offset, self.master_max_offset
-            ).cpu()
+            cpu_buffer = self.optimizer_fusion_storage_helper.cpu_buffer
+            if (
+                cpu_buffer.place.is_cuda_pinned_place()
+                and cpu_buffer.dtype == paddle.float32
+                and cpu_buffer.is_contiguous()
+            ):
+                cpu_master_weights = pin2cpu_zero_copy_fp32(cpu_buffer)._slice(
+                    self.master_min_offset, self.master_max_offset
+                )
+            else:
+                cpu_master_weights = cpu_buffer._slice(self.master_min_offset, self.master_max_offset).cpu()
             if zcc_ema_loss_threshold is None or loss < zcc_ema_loss_threshold:
-                self.ema_buffer = self.ema_coef * self.ema_buffer + (1 - self.ema_coef) * cpu_master_weights
+                self.ema_buffer.lerp_(cpu_master_weights, 1 - self.ema_coef)
                 for index, ema_buf in self.ema_buffer_model_params.items():
                     _, cpu_buf = self.param_fusion_storage_helper.inited_buffers[index]
                     updated_ema = self.ema_coef * ema_buf + (1 - self.ema_coef) * cpu_buf
@@ -388,7 +405,7 @@ class ZeroCostCheckpointEMAProcessor:
                     continue  # non fp32 has no `self.ema_buffer_model_params`
                 if buffer_index.startswith("unshard_"):
                     # unshard_ type tensors use the entire buffer directly
-                    tensor = self.ema_buffer_model_params[buffer_index].clone()
+                    tensor = self.ema_buffer_model_params[buffer_index]
                     tensor.get_tensor()._set_dims(shape)
                     tensor.name = name
                     ema_state_dict[k] = tensor
@@ -396,7 +413,7 @@ class ZeroCostCheckpointEMAProcessor:
                 start = tensor_meta["start"]
                 end = tensor_meta["end"]
                 cpu_buffer = self.ema_buffer_model_params[buffer_index]
-                tensor = cpu_buffer._slice(start, end).clone()  # slice 出来的 tensor 在执行`paddle.save`会异常慢，此处必须clone
+                tensor = cpu_buffer._slice(start, end)
                 tensor.get_tensor()._set_dims(shape)
                 tensor.name = name
                 ema_state_dict[k] = tensor
@@ -404,7 +421,7 @@ class ZeroCostCheckpointEMAProcessor:
             for k, meta in self.optimizer_fusion_storage_helper.master_weights_meta.items():
                 s = meta["start"] - self.master_min_offset
                 e = meta["end"] - self.master_min_offset
-                t = self.ema_buffer._slice(s, e).clone()
+                t = self.ema_buffer._slice(s, e)
                 t.get_tensor()._set_dims(meta["shape"])
                 t.name = meta["name"]
                 ema_state_dict_master_weights[k] = t
@@ -435,6 +452,36 @@ class ZeroCostCheckpointEMAProcessor:
             e = meta["end"] - self.master_min_offset
             if k in ema_master:  # state-dict is filtered
                 self.ema_buffer[s:e] = ema_master[k].flatten()
+
+
+class OptFusionStorageHelper(FusionStorageHelper):
+    """
+    A zero-copy variant of FusionStorageHelper whose `state_dict` returns
+    zero-copy views of its cpu_buffer (in pinned memory) instead of independent
+    copies.
+
+    Note: the caller MUST fully consume or persist the returned state_dict (e.g.
+    finish `paddle.save`) before starting the next `sync_param`, otherwise it
+    may silently corrupt the content in state_dict.
+    """
+
+    @imperative_base.no_grad()
+    def restore_tensor_from_meta(self, tensor_meta):
+        shape = tensor_meta["shape"]
+        name = tensor_meta["name"]
+        start = tensor_meta["start"]
+        end = tensor_meta["end"]
+        if (
+            self.cpu_buffer.place.is_cuda_pinned_place()
+            and self.cpu_buffer.dtype == paddle.float32
+            and self.cpu_buffer.is_contiguous()
+        ):
+            tensor = pin2cpu_zero_copy_fp32(self.cpu_buffer)._slice(start, end)
+        else:
+            tensor = self.cpu_buffer._slice(start, end)
+        tensor.get_tensor()._set_dims(shape)
+        tensor.name = name
+        return tensor
 
 
 class ParamFusionStorageHelper:
@@ -1415,7 +1462,7 @@ class ZeroCostCheckpointWorker:
             buffer_ipc_meta,
         ) = optimizer_states_meta
         if self.optimizer_fusion_storage_helper is None:
-            self.optimizer_fusion_storage_helper = FusionStorageHelper(
+            self.optimizer_fusion_storage_helper = OptFusionStorageHelper(
                 accumulators_meta,
                 master_weights_meta,
                 merged_model_params_meta,

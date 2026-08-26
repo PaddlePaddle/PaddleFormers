@@ -224,6 +224,24 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
         full_attn_layers = [i for i, lt in enumerate(layer_types) if lt == "full_attention"]
         linear_attn_layers = [i for i, lt in enumerate(layer_types) if lt == "linear_attention"]
 
+        # The reference model declares the MoE router gate and the GDN
+        # ``A_log``/``dt_bias`` as plain parameters, so the official checkpoint
+        # stores them in the model dtype (BF16) and they are promoted to FP32
+        # only at the computation boundary. Converting them to FP32 leaves here
+        # changes the parameter / gradient / optimizer-state dtype relative to
+        # the reference. Keep the historical FP32 conversion on the default path
+        # and honor the declared dtype in accuracy-compatible mode, matching the
+        # Fleet-side owners (StandardMoERouter, GatedDeltaNet) and the inverse
+        # statements in ``_gen_inv_aoa_config``, which already export BF16.
+        accuracy_param_dtype = (
+            "bfloat16"
+            if (
+                getattr(text_config, "use_accuracy_compatible", False)
+                or getattr(config, "use_accuracy_compatible", False)
+            )
+            else "float32"
+        )
+
         # language model — embedding & final norm
         aoa_config = {
             "aoa_statements": [
@@ -366,11 +384,11 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
             ]
 
         aoa_config["aoa_statements"] += [
-            f"model.language_model.layers.{i}.linear_attn.dt_bias -> {llm_prefix}layers.{i}.self_attn.dt_bias, dtype='float32'"
+            f"model.language_model.layers.{i}.linear_attn.dt_bias -> {llm_prefix}layers.{i}.self_attn.dt_bias, dtype='{accuracy_param_dtype}'"
             for i in linear_attn_layers
         ]
         aoa_config["aoa_statements"] += [
-            f"model.language_model.layers.{i}.linear_attn.A_log -> {llm_prefix}layers.{i}.self_attn.A_log, dtype='float32'"
+            f"model.language_model.layers.{i}.linear_attn.A_log -> {llm_prefix}layers.{i}.self_attn.A_log, dtype='{accuracy_param_dtype}'"
             for i in linear_attn_layers
         ]
         aoa_config["aoa_statements"] += [
@@ -390,7 +408,7 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
         if is_moe and num_experts > 0:
             # MoE — router gate
             aoa_config["aoa_statements"] += [
-                f"model.language_model.layers.{i}.mlp.gate.weight -> {llm_prefix}layers.{i}.mlp.gate.weight, dtype='float32'"
+                f"model.language_model.layers.{i}.mlp.gate.weight -> {llm_prefix}layers.{i}.mlp.gate.weight, dtype='{accuracy_param_dtype}'"
                 for i in range(text_config.num_hidden_layers)
             ]
             # MoE — routed experts
@@ -499,7 +517,7 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
 
                 # MTP transformer layer — MoE router
                 aoa_config["aoa_statements"].append(
-                    f"{hf_mtp_pre}.mlp.gate.weight -> {fleet_mtp_pre}.transformer_layer.mlp.gate.weight, dtype='float32'"
+                    f"{hf_mtp_pre}.mlp.gate.weight -> {fleet_mtp_pre}.transformer_layer.mlp.gate.weight, dtype='{accuracy_param_dtype}'"
                 )
 
                 # MTP transformer layer — MoE routed experts

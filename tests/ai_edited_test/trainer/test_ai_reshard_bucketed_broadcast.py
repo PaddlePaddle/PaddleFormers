@@ -4,7 +4,7 @@
 Mirrors the existing single-process reshard unit tests: no real collective is
 started. all_gather_state_dict short-circuits the broadcast when group.nranks
 < 2, yet still runs the full bucket/pack/unpack/dtype logic, so a fake 1-rank
-group lets us diff the legacy vs bucketed paths in-process. The true multi-root
+group lets us exercise the pack/unpack path in-process. The true multi-root
 collective sequence (>=2 ranks) is out of scope here and belongs to a
 launch-based integration test.
 """
@@ -22,7 +22,6 @@ from paddleformers.trainer.utils.reshard.common import (
     _normalize_np_dtype_str,
     all_gather_state_dict,
     set_broadcast_max_chunk_bytes,
-    set_bucketed_broadcast,
 )
 
 _DEFAULT_MAX_CHUNK = reshard_common._STATE_DICT_BROADCAST_MAX_CHUNK_BYTES
@@ -79,29 +78,26 @@ class TestIterBucketChunks(unittest.TestCase):
         self.assertEqual([len(c) for c in chunks], [2, 2, 1])
 
 
-class TestBucketedMatchesLegacy(unittest.TestCase):
-    """all_gather_state_dict must return identical results in both modes."""
+class TestBucketedGather(unittest.TestCase):
+    """all_gather_state_dict must preserve key/shape/dtype/value."""
 
     def tearDown(self):
-        set_bucketed_broadcast(False)
         set_broadcast_max_chunk_bytes(_DEFAULT_MAX_CHUNK)
 
-    def _gather(self, state_dict, filter_func, bucketed, max_chunk_bytes=None):
-        set_bucketed_broadcast(bucketed)
+    def _gather(self, state_dict, filter_func, max_chunk_bytes=None):
         if max_chunk_bytes is not None:
             set_broadcast_max_chunk_bytes(max_chunk_bytes)
         return all_gather_state_dict(_copy_sd(state_dict), filter_func, _fake_group())
 
-    def _assert_same(self, a, b):
-        self.assertEqual(set(a.keys()), set(b.keys()))
-        for k in a:
-            ta, tb = a[k], b[k]
-            self.assertEqual(list(ta.shape), list(tb.shape), f"shape mismatch for {k}")
-            self.assertEqual(str(ta.dtype), str(tb.dtype), f"dtype mismatch for {k}")
-            na = ta.astype("float32").numpy()
-            nb = tb.astype("float32").numpy()
+    def _assert_matches_input(self, out, sd, keys):
+        self.assertEqual(set(out.keys()), set(keys))
+        for k in keys:
+            t = out[k]
+            self.assertEqual(list(t.shape), list(np.asarray(sd[k]).shape), f"shape mismatch for {k}")
+            na = t.astype("float32").numpy()
+            nb = paddle.to_tensor(sd[k]).astype("float32").numpy()
             np.testing.assert_array_equal(na, nb, err_msg=f"value mismatch for {k}")
-        return a
+        return out
 
     def test_basic_fp32(self):
         sd = OrderedDict(
@@ -109,11 +105,8 @@ class TestBucketedMatchesLegacy(unittest.TestCase):
             b=np.random.rand(16).astype("float32"),
             c=np.random.rand(2, 2, 2).astype("float32"),
         )
-        legacy = self._gather(sd, lambda x: True, bucketed=False)
-        bucketed = self._gather(sd, lambda x: True, bucketed=True)
-        self._assert_same(legacy, bucketed)
-        # also check absolute correctness vs input for one key
-        np.testing.assert_array_equal(bucketed["a"].numpy(), sd["a"])
+        out = self._gather(sd, lambda x: True)
+        self._assert_matches_input(out, sd, ["a", "b", "c"])
 
     def test_bf16_return_numpy_uint16(self):
         # Regression: BF16 checkpoint loaded via return_numpy=True is uint16.
@@ -121,10 +114,9 @@ class TestBucketedMatchesLegacy(unittest.TestCase):
         base = np.random.rand(3, 5).astype("float32")
         sd = OrderedDict(w=_bf16_uint16(base), s=np.random.rand(8).astype("float32"))
         self.assertEqual(str(sd["w"].dtype), "uint16")
-        legacy = self._gather(sd, lambda x: True, bucketed=False)
-        bucketed = self._gather(sd, lambda x: True, bucketed=True)
-        out = self._assert_same(legacy, bucketed)
+        out = self._gather(sd, lambda x: True)
         self.assertEqual(str(out["w"].dtype).split(".")[-1], "bfloat16")
+        self._assert_matches_input(out, sd, ["w", "s"])
 
     def test_partial_filter(self):
         sd = OrderedDict(
@@ -133,10 +125,8 @@ class TestBucketedMatchesLegacy(unittest.TestCase):
             keep1=np.random.rand(4).astype("float32"),
         )
         f = lambda k: k.startswith("keep")
-        legacy = self._gather(sd, f, bucketed=False)
-        bucketed = self._gather(sd, f, bucketed=True)
-        self.assertEqual(set(bucketed.keys()), {"keep0", "keep1"})
-        self._assert_same(legacy, bucketed)
+        out = self._gather(sd, f)
+        self._assert_matches_input(out, sd, ["keep0", "keep1"])
 
     def test_empty_and_scalar(self):
         sd = OrderedDict(
@@ -145,10 +135,9 @@ class TestBucketedMatchesLegacy(unittest.TestCase):
             scalar=np.asarray(3.14, dtype="float32"),
             normal=np.random.rand(5).astype("float32"),
         )
-        legacy = self._gather(sd, lambda x: True, bucketed=False)
-        bucketed = self._gather(sd, lambda x: True, bucketed=True)
-        self._assert_same(legacy, bucketed)
-        self.assertEqual(list(bucketed["scalar"].shape), [])
+        out = self._gather(sd, lambda x: True)
+        self._assert_matches_input(out, sd, ["empty", "empty2d", "scalar", "normal"])
+        self.assertEqual(list(out["scalar"].shape), [])
 
     def test_oversized_tensor_small_max_chunk(self):
         # Shrink bucket/chunk caps so tiny tensors exercise the multi-chunk and
@@ -159,9 +148,8 @@ class TestBucketedMatchesLegacy(unittest.TestCase):
                 s0=np.random.rand(8).astype("float32"),
                 s1=np.random.rand(8).astype("float32"),
             )
-            legacy = self._gather(sd, lambda x: True, bucketed=False, max_chunk_bytes=512)
-            bucketed = self._gather(sd, lambda x: True, bucketed=True, max_chunk_bytes=512)
-            self._assert_same(legacy, bucketed)
+            out = self._gather(sd, lambda x: True, max_chunk_bytes=512)
+            self._assert_matches_input(out, sd, ["big", "s0", "s1"])
 
 
 if __name__ == "__main__":

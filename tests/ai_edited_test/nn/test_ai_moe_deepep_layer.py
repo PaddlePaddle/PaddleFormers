@@ -72,11 +72,6 @@ def _make_modular_moe_layer(
         moe_expert_capacity_factor=moe_expert_capacity_factor,
         moe_token_drop_policy="probs",
     )
-    # PretrainedConfig.__init__ has a bug where set_expected_keys correctly
-    # reads moe_token_dispatcher_type from kwargs, but a later line
-    # (kwargs.pop with default "deepep") overwrites it. Fix it here.
-    pretrained_config.moe_token_dispatcher_type = moe_token_dispatcher_type
-
     moe_config = {
         "gate_activation": "softmax",
         "eval_capacity_factor": 1.0,
@@ -165,6 +160,20 @@ class TestModularMoELayer(unittest.TestCase):
         """Test that shared_experts is created when num_shared_experts > 0."""
         layer = _make_modular_moe_layer(num_shared_experts=1)
         self.assertIsNotNone(layer.shared_experts)
+
+    def test_pretrained_config_preserves_dispatcher_type(self):
+        """Test default and explicit dispatcher types are preserved."""
+        from paddleformers.transformers.configuration_utils import PretrainedConfig
+
+        self.assertEqual(PretrainedConfig().moe_token_dispatcher_type, "alltoall")
+        self.assertEqual(
+            PretrainedConfig(moe_token_dispatcher_type="deepep").moe_token_dispatcher_type,
+            "deepep",
+        )
+        self.assertEqual(
+            PretrainedConfig(moe_token_dispatcher_type="alltoall").moe_token_dispatcher_type,
+            "alltoall",
+        )
 
     def test_init_has_communication(self):
         """Test that communication module is created."""

@@ -12,20 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import types
 from dataclasses import dataclass
 
 import paddle
 from paddle.distributed import fleet
-from paddle.distributed.fleet.meta_parallel import NoPipelineParallel
-from paddlefleet.models.gpt.gpt_embedding import GPTEmbedding
-from paddlefleet.models.gpt.lm_head import GPTLMHead
 from paddlefleet.models.kimi_k3 import (
     build_kimi_k3_vision_config,
-    build_vision_startend_row_indices,
     kimi_k3_vision_builder,
-    merge_input_ids_with_image_features,
 )
-from paddlefleet.transformer.layer import FleetLayer
 
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.pp_model import GeneralModelForCausalLMPipe
@@ -650,171 +645,83 @@ def build_kimi_k3_vision_tower(vision_config, params_dtype=None):
     return tower, fleet_config
 
 
-class KimiK3VLModel(FleetLayer):
-    """Vision tower + text backbone with the K3 dynamic-expansion fusion.
+# Batch keys forwarded to pipeline stage 0. The scheduler only ships what is
+# declared here and a missing key does not raise: without ``pixel_values`` the
+# vision tower never runs and training silently degrades to text-only.
+_PIPELINE_FIRST_STAGE_KEYS = [
+    "input_ids",
+    "attention_mask",
+    "attn_mask_startend_row_indices",
+    "position_ids",
+    "pixel_values",
+    "image_grid_thw",
+]
 
-    The text stream carries exactly one placeholder token per media and the model
-    expands it into the real visual token count, so the sequence grows inside
-    ``forward`` and ``attention_mask`` / ``labels`` / ``position_ids`` must be
-    rebuilt. Visual tokens then use plain 1-D position ids continuous with the
-    text, not a three-axis MRoPE.
+
+class KimiK3CriterionPipe(CriterionLayer):
+    """``CriterionLayer`` for the pipeline last stage.
+
+    ``GPTLMHead.forward`` returns ``[main_logits, mtp_logits...]`` with MTP enabled,
+    but the scheduler asserts ``loss_fn`` returns a single Tensor and never forwards
+    ``mtp_logits`` itself.
     """
 
-    def __init__(
-        self,
-        config,
-        vision_model=None,
-        language_model=None,
-        media_placeholder_token_id=None,
-        pad_token_id=None,
-        ignore_index=-100,
-    ):
-        assert isinstance(vision_model, NoPipelineParallel)
-        assert isinstance(language_model, NoPipelineParallel)
-        super().__init__(config=config)
-        self.visual = vision_model
-        self.language_model = language_model
-        self.media_placeholder_token_id = media_placeholder_token_id
-        self.pad_token_id = pad_token_id
-        self.ignore_index = ignore_index
+    def forward(self, logits, labels, loss_mask=None, **kwargs):
+        if isinstance(logits, list):
+            return super().forward(logits[0], labels, loss_mask, mtp_logits=logits[1:], **kwargs)
+        return super().forward(logits, labels, loss_mask, **kwargs)
 
-        self.language_embedding = self._find_language_embedding()
-        self.language_backbone = self._find_language_backbone()
-        self.language_lm_head = self._find_lm_head()
 
-        # ``forward`` embeds ``input_ids`` here and feeds the merged sequence back
-        # in as ``decoder_input``, so the embedding is required. The lm head is
-        # optional: a non-last pipeline stage has none.
-        if self.language_embedding is None:
-            raise RuntimeError(
-                "no GPTEmbedding found in the Kimi-K3 language backbone; the "
-                "multimodal fusion path cannot embed input_ids without it"
-            )
-        self.language_embedding.embedding.embed_tokens.reduce_scatter_embeddings = False
+def _prepare_kimi_k3_pipeline_inputs(inputs, gather_pp_need_data=True):
+    """Split a batch into stage-0 inputs and last-stage labels.
 
-    def _find_language_embedding(self):
-        for layer in self.language_model._layers.run_function:
-            if isinstance(layer, GPTEmbedding):
-                return layer
-        return None
+    ``gather_pp_need_data`` is accepted for signature compatibility only; this
+    function always returns the ``(inputs, labels)`` tuple.
+    """
+    if isinstance(inputs, dict):
+        first_stage_batch = {k: inputs[k] for k in _PIPELINE_FIRST_STAGE_KEYS if k in inputs}
+        return (first_stage_batch, inputs.get("labels", None))
 
-    def _find_language_backbone(self):
-        return [
-            layer
-            for layer in self.language_model._layers.run_function
-            if not isinstance(layer, (GPTEmbedding, GPTLMHead))
-        ]
+    first_stage_batch = {}
+    for key in _PIPELINE_FIRST_STAGE_KEYS:
+        values = [data.get(key, None) for data in inputs]
+        if any(value is not None for value in values):
+            first_stage_batch[key] = values
+    return (first_stage_batch, [data.get("labels", None) for data in inputs])
 
-    def _find_lm_head(self):
-        for layer in self.language_model._layers.run_function:
-            if isinstance(layer, GPTLMHead):
-                return layer
-        return None
 
-    def get_image_features(self, pixel_values, grid_thws):
-        """Run the vision tower; returns one ``(tokens_i, hidden)`` per media."""
-        dict_input = {
-            "pixel_values": pixel_values,
-            "grid_thws": grid_thws,
-            "attn_mask_startend_row_indices": build_vision_startend_row_indices(grid_thws),
-        }
-        output = self.visual._layers.forward(dict_input)
-        features = output["hidden_states"]
-        if not isinstance(features, (list, tuple)):
-            features = [features]
-        return features
+class KimiK3VisionMergeLayer(paddle.nn.Layer):
+    """Stage-0 layer that runs the MoonViT3d tower and hands the features to
+    ``GPTEmbedding`` as ``image_embeds``.
+
+    The attribute names are load bearing: Fleet's ``is_vision_merge_key`` matches the
+    ``vision_merge.vision_model.`` prefix to keep these parameters out of the pipeline
+    stage numbering and remap them in ``state_dict`` / ``sharded_state_dict``.
+    """
+
+    def __init__(self, vision_model):
+        super().__init__()
+        self.vision_model = vision_model
 
     def forward(self, dict_args):
-        """Embed, fuse the visual tokens, then run the text backbone.
-
-        Media inputs make the sequence longer, so ``attention_mask`` / ``labels``
-        / ``position_ids`` are rewritten in ``dict_args`` for the caller to read
-        back after this returns.
-        """
-        input_ids = dict_args["input_ids"]
         pixel_values = dict_args.get("pixel_values", None)
-        grid_thws = dict_args.get("image_grid_thw", None)
-        attention_mask = dict_args.get("attention_mask", None)
-        labels = dict_args.get("labels", None)
-
-        # Without the grid the vision tower cannot run; fail loudly rather than
-        # silently falling back to text-only training.
-        if pixel_values is not None and grid_thws is None:
-            raise ValueError(
-                "pixel_values were provided without `image_grid_thw`; the Kimi-K3 "
-                "vision tower needs the per-image [T, H, W] patch grid."
-            )
-
-        inputs_embeds = self.language_embedding.embedding.embed_tokens(input_ids)
-
         if pixel_values is not None:
-            image_features = [f.astype(inputs_embeds.dtype) for f in self.get_image_features(pixel_values, grid_thws)]
-            if attention_mask is None:
-                attention_mask = paddle.ones(input_ids.shape, dtype="int64")
-            # One placeholder expands into many visual tokens, so every
-            # per-position tensor changes length here.
-            inputs_embeds, attention_mask, labels, position_ids = merge_input_ids_with_image_features(
-                image_features,
-                inputs_embeds,
-                input_ids,
-                attention_mask,
-                image_token_index=self.media_placeholder_token_id,
-                pad_token_id=self.pad_token_id,
-                ignore_index=self.ignore_index,
-                labels=labels,
+            grid_thws = dict_args.get("image_grid_thw", None)
+            if grid_thws is None:
+                raise ValueError(
+                    "pixel_values were provided without `image_grid_thw`; the Kimi-K3 "
+                    "vision tower needs the per-image [T, H, W] patch grid."
+                )
+            output = self.vision_model.forward({"pixel_values": pixel_values, "grid_thws": grid_thws})
+            features = output["hidden_states"]
+            if not isinstance(features, (list, tuple)):
+                features = [features]
+            dict_args["image_embeds"] = paddle.concat(
+                [feature.reshape([-1, feature.shape[-1]]) for feature in features], axis=0
             )
-            dict_args["attention_mask"] = attention_mask
-            dict_args["labels"] = labels
-            dict_args["position_ids"] = position_ids
-
-        dict_args["input_ids"] = None
-        dict_args["decoder_input"] = inputs_embeds
-
-        lm_dict_args = self.language_embedding(dict_args, decoder_input=inputs_embeds)
-        for layer in self.language_backbone:
-            lm_dict_args = layer(lm_dict_args)
-
-        if self.language_lm_head is not None:
-            return self.language_lm_head(lm_dict_args)
-        return lm_dict_args
-
-
-class FleetKimiK3ForConditionalGeneration(FleetLayer, PretrainedModel):
-    config_class = None
-
-    def _post_init(self, original_init, *args, **kwargs):
-        pass
-
-    def __init__(self, config, model, criterion):
-        super().__init__(config)
-        self.model = model
-        self.criterion = criterion
-
-    def forward(self, dict_args=None, **kwargs):
-        """Run the multimodal model and return the scalar training loss.
-
-        Training only: ``generate()`` is unsupported because the fusion rewrites
-        the sequence length and this wrapper has no KV-cache contract, so
-        ``labels`` is required. ``dict_args`` may also arrive as plain keyword
-        arguments, because ``Trainer.compute_loss`` calls ``model(**inputs)`` for
-        models it does not recognise as a Fleet ``GPTModel``.
-        """
-        if dict_args is None:
-            dict_args = kwargs
-        logits = self.model(dict_args)
-        # Read labels only after the inner forward, which rebuilds them at the
-        # expanded sequence length.
-        labels = dict_args.get("labels", None)
-        if labels is None:
-            raise ValueError(
-                "KimiK3ForConditionalGeneration supports training only and requires "
-                "`labels`; generation is not implemented yet."
-            )
-        # With num_nextn_predict_layers > 0 the lm head emits the main logits
-        # plus one per MTP layer.
-        if isinstance(logits, list):
-            return self.criterion(logits[0], labels, mtp_logits=logits[1:])
-        return self.criterion(logits, labels)
+        for key in ("pixel_values", "image_grid_thw"):
+            dict_args.pop(key, None)
+        return dict_args
 
 
 def _build_vl_model(config, criterion):
@@ -833,48 +740,51 @@ def _build_vl_model(config, criterion):
     ):
         setattr(text_config, name, max(getattr(text_config, name, 1), 1))
 
-    vision_model, _ = build_kimi_k3_vision_tower(
-        vision_config,
-        params_dtype=getattr(text_config, "params_dtype", None) or getattr(text_config, "dtype", None),
-    )
-    language_model = KimiK3ModelProvider.from_config(text_config).provide()
+    pp_size = getattr(text_config, "pipeline_model_parallel_size", 1) or 1
+    is_first_stage = pp_size == 1 or fleet.get_hybrid_communicate_group().get_stage_id() == 0
 
-    strategy = fleet.DistributedStrategy()
-    model = KimiK3VLModel(
-        config=text_config,
-        vision_model=NoPipelineParallel(vision_model, strategy),
-        language_model=NoPipelineParallel(language_model, strategy),
-        media_placeholder_token_id=config.media_placeholder_token_id,
-        pad_token_id=getattr(config, "pad_token_id", None),
-        ignore_index=getattr(config, "ignore_index", -100),
-    )
-    model.config_to_save = config
-    wrapper = FleetKimiK3ForConditionalGeneration(config, model, criterion)
-    wrapper._gen_aoa_config = KimiK3ForConditionalGeneration._gen_aoa_config
-    wrapper._gen_inv_aoa_config = KimiK3ForConditionalGeneration._gen_inv_aoa_config
-    return wrapper
+    vision_model = None
+    if is_first_stage:
+        vision_model, _ = build_kimi_k3_vision_tower(
+            vision_config,
+            params_dtype=getattr(text_config, "params_dtype", None) or getattr(text_config, "dtype", None),
+        )
+    language_provider = KimiK3ModelProvider.from_config(text_config)
+    language_provider.multimodal_embedding = True
+    language_provider.image_token_id = config.media_placeholder_token_id
+    language_provider.video_token_id = -1
+
+    if getattr(language_provider, "enable_mtp_magic_send", False):
+        raise ValueError(
+            "enable_mtp_magic_send re-embeds input_ids on the last pipeline "
+            "stage and is incompatible with multimodal inputs."
+        )
+    language_model = language_provider.provide(loss_fn=criterion)
+
+    if is_first_stage:
+        vision_merge = KimiK3VisionMergeLayer(vision_model=vision_model)
+        language_model.vision_merge = vision_merge
+        if getattr(language_model, "_model_chunks", None):
+            language_model._model_chunks[0].run_function.insert(0, vision_merge)
+        else:
+            language_model.run_function.insert(0, vision_merge)
+    else:
+        language_model.vision_merge = None
+
+    language_model._prepare_pipeline_inputs_func = _prepare_kimi_k3_pipeline_inputs
+    language_model.config_to_save = config
+    language_model.is_fleet = True
+    language_model._gen_aoa_config = lambda _=None: KimiK3ForConditionalGeneration._gen_aoa_config(config)
+    language_model._gen_inv_aoa_config = lambda _=None: KimiK3ForConditionalGeneration._gen_inv_aoa_config(config)
+    language_model.can_generate = lambda: False
+    language_model.save_pretrained = types.MethodType(PretrainedModel.save_pretrained, language_model)
+    return language_model
 
 
 class KimiK3ForConditionalGeneration(KimiK3PretrainedModel):
     """Kimi-K3 multimodal model: MoonViT3d vision tower + KDA/MLA text backbone."""
 
     is_fleet = True
-
-    @staticmethod
-    def _vl_language_name(name, num_layers):
-        prefix = "model.language_model._layers."
-        if name == "model.embedding.embed_tokens.weight":
-            return f"{prefix}0.embedding.embed_tokens.weight"
-        if name.startswith("model.layers."):
-            index, _, tail = name[len("model.layers.") :].partition(".")
-            return f"{prefix}{int(index) + 1}.{tail}"
-        if name.startswith("model.output_attn_res."):
-            return f"{prefix}{num_layers + 1}.{name[len('model.output_attn_res.') :]}"
-        if name == "model.norm.weight":
-            return f"{prefix}{num_layers + 2}.norm.weight"
-        if name == "model.lm_head.weight":
-            return f"{prefix}{num_layers + 3}.weight"
-        return name
 
     @classmethod
     def _gen_aoa_config(cls, config):
@@ -887,49 +797,26 @@ class KimiK3ForConditionalGeneration(KimiK3PretrainedModel):
         vision_config = config.vision_config
         dtype = getattr(text_config, "dtype", None) or getattr(config, "dtype", None)
         cast = f", dtype='{dtype}'" if dtype else ""
-        num_layers = text_config.num_hidden_layers
         vt_layers = vision_config.vt_num_hidden_layers
         vt_heads = vision_config.vt_num_attention_heads
-        visual_prefix = "model.visual._layers."
-
-        # language model: the text-only targets name a flat model.layers.{i} backbone, which
-        # _vl_language_name maps onto the VL layout. The embedding and the lm head appear
-        # twice in sharded_state_dict(), hence aliases.
-        aliases = {
-            "model.embedding.embed_tokens.weight": "model.language_embedding.embedding.embed_tokens.weight",
-            "model.lm_head.weight": "model.language_lm_head.weight",
-        }
-        aoa_config = {"aoa_statements": []}
-        for statement in KimiK3PretrainedModel._gen_aoa_config(config)["aoa_statements"]:
-            sources, _, target_part = statement.partition("->")
-            target, comma, options = target_part.strip().partition(",")
-            target = target.strip()
-            options = f",{options}" if comma else ""
-            vl_target = cls._vl_language_name(target, num_layers)
-            aoa_config["aoa_statements"].append(f"{sources.strip()} -> {vl_target}{options}")
-            if target in aliases:
-                aoa_config["aoa_statements"].append(f"{sources.strip()} -> {aliases[target]}{options}")
-
-        # visual model: patch-embed, the encoder blocks, the final norm, the sd2_tpool merger
-        # (no parameters) and the projector are consecutive children, so vt_layers + 2 is
-        # skipped. Pipeline-parallel vision would re-number them.
+        visual_prefix = "model.vision_model."
+        aoa_config = {"aoa_statements": list(KimiK3PretrainedModel._gen_aoa_config(config)["aoa_statements"])}
         if (getattr(vision_config, "pipeline_model_parallel_size", 1) or 1) != 1:
             raise NotImplementedError(
                 "Kimi-K3 vision AOA statements only cover the single-stage tower; "
                 "pipeline-parallel vision re-numbers the child layers."
             )
         aoa_config["aoa_statements"] += [
-            f"vision_tower.patch_embed.proj.weight -> {visual_prefix}0.embedding.proj.weight{cast}",
-            f"vision_tower.patch_embed.pos_emb.weight -> {visual_prefix}0.embedding.pos_emb.weight{cast}",
-            f"vision_tower.encoder.final_layernorm.weight -> {visual_prefix}{vt_layers + 1}.norm.weight{cast}",
-            f"mm_projector.proj.0.weight^T -> {visual_prefix}{vt_layers + 3}.proj.up_gate_proj.weight{cast}",
-            f"mm_projector.proj.2.weight^T -> {visual_prefix}{vt_layers + 3}.proj.down_proj.weight{cast}",
-            f"mm_projector.post_norm.weight -> {visual_prefix}{vt_layers + 3}.post_norm.weight{cast}",
+            f"vision_tower.patch_embed.proj.weight -> {visual_prefix}patch_embed.embedding.proj.weight{cast}",
+            f"vision_tower.patch_embed.pos_emb.weight -> {visual_prefix}patch_embed.embedding.pos_emb.weight{cast}",
+            f"vision_tower.encoder.final_layernorm.weight -> {visual_prefix}final_layernorm.norm.weight{cast}",
+            f"mm_projector.proj.0.weight^T -> {visual_prefix}mm_projector.proj.up_gate_proj.weight{cast}",
+            f"mm_projector.proj.2.weight^T -> {visual_prefix}mm_projector.proj.down_proj.weight{cast}",
+            f"mm_projector.post_norm.weight -> {visual_prefix}mm_projector.post_norm.weight{cast}",
         ]
-        # HF block i maps to child i + 1, so $LAYER_ID cannot express it.
         aoa_config["aoa_statements"] += [
             f"vision_tower.encoder.blocks.{layer_id}.{hf}{'^T' if transpose else ''} -> "
-            f"{visual_prefix}{layer_id + 1}.{fleet}{cast}"
+            f"{visual_prefix}layers.{layer_id}.{fleet}{cast}"
             for layer_id in range(vt_layers)
             for hf, fleet, transpose in (
                 ("norm0.weight", "input_layernorm.weight", False),
@@ -948,7 +835,7 @@ class KimiK3ForConditionalGeneration(KimiK3PretrainedModel):
                 f"vision_tower.encoder.blocks.{layer_id}.wqkv.weight -> k3vqkv{layer_id}{cast}",
                 f"k3vqkv{layer_id} -> k3vqkv{layer_id}q,k3vqkv{layer_id}k,k3vqkv{layer_id}v, axis=0",
                 f"k3vqkv{layer_id}q^T,k3vqkv{layer_id}k^T,k3vqkv{layer_id}v^T -> "
-                f"{visual_prefix}{layer_id + 1}.self_attn.qkv_proj.weight, fused_qkv, "
+                f"{visual_prefix}layers.{layer_id}.self_attn.qkv_proj.weight, fused_qkv, "
                 f"num_heads={vt_heads}, num_key_value_groups={vt_heads}",
             )
         ]
@@ -957,41 +844,25 @@ class KimiK3ForConditionalGeneration(KimiK3PretrainedModel):
     @classmethod
     def _gen_inv_aoa_config(cls, config):
         """Inverse of :meth:`_gen_aoa_config`: VL weights back to the official HF schema."""
-        text_config = config.get_text_config()
         vision_config = config.vision_config
-        num_layers = text_config.num_hidden_layers
         vt_layers = vision_config.vt_num_hidden_layers
         vt_heads = vision_config.vt_num_attention_heads
-        visual_prefix = "model.visual._layers."
+        visual_prefix = "model.vision_model."
 
-        # language model: here the Fleet names are the sources, so rewrite the left side.
-        aoa_config = {"aoa_statements": []}
-        for statement in KimiK3PretrainedModel._gen_inv_aoa_config(config)["aoa_statements"]:
-            source_part, _, targets = statement.partition("->")
-            sources = []
-            for source in source_part.split(","):
-                source = source.strip()
-                transposed = source.endswith("^T")
-                name = cls._vl_language_name(source[:-2] if transposed else source, num_layers)
-                sources.append(f"{name}^T" if transposed else name)
-            aoa_config["aoa_statements"].append(f"{','.join(sources)} -> {targets.strip()}")
-
-        aoa_config["aoa_statements"] += [
-            "model.language_embedding.embedding.embed_tokens.weight -> _",
-            "model.language_lm_head.weight -> _",
-        ]
+        # language model: the Fleet names on the left are already the text-only names.
+        aoa_config = {"aoa_statements": list(KimiK3PretrainedModel._gen_inv_aoa_config(config)["aoa_statements"])}
 
         # visual model
         aoa_config["aoa_statements"] += [
-            f"{visual_prefix}0.embedding.proj.weight -> vision_tower.patch_embed.proj.weight",
-            f"{visual_prefix}0.embedding.pos_emb.weight -> vision_tower.patch_embed.pos_emb.weight",
-            f"{visual_prefix}{vt_layers + 1}.norm.weight -> vision_tower.encoder.final_layernorm.weight",
-            f"{visual_prefix}{vt_layers + 3}.proj.up_gate_proj.weight^T -> mm_projector.proj.0.weight",
-            f"{visual_prefix}{vt_layers + 3}.proj.down_proj.weight^T -> mm_projector.proj.2.weight",
-            f"{visual_prefix}{vt_layers + 3}.post_norm.weight -> mm_projector.post_norm.weight",
+            f"{visual_prefix}patch_embed.embedding.proj.weight -> vision_tower.patch_embed.proj.weight",
+            f"{visual_prefix}patch_embed.embedding.pos_emb.weight -> vision_tower.patch_embed.pos_emb.weight",
+            f"{visual_prefix}final_layernorm.norm.weight -> vision_tower.encoder.final_layernorm.weight",
+            f"{visual_prefix}mm_projector.proj.up_gate_proj.weight^T -> mm_projector.proj.0.weight",
+            f"{visual_prefix}mm_projector.proj.down_proj.weight^T -> mm_projector.proj.2.weight",
+            f"{visual_prefix}mm_projector.post_norm.weight -> mm_projector.post_norm.weight",
         ]
         aoa_config["aoa_statements"] += [
-            f"{visual_prefix}{layer_id + 1}.{fleet}{'^T' if transpose else ''} -> "
+            f"{visual_prefix}layers.{layer_id}.{fleet}{'^T' if transpose else ''} -> "
             f"vision_tower.encoder.blocks.{layer_id}.{hf}"
             for layer_id in range(vt_layers)
             for hf, fleet, transpose in (
@@ -1007,7 +878,7 @@ class KimiK3ForConditionalGeneration(KimiK3PretrainedModel):
             stmt
             for layer_id in range(vt_layers)
             for stmt in (
-                f"{visual_prefix}{layer_id + 1}.self_attn.qkv_proj.weight -> "
+                f"{visual_prefix}layers.{layer_id}.self_attn.qkv_proj.weight -> "
                 f"k3vqkv{layer_id}q,k3vqkv{layer_id}k,k3vqkv{layer_id}v, fused_qkv, "
                 f"num_heads={vt_heads}, num_key_value_groups={vt_heads}",
                 f"k3vqkv{layer_id}q^T,k3vqkv{layer_id}k^T,k3vqkv{layer_id}v^T -> "
@@ -1023,14 +894,32 @@ class KimiK3ForConditionalGeneration(KimiK3PretrainedModel):
                 "use KimiK3ForCausalLM for the text-only model."
             )
 
-        criterion = CriterionLayer(config.get_text_config()) if have_criterion else None
+        text_config = config.get_text_config()
+        for name in (
+            "tensor_model_parallel_size",
+            "context_parallel_size",
+            "pipeline_model_parallel_size",
+            "virtual_pipeline_model_parallel_size",
+            "expert_model_parallel_size",
+        ):
+            value = max(getattr(config, name, 1) or 1, 1)
+            setattr(config, name, value)
+            setattr(text_config, name, value)
+        text_config.sequence_parallel = getattr(config, "sequence_parallel", False)
+
+        criterion = None
+        if have_criterion:
+            criterion = KimiK3CriterionPipe(text_config, return_tuple=False)
         return _build_vl_model(config, criterion)
 
+
+KimiK3ForConditionalGenerationPipe = KimiK3ForConditionalGeneration
 
 __all__ = [
     "KimiK3Model",
     "KimiK3ForCausalLM",
     "KimiK3ForCausalLMPipe",
     "KimiK3ForConditionalGeneration",
+    "KimiK3ForConditionalGenerationPipe",
     "KimiK3ModelProvider",
 ]

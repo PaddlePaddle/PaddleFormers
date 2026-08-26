@@ -173,6 +173,14 @@ import_structure = {
     "paddleocr_vl.processor": ["PaddleOCRVLProcessor"],
     "gpt_oss.configuration": ["GptOssConfig"],
     "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM", "GptOssForCausalLMPipe"],
+    "minicpm3.configuration": ["MiniCPM3Config"],
+    "minicpm3.modeling": [
+        "MiniCPMDecoderLayer",
+        "MiniCPM3ForCausalLM",
+        "MiniCPM3ForSequenceClassification",
+        "MiniCPM3Model",
+        "MiniCPM3PreTrainedModel",
+    ],
     "granite.configuration": ["GraniteConfig"],
     "granite.modeling": [
         "GraniteDecoderLayer",
@@ -359,6 +367,7 @@ import_structure = {
     "qwen2_vl": [],
     "qwen3_moe": [],
     "qwen3_next": [],
+    "minicpm3": [],
     "glm4_moe.configuration": ["Glm4MoeConfig"],
     "whisper.processor": ["WhisperFeatureExtractor"],
     "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM", "Glm4MoeForCausalLMDeprecated"],
@@ -375,6 +384,14 @@ import_structure = {
         "MiniCPMForSequenceClassification",
     ],
     "minicpm": [],
+    "minicpm4_1.configuration": ["MiniCPM4_1Config"],
+    "minicpm4_1.modeling": [
+        "MiniCPM4_1Model",
+        "MiniCPM4_1ForCausalLM",
+        "MiniCPM4_1ForCausalLMPipe",
+        "MiniCPM4_1ForSequenceClassification",
+    ],
+    "minicpm4_1": [],
     "deepseek_v4.configuration": ["DeepseekV4Config"],
     "deepseek_v4": ["DeepseekV4ForCausalLMPipe", "DeepseekV4ForCausalLM"],
     "glm4v_moe.image_processor": ["Glm4vImageProcessor"],
@@ -517,8 +534,10 @@ if TYPE_CHECKING:
     from .glm_moe_dsa import *
     from .minimax_m2 import *
     from .minicpm import *
+    from .minicpm4_1 import *
     from .deepseek_v4 import *
     from .gpt_oss import *
+    from .minicpm3 import *
     from .granite import *
     from .phi3 import *
     from .gemma3_text import *

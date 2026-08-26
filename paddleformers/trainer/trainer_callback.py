@@ -22,6 +22,7 @@ import dataclasses
 import json
 import os
 import random
+import sys
 import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
@@ -1006,14 +1007,27 @@ class InternalMedicineCallback(TrainerCallback):
 
         self._maybe_truncate_on_resume(state)
 
+        # internal_medicine declares requires-python >= 3.10.
+        if sys.version_info < (3, 10):
+            logger.warning(
+                "[InternalMedicine/pfleet] internal_medicine requires Python >= 3.10 but this "
+                "interpreter is %d.%d; skipping monitor setup. Disable internal_medicine_monitors "
+                "to silence this warning.",
+                sys.version_info[0],
+                sys.version_info[1],
+            )
+            return
+
         try:
             from internal_medicine.backends.paddlefleet import setup_monitors
             from internal_medicine.core.training_logs import training_logs
-        except ImportError:
-            logger.exception(
+        except (ImportError, TypeError, SyntaxError) as exc:
+            logger.warning(
                 "[InternalMedicine/pfleet] internal_medicine_monitors is enabled, but the optional "
                 "internal_medicine package is not importable. Add third_party/llm-internal-medicine/src "
-                "to PYTHONPATH or disable internal_medicine_monitors."
+                "to PYTHONPATH or disable internal_medicine_monitors. (%s: %s)",
+                type(exc).__name__,
+                exc,
             )
             return
 
@@ -1044,6 +1058,24 @@ class InternalMedicineCallback(TrainerCallback):
             collect = getattr(monitor, "collect_expert_norms", None)
             if collect is not None:
                 collect()
+
+    def on_optimizer_begin(self, args, state, control, scaler=None, **kwargs):
+        if not self._setup_done:
+            return
+
+        for monitor in self._monitor_dict.values():
+            finalize = getattr(monitor, "finalize_scaled_grad_metrics", None)
+            if finalize is not None:
+                finalize(scaler)
+
+    def on_substep_end(self, args, state, control, **kwargs):
+        if not self._setup_done:
+            return
+
+        for monitor in self._monitor_dict.values():
+            finalize = getattr(monitor, "finalize_composite_microbatch", None)
+            if finalize is not None:
+                finalize()
 
     def on_step_end(self, args, state, control, **kwargs):
         if not self._setup_done:
@@ -1162,7 +1194,7 @@ class InternalMedicineCallback(TrainerCallback):
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
         except Exception:
             # Never let logging IO crash training.
-            logger.exception("[InternalMedicine] failed to append jsonl record")
+            logger.warning("[InternalMedicine] failed to append jsonl record")
 
 
 class EMAStateAssemblerCallback(TrainerCallback):

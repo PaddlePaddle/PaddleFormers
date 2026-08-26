@@ -366,9 +366,8 @@ class Trainer:
             self.args.max_grad_norm = 0.0
         # Apply the reshard broadcast toggle once here: Trainer.__init__ is the
         # single point every reshard/EMA path runs after, so all_gather_state_dict
-        # need not thread the flag and no construction site is missed (incl. the
-        # non-ZCC EMA assembler that bypasses create_ema_state_assembler). Difers
-        reshard_util.set_bucketed_broadcast(getattr(self.args, "use_reshard_bucketed_broadcast", False))
+        # need not thread the value and no construction site is missed (incl. the
+        # non-ZCC EMA assembler that bypasses create_ema_state_assembler).
         reshard_util.set_broadcast_max_chunk_bytes(
             int(getattr(self.args, "reshard_bucketed_broadcast_max_chunk_gb", 2.0) * (1024**3))
         )
@@ -705,7 +704,7 @@ class Trainer:
             self.scaler = fleet.distributed_scaler(self.scaler)
         elif self.sharding is not None:
             if self.amp_dtype == "float16" or self.amp_dtype == "bfloat16":
-                if ShardingOption.SHARD_OP in self.args.sharding:
+                if ShardingOption.SHARD_OP in self.args.sharding or ShardingOption.FSDP in self.args.sharding:
                     if self.args.amp_master_grad:
                         mix_precision_utils.MixPrecisionScaler(self.scaler)  # return value has no use
                     self.scaler = fleet.distributed_scaler(self.scaler)
@@ -1378,6 +1377,8 @@ class Trainer:
             if self.args.tensorwise_offload_optimizer:
                 logger.info("Offloading optimizer state for FC...")
                 for k, v in optimizer_sharded_state_dict.items():
+                    if v.local_tensor.numel() <= 1:
+                        continue
                     offload(v.local_tensor)
                 del opt_states, master_weights, optimizer_sharded_state_dict
 
@@ -3966,9 +3967,14 @@ class Trainer:
                 assert self.optimizer is not None, "optimizer is empty!"
                 self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
 
+        # Paddle native FSDP (`--sharding fsdp`). fully_shard() owns param / grad /
+        # optimizer-state sharding, registers the main_grad hooks itself and must therefore run
+        # before MixPrecisionLayer, so the wrapping order below differs from the group-sharded path.
+        in_fsdp_mode = ShardingOption.FSDP in self.args.sharding
+
         # Pipeline mode
         if in_pipeline_parallel_mode:
-            if self.args.amp_master_grad:
+            if self.args.amp_master_grad and not in_fsdp_mode:
                 mix_precision_utils.MixPrecisionLayer(model, dtype=self.amp_dtype)  # return value has no use
             # hack for pipeline model mini batch to batch
             # need batter solution @ZHUI
@@ -4019,9 +4025,16 @@ class Trainer:
                 model._prepare_pipeline_inputs_func = _prepare_pipeline_inputs_func
 
             assert self.optimizer is not None, "Pipeline mode need decorate optimizer, pelease init optimizer."
-            if self.args.amp_master_grad:
-                self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
-            self.optimizer = self._wrap_distributed_optimizer(self.optimizer)
+            if in_fsdp_mode:
+                fsdp_layers = model._layers if hasattr(model, "_layers") else model
+                fully_shard(fsdp_layers, enable_tensor_fusion_and_overlap=True)
+                if self.args.amp_master_grad:
+                    mix_precision_utils.MixPrecisionLayer(fsdp_layers, dtype=self.amp_dtype)
+                    self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
+            else:
+                if self.args.amp_master_grad:
+                    self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
+                self.optimizer = self._wrap_distributed_optimizer(self.optimizer)
 
             if (
                 hasattr(self.args, "enable_sharding_comm_overlap")
@@ -4037,7 +4050,12 @@ class Trainer:
         # No pipeline mode, sharding only
         if not in_pipeline_parallel_mode and in_sharding_parallel_mode:
             # Sharded DDP!
-            if self.args.tensor_model_parallel_size > 1:
+            if in_fsdp_mode:
+                fully_shard(model, enable_tensor_fusion_and_overlap=True)
+                if self.args.amp_master_grad:
+                    mix_precision_utils.MixPrecisionLayer(model, dtype=self.amp_dtype)
+                    self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
+            elif self.args.tensor_model_parallel_size > 1:
                 hcg = fleet.get_hybrid_communicate_group()
                 assert (
                     ShardingOption.SHARD_GRAD_OP in self.args.sharding or ShardingOption.SHARD_OP in self.args.sharding
@@ -4048,7 +4066,10 @@ class Trainer:
                         model, hcg, strategy=fleet.fleet._user_defined_strategy
                     )
 
-            if ShardingOption.SHARD_OP in self.args.sharding:
+            if in_fsdp_mode:
+                # model is already wrapped by fully_shard above, skip group sharded parallel
+                pass
+            elif ShardingOption.SHARD_OP in self.args.sharding:
                 if self.args.amp_master_grad:
                     mix_precision_utils.MixPrecisionLayer(model, dtype=self.amp_dtype)  # return value has no use
                 model = fleet.distributed_model(model)
@@ -4377,6 +4398,17 @@ class Trainer:
 
         return loss.detach()
 
+    def _fsdp_all_gather_params(self):
+        from paddle.distributed.fsdp._fsdp_context import get_fsdp_context
+
+        fsdp_context = get_fsdp_context()
+        if fsdp_context is None:
+            logger.warning("sharding=fsdp but no fsdp context is registered, skip param all_gather.")
+            return
+        comm_manager = fsdp_context.comm_manager
+        for group in fsdp_context.buffer_manager.buffer_groups:
+            comm_manager.all_gather_params(group.params)
+
     def save_model(
         self,
         output_dir: Optional[str] = None,
@@ -4399,6 +4431,9 @@ class Trainer:
 
         if ShardingOption.FULL_SHARD in self.args.sharding:
             self.model_wrapped.get_all_parameters(convert2cpu=True, with_freeze_param=True)
+
+        if ShardingOption.FSDP in self.args.sharding:
+            self._fsdp_all_gather_params()
 
         if self.args.should_save_model_state:
             self._save(output_dir=output_dir, merge_tensor_parallel=merge_tensor_parallel, last_fc_to_hf=last_fc_to_hf)

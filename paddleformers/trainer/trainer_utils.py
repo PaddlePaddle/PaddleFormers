@@ -543,12 +543,14 @@ class ShardingOption(ExplicitEnum):
     OP for sharding optimizer state
     GRAD for sharding gradients
     FULL_SHARD for sharding optimizer gradient and parameter
+    FSDP for sharding optimizer gradient and parameter via paddle.distributed.fsdp.fully_shard
     OFFLOAD means offload to cpu.
     """
 
     SHARD_OP = "stage1"
     SHARD_GRAD_OP = "stage2"
     FULL_SHARD = "stage3"
+    FSDP = "fsdp"
     # NO_SHARD = "no"
     OFFLOAD = "offload"
 
