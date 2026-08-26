@@ -350,7 +350,6 @@ jobs:
           pip install coverage==7.6.1
           pip install librosa==0.11.0
           '
-      
       - name: GLM4.5 pre-train
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
         run: |
