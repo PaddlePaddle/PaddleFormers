@@ -25,6 +25,7 @@ from .common import (
     is_sharding_opt,
     merge_model_state,
     merge_opt_state,
+    set_broadcast_max_chunk_bytes,
     split_model_state,
     split_opt_state,
     split_structure_name_mapping,

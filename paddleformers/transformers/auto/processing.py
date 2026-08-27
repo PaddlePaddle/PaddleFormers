@@ -50,6 +50,7 @@ PROCESSOR_MAPPING_NAMES = OrderedDict(
     [
         ("kimi_k25", "KimiK25Processor"),
         ("phi4_multimodal", "Phi4MultimodalProcessor"),
+        ("kimi_k3", "KimiK3Processor"),
         ("qwen2_5_vl", "Qwen2_5_VLProcessor"),
         ("qwen3_vl", "Qwen3VLProcessor"),
         ("qwen2_vl", "Qwen2VLProcessor"),
