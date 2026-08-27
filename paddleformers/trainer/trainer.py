@@ -361,7 +361,10 @@ class Trainer:
             args = TrainingArguments(output_dir=output_dir)
 
         self.args = args
-        # Apply the reshard broadcast chunk cap once here: Trainer.__init__ is the
+        _model_config = getattr(model, "config", None)
+        if getattr(_model_config, "use_accuracy_compatible", False) and getattr(self.args, "max_grad_norm", 0) > 0:
+            self.args.max_grad_norm = 0.0
+        # Apply the reshard broadcast toggle once here: Trainer.__init__ is the
         # single point every reshard/EMA path runs after, so all_gather_state_dict
         # need not thread the value and no construction site is missed (incl. the
         # non-ZCC EMA assembler that bypasses create_ema_state_assembler).
