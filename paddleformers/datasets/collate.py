@@ -932,7 +932,7 @@ def mm_collate_fn_ds_ocr2(
     if isinstance(model, LoRAModel):
         model = model.model.base_model
 
-    input_keys = ["input_ids", "labels", "position_ids", "images_spatial_crop", "images_seq_mask"]
+    input_keys = ["input_ids", "labels", "position_ids", "images_seq_mask"]
 
     if training_args.num_nextn_predict_layers > 0:
         input_keys.append("nbatch_pack_offset")
@@ -943,6 +943,7 @@ def mm_collate_fn_ds_ocr2(
 
     return_list = []
     return_images_list = []
+    return_images_spatial_crop_list = []
     if padding_free:
         batch = [sum(batch, [])]
         max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
@@ -966,8 +967,18 @@ def mm_collate_fn_ds_ocr2(
             cur_image = mm_inputs.get("images")
             cur_images_crop = mm_inputs.get("images_crop")
             if cur_image is not None and cur_images_crop is not None:
-                images_list.extend((cur_images_crop, cur_image))
-                images_spatial_crop_list.extend(mm_inputs.get("images_spatial_crop", []))
+                crop_offset = 0
+                for image_idx, crop_shape in enumerate(mm_inputs.get("images_spatial_crop", [])):
+                    width_crop_num, height_crop_num = (int(value) for value in crop_shape)
+                    num_crops = max(1, width_crop_num * height_crop_num)
+                    images_list.append(
+                        (
+                            cur_images_crop[crop_offset : crop_offset + num_crops],
+                            cur_image[image_idx : image_idx + 1],
+                        )
+                    )
+                    images_spatial_crop_list.append(crop_shape)
+                    crop_offset += num_crops
             images_seq_mask = (
                 paddle.to_tensor(seq.token_ids)
                 == tokenizer.encode(template.mm_plugin.image_token, add_special_tokens=False)[0]
@@ -997,11 +1008,11 @@ def mm_collate_fn_ds_ocr2(
         return_list[-1].extend(
             [
                 padded_position_ids,
-                images_spatial_crop_list,
                 padded_images_seq_mask,
             ]
         )
         return_images_list.append(images_list)
+        return_images_spatial_crop_list.append(images_spatial_crop_list)
 
         if training_args.num_nextn_predict_layers > 0:
             # each sequence end index
@@ -1035,6 +1046,7 @@ def mm_collate_fn_ds_ocr2(
             input_dict[key] = value
     if any(return_images_list):
         input_dict["images"] = return_images_list
+        input_dict["images_spatial_crop"] = return_images_spatial_crop_list
     return input_dict
 
 

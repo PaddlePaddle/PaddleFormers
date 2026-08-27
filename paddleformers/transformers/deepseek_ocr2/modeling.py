@@ -1385,67 +1385,67 @@ class DeepseekOCR2Model(DeepseekV3Model):
         if (
             sam_model is not None
             and images is not None
+            and images_spatial_crop is not None
             and (input_ids.shape[1] != 1 or self.training)
-            and paddle.sum(images[0][1]).item() != 0
         ):
+            for idx, (row_images, row_crop_shapes) in enumerate(zip(images, images_spatial_crop)):
+                if not row_images:
+                    continue
 
-            idx = 0
+                # Direct model callers pass one ``(patches, global_view)`` pair per
+                # batch row. The SFT collator passes a list of such pairs so packed
+                # rows can contain multiple images without losing their boundaries.
+                if isinstance(row_images, tuple):
+                    row_images = [row_images]
+                    row_crop_shapes = [row_crop_shapes]
 
-            for image, crop_shape in zip(images, images_spatial_crop):
+                if len(row_images) != len(row_crop_shapes):
+                    raise ValueError(
+                        "The number of image tensors must match images_spatial_crop "
+                        f"for batch row {idx}: {len(row_images)} != {len(row_crop_shapes)}."
+                    )
+
                 images_in_this_batch = []
+                for image, _crop_shape in zip(row_images, row_crop_shapes):
+                    patches, image_ori = image
+                    patches = patches.astype(inputs_embeds.dtype)
+                    image_ori = image_ori.astype(inputs_embeds.dtype)
 
-                patches = image[0]
-                image_ori = image[1]
-                patches = patches.astype(inputs_embeds.dtype)
-                image_ori = image_ori.astype(inputs_embeds.dtype)
+                    # Text-only rows in a mixed batch have no image pairs. Keep
+                    # accepting the legacy all-zero sentinel used by direct callers.
+                    if paddle.sum(image_ori).item() == 0:
+                        continue
 
-                with paddle.no_grad():
-
-                    if paddle.sum(patches).item() != 0:
-                        # P, C, H, W = patches.shape
-                        local_features_1 = sam_model(patches)
-                        local_features_2 = qwen2_model(local_features_1)
-                        local_features = local_features_2
-                        local_features = self.projector(local_features)
+                    has_local_patches = paddle.sum(patches).item() != 0
+                    with paddle.no_grad():
+                        if has_local_patches:
+                            local_features_1 = sam_model(patches)
+                            local_features_2 = qwen2_model(local_features_1)
+                            local_features = self.projector(local_features_2)
 
                         global_features_1 = sam_model(image_ori)
                         global_features_2 = qwen2_model(global_features_1)
-                        global_features = global_features_2
-                        global_features = self.projector(global_features)
+                        global_features = self.projector(global_features_2)
 
-                        _, hw, n_dim = global_features.shape
-
-                        _2, hw2, n_dim2 = local_features.shape
-
+                        n_dim = global_features.shape[-1]
                         global_features = global_features.view(-1, n_dim)
 
-                        local_features = local_features.view(-1, n_dim2)
+                        if has_local_patches:
+                            n_dim2 = local_features.shape[-1]
+                            local_features = local_features.view(-1, n_dim2)
+                            global_features = paddle.cat(
+                                [local_features, global_features, self.view_seperator[None, :]], dim=0
+                            )
+                        else:
+                            global_features = paddle.cat([global_features, self.view_seperator[None, :]], dim=0)
 
-                        global_local_features = paddle.cat(
-                            [local_features, global_features, self.view_seperator[None, :]], dim=0
-                        )
-
-                    else:
-                        global_features_1 = sam_model(image_ori)
-                        global_features_2 = qwen2_model(global_features_1)
-                        global_features = global_features_2
-                        global_features = self.projector(global_features)
-
-                        _, hw, n_dim = global_features.shape
-
-                        global_features = global_features.view(-1, n_dim)
-
-                        global_local_features = paddle.cat([global_features, self.view_seperator[None, :]], dim=0)
-
-                    images_in_this_batch.append(global_local_features)
+                        images_in_this_batch.append(global_features)
 
                 if images_in_this_batch:
                     images_in_this_batch = paddle.cat(images_in_this_batch, dim=0)
                     inputs_embeds[idx].masked_scatter_(
                         images_seq_mask[idx].astype(paddle.bool).unsqueeze(-1), images_in_this_batch
                     )
-
-                idx += 1
 
         if position_ids is None:
             past_length = past_key_values.get_seq_length() if isinstance(past_key_values, Cache) else 0

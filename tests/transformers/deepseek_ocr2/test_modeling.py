@@ -35,6 +35,7 @@ from paddleformers.transformers.deepseek_ocr2.modeling import (
     _parse_line_result,
     extract_coordinates_and_label,
 )
+from paddleformers.transformers.deepseek_v3.modeling import DeepseekV3Model
 from tests.testing_utils import gpu_device_initializer, slow
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
@@ -410,6 +411,98 @@ class DeepseekOCR2ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Te
         self.assertNotIn("images", result)
         self.assertNotIn("images_spatial_crop", result)
         self.assertEqual(result["input_ids"].shape, [1, 8])
+
+    def test_mixed_text_image_collation_keeps_batch_rows_aligned(self):
+        from paddleformers.datasets.collate import mm_collate_fn_ds_ocr2
+        from paddleformers.datasets.SFTDataset import Sequence
+
+        text_sequence = Sequence(
+            token_ids=[3, 4, 5],
+            position_ids=[0, 1, 2],
+            labels=[-100, 4, 5],
+            num_examples=1,
+            mm_inputs={},
+        )
+        image_sequence = Sequence(
+            token_ids=[128815, 6, 7],
+            position_ids=[0, 1, 2],
+            labels=[-100, 6, 7],
+            num_examples=1,
+            mm_inputs={
+                "images": paddle.ones([1, 3, 4, 4]),
+                "images_crop": paddle.ones([1, 3, 4, 4]),
+                "images_spatial_crop": [[1, 1]],
+            },
+        )
+        tokenizer = mock.Mock(pad_token_id=0)
+        tokenizer.encode.return_value = [128815]
+        common_kwargs = {
+            "template": SimpleNamespace(mm_plugin=SimpleNamespace(image_token="<image>")),
+            "processor": None,
+            "tokenizer": tokenizer,
+            "training_args": SimpleNamespace(
+                num_nextn_predict_layers=0,
+                context_parallel_size=1,
+                tensor_model_parallel_size=1,
+                sequence_parallel=False,
+                fp8=False,
+            ),
+            "model_args": SimpleNamespace(
+                use_attn_mask_startend_row_indices=False,
+                use_global_causal_attn=False,
+            ),
+            "max_seq_len": 8,
+            "padding_free": False,
+            "model": mock.Mock(),
+        }
+
+        for batch, image_row in (([[text_sequence], [image_sequence]], 1), ([[image_sequence], [text_sequence]], 0)):
+            with self.subTest(image_row=image_row):
+                result = mm_collate_fn_ds_ocr2(batch=batch, **common_kwargs)
+                self.assertEqual(len(result["images"]), 2)
+                self.assertEqual(len(result["images_spatial_crop"]), 2)
+                self.assertEqual(result["images"][1 - image_row], [])
+                self.assertEqual(result["images_spatial_crop"][1 - image_row], [])
+                self.assertEqual(len(result["images"][image_row]), 1)
+                self.assertEqual(result["images_spatial_crop"][image_row], [[1, 1]])
+
+    def test_mixed_text_image_forward_handles_both_batch_orders(self):
+        class FakeVisionLayer(paddle.nn.Layer):
+            def __init__(self, hidden_size):
+                super().__init__()
+                self.hidden_size = hidden_size
+
+            def forward(self, pixel_values):
+                return paddle.ones([pixel_values.shape[0], 1, self.hidden_size], dtype=pixel_values.dtype)
+
+        config = self.model_tester.get_config()
+        model = DeepseekOCR2Model(config)
+        model.sam_model = FakeVisionLayer(config.hidden_size)
+        model.qwen2_model = paddle.nn.Identity()
+        model.projector = paddle.nn.Identity()
+        model.eval()
+
+        image_pair = (paddle.ones([1, 3, 4, 4]), paddle.ones([1, 3, 4, 4]))
+        input_ids = paddle.to_tensor([[3, 4, 5, 6], [7, 8, 9, 10]], dtype=paddle.int64)
+
+        for image_row in (0, 1):
+            with self.subTest(image_row=image_row):
+                images = [[], []]
+                crop_shapes = [[], []]
+                images_seq_mask = paddle.zeros([2, 4], dtype=paddle.bool)
+                images[image_row] = [image_pair]
+                crop_shapes[image_row] = [[1, 1]]
+                images_seq_mask[image_row, :3] = True
+
+                with mock.patch.object(DeepseekV3Model, "forward", return_value=object()) as parent_forward:
+                    model(
+                        input_ids=input_ids,
+                        images=images,
+                        images_spatial_crop=crop_shapes,
+                        images_seq_mask=images_seq_mask,
+                    )
+
+                self.assertEqual(parent_forward.call_args.kwargs["inputs_embeds"].shape, [2, 4, config.hidden_size])
 
     def test_model_forward_with_images(self):
         """Test forward pass with image inputs (vision branch active)."""
