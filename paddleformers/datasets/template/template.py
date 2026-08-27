@@ -708,6 +708,10 @@ register_template(
     ),
     format_tools=ToolFormatter(tool_format="qwen3_5"),
     stop_words=["<|im_end|>"],
+    # ``format_assistant`` already emits ``<|im_end|>`` inline, so the dataset
+    # must not append a dynamic EOS on top of it.
+    efficient_eos=False,
+    grounding_plugin=get_grounding_plugin(name="base", norm_bbox="norm1000"),
     mm_plugin=get_mm_plugin(name="qwen3_vl", image_token="<|image_pad|>", video_token="<|video_pad|>"),
     template_class=ReasoningTemplate,
 )
@@ -724,6 +728,8 @@ register_template(
     ),
     format_tools=ToolFormatter(tool_format="qwen3_5"),
     stop_words=["<|im_end|>"],
+    efficient_eos=False,
+    grounding_plugin=get_grounding_plugin(name="base", norm_bbox="norm1000"),
     mm_plugin=get_mm_plugin(name="qwen3_vl", image_token="<|image_pad|>", video_token="<|video_pad|>"),
 )
 
@@ -1061,7 +1067,7 @@ register_template(
     format_assistant=StringFormatter(
         slots=["{{content}}<|close|>response<|sep|><|close|>message<|sep|><|end_of_msg|>"]
     ),
-    mm_plugin=get_mm_plugin(name="kimi_k3", image_token="<|media_pad|>", expand_mm_tokens=False),
+    mm_plugin=get_mm_plugin(name="kimi_k3", image_token="<|media_pad|>"),
 )
 register_template(
     name="internlm2_5",

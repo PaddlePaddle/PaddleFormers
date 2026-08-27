@@ -46,6 +46,7 @@ learning_rate: 1.0e-5
 # performance
 tensor_model_parallel_size: 2
 pipeline_model_parallel_size: 2
+moe_token_dispatcher_type: deepep
 sequence_parallel: true
 sharding: stage1
 recompute_granularity: full
@@ -72,3 +73,9 @@ sync_grad: true
 
 save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint
+
+weight_decay: 0.0
+adam_beta2: 0.999
+moe_router_bias_update_rate: 0.0
+save_safetensors: false
+overlap_p2p_comm: false

@@ -4,3 +4,11 @@ model_name_or_path: PaddlePaddle/PaddleOCR-VL
 output_dir: ./PaddleOCR-VL-SFT-Bengali-lora
 copy_custom_file_list: "configuration_paddleocr_vl.py image_processing_paddleocr_vl.py modeling_paddleocr_vl.py processing_paddleocr_vl.py inference.yml"
 device: xpu
+
+moe_token_dispatcher_type: "deepep"
+weight_decay: 0.0
+adam_beta2: 0.999
+moe_router_bias_update_rate: 0.0
+save_safetensors: false
+overlap_p2p_comm: false
+batch_p2p_comm: true

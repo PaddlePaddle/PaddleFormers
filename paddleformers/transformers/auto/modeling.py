@@ -29,6 +29,7 @@ from .configuration import (
     MODEL_NAMES_MAPPING,
     AutoConfig,
     PretrainedConfig,
+    resolve_minicpm4_1_model_type,
 )
 from .factory import _LazyAutoMapping
 
@@ -79,8 +80,10 @@ MAPPING_NAMES = OrderedDict(
         ("GlmMoeDsa", "glm_moe_dsa"),
         ("MiniMaxM2", "minimax_m2"),
         ("MiniCPM", "minicpm"),
+        ("MiniCPM4_1", "minicpm4_1"),
         ("DeepseekV4", "deepseek_v4"),
         ("GptOss", "gpt_oss"),
+        ("MiniCPM3", "minicpm3"),
         ("Granite", "granite"),
         ("Phi3", "phi3"),
         ("Phi4", "phi4"),
@@ -175,10 +178,19 @@ class _BaseAutoModelClass:
 
     # TODO: Refactor into AutoConfig when available
     @classmethod
-    def _get_model_class_from_config(cls, pretrained_model_name_or_path, config_file_path, config=None, is_lora=False):
+    def _get_model_class_from_config(
+        cls,
+        pretrained_model_name_or_path,
+        config_file_path,
+        config=None,
+        is_lora=False,
+        model_type_override=None,
+    ):
         if config is None:
             with io.open(config_file_path, encoding="utf-8") as f:
                 config = json.load(f)
+
+        resolved_model_type = resolve_minicpm4_1_model_type(config, model_type_override)
 
         # Get class name corresponds to this configuration
         if is_standard_config(config):
@@ -191,9 +203,9 @@ class _BaseAutoModelClass:
         # Sort the MAPPING_NAMES to reorder the model class names with longest-first rule
         # thus the names with same prefix can be correctly inferred
         # such as QWen and QWen2MOE, QWen2MOE is the longest prefix of QWen2MOEModel
-        model_name = None
+        model_name = "MiniCPM4_1Model" if resolved_model_type == "minicpm4_1" else None
         SORTED_MAPPING_NAMES = dict(sorted(MAPPING_NAMES.items(), key=lambda x: len(x[0]), reverse=True))
-        if init_class:
+        if model_name is None and init_class:
             for model_flag, name in SORTED_MAPPING_NAMES.items():
                 if model_flag in init_class:
                     model_name = model_flag + "Model"
@@ -201,6 +213,9 @@ class _BaseAutoModelClass:
         if model_name is None and init_class == "PaliGemmaForConditionalGeneration":
             model_name = "PaliGemma2ForConditionalGenerationModel"
         if model_name is None and init_class is None:
+            if model_name is None and init_class == "PaliGemmaForConditionalGeneration":
+                model_name = "PaliGemma2ForConditionalGenerationModel"
+        elif model_name is None:
             # From pretrained_model_name_or_path
             for model_flag, name in SORTED_MAPPING_NAMES.items():
                 if type(pretrained_model_name_or_path) is str and name in pretrained_model_name_or_path.lower():
@@ -257,6 +272,7 @@ class _BaseAutoModelClass:
 
     @classmethod
     def _from_pretrained(cls, pretrained_model_name_or_path, task=None, *model_args, **kwargs):
+        model_type_override = kwargs.pop("model_type_override", None)
         if task:
             if cls._task_choice:
                 cls._name_mapping = get_name_mapping(task)
@@ -319,7 +335,12 @@ class _BaseAutoModelClass:
                 is_lora = kwargs.get("config").get("is_lora", False)
             else:
                 is_lora = False
-            model_class = cls._get_model_class_from_config(pretrained_model_name_or_path, config_file, is_lora=is_lora)
+            model_class = cls._get_model_class_from_config(
+                pretrained_model_name_or_path,
+                config_file,
+                is_lora=is_lora,
+                model_type_override=model_type_override,
+            )
             logger.info(f"We are using {model_class} to load '{pretrained_model_name_or_path}'.")
             return model_class.from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
         else:
