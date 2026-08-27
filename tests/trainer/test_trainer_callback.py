@@ -225,17 +225,19 @@ class TrainerCallbackTest(unittest.TestCase):
         expected_callbacks = DEFAULT_CALLBACKS.copy() + [PrinterCallback] + [MyTestTrainerCallback]
         self.check_callbacks_equality(trainer.callback_handler.callbacks, expected_callbacks)
 
-        trainer = self.get_trainer(callbacks=[MyTestTrainerCallback], save_steps=5)
+        trainer = self.get_trainer(callbacks=[MyTestTrainerCallback], logging_steps=500, save_steps=5)
         trainer.train()
         events = trainer.callback_handler.callbacks[-2].events
         self.assertEqual(events, self.get_expected_events(trainer))
 
-        trainer = self.get_trainer(callbacks=[MyTestTrainerCallback], eval_steps=5, evaluation_strategy="steps")
+        trainer = self.get_trainer(
+            callbacks=[MyTestTrainerCallback], logging_steps=500, eval_steps=5, evaluation_strategy="steps"
+        )
         trainer.train()
         events = trainer.callback_handler.callbacks[-2].events
         self.assertEqual(events, self.get_expected_events(trainer))
 
-        trainer = self.get_trainer(callbacks=[MyTestTrainerCallback], evaluation_strategy="epoch")
+        trainer = self.get_trainer(callbacks=[MyTestTrainerCallback], logging_steps=500, evaluation_strategy="epoch")
         trainer.train()
         events = trainer.callback_handler.callbacks[-2].events
         self.assertEqual(events, self.get_expected_events(trainer))
@@ -256,6 +258,7 @@ class TrainerCallbackTest(unittest.TestCase):
         # from paddleformers import transformers
         with patch("paddleformers.trainer.logger.warning") as warn_mock:
             trainer = self.get_trainer(
+                logging_steps=500,
                 callbacks=[MyTestTrainerCallback, MyTestTrainerCallback],
             )
             assert str(MyTestTrainerCallback) in warn_mock.call_args[0][0]

@@ -361,6 +361,13 @@ class Trainer:
             args = TrainingArguments(output_dir=output_dir)
 
         self.args = args
+        # Apply the reshard broadcast chunk cap once here: Trainer.__init__ is the
+        # single point every reshard/EMA path runs after, so all_gather_state_dict
+        # need not thread the value and no construction site is missed (incl. the
+        # non-ZCC EMA assembler that bypasses create_ema_state_assembler).
+        reshard_util.set_broadcast_max_chunk_bytes(
+            int(getattr(self.args, "reshard_bucketed_broadcast_max_chunk_gb", 2.0) * (1024**3))
+        )
         self.is_in_train = False
         # self.do_grad_scaling = args.fp16
 
@@ -574,7 +581,7 @@ class Trainer:
             assert (
                 ShardingOption.FULL_SHARD not in self.args.sharding
             ), "FULL_SHARD is not supported when using zero cost checkpoint"
-            assert not self.args.save_tokenizer, "save_tokenizer is not supported when using zero cost checkpoint"
+            # assert not self.args.save_tokenizer, "save_tokenizer is not supported when using zero cost checkpoint"
 
             # init attributes for zero cost checkpoint mode
             self.zcc_manager = None
@@ -587,6 +594,11 @@ class Trainer:
 
         if self.args.use_async_save:
             self._async_optimizer_saver = AsyncSaver()
+
+        if self.args.use_flex_async_save:
+            from .utils.flex_async_save import FlexAsyncSaver
+
+            self._flex_async_saver = FlexAsyncSaver()
 
         if args.max_steps > 0:
             logger.info("max_steps is given, it will override any value given in num_train_epochs")
@@ -689,7 +701,7 @@ class Trainer:
             self.scaler = fleet.distributed_scaler(self.scaler)
         elif self.sharding is not None:
             if self.amp_dtype == "float16" or self.amp_dtype == "bfloat16":
-                if ShardingOption.SHARD_OP in self.args.sharding:
+                if ShardingOption.SHARD_OP in self.args.sharding or ShardingOption.FSDP in self.args.sharding:
                     if self.args.amp_master_grad:
                         mix_precision_utils.MixPrecisionScaler(self.scaler)  # return value has no use
                     self.scaler = fleet.distributed_scaler(self.scaler)
@@ -1115,6 +1127,17 @@ class Trainer:
         )
         self.add_callback(non_zcc_ema_callback)
 
+    def _save_hf_side_files(self, output_dir):
+        """Save tokenizer / processing_class / custom files next to an EMA HF checkpoint."""
+        if not self.args.should_save:
+            return
+        if self.tokenizer is not None and self.args.save_tokenizer:
+            self.tokenizer.save_pretrained(output_dir)
+        if self.processing_class is not None:
+            self.processing_class.save_pretrained(output_dir)
+        if getattr(self.args, "copy_custom_file_list", None):
+            self.copy_custom_files(output_dir)
+
     def create_ema_state_assembler(self):
         global_steps = self.state.global_step
         memory_growth_threshold_bytes = self.args.save_hf_memory_growth_threshold * (2**30)
@@ -1128,9 +1151,19 @@ class Trainer:
             optimizer=self.optimizer,
             start_step=global_steps,
             memory_growth_threshold=memory_growth_threshold_bytes,
+            post_save_hook=self._save_hf_side_files,
         )
         callback = EMAStateAssemblerCallback(self.ema_state_assembler)
         self.add_callback(callback)
+
+    def _wait_flex_async_save(self):
+        """Wait for any in-progress flex async checkpoint save to complete.
+
+        Should be called before optimizer.step() to ensure CPU pinned memory
+        is no longer being read by the background write thread.
+        """
+        if hasattr(self, "_flex_async_saver") and self._flex_async_saver.is_saving:
+            self._flex_async_saver.wait_for_completion()
 
     def _save_flex_model_state(self, output_dir):
         model_sharded_state_dict = self.model.sharded_state_dict()
@@ -1305,6 +1338,12 @@ class Trainer:
 
             # use filtered AOA for master_weight (excludes FP32-only params)
             master_weight_aoa = getattr(self.args, "aoa_config_master_weight", None) or self.args.aoa_config
+            if os.getenv("HACK_CONVERT_CKPT", "0").lower() in ["true", "1"] and os.getenv(
+                "HACK_CONVERT_CKPT_NOPP_TO_PP", "0"
+            ).lower() in ["true", "1"]:
+                logger.info("[AOAConfig] generate master_weight_aoa by _gen_ckpt_convert_aoa !")
+                master_weight_aoa = self.model._gen_ckpt_convert_aoa(self.model.config)
+
             dist.load_state_dict(
                 master_weights,
                 master_weights_path,
@@ -1315,10 +1354,17 @@ class Trainer:
             )
 
             if not self.args.ignore_load_lr_and_optim:
+                opt_stat_aoa = self.args.aoa_config
+                if os.getenv("HACK_CONVERT_CKPT", "0").lower() in ["true", "1"] and os.getenv(
+                    "HACK_CONVERT_CKPT_NOPP_TO_PP", "0"
+                ).lower() in ["true", "1"]:
+                    logger.info("[AOAConfig] generate opt_stat_aoa by _gen_ckpt_convert_aoa !")
+                    opt_stat_aoa = self.model._gen_ckpt_convert_aoa(self.model.config, target="opt_state")
+
                 dist.load_state_dict(
                     opt_states,
                     opt_states_path,
-                    aoa_config=self.args.aoa_config,
+                    aoa_config=opt_stat_aoa,
                     offload=self.args.load_via_cpu,
                     comm_method=flex_ckpt_comm_method,
                     worker_groups=worker_groups,
@@ -1328,6 +1374,8 @@ class Trainer:
             if self.args.tensorwise_offload_optimizer:
                 logger.info("Offloading optimizer state for FC...")
                 for k, v in optimizer_sharded_state_dict.items():
+                    if v.local_tensor.numel() <= 1:
+                        continue
                     offload(v.local_tensor)
                 del opt_states, master_weights, optimizer_sharded_state_dict
 
@@ -1377,7 +1425,7 @@ class Trainer:
             def bf16_filtered_sharded_state_dict(sharded_state_dict):
                 new_state_dict = {}
                 for k, v in sharded_state_dict.items():
-                    if v.local_tensor.dtype == paddle.bfloat16:
+                    if v.local_tensor.dtype == paddle.bfloat16 and not v.local_tensor.stop_gradient:
                         continue
                     new_state_dict[k] = v
                 return new_state_dict
@@ -1390,6 +1438,10 @@ class Trainer:
                 if enable_bf16_opt:
                     model_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
                 aoa_config = getattr(self.args, "aoa_config_model_state", None)
+                if os.getenv("HACK_CONVERT_CKPT_NOPP_TO_PP", "0").lower() in ["true", "1"]:
+                    logger.info("[AOAConfig] generate model_state_aoa by _gen_ckpt_convert_aoa_model_state !")
+                    aoa_config = self.model._gen_ckpt_convert_aoa_model_state(self.model.config)
+
             elif enable_bf16_opt:
                 model_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
                 aoa_config = None
@@ -1868,6 +1920,7 @@ class Trainer:
                     optimizer=self.optimizer,
                     start_step=self.state.global_step,
                     memory_growth_threshold=memory_growth_threshold_bytes,
+                    post_save_hook=self._save_hf_side_files,
                 )
             self.add_non_zcc_ema_callback(resume_from_checkpoint, ema_state_assembler)
 
@@ -2063,6 +2116,10 @@ class Trainer:
             )
             self.optimizer.clear_grad()
             return
+
+        # Wait for any in-progress flex async save before optimizer.step(),
+        # because reload_optim will read from CPU pinned memory.
+        self._wait_flex_async_save()
 
         if parameters_list is None:
             parameters_list = []
@@ -2383,6 +2440,17 @@ class Trainer:
 
                 for inputs in inputs_list:
                     if step_control % args.gradient_accumulation_steps == 0:
+                        # The ZCC snapshot of the previous step reads GPU buffers over CUDA IPC
+                        # from a separate process. It must be finished before any callback or
+                        # optimizer mutates those buffers, and the earliest mutator is
+                        # `on_step_begin` (FP8 expert quantization clears the bf16 param storage),
+                        # which runs before `on_optimizer_begin`. Sync here, not there.
+                        if (
+                            not args.enable_auto_parallel
+                            and self.args.enable_zero_cost_checkpoint
+                            and self.zcc_manager is not None
+                        ):
+                            self.zcc_manager.maybe_sync_offload_status()
                         self.control = self.callback_handler.on_step_begin(args, self.state, self.control)
                         self.timers and self.timers("forward-backward").start()
 
@@ -2676,6 +2744,9 @@ class Trainer:
         metrics["train_loss"] = train_loss
 
         self.is_in_train = False
+
+        # Ensure the last flex async checkpoint save is fully written before exiting.
+        self._wait_flex_async_save()
 
         self._memory_tracker.stop_and_update_metrics(metrics)
 
@@ -3390,6 +3461,70 @@ class Trainer:
         self.create_scheduler(num_training_steps=num_training_steps)
         self.create_optimizer(self.lr_scheduler)
 
+    def _build_muon_slice_config(self):
+        """Build the Muon slice-config by walking the module tree.
+
+        Each weight-holding submodule declares how to Muon-slice its own
+        parameters via ``muon_slice_specs(muon_configs)`` which returns
+        ``{relative_param_path: (slice_fn, kwargs)}``. We prepend each
+        submodule's name so only parameters that actually exist on this rank
+        get a slice spec (layer/MTP/SWA enumeration is implicit). Adding a new
+        model therefore needs no per-model Muon slice function here.
+        """
+        model = self.model
+        muon_configs = model.config.muon_configs
+        slice_config = {}
+        for name, sub in model.named_sublayers():
+            fn = getattr(sub, "muon_slice_specs", None)
+            if fn is None:
+                continue
+            for rel, spec in fn(muon_configs).items():
+                slice_config[f"{name}.{rel}"] = spec
+        return slice_config
+
+    def _build_muon_param_info_map(self):
+        """Build the per-parameter Muon metadata map for module-walk models.
+
+        Used for models that declare their slice specs on the submodules
+        themselves; ``_build_muon_slice_config`` keys are pp-local names and so
+        match ``named_parameters()`` directly. Models that still implement
+        ``build_muon_param_info_map`` keep using their own implementation.
+        """
+        from functools import partial
+
+        from paddle.optimizer.muon import MuonParamInfo, _default_should_use_muon
+
+        model = self.model
+        exclude_patterns = model.config.muon_configs["muon_exclude_patterns"]
+        slice_config = self._build_muon_slice_config()
+
+        info_map = {}
+        for pp_name, param in model.named_parameters():
+            use_muon = _default_should_use_muon(pp_name, param.shape, exclude_patterns) and _default_should_use_muon(
+                param.name, param.shape, exclude_patterns
+            )
+
+            if pp_name in slice_config:
+                slice_fn, slice_kwargs = slice_config[pp_name]
+                split_concat_func = partial(slice_fn, **slice_kwargs)
+            else:
+                split_concat_func = None
+
+            info_map[param.name] = MuonParamInfo(
+                use_muon=use_muon,
+                split_concat_func=split_concat_func,
+            )
+
+            sc_func = split_concat_func
+            logger.info(
+                f"name: {pp_name}, param.name: {param.name}, shape: {param.shape}, "
+                f"use_muon: {use_muon}, "
+                f"split_concat_func: {sc_func.func.__name__ if sc_func else None}, "
+                f"split_concat_func_kwargs: {sc_func.keywords if sc_func else {}}"
+            )
+
+        return info_map
+
     def create_optimizer(self, lr_scheduler=None):
         """
         Setup the optimizer.
@@ -3457,15 +3592,18 @@ class Trainer:
             if hasattr(optimizer_cls, "_create_master_weight") and self.args.fp16_opt_level == "O2":
                 optimizer_kwargs["multi_precision"] = True
 
-            if self.args.optim == OptimizerNames.MUON and hasattr(self.model, "build_muon_param_info_map"):
+            if self.args.optim == OptimizerNames.MUON:
                 self.model.config.muon_configs = {
                     "muon_qkv_update_mode": self.args.muon_qkv_update_mode,
                     "muon_ffn_split": self.args.muon_ffn_split,
                     "muon_exclude_patterns": self.args.muon_exclude_patterns,
                 }
-                optimizer_kwargs["muon_param_info_map"] = self.model.build_muon_param_info_map(
-                    self.model, self.model.config
-                )
+                if hasattr(self.model, "build_muon_param_info_map"):
+                    optimizer_kwargs["muon_param_info_map"] = self.model.build_muon_param_info_map(
+                        self.model, self.model.config
+                    )
+                else:
+                    optimizer_kwargs["muon_param_info_map"] = self._build_muon_param_info_map()
                 logger.info(f"muon_param_info_map: {optimizer_kwargs['muon_param_info_map']}")
 
             self.optimizer = optimizer_cls(
@@ -3585,6 +3723,9 @@ class Trainer:
             logger.info("Creating Muon optimizer")
             muon_kwargs = {
                 **adam_kwargs,
+                "adam_beta1": args.adam_beta1,
+                "adam_beta2": args.adam_beta2,
+                "adam_epsilon": args.adam_epsilon,
                 "momentum": args.muon_momentum,
                 "muon_version": args.muon_version,
                 "muon_exclude_patterns": args.muon_exclude_patterns,
@@ -3823,9 +3964,14 @@ class Trainer:
                 assert self.optimizer is not None, "optimizer is empty!"
                 self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
 
+        # Paddle native FSDP (`--sharding fsdp`). fully_shard() owns param / grad /
+        # optimizer-state sharding, registers the main_grad hooks itself and must therefore run
+        # before MixPrecisionLayer, so the wrapping order below differs from the group-sharded path.
+        in_fsdp_mode = ShardingOption.FSDP in self.args.sharding
+
         # Pipeline mode
         if in_pipeline_parallel_mode:
-            if self.args.amp_master_grad:
+            if self.args.amp_master_grad and not in_fsdp_mode:
                 mix_precision_utils.MixPrecisionLayer(model, dtype=self.amp_dtype)  # return value has no use
             # hack for pipeline model mini batch to batch
             # need batter solution @ZHUI
@@ -3876,9 +4022,16 @@ class Trainer:
                 model._prepare_pipeline_inputs_func = _prepare_pipeline_inputs_func
 
             assert self.optimizer is not None, "Pipeline mode need decorate optimizer, pelease init optimizer."
-            if self.args.amp_master_grad:
-                self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
-            self.optimizer = self._wrap_distributed_optimizer(self.optimizer)
+            if in_fsdp_mode:
+                fsdp_layers = model._layers if hasattr(model, "_layers") else model
+                fully_shard(fsdp_layers, enable_tensor_fusion_and_overlap=True)
+                if self.args.amp_master_grad:
+                    mix_precision_utils.MixPrecisionLayer(fsdp_layers, dtype=self.amp_dtype)
+                    self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
+            else:
+                if self.args.amp_master_grad:
+                    self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
+                self.optimizer = self._wrap_distributed_optimizer(self.optimizer)
 
             if (
                 hasattr(self.args, "enable_sharding_comm_overlap")
@@ -3894,7 +4047,12 @@ class Trainer:
         # No pipeline mode, sharding only
         if not in_pipeline_parallel_mode and in_sharding_parallel_mode:
             # Sharded DDP!
-            if self.args.tensor_model_parallel_size > 1:
+            if in_fsdp_mode:
+                fully_shard(model, enable_tensor_fusion_and_overlap=True)
+                if self.args.amp_master_grad:
+                    mix_precision_utils.MixPrecisionLayer(model, dtype=self.amp_dtype)
+                    self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
+            elif self.args.tensor_model_parallel_size > 1:
                 hcg = fleet.get_hybrid_communicate_group()
                 assert (
                     ShardingOption.SHARD_GRAD_OP in self.args.sharding or ShardingOption.SHARD_OP in self.args.sharding
@@ -3905,7 +4063,10 @@ class Trainer:
                         model, hcg, strategy=fleet.fleet._user_defined_strategy
                     )
 
-            if ShardingOption.SHARD_OP in self.args.sharding:
+            if in_fsdp_mode:
+                # model is already wrapped by fully_shard above, skip group sharded parallel
+                pass
+            elif ShardingOption.SHARD_OP in self.args.sharding:
                 if self.args.amp_master_grad:
                     mix_precision_utils.MixPrecisionLayer(model, dtype=self.amp_dtype)  # return value has no use
                 model = fleet.distributed_model(model)
@@ -4234,6 +4395,17 @@ class Trainer:
 
         return loss.detach()
 
+    def _fsdp_all_gather_params(self):
+        from paddle.distributed.fsdp._fsdp_context import get_fsdp_context
+
+        fsdp_context = get_fsdp_context()
+        if fsdp_context is None:
+            logger.warning("sharding=fsdp but no fsdp context is registered, skip param all_gather.")
+            return
+        comm_manager = fsdp_context.comm_manager
+        for group in fsdp_context.buffer_manager.buffer_groups:
+            comm_manager.all_gather_params(group.params)
+
     def save_model(
         self,
         output_dir: Optional[str] = None,
@@ -4256,6 +4428,9 @@ class Trainer:
 
         if ShardingOption.FULL_SHARD in self.args.sharding:
             self.model_wrapped.get_all_parameters(convert2cpu=True, with_freeze_param=True)
+
+        if ShardingOption.FSDP in self.args.sharding:
+            self._fsdp_all_gather_params()
 
         if self.args.should_save_model_state:
             self._save(output_dir=output_dir, merge_tensor_parallel=merge_tensor_parallel, last_fc_to_hf=last_fc_to_hf)
@@ -4478,7 +4653,8 @@ class Trainer:
                                 self.args.optim_shard_num,
                             )
                         elif self.args.save_checkpoint_format == "flex_checkpoint":
-                            self._save_flex_optimizer_state(output_dir)
+                            if not self.args.use_flex_async_save:
+                                self._save_flex_optimizer_state(output_dir)
                         else:
                             if self.dp_group.rank > 0:  # this should only work for MoE saving
                                 self._save_ckpt_func(
@@ -4530,8 +4706,9 @@ class Trainer:
                                 signal_dir,
                             )
                         elif self.args.save_checkpoint_format == "flex_checkpoint":
-                            self._save_flex_model_state(output_dir)
-                            self._save_flex_optimizer_state(output_dir)
+                            if not self.args.use_flex_async_save:
+                                self._save_flex_model_state(output_dir)
+                                self._save_flex_optimizer_state(output_dir)
                         else:
                             if self.args.data_parallel_rank > 0 and self.args.use_expert_parallel:
                                 self._save_ckpt_func(
@@ -4769,6 +4946,10 @@ class Trainer:
 
                 return
             if self.args.save_checkpoint_format == "flex_checkpoint":
+                if self.args.use_flex_async_save and not last_fc_to_hf:
+                    # Async mode: model + optimizer saved together in background
+                    self._flex_async_saver.save_async(self, output_dir)
+                    return
                 if last_fc_to_hf:
                     is_main_process = paddle.distributed.get_rank() == 0
                     # Convert user-configured GB value to bytes for HFFormatFullParamSaver

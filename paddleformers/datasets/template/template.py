@@ -719,6 +719,10 @@ register_template(
     ),
     format_tools=ToolFormatter(tool_format="qwen3_5"),
     stop_words=["<|im_end|>"],
+    # ``format_assistant`` already emits ``<|im_end|>`` inline, so the dataset
+    # must not append a dynamic EOS on top of it.
+    efficient_eos=False,
+    grounding_plugin=get_grounding_plugin(name="base", norm_bbox="norm1000"),
     mm_plugin=get_mm_plugin(name="qwen3_vl", image_token="<|image_pad|>", video_token="<|video_pad|>"),
     template_class=ReasoningTemplate,
 )
@@ -735,6 +739,8 @@ register_template(
     ),
     format_tools=ToolFormatter(tool_format="qwen3_5"),
     stop_words=["<|im_end|>"],
+    efficient_eos=False,
+    grounding_plugin=get_grounding_plugin(name="base", norm_bbox="norm1000"),
     mm_plugin=get_mm_plugin(name="qwen3_vl", image_token="<|image_pad|>", video_token="<|video_pad|>"),
 )
 
@@ -1033,6 +1039,25 @@ register_template(
     format_prefix=EmptyFormatter(slots=["[gMASK]<sop>"]),
     chat_sep="<|assistant|>\n",
     mm_plugin=get_mm_plugin(name="glm_ocr", image_token="<|image|>"),
+)
+
+# Kimi-K3 XTML chat format, non-thinking channel. One <|media_pad|> per image is
+# expanded inside the model, hence expand_mm_tokens=False.
+register_template(
+    name="kimi_k3",
+    format_system=StringFormatter(
+        slots=['<|open|>message role="system"<|sep|>{{content}}<|close|>message<|sep|><|end_of_msg|>']
+    ),
+    format_user=StringFormatter(
+        slots=[
+            '<|open|>message role="user"<|sep|>{{content}}<|close|>message<|sep|><|end_of_msg|>'
+            '<|open|>message role="assistant"<|sep|><|open|>response<|sep|>'
+        ]
+    ),
+    format_assistant=StringFormatter(
+        slots=["{{content}}<|close|>response<|sep|><|close|>message<|sep|><|end_of_msg|>"]
+    ),
+    mm_plugin=get_mm_plugin(name="kimi_k3", image_token="<|media_pad|>"),
 )
 register_template(
     name="internlm2_5",

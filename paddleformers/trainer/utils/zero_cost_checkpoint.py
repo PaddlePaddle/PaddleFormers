@@ -14,6 +14,7 @@
 
 import atexit
 import copy
+import ctypes
 import functools
 import hashlib
 import json
@@ -56,7 +57,7 @@ from paddle.incubate.tensor.manipulation import (
     async_offload_with_offset,
     create_async_load,
 )
-from paddle.optimizer.fusion_utils import FusionStorageHelper, _share_tensor_ipc_meta
+from paddle.optimizer.fusion_utils import FusionStorageHelper
 
 from paddleformers.trainer.trainer_callback import TrainerCallback
 from paddleformers.trainer.utils.sharding_io import GroupGetter
@@ -202,8 +203,55 @@ def sharded_state_dict_compatibility(func, *, return_sharded_state_dict=False):
     return wrapper
 
 
+class MuonPerParamStagingBuffer:
+    """Staging buffer for Muon params that ZCC would otherwise share one-by-one.
+
+    ``_share_tensor_ipc_meta()`` describes the *enclosing* device allocation, not the
+    tensor's offset inside it. Several Muon params (e.g. the fp32 mHC
+    ``mapping_proj.weight`` / ``hc_head_fn``) live in a single allocation, so sharing
+    them individually makes every one of them resolve to the same region in the ZCC
+    worker, and each is dumped with the content of whichever param sits at the
+    allocation base.
+
+    Copy those params into a flat buffer that ZCC owns instead, and address them by
+    element offset -- exactly how the sharding comm buffers are already addressed.
+    The params involved are tiny (a few MB per rank), so the extra device-to-device
+    copy per save is negligible.
+    """
+
+    def __init__(self):
+        self.buffers = {}  # dtype -> flat device tensor
+        self.entries = defaultdict(list)  # dtype -> [(param, start, numel)]
+        self.numels = defaultdict(int)  # dtype -> total numel
+
+    def reserve(self, param):
+        """Book a slot for `param` and return its (start, end) element offsets."""
+        dtype = param.dtype
+        start = self.numels[dtype]
+        numel = param._numel()
+        self.numels[dtype] = start + numel
+        self.entries[dtype].append((param, start, numel))
+        return start, start + numel
+
+    def build(self):
+        for dtype, numel in self.numels.items():
+            self.buffers[dtype] = paddle.zeros([numel], dtype=dtype)
+        self.sync()
+
+    def ipc_meta(self, dtype):
+        return self.buffers[dtype].get_tensor()._share_cuda()
+
+    @imperative_base.no_grad()
+    def sync(self):
+        """Refresh the staged copy from the live params. Must run before offloading."""
+        for dtype, entries in self.entries.items():
+            buffer = self.buffers[dtype]
+            for param, start, numel in entries:
+                buffer[start : start + numel] = param.detach().reshape([numel])
+
+
 @sharded_state_dict_compatibility
-def get_fused_param_mappings(optimizer, manipulated_state_dict):
+def get_fused_param_mappings(optimizer, manipulated_state_dict, staging_holder=None):
     param_mappings = {}
     ipc_meta_mappings = {}
     index = 0
@@ -232,23 +280,6 @@ def get_fused_param_mappings(optimizer, manipulated_state_dict):
 
         local_2d_name_to_param = {p.name: p for p in local_2d_params}
 
-        for k, v in manipulated_state_dict.items():
-            if k in param_mappings:
-                continue
-            if v.name in local_2d_name_to_param:
-                param = local_2d_name_to_param[v.name]
-                ipc_meta = _share_tensor_ipc_meta(param)
-                ipc_meta_mappings[str(index)] = ipc_meta
-                param_meta = {
-                    "buffer_index": str(index),
-                    "shape": list(param.shape),
-                    "name": param.name,
-                    "start": 0,
-                    "end": param._numel(),
-                }
-                param_mappings[k] = param_meta
-                index += 1
-
         # Third Muon block: map remaining params (e.g. stop_gradient parameters) via
         # optimizer._parameter_list. Note that persistable registered buffers are NOT in
         # _parameter_list and would not be mapped here — see the comment in
@@ -259,22 +290,40 @@ def get_fused_param_mappings(optimizer, manipulated_state_dict):
                 if p.name not in all_param_by_name:
                     all_param_by_name[p.name] = p
 
-        for k, v in manipulated_state_dict.items():
-            if k in param_mappings:
-                continue
-            if v.name in all_param_by_name:
-                param = all_param_by_name[v.name]
-                ipc_meta = _share_tensor_ipc_meta(param)
-                ipc_meta_mappings[str(index)] = ipc_meta
-                param_meta = {
-                    "buffer_index": str(index),
+        # These params are not backed by a ZCC-visible fused buffer, so they are staged
+        # into one buffer per dtype instead of being shared one CUDA IPC handle each --
+        # see MuonPerParamStagingBuffer for why per-param sharing corrupts them.
+        staging = MuonPerParamStagingBuffer()
+        dtype_to_buffer_index = {}
+        for name_to_param in (local_2d_name_to_param, all_param_by_name):
+            for k, v in manipulated_state_dict.items():
+                if k in param_mappings:
+                    continue
+                if v.name not in name_to_param:
+                    continue
+                param = name_to_param[v.name]
+                if param.dtype not in dtype_to_buffer_index:
+                    dtype_to_buffer_index[param.dtype] = str(index)
+                    index += 1
+                start, end = staging.reserve(param)
+                param_mappings[k] = {
+                    "buffer_index": dtype_to_buffer_index[param.dtype],
                     "shape": list(param.shape),
                     "name": param.name,
-                    "start": 0,
-                    "end": param._numel(),
+                    "start": start,
+                    "end": end,
                 }
-                param_mappings[k] = param_meta
-                index += 1
+        if dtype_to_buffer_index:
+            staging.build()
+            for dtype, buffer_index in dtype_to_buffer_index.items():
+                ipc_meta_mappings[buffer_index] = staging.ipc_meta(dtype)
+            if staging_holder is not None:
+                staging_holder.append(staging)
+            logger.info(
+                f"[ZCC Manager] Staged {sum(len(e) for e in staging.entries.values())} Muon params into "
+                f"{len(dtype_to_buffer_index)} buffer(s): "
+                f"{{str(d): n for d, n in staging.numels.items()}} elements"
+            )
 
     for k, v in manipulated_state_dict.items():
         if k not in param_mappings:
@@ -295,6 +344,14 @@ def get_fused_param_mappings(optimizer, manipulated_state_dict):
     return param_mappings, ipc_meta_mappings
 
 
+def pin2cpu_zero_copy_fp32(t):
+    lt = t.get_tensor()
+    arr = np.ctypeslib.as_array(ctypes.cast(lt._ptr(), ctypes.POINTER(ctypes.c_float)), shape=(t._numel(),))
+    alias = core.eager.Tensor(value=arr, place=core.CPUPlace(), zero_copy=True)
+    alias._keep_alive = (t, arr)
+    return alias
+
+
 class ZeroCostCheckpointEMAProcessor:
     """
     生活在 ZCC Worker 里面的 EMA 处理模块.
@@ -304,7 +361,7 @@ class ZeroCostCheckpointEMAProcessor:
     def __init__(self, optimizer_fusion_storage_helper, param_fusion_storage_helper, ema_coef):
         self.optimizer_fusion_storage_helper = optimizer_fusion_storage_helper
         self.param_fusion_storage_helper = param_fusion_storage_helper
-        self.ema_coef = ema_coef
+        self.ema_coef = None if ema_coef is None else float(ema_coef)
         (
             self.ema_buffer,
             self.ema_buffer_model_params,
@@ -357,11 +414,19 @@ class ZeroCostCheckpointEMAProcessor:
         # do update: ema = alpha * ema + (1-alpha) * model
         logger.info(f"[ZCC EMA] accumulating, buffer type:{self.ema_buffer.place} {self.ema_buffer.dtype}")
         with device_guard("cpu"):
-            cpu_master_weights = self.optimizer_fusion_storage_helper.cpu_buffer._slice(
-                self.master_min_offset, self.master_max_offset
-            ).cpu()
+            cpu_buffer = self.optimizer_fusion_storage_helper.cpu_buffer
+            if (
+                cpu_buffer.place.is_cuda_pinned_place()
+                and cpu_buffer.dtype == paddle.float32
+                and cpu_buffer.is_contiguous()
+            ):
+                cpu_master_weights = pin2cpu_zero_copy_fp32(cpu_buffer)._slice(
+                    self.master_min_offset, self.master_max_offset
+                )
+            else:
+                cpu_master_weights = cpu_buffer._slice(self.master_min_offset, self.master_max_offset).cpu()
             if zcc_ema_loss_threshold is None or loss < zcc_ema_loss_threshold:
-                self.ema_buffer = self.ema_coef * self.ema_buffer + (1 - self.ema_coef) * cpu_master_weights
+                self.ema_buffer.lerp_(cpu_master_weights, 1 - self.ema_coef)
                 for index, ema_buf in self.ema_buffer_model_params.items():
                     _, cpu_buf = self.param_fusion_storage_helper.inited_buffers[index]
                     updated_ema = self.ema_coef * ema_buf + (1 - self.ema_coef) * cpu_buf
@@ -388,7 +453,7 @@ class ZeroCostCheckpointEMAProcessor:
                     continue  # non fp32 has no `self.ema_buffer_model_params`
                 if buffer_index.startswith("unshard_"):
                     # unshard_ type tensors use the entire buffer directly
-                    tensor = self.ema_buffer_model_params[buffer_index].clone()
+                    tensor = self.ema_buffer_model_params[buffer_index]
                     tensor.get_tensor()._set_dims(shape)
                     tensor.name = name
                     ema_state_dict[k] = tensor
@@ -396,7 +461,7 @@ class ZeroCostCheckpointEMAProcessor:
                 start = tensor_meta["start"]
                 end = tensor_meta["end"]
                 cpu_buffer = self.ema_buffer_model_params[buffer_index]
-                tensor = cpu_buffer._slice(start, end).clone()  # slice 出来的 tensor 在执行`paddle.save`会异常慢，此处必须clone
+                tensor = cpu_buffer._slice(start, end)
                 tensor.get_tensor()._set_dims(shape)
                 tensor.name = name
                 ema_state_dict[k] = tensor
@@ -404,7 +469,7 @@ class ZeroCostCheckpointEMAProcessor:
             for k, meta in self.optimizer_fusion_storage_helper.master_weights_meta.items():
                 s = meta["start"] - self.master_min_offset
                 e = meta["end"] - self.master_min_offset
-                t = self.ema_buffer._slice(s, e).clone()
+                t = self.ema_buffer._slice(s, e)
                 t.get_tensor()._set_dims(meta["shape"])
                 t.name = meta["name"]
                 ema_state_dict_master_weights[k] = t
@@ -435,6 +500,36 @@ class ZeroCostCheckpointEMAProcessor:
             e = meta["end"] - self.master_min_offset
             if k in ema_master:  # state-dict is filtered
                 self.ema_buffer[s:e] = ema_master[k].flatten()
+
+
+class OptFusionStorageHelper(FusionStorageHelper):
+    """
+    A zero-copy variant of FusionStorageHelper whose `state_dict` returns
+    zero-copy views of its cpu_buffer (in pinned memory) instead of independent
+    copies.
+
+    Note: the caller MUST fully consume or persist the returned state_dict (e.g.
+    finish `paddle.save`) before starting the next `sync_param`, otherwise it
+    may silently corrupt the content in state_dict.
+    """
+
+    @imperative_base.no_grad()
+    def restore_tensor_from_meta(self, tensor_meta):
+        shape = tensor_meta["shape"]
+        name = tensor_meta["name"]
+        start = tensor_meta["start"]
+        end = tensor_meta["end"]
+        if (
+            self.cpu_buffer.place.is_cuda_pinned_place()
+            and self.cpu_buffer.dtype == paddle.float32
+            and self.cpu_buffer.is_contiguous()
+        ):
+            tensor = pin2cpu_zero_copy_fp32(self.cpu_buffer)._slice(start, end)
+        else:
+            tensor = self.cpu_buffer._slice(start, end)
+        tensor.get_tensor()._set_dims(shape)
+        tensor.name = name
+        return tensor
 
 
 class ParamFusionStorageHelper:
@@ -471,7 +566,10 @@ class ParamFusionStorageHelper:
             assert isinstance(v, dict), "model_weights_metas must be a dict"
             buffer_index = v["buffer_index"]
             if buffer_index not in self.inited_buffers.keys():
-                buffer_tuple = self.init_buffer(buffer_ipc_metas[buffer_index])
+                buffer_tuple = self.init_buffer(
+                    buffer_ipc_metas[buffer_index],
+                    flatten=not buffer_index.startswith("unshard_"),
+                )
                 self.inited_buffers[buffer_index] = buffer_tuple
             if buffer_index.startswith("unshard_"):
                 self.model_weights_metas[k] = v
@@ -483,12 +581,21 @@ class ParamFusionStorageHelper:
             v["logical_end"] = self.all_param_numel
             self.model_weights_metas[k] = v
 
-    def init_buffer(self, meta):
+    def init_buffer(self, meta, flatten=False):
         if paddle.is_compiled_with_xpu():
             cuda_buffer = paddle.to_tensor(paddle.base.core.LoDTensor._new_shared_xpu(meta))
         else:
             cuda_buffer = paddle.to_tensor(paddle.base.core.LoDTensor._new_shared_cuda(meta))
         cpu_buffer = cuda_buffer.cpu()
+        if flatten and len(cuda_buffer.shape) > 1:
+            # Every consumer below addresses this buffer by *element* offset --
+            # async_offload_with_offset() only accepts 1-D and _slice() counts
+            # elements -- so re-view any multi-dimensional buffer flat. The logical
+            # shape is carried in meta["shape"] and restored by
+            # restore_tensor_from_meta().
+            numel = int(np.prod(cuda_buffer.shape))
+            cuda_buffer.get_tensor()._set_dims([numel])
+            cpu_buffer.get_tensor()._set_dims([numel])
         return (cuda_buffer, cpu_buffer)
 
     @imperative_base.no_grad()
@@ -596,6 +703,11 @@ class ZeroCostCheckpointCallback(TrainerCallback):
     on_optimizer_begin: call sync_offload_status, unset set manager.current_worker
         maybe optimizer reload
         maybe optimizer offload
+
+    NOTE: the offload handshake is additionally synced at the beginning of the next step
+    (`Trainer._inner_training_loop` -> `manager.maybe_sync_offload_status`), because
+    `on_step_begin` callbacks may already mutate the GPU buffers that the worker is
+    still reading over CUDA IPC.
     """
 
     def __init__(self, args, zcc_manager, timer, sharding_io):
@@ -609,6 +721,13 @@ class ZeroCostCheckpointCallback(TrainerCallback):
         self.model_meta = None
         self.sharding_io = sharding_io
         self.zcc_ema_interval = args.zcc_ema_interval
+        self.muon_param_staging = None
+
+    def sync_muon_param_staging(self):
+        """Snapshot the staged Muon params. Must run after the optimizer step of the
+        step being saved and before the worker starts offloading."""
+        if self.muon_param_staging is not None:
+            self.muon_param_staging.sync()
 
     def on_substep_end(self, args, state, control, **kwargs):
         self.manager.zcc_pipeline_hook(0)  # only works in non-pp model
@@ -624,10 +743,17 @@ class ZeroCostCheckpointCallback(TrainerCallback):
         if not control.should_save:
             if args.zcc_save_ema_coef is not None and state.global_step % self.zcc_ema_interval == 0:
                 self.maybe_update_zcc_worker(args, model, optimizer, state.global_step)
+                # `maybe_update_zcc_worker` only reaches `update_zcc_workers` (which assigns
+                # `manager.global_step`) on the very first save of a run, because the
+                # `fused_buffer_version == cache_version` guard short-circuits afterwards.
+                # Refresh it here so `sync_offload_status` compares against the step that is
+                # actually being offloaded instead of a permanently frozen value.
+                self.manager.global_step = state.global_step
                 self.manager.get_idle_worker_for_saving(((None, None), (None, state, None)))  # prepare for dumping
         else:
             self.runtime_timer.start("checkpoint saving time")
             self.maybe_update_zcc_worker(args, model, optimizer, state.global_step)
+            self.manager.global_step = state.global_step  # see comment above
             checkpoint_folder = f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}"
             save_infos = self._get_save_infos_based_on_steps(state, args, checkpoint_folder)
             non_cached_objects = (lr_scheduler.state_dict(), state, self.get_rng_states(args))
@@ -682,10 +808,15 @@ class ZeroCostCheckpointCallback(TrainerCallback):
     def maybe_update_zcc_worker(self, args, model, optimizer, global_step):
         inner_opt = _unwrap_opt_for_fused_states(optimizer)
         if inner_opt.fused_buffer_version == self.manager.cache_version:
+            self.sync_muon_param_staging()
             return
         logger.info("ZCC checkpoint workers need upgrade.")
         self._cache_meta_for_sharded_save(model, optimizer)
-        param_mappings, ipc_meta_mappings = get_fused_param_mappings(optimizer, self.manipulated_state_dict)
+        staging_holder = []
+        param_mappings, ipc_meta_mappings = get_fused_param_mappings(
+            optimizer, self.manipulated_state_dict, staging_holder=staging_holder
+        )
+        self.muon_param_staging = staging_holder[0] if staging_holder else None
         self.optimizer_states_meta = (
             inner_opt.fused_states_accumulators_meta,
             inner_opt.fused_states_master_weights_meta,
@@ -956,6 +1087,28 @@ class ZeroCostCheckpointManager:
         logger.info(
             f"[ZCC manager] after putting task for prepare, dumping={save_infos_and_non_cached_objects is not None}"
         )
+
+    def maybe_sync_offload_status(self):
+        """Idempotent variant of `sync_offload_status`, safe to call at the beginning of a step.
+
+        The ZCC worker is a separate process that reads the trainer's fused GPU buffers
+        through CUDA IPC on its own stream, so there is no CUDA stream ordering between
+        the trainer's compute stream and the worker's copy stream. The only ordering is
+        this handshake. It therefore has to be reached before *any* mutation of those
+        buffers in the next step, which happens earlier than `on_optimizer_begin`
+        (e.g. FP8 expert-weight quantization / `clear_param_storage` in `on_step_begin`).
+        """
+        if self.current_worker is None:
+            return
+        if self.current_pipeline_hook_step != self.pipeline_hooks_steps:
+            # The offload is still being sliced across pipeline hooks (PP > 1, or
+            # gradient_accumulation_steps > 1). The remaining chunks are only dispatched
+            # during this step's forward/backward, so waiting here would deadlock. Those
+            # configurations keep synchronizing at `on_optimizer_begin` as before.
+            return
+        logger.info("[ZCC manager] Start syncing checkpoints (step begin)")
+        self.sync_offload_status()
+        logger.info("[ZCC manager] Synced checkpoints (step begin).")
 
     def sync_offload_status(self):
         self.report_error_worker()
@@ -1381,7 +1534,7 @@ class ZeroCostCheckpointWorker:
             buffer_ipc_meta,
         ) = optimizer_states_meta
         if self.optimizer_fusion_storage_helper is None:
-            self.optimizer_fusion_storage_helper = FusionStorageHelper(
+            self.optimizer_fusion_storage_helper = OptFusionStorageHelper(
                 accumulators_meta,
                 master_weights_meta,
                 merged_model_params_meta,
@@ -2024,6 +2177,30 @@ class DistInfoCollectorValidator:
         return True, None
 
 
+def _zcc_lookup_local_shape(ckpt_meta, key, numel):
+    """Return the per-rank local_shape recorded in ckpt_meta for `key` whose
+    element count matches `numel`, else None. Used to reshape grouped-GEMM
+    optimizer tensors to the N-D shape their metadata declares, so the saved
+    bytes and the recorded metadata stay consistent (fixes allgather SonicMoE
+    experts whose sharded descriptor is N-D [E, io, 2, I_local] while the muon
+    fused buffer is flattened 2-D)."""
+    sdm = getattr(ckpt_meta, "state_dict_metadata", None)
+    if not sdm or key not in sdm:
+        return None
+    entry = sdm[key]
+    cands = entry if isinstance(entry, (list, tuple)) else [entry]
+    for m in cands:
+        ls = getattr(m, "local_shape", None)
+        if ls is None:
+            continue
+        n = 1
+        for s in ls:
+            n *= int(s)
+        if n == int(numel):
+            return list(ls)
+    return None
+
+
 def saved_ckptmeta(state_dict, ckpt_file_name, process_group=None, replicate_saved_into_local=False):
     with paddle.base.dygraph.guard():
         assert isinstance(state_dict, dict), "The state_dict should be a dictionary."
@@ -2300,28 +2477,32 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
 
         # EMA metadata: master_weights portion (same .w_0 suffix as optimizer master_weights)
         # Distinguished from optimizer by being saved to ema_state/ directory
+        # NOTE: saved_ckptmeta() runs all_gather_object over the whole world, so it must be
+        # entered by every rank. Gating it on a rank-local "do I own any master weight?"
+        # deadlocks as soon as the ownership is skewed (e.g. Phase 2 freezes the backbone and
+        # only the couple of sharding ranks holding the Indexer master weights have a non-empty
+        # dict). Always call it, then fall back to None when the *global* result is empty.
         ema_master_weights_sharded = master_weights
-        if ema_master_weights_sharded:
-            self.ema_master_weight_ckpt_meta, self.ema_master_weights_filter = saved_ckptmeta(
-                ema_master_weights_sharded,
-                self.ckpt_data_name,
-                replicate_saved_into_local=True,
-            )
-        else:
+        self.ema_master_weight_ckpt_meta, self.ema_master_weights_filter = saved_ckptmeta(
+            ema_master_weights_sharded,
+            self.ckpt_data_name,
+            replicate_saved_into_local=True,
+        )
+        if not self.ema_master_weight_ckpt_meta.state_dict_metadata:
             self.ema_master_weight_ckpt_meta = None
             self.ema_master_weights_filter = {}
 
         # EMA metadata: model_params portion (float32 items from manipulated_state_dict)
+        # Same collective constraint as above: unconditional call, global emptiness decides None.
         ema_model_params_sharded = {
             k: v for k, v in self.manipulated_state_dict.items() if v.local_tensor.dtype == paddle.float32
         }
-        if ema_model_params_sharded:
-            self.ema_model_params_ckpt_meta, self.ema_model_state_filter = saved_ckptmeta(
-                ema_model_params_sharded,
-                self.ckpt_data_name,
-                replicate_saved_into_local=True,
-            )
-        else:
+        self.ema_model_params_ckpt_meta, self.ema_model_state_filter = saved_ckptmeta(
+            ema_model_params_sharded,
+            self.ckpt_data_name,
+            replicate_saved_into_local=True,
+        )
+        if not self.ema_model_params_ckpt_meta.state_dict_metadata:
             self.ema_model_params_ckpt_meta = None
             self.ema_model_state_filter = {}
 
@@ -2439,11 +2620,16 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
         inner_opt = _unwrap_opt_for_fused_states(optimizer)
 
         if inner_opt.fused_buffer_version == self.manager.cache_version:
+            self.sync_muon_param_staging()
             return
 
         logger.info("ZCC checkpoint workers need upgrade.")
         self._cache_meta_for_sharded_save(model, optimizer)
-        param_mappings, ipc_meta_mappings = get_fused_param_mappings(optimizer, self.manipulated_state_dict)
+        staging_holder = []
+        param_mappings, ipc_meta_mappings = get_fused_param_mappings(
+            optimizer, self.manipulated_state_dict, staging_holder=staging_holder
+        )
+        self.muon_param_staging = staging_holder[0] if staging_holder else None
         self.optimizer_states_meta = (
             inner_opt.fused_states_accumulators_meta,
             inner_opt.fused_states_master_weights_meta,
@@ -2600,7 +2786,8 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
                     struct_name = _extract_struct_name(k)
                     if struct_name is not None and struct_name in self.grouped_gemm_params:
                         origin_shape = v.shape
-                        opt_state_dict[k] = v.reshape((-1, v.shape[-1]))
+                        tgt = _zcc_lookup_local_shape(self.opt_ckpt_meta, k, int(v.numel()))
+                        opt_state_dict[k] = v.reshape(tgt) if tgt else v.reshape((-1, v.shape[-1]))
                         logger.info(
                             f"[ZCC worker] {k} with shape {origin_shape} is reshaped to {opt_state_dict[k].shape}."
                         )
@@ -2608,7 +2795,8 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
                     struct_name = _extract_struct_name(k)
                     if struct_name is not None and struct_name in self.grouped_gemm_params:
                         origin_shape = v.shape
-                        master_weights[k] = v.reshape((-1, v.shape[-1]))
+                        tgt = _zcc_lookup_local_shape(self.master_weight_ckpt_meta, k, int(v.numel()))
+                        master_weights[k] = v.reshape(tgt) if tgt else v.reshape((-1, v.shape[-1]))
                         logger.info(
                             f"[ZCC worker] {k} with shape {origin_shape} is reshaped to {master_weights[k].shape}."
                         )
@@ -2663,7 +2851,8 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
                     struct_name = struct_name.group(1) if struct_name else None
                     if struct_name is not None and struct_name in self.grouped_gemm_params:
                         origin_shape = v.shape
-                        master_weights[k] = v.reshape((-1, v.shape[-1]))
+                        tgt = _zcc_lookup_local_shape(self.ema_master_weight_ckpt_meta, k, int(v.numel()))
+                        master_weights[k] = v.reshape(tgt) if tgt else v.reshape((-1, v.shape[-1]))
                         logger.info(
                             f"[ZCC worker] EMA master_weight {k} with shape {origin_shape} "
                             f"is reshaped to {master_weights[k].shape}."

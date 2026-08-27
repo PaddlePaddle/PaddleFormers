@@ -16,6 +16,7 @@ from __future__ import annotations
 import concurrent.futures
 import contextlib
 import copy
+import ctypes
 import gc
 import inspect
 import json
@@ -46,10 +47,15 @@ from huggingface_hub import (
 )
 from huggingface_hub.utils import EntryNotFoundError
 from paddle import Tensor
+from paddle.base import core
 from paddle.distributed.fleet.meta_parallel import LocalSharedLayerDesc
 from paddle.distributed.fleet.meta_parallel.parallel_layers import (
     PipelineLayer,
     SharedLayerDesc,
+)
+from paddle.incubate.tensor.manipulation import (
+    async_offload_with_offset,
+    create_async_load,
 )
 from paddle.nn import Embedding, Layer
 
@@ -403,7 +409,7 @@ def _load_part_state_dict(
     def _is_need_transpose(key):
         if "lora" not in key and convert_from_hf and isinstance(transpose_weight_keys, list):
             for trans_key in transpose_weight_keys:
-                if re.search(f"\.{trans_key}\.weight$", key) or re.fullmatch(f"^{trans_key}\.weight$", key):
+                if re.search(rf"\.{trans_key}\.weight$", key) or re.fullmatch(rf"^{trans_key}\.weight$", key):
                     return True
         return False
 
@@ -2765,6 +2771,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         subfolder = kwargs.pop("subfolder", None)
         load_via_cpu = kwargs.pop("load_via_cpu", False)
         load_checkpoint_format = kwargs.pop("load_checkpoint_format", "flex_checkpoint")
+        flex_ckpt_comm_method = kwargs.pop("flex_ckpt_comm_method", None)
         if subfolder is None:
             subfolder = ""
         variant = kwargs.pop("variant", None)
@@ -2909,13 +2916,14 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             sharded_state_dict = model.sharded_state_dict()
             metadata_path = os.path.join(ckpt_path, FLEX_CKPT_AUTO_GENERATED_METADATA)
 
-            # delete the metadata file if it exists
-            try:
-                os.remove(metadata_path)
-            except FileNotFoundError:
-                pass
-            except Exception as e:
-                logger.error(f"Failed to delete {metadata_path}: {e}")
+            # delete the metadata file if it exists (skip during benchmark)
+            if not os.environ.get("BENCHMARK_MODE", "0") == "1":
+                try:
+                    os.remove(metadata_path)
+                except FileNotFoundError:
+                    pass
+                except Exception as e:
+                    logger.error(f"Failed to delete {metadata_path}: {e}")
 
             # change dtype in aoa
             # Skip identity dtype mapping for fleet models — fleet state_dict keys
@@ -2928,13 +2936,63 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     else:
                         aoa_config["aoa_statements"].append(f"{key} -> {key}, dtype='{dtype}'")
 
-            dist.load_state_dict(
-                sharded_state_dict,
+            worker_groups = None
+            flex_ckpt_comm_method_resolved = flex_ckpt_comm_method
+
+            # Only configure parallel worker_groups when fleet is initialized with hybrid parallelism
+            if (
+                paddle.distributed.get_world_size() > 1
+                and hasattr(dist, "fleet")
+                and hasattr(dist.fleet, "_hcg")
+                and dist.fleet._hcg is not None
+            ):
+                hcg = dist.fleet.get_hybrid_communicate_group()
+
+                pp_group = None
+                try:
+                    pp_group = hcg.get_pipe_parallel_group()
+                    if pp_group is not None and pp_group.nranks < 1:
+                        pp_group = None
+                except Exception:
+                    pp_group = None
+
+                moe_group = None
+                if hasattr(hcg, "get_expert_parallel_group"):
+                    try:
+                        moe_group = hcg.get_expert_parallel_group()
+                        if moe_group is not None and moe_group.nranks < 1:
+                            moe_group = None
+                    except Exception:
+                        moe_group = None
+
+                moe_sharding_group = None
+                if hasattr(hcg, "get_moe_sharding_parallel_group"):
+                    try:
+                        moe_sharding_group = hcg.get_moe_sharding_parallel_group()
+                    except Exception:
+                        moe_sharding_group = None
+
+                if pp_group is not None and moe_group is not None:
+                    if pp_group.nranks > 1:
+                        worker_groups = [moe_group, pp_group, moe_sharding_group]
+                    else:
+                        worker_groups = [moe_group, moe_sharding_group, pp_group]
+
+                from ..trainer.trainer_utils import select_flex_ckpt_comm_method
+
+                if flex_ckpt_comm_method_resolved is None:
+                    flex_ckpt_comm_method_resolved = select_flex_ckpt_comm_method()
+
+            load_kwargs = dict(
                 path=ckpt_path,
                 aoa_config=aoa_config,
                 safetensors=True,
                 offload=load_via_cpu,
             )
+            if worker_groups is not None:
+                load_kwargs["comm_method"] = flex_ckpt_comm_method_resolved
+                load_kwargs["worker_groups"] = worker_groups
+            dist.load_state_dict(sharded_state_dict, **load_kwargs)
 
             for v in sharded_state_dict.values():
                 if hasattr(v.local_tensor, "target_tensor"):
@@ -3245,9 +3303,55 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     model_to_save, aoa_config, memory_growth_threshold=memory_growth_threshold
                 ).save_checkpoint(save_dir, max_shard_size)
             else:
-                HFFormatFullParamSaver(
-                    model_to_save, aoa_config, memory_growth_threshold=memory_growth_threshold
-                ).save_checkpoint(save_dir, max_shard_size)
+                pp_group = None
+                moe_group = None
+                moe_sharding_group = None
+
+                if (
+                    paddle.distributed.get_world_size() > 1
+                    and hasattr(dist, "fleet")
+                    and hasattr(dist.fleet, "_hcg")
+                    and dist.fleet._hcg is not None
+                ):
+                    hcg = dist.fleet.get_hybrid_communicate_group()
+                    try:
+                        pp_group = hcg.get_pipe_parallel_group()
+                    except Exception:
+                        pp_group = None
+                    if hasattr(hcg, "get_expert_parallel_group"):
+                        try:
+                            moe_group = hcg.get_expert_parallel_group()
+                        except Exception:
+                            moe_group = None
+                    if hasattr(hcg, "get_moe_sharding_parallel_group"):
+                        try:
+                            moe_sharding_group = hcg.get_moe_sharding_parallel_group()
+                        except Exception:
+                            moe_sharding_group = None
+
+                use_parallel_save = (
+                    pp_group is not None
+                    and pp_group.nranks > 1
+                    and moe_group is not None
+                    and moe_group.nranks > 1
+                    and moe_sharding_group is not None
+                )
+
+                if use_parallel_save:
+                    moe_sharding_rank = moe_sharding_group.rank if moe_sharding_group.nranks > 1 else 0
+                    HFFormatFullParamSaver(
+                        model=model_to_save,
+                        aoa_config=aoa_config,
+                        h_group=moe_group,
+                        v_group=pp_group,
+                        num_splits=moe_sharding_group.nranks,
+                        shard_idx=moe_sharding_rank,
+                        memory_growth_threshold=memory_growth_threshold,
+                    ).save_checkpoint(save_dir, max_shard_size)
+                else:
+                    HFFormatFullParamSaver(
+                        model_to_save, aoa_config, memory_growth_threshold=memory_growth_threshold
+                    ).save_checkpoint(save_dir, max_shard_size)
 
             dtype = get_parameter_dtype(model_to_save)
             if dtype is not None:
@@ -3291,7 +3395,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         if dtype is not None:
             model_to_save.config.dtype = str(dtype).split(".")[1]
         if config_to_save is None:
-            config_to_save = copy.deepcopy(model_to_save.config)
+            config_to_save = copy.deepcopy(getattr(model_to_save, "config_to_save", model_to_save.config))
 
         # Save the model
         if state_dict is None:
@@ -3564,17 +3668,19 @@ class PipelinePretrainedModel(PretrainedModel):
             pp_to_single_mapping = {}
 
             state_dict_keys = list(super().state_dict().keys())
-            first_key = ""
-            for k in state_dict_keys:
-                if "shared_layers" not in k:
-                    first_key = k
-                    break
-            first_key = first_key.split(".")
-            # if use virtual pp_degree, the prefix is like 0.0.xxx
-            # else it will be like 0.xxx
-            use_virtual_pipeline_model_parallel_size = first_key[0].isdigit() and first_key[1].isdigit()
+            # Whether the layers are chunked is a property of the model, not something the
+            # key shapes can tell: a chunk key is `{chunk_start}.{local_idx}.xxx`, but an
+            # ordinary PP `LayerDesc(nn.Sequential, ...)` also yields
+            # `{global_idx}.{sublayer_idx}.xxx`, and conversely the first key of a chunked
+            # stage may be a shared layer alias or a directly added layer, both of which
+            # keep a non digit second segment. Ask the pipeline layer itself; dualpipev
+            # chunks the layers as well.
+            use_virtual_pipeline_model_parallel_size = self._num_virtual_pipeline_stages > 1 or self._use_dualpipev
 
             prefixes = self.get_sequential_name_prefixes()
+            shared_layer_names = {
+                layer.layer_name for layer in self._layers_desc if isinstance(layer, SharedLayerDesc)
+            }
             for k in state_dict_keys:
                 name_splited = k.split(".")
                 if use_virtual_pipeline_model_parallel_size:
@@ -3583,12 +3689,22 @@ class PipelinePretrainedModel(PretrainedModel):
                             idx = str(int(name_splited[0]) + int(name_splited[1]))
                             single_name = [prefixes[idx]]
                             single_name.extend(name_splited[2:])
-                        else:
-                            single_name = [prefixes[str(len(prefixes) - 1)]]
+                        elif name_splited[1] in shared_layer_names:
+                            # A SharedLayerDesc with `forward_func` is registered on the chunk
+                            # itself under VPP, so its key is `{chunk_start}.{shared_name}.rest`.
+                            # It aliases the same parameter as `shared_layers.{shared_name}.rest`
+                            # and must resolve to the same single card name.
+                            single_name = [self.get_shardlayer_prefix(name_splited, SharedLayerDesc)]
                             single_name.extend(name_splited[2:])
-                            logger.warning(
-                                f"Please check! we treat this key as last layer, get {k}, set origin name as {'.'.join(single_name)}"
-                            )
+                        else:
+                            # Layers directly added to the PipelineLayer under VPP (e.g. lm_head) are
+                            # named `{global_idx}.rest` instead of `{chunk_start}.{local_idx}.rest`, so
+                            # the first segment is already the global index. Resolve them per layer like
+                            # the non-VPP branch, otherwise every such key collapses onto the last layer
+                            # prefix, drops its submodule name and collides with its siblings.
+                            idx = name_splited[0]
+                            single_name = [] if prefixes[idx] == "" else [prefixes[idx]]
+                            single_name.extend(name_splited[1:])
                     elif name_splited[0] == "shared_layers":
                         single_name = [self.get_shardlayer_prefix(name_splited, SharedLayerDesc)]
                         single_name.extend(name_splited[2:])
@@ -3863,6 +3979,33 @@ def clean_model_class_name(class_name, suffixes_to_strip: Union[str, List[str]] 
     return re.sub(pattern, "", class_name)
 
 
+_PINNED_ARENA = None
+_PINNED_ARENA_CAPACITY = 0
+_ASYNC_LOADER = None
+
+
+def _get_pinned_arena(nbytes):
+    """Return a process-level (per-rank) pinned uint8 arena of at least ``nbytes`` and a
+    shared async loader, both reused across checkpoints.
+
+    NOTE: The arena is a single shared buffer. Checkpoint saves that use it MUST NOT
+    overlap in time -- if two saves run concurrently they will write into the same
+    arena region and corrupt each other's data. Callers rely on checkpoints being
+    serialized (one save fully finishes, including the final cpu_wait + save_file,
+    before the next begins) so the buffer can be safely reused.
+    """
+    global _PINNED_ARENA, _PINNED_ARENA_CAPACITY, _ASYNC_LOADER
+    if _PINNED_ARENA is None or _PINNED_ARENA_CAPACITY < nbytes:
+        arena = core.eager.Tensor()
+        arena.get_tensor()._set_dims([nbytes])
+        arena.get_tensor()._mutable_data(paddle.CUDAPinnedPlace(), core.VarDesc.VarType.UINT8)
+        _PINNED_ARENA = arena
+        _PINNED_ARENA_CAPACITY = nbytes
+    if _ASYNC_LOADER is None:
+        _ASYNC_LOADER = create_async_load()
+    return _PINNED_ARENA, _ASYNC_LOADER
+
+
 def save_full_param(
     itr: Iterator[tuple[str, Tensor]],
     save_dir: str,
@@ -3874,6 +4017,14 @@ def save_full_param(
     """
     Saves model weights from an iterator into shards, supporting max shard size
     and a limited number of saver ranks.
+
+    On GPU, weights are offloaded asynchronously via a reused pinned-memory arena:
+    each param is DMA-copied D2H into a byte offset of a page-locked buffer on a
+    dedicated loader stream (no per-param host sync), a zero-copy alias into that
+    buffer is handed to save_file, and the shard waits once (cpu_wait on the last
+    copy) before writing to disk. This overlaps the copies and avoids the slow
+    synchronous pageable path. On non-GPU devices (XPU/CPU) the arena is skipped
+    and every param falls back to a synchronous param.cpu() copy.
 
     Only ranks less than `num_saver_ranks` will perform disk I/O. All other ranks
     will iterate through the data to maintain synchronization but will not save.
@@ -3905,14 +4056,43 @@ def save_full_param(
 
     os.makedirs(save_dir, exist_ok=True)
 
+    use_pinned_arena = paddle.get_device().startswith("gpu")
+    if use_pinned_arena:
+        arena_cpu, async_loader = _get_pinned_arena(max_shard_size_bytes)
+    else:
+        arena_cpu, async_loader = None, None
+
     current_shard_state_dict = {}
     current_shard_size_bytes = 0
     sub_shard_index = 0
+    arena_offset = 0
+    shard_tasks = []
+    shard_src_refs = []
+
+    def get_param(byte_start, nbytes, dtype, shape):
+        # Wrap the pinned arena bytes as a CPUPlace zero-copy alias so save_file
+        # sees is_cpu_place()==True and skips its internal per-param .cpu().
+        base_ptr = arena_cpu.get_tensor()._ptr() + byte_start
+        np_u8 = np.ctypeslib.as_array(ctypes.cast(base_ptr, ctypes.POINTER(ctypes.c_ubyte)), shape=(nbytes,))
+        alias_u8 = core.eager.Tensor(value=np_u8, place=core.CPUPlace(), zero_copy=True)
+        alias = alias_u8.view(dtype)
+        alias.get_tensor()._set_dims(shape)
+        alias._keep_alive = (arena_cpu, np_u8, alias_u8)
+        return alias
 
     def _save_current_shard():
         nonlocal sub_shard_index, current_shard_state_dict, current_shard_size_bytes
+        nonlocal arena_offset, shard_tasks, shard_src_refs
         if not current_shard_state_dict:
             return
+
+        # Wait for all async D2H copies of this shard to land in the arena.
+        # cuda_wait for all but the last, cpu_wait on the last (same ordered stream).
+        if shard_tasks:
+            last_task = shard_tasks.pop(-1)
+            for task in shard_tasks:
+                task.cuda_wait()
+            last_task.cpu_wait()
 
         # Filename includes the main shard number (rank) and the sub-shard index
         cur_rank = paddle.distributed.get_rank()
@@ -3932,20 +4112,43 @@ def save_full_param(
         sub_shard_index += 1
         current_shard_state_dict = {}
         current_shard_size_bytes = 0
+        arena_offset = 0
+        shard_tasks = []
+        shard_src_refs = []
 
     logger.info(f"[Rank {rank}/{moe_sharding_world_size}] Starting to process the weight iterator...")
 
     total_size = 0
 
     for i, (param_key, param) in enumerate(itr):
-        param_size_bytes = param.numel() * param.element_size()
-        total_size += param_size_bytes.item()
+        param_size_bytes = param.size * param.itemsize
+        total_size += param_size_bytes
         if i % num_saver_ranks == rank:
             logger.info(f"[Rank {rank}/{moe_sharding_world_size}] Assigned to store parameter {param_key}")
             if current_shard_size_bytes > 0 and (current_shard_size_bytes + param_size_bytes > max_shard_size_bytes):
                 _save_current_shard()
-            # Move tensor to CPU since we only need to save it, not compute with it
-            current_shard_state_dict[param_key] = param.cpu()
+
+            if not use_pinned_arena or param_size_bytes > max_shard_size_bytes:
+                # Non-GPU device, or a single param larger than the arena: synchronous copy.
+                current_shard_state_dict[param_key] = param.cpu()
+            else:
+                # Async D2H copy into the arena, plus a zero-copy alias for save_file.
+                src = param.flatten().view(paddle.uint8)
+                task = async_offload_with_offset(
+                    src_tensor=src,
+                    dst_tensor=arena_cpu,
+                    src_offset=0,
+                    dst_offset=arena_offset,
+                    offload_size=param_size_bytes,
+                    async_loader=async_loader,
+                )
+                shard_tasks.append(task)
+                shard_src_refs.append(src)
+                current_shard_state_dict[param_key] = get_param(
+                    arena_offset, param_size_bytes, param.dtype, list(param.shape)
+                )
+                arena_offset += param_size_bytes
+
             current_shard_size_bytes += param_size_bytes
 
             if current_shard_size_bytes >= max_shard_size_bytes:
