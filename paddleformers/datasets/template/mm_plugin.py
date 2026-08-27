@@ -1523,6 +1523,7 @@ class PixtralPlugin(BasePlugin):
             mm_inputs.update(image_processor(images, patch_size=patch_size, return_tensors="pd"))
 
         return mm_inputs
+
     @override
     def process_messages(
         self,
@@ -1665,6 +1666,7 @@ class KimiK3Plugin(BasePlugin):
         )["images"]
         medias = [{"type": "image", "image": image} for image in pil_images]
         return dict(image_processor.preprocess(medias, return_tensors="pd"))
+
 
 PLUGINS = {
     "base": BasePlugin,
