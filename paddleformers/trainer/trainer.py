@@ -74,7 +74,7 @@ from paddle.distributed.fleet.meta_parallel.sharding.group_sharded_optimizer_sta
 from paddle.distributed.fleet.utils.hybrid_parallel_util import (
     obtain_optimizer_parameters_list,
 )
-from paddle.distributed.fsdp.fully_shard import fully_shard
+from paddle.distributed.fsdp.fully_shard import MixedPrecisionPolicy, fully_shard
 
 _obtain_optimizer_parameters_list = obtain_optimizer_parameters_list
 
@@ -3589,11 +3589,11 @@ class Trainer:
             optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
             if self.args.optim == OptimizerNames.ADAMW_CUSTOM:
                 optimizer_kwargs["quantization_config"] = self.model.config.quantization_config
-                optimizer_kwargs["use_lowprecision_moment"] = self.args.use_lowprecision_moment
                 optimizer_kwargs["tensorwise_offload_optimizer"] = self.args.tensorwise_offload_optimizer
-
+            optimizer_kwargs["use_lowprecision_moment"] = self.args.use_lowprecision_moment
+            bf16_master = optimizer_kwargs.get("use_lowprecision_moment", False)
             if hasattr(optimizer_cls, "_create_master_weight") and self.args.fp16_opt_level == "O2":
-                optimizer_kwargs["multi_precision"] = True
+                optimizer_kwargs["multi_precision"] = not bf16_master
 
             if self.args.optim == OptimizerNames.MUON:
                 self.model.config.muon_configs = {
@@ -3971,6 +3971,9 @@ class Trainer:
         # optimizer-state sharding, registers the main_grad hooks itself and must therefore run
         # before MixPrecisionLayer, so the wrapping order below differs from the group-sharded path.
         in_fsdp_mode = ShardingOption.FSDP in self.args.sharding
+        fsdp_mp_policy = None
+        if in_fsdp_mode and not self.args.amp_master_grad and self.amp_dtype in ("float16", "bfloat16"):
+            fsdp_mp_policy = MixedPrecisionPolicy(reduce_dtype=getattr(paddle, self.amp_dtype))
 
         # Pipeline mode
         if in_pipeline_parallel_mode:
@@ -4027,7 +4030,7 @@ class Trainer:
             assert self.optimizer is not None, "Pipeline mode need decorate optimizer, pelease init optimizer."
             if in_fsdp_mode:
                 fsdp_layers = model._layers if hasattr(model, "_layers") else model
-                fully_shard(fsdp_layers, enable_tensor_fusion_and_overlap=True)
+                fully_shard(fsdp_layers, enable_tensor_fusion_and_overlap=True, mp_policy=fsdp_mp_policy)
                 if self.args.amp_master_grad:
                     mix_precision_utils.MixPrecisionLayer(fsdp_layers, dtype=self.amp_dtype)
                     self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
@@ -4051,7 +4054,7 @@ class Trainer:
         if not in_pipeline_parallel_mode and in_sharding_parallel_mode:
             # Sharded DDP!
             if in_fsdp_mode:
-                fully_shard(model, enable_tensor_fusion_and_overlap=True)
+                fully_shard(model, enable_tensor_fusion_and_overlap=True, mp_policy=fsdp_mp_policy)
                 if self.args.amp_master_grad:
                     mix_precision_utils.MixPrecisionLayer(model, dtype=self.amp_dtype)
                     self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
