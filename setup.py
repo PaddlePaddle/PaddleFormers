@@ -61,32 +61,6 @@ def is_dirty(dir: str) -> bool:
     return output.strip() != b""
 
 
-def get_git_branch(dir: str) -> str:
-    """Get current branch name of a git repository."""
-    try:
-        return (
-            subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=dir)
-            .strip()
-            .decode("utf-8")
-        )
-    except (subprocess.CalledProcessError, OSError):
-        return "unknown"
-
-
-def get_current_branch(dir: str) -> str:
-    """Get current branch name, preferring CI-provided env vars over git (CI checkouts
-    are often in detached HEAD state, where `git rev-parse --abbrev-ref HEAD` just
-    returns "HEAD" instead of the real branch name)."""
-    branch = (
-        os.getenv("GITHUB_REF_NAME")
-        or os.getenv("CI_COMMIT_REF_NAME")
-        or os.getenv("BRANCH_NAME")
-    )
-    if branch:
-        return branch
-    return get_git_branch(dir)
-
-
 commit = "unknown"
 paddleformers_dir = os.path.abspath(os.path.dirname(__file__))
 if commit.endswith("unknown") and is_git_repo(paddleformers_dir) and have_git():
@@ -141,13 +115,8 @@ def show():
 
 __version__ = "1.3.0.dev"
 
-current_branch = get_current_branch(paddleformers_dir)
-
 if os.getenv(PADDLEFORMERS_STABLE_VERSION):
     __version__ = __version__.replace(".dev", "")
-elif current_branch == "release" or current_branch.startswith("release/"):
-    formatted_date = datetime.now().date().strftime("%Y%m%d")
-    __version__ = __version__.replace(".dev", ".post{}".format(formatted_date))
 else:
     formatted_date = datetime.now().date().strftime("%Y%m%d")
     __version__ = __version__.replace(".dev", ".dev{}".format(formatted_date))
