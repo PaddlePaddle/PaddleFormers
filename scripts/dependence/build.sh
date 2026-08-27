@@ -52,7 +52,12 @@ paddleformers_build (){
     commit=$(python -c "import paddleformers; print(paddleformers.version.commit)")
     commit=${commit:-unknown}
     cp $formers_dir/dist/p****.whl ${upload_path}/
-    cp $formers_dir/dist/p****.whl ${upload_path}/paddleformers-0.0.0.dev-py3-none-any.whl
+    if [ "$BRANCH" = "release" ] || [[ "$BRANCH" == release/* ]]; then
+        alias_name=paddleformers-0.0.0.post-py3-none-any.whl
+    else
+        alias_name=paddleformers-0.0.0.dev-py3-none-any.whl
+    fi
+    cp $formers_dir/dist/p****.whl ${upload_path}/${alias_name}
     
     whl_file=$(ls $formers_dir/dist/paddleformers-*.whl)
     base_name=$(basename $whl_file)
