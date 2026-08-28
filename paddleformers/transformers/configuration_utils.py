@@ -300,19 +300,18 @@ class LlmMetaConfig:
             "The number of tokens in each subbatch for MoE model processing.",
         ),
         ("moe_router_force_load_balancing", bool, False, "Whether to fake gate."),
-        ("moe_token_dispatcher_type", str, "deepep", 'Communication type used by MoE module "deepep" or "alltoall". '),
+        (
+            "moe_token_dispatcher_type",
+            str,
+            "alltoall",
+            'Communication type used by MoE module "deepep" or "alltoall". ',
+        ),
         ("use_unified_moe", bool, False, "Whether to use unified moe."),
         (
             "moe_deepep_num_sms",
             Optional[bool],
             None,
             "Whether to enable DeepEP (Deep Expert Pruning) with SMS (Sub-Model Selection) for MoE. Defaults to False.",
-        ),
-        (
-            "moe_token_dispatcher_type",
-            str,
-            "deepep",
-            "Type of token dispatcher for MoE (e.g., 'round_robin', 'top_k'). Defaults to None (use default dispatcher).",
         ),
         (
             "moe_use_fusion_node",
@@ -420,7 +419,7 @@ class LlmMetaConfig:
         (
             "dsa_indexer_loss_coeff",
             float,
-            0.01,
+            0.0,
             "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term.",
         ),
         (
@@ -824,7 +823,7 @@ class PretrainedConfig:
             `"single_label_classification"` or `"multi_label_classification"`.
         moe_subbatch_token_num_before_dispatch (`int`, *optional*, defaults to 0):
             The number of tokens in a subbatch for MoE.
-        moe_token_dispatcher_type (`str`, *optional*, defaults to `deepep`):
+        moe_token_dispatcher_type (`str`, *optional*, defaults to `alltoall`):
             Communication type for expert parallel. Can be one of `deepep`, `alltoall`.
         use_unified_moe (`bool`, *optional*, defaults to `False`):
             Whether to use unified MoE.
@@ -977,7 +976,6 @@ class PretrainedConfig:
         self.dpo_config = kwargs.pop("dpo_config", None)
         self.kto_config = kwargs.pop("kto_config", None)
 
-        self.moe_token_dispatcher_type = kwargs.pop("moe_token_dispatcher_type", "deepep")
         self.use_unified_moe = kwargs.pop("use_unified_moe", False)
         self.moe_router_force_load_balancing = kwargs.pop("moe_router_force_load_balancing", False)
 
@@ -1015,11 +1013,6 @@ class PretrainedConfig:
                 "Passing `gradient_checkpointing` to a config initialization is deprecated and will be removed in v5 "
                 "Transformers. Using `model.gradient_checkpointing_enable()` instead, or if you are using the "
                 "`Trainer` API, pass `gradient_checkpointing=True` in your `TrainingArguments`."
-            )
-        if "save_to_hf" in kwargs:
-            raise ValueError(
-                "The parameter `save_to_hf` has been renamed to `save_safetensors`. "
-                "Please update your code or config accordingly."
             )
         self._save_safetensors = kwargs.pop("save_safetensors", True)
         self._unsavable_keys.add("_save_safetensors")
@@ -1121,11 +1114,6 @@ class PretrainedConfig:
 
         os.makedirs(save_directory, exist_ok=True)
 
-        if "save_to_hf" in kwargs:
-            raise ValueError(
-                "The parameter `save_to_hf` has been renamed to `save_safetensors`. "
-                "Please update your code or config accordingly."
-            )
         self._save_safetensors = kwargs.pop("save_safetensors", True)
 
         # If we have a custom config, we copy the file defining it in the folder and set the attributes so it can be

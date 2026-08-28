@@ -1046,7 +1046,7 @@ register_template(
     format_assistant=StringFormatter(
         slots=["{{content}}<|close|>response<|sep|><|close|>message<|sep|><|end_of_msg|>"]
     ),
-    mm_plugin=get_mm_plugin(name="kimi_k3", image_token="<|media_pad|>", expand_mm_tokens=False),
+    mm_plugin=get_mm_plugin(name="kimi_k3", image_token="<|media_pad|>"),
 )
 register_template(
     name="internlm2_5",
