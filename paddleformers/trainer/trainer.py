@@ -528,6 +528,7 @@ class Trainer:
                     monitors=_im_monitors,
                     monitor_interval=_im_interval,
                     qk_row_stride=getattr(self.args, "internal_medicine_qk_row_stride", 1),
+                    debug_mode=getattr(self.args, "internal_medicine_debug_mode", False),
                     log_dir=_im_log_dir,
                 )
             )

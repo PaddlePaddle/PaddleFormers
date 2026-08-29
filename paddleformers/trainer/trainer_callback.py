@@ -970,6 +970,7 @@ class InternalMedicineCallback(TrainerCallback):
         monitor_interval=0,
         verbose: bool = True,
         qk_row_stride: int = 1,
+        debug_mode: bool = False,
         log_dir: str = "",
     ):
         super().__init__()
@@ -977,6 +978,7 @@ class InternalMedicineCallback(TrainerCallback):
         self.monitor_interval = int(monitor_interval) if monitor_interval else 0
         self.verbose = verbose
         self.qk_row_stride = qk_row_stride
+        self.debug_mode = bool(debug_mode)
         self.log_dir = log_dir or ""
         self.log_path = os.path.join(self.log_dir, "internal_medicine.jsonl") if self.log_dir else ""
         self._monitor_dict = {}
@@ -1020,6 +1022,7 @@ class InternalMedicineCallback(TrainerCallback):
 
         try:
             from internal_medicine.backends.paddlefleet import setup_monitors
+            from internal_medicine.core.metric_families import exclusions_for
             from internal_medicine.core.training_logs import training_logs
         except (ImportError, TypeError, SyntaxError) as exc:
             logger.warning(
@@ -1031,6 +1034,10 @@ class InternalMedicineCallback(TrainerCallback):
             )
             return
 
+        # Which families a non-debug run leaves out is the library's call, not a
+        # yaml string: one bit here, the set itself lives next to the taxonomy.
+        exclude_families = exclusions_for(self.debug_mode)
+
         try:
             setup_monitors(
                 model,
@@ -1039,6 +1046,7 @@ class InternalMedicineCallback(TrainerCallback):
                 monitor_interval=self.monitor_interval,
                 verbose=self.verbose,
                 qk_stats={"row_stride": self.qk_row_stride},
+                exclude_families=exclude_families,
             )
             self._training_logs = training_logs
             self._setup_done = True
