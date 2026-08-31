@@ -1046,10 +1046,20 @@ class InternalMedicineCallback(TrainerCallback):
         if not self._setup_done or self._training_logs is None:
             return
 
+        if not self._sampled_this_step():
+            return
+
         aggregated = self._training_logs.gather_and_aggregate()
         if aggregated:
             self._training_logs.reset()
             self._maybe_write_jsonl(state, aggregated)
+
+    def _sampled_this_step(self):
+        """Whether any monitor sampled during the step that just finished."""
+        monitors = list(self._monitor_dict.values())
+        if not monitors:
+            return True
+        return any(getattr(m, "sampled_this_step", True) for m in monitors)
 
     def _resolve_writer(self):
         """Decide once whether this process should write the jsonl file.
