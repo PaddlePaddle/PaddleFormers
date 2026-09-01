@@ -4436,10 +4436,11 @@ class Trainer:
             self.model_wrapped.get_all_parameters(convert2cpu=True, with_freeze_param=True)
 
         if ShardingOption.FSDP in self.args.sharding:
-            if last_fc_to_hf or self.args.save_checkpoint_format != "flex_checkpoint":
-                raise NotImplementedError(
-                    "sharding=fsdp only saves flex_checkpoint shards; convert them offline for HF export."
-                )
+            if self.args.save_checkpoint_format != "flex_checkpoint":
+                raise NotImplementedError("sharding=fsdp only supports save_checkpoint_format=flex_checkpoint.")
+            if last_fc_to_hf:
+                logger.warning("sharding=fsdp cannot export HF format; saving flex_checkpoint shards instead.")
+                last_fc_to_hf = False
 
         if self.args.should_save_model_state:
             self._save(output_dir=output_dir, merge_tensor_parallel=merge_tensor_parallel, last_fc_to_hf=last_fc_to_hf)
