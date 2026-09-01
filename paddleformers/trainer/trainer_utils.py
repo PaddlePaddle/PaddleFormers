@@ -1827,7 +1827,7 @@ def _restore_master_weights_single(master_weights, model, optimizer, group, stru
     nms = reshard_util.NodeModelState(group=group)
     nms_tmp = reshard_util.NodeModelState(group=group)
     nms_tmp.add_master_weights(master_weights)
-    nms_tmp.pack_keys(structure_name_map, get_env_device())
+    nms_tmp.pack_keys(structure_name_map, paddle.device.get_device())
     nms.merge_from(nms_tmp, max(group.rank, 0))
     del nms_tmp
     nms = restore_func(nms, model, optimizer)

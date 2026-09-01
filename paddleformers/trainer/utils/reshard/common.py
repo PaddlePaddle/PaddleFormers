@@ -990,7 +990,7 @@ def _all_gather_state_dict_bucketed(state_dict, filter_func, group):
                 if dtype == "bfloat16" or not v.place.is_cpu_place():
                     state_dict[k] = v.numpy()
                 else:
-                    state_dict[k] = np.from_dlpack(v)
+                    state_dict[k] = np.from_dlpack(v.detach())
         else:
             dtype = _normalize_np_dtype_str(str(v.dtype))
         meta_dict[k] = (dtype, shape, group_rank)
