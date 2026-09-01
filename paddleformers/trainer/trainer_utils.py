@@ -1827,7 +1827,7 @@ def _restore_master_weights_single(master_weights, model, optimizer, group, stru
     nms = reshard_util.NodeModelState(group=group)
     nms_tmp = reshard_util.NodeModelState(group=group)
     nms_tmp.add_master_weights(master_weights)
-    nms_tmp.pack_keys(structure_name_map)
+    nms_tmp.pack_keys(structure_name_map, get_env_device())
     nms.merge_from(nms_tmp, max(group.rank, 0))
     del nms_tmp
     nms = restore_func(nms, model, optimizer)
@@ -1839,13 +1839,14 @@ def recover_params_from_master_weight(ema_state_dict, model, optimizer, group):
     master_weights = ema_state_dict.get("master_weights", {})
     tmp = OrderedDict()
     (master_weights, tmp) = (tmp, master_weights)
-    # cast to bf16 and move to cpu
+    # cast to bf16
     for (k, v) in tmp.items():
         name = v.name
-        master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
+        master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16)
         master_weights[k].name = name
 
-    structure_name_map = {k: v.name for (k, v) in model.state_dict().items()}
+    model_state_dict = model.state_dict()
+    structure_name_map = {k: v.name for (k, v) in model_state_dict.items()}
 
     muon_opt = _unwrap_muon_sharding_optimizer(optimizer)
     if muon_opt is not None:
@@ -1884,7 +1885,6 @@ def recover_params_from_master_weight(ema_state_dict, model, optimizer, group):
             master_weights, model, optimizer, group, structure_name_map, restore_func
         )
 
-    model_state_dict = model.state_dict()
     ema_param_state_dict = OrderedDict()
     for key, param in model_state_dict.items():
         if param.name in master_weights and param.dtype == paddle.bfloat16:
@@ -1894,11 +1894,7 @@ def recover_params_from_master_weight(ema_state_dict, model, optimizer, group):
             assert (
                 param.shape == master_weights[param.name].shape
             ), f"got {param.shape} vs {master_weights[param.name].shape}"
-            master_weight = paddle.reshape(master_weights[param.name], param.shape)
-            ema_param_state_dict[key] = paddle.cast(to_device(master_weight), paddle.bfloat16)
-
-    for k, v in master_weights.items():
-        v._clear()
+            ema_param_state_dict[key] = to_device(master_weights[param.name])
 
     del master_weights
     return ema_param_state_dict
