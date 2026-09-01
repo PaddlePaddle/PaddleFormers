@@ -18,7 +18,9 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import paddle
+from safetensors.numpy import save_file
 
 from paddleformers.cli.utils.llm_utils import get_lora_target_modules
 from paddleformers.transformers import (
@@ -27,10 +29,13 @@ from paddleformers.transformers import (
     Phi4MultimodalForCausalLM,
     Phi4MultimodalModel,
 )
+from paddleformers.transformers.model_utils import load_state_dict
 from paddleformers.transformers.phi4_multimodal.modeling import (
     Phi4MultimodalAudioAttention,
     Phi4MultimodalAudioModel,
+    Phi4MultimodalPreTrainedModel,
     _lora_adapter_from_input_mode,
+    _merge_multimodal_embeddings,
     adaptive_enc_mask,
 )
 
@@ -45,7 +50,7 @@ class Phi4MultimodalModelingTest(unittest.TestCase):
         self.assertIs(Phi4MMForCausalLM, Phi4MultimodalForCausalLM)
         self.assertIs(Phi4MMForConditionalGeneration, Phi4MultimodalForCausalLM)
 
-    def test_saved_config_uses_upstream_phi4mm_metadata(self):
+    def test_saved_config_keeps_native_complete_vision_config(self):
         config = Phi4MultimodalConfig(
             vocab_size=101,
             hidden_size=32,
@@ -54,21 +59,116 @@ class Phi4MultimodalModelingTest(unittest.TestCase):
             num_attention_heads=4,
             num_key_value_heads=2,
             dtype="bfloat16",
+            vision_config={
+                "hidden_size": 48,
+                "intermediate_size": 80,
+                "num_hidden_layers": 2,
+                "num_attention_heads": 4,
+                "image_size": 336,
+                "patch_size": 14,
+                "crop_size": 336,
+            },
         )
         with tempfile.TemporaryDirectory() as tmpdir:
             config.save_pretrained(tmpdir)
+            saved = json.loads((Path(tmpdir) / "config.json").read_text())
+
+            self.assertEqual(saved["model_type"], "phi4_multimodal")
+            self.assertEqual(saved["vision_config"]["hidden_size"], 48)
+            self.assertEqual(saved["vision_config"]["num_hidden_layers"], 2)
+            self.assertEqual(saved["vision_config"]["image_size"], 336)
+            self.assertEqual(saved["vision_config"]["patch_size"], 14)
+            self.assertEqual(saved["vision_config"]["crop_size"], 336)
+            self.assertFalse((Path(tmpdir) / "configuration_phi4mm.py").exists())
+
+            reloaded = AutoConfig.from_pretrained(tmpdir)
+            self.assertIsInstance(reloaded, Phi4MultimodalConfig)
+            self.assertEqual(reloaded.hidden_size, config.hidden_size)
+            self.assertEqual(reloaded.dtype, config.dtype)
+            self.assertEqual(reloaded.vision_config.hidden_size, 48)
+            self.assertEqual(reloaded.vision_config.num_hidden_layers, 2)
+            self.assertEqual(reloaded.vision_config.image_size, 336)
+
+    def test_upstream_config_export_is_explicit_and_preserves_vision_config(self):
+        config = Phi4MultimodalConfig(
+            num_hidden_layers=0,
+            dtype="bfloat16",
+            vision_config={
+                "hidden_size": 48,
+                "intermediate_size": 80,
+                "num_hidden_layers": 2,
+                "num_attention_heads": 4,
+                "image_size": 336,
+                "patch_size": 14,
+                "crop_size": 336,
+            },
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config.save_upstream_config(tmpdir)
             exported = json.loads((Path(tmpdir) / "config.json").read_text())
 
             self.assertEqual(exported["model_type"], "phi4mm")
             self.assertEqual(exported["architectures"], ["Phi4MMForCausalLM"])
             self.assertEqual(exported["auto_map"]["AutoConfig"], "configuration_phi4mm.Phi4MMConfig")
             self.assertEqual(exported["torch_dtype"], "bfloat16")
+            self.assertEqual(exported["vision_config"]["hidden_size"], 48)
+            self.assertEqual(exported["vision_config"]["num_hidden_layers"], 2)
+            self.assertEqual(exported["vision_config"]["image_size"], 336)
             self.assertTrue((Path(tmpdir) / "configuration_phi4mm.py").is_file())
 
-            reloaded = AutoConfig.from_pretrained(tmpdir)
-            self.assertIsInstance(reloaded, Phi4MultimodalConfig)
-            self.assertEqual(reloaded.hidden_size, config.hidden_size)
-            self.assertEqual(reloaded.dtype, config.dtype)
+            reloaded = Phi4MultimodalConfig.from_dict(exported)
+            self.assertEqual(reloaded.vision_config.hidden_size, 48)
+            self.assertEqual(reloaded.vision_config.num_hidden_layers, 2)
+            self.assertEqual(reloaded.vision_config.image_size, 336)
+
+    def test_hf_linear_weights_are_transposed_by_standard_loader(self):
+        weights = {
+            "model.layers.0.self_attn.qkv_proj.weight": np.arange(6, dtype=np.float32).reshape(2, 3),
+            "model.embed_tokens_extend.image_embed.img_processor.encoder.layers.0.mlp.fc1.weight": np.arange(
+                12, dtype=np.float32
+            ).reshape(3, 4),
+            "model.embed_tokens_extend.audio_embed.encoder.embed.out.weight": np.arange(20, dtype=np.float32).reshape(
+                4, 5
+            ),
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            checkpoint = str(Path(tmpdir) / "model.safetensors")
+            save_file(weights, checkpoint, metadata={"format": "np"})
+            loaded = load_state_dict(
+                checkpoint,
+                return_numpy=True,
+                convert_from_hf=True,
+                transpose_weight_keys=Phi4MultimodalPreTrainedModel.transpose_weight_keys,
+            )
+
+        for key, weight in weights.items():
+            np.testing.assert_array_equal(loaded[key], weight.T)
+        self.assertTrue(
+            all(not key.endswith(".weight") for key in Phi4MultimodalPreTrainedModel.transpose_weight_keys)
+        )
+
+    def test_unsupported_tensor_and_sequence_parallel_fail_early(self):
+        for sequence_parallel in (False, True):
+            config = Phi4MultimodalConfig(
+                num_hidden_layers=0,
+                tensor_model_parallel_size=2,
+                sequence_parallel=sequence_parallel,
+            )
+            with self.subTest(sequence_parallel=sequence_parallel):
+                with self.assertRaisesRegex(NotImplementedError, "tensor parallel or sequence parallel"):
+                    Phi4MultimodalModel(config)
+
+    def test_multimodal_embeddings_are_vectorized_and_validate_token_count(self):
+        input_ids = paddle.to_tensor([[1, 99, 2], [99, 3, 99]], dtype="int64")
+        inputs_embeds = paddle.zeros([2, 3, 2], dtype="float32")
+        features = paddle.to_tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+
+        merged = _merge_multimodal_embeddings(input_ids, inputs_embeds, features, 99, "Image")
+        expected = paddle.to_tensor([[[0.0, 0.0], [1.0, 2.0], [0.0, 0.0]], [[3.0, 4.0], [0.0, 0.0], [5.0, 6.0]]])
+        np.testing.assert_array_equal(merged.numpy(), expected.numpy())
+
+        with self.assertRaisesRegex(ValueError, "Image features and Image tokens do not match"):
+            _merge_multimodal_embeddings(input_ids, inputs_embeds, features[:2], 99, "Image")
 
     def test_lora_targets_only_language_projection_layers(self):
         model = SimpleNamespace(config=SimpleNamespace(model_type="phi4_multimodal"))

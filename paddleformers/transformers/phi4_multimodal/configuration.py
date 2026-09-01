@@ -36,6 +36,7 @@ def _convert_phi4mm_config(config_dict, with_lora_adapters=True):
     config.pop("transformers_version", None)
     config.pop("_attn_implementation", None)
     config.pop("model_type", None)
+    vision_config = config.pop("vision_config", None) or {}
 
     embd_layer = config.pop("embd_layer")
     audio_embd_layer = embd_layer["audio_embd_layer"]
@@ -63,7 +64,8 @@ def _convert_phi4mm_config(config_dict, with_lora_adapters=True):
         audio_config["depthwise_separable_out_channel"] = audio_config.get("ext_pw_out_channel")
 
     config["audio_config"] = audio_config
-    config["vision_config"] = {"crop_size": vision_embd_layer["crop_size"]}
+    vision_config.setdefault("crop_size", vision_embd_layer["crop_size"])
+    config["vision_config"] = vision_config
     config["eos_token_id"] = [199999, 200020]
 
     if with_lora_adapters:
@@ -326,6 +328,10 @@ class Phi4MultimodalConfig(PretrainedConfig):
                 "model_type": "phi4mm",
                 "architectures": ["Phi4MMForCausalLM"],
                 "auto_map": {"AutoConfig": "configuration_phi4mm.Phi4MMConfig"},
+                # This is a PaddleFormers extension to the upstream schema. It
+                # keeps non-default/tiny vision towers round-trippable instead
+                # of silently restoring the fixed upstream SigLIP defaults.
+                "vision_config": vision.to_dict(),
                 "embd_layer": {
                     "embedding_cls": "image_audio",
                     "image_embd_layer": {
@@ -399,9 +405,14 @@ class Phi4MultimodalConfig(PretrainedConfig):
         )
         return output
 
-    def save_pretrained(self, save_directory, **kwargs):
-        """Save a checkpoint that remains loadable by upstream serving tools."""
-        super().save_pretrained(save_directory, **kwargs)
+    def save_upstream_config(self, save_directory):
+        """Explicitly export the Transformers/vLLM configuration format.
+
+        Standard ``save_pretrained`` intentionally keeps PaddleFormers' native
+        ``config.json``. Exporting the upstream schema is a separate operation
+        so a Paddle checkpoint never loses its complete vision configuration.
+        """
+        os.makedirs(save_directory, exist_ok=True)
         output_config = os.path.join(save_directory, "config.json")
         with open(output_config, "w", encoding="utf-8") as writer:
             json.dump(self.to_phi4mm_dict(), writer, indent=2, sort_keys=True, ensure_ascii=False)

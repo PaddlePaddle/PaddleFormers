@@ -114,6 +114,24 @@ def _lora_adapter_from_input_mode(input_mode, image_pixel_values=None, audio_inp
     return None
 
 
+def _merge_multimodal_embeddings(
+    input_ids: paddle.Tensor,
+    inputs_embeds: paddle.Tensor,
+    multimodal_embeds: paddle.Tensor,
+    token_id: int,
+    modality: str,
+) -> paddle.Tensor:
+    """Replace multimodal placeholder embeddings without a Python loop over tokens."""
+    placeholder_mask = input_ids == token_id
+    expanded_mask = placeholder_mask.unsqueeze(-1).expand_as(inputs_embeds)
+    if inputs_embeds[expanded_mask].numel() != multimodal_embeds.numel():
+        raise ValueError(
+            f"{modality} features and {modality} tokens do not match: "
+            f"tokens={placeholder_mask.sum().item()}, features={multimodal_embeds.shape[0]}."
+        )
+    return inputs_embeds.masked_scatter(expanded_mask, multimodal_embeds)
+
+
 # ======================= Vision Encoder =======================
 
 
@@ -498,15 +516,13 @@ class Phi4MultimodalImageEmbedding(nn.Layer):
         merged_img_set_tensor = paddle.concat(img_set_tensor, axis=1).squeeze(0)
         merged_img_set_tensor = merged_img_set_tensor.astype(inputs_embeds.dtype)
 
-        positions = paddle.nonzero(input_ids == self.config.vision_config.image_token_id)
-        if positions.shape[0] > 0:
-            image_embeds = inputs_embeds.clone()
-            for i in range(positions.shape[0]):
-                batch_idx = positions[i, 0]
-                seq_idx = positions[i, 1]
-                image_embeds[batch_idx, seq_idx] = merged_img_set_tensor[i]
-        else:
-            image_embeds = inputs_embeds
+        image_embeds = _merge_multimodal_embeddings(
+            input_ids,
+            inputs_embeds,
+            merged_img_set_tensor,
+            self.config.vision_config.image_token_id,
+            "Image",
+        )
 
         image_embeds = self.drop(image_embeds)
         return image_embeds
@@ -927,8 +943,6 @@ class Phi4MultimodalAudioEmbedding(nn.Layer):
         audio_attention_mask=None,
         audio_projection_mode="speech",
     ) -> paddle.Tensor:
-        positions = paddle.nonzero(input_ids == self.config.audio_config.audio_token_id)
-
         up_proj = self.up_proj_for_speech if audio_projection_mode == "speech" else self.up_proj_for_vision_speech
         down_proj = (
             self.down_proj_for_speech if audio_projection_mode == "speech" else self.down_proj_for_vision_speech
@@ -947,12 +961,13 @@ class Phi4MultimodalAudioEmbedding(nn.Layer):
         )
         merged_audio_embeds = merged_audio_embeds.astype(inputs_embeds.dtype)
 
-        audio_embeds_out = inputs_embeds.clone()
-        if positions.shape[0] > 0:
-            for i in range(positions.shape[0]):
-                batch_idx = positions[i, 0]
-                seq_idx = positions[i, 1]
-                audio_embeds_out[batch_idx, seq_idx] = merged_audio_embeds[i]
+        audio_embeds_out = _merge_multimodal_embeddings(
+            input_ids,
+            inputs_embeds,
+            merged_audio_embeds,
+            self.config.audio_config.audio_token_id,
+            "Audio",
+        )
 
         audio_embeds_out = self.drop(audio_embeds_out)
         return audio_embeds_out
@@ -1125,13 +1140,6 @@ class Phi4MultimodalAttention(nn.Layer):
         self.num_key_value_groups = config.num_attention_heads // config.num_key_value_heads
         self.scaling = self.head_dim**-0.5
         self.attention_dropout = config.attention_dropout
-        self.sequence_parallel = config.sequence_parallel
-
-        if config.tensor_model_parallel_size > 1:
-            assert self.num_heads % config.tensor_model_parallel_size == 0
-            assert self.num_key_value_heads % config.tensor_model_parallel_size == 0
-            self.num_heads = self.num_heads // config.tensor_model_parallel_size
-            self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
 
         op_size = config.num_attention_heads * self.head_dim + 2 * (config.num_key_value_heads * self.head_dim)
         self.qkv_proj = GeneralLinear.create(
@@ -1171,11 +1179,7 @@ class Phi4MultimodalAttention(nn.Layer):
         past_key_values: Optional[Cache] = None,
         use_cache: bool = False,
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor]]:
-        if self.sequence_parallel:
-            seq_len, hidden_size = hidden_states.shape
-            batch_size = 1
-        else:
-            batch_size, seq_len, hidden_size = hidden_states.shape
+        batch_size, seq_len, hidden_size = hidden_states.shape
 
         qkv = self.qkv_proj(hidden_states)
         adapter = _active_lora_adapter(self.config)
@@ -1193,23 +1197,15 @@ class Phi4MultimodalAttention(nn.Layer):
         key_states = qkv[..., query_pos : query_pos + kv_pos]
         value_states = qkv[..., query_pos + kv_pos :]
 
-        if self.sequence_parallel:
-            query_states = query_states.reshape([seq_len, self.num_heads, self.head_dim])
-            key_states = key_states.reshape([seq_len, self.num_key_value_heads, self.head_dim])
-            value_states = value_states.reshape([seq_len, self.num_key_value_heads, self.head_dim])
-            query_states = query_states.transpose([1, 0, 2])
-            key_states = key_states.transpose([1, 0, 2])
-            value_states = value_states.transpose([1, 0, 2])
-        else:
-            query_states = query_states.reshape([batch_size, seq_len, self.num_heads, self.head_dim]).transpose(
-                [0, 2, 1, 3]
-            )
-            key_states = key_states.reshape([batch_size, seq_len, self.num_key_value_heads, self.head_dim]).transpose(
-                [0, 2, 1, 3]
-            )
-            value_states = value_states.reshape(
-                [batch_size, seq_len, self.num_key_value_heads, self.head_dim]
-            ).transpose([0, 2, 1, 3])
+        query_states = query_states.reshape([batch_size, seq_len, self.num_heads, self.head_dim]).transpose(
+            [0, 2, 1, 3]
+        )
+        key_states = key_states.reshape([batch_size, seq_len, self.num_key_value_heads, self.head_dim]).transpose(
+            [0, 2, 1, 3]
+        )
+        value_states = value_states.reshape([batch_size, seq_len, self.num_key_value_heads, self.head_dim]).transpose(
+            [0, 2, 1, 3]
+        )
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
@@ -1231,10 +1227,7 @@ class Phi4MultimodalAttention(nn.Layer):
             sliding_window=getattr(self.config, "sliding_window", None),
         )
 
-        if self.sequence_parallel:
-            attn_output = attn_output.reshape([seq_len, -1])
-        else:
-            attn_output = attn_output.reshape([batch_size, seq_len, -1])
+        attn_output = attn_output.reshape([batch_size, seq_len, -1])
         o_input = attn_output
         attn_output = self.o_proj(o_input)
         if adapter is not None and hasattr(self, f"{adapter}_o_lora_A"):
@@ -1360,17 +1353,32 @@ class Phi4MultimodalPreTrainedModel(PretrainedModel):
     config_class = Phi4MultimodalConfig
     base_model_prefix = "model"
     transpose_weight_keys = [
-        "qkv_proj.weight",
-        "o_proj.weight",
-        "gate_up_proj.weight",
-        "down_proj.weight",
-        "img_projection_up.weight",
-        "img_projection_down.weight",
-        "up_proj_for_speech.weight",
-        "down_proj_for_speech.weight",
-        "up_proj_for_vision_speech.weight",
-        "down_proj_for_vision_speech.weight",
+        "qkv_proj",
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "out_proj",
+        "gate_up_proj",
+        "down_proj",
+        "fc1",
+        "fc2",
+        "img_projection_up",
+        "img_projection_down",
+        "up_proj_for_speech",
+        "down_proj_for_speech",
+        "up_proj_for_vision_speech",
+        "down_proj_for_vision_speech",
+        "out",
+        "lm_head",
     ]
+
+    def __init__(self, config: Phi4MultimodalConfig):
+        if config.tensor_model_parallel_size > 1 or config.sequence_parallel:
+            raise NotImplementedError(
+                "Phi-4 multimodal does not currently support tensor parallel or sequence parallel."
+            )
+        super().__init__(config)
 
     @classmethod
     def _gen_aoa_config(cls, config: Phi4MultimodalConfig):
@@ -1580,7 +1588,6 @@ class Phi4MultimodalModel(Phi4MultimodalPreTrainedModel):
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
         self.config = config
-        self.sequence_parallel = config.sequence_parallel
 
         self.embed_tokens = GeneralEmbedding.create(
             config=config, num_embeddings=config.vocab_size, embedding_dim=config.hidden_size
