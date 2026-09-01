@@ -151,6 +151,8 @@ class Phi4MultimodalVisionMLP(nn.Layer):
 
 
 class Phi4MultimodalVisionAttention(nn.Layer):
+    # Keep the explicit eager operator order aligned with upstream
+    # SiglipAttention. The upstream eager path does not use PyTorch SDPA.
     def __init__(self, config: Phi4MultimodalVisionConfig):
         super().__init__()
         self.config = config
@@ -224,6 +226,10 @@ class Phi4MultimodalVisionEncoder(nn.Layer):
         self.config = config
         self.layers = nn.LayerList([Phi4MultimodalVisionEncoderLayer(config) for _ in range(config.num_hidden_layers)])
 
+    @paddle.jit.not_to_static
+    def recompute_training_full(self, layer_module, hidden_states, attention_mask):
+        return recompute(layer_module, hidden_states, attention_mask)
+
     def forward(
         self,
         inputs_embeds: paddle.Tensor,
@@ -236,7 +242,16 @@ class Phi4MultimodalVisionEncoder(nn.Layer):
         for encoder_layer in self.layers:
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
-            hidden_states = encoder_layer(hidden_states, attention_mask)
+            has_gradient = not hidden_states.stop_gradient
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
+                hidden_states = self.recompute_training_full(encoder_layer, hidden_states, attention_mask)
+            else:
+                hidden_states = encoder_layer(hidden_states, attention_mask)
 
         if output_hidden_states:
             all_hidden_states = all_hidden_states + (hidden_states,)
@@ -552,6 +567,9 @@ class Phi4MultimodalAudioMLP(nn.Layer):
 
 
 class Phi4MultimodalAudioAttention(nn.Layer):
+    # Upstream Conformer defaults to its explicit relative-position attention
+    # path (use_pt_scaled_dot_product_attention=False). Keep the same eager
+    # math and masked-softmax semantics instead of using text-model attention.
     def __init__(self, config: Phi4MultimodalAudioConfig):
         super().__init__()
         self.config = config
@@ -808,6 +826,10 @@ class Phi4MultimodalAudioModel(nn.Layer):
             [Phi4MultimodalAudioConformerEncoderLayer(config) for _ in range(config.num_blocks)]
         )
 
+    @paddle.jit.not_to_static
+    def recompute_training_full(self, layer_module, hidden_states, attention_mask):
+        return recompute(layer_module, hidden_states, attention_mask)
+
     def _streaming_mask(self, seq_len, batch_size, chunk_size, left_chunk):
         chunk_start_idx = np.arange(0, seq_len, chunk_size)
         if self.training and np.random.rand() > 0.5:
@@ -906,7 +928,16 @@ class Phi4MultimodalAudioModel(nn.Layer):
         attention_mask = self._prepare_attention_mask(hs_mask, relative_attention_bias)
 
         for layer in self.encoders:
-            hidden_states = layer(hidden_states, attention_mask)
+            has_gradient = not hidden_states.stop_gradient
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
+                hidden_states = self.recompute_training_full(layer, hidden_states, attention_mask)
+            else:
+                hidden_states = layer(hidden_states, attention_mask)
 
         if unfolded:
             embed_dim = hidden_states.shape[-1]

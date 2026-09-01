@@ -34,6 +34,7 @@ from paddleformers.transformers.phi4_multimodal.modeling import (
     Phi4MultimodalAudioAttention,
     Phi4MultimodalAudioModel,
     Phi4MultimodalPreTrainedModel,
+    Phi4MultimodalVisionEncoder,
     _lora_adapter_from_input_mode,
     _merge_multimodal_embeddings,
     adaptive_enc_mask,
@@ -222,6 +223,49 @@ class Phi4MultimodalModelingTest(unittest.TestCase):
         self.assertEqual(recompute_output.tolist(), reference_output.tolist())
         self.assertEqual(recompute_input.grad.tolist(), reference_input_grad.tolist())
         self.assertEqual(layer.vision_lora.grad.tolist(), reference_lora_grad.tolist())
+
+    def test_recompute_config_is_propagated_to_modality_encoders(self):
+        config = Phi4MultimodalConfig(
+            num_hidden_layers=0,
+            recompute_granularity="full",
+            recompute_method="uniform",
+            recompute_num_layers=1,
+        )
+
+        for modality_config in (config.vision_config, config.audio_config):
+            self.assertEqual(modality_config.recompute_granularity, "full")
+            self.assertEqual(modality_config.recompute_method, "uniform")
+            self.assertEqual(modality_config.recompute_num_layers, 1)
+
+    def test_vision_and_audio_encoder_recompute_preserve_forward_and_backward(self):
+        class MaskedLayer(paddle.nn.Layer):
+            def __init__(self):
+                super().__init__()
+                self.scale = self.create_parameter(shape=[1], default_initializer=paddle.nn.initializer.Constant(2.0))
+
+            def forward(self, hidden_states, attention_mask):
+                return hidden_states * self.scale + attention_mask
+
+        attention_mask = paddle.to_tensor([[[1.0], [2.0]]])
+        for encoder_class in (Phi4MultimodalVisionEncoder, Phi4MultimodalAudioModel):
+            layer = MaskedLayer()
+            reference_input = paddle.to_tensor([[[3.0], [4.0]]], stop_gradient=False)
+            reference_output = layer(reference_input, attention_mask)
+            reference_output.sum().backward()
+            reference_input_grad = reference_input.grad.clone()
+            reference_scale_grad = layer.scale.grad.clone()
+            layer.clear_gradients()
+
+            recompute_input = paddle.to_tensor([[[3.0], [4.0]]], stop_gradient=False)
+            recompute_output = encoder_class.recompute_training_full(
+                SimpleNamespace(), layer, recompute_input, attention_mask
+            )
+            recompute_output.sum().backward()
+
+            with self.subTest(encoder=encoder_class.__name__):
+                np.testing.assert_array_equal(recompute_output.numpy(), reference_output.numpy())
+                np.testing.assert_array_equal(recompute_input.grad.numpy(), reference_input_grad.numpy())
+                np.testing.assert_array_equal(layer.scale.grad.numpy(), reference_scale_grad.numpy())
 
     def test_adaptive_enc_mask_uses_chunk_windows(self):
         mask = adaptive_enc_mask(6, [2, 4])

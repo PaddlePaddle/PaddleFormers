@@ -279,6 +279,14 @@ class Phi4MultimodalConfig(PretrainedConfig):
         else:
             self.audio_config = audio_config
 
+        # Recompute is a model-wide training option in PaddleFormers. Propagate
+        # it to both modality encoders so their layer loops follow the same
+        # policy as the text decoder.
+        for modality_config in (self.vision_config, self.audio_config):
+            modality_config.recompute_granularity = self.recompute_granularity
+            modality_config.recompute_method = self.recompute_method
+            modality_config.recompute_num_layers = self.recompute_num_layers
+
         # Build rope_parameters dict for compatibility with rope utils
         self.rope_parameters = rope_parameters if rope_parameters is not None else self._build_rope_parameters()
 
