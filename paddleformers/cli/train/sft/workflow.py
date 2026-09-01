@@ -15,12 +15,17 @@
 """Training Ernie Model."""
 
 import gc
+import hashlib
+import importlib.metadata
+import json
 import math
 import os
+import platform
 import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import fields
 from functools import partial
+from pathlib import Path
 
 import numpy as np
 import paddle
@@ -47,6 +52,7 @@ from paddleformers.trainer import (
     MoEGateSpGradSyncCallBack,
     MoEQuantileBalancingCallback,
     RuntimeTimer,
+    TrainerCallback,
     get_last_checkpoint,
     set_random_seed,
     set_seed,
@@ -89,6 +95,243 @@ from paddleformers.cli.utils import (
     get_lora_target_modules,
     get_multimodel_lora_target_modules,
 )
+
+
+class ModelReproObservationCallback(TrainerCallback):
+    """Rank-zero loss.json / env.json writer for formal model-reproduction runs.
+
+    Dump hooks, parameter inventories, and forward/backward receipts stay in
+    Explore trees. This callback only writes the acceptance-oracle artifacts.
+    """
+
+    def __init__(self, raw_loss_path=None):
+        self.raw_loss_path = raw_loss_path
+        self.env_path = os.environ.get("MODEL_REPRO_ENV_PATH")
+        self.loss_path = os.environ.get("MODEL_REPRO_LOSS_PATH")
+        self._loss_events = []
+
+    @staticmethod
+    def _sha256_file(path):
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+    @staticmethod
+    def _write_json(path, payload):
+        path = Path(path).expanduser().resolve()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(payload, ensure_ascii=False, allow_nan=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+    @staticmethod
+    def _normalized_device():
+        """Return the device class the benchmark checker expects, not the GPU model name."""
+        return "cuda" if paddle.device.is_compiled_with_cuda() else "cpu"
+
+    @staticmethod
+    def _normalized_dtype(args):
+        return "bfloat16" if getattr(args, "bf16", False) else "float32"
+
+    @staticmethod
+    def _machine_loss_payload(events, raw_path=None, source_sha256=None):
+        """Return the machine loss artifact.
+
+        ``losses`` is the benchmark gate field: an unrounded main-loss series with
+        one entry per recorded step. ``events`` keeps per-step diagnostic detail.
+        """
+        return {
+            "schema": "glm52-machine-loss/v1",
+            "framework": "paddle",
+            "raw": True,
+            "owning_cli_exit_code": 0,
+            "losses": [event["loss"] for event in events if "loss" in event],
+            "event_count": len(events),
+            "steps": [event["step"] for event in events],
+            "events": events,
+            "source": str(raw_path) if raw_path else None,
+            "source_sha256": source_sha256,
+        }
+
+    @classmethod
+    def _environment_payload(cls, args):
+        config_path = os.environ.get("MODEL_REPRO_MODEL_CONFIG_PATH")
+        try:
+            nccl_package = importlib.metadata.version("nvidia-nccl-cu12")
+        except importlib.metadata.PackageNotFoundError:
+            nccl_package = None
+        return {
+            "schema": "glm52-environment/v1",
+            "framework": "paddle",
+            "framework_version": paddle.__version__,
+            "python_version": platform.python_version(),
+            "device": cls._normalized_device(),
+            "device_name": paddle.device.cuda.get_device_name(0) if paddle.device.is_compiled_with_cuda() else None,
+            "dtype": cls._normalized_dtype(args),
+            "cuda": paddle.version.cuda(),
+            "cudnn": paddle.version.cudnn(),
+            "nccl_package": nccl_package,
+            "model_id": os.environ.get("MODEL_REPRO_MODEL_ID"),
+            "revision": os.environ.get("MODEL_REPRO_MODEL_REVISION"),
+            "model_config_sha256": cls._sha256_file(config_path) if config_path else None,
+            "weights_loaded": True,
+            "world_size": paddle.distributed.get_world_size() if paddle.distributed.is_initialized() else 1,
+        }
+
+    @staticmethod
+    def _is_writer(state):
+        return bool(getattr(state, "is_world_process_zero", False))
+
+    def on_train_begin(self, args, state, control, **kwargs):
+        if not self._is_writer(state):
+            return
+        if self.raw_loss_path:
+            raw_path = Path(self.raw_loss_path).expanduser().resolve()
+            raw_path.parent.mkdir(parents=True, exist_ok=True)
+            raw_path.unlink(missing_ok=True)
+        if self.env_path:
+            self._write_json(self.env_path, self._environment_payload(args))
+
+    def on_train_end(self, args, state, control, **kwargs):
+        if not self.loss_path or not self._is_writer(state):
+            return
+        raw_path = Path(self.raw_loss_path).expanduser().resolve() if self.raw_loss_path else None
+        payload = self._machine_loss_payload(
+            self._loss_events,
+            raw_path=raw_path,
+            source_sha256=self._sha256_file(raw_path) if raw_path and raw_path.is_file() else None,
+        )
+        self._write_json(self.loss_path, payload)
+
+    def on_log(self, args, state, control, logs=None, raw_loss=None, **kwargs):
+        if not self.raw_loss_path or raw_loss is None or not self._is_writer(state):
+            return
+        event = {"step": int(state.global_step), "loss": float(raw_loss)}
+        for key, value in (logs or {}).items():
+            normalized_key = key.replace(" ", "_")
+            if normalized_key.startswith("mtp_") and normalized_key.endswith("_loss"):
+                event[normalized_key] = float(value)
+        path = os.path.abspath(os.path.expanduser(self.raw_loss_path))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as stream:
+            stream.write(json.dumps(event, ensure_ascii=False, allow_nan=False) + "\n")
+        self._loss_events.append(event)
+
+
+def load_tokenizer_and_processor(model_args, data_args):
+    tokenizer_path = model_args.tokenizer_name_or_path or model_args.model_name_or_path
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+    logger.info(f"Loading tokenizer from {tokenizer_path}")
+    if "VL" in model_args.stage:
+        processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
+    else:
+        processor = tokenizer
+    return tokenizer, processor
+
+
+def apply_glm_moe_dsa_training_contract(model_config, training_args, model_args, data_args):
+    """Propagate CLI training semantics into the Fleet provider used by GLM MoE DSA."""
+    if getattr(model_config, "model_type", None) != "glm_moe_dsa":
+        return
+
+    requested_mtp = int(getattr(training_args, "num_nextn_predict_layers", 0) or 0)
+    explicit_mtp = int(getattr(training_args, "mtp_num_layers", 0) or 0)
+    if requested_mtp and explicit_mtp and requested_mtp != explicit_mtp:
+        raise ValueError(
+            f"GLM MoE DSA MTP depth mismatch: num_nextn_predict_layers={requested_mtp}, "
+            f"mtp_num_layers={explicit_mtp}"
+        )
+    mtp_depth = explicit_mtp or requested_mtp
+    model_config.num_nextn_predict_layers = mtp_depth
+    model_config.mtp_num_layers = mtp_depth
+    training_args.num_nextn_predict_layers = mtp_depth
+    training_args.mtp_num_layers = mtp_depth
+    model_config.mtp_enabled = mtp_depth > 0
+
+    requested_mtp_loss_scaling_factor = getattr(training_args, "mtp_loss_scaling_factor", None)
+    if requested_mtp_loss_scaling_factor is not None:
+        model_config.mtp_loss_scaling_factor = float(requested_mtp_loss_scaling_factor)
+    logger.info(
+        "GLM MoE DSA MTP loss weight: mtp_loss_scaling_factor="
+        f"{getattr(model_config, 'mtp_loss_scaling_factor', None)} "
+        f"(cli={requested_mtp_loss_scaling_factor!r}, mtp_depth={mtp_depth})"
+    )
+
+    if getattr(data_args, "pretokenized_dataset", False) and mtp_depth > 0 and not model_args.mtp_attention_flexible:
+        raise ValueError("pretokenized GLM MoE DSA MTP requires mtp_attention_flexible=true")
+
+    model_config.fp32_residual_connection = training_args.fp32_residual_connection
+    model_config.moe_token_dispatcher_type = getattr(training_args, "moe_token_dispatcher_type", "alltoall")
+    model_config.moe_router_bias_update_rate = float(getattr(training_args, "moe_router_bias_update_rate", 0.001))
+    _moe_expert_fusion = getattr(training_args, "moe_expert_fusion", None)
+    _moe_expert_fusion_env = os.environ.get("MODEL_REPRO_MOE_FUSION", None)
+    if _moe_expert_fusion_env is not None:
+        model_config.moe_expert_fusion = _moe_expert_fusion_env == "1"
+    elif _moe_expert_fusion is not None:
+        model_config.moe_expert_fusion = bool(_moe_expert_fusion)
+    # CLI dataclass has no bias_activation_fusion field; set_llm_config() would
+    # leave the GLMMoEModelProvider default True. Honour the env after that call.
+    _bias_activation_fusion_env = os.environ.get("MODEL_REPRO_BIAS_ACTIVATION_FUSION", None)
+    if _bias_activation_fusion_env is not None:
+        model_config.bias_activation_fusion = _bias_activation_fusion_env == "1"
+        print(
+            "[BIAS-ACT-FUSION] model_config.bias_activation_fusion=" f"{model_config.bias_activation_fusion}",
+            flush=True,
+        )
+    # YAML overlap_p2p_comm / batch_p2p_comm / variable_seq_lengths land on
+    # TrainingArguments (pipeline runtime), not GLMMoEModelProvider. Fleet
+    # ModelParallelConfig defaults True/None/False; IEEE 357ff883 constructed
+    # False/True/True. Env override after set_llm_config, same pattern as BIAS.
+
+    def _env_bool(name):
+        value = os.environ.get(name)
+        if value is None:
+            return None
+        return value == "1"
+
+    _overlap_p2p_comm = _env_bool("MODEL_REPRO_OVERLAP_P2P_COMM")
+    if _overlap_p2p_comm is None:
+        _overlap_p2p_comm = getattr(training_args, "overlap_p2p_comm", None)
+    if _overlap_p2p_comm is not None:
+        model_config.overlap_p2p_comm = bool(_overlap_p2p_comm)
+    _batch_p2p_comm = _env_bool("MODEL_REPRO_BATCH_P2P_COMM")
+    if _batch_p2p_comm is None:
+        _batch_p2p_comm = getattr(training_args, "batch_p2p_comm", None)
+    if _batch_p2p_comm is not None:
+        model_config.batch_p2p_comm = bool(_batch_p2p_comm)
+    _variable_seq_lengths = _env_bool("MODEL_REPRO_VARIABLE_SEQ_LENGTHS")
+    if _variable_seq_lengths is None:
+        _variable_seq_lengths = getattr(training_args, "variable_seq_lengths", None)
+    if _variable_seq_lengths is not None:
+        model_config.variable_seq_lengths = bool(_variable_seq_lengths)
+    if any(field is not None for field in (_overlap_p2p_comm, _batch_p2p_comm, _variable_seq_lengths)):
+        print(
+            "[PP-P2P] model_config.overlap_p2p_comm="
+            f"{getattr(model_config, 'overlap_p2p_comm', None)} "
+            f"batch_p2p_comm={getattr(model_config, 'batch_p2p_comm', None)} "
+            f"variable_seq_lengths={getattr(model_config, 'variable_seq_lengths', None)}",
+            flush=True,
+        )
+    for parallel_field in (
+        "tensor_model_parallel_size",
+        "pipeline_model_parallel_size",
+        "context_parallel_size",
+        "expert_model_parallel_size",
+    ):
+        configured_size = int(getattr(training_args, parallel_field, -1))
+        setattr(model_config, parallel_field, max(configured_size, 1))
+    model_config.sequence_parallel = bool(getattr(training_args, "sequence_parallel", False))
+    configured_expert_tensor_parallel_size = int(getattr(training_args, "expert_tensor_model_parallel_size", -1))
+    expert_tensor_parallel_size = (
+        1 if configured_expert_tensor_parallel_size == -1 else configured_expert_tensor_parallel_size
+    )
+    if expert_tensor_parallel_size < 1:
+        raise ValueError(
+            "GLM MoE DSA expert_tensor_model_parallel_size must be -1 or at least 1, "
+            f"got {configured_expert_tensor_parallel_size}"
+        )
+    model_config.expert_tensor_parallel_size = expert_tensor_parallel_size
+    if model_args.persist_layer_norm is not None:
+        model_config.persist_layer_norm = model_args.persist_layer_norm
 
 
 def freeze_param_except_mtp(model, config):
@@ -304,6 +547,7 @@ def run_sft(
         training_args.prediction_loss_only = True
 
     LlmMetaConfig.set_llm_config(model_config, training_args)
+    apply_glm_moe_dsa_training_contract(model_config, training_args, model_args, data_args)
     model_config.use_fast_layer_norm = model_args.use_fast_layer_norm
 
     # autoregressive mtp training
@@ -420,7 +664,7 @@ def run_sft(
     runtime_timer = RuntimeTimer("Creating SFT MapDataset")
 
     # Load tokenizer & processor & dataset
-    tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
+    tokenizer, processor = load_tokenizer_and_processor(model_args, data_args)
     add_new_special_tokens(tokenizer, data_args.new_special_tokens_path)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
@@ -432,13 +676,9 @@ def run_sft(
     if isinstance(tokenizer, LlamaTokenizer) or isinstance(tokenizer, Llama3Tokenizer):
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
-    # The multimodal plugins read the resolution bounds off the processor
-    # (falling back to a hardcoded 768*768 / 32*32), so without wiring these the
-    # --max_pixels / --min_pixels arguments have no way to reach image
-    # preprocessing. They live on End2EndProcessorArguments rather than
-    # DataArguments because both dataclasses feed the same parser.
-    if preprocess_args is not None:
+    # Text GLM SFT keeps processor=tokenizer (load_tokenizer_and_processor).
+    # VL stages still need the develop max/min pixel wiring on AutoProcessor.
+    if preprocess_args is not None and processor is not tokenizer:
         if preprocess_args.max_pixels is not None:
             processor.image_max_pixels = preprocess_args.max_pixels
         if preprocess_args.min_pixels is not None:
@@ -473,6 +713,9 @@ def run_sft(
         "packed_idx_cache_dir": data_args.packed_idx_cache_dir,
         "dataloader_num_workers": training_args.dataloader_num_workers,
         "template": data_args.template,
+        # YAML enable_thinking lands on GeneratingArguments. glm5_2 is a
+        # ReasoningTemplate; without this copy it stays register_template default True.
+        "enable_thinking": getattr(generating_args, "enable_thinking", None),
         "tool_format": None,
         "default_system": None,
         "truncation_strategy": data_args.truncation_strategy,
@@ -730,6 +973,11 @@ def run_sft(
         training_args.logging_steps = int(training_args.max_steps / training_args.num_train_epochs)
 
     callbacks = []
+    raw_loss_path = os.environ.get("MODEL_REPRO_RAW_LOSS_PATH")
+    env_path = os.environ.get("MODEL_REPRO_ENV_PATH")
+    loss_path = os.environ.get("MODEL_REPRO_LOSS_PATH")
+    if raw_loss_path or env_path or loss_path:
+        callbacks.append(ModelReproObservationCallback(raw_loss_path))
     if getattr(model_config.get_text_config(), "topk_method", None) == "noaux_tc":
         callbacks += [MoECorrectionBiasAdjustCallback(lr=training_args.moe_router_bias_update_rate)]
     elif getattr(model_config.get_text_config(), "topk_method", None) == "quantile_balancing":

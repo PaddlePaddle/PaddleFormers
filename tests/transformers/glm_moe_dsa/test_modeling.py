@@ -219,6 +219,11 @@ class GlmMoeDsaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
         self.assertFalse(config.rope_interleave)
         self.assertTrue(config.rotary_interleaved)
 
+    def test_official_indexer_rope_interleave_maps_to_rotary_interleaved(self):
+        config = GlmMoeDsaConfig.from_dict({"indexer_rope_interleave": True})
+        self.assertTrue(config.indexer_rope_interleave)
+        self.assertTrue(config.rotary_interleaved)
+
     def test_nested_rope_theta_maps_to_paddlefleet_name(self):
         config = GlmMoeDsaConfig(rope_parameters={"rope_type": "default", "rope_theta": 8_000_000})
         self.assertEqual(config.rope_parameters["rope_theta"], 8_000_000)

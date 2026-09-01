@@ -126,6 +126,14 @@ class GlmMoeDsaConfig(PretrainedConfig):
 
     model_type = "glm_moe_dsa"
     keys_to_ignore_at_inference = ["past_key_values"]
+    # Official GLM-5.2 config.json serializes indexer RoPE as
+    # ``indexer_rope_interleave``. Keep that name as the stored attribute so
+    # from_dict/to_dict round-trips the official field; rotary_interleaved is
+    # the Fleet-facing alias used by existing tests and providers.
+    attribute_map = {
+        "num_classes": "num_labels",
+        "rotary_interleaved": "indexer_rope_interleave",
+    }
 
     def __init__(
         self,
@@ -144,7 +152,7 @@ class GlmMoeDsaConfig(PretrainedConfig):
         rope_theta=10000.0,
         rope_scaling=None,
         rope_interleave=False,
-        rotary_interleaved=None,
+        indexer_rope_interleave=None,
         attention_bias=False,
         attention_dropout=0.0,
         moe_intermediate_size=1408,
@@ -187,7 +195,7 @@ class GlmMoeDsaConfig(PretrainedConfig):
         self.rope_theta = rope_theta
         self.rope_scaling = rope_scaling
         self.rope_interleave = rope_interleave
-        self.rotary_interleaved = False if rotary_interleaved is None else rotary_interleaved
+        self.indexer_rope_interleave = False if indexer_rope_interleave is None else indexer_rope_interleave
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
         self.sliding_window = sliding_window
@@ -202,6 +210,13 @@ class GlmMoeDsaConfig(PretrainedConfig):
         self.rotary_base = self.rope_theta
         rope_type = self.rope_parameters["rope_type"]
         self.rope_type = "rope" if rope_type == "default" else rope_type
+        # IEEE 1-5 (e479): nested rope_parameters.partial_rotary_factor is
+        # derived from the top-level field. Formal dumps still carry it
+        # inside rope_scaling; e520 popped it. rotary_percent stays 0.5.
+        if isinstance(self.rope_parameters, dict):
+            self.rope_parameters.pop("partial_rotary_factor", None)
+            if self.rope_scaling is not None:
+                self.rope_scaling.pop("partial_rotary_factor", None)
         rope_config_validation(self)
 
         # MoE arguments
@@ -229,6 +244,11 @@ class GlmMoeDsaConfig(PretrainedConfig):
             fp32_residual_connection=fp32_residual_connection,
             **kwargs,
         )
+        # IEEE 1-5 (e479): rope_parameters is derived from rope_theta /
+        # rope_scaling. Keep it off the serialized dict so ConfigTester
+        # round-trips the constructor kwargs (rope_scaling stays None when
+        # it was not provided).
+        self.register_unsavable_keys(["rope_parameters", "rotary_base", "rope_type"])
 
 
 __all__ = ["GlmMoeDsaConfig"]

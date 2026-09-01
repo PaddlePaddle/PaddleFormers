@@ -280,6 +280,51 @@ class TestMoEAOAConfigGeneratorAttention(unittest.TestCase):
         self.assertNotIn("self_attn.indexer", "\n".join(shared_stmts))
         self.assertEqual(len(shared_stmts), 4)
 
+    def test_inverse_mla_attention_exports_mtp_indexer_even_when_decoder_list_ends_shared(self):
+        from paddleformers.transformers.aoa_config_base import (
+            MoEAOAConfigGenerator,
+            MoEAOAConfigParams,
+        )
+
+        params = MoEAOAConfigParams(
+            multi_latent_attention=True,
+            index_n_heads=32,
+            num_hidden_layers=4,
+            num_nextn_predict_layers=1,
+            indexer_types=["full", "full", "full", "shared"],
+        )
+        decoder_shared = MoEAOAConfigGenerator._get_inv_attention_statements(
+            params, 3, "model.layers.3", "model.layers.3"
+        )
+        mtp_stmts = MoEAOAConfigGenerator._get_inv_attention_statements(
+            params,
+            4,
+            "model.layers.4",
+            "model.layers.4.transformer_layer",
+        )
+        self.assertNotIn("self_attn.indexer", "\n".join(decoder_shared))
+        combined = "\n".join(mtp_stmts)
+        self.assertIn(
+            "model.layers.4.transformer_layer.self_attn.core_attention.indexer.wq_b.weight^T -> model.layers.4.self_attn.indexer.wq_b.weight",
+            combined,
+        )
+        self.assertIn(
+            "model.layers.4.transformer_layer.self_attn.core_attention.indexer.wk.weight^T -> model.layers.4.self_attn.indexer.wk.weight",
+            combined,
+        )
+        self.assertIn(
+            "model.layers.4.transformer_layer.self_attn.core_attention.indexer.weights_proj.weight^T -> model.layers.4.self_attn.indexer.weights_proj.weight",
+            combined,
+        )
+        self.assertIn(
+            "model.layers.4.transformer_layer.self_attn.core_attention.indexer.k_norm.bias -> model.layers.4.self_attn.indexer.k_norm.bias",
+            combined,
+        )
+        self.assertIn(
+            "model.layers.4.transformer_layer.self_attn.core_attention.indexer.k_norm.weight -> model.layers.4.self_attn.indexer.k_norm.weight",
+            combined,
+        )
+
     def test_mla_attention_rejects_unknown_indexer_type(self):
         from paddleformers.transformers.aoa_config_base import (
             MoEAOAConfigGenerator,
@@ -549,6 +594,25 @@ class TestMoEAOAConfigGeneratorGenAoaConfig(unittest.TestCase):
         self.assertIn("aoa_statements", result)
         self.assertTrue(len(result["aoa_statements"]) > 0)
 
+    def test_uac_copies_embed_into_mtp_embed(self):
+        from paddleformers.transformers.aoa_config_base import (
+            MoEAOAConfigGenerator,
+            MoEAOAConfigParams,
+        )
+
+        params = MoEAOAConfigParams(
+            num_hidden_layers=4,
+            num_nextn_predict_layers=1,
+            use_accuracy_compatible=True,
+        )
+        stmts = MoEAOAConfigGenerator._get_basic_weight_statements(params)
+        self.assertIn(
+            "model.embed_tokens.weight -> model.layers.4.mtp_embed.weight",
+            stmts,
+        )
+        inv = MoEAOAConfigGenerator._get_inv_basic_weight_statements(params)
+        self.assertIn("model.layers.4.mtp_embed.weight -> _", inv)
+
 
 class TestMoEAOAConfigGeneratorInverse(unittest.TestCase):
     """Tests for inverse AOA config generation."""
@@ -676,6 +740,60 @@ class TestMoEAOAConfigGeneratorInverse(unittest.TestCase):
         )
         stmts = MoEAOAConfigGenerator._get_inv_grouped_gemm_layer_statements(params, "model.layers.0")
         self.assertEqual(stmts, [])
+
+    def test_inv_routed_experts_transpose_gate_up_to_official_prefix(self):
+        from paddleformers.transformers.aoa_config_base import (
+            MoEAOAConfigGenerator,
+            MoEAOAConfigParams,
+        )
+
+        params = MoEAOAConfigParams(num_experts=2, using_sonic_moe=False)
+        stmts = MoEAOAConfigGenerator._get_inv_routed_expert_statements(
+            params, "model.layers.4", "model.layers.4.transformer_layer"
+        )
+        combined = "\n".join(stmts)
+        self.assertIn(
+            "model.layers.4.transformer_layer.mlp.experts.$EXPERT_ID.gate_proj.weight^T -> model.layers.4.mlp.experts.$EXPERT_ID.gate_proj.weight",
+            combined,
+        )
+        self.assertIn(
+            "model.layers.4.transformer_layer.mlp.experts.$EXPERT_ID.up_proj.weight^T -> model.layers.4.mlp.experts.$EXPERT_ID.up_proj.weight",
+            combined,
+        )
+        self.assertNotIn(
+            "model.layers.4.transformer_layer.mlp.experts.$EXPERT_ID.gate_proj.weight^T -> model.layers.4.transformer_layer.mlp.experts",
+            combined,
+        )
+
+    def test_inv_moe_layer_renames_mtp_experts_off_transformer_layer(self):
+        from paddleformers.transformers.aoa_config_base import (
+            MoEAOAConfigGenerator,
+            MoEAOAConfigParams,
+        )
+
+        params = MoEAOAConfigParams(
+            num_hidden_layers=4,
+            num_nextn_predict_layers=1,
+            first_k_dense_replace=3,
+            num_experts=2,
+            moe_expert_fusion=True,
+            multi_latent_attention=True,
+            index_n_heads=32,
+            indexer_types=["full", "full", "full", "shared"],
+            has_shared_experts=True,
+        )
+        stmts = MoEAOAConfigGenerator._get_inv_moe_layer_statements(params)
+        combined = "\n".join(stmts)
+        self.assertIn(
+            "model.layers.4.transformer_layer.mlp.grouped_gemm_experts.weight1 ->",
+            combined,
+        )
+        self.assertIn("model.layers.4.mlp.experts.$EXPERT_ID.gate_proj.weight", combined)
+        self.assertIn("model.layers.4.mlp.experts.$EXPERT_ID.up_proj.weight", combined)
+        self.assertIn(
+            "model.layers.4.transformer_layer.self_attn.core_attention.indexer.wq_b.weight^T -> model.layers.4.self_attn.indexer.wq_b.weight",
+            combined,
+        )
 
 
 class TestMoEAOAConfigGeneratorModelPrefix(unittest.TestCase):

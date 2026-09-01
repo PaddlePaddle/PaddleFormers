@@ -1260,6 +1260,19 @@ class TrainingArguments:
         default=True,
         metadata={"help": "Save model to HuggingFace safetensors."},
     )
+    save_to_hf: Optional[bool] = field(
+        default=True,
+        metadata={"help": "Export the final trained model in HuggingFace format."},
+    )
+    moe_expert_fusion: Optional[bool] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Whether to fuse MoE experts into grouped GEMM. When None, the "
+                "model config value is kept. Formal GLM-5.2 YAML sets true."
+            )
+        },
+    )
     nccl_comm_group_config: Optional[str] = field(
         default=None,
         metadata={
@@ -2905,11 +2918,22 @@ class TrainingArguments:
                 self.expert_model_parallel_size = -1
                 self.expert_tensor_model_parallel_size = -1
 
-        # NOTE(Waynezee): when moe_expert_fusion is true and sharding_parallel_size = 1,  checkpoint will fail to save
-        if hasattr(self, "moe_expert_fusion") and self.moe_expert_fusion and self.world_size > 1:
-            assert (
-                self.sharding_parallel_size > 1
-            ), "Checkpoint will fail to save when moe_expert_fusion is true and sharding_parallel_size = 1, please set moe_expert_fusion to false"
+        # fused MoE + sharding_parallel_size=1 used to abort here because
+        # GroupedMLPExpert.sharded_state_dict() flattens 3-D expert weights to
+        # 2-D, which broke FlexCheckpoint save. The save path now restores the
+        # 3-D layout, so the assert is no longer a hard gate.
+        if (
+            hasattr(self, "moe_expert_fusion")
+            and self.moe_expert_fusion
+            and self.world_size > 1
+            and self.sharding_parallel_size <= 1
+            and getattr(self.save_strategy, "value", self.save_strategy) != "no"
+        ):
+            logger.warning(
+                "moe_expert_fusion=true with sharding_parallel_size="
+                f"{self.sharding_parallel_size}; "
+                "fused-expert checkpoint save keeps 3-D grouped_gemm weights."
+            )
 
         if self.hybrid_parallel_topo_order is None:
             self.hybrid_parallel_topo_order = "sharding_first"

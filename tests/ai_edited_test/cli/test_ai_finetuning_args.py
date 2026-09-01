@@ -118,6 +118,17 @@ class TestFinetuningArgumentsFieldDefaults(unittest.TestCase):
         self.assertEqual(fields["enable_linear_fused_grad_add"], False)
         self.assertEqual(fields["hidden_dropout_prob"], 0.0)
         self.assertEqual(fields["attention_probs_dropout_prob"], 0.0)
+        self.assertIsNone(fields["moe_expert_fusion"])
+
+
+class TestTrainingArgumentsMoEExpertFusion(unittest.TestCase):
+    def test_training_arguments_declares_moe_expert_fusion(self):
+        import dataclasses
+
+        from paddleformers.trainer.training_args import TrainingArguments
+
+        names = {f.name for f in dataclasses.fields(TrainingArguments)}
+        self.assertIn("moe_expert_fusion", names)
 
 
 class TestFinetuningArgumentsComputeType(unittest.TestCase):
