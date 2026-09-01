@@ -619,10 +619,8 @@ class BaseSFTDataset:
                 # Truncate the sequence to the maximum length
                 tokens = tokens[: self.max_seq_len + 1]
 
-            labels = self.template.mm_plugin.process_tokens(tokens, self.processor)
-
             # label shift
-            labels = labels[1:] + [-100]
+            labels = tokens[1:] + [-100]
             labels = self._mask_mm_token_labels(tokens, labels)
 
             pos_ids = list(range(len(tokens)))  # only pure text, mm_position_ids will be reconstructed in collate.py
@@ -925,18 +923,7 @@ class BaseSFTDataset:
         if not getattr(mm_plugin, "mask_mm_token_labels", False):
             return labels
 
-        mm_tokens = [token for token in [mm_plugin.image_token, mm_plugin.audio_token] if token is not None]
-        if not mm_tokens:
-            return labels
-
-        mm_token_ids = self.tokenizer.convert_tokens_to_ids(mm_tokens)
-        if not isinstance(mm_token_ids, list):
-            mm_token_ids = [mm_token_ids]
-        mm_token_ids = {token_id for token_id in mm_token_ids if token_id is not None}
-        for i, token in enumerate(tokens):
-            if token in mm_token_ids or labels[i] in mm_token_ids:
-                labels[i] = -100
-        return labels
+        return mm_plugin.process_tokens(tokens, self.processor, labels=labels)
 
     def _encode_truncated(self, input_ids, labels):
         length = self._get_length(input_ids, labels)

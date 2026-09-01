@@ -22,19 +22,23 @@ import numpy as np
 import paddle
 from safetensors.numpy import save_file
 
-from paddleformers.cli.utils.llm_utils import get_lora_target_modules
 from paddleformers.transformers import (
     AutoConfig,
+    Phi4MultimodalAudioConfig,
     Phi4MultimodalConfig,
     Phi4MultimodalForCausalLM,
     Phi4MultimodalModel,
+    Phi4MultimodalVisionConfig,
 )
 from paddleformers.transformers.model_utils import load_state_dict
 from paddleformers.transformers.phi4_multimodal.modeling import (
     Phi4MultimodalAudioAttention,
     Phi4MultimodalAudioModel,
+    Phi4MultimodalDecoderLayer,
     Phi4MultimodalPreTrainedModel,
+    Phi4MultimodalRotaryEmbedding,
     Phi4MultimodalVisionEncoder,
+    Phi4MultimodalVisionModel,
     _lora_adapter_from_input_mode,
     _merge_multimodal_embeddings,
     adaptive_enc_mask,
@@ -42,6 +46,104 @@ from paddleformers.transformers.phi4_multimodal.modeling import (
 
 
 class Phi4MultimodalModelingTest(unittest.TestCase):
+    def test_subpackage_exports_standalone_modality_models(self):
+        from paddleformers.transformers.phi4_multimodal import (
+            Phi4MultimodalAudioModel as ExportedAudioModel,
+        )
+        from paddleformers.transformers.phi4_multimodal import (
+            Phi4MultimodalVisionModel as ExportedVisionModel,
+        )
+
+        self.assertIs(ExportedVisionModel, Phi4MultimodalVisionModel)
+        self.assertIs(ExportedAudioModel, Phi4MultimodalAudioModel)
+
+    def test_standalone_modality_models_save_and_reload(self):
+        vision_config = Phi4MultimodalVisionConfig(
+            hidden_size=8,
+            intermediate_size=16,
+            num_hidden_layers=1,
+            num_attention_heads=2,
+            image_size=28,
+            crop_size=28,
+            patch_size=14,
+        )
+        audio_config = Phi4MultimodalAudioConfig(
+            hidden_size=8,
+            intermediate_size=12,
+            num_blocks=1,
+            num_attention_heads=2,
+            input_size=4,
+            ext_pw_out_channel=8,
+            depthwise_separable_out_channel=8,
+            nemo_conv_channels=8,
+        )
+
+        for model_class, config in (
+            (Phi4MultimodalVisionModel, vision_config),
+            (Phi4MultimodalAudioModel, audio_config),
+        ):
+            model = model_class(config)
+            with tempfile.TemporaryDirectory() as tmpdir:
+                model.save_pretrained(tmpdir, save_checkpoint_format="", save_safetensors=False)
+                reloaded = model_class.from_pretrained(
+                    tmpdir,
+                    load_checkpoint_format="",
+                    convert_from_hf=False,
+                    use_safetensors=False,
+                )
+
+            with self.subTest(model=model_class.__name__):
+                self.assertEqual(set(model.state_dict()), set(reloaded.state_dict()))
+                self.assertTrue(model_class._no_split_modules)
+
+    def test_general_rms_norm_keeps_unfused_phi4_path(self):
+        config = Phi4MultimodalConfig(
+            vocab_size=32,
+            hidden_size=8,
+            intermediate_size=16,
+            num_hidden_layers=1,
+            num_attention_heads=2,
+            num_key_value_heads=1,
+        )
+        layer = Phi4MultimodalDecoderLayer(config, layer_idx=0)
+
+        self.assertEqual(layer.input_layernorm.__class__.__name__, "RMSNorm")
+        self.assertFalse(config.fuse_rms_norm)
+
+    def test_short_longrope_torch_rounding_is_narrowly_scoped(self):
+        rope_parameters = {
+            "rope_type": "longrope",
+            "rope_theta": 10000.0,
+            "short_factor": [1.0] * 48,
+            "long_factor": [2.0] * 48,
+            "original_max_position_embeddings": 4096,
+        }
+        config = Phi4MultimodalConfig(
+            hidden_size=384,
+            num_attention_heads=4,
+            num_key_value_heads=4,
+            num_hidden_layers=0,
+            max_position_embeddings=131072,
+            original_max_position_embeddings=4096,
+            rope_parameters=rope_parameters,
+        )
+        raw_inv_freq, _ = Phi4MultimodalRotaryEmbedding.compute_default_rope_parameters(config)
+        rotary = Phi4MultimodalRotaryEmbedding(config)
+        self.assertFalse(np.array_equal(raw_inv_freq.numpy(), rotary.inv_freq.numpy()))
+
+        non_upstream_config = Phi4MultimodalConfig(
+            hidden_size=384,
+            num_attention_heads=4,
+            num_key_value_heads=4,
+            num_hidden_layers=0,
+            max_position_embeddings=131072,
+            original_max_position_embeddings=4096,
+            rope_parameters={**rope_parameters, "rope_theta": 10001.0},
+        )
+        raw_non_upstream = Phi4MultimodalRotaryEmbedding.compute_default_rope_parameters(non_upstream_config)[0]
+        non_upstream_rotary = Phi4MultimodalRotaryEmbedding(non_upstream_config)
+        np.testing.assert_array_equal(raw_non_upstream.numpy(), non_upstream_rotary.inv_freq.numpy())
+
     def test_top_level_exports_phi4mm_aliases(self):
         from paddleformers.transformers import (
             Phi4MMForCausalLM,
@@ -172,6 +274,8 @@ class Phi4MultimodalModelingTest(unittest.TestCase):
             _merge_multimodal_embeddings(input_ids, inputs_embeds, features[:2], 99, "Image")
 
     def test_lora_targets_only_language_projection_layers(self):
+        from paddleformers.cli.utils.llm_utils import get_lora_target_modules
+
         model = SimpleNamespace(config=SimpleNamespace(model_type="phi4_multimodal"))
 
         self.assertEqual(

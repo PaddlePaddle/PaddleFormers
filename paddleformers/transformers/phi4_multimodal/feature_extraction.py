@@ -16,10 +16,10 @@
 
 import numpy as np
 import paddle
-from transformers.audio_utils import mel_filter_bank
 
 from ...utils.log import logger
 from ..audio_processing_utils import SequenceFeatureExtractor
+from ..audio_utils import mel_filter_bank
 from ..feature_extraction_utils import BatchFeature
 
 

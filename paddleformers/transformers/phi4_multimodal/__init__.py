@@ -27,6 +27,8 @@ import_structure = {
     "image_processor": ["Phi4MultimodalImageProcessor"],
     "modeling": [
         "Phi4MultimodalPreTrainedModel",
+        "Phi4MultimodalVisionModel",
+        "Phi4MultimodalAudioModel",
         "Phi4MultimodalModel",
         "Phi4MultimodalForCausalLM",
         "Phi4MultimodalForConditionalGeneration",

@@ -19,7 +19,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import numpy as np
+
 from paddleformers.transformers.feature_extraction_utils import FEATURE_EXTRACTOR_NAME
+from paddleformers.transformers.phi4_multimodal.feature_extraction import (
+    Phi4MultimodalFeatureExtractor,
+)
 from paddleformers.transformers.phi4_multimodal.image_processor import (
     Phi4MultimodalImageProcessor,
 )
@@ -27,6 +32,29 @@ from paddleformers.transformers.phi4_multimodal.processor import Phi4MultimodalP
 
 
 class Phi4MultimodalProcessorTest(unittest.TestCase):
+    def test_feature_extractor_uses_local_kaldi_mel_filter_bank(self):
+        feature_extractor = Phi4MultimodalFeatureExtractor(
+            feature_size=4,
+            sampling_rate=16000,
+            n_fft=16,
+            mel_max_frequency=7600,
+        )
+        expected = np.array(
+            [
+                [0.0, 0.0, 0.0, 0.0],
+                [0.20596816, 0.79403184, 0.0, 0.0],
+                [0.0, 0.27059305, 0.72940695, 0.0],
+                [0.0, 0.0, 0.63353299, 0.36646701],
+                [0.0, 0.0, 0.14983623, 0.85016377],
+                [0.0, 0.0, 0.0, 0.75980572],
+                [0.0, 0.0, 0.0, 0.43298425],
+                [0.0, 0.0, 0.0, 0.15171309],
+                [0.0, 0.0, 0.0, 0.0],
+            ],
+            dtype=np.float32,
+        )
+        np.testing.assert_allclose(feature_extractor.mel_filters, expected, rtol=0.0, atol=1e-7)
+
     def test_image_processor_save_and_reload(self):
         image_processor = Phi4MultimodalImageProcessor(
             size={"height": 28, "width": 28},

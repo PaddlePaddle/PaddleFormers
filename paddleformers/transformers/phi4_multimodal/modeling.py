@@ -28,13 +28,14 @@ from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
+from ...nn.norm import Norm as GeneralNorm
 from ...utils.log import logger
 from ..activations import ACT2FN
 from ..cache_utils import Cache, DynamicCache
 from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
-from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS
+from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from .configuration import (
     Phi4MultimodalAudioConfig,
     Phi4MultimodalConfig,
@@ -130,6 +131,38 @@ def _merge_multimodal_embeddings(
             f"tokens={placeholder_mask.sum().item()}, features={multimodal_embeds.shape[0]}."
         )
     return inputs_embeds.masked_scatter(expanded_mask, multimodal_embeds)
+
+
+class _Phi4MultimodalComponentPreTrainedModel(PretrainedModel):
+    """Shared pretrained-model behavior for the full model and standalone modality encoders."""
+
+    transpose_weight_keys = [
+        "qkv_proj",
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "out_proj",
+        "gate_up_proj",
+        "down_proj",
+        "fc1",
+        "fc2",
+        "img_projection_up",
+        "img_projection_down",
+        "up_proj_for_speech",
+        "down_proj_for_speech",
+        "up_proj_for_vision_speech",
+        "down_proj_for_vision_speech",
+        "out",
+        "lm_head",
+    ]
+
+    def __init__(self, config):
+        if getattr(config, "tensor_model_parallel_size", 1) > 1 or getattr(config, "sequence_parallel", False):
+            raise NotImplementedError(
+                "Phi-4 multimodal does not currently support tensor parallel or sequence parallel."
+            )
+        super().__init__(config)
 
 
 # ======================= Vision Encoder =======================
@@ -355,9 +388,12 @@ class Phi4MultimodalVisionMultiheadAttentionPoolingHead(nn.Layer):
         return hidden_state[:, 0]
 
 
-class Phi4MultimodalVisionModel(nn.Layer):
+class Phi4MultimodalVisionModel(_Phi4MultimodalComponentPreTrainedModel):
+    config_class = Phi4MultimodalVisionConfig
+    _no_split_modules = ["Phi4MultimodalVisionEncoderLayer"]
+
     def __init__(self, config: Phi4MultimodalVisionConfig):
-        super().__init__()
+        super().__init__(config)
         self.config = config
         self.embeddings = Phi4MultimodalVisionEmbeddings(config)
         self.encoder = Phi4MultimodalVisionEncoder(config)
@@ -815,9 +851,12 @@ def adaptive_enc_mask(x_len, chunk_start_idx, left_window=0, right_window=0):
     return (seq_range_expand >= boundary_left.unsqueeze(-1)) & (seq_range_expand < boundary_right.unsqueeze(-1))
 
 
-class Phi4MultimodalAudioModel(nn.Layer):
+class Phi4MultimodalAudioModel(_Phi4MultimodalComponentPreTrainedModel):
+    config_class = Phi4MultimodalAudioConfig
+    _no_split_modules = ["Phi4MultimodalAudioConformerEncoderLayer"]
+
     def __init__(self, config: Phi4MultimodalAudioConfig):
-        super().__init__()
+        super().__init__(config)
         self.config = config
         self.encoder_embedding = Phi4MultimodalAudioMeanVarianceNormLayer(config)
         self.embed = Phi4MultimodalAudioNemoConvSubsampling(config)
@@ -1007,26 +1046,6 @@ class Phi4MultimodalAudioEmbedding(nn.Layer):
 # ======================= Text Decoder =======================
 
 
-class Phi4MultimodalRMSNorm(nn.Layer):
-    def __init__(self, hidden_size: int, eps: float = 1e-6):
-        super().__init__()
-        self.weight = self.create_parameter(
-            shape=[hidden_size],
-            default_initializer=nn.initializer.Constant(1.0),
-        )
-        self.variance_epsilon = eps
-
-    def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
-        input_dtype = hidden_states.dtype
-        with paddle.amp.auto_cast(enable=False):
-            hidden_states = hidden_states.astype(paddle.float32)
-            variance = hidden_states.pow(2).mean(axis=-1, keepdim=True)
-            hidden_states = hidden_states * paddle.rsqrt(variance + self.variance_epsilon)
-            hidden_states = hidden_states.astype(input_dtype)
-        weight = self.weight.astype(input_dtype) if self.weight.dtype != input_dtype else self.weight
-        return weight * hidden_states
-
-
 class Phi4MultimodalMLP(nn.Layer):
     def __init__(self, config: Phi4MultimodalConfig):
         super().__init__()
@@ -1096,6 +1115,11 @@ class Phi4MultimodalRotaryEmbedding(nn.Layer):
             rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
         inv_freq, self.attention_scaling = rope_init_fn(config)
 
+        # Transformers computes the official Phi-4 short LongRoPE frequencies with
+        # torch.pow, whose FP32 rounding differs by a few ULPs from Paddle's pow.
+        # Restrict the compatibility correction to that exact upstream parameter set.
+        inv_freq = self._match_torch_short_longrope_rounding(inv_freq)
+
         self.register_buffer("inv_freq", inv_freq, persistable=False)
         self.register_buffer("original_inv_freq", inv_freq.clone(), persistable=False)
 
@@ -1121,23 +1145,6 @@ class Phi4MultimodalRotaryEmbedding(nn.Layer):
             inv_freq = paddle.scatter(inv_freq, indices, updates, overwrite=True)
         return inv_freq
 
-    def _update_longrope_inv_freq(self, position_ids, device):
-        if self.rope_type != "longrope":
-            return
-
-        seq_len = int((paddle.max(position_ids) + 1).item())
-        rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
-        inv_freq, self.attention_scaling = rope_init_fn(self.config, device, seq_len=seq_len)
-
-        original_max_position_embeddings = self.config.rope_parameters.get(
-            "original_max_position_embeddings",
-            getattr(self.config, "original_max_position_embeddings", self.config.max_position_embeddings),
-        )
-        if seq_len <= original_max_position_embeddings:
-            inv_freq = self._match_torch_short_longrope_rounding(inv_freq)
-            self.register_buffer("original_inv_freq", inv_freq.clone(), persistable=False)
-        self.register_buffer("inv_freq", inv_freq, persistable=False)
-
     @staticmethod
     def compute_default_rope_parameters(config, seq_len=None):
         base = config.rope_parameters["rope_theta"]
@@ -1148,8 +1155,9 @@ class Phi4MultimodalRotaryEmbedding(nn.Layer):
         inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype="int64").astype("float32") / dim))
         return inv_freq, attention_factor
 
+    @dynamic_rope_update
+    @paddle.no_grad()
     def forward(self, x, position_ids):
-        self._update_longrope_inv_freq(position_ids, x.place)
         with paddle.amp.auto_cast(enable=False):
             inv_freq_expanded = self.inv_freq.astype("float32")[None, :, None].expand([position_ids.shape[0], -1, 1])
             position_ids_expanded = position_ids[:, None, :].astype("float32")
@@ -1277,8 +1285,8 @@ class Phi4MultimodalDecoderLayer(nn.Layer):
         self.hidden_size = config.hidden_size
         self.self_attn = Phi4MultimodalAttention(config=config, layer_idx=layer_idx)
         self.mlp = Phi4MultimodalMLP(config)
-        self.input_layernorm = Phi4MultimodalRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = Phi4MultimodalRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.input_layernorm = GeneralNorm.create(config, norm_type="rms_norm", norm_eps=config.rms_norm_eps)
+        self.post_attention_layernorm = GeneralNorm.create(config, norm_type="rms_norm", norm_eps=config.rms_norm_eps)
         self.config = config
         self.resid_attn_dropout = nn.Dropout(config.resid_pdrop)
         self.resid_mlp_dropout = nn.Dropout(config.resid_pdrop)
@@ -1380,36 +1388,14 @@ class Phi4MultimodalFeatureEmbedding(nn.Layer):
 # ======================= Main Model =======================
 
 
-class Phi4MultimodalPreTrainedModel(PretrainedModel):
+class Phi4MultimodalPreTrainedModel(_Phi4MultimodalComponentPreTrainedModel):
     config_class = Phi4MultimodalConfig
     base_model_prefix = "model"
-    transpose_weight_keys = [
-        "qkv_proj",
-        "q_proj",
-        "k_proj",
-        "v_proj",
-        "o_proj",
-        "out_proj",
-        "gate_up_proj",
-        "down_proj",
-        "fc1",
-        "fc2",
-        "img_projection_up",
-        "img_projection_down",
-        "up_proj_for_speech",
-        "down_proj_for_speech",
-        "up_proj_for_vision_speech",
-        "down_proj_for_vision_speech",
-        "out",
-        "lm_head",
+    _no_split_modules = [
+        "Phi4MultimodalDecoderLayer",
+        "Phi4MultimodalVisionEncoderLayer",
+        "Phi4MultimodalAudioConformerEncoderLayer",
     ]
-
-    def __init__(self, config: Phi4MultimodalConfig):
-        if config.tensor_model_parallel_size > 1 or config.sequence_parallel:
-            raise NotImplementedError(
-                "Phi-4 multimodal does not currently support tensor parallel or sequence parallel."
-            )
-        super().__init__(config)
 
     @classmethod
     def _gen_aoa_config(cls, config: Phi4MultimodalConfig):
@@ -1626,7 +1612,7 @@ class Phi4MultimodalModel(Phi4MultimodalPreTrainedModel):
         self.layers = nn.LayerList(
             [Phi4MultimodalDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
-        self.norm = Phi4MultimodalRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.norm = GeneralNorm.create(config, norm_type="rms_norm", norm_eps=config.rms_norm_eps)
         self.rotary_emb = Phi4MultimodalRotaryEmbedding(config)
         self.embed_dropout = nn.Dropout(config.embd_pdrop)
         self.embed_tokens_extend = Phi4MultimodalFeatureEmbedding(config)

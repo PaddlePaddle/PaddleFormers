@@ -212,6 +212,7 @@ class Phi4MultimodalConfig(PretrainedConfig):
         rope_theta=10000.0,
         rope_scaling=None,
         rope_parameters=None,
+        fuse_rms_norm=False,
         bos_token_id=199999,
         eos_token_id=None,
         pad_token_id=199999,
@@ -289,6 +290,8 @@ class Phi4MultimodalConfig(PretrainedConfig):
 
         # Build rope_parameters dict for compatibility with rope utils
         self.rope_parameters = rope_parameters if rope_parameters is not None else self._build_rope_parameters()
+        # Keep the same unfused FP32 RMSNorm path used by the upstream Phi-4 implementation.
+        self.fuse_rms_norm = fuse_rms_norm
 
     def to_phi4mm_dict(self):
         """Return the upstream Phi-4-MM config used by Transformers/vLLM."""

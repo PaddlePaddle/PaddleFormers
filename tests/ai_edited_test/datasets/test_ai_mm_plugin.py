@@ -173,6 +173,22 @@ class TestMMPluginMixin(unittest.TestCase):
 class TestGetMMPlugin(unittest.TestCase):
     """Tests for get_mm_plugin and register_mm_plugin."""
 
+    def test_phi4_process_tokens_masks_shifted_multimodal_labels(self):
+        token_ids = {"<image>": 10, "<audio>": 11}
+        tokenizer = MagicMock()
+        tokenizer.convert_tokens_to_ids.side_effect = lambda tokens: [token_ids[token] for token in tokens]
+        processor = MagicMock(tokenizer=tokenizer)
+        plugin = get_mm_plugin(
+            name="phi4_multimodal",
+            image_token="<image>",
+            audio_token="<audio>",
+        )
+        plugin.masked_tokens = ["<image>", "<audio>"]
+
+        labels = plugin.process_tokens([1, 10, 2, 11], processor, labels=[10, 2, 11, -100])
+
+        self.assertEqual(labels, [-100, -100, -100, -100])
+
     def test_get_existing_plugin(self):
         """Test getting a registered plugin."""
         plugin = get_mm_plugin(name="base")
