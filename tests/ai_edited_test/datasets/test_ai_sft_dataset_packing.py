@@ -1,5 +1,5 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
-"""Focused tests for IEEE packing=false SFT iteration (no leftover yield)."""
+"""Focused tests for packing=false SFT iteration (no leftover yield)."""
 
 import inspect
 import unittest

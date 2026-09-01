@@ -277,10 +277,11 @@ def apply_glm_moe_dsa_training_contract(model_config, training_args, model_args,
             "[BIAS-ACT-FUSION] model_config.bias_activation_fusion=" f"{model_config.bias_activation_fusion}",
             flush=True,
         )
-    # YAML overlap_p2p_comm / batch_p2p_comm / variable_seq_lengths land on
-    # TrainingArguments (pipeline runtime), not GLMMoEModelProvider. Fleet
-    # ModelParallelConfig defaults True/None/False; IEEE 357ff883 constructed
-    # False/True/True. Env override after set_llm_config, same pattern as BIAS.
+    # YAML overlap_p2p_comm / batch_p2p_comm land on TrainingArguments
+    # (pipeline runtime). Copy them onto GLMMoEModelProvider after
+    # set_llm_config. Do not copy variable_seq_lengths: that YAML flag
+    # drives pipeline enable_dynamic_shape, while the provider default
+    # stays False.
 
     def _env_bool(name):
         value = os.environ.get(name)
@@ -298,17 +299,11 @@ def apply_glm_moe_dsa_training_contract(model_config, training_args, model_args,
         _batch_p2p_comm = getattr(training_args, "batch_p2p_comm", None)
     if _batch_p2p_comm is not None:
         model_config.batch_p2p_comm = bool(_batch_p2p_comm)
-    _variable_seq_lengths = _env_bool("MODEL_REPRO_VARIABLE_SEQ_LENGTHS")
-    if _variable_seq_lengths is None:
-        _variable_seq_lengths = getattr(training_args, "variable_seq_lengths", None)
-    if _variable_seq_lengths is not None:
-        model_config.variable_seq_lengths = bool(_variable_seq_lengths)
-    if any(field is not None for field in (_overlap_p2p_comm, _batch_p2p_comm, _variable_seq_lengths)):
+    if any(field is not None for field in (_overlap_p2p_comm, _batch_p2p_comm)):
         print(
             "[PP-P2P] model_config.overlap_p2p_comm="
             f"{getattr(model_config, 'overlap_p2p_comm', None)} "
-            f"batch_p2p_comm={getattr(model_config, 'batch_p2p_comm', None)} "
-            f"variable_seq_lengths={getattr(model_config, 'variable_seq_lengths', None)}",
+            f"batch_p2p_comm={getattr(model_config, 'batch_p2p_comm', None)}",
             flush=True,
         )
     for parallel_field in (

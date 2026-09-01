@@ -210,9 +210,8 @@ class GlmMoeDsaConfig(PretrainedConfig):
         self.rotary_base = self.rope_theta
         rope_type = self.rope_parameters["rope_type"]
         self.rope_type = "rope" if rope_type == "default" else rope_type
-        # IEEE 1-5 (e479): nested rope_parameters.partial_rotary_factor is
-        # derived from the top-level field. Formal dumps still carry it
-        # inside rope_scaling; e520 popped it. rotary_percent stays 0.5.
+        # Nested rope_parameters.partial_rotary_factor is derived from the
+        # top-level field; drop the nested copy so ConfigTester round-trips.
         if isinstance(self.rope_parameters, dict):
             self.rope_parameters.pop("partial_rotary_factor", None)
             if self.rope_scaling is not None:
@@ -244,10 +243,8 @@ class GlmMoeDsaConfig(PretrainedConfig):
             fp32_residual_connection=fp32_residual_connection,
             **kwargs,
         )
-        # IEEE 1-5 (e479): rope_parameters is derived from rope_theta /
-        # rope_scaling. Keep it off the serialized dict so ConfigTester
-        # round-trips the constructor kwargs (rope_scaling stays None when
-        # it was not provided).
+        # rope_parameters is derived from rope_theta / rope_scaling. Keep it
+        # off the serialized dict so ConfigTester round-trips constructor kwargs.
         self.register_unsavable_keys(["rope_parameters", "rotary_base", "rope_type"])
 
 

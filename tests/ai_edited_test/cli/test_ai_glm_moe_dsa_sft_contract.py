@@ -102,17 +102,31 @@ def test_glm_moe_dsa_training_contract_applies_pp_p2p_needles_from_env(monkeypat
     data_args = SimpleNamespace()
     monkeypatch.setenv("MODEL_REPRO_OVERLAP_P2P_COMM", "0")
     monkeypatch.setenv("MODEL_REPRO_BATCH_P2P_COMM", "1")
-    monkeypatch.setenv("MODEL_REPRO_VARIABLE_SEQ_LENGTHS", "1")
 
     apply_glm_moe_dsa_training_contract(model_config, training_args, model_args, data_args)
 
     assert model_config.overlap_p2p_comm is False
     assert model_config.batch_p2p_comm is True
-    assert model_config.variable_seq_lengths is True
     captured = capsys.readouterr()
     assert "[PP-P2P] model_config.overlap_p2p_comm=False" in captured.out
     assert "batch_p2p_comm=True" in captured.out
-    assert "variable_seq_lengths=True" in captured.out
+
+
+def test_glm_moe_dsa_training_contract_does_not_copy_variable_seq_lengths_onto_provider(monkeypatch):
+    model_config = SimpleNamespace(
+        model_type="glm_moe_dsa",
+        overlap_p2p_comm=True,
+        batch_p2p_comm=None,
+        variable_seq_lengths=False,
+    )
+    training_args = _base_training_args(variable_seq_lengths=True)
+    model_args = SimpleNamespace(mtp_attention_flexible=True, persist_layer_norm=False)
+    data_args = SimpleNamespace()
+    monkeypatch.setenv("MODEL_REPRO_VARIABLE_SEQ_LENGTHS", "1")
+
+    apply_glm_moe_dsa_training_contract(model_config, training_args, model_args, data_args)
+
+    assert model_config.variable_seq_lengths is False
 
 
 def test_glm_moe_dsa_training_contract_keeps_registered_mtp_loss_weight_when_cli_is_silent():

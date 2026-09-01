@@ -1262,8 +1262,8 @@ class Trainer:
             optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
         except ValueError as err:
             # Fused grouped-GEMM moments stay 3-D while FlexCheckpoint shards
-            # flatten to 2-D. Prefix HF export is the oracle payload; skip the
-            # optimizer flex dump rather than abort after a finished N-step run.
+            # flatten to 2-D. Skip the optimizer flex save rather than abort
+            # after a finished training run; HF model export still proceeds.
             logger.warning(f"Skipping fused-expert optimizer flex save: {err}")
             return
         for k, v in optimizer_sharded_state_dict.items():
