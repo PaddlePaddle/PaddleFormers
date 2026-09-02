@@ -974,9 +974,7 @@ def _all_gather_state_dict_bucketed(state_dict, filter_func, group):
 
     group_rank = max(group.rank, 0)
 
-    on_gpu = bool(state_dict) and all(
-        isinstance(v, paddle.Tensor) and v.place.is_gpu_place() for v in state_dict.values()
-    )
+    on_gpu = all(isinstance(v, paddle.Tensor) and v.place.is_gpu_place() for v in state_dict.values())
 
     meta_dict = {}
     for (k, v) in state_dict.items():
