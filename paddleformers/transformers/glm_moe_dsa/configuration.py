@@ -177,8 +177,14 @@ class GlmMoeDsaConfig(PretrainedConfig):
         fd_fallback=False,
         **kwargs,
     ):
-        if rope_scaling is None and "rope_parameters" in kwargs:
-            rope_scaling = kwargs.pop("rope_parameters")
+        # GLM-5.2 HF config.json stores RoPE under ``rope_parameters`` and
+        # leaves ``rope_scaling`` null. Keep those two attributes distinct:
+        # copying the nested dict onto ``rope_scaling`` makes
+        # ``from_json_file`` disagree with a default-constructed config
+        # (ConfigTester.test_config).
+        rope_parameters = kwargs.pop("rope_parameters", None)
+        if rope_parameters is None:
+            rope_parameters = rope_scaling
         self.vocab_size = vocab_size
         self.max_position_embeddings = max_position_embeddings
         self.hidden_size = hidden_size
@@ -204,7 +210,7 @@ class GlmMoeDsaConfig(PretrainedConfig):
         # BC: if there is a 'type' field, move it to 'rope_type'.
         if self.rope_scaling is not None and "type" in self.rope_scaling:
             self.rope_scaling["rope_type"] = self.rope_scaling["type"]
-        self.rope_parameters = self.rope_scaling
+        self.rope_parameters = rope_parameters
         standardize_rope_params(self, rope_theta=rope_theta)
         self.rope_theta = self.rope_parameters["rope_theta"]
         self.rotary_base = self.rope_theta
@@ -214,8 +220,8 @@ class GlmMoeDsaConfig(PretrainedConfig):
         # top-level field; drop the nested copy so ConfigTester round-trips.
         if isinstance(self.rope_parameters, dict):
             self.rope_parameters.pop("partial_rotary_factor", None)
-            if self.rope_scaling is not None:
-                self.rope_scaling.pop("partial_rotary_factor", None)
+        if isinstance(self.rope_scaling, dict):
+            self.rope_scaling.pop("partial_rotary_factor", None)
         rope_config_validation(self)
 
         # MoE arguments

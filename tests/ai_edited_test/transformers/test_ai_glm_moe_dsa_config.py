@@ -11,6 +11,7 @@ class TestGlmMoeDsaRopeParameters(unittest.TestCase):
     def test_init_pops_nested_partial_rotary_factor(self):
         source = inspect.getsource(GlmMoeDsaConfig.__init__)
         self.assertIn('self.rope_parameters.pop("partial_rotary_factor", None)', source)
+        self.assertIn("isinstance(self.rope_scaling, dict)", source)
         self.assertIn('self.rope_scaling.pop("partial_rotary_factor", None)', source)
 
         cfg = GlmMoeDsaConfig()
@@ -37,3 +38,16 @@ class TestGlmMoeDsaRopeParameters(unittest.TestCase):
         self.assertIn("rope_parameters", saved)
         self.assertEqual(saved["rope_parameters"]["rope_theta"], 8000000)
         self.assertEqual(loaded.rope_parameters["rope_theta"], 8000000)
+        self.assertIsNone(loaded.rope_scaling)
+
+    def test_json_roundtrip_keeps_rope_scaling_none(self):
+        import tempfile
+
+        cfg = GlmMoeDsaConfig(vocab_size=256, hidden_size=24)
+        self.assertIsNone(cfg.rope_scaling)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = f"{tmp}/config.json"
+            cfg.to_json_file(path)
+            loaded = GlmMoeDsaConfig.from_json_file(path)
+        self.assertIsNone(loaded.rope_scaling)
+        self.assertEqual(loaded.to_dict(), cfg.to_dict())
