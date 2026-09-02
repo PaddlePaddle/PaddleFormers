@@ -20,9 +20,11 @@ from paddleformers.cli.train.sft.workflow import run_sft
 from paddleformers.transformers.tokenizer_utils import PreTrainedTokenizer
 
 
-def test_sft_dataset_config_copies_generating_enable_thinking():
+def test_sft_copies_enable_thinking_only_for_glm5_2():
     source = inspect.getsource(run_sft)
-    assert '"enable_thinking": getattr(generating_args, "enable_thinking", None)' in source
+    assert 'if data_args.template == "glm5_2":' in source
+    assert 'dataset_config["enable_thinking"] = getattr(generating_args, "enable_thinking", None)' in source
+    assert '"enable_thinking": getattr(generating_args, "enable_thinking", None)' not in source
 
 
 def test_encode_chat_inputs_keep_huggingface_chat_template_defaults():

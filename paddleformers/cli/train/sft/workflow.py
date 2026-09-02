@@ -549,14 +549,17 @@ def run_sft(
         "packed_idx_cache_dir": data_args.packed_idx_cache_dir,
         "dataloader_num_workers": training_args.dataloader_num_workers,
         "template": data_args.template,
-        # YAML enable_thinking lands on GeneratingArguments. glm5_2 is a
-        # ReasoningTemplate; without this copy it stays register_template default True.
-        "enable_thinking": getattr(generating_args, "enable_thinking", None),
         "tool_format": None,
         "default_system": None,
         "truncation_strategy": data_args.truncation_strategy,
         "skip_warmup": data_args.skip_warmup,
     }
+    # GeneratingArguments.enable_thinking defaults to False for VL generate.
+    # Copying that onto every SFT template overwrites qwen3_vl's registered
+    # True and shifts the Qwen3-VL CI GT by ~6e-4. Only glm5_2 needs the
+    # YAML/CLI value; other templates keep register_template defaults.
+    if data_args.template == "glm5_2":
+        dataset_config["enable_thinking"] = getattr(generating_args, "enable_thinking", None)
 
     if dataset_config["template_backend"] == "custom":
         template_instance = get_template_and_fix_tokenizer(dataset_config)

@@ -363,6 +363,22 @@ class TestGetTemplateAndFixTokenizer(unittest.TestCase):
         self.assertIsInstance(result, ReasoningTemplate)
         self.assertIs(result.enable_thinking, False)
 
+    def test_qwen3_vl_keeps_registered_enable_thinking_without_dataset_override(self):
+        tokenizer = MagicMock()
+        tokenizer.eos_token = "</s>"
+        tokenizer.eos_token_id = 2
+        tokenizer.pad_token_id = 0
+        tokenizer.add_special_tokens.return_value = 0
+        config = {
+            "tokenizer": tokenizer,
+            "template": "qwen3_vl",
+            "tool_format": None,
+            "default_system": None,
+        }
+        result = get_template_and_fix_tokenizer(config)
+        self.assertIsInstance(result, ReasoningTemplate)
+        self.assertIs(result.enable_thinking, True)
+
 
 if __name__ == "__main__":
     unittest.main()
