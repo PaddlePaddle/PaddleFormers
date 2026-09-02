@@ -246,6 +246,17 @@ class GlmMoeDsaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
         self.assertEqual(config.rope_theta, 123_456)
         self.assertEqual(config.rotary_base, 123_456)
 
+    def test_dsa_provider_maps_expert_tensor_parallel_size(self):
+        from paddleformers.transformers.glm_moe_dsa.modeling import (
+            GlmMoeDsaModelProvider,
+        )
+
+        config = GlmMoeDsaConfig()
+        config.expert_tensor_model_parallel_size = 1
+        provider = object.__new__(GlmMoeDsaModelProvider)
+        provider.register_attributes(config)
+        self.assertEqual(provider.expert_tensor_parallel_size, 1)
+
     def test_GlmMoeDsa_lm_head_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_lm_head_model(*config_and_inputs)

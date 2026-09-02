@@ -407,7 +407,7 @@ class PaddleTokenizerMixin:
             conversation_id = []
             conversation_dict["messages"].append(conversations["messages"][idx])
             round_str = self.apply_chat_template(
-                conversation_dict["messages"], add_generation_prompt=True, tokenize=False, enable_thinking=False
+                conversation_dict["messages"], add_generation_prompt=True, tokenize=False
             )
             # query: user prefix + user content + assist prefix
             query = round_str[len(cur_str) :]
@@ -418,7 +418,7 @@ class PaddleTokenizerMixin:
             if idx + 1 < len(conversations["messages"]):
                 conversation_dict["messages"].append(conversations["messages"][idx + 1])
                 round_str = self.apply_chat_template(
-                    conversation_dict["messages"], add_generation_prompt=False, tokenize=False, enable_thinking=False
+                    conversation_dict["messages"], add_generation_prompt=False, tokenize=False
                 )
                 # answer: assistant content
                 answer = round_str[len(cur_str) :]
@@ -449,7 +449,7 @@ class PaddleTokenizerMixin:
             conversation_id = []
             conversation_dict["messages"].append(conversations["messages"][idx])
             round_str = self.apply_chat_template(
-                conversation_dict["messages"], add_generation_prompt=True, tokenize=False, enable_thinking=False
+                conversation_dict["messages"], add_generation_prompt=True, tokenize=False
             )
             # query: user prefix + user content + assist prefix
             query = round_str[len(cur_str) :]
@@ -460,7 +460,7 @@ class PaddleTokenizerMixin:
             if idx + 1 < len(conversations["messages"]):
                 conversation_dict["messages"].append(conversations["messages"][idx + 1])
                 round_str = self.apply_chat_template(
-                    conversation_dict["messages"], add_generation_prompt=False, tokenize=False, enable_thinking=False
+                    conversation_dict["messages"], add_generation_prompt=False, tokenize=False
                 )
                 # answer: assistant content
                 answer = round_str[len(cur_str) :]
@@ -481,9 +481,7 @@ class PaddleTokenizerMixin:
         # splited by replaced specified words
         non_learnable_parts = re.split(
             r"(?:%s)" % regex_pattern,
-            self.apply_chat_template(
-                conversation=origin_msg, add_generation_prompt=False, tokenize=False, enable_thinking=False
-            ),
+            self.apply_chat_template(conversation=origin_msg, add_generation_prompt=False, tokenize=False),
         )
 
         if non_learnable_parts[-1] == "":
@@ -502,9 +500,7 @@ class PaddleTokenizerMixin:
         # Some template do not support system msg, so we need to check it first.
         if system:
             try:
-                self.apply_chat_template(
-                    [{"role": "system", "content": system}], add_generation_prompt, enable_thinking=False
-                )
+                self.apply_chat_template([{"role": "system", "content": system}], add_generation_prompt)
             except Exception as e:
                 raise ValueError("System is not supported in this tokenizer.", e)
 
@@ -524,15 +520,10 @@ class PaddleTokenizerMixin:
         # attention: answer should include end token!
         for conv in conversation_dict:
             roundi = [{"role": "system", "content": system}] + conv if system else conv
-            roundi_str = self.apply_chat_template(
-                conversation=roundi, add_generation_prompt=False, tokenize=False, enable_thinking=False
-            )
+            roundi_str = self.apply_chat_template(conversation=roundi, add_generation_prompt=False, tokenize=False)
             roundi_no_ans = [{"role": "system", "content": system}] + [conv[0]] if system else [conv[0]]
             roundi_no_ans_str = self.apply_chat_template(
-                conversation=roundi_no_ans,
-                add_generation_prompt=add_generation_prompt,
-                tokenize=False,
-                enable_thinking=False,
+                conversation=roundi_no_ans, add_generation_prompt=add_generation_prompt, tokenize=False
             )
             ans_roundi = roundi_str[len(roundi_no_ans_str) :]
             ans.append(ans_roundi)

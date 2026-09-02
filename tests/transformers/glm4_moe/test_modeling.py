@@ -25,7 +25,6 @@ from paddleformers.transformers import (
     Glm4MoeForCausalLMDeprecated as Glm4MoeForCausalLM,
 )
 from paddleformers.transformers import Glm4MoeModel
-from paddleformers.transformers.glm4_moe.modeling import GLMMoEModelProvider
 from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
@@ -300,15 +299,6 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     base_model_class = Glm4MoeModel
     return_dict = False
     use_labels = False
-
-    def test_fleet_provider_maps_expert_tensor_parallel_size(self):
-        config = Glm4MoeConfig()
-        config.expert_tensor_model_parallel_size = 1
-
-        provider = object.__new__(GLMMoEModelProvider)
-        provider.register_attributes(config)
-
-        self.assertEqual(provider.expert_tensor_parallel_size, 1)
 
     all_model_classes = (Glm4MoeModel, Glm4MoeForCausalLM)
     all_generative_model_classes = {Glm4MoeForCausalLM: (Glm4MoeModel, "Glm4Moe")}

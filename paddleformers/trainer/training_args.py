@@ -489,10 +489,10 @@ class TrainingArguments:
         metadata={"help": "Number of predictions steps to accumulate before moving the tensors to the CPU."},
     )
 
-    learning_rate: float = field(default=1e-5, metadata={"help": "The initial learning rate for AdamW."})
-    weight_decay: float = field(default=0.1, metadata={"help": "Weight decay for AdamW if we apply some."})
+    learning_rate: float = field(default=5e-5, metadata={"help": "The initial learning rate for AdamW."})
+    weight_decay: float = field(default=0.0, metadata={"help": "Weight decay for AdamW if we apply some."})
     adam_beta1: float = field(default=0.9, metadata={"help": "Beta1 for AdamW optimizer"})
-    adam_beta2: float = field(default=0.95, metadata={"help": "Beta2 for AdamW optimizer"})
+    adam_beta2: float = field(default=0.999, metadata={"help": "Beta2 for AdamW optimizer"})
     adam_epsilon: float = field(default=1e-8, metadata={"help": "Epsilon for AdamW optimizer."})
     max_grad_norm: float = field(default=1.0, metadata={"help": "Max gradient norm."})
 
@@ -514,7 +514,7 @@ class TrainingArguments:
     power: float = field(default=1.0, metadata={"help": "The power factor in the polynomial scheduler."})
     min_lr: float = field(default=0.0, metadata={"help": "The minimum learning rate in cosine scheduler."})
     moe_router_bias_update_rate: float = field(
-        default=1.0e-3,
+        default=0.0,
         metadata={
             "help": """The expert bias is updated based on the number of assigned tokens to each expert
         in a global batch, where the bias is increased for the experts with less assigned tokens
@@ -549,7 +549,7 @@ class TrainingArguments:
         metadata={"help": "The logging strategy to use."},
     )
     logging_first_step: bool = field(default=False, metadata={"help": "Log the first global_step"})
-    logging_steps: int = field(default=5, metadata={"help": "Log every X updates steps."})
+    logging_steps: int = field(default=500, metadata={"help": "Log every X updates steps."})
 
     save_strategy: IntervalStrategy = field(
         default=IntervalStrategy.STEPS,
@@ -692,7 +692,7 @@ class TrainingArguments:
     )
 
     dsa_indexer_loss_coeff: float = field(
-        default=0.0,
+        default=0.01,
         metadata={"help": "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term."},
     )
 
@@ -1261,15 +1261,20 @@ class TrainingArguments:
         metadata={"help": "Save model to HuggingFace safetensors."},
     )
     save_to_hf: Optional[bool] = field(
-        default=True,
-        metadata={"help": "Export the final trained model in HuggingFace format."},
+        default=False,
+        metadata={
+            "help": (
+                "Export HuggingFace safetensors on the save_steps cadence. "
+                "Default False keeps existing jobs on save_hf_steps=-1."
+            )
+        },
     )
     moe_expert_fusion: Optional[bool] = field(
         default=None,
         metadata={
             "help": (
-                "Whether to fuse MoE experts into grouped GEMM. When None, the "
-                "model config value is kept. Formal GLM-5.2 YAML sets true."
+                "Whether to fuse MoE experts into grouped GEMM. None keeps the "
+                "model-config value. YAML can set true for GLM-5.2."
             )
         },
     )
@@ -1414,11 +1419,11 @@ class TrainingArguments:
         default=False, metadata={"help": "Whether to use asynchronous reduce-scatter for sharding parallelism (SP)."}
     )
     overlap_p2p_comm: bool = field(
-        default=True,
-        metadata={"help": "Whether to overlap point-to-point (P2P) communication with computation."},
+        default=False,
+        metadata={"help": "Whether to overlap point-to-point (P2P) communication with computation. Defaults to True."},
     )
-    batch_p2p_comm: Optional[bool] = field(
-        default=None, metadata={"help": "Whether to batch point-to-point (P2P) communication requests."}
+    batch_p2p_comm: bool = field(
+        default=True, metadata={"help": "Whether to batch point-to-point (P2P) communication requests."}
     )
     variable_seq_lengths: bool = field(
         default=False,
@@ -1739,6 +1744,11 @@ class TrainingArguments:
         },
     )
 
+    dsa_indexer_loss_coeff: float = field(
+        default=0.01,
+        metadata={"help": "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term."},
+    )
+
     online_merge_ema: bool = field(
         default=True, metadata={"help": "Whether to perform online merge of the EMA parameters during training. "}
     )
@@ -1988,9 +1998,6 @@ class TrainingArguments:
                     raise ValueError(
                         "pipeline parallel is not compatible for sharding stage2 or stage3, please using sharding stage1"
                     )
-
-            if self.batch_p2p_comm is None:
-                self.batch_p2p_comm = not self.overlap_p2p_comm
 
             # TODO use paddle.distributed.is_initialized() after paddle 2.4rc
             if not paddle.distributed.parallel.parallel_helper._is_parallel_ctx_initialized():
@@ -2918,10 +2925,9 @@ class TrainingArguments:
                 self.expert_model_parallel_size = -1
                 self.expert_tensor_model_parallel_size = -1
 
-        # fused MoE + sharding_parallel_size=1 used to abort here because
-        # GroupedMLPExpert.sharded_state_dict() flattens 3-D expert weights to
-        # 2-D, which broke FlexCheckpoint save. The save path now restores the
-        # 3-D layout, so the assert is no longer a hard gate.
+        # fused MoE + sharding=1 used to abort because grouped-GEMM weights
+        # flatten to 2-D. Model export now restores 3-D layout, so this is a
+        # warning rather than a hard gate.
         if (
             hasattr(self, "moe_expert_fusion")
             and self.moe_expert_fusion
@@ -2931,8 +2937,8 @@ class TrainingArguments:
         ):
             logger.warning(
                 "moe_expert_fusion=true with sharding_parallel_size="
-                f"{self.sharding_parallel_size}; "
-                "fused-expert checkpoint save keeps 3-D grouped_gemm weights."
+                f"{self.sharding_parallel_size}; fused-expert checkpoint save "
+                "keeps 3-D grouped_gemm weights."
             )
 
         if self.hybrid_parallel_topo_order is None:

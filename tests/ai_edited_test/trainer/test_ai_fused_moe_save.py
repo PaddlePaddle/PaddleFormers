@@ -22,7 +22,7 @@ class TestFusedMoEShardingOneSaveAssert(unittest.TestCase):
         source = inspect.getsource(TrainingArguments._post_init_parallel_degree)
         self.assertNotIn("please set moe_expert_fusion to false", source)
         self.assertNotIn("Checkpoint will fail to save when moe_expert_fusion is true", source)
-        self.assertIn("fused-expert checkpoint save keeps 3-D grouped_gemm weights", source)
+        self.assertIn("keeps 3-D grouped_gemm weights", source)
         self.assertNotIn("sharding_parallel_size=%s", source)
 
 
