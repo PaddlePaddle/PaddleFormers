@@ -115,7 +115,7 @@ class GlmMoeDsaModelTester:
             choice_labels = ids_tensor([self.batch_size], self.num_choices)
 
         config = self.get_config()
-        self.assertTrue(config.use_qk_norm)
+        self.parent.assertTrue(config.use_qk_norm)
         return config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
 
     def get_config(self) -> GlmMoeDsaConfig:

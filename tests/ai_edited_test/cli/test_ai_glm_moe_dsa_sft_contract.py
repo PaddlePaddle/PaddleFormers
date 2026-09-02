@@ -15,6 +15,7 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from paddleformers.cli.train.sft import workflow as sft_workflow
 from paddleformers.cli.train.sft.workflow import (
     apply_glm_moe_dsa_training_contract,
     load_tokenizer_and_processor,
@@ -30,8 +31,9 @@ def test_load_tokenizer_uses_independent_source():
     )
     data_args = SimpleNamespace(processor_use_fast=None)
 
-    with patch(
-        "paddleformers.cli.train.sft.workflow.AutoTokenizer.from_pretrained",
+    with patch.object(
+        sft_workflow.AutoTokenizer,
+        "from_pretrained",
         return_value=tokenizer,
     ) as load_tokenizer:
         actual_tokenizer, processor = load_tokenizer_and_processor(model_args, data_args)
