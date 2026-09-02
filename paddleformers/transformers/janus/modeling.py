@@ -113,6 +113,25 @@ def _requested_runtime_dtype(config: JanusConfig, name: str):
     return _RUNTIME_DTYPE_MAP[requested]
 
 
+def _validated_image_masks(
+    images_seq_mask: paddle.Tensor,
+    images_emb_mask: paddle.Tensor,
+    batch_size: int,
+) -> tuple[paddle.Tensor, paddle.Tensor]:
+    if images_seq_mask.ndim != 2 or images_emb_mask.ndim != 3:
+        raise ValueError("images_seq_mask must be [batch, sequence] and images_emb_mask [batch, image, token]")
+    if images_seq_mask.shape[0] != batch_size or images_emb_mask.shape[0] != batch_size:
+        raise ValueError("image masks must have the same batch size as input_ids")
+
+    seq_mask = images_seq_mask.astype("bool")
+    image_mask = images_emb_mask.astype("bool").reshape([batch_size, -1])
+    placeholder_counts = seq_mask.astype("int64").sum(axis=1)
+    embedding_counts = image_mask.astype("int64").sum(axis=1)
+    if not bool(paddle.equal(placeholder_counts, embedding_counts).all().item()):
+        raise ValueError("the number of image placeholders must equal the number of image embeddings for each sample")
+    return seq_mask, image_mask
+
+
 def _looks_like_hf_weight_filename(name: str) -> bool:
     """Return whether a basename follows the conventional HF weight names."""
 
@@ -552,18 +571,13 @@ class JanusForCausalLM(JanusPretrainedModel):
             pixel_values = pixel_values.unsqueeze(1)
         if pixel_values.ndim != 5:
             raise ValueError(f"pixel_values must have rank 4 or 5, got {pixel_values.shape}")
-        if images_seq_mask.ndim != 2 or images_emb_mask.ndim != 3:
-            raise ValueError("images_seq_mask must be [batch, sequence] and images_emb_mask [batch, image, token]")
 
         batch_size, num_images = pixel_values.shape[:2]
         images = pixel_values.reshape([batch_size * num_images, *pixel_values.shape[2:]])
         image_embeds = self.aligner(self.vision_model(images))
         image_embeds = image_embeds.astype(self._language_embedding_dtype())
         image_embeds = image_embeds.reshape([batch_size, num_images * image_embeds.shape[1], image_embeds.shape[2]])
-        image_mask = images_emb_mask.astype("bool").reshape([batch_size, -1])
-        seq_mask = images_seq_mask.astype("bool")
-        if int(seq_mask.astype("int64").sum().item()) != int(image_mask.astype("int64").sum().item()):
-            raise ValueError("the number of image placeholders must equal the number of image embeddings")
+        seq_mask, image_mask = _validated_image_masks(images_seq_mask, images_emb_mask, input_ids.shape[0])
 
         safe_input_ids = paddle.where(input_ids < 0, paddle.zeros_like(input_ids), input_ids)
         inputs_embeds = self.language_model.get_input_embeddings()(safe_input_ids).clone()
@@ -606,11 +620,10 @@ class JanusForCausalLM(JanusPretrainedModel):
                 safe_input_ids = paddle.where(input_ids < 0, paddle.zeros_like(input_ids), input_ids)
                 inputs_embeds = self.language_model.get_input_embeddings()(safe_input_ids).clone()
                 image_embeds = image_embeds.astype(self._language_embedding_dtype())
-                image_mask = images_emb_mask.astype("bool").reshape([-1])
-                seq_mask = images_seq_mask.astype("bool")
+                seq_mask, image_mask = _validated_image_masks(images_seq_mask, images_emb_mask, input_ids.shape[0])
                 hidden_size = inputs_embeds.shape[-1]
                 flat_inputs = inputs_embeds.reshape([-1, hidden_size])
-                flat_inputs[seq_mask.reshape([-1])] = image_embeds.reshape([-1, hidden_size])[image_mask]
+                flat_inputs[seq_mask.reshape([-1])] = image_embeds.reshape([-1, hidden_size])[image_mask.reshape([-1])]
                 inputs_embeds = flat_inputs.reshape(inputs_embeds.shape)
             input_ids = None
 
@@ -655,8 +668,32 @@ class JanusForCausalLM(JanusPretrainedModel):
     def set_output_embeddings(self, value):
         return self.language_model.set_output_embeddings(value)
 
-    def prepare_inputs_for_generation(self, input_ids, **kwargs):
-        return self.language_model.prepare_inputs_for_generation(input_ids, **kwargs)
+    def prepare_inputs_for_generation(
+        self,
+        input_ids,
+        past_key_values=None,
+        inputs_embeds=None,
+        **kwargs,
+    ):
+        model_inputs = self.language_model.prepare_inputs_for_generation(
+            input_ids,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            **kwargs,
+        )
+
+        cache_length = 0
+        if past_key_values is not None:
+            if hasattr(past_key_values, "get_seq_length"):
+                cache_length = past_key_values.get_seq_length()
+            elif isinstance(past_key_values, tuple) and past_key_values and past_key_values[0] is not None:
+                cache_length = past_key_values[0][0].shape[-2]
+
+        if cache_length > 0:
+            # Image features are already represented by the prefill KV cache.
+            for name in ("pixel_values", "images", "image_embeds", "images_seq_mask", "images_emb_mask"):
+                model_inputs[name] = None
+        return model_inputs
 
 
 JanusModel = JanusForCausalLM

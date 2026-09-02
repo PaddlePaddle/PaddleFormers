@@ -301,6 +301,86 @@ class JanusContractTest(unittest.TestCase):
             )
         self.assertEqual(tuple(output.logits.shape), (1, 3, 97))
 
+    def test_image_generation_with_cache_only_uses_images_during_prefill(self):
+        model = JanusForCausalLM(tiny_janus_config(with_vision=True))
+        model.eval()
+        input_ids = paddle.to_tensor([[1, 2, 3]], dtype="int64")
+        pixel_values = paddle.zeros([1, 1, 3, 16, 16], dtype="float32")
+        images_seq_mask = paddle.to_tensor([[False, True, True]], dtype="bool")
+        images_emb_mask = paddle.to_tensor([[[True, True] + [False] * 14]], dtype="bool")
+        vision_outputs = []
+
+        def capture_vision_output(layer, inputs, output):
+            vision_outputs.append(output)
+
+        hook = model.vision_model.register_forward_post_hook(capture_vision_output)
+        try:
+            with paddle.no_grad():
+                output_ids, _ = model.generate(
+                    input_ids=input_ids,
+                    pixel_values=pixel_values,
+                    images_seq_mask=images_seq_mask,
+                    images_emb_mask=images_emb_mask,
+                    decode_strategy="greedy_search",
+                    max_new_tokens=2,
+                    use_cache=True,
+                )
+        finally:
+            hook.remove()
+
+        self.assertEqual(tuple(output_ids.shape), (1, 2))
+        self.assertEqual(len(vision_outputs), 1)
+
+    def test_pixel_values_reject_cross_sample_placeholder_counts(self):
+        model = JanusForCausalLM(tiny_janus_config(with_vision=True))
+        input_ids = paddle.ones([2, 3], dtype="int64")
+        pixel_values = paddle.zeros([2, 1, 3, 16, 16], dtype="float32")
+        images_seq_mask = paddle.to_tensor(
+            [[False, True, True], [False, False, False]],
+            dtype="bool",
+        )
+        images_emb_mask = paddle.to_tensor(
+            [
+                [[True] + [False] * 15],
+                [[True] + [False] * 15],
+            ],
+            dtype="bool",
+        )
+
+        with self.assertRaisesRegex(ValueError, "for each sample"):
+            model(
+                input_ids=input_ids,
+                pixel_values=pixel_values,
+                images_seq_mask=images_seq_mask,
+                images_emb_mask=images_emb_mask,
+                use_cache=False,
+            )
+
+    def test_image_embeds_reject_cross_sample_placeholder_counts(self):
+        model = JanusForCausalLM(tiny_janus_config(with_vision=True))
+        input_ids = paddle.ones([2, 3], dtype="int64")
+        image_embeds = paddle.zeros([2, 16, 32], dtype="float32")
+        images_seq_mask = paddle.to_tensor(
+            [[False, True, True], [False, False, False]],
+            dtype="bool",
+        )
+        images_emb_mask = paddle.to_tensor(
+            [
+                [[True] + [False] * 15],
+                [[True] + [False] * 15],
+            ],
+            dtype="bool",
+        )
+
+        with self.assertRaisesRegex(ValueError, "for each sample"):
+            model(
+                input_ids=input_ids,
+                image_embeds=image_embeds,
+                images_seq_mask=images_seq_mask,
+                images_emb_mask=images_emb_mask,
+                use_cache=False,
+            )
+
     def test_vision_parity_precision_is_explicit_and_validated(self):
         config = tiny_janus_config(with_vision=True)
         config.vision_config["params"]["vision_parity_precision"] = "fp64_accumulate"
