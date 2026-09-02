@@ -99,7 +99,6 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("ernie4_5_moe_vl", "Ernie4_5_VLMoeForConditionalGeneration"),
         ("paddleocr_vl", "PaddleOCRVLForConditionalGeneration"),
         ("llama", "Llama"),
-
         ("telechat", "TelechatModel"),
         ("kimi_k3", "KimiK3"),
         ("qwen2", "Qwen2"),
