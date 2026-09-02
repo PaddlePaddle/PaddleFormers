@@ -476,7 +476,9 @@ class TrainingArguments:
     )
 
     per_device_train_batch_size: int = field(default=8, metadata={"help": "Batch size per GPU core/CPU for training."})
-    per_device_eval_batch_size: int = field(default=8, metadata={"help": "Batch size per GPU core/CPU for evaluation."})
+    per_device_eval_batch_size: int = field(
+        default=8, metadata={"help": "Batch size per GPU core/CPU for evaluation."}
+    )
 
     gradient_accumulation_steps: int = field(
         default=1,
@@ -1780,9 +1782,9 @@ class TrainingArguments:
                     4,
                 ), f"Invalid fa_version: {self.fa_version}. Supported versions are: 2, 3, and 4."
             else:
-                assert self.fa_version == 2, (
-                    f"Invalid fa_version: {self.fa_version}. Supported versions are: 2 on non-CUDA devices."
-                )
+                assert (
+                    self.fa_version == 2
+                ), f"Invalid fa_version: {self.fa_version}. Supported versions are: 2 on non-CUDA devices."
         else:
             if paddle.base.core.is_compiled_with_cuda():
                 is_sm100 = paddle_device.get_device_capability()[0] == 10
@@ -2047,12 +2049,14 @@ class TrainingArguments:
                     using_comm_overlap = self.pp_sharding_comm_overlap or self.dp_comm_overlap
                     enable_dp_comm_overlap = using_comm_overlap and self.data_parallel_size > 1
                     self.enable_sharding_comm_overlap = using_comm_overlap and self.sharding_parallel_size > 1
-                    assert not (enable_dp_comm_overlap and self.enable_sharding_comm_overlap), (
-                        "dp_comm_overlap and sharding_comm_overlap cannot be enabled at the same time"
-                    )
+                    assert not (
+                        enable_dp_comm_overlap and self.enable_sharding_comm_overlap
+                    ), "dp_comm_overlap and sharding_comm_overlap cannot be enabled at the same time"
 
                     if self.enable_sharding_comm_overlap and not self.amp_master_grad:
-                        raise ValueError("If `sharding_comm_overlap` in training_args, `amp_master_grad` must be True.")
+                        raise ValueError(
+                            "If `sharding_comm_overlap` in training_args, `amp_master_grad` must be True."
+                        )
 
                     dygraph_pp_configs = {
                         "delay_scale_loss": True,  # TODO[Waynezee]: remove this config in the future
@@ -2247,9 +2251,9 @@ class TrainingArguments:
                     }
 
                 if self.expert_model_parallel_size > 1:
-                    assert self.use_expert_parallel is True and self.moe_sharding_parallel_size >= 0, (
-                        f"invalid expert_model_parallel_size {self.expert_model_parallel_size} and use_expert_paralle:{self.use_expert_parallel}."
-                    )
+                    assert (
+                        self.use_expert_parallel is True and self.moe_sharding_parallel_size >= 0
+                    ), f"invalid expert_model_parallel_size {self.expert_model_parallel_size} and use_expert_paralle:{self.use_expert_parallel}."
                     hybrid_configs["ep_degree"] = self.expert_model_parallel_size
                     hybrid_configs["moe_sharding_degree"] = self.moe_sharding_parallel_size
 
@@ -2294,9 +2298,9 @@ class TrainingArguments:
                                 f"Please promote this secondary switch {x} to a primary switch."
                             )
                     if not self.stage1_reduce_avg:
-                        assert self.sharding == [ShardingOption.SHARD_OP], (
-                            "Only sharding stage1 supports to disable reduce_avg strategy."
-                        )
+                        assert self.sharding == [
+                            ShardingOption.SHARD_OP
+                        ], "Only sharding stage1 supports to disable reduce_avg strategy."
                         try:
                             strategy.hybrid_configs["sharding_configs"].use_reduce_avg = False
                         except:
@@ -2316,9 +2320,9 @@ class TrainingArguments:
                             )
 
                         if self.sharding_comm_group_call_opt:
-                            assert self.optim == OptimizerNames.MUON, (
-                                "sharding_comm_group_call_opt only supports Muon optimizer."
-                            )
+                            assert (
+                                self.optim == OptimizerNames.MUON
+                            ), "sharding_comm_group_call_opt only supports Muon optimizer."
                             strategy.hybrid_configs["sharding_configs"].comm_group_call_opt = True
 
                         if self.split_param:
@@ -2355,26 +2359,26 @@ class TrainingArguments:
                             "by current version of Paddle. Please try latest develop Paddle."
                         )
                     if self.stage2_overlap:
-                        assert ShardingOption.SHARD_GRAD_OP in self.sharding, (
-                            f"stage2_overlap expects sharding=stage2, but got {self.sharding}."
-                        )
+                        assert (
+                            ShardingOption.SHARD_GRAD_OP in self.sharding
+                        ), f"stage2_overlap expects sharding=stage2, but got {self.sharding}."
                         assert self.logging_steps > 1, (
                             "The logging_steps should be greater than 1 for stage2 overlap, "
                             f"but got logging_steps={self.logging_steps}."
                         )
                     if self.stage1_broadcast_overlap:
-                        assert ShardingOption.SHARD_OP in self.sharding, (
-                            f"stage1_broadcast_overlap expects sharding=stage1, but got {self.sharding}."
-                        )
+                        assert (
+                            ShardingOption.SHARD_OP in self.sharding
+                        ), f"stage1_broadcast_overlap expects sharding=stage1, but got {self.sharding}."
 
-                        assert not self.split_param, (
-                            "split_param should not be set when stage1_broadcast_overlap is True."
-                        )
+                        assert (
+                            not self.split_param
+                        ), "split_param should not be set when stage1_broadcast_overlap is True."
 
                     if self.stage1_allgather_overlap:
-                        assert ShardingOption.SHARD_OP in self.sharding, (
-                            f"stage1_allgather_overlap expects sharding=stage1, but got {self.sharding}."
-                        )
+                        assert (
+                            ShardingOption.SHARD_OP in self.sharding
+                        ), f"stage1_allgather_overlap expects sharding=stage1, but got {self.sharding}."
 
                         assert self.split_param, "split_param should be set when stage1_allgather_overlap is True."
 
@@ -2408,21 +2412,21 @@ class TrainingArguments:
 
         elif self.enable_auto_parallel:
             assert paddle.distributed.get_world_size() > 1, "Auto parallel mode needs world size > 1."
-            assert not self.to_static, (
-                "Auto parallel only support dyanmic parallel now. Static parallel will be supported later."
-            )
+            assert (
+                not self.to_static
+            ), "Auto parallel only support dyanmic parallel now. Static parallel will be supported later."
 
             self.tensor_model_parallel_size = max(self.tensor_model_parallel_size, 1)
             self.sep_parallel_size = max(self.sep_parallel_size, 1)
             self.context_parallel_size = max(self.context_parallel_size, 1)
             self.pipeline_model_parallel_size = max(self.pipeline_model_parallel_size, 1)
 
-            assert self.pipeline_model_parallel_size == 1, (
-                "Current not support pipeline parallel in auto parallel mode."
-            )
-            assert world_size % (self.tensor_model_parallel_size * self.pipeline_model_parallel_size) == 0, (
-                f"Total world_size:{world_size} should be divided by tensor_model_parallel_size: {self.tensor_model_parallel_size} and pipeline_model_parallel_size: {self.pipeline_model_parallel_size}."
-            )
+            assert (
+                self.pipeline_model_parallel_size == 1
+            ), "Current not support pipeline parallel in auto parallel mode."
+            assert (
+                world_size % (self.tensor_model_parallel_size * self.pipeline_model_parallel_size) == 0
+            ), f"Total world_size:{world_size} should be divided by tensor_model_parallel_size: {self.tensor_model_parallel_size} and pipeline_model_parallel_size: {self.pipeline_model_parallel_size}."
 
             if self.sharding_parallel_size == -1:
                 if len(self.sharding) > 0:
@@ -2768,25 +2772,25 @@ class TrainingArguments:
                 f"PDC_FC_INIT_STEP {pdc_zcc_init_step} has been specified, automatically resume from FLASH_DEVICE: {self.resume_from_checkpoint}"
             )
         if self.flash_device_save_steps > 0:
-            assert self.enable_zero_cost_checkpoint, (
-                "flash_device_save_steps should only be set in zero cost checkpoint save mode with flash device mounted."
-            )
+            assert (
+                self.enable_zero_cost_checkpoint
+            ), "flash_device_save_steps should only be set in zero cost checkpoint save mode with flash device mounted."
 
         if self.enable_zero_cost_checkpoint:
-            assert self.fuse_optimizer_states, (
-                "zero cost checkpoint must be used when fuse_optimizer_states is enabled in sharding parallel config"
-            )
+            assert (
+                self.fuse_optimizer_states
+            ), "zero cost checkpoint must be used when fuse_optimizer_states is enabled in sharding parallel config"
 
-        assert self.flash_device_save_steps % self.zcc_ema_interval == 0, (
-            f"flash_device_save_steps[{self.flash_device_save_steps}] must be divisible by zcc_ema_interval[{self.zcc_ema_interval}]"
-        )
-        assert self.save_steps % self.zcc_ema_interval == 0, (
-            f"save_steps[{self.save_steps}] must be divisible by zcc_ema_interval[{self.zcc_ema_interval}]"
-        )
+        assert (
+            self.flash_device_save_steps % self.zcc_ema_interval == 0
+        ), f"flash_device_save_steps[{self.flash_device_save_steps}] must be divisible by zcc_ema_interval[{self.zcc_ema_interval}]"
+        assert (
+            self.save_steps % self.zcc_ema_interval == 0
+        ), f"save_steps[{self.save_steps}] must be divisible by zcc_ema_interval[{self.zcc_ema_interval}]"
         if self.enable_zero_cost_checkpoint and self.zcc_save_ema_coef is not None:
-            assert self.zcc_workers_num == 1, (
-                "EMA function in zero cost checkpoint mode does not support zcc_workers_num > 1 for now."
-            )
+            assert (
+                self.zcc_workers_num == 1
+            ), "EMA function in zero cost checkpoint mode does not support zcc_workers_num > 1 for now."
 
         if self.hybrid_parallel_expert_grad_scale is None:
             tensor_model_parallel_size = max(self.tensor_model_parallel_size, 1)
@@ -2838,17 +2842,17 @@ class TrainingArguments:
             expert_tensor_model_parallel_size = max(self.expert_tensor_model_parallel_size, 1)
 
             # TODO(@gexiao): support expert_tensor_model_parallel_size > 1 in the future
-            assert expert_tensor_model_parallel_size == 1, (
-                f"Currently only support expert_tensor_model_parallel_size=1, but got expert_tensor_model_parallel_size of {expert_tensor_model_parallel_size}"
-            )
+            assert (
+                expert_tensor_model_parallel_size == 1
+            ), f"Currently only support expert_tensor_model_parallel_size=1, but got expert_tensor_model_parallel_size of {expert_tensor_model_parallel_size}"
 
-            assert world_size % (self.tensor_model_parallel_size * self.pipeline_model_parallel_size) == 0, (
-                f"Total world_size:{world_size} should be divided by tensor_model_parallel_size: {self.tensor_model_parallel_size} and pipeline_model_parallel_size: {self.pipeline_model_parallel_size}."
-            )
+            assert (
+                world_size % (self.tensor_model_parallel_size * self.pipeline_model_parallel_size) == 0
+            ), f"Total world_size:{world_size} should be divided by tensor_model_parallel_size: {self.tensor_model_parallel_size} and pipeline_model_parallel_size: {self.pipeline_model_parallel_size}."
 
-            assert not (sep_parallel_size > 1 and context_parallel_size > 1), (
-                f"sep parallel and context parallel cannot be used together, sep_parallel_size:{sep_parallel_size}, context_parallel_size:{context_parallel_size}."
-            )
+            assert not (
+                sep_parallel_size > 1 and context_parallel_size > 1
+            ), f"sep parallel and context parallel cannot be used together, sep_parallel_size:{sep_parallel_size}, context_parallel_size:{context_parallel_size}."
 
             if self.sharding_parallel_size == -1:
                 if len(self.sharding) > 0:
@@ -2867,9 +2871,9 @@ class TrainingArguments:
 
             if expert_model_parallel_size > 1:
                 moe_sharding_parallel_size = world_size // (pipeline_model_parallel_size * expert_model_parallel_size)
-                assert self.expert_tensor_model_parallel_size <= 1, (
-                    "expert_tensor_model_parallel_size > 1 is not supported when expert_model_parallel_size > 1"
-                )
+                assert (
+                    self.expert_tensor_model_parallel_size <= 1
+                ), "expert_tensor_model_parallel_size > 1 is not supported when expert_model_parallel_size > 1"
             else:
                 moe_sharding_parallel_size = 1
             moe_sharding_parallel_size = max(moe_sharding_parallel_size, 1)
@@ -2879,13 +2883,13 @@ class TrainingArguments:
                 )
 
             if sharding_parallel_size > 1 and moe_sharding_parallel_size > 1:
-                assert sharding_parallel_size % moe_sharding_parallel_size == 0, (
-                    f"sharding_parallel_size should be divided by moe_sharding_parallel_size, current sharding_parallel_size: {sharding_parallel_size}, moe_sharding_parallel_size: {moe_sharding_parallel_size}."
-                )
+                assert (
+                    sharding_parallel_size % moe_sharding_parallel_size == 0
+                ), f"sharding_parallel_size should be divided by moe_sharding_parallel_size, current sharding_parallel_size: {sharding_parallel_size}, moe_sharding_parallel_size: {moe_sharding_parallel_size}."
 
-            assert not (self.data_parallel_size > 1 and expert_model_parallel_size > 1), (
-                f"Currently only support use expert_data_parallel strategy together with sharding_parallel strategy, but not with data_parallel strategy. Currently data_parallel_size is {self.data_parallel_size}."
-            )
+            assert not (
+                self.data_parallel_size > 1 and expert_model_parallel_size > 1
+            ), f"Currently only support use expert_data_parallel strategy together with sharding_parallel strategy, but not with data_parallel strategy. Currently data_parallel_size is {self.data_parallel_size}."
 
             if (
                 sharding_parallel_size > 1
@@ -2942,9 +2946,9 @@ class TrainingArguments:
     def _post_init_save_checkpoint_format(self):
         if self.save_checkpoint_format:
             valid_modes = ["unified_checkpoint", "sharding_io", "flex_checkpoint"]
-            assert self.save_checkpoint_format in valid_modes, (
-                f"Invalid save_checkpoint_format: {self.save_checkpoint_format}, Only these formats are allowed: {valid_modes}."
-            )
+            assert (
+                self.save_checkpoint_format in valid_modes
+            ), f"Invalid save_checkpoint_format: {self.save_checkpoint_format}, Only these formats are allowed: {valid_modes}."
         else:
             if self.unified_checkpoint:
                 self.save_checkpoint_format = "unified_checkpoint"
@@ -2954,9 +2958,9 @@ class TrainingArguments:
     def _post_init_load_checkpoint_format(self):
         if self.load_checkpoint_format:
             valid_modes = ["unified_checkpoint", "sharding_io", "flex_checkpoint"]
-            assert self.load_checkpoint_format in valid_modes, (
-                f"Invalid load_checkpoint_format: {self.load_checkpoint_format}, Only these formats are allowed: {valid_modes}."
-            )
+            assert (
+                self.load_checkpoint_format in valid_modes
+            ), f"Invalid load_checkpoint_format: {self.load_checkpoint_format}, Only these formats are allowed: {valid_modes}."
         else:
             if self.unified_checkpoint:
                 self.load_checkpoint_format = "unified_checkpoint"
@@ -3081,9 +3085,9 @@ class TrainingArguments:
         if self.use_hybrid_parallel:
             if self.context_parallel_size > 1:
                 assert self.use_hybrid_parallel, "context parallel only support with use_hybrid_parallel"
-                assert self.data_parallel_size == 1, (
-                    f"context parallel can not coexist with data parallel, but got self.data_parallel_size == {self.data_parallel_size}"
-                )
+                assert (
+                    self.data_parallel_size == 1
+                ), f"context parallel can not coexist with data parallel, but got self.data_parallel_size == {self.data_parallel_size}"
                 sharding_parallel_size = self.cp_sharding_degree
             else:
                 sharding_parallel_size = self.sharding_parallel_size
@@ -3256,7 +3260,9 @@ class TrainingArguments:
             pp_rank = max(self.pipeline_parallel_rank, 0)
             tp_rank = max(self.tensor_parallel_rank, 0)
 
-            rank = dp_rank * (sd_size * pp_size * tp_size) + sd_rank * (pp_size * tp_size) + pp_rank * tp_size + tp_rank
+            rank = (
+                dp_rank * (sd_size * pp_size * tp_size) + sd_rank * (pp_size * tp_size) + pp_rank * tp_size + tp_rank
+            )
 
             return rank
         return 0
@@ -3422,7 +3428,9 @@ class TrainingArguments:
         """
         Get number of steps used for a linear warmup.
         """
-        warmup_steps = self.warmup_steps if self.warmup_steps > 0 else math.ceil(num_training_steps * self.warmup_ratio)
+        warmup_steps = (
+            self.warmup_steps if self.warmup_steps > 0 else math.ceil(num_training_steps * self.warmup_ratio)
+        )
         return warmup_steps
 
     def to_dict(self):

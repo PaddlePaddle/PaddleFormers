@@ -173,13 +173,13 @@ class Glm4MoeAttention(nn.Layer):
         self.gqa_or_mqa = config.num_attention_heads != config.num_key_value_heads
 
         if config.tensor_model_parallel_size > 1:
-            assert self.num_heads % config.tensor_model_parallel_size == 0, (
-                f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
-            )
+            assert (
+                self.num_heads % config.tensor_model_parallel_size == 0
+            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
             self.num_heads = self.num_heads // config.tensor_model_parallel_size
-            assert self.num_key_value_heads % config.tensor_model_parallel_size == 0, (
-                f"num_key_value_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
-            )
+            assert (
+                self.num_key_value_heads % config.tensor_model_parallel_size == 0
+            ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
             self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
 
         kv_hidden_size = self.config.num_key_value_heads * self.head_dim
@@ -670,9 +670,9 @@ class Glm4MoeDecoderLayer(nn.Layer):
             # hidden_states shape:[b*s,h]
             seq_len = self.config.max_sequence_length // self.config.tensor_model_parallel_size
             batch_size = hidden_states.shape[0] // seq_len
-            assert batch_size > 0, (
-                f"batch_size must larger than 0, but calulate batch_size:{batch_size}, hidden_states shape:{hidden_states.shape}"
-            )
+            assert (
+                batch_size > 0
+            ), f"batch_size must larger than 0, but calulate batch_size:{batch_size}, hidden_states shape:{hidden_states.shape}"
             hidden_states = hidden_states.reshape([-1, batch_size, hidden_size])
         sub_seq_len = self.config.moe_subbatch_token_num_before_dispatch
         seq_axis = 0 if self.config.sequence_parallel else 1
