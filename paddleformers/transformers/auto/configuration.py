@@ -81,6 +81,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("gemma4", "Gemma4MoeConfig"),  # Temporary: no standalone text ckpt, extract text_config in from_dict
         ("phi4", "Phi4Config"),
         ("phi4flash", "Phi4Config"),
+        ("multi_modality", "JanusConfig"),
     ]
 )
 
@@ -128,6 +129,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("gemma4", "Gemma4MoeForCausalLM"),
         ("phi4", "Phi4ForCausalLM"),
         ("phi4flash", "Phi4ForCausalLM"),
+        ("multi_modality", "Janus"),
     ]
 )
 
@@ -149,6 +151,7 @@ SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
         ("gemma4_text", "gemma4_moe"),
         ("gemma4", "gemma4_moe"),
         ("phi4flash", "phi4"),
+        ("multi_modality", "janus"),
     ]
 )
 

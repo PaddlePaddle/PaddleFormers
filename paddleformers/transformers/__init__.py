@@ -240,6 +240,8 @@ import_structure = {
     "llama.modeling": ["LlamaForCausalLM", "LlamaModel", "LlamaForCausalLMPipe", "LlamaRotaryEmbedding"],
     "llama.tokenizer": ["LlamaTokenizer", "Llama3Tokenizer"],
     "llama.tokenizer_fast": ["LlamaTokenizerFast"],
+    "janus.configuration": ["JanusConfig"],
+    "janus.modeling": ["JanusPretrainedModel", "JanusModel", "JanusForCausalLM"],
     "optimization": [
         "LinearDecayWithWarmup",
         "ConstScheduleWithWarmup",
@@ -517,6 +519,7 @@ if TYPE_CHECKING:
     from .kimi_k3 import *
     from .paddleocr_vl import *
     from .llama import *
+    from .janus import *
     from .optimization import *
     from .qwen2 import *
     from .qwen2_5_vl import *
