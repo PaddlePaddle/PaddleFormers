@@ -36,6 +36,21 @@ class TestPreTrainingArguments(unittest.TestCase):
         self.assertEqual(fields["use_ortho_loss_callback"], False)
         self.assertEqual(fields["moe_with_send_router_loss"], True)
 
+    def test_shared_training_args_keep_develop_optimizer_defaults(self):
+        import dataclasses
+
+        from paddleformers.trainer.training_args import TrainingArguments
+
+        fields = {f.name: f.default for f in dataclasses.fields(TrainingArguments)}
+        self.assertEqual(fields["learning_rate"], 1e-5)
+        self.assertEqual(fields["weight_decay"], 0.1)
+        self.assertEqual(fields["adam_beta2"], 0.95)
+        self.assertEqual(fields["logging_steps"], 5)
+        self.assertEqual(fields["moe_router_bias_update_rate"], 1.0e-3)
+        self.assertEqual(fields["dsa_indexer_loss_coeff"], 0.0)
+        self.assertEqual(fields["overlap_p2p_comm"], True)
+        self.assertIsNone(fields["batch_p2p_comm"])
+
     def test_vl_sft_field_defaults(self):
         """Test VLSFTTrainingArguments field defaults."""
         import dataclasses

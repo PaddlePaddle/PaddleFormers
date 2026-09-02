@@ -489,10 +489,10 @@ class TrainingArguments:
         metadata={"help": "Number of predictions steps to accumulate before moving the tensors to the CPU."},
     )
 
-    learning_rate: float = field(default=5e-5, metadata={"help": "The initial learning rate for AdamW."})
-    weight_decay: float = field(default=0.0, metadata={"help": "Weight decay for AdamW if we apply some."})
+    learning_rate: float = field(default=1e-5, metadata={"help": "The initial learning rate for AdamW."})
+    weight_decay: float = field(default=0.1, metadata={"help": "Weight decay for AdamW if we apply some."})
     adam_beta1: float = field(default=0.9, metadata={"help": "Beta1 for AdamW optimizer"})
-    adam_beta2: float = field(default=0.999, metadata={"help": "Beta2 for AdamW optimizer"})
+    adam_beta2: float = field(default=0.95, metadata={"help": "Beta2 for AdamW optimizer"})
     adam_epsilon: float = field(default=1e-8, metadata={"help": "Epsilon for AdamW optimizer."})
     max_grad_norm: float = field(default=1.0, metadata={"help": "Max gradient norm."})
 
@@ -514,7 +514,7 @@ class TrainingArguments:
     power: float = field(default=1.0, metadata={"help": "The power factor in the polynomial scheduler."})
     min_lr: float = field(default=0.0, metadata={"help": "The minimum learning rate in cosine scheduler."})
     moe_router_bias_update_rate: float = field(
-        default=0.0,
+        default=1.0e-3,
         metadata={
             "help": """The expert bias is updated based on the number of assigned tokens to each expert
         in a global batch, where the bias is increased for the experts with less assigned tokens
@@ -549,7 +549,7 @@ class TrainingArguments:
         metadata={"help": "The logging strategy to use."},
     )
     logging_first_step: bool = field(default=False, metadata={"help": "Log the first global_step"})
-    logging_steps: int = field(default=500, metadata={"help": "Log every X updates steps."})
+    logging_steps: int = field(default=5, metadata={"help": "Log every X updates steps."})
 
     save_strategy: IntervalStrategy = field(
         default=IntervalStrategy.STEPS,
@@ -692,7 +692,7 @@ class TrainingArguments:
     )
 
     dsa_indexer_loss_coeff: float = field(
-        default=0.01,
+        default=0.0,
         metadata={"help": "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term."},
     )
 
@@ -984,9 +984,7 @@ class TrainingArguments:
     )
     prefetch_factor: int = field(
         default=2,
-        metadata={
-            "help": "Number of batch data the DataLoader would prefetch if use_buffer_reader=True. " "Default 2."
-        },
+        metadata={"help": "Number of batch data the DataLoader would prefetch if use_buffer_reader=True. Default 2."},
     )
 
     past_index: int = field(
@@ -1419,11 +1417,11 @@ class TrainingArguments:
         default=False, metadata={"help": "Whether to use asynchronous reduce-scatter for sharding parallelism (SP)."}
     )
     overlap_p2p_comm: bool = field(
-        default=False,
-        metadata={"help": "Whether to overlap point-to-point (P2P) communication with computation. Defaults to True."},
+        default=True,
+        metadata={"help": "Whether to overlap point-to-point (P2P) communication with computation."},
     )
-    batch_p2p_comm: bool = field(
-        default=True, metadata={"help": "Whether to batch point-to-point (P2P) communication requests."}
+    batch_p2p_comm: Optional[bool] = field(
+        default=None, metadata={"help": "Whether to batch point-to-point (P2P) communication requests."}
     )
     variable_seq_lengths: bool = field(
         default=False,
@@ -1676,7 +1674,7 @@ class TrainingArguments:
     )
     muon_momentum: float = field(
         default=0.95,
-        metadata={"help": ("Momentum coefficient for Muon optimizer. " "Default: 0.95. Only used when optim=muon.")},
+        metadata={"help": ("Momentum coefficient for Muon optimizer. Default: 0.95. Only used when optim=muon.")},
     )
     muon_version: int = field(
         default=3,
@@ -1694,7 +1692,7 @@ class TrainingArguments:
         default=5,
         metadata={
             "help": (
-                "Number of Newton-Schulz iteration steps for Muon optimizer. " "Default: 5. Only used when optim=muon."
+                "Number of Newton-Schulz iteration steps for Muon optimizer. Default: 5. Only used when optim=muon."
             )
         },
     )
@@ -1742,11 +1740,6 @@ class TrainingArguments:
         metadata={
             "help": "When enabled, the computation part of the moelayer will use the implementation provided by SonicMoE."
         },
-    )
-
-    dsa_indexer_loss_coeff: float = field(
-        default=0.01,
-        metadata={"help": "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term."},
     )
 
     online_merge_ema: bool = field(
@@ -1998,6 +1991,9 @@ class TrainingArguments:
                     raise ValueError(
                         "pipeline parallel is not compatible for sharding stage2 or stage3, please using sharding stage1"
                     )
+
+            if self.batch_p2p_comm is None:
+                self.batch_p2p_comm = not self.overlap_p2p_comm
 
             # TODO use paddle.distributed.is_initialized() after paddle 2.4rc
             if not paddle.distributed.parallel.parallel_helper._is_parallel_ctx_initialized():
@@ -2415,7 +2411,6 @@ class TrainingArguments:
                         self.add_moe_comm_group()
 
         elif self.enable_auto_parallel:
-
             assert paddle.distributed.get_world_size() > 1, "Auto parallel mode needs world size > 1."
             assert (
                 not self.to_static

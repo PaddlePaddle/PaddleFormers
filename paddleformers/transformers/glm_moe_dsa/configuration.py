@@ -245,10 +245,11 @@ class GlmMoeDsaConfig(PretrainedConfig):
             fp32_residual_connection=fp32_residual_connection,
             **kwargs,
         )
-        # rope_parameters is derived from rope_theta / rope_scaling. Keep it
-        # off the serialized dict so ConfigTester round-trips the constructor
-        # kwargs (rope_scaling stays None when it was not provided).
-        self.register_unsavable_keys(["rope_parameters", "rotary_base", "rope_type"])
+        # rotary_base / rope_type are derived aliases. Keep official
+        # rope_parameters on the serialized dict so save_pretrained round-trips
+        # the GLM-5.2 config.json field. Nested partial_rotary_factor is
+        # already popped above so ConfigTester still round-trips.
+        self.register_unsavable_keys(["rotary_base", "rope_type"])
 
 
 __all__ = ["GlmMoeDsaConfig"]

@@ -74,7 +74,7 @@ from paddle.distributed.fleet.meta_parallel.sharding.group_sharded_optimizer_sta
 from paddle.distributed.fleet.utils.hybrid_parallel_util import (
     obtain_optimizer_parameters_list,
 )
-from paddle.distributed.fsdp.fully_shard import fully_shard
+from paddle.distributed.fsdp.fully_shard import MixedPrecisionPolicy, fully_shard
 
 _obtain_optimizer_parameters_list = obtain_optimizer_parameters_list
 
@@ -755,7 +755,7 @@ class Trainer:
             self.scaler = fleet.distributed_scaler(self.scaler)
         elif self.sharding is not None:
             if self.amp_dtype == "float16" or self.amp_dtype == "bfloat16":
-                if ShardingOption.SHARD_OP in self.args.sharding:
+                if ShardingOption.SHARD_OP in self.args.sharding or ShardingOption.FSDP in self.args.sharding:
                     if self.args.amp_master_grad:
                         mix_precision_utils.MixPrecisionScaler(self.scaler)  # return value has no use
                     self.scaler = fleet.distributed_scaler(self.scaler)
@@ -874,7 +874,6 @@ class Trainer:
 
         if self.args.enable_auto_parallel:
             if resume_from_checkpoint is not None:
-
                 logger.info(f"Loading model from {resume_from_checkpoint} .")
 
                 if not self.args.ignore_load_lr_and_optim:
@@ -981,7 +980,6 @@ class Trainer:
                 if resume_from_checkpoint is not None and (
                     self.args.dataset_rank == 0 or self.args.use_expert_parallel
                 ):
-
                     weights_file = os.path.join(
                         resume_from_checkpoint, _add_variant(weight_name, self.args.weight_name_suffix)
                     )
@@ -1239,11 +1237,12 @@ class Trainer:
         optimizer_states = {}
         master_weights = {}
         if getattr(self.args, "moe_expert_fusion", False):
-            logger.warning(
-                "Skipping fused-expert optimizer flex save: 3-D grouped-GEMM "
-                "moments are not FlexCheckpoint-compatible at sharding=1."
+            raise RuntimeError(
+                "Fused-expert optimizer FlexCheckpoint save is not supported "
+                "at sharding=1: 3-D grouped-GEMM moments cannot round-trip. "
+                "Disable moe_expert_fusion or raise sharding_parallel_size "
+                "before checkpointing."
             )
-            return
         model_sharded_state_dict = self.model.sharded_state_dict()
         restore_fused_expert_3d_layout(self.model, model_sharded_state_dict, optimizer=self.optimizer)
         try:
@@ -2940,7 +2939,6 @@ class Trainer:
     def _maybe_log_save_evaluate(self, tr_loss, model, epoch, ignore_keys_for_eval, **kwargs):
         flag_log = self.control.should_log
         if self.control.should_log:
-
             logs: Dict[str, float] = {}
             num_steps = self.state.global_step - self._globalstep_last_logged - self._skip_steps_since_last_logged
             self._skip_steps_since_last_logged = 0
@@ -3200,7 +3198,6 @@ class Trainer:
                     tensors = paddle.cat(output_tensors).sum().reshape([1])
                 token_list.append(tensors.item())
             if self.is_local_process_zero():
-
                 logger.info(
                     f"Update to now, trained_effective_tokens: {token_list[0]}, trained_tokens: {token_list[1]}."
                 )
@@ -4026,9 +4023,17 @@ class Trainer:
                 assert self.optimizer is not None, "optimizer is empty!"
                 self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
 
+        # Paddle native FSDP (`--sharding fsdp`). fully_shard() owns param / grad /
+        # optimizer-state sharding, registers the main_grad hooks itself and must therefore run
+        # before MixPrecisionLayer, so the wrapping order below differs from the group-sharded path.
+        in_fsdp_mode = ShardingOption.FSDP in self.args.sharding
+        fsdp_mp_policy = None
+        if in_fsdp_mode and not self.args.amp_master_grad and self.amp_dtype in ("float16", "bfloat16"):
+            fsdp_mp_policy = MixedPrecisionPolicy(reduce_dtype=getattr(paddle, self.amp_dtype))
+
         # Pipeline mode
         if in_pipeline_parallel_mode:
-            if self.args.amp_master_grad:
+            if self.args.amp_master_grad and not in_fsdp_mode:
                 mix_precision_utils.MixPrecisionLayer(model, dtype=self.amp_dtype)  # return value has no use
             # hack for pipeline model mini batch to batch
             # need batter solution @ZHUI
@@ -4079,9 +4084,16 @@ class Trainer:
                 model._prepare_pipeline_inputs_func = _prepare_pipeline_inputs_func
 
             assert self.optimizer is not None, "Pipeline mode need decorate optimizer, pelease init optimizer."
-            if self.args.amp_master_grad:
-                self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
-            self.optimizer = self._wrap_distributed_optimizer(self.optimizer)
+            if in_fsdp_mode:
+                fsdp_layers = model._layers if hasattr(model, "_layers") else model
+                fully_shard(fsdp_layers, enable_tensor_fusion_and_overlap=True, mp_policy=fsdp_mp_policy)
+                if self.args.amp_master_grad:
+                    mix_precision_utils.MixPrecisionLayer(fsdp_layers, dtype=self.amp_dtype)
+                    self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
+            else:
+                if self.args.amp_master_grad:
+                    self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
+                self.optimizer = self._wrap_distributed_optimizer(self.optimizer)
 
             if (
                 hasattr(self.args, "enable_sharding_comm_overlap")
@@ -4097,7 +4109,12 @@ class Trainer:
         # No pipeline mode, sharding only
         if not in_pipeline_parallel_mode and in_sharding_parallel_mode:
             # Sharded DDP!
-            if self.args.tensor_model_parallel_size > 1:
+            if in_fsdp_mode:
+                fully_shard(model, enable_tensor_fusion_and_overlap=True, mp_policy=fsdp_mp_policy)
+                if self.args.amp_master_grad:
+                    mix_precision_utils.MixPrecisionLayer(model, dtype=self.amp_dtype)
+                    self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
+            elif self.args.tensor_model_parallel_size > 1:
                 hcg = fleet.get_hybrid_communicate_group()
                 assert (
                     ShardingOption.SHARD_GRAD_OP in self.args.sharding or ShardingOption.SHARD_OP in self.args.sharding
@@ -4108,7 +4125,10 @@ class Trainer:
                         model, hcg, strategy=fleet.fleet._user_defined_strategy
                     )
 
-            if ShardingOption.SHARD_OP in self.args.sharding:
+            if in_fsdp_mode:
+                # model is already wrapped by fully_shard above, skip group sharded parallel
+                pass
+            elif ShardingOption.SHARD_OP in self.args.sharding:
                 if self.args.amp_master_grad:
                     mix_precision_utils.MixPrecisionLayer(model, dtype=self.amp_dtype)  # return value has no use
                 model = fleet.distributed_model(model)
@@ -4437,6 +4457,17 @@ class Trainer:
 
         return loss.detach()
 
+    def _fsdp_all_gather_params(self):
+        from paddle.distributed.fsdp._fsdp_context import get_fsdp_context
+
+        fsdp_context = get_fsdp_context()
+        if fsdp_context is None:
+            logger.warning("sharding=fsdp but no fsdp context is registered, skip param all_gather.")
+            return
+        comm_manager = fsdp_context.comm_manager
+        for group in fsdp_context.buffer_manager.buffer_groups:
+            comm_manager.all_gather_params(group.params)
+
     def save_model(
         self,
         output_dir: Optional[str] = None,
@@ -4459,6 +4490,9 @@ class Trainer:
 
         if ShardingOption.FULL_SHARD in self.args.sharding:
             self.model_wrapped.get_all_parameters(convert2cpu=True, with_freeze_param=True)
+
+        if ShardingOption.FSDP in self.args.sharding:
+            self._fsdp_all_gather_params()
 
         if self.args.should_save_model_state:
             self._save(output_dir=output_dir, merge_tensor_parallel=merge_tensor_parallel, last_fc_to_hf=last_fc_to_hf)
@@ -4491,7 +4525,6 @@ class Trainer:
             paddle.save(self.state.global_step, os.path.join(signal_dir, f".model_weight.done.{global_rank}"))
 
     def copy_custom_files(self, output_dir):
-
         resolve_result = resolve_file_path(
             self.args.model_name_or_path,
             [SAFE_WEIGHTS_INDEX_NAME, SAFE_WEIGHTS_NAME],

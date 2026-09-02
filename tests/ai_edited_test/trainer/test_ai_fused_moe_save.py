@@ -59,7 +59,7 @@ class TestRestoreFusedExpert3DLayout(unittest.TestCase):
         self.assertIn("optimizer=self.optimizer", source)
         # Rank-invariant skip: fused experts live only on some PP stages.
         self.assertIn('getattr(self.args, "moe_expert_fusion", False)', source)
-        self.assertIn("Skipping fused-expert optimizer flex save", source)
+        self.assertIn("Fused-expert optimizer FlexCheckpoint save is not supported", source)
 
 
 class TestDefaultFlowCallbackSaveHf(unittest.TestCase):
