@@ -443,6 +443,9 @@ class BaseSFTDataset:
                             # Set flag to False and yield empty list to signal the end of estimation
                             self.estimate = False
                             yield []
+                # packing=false already yields each sequence inside the loop.
+                # A second yield after StopIteration would duplicate the last
+                # sequence.
                 self.iter_all_examples = True
             else:
                 if self.binpacking:

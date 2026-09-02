@@ -543,11 +543,15 @@ class DefaultFlowCallback(TrainerCallback):
             if args.save_last_step:
                 control.should_save = True
 
-        # Save hf
+        # Save hf. save_hf_steps defaults to -1. Only follow save_steps when
+        # the job explicitly requested HuggingFace export (save_to_hf=True).
+        save_hf_steps = args.save_hf_steps
+        if save_hf_steps <= 0 and getattr(args, "save_to_hf", False) and args.save_steps > 0:
+            save_hf_steps = args.save_steps
         if (
             args.save_strategy == IntervalStrategy.STEPS
-            and args.save_hf_steps > 0
-            and state.global_step % args.save_hf_steps == 0
+            and save_hf_steps > 0
+            and state.global_step % save_hf_steps == 0
         ):
             control.should_save_hf = True
 

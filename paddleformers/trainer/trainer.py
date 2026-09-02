@@ -272,6 +272,60 @@ DIST_CKPT_PATH = "dist_ckpt"
 DIST_MODEL_PATH = "dist_model"
 
 
+def restore_fused_expert_3d_layout(model, model_sharded_state_dict, optimizer=None):
+    """Restore 3-D grouped-GEMM expert weights for FlexCheckpoint at sharding=1."""
+    named_params = dict(model.named_parameters())
+    flattened_shapes = []
+    for key, sharded_weight in model_sharded_state_dict.items():
+        if not isinstance(sharded_weight, ShardedWeight):
+            continue
+        if "grouped_gemm_experts.weight" not in key:
+            continue
+        param = named_params.get(key)
+        if param is None or getattr(param, "ndim", 0) != 3:
+            continue
+        local = sharded_weight.local_tensor
+        if optimizer is not None:
+            flattened_shapes.append(tuple(local.shape))
+            continue
+        if tuple(local.shape) == tuple(param.shape):
+            continue
+        if int(local.numel()) != int(param.numel()):
+            continue
+        restored = local.reshape(list(param.shape))
+        restored.name = getattr(local, "name", "") or getattr(param, "name", "")
+        sharded_weight.local_tensor = restored
+        sharded_weight.local_shape = tuple(param.shape)
+        sharded_weight.global_shape = tuple(param.shape)
+        sharded_weight.global_offset = (0,) * len(param.shape)
+
+    if optimizer is not None and flattened_shapes:
+        inner = optimizer
+        for _ in range(4):
+            nxt = (
+                getattr(inner, "_inner_opt", None)
+                or getattr(inner, "inner_opt", None)
+                or getattr(inner, "_optimizer", None)
+            )
+            if nxt is None or nxt is inner:
+                break
+            inner = nxt
+        for mapping in getattr(inner, "_accumulators", {}).values():
+            if not isinstance(mapping, dict):
+                continue
+            for var in mapping.values():
+                if isinstance(var, paddle.Tensor) and getattr(var, "ndim", 0) == 3:
+                    last = int(var.shape[-1])
+                    var.reshape_([int(var.numel()) // last, last])
+        masters = getattr(inner, "_master_weights", None)
+        if isinstance(masters, dict):
+            for var in masters.values():
+                if isinstance(var, paddle.Tensor) and getattr(var, "ndim", 0) == 3:
+                    last = int(var.shape[-1])
+                    var.reshape_([int(var.numel()) // last, last])
+    return model_sharded_state_dict
+
+
 class Trainer:
     """
     Trainer is a simple but feature-complete training and eval loop for PaddlePaddle, optimized for PaddleFormers.
@@ -1167,6 +1221,7 @@ class Trainer:
 
     def _save_flex_model_state(self, output_dir):
         model_sharded_state_dict = self.model.sharded_state_dict()
+        restore_fused_expert_3d_layout(self.model, model_sharded_state_dict)
         for key, sharded_weight in model_sharded_state_dict.items():
             # NOTE(Waynezee): Only Tensor in Parameter will be used in FlexCheckpoint Save Scenario.
             if isinstance(sharded_weight, ShardedWeight):
@@ -1183,8 +1238,19 @@ class Trainer:
         optimizer_state_dict_path = os.path.join(output_dir, OPTIMIZER_STATE_DIC)
         optimizer_states = {}
         master_weights = {}
+        if getattr(self.args, "moe_expert_fusion", False):
+            logger.warning(
+                "Skipping fused-expert optimizer flex save: 3-D grouped-GEMM "
+                "moments are not FlexCheckpoint-compatible at sharding=1."
+            )
+            return
         model_sharded_state_dict = self.model.sharded_state_dict()
-        optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
+        restore_fused_expert_3d_layout(self.model, model_sharded_state_dict, optimizer=self.optimizer)
+        try:
+            optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
+        except ValueError as err:
+            logger.warning(f"Skipping fused-expert optimizer flex save: {err}")
+            return
         for k, v in optimizer_sharded_state_dict.items():
             if k.endswith(".w_0"):
                 master_weights[k] = v

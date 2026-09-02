@@ -219,6 +219,11 @@ class GlmMoeDsaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
         self.assertFalse(config.rope_interleave)
         self.assertTrue(config.rotary_interleaved)
 
+    def test_official_indexer_rope_interleave_maps_to_rotary_interleaved(self):
+        config = GlmMoeDsaConfig.from_dict({"indexer_rope_interleave": True})
+        self.assertTrue(config.indexer_rope_interleave)
+        self.assertTrue(config.rotary_interleaved)
+
     def test_nested_rope_theta_maps_to_paddlefleet_name(self):
         config = GlmMoeDsaConfig(rope_parameters={"rope_type": "default", "rope_theta": 8_000_000})
         self.assertEqual(config.rope_parameters["rope_theta"], 8_000_000)
@@ -240,6 +245,17 @@ class GlmMoeDsaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
         config = GlmMoeDsaConfig(rope_theta=123_456)
         self.assertEqual(config.rope_theta, 123_456)
         self.assertEqual(config.rotary_base, 123_456)
+
+    def test_dsa_provider_maps_expert_tensor_parallel_size(self):
+        from paddleformers.transformers.glm_moe_dsa.modeling import (
+            GlmMoeDsaModelProvider,
+        )
+
+        config = GlmMoeDsaConfig()
+        config.expert_tensor_model_parallel_size = 1
+        provider = object.__new__(GlmMoeDsaModelProvider)
+        provider.register_attributes(config)
+        self.assertEqual(provider.expert_tensor_parallel_size, 1)
 
     def test_GlmMoeDsa_lm_head_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()

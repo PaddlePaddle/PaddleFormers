@@ -269,12 +269,16 @@ class ModelReproObservationCallback(TrainerCallback):
                         module_hits[module_name].append(module)
                 invalid = {name: len(hits) for name, hits in module_hits.items() if len(hits) != 1}
                 if invalid:
-                    raise RuntimeError(f"layer0 fine forward selectors must match exactly once on rank {rank}: {invalid}")
+                    raise RuntimeError(
+                        f"layer0 fine forward selectors must match exactly once on rank {rank}: {invalid}"
+                    )
                 for module_name, boundary in fine_specs.items():
                     module = module_hits[module_name][0]
-                    handles.append(module.register_forward_post_hook(
-                        lambda _module, _inputs, output, name=boundary: self._write_forward_record(name, output)
-                    ))
+                    handles.append(
+                        module.register_forward_post_hook(
+                            lambda _module, _inputs, output, name=boundary: self._write_forward_record(name, output)
+                        )
+                    )
                     selected.append({"module": module_name, "boundary": boundary})
             self._forward_contract_selector_receipt = selected
             rank_dir = os.path.join(output_dir, f"rank{rank}")
@@ -309,27 +313,37 @@ class ModelReproObservationCallback(TrainerCallback):
             elif module_name in base_layers:
                 global_layer = base_layers[module_name]
                 input_boundary = f"base_layer_{global_layer}_input"
-                handles.append(module.register_forward_pre_hook(
-                    lambda _module, inputs, name=input_boundary: self._write_forward_record(name, inputs)
-                ))
+                handles.append(
+                    module.register_forward_pre_hook(
+                        lambda _module, inputs, name=input_boundary: self._write_forward_record(name, inputs)
+                    )
+                )
                 boundary = f"base_layer_{global_layer}_output"
             elif module_name == "5":
                 boundary = "final_norm_output"
             elif module_name == "7":
-                handles.append(module.register_forward_pre_hook(
-                    lambda _module, inputs, name="output_head_input": self._write_forward_record(name, inputs)
-                ))
+                handles.append(
+                    module.register_forward_pre_hook(
+                        lambda _module, inputs, name="output_head_input": self._write_forward_record(name, inputs)
+                    )
+                )
                 boundary = "output_head_output"
             elif module_name == "6":
                 boundary = "mtp_layer_output"
             elif module_name.startswith("6.") and module_name.rsplit(".", 1)[-1] in {
-                "enorm", "hnorm", "eh_proj", "transformer_layer", "final_layernorm"
+                "enorm",
+                "hnorm",
+                "eh_proj",
+                "transformer_layer",
+                "final_layernorm",
             }:
                 boundary = f"mtp_{module_name.removeprefix('6.').replace('.', '_')}_output"
             if boundary is not None:
-                handles.append(module.register_forward_post_hook(
-                    lambda _module, _inputs, output, name=boundary: self._write_forward_record(name, output)
-                ))
+                handles.append(
+                    module.register_forward_post_hook(
+                        lambda _module, _inputs, output, name=boundary: self._write_forward_record(name, output)
+                    )
+                )
         self._forward_contract_handles = handles
         self._forward_contract_installed = True
 
@@ -337,10 +351,7 @@ class ModelReproObservationCallback(TrainerCallback):
         if not self.parameter_receipt_dir or self._parameters_written or model is None:
             return
         rank = paddle.distributed.get_rank() if paddle.distributed.is_initialized() else 0
-        parameters = [
-            {"name": name, **self._parameter_record(param)}
-            for name, param in model.named_parameters()
-        ]
+        parameters = [{"name": name, **self._parameter_record(param)} for name, param in model.named_parameters()]
         payload = {
             "schema": "glm52-loaded-parameter-inventory/v1",
             "framework": "paddle",
@@ -475,9 +486,7 @@ def load_tokenizer_and_processor(model_args, data_args):
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
     logger.info(f"Loading tokenizer from {tokenizer_path}")
     if "VL" in model_args.stage:
-        processor = AutoProcessor.from_pretrained(
-            model_args.model_name_or_path, use_fast=data_args.processor_use_fast
-        )
+        processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
     else:
         processor = tokenizer
     return tokenizer, processor
@@ -533,14 +542,32 @@ def apply_glm_moe_dsa_training_contract(model_config, training_args, model_args,
     training_args.mtp_num_layers = mtp_depth
     model_config.mtp_enabled = mtp_depth > 0
 
-    if data_args.pretokenized_dataset and mtp_depth > 0 and not model_args.mtp_attention_flexible:
+    requested_mtp_loss_scaling_factor = getattr(training_args, "mtp_loss_scaling_factor", None)
+    if requested_mtp_loss_scaling_factor is not None:
+        model_config.mtp_loss_scaling_factor = float(requested_mtp_loss_scaling_factor)
+    logger.info(
+        "GLM MoE DSA MTP loss weight: mtp_loss_scaling_factor="
+        f"{getattr(model_config, 'mtp_loss_scaling_factor', None)} "
+        f"(cli={requested_mtp_loss_scaling_factor!r}, mtp_depth={mtp_depth})"
+    )
+
+    if getattr(data_args, "pretokenized_dataset", False) and mtp_depth > 0 and not model_args.mtp_attention_flexible:
         raise ValueError("pretokenized GLM MoE DSA MTP requires mtp_attention_flexible=true")
 
     model_config.fp32_residual_connection = training_args.fp32_residual_connection
-    model_config.moe_token_dispatcher_type = training_args.moe_token_dispatcher_type
-    model_config.moe_router_bias_update_rate = float(
-        getattr(training_args, "moe_router_bias_update_rate", 0.001)
-    )
+    model_config.moe_token_dispatcher_type = getattr(training_args, "moe_token_dispatcher_type", "alltoall")
+    model_config.moe_router_bias_update_rate = float(getattr(training_args, "moe_router_bias_update_rate", 0.001))
+    moe_expert_fusion = getattr(training_args, "moe_expert_fusion", None)
+    if moe_expert_fusion is not None:
+        model_config.moe_expert_fusion = bool(moe_expert_fusion)
+    # YAML overlap_p2p_comm / batch_p2p_comm land on TrainingArguments
+    # (pipeline runtime). Copy them onto the Fleet provider after
+    # set_llm_config. Do not copy variable_seq_lengths: that YAML flag
+    # drives pipeline enable_dynamic_shape.
+    if getattr(training_args, "overlap_p2p_comm", None) is not None:
+        model_config.overlap_p2p_comm = bool(training_args.overlap_p2p_comm)
+    if getattr(training_args, "batch_p2p_comm", None) is not None:
+        model_config.batch_p2p_comm = bool(training_args.batch_p2p_comm)
     for parallel_field in (
         "tensor_model_parallel_size",
         "pipeline_model_parallel_size",
@@ -550,9 +577,7 @@ def apply_glm_moe_dsa_training_contract(model_config, training_args, model_args,
         configured_size = int(getattr(training_args, parallel_field, -1))
         setattr(model_config, parallel_field, max(configured_size, 1))
     model_config.sequence_parallel = bool(getattr(training_args, "sequence_parallel", False))
-    configured_expert_tensor_parallel_size = int(
-        getattr(training_args, "expert_tensor_model_parallel_size", -1)
-    )
+    configured_expert_tensor_parallel_size = int(getattr(training_args, "expert_tensor_model_parallel_size", -1))
     expert_tensor_parallel_size = (
         1 if configured_expert_tensor_parallel_size == -1 else configured_expert_tensor_parallel_size
     )
@@ -908,13 +933,9 @@ def run_sft(
     if isinstance(tokenizer, LlamaTokenizer) or isinstance(tokenizer, Llama3Tokenizer):
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
-    # The multimodal plugins read the resolution bounds off the processor
-    # (falling back to a hardcoded 768*768 / 32*32), so without wiring these the
-    # --max_pixels / --min_pixels arguments have no way to reach image
-    # preprocessing. They live on End2EndProcessorArguments rather than
-    # DataArguments because both dataclasses feed the same parser.
-    if preprocess_args is not None:
+    # Text GLM SFT keeps processor=tokenizer (load_tokenizer_and_processor).
+    # VL stages still need the develop max/min pixel wiring on AutoProcessor.
+    if preprocess_args is not None and processor is not tokenizer:
         if preprocess_args.max_pixels is not None:
             processor.image_max_pixels = preprocess_args.max_pixels
         if preprocess_args.min_pixels is not None:
@@ -949,12 +970,17 @@ def run_sft(
         "packed_idx_cache_dir": data_args.packed_idx_cache_dir,
         "dataloader_num_workers": training_args.dataloader_num_workers,
         "template": data_args.template,
-        "enable_thinking": getattr(generating_args, "enable_thinking", None),
         "tool_format": None,
         "default_system": None,
         "truncation_strategy": data_args.truncation_strategy,
         "skip_warmup": data_args.skip_warmup,
     }
+    # GeneratingArguments.enable_thinking defaults to False for VL generate.
+    # Copying that onto every SFT template overwrites qwen3_vl's registered
+    # True and shifts the Qwen3-VL CI GT by ~6e-4. Only glm5_2 needs the
+    # YAML/CLI value; other templates keep register_template defaults.
+    if data_args.template == "glm5_2":
+        dataset_config["enable_thinking"] = getattr(generating_args, "enable_thinking", None)
 
     if dataset_config["template_backend"] == "custom":
         template_instance = get_template_and_fix_tokenizer(dataset_config)
@@ -1161,9 +1187,7 @@ def run_sft(
                 model_args=model_args,
                 max_seq_len=max_seq_len,
                 padding_free=data_args.padding_free,
-                input_pad_token_id=(
-                    data_args.pretokenized_pad_token_id if data_args.pretokenized_dataset else None
-                ),
+                input_pad_token_id=(data_args.pretokenized_pad_token_id if data_args.pretokenized_dataset else None),
             )
 
     if training_args.max_steps == -1:

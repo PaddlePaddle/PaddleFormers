@@ -1,3 +1,17 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -11,8 +25,8 @@ from paddleformers.cli.train.sft.workflow import (
     save_final_hf_model_if_requested,
     validate_pretokenized_offline_dataset,
 )
-from paddleformers.datasets.SFTDataset import TextSequence
 from paddleformers.datasets.collate import collate_fn
+from paddleformers.datasets.SFTDataset import TextSequence
 
 
 def fixed_sequence():
@@ -27,19 +41,19 @@ def fixed_sequence():
 def test_load_tokenizer_uses_independent_source():
     tokenizer = SimpleNamespace()
     model_args = SimpleNamespace(
-        tokenizer_name_or_path='/tokenizer-only',
-        model_name_or_path='/weights-only',
-        stage='PT',
+        tokenizer_name_or_path="/tokenizer-only",
+        model_name_or_path="/weights-only",
+        stage="PT",
     )
     data_args = SimpleNamespace(processor_use_fast=None)
 
     with patch(
-        'paddleformers.cli.train.sft.workflow.AutoTokenizer.from_pretrained',
+        "paddleformers.cli.train.sft.workflow.AutoTokenizer.from_pretrained",
         return_value=tokenizer,
     ) as load_tokenizer:
         actual_tokenizer, processor = load_tokenizer_and_processor(model_args, data_args)
 
-    load_tokenizer.assert_called_once_with('/tokenizer-only')
+    load_tokenizer.assert_called_once_with("/tokenizer-only")
     assert actual_tokenizer is tokenizer
     assert processor is tokenizer
 
@@ -62,17 +76,17 @@ def test_validate_pretokenized_offline_dataset_rejects_wrong_length():
     sequence = fixed_sequence()
     sequence.position_ids = sequence.position_ids[:-1]
 
-    with pytest.raises(ValueError, match='position_ids length 6 != 7'):
+    with pytest.raises(ValueError, match="position_ids length 6 != 7"):
         validate_pretokenized_offline_dataset([[sequence]], expected_length=7)
 
 
 def test_glm_moe_dsa_training_contract_propagates_frozen_provider_fields():
-    model_config = SimpleNamespace(model_type='glm_moe_dsa')
+    model_config = SimpleNamespace(model_type="glm_moe_dsa")
     training_args = SimpleNamespace(
         num_nextn_predict_layers=1,
         mtp_num_layers=1,
         fp32_residual_connection=False,
-        moe_token_dispatcher_type='alltoall',
+        moe_token_dispatcher_type="alltoall",
         tensor_model_parallel_size=2,
         pipeline_model_parallel_size=4,
         context_parallel_size=1,
@@ -89,7 +103,7 @@ def test_glm_moe_dsa_training_contract_propagates_frozen_provider_fields():
     assert model_config.num_nextn_predict_layers == 1
     assert model_config.mtp_enabled is True
     assert model_config.fp32_residual_connection is False
-    assert model_config.moe_token_dispatcher_type == 'alltoall'
+    assert model_config.moe_token_dispatcher_type == "alltoall"
     assert model_config.tensor_model_parallel_size == 2
     assert model_config.pipeline_model_parallel_size == 4
     assert model_config.context_parallel_size == 1
@@ -100,33 +114,33 @@ def test_glm_moe_dsa_training_contract_propagates_frozen_provider_fields():
 
 
 def test_glm_moe_dsa_training_contract_rejects_invalid_expert_tensor_parallel_size():
-    model_config = SimpleNamespace(model_type='glm_moe_dsa')
+    model_config = SimpleNamespace(model_type="glm_moe_dsa")
     training_args = SimpleNamespace(
         num_nextn_predict_layers=1,
         mtp_num_layers=1,
         fp32_residual_connection=False,
-        moe_token_dispatcher_type='alltoall',
+        moe_token_dispatcher_type="alltoall",
         expert_tensor_model_parallel_size=0,
     )
     model_args = SimpleNamespace(mtp_attention_flexible=True, persist_layer_norm=False)
     data_args = SimpleNamespace(pretokenized_dataset=True)
 
-    with pytest.raises(ValueError, match='expert_tensor_model_parallel_size must be -1 or at least 1'):
+    with pytest.raises(ValueError, match="expert_tensor_model_parallel_size must be -1 or at least 1"):
         apply_glm_moe_dsa_training_contract(model_config, training_args, model_args, data_args)
 
 
 def test_glm_moe_dsa_pretokenized_mtp_requires_flexible_mask():
-    model_config = SimpleNamespace(model_type='glm_moe_dsa')
+    model_config = SimpleNamespace(model_type="glm_moe_dsa")
     training_args = SimpleNamespace(
         num_nextn_predict_layers=1,
         mtp_num_layers=1,
         fp32_residual_connection=False,
-        moe_token_dispatcher_type='alltoall',
+        moe_token_dispatcher_type="alltoall",
     )
     model_args = SimpleNamespace(mtp_attention_flexible=False, persist_layer_norm=False)
     data_args = SimpleNamespace(pretokenized_dataset=True)
 
-    with pytest.raises(ValueError, match='mtp_attention_flexible=true'):
+    with pytest.raises(ValueError, match="mtp_attention_flexible=true"):
         apply_glm_moe_dsa_training_contract(model_config, training_args, model_args, data_args)
 
 
@@ -156,9 +170,9 @@ def test_pretokenized_mtp_padding_uses_explicit_zero_sentinel():
         input_pad_token_id=0,
     )
 
-    assert batch['input_ids'].tolist() == [[154820, 42, 42, 17, 99, 42, 8, 0]]
-    assert batch['labels'].tolist() == [[42, 42, 17, 99, 42, 8, 3, -100]]
-    assert batch['position_ids'].tolist() == [[0, 1, 2, 3, 4, 5, 6, 0]]
+    assert batch["input_ids"].tolist() == [[154820, 42, 42, 17, 99, 42, 8, 0]]
+    assert batch["labels"].tolist() == [[42, 42, 17, 99, 42, 8, 3, -100]]
+    assert batch["position_ids"].tolist() == [[0, 1, 2, 3, 4, 5, 6, 0]]
 
 
 def test_pretokenized_mtp_flexible_mask_matches_main_stream_length():
@@ -187,8 +201,8 @@ def test_pretokenized_mtp_flexible_mask_matches_main_stream_length():
         input_pad_token_id=0,
     )
 
-    assert list(batch['input_ids'].shape) == [1, 8]
-    assert list(batch['attention_mask'].shape) == [1, 1, 7, 7]
+    assert list(batch["input_ids"].shape) == [1, 8]
+    assert list(batch["attention_mask"].shape) == [1, 1, 7, 7]
 
 
 class FakeTensor:
