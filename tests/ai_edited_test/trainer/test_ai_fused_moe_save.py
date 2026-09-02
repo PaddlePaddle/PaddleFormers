@@ -52,14 +52,45 @@ class TestRestoreFusedExpert3DLayout(unittest.TestCase):
         self.assertEqual(shard.local_shape, (2, 4, 6))
         self.assertEqual(shard.global_shape, (2, 4, 6))
 
-    def test_optimizer_path_passes_optimizer_into_restore(self):
+    def test_optimizer_path_restores_3d_layout_then_saves(self):
         source = inspect.getsource(
             __import__("paddleformers.trainer.trainer", fromlist=["Trainer"]).Trainer._save_flex_optimizer_state
         )
         self.assertIn("optimizer=self.optimizer", source)
-        # Rank-invariant skip: fused experts live only on some PP stages.
-        self.assertIn('getattr(self.args, "moe_expert_fusion", False)', source)
-        self.assertIn("Fused-expert optimizer FlexCheckpoint save is not supported", source)
+        self.assertIn("restore_fused_expert_3d_layout", source)
+        self.assertIn("self.optimizer.sharded_state_dict(model_sharded_state_dict)", source)
+        self.assertNotIn("Fused-expert optimizer FlexCheckpoint save is not supported", source)
+
+    def test_fused_expert_optimizer_round_trip_keeps_3d_moments(self):
+        import paddle
+        from paddle.distributed import ShardedWeight
+
+        from paddleformers.trainer.trainer import restore_fused_expert_3d_layout
+
+        key = "model.layers.3.mlp.grouped_gemm_experts.weight1"
+        param = paddle.zeros([2, 4, 6], dtype="float32")
+        shard = ShardedWeight(
+            key=key,
+            local_tensor=param,
+            local_shape=tuple(param.shape),
+            global_shape=tuple(param.shape),
+            global_offset=(0, 0, 0),
+        )
+        moment = paddle.ones([2, 4, 6], dtype="float32")
+        optimizer = type(
+            "Opt",
+            (),
+            {"_accumulators": {"moment1": {key: moment}}, "_master_weights": {}},
+        )()
+        model = MagicMock()
+        model.named_parameters.return_value = [(key, param)]
+
+        restore_fused_expert_3d_layout(model, {key: shard}, optimizer=optimizer)
+
+        self.assertEqual(tuple(moment.shape), (8, 6))
+        restored = moment.reshape([2, 4, 6])
+        self.assertEqual(tuple(restored.shape), tuple(param.shape))
+        self.assertEqual(int(restored.numel()), int(param.numel()))
 
 
 class TestDefaultFlowCallbackSaveHf(unittest.TestCase):
