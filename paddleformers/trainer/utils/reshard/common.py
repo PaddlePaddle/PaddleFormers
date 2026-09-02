@@ -974,7 +974,13 @@ def _all_gather_state_dict_bucketed(state_dict, filter_func, group):
 
     group_rank = max(group.rank, 0)
 
-    on_gpu = all(isinstance(v, paddle.Tensor) and v.place.is_gpu_place() for v in state_dict.values())
+    on_gpu_local = (
+        all(isinstance(v, paddle.Tensor) and v.place.is_gpu_place() for v in state_dict.values())
+        if len(state_dict) > 0
+        else None
+    )
+    votes = [v for v in all_gather_simple_object(on_gpu_local, group) if v is not None]
+    on_gpu = len(votes) > 0 and all(votes)
 
     meta_dict = {}
     for (k, v) in state_dict.items():
