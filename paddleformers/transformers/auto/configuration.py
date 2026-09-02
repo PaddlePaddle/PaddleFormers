@@ -43,6 +43,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("ernie4_5_moe_vl", "Ernie4_5_VLConfig"),
         ("paddleocr_vl", "PaddleOCRVLConfig"),
         ("llama", "LlamaConfig"),
+        ("telechat", "TelechatConfig"),
         ("kimi_k2", "KimiK2Config"),
         ("kimi_k3", "KimiK3Config"),
         ("qwen2", "Qwen2Config"),
@@ -98,6 +99,8 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("ernie4_5_moe_vl", "Ernie4_5_VLMoeForConditionalGeneration"),
         ("paddleocr_vl", "PaddleOCRVLForConditionalGeneration"),
         ("llama", "Llama"),
+
+        ("telechat", "TelechatModel"),
         ("kimi_k3", "KimiK3"),
         ("qwen2", "Qwen2"),
         ("qwen2_5_vl", "Qwen2_5_VL"),
