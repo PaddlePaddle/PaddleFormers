@@ -1220,6 +1220,128 @@ class Trainer:
             assert len(metadata_files) == 1, f"Found multiple metadata files in {path}"
             return metadata_files[0]
 
+
+        # ---- phase timings for the flex-checkpoint window -------------------
+        # dist.load_state_dict() is opaque from here: it either reports
+        # "resumable locally, skipping reshard." and reads only this rank's own
+        # .distcp, or it silently degrades to fetching shards across the cluster.
+        # Attributing this window previously meant diffing timestamps of
+        # unrelated log lines, which cannot separate reading a component from the
+        # metadata / optimizer-init work in front of it.
+        #
+        # Logged on every rank with the rank id on purpose: the window is gated
+        # by collectives, so the interesting number is usually the spread across
+        # ranks (one slow reader stalls everyone), not rank 0 alone.
+        #   grep '[flex-load]' workerlog.*
+        _flex_phase_stats = OrderedDict()
+        _flex_nested_stats = OrderedDict()
+        _flex_rank = dist.get_rank() if paddle.distributed.is_initialized() else 0
+        # Every phase launches device work (H2D from the .distcp files, cast
+        # kernels, NCCL), all enqueued asynchronously, so a bare host timer would
+        # charge one phase's execution to whichever later phase blocks first.
+        # Fence both ends: one synchronize per phase is noise next to seconds of
+        # payload.
+        _flex_on_gpu = str(paddle.get_device()).startswith("gpu")
+
+        def flex_fence():
+            if _flex_on_gpu:
+                paddle.device.synchronize()
+
+        @contextlib.contextmanager
+        def flex_phase(name, extra="", nested=False):
+            flex_fence()
+            t0 = time.time()
+            try:
+                yield
+            finally:
+                flex_fence()
+                dt = time.time() - t0
+                # nested phases are kept apart so TOTAL stays a real sum
+                bucket = _flex_nested_stats if nested else _flex_phase_stats
+                bucket[name] = bucket.get(name, 0.0) + dt
+                logger.info(f"[flex-load] rank={_flex_rank} phase={name} seconds={dt:.3f}{extra}")
+
+        def flex_phase_summary():
+            total = sum(_flex_phase_stats.values())
+            parts = ", ".join(f"{k}={v:.2f}s" for k, v in _flex_phase_stats.items())
+            logger.info(f"[flex-load] rank={_flex_rank} TOTAL={total:.2f}s | {parts}")
+            if _flex_nested_stats:
+                sub = ", ".join(f"{k}={v:.2f}s" for k, v in _flex_nested_stats.items())
+                logger.info(f"[flex-load] rank={_flex_rank} NESTED (already inside TOTAL) | {sub}")
+
+        # ---- why a component fell off the local fast path -------------------
+        # check_resumable_locally() is a global AND over every key, so a single
+        # key missing from this rank's own file drags the whole component onto
+        # the reshard path -- and nothing in the log says which key. Reproduce
+        # that check here and name the offenders.
+        #
+        # Deliberately collective-free: an all_reduce here would deadlock if the
+        # import guard succeeded on some ranks and failed on others. Aggregate
+        # across ranks with grep instead.
+        _flex_storage_meta = {}
+
+        def flex_diagnose_component(name, sharded_state_dict):
+            storage_metadata = _flex_storage_meta.get(name)
+            if not storage_metadata:
+                return
+            try:
+                from dataclasses import replace as _dc_replace
+
+                from paddle.distributed.flex_checkpoint.dcp.metadata import (
+                    LocalTensorIndex,
+                )
+                from paddle.distributed.flex_checkpoint.dcp.utils import (
+                    extract_tensor_metadata,
+                )
+            except (ImportError, ModuleNotFoundError) as exc:
+                logger.info(f"[flex-load] rank={_flex_rank} diag={name} skipped: {exc}")
+                return
+
+            own_file = f"{_flex_rank}_0.distcp"
+            index_to_files = {}
+            own_indices = set()
+            for index, fname in storage_metadata.items():
+                plain = _dc_replace(index, replica_id=None)
+                index_to_files.setdefault(plain, set()).add(fname)
+                if fname == own_file:
+                    own_indices.add(plain)
+
+            missing = []
+            needed_files = set()
+            n_checked = 0
+            for key, value in sharded_state_dict.items():
+                _, ltm = extract_tensor_metadata(value)
+                if ltm is None:
+                    continue
+                n_checked += 1
+                plain = LocalTensorIndex(
+                    tensor_key=key,
+                    global_offset=ltm.global_offset,
+                    is_flattened=ltm.is_flattened,
+                    flattened_range=ltm.flattened_range,
+                    local_shape=ltm.local_shape,
+                    replica_id=None,
+                )
+                if plain in own_indices:
+                    needed_files.add(own_file)
+                else:
+                    missing.append(key)
+                    needed_files |= index_to_files.get(plain, set())
+
+            # an index with a single candidate file is exactly the case that
+            # replicate_saved_into_local cannot fix on the load side
+            single_replica = sum(1 for files in index_to_files.values() if len(files) == 1)
+            logger.info(
+                f"[flex-load] rank={_flex_rank} diag={name} "
+                f"local_readable={'YES' if not missing else 'NO'} "
+                f"checked={n_checked} missing_from_own_file={len(missing)} "
+                f"distinct_files_to_read={len(needed_files)} "
+                f"index_entries={len(index_to_files)} single_replica_indices={single_replica} "
+                f"own_file_exists={os.path.isfile(os.path.join(_flex_component_paths[name], own_file))}"
+            )
+            if missing:
+                logger.info(f"[flex-load] rank={_flex_rank} diag={name} first_missing_keys={missing[:5]}")
+
         model_sharded_state_dict = self.model.sharded_state_dict()
         master_weights_path = os.path.join(resume_from_checkpoint, MASTER_WEIGHT_DIC)
         opt_states_path = os.path.join(resume_from_checkpoint, OPTIMIZER_STATE_DIC)
@@ -1291,20 +1413,33 @@ class Trainer:
             return
 
         state_dict_metadata = {}
+        _flex_component_paths = {
+            "model_state": model_states_path,
+            "opt_state": opt_states_path,
+            "master_weight": master_weights_path,
+        }
         metadata_paths = [
             os.path.join(model_states_path, get_metadata_file_name(model_states_path)),
             os.path.join(opt_states_path, get_metadata_file_name(opt_states_path)),
             os.path.join(master_weights_path, get_metadata_file_name(master_weights_path)),
         ]
 
-        for metadata_file in metadata_paths:
-            if not os.path.exists(metadata_file):
-                raise FileNotFoundError(f"Metadata file not found: {metadata_file}")
-            metadata = paddle.load(metadata_file)
-            state_dict_metadata.update(metadata.state_dict_metadata)
+        with flex_phase("metadata_load", extra=f" files={len(metadata_paths)}"):
+            for metadata_file in metadata_paths:
+                if not os.path.exists(metadata_file):
+                    raise FileNotFoundError(f"Metadata file not found: {metadata_file}")
+                metadata = paddle.load(metadata_file)
+                state_dict_metadata.update(metadata.state_dict_metadata)
+                # keep storage_metadata so the diagnosis does not have to re-read
+                # the file (model_state's can be hundreds of MiB)
+                for _cname, _cpath in _flex_component_paths.items():
+                    if os.path.dirname(metadata_file) == _cpath:
+                        _flex_storage_meta[_cname] = getattr(metadata, "storage_metadata", None)
+            logger.info(f"[flex-load] rank={_flex_rank} state_dict_metadata keys={len(state_dict_metadata)}")
 
         if not self.args.sharded_model_from_ema:
-            init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
+            with flex_phase("init_optimizer"):
+                init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
 
             # ===== EMA State Resharding for ZCC (right after optimizer init) =====
             # Non-ZCC handles reshard internally in EMABufferFcBased._load()
@@ -1331,14 +1466,19 @@ class Trainer:
                     else:
                         logger.info("[EMA Reshard] Same strategy, subprocess will load EMA directly from file")
 
-            optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
-            opt_states = {}
-            master_weights = {}
-            for k, v in optimizer_sharded_state_dict.items():
-                if k.endswith(".w_0"):
-                    master_weights[k] = v
-                else:
-                    opt_states[k] = v
+            with flex_phase("optimizer_sharded_state_dict"):
+                optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
+                opt_states = {}
+                master_weights = {}
+                for k, v in optimizer_sharded_state_dict.items():
+                    if k.endswith(".w_0"):
+                        master_weights[k] = v
+                    else:
+                        opt_states[k] = v
+                logger.info(
+                    f"[flex-load] rank={_flex_rank} master_weight_keys={len(master_weights)} "
+                    f"opt_state_keys={len(opt_states)}"
+                )
 
             # use filtered AOA for master_weight (excludes FP32-only params)
             master_weight_aoa = getattr(self.args, "aoa_config_master_weight", None) or self.args.aoa_config
@@ -1348,9 +1488,11 @@ class Trainer:
                 logger.info("[AOAConfig] generate master_weight_aoa by _gen_ckpt_convert_aoa !")
                 master_weight_aoa = self.model._gen_ckpt_convert_aoa(self.model.config)
 
-            dist.load_state_dict(
-                master_weights,
-                master_weights_path,
+            flex_diagnose_component("master_weight", master_weights)
+            with flex_phase("master_weight_load", extra=f" keys={len(master_weights)}"):
+                dist.load_state_dict(
+                    master_weights,
+                    master_weights_path,
                 aoa_config=master_weight_aoa,
                 offload=self.args.load_via_cpu,
                 comm_method=flex_ckpt_comm_method,
@@ -1365,9 +1507,11 @@ class Trainer:
                     logger.info("[AOAConfig] generate opt_stat_aoa by _gen_ckpt_convert_aoa !")
                     opt_stat_aoa = self.model._gen_ckpt_convert_aoa(self.model.config, target="opt_state")
 
-                dist.load_state_dict(
-                    opt_states,
-                    opt_states_path,
+                flex_diagnose_component("opt_state", opt_states)
+                with flex_phase("opt_state_load", extra=f" keys={len(opt_states)}"):
+                    dist.load_state_dict(
+                        opt_states,
+                        opt_states_path,
                     aoa_config=opt_stat_aoa,
                     offload=self.args.load_via_cpu,
                     comm_method=flex_ckpt_comm_method,
@@ -1452,9 +1596,11 @@ class Trainer:
             else:
                 aoa_config = self.args.aoa_config
 
-            dist.load_state_dict(
-                model_sharded_state_dict,
-                model_states_path,
+            flex_diagnose_component("model_state", model_sharded_state_dict)
+            with flex_phase("model_state_load", extra=f" keys={len(model_sharded_state_dict)}"):
+                dist.load_state_dict(
+                    model_sharded_state_dict,
+                    model_states_path,
                 aoa_config=aoa_config,
                 offload=self.args.load_via_cpu,
                 comm_method=flex_ckpt_comm_method,
@@ -1462,9 +1608,13 @@ class Trainer:
             )
 
         if enable_bf16_opt:
-            opt_state_dict = self.optimizer.state_dict()
+            with flex_phase("optimizer_state_dict"):
+                opt_state_dict = self.optimizer.state_dict()
 
             def _assign_master_weights_to_model(master_weights):
+                flex_fence()
+                _t_assign = time.time()
+                _n_written = 0
                 model_state_dict = self.model.state_dict()
                 for key, param in model_state_dict.items():
                     if param.name in master_weights and param.dtype == paddle.bfloat16:
@@ -1478,16 +1628,41 @@ class Trainer:
                         ), f"got {param.shape} vs {master_weights[param.name].shape}"
                         master_weight = paddle.reshape(master_weights[param.name], param.shape)
                         paddle.assign(paddle.cast(to_device(master_weight), paddle.bfloat16), model_state_dict[key])
+                        _n_written += 1
+                flex_fence()
+                _dt_assign = time.time() - _t_assign
+                _flex_nested_stats["assign_to_model"] = _flex_nested_stats.get("assign_to_model", 0.0) + _dt_assign
+                logger.info(
+                    f"[flex-load] rank={_flex_rank} phase=assign_to_model "
+                    f"seconds={_dt_assign:.3f} params_written={_n_written}"
+                )
 
             def recover_params_from_master_weight(opt_state_dict, group):
                 master_weights = opt_state_dict.get("master_weights", {})
                 tmp = OrderedDict()
                 master_weights, tmp = (tmp, master_weights)
                 # cast to bf16 and move to cpu
+                #
+                # Timed separately because the block containing it also holds
+                # optimizer.state_dict(), GroupGetter and split_opt_state, so the
+                # copy could never be told apart from them. src_on_device records
+                # whether the sources really were on device: with the optimizer
+                # offloaded to pinned host memory the trip runs the other way.
+                flex_fence()
+                _t_cast = time.time()
+                _cast_on_device = 0
                 for k, v in tmp.items():
                     name = v.name
+                    if isinstance(v, paddle.Tensor) and not v.place.is_cpu_place():
+                        _cast_on_device += 1
                     master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
                     master_weights[k].name = name
+                flex_fence()
+                logger.info(
+                    f"[flex-load] rank={_flex_rank} phase=master_weight_cast_to_host "
+                    f"seconds={time.time() - _t_cast:.3f} tensors={len(master_weights)} "
+                    f"src_on_device={_cast_on_device} group_nranks={group.nranks}"
+                )
 
                 structure_name_map = {k: v.name for (k, v) in self.model.state_dict().items()}
 
@@ -1503,6 +1678,7 @@ class Trainer:
                             mw_2d[k] = v
                         else:
                             mw_1d[k] = v
+                    logger.info(f"[flex-load] rank={_flex_rank} split_2d_1d mw_2d={len(mw_2d)} mw_1d={len(mw_1d)}")
 
                     all_master_weights = OrderedDict()
                     restored_2d = _restore_master_weights_single(
@@ -1540,15 +1716,23 @@ class Trainer:
 
                 _assign_master_weights_to_model(master_weights)
 
+            _t_recover = time.time()
             with paddle.no_grad():
                 if paddle.distributed.is_initialized():
-                    group_getter = GroupGetter(self.model)
-                    opt_state_dict = split_opt_state(opt_state_dict, group_getter)
-                    for gid in group_getter.get_group_ids():
+                    with flex_phase("group_getter_and_split_opt_state"):
+                        group_getter = GroupGetter(self.model)
+                        opt_state_dict = split_opt_state(opt_state_dict, group_getter)
+                    for _pass_idx, gid in enumerate(group_getter.get_group_ids()):
                         sub_opt_state_dict = opt_state_dict.get(gid, {})
                         group = group_getter.get_group_by_id(gid)
                         if self.args.bf16:
-                            recover_params_from_master_weight(sub_opt_state_dict, group)
+                            with flex_phase(
+                                f"recover_pass{_pass_idx}",
+                                nested=True,
+                                extra=f" group_nranks={group.nranks} "
+                                f"tensors={len(sub_opt_state_dict.get('master_weights', {}))}",
+                            ):
+                                recover_params_from_master_weight(sub_opt_state_dict, group)
                 else:
                     master_weights = opt_state_dict["master_weights"]
                     model_state_dict = self.model.state_dict()
@@ -1564,6 +1748,14 @@ class Trainer:
                             paddle.assign(
                                 paddle.cast(to_device(master_weight), paddle.bfloat16), model_state_dict[key]
                             )
+
+            # Covers both group passes: cast to bf16, the 2D/1D split, the
+            # reshard rounds and the writeback.
+            _dt = time.time() - _t_recover
+            _flex_phase_stats["bf16_master_weight_recovery"] = _dt
+            logger.info(f"[flex-load] rank={_flex_rank} phase=bf16_master_weight_recovery seconds={_dt:.3f}")
+
+        flex_phase_summary()
 
     def _is_fc_format_ema(self, ema_state_path):
         """Check if EMA state is in FC format by looking for .metadata file."""

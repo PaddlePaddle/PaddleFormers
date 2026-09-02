@@ -1838,15 +1838,52 @@ def _get_muon_2d_param_names(muon_opt):
 
 
 def _restore_master_weights_single(master_weights, model, optimizer, group, structure_name_map, restore_func):
+    # Six steps, only two of which communicate, but the others are not free:
+    # pack_keys() forces every value to host (a real device-to-host copy when the
+    # source is still on device) and restore_func() for ShardingV2 runs
+    # even_distribute(), i.e. more all_gather rounds. Without this breakdown the
+    # whole thing is one opaque block.
+    _on_gpu = str(paddle.get_device()).startswith("gpu")
+
+    def _fence():
+        # pack_keys() and restore_func() launch copies and concat kernels; a bare
+        # host timer would push their execution into the next step.
+        if _on_gpu:
+            paddle.device.synchronize()
+
+    _fence()
+    t0 = time.time()
     nms = reshard_util.NodeModelState(group=group)
     nms_tmp = reshard_util.NodeModelState(group=group)
     nms_tmp.add_master_weights(master_weights)
+    _fence()
+    t_add = time.time()
     nms_tmp.pack_keys(structure_name_map)
+    _fence()
+    t_pack = time.time()
     nms.merge_from(nms_tmp, max(group.rank, 0))
     del nms_tmp
+    _fence()
+    t_merge = time.time()
     nms = restore_func(nms, model, optimizer)
+    _fence()
+    t_restore = time.time()
     nms.unpack_keys()
-    return reshard_util.all_gather_state_dict(nms.master_weights, lambda x: True, group)
+    _fence()
+    t_unpack = time.time()
+    res = reshard_util.all_gather_state_dict(nms.master_weights, lambda x: True, group)
+    _fence()
+    t_gather = time.time()
+    logger.info(
+        f"[mw-restore] rank={max(group.rank, 0)} "
+        f"restore={getattr(restore_func, '__module__', '?').split('.')[-1]} "
+        f"in_tensors={len(master_weights)} out_tensors={len(res)} nranks={group.nranks} "
+        f"total={t_gather - t0:.3f}s | add_master={t_add - t0:.3f}s "
+        f"pack_keys(host_copy)={t_pack - t_add:.3f}s merge_from={t_merge - t_pack:.3f}s "
+        f"restore_func={t_restore - t_merge:.3f}s unpack_keys={t_unpack - t_restore:.3f}s "
+        f"all_gather={t_gather - t_unpack:.3f}s"
+    )
+    return res
 
 
 def recover_params_from_master_weight(ema_state_dict, model, optimizer, group):
