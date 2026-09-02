@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
+
 import paddle
 import paddle.nn.functional as F
 from paddle import nn
@@ -45,13 +47,30 @@ class TelechatRotaryEmbedding(nn.Layer):
     def __init__(self, config):
         super().__init__()
         self.head_dim = config.hidden_size // config.n_head
-        inv_freq = 1.0 / (10000.0 ** (paddle.arange(0, self.head_dim, 2, dtype="float32") / self.head_dim))
-        self.register_buffer("inv_freq", inv_freq, persistable=False)
+        self.base = 10000.0
+        self.base_seqlen = config.base_seqlen
+        self.training_seqlen = config.training_seqlen
+
+    def _get_mscale(self, scale=1.0):
+        if scale <= 1:
+            return 1.0
+        return 0.1 * math.log(scale) + 1.0
+
+    def _get_ntk_alpha(self, true_seq_len):
+        context_value = math.log(true_seq_len / self.base_seqlen, 2) + 1
+        ntk_alpha = 2 ** math.ceil(context_value) - 1
+        return max(ntk_alpha, 1)
 
     def forward(self, x, position_ids):
-        freqs = position_ids.astype("float32").unsqueeze(-1) * self.inv_freq.reshape([1, 1, -1])
+        seq_len = int(position_ids.max().item()) + 1
+        seq_len = max(seq_len, self.training_seqlen)
+        ntk_alpha = self._get_ntk_alpha(seq_len)
+        mscale = self._get_mscale(seq_len / self.training_seqlen)
+        base = self.base * ntk_alpha ** (self.head_dim / (self.head_dim - 2))
+        inv_freq = 1.0 / (base ** (paddle.arange(0, self.head_dim, 2, dtype="float32") / self.head_dim))
+        freqs = position_ids.astype("float32").unsqueeze(-1) * inv_freq.reshape([1, 1, -1])
         emb = paddle.concat((freqs, freqs), axis=-1)
-        return emb.cos().astype(x.dtype), emb.sin().astype(x.dtype)
+        return (mscale * emb.cos()).astype(x.dtype), (mscale * emb.sin()).astype(x.dtype)
 
 
 class TelechatRMSNorm(nn.Layer):
@@ -73,6 +92,7 @@ class TelechatRMSNorm(nn.Layer):
 class TelechatAttention(nn.Layer):
     def __init__(self, config, layer_idx):
         super().__init__()
+        self.config = config
         self.layer_idx = layer_idx
         self.head_dim = config.hidden_size // config.n_head
         if self.head_dim * config.n_head != config.hidden_size:
@@ -117,7 +137,7 @@ class TelechatAttention(nn.Layer):
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, *position_embeddings)
         if past_key_values is not None:
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
-        attention_interface = ALL_ATTENTION_FUNCTIONS["sdpa"]
+        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
         attn_output, _ = attention_interface(
             self,
             query=query_states,
@@ -155,6 +175,8 @@ class TelechatDecoderLayer(nn.Layer):
         self.input_layernorm = TelechatRMSNorm(config.hidden_size, config.layer_norm_epsilon)
         self.post_attention_layernorm = TelechatRMSNorm(config.hidden_size, config.layer_norm_epsilon)
         self.mlp = TelechatMLP(config)
+        self.apply_residual_connection_post_layernorm = config.apply_residual_connection_post_layernorm
+        self.hidden_dropout = config.hidden_dropout
 
     def forward(
         self,
@@ -164,14 +186,24 @@ class TelechatDecoderLayer(nn.Layer):
         position_embeddings=None,
         past_key_values=None,
     ):
-        residual = hidden_states
-        hidden_states = self.input_layernorm(hidden_states)
-        hidden_states = residual + self.self_attention(
-            hidden_states, attention_mask, attn_mask_startend_row_indices, position_embeddings, past_key_values
+        layernorm_output = self.input_layernorm(hidden_states)
+        if self.apply_residual_connection_post_layernorm:
+            residual = layernorm_output
+        else:
+            residual = hidden_states
+        attention_output = self.self_attention(
+            layernorm_output, attention_mask, attn_mask_startend_row_indices, position_embeddings, past_key_values
         )
-        residual = hidden_states
-        hidden_states = self.post_attention_layernorm(hidden_states)
-        return residual + self.mlp(hidden_states)
+        attention_output = F.dropout(attention_output, p=self.hidden_dropout, training=self.training)
+        hidden_states = residual + attention_output
+
+        layernorm_output = self.post_attention_layernorm(hidden_states)
+        if self.apply_residual_connection_post_layernorm:
+            residual = layernorm_output
+        else:
+            residual = hidden_states
+        mlp_output = F.dropout(self.mlp(layernorm_output), p=self.hidden_dropout, training=self.training)
+        return residual + mlp_output
 
 
 class TelechatPretrainedModel(PretrainedModel):

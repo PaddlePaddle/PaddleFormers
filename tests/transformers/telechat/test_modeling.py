@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 import unittest
 from unittest.mock import patch
 
@@ -43,6 +44,82 @@ class TelechatModelTest(unittest.TestCase):
         cos, sin = rotary_emb(x, position_ids)
         self.assertEqual(cos.dtype, paddle.float32)
         self.assertEqual(sin.dtype, paddle.float32)
+
+    def test_rotary_embedding_matches_base_formula_within_training_seqlen(self):
+        rotary_emb = TelechatRotaryEmbedding(self.config)
+        x = paddle.zeros([1])
+        position_ids = paddle.arange(8, dtype="int64").unsqueeze(0)
+        cos, sin = rotary_emb(x, position_ids)
+        inv_freq = 1.0 / (10000.0 ** (paddle.arange(0, 16, 2, dtype="float32") / 16))
+        freqs = position_ids.astype("float32").unsqueeze(-1) * inv_freq.reshape([1, 1, -1])
+        emb = paddle.concat((freqs, freqs), axis=-1)
+        self.assertTrue(bool(paddle.allclose(cos, emb.cos(), atol=1e-6)))
+        self.assertTrue(bool(paddle.allclose(sin, emb.sin(), atol=1e-6)))
+
+    def test_rotary_embedding_applies_ntk_scaling_beyond_training_seqlen(self):
+        config = TelechatConfig(
+            vocab_size=64, hidden_size=64, ffn_hidden_size=128, n_layer=2, n_head=4, training_seqlen=8, base_seqlen=8
+        )
+        rotary_emb = TelechatRotaryEmbedding(config)
+        x = paddle.zeros([1])
+        position_ids = paddle.arange(16, dtype="int64").unsqueeze(0)
+        cos, sin = rotary_emb(x, position_ids)
+
+        head_dim = config.hidden_size // config.n_head
+        ntk_alpha = 2 ** math.ceil(math.log(16 / config.base_seqlen, 2) + 1) - 1
+        mscale = 0.1 * math.log(16 / config.training_seqlen) + 1.0
+        base = 10000.0 * ntk_alpha ** (head_dim / (head_dim - 2))
+        inv_freq = 1.0 / (base ** (paddle.arange(0, head_dim, 2, dtype="float32") / head_dim))
+        freqs = position_ids.astype("float32").unsqueeze(-1) * inv_freq.reshape([1, 1, -1])
+        emb = paddle.concat((freqs, freqs), axis=-1)
+        self.assertGreater(ntk_alpha, 1)
+        self.assertTrue(bool(paddle.allclose(cos, mscale * emb.cos(), atol=1e-6)))
+        self.assertTrue(bool(paddle.allclose(sin, mscale * emb.sin(), atol=1e-6)))
+
+    def test_hidden_dropout_applied_in_training_mode(self):
+        config = TelechatConfig(
+            vocab_size=64, hidden_size=64, ffn_hidden_size=128, n_layer=2, n_head=4, hidden_dropout=0.5
+        )
+        model = TelechatForCausalLM(config)
+        model.train()
+        first = model(self.input_ids, return_dict=True).logits
+        second = model(self.input_ids, return_dict=True).logits
+        self.assertFalse(bool(paddle.allclose(first, second)))
+
+        model.eval()
+        eval_first = model(self.input_ids, return_dict=True).logits
+        eval_second = model(self.input_ids, return_dict=True).logits
+        self.assertTrue(bool(paddle.allclose(eval_first, eval_second)))
+
+    def test_apply_residual_connection_post_layernorm_changes_forward(self):
+        model_default = TelechatForCausalLM(self.config)
+        model_default.eval()
+        paddle.seed(42)
+        model_post = TelechatForCausalLM(
+            TelechatConfig(
+                vocab_size=64,
+                hidden_size=64,
+                ffn_hidden_size=128,
+                n_layer=2,
+                n_head=4,
+                apply_residual_connection_post_layernorm=True,
+            )
+        )
+        model_post.eval()
+        output_default = model_default(self.input_ids, return_dict=True).logits
+        output_post = model_post(self.input_ids, return_dict=True).logits
+        self.assertFalse(bool(paddle.allclose(output_default, output_post)))
+
+    def test_attention_backend_routing(self):
+        outputs = {}
+        for backend in ("sdpa", "eager"):
+            config = TelechatConfig(**self.config.to_dict())
+            config._attn_implementation = backend
+            paddle.seed(42)
+            model = TelechatForCausalLM(config)
+            model.eval()
+            outputs[backend] = model(self.input_ids, return_dict=True).logits
+        self.assertTrue(bool(paddle.allclose(outputs["sdpa"], outputs["eager"], atol=1e-5)))
 
     def test_attention_uses_local_heads_for_tensor_parallel_config(self):
         config = TelechatConfig(
