@@ -6,10 +6,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from paddleformers.trainer.trainer import (
-    Trainer,
-    maybe_zero_max_grad_norm_for_uac,
-)
+from paddleformers.trainer.trainer import Trainer, maybe_zero_max_grad_norm_for_uac
 from paddleformers.trainer.trainer_callback import (
     DefaultFlowCallback,
     TrainerControl,
