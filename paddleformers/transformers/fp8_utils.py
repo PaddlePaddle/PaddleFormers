@@ -626,8 +626,6 @@ class FP8Linear(paddle.nn.Layer):
 
 
 def cache_fp8_weight(weight, quant_transpose=None):
-    if hasattr(weight, "fp8_weight") or hasattr(weight, "fp8_weight_transpose"):
-        return
     if quant_transpose is None:
         w_fp8, w_scale, w_t_fp8, w_t_scale = paddle.incubate.nn.functional.fp8_quant_blockwise(
             weight,

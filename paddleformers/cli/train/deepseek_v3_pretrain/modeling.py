@@ -515,8 +515,6 @@ class DeepseekV2MoE(MoELayer):
             """Helper function to quantize a list of weights."""
             if weight_obj is None:
                 weight_obj = weight_list[0]
-            if hasattr(weight_obj, "fp8_weight_stacked") or hasattr(weight_obj, "fp8_weight_stacked_transpose"):
-                return
 
             if quant_transpose is None:
                 fp8_weight, fp8_scale = paddle.incubate.nn.functional.fused_stack_transpose_quant(
