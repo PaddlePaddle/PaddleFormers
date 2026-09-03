@@ -240,6 +240,14 @@ import_structure = {
     "llama.modeling": ["LlamaForCausalLM", "LlamaModel", "LlamaForCausalLMPipe", "LlamaRotaryEmbedding"],
     "llama.tokenizer": ["LlamaTokenizer", "Llama3Tokenizer"],
     "llama.tokenizer_fast": ["LlamaTokenizerFast"],
+    "llama4.configuration": ["Llama4Config", "Llama4TextConfig", "Llama4VisionConfig"],
+    "llama4.modeling": [
+        "Llama4ForCausalLM",
+        "Llama4TextDecoderLayer",
+        "Llama4TextModel",
+        "Llama4TextPretrainedModel",
+    ],
+    "llama4.multimodal": ["Llama4ForConditionalGeneration", "Llama4VisionEncoderLayer", "Llama4VisionModel"],
     "optimization": [
         "LinearDecayWithWarmup",
         "ConstScheduleWithWarmup",
@@ -351,6 +359,7 @@ import_structure = {
         "Qwen3NextPretrainingCriterion",
     ],
     "llama": [],
+    "llama4": [],
     "qwen2": [],
     "glm_ocr": [],
     "qwen3": [],

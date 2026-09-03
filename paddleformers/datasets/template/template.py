@@ -955,6 +955,27 @@ register_template(
     chat_sep="<|eot_id|>",
 )
 
+register_template(
+    name="llama4",
+    format_user=StringFormatter(
+        slots=[
+            ("<|header_start|>user<|header_end|>\n\n{{content}}<|eot|>" "<|header_start|>assistant<|header_end|>\n\n")
+        ]
+    ),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|header_start|>system<|header_end|>\n\n{{content}}<|eot|>"]),
+    format_function=FunctionFormatter(slots=["{{content}}"], tool_format="llama4"),
+    format_observation=StringFormatter(
+        slots=[
+            ("<|header_start|>user<|header_end|>\n\n{{content}}<|eot|>" "<|header_start|>assistant<|header_end|>\n\n")
+        ]
+    ),
+    format_tools=ToolFormatter(tool_format="llama4"),
+    format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
+    suffix=["<|eot|>"],
+    chat_sep="<|eot|>",
+)
+
 
 # copied from gemma template
 register_template(

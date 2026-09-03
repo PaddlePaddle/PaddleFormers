@@ -90,6 +90,15 @@ LLAMA3_TOOL_PROMPT = (
     "Do not use variables.\n\n{tool_text}"
 )
 
+LLAMA4_TOOL_PROMPT = (
+    "You are a helpful assistant and an expert in function composition. You can answer general questions using your "
+    "internal knowledge OR invoke functions when necessary.\n"
+    "Here is a list of functions in JSON format that you can invoke:\n{tool_text}\n"
+    "Should you decide to return the function call(s), put them in the format of "
+    "[func1(param_name=param_value, ...), func2(...)].\n"
+    "Do not include any other text in the response when returning function calls."
+)
+
 
 @dataclass
 class ToolUtils(ABC):
@@ -288,6 +297,33 @@ class Llama3ToolUtils(ToolUtils):
         return json.dumps(function_objects[0] if len(function_objects) == 1 else function_objects, ensure_ascii=False)
 
 
+class Llama4ToolUtils(ToolUtils):
+    r"""Llama 4 zero-shot tool calling format.
+
+    Reference: https://github.com/meta-llama/llama-models/blob/main/models/llama4/prompt_format.md
+    """
+
+    @override
+    @staticmethod
+    def tool_formatter(tools: list[dict[str, Any]]) -> str:
+        normalized_tools = [tool.get("function", {}) if tool.get("type") == "function" else tool for tool in tools]
+        tool_text = json.dumps(normalized_tools, indent=4, ensure_ascii=False)
+        return LLAMA4_TOOL_PROMPT.format(tool_text=tool_text)
+
+    @override
+    @staticmethod
+    def function_formatter(functions: list["FunctionCall"]) -> str:
+        function_texts = []
+        for name, arguments in functions:
+            parsed_arguments = json.loads(arguments)
+            argument_text = ", ".join(
+                f"{key}={json.dumps(value, ensure_ascii=False)}" for key, value in parsed_arguments.items()
+            )
+            function_texts.append(f"{name}({argument_text})")
+
+        return "[" + ", ".join(function_texts) + "]"
+
+
 class ERNIEToolUtils(ToolUtils):
     r"""ERNIE 4.5 tool using template."""
 
@@ -346,6 +382,7 @@ TOOLS = {
     "glm4_moe": GLM4MOEToolUtils(),
     "glm_moe_dsa": GLM_5ToolUtils(),
     "llama3": Llama3ToolUtils(),
+    "llama4": Llama4ToolUtils(),
 }
 
 
