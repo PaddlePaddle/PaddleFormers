@@ -49,6 +49,7 @@ from .reshard import (
     split_opt_state,
     split_structure_name_mapping,
 )
+from .sname_translator import translate_structure_name_mapping
 
 
 def to_device(tensor, place=None):
@@ -293,6 +294,7 @@ class ShardingIO:
             suffix = self._sharding_meta_suffix()
             model_meta = self._load_model_meta_impl(checkpoint)
             old_mapping = model_meta["sharding_metas"][suffix]["structure_name_mapping"]
+            old_mapping = translate_structure_name_mapping(old_mapping)
             self.remapper = ParameterNameRemapper(old_mapping, new_mapping, checkpoint)
         return self.remapper
 
@@ -404,7 +406,21 @@ class ShardingIO:
             base_weight_name = base_weight_name.replace("model_state", "ema").replace("pdparams", "pdopt")
         file_path = os.path.join(resume_from_checkpoint, _add_variant(base_weight_name, weight_name_suffix))
         if not os.path.isfile(file_path):
-            raise ValueError(f"Can't find a valid checkpoint at {resume_from_checkpoint}, no {file_path}")
+            # Fallback: old ckpt was saved without _moeXX suffix, try stripping it.
+            import re as _re
+
+            suffix_no_moe = _re.sub(r"_moe\d+", "", weight_name_suffix or "")
+            if suffix_no_moe != weight_name_suffix:
+                file_path_fallback = os.path.join(
+                    resume_from_checkpoint, _add_variant(base_weight_name, suffix_no_moe or None)
+                )
+                logger.info(f"fallback: try loading model state from {file_path_fallback}")
+                if os.path.isfile(file_path_fallback):
+                    file_path = file_path_fallback
+                else:
+                    raise ValueError(f"Can't find a valid checkpoint at {resume_from_checkpoint}, no {file_path}")
+            else:
+                raise ValueError(f"Can't find a valid checkpoint at {resume_from_checkpoint}, no {file_path}")
 
         logger.info(f"Loading model from {file_path} .")
         # We load the model state dict on the CPU to avoid an OOM error.
@@ -430,6 +446,26 @@ class ShardingIO:
                 is_opt=True,
             )
         logger.info(f"{path} not exists")
+
+        # Fallback: old ckpt was saved without _moeXX suffix, try stripping it.
+        import re as _re
+
+        suffix_no_moe = _re.sub(r"_moe\d+", "", optimizer_name_suffix or "")
+        if suffix_no_moe != optimizer_name_suffix:
+            optimizer_name_fallback = _add_variant(base_opt_name, suffix_no_moe or None)
+            path_fallback = os.path.join(checkpoint, optimizer_name_fallback)
+            logger.info(f"fallback: try loading optimizer state from {path_fallback}")
+            if os.path.isfile(path_fallback):
+                opt_state = paddleformers_load(path_fallback, map_location="cpu")
+                if self.is_ema:
+                    opt_state = {"master_weights": opt_state.get("master_weights", {})}
+                return self._remap_parameter_name(
+                    checkpoint,
+                    self._modify_ckpt_for_compatibility(opt_state),
+                    is_opt=True,
+                )
+            logger.info(f"{path_fallback} not exists either")
+
         return None
 
     def _modify_ckpt_for_compatibility(self, ckpt):
