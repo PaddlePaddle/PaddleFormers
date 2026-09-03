@@ -12,6 +12,8 @@ Function Calling 是一种让大模型能够调用外部函数的机制，当模
 
 本次实验旨在说明如何基于 PaddleFormers 训练一个支持 Function Calling 能力的模型，验证模型 Function Calling 能力的性能和效果。整个实验使用1张40G A100显卡进行训练，耗时约5分钟。
 
+*在线教程：https://aistudio.baidu.com/projectdetail/10005408*
+
 # 2. 任务准备
 
 ## 2.1. 模型准备
