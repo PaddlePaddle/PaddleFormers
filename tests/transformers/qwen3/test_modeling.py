@@ -14,7 +14,11 @@
 # limitations under the License.
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 import tempfile
+import textwrap
 import unittest
 
 import numpy as np
@@ -402,6 +406,40 @@ class Qwen3IntegrationTest(unittest.TestCase):
                                            0.22540271, 0.29454109, 0.20641674, 0.27301168, 0.19073905,
                                            -0.18411471, -0.00371862, -0.03729195, 0.04005751, 0.05292411])  # fmt: skip
         self.assertTrue(paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
+
+
+class Qwen3ImportFallbackTest(unittest.TestCase):
+    def test_deprecated_model_imports_without_gpt_provider(self):
+        code = textwrap.dedent(
+            """
+            import importlib.abc
+            import sys
+
+            class BlockGPTProvider(importlib.abc.MetaPathFinder):
+                def find_spec(self, fullname, path=None, target=None):
+                    if fullname == "paddleformers.transformers.gpt_provider":
+                        raise ImportError("simulated missing paddlefleet")
+                    return None
+
+            sys.meta_path.insert(0, BlockGPTProvider())
+
+            from paddleformers.transformers.qwen3.modeling import GPTModelProvider, Qwen3ForCausalLMDeprecated
+
+            assert Qwen3ForCausalLMDeprecated.__name__ == "Qwen3ForCausalLMDeprecated"
+
+            try:
+                GPTModelProvider.from_config(None)
+            except ImportError:
+                pass
+            else:
+                raise AssertionError("fallback GPTModelProvider should require PaddleFleet when used")
+            """
+        )
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.pathsep.join(path for path in [os.getcwd(), env.get("PYTHONPATH", "")] if path)
+        result = subprocess.run([sys.executable, "-c", code], cwd=os.getcwd(), env=env, capture_output=True, text=True)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 class Qwen3GenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
