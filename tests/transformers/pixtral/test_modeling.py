@@ -159,6 +159,29 @@ class PixtralModelTest(unittest.TestCase):
     def test_vision_model_output_hidden_states(self):
         self.model_tester.create_and_check_vision_model_output_hidden_states()
 
+    def test_vision_model_uses_config_output_hidden_states(self):
+        config = self.model_tester.get_config()
+        config.output_hidden_states = True
+        model = PixtralVisionModel(config)
+        model.eval()
+
+        with paddle.no_grad():
+            result = model(self.model_tester.get_pixel_values())
+
+        self.assertEqual(len(result.hidden_states), config.num_hidden_layers + 1)
+
+    def test_vision_model_recompute(self):
+        config = self.model_tester.get_config()
+        config.recompute_granularity = "full"
+        config.recompute_use_reentrant = False
+        model = PixtralVisionModel(config)
+        model.train()
+
+        result = model(self.model_tester.get_pixel_values())
+        result.last_hidden_state.square().mean().backward()
+
+        self.assertIsNotNone(model.transformer.layers[0].attention.q_proj.weight.grad)
+
     def test_vision_model_single_image(self):
         self.model_tester.create_and_check_vision_model_single_image()
 

@@ -60,6 +60,7 @@ class PixtralVisionConfig(PretrainedConfig):
         attention_dropout=0.0,
         rope_theta=10000.0,
         initializer_range=0.02,
+        fuse_rms_norm=False,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -74,6 +75,8 @@ class PixtralVisionConfig(PretrainedConfig):
         self.attention_dropout = attention_dropout
         self.rope_theta = rope_theta
         self.initializer_range = initializer_range
+        # Keep the unfused FP32 accumulation order used by the reference implementation.
+        self.fuse_rms_norm = fuse_rms_norm
         self.head_dim = self.hidden_size // self.num_attention_heads
 
         # Build rope_parameters dict for compatibility

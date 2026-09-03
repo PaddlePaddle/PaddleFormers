@@ -16,7 +16,9 @@
 
 import paddle
 from paddle import nn
+from paddle.distributed.fleet.utils import recompute
 
+from ...nn.norm import Norm as GeneralNorm
 from ..model_outputs import BaseModelOutput
 from ..model_utils import PretrainedModel, register_base_model
 from .configuration import PixtralVisionConfig
@@ -113,25 +115,6 @@ class PixtralRotaryEmbedding(nn.Layer):
         return cos.astype(x.dtype), sin.astype(x.dtype)
 
 
-class PixtralRMSNorm(nn.Layer):
-    """RMS Normalization for Pixtral."""
-
-    def __init__(self, hidden_size, eps=1e-6):
-        super().__init__()
-        self.weight = self.create_parameter(
-            shape=[hidden_size],
-            default_initializer=nn.initializer.Constant(1.0),
-        )
-        self.variance_epsilon = eps
-
-    def forward(self, hidden_states):
-        input_dtype = hidden_states.dtype
-        hidden_states = hidden_states.astype("float32")
-        variance = hidden_states.pow(2).mean(-1, keepdim=True)
-        hidden_states = hidden_states * paddle.rsqrt(variance + self.variance_epsilon)
-        return self.weight * hidden_states.astype(input_dtype)
-
-
 class PixtralMLP(nn.Layer):
     """MLP for Pixtral (gate + up + down projections)."""
 
@@ -220,10 +203,22 @@ class PixtralAttentionLayer(nn.Layer):
 
     def __init__(self, config: PixtralVisionConfig):
         super().__init__()
-        self.attention_norm = PixtralRMSNorm(config.hidden_size, eps=1e-5)
+        self.attention_norm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            has_bias=False,
+            norm_eps=1e-5,
+        )
         self.feed_forward = PixtralMLP(config)
         self.attention = PixtralAttention(config)
-        self.ffn_norm = PixtralRMSNorm(config.hidden_size, eps=1e-5)
+        self.ffn_norm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            has_bias=False,
+            norm_eps=1e-5,
+        )
 
     def forward(
         self,
@@ -261,19 +256,43 @@ class PixtralTransformer(nn.Layer):
         inputs_embeds: paddle.Tensor,
         attention_mask: paddle.Tensor | None = None,
         position_embeddings: tuple[paddle.Tensor, paddle.Tensor] | None = None,
-        output_hidden_states: bool = False,
+        output_hidden_states: bool | None = None,
     ) -> BaseModelOutput:
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
         hidden_states = inputs_embeds
         all_hidden_states = () if output_hidden_states else None
+
+        def create_custom_forward(module):
+            def custom_forward(layer_hidden_states):
+                return module(
+                    layer_hidden_states,
+                    attention_mask,
+                    position_embeddings=position_embeddings,
+                )
+
+            return custom_forward
 
         for encoder_layer in self.layers:
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
-            hidden_states = encoder_layer(
-                hidden_states,
-                attention_mask,
-                position_embeddings=position_embeddings,
-            )
+            if (
+                self.training
+                and not hidden_states.stop_gradient
+                and getattr(self.config, "recompute_granularity", None) == "full"
+            ):
+                hidden_states = recompute(
+                    create_custom_forward(encoder_layer),
+                    hidden_states,
+                    use_reentrant=getattr(self.config, "recompute_use_reentrant", True),
+                )
+            else:
+                hidden_states = encoder_layer(
+                    hidden_states,
+                    attention_mask,
+                    position_embeddings=position_embeddings,
+                )
 
         if output_hidden_states:
             all_hidden_states = all_hidden_states + (hidden_states,)
@@ -402,7 +421,13 @@ class PixtralVisionModel(PixtralPretrainedModel):
             bias_attr=False,
         )
         self.patch_size = config.patch_size
-        self.ln_pre = PixtralRMSNorm(config.hidden_size, eps=1e-5)
+        self.ln_pre = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            has_bias=False,
+            norm_eps=1e-5,
+        )
         self.transformer = PixtralTransformer(config)
         self.patch_positional_embedding = PixtralRotaryEmbedding(config)
 
@@ -440,7 +465,7 @@ class PixtralVisionModel(PixtralPretrainedModel):
         self,
         pixel_values: paddle.Tensor,
         image_sizes: paddle.Tensor | None = None,
-        output_hidden_states: bool = False,
+        output_hidden_states: bool | None = None,
         return_dict: bool = True,
     ) -> BaseModelOutput:
         """
@@ -450,6 +475,9 @@ class PixtralVisionModel(PixtralPretrainedModel):
             output_hidden_states: whether to return all hidden states
             return_dict: whether to return BaseModelOutput or tuple
         """
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
         if image_sizes is None:
             batch_size, _, height, width = pixel_values.shape
             image_sizes = [(height, width)] * batch_size
