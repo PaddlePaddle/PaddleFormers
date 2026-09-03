@@ -2317,6 +2317,8 @@ class Trainer:
         if self.resume_from_custom_func is not None:
             self.resume_from_custom_func(model)
 
+        step_control = 0  # used in loop control, should not be cleared when go to new epoch
+
         for epoch in range(epochs_trained, num_train_epochs):
             if (
                 not args.enable_auto_parallel
@@ -2325,7 +2327,6 @@ class Trainer:
             ):
                 train_dataloader.batch_sampler.set_epoch(epoch, consumed_samples)
 
-            step_control = 0  # used in loop control, reset to 0 after every step
             self.control = self.callback_handler.on_epoch_begin(args, self.state, self.control)
 
             step = -1
