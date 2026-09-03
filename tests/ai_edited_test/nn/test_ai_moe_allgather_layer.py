@@ -178,7 +178,7 @@ class TestMOEAllGatherLayerV2Init(unittest.TestCase):
         mock_gate = MagicMock()
         mock_gate.config = MagicMock()
         mock_gate.config.router_aux_loss_coef = 0.0
-        mock_gate.config.moe_use_aux_free = True
+        mock_gate.config.topk_method = "noaux_tc"
         mock_gate.config.moe_use_hard_gate = False
         mock_gate.config.norm_gate_logits = False
         mock_gate.config.moe_orthogonal_loss_lambda = 0.0
@@ -217,7 +217,7 @@ class TestMOEAllGatherLayerV2Init(unittest.TestCase):
         mock_gate = MagicMock()
         mock_gate.config = MagicMock()
         mock_gate.config.router_aux_loss_coef = 0.0
-        mock_gate.config.moe_use_aux_free = True
+        mock_gate.config.topk_method = "noaux_tc"
         mock_gate.config.moe_use_hard_gate = False
         mock_gate.config.norm_gate_logits = False
         mock_gate.config.moe_orthogonal_loss_lambda = 0.0
@@ -257,7 +257,7 @@ class TestMOEAllGatherLayerV2Init(unittest.TestCase):
         mock_gate = MagicMock()
         mock_gate.config = MagicMock()
         mock_gate.config.router_aux_loss_coef = 0.0
-        mock_gate.config.moe_use_aux_free = True
+        mock_gate.config.topk_method = "noaux_tc"
         mock_gate.config.moe_use_hard_gate = False
         mock_gate.config.norm_gate_logits = False
         mock_gate.config.moe_orthogonal_loss_lambda = 0.0
@@ -291,7 +291,7 @@ class TestMOEAllGatherLayerV2Init(unittest.TestCase):
         mock_gate = MagicMock()
         mock_gate.config = MagicMock()
         mock_gate.config.router_aux_loss_coef = 0.0
-        mock_gate.config.moe_use_aux_free = True
+        mock_gate.config.topk_method = "noaux_tc"
         mock_gate.config.moe_use_hard_gate = False
         mock_gate.config.norm_gate_logits = False
         mock_gate.config.moe_orthogonal_loss_lambda = 0.0
@@ -325,7 +325,7 @@ class TestMOEAllGatherLayerV2Init(unittest.TestCase):
         mock_gate = MagicMock()
         mock_gate.config = MagicMock()
         mock_gate.config.router_aux_loss_coef = 0.0
-        mock_gate.config.moe_use_aux_free = True
+        mock_gate.config.topk_method = "noaux_tc"
         mock_gate.config.moe_use_hard_gate = False
         mock_gate.config.norm_gate_logits = False
         mock_gate.config.moe_orthogonal_loss_lambda = 0.0
@@ -387,7 +387,7 @@ class TestMOEAllGatherLayerV2ForwardExperts(unittest.TestCase):
         mock_gate = MagicMock()
         mock_gate.config = MagicMock()
         mock_gate.config.router_aux_loss_coef = 0.0
-        mock_gate.config.moe_use_aux_free = True
+        mock_gate.config.topk_method = "noaux_tc"
         mock_gate.config.moe_use_hard_gate = False
         mock_gate.config.norm_gate_logits = False
         mock_gate.config.moe_orthogonal_loss_lambda = 0.0
@@ -466,7 +466,7 @@ class TestMOEAllGatherLayerV2CalcRouterLoss(unittest.TestCase):
         mock_gate = MagicMock()
         mock_gate.config = MagicMock()
         mock_gate.config.router_aux_loss_coef = 0.0
-        mock_gate.config.moe_use_aux_free = True
+        mock_gate.config.topk_method = "noaux_tc"
         mock_gate.config.moe_use_hard_gate = False
         mock_gate.config.norm_gate_logits = False
         mock_gate.config.moe_orthogonal_loss_lambda = 0.0
@@ -519,7 +519,7 @@ class TestMOEAllGatherLayerV2FusedGateLogitsProcessFused(unittest.TestCase):
         mock_gate = MagicMock()
         mock_gate.config = MagicMock()
         mock_gate.config.router_aux_loss_coef = 0.0
-        mock_gate.config.moe_use_aux_free = True
+        mock_gate.config.topk_method = "noaux_tc"
         mock_gate.config.moe_use_hard_gate = False
         mock_gate.config.norm_gate_logits = False
         mock_gate.config.moe_orthogonal_loss_lambda = 0.0

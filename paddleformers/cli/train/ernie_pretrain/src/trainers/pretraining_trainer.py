@@ -247,7 +247,7 @@ class PreTrainingArguments(TrainingArguments):
     )
     moe_router_bias_update_rate: float = field(
         default=1.0e-3,
-        metadata={"help": "moe aux free update coef,"},
+        metadata={"help": "moe aux-free update coef, only effective when model_config.topk_method=noaux_tc"},
     )
     use_fp8: bool = field(
         default=False,

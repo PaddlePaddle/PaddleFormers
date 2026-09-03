@@ -432,7 +432,7 @@ class MOELayer(nn.Layer):
         self.moe_statics = moe_statics
         if self.use_correction_bias:
             logger.info(f"using correction bias, aux-coef:{self.gate.config.router_aux_loss_coef}")
-            assert self.gate.config.moe_use_aux_free
+            assert self.gate.config.topk_method == "noaux_tc"
 
         self.is_mp_moe = (
             hasattr(fleet.fleet, "_hcg") and group is fleet.get_hybrid_communicate_group().get_model_parallel_group()

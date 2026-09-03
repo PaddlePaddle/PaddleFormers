@@ -193,7 +193,7 @@ class TopKGate(nn.Layer):
 
         self.sinkhorn_2gate = config.sinkhorn_2gate
         self.sinkhorn_temp = config.sinkhorn_temp
-        self.use_correction_bias = config.moe_use_aux_free  # true
+        self.use_correction_bias = config.topk_method == "noaux_tc"
         self.use_token_type_bias = config.get("moe_use_token_type_bias", False)
 
         if config.scoring_func == "softmax":

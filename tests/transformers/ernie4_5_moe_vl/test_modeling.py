@@ -68,7 +68,7 @@ class Ernie4_5_VLModelTester:
         moe_multimodal_dispatch_use_allgather="v2-alltoall-unpad-text",
         moe_num_experts=[4, 4],
         moe_num_shared_experts=1,
-        moe_use_aux_free=True,
+        topk_method="noaux_tc",
         pixel_hidden_size=32,
         rms_norm_eps=1e-5,
         rope_3d=True,
@@ -129,7 +129,7 @@ class Ernie4_5_VLModelTester:
         self.moe_multimodal_dispatch_use_allgather = moe_multimodal_dispatch_use_allgather
         self.moe_num_experts = moe_num_experts
         self.moe_num_shared_experts = moe_num_shared_experts
-        self.moe_use_aux_free = moe_use_aux_free
+        self.topk_method = topk_method
         self.pixel_hidden_size = pixel_hidden_size
         self.rms_norm_eps = rms_norm_eps
         self.rope_3d = rope_3d
@@ -259,7 +259,7 @@ class Ernie4_5_VLModelTester:
             moe_multimodal_dispatch_use_allgather=self.moe_multimodal_dispatch_use_allgather,
             moe_num_experts=self.moe_num_experts,
             moe_num_shared_experts=self.moe_num_shared_experts,
-            moe_use_aux_free=self.moe_use_aux_free,
+            topk_method=self.topk_method,
             pixel_hidden_size=self.pixel_hidden_size,
             rms_norm_eps=self.rms_norm_eps,
             rope_3d=self.rope_3d,

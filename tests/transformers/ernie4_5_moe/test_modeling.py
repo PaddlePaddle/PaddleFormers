@@ -85,7 +85,7 @@
 #         moe_norm_gate_logits=True,
 #         moe_all_to_all_dropout=0.0,
 #         moe_k=2,
-#         moe_use_aux_free=True,
+#         topk_method="noaux_tc",
 #         moe_group_experts=False,
 #         moe_group_orthogonal_loss=True,
 #         enable_delay_scale_loss=True,
@@ -160,7 +160,7 @@
 #         self.moe_layer_end_index = self.num_hidden_layers - 1 if moe_layer_end_index == -1 else moe_layer_end_index
 #         self.moe_gate_act = moe_gate_act
 #         self.moe_norm_gate_logits = moe_norm_gate_logits
-#         self.moe_use_aux_free = moe_use_aux_free
+#         self.topk_method = topk_method
 #         self.fuse_gate_detach_matmul = fuse_gate_detach_matmul
 #         self.moe_use_hard_gate = moe_use_hard_gate
 #         self.num_nextn_predict_layers = num_nextn_predict_layers
@@ -249,7 +249,7 @@
 #             num_acc_steps=self.num_acc_steps,
 #             moe_gate_act=self.moe_gate_act,
 #             moe_norm_gate_logits=self.moe_norm_gate_logits,
-#             moe_use_aux_free=self.moe_use_aux_free,
+#             topk_method=self.topk_method,
 #             fuse_gate_detach_matmul=self.fuse_gate_detach_matmul,
 #             moe_use_hard_gate=self.moe_use_hard_gate,
 #             num_nextn_predict_layers=self.num_nextn_predict_layers,

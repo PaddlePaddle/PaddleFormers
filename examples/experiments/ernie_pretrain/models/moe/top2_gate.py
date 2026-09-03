@@ -216,7 +216,7 @@ class Top2Gate(nn.Layer):
         if self.global_aux_loss:
             self.rank = dist.get_rank(self.group)
 
-        self.use_correction_bias = config.moe_use_aux_free
+        self.use_correction_bias = config.topk_method == "noaux_tc"
 
         if config.scoring_func == "softmax":
             self.act = partial(F.softmax, axis=-1)

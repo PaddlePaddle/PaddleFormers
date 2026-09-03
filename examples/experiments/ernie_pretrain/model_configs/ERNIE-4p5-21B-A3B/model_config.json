@@ -50,7 +50,7 @@
   "moe_group_orthogonal_loss": true,
   "moe_orthogonal_loss_lambda": 1e-3,
   "moe_layer_interval": 1,
-  "moe_use_aux_free": true,
+  "topk_method": "noaux_tc",
   "using_precision_check": false,
   "fp8_mem_configs": {
       "shared_expert": false

@@ -660,7 +660,7 @@ def main():
     callbacks += [GlobalRNGCallback()]
     callbacks += [OrthogonalCallback(ortho_loss_lambda)] if args.use_ortho_loss_callback else []
 
-    if getattr(cfg, "moe_use_aux_free", 0.0) > 0.0:
+    if cfg.topk_method == "noaux_tc":
         logger.info("adding aux free callback")
         callbacks += [MoECorrectionBiasAdjustCallback(args.moe_router_bias_update_rate, args.sequence_parallel)]
 
