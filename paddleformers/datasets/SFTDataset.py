@@ -270,6 +270,7 @@ class BaseSFTDataset:
                 # Pre-fill the queue
                 for _ in range(self.prefetch_size):
                     if send_idx >= total_samples:
+                        self.iter_all_examples = True
                         break
                     example = next(dataset_iterator)
                     self._in_queue.put((send_idx, example, actual_example_num))
@@ -293,6 +294,8 @@ class BaseSFTDataset:
                         self._in_queue.put((send_idx, example, actual_example_num))
                         send_idx += 1
                         pending += 1
+                    if send_idx >= total_samples:
+                        self.iter_all_examples = True
 
                     # Store result in buffer
                     result_buffer[idx] = result
@@ -336,6 +339,7 @@ class BaseSFTDataset:
                     if self.estimate:
                         self.unused_samples += actual_example_num
                         self.used_estimate_samples += actual_example_num
+            self.iter_all_examples = True
 
     def _generate_sequences(self):
 
@@ -421,10 +425,8 @@ class BaseSFTDataset:
                 )
                 batch_sequence = [sequence]
                 yield batch_sequence
-            self.iter_all_examples = True
         else:
             if not self.packing:
-                logger.info("Not using packing mode for data iteration.")
                 # No packing mode
                 data_iter = self._get_processed_data_iterator(
                     dataset_iterator, actual_example_num, self._current_processor_func
@@ -445,10 +447,8 @@ class BaseSFTDataset:
                             yield []
                 if len(batch_sequence) > 0:
                     yield batch_sequence
-                self.iter_all_examples = True
             else:
                 if self.binpacking:
-                    logger.info("Using binpacking mode for data iteration.")
                     data_iter = self._get_processed_data_iterator(
                         dataset_iterator, actual_example_num, self._current_processor_func
                     )
@@ -477,10 +477,8 @@ class BaseSFTDataset:
                                 yield []
 
                         if finished:
-                            self.iter_all_examples = True
                             break
                 elif not self.greedy_intokens:
-                    logger.info("Using base packing mode for data iteration.")
                     # base packing mode
                     data_iter = self._get_processed_data_iterator(
                         dataset_iterator, actual_example_num, self._current_processor_func
@@ -508,9 +506,7 @@ class BaseSFTDataset:
                                 yield []
                     if len(batch_sequence) > 0:
                         yield batch_sequence
-                    self.iter_all_examples = True
                 else:
-                    logger.info("Using greedy packing mode for data iteration.")
                     # Pseudo multiple rounds + group greedy intokens.
                     buffer_size = self.packing_interval
                     sequences_buffer = []
@@ -553,8 +549,6 @@ class BaseSFTDataset:
                         for pack in generate_packs:
                             if len(pack) > 0:
                                 yield pack
-
-                    self.iter_all_examples = True
 
     def __iter__(self):
         """
