@@ -89,6 +89,9 @@ class GLMMoEModelProvider(GPTModelProvider):
     moe_expert_fusion: bool = False
     use_accuracy_compatible: bool = False
 
+    attention_softmax_in_fp32: bool = True
+    bf16: bool = True
+
 
 def eager_attention_forward(
     module: nn.Layer,
