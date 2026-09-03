@@ -83,6 +83,7 @@ MAPPING_NAMES = OrderedDict(
         ("DeepseekV4", "deepseek_v4"),
         ("GptOss", "gpt_oss"),
         ("MiniCPM3", "minicpm3"),
+        ("SeedOss", "seed_oss"),
         ("Granite", "granite"),
         ("Phi3", "phi3"),
         ("Phi4", "phi4"),
