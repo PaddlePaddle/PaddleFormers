@@ -2166,7 +2166,11 @@ class Trainer:
                     for buffer in buffers:
                         buffer._clear_grad_storage()
         else:
-            self.optimizer.clear_grad()
+            # Use set_to_zero=False so parameters not activated in the next step
+            # keep grad=None rather than a zero tensor. With set_to_zero=True (default),
+            # AdamW applies weight_decay to inactive MoE experts (grad=0 tensor != grad=None),
+            # causing weight divergence from PyTorch/HF which skips grad=None parameters.
+            self.optimizer.clear_grad(set_to_zero=False)
 
     def _get_meshes_for_loader(self):
         return self.global_mesh.get_mesh_with_dim("pp")[0]
