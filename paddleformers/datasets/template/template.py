@@ -648,6 +648,28 @@ register_template(
     mm_plugin=get_mm_plugin(name="paddleocr_vl", image_token="<|IMAGE_PLACEHOLDER|>"),
 )
 
+register_template(
+    name="aya_vision",
+    format_user=StringFormatter(
+        slots=[
+            "<|START_OF_TURN_TOKEN|><|USER_TOKEN|>{{content}}<|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|><|START_RESPONSE|>"
+        ]
+    ),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|>{{content}}<|END_OF_TURN_TOKEN|>"]),
+    format_function=FunctionFormatter(slots=["{{content}}"], tool_format="default"),
+    format_observation=StringFormatter(
+        slots=[
+            "<|START_OF_TURN_TOKEN|><|USER_TOKEN|>{{content}}<|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|><|START_RESPONSE|>"
+        ]
+    ),
+    format_tools=ToolFormatter(tool_format="default"),
+    format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
+    chat_sep="<|END_RESPONSE|><|END_OF_TURN_TOKEN|>",
+    suffix=["<|END_RESPONSE|><|END_OF_TURN_TOKEN|>"],
+    mm_plugin=get_mm_plugin(name="aya_vision", image_token="<image>"),
+)
+
 # copied from chatml template
 register_template(
     name="qwen",

@@ -111,6 +111,7 @@ from .utils import (  # convert_ndarray_dtype,
 )
 
 VLMS = [
+    "ayavision",
     "qwen2vl",
     "qwen2_5_vl",
 ]
