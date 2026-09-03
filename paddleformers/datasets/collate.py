@@ -26,6 +26,72 @@ from paddleformers.peft.lora import LoRAModel
 from .SFTDataset import Sequence
 
 
+def _pad_and_stack_multimodal_tensors(tensors, padding_value=0):
+    max_length = max(tensor.shape[0] for tensor in tensors)
+    padded_tensors = []
+    for tensor in tensors:
+        padding_length = max_length - tensor.shape[0]
+        if padding_length > 0:
+            padding = paddle.full(
+                [padding_length, *tensor.shape[1:]],
+                padding_value,
+                dtype=tensor.dtype,
+            )
+            tensor = paddle.concat([tensor, padding], axis=0)
+        padded_tensors.append(tensor)
+    return paddle.stack(padded_tensors, axis=0)
+
+
+def _pack_molmo_multimodal_inputs(batch_sequence):
+    """Merge Molmo inputs for samples packed into one token sequence."""
+    images = []
+    image_masks = []
+    image_input_idx = []
+    token_offset = 0
+
+    for sequence in batch_sequence:
+        mm_inputs = sequence.mm_inputs
+        molmo_keys = ("images", "image_masks", "image_input_idx")
+        present_keys = [key for key in molmo_keys if key in mm_inputs]
+        if not any(key in mm_inputs for key in ("image_masks", "image_input_idx")):
+            token_offset += len(sequence.token_ids)
+            continue
+        if present_keys and len(present_keys) != len(molmo_keys):
+            missing_keys = sorted(set(molmo_keys) - set(present_keys))
+            raise ValueError(f"Incomplete Molmo multimodal inputs; missing {missing_keys}.")
+
+        if present_keys:
+            images.append(paddle.to_tensor(mm_inputs["images"]))
+            image_masks.append(paddle.to_tensor(mm_inputs["image_masks"]))
+            indices = paddle.to_tensor(mm_inputs["image_input_idx"]).clone()
+            indices = paddle.where(indices >= 0, indices + token_offset, indices)
+            image_input_idx.append(indices)
+
+        token_offset += len(sequence.token_ids)
+
+    if not images:
+        return None, None, None
+
+    return (
+        paddle.concat(images, axis=0),
+        paddle.concat(image_masks, axis=0),
+        paddle.concat(image_input_idx, axis=0),
+    )
+
+
+def _pad_and_stack_optional_multimodal_tensors(tensors, padding_value=0):
+    """Stack packed rows, padding rows without images and rows with fewer crops."""
+    reference = next((tensor for tensor in tensors if tensor is not None), None)
+    if reference is None:
+        return None
+
+    empty = paddle.empty([0, *reference.shape[1:]], dtype=reference.dtype)
+    return _pad_and_stack_multimodal_tensors(
+        [tensor if tensor is not None else empty for tensor in tensors],
+        padding_value=padding_value,
+    )
+
+
 def calc_padding_size(seq_len: int, training_args) -> int:
     """
     Calculate appropriate padding size based on training parameters
@@ -693,6 +759,9 @@ def mm_collate_fn(
         input_keys.append("video_grid_thw")
         input_keys.append("input_features")
         input_keys.append("feature_attention_mask")
+        input_keys.append("images")
+        input_keys.append("image_masks")
+        input_keys.append("image_input_idx")
 
     mtp_depth = training_args.num_nextn_predict_layers
     use_mtp_attention_flexible = getattr(model_args, "mtp_attention_flexible", False) and mtp_depth > 0
@@ -717,6 +786,9 @@ def mm_collate_fn(
             input_keys.append("attention_mask")
 
     return_list = []
+    batch_molmo_images = []
+    batch_molmo_image_masks = []
+    batch_molmo_image_input_idx = []
     if padding_free:
         batch = [sum(batch, [])]
         max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
@@ -738,6 +810,10 @@ def mm_collate_fn(
         video_grid_thw = []
         input_features = []
         feature_attention_mask = []
+        molmo_images, molmo_image_masks, molmo_image_input_idx = _pack_molmo_multimodal_inputs(batch_sequence)
+        batch_molmo_images.append(molmo_images)
+        batch_molmo_image_masks.append(molmo_image_masks)
+        batch_molmo_image_input_idx.append(molmo_image_input_idx)
         for seq in batch_sequence:
             original_token_ids.append(seq.token_ids)
             mm_inputs = seq.mm_inputs
@@ -822,6 +898,9 @@ def mm_collate_fn(
                     video_grid_thw,
                     input_features,
                     feature_attention_mask,
+                    [],
+                    [],
+                    [],
                 ]
             )
 
@@ -899,6 +978,14 @@ def mm_collate_fn(
             value = paddle.to_tensor([])
         if len(value) > 0:
             input_dict[key] = value
+    molmo_images = _pad_and_stack_optional_multimodal_tensors(batch_molmo_images)
+    if molmo_images is not None:
+        input_dict["images"] = molmo_images
+        input_dict["image_masks"] = _pad_and_stack_optional_multimodal_tensors(batch_molmo_image_masks)
+        input_dict["image_input_idx"] = _pad_and_stack_optional_multimodal_tensors(
+            batch_molmo_image_input_idx,
+            padding_value=-1,
+        )
     return input_dict
 
 
