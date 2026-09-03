@@ -379,9 +379,12 @@ import_structure = {
     "minicpm.configuration": ["MiniCPMConfig"],
     "minicpm.modeling": [
         "MiniCPMModel",
+        "MiniCPMPretrainedModel",
         "MiniCPMForCausalLM",
-        "MiniCPMForCausalLMPipe",
         "MiniCPMForSequenceClassification",
+        "MiniCPMForTokenClassification",
+        "MiniCPMSentenceEmbedding",
+        "MiniCPMForCausalLMDeprecated",
     ],
     "minicpm": [],
     "minicpm4_1.configuration": ["MiniCPM4_1Config"],

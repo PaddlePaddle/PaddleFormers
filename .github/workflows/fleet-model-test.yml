@@ -247,6 +247,21 @@ jobs:
           fi
           '
 
+      - name: MiniCPM-1B single-card SFT
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 5m bash -x PaddleFormers/tests/integration_test/minicpm_sft_single_card.sh
+          exit_code=$?
+          if [[ "$exit_code" != "0" ]]; then
+            echo -e "::error:: \033[31mIntegration test failed: MiniCPM-1B single-card SFT.\033[0m"
+            exit 1
+          else
+            echo -e "\033[32mIntegration test succeeded: MiniCPM-1B single-card SFT.\033[0m"
+          fi
+          '
+
 
       - name: Terminate and delete the container
         if: ${{ always() }}
