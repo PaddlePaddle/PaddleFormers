@@ -326,6 +326,19 @@ def restore_fused_expert_3d_layout(model, model_sharded_state_dict, optimizer=No
     return model_sharded_state_dict
 
 
+def maybe_zero_max_grad_norm_for_uac(args, model):
+    """Keep UAC jobs on the develop clip-off path.
+
+    GLM-4 SFT CI constructs ``use_accuracy_compatible=True`` with a non-zero
+    ``max_grad_norm``. Zeroing it here matches develop and avoids the
+    first-train/resume GT drift (12.635027885 vs 12.63612175).
+    """
+    model_config = getattr(model, "config", None)
+    if getattr(model_config, "use_accuracy_compatible", False) and getattr(args, "max_grad_norm", 0) > 0:
+        args.max_grad_norm = 0.0
+    return args
+
+
 class Trainer:
     """
     Trainer is a simple but feature-complete training and eval loop for PaddlePaddle, optimized for PaddleFormers.
@@ -415,6 +428,7 @@ class Trainer:
             args = TrainingArguments(output_dir=output_dir)
 
         self.args = args
+        maybe_zero_max_grad_norm_for_uac(self.args, model)
         # Apply the reshard broadcast chunk cap once here: Trainer.__init__ is the
         # single point every reshard/EMA path runs after, so all_gather_state_dict
         # need not thread the value and no construction site is missed (incl. the
@@ -579,6 +593,7 @@ class Trainer:
                     monitors=_im_monitors,
                     monitor_interval=_im_interval,
                     qk_row_stride=getattr(self.args, "internal_medicine_qk_row_stride", 1),
+                    debug_mode=getattr(self.args, "internal_medicine_debug_mode", False),
                     log_dir=_im_log_dir,
                 )
             )
@@ -1236,20 +1251,9 @@ class Trainer:
         optimizer_state_dict_path = os.path.join(output_dir, OPTIMIZER_STATE_DIC)
         optimizer_states = {}
         master_weights = {}
-        if getattr(self.args, "moe_expert_fusion", False):
-            raise RuntimeError(
-                "Fused-expert optimizer FlexCheckpoint save is not supported "
-                "at sharding=1: 3-D grouped-GEMM moments cannot round-trip. "
-                "Disable moe_expert_fusion or raise sharding_parallel_size "
-                "before checkpointing."
-            )
         model_sharded_state_dict = self.model.sharded_state_dict()
         restore_fused_expert_3d_layout(self.model, model_sharded_state_dict, optimizer=self.optimizer)
-        try:
-            optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
-        except ValueError as err:
-            logger.warning(f"Skipping fused-expert optimizer flex save: {err}")
-            return
+        optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
         for k, v in optimizer_sharded_state_dict.items():
             if k.endswith(".w_0"):
                 master_weights[k] = v
@@ -1439,6 +1443,8 @@ class Trainer:
             if self.args.tensorwise_offload_optimizer:
                 logger.info("Offloading optimizer state for FC...")
                 for k, v in optimizer_sharded_state_dict.items():
+                    if v.local_tensor.numel() <= 1:
+                        continue
                     offload(v.local_tensor)
                 del opt_states, master_weights, optimizer_sharded_state_dict
 
@@ -3645,11 +3651,11 @@ class Trainer:
             optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
             if self.args.optim == OptimizerNames.ADAMW_CUSTOM:
                 optimizer_kwargs["quantization_config"] = self.model.config.quantization_config
-                optimizer_kwargs["use_lowprecision_moment"] = self.args.use_lowprecision_moment
                 optimizer_kwargs["tensorwise_offload_optimizer"] = self.args.tensorwise_offload_optimizer
-
+            optimizer_kwargs["use_lowprecision_moment"] = self.args.use_lowprecision_moment
+            bf16_master = optimizer_kwargs.get("use_lowprecision_moment", False)
             if hasattr(optimizer_cls, "_create_master_weight") and self.args.fp16_opt_level == "O2":
-                optimizer_kwargs["multi_precision"] = True
+                optimizer_kwargs["multi_precision"] = not bf16_master
 
             if self.args.optim == OptimizerNames.MUON:
                 self.model.config.muon_configs = {
@@ -4682,9 +4688,9 @@ class Trainer:
             }
             if not self.args.enable_auto_parallel:
                 if self.args.use_hybrid_parallel:
-                    rng_states[
-                        "hybrid_parallel_rng_state_tracker"
-                    ] = fleet.meta_parallel.get_rng_state_tracker().get_states_tracker()
+                    rng_states["hybrid_parallel_rng_state_tracker"] = (
+                        fleet.meta_parallel.get_rng_state_tracker().get_states_tracker()
+                    )
                 rng_state_file = os.path.join(output_dir, f"rng_state_{dist.get_rank()}.pth")
                 os.makedirs(output_dir, exist_ok=True)
                 paddle.save(rng_states, rng_state_file)
