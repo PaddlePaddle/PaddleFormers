@@ -1311,21 +1311,23 @@ class Trainer:
             self._ema_reshard_result = None
             if self.args.enable_zero_cost_checkpoint:
                 ema_state_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC)
+                is_fc = self._is_fc_format_ema(ema_state_path)
+                is_safetensors = self._is_safetensors_format_ema(ema_state_path)
                 if (
                     os.path.exists(ema_state_path)
                     and self.args.zcc_save_ema_coef is not None
-                    and self._is_fc_format_ema(ema_state_path)
+                    and (is_fc or is_safetensors)
                 ):
                     same_strategy, err_msg = DistInfoCollectorValidator(self.args, self.hcg).check_same_strategy(
                         resume_from_checkpoint
                     )
 
-                    if not same_strategy:
+                    if not same_strategy or is_safetensors:
                         logger.info(
                             f"[EMA Reshard] Parallelism strategy changed ({err_msg}), performing EMA reshard..."
                         )
                         self._ema_reshard_result = self._load_ema_with_reshard(
-                            ema_state_path, flex_ckpt_comm_method, worker_groups
+                            ema_state_path, flex_ckpt_comm_method, worker_groups, safetensors=is_safetensors
                         )
                         logger.info("[EMA Reshard] EMA reshard completed, results stored for subprocess")
                     else:
@@ -1571,7 +1573,13 @@ class Trainer:
             return False
         return any(f.endswith(".metadata") for f in os.listdir(ema_state_path))
 
-    def _load_ema_with_reshard(self, ema_state_path, comm_method, worker_groups):
+    def _is_safetensors_format_ema(self, ema_state_path):
+        """Check if EMA state is in safetensors format."""
+        if not os.path.isdir(ema_state_path):
+            return False
+        return any(f.endswith(".safetensors") for f in os.listdir(ema_state_path))
+
+    def _load_ema_with_reshard(self, ema_state_path, comm_method, worker_groups, safetensors=False):
         """Use FlexCheckpoint to reshard EMA state, return shared memory metas for subprocess."""
         model_sharded_state_dict = self.model.sharded_state_dict()
         opt_sharded = self.optimizer.sharded_state_dict(model_sharded_state_dict)
@@ -1581,8 +1589,8 @@ class Trainer:
         for k, sw in opt_sharded.items():
             if k.endswith(".w_0"):
                 local_tensor = paddle.zeros(sw.local_tensor.shape, dtype=paddle.float32)
-                ema_target[k] = ShardedWeight(
-                    key=sw.key,
+                ema_target[k[:-4]] = ShardedWeight(
+                    key=sw.key[:-4],
                     local_tensor=local_tensor,
                     local_shape=sw.local_shape,
                     global_shape=sw.global_shape,
@@ -1605,15 +1613,35 @@ class Trainer:
                     flattened_range=getattr(sw, "flattened_range", None),
                 )
 
+        if safetensors:
+            aoa_config = self.model._gen_aoa_config(self.model.config)
+            # Remove stale auto-generated metadata if present
+            metadata_path = os.path.join(ema_state_path, FLEX_CKPT_AUTO_GENERATED_METADATA)
+            try:
+                os.remove(metadata_path)
+            except FileNotFoundError:
+                pass
+            except Exception as e:
+                logger.warning(f"[EMA Reshard] Failed to delete stale metadata {metadata_path}: {e}")
+        else:
+            aoa_config = self.args.aoa_config
+
         logger.info(f"[EMA Reshard] Loading {len(ema_target)} EMA tensors via dist.load_state_dict...")
         dist.load_state_dict(
             ema_target,
             ema_state_path,
-            aoa_config=self.args.aoa_config,
+            aoa_config=aoa_config,
             offload=self.args.load_via_cpu,
             comm_method=comm_method,
             worker_groups=worker_groups,
+            safetensors=safetensors,
         )
+
+        for k, sw in opt_sharded.items():
+            if k.endswith(".w_0"):
+                ema_target[k[:-4]].key = ema_target[k[:-4]].key + ".w_0"
+                ema_target[k] = ema_target[k[:-4]]
+                del ema_target[k[:-4]]
         logger.info("[EMA Reshard] dist.load_state_dict completed")
 
         # Move to CPU shared memory for subprocess consumption
