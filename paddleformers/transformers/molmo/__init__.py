@@ -25,7 +25,6 @@ import_structure = {
         "MolmoPretrainedModel",
         "MolmoModel",
         "MolmoForCausalLM",
-        "MolmoForCausalLMPipe",
     ],
     "processing": ["MolmoProcessor"],
 }

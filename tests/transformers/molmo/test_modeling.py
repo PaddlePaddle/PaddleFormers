@@ -336,6 +336,20 @@ class MolmoModelTest(ModelTesterMixin, unittest.TestCase):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_for_causal_lm(*config_and_inputs)
 
+    def test_for_causal_lm_uses_config_output_hidden_states(self):
+        config = self.model_tester.get_config(with_vision=True)
+        input_ids = ids_tensor(
+            [self.model_tester.batch_size, self.model_tester.seq_length], config.vocab_size, dtype=paddle.int64
+        )
+        config.output_hidden_states = True
+        model = MolmoForCausalLM(config)
+        model.eval()
+
+        with paddle.no_grad():
+            result = model(input_ids, return_dict=True)
+
+        self.assertEqual(len(result.hidden_states), config.num_hidden_layers + 1)
+
     def test_auto_model_for_causal_lm_from_config(self):
         config = self.model_tester.get_config()
         config.architectures = ["MolmoForCausalLM"]

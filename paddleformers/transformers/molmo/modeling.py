@@ -28,7 +28,6 @@ from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.norm import Norm as GeneralNorm
-from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
 from ..masking_utils import create_causal_mask_and_row_indices
@@ -1224,7 +1223,7 @@ class MolmoForCausalLM(MolmoPretrainedModel):
         loss_mask: paddle.Tensor | None = None,
         use_cache: bool = False,
         past_key_values: Cache | None = None,
-        output_hidden_states: bool | None = False,
+        output_hidden_states: bool | None = None,
         return_dict: bool = False,
         **kwargs,
     ):
@@ -1280,21 +1279,8 @@ class MolmoForCausalLM(MolmoPretrainedModel):
         )
 
 
-class MolmoForCausalLMPipe(GeneralModelForCausalLMPipe):
-    config_class = MolmoConfig
-    _decoder_layer_cls = MolmoDecoderLayer
-    _get_tensor_parallel_mappings = MolmoModel._get_tensor_parallel_mappings
-    _init_weights = MolmoModel._init_weights
-    _keep_in_fp32_modules = MolmoModel._keep_in_fp32_modules
-    _tied_weights_keys = ["lm_head.weight"]
-    transpose_weight_keys = MolmoModel.transpose_weight_keys
-    _gen_aoa_config = MolmoForCausalLM._gen_aoa_config
-    _gen_inv_aoa_config = MolmoForCausalLM._gen_inv_aoa_config
-
-
 __all__ = [
     "MolmoPretrainedModel",
     "MolmoModel",
     "MolmoForCausalLM",
-    "MolmoForCausalLMPipe",
 ]
