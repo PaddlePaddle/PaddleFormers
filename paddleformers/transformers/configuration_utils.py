@@ -237,6 +237,7 @@ class LlmMetaConfig:
     hybrid_parallel_attributes = [
         # tensor_parallel
         ("tensor_model_parallel_size", int, 1, "tensor_model_parallel_size"),
+        ("tensor_parallel_degree", int, 1, "tensor_parallel_degree"),
         ("tensor_parallel_rank", int, 0, "tensor_parallel_rank"),
         ("tensor_parallel_output", bool, True, "tensor_parallel_output"),
         # pipeline_parallel
@@ -887,6 +888,13 @@ class PretrainedConfig:
         self._unsavable_keys.add("flashmask_use_varlen")
 
         kwargs = set_expected_keys(self, llm_meta, kwargs)
+        if getattr(self, "tensor_parallel_degree", 1) > 1:
+            logger.warning(
+                "tensor_parallel_degree is deprecated and will be removed in a future version."
+                "Please use tensor_model_parallel_size instead."
+            )
+            if getattr(self, "tensor_model_parallel_size", 1) == 1:
+                setattr(self, "tensor_model_parallel_size", self.tensor_parallel_degree)
         if self.sequence_parallel:
             assert (
                 self.tensor_model_parallel_size > 1
