@@ -24,6 +24,7 @@ from paddleformers.cli.train.sft.workflow import (
 
 def test_load_tokenizer_uses_independent_source():
     tokenizer = SimpleNamespace()
+    processor = SimpleNamespace()
     model_args = SimpleNamespace(
         tokenizer_name_or_path="/tokenizer-only",
         model_name_or_path="/weights-only",
@@ -35,12 +36,44 @@ def test_load_tokenizer_uses_independent_source():
         sft_workflow.AutoTokenizer,
         "from_pretrained",
         return_value=tokenizer,
-    ) as load_tokenizer:
-        actual_tokenizer, processor = load_tokenizer_and_processor(model_args, data_args)
+    ) as load_tokenizer, patch.object(
+        sft_workflow.AutoProcessor,
+        "from_pretrained",
+        return_value=processor,
+    ) as load_processor:
+        actual_tokenizer, actual_processor = load_tokenizer_and_processor(model_args, data_args)
 
     load_tokenizer.assert_called_once_with("/tokenizer-only")
+    load_processor.assert_called_once_with("/weights-only", use_fast=None)
     assert actual_tokenizer is tokenizer
-    assert processor is tokenizer
+    assert actual_processor is processor
+
+
+def test_load_processor_uses_autoprocessor_on_text_sft():
+    tokenizer = SimpleNamespace()
+    processor = SimpleNamespace()
+    model_args = SimpleNamespace(
+        tokenizer_name_or_path=None,
+        model_name_or_path="/glm4-weights",
+        stage="SFT",
+    )
+    data_args = SimpleNamespace(processor_use_fast=True)
+
+    with patch.object(
+        sft_workflow.AutoTokenizer,
+        "from_pretrained",
+        return_value=tokenizer,
+    ), patch.object(
+        sft_workflow.AutoProcessor,
+        "from_pretrained",
+        return_value=processor,
+    ) as load_processor:
+        actual_tokenizer, actual_processor = load_tokenizer_and_processor(model_args, data_args)
+
+    load_processor.assert_called_once_with("/glm4-weights", use_fast=True)
+    assert actual_tokenizer is tokenizer
+    assert actual_processor is processor
+    assert actual_processor is not tokenizer
 
 
 def _base_training_args(**overrides):

@@ -95,10 +95,11 @@ def load_tokenizer_and_processor(model_args, data_args):
     tokenizer_path = model_args.tokenizer_name_or_path or model_args.model_name_or_path
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
     logger.info(f"Loading tokenizer from {tokenizer_path}")
-    if "VL" in model_args.stage:
-        processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
-    else:
-        processor = tokenizer
+    # Keep develop's AutoProcessor load for every stage. Routing processor=
+    # tokenizer on text SFT moved GLM4 CI first-train/resume loss off the
+    # published GT (12.635027885 vs 12.63612175). GLM-5.2 still needs an
+    # independent tokenizer path; processor stays on the model weights path.
+    processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
     return tokenizer, processor
 
 
@@ -512,9 +513,12 @@ def run_sft(
     if isinstance(tokenizer, LlamaTokenizer) or isinstance(tokenizer, Llama3Tokenizer):
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    # Text GLM SFT keeps processor=tokenizer (load_tokenizer_and_processor).
-    # VL stages still need the develop max/min pixel wiring on AutoProcessor.
-    if preprocess_args is not None and processor is not tokenizer:
+    # The multimodal plugins read the resolution bounds off the processor
+    # (falling back to a hardcoded 768*768 / 32*32), so without wiring these the
+    # --max_pixels / --min_pixels arguments have no way to reach image
+    # preprocessing. They live on End2EndProcessorArguments rather than
+    # DataArguments because both dataclasses feed the same parser.
+    if preprocess_args is not None:
         if preprocess_args.max_pixels is not None:
             processor.image_max_pixels = preprocess_args.max_pixels
         if preprocess_args.min_pixels is not None:

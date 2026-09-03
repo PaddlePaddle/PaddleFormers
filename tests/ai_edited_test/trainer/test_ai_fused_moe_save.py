@@ -6,6 +6,10 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+from paddleformers.trainer.trainer import (
+    Trainer,
+    maybe_zero_max_grad_norm_for_uac,
+)
 from paddleformers.trainer.trainer_callback import (
     DefaultFlowCallback,
     TrainerControl,
@@ -91,6 +95,24 @@ class TestRestoreFusedExpert3DLayout(unittest.TestCase):
         restored = moment.reshape([2, 4, 6])
         self.assertEqual(tuple(restored.shape), tuple(param.shape))
         self.assertEqual(int(restored.numel()), int(param.numel()))
+
+
+class TestUacMaxGradNormOverride(unittest.TestCase):
+    def test_trainer_init_zeros_max_grad_norm_under_uac(self):
+        args = SimpleNamespace(max_grad_norm=1.0)
+        model = SimpleNamespace(config=SimpleNamespace(use_accuracy_compatible=True))
+        maybe_zero_max_grad_norm_for_uac(args, model)
+        self.assertEqual(args.max_grad_norm, 0.0)
+
+    def test_non_uac_keeps_configured_max_grad_norm(self):
+        args = SimpleNamespace(max_grad_norm=1.0)
+        model = SimpleNamespace(config=SimpleNamespace(use_accuracy_compatible=False))
+        maybe_zero_max_grad_norm_for_uac(args, model)
+        self.assertEqual(args.max_grad_norm, 1.0)
+
+    def test_trainer_init_calls_shipped_uac_helper(self):
+        source = inspect.getsource(Trainer.__init__)
+        self.assertIn("maybe_zero_max_grad_norm_for_uac(self.args, model)", source)
 
 
 class TestDefaultFlowCallbackSaveHf(unittest.TestCase):
