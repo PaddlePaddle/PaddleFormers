@@ -3713,6 +3713,7 @@ class Trainer:
                 "ns_steps": args.muon_ns_steps,
                 "ns_coeff_type": args.muon_ns_coeff_type,
                 "ns_coeffs": args.muon_ns_coeffs,
+                "use_symmetric_gemm": args.muon_use_symmetric_gemm,
             }
             optimizer_cls = Muon
             optimizer_kwargs.update(muon_kwargs)
