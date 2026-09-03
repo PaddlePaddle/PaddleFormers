@@ -2302,6 +2302,48 @@ class Trainer:
 
         self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
 
+        # === 精度对齐：注册 forward hooks ===
+        # 使用方式：设置环境变量 ENABLE_SAVE_HOOK=1 启用
+        # 设置环境变量 ENABLE_BACKWARD_HOOK=1 同时注册 backward hooks
+        # 设置环境变量 SAVE_TENSOR_GRAD=1 启用中间层梯度流追溯
+        enable_backward_hook_env = os.environ.get("ENABLE_BACKWARD_HOOK", "0") == "1"
+        save_tensor_grad_env = os.environ.get("SAVE_TENSOR_GRAD", "0") == "1"  # 中间层梯度流追溯
+        if os.environ.get("ENABLE_SAVE_HOOK", "0") == "1":
+            sys.path.insert(0, "/root/paddlejob/share-storage/gpfs/system-public/dengsiwei02/tensor_debug")
+            from save_tensor_paddle import enable_save_hook, register_all_hooks
+
+            enable_save_hook()
+
+            # === 调试：检查参数状态 ===
+            if enable_backward_hook_env:
+                total_params = 0
+                stop_grad_params = 0
+                main_grad_params = 0
+                for name, param in model.named_parameters():
+                    total_params += 1
+                    if param.stop_gradient:
+                        stop_grad_params += 1
+                    if hasattr(param, "main_grad"):
+                        main_grad_params += 1
+            # === 调试结束 ===
+
+            # 为所有叶子模块注册 hook (layer_types=None 表示所有叶子模块)
+            self._save_hooks = register_all_hooks(
+                model,
+                layer_types=None,  # None 表示注册所有叶子模块
+                subdir="forward_hooks",
+                save_input=True,
+                save_output=True,
+                save_grad=False,
+                save_backward=enable_backward_hook_env,
+                save_input_grad=save_tensor_grad_env,  # 中间层输入梯度
+                save_output_grad=save_tensor_grad_env,  # 中间层输出梯度
+            )
+            logger.info(
+                "精度对齐 hooks 已注册，保存目录: /root/paddlejob/share-storage/gpfs/system-public/dengsiwei02/tensor_debug/pf"
+            )
+        # === 精度对齐结束 ===
+
         tr_loss = paddle.to_tensor(0.0)
         self._total_loss_scalar = 0.0
         self._globalstep_last_logged = self.state.global_step
@@ -2347,6 +2389,50 @@ class Trainer:
                         enable_layerwise_event=True,
                     )
                 os.environ["TRAINER_GLOBAL_STEP"] = str(self.state.global_step)
+
+                # === 权重对齐 X光 ===
+                import hashlib
+
+                cur_global_step = int(os.environ["TRAINER_GLOBAL_STEP"]) + 1
+
+                if paddle.distributed.get_rank() == 0 and cur_global_step <= 1:
+                    log_dir = "/root/paddlejob/share-storage/gpfs/system-public/dengsiwei02/tensor_debug/pf"
+                    os.makedirs(log_dir, exist_ok=True)
+                    log_file = os.path.join(log_dir, "weights_md5.log")
+                    with open(log_file, "w") as f:
+                        f.write("\n" + "=" * 20 + " [Paddle 初始权重] " + "=" * 20 + "\n")
+                        for name, param in model.named_parameters():
+                            p = param.numpy()
+                            if p.dtype == np.uint16:
+                                p = param.astype("float32").numpy()
+                            else:
+                                p = p.astype(np.float32)
+                            md5 = hashlib.md5(p.tobytes()).hexdigest()
+                            norm_val = float(np.linalg.norm(p))
+                            line = f"[Paddle] {name} | md5: {md5} | sum: {p.sum()} | norm: {norm_val:.6f} | shape: {p.shape} | dtype: {param.dtype}\n"
+                            f.write(line)
+                            print(line, end="")
+                        f.write("=" * 61 + "\n")
+                    print(f"[Paddle] 权重信息已保存到: {log_file}")
+
+                    # === 打印模型结构 ===
+                    structure_file = os.path.join(log_dir, "model_structure.log")
+                    with open(structure_file, "w") as f:
+                        f.write("\n" + "=" * 20 + " [Paddle 模型结构] " + "=" * 20 + "\n\n")
+                        for name, module in model.named_sublayers():
+                            module_type = type(module).__name__
+                            params_info = ""
+                            if hasattr(module, "weight") and module.weight is not None:
+                                params_info += f" | weight: {tuple(module.weight.shape)}"
+                            if hasattr(module, "bias") and module.bias is not None:
+                                params_info += f" | bias: {tuple(module.bias.shape)}"
+                            line = f"{name} ({module_type}){params_info}\n"
+                            f.write(line)
+                        f.write("\n" + "=" * 60 + "\n")
+                    print(f"[Paddle] 模型结构已保存到: {structure_file}")
+                    # === 模型结构结束 ===
+                # === 权重对齐 X光 结束 ===
+
                 self.callback_handler.on_load_data_end(args, self.state, self.control, inputs=inputs)
 
                 # Skip past any already trained steps if resuming training
@@ -2608,6 +2694,25 @@ class Trainer:
                                         p.main_grad.scale_(1.0 / self.args.gradient_accumulation_steps)
                                     elif p.grad is not None:
                                         p.grad.scale_(1.0 / self.args.gradient_accumulation_steps)
+                        # === 精度对齐：在所有microbatch累积完成后保存梯度 ===
+                        save_all_grads = os.environ.get("SAVE_ALL_GRADS", "0") == "1"
+                        if save_all_grads:
+                            sys.path.insert(
+                                0, "/root/paddlejob/share-storage/gpfs/system-public/dengsiwei02/tensor_debug"
+                            )
+                            try:
+                                from save_all_grads import save_all_grads_pf
+                            except ImportError as e:
+                                print(f"[Warning] Failed to import save_all_grads_pf: {e}")
+                                save_all_grads_pf = None
+
+                            # 只在第一次训练步骤保存
+                            if not hasattr(self, "_all_grads_saved"):
+                                self._all_grads_saved = True
+                                rank = paddle.distributed.get_rank() if paddle.distributed.get_world_size() > 1 else 0
+                                save_all_grads_pf(model, rank=rank, prefix="grad_step1")
+                                print("[PF] All grads saved to npy files after gradient accumulation")
+
                         # Optimizer step
                         self.callback_handler.on_optimizer_begin(
                             args, self.state, self.control, scaler=self.scaler if self.do_grad_scaling else None
@@ -3870,7 +3975,7 @@ class Trainer:
                     global_norm_var_fp32 = paddle.sqrt(global_norm_var_dist + global_norm_var_not_dist)
                 training_logs["global_norm"] = global_norm_var_fp32.item()
 
-            self.optimizer._inner_opt._grad_clip._global_norm = types.MethodType(
+            dist_optimizer._inner_opt._grad_clip._global_norm = types.MethodType(
                 new_global_norm_func, dist_optimizer._inner_opt._grad_clip
             )
         return dist_optimizer
@@ -4294,7 +4399,7 @@ class Trainer:
         Return:
             `paddle.Tensor`: The tensor with training loss on this batch.
         """
-        if is_paddlefleet_available() and self.using_fleet_model:
+        if is_paddlefleet_available() and self.using_fleet_model and self.args.pipeline_model_parallel_size > 1:
             return self.training_pipeline_step(model, inputs)
 
         if self.args.pipeline_model_parallel_size > 1:
@@ -4308,12 +4413,48 @@ class Trainer:
         with self.autocast_smart_context_manager():
             loss = self.compute_loss(model, inputs)
 
+        # 梯度累积归一化：在 backward 之前做，与 MG 对齐
+        if self.args.gradient_accumulation_steps > 1:
+            loss = loss / self.args.gradient_accumulation_steps
+
         if self.do_grad_scaling:
             self.scaler.scale(loss).backward()
         else:
             loss.backward()
-        if self.args.gradient_accumulation_steps > 1:
-            loss = loss / self.args.gradient_accumulation_steps
+
+        # === 精度对齐：在 backward 后打印梯度累积状态 ===
+        enable_backward_hook_env = os.environ.get("ENABLE_BACKWARD_HOOK", "0") == "1"
+        if enable_backward_hook_env:
+            sys.path.insert(0, "/root/paddlejob/share-storage/gpfs/system-public/dengsiwei02/tensor_debug")
+            from save_tensor_paddle import print_main_grad_info
+
+            # 打印当前 microbatch 累积后的梯度
+            print_main_grad_info(model, prefix="PF GRAD", microbatch_idx="backward")
+
+            # 保存 output_layer.weight 的完整梯度数据用于详细对比
+            save_full_grad = os.environ.get("SAVE_FULL_WEIGHT_GRAD", "0") == "1"
+            if save_full_grad:
+                import numpy as np
+
+                for name, param in model.named_parameters():
+                    # 匹配 _layers.4 (output_layer, 带点号) 或 embed_tokens
+                    if "lm_head.weight" in name or "embed_tokens.weight" in name or "_layers.4" in name:
+                        # PF 使用 main_grad 或 grad
+                        grad_tensor = None
+                        if hasattr(param, "main_grad") and param.main_grad is not None:
+                            grad_tensor = param.main_grad
+                        elif param.grad is not None:
+                            grad_tensor = param.grad
+
+                        if grad_tensor is not None:
+                            grad_np = grad_tensor.cast("float32").numpy()
+                            rank = paddle.distributed.get_rank() if paddle.distributed.get_world_size() > 1 else 0
+                            save_path = f'/root/paddlejob/share-storage/gpfs/system-public/dengsiwei02/tensor_debug/pf_{name.replace(".", "_")}_rank{rank}.npy'
+                            np.save(save_path, grad_np)
+                            print(f"[PF] Saved {name} grad to {save_path}")
+                            print(f"     Shape: {grad_np.shape}, Sum: {grad_np.sum():.6e}")
+
+        # === 精度对齐结束 ===
 
         if not self.args.enable_auto_parallel:
             return loss.detach()
