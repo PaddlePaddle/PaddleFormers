@@ -71,6 +71,21 @@ class Lfm2VlModelTest(unittest.TestCase):
         self.assertIsNotNone(outputs.loss)
         outputs.loss.backward()
 
+    def test_multimodal_recompute_forward_and_backward(self):
+        config = get_config()
+        config.text_config.recompute_granularity = "full"
+        config.text_config.recompute_use_reentrant = False
+        config.vision_config.recompute_granularity = "full"
+        config.vision_config.recompute_use_reentrant = False
+        model = Lfm2VlForConditionalGeneration(config)
+        model.train()
+
+        outputs = model(**self.get_inputs())
+        outputs.loss.backward()
+
+        self.assertIsNotNone(model.model.language_model.layers[0].feed_forward.w1.weight.grad)
+        self.assertIsNotNone(model.model.vision_tower.vision_model.encoder.layers[0].self_attn.q_proj.weight.grad)
+
     def test_text_only_forward(self):
         model = Lfm2VlForConditionalGeneration(get_config())
         inputs = self.get_inputs()

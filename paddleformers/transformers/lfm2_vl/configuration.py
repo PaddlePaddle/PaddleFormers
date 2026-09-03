@@ -40,6 +40,7 @@ class Lfm2Config(PretrainedConfig):
         pad_token_id=0,
         bos_token_id=1,
         eos_token_id=2,
+        fuse_rms_norm=False,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -52,6 +53,8 @@ class Lfm2Config(PretrainedConfig):
         self.initializer_range = initializer_range
         self.norm_eps = norm_eps
         self.rms_norm_eps = norm_eps
+        # Preserve the reference implementation's unfused FP32 RMSNorm computation.
+        self.fuse_rms_norm = fuse_rms_norm
         self.use_cache = use_cache
         self.rope_theta = rope_theta
         self.rope_parameters = rope_parameters or {"rope_type": "default", "rope_theta": rope_theta}

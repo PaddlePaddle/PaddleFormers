@@ -8,26 +8,14 @@
 import paddle
 import paddle.nn.functional as F
 from paddle import nn
+from paddle.distributed.fleet.utils import recompute
 
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.lm_head import LMHead
+from ...nn.norm import Norm as GeneralNorm
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from .configuration import Lfm2Config
-
-
-class Lfm2RMSNorm(nn.Layer):
-    def __init__(self, hidden_size, eps=1e-6):
-        super().__init__()
-        self.weight = self.create_parameter([hidden_size], default_initializer=nn.initializer.Constant(1.0))
-        self.variance_epsilon = eps
-
-    def forward(self, hidden_states):
-        dtype = hidden_states.dtype
-        hidden_states = hidden_states.astype("float32")
-        variance = hidden_states.square().mean(axis=-1, keepdim=True)
-        hidden_states = hidden_states * paddle.rsqrt(variance + self.variance_epsilon)
-        return self.weight * hidden_states.astype(dtype)
 
 
 class Lfm2MLP(nn.Layer):
@@ -70,8 +58,12 @@ class Lfm2Attention(nn.Layer):
         self.k_proj = nn.Linear(config.hidden_size, self.num_key_value_heads * self.head_dim, bias_attr=False)
         self.v_proj = nn.Linear(config.hidden_size, self.num_key_value_heads * self.head_dim, bias_attr=False)
         self.out_proj = nn.Linear(self.num_heads * self.head_dim, config.hidden_size, bias_attr=False)
-        self.q_layernorm = Lfm2RMSNorm(self.head_dim, config.norm_eps)
-        self.k_layernorm = Lfm2RMSNorm(self.head_dim, config.norm_eps)
+        self.q_layernorm = GeneralNorm.create(
+            config=config, norm_type="rms_norm", hidden_size=self.head_dim, has_bias=False, norm_eps=config.norm_eps
+        )
+        self.k_layernorm = GeneralNorm.create(
+            config=config, norm_type="rms_norm", hidden_size=self.head_dim, has_bias=False, norm_eps=config.norm_eps
+        )
 
     def forward(self, hidden_states, cos, sin, attention_mask=None):
         batch_size, sequence_length, _ = hidden_states.shape
@@ -142,8 +134,20 @@ class Lfm2DecoderLayer(nn.Layer):
         else:
             self.conv = Lfm2ShortConv(config)
         self.feed_forward = Lfm2MLP(config)
-        self.operator_norm = Lfm2RMSNorm(config.hidden_size, config.norm_eps)
-        self.ffn_norm = Lfm2RMSNorm(config.hidden_size, config.norm_eps)
+        self.operator_norm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            has_bias=False,
+            norm_eps=config.norm_eps,
+        )
+        self.ffn_norm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            has_bias=False,
+            norm_eps=config.norm_eps,
+        )
 
     def forward(self, hidden_states, cos, sin, causal_mask=None, attention_mask=None):
         residual = hidden_states
@@ -159,6 +163,7 @@ class Lfm2DecoderLayer(nn.Layer):
 class Lfm2PreTrainedModel(PretrainedModel):
     config_class = Lfm2Config
     base_model_prefix = "model"
+    supports_gradient_checkpointing = True
 
 
 @register_base_model
@@ -167,7 +172,13 @@ class Lfm2Model(Lfm2PreTrainedModel):
         super().__init__(config)
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=config.pad_token_id)
         self.layers = nn.LayerList([Lfm2DecoderLayer(config, index) for index in range(config.num_hidden_layers)])
-        self.embedding_norm = Lfm2RMSNorm(config.hidden_size, config.norm_eps)
+        self.embedding_norm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            has_bias=False,
+            norm_eps=config.norm_eps,
+        )
         head_dim = config.hidden_size // config.num_attention_heads
         inv_freq = 1.0 / (config.rope_theta ** (paddle.arange(0, head_dim, 2, dtype="float32") / head_dim))
         self.register_buffer("inv_freq", inv_freq, persistable=False)
@@ -201,8 +212,26 @@ class Lfm2Model(Lfm2PreTrainedModel):
             padding_mask = (1 - attention_mask.astype(inputs_embeds.dtype))[:, None, None, :] * minimum
             causal_mask = causal_mask + padding_mask
         hidden_states = inputs_embeds
+
+        def create_custom_forward(module):
+            def custom_forward(layer_hidden_states):
+                return module(layer_hidden_states, cos, sin, causal_mask, attention_mask)
+
+            return custom_forward
+
         for layer in self.layers:
-            hidden_states = layer(hidden_states, cos, sin, causal_mask, attention_mask)
+            if (
+                self.training
+                and not hidden_states.stop_gradient
+                and getattr(self.config, "recompute_granularity", None) == "full"
+            ):
+                hidden_states = recompute(
+                    create_custom_forward(layer),
+                    hidden_states,
+                    use_reentrant=getattr(self.config, "recompute_use_reentrant", True),
+                )
+            else:
+                hidden_states = layer(hidden_states, cos, sin, causal_mask, attention_mask)
         hidden_states = self.embedding_norm(hidden_states)
         return BaseModelOutputWithPast(last_hidden_state=hidden_states, past_key_values=None)
 

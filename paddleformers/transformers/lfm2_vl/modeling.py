@@ -14,6 +14,7 @@ from dataclasses import dataclass
 import paddle
 import paddle.nn.functional as F
 from paddle import nn
+from paddle.distributed.fleet.utils import recompute
 from safetensors import safe_open
 
 from ...nn.criterion.interface import CriterionLayer
@@ -180,11 +181,29 @@ class Siglip2EncoderLayer(nn.Layer):
 class Siglip2Encoder(nn.Layer):
     def __init__(self, config):
         super().__init__()
+        self.config = config
         self.layers = nn.LayerList([Siglip2EncoderLayer(config) for _ in range(config.num_hidden_layers)])
 
     def forward(self, hidden_states, attention_mask):
+        def create_custom_forward(module):
+            def custom_forward(layer_hidden_states):
+                return module(layer_hidden_states, attention_mask)
+
+            return custom_forward
+
         for layer in self.layers:
-            hidden_states = layer(hidden_states, attention_mask)
+            if (
+                self.training
+                and not hidden_states.stop_gradient
+                and getattr(self.config, "recompute_granularity", None) == "full"
+            ):
+                hidden_states = recompute(
+                    create_custom_forward(layer),
+                    hidden_states,
+                    use_reentrant=getattr(self.config, "recompute_use_reentrant", True),
+                )
+            else:
+                hidden_states = layer(hidden_states, attention_mask)
         return hidden_states
 
 
@@ -244,6 +263,7 @@ class Lfm2VlMultiModalProjector(nn.Layer):
 class Lfm2VlPreTrainedModel(PretrainedModel):
     config_class = Lfm2VlConfig
     base_model_prefix = "model"
+    supports_gradient_checkpointing = True
 
 
 @register_base_model
