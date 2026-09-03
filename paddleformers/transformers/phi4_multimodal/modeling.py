@@ -404,8 +404,11 @@ class Phi4MultimodalVisionModel(_Phi4MultimodalComponentPreTrainedModel):
         self,
         pixel_values: paddle.Tensor,
         patch_attention_mask: Optional[paddle.Tensor] = None,
-        output_hidden_states: bool = False,
+        output_hidden_states: Optional[bool] = None,
     ):
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
         batch_size = pixel_values.shape[0]
         if patch_attention_mask is None:
             patch_attention_mask = paddle.ones(

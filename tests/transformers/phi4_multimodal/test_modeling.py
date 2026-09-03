@@ -96,6 +96,25 @@ class Phi4MultimodalModelingTest(unittest.TestCase):
                 self.assertEqual(set(model.state_dict()), set(reloaded.state_dict()))
                 self.assertTrue(model_class._no_split_modules)
 
+    def test_vision_model_uses_config_output_hidden_states(self):
+        config = Phi4MultimodalVisionConfig(
+            hidden_size=8,
+            intermediate_size=16,
+            num_hidden_layers=1,
+            num_attention_heads=2,
+            image_size=28,
+            crop_size=28,
+            patch_size=14,
+            output_hidden_states=True,
+        )
+        model = Phi4MultimodalVisionModel(config)
+        model.eval()
+
+        with paddle.no_grad():
+            output = model(paddle.randn([1, 3, 28, 28]))
+
+        self.assertEqual(len(output[2]), config.num_hidden_layers + 1)
+
     def test_general_rms_norm_keeps_unfused_phi4_path(self):
         config = Phi4MultimodalConfig(
             vocab_size=32,
