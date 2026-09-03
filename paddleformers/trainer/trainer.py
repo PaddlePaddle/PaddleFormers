@@ -120,6 +120,8 @@ if TYPE_CHECKING:
 
 from paddle.framework.recall_error import LOSS_INF_ERROR, LOSS_NAN_ERROR
 
+from paddleformers.utils.accuracy_compatible_patch import use_accuracy_compatible
+
 from ..transformers.context_parallel_utils import auto_split_sequence_dim_load_balance
 from ..transformers.image_processing_utils import ImageProcessingMixin
 from ..transformers.model_utils import (
@@ -2503,6 +2505,16 @@ class Trainer:
                     else:
                         tr_loss += tr_loss_step
 
+                    should_flush_sequence_first_wgrad = (step_control + 1) % args.gradient_accumulation_steps == 0 or (
+                        steps_in_epoch <= args.gradient_accumulation_steps and (step + 1) == steps_in_epoch
+                    )
+                    if use_accuracy_compatible() and should_flush_sequence_first_wgrad:
+                        from paddleformers.utils.accuracy_compatible_patch import (
+                            flush_sequence_first_wgrad,
+                        )
+
+                        flush_sequence_first_wgrad(model)
+
                     def fused_allreduce_gradients_no_sync(paramlist, hcg):
                         paramlist = list(paramlist)
                         nonmoe_list = [p for p in paramlist if not getattr(p, "no_sync", False)]
@@ -2596,7 +2608,11 @@ class Trainer:
                             self.timers and self.timers("all-reduce").stop()
                             self.timers and self.timers("optimizer-step").start()
 
-                        if not args.enable_auto_parallel and self.args.gradient_accumulation_steps > 1:
+                        if (
+                            not args.enable_auto_parallel
+                            and self.args.gradient_accumulation_steps > 1
+                            and not use_accuracy_compatible()
+                        ):
                             paddle.device.synchronize()
                             parameters = (
                                 model._layers.parameters() if hasattr(model, "_layers") else model.parameters()
@@ -4347,6 +4363,11 @@ class Trainer:
         Return:
             `paddle.Tensor`: The tensor with training loss on this batch.
         """
+        if use_accuracy_compatible():
+            from paddleformers.utils.accuracy_compatible_patch import set_loss_acc_steps
+
+            set_loss_acc_steps(self.args.gradient_accumulation_steps)
+
         # accumulation data
         if data_buffer_prepared:
             if len(self._pp_data_buffer) < self.args.gradient_accumulation_steps:
@@ -4386,6 +4407,13 @@ class Trainer:
             inputs = _dataset_process_function()
         else:
             inputs = PipelineDatasetPreprocessor(_dataset_process_function)
+
+        if use_accuracy_compatible():
+            from paddleformers.utils.accuracy_compatible_patch import (
+                set_pipeline_loss_scale,
+            )
+
+            set_pipeline_loss_scale(self.args.gradient_accumulation_steps)
 
         with self.autocast_smart_context_manager():
             loss = model.forward_backward_pipeline(inputs, self.scaler if self.do_grad_scaling else None)
