@@ -36,6 +36,7 @@ from transformers import TextStreamer
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.lm_head import LMHead as GeneralLMHead
+from ...utils.log import logger
 from ..cache_utils import Cache
 from ..deepseek_v3 import DeepseekV3ForCausalLM, DeepseekV3Model
 from ..deepseek_v3.modeling import DeepseekV3PretrainedModel
@@ -428,8 +429,7 @@ def build_qwen2_decoder_as_encoder(
         state_dict = paddle.load(checkpoint)
 
         decoder_as_encoder.load_state_dict(state_dict, strict=True)
-        # tob
-        print(checkpoint)
+        logger.info("Loaded decoder-as-encoder checkpoint from %s", checkpoint)
     return decoder_as_encoder
 
 
@@ -959,7 +959,7 @@ def _build_sam(
         image_encoder.load_state_dict(
             {k[30:]: v for k, v in state_dict.items() if "vision_tower_high" in k}, strict=True
         )
-        print(checkpoint)
+        logger.info("Loaded image encoder checkpoint from %s", checkpoint)
     return image_encoder
 
 
@@ -972,8 +972,8 @@ def load_image(image_path):
         else:
             image = Image.open(image_path)
         return ImageOps.exif_transpose(image)
-    except Exception as e:
-        print(f"error: {e}")
+    except Exception as error:
+        logger.warning("Failed to load image %s: %s", image_path, error)
         try:
             return Image.open(image_path)
         except:
@@ -1106,9 +1106,8 @@ def draw_bounding_boxes(image, refs, ouput_path):
                         try:
                             cropped = image.crop((x1, y1, x2, y2))
                             cropped.save(f"{ouput_path}/images/{img_idx}.jpg")
-                        except Exception as e:
-                            print(e)
-                            pass
+                        except Exception as error:
+                            logger.warning("Failed to save cropped image %s: %s", img_idx, error)
                         img_idx += 1
 
                     try:
@@ -2009,7 +2008,7 @@ class DeepseekOCR2ForCausalLM(DeepseekV3ForCausalLM):
 
                 """process the global view"""
                 if image_size <= 768:
-                    print("directly resize")
+                    logger.debug("Resizing the global image view directly to %s", image_size)
                     image = image.resize((image_size, image_size))
                 # else:
                 global_view = ImageOps.pad(
