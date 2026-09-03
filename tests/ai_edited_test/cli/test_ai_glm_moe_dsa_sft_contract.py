@@ -59,11 +59,7 @@ def test_load_processor_uses_autoprocessor_on_text_sft():
     )
     data_args = SimpleNamespace(processor_use_fast=True)
 
-    with patch.object(
-        sft_workflow.AutoTokenizer,
-        "from_pretrained",
-        return_value=tokenizer,
-    ), patch.object(
+    with patch.object(sft_workflow.AutoTokenizer, "from_pretrained", return_value=tokenizer,), patch.object(
         sft_workflow.AutoProcessor,
         "from_pretrained",
         return_value=processor,
