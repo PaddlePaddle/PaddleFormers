@@ -257,6 +257,7 @@ jobs:
               echo "ERROR: Failed to upload $file (exit code: $exit_code)"
             fi
           done
+          '
       - name: Set pytest execute flag output
         if: always()
         id: set_pytest_flag  # 专门设置输出的步骤
