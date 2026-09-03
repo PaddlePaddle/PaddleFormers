@@ -808,7 +808,7 @@ class Llama4ForCausalLM(Llama4TextPretrainedModel):
         loss_mask: paddle.Tensor | None = None,
         use_cache: bool = False,
         past_key_values: Cache | None = None,
-        output_hidden_states: bool | None = False,
+        output_hidden_states: bool | None = None,
         return_dict: bool = False,
         **kwargs,
     ):

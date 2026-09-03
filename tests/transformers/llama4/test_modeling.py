@@ -199,6 +199,17 @@ class Llama4ModelTest(ModelTesterMixin, unittest.TestCase):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_for_causal_lm(*config_and_inputs)
 
+    def test_causal_lm_uses_config_output_hidden_states(self):
+        config, input_ids, input_mask, _ = self.model_tester.prepare_config_and_inputs()
+        config.output_hidden_states = True
+        model = Llama4ForCausalLM(config)
+        model.eval()
+
+        with paddle.no_grad():
+            result = model(input_ids, attention_mask=input_mask, return_dict=True)
+
+        self.assertEqual(len(result.hidden_states), config.num_hidden_layers + 1)
+
     def test_expert_parameters_are_trainable_from_initialization(self):
         config = self.model_tester.get_config()
         experts = Llama4TextExperts(config)

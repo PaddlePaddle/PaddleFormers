@@ -89,6 +89,17 @@ class Llama4MultimodalModelTest(unittest.TestCase):
         self.assertEqual(output.image_hidden_states.shape, [1, 1, 64])
         self.assertIsNotNone(output.loss)
 
+    def test_multimodal_uses_text_config_output_hidden_states(self):
+        self.config.text_config.output_hidden_states = True
+        model = Llama4ForConditionalGeneration(self.config)
+        model.eval()
+        input_ids = paddle.to_tensor([[1, 2, 3]], dtype="int64")
+
+        with paddle.no_grad():
+            output = model(input_ids=input_ids)
+
+        self.assertEqual(len(output.hidden_states), self.config.text_config.num_hidden_layers + 1)
+
     def test_image_token_count_validation(self):
         model = Llama4ForConditionalGeneration(self.config)
         input_ids = paddle.to_tensor([[1, 2, 3]], dtype="int64")

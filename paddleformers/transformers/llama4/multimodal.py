@@ -188,7 +188,7 @@ class Llama4VisionEncoder(nn.Layer):
         freqs_ci,
         attention_mask=None,
         output_attentions=False,
-        output_hidden_states=False,
+        output_hidden_states=None,
         return_dict=True,
     ):
         encoder_states = () if output_hidden_states else None
