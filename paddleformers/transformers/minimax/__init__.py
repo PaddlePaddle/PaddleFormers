@@ -23,7 +23,6 @@ import_structure = {
         "MiniMaxPretrainedModel",
         "MiniMaxModel",
         "MiniMaxForCausalLM",
-        "MiniMaxForCausalLMPipe",
     ],
 }
 

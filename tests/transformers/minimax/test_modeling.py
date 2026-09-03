@@ -14,10 +14,12 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 import paddle
 import paddle.nn.functional as F
 
+from paddleformers.nn.norm import RMSNorm
 from paddleformers.transformers import MiniMaxConfig, MiniMaxForCausalLM, MiniMaxModel
 from paddleformers.transformers.auto.modeling import AutoModelForCausalLM
 from paddleformers.transformers.minimax.modeling import MiniMaxLightningAttention
@@ -170,6 +172,55 @@ class MiniMaxModelTest(ModelTesterMixin, unittest.TestCase):
     def test_auto_model_for_causal_lm(self):
         config = self.model_tester.get_config()
         self.model_tester.create_and_check_auto_model(config)
+
+    def test_uses_general_norm_and_linear_router(self):
+        config = self.model_tester.get_config()
+        model = MiniMaxForCausalLM(config)
+
+        self.assertIsInstance(model.model.norm, RMSNorm)
+        for layer in model.model.layers:
+            self.assertIsInstance(layer.input_layernorm, RMSNorm)
+            self.assertIsInstance(layer.post_attention_layernorm, RMSNorm)
+            if isinstance(layer.self_attn, MiniMaxLightningAttention):
+                self.assertIsInstance(layer.self_attn.norm, RMSNorm)
+            self.assertIsInstance(layer.block_sparse_moe.gate, paddle.nn.Linear)
+
+        self.assertIn("model.layers.0.block_sparse_moe.gate.weight", model.state_dict())
+
+    def test_output_hidden_states_uses_config_default(self):
+        config, input_ids, input_mask = self.model_tester.prepare_config_and_inputs()
+        config.output_hidden_states = True
+        model = MiniMaxForCausalLM(config)
+        model.eval()
+
+        outputs = model(input_ids, attention_mask=input_mask, return_dict=True)
+        self.assertEqual(len(outputs.hidden_states), config.num_hidden_layers + 1)
+
+    def test_full_layer_recompute_path(self):
+        config, input_ids, input_mask = self.model_tester.prepare_config_and_inputs()
+        config.recompute_granularity = "full"
+        config.recompute_method = "uniform"
+        config.recompute_num_layers = 1
+        config.recompute_use_reentrant = False
+        model = MiniMaxModel(config)
+        model.train()
+
+        def run_forward(function, *args, **kwargs):
+            kwargs.pop("use_reentrant", None)
+            return function(*args, **kwargs)
+
+        with patch("paddleformers.transformers.minimax.modeling.recompute", side_effect=run_forward) as mock_recompute:
+            outputs = model(input_ids, attention_mask=input_mask, return_dict=True)
+
+        self.assertEqual(
+            outputs.last_hidden_state.shape,
+            [self.model_tester.batch_size, self.model_tester.seq_length, self.model_tester.hidden_size],
+        )
+        self.assertEqual(mock_recompute.call_count, config.num_hidden_layers)
+
+    def test_transpose_weight_keys_match_minimax_modules(self):
+        self.assertNotIn("gate_up_proj", MiniMaxForCausalLM.transpose_weight_keys)
+        self.assertNotIn("down_proj", MiniMaxForCausalLM.transpose_weight_keys)
 
     def test_lm_head_aoa_keeps_hf_layout(self):
         config = self.model_tester.get_config()

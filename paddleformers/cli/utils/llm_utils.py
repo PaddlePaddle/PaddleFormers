@@ -155,7 +155,7 @@ def get_lora_target_modules(model):
             ".*qkv_proj.*",
             ".*out_proj.*",
             ".*output_gate.*",
-            # Sparse MoE experts; the router is a standalone parameter rather than a Linear layer.
+            # Sparse MoE experts; keep the router excluded from the default LoRA targets.
             ".*block_sparse_moe.experts.*w1.*",
             ".*block_sparse_moe.experts.*w2.*",
             ".*block_sparse_moe.experts.*w3.*",

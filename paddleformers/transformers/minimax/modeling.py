@@ -15,19 +15,19 @@
 
 from __future__ import annotations
 
-import os
 from typing import Callable
 
 import paddle
 import paddle.nn.functional as F
 from paddle import nn
+from paddle.distributed.fleet.recompute.recompute import recompute
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
-from ...nn.pp_model import GeneralModelForCausalLMPipe
+from ...nn.norm import Norm as GeneralNorm
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
 from ..masking_utils import create_causal_mask_and_row_indices
@@ -67,28 +67,6 @@ def apply_rotary_pos_emb(
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
     return q_embed.astype(q.dtype), k_embed.astype(k.dtype)
-
-
-class MiniMaxRMSNorm(nn.Layer):
-    """RMSNorm used in MiniMax (Text-01). Equivalent to T5LayerNorm."""
-
-    def __init__(self, hidden_size: int, eps: float = 1e-6):
-        super().__init__()
-        self.weight = self.create_parameter(
-            shape=[hidden_size],
-            default_initializer=nn.initializer.Constant(1.0),
-        )
-        self.variance_epsilon = eps
-
-    def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
-        input_dtype = hidden_states.dtype
-        hidden_states = hidden_states.astype("float32")
-        variance = hidden_states.pow(2).mean(-1, keepdim=True)
-        hidden_states = hidden_states * paddle.rsqrt(variance + self.variance_epsilon)
-        return self.weight * hidden_states.astype(input_dtype)
-
-    def extra_repr(self) -> str:
-        return f"{tuple(self.weight.shape)}, eps={self.variance_epsilon}"
 
 
 class MiniMaxCache(DynamicCache):
@@ -156,7 +134,13 @@ class MiniMaxLightningAttention(nn.Layer):
             config=config,
             tp_plan="colwise",
         )
-        self.norm = MiniMaxRMSNorm(self.head_dim * self.num_attention_heads, eps=config.rms_norm_eps)
+        self.norm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+            hidden_size=self.head_dim * self.num_attention_heads,
+            norm_eps=config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
+        )
 
         self.act_fn = F.silu
 
@@ -695,29 +679,6 @@ class MiniMaxAttention(nn.Layer):
         return attn_output, attn_weights
 
 
-class MiniMaxTopKRouter(nn.Layer):
-    """Top-K router for MiniMax MoE."""
-
-    def __init__(self, config: MiniMaxConfig):
-        super().__init__()
-        self.top_k = config.num_experts_per_tok
-        self.num_experts = config.num_local_experts
-        self.hidden_dim = config.hidden_size
-        self.weight = self.create_parameter(
-            shape=[self.hidden_dim, self.num_experts],
-            dtype=paddle.get_default_dtype(),
-            is_bias=False,
-        )
-
-    def forward(self, hidden_states: paddle.Tensor) -> tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
-        router_logits = F.linear(hidden_states, self.weight)
-        router_logits = F.softmax(router_logits.astype("float32"), axis=-1)
-        router_top_value, router_indices = paddle.topk(router_logits, self.top_k, axis=-1)
-        router_top_value = router_top_value / router_top_value.sum(axis=-1, keepdim=True)
-        router_top_value = router_top_value.astype(hidden_states.dtype)
-        return router_logits, router_top_value, router_indices
-
-
 class MiniMaxBlockSparseTop2MLP(nn.Layer):
     def __init__(self, config: MiniMaxConfig):
         super().__init__()
@@ -757,8 +718,16 @@ class MiniMaxSparseMoeBlock(nn.Layer):
     def __init__(self, config: MiniMaxConfig):
         super().__init__()
         self.top_k = config.num_experts_per_tok
+        self.num_experts = config.num_local_experts
         self.jitter_noise = config.router_jitter_noise
-        self.gate = MiniMaxTopKRouter(config)
+        self.gate = GeneralLinear.create(
+            config.hidden_size,
+            self.num_experts,
+            has_bias=False,
+            config=config,
+            tp_plan="colwise",
+            gather_output=True,
+        )
         self.experts = nn.LayerList([MiniMaxBlockSparseTop2MLP(config) for _ in range(config.num_local_experts)])
 
     def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
@@ -772,41 +741,32 @@ class MiniMaxSparseMoeBlock(nn.Layer):
             )
         hidden_states_flat = hidden_states.reshape([-1, hidden_states.shape[-1]])
         final_hidden_states = paddle.zeros_like(hidden_states_flat)
-        _, routing_weights, selected_experts = self.gate(hidden_states_flat)
+        router_logits = F.softmax(self.gate(hidden_states_flat).astype("float32"), axis=-1)
+        routing_weights, selected_experts = paddle.topk(router_logits, self.top_k, axis=-1)
+        routing_weights = routing_weights / routing_weights.sum(axis=-1, keepdim=True)
+        routing_weights = routing_weights.astype(hidden_states.dtype)
 
         with paddle.no_grad():
-            expert_mask = F.one_hot(selected_experts, num_classes=self.gate.num_experts)
+            expert_mask = F.one_hot(selected_experts, num_classes=self.num_experts)
             expert_mask = expert_mask.transpose([2, 1, 0])
-
-        fixed_expert_order = os.environ.get("PADDLE_MINIMAX_MOE_FIXED_EXPERT_ORDER", "0") == "1"
-        connect_empty_experts = os.environ.get("PADDLE_MINIMAX_MOE_CONNECT_EMPTY_EXPERTS", "1") == "1"
-        expert_indices = (
-            range(self.gate.num_experts)
-            if fixed_expert_order
-            else [
+            expert_indices = [
                 int(expert_idx[0].item())
                 for expert_idx in paddle.greater(
                     expert_mask.sum(axis=(-1, -2)),
                     paddle.to_tensor(0, dtype="int64"),
                 ).nonzero()
             ]
-        )
 
         for expert_idx in expert_indices:
             top_k_pos, token_idx = paddle.where(expert_mask[expert_idx])
             current_state = hidden_states_flat[token_idx]
             current_hidden_states = self.experts[expert_idx](current_state)
-            if token_idx.shape[0] > 0:
-                current_hidden_states = current_hidden_states * routing_weights[token_idx, top_k_pos, None]
-                final_hidden_states = final_hidden_states.index_add_(
-                    axis=0,
-                    index=token_idx,
-                    value=current_hidden_states.astype(final_hidden_states.dtype),
-                )
-            elif fixed_expert_order and connect_empty_experts:
-                final_hidden_states = (
-                    final_hidden_states + current_hidden_states.sum().astype(final_hidden_states.dtype) * 0.0
-                )
+            current_hidden_states = current_hidden_states * routing_weights[token_idx, top_k_pos, None]
+            final_hidden_states = final_hidden_states.index_add_(
+                axis=0,
+                index=token_idx,
+                value=current_hidden_states.astype(final_hidden_states.dtype),
+            )
 
         return final_hidden_states.reshape([batch_size, sequence_length, hidden_dim])
 
@@ -823,8 +783,20 @@ class MiniMaxDecoderLayer(nn.Layer):
         self.mlp_alpha_factor = config.mlp_alpha_factor
         self.mlp_beta_factor = config.mlp_beta_factor
 
-        self.input_layernorm = MiniMaxRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = MiniMaxRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.input_layernorm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            norm_eps=config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
+        )
+        self.post_attention_layernorm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            norm_eps=config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
+        )
 
         if self.layer_type == "linear_attention":
             self.self_attn = MiniMaxLightningAttention(config, layer_idx)
@@ -886,8 +858,6 @@ class MiniMaxPretrainedModel(PretrainedModel):
         "k_proj",
         "v_proj",
         "o_proj",
-        "gate_up_proj",
-        "down_proj",
         "gate",
         "w1",
         "w2",
@@ -900,13 +870,6 @@ class MiniMaxPretrainedModel(PretrainedModel):
     @classmethod
     def _gen_aoa_config(cls, config: MiniMaxConfig):
         """AOA config: mapping from HF safetensors key to PaddleFormers model key."""
-        if os.environ.get("PADDLE_MINIMAX_DEBUG_AOA", "0") == "1":
-            print(
-                "[PADDLE_MINIMAX_DEBUG_AOA] "
-                f"cls={cls.__name__} num_hidden_layers={config.num_hidden_layers} "
-                f"layer_types={getattr(config, 'layer_types', None)}",
-                flush=True,
-            )
         model_prefix = "model." if cls != cls.base_model_class else ""
 
         aoa_statements = [
@@ -1054,8 +1017,44 @@ class MiniMaxModel(MiniMaxPretrainedModel):
         self.layers = nn.LayerList(
             [MiniMaxDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
-        self.norm = MiniMaxRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.norm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            norm_eps=config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
+        )
         self.rotary_emb = MiniMaxRotaryEmbedding(config=config)
+
+    @paddle.jit.not_to_static
+    def recompute_training_full(
+        self,
+        layer_module: nn.Layer,
+        hidden_states: paddle.Tensor,
+        attention_mask: paddle.Tensor | None,
+        position_ids: paddle.Tensor | None,
+        position_embeddings: tuple[paddle.Tensor, paddle.Tensor] | None,
+        past_key_values: Cache | None,
+        use_cache: bool,
+        attn_mask_startend_row_indices: paddle.Tensor | None,
+    ) -> paddle.Tensor:
+        def create_custom_forward(module):
+            def custom_forward(*inputs):
+                return module(*inputs)
+
+            return custom_forward
+
+        return recompute(
+            create_custom_forward(layer_module),
+            hidden_states,
+            attention_mask,
+            position_ids,
+            position_embeddings,
+            past_key_values,
+            use_cache,
+            attn_mask_startend_row_indices,
+            use_reentrant=self.config.recompute_use_reentrant,
+        )
 
     def forward(
         self,
@@ -1070,7 +1069,9 @@ class MiniMaxModel(MiniMaxPretrainedModel):
         attn_mask_startend_row_indices: paddle.Tensor | None = None,
         **kwargs,
     ):
-        output_hidden_states = output_hidden_states if output_hidden_states is not None else False
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
@@ -1124,16 +1125,34 @@ class MiniMaxModel(MiniMaxPretrainedModel):
                 input_attention_mask = attention_mask
                 input_mask_startend = attn_mask_startend_row_indices
 
-            hidden_states = decoder_layer(
-                hidden_states,
-                attention_mask=input_attention_mask,
-                position_ids=position_ids,
-                position_embeddings=position_embeddings,
-                past_key_values=past_key_values,
-                use_cache=use_cache,
-                attn_mask_startend_row_indices=input_mask_startend,
-                **kwargs,
-            )
+            has_gradient = not hidden_states.stop_gradient
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
+                hidden_states = self.recompute_training_full(
+                    layer_module=decoder_layer,
+                    hidden_states=hidden_states,
+                    attention_mask=input_attention_mask,
+                    position_ids=position_ids,
+                    position_embeddings=position_embeddings,
+                    past_key_values=past_key_values,
+                    use_cache=use_cache,
+                    attn_mask_startend_row_indices=input_mask_startend,
+                )
+            else:
+                hidden_states = decoder_layer(
+                    hidden_states,
+                    attention_mask=input_attention_mask,
+                    position_ids=position_ids,
+                    position_embeddings=position_embeddings,
+                    past_key_values=past_key_values,
+                    use_cache=use_cache,
+                    attn_mask_startend_row_indices=input_mask_startend,
+                    **kwargs,
+                )
 
         hidden_states = self.norm(hidden_states)
         if output_hidden_states:
@@ -1178,7 +1197,7 @@ class MiniMaxForCausalLM(MiniMaxPretrainedModel):
         loss_mask: paddle.Tensor | None = None,
         use_cache: bool = False,
         past_key_values: Cache | None = None,
-        output_hidden_states: bool | None = False,
+        output_hidden_states: bool | None = None,
         output_router_logits: bool | None = None,
         return_dict: bool = False,
         **kwargs,
@@ -1237,24 +1256,9 @@ class MiniMaxForCausalLM(MiniMaxPretrainedModel):
         )
 
 
-class MiniMaxForCausalLMPipe(GeneralModelForCausalLMPipe):
-    """Pipeline-parallel wrapper for MiniMax (Text-01)."""
-
-    config_class = MiniMaxConfig
-    _decoder_layer_cls = MiniMaxDecoderLayer
-    _get_tensor_parallel_mappings = MiniMaxModel._get_tensor_parallel_mappings
-    _init_weights = MiniMaxModel._init_weights
-    _keep_in_fp32_modules = MiniMaxModel._keep_in_fp32_modules
-    _tied_weights_keys = ["lm_head.weight"]
-    transpose_weight_keys = MiniMaxModel.transpose_weight_keys
-    _gen_aoa_config = MiniMaxForCausalLM._gen_aoa_config
-    _gen_inv_aoa_config = MiniMaxForCausalLM._gen_inv_aoa_config
-
-
 __all__ = [
     "MiniMaxConfig",
     "MiniMaxPretrainedModel",
     "MiniMaxModel",
     "MiniMaxForCausalLM",
-    "MiniMaxForCausalLMPipe",
 ]

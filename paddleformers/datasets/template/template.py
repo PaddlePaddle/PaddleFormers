@@ -646,7 +646,7 @@ register_template(
             "<beginning_of_sentence>ai name=assistant\n"
         ]
     ),
-    format_assistant=StringFormatter(slots=["{{content}}<end_of_sentence>"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
     format_system=StringFormatter(
         slots=["<beginning_of_sentence>system ai_setting=assistant\n{{content}}<end_of_sentence>\n"]
     ),

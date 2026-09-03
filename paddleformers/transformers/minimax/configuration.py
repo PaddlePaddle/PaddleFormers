@@ -56,6 +56,9 @@ class MiniMaxConfig(PretrainedConfig):
             The standard deviation of the truncated_normal_initializer for initializing all weight matrices.
         rms_norm_eps (`float`, *optional*, defaults to 1e-05):
             The epsilon used by the rms normalization layers.
+        fuse_rms_norm (`bool`, *optional*, defaults to `False`):
+            Whether to use the fused RMSNorm kernel. The default preserves the FP32 accumulation order used by the
+            Transformers MiniMax implementation.
         use_cache (`bool`, *optional*, defaults to `True`):
             Whether or not the model should return the last key/values attentions.
         tie_word_embeddings (`bool`, *optional*, defaults to `False`):
@@ -125,6 +128,7 @@ class MiniMaxConfig(PretrainedConfig):
         max_position_embeddings=10240000,
         initializer_range=0.02,
         rms_norm_eps=1e-5,
+        fuse_rms_norm=False,
         use_cache=True,
         pad_token_id=None,
         bos_token_id=None,
@@ -168,6 +172,7 @@ class MiniMaxConfig(PretrainedConfig):
         self.hidden_act = hidden_act
         self.initializer_range = initializer_range
         self.rms_norm_eps = rms_norm_eps
+        self.fuse_rms_norm = fuse_rms_norm
         self.use_cache = use_cache
         self.attention_dropout = attention_dropout
         self.rope_theta = rope_theta

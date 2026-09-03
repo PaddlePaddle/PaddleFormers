@@ -339,7 +339,7 @@ import_structure = {
     "deepseek_v4.configuration": ["DeepseekV4Config"],
     "deepseek_v4": ["DeepseekV4ForCausalLMPipe", "DeepseekV4ForCausalLM"],
     "minimax.configuration": ["MiniMaxConfig"],
-    "minimax": ["MiniMaxModel", "MiniMaxForCausalLM", "MiniMaxForCausalLMPipe"],
+    "minimax": ["MiniMaxModel", "MiniMaxForCausalLM"],
     "glm4v_moe.image_processor": ["Glm4vImageProcessor"],
     "glm4v_moe.image_processor_fast": ["Glm4vImageProcessorFast"],
     "auto": ["AutoModelForCausalLM"],
