@@ -580,8 +580,7 @@ def apply_glm_moe_dsa_training_contract(model_config, training_args, model_args,
     if _bias_activation_fusion_env is not None:
         model_config.bias_activation_fusion = _bias_activation_fusion_env == "1"
         print(
-            "[BIAS-ACT-FUSION] model_config.bias_activation_fusion="
-            f"{model_config.bias_activation_fusion}",
+            "[BIAS-ACT-FUSION] model_config.bias_activation_fusion=" f"{model_config.bias_activation_fusion}",
             flush=True,
         )
     # YAML overlap_p2p_comm / batch_p2p_comm land on TrainingArguments
