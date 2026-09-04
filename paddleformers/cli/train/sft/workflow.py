@@ -507,10 +507,14 @@ def load_tokenizer_and_processor(model_args, data_args):
 
 
 def save_final_hf_model_if_requested(trainer, training_args):
-    """Avoid a duplicate full-parameter export when native checkpoints are requested."""
-    if not training_args.save_to_hf:
-        logger.info("Skipping final HuggingFace export because save_to_hf=false.")
-        return False
+    """Write a HuggingFace-layout checkpoint after train().
+
+    Mid-training HF cadence is gated by save_to_hf / save_hf_steps. The
+    final export is independent: GLM-4 model-unittest generate and
+    integration SFT-from-PT both load output_dir via from_pretrained and
+    need config.json. Skipping this when save_to_hf=false left flex
+    weights only and failed those jobs.
+    """
     trainer.save_model(
         merge_tensor_parallel=training_args.tensor_model_parallel_size > 1,
         last_fc_to_hf=True,

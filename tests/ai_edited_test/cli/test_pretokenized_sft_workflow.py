@@ -40,6 +40,7 @@ def fixed_sequence():
 
 def test_load_tokenizer_uses_independent_source():
     tokenizer = SimpleNamespace()
+    processor = SimpleNamespace()
     model_args = SimpleNamespace(
         tokenizer_name_or_path="/tokenizer-only",
         model_name_or_path="/weights-only",
@@ -50,24 +51,33 @@ def test_load_tokenizer_uses_independent_source():
     with patch(
         "paddleformers.cli.train.sft.workflow.AutoTokenizer.from_pretrained",
         return_value=tokenizer,
-    ) as load_tokenizer:
-        actual_tokenizer, processor = load_tokenizer_and_processor(model_args, data_args)
+    ) as load_tokenizer, patch(
+        "paddleformers.cli.train.sft.workflow.AutoProcessor.from_pretrained",
+        return_value=processor,
+    ) as load_processor:
+        actual_tokenizer, actual_processor = load_tokenizer_and_processor(model_args, data_args)
 
     load_tokenizer.assert_called_once_with("/tokenizer-only")
+    load_processor.assert_called_once_with("/weights-only", use_fast=None)
     assert actual_tokenizer is tokenizer
-    assert processor is tokenizer
+    assert actual_processor is processor
 
 
-def test_final_hf_export_respects_save_to_hf():
+def test_final_hf_export_always_writes_last_fc_to_hf():
     trainer = MagicMock()
     args = SimpleNamespace(save_to_hf=False, tensor_model_parallel_size=1)
-    assert save_final_hf_model_if_requested(trainer, args) is False
-    trainer.save_model.assert_not_called()
-
-    args.save_to_hf = True
     assert save_final_hf_model_if_requested(trainer, args) is True
     trainer.save_model.assert_called_once_with(
         merge_tensor_parallel=False,
+        last_fc_to_hf=True,
+    )
+
+    trainer.reset_mock()
+    args.save_to_hf = True
+    args.tensor_model_parallel_size = 2
+    assert save_final_hf_model_if_requested(trainer, args) is True
+    trainer.save_model.assert_called_once_with(
+        merge_tensor_parallel=True,
         last_fc_to_hf=True,
     )
 
@@ -99,7 +109,8 @@ def test_glm_moe_dsa_training_contract_propagates_frozen_provider_fields():
 
     apply_glm_moe_dsa_training_contract(model_config, training_args, model_args, data_args)
 
-    assert model_config.mtp_num_layers == 1
+    assert not hasattr(model_config, "mtp_num_layers")
+    assert training_args.mtp_num_layers == 0
     assert model_config.num_nextn_predict_layers == 1
     assert model_config.mtp_enabled is True
     assert model_config.fp32_residual_connection is False
