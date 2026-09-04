@@ -1007,6 +1007,7 @@ class InternalMedicineCallback(TrainerCallback):
                 exclude_families=exclude_families,
             )
             self._training_logs = training_logs
+            self._skip_first_step_on_resume(state)
             self._setup_done = True
             logger.info("[InternalMedicine/pfleet] Monitors registered: %s" % list(self._monitor_dict.keys()))
         except Exception:
@@ -1068,6 +1069,30 @@ class InternalMedicineCallback(TrainerCallback):
         if not monitors:
             return True
         return any(getattr(m, "sampled_this_step", True) for m in monitors)
+
+    def _skip_first_step_on_resume(self, state):
+        """Suppress probe work on the first step after checkpoint restoration."""
+        resume_step = int(getattr(state, "global_step", 0) or 0)
+        if resume_step <= 0:
+            return
+
+        skipped = 0
+        for monitor in self._monitor_dict.values():
+            skip = getattr(monitor, "skip_next_steps", None)
+            if skip is not None:
+                skip(1)
+                skipped += 1
+
+        if skipped:
+            logger.info(
+                f"[InternalMedicine/pfleet] Resume detected at global_step={resume_step}; "
+                "skipping internal-medicine collection on the first resumed step."
+            )
+        elif self._monitor_dict:
+            logger.warning(
+                f"[InternalMedicine/pfleet] Resume detected at global_step={resume_step}, but the installed "
+                "internal_medicine package cannot skip the first resumed step."
+            )
 
     def _resolve_writer(self):
         """Decide once whether this process should write the jsonl file.
