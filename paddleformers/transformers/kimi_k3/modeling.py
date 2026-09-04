@@ -79,6 +79,38 @@ class KimiK3PretrainedModel(PretrainedModel):
         return layer_idx % frequency == 0
 
     @classmethod
+    def _gen_hf_quan_config(cls):
+        """Describe the MXFP4 group-quantized Kimi-K3 HF checkpoint.
+
+        The released compressed-tensors checkpoint only quantizes the routed
+        experts (``w1``/``w3``/``w2``); attention, shared experts, dense MLPs,
+        ``lm_head``, and the vision half stay in bfloat16 via the HF
+        ``quantization_config.ignore`` list, so a single group is enough.
+        Each expert stores ``.weight_packed`` (two E2M1 nibbles per uint8, low
+        nibble first) plus ``.weight_scale`` (uint8 E8M0 exponents, one per
+        group of 32 along the last axis).  The logical ``.weight`` names this
+        produces are exactly the AOA sources in :meth:`_gen_aoa_config`.
+        """
+        return {
+            "schema_version": 1,
+            "component_pairing": {"weight_suffix": ".weight_packed", "scale_suffix": ".weight_scale"},
+            "logic_name_suffix": ".weight",
+            "groups": [
+                {
+                    "name": "mxfp4_group",
+                    "targets": [
+                        r"re:^language_model\.model\.layers\.[0-9]+"
+                        r"\.block_sparse_moe\.experts\.[0-9]+\.w[123]\.weight_packed$"
+                    ],
+                    "quant_method": "mxfp4_group",
+                    "value_format": "e2m1",
+                    "scale_format": "ue8m0",
+                    "block_shape": [32],
+                }
+            ],
+        }
+
+    @classmethod
     def _gen_aoa_config(cls, config):
         """Map the official Kimi-K3 HuggingFace checkpoint to Fleet GPT."""
         if hasattr(config, "get_text_config"):
@@ -596,6 +628,7 @@ def _build_text_model(model_class, config):
     gpt_model.is_fleet = model_class.is_fleet
     gpt_model._gen_aoa_config = model_class._gen_aoa_config
     gpt_model._gen_inv_aoa_config = model_class._gen_inv_aoa_config
+    gpt_model._gen_hf_quan_config = model_class._gen_hf_quan_config
     return gpt_model
 
 
@@ -776,6 +809,7 @@ def _build_vl_model(config, criterion):
     language_model.is_fleet = True
     language_model._gen_aoa_config = lambda _=None: KimiK3ForConditionalGeneration._gen_aoa_config(config)
     language_model._gen_inv_aoa_config = lambda _=None: KimiK3ForConditionalGeneration._gen_inv_aoa_config(config)
+    language_model._gen_hf_quan_config = KimiK3ForConditionalGeneration._gen_hf_quan_config
     language_model.can_generate = lambda: False
     language_model.save_pretrained = types.MethodType(PretrainedModel.save_pretrained, language_model)
     return language_model

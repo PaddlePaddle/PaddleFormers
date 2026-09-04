@@ -102,6 +102,10 @@ from ..data import (
 )
 from ..peft import LoRAModel
 from ..peft.lora import QuantizationLoRABaseLinear
+from ..quantization.hf_checkpoint import (
+    build_hf_dequant_load_transform,
+    hf_checkpoint_is_quantized,
+)
 from ..quantization.quantization_linear import (
     ColumnParallelQuantizationLinear,
     QuantizationLinear,
@@ -1260,6 +1264,17 @@ class Trainer:
 
         if self.args.load_from_hf:
             hf_aoa_config = self.model._gen_aoa_config(self.model.config)
+            # The checkpoint's own config.json states whether its weights are
+            # quantized, so nothing has to declare it through an argument.
+            hf_quan_config = None
+            if hf_checkpoint_is_quantized(resume_from_checkpoint):
+                gen_hf_quan_config = getattr(self.model, "_gen_hf_quan_config", None)
+                if not callable(gen_hf_quan_config):
+                    raise ValueError(
+                        f"Checkpoint '{resume_from_checkpoint}' declares a quantization_config, but "
+                        f"{type(self.model).__name__} defines no _gen_hf_quan_config() to describe its layout."
+                    )
+                hf_quan_config = gen_hf_quan_config()
             assert (
                 self.args.ignore_load_lr_and_optim
             ), "Loading from HuggingFace format is only allowed when learning rate and optimizer state are ignored."
@@ -1276,6 +1291,13 @@ class Trainer:
             except Exception as e:
                 logger.error(f"Failed to delete {metadata_path}: {e}")
 
+            load_transform = build_hf_dequant_load_transform(
+                checkpoint_path=resume_from_checkpoint,
+                quan_config=hf_quan_config,
+            )
+            # Only forward load_transform when a transform exists, so that a
+            # Paddle without the keyword keeps working for unquantized loads.
+            load_transform_kwargs = {} if load_transform is None else {"load_transform": load_transform}
             dist.load_state_dict(
                 model_sharded_state_dict,
                 resume_from_checkpoint,
@@ -1285,6 +1307,7 @@ class Trainer:
                 process_group=None,
                 comm_method=flex_ckpt_comm_method,
                 worker_groups=worker_groups,
+                **load_transform_kwargs,
             )
             if hasattr(self.model, "_synchronize_shared_weights"):
                 self.model._synchronize_shared_weights()
