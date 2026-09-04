@@ -72,6 +72,26 @@ def test_load_processor_uses_autoprocessor_on_text_sft():
     assert actual_processor is not tokenizer
 
 
+def test_load_processor_falls_back_to_tokenizer_without_processor_files():
+    tokenizer = SimpleNamespace()
+    model_args = SimpleNamespace(
+        tokenizer_name_or_path="/tokenizer-only",
+        model_name_or_path="/extracted-weights",
+        stage="SFT",
+    )
+    data_args = SimpleNamespace(processor_use_fast=None)
+
+    with patch.object(sft_workflow.AutoTokenizer, "from_pretrained", return_value=tokenizer,), patch.object(
+        sft_workflow.AutoProcessor,
+        "from_pretrained",
+        side_effect=ValueError("Unrecognized processing class"),
+    ):
+        actual_tokenizer, actual_processor = load_tokenizer_and_processor(model_args, data_args)
+
+    assert actual_tokenizer is tokenizer
+    assert actual_processor is tokenizer
+
+
 def _base_training_args(**overrides):
     args = SimpleNamespace(
         num_nextn_predict_layers=1,
