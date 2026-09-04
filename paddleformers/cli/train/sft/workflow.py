@@ -538,9 +538,14 @@ def apply_glm_moe_dsa_training_contract(model_config, training_args, model_args,
         )
     mtp_depth = explicit_mtp or requested_mtp
     model_config.num_nextn_predict_layers = mtp_depth
-    model_config.mtp_num_layers = mtp_depth
     training_args.num_nextn_predict_layers = mtp_depth
-    training_args.mtp_num_layers = mtp_depth
+    # Fleet TransformerConfig rejects a non-zero mtp_num_layers (renamed to
+    # num_nextn_predict_layers). Keep the old CLI field at 0 so register_attributes
+    # does not fail-closed on GLM MoE DSA.
+    if hasattr(training_args, "mtp_num_layers"):
+        training_args.mtp_num_layers = 0
+    if hasattr(model_config, "mtp_num_layers"):
+        delattr(model_config, "mtp_num_layers")
     model_config.mtp_enabled = mtp_depth > 0
 
     requested_mtp_loss_scaling_factor = getattr(training_args, "mtp_loss_scaling_factor", None)

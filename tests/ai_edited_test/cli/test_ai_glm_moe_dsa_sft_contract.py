@@ -101,7 +101,9 @@ def test_glm_moe_dsa_training_contract_does_not_require_pretokenized_dataset_fie
 
     apply_glm_moe_dsa_training_contract(model_config, training_args, model_args, data_args)
 
-    assert model_config.mtp_num_layers == 1
+    assert model_config.num_nextn_predict_layers == 1
+    assert not hasattr(model_config, "mtp_num_layers")
+    assert training_args.mtp_num_layers == 0
     assert model_config.moe_expert_fusion is True
     assert model_config.moe_token_dispatcher_type == "alltoall"
 
