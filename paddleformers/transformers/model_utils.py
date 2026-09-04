@@ -16,7 +16,6 @@ from __future__ import annotations
 import concurrent.futures
 import contextlib
 import copy
-import ctypes
 import gc
 import inspect
 import json
@@ -47,15 +46,10 @@ from huggingface_hub import (
 )
 from huggingface_hub.utils import EntryNotFoundError
 from paddle import Tensor
-from paddle.base import core
 from paddle.distributed.fleet.meta_parallel import LocalSharedLayerDesc
 from paddle.distributed.fleet.meta_parallel.parallel_layers import (
     PipelineLayer,
     SharedLayerDesc,
-)
-from paddle.incubate.tensor.manipulation import (
-    async_offload_with_offset,
-    create_async_load,
 )
 from paddle.nn import Embedding, Layer
 
@@ -3882,33 +3876,6 @@ def clean_model_class_name(class_name, suffixes_to_strip: Union[str, List[str]] 
     return re.sub(pattern, "", class_name)
 
 
-_PINNED_ARENA = None
-_PINNED_ARENA_CAPACITY = 0
-_ASYNC_LOADER = None
-
-
-def _get_pinned_arena(nbytes):
-    """Return a process-level (per-rank) pinned uint8 arena of at least ``nbytes`` and a
-    shared async loader, both reused across checkpoints.
-
-    NOTE: The arena is a single shared buffer. Checkpoint saves that use it MUST NOT
-    overlap in time -- if two saves run concurrently they will write into the same
-    arena region and corrupt each other's data. Callers rely on checkpoints being
-    serialized (one save fully finishes, including the final cpu_wait + save_file,
-    before the next begins) so the buffer can be safely reused.
-    """
-    global _PINNED_ARENA, _PINNED_ARENA_CAPACITY, _ASYNC_LOADER
-    if _PINNED_ARENA is None or _PINNED_ARENA_CAPACITY < nbytes:
-        arena = core.eager.Tensor()
-        arena.get_tensor()._set_dims([nbytes])
-        arena.get_tensor()._mutable_data(paddle.CUDAPinnedPlace(), core.VarDesc.VarType.UINT8)
-        _PINNED_ARENA = arena
-        _PINNED_ARENA_CAPACITY = nbytes
-    if _ASYNC_LOADER is None:
-        _ASYNC_LOADER = create_async_load()
-    return _PINNED_ARENA, _ASYNC_LOADER
-
-
 def save_full_param(
     itr: Iterator[tuple[str, Tensor]],
     save_dir: str,
@@ -3920,14 +3887,6 @@ def save_full_param(
     """
     Saves model weights from an iterator into shards, supporting max shard size
     and a limited number of saver ranks.
-
-    On GPU, weights are offloaded asynchronously via a reused pinned-memory arena:
-    each param is DMA-copied D2H into a byte offset of a page-locked buffer on a
-    dedicated loader stream (no per-param host sync), a zero-copy alias into that
-    buffer is handed to save_file, and the shard waits once (cpu_wait on the last
-    copy) before writing to disk. This overlaps the copies and avoids the slow
-    synchronous pageable path. On non-GPU devices (XPU/CPU) the arena is skipped
-    and every param falls back to a synchronous param.cpu() copy.
 
     Only ranks less than `num_saver_ranks` will perform disk I/O. All other ranks
     will iterate through the data to maintain synchronization but will not save.
@@ -3959,43 +3918,14 @@ def save_full_param(
 
     os.makedirs(save_dir, exist_ok=True)
 
-    use_pinned_arena = paddle.get_device().startswith("gpu")
-    if use_pinned_arena:
-        arena_cpu, async_loader = _get_pinned_arena(max_shard_size_bytes)
-    else:
-        arena_cpu, async_loader = None, None
-
     current_shard_state_dict = {}
     current_shard_size_bytes = 0
     sub_shard_index = 0
-    arena_offset = 0
-    shard_tasks = []
-    shard_src_refs = []
-
-    def get_param(byte_start, nbytes, dtype, shape):
-        # Wrap the pinned arena bytes as a CPUPlace zero-copy alias so save_file
-        # sees is_cpu_place()==True and skips its internal per-param .cpu().
-        base_ptr = arena_cpu.get_tensor()._ptr() + byte_start
-        np_u8 = np.ctypeslib.as_array(ctypes.cast(base_ptr, ctypes.POINTER(ctypes.c_ubyte)), shape=(nbytes,))
-        alias_u8 = core.eager.Tensor(value=np_u8, place=core.CPUPlace(), zero_copy=True)
-        alias = alias_u8.view(dtype)
-        alias.get_tensor()._set_dims(shape)
-        alias._keep_alive = (arena_cpu, np_u8, alias_u8)
-        return alias
 
     def _save_current_shard():
         nonlocal sub_shard_index, current_shard_state_dict, current_shard_size_bytes
-        nonlocal arena_offset, shard_tasks, shard_src_refs
         if not current_shard_state_dict:
             return
-
-        # Wait for all async D2H copies of this shard to land in the arena.
-        # cuda_wait for all but the last, cpu_wait on the last (same ordered stream).
-        if shard_tasks:
-            last_task = shard_tasks.pop(-1)
-            for task in shard_tasks:
-                task.cuda_wait()
-            last_task.cpu_wait()
 
         # Filename includes the main shard number (rank) and the sub-shard index
         cur_rank = paddle.distributed.get_rank()
@@ -4015,43 +3945,20 @@ def save_full_param(
         sub_shard_index += 1
         current_shard_state_dict = {}
         current_shard_size_bytes = 0
-        arena_offset = 0
-        shard_tasks = []
-        shard_src_refs = []
 
     logger.info(f"[Rank {rank}/{moe_sharding_world_size}] Starting to process the weight iterator...")
 
     total_size = 0
 
     for i, (param_key, param) in enumerate(itr):
-        param_size_bytes = param.size * param.itemsize
-        total_size += param_size_bytes
+        param_size_bytes = param.numel() * param.element_size()
+        total_size += param_size_bytes.item()
         if i % num_saver_ranks == rank:
             logger.info(f"[Rank {rank}/{moe_sharding_world_size}] Assigned to store parameter {param_key}")
             if current_shard_size_bytes > 0 and (current_shard_size_bytes + param_size_bytes > max_shard_size_bytes):
                 _save_current_shard()
-
-            if not use_pinned_arena or param_size_bytes > max_shard_size_bytes:
-                # Non-GPU device, or a single param larger than the arena: synchronous copy.
-                current_shard_state_dict[param_key] = param.cpu()
-            else:
-                # Async D2H copy into the arena, plus a zero-copy alias for save_file.
-                src = param.flatten().view(paddle.uint8)
-                task = async_offload_with_offset(
-                    src_tensor=src,
-                    dst_tensor=arena_cpu,
-                    src_offset=0,
-                    dst_offset=arena_offset,
-                    offload_size=param_size_bytes,
-                    async_loader=async_loader,
-                )
-                shard_tasks.append(task)
-                shard_src_refs.append(src)
-                current_shard_state_dict[param_key] = get_param(
-                    arena_offset, param_size_bytes, param.dtype, list(param.shape)
-                )
-                arena_offset += param_size_bytes
-
+            # Move tensor to CPU since we only need to save it, not compute with it
+            current_shard_state_dict[param_key] = param.cpu()
             current_shard_size_bytes += param_size_bytes
 
             if current_shard_size_bytes >= max_shard_size_bytes:
