@@ -16,6 +16,7 @@ import logging
 from dataclasses import dataclass
 
 from ...nn.pp_model import CriterionLayerPipe, GeneralModelForCausalLMPipe
+from ...utils.accuracy_compatible_patch import use_accuracy_compatible
 from ..gpt_provider import GPTModelProvider
 from ..model_utils import PretrainedModel
 from .configuration import DeepseekV4Config
@@ -411,6 +412,9 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         # Note: num_hidden_layers in PaddleFormers config is the decoder layer count (NOT bumped by MTP).
         # MTP layers are appended AFTER the decoder layers, so MTP layer i is at index num_hidden_layers + i.
         num_decoder_layers = num_hidden_layers
+        use_accuracy_patch = use_accuracy_compatible()
+        mhc_param_dtype = "bfloat16" if use_accuracy_patch else "float32"
+        head_contract_dtype = "bfloat16" if use_accuracy_patch else "float32"
 
         stmts = []
 
@@ -476,11 +480,11 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 f"{src}.hc_attn_scale -> {tgt}.self_attention_hyper_connection.alpha_pre_t, "
                 f"{tgt}.self_attention_hyper_connection.alpha_post_t, "
                 f"{tgt}.self_attention_hyper_connection.alpha_res_t, axis=0",
-                f"{tgt}.self_attention_hyper_connection.alpha_pre_t -> {tgt}.self_attention_hyper_connection.alpha_pre, dtype='float32'",
-                f"{tgt}.self_attention_hyper_connection.alpha_post_t -> {tgt}.self_attention_hyper_connection.alpha_post, dtype='float32'",
-                f"{tgt}.self_attention_hyper_connection.alpha_res_t -> {tgt}.self_attention_hyper_connection.alpha_res, dtype='float32'",
-                f"{src}.hc_attn_base -> {tgt}.self_attention_hyper_connection.bias, dtype='float32'",
-                f"{src}.hc_attn_fn^T -> {tgt}.self_attention_hyper_connection.mapping_proj.weight, dtype='float32'",
+                f"{tgt}.self_attention_hyper_connection.alpha_pre_t -> {tgt}.self_attention_hyper_connection.alpha_pre, dtype='{mhc_param_dtype}'",
+                f"{tgt}.self_attention_hyper_connection.alpha_post_t -> {tgt}.self_attention_hyper_connection.alpha_post, dtype='{mhc_param_dtype}'",
+                f"{tgt}.self_attention_hyper_connection.alpha_res_t -> {tgt}.self_attention_hyper_connection.alpha_res, dtype='{mhc_param_dtype}'",
+                f"{src}.hc_attn_base -> {tgt}.self_attention_hyper_connection.bias, dtype='{mhc_param_dtype}'",
+                f"{src}.hc_attn_fn^T -> {tgt}.self_attention_hyper_connection.mapping_proj.weight, dtype='{mhc_param_dtype}'",
             ]
 
             # --- mHC: MLP HyperConnection ---
@@ -488,11 +492,11 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 f"{src}.hc_ffn_scale -> {tgt}.mlp_hyper_connection.alpha_pre_t, "
                 f"{tgt}.mlp_hyper_connection.alpha_post_t, "
                 f"{tgt}.mlp_hyper_connection.alpha_res_t, axis=0",
-                f"{tgt}.mlp_hyper_connection.alpha_pre_t -> {tgt}.mlp_hyper_connection.alpha_pre, dtype='float32'",
-                f"{tgt}.mlp_hyper_connection.alpha_post_t -> {tgt}.mlp_hyper_connection.alpha_post, dtype='float32'",
-                f"{tgt}.mlp_hyper_connection.alpha_res_t -> {tgt}.mlp_hyper_connection.alpha_res, dtype='float32'",
-                f"{src}.hc_ffn_base -> {tgt}.mlp_hyper_connection.bias, dtype='float32'",
-                f"{src}.hc_ffn_fn^T -> {tgt}.mlp_hyper_connection.mapping_proj.weight, dtype='float32'",
+                f"{tgt}.mlp_hyper_connection.alpha_pre_t -> {tgt}.mlp_hyper_connection.alpha_pre, dtype='{mhc_param_dtype}'",
+                f"{tgt}.mlp_hyper_connection.alpha_post_t -> {tgt}.mlp_hyper_connection.alpha_post, dtype='{mhc_param_dtype}'",
+                f"{tgt}.mlp_hyper_connection.alpha_res_t -> {tgt}.mlp_hyper_connection.alpha_res, dtype='{mhc_param_dtype}'",
+                f"{src}.hc_ffn_base -> {tgt}.mlp_hyper_connection.bias, dtype='{mhc_param_dtype}'",
+                f"{src}.hc_ffn_fn^T -> {tgt}.mlp_hyper_connection.mapping_proj.weight, dtype='{mhc_param_dtype}'",
             ]
 
             # --- CSA Compressor (present when compress_ratio > 0) ---
@@ -520,7 +524,10 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ]
 
             # --- MoE Gate ---
-            stmts += [f"{src}.ffn.gate.weight -> {tgt}.mlp.gate.weight, dtype='float32'"]
+            gate_weight_stmt = f"{src}.ffn.gate.weight -> {tgt}.mlp.gate.weight"
+            if not use_accuracy_patch:
+                gate_weight_stmt += ", dtype='float32'"
+            stmts += [gate_weight_stmt]
             # Non-hash layers have e_score_correction_bias; hash layers use tid2eid
             if L >= moe_n_hash_layers:
                 stmts += [f"{src}.ffn.gate.bias -> {tgt}.mlp.gate.e_score_correction_bias"]
@@ -560,9 +567,9 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
 
         # === 3. Top-level mHC head contraction (output head HyperConnection) ===
         stmts += [
-            "hc_head_base -> model.mhc_contract.hc_head_base, dtype='float32'",
-            "hc_head_fn^T -> model.mhc_contract.hc_head_fn, dtype='float32'",
-            "hc_head_scale -> model.mhc_contract.hc_head_scale, dtype='float32'",
+            f"hc_head_base -> model.mhc_contract.hc_head_base, dtype='{head_contract_dtype}'",
+            f"hc_head_fn^T -> model.mhc_contract.hc_head_fn, dtype='{head_contract_dtype}'",
+            f"hc_head_scale -> model.mhc_contract.hc_head_scale, dtype='{head_contract_dtype}'",
         ]
 
         # === 4. MTP (Multi-Token Prediction) layers ===
@@ -582,9 +589,9 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
 
             # --- MTP head HyperConnection ---
             stmts += [
-                f"{mtp_src}.hc_head_base -> {mtp_tgt}.hc_head_base, dtype='float32'",
-                f"{mtp_src}.hc_head_fn^T -> {mtp_tgt}.hc_head_fn, dtype='float32'",
-                f"{mtp_src}.hc_head_scale -> {mtp_tgt}.hc_head_scale, dtype='float32'",
+                f"{mtp_src}.hc_head_base -> {mtp_tgt}.hc_head_base, dtype='{head_contract_dtype}'",
+                f"{mtp_src}.hc_head_fn^T -> {mtp_tgt}.hc_head_fn, dtype='{head_contract_dtype}'",
+                f"{mtp_src}.hc_head_scale -> {mtp_tgt}.hc_head_scale, dtype='{head_contract_dtype}'",
             ]
 
             # --- LayerNorm (inside transformer_layer) ---
@@ -610,11 +617,11 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 f"{mtp_src}.hc_attn_scale -> {tl}.self_attention_hyper_connection.alpha_pre_t, "
                 f"{tl}.self_attention_hyper_connection.alpha_post_t, "
                 f"{tl}.self_attention_hyper_connection.alpha_res_t, axis=0",
-                f"{tl}.self_attention_hyper_connection.alpha_pre_t -> {tl}.self_attention_hyper_connection.alpha_pre, dtype='float32'",
-                f"{tl}.self_attention_hyper_connection.alpha_post_t -> {tl}.self_attention_hyper_connection.alpha_post, dtype='float32'",
-                f"{tl}.self_attention_hyper_connection.alpha_res_t -> {tl}.self_attention_hyper_connection.alpha_res, dtype='float32'",
-                f"{mtp_src}.hc_attn_base -> {tl}.self_attention_hyper_connection.bias, dtype='float32'",
-                f"{mtp_src}.hc_attn_fn^T -> {tl}.self_attention_hyper_connection.mapping_proj.weight, dtype='float32'",
+                f"{tl}.self_attention_hyper_connection.alpha_pre_t -> {tl}.self_attention_hyper_connection.alpha_pre, dtype='{mhc_param_dtype}'",
+                f"{tl}.self_attention_hyper_connection.alpha_post_t -> {tl}.self_attention_hyper_connection.alpha_post, dtype='{mhc_param_dtype}'",
+                f"{tl}.self_attention_hyper_connection.alpha_res_t -> {tl}.self_attention_hyper_connection.alpha_res, dtype='{mhc_param_dtype}'",
+                f"{mtp_src}.hc_attn_base -> {tl}.self_attention_hyper_connection.bias, dtype='{mhc_param_dtype}'",
+                f"{mtp_src}.hc_attn_fn^T -> {tl}.self_attention_hyper_connection.mapping_proj.weight, dtype='{mhc_param_dtype}'",
             ]
 
             # --- mHC: MLP HyperConnection (inside transformer_layer) ---
@@ -622,11 +629,11 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 f"{mtp_src}.hc_ffn_scale -> {tl}.mlp_hyper_connection.alpha_pre_t, "
                 f"{tl}.mlp_hyper_connection.alpha_post_t, "
                 f"{tl}.mlp_hyper_connection.alpha_res_t, axis=0",
-                f"{tl}.mlp_hyper_connection.alpha_pre_t -> {tl}.mlp_hyper_connection.alpha_pre, dtype='float32'",
-                f"{tl}.mlp_hyper_connection.alpha_post_t -> {tl}.mlp_hyper_connection.alpha_post, dtype='float32'",
-                f"{tl}.mlp_hyper_connection.alpha_res_t -> {tl}.mlp_hyper_connection.alpha_res, dtype='float32'",
-                f"{mtp_src}.hc_ffn_base -> {tl}.mlp_hyper_connection.bias, dtype='float32'",
-                f"{mtp_src}.hc_ffn_fn^T -> {tl}.mlp_hyper_connection.mapping_proj.weight, dtype='float32'",
+                f"{tl}.mlp_hyper_connection.alpha_pre_t -> {tl}.mlp_hyper_connection.alpha_pre, dtype='{mhc_param_dtype}'",
+                f"{tl}.mlp_hyper_connection.alpha_post_t -> {tl}.mlp_hyper_connection.alpha_post, dtype='{mhc_param_dtype}'",
+                f"{tl}.mlp_hyper_connection.alpha_res_t -> {tl}.mlp_hyper_connection.alpha_res, dtype='{mhc_param_dtype}'",
+                f"{mtp_src}.hc_ffn_base -> {tl}.mlp_hyper_connection.bias, dtype='{mhc_param_dtype}'",
+                f"{mtp_src}.hc_ffn_fn^T -> {tl}.mlp_hyper_connection.mapping_proj.weight, dtype='{mhc_param_dtype}'",
             ]
 
             # --- MTP CSA Compressor (if compress_ratio > 0 for this layer) ---
@@ -653,8 +660,11 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     ]
 
             # --- MoE Gate (MTP layers are always non-hash, so always have bias) ---
+            gate_weight_stmt = f"{mtp_src}.ffn.gate.weight -> {tl}.mlp.gate.weight"
+            if not use_accuracy_patch:
+                gate_weight_stmt += ", dtype='float32'"
             stmts += [
-                f"{mtp_src}.ffn.gate.weight -> {tl}.mlp.gate.weight, dtype='float32'",
+                gate_weight_stmt,
                 f"{mtp_src}.ffn.gate.bias -> {tl}.mlp.gate.e_score_correction_bias",
             ]
 
