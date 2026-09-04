@@ -13,16 +13,20 @@
 # limitations under the License.
 
 import unittest
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import numpy as np
+import paddle
 
 from paddleformers.datasets.collate import (
     calc_padding_size,
     dpo_collate_fn,
+    mm_collate_fn,
     mm_dpo_collate_fn,
 )
 from paddleformers.datasets.DPODataset import Sequence
+from paddleformers.datasets.SFTDataset import Sequence as SFTSequence
 
 
 class TestCalcPaddingSize(unittest.TestCase):
@@ -259,6 +263,107 @@ class TestMMDPOCollateFn(unittest.TestCase):
             mm_inputs={"pixel_values": np.random.randn(1, 3, 224, 224)},
         )
         self.assertIn("pixel_values", seq.mm_inputs)
+
+
+class TestMMCollateFn(unittest.TestCase):
+    def test_pads_heterogeneous_phi4_image_crops_and_audio_frames(self):
+        common = {
+            "position_ids": [0, 1],
+            "labels": [-100, 1],
+            "num_examples": 1,
+        }
+        seq1 = SFTSequence(
+            token_ids=[1, 2],
+            mm_inputs={
+                "image_pixel_values": paddle.ones([1, 2, 3, 2, 2]),
+                "image_attention_mask": paddle.ones([1, 2, 2, 2], dtype="bool"),
+                "audio_input_features": paddle.ones([1, 3, 80]),
+                "audio_embed_sizes": paddle.to_tensor([1], dtype="int64"),
+                "input_mode": paddle.to_tensor([3], dtype="int64"),
+            },
+            **common,
+        )
+        seq2 = SFTSequence(
+            token_ids=[3, 4],
+            mm_inputs={
+                "image_pixel_values": paddle.ones([1, 4, 3, 2, 2]),
+                "image_attention_mask": paddle.ones([1, 4, 2, 2], dtype="bool"),
+                "audio_input_features": paddle.ones([1, 5, 80]),
+                "audio_embed_sizes": paddle.to_tensor([1], dtype="int64"),
+                "input_mode": paddle.to_tensor([3], dtype="int64"),
+            },
+            **common,
+        )
+        training_args = SimpleNamespace(
+            num_nextn_predict_layers=0,
+            context_parallel_size=1,
+            tensor_model_parallel_size=1,
+            sequence_parallel=False,
+            fp8=False,
+        )
+        model_args = SimpleNamespace(
+            mtp_attention_flexible=False,
+            use_attn_mask_startend_row_indices=True,
+            use_global_causal_attn=False,
+        )
+
+        result = mm_collate_fn(
+            [[seq1], [seq2]],
+            template=None,
+            processor=None,
+            tokenizer=SimpleNamespace(pad_token_id=0),
+            training_args=training_args,
+            model_args=model_args,
+            max_seq_len=2,
+            padding_free=False,
+            model=None,
+        )
+
+        self.assertEqual(result["image_pixel_values"].shape, [2, 4, 3, 2, 2])
+        self.assertEqual(result["image_attention_mask"].shape, [2, 4, 2, 2])
+        self.assertEqual(result["audio_input_features"].shape, [2, 5, 80])
+        self.assertEqual(result["audio_attention_mask"].shape, [2, 5])
+        self.assertTrue(result["image_attention_mask"][0, 2:].all().item())
+        self.assertEqual(result["audio_attention_mask"][0, 3:].sum().item(), 0)
+
+    def test_adds_text_input_mode_when_batch_contains_multimodal_sample(self):
+        common = {
+            "position_ids": [0, 1],
+            "labels": [-100, 1],
+            "num_examples": 1,
+        }
+        text_seq = SFTSequence(token_ids=[1, 2], mm_inputs={}, **common)
+        vision_seq = SFTSequence(
+            token_ids=[3, 4],
+            mm_inputs={"input_mode": paddle.to_tensor([1], dtype="int64")},
+            **common,
+        )
+        training_args = SimpleNamespace(
+            num_nextn_predict_layers=0,
+            context_parallel_size=1,
+            tensor_model_parallel_size=1,
+            sequence_parallel=False,
+            fp8=False,
+        )
+        model_args = SimpleNamespace(
+            mtp_attention_flexible=False,
+            use_attn_mask_startend_row_indices=True,
+            use_global_causal_attn=False,
+        )
+
+        result = mm_collate_fn(
+            [[text_seq], [vision_seq]],
+            template=None,
+            processor=None,
+            tokenizer=SimpleNamespace(pad_token_id=0),
+            training_args=training_args,
+            model_args=model_args,
+            max_seq_len=2,
+            padding_free=False,
+            model=None,
+        )
+
+        self.assertEqual(result["input_mode"].tolist(), [0, 1])
 
 
 if __name__ == "__main__":

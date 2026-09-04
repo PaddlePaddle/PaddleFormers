@@ -1022,6 +1022,24 @@ register_template(
 )
 
 register_template(
+    name="phi4_multimodal",
+    format_user=StringFormatter(slots=["<|user|>\n{{content}}<|end|>\n<|assistant|>\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|system|>\n{{content}}<|end|>\n"]),
+    format_observation=StringFormatter(
+        slots=["<|user|>\n<tool_response>\n{{content}}\n</tool_response><|end|>\n<|assistant|>\n"]
+    ),
+    suffix=["<|end|>"],
+    chat_sep="<|end|>\n",
+    auto_add_bos=False,
+    mm_plugin=get_mm_plugin(
+        name="phi4_multimodal",
+        image_token="<|endoftext10|>",
+        audio_token="<|endoftext11|>",
+    ),
+)
+
+register_template(
     name="glm_ocr",
     format_user=StringFormatter(slots=["<|user|>\n{{content}}\n"]),
     format_assistant=StringFormatter(slots=["{{content}}"]),
