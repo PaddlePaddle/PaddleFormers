@@ -492,9 +492,15 @@ def load_tokenizer_and_processor(model_args, data_args):
     try:
         processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
     except (OSError, ValueError):
-        # GLM-4 SFT CI still needs AutoProcessor on the published checkpoint.
-        # Extracted GLM-5.2 text weights have no processor files; keep the
-        # independently loaded tokenizer as the processor.
+        # Extracted GLM-5.2 weights keep an independent tokenizer path and
+        # have no processor files. Published GLM-4 SFT still needs
+        # AutoProcessor; swallowing that failure moved first-train/resume
+        # loss off the published GT (12.635027885 vs 12.63612175).
+        independent_tokenizer = (
+            model_args.tokenizer_name_or_path and model_args.tokenizer_name_or_path != model_args.model_name_or_path
+        )
+        if not independent_tokenizer:
+            raise
         logger.info(f"No AutoProcessor at {model_args.model_name_or_path}; using tokenizer as processor")
         processor = tokenizer
     return tokenizer, processor
