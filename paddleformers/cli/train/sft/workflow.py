@@ -618,10 +618,7 @@ def apply_glm_moe_dsa_training_contract(model_config, training_args, model_args,
         _variable_seq_lengths = getattr(training_args, "variable_seq_lengths", None)
     if _variable_seq_lengths is not None:
         model_config.variable_seq_lengths = bool(_variable_seq_lengths)
-    if any(
-        field is not None
-        for field in (_overlap_p2p_comm, _batch_p2p_comm, _variable_seq_lengths)
-    ):
+    if any(field is not None for field in (_overlap_p2p_comm, _batch_p2p_comm, _variable_seq_lengths)):
         print(
             "[PP-P2P] model_config.overlap_p2p_comm="
             f"{getattr(model_config, 'overlap_p2p_comm', None)} "
