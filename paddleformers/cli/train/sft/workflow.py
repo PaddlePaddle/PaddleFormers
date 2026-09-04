@@ -99,7 +99,14 @@ def load_tokenizer_and_processor(model_args, data_args):
     # tokenizer on text SFT moved GLM4 CI first-train/resume loss off the
     # published GT (12.635027885 vs 12.63612175). GLM-5.2 still needs an
     # independent tokenizer path; processor stays on the model weights path.
-    processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
+    try:
+        processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
+    except (OSError, ValueError):
+        # GLM-4 SFT CI still needs AutoProcessor on the published checkpoint.
+        # Extracted GLM-5.2 text weights have no processor files; keep the
+        # independently loaded tokenizer as the processor.
+        logger.info(f"No AutoProcessor at {model_args.model_name_or_path}; using tokenizer as processor")
+        processor = tokenizer
     return tokenizer, processor
 
 
