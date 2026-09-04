@@ -382,7 +382,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         return info_map
 
     @classmethod
-    def _gen_aoa_config(cls, config: DeepseekV4Config):
+    def _gen_aoa_config(cls, config: DeepseekV4Config, checkpoint_keys=None):
         """Weight conversion: HuggingFace DSv4 checkpoint -> PaddleFleet internal format.
 
         Maps open-source DeepSeek-V4 HuggingFace parameter names to PaddleFleet names.
@@ -392,12 +392,40 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
 
         HF naming convention: layers.{L}.attn.*, layers.{L}.ffn.*, embed.weight, etc.
         PF naming convention: model.layers.{L}.self_attn.*, model.layers.{L}.mlp.*, etc.
+
+        Args:
+            config: Model config.
+            checkpoint_keys: Optional iterable of HF-side state-dict keys that the
+                loader has determined actually exist in the on-disk checkpoint (e.g.
+                ``sharded_metadata["all_checkpoint_keys"]``). Used **only** to decide
+                the load rule for the trained-but-persistable ``indexer_moh_bias``
+                buffer (see V4_INDEXER_MOH below):
+
+                * When ``indexer_moh_bias`` **is** present in the checkpoint (i.e.
+                  a prior ``save_pretrained`` wrote it back via
+                  ``_gen_inv_aoa_config``), the forward AOA emits a named
+                  ``hf_key -> fleet_key`` mapping so the trained aux-loss-free
+                  bias is loaded, not overwritten.
+                * When the key is **absent** (fresh HuggingFace release, or a
+                  legacy pre-round-trip save), we fall back to the ``_ ->
+                  fleet_key`` add primitive so the bias is zero-initialized.
+
+                ``checkpoint_keys=None`` preserves the historical behavior of
+                always zero-initializing -- safe but drops the round-trip. Pass
+                a concrete set/list when the caller knows the checkpoint contents
+                (from_pretrained / _load_flex_checkpoint do; merge tools may not).
         """
+        # Normalize to a set for O(1) membership checks; ``None`` sentinel is
+        # preserved as "caller doesn't know", which keeps the pre-existing
+        # zero-init fallback.
+        if checkpoint_keys is not None and not isinstance(checkpoint_keys, (set, frozenset)):
+            checkpoint_keys = set(checkpoint_keys)
         num_hidden_layers = config.num_hidden_layers
         num_experts = config.n_routed_experts
         n_shared_experts = getattr(config, "n_shared_experts", 1)
         moe_n_hash_layers = getattr(config, "moe_n_hash_layers", 3)
         dense_mode = getattr(config, "csa_dense_mode", False)
+        use_moh = getattr(config, "use_moh", False)
         csa_compress_ratios = config.csa_compress_ratios
         num_head_empty_layers = (
             config.num_empty_layers_add_in_head
@@ -518,6 +546,26 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     f"{idx_src}.weights_proj.weight^T -> {idx_tgt}.linear_weights_proj.weight",
                     f"{idx_src}.wq_b.weight^T -> {idx_tgt}.linear_wq_b.weight",
                 ]
+                # V4_INDEXER_MOH: indexer_moh_bias is a *persistable* buffer
+                # mutated every step by the aux-loss-free callback. Two cases:
+                #   * fresh HF release (or legacy pre-round-trip save):
+                #     ``indexer_moh_bias`` is absent -> use the add primitive
+                #     so the buffer is zero-initialized on load.
+                #   * checkpoint saved by our own ``_gen_inv_aoa_config``:
+                #     ``indexer_moh_bias`` is present -> map named->named so
+                #     the trained load-balancing state actually loads.
+                # ``checkpoint_keys=None`` means the caller doesn't know, so
+                # we conservatively zero-init (backward-compatible).
+                if use_moh:
+                    hf_bias_key = f"{src}.attn.indexer.indexer_moh_bias"
+                    if checkpoint_keys is not None and hf_bias_key in checkpoint_keys:
+                        stmts += [
+                            f"{hf_bias_key} -> {idx_tgt}.indexer_moh_bias",
+                        ]
+                    else:
+                        stmts += [
+                            f"_ -> {idx_tgt}.indexer_moh_bias",
+                        ]
 
             # --- MoE Gate ---
             stmts += [f"{src}.ffn.gate.weight -> {tgt}.mlp.gate.weight, dtype='float32'"]
@@ -651,6 +699,19 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                         f"{idx_src}.weights_proj.weight^T -> {idx_tgt}.linear_weights_proj.weight",
                         f"{idx_src}.wq_b.weight^T -> {idx_tgt}.linear_wq_b.weight",
                     ]
+                    # V4_INDEXER_MOH: same rationale as the decoder branch --
+                    # named->named when the checkpoint carries the trained bias
+                    # (round-trip case), add primitive otherwise.
+                    if use_moh:
+                        hf_bias_key = f"{mtp_src}.attn.indexer.indexer_moh_bias"
+                        if checkpoint_keys is not None and hf_bias_key in checkpoint_keys:
+                            stmts += [
+                                f"{hf_bias_key} -> {idx_tgt}.indexer_moh_bias",
+                            ]
+                        else:
+                            stmts += [
+                                f"_ -> {idx_tgt}.indexer_moh_bias",
+                            ]
 
             # --- MoE Gate (MTP layers are always non-hash, so always have bias) ---
             stmts += [
@@ -702,6 +763,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         n_shared_experts = getattr(config, "n_shared_experts", 1)
         moe_n_hash_layers = getattr(config, "moe_n_hash_layers", 3)
         dense_mode = getattr(config, "csa_dense_mode", False)
+        use_moh = getattr(config, "use_moh", False)
         csa_compress_ratios = config.csa_compress_ratios
         num_head_empty_layers = (
             config.num_empty_layers_add_in_head
@@ -824,6 +886,13 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                         f"{idx_src}.linear_weights_proj.weight^T -> {idx_tgt}.weights_proj.weight",
                         f"{idx_src}.linear_wq_b.weight^T -> {idx_tgt}.wq_b.weight",
                     ]
+                    # V4_INDEXER_MOH: same rationale as the decoder path -- the
+                    # aux-loss-free bias is persistable state and must survive a
+                    # save/load round-trip.
+                    if use_moh:
+                        stmts += [
+                            f"{idx_src}.indexer_moh_bias -> {idx_tgt}.indexer_moh_bias",
+                        ]
 
             # --- MoE Gate ---
             stmts += [
@@ -949,6 +1018,15 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     f"{idx_src}.linear_weights_proj.weight^T -> {idx_tgt}.weights_proj.weight",
                     f"{idx_src}.linear_wq_b.weight^T -> {idx_tgt}.wq_b.weight",
                 ]
+                # V4_INDEXER_MOH: persist the trained aux-loss-free bias back to
+                # HF. Forward path uses ``_ -> ...indexer_moh_bias`` to zero-init
+                # on load, so if we skip this side of the round-trip the trained
+                # load-balancing state is dropped on every save_pretrained and
+                # replaced with zeros on the next from_pretrained.
+                if use_moh:
+                    stmts += [
+                        f"{idx_src}.indexer_moh_bias -> {idx_tgt}.indexer_moh_bias",
+                    ]
 
             # --- MoE Gate ---
             stmts += [f"{src}.mlp.gate.weight -> {tgt}.ffn.gate.weight,dtype='float32'"]

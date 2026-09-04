@@ -272,6 +272,35 @@ DIST_CKPT_PATH = "dist_ckpt"
 DIST_MODEL_PATH = "dist_model"
 
 
+def _read_flex_checkpoint_keys(ckpt_path):
+    """Best-effort read of the HF safetensors shard index to enumerate keys.
+
+    Used by the flex-checkpoint load path (via ``_gen_aoa_config``) to
+    distinguish HF checkpoints that already carry persisted trainer state
+    (e.g. ``indexer_moh_bias``) from fresh HF releases. Returns ``None`` on
+    any failure -- callers must treat ``None`` as "unknown" and fall back to
+    the historical zero-init behavior.
+    """
+    if not ckpt_path or not os.path.isdir(ckpt_path):
+        return None
+    # ``model.safetensors.index.json`` is the standard HF sharded-checkpoint
+    # index file. Non-sharded (single .safetensors) checkpoints won't have
+    # it, and we don't want to eagerly open every shard just to build the
+    # key set -- ``None`` is a safe fallback there too.
+    index_path = os.path.join(ckpt_path, "model.safetensors.index.json")
+    if not os.path.isfile(index_path):
+        return None
+    try:
+        with open(index_path, "r") as f:
+            index = json.load(f)
+    except (OSError, ValueError):
+        return None
+    weight_map = index.get("weight_map")
+    if not isinstance(weight_map, dict):
+        return None
+    return set(weight_map.keys())
+
+
 class Trainer:
     """
     Trainer is a simple but feature-complete training and eval loop for PaddlePaddle, optimized for PaddleFormers.
@@ -1259,7 +1288,17 @@ class Trainer:
             worker_groups = None
 
         if self.args.load_from_hf:
-            hf_aoa_config = self.model._gen_aoa_config(self.model.config)
+            # V4_INDEXER_MOH round-trip: read the HF checkpoint's key set so
+            # _gen_aoa_config can emit ``named -> named`` for persisted trainer
+            # state (e.g. ``indexer_moh_bias``) and fall back to ``_ -> ...``
+            # only for genuinely missing keys. Read the shard index first;
+            # older classmethods that don't accept ``checkpoint_keys`` keep
+            # their old signature via the TypeError fallback below.
+            _aoa_checkpoint_keys = _read_flex_checkpoint_keys(resume_from_checkpoint)
+            try:
+                hf_aoa_config = self.model._gen_aoa_config(self.model.config, checkpoint_keys=_aoa_checkpoint_keys)
+            except TypeError:
+                hf_aoa_config = self.model._gen_aoa_config(self.model.config)
             assert (
                 self.args.ignore_load_lr_and_optim
             ), "Loading from HuggingFace format is only allowed when learning rate and optimizer state are ignored."
@@ -1853,7 +1892,15 @@ class Trainer:
             if resume_from_checkpoint is not None:
                 if self.args.convert_from_hf:
                     model_sharded_state_dict = model.sharded_state_dict()
-                    aoa_config = model._gen_aoa_config(model.config)
+                    # See _load_flex_checkpoint for the V4_INDEXER_MOH round-trip
+                    # rationale -- feed the HF checkpoint's key set through so
+                    # persisted trainer state (e.g. ``indexer_moh_bias``) is
+                    # loaded named->named instead of being zero-init'd.
+                    _aoa_checkpoint_keys = _read_flex_checkpoint_keys(resume_from_checkpoint)
+                    try:
+                        aoa_config = model._gen_aoa_config(model.config, checkpoint_keys=_aoa_checkpoint_keys)
+                    except TypeError:
+                        aoa_config = model._gen_aoa_config(model.config)
                     dist.load_state_dict(
                         model_sharded_state_dict,
                         resume_from_checkpoint,

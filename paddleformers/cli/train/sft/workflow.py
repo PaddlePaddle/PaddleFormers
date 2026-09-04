@@ -41,6 +41,7 @@ from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
 from paddleformers.trainer import (
     FP8QuantWeightCallback,
+    IndexerBiasAdjustCallback,
     IntervalStrategy,
     MoECorrectionBiasAdjustCallback,
     MoeExpertsGradScaleCallback,
@@ -734,6 +735,17 @@ def run_sft(
         callbacks += [MoECorrectionBiasAdjustCallback(lr=training_args.moe_router_bias_update_rate)]
     elif getattr(model_config.get_text_config(), "topk_method", None) == "quantile_balancing":
         callbacks += [MoEQuantileBalancingCallback()]
+
+    # MoH: indexer_moh_bias load-balance update. The callback is a no-op when
+    # no CSAIndexer in the model carries the MoH buffers, so it is safe to add
+    # whenever ``use_moh`` is on in the config.
+    if getattr(model_config.get_text_config(), "use_moh", False):
+        callbacks += [
+            IndexerBiasAdjustCallback(
+                lr=getattr(training_args, "indexer_bias_update_rate", 0.001),
+                use_mp=training_args.sequence_parallel,
+            )
+        ]
 
     if training_args.use_expert_parallel:
         callbacks += [MoeExpertsGradScaleCallback(training_args)]

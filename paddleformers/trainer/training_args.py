@@ -521,6 +521,15 @@ class TrainingArguments:
         and decreased for the experts with more assigned tokens."""
         },
     )
+    indexer_bias_update_rate: float = field(
+        default=0.001,
+        metadata={
+            "help": """The MoH indexer bias (indexer_moh_bias) is updated based on the number of tokens
+        routed to each indexer head in a global batch, where the bias is increased for the heads with
+        fewer assigned tokens and decreased for the heads with more assigned tokens. Only effective
+        when the model config sets use_moh=True."""
+        },
+    )
     freeze_training: bool = field(
         default=False,
         metadata={

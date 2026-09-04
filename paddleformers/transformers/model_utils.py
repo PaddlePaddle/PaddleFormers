@@ -2906,7 +2906,21 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     "When using flex_checkpoint to load Hugging Face open-source weights, "
                     "the model must implement the _gen_aoa_config function to provide checkpoint conversion rules."
                 )
-            aoa_config = cls._gen_aoa_config(config)
+            # V4_INDEXER_MOH round-trip: some models (e.g. DeepSeek-V4 with MoH)
+            # need to know which keys are physically present in the HF
+            # checkpoint so they can emit ``named -> named`` for persisted
+            # trainer state (e.g. ``indexer_moh_bias``) and fall back to the
+            # ``_ -> ...`` add primitive only for keys that are actually
+            # missing. Pass ``checkpoint_keys`` when the classmethod accepts
+            # it; older classmethods without the kwarg keep their old
+            # signature and behavior.
+            _aoa_checkpoint_keys = None
+            if sharded_metadata is not None and "all_checkpoint_keys" in sharded_metadata:
+                _aoa_checkpoint_keys = set(sharded_metadata["all_checkpoint_keys"])
+            try:
+                aoa_config = cls._gen_aoa_config(config, checkpoint_keys=_aoa_checkpoint_keys)
+            except TypeError:
+                aoa_config = cls._gen_aoa_config(config)
             sharded_state_dict = model.sharded_state_dict()
             metadata_path = os.path.join(ckpt_path, FLEX_CKPT_AUTO_GENERATED_METADATA)
 
