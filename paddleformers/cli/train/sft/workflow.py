@@ -611,7 +611,8 @@ def freeze_param_except_mtp(model, config):
         return None
 
     # not sure can work on all model
-    jackpot = set(range(config.num_hidden_layers, config.num_hidden_layers + config.mtp_num_layers))
+    mtp_depth = int(getattr(config, "num_nextn_predict_layers", 0) or getattr(config, "mtp_num_layers", 0) or 0)
+    jackpot = set(range(config.num_hidden_layers, config.num_hidden_layers + mtp_depth))
     for name, param in model.state_dict().items():
         layer_idx = extract_layer_idx(name)
         is_mtp = layer_idx in jackpot
@@ -813,8 +814,10 @@ def run_sft(
     apply_glm_moe_dsa_training_contract(model_config, training_args, model_args, data_args)
     model_config.use_fast_layer_norm = model_args.use_fast_layer_norm
 
-    # autoregressive mtp training
-    if model_config.mtp_num_layers > 1:
+    # autoregressive mtp training (non GLM MoE DSA). GLM MoE DSA already mapped
+    # depth onto num_nextn_predict_layers and dropped mtp_num_layers so Fleet
+    # TransformerConfig does not fail-closed on the renamed key.
+    if getattr(model_config, "model_type", None) != "glm_moe_dsa" and getattr(model_config, "mtp_num_layers", 0) > 1:
         tmp = model_config.mtp_num_layers
         model_config.mtp_num_layers = model_config.num_nextn_predict_layers
         model_config.num_nextn_predict_layers = tmp
