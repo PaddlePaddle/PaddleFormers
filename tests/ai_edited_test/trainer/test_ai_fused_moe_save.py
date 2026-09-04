@@ -37,6 +37,12 @@ class TestDeferredTokenNormalizationWiring(unittest.TestCase):
         self.assertIn("grad.scale_(scale)", src)
         self.assertIn("main_grad", src)
 
+    def test_resolve_skips_cpu_collective_when_accuracy_flag_off(self):
+        src = inspect.getsource(Trainer._resolve_deferred_token_normalization)
+        self.assertIn("FLAGS_use_accuracy_compatible_kernel", src)
+        self.assertIn("paddle.full", src)
+        self.assertNotIn("paddle.to_tensor([0.0 if divisor is None", src)
+
 
 class TestFlexSaveWithoutMtpNumLayers(unittest.TestCase):
     def test_flex_save_uses_getattr_for_mtp_num_layers(self):

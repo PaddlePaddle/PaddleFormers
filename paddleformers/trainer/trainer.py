@@ -2203,6 +2203,11 @@ class Trainer:
 
         Only the last PP stage computes the loss. MAX all-reduce: the stage
         that registered a divisor contributes it, others contribute 0.
+
+        Skip when FLAGS_use_accuracy_compatible_kernel is off: DeferToken
+        never registers a divisor on that path, and a CPU float64
+        all-reduce still constructs an NCCL collective. That aborted Qwen
+        SFT and GLM-4.5 LoRA on H20-multi with 'unhandled cuda error'.
         """
         try:
             from paddlefleet.models.common.language_loss.language_loss import (
@@ -2210,6 +2215,9 @@ class Trainer:
                 set_pending_gradient_divisor,
             )
         except ImportError:
+            return
+
+        if os.environ.get("FLAGS_use_accuracy_compatible_kernel", "0") != "1":
             return
 
         divisor = get_pending_gradient_divisor()
@@ -2222,7 +2230,9 @@ class Trainer:
         if pp_group is None or pp_group.nranks <= 1:
             return
 
-        holder = paddle.to_tensor([0.0 if divisor is None else float(divisor)], dtype="float64")
+        # Allocate on the current training device. paddle.to_tensor(list)
+        # of Python floats is CPU-only and NCCL rejects that buffer.
+        holder = paddle.full([1], 0.0 if divisor is None else float(divisor), dtype="float64")
         paddle.distributed.all_reduce(holder, op=paddle.distributed.ReduceOp.MAX, group=pp_group)
         value = float(holder.numpy()[0])
         if value > 0:
