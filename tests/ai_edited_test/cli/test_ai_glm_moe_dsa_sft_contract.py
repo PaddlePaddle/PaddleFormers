@@ -20,6 +20,7 @@ from paddleformers.cli.train.sft.workflow import (
     apply_glm_moe_dsa_training_contract,
     load_tokenizer_and_processor,
 )
+from paddleformers.transformers.glm4_moe.modeling import Glm4MoePreTrainedModel
 
 
 def test_load_tokenizer_uses_independent_source():
@@ -112,6 +113,29 @@ def test_load_processor_reraises_missing_processor_on_glm4_checkpoint():
             assert "Unrecognized processing class" in str(exc)
         else:
             raise AssertionError("GLM-4 AutoProcessor failure must not fall back to tokenizer")
+
+
+def test_glm4_moe_aoa_keeps_gate_weight_float32_under_uac():
+    config = SimpleNamespace(
+        using_sonic_moe=False,
+        n_routed_experts=4,
+        num_hidden_layers=2,
+        first_k_dense_replace=1,
+        mtp_num_layers=0,
+        num_nextn_predict_layers=0,
+        num_attention_heads=8,
+        num_key_value_heads=8,
+        tie_word_embeddings=False,
+        use_qk_norm=False,
+        attention_bias=False,
+        use_accuracy_compatible=True,
+        moe_expert_fusion=False,
+    )
+    config.get = lambda key, default=False: default
+    statements = Glm4MoePreTrainedModel._gen_aoa_config(config)["aoa_statements"]
+    joined = "\n".join(statements)
+    assert "mlp.gate.weight, dtype='float32'" in joined
+    assert "mlp.gate.weight, dtype='bfloat16'" not in joined
 
 
 def _base_training_args(**overrides):

@@ -18,6 +18,7 @@ from unittest.mock import MagicMock, patch
 import paddle
 import pytest
 
+from paddleformers.cli.train.sft import workflow as sft_workflow
 from paddleformers.cli.train.sft.workflow import (
     ModelReproObservationCallback,
     apply_glm_moe_dsa_training_contract,
@@ -48,11 +49,13 @@ def test_load_tokenizer_uses_independent_source():
     )
     data_args = SimpleNamespace(processor_use_fast=None)
 
-    with patch(
-        "paddleformers.cli.train.sft.workflow.AutoTokenizer.from_pretrained",
+    with patch.object(
+        sft_workflow.AutoTokenizer,
+        "from_pretrained",
         return_value=tokenizer,
-    ) as load_tokenizer, patch(
-        "paddleformers.cli.train.sft.workflow.AutoProcessor.from_pretrained",
+    ) as load_tokenizer, patch.object(
+        sft_workflow.AutoProcessor,
+        "from_pretrained",
         return_value=processor,
     ) as load_processor:
         actual_tokenizer, actual_processor = load_tokenizer_and_processor(model_args, data_args)
