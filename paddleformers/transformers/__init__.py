@@ -394,6 +394,8 @@ import_structure = {
     "minicpm4_1": [],
     "deepseek_v4.configuration": ["DeepseekV4Config"],
     "deepseek_v4": ["DeepseekV4ForCausalLMPipe", "DeepseekV4ForCausalLM"],
+    "minimax.configuration": ["MiniMaxConfig"],
+    "minimax": ["MiniMaxModel", "MiniMaxForCausalLM"],
     "glm4v_moe.image_processor": ["Glm4vImageProcessor"],
     "glm4v_moe.image_processor_fast": ["Glm4vImageProcessorFast"],
     "auto": ["AutoModelForCausalLM"],
@@ -536,6 +538,7 @@ if TYPE_CHECKING:
     from .minicpm import *
     from .minicpm4_1 import *
     from .deepseek_v4 import *
+    from .minimax import *
     from .gpt_oss import *
     from .minicpm3 import *
     from .granite import *

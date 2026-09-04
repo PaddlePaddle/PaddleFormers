@@ -8,6 +8,7 @@
 |GPT-OSS|✓|✓|✓|x|x|
 |Granite|✓|✓|✓|✓|✓|
 |LLaMA3|✓|✓|✓|✓|✓|
+|MiniMax-Text-01|✓|✓|✓|x|x|
 |OLMo2|✓|✓|✓|✓|✓|
 |Phi4|✓|✓|✓|✓|✓|
 |Qwen2|✓|✓|✓|✓|✓|
@@ -28,6 +29,7 @@
 |GPT-OSS|✓|✓|x|x|✓|✓|
 |Granite|✓|✓|-|x|✓|✓|
 |LLaMA3|✓|✓|-|x|✓|✓|
+|MiniMax-Text-01|x|x|x|x|✓|✓|
 |OLMo2|✓|✓|-|x|✓|✓|
 |Phi4|✓|✓|-|x|✓|✓|
 |Qwen2|✓|✓|x|x|✓|✓|

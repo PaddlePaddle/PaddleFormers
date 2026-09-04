@@ -22,6 +22,7 @@ from paddleformers.datasets.template.formatter import (
     ToolFormatter,
 )
 from paddleformers.datasets.template.template import (
+    TEMPLATES,
     GLM5ReasoningTemplate,
     ReasoningTemplate,
     Role,
@@ -137,6 +138,13 @@ class TestTemplate(unittest.TestCase):
         """Test that registering a duplicate template raises ValueError."""
         with self.assertRaises(ValueError):
             register_template(name="default")  # already registered
+
+    def test_minimax_assistant_separator_is_not_duplicated(self):
+        template = TEMPLATES["minimax"]
+
+        self.assertEqual(template.format_assistant.apply(content="answer"), ["answer"])
+        self.assertEqual(template.chat_sep, "<end_of_sentence>\n")
+        self.assertEqual(template.suffix, ["<end_of_sentence>"])
 
 
 class TestReasoningTemplate(unittest.TestCase):

@@ -77,6 +77,7 @@ MAPPING_NAMES = OrderedDict(
         ("Qwen3_5", "qwen3_5"),
         ("Glm4Moe", "glm4_moe"),
         ("GlmMoeDsa", "glm_moe_dsa"),
+        ("MiniMax", "minimax"),
         ("MiniMaxM2", "minimax_m2"),
         ("MiniCPM", "minicpm"),
         ("MiniCPM4_1", "minicpm4_1"),
