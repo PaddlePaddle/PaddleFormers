@@ -1568,7 +1568,7 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
                 if param_name not in static_to_struct_mapping:
                     continue
                 struct_name = static_to_struct_mapping[param_name]
-                if os.getenv("HACK_CONVERT_CKPT", "0").lower() not in ["true", "1"]:
+                if (os.getenv("HACK_CONVERT_CKPT", "0").lower() not in ["true", "1"]) and False:
                     if not any(
                         struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names
                     ):
@@ -1597,7 +1597,7 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
                 if param_name not in static_to_struct_mapping:
                     continue
                 struct_name = static_to_struct_mapping[param_name]
-                if os.getenv("HACK_CONVERT_CKPT", "0").lower() not in ["true", "1"]:
+                if (os.getenv("HACK_CONVERT_CKPT", "0").lower() not in ["true", "1"]) and False:
                     if not any(
                         struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names
                     ):
