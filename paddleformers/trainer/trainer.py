@@ -1957,6 +1957,7 @@ class Trainer:
         else:
             per_device_trainable_numel = sum(np.prod(p.shape) for p in model.parameters() if not p.stop_gradient)
         logger.debug(f"  Number of trainable parameters = {per_device_trainable_numel:,} (per device)")
+        self.log_moe_trainable_numel(model)
         if self.args.use_hybrid_parallel:
             # todo fix for pipeline_model_parallel_size
             parts_num = max(self.args.tensor_model_parallel_size, 1) * max(self.args.pipeline_model_parallel_size, 1)
@@ -1973,6 +1974,79 @@ class Trainer:
                 # the numel is roughly, because the tensor parallel still hold own bias or layer_norm weight without splited
                 # so, the trainable numel is a little bigger than real.
                 logger.debug(f"  Number of trainable parameters = {trainable_numel:,} (all devices, roughly)")
+
+    @staticmethod
+    def _first_int_config_value(config, names):
+        for name in names:
+            value = getattr(config, name, None)
+            if isinstance(value, int) and value > 0:
+                return value
+        return None
+
+    def log_moe_trainable_numel(self, model):
+        """Log the whole model and the per token activated numel of a MoE model.
+
+        The per device numel cannot be scaled by the world size directly: routed expert
+        params are split over expert parallel, everything else is replicated on every
+        dim but TP/PP. Summing each part over the world and undoing its own replication
+        factor gives
+
+            dense_total  = sum_world(dense_local)  * tp * pp      / world_size
+            expert_total = sum_world(expert_local) * tp * pp * ep / world_size
+
+        so an unbalanced PP layout needs no special casing. With tp > 1 both numbers are
+        a slight over-count because unsplit biases and norm weights are kept on every TP
+        rank, the same caveat as the "all devices, roughly" line above.
+
+        The activated numel keeps the whole dense part (embeddings, lm_head and the
+        shared experts, which run for every token) plus topk / num_experts of the routed
+        part, and drops the MTP layers since they do not join the main forward.
+        """
+        if self.args.enable_auto_parallel:
+            return
+        world_size = max(self.args.world_size, 1)
+        if world_size > 1 and not paddle.distributed.is_initialized():
+            return
+
+        config = getattr(unwrap_model(model), "config", None)
+        num_hidden_layers = self._first_int_config_value(config, ("num_hidden_layers",))
+        # [dense_main, dense_mtp, expert_main, expert_mtp]
+        numels = [0, 0, 0, 0]
+        for name, p in model.named_parameters():
+            if p.stop_gradient:
+                continue
+            is_expert = getattr(p, "expert", False) or getattr(p, "is_moe_param", False)
+            layer_id = re.search(r"layers\.(\d+)\.", name)
+            is_mtp = "mtp" in name.lower() or (
+                num_hidden_layers is not None and layer_id is not None and int(layer_id.group(1)) >= num_hidden_layers
+            )
+            numels[2 * int(is_expert) + int(is_mtp)] += int(np.prod(p.shape))
+        if numels[2] + numels[3] == 0:
+            # dense model, the per device numel is already the whole model
+            return
+
+        if world_size > 1:
+            all_reduce_dtype = "int64"
+            if paddle.get_device().split(":")[0] in ["npu", "xpu"]:
+                # TODO(duanyanhui): fix when NPU all_reduce supports int64
+                all_reduce_dtype = "float32"
+            numels_tensor = paddle.to_tensor(numels, dtype=all_reduce_dtype)
+            paddle.distributed.all_reduce(numels_tensor)
+            numels = [int(v) for v in numels_tensor.numpy().tolist()]
+        dense_main, dense_mtp, expert_main, expert_mtp = numels
+
+        parts_num = max(self.args.tensor_model_parallel_size, 1) * max(self.args.pipeline_model_parallel_size, 1)
+        dense_scale = parts_num / world_size
+        expert_scale = dense_scale * max(self.args.expert_model_parallel_size, 1)
+        whole_numel = round((dense_main + dense_mtp) * dense_scale + (expert_main + expert_mtp) * expert_scale)
+        logger.debug(f"  Number of trainable parameters = {whole_numel:,} (whole model, expert parallel restored)")
+
+        num_experts = self._first_int_config_value(config, ("n_routed_experts", "moe_num_experts", "num_experts"))
+        topk = self._first_int_config_value(config, ("num_experts_per_tok", "moe_router_topk", "moe_k", "top_k"))
+        if num_experts is None or topk is None:
+            return
+        activated_numel = round(dense_main * dense_scale + expert_main * expert_scale * topk / num_experts)
+        logger.debug(f"  Number of trainable parameters = {activated_numel:,} (activated per token)")
 
     def _split_batches_for_accumulation(self, inputs):
         if self.args.gradient_accumulation_steps == 1:
