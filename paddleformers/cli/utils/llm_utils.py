@@ -423,6 +423,15 @@ def get_lora_target_modules(model):
             ".*mlp.fc1.*",
             ".*mlp.fc2.*",
         ]
+    elif model.config.model_type == "telechat":
+        target_modules = [
+            ".*query.*",
+            ".*key_value.*",
+            ".*dense.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
+        ]
     elif model.config.model_type == "glm4v_moe":
         target_modules = [
             # language_model
