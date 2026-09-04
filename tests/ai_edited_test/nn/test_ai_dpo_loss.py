@@ -13,7 +13,8 @@
 # limitations under the License.
 
 import unittest
-from unittest.mock import MagicMock
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import paddle
@@ -127,6 +128,53 @@ class TestLossImpl(unittest.TestCase):
         # Check logits were cast to float32
         call_args = mock_self.loss_func.call_args[0]
         self.assertEqual(call_args[0].dtype, paddle.float32)
+
+
+class TestDpoLogps(unittest.TestCase):
+    """Tests for response log-prob aggregation."""
+
+    def _run_dpo_logps(self, average_log_prob=False, normalize_logps=False):
+        from paddleformers.nn.criterion.dpo_loss import dpo_logps
+
+        mock_self = SimpleNamespace(
+            config=SimpleNamespace(tensor_model_parallel_size=1, sequence_parallel=False),
+            dpo_config=SimpleNamespace(
+                ignore_eos_token=True,
+                normalize_logps=normalize_logps,
+                sft_loss_ratio=1.0,
+            ),
+            loss_subbatch_sequence_length=1024,
+            tie_word_embeddings=False,
+            use_filtered_label_loss=False,
+            use_fused_head_and_loss_fn=False,
+            use_subbatch=False,
+        )
+        logits = paddle.zeros([1, 7, 2])
+        labels = paddle.zeros([1, 7], dtype="int64")
+        response_indexes = paddle.to_tensor([[0, 0, 3, 7]], dtype="int64")
+        token_losses = paddle.to_tensor([[[1.0], [2.0], [100.0], [3.0], [4.0], [5.0], [100.0]]])
+
+        with patch("paddleformers.nn.criterion.dpo_loss.loss_impl", return_value=token_losses):
+            return dpo_logps(
+                mock_self,
+                logits,
+                labels,
+                response_indexes,
+                average_log_prob=average_log_prob,
+            )
+
+    def test_average_log_prob_excludes_ignored_eos_from_lengths(self):
+        chosen_logps, rejected_logps, sft_loss = self._run_dpo_logps(average_log_prob=True)
+
+        np.testing.assert_allclose(chosen_logps.numpy(), [-1.5])
+        np.testing.assert_allclose(rejected_logps.numpy(), [-4.0])
+        np.testing.assert_allclose(sft_loss.numpy(), 1.5)
+
+    def test_normalize_logps_excludes_ignored_eos_from_lengths(self):
+        chosen_logps, rejected_logps, _ = self._run_dpo_logps(normalize_logps=True)
+
+        np.testing.assert_allclose(chosen_logps.numpy(), [-3.75])
+        np.testing.assert_allclose(rejected_logps.numpy(), [-10.0])
 
 
 class TestCalDpoLoss(unittest.TestCase):

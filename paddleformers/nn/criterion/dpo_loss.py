@@ -227,20 +227,17 @@ def dpo_logps(
 
     # 4.sft_loss
     chosen_response_lengths = response_indexs[:, 2] - response_indexs[:, 1] - offset
+    rejected_response_lengths = response_indexs[:, 3] - response_indexs[:, 2] - offset
     sft_loss = -chosen_logps.sum() / chosen_response_lengths.sum()
 
     # 5.average & normalize
     if average_log_prob:
-        chosen_response_length = response_indexs[:, 2] - response_indexs[:, 1]
-        rejected_response_length = response_indexs[:, 3] - response_indexs[:, 2]
-        chosen_logps /= chosen_response_length.astype("float32")
-        rejected_logps /= rejected_response_length.astype("float32")
+        chosen_logps /= chosen_response_lengths.astype("float32")
+        rejected_logps /= rejected_response_lengths.astype("float32")
     elif self.dpo_config.normalize_logps:
-        avg_response_length = (response_indexs[:, 3] - response_indexs[:, 1]) / 2
-        chosen_response_length = response_indexs[:, 2] - response_indexs[:, 1]
-        rejected_response_length = response_indexs[:, 3] - response_indexs[:, 2]
-        chosen_logps *= avg_response_length / chosen_response_length.astype("float32")
-        rejected_logps *= avg_response_length / rejected_response_length.astype("float32")
+        avg_response_length = (chosen_response_lengths + rejected_response_lengths) / 2
+        chosen_logps *= avg_response_length / chosen_response_lengths.astype("float32")
+        rejected_logps *= avg_response_length / rejected_response_lengths.astype("float32")
 
     return chosen_logps, rejected_logps, sft_loss * self.dpo_config.sft_loss_ratio
 
