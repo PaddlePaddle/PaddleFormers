@@ -1718,6 +1718,18 @@ class TrainingArguments:
             )
         },
     )
+    muon_use_symmetric_gemm: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Whether to compute the two symmetric matmuls of each Newton-Schulz step with "
+                "quack's SYRK-style gemm_symmetric kernel, which only evaluates the lower triangle "
+                "and mirrors it back. Requires bfloat16/float16 Newton-Schulz matmuls, an importable "
+                "quack, and compute capability 9.x/10.x/11.x. "
+                "Default: False. Only used when optim=muon."
+            )
+        },
+    )
     sd_sharding_comm_overlap: bool = field(
         default=False,
         metadata={
