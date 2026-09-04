@@ -16,6 +16,28 @@ from paddleformers.trainer.trainer_utils import IntervalStrategy
 from paddleformers.trainer.training_args import TrainingArguments
 
 
+class TestDeferredTokenNormalizationWiring(unittest.TestCase):
+    def test_train_loop_resolves_then_applies_before_optimizer_step(self):
+        src = inspect.getsource(Trainer._inner_training_loop)
+        resolve_at = src.find("self._resolve_deferred_token_normalization()")
+        begin_at = src.find("self.callback_handler.on_optimizer_begin(")
+        apply_at = src.find("self._apply_deferred_token_normalization(model)")
+        step_at = src.find("self.optimizer_step(")
+        self.assertNotEqual(resolve_at, -1)
+        self.assertNotEqual(begin_at, -1)
+        self.assertNotEqual(apply_at, -1)
+        self.assertNotEqual(step_at, -1)
+        self.assertLess(resolve_at, begin_at)
+        self.assertLess(begin_at, apply_at)
+        self.assertLess(apply_at, step_at)
+
+    def test_apply_scales_main_grad_then_clears_divisor(self):
+        src = inspect.getsource(Trainer._apply_deferred_token_normalization)
+        self.assertIn("clear_pending_gradient_divisor", src)
+        self.assertIn("grad.scale_(scale)", src)
+        self.assertIn("main_grad", src)
+
+
 class TestFusedMoEShardingOneSaveAssert(unittest.TestCase):
     """The fusion + sharding=1 + save_strategy=steps combination must not abort."""
 
