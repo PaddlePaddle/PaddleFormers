@@ -170,3 +170,17 @@ def test_glm_moe_dsa_training_contract_keeps_registered_mtp_loss_weight_when_cli
     apply_glm_moe_dsa_training_contract(model_config, training_args, model_args, data_args)
 
     assert model_config.mtp_loss_scaling_factor == 0.1
+
+
+def test_glm_moe_dsa_training_contract_applies_bias_activation_fusion_env(monkeypatch, capsys):
+    model_config = SimpleNamespace(model_type="glm_moe_dsa", bias_activation_fusion=True)
+    training_args = _base_training_args()
+    model_args = SimpleNamespace(mtp_attention_flexible=True, persist_layer_norm=False)
+    data_args = SimpleNamespace()
+
+    monkeypatch.setenv("MODEL_REPRO_BIAS_ACTIVATION_FUSION", "0")
+    apply_glm_moe_dsa_training_contract(model_config, training_args, model_args, data_args)
+
+    assert model_config.bias_activation_fusion is False
+    captured = capsys.readouterr()
+    assert "[BIAS-ACT-FUSION] model_config.bias_activation_fusion=False" in captured.out

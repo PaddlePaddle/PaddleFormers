@@ -573,6 +573,17 @@ def apply_glm_moe_dsa_training_contract(model_config, training_args, model_args,
     moe_expert_fusion = getattr(training_args, "moe_expert_fusion", None)
     if moe_expert_fusion is not None:
         model_config.moe_expert_fusion = bool(moe_expert_fusion)
+    # CLI dataclass has no bias_activation_fusion field; set_llm_config()
+    # leaves GLMMoEModelProvider default True (BiasSwiGLU). Honour the env
+    # after that call so dump-off IEEE matches Megatron's False default.
+    _bias_activation_fusion_env = os.environ.get("MODEL_REPRO_BIAS_ACTIVATION_FUSION", None)
+    if _bias_activation_fusion_env is not None:
+        model_config.bias_activation_fusion = _bias_activation_fusion_env == "1"
+        print(
+            "[BIAS-ACT-FUSION] model_config.bias_activation_fusion="
+            f"{model_config.bias_activation_fusion}",
+            flush=True,
+        )
     # YAML overlap_p2p_comm / batch_p2p_comm land on TrainingArguments
     # (pipeline runtime). Copy them onto the Fleet provider after
     # set_llm_config. Do not copy variable_seq_lengths: that YAML flag
