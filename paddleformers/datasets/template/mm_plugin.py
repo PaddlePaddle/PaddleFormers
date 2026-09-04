@@ -393,6 +393,91 @@ class BasePlugin(MMPluginMixin):
 
 
 @dataclass
+class Idefics3Plugin(BasePlugin):
+    fake_image_token: str = "<fake_token_around_image>"
+    global_image_token: str = "<global-img>"
+
+    # Idefics3 uses a unique placeholder internally because its model image_token
+    # ("<image>") collides with the dataset IMAGE_PLACEHOLDER ("<image>").
+    _IDEFICS3_IMG_PLACEHOLDER: str = "<idefics3_image>"
+
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        mm_inputs,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        num_image_tokens = 0
+        messages = deepcopy(messages)
+        image_seq_len = getattr(processor, "image_seq_len", 169)
+
+        # Pre-compute per-image tile counts
+        image_processor = getattr(processor, "image_processor", None)
+        do_split = getattr(image_processor, "do_image_splitting", True)
+        per_image_tiles = []
+        if self.expand_mm_tokens and do_split:
+            for img in images:
+                h, w = self._get_image_size(img)
+                _, rows, cols = image_processor.get_number_of_image_patches(h, w, {})
+                per_image_tiles.append(rows * cols + 1 if rows > 0 else 1)
+        else:
+            per_image_tiles = [1] * len(images)
+
+        for message in messages:
+            content = message.get("content", "")
+            if not isinstance(content, str) or IMAGE_PLACEHOLDER not in content:
+                continue
+
+            # Step 1: <image> → safe temp placeholder (IMAGE_PLACEHOLDER == self.image_token)
+            for tiles in per_image_tiles:
+                content = content.replace(IMAGE_PLACEHOLDER, self._IDEFICS3_IMG_PLACEHOLDER, 1)
+
+            # Step 2: while loop over temp placeholder, standard pattern
+            while self._IDEFICS3_IMG_PLACEHOLDER in content:
+                tiles = per_image_tiles[num_image_tokens]
+                image_seqlen = tiles * image_seq_len if self.expand_mm_tokens else 1
+                content = content.replace(
+                    self._IDEFICS3_IMG_PLACEHOLDER,
+                    self.image_token * image_seqlen,
+                    1,
+                )
+                num_image_tokens += 1
+
+            message["content"] = content
+
+        self.masked_tokens = [
+            self.image_token,
+            self.fake_image_token,
+            self.global_image_token,
+            *[f"<row_{row}_col_{col}>" for row in range(1, 7) for col in range(1, 7)],
+        ]
+        return messages
+
+    @staticmethod
+    def _get_image_size(img):
+        """Get (height, width) from various image representations."""
+        if isinstance(img, str):
+            try:
+                from PIL import Image as PILImage
+
+                with PILImage.open(img) as pil:
+                    return pil.height, pil.width
+            except Exception:
+                return 364, 364
+        if hasattr(img, "size"):
+            w, h = img.size
+            return h, w
+        if hasattr(img, "height") and hasattr(img, "width"):
+            return img.height, img.width
+        return 364, 364
+
+
+@dataclass
 class PaddleOCRVLPlugin(BasePlugin):
     image_bos_token: str = "<|IMAGE_START|>"
     image_eos_token: str = "<|IMAGE_END|>"
@@ -1602,6 +1687,7 @@ class KimiK3Plugin(BasePlugin):
 
 PLUGINS = {
     "base": BasePlugin,
+    "idefics3": Idefics3Plugin,
     "ernie_vl": ErnieVLPlugin,
     "qwen2_vl": Qwen2VLPlugin,
     "paddleocr_vl": PaddleOCRVLPlugin,

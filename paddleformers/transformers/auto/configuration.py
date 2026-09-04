@@ -71,6 +71,8 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("shieldgemma2", "ShieldGemma2Config"),
         ("glm4v_moe", "Glm4vMoeConfig"),
         ("glm_ocr", "GlmOcrConfig"),
+        ("idefics3", "Idefics3Config"),
+        ("idefics3_vision", "Idefics3VisionConfig"),
         ("qwen3_5", "Qwen3_5Config"),
         ("qwen3_5_moe", "Qwen3_5MoEConfig"),
         ("olmo2", "Olmo2Config"),
@@ -117,6 +119,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("gemma3", "Gemma3ForConditionalGeneration"),
         ("gemma3_text", "Gemma3TextModel"),
         ("shieldgemma2", "ShieldGemma2ForImageClassification"),
+        ("idefics3", "Idefics3ForConditionalGeneration"),
         ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
         ("qwen3_5", "Qwen3_5ForConditionalGeneration"),
         ("minicpm3", "MiniCPM3Model"),
@@ -149,6 +152,7 @@ SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
         ("gemma4_text", "gemma4_moe"),
         ("gemma4", "gemma4_moe"),
         ("phi4flash", "phi4"),
+        ("idefics3_vision", "idefics3"),
     ]
 )
 
