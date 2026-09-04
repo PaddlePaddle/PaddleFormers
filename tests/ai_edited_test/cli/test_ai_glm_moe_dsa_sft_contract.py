@@ -76,7 +76,7 @@ def test_load_processor_falls_back_to_tokenizer_without_processor_files():
     tokenizer = SimpleNamespace()
     model_args = SimpleNamespace(
         tokenizer_name_or_path="/tokenizer-only",
-        model_name_or_path="/extracted-weights",
+        model_name_or_path="/extracted-GLM-5.2-weights",
         stage="SFT",
     )
     data_args = SimpleNamespace(processor_use_fast=None)
@@ -90,6 +90,28 @@ def test_load_processor_falls_back_to_tokenizer_without_processor_files():
 
     assert actual_tokenizer is tokenizer
     assert actual_processor is tokenizer
+
+
+def test_load_processor_reraises_missing_processor_on_glm4_checkpoint():
+    tokenizer = SimpleNamespace()
+    model_args = SimpleNamespace(
+        tokenizer_name_or_path=None,
+        model_name_or_path="/glm4-weights",
+        stage="SFT",
+    )
+    data_args = SimpleNamespace(processor_use_fast=None)
+
+    with patch.object(sft_workflow.AutoTokenizer, "from_pretrained", return_value=tokenizer,), patch.object(
+        sft_workflow.AutoProcessor,
+        "from_pretrained",
+        side_effect=ValueError("Unrecognized processing class"),
+    ):
+        try:
+            load_tokenizer_and_processor(model_args, data_args)
+        except ValueError as exc:
+            assert "Unrecognized processing class" in str(exc)
+        else:
+            raise AssertionError("GLM-4 AutoProcessor failure must not fall back to tokenizer")
 
 
 def _base_training_args(**overrides):
