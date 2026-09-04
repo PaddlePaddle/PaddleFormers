@@ -593,14 +593,42 @@ def apply_glm_moe_dsa_training_contract(model_config, training_args, model_args,
             "[BIAS-ACT-FUSION] model_config.bias_activation_fusion=" f"{model_config.bias_activation_fusion}",
             flush=True,
         )
-    # YAML overlap_p2p_comm / batch_p2p_comm land on TrainingArguments
-    # (pipeline runtime). Copy them onto the Fleet provider after
-    # set_llm_config. Do not copy variable_seq_lengths: that YAML flag
-    # drives pipeline enable_dynamic_shape.
-    if getattr(training_args, "overlap_p2p_comm", None) is not None:
-        model_config.overlap_p2p_comm = bool(training_args.overlap_p2p_comm)
-    if getattr(training_args, "batch_p2p_comm", None) is not None:
-        model_config.batch_p2p_comm = bool(training_args.batch_p2p_comm)
+    # YAML overlap_p2p_comm / batch_p2p_comm / variable_seq_lengths land on
+    # TrainingArguments (pipeline runtime), not GLMMoEModelProvider. Fleet
+    # ModelParallelConfig defaults True/None/False; IEEE E-654 constructed
+    # False/True/True. Env override after set_llm_config, same pattern as BIAS.
+    def _env_bool(name):
+        value = os.environ.get(name)
+        if value is None:
+            return None
+        return value == "1"
+
+    _overlap_p2p_comm = _env_bool("MODEL_REPRO_OVERLAP_P2P_COMM")
+    if _overlap_p2p_comm is None:
+        _overlap_p2p_comm = getattr(training_args, "overlap_p2p_comm", None)
+    if _overlap_p2p_comm is not None:
+        model_config.overlap_p2p_comm = bool(_overlap_p2p_comm)
+    _batch_p2p_comm = _env_bool("MODEL_REPRO_BATCH_P2P_COMM")
+    if _batch_p2p_comm is None:
+        _batch_p2p_comm = getattr(training_args, "batch_p2p_comm", None)
+    if _batch_p2p_comm is not None:
+        model_config.batch_p2p_comm = bool(_batch_p2p_comm)
+    _variable_seq_lengths = _env_bool("MODEL_REPRO_VARIABLE_SEQ_LENGTHS")
+    if _variable_seq_lengths is None:
+        _variable_seq_lengths = getattr(training_args, "variable_seq_lengths", None)
+    if _variable_seq_lengths is not None:
+        model_config.variable_seq_lengths = bool(_variable_seq_lengths)
+    if any(
+        field is not None
+        for field in (_overlap_p2p_comm, _batch_p2p_comm, _variable_seq_lengths)
+    ):
+        print(
+            "[PP-P2P] model_config.overlap_p2p_comm="
+            f"{getattr(model_config, 'overlap_p2p_comm', None)} "
+            f"batch_p2p_comm={getattr(model_config, 'batch_p2p_comm', None)} "
+            f"variable_seq_lengths={getattr(model_config, 'variable_seq_lengths', None)}",
+            flush=True,
+        )
     for parallel_field in (
         "tensor_model_parallel_size",
         "pipeline_model_parallel_size",
