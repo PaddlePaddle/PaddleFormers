@@ -16,6 +16,14 @@ from paddleformers.trainer.trainer_utils import IntervalStrategy
 from paddleformers.trainer.training_args import TrainingArguments
 
 
+class TestFlexSaveWithoutMtpNumLayers(unittest.TestCase):
+    def test_flex_save_uses_getattr_for_mtp_num_layers(self):
+        from paddleformers.transformers.model_utils import PretrainedModel
+
+        src = inspect.getsource(PretrainedModel.save_pretrained)
+        self.assertIn('getattr(model_to_save.config, "mtp_num_layers", 0)', src)
+
+
 class TestFusedMoEShardingOneSaveAssert(unittest.TestCase):
     """The fusion + sharding=1 + save_strategy=steps combination must not abort."""
 
