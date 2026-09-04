@@ -194,6 +194,16 @@ import_structure = {
     "kimi_k25.tokenizer": ["TikTokenTokenizer"],
     "gemma3_text.configuration": ["Gemma3Config", "Gemma3TextConfig"],
     "gemma3_text.modeling": ["Gemma3TextModel", "Gemma3ForCausalLM", "Gemma3ForCausalLMPipe"],
+    "t5gemma.configuration": ["T5GemmaConfig", "T5GemmaModuleConfig"],
+    "t5gemma.modeling": [
+        "T5GemmaPreTrainedModel",
+        "T5GemmaEncoderModel",
+        "T5GemmaModel",
+        "T5GemmaForConditionalGeneration",
+        "T5GemmaForSequenceClassification",
+        "T5GemmaForTokenClassification",
+    ],
+    "t5gemma": [],
     "gemma3.configuration": ["Gemma3Config"],
     "gemma3.image_processor": ["Gemma3ImageProcessor", "Gemma3ImageProcessorKwargs"],
     "gemma3.image_processor_fast": ["Gemma3ImageProcessorFast"],
@@ -541,6 +551,7 @@ if TYPE_CHECKING:
     from .granite import *
     from .phi3 import *
     from .gemma3_text import *
+    from .t5gemma import *
     from .gemma3 import *
     from .shieldgemma2 import *
     from .glm_ocr import *
