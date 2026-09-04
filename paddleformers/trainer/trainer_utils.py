@@ -1979,11 +1979,15 @@ class EMAStateAssembler:
             self.expert_id_offset = (n_routed_experts // moe_group.nranks) * moe_group.rank
 
         self._set_latest_processed_checkpoint_step(start_step)
-        self.expected_next_save_ckpt_step = self.latest_processed_checkpoint_step + save_steps
+        self.expected_next_save_ckpt_step = self.latest_processed_checkpoint_step + save_hf_steps
+        self.pending_hf_step = None
 
-    def run(self):
-        if self.save_hf_steps < 0:
-            logger.info("[EMAStateAssembler] save_hf_steps is negative. Skipping.")
+    def run(self, global_step, last_step=False):
+        if self.save_hf_steps <= 0:
+            logger.info("[EMAStateAssembler] save_hf_steps is not positive. Skipping.")
+            return
+
+        if not last_step and not self._begin_EMAHFProcess(global_step):
             return
 
         next_step, next_ckpt_dir = self._find_checkpoint(mode="next")
@@ -1993,22 +1997,15 @@ class EMAStateAssembler:
         dist.all_gather_object(next_steps, next_step)
         if -1 in next_steps:
             # At this point, some trainers no longer have any checkpoints to process. Each trainer checks whether it has any checkpoints left to process.
-            if next_step != -1 and next_ckpt_dir is not None:
-                # There are still checkpoints available locally for processing.
-                if self._is_already_handled(next_ckpt_dir):
-                    # Already processed, skip. It may enter here during the first warm start.
-                    self.latest_processed_checkpoint_step = next_step
-                    self._update_expected_next_save_ckpt_step()
-                    logger.info(
-                        f"[EMAStateAssembler] [Rank {self.rank}] Checkpoint at step {next_step} has "
-                        "already been handled. Skipping."
-                    )
-                    return
-                # Not yet processed, check if EMA state needs to be merged.
-                is_hf_save_step = next_step % self.save_hf_steps == 0
-                if not is_hf_save_step:
-                    self._handle_naive_checkpoint(next_step, next_ckpt_dir)
-                    return
+            if next_step != -1 and next_ckpt_dir is not None and self._is_already_handled(next_ckpt_dir):
+                self.latest_processed_checkpoint_step = next_step
+                self._update_expected_next_save_ckpt_step()
+                self._close_EMAHFProcess(next_step)
+                logger.info(
+                    f"[EMAStateAssembler] [Rank {self.rank}] Checkpoint at step {next_step} has "
+                    "already been handled. Skipping."
+                )
+                return
             logger.info(
                 f"[EMAStateAssembler][Rank {self.rank}] No unprocessed checkpoint found in {self.output_dir} "
                 f"in current training step. Latest processed checkpoint step is {self.latest_processed_checkpoint_step}. Skipping."
@@ -2017,20 +2014,6 @@ class EMAStateAssembler:
 
         # At this point, each trainer has a checkpoint to process, but the step counts are not consistent.
         if len(set(next_steps)) != 1:
-            # If the checkpoint does not need to be used for merging EMA state, then try to process it.
-            is_hf_save_step = next_step % self.save_hf_steps == 0
-            if not is_hf_save_step and next_ckpt_dir is not None:
-                if self._is_already_handled(next_ckpt_dir):
-                    self.latest_processed_checkpoint_step = next_step
-                    self._update_expected_next_save_ckpt_step()
-                    logger.info(
-                        f"[EMAStateAssembler] [Rank {self.rank}] Checkpoint at step {next_step} has "
-                        "already been handled. Skipping."
-                    )
-                    return
-                self._handle_naive_checkpoint(next_step, next_ckpt_dir)
-                return
-
             logger.warning(
                 f"[EMAStateAssembler][Rank {self.rank}] Multiple checkpoints detected. "
                 f"Selected checkpoint path: {next_ckpt_dir}. Skipping processing for this checkpoint."
@@ -2040,24 +2023,30 @@ class EMAStateAssembler:
         if self._is_already_handled(next_ckpt_dir):
             self.latest_processed_checkpoint_step = next_step
             self._update_expected_next_save_ckpt_step()
+            self._close_EMAHFProcess(next_step)
             logger.info(
                 f"[EMAStateAssembler] [Rank {self.rank}] Checkpoint at step {next_step} has "
                 "already been handled. Skipping."
             )
             return
 
-        is_hf_save_step = next_step % self.save_hf_steps == 0
-
-        if is_hf_save_step:
-            self._handle_checkpoint_with_ema(next_step, next_ckpt_dir)
-        else:
-            self._handle_naive_checkpoint(next_step, next_ckpt_dir)
+        if self._handle_checkpoint_with_ema(next_step, next_ckpt_dir):
+            self._close_EMAHFProcess(next_step)
 
     def _update_expected_next_save_ckpt_step(self):
-        self.expected_next_save_ckpt_step = self.latest_processed_checkpoint_step + self.save_steps
+        self.expected_next_save_ckpt_step = self.latest_processed_checkpoint_step + self.save_hf_steps
         logger.info(
             f"[EMAStateAssembler] [Rank {self.rank}] Update the expected next save ckpt step to {self.expected_next_save_ckpt_step}!"
         )
+
+    def _begin_EMAHFProcess(self, global_step):
+        if global_step % self.save_hf_steps == 0:
+            self.pending_hf_step = global_step
+        return self.pending_hf_step is not None
+
+    def _close_EMAHFProcess(self, consumed_step):
+        if self.pending_hf_step is not None and consumed_step >= self.pending_hf_step:
+            self.pending_hf_step = None
 
     def _set_latest_processed_checkpoint_step(self, start_step):
 
@@ -2080,7 +2069,7 @@ class EMAStateAssembler:
                             target_step = step
                             target_ckpt_path = item
                     elif mode == "next":
-                        if step > self.latest_processed_checkpoint_step:
+                        if step > self.latest_processed_checkpoint_step and step % self.save_hf_steps == 0:
                             if (target_step is None) or (step < target_step):
                                 target_step = step
                                 target_ckpt_path = item
@@ -2119,7 +2108,8 @@ class EMAStateAssembler:
         self.latest_processed_checkpoint_step = step
         self._update_expected_next_save_ckpt_step()
 
-    def _handle_checkpoint_with_ema(self, step: int, checkpoint_dir: Path):
+    def _handle_checkpoint_with_ema(self, step: int, checkpoint_dir: Path) -> bool:
+        """Return True when this checkpoint is done being processed, False when still waiting."""
         if self._check_all_ranks_saved(checkpoint_dir):
             logger.info(
                 f"[EMAStateAssembler] [Rank {self.rank}] All ranks ready. Proceeding with EMA state assembly for step {step}."
@@ -2130,16 +2120,18 @@ class EMAStateAssembler:
                 logger.warning(
                     f"[EMAStateAssembler] [Rank {self.rank}] EMA state file not found at {ema_state_path}, skipping and updating signal. "
                 )
-                return
+                return True
             ema_sharded_state_dict = self._build_ema_sharded_state_dict(self._load_ema_state_dict(ema_state_path))
             self._mark_as_handled(checkpoint_dir, step)
             self._save_full_ema_states(step, ema_sharded_state_dict)
             del ema_sharded_state_dict
             logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Finished merging EMA states and updated signal.")
+            return True
         else:
             logger.info(
                 f"[EMAStateAssembler] [Rank {self.rank}] Waiting for other ranks to finish saving checkpoint at step {step}."
             )
+            return False
 
     def _handle_naive_checkpoint(self, step: int, checkpoint_dir: Path):
         logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Processing a no need merge EMA checkpoint.")
