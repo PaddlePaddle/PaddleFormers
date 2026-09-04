@@ -343,6 +343,59 @@ class Llama2Template(Template):
 
 
 @dataclass
+class AyaTemplate(Template):
+    r"""Aya template aligned with ms-swift's built-in `aya` template.
+
+    Swift uses `system_prefix` instead of `prefix` when a system prompt exists.
+    The generic Template always emits `prefix + system`, which would add an
+    extra BOS token for Aya system conversations.
+    """
+
+    @override
+    def _encode(
+        self,
+        tokenizer: "PreTrainedTokenizer",
+        messages: list[dict[str, str]],
+        system: str,
+        tools: str,
+    ) -> list[list[int]]:
+        system = system or self.default_system
+        encoded_messages = []
+        for i, message in enumerate(messages):
+            elements = []
+
+            if i == 0:
+                if system or tools:
+                    tool_text = self.format_tools.apply(content=tools)[0] if tools else ""
+                    elements += self.format_system.apply(content=(system + tool_text))
+                else:
+                    elements += self.format_prefix.apply()
+
+            if message["role"] == Role.USER:
+                elements += self.format_user.apply(content=message["content"], idx=str(i // 2))
+            elif message["role"] == Role.ASSISTANT:
+                elements += self.format_assistant.apply(content=message["content"])
+                if "tool_calls" in message:
+                    elements += self.format_function.apply(
+                        content=message["tool_calls"], thought_words=self.thought_words
+                    )
+                if i < len(messages) - 1:
+                    elements += [self.chat_sep]
+            elif message["role"] == Role.OBSERVATION:
+                elements += self.format_observation.apply(content=message["content"])
+            elif message["role"] == Role.FUNCTION:
+                elements += self.format_function.apply(content=message["content"], thought_words=self.thought_words)
+                if i < len(messages) - 1:
+                    elements += [self.chat_sep]
+            else:
+                raise NotImplementedError("Unexpected role: {}".format(message["role"]))
+
+            encoded_messages.append(self._convert_elements_to_ids(tokenizer, elements))
+
+        return encoded_messages
+
+
+@dataclass
 class ErnieThinkingTemplate(ReasoningTemplate):
     r"""A template that fuse the system message to first user message."""
 
@@ -576,6 +629,31 @@ register_template(
 register_template(
     name="empty",
     format_assistant=StringFormatter(slots=["{{content}}"]),
+)
+
+register_template(
+    name="aya",
+    format_user=StringFormatter(
+        slots=[
+            (
+                "<|START_OF_TURN_TOKEN|><|USER_TOKEN|>{{content}}<|END_OF_TURN_TOKEN|>"
+                "<|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|>"
+            )
+        ]
+    ),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    # Match ms-swift's current built-in Aya template exactly. Its system_prefix
+    # is missing the closing ">" in END_OF_TURN_TOKEN on the system turn.
+    format_system=StringFormatter(slots=["<|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|>{{content}}<|END_OF_TURN_TOKEN|"]),
+    format_prefix=EmptyFormatter(slots=["<BOS_TOKEN>"]),
+    default_system=(
+        "You are Aya, a brilliant, sophisticated, multilingual AI-assistant trained to assist human users by providing "
+        "thorough responses. You are able to interact and respond to questions in 23 languages and you are powered by "
+        "a multilingual model built by Cohere For AI."
+    ),
+    chat_sep="<|END_OF_TURN_TOKEN|>",
+    suffix=["<|END_OF_TURN_TOKEN|>"],
+    template_class=AyaTemplate,
 )
 
 # copied from chatml template
