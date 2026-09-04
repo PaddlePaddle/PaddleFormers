@@ -1179,7 +1179,7 @@ class EMAStateAssemblerCallback(TrainerCallback):
 
     def on_step_end(self, args, state, control, **kwargs):
         start = time.time()
-        self.ema_state_assembler.run()
+        self.ema_state_assembler.run(state.global_step)
         duration = time.time() - start
         logger.info(f"[EMAStateAssembler] Assembling EMA state took {duration:.3f} seconds.")
 
