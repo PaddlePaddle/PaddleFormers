@@ -216,8 +216,10 @@ class GlmMoeDsaConfig(PretrainedConfig):
         self.rotary_base = self.rope_theta
         rope_type = self.rope_parameters["rope_type"]
         self.rope_type = "rope" if rope_type == "default" else rope_type
-        # Nested rope_parameters.partial_rotary_factor is derived from the
-        # top-level field; drop the nested copy so ConfigTester round-trips.
+        # ConfigTester round-trips constructor kwargs. Nested
+        # rope_parameters.partial_rotary_factor is derived from the top-level
+        # field; drop it from the serialized nested dict so from_dict does not
+        # treat it as an unused constructor argument and wipe the nest.
         if isinstance(self.rope_parameters, dict):
             self.rope_parameters.pop("partial_rotary_factor", None)
         if isinstance(self.rope_scaling, dict):
@@ -251,7 +253,8 @@ class GlmMoeDsaConfig(PretrainedConfig):
         )
         # rotary_base / rope_type are derived aliases. Keep official
         # rope_parameters on the serialized dict so save_pretrained round-trips
-        # the GLM-5.2 config.json field.
+        # the GLM-5.2 config.json field. Nested partial_rotary_factor is
+        # already popped above so ConfigTester still round-trips.
         self.register_unsavable_keys(["rotary_base", "rope_type"])
 
 

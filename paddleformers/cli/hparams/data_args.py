@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from dataclasses import dataclass, field
+from typing import Optional
 
 
 @dataclass
@@ -32,6 +33,14 @@ class DataArguments:
     input_dir: str = field(
         default=None,
         metadata={"help": "data path (only valid in offline pretrain dataset)"},
+    )
+    pretokenized_dataset: bool = field(
+        default=False,
+        metadata={"help": "Require offline rows to contain pretokenized token_ids, labels, and position_ids."},
+    )
+    pretokenized_pad_token_id: Optional[int] = field(
+        default=None,
+        metadata={"help": "Explicit input padding token for pretokenized offline rows."},
     )
     split: str = field(
         default="950,50",

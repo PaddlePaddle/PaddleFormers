@@ -2198,6 +2198,75 @@ class Trainer:
                 raise ValueError(f"unsupported type: {type(dtensors)}")
         return global_micro_batchs
 
+    def _resolve_deferred_token_normalization(self):
+        """Broadcast the deferred token-count divisor to every pipeline rank.
+
+        Only the last PP stage computes the loss. MAX all-reduce: the stage
+        that registered a divisor contributes it, others contribute 0.
+
+        Skip when FLAGS_use_accuracy_compatible_kernel is off: DeferToken
+        never registers a divisor on that path, and a CPU float64
+        all-reduce still constructs an NCCL collective. That aborted Qwen
+        SFT and GLM-4.5 LoRA on H20-multi with 'unhandled cuda error'.
+        """
+        try:
+            from paddlefleet.models.common.language_loss.language_loss import (
+                get_pending_gradient_divisor,
+                set_pending_gradient_divisor,
+            )
+        except ImportError:
+            return
+
+        if os.environ.get("FLAGS_use_accuracy_compatible_kernel", "0") != "1":
+            return
+
+        divisor = get_pending_gradient_divisor()
+        if self.args.pipeline_model_parallel_size <= 1 or not paddle.distributed.is_initialized():
+            return
+
+        from paddlefleet.parallel_state import get_pipeline_model_parallel_group
+
+        pp_group = get_pipeline_model_parallel_group(check_initialized=False)
+        if pp_group is None or pp_group.nranks <= 1:
+            return
+
+        # Allocate on the current training device. paddle.to_tensor(list)
+        # of Python floats is CPU-only and NCCL rejects that buffer.
+        holder = paddle.full([1], 0.0 if divisor is None else float(divisor), dtype="float64")
+        paddle.distributed.all_reduce(holder, op=paddle.distributed.ReduceOp.MAX, group=pp_group)
+        value = float(holder.numpy()[0])
+        if value > 0:
+            set_pending_gradient_divisor(value)
+
+    def _apply_deferred_token_normalization(self, model):
+        """Divide fp32 gradient buffers by the deferred valid-token count.
+
+        Must run AFTER on_optimizer_begin (SPGradSync all-reduce) so the
+        order is sum-then-scale, matching Megatron finalize_model_grads.
+        """
+        try:
+            from paddlefleet.models.common.language_loss.language_loss import (
+                clear_pending_gradient_divisor,
+                get_pending_gradient_divisor,
+            )
+        except ImportError:
+            return
+
+        divisor = get_pending_gradient_divisor()
+        clear_pending_gradient_divisor()
+        if not divisor or divisor <= 0:
+            return
+
+        scale = 1.0 / divisor
+        parameters = model._layers.parameters() if hasattr(model, "_layers") else model.parameters()
+        with paddle.no_grad():
+            for p in parameters:
+                grad = getattr(p, "main_grad", None)
+                if grad is not None:
+                    grad.scale_(scale)
+                elif p.grad is not None:
+                    p.grad.scale_(scale)
+
     def optimizer_step(self, args, model, parameters_list=None):
         # When freeze_training is enabled, skip optimizer step and lr scheduler step
         # to keep both model parameters and optimizer state unchanged
@@ -2697,9 +2766,14 @@ class Trainer:
                                     elif p.grad is not None:
                                         p.grad.scale_(1.0 / self.args.gradient_accumulation_steps)
                         # Optimizer step
+                        # E-233/E-234: resolve BEFORE callbacks so every PP rank
+                        # sees the divisor; apply AFTER on_optimizer_begin so
+                        # SPGradSync all-reduces first (sum-then-scale).
+                        self._resolve_deferred_token_normalization()
                         self.callback_handler.on_optimizer_begin(
                             args, self.state, self.control, scaler=self.scaler if self.do_grad_scaling else None
                         )
+                        self._apply_deferred_token_normalization(model)
                         self.optimizer_step(args, model=model, parameters_list=parameters_list)
 
                         if not args.enable_auto_parallel:
@@ -2978,10 +3052,8 @@ class Trainer:
             # reset tr_loss to zero
             tr_loss.subtract_(tr_loss)
             # set loss to zero if all steps are skipped since last log
-            if num_steps == 0:
-                logs["loss"] = 0.0
-            else:
-                logs["loss"] = round(tr_loss_scalar / num_steps, 8)
+            raw_loss = 0.0 if num_steps == 0 else tr_loss_scalar / num_steps
+            logs["loss"] = round(raw_loss, 8)
 
             logs["learning_rate"] = float("{0:.3e}".format(self._get_learning_rate()))
             logs["global_step"] = int(self.state.global_step)
@@ -3150,7 +3222,7 @@ class Trainer:
                             "gpu_max_memory_reserved": paddle_device.max_memory_reserved() >> 20,
                         }
                     )
-            self.log(logs, **kwargs)
+            self.log(logs, raw_loss=raw_loss, **kwargs)
 
         metrics = None
         if self.control.should_evaluate:
