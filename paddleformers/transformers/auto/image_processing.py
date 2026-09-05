@@ -62,6 +62,7 @@ IMAGE_PROCESSOR_MAPPING_NAMES.update(
         "qwen3_vl": ("Qwen3VLImageProcessor", "Qwen3VLImageProcessorFast"),
         "glm_ocr": ("Glm46VImageProcessor"),
         "paligemma": ("PaliGemmaImageProcessor"),
+        "llava_qwen2": ("FastVLMImageProcessor"),
     }
 )
 
