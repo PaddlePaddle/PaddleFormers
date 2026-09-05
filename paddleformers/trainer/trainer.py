@@ -3182,9 +3182,7 @@ class Trainer:
         if self.control.should_save_hf:
             if self.args.save_checkpoint_format == "flex_checkpoint":
                 is_main_process = paddle.distributed.get_rank() == 0
-                run_dir = self.args.output_dir
-                checkpoint_folder = f"{PREFIX_HF_CHECKPOINT_DIR}-{self.state.global_step}"
-                ckpt_path = os.path.join(run_dir, checkpoint_folder)
+                run_dir, ckpt_path = self._hf_cadence_paths()
                 # Convert user-configured GB value to bytes for HFFormatFullParamSaver
                 memory_growth_threshold_bytes = self.args.save_hf_memory_growth_threshold * (2**30)
                 if isinstance(self.model, LoRAModel):
@@ -4925,6 +4923,24 @@ class Trainer:
             logger.info(f"Deleting older checkpoint [{checkpoint}] due to args.save_total_limit")
             # ignore_errors for shared disks between train nodes.
             shutil.rmtree(checkpoint, ignore_errors=True)
+
+    def _hf_cadence_paths(self, step=None):
+        """Resolve mid-training HF cadence root and snapshot dir.
+
+        Default layout is ``{output_dir}/hf_checkpoint-{step}`` so
+        ``_rotate_hf_checkpoints``, resume, and latest-discovery keep working.
+        ``save_hf_output_dir`` is opt-in for an oracle that rglob's output_dir.
+        """
+        from .checkpoint_export import resolve_hf_checkpoint_dir
+
+        step = self.state.global_step if step is None else step
+        run_dir = getattr(self.args, "save_hf_output_dir", None) or self.args.output_dir
+        ckpt_path = resolve_hf_checkpoint_dir(
+            self.args.output_dir,
+            step,
+            getattr(self.args, "save_hf_output_dir", None),
+        )
+        return run_dir, ckpt_path
 
     def _rotate_hf_checkpoints(self, use_mtime=False, output_dir=None) -> None:
         if self.args.save_hf_total_limit is None or self.args.save_hf_total_limit <= 0:
