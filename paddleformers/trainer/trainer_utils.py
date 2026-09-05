@@ -1995,7 +1995,13 @@ class EMAStateAssembler:
             )
             return
 
-        # At this point, each trainer has a checkpoint to process, but the step counts are not consistent.
+        # The two branches below only exist for recovery. Ranks normally reach this point in
+        # lockstep: same global_step, same checkpoint dir, hence the same next_step and the same
+        # signal state. A machine interruption can break that -- ranks end up on different steps,
+        # or a checkpoint is left with only part of the ranks' signals written. Such a checkpoint
+        # can never be merged again, since merging needs every rank to take part, so it is given
+        # up on and all ranks realign onto the newest checkpoint.
+
         if len(set(next_steps)) != 1:
             target_step = max(next_steps)
             # Only the lagging ranks move: they signal the checkpoint they skip so it stays loadable,
@@ -2012,7 +2018,10 @@ class EMAStateAssembler:
             return
 
         if any(handled for _, handled in gathered):
-            self._handle_naive_checkpoint(next_step, next_ckpt_dir)
+            # Ranks that already hold saved_signal have no TMP left; calling into
+            # _handle_naive_checkpoint there would only emit a misleading warning.
+            if not local_handled:
+                self._handle_naive_checkpoint(next_step, next_ckpt_dir)
             self.latest_processed_checkpoint_step = next_step
             self._update_expected_next_save_ckpt_step()
             self._close_EMAHFProcess(next_step)
