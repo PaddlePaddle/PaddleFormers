@@ -1342,6 +1342,20 @@ class TrainingArguments:
     )
 
     save_hf_steps: int = field(default=-1, metadata={"help": "Save huggingface checkpoint every X updates steps."})
+    save_hf_output_dir: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Optional root for mid-training hf_checkpoint-* snapshots. "
+                "Default None keeps the historical layout "
+                "{output_dir}/hf_checkpoint-{step}, which resume, "
+                "get_last_checkpoint, save_hf_total_limit rotation, and "
+                "best-checkpoint consumers already know. Set this only when "
+                "an oracle (mrk checkpoint) rglob's output_dir and must not "
+                "see nested cadence copies of the same tensor names."
+            )
+        },
+    )
     save_hf_total_limit: Optional[int] = field(
         default=None,
         metadata={
