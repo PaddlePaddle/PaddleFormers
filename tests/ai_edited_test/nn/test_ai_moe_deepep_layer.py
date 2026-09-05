@@ -165,7 +165,7 @@ class TestModularMoELayer(unittest.TestCase):
         """Test default and explicit dispatcher types are preserved."""
         from paddleformers.transformers.configuration_utils import PretrainedConfig
 
-        self.assertEqual(PretrainedConfig().moe_token_dispatcher_type, "alltoall")
+        self.assertEqual(PretrainedConfig().moe_token_dispatcher_type, "deepep")
         self.assertEqual(
             PretrainedConfig(moe_token_dispatcher_type="deepep").moe_token_dispatcher_type,
             "deepep",
@@ -174,6 +174,12 @@ class TestModularMoELayer(unittest.TestCase):
             PretrainedConfig(moe_token_dispatcher_type="alltoall").moe_token_dispatcher_type,
             "alltoall",
         )
+
+    def test_llm_meta_default_dispatcher_stays_deepep(self):
+        from paddleformers.transformers.configuration_utils import LlmMetaConfig
+
+        self.assertEqual(LlmMetaConfig._get_defaults()["moe_token_dispatcher_type"], "deepep")
+        self.assertEqual(LlmMetaConfig._get_init()["moe_token_dispatcher_type"], "deepep")
 
     def test_init_has_communication(self):
         """Test that communication module is created."""

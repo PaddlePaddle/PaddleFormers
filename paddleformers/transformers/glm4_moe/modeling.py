@@ -228,7 +228,6 @@ class Glm4MoeAttention(nn.Layer):
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         batch_size: Optional[int] = None,
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
-
         mix_layer = self.qkv_proj(hidden_states)
         if self.sequence_parallel:
             max_sequence_length = self.config.max_sequence_length
@@ -799,7 +798,6 @@ class Glm4MoeDecoderLayer(nn.Layer):
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> paddle.Tensor:
-
         attn_outputs = self.attn(
             hidden_states,
             past_key_values=past_key_values,

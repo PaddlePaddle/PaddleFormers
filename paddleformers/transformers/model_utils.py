@@ -3266,8 +3266,10 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         model_to_save = unwrap_model(self)
 
         if save_checkpoint_format == "flex_checkpoint":
-            # autoregressive mtp training
-            autoregressive_mtp_training = model_to_save.config.mtp_num_layers > 0
+            # autoregressive mtp training. GLM MoE DSA drops mtp_num_layers
+            # (Fleet renamed it to num_nextn_predict_layers); getattr keeps
+            # last_fc_to_hf export from crashing after train().
+            autoregressive_mtp_training = int(getattr(model_to_save.config, "mtp_num_layers", 0) or 0) > 0
             if autoregressive_mtp_training:
                 tmp = model_to_save.config.mtp_num_layers
                 model_to_save.config.mtp_num_layers = model_to_save.config.num_nextn_predict_layers

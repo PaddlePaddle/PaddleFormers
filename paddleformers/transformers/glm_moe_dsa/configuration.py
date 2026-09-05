@@ -114,8 +114,10 @@ class GlmMoeDsaConfig(PretrainedConfig):
                                                             \--k dense layers--/
         norm_topk_prob (`bool`, *optional*, defaults to `True`):
             Whether to normalize the topk probabilities.
-        use_qk_norm (`bool`, *optional*, defaults to `False`):
-            Whether to use query-key normalization in the attention
+        use_qk_norm (`bool`, *optional*, defaults to `True`):
+            Whether to normalize the compressed query and key/value MLA representations.
+        fp32_residual_connection (`bool`, *optional*, defaults to `False`):
+            Whether to keep residual connections in float32.
         disable_ffn_model_parallel (`bool`, *optional*, defaults to `False`):
             Whether to use tp in the moe
         fd_fallback (`bool`, *optional*, defaults to `False`):
@@ -124,6 +126,14 @@ class GlmMoeDsaConfig(PretrainedConfig):
 
     model_type = "glm_moe_dsa"
     keys_to_ignore_at_inference = ["past_key_values"]
+    # Official GLM-5.2 config.json serializes indexer RoPE as
+    # ``indexer_rope_interleave``. Keep that name as the stored attribute so
+    # from_dict/to_dict round-trips the official field; rotary_interleaved is
+    # the Fleet-facing alias used by existing tests and providers.
+    attribute_map = {
+        "num_classes": "num_labels",
+        "rotary_interleaved": "indexer_rope_interleave",
+    }
 
     def __init__(
         self,
@@ -141,6 +151,8 @@ class GlmMoeDsaConfig(PretrainedConfig):
         use_cache=True,
         rope_theta=10000.0,
         rope_scaling=None,
+        rope_interleave=False,
+        indexer_rope_interleave=None,
         attention_bias=False,
         attention_dropout=0.0,
         moe_intermediate_size=1408,
@@ -152,7 +164,8 @@ class GlmMoeDsaConfig(PretrainedConfig):
         topk_group=1,
         first_k_dense_replace=1,
         norm_topk_prob=True,
-        use_qk_norm=False,
+        use_qk_norm=True,
+        fp32_residual_connection=False,
         pp_seg_method="layer:Glm4MoeDecoderLayer",
         disable_ffn_model_parallel=False,
         scoring_func="sigmoid",
@@ -164,6 +177,14 @@ class GlmMoeDsaConfig(PretrainedConfig):
         fd_fallback=False,
         **kwargs,
     ):
+        # GLM-5.2 HF config.json stores RoPE under ``rope_parameters`` and
+        # leaves ``rope_scaling`` null. Keep those two attributes distinct:
+        # copying the nested dict onto ``rope_scaling`` makes
+        # ``from_json_file`` disagree with a default-constructed config
+        # (ConfigTester.test_config).
+        rope_parameters = kwargs.pop("rope_parameters", None)
+        if rope_parameters is None:
+            rope_parameters = rope_scaling
         self.vocab_size = vocab_size
         self.max_position_embeddings = max_position_embeddings
         self.hidden_size = hidden_size
@@ -179,6 +200,8 @@ class GlmMoeDsaConfig(PretrainedConfig):
         self.use_cache = use_cache
         self.rope_theta = rope_theta
         self.rope_scaling = rope_scaling
+        self.rope_interleave = rope_interleave
+        self.indexer_rope_interleave = False if indexer_rope_interleave is None else indexer_rope_interleave
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
         self.sliding_window = sliding_window
@@ -187,8 +210,18 @@ class GlmMoeDsaConfig(PretrainedConfig):
         # BC: if there is a 'type' field, move it to 'rope_type'.
         if self.rope_scaling is not None and "type" in self.rope_scaling:
             self.rope_scaling["rope_type"] = self.rope_scaling["type"]
-        self.rope_parameters = self.rope_scaling
+        self.rope_parameters = rope_parameters
         standardize_rope_params(self, rope_theta=rope_theta)
+        self.rope_theta = self.rope_parameters["rope_theta"]
+        self.rotary_base = self.rope_theta
+        rope_type = self.rope_parameters["rope_type"]
+        self.rope_type = "rope" if rope_type == "default" else rope_type
+        # Nested rope_parameters.partial_rotary_factor is derived from the
+        # top-level field; drop the nested copy so ConfigTester round-trips.
+        if isinstance(self.rope_parameters, dict):
+            self.rope_parameters.pop("partial_rotary_factor", None)
+        if isinstance(self.rope_scaling, dict):
+            self.rope_scaling.pop("partial_rotary_factor", None)
         rope_config_validation(self)
 
         # MoE arguments
@@ -213,8 +246,13 @@ class GlmMoeDsaConfig(PretrainedConfig):
         self.disable_ffn_model_parallel = disable_ffn_model_parallel
 
         super().__init__(
+            fp32_residual_connection=fp32_residual_connection,
             **kwargs,
         )
+        # rotary_base / rope_type are derived aliases. Keep official
+        # rope_parameters on the serialized dict so save_pretrained round-trips
+        # the GLM-5.2 config.json field.
+        self.register_unsavable_keys(["rotary_base", "rope_type"])
 
 
 __all__ = ["GlmMoeDsaConfig"]

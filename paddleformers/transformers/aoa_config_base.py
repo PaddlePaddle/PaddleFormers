@@ -64,9 +64,14 @@ class MoEAOAConfigParams:
     model_prefix: str = "model."
 
     index_n_heads: int = 0
+    indexer_types: List[str] | None = None
 
     # Extra statements to add
     extra_statements: List[str] = field(default_factory=list)
+
+    # Last-stage MTP embedding copy (magic-send, or UAC re-lookup).
+    enable_mtp_magic_send: bool = False
+    use_accuracy_compatible: bool = False
 
 
 class MoEAOAConfigGenerator:
@@ -132,6 +137,9 @@ class MoEAOAConfigGenerator:
             has_shared_experts=cls._has_shared_experts(config),
             model_prefix=cls._get_model_prefix(config),
             index_n_heads=getattr(config, "index_n_heads", 0),
+            indexer_types=getattr(config, "indexer_types", None),
+            enable_mtp_magic_send=getattr(config, "enable_mtp_magic_send", False),
+            use_accuracy_compatible=getattr(config, "use_accuracy_compatible", False),
         )
 
     @classmethod
@@ -182,6 +190,15 @@ class MoEAOAConfigGenerator:
 
         # Embeddings
         statements.append(f"model.embed_tokens.weight -> {params.model_prefix}embedding.embed_tokens.weight")
+        if params.num_nextn_predict_layers > 0 and (params.enable_mtp_magic_send or params.use_accuracy_compatible):
+            # Last-stage MTP VocabParallelEmbedding is a copy of the official
+            # table. Without this, load fail-closes on
+            # model.layers.{N}.mtp_embed.weight (E-341).
+            for mtp_i in range(params.num_nextn_predict_layers):
+                mtp_embed_idx = params.num_hidden_layers + params.num_head_empty_layers + mtp_i
+                statements.append(
+                    f"model.embed_tokens.weight -> {params.model_prefix}layers.{mtp_embed_idx}.mtp_embed.weight"
+                )
 
         # lm_head
         if params.tie_word_embeddings:
@@ -332,7 +349,7 @@ class MoEAOAConfigGenerator:
         Override this method for different attention types (standard QKV vs MLA).
         """
         if params.multi_latent_attention:
-            return cls._get_mla_attention_statements(params, prefix, prefix_offset)
+            return cls._get_mla_attention_statements(params, layer_idx, prefix, prefix_offset)
         return cls._get_standard_attention_statements(params, prefix, prefix_offset)
 
     @classmethod
@@ -352,7 +369,24 @@ class MoEAOAConfigGenerator:
         return statements
 
     @classmethod
-    def _get_mla_attention_statements(cls, params: MoEAOAConfigParams, prefix: str, prefix_offset: str) -> List[str]:
+    def _indexer_type_for_layer(cls, params: MoEAOAConfigParams, layer_idx: int) -> str:
+        """Resolve DSA indexer type for a layer.
+
+        ``indexer_types`` describes decoder layers only (length =
+        ``num_hidden_layers``). MTP layers (layer_idx >= num_hidden_layers)
+        own a full indexer in the official checkpoint even when the last
+        decoder entry is ``shared``.
+        """
+        if params.num_hidden_layers and layer_idx >= params.num_hidden_layers:
+            return "full"
+        if params.indexer_types is not None and layer_idx < len(params.indexer_types):
+            return params.indexer_types[layer_idx]
+        return "full"
+
+    @classmethod
+    def _get_mla_attention_statements(
+        cls, params: MoEAOAConfigParams, layer_idx: int, prefix: str, prefix_offset: str
+    ) -> List[str]:
         """Generate Multi-Latent Attention (MLA) statements.
 
         MLA uses compressed KV representation with separate projections.
@@ -373,6 +407,14 @@ class MoEAOAConfigGenerator:
             )
 
         if params.index_n_heads and params.index_n_heads > 0:
+            indexer_type = cls._indexer_type_for_layer(params, layer_idx)
+            if indexer_type not in {"full", "shared"}:
+                raise ValueError(
+                    f"Unsupported indexer type {indexer_type!r} for layer {layer_idx}; " "expected 'full' or 'shared'"
+                )
+            if indexer_type == "shared":
+                return statements
+
             indexer_weights = [
                 "wq_b",
                 "wk",
@@ -579,6 +621,11 @@ class MoEAOAConfigGenerator:
         else:
             statements.append(f"{params.model_prefix}lm_head.weight -> lm_head.weight")
 
+        if params.num_nextn_predict_layers > 0 and (params.enable_mtp_magic_send or params.use_accuracy_compatible):
+            for mtp_i in range(params.num_nextn_predict_layers):
+                mtp_embed_idx = params.num_hidden_layers + params.num_head_empty_layers + mtp_i
+                statements.append(f"{params.model_prefix}layers.{mtp_embed_idx}.mtp_embed.weight -> _")
+
         return statements
 
     # ==================== Inverse Dense Layers ====================
@@ -687,7 +734,9 @@ class MoEAOAConfigGenerator:
             # Grouped GEMM un-grouping (if applicable)
             statements.extend(cls._get_inv_grouped_gemm_layer_statements(params, prefix_offset))
 
-            # MoE expert weight inversion
+            # MoE expert weight inversion. For MTP layers the live module tree
+            # is prefix_offset=...transformer_layer, but the official HF layout
+            # is model.layers.{L}.mlp.experts.* (no transformer_layer infix).
             statements.extend(cls._get_inv_moe_expert_statements(params, prefix, prefix_offset))
 
         return statements
@@ -700,7 +749,7 @@ class MoEAOAConfigGenerator:
     ) -> List[str]:
         """Generate inverse attention-related statements."""
         if params.multi_latent_attention:
-            return cls._get_inv_mla_attention_statements(params, prefix, prefix_offset)
+            return cls._get_inv_mla_attention_statements(params, layer_idx, prefix, prefix_offset)
         return cls._get_inv_standard_attention_statements(params, prefix, prefix_offset)
 
     @classmethod
@@ -727,7 +776,7 @@ class MoEAOAConfigGenerator:
 
     @classmethod
     def _get_inv_mla_attention_statements(
-        cls, params: MoEAOAConfigParams, prefix: str, prefix_offset: str
+        cls, params: MoEAOAConfigParams, layer_idx: int, prefix: str, prefix_offset: str
     ) -> List[str]:
         """Generate inverse Multi-Latent Attention (MLA) statements."""
         statements = [
@@ -746,6 +795,14 @@ class MoEAOAConfigGenerator:
             )
 
         if params.index_n_heads and params.index_n_heads > 0:
+            indexer_type = cls._indexer_type_for_layer(params, layer_idx)
+            if indexer_type not in {"full", "shared"}:
+                raise ValueError(
+                    f"Unsupported indexer type {indexer_type!r} for layer {layer_idx}; " "expected 'full' or 'shared'"
+                )
+            if indexer_type == "shared":
+                return statements
+
             indexer_weights = [
                 "wq_b",
                 "wk",

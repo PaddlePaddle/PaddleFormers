@@ -22,6 +22,7 @@ from paddleformers.datasets.template.formatter import (
     ToolFormatter,
 )
 from paddleformers.datasets.template.template import (
+    TEMPLATES,
     GLM5ReasoningTemplate,
     ReasoningTemplate,
     Role,
@@ -266,6 +267,10 @@ class TestGLM5ReasoningTemplate(unittest.TestCase):
         # Should only encode the closing tag
         tokenizer.encode.assert_called_with("\n</think\n", add_special_tokens=False)
 
+    def test_glm5_2_uses_complete_empty_thought_pair(self):
+        self.assertEqual(TEMPLATES["glm_moe_dsa"].add_thought("hello"), "</think>hello")
+        self.assertEqual(TEMPLATES["glm5_2"].add_thought("hello"), "<think></think>hello")
+
 
 class TestGetTemplateAndFixTokenizer(unittest.TestCase):
     """Tests for get_template_and_fix_tokenizer."""
@@ -340,6 +345,39 @@ class TestGetTemplateAndFixTokenizer(unittest.TestCase):
         }
         result = get_template_and_fix_tokenizer(config)
         self.assertEqual(result.default_system, "Custom system")
+
+    def test_glm5_2_honors_enable_thinking_false_from_dataset_config(self):
+        tokenizer = MagicMock()
+        tokenizer.eos_token = "</s>"
+        tokenizer.eos_token_id = 2
+        tokenizer.pad_token_id = 0
+        tokenizer.add_special_tokens.return_value = 0
+        config = {
+            "tokenizer": tokenizer,
+            "template": "glm5_2",
+            "enable_thinking": False,
+            "tool_format": None,
+            "default_system": None,
+        }
+        result = get_template_and_fix_tokenizer(config)
+        self.assertIsInstance(result, ReasoningTemplate)
+        self.assertIs(result.enable_thinking, False)
+
+    def test_qwen3_vl_keeps_registered_enable_thinking_without_dataset_override(self):
+        tokenizer = MagicMock()
+        tokenizer.eos_token = "</s>"
+        tokenizer.eos_token_id = 2
+        tokenizer.pad_token_id = 0
+        tokenizer.add_special_tokens.return_value = 0
+        config = {
+            "tokenizer": tokenizer,
+            "template": "qwen3_vl",
+            "tool_format": None,
+            "default_system": None,
+        }
+        result = get_template_and_fix_tokenizer(config)
+        self.assertIsInstance(result, ReasoningTemplate)
+        self.assertIs(result.enable_thinking, True)
 
 
 if __name__ == "__main__":

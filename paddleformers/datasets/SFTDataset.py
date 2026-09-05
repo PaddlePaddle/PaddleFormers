@@ -444,6 +444,9 @@ class BaseSFTDataset:
                             self.estimate = False
                             yield []
                 if len(batch_sequence) > 0:
+                    # GLM-4 SFT CI is a tiny packing=false set; this leftover
+                    # yield after StopIteration is the published GT path
+                    # (12.63612175). Dropping it moved first-train to 12.635027885.
                     yield batch_sequence
                 self.iter_all_examples = True
             else:

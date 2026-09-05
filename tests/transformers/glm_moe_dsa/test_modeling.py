@@ -115,6 +115,7 @@ class GlmMoeDsaModelTester:
             choice_labels = ids_tensor([self.batch_size], self.num_choices)
 
         config = self.get_config()
+        self.parent.assertTrue(config.use_qk_norm)
         return config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
 
     def get_config(self) -> GlmMoeDsaConfig:
@@ -190,6 +191,71 @@ class GlmMoeDsaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
 
     def test_config(self):
         self.config_tester.run_common_tests()
+
+    def test_qk_norm_defaults_to_enabled(self):
+        self.assertTrue(GlmMoeDsaConfig().use_qk_norm)
+
+    def test_qk_norm_can_be_disabled_explicitly(self):
+        self.assertFalse(GlmMoeDsaConfig(use_qk_norm=False).use_qk_norm)
+
+    def test_fp32_residual_connection_defaults_to_disabled(self):
+        config = GlmMoeDsaConfig()
+        self.assertFalse(config.fp32_residual_connection)
+
+    def test_fp32_residual_connection_can_be_enabled_explicitly(self):
+        config = GlmMoeDsaConfig(fp32_residual_connection=True)
+        self.assertTrue(config.fp32_residual_connection)
+
+    def test_rope_interleave_keeps_fleet_frequency_layout(self):
+        config = GlmMoeDsaConfig(rope_interleave=True)
+        self.assertTrue(config.rope_interleave)
+        self.assertFalse(config.rotary_interleaved)
+
+    def test_rotary_interleaved_can_override_frequency_layout(self):
+        config = GlmMoeDsaConfig(
+            rope_interleave=False,
+            rotary_interleaved=True,
+        )
+        self.assertFalse(config.rope_interleave)
+        self.assertTrue(config.rotary_interleaved)
+
+    def test_official_indexer_rope_interleave_maps_to_rotary_interleaved(self):
+        config = GlmMoeDsaConfig.from_dict({"indexer_rope_interleave": True})
+        self.assertTrue(config.indexer_rope_interleave)
+        self.assertTrue(config.rotary_interleaved)
+
+    def test_nested_rope_theta_maps_to_paddlefleet_name(self):
+        config = GlmMoeDsaConfig(rope_parameters={"rope_type": "default", "rope_theta": 8_000_000})
+        self.assertEqual(config.rope_parameters["rope_theta"], 8_000_000)
+        self.assertEqual(config.rope_theta, 8_000_000)
+        self.assertEqual(config.rotary_base, 8_000_000)
+        self.assertEqual(config.rope_type, "rope")
+
+    def test_non_default_rope_type_maps_to_paddlefleet_name(self):
+        config = GlmMoeDsaConfig(
+            rope_parameters={
+                "rope_type": "yarn",
+                "rope_theta": 8_000_000,
+                "factor": 2.0,
+            }
+        )
+        self.assertEqual(config.rope_type, "yarn")
+
+    def test_top_level_rope_theta_maps_to_paddlefleet_name(self):
+        config = GlmMoeDsaConfig(rope_theta=123_456)
+        self.assertEqual(config.rope_theta, 123_456)
+        self.assertEqual(config.rotary_base, 123_456)
+
+    def test_dsa_provider_maps_expert_tensor_parallel_size(self):
+        from paddleformers.transformers.glm_moe_dsa.modeling import (
+            GlmMoeDsaModelProvider,
+        )
+
+        config = GlmMoeDsaConfig()
+        config.expert_tensor_model_parallel_size = 1
+        provider = object.__new__(GlmMoeDsaModelProvider)
+        provider.register_attributes(config)
+        self.assertEqual(provider.expert_tensor_parallel_size, 1)
 
     def test_GlmMoeDsa_lm_head_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()

@@ -23,6 +23,15 @@ from .configuration import GlmMoeDsaConfig
 logger = logging.getLogger(__name__)
 
 
+class GlmMoeDsaModelProvider(GLMMoEModelProvider):
+    """GLM-5.2 DSA provider. Do not put DSA-only HF maps on GLM-4 MoE."""
+
+    transform_rules = {
+        **GLMMoEModelProvider.transform_rules,
+        "expert_tensor_model_parallel_size": "expert_tensor_parallel_size",
+    }
+
+
 class GlmMoeDsaPreTrainedModel(PretrainedModel):
     config: GlmMoeDsaConfig
 
@@ -337,7 +346,7 @@ class GlmMoeDsaForCausalLM(GlmMoeDsaPreTrainedModel):
         config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
         config.fuse_rms_norm = True
         config.multi_latent_attention = True
-        model_provider_class = GLMMoEModelProvider
+        model_provider_class = GlmMoeDsaModelProvider
         model_provider = model_provider_class.from_config(config)
         loss_fn = None
         if getattr(config, "dpo_config", None):
@@ -363,7 +372,7 @@ class GlmMoeDsaForCausalLMPipe(GlmMoeDsaPreTrainedModel, GeneralModelForCausalLM
         config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
         config.fuse_rms_norm = True
         config.multi_latent_attention = True
-        model_provider_class = GLMMoEModelProvider
+        model_provider_class = GlmMoeDsaModelProvider
         model_provider = model_provider_class.from_config(config)
         loss_fn = None
         if getattr(config, "dpo_config", None):

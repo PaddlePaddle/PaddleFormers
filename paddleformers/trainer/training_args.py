@@ -984,9 +984,7 @@ class TrainingArguments:
     )
     prefetch_factor: int = field(
         default=2,
-        metadata={
-            "help": "Number of batch data the DataLoader would prefetch if use_buffer_reader=True. " "Default 2."
-        },
+        metadata={"help": "Number of batch data the DataLoader would prefetch if use_buffer_reader=True. Default 2."},
     )
 
     past_index: int = field(
@@ -1260,6 +1258,24 @@ class TrainingArguments:
         default=True,
         metadata={"help": "Save model to HuggingFace safetensors."},
     )
+    save_to_hf: Optional[bool] = field(
+        default=False,
+        metadata={
+            "help": (
+                "Export HuggingFace safetensors on the save_steps cadence. "
+                "Default False keeps existing jobs on save_hf_steps=-1."
+            )
+        },
+    )
+    moe_expert_fusion: Optional[bool] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Whether to fuse MoE experts into grouped GEMM. None keeps the "
+                "model-config value. YAML can set true for GLM-5.2."
+            )
+        },
+    )
     nccl_comm_group_config: Optional[str] = field(
         default=None,
         metadata={
@@ -1326,6 +1342,20 @@ class TrainingArguments:
     )
 
     save_hf_steps: int = field(default=-1, metadata={"help": "Save huggingface checkpoint every X updates steps."})
+    save_hf_output_dir: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Optional root for mid-training hf_checkpoint-* snapshots. "
+                "Default None keeps the historical layout "
+                "{output_dir}/hf_checkpoint-{step}, which resume, "
+                "get_last_checkpoint, save_hf_total_limit rotation, and "
+                "best-checkpoint consumers already know. Set this only when "
+                "an oracle (mrk checkpoint) rglob's output_dir and must not "
+                "see nested cadence copies of the same tensor names."
+            )
+        },
+    )
     save_hf_total_limit: Optional[int] = field(
         default=None,
         metadata={
@@ -1658,7 +1688,7 @@ class TrainingArguments:
     )
     muon_momentum: float = field(
         default=0.95,
-        metadata={"help": ("Momentum coefficient for Muon optimizer. " "Default: 0.95. Only used when optim=muon.")},
+        metadata={"help": ("Momentum coefficient for Muon optimizer. Default: 0.95. Only used when optim=muon.")},
     )
     muon_version: int = field(
         default=3,
@@ -1676,7 +1706,7 @@ class TrainingArguments:
         default=5,
         metadata={
             "help": (
-                "Number of Newton-Schulz iteration steps for Muon optimizer. " "Default: 5. Only used when optim=muon."
+                "Number of Newton-Schulz iteration steps for Muon optimizer. Default: 5. Only used when optim=muon."
             )
         },
     )
@@ -2407,7 +2437,6 @@ class TrainingArguments:
                         self.add_moe_comm_group()
 
         elif self.enable_auto_parallel:
-
             assert paddle.distributed.get_world_size() > 1, "Auto parallel mode needs world size > 1."
             assert (
                 not self.to_static
@@ -2917,11 +2946,21 @@ class TrainingArguments:
                 self.expert_model_parallel_size = -1
                 self.expert_tensor_model_parallel_size = -1
 
-        # NOTE(Waynezee): when moe_expert_fusion is true and sharding_parallel_size = 1,  checkpoint will fail to save
-        if hasattr(self, "moe_expert_fusion") and self.moe_expert_fusion and self.world_size > 1:
-            assert (
-                self.sharding_parallel_size > 1
-            ), "Checkpoint will fail to save when moe_expert_fusion is true and sharding_parallel_size = 1, please set moe_expert_fusion to false"
+        # fused MoE + sharding=1 used to abort because grouped-GEMM weights
+        # flatten to 2-D. Model export now restores 3-D layout, so this is a
+        # warning rather than a hard gate.
+        if (
+            hasattr(self, "moe_expert_fusion")
+            and self.moe_expert_fusion
+            and self.world_size > 1
+            and self.sharding_parallel_size <= 1
+            and getattr(self.save_strategy, "value", self.save_strategy) != "no"
+        ):
+            logger.warning(
+                "moe_expert_fusion=true with sharding_parallel_size="
+                f"{self.sharding_parallel_size}; fused-expert checkpoint save "
+                "keeps 3-D grouped_gemm weights."
+            )
 
         if self.hybrid_parallel_topo_order is None:
             self.hybrid_parallel_topo_order = "sharding_first"

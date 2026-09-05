@@ -102,6 +102,11 @@ class TestModelArguments(unittest.TestCase):
         self.assertEqual(args.stage, "SFT")
         self.assertTrue(args.use_mem_eff_attn)
         self.assertTrue(args.use_attn_mask_startend_row_indices)
+        self.assertIsNone(args.persist_layer_norm)
+
+    def test_persist_layer_norm_override(self):
+        args = ModelArguments(persist_layer_norm=False)
+        self.assertIs(args.persist_layer_norm, False)
 
     def test_lora_auto_set(self):
         """Test that fine_tuning='LoRA' auto-sets lora=True."""
