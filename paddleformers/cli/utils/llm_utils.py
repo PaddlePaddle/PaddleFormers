@@ -473,6 +473,33 @@ def get_lora_target_modules(model):
             ".*w2.*",
             ".*w3.*",
         ]
+    elif model.config.model_type == "deepseek_ocr2":
+        target_modules = [
+            # Language Model (DeepseekV3)
+            ".*model.*q_proj.*",
+            ".*model.*q_a_proj.*",
+            ".*model.*q_b_proj.*",
+            ".*model.*kv_a_proj_with_mqa.*",
+            ".*model.*kv_b_proj.*",
+            ".*model.*k_proj.*",
+            ".*model.*v_proj.*",
+            ".*model.*o_proj.*",
+            ".*model.*mlp.gate_proj.*",
+            ".*model.*mlp.up_proj.*",
+            ".*model.*mlp.down_proj.*",
+            # SAM Vision Encoder
+            "sam_model.*attn.qkv.*",
+            "sam_model.*attn.proj.*",
+            "sam_model.*mlp.lin1.*",
+            "sam_model.*mlp.lin2.*",
+            # Qwen2 Encoder-as-Decoder
+            "qwen2_model.*self_attn.qkv_proj.*",
+            "qwen2_model.*self_attn.o_proj.*",
+            "qwen2_model.*mlp.up_gate_proj.*",
+            "qwen2_model.*mlp.down_proj.*",
+            # Projector
+            "projector.*",
+        ]
     else:
         raise ValueError(f"Unknown base_model_prefix: {model.config.model_type}.")
     return target_modules
