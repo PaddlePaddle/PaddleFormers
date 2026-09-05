@@ -1,0 +1,48 @@
+### data
+# JSONL example:
+# {"messages":[{"role":"user","content":"<image><CAPTION>"},{"role":"assistant","content":"A cat."}],
+#  "images":["/path/to/image.jpg"]}
+train_dataset_type: messages
+eval_dataset_type: messages
+train_dataset_path: ./florence2_train.jsonl
+train_dataset_prob: "1.0"
+eval_dataset_path: ./florence2_train.jsonl
+eval_dataset_prob: "1.0"
+max_seq_len: 1024
+packing: false
+mix_strategy: concat
+template_backend: custom
+template: florence2
+
+### model
+model_name_or_path: /home/housaijie/code/Florence-2-base
+continue_training: true
+
+### finetuning
+stage: VL-SFT
+fine_tuning: full
+seed: 23
+do_train: true
+do_eval: false
+per_device_train_batch_size: 1
+max_steps: 300
+save_strategy: "no"
+logging_steps: 1
+gradient_accumulation_steps: 1
+output_dir: ./checkpoints/florence2-sft-full
+disable_tqdm: true
+
+### train
+warmup_steps: 0
+learning_rate: 1.0e-5
+
+### performance
+tensor_model_parallel_size: 1
+pipeline_model_parallel_size: 1
+bf16: true
+fp16: false
+fp16_opt_level: O1
+convert_from_hf: true
+unified_checkpoint: false
+save_checkpoint_format: "flex_checkpoint"
+load_checkpoint_format: ""
