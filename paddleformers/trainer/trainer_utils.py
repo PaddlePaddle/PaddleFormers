@@ -1982,30 +1982,23 @@ class EMAStateAssembler:
         self.expected_next_save_ckpt_step = self.latest_processed_checkpoint_step + save_hf_steps
         self.pending_hf_step = None
 
-    def run(self, global_step, last_step=False):
+    def run(self, global_step=None):
         if self.save_hf_steps <= 0:
             logger.info("[EMAStateAssembler] save_hf_steps is not positive. Skipping.")
             return
 
-        if not last_step and not self._begin_EMAHFProcess(global_step):
+        # global_step is None means it's last step
+        if global_step is not None and not self._begin_EMAHFProcess(global_step):
             return
 
         next_step, next_ckpt_dir = self._find_checkpoint(mode="next")
         if next_step is None:
             next_step = -1
-        next_steps = []
-        dist.all_gather_object(next_steps, next_step)
+        local_handled = next_step != -1 and next_ckpt_dir is not None and self._is_already_handled(next_ckpt_dir)
+        gathered = []
+        dist.all_gather_object(gathered, (next_step, local_handled))
+        next_steps = [step for step, _ in gathered]
         if -1 in next_steps:
-            # At this point, some trainers no longer have any checkpoints to process. Each trainer checks whether it has any checkpoints left to process.
-            if next_step != -1 and next_ckpt_dir is not None and self._is_already_handled(next_ckpt_dir):
-                self.latest_processed_checkpoint_step = next_step
-                self._update_expected_next_save_ckpt_step()
-                self._close_EMAHFProcess(next_step)
-                logger.info(
-                    f"[EMAStateAssembler] [Rank {self.rank}] Checkpoint at step {next_step} has "
-                    "already been handled. Skipping."
-                )
-                return
             logger.info(
                 f"[EMAStateAssembler][Rank {self.rank}] No unprocessed checkpoint found in {self.output_dir} "
                 f"in current training step. Latest processed checkpoint step is {self.latest_processed_checkpoint_step}. Skipping."
@@ -2014,19 +2007,28 @@ class EMAStateAssembler:
 
         # At this point, each trainer has a checkpoint to process, but the step counts are not consistent.
         if len(set(next_steps)) != 1:
+            target_step = max(next_steps)
+            # Only the lagging ranks move: they signal the checkpoint they skip so it stays loadable,
+            # then line up with the leading ranks, which already sit right before target_step. Every
+            # rank finds target_step on the next call.
+            if next_step < target_step:
+                self._handle_naive_checkpoint(next_step, next_ckpt_dir)
+                self.latest_processed_checkpoint_step = next_step
+                self._update_expected_next_save_ckpt_step()
             logger.warning(
-                f"[EMAStateAssembler][Rank {self.rank}] Multiple checkpoints detected. "
-                f"Selected checkpoint path: {next_ckpt_dir}. Skipping processing for this checkpoint."
+                f"[EMAStateAssembler][Rank {self.rank}] Inconsistent checkpoint steps {next_steps}. "
+                f"All ranks will process step {target_step} next."
             )
             return
-        # If the checkpoint has already been processed, skip it.
-        if self._is_already_handled(next_ckpt_dir):
+
+        if any(handled for _, handled in gathered):
+            self._handle_naive_checkpoint(next_step, next_ckpt_dir)
             self.latest_processed_checkpoint_step = next_step
             self._update_expected_next_save_ckpt_step()
             self._close_EMAHFProcess(next_step)
-            logger.info(
-                f"[EMAStateAssembler] [Rank {self.rank}] Checkpoint at step {next_step} has "
-                "already been handled. Skipping."
+            logger.warning(
+                f"[EMAStateAssembler][Rank {self.rank}] Checkpoint at step {next_step} was partially "
+                "handled before; completed its signal and skipped the EMA merge."
             )
             return
 
