@@ -3979,33 +3979,6 @@ def clean_model_class_name(class_name, suffixes_to_strip: Union[str, List[str]] 
     return re.sub(pattern, "", class_name)
 
 
-_PINNED_ARENA = None
-_PINNED_ARENA_CAPACITY = 0
-_ASYNC_LOADER = None
-
-
-def _get_pinned_arena(nbytes):
-    """Return a process-level (per-rank) pinned uint8 arena of at least ``nbytes`` and a
-    shared async loader, both reused across checkpoints.
-
-    NOTE: The arena is a single shared buffer. Checkpoint saves that use it MUST NOT
-    overlap in time -- if two saves run concurrently they will write into the same
-    arena region and corrupt each other's data. Callers rely on checkpoints being
-    serialized (one save fully finishes, including the final cpu_wait + save_file,
-    before the next begins) so the buffer can be safely reused.
-    """
-    global _PINNED_ARENA, _PINNED_ARENA_CAPACITY, _ASYNC_LOADER
-    if _PINNED_ARENA is None or _PINNED_ARENA_CAPACITY < nbytes:
-        arena = core.eager.Tensor()
-        arena.get_tensor()._set_dims([nbytes])
-        arena.get_tensor()._mutable_data(paddle.CUDAPinnedPlace(), core.VarDesc.VarType.UINT8)
-        _PINNED_ARENA = arena
-        _PINNED_ARENA_CAPACITY = nbytes
-    if _ASYNC_LOADER is None:
-        _ASYNC_LOADER = create_async_load()
-    return _PINNED_ARENA, _ASYNC_LOADER
-
-
 def save_full_param(
     itr: Iterator[tuple[str, Tensor]],
     save_dir: str,
@@ -4018,13 +3991,14 @@ def save_full_param(
     Saves model weights from an iterator into shards, supporting max shard size
     and a limited number of saver ranks.
 
-    On GPU, weights are offloaded asynchronously via a reused pinned-memory arena:
+    On GPU, weights are offloaded asynchronously via a per-save pinned-memory arena:
     each param is DMA-copied D2H into a byte offset of a page-locked buffer on a
     dedicated loader stream (no per-param host sync), a zero-copy alias into that
     buffer is handed to save_file, and the shard waits once (cpu_wait on the last
     copy) before writing to disk. This overlaps the copies and avoids the slow
-    synchronous pageable path. On non-GPU devices (XPU/CPU) the arena is skipped
-    and every param falls back to a synchronous param.cpu() copy.
+    synchronous pageable path. The arena is dropped when this function returns, so
+    nothing stays page-locked between checkpoints. On non-GPU devices (XPU/CPU) the
+    arena is skipped and every param falls back to a synchronous param.cpu() copy.
 
     Only ranks less than `num_saver_ranks` will perform disk I/O. All other ranks
     will iterate through the data to maintain synchronization but will not save.
@@ -4039,7 +4013,6 @@ def save_full_param(
         max_shard_size (str): The maximum size for each shard file, e.g., "500MB", "2GB".
         num_saver_ranks (int): The number of ranks (starting from 0) that will save files.
     """
-
     # 1. Non-saver ranks simply consume the iterator to stay in sync.
     if rank >= num_saver_ranks:
         logger.info(f"[Rank {rank}/{moe_sharding_world_size}] (Non-saver) Consuming iterator for synchronization...")
@@ -4058,7 +4031,14 @@ def save_full_param(
 
     use_pinned_arena = paddle.get_device().startswith("gpu")
     if use_pinned_arena:
-        arena_cpu, async_loader = _get_pinned_arena(max_shard_size_bytes)
+        # Scoped to this save, so nothing stays page-locked between checkpoints. A few-GB
+        # arena is carved out of Paddle's already-warm pinned pool for free, while a much
+        # larger max_shard_size would fall through to a direct cudaHostAlloc costing
+        # seconds per rank.
+        arena_cpu = core.eager.Tensor()
+        arena_cpu.get_tensor()._set_dims([max_shard_size_bytes])
+        arena_cpu.get_tensor()._mutable_data(paddle.CUDAPinnedPlace(), core.VarDesc.VarType.UINT8)
+        async_loader = create_async_load()
     else:
         arena_cpu, async_loader = None, None
 
@@ -4293,7 +4273,7 @@ class HFFormatFullParamSaver:
             local_world_size = int(os.environ.get("PADDLE_LOCAL_SIZE", 8))
             self.num_saver_ranks = min(local_world_size, self.num_saver_ranks)
 
-    def save_checkpoint(self, path, max_shard_size="16GB", save_peft=False):
+    def save_checkpoint(self, path, max_shard_size="2GB", save_peft=False):
         total_saved_size = save_full_param(
             itr=self.get_full_param_iter(),
             save_dir=path,

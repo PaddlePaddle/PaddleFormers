@@ -1776,7 +1776,7 @@ class HFFormatFullParamSaver:
             local_world_size = int(os.environ.get("PADDLE_LOCAL_SIZE", 8))
             self.num_saver_ranks = min(local_world_size, self.num_saver_ranks)
 
-    def save_checkpoint(self, path, max_shard_size="16GB"):
+    def save_checkpoint(self, path, max_shard_size="2GB"):
         total_saved_size = save_full_param(
             itr=self.get_full_param_iter(),
             save_dir=path,
