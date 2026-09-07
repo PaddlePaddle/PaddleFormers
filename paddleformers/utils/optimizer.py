@@ -137,26 +137,28 @@ class AdamWMini(AdamW):
         if not multi_precision:
             master_weight = None
         lr = learning_rate * lr_ratio
-        if master_weight is not None:
-            p = master_weight
-        else:
-            p = param
-        p *= 1.0 - lr * coeff
-        mom1 = moment1
-        mom2 = moment2
+        with paddle.no_grad():
+            if master_weight is not None:
+                master_weight.stop_gradient = True
+                p = master_weight
+            else:
+                p = param
+            p *= 1.0 - lr * coeff
+            mom1 = moment1
+            mom2 = moment2
 
-        mom1 = beta1 * mom1 + (1.0 - beta1) * grad
-        mom2 = beta2 * mom2 + (1.0 - beta2) * (grad * grad).mean()
-        denom = mom2.sqrt() / (1.0 - beta2_pow).sqrt() + epsilon
-        p += (mom1 / denom) * (-(lr / (1.0 - beta1_pow)))
-        if master_weight is not None:
-            master_weight[:] = p
-            param[:] = p.astype(param.dtype)
-        else:
-            param[:] = p
-        moment1[:] = mom1
-        moment2[:] = mom2
-        beta1_pow[:], beta2_pow[:] = beta1 * beta1_pow[:], beta2 * beta2_pow[:]
+            mom1 = beta1 * mom1 + (1.0 - beta1) * grad
+            mom2 = beta2 * mom2 + (1.0 - beta2) * (grad * grad).mean()
+            denom = mom2.sqrt() / (1.0 - beta2_pow).sqrt() + epsilon
+            p += (mom1 / denom) * (-(lr / (1.0 - beta1_pow)))
+            if master_weight is not None:
+                master_weight[:] = p
+                param[:] = p.astype(param.dtype)
+            else:
+                param[:] = p
+            moment1[:] = mom1
+            moment2[:] = mom2
+            beta1_pow[:], beta2_pow[:] = beta1 * beta1_pow[:], beta2 * beta2_pow[:]
         return
 
 
@@ -391,30 +393,32 @@ class AdamWCustom(AdamW):
         if not multi_precision:
             master_weight = None
         lr = learning_rate * lr_ratio
-        if master_weight is not None:
-            p = master_weight
-        else:
-            p = param
+        with paddle.no_grad():
+            if master_weight is not None:
+                master_weight.stop_gradient = True
+                p = master_weight
+            else:
+                p = param
 
-        p *= 1.0 - lr * coeff
-        moment_dtype = moment1.dtype
-        mom1 = moment1.astype("float32")
-        mom2 = moment2.astype("float32")
+            p *= 1.0 - lr * coeff
+            moment_dtype = moment1.dtype
+            mom1 = moment1.astype("float32")
+            mom2 = moment2.astype("float32")
 
-        mom1 = beta1 * mom1 + (1.0 - beta1) * grad
-        mom2 = beta2 * mom2 + (1.0 - beta2) * grad * grad
-        denom = mom2.sqrt() / (1.0 - beta2_pow).sqrt() + epsilon
-        p += (mom1 / denom) * (-(lr / (1.0 - beta1_pow)))
+            mom1 = beta1 * mom1 + (1.0 - beta1) * grad
+            mom2 = beta2 * mom2 + (1.0 - beta2) * grad * grad
+            denom = mom2.sqrt() / (1.0 - beta2_pow).sqrt() + epsilon
+            p += (mom1 / denom) * (-(lr / (1.0 - beta1_pow)))
 
-        if master_weight is not None:
-            master_weight[:] = p
-            if not skip_update_param:
-                param[:] = p.astype(param.dtype)
-        else:
-            param[:] = p
-        moment1[:] = mom1.astype(moment_dtype)
-        moment2[:] = mom2.astype(moment_dtype)
-        beta1_pow[:], beta2_pow[:] = beta1 * beta1_pow[:], beta2 * beta2_pow[:]
+            if master_weight is not None:
+                master_weight[:] = p
+                if not skip_update_param:
+                    param[:] = p.astype(param.dtype)
+            else:
+                param[:] = p
+            moment1[:] = mom1.astype(moment_dtype)
+            moment2[:] = mom2.astype(moment_dtype)
+            beta1_pow[:], beta2_pow[:] = beta1 * beta1_pow[:], beta2 * beta2_pow[:]
         return
 
     def offload_optim(self, p):
