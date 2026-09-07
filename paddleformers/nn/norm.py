@@ -62,13 +62,14 @@ class RMSNorm(nn.Layer):
             default_initializer=nn.initializer.Constant(1.0),
         )
         self.config = config
+        self.fuse_rms_norm = config.get("fuse_rms_norm", True)
 
         if input_is_parallel:
             self.enable_sequence_parallel()
 
     def forward(self, hidden_states):
         current_device = detect_device()
-        if self.config.get("fuse_rms_norm", True) and current_device != "iluvatar_gpu":
+        if self.fuse_rms_norm and current_device != "iluvatar_gpu":
             return fused_rms_norm_ext(hidden_states, self.weight, self.variance_epsilon)[0].astype(self.weight.dtype)
 
         with paddle.amp.auto_cast(False):
