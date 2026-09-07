@@ -1448,7 +1448,8 @@ class ZeroCostCheckpointWorker:
 
         self._dump_args_and_state(output_dir)
 
-        if self.save_hf_steps > 0 and self.ema_coef is not None and saved_signal_type == "tmp":
+        is_hf_step = self.save_hf_steps > 0 and self.global_step.value % self.save_hf_steps == 0
+        if is_hf_step and self.ema_coef is not None and saved_signal_type == "tmp":
             saved_signal_prefix = "save_signal_TMP"
         else:
             saved_signal_prefix = "saved_signal"
