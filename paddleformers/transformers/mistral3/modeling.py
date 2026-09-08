@@ -282,7 +282,7 @@ class Mistral3MultiModalProjector(nn.Layer):
     def __init__(self, config: Mistral3Config):
         super().__init__()
         self.norm = GeneralNorm.create(
-            config=config.text_config,
+            config=config.vision_config,
             norm_type="rms_norm",
             hidden_size=config.vision_config.hidden_size,
             has_bias=False,
