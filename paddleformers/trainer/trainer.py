@@ -201,6 +201,7 @@ from .trainer_utils import (  # set_hyrbid_parallel_seed,
     _get_muon_2d_param_names,
     _insert_sync,
     _is_muon_sharding_optimizer,
+    _restore_master_weights_2d_on_device,
     _restore_master_weights_single,
     _unwrap_muon_sharding_optimizer,
     download_recovery_ckpt_from_pdc,
@@ -440,6 +441,7 @@ class Trainer:
         reshard_util.set_broadcast_max_chunk_bytes(
             int(getattr(self.args, "reshard_bucketed_broadcast_max_chunk_gb", 2.0) * (1024**3))
         )
+        reshard_util.set_device_gather(getattr(self.args, "reshard_master_weight_device_gather", False))
         self.is_in_train = False
         # self.do_grad_scaling = args.fp16
 
@@ -1556,32 +1558,47 @@ class Trainer:
                 model_state_dict = self.model.state_dict()
                 for key, param in model_state_dict.items():
                     if param.name in master_weights and param.dtype == paddle.bfloat16:
+                        value = master_weights[param.name]
                         logger.debug(
                             f"key {key}, convert master weights {param.name} "
-                            f"shape {master_weights[param.name].shape} to param "
+                            f"shape {value.shape} to param "
                             f"{param.name} shape{param.shape}"
                         )
-                        assert (
-                            param.shape == master_weights[param.name].shape
-                        ), f"got {param.shape} vs {master_weights[param.name].shape}"
-                        master_weight = paddle.reshape(master_weights[param.name], param.shape)
+                        assert param.shape == value.shape, f"got {param.shape} vs {value.shape}"
+                        if isinstance(value, reshard_util.AssignedMasterWeight):
+                            # Already written straight into this parameter by the
+                            # device gather, while the buffer was still on device.
+                            # Keep walking the loop anyway so this stays the single
+                            # place that checks every parameter got a master weight
+                            # of the right shape.
+                            continue
+                        master_weight = paddle.reshape(value, param.shape)
                         paddle.assign(paddle.cast(to_device(master_weight), paddle.bfloat16), model_state_dict[key])
 
             def recover_params_from_master_weight(opt_state_dict, group):
                 master_weights = opt_state_dict.get("master_weights", {})
                 tmp = OrderedDict()
                 master_weights, tmp = (tmp, master_weights)
-                # cast to bf16 and move to cpu
+
+                muon_opt = _unwrap_muon_sharding_optimizer(self.optimizer)
+                param_2d_names = _get_muon_2d_param_names(muon_opt) if muon_opt is not None else set()
+
+                # Cast to bf16. 2D Muon parameters stay on device: each is owned
+                # whole by one rank, so nothing has to be reassembled on host and
+                # _restore_master_weights_2d_on_device can gather them in place.
+                # 1D parameters go through ShardingV2's redistribute-and-
+                # concatenate, which is host-resident, so they move to host here.
                 for k, v in tmp.items():
                     name = v.name
-                    master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
+                    if k in param_2d_names and reshard_util.use_device_gather():
+                        master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16)
+                    else:
+                        master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
                     master_weights[k].name = name
 
                 structure_name_map = {k: v.name for (k, v) in self.model.state_dict().items()}
 
-                muon_opt = _unwrap_muon_sharding_optimizer(self.optimizer)
                 if muon_opt is not None:
-                    param_2d_names = _get_muon_2d_param_names(muon_opt)
                     logger.debug(f"Muon recovery: {len(param_2d_names)} 2D params detected")
 
                     mw_2d = OrderedDict()
@@ -1593,14 +1610,23 @@ class Trainer:
                             mw_1d[k] = v
 
                     all_master_weights = OrderedDict()
-                    restored_2d = _restore_master_weights_single(
-                        mw_2d,
-                        self.model,
-                        self.optimizer,
-                        group,
-                        structure_name_map,
-                        reshard_util.sharding_v1.restore,
-                    )
+                    # Destinations for the device gather to write into, so the
+                    # gathered 2D union never needs host storage. Passed as an
+                    # argument rather than module state: a leaked sink would make a
+                    # later reshard write into parameters from this load.
+                    device_param_sink = {
+                        p.name: p for p in self.model.state_dict().values() if p.dtype == paddle.bfloat16
+                    }
+                    restored_2d = _restore_master_weights_2d_on_device(mw_2d, group, device_param_sink)
+                    if restored_2d is None:  # reshard_master_weight_device_gather=False
+                        restored_2d = _restore_master_weights_single(
+                            mw_2d,
+                            self.model,
+                            self.optimizer,
+                            group,
+                            structure_name_map,
+                            reshard_util.sharding_v1.restore,
+                        )
                     all_master_weights.update(restored_2d)
 
                     restored_1d = _restore_master_weights_single(

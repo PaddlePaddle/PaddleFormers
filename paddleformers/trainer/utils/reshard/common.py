@@ -868,6 +868,197 @@ def set_broadcast_max_chunk_bytes(nbytes):
     _broadcast_max_chunk_bytes = max(nbytes, _STATE_DICT_BROADCAST_BUCKET_SIZE_BYTES)
 
 
+class AssignedMasterWeight:
+    """Marker put into the gathered dict in place of a host copy.
+
+    It means "this master weight was already written into its bf16 model
+    parameter while the gather buffer was still resident on device, so there is
+    nothing left to copy". Only metadata is carried so the caller can keep
+    running its shape / coverage checks over the returned dict unchanged.
+    """
+
+    __slots__ = ("shape", "dtype")
+
+    def __init__(self, shape, dtype):
+        self.shape = list(shape)
+        self.dtype = dtype
+
+    def __repr__(self):
+        return f"AssignedMasterWeight(shape={self.shape}, dtype={self.dtype})"
+
+
+# ---------------------------------------------------------------------------
+# Device-resident all-gather, used only by the master-weight -> bf16 parameter
+# restore path.
+#
+# The bucketed host path below moves every byte across PCIe four times: the
+# caller casts to bf16 and copies to host, pack stages the bucket on host and
+# uploads it, unpack downloads the broadcast result, and the caller uploads it
+# again to write the parameter. Only the middle step (the broadcast) needs the
+# data on device, and the two ends (fp32 master weight, bf16 parameter) are
+# already on device -- so the host is a detour, not a destination.
+#
+# This function keeps sources, buckets and destinations in device memory:
+#
+#   source (device)  -> bucket (device, D2D) -> NCCL -> bucket -> parameter (D2D)
+#
+# What it does NOT change: the broadcast itself, the deterministic global
+# ordering, and the chunk budget that bounds how much is resident at once.
+#
+# Two deliberate differences from the host path:
+#
+# * Buckets are cut at the chunk budget instead of 128 MiB. The 128 MiB limit
+#   existed to amortise one host-to-device upload per bucket; with no upload
+#   left, a smaller bucket only buys more NCCL operations.
+#
+# * The result is written straight into the destination parameter, so the
+#   gathered union never needs storage of its own. Keys without a matching
+#   parameter fall back to a device tensor of their own.
+#
+# Cost: this rank's own contribution stays resident until it is packed, which
+# the host path did not pay for. Bounded by what this rank owns.
+# ---------------------------------------------------------------------------
+
+
+# Driven by TrainingArguments.reshard_master_weight_device_gather, applied via
+# set_device_gather() in Trainer.__init__ -- same wiring as
+# set_broadcast_max_chunk_bytes() above, so the flag does not have to be
+# threaded through the restore call chain. Default False keeps the host path.
+_USE_DEVICE_GATHER = False
+
+
+def set_device_gather(enabled):
+    global _USE_DEVICE_GATHER
+    _USE_DEVICE_GATHER = bool(enabled)
+
+
+def use_device_gather():
+    return _USE_DEVICE_GATHER
+
+
+def _device_destination(key, shape, dtype, param_sink):
+    """The parameter this gathered tensor belongs in, or None.
+
+    Name, shape and dtype must all agree; anything else is treated as "no
+    destination" so a mismatch degrades into an extra tensor rather than a
+    silently corrupted parameter.
+    """
+    param = param_sink.get(key)
+    if param is None:
+        return None
+    if str(param.dtype).split(".")[-1] != dtype:
+        return None
+    if list(param.shape) != list(shape):
+        return None
+    return param
+
+
+def _fill_bucket_from_device(bucket, state_dict):
+    """Concatenate this rank's tensors into one contiguous device buffer."""
+    tensor = paddle.empty([bucket["numel"]], dtype=bucket["dtype"])
+    for k, _shape, begin, end in bucket["items"]:
+        source = state_dict.pop(k)
+        # __setitem__ maps to set_value, which writes through to tensor's
+        # storage. paddle.assign(src, tensor[begin:end]) would assign into a
+        # temporary view instead and silently drop the write.
+        tensor[begin:end] = source.reshape([-1])
+        del source
+    return tensor
+
+
+def _scatter_bucket_on_device(bucket, tensor, destinations, gathered):
+    """Move each tensor out of the broadcast buffer to where it belongs."""
+    for k, shape, begin, end in bucket["items"]:
+        piece = tensor[begin:end].reshape(shape)
+        destination = destinations.get(k)
+        if destination is None:
+            # No parameter to land in, and the bucket is freed at the end of
+            # this chunk, so this needs storage of its own.
+            gathered[k] = piece.clone()
+        else:
+            paddle.assign(piece, destination)
+            gathered[k] = AssignedMasterWeight(shape, bucket["dtype"])
+
+
+def all_gather_on_device(state_dict, group, param_sink=None, max_chunk_bytes=None):
+    """All-gather that never touches host memory.
+
+    Same contract as ``all_gather_state_dict(state_dict, lambda k: True,
+    group)``: every rank contributes the entries it owns, every rank receives
+    the union, and ``state_dict`` is consumed on the way. Entries whose name,
+    shape and dtype match a parameter in ``param_sink`` are written into that
+    parameter and represented in the result by an AssignedMasterWeight marker,
+    so the gathered union needs no host storage at all. Entries with no match
+    get a device tensor of their own.
+
+    All values must already be device tensors; passing host tensors is a bug in
+    the caller rather than something to paper over, so it asserts.
+    """
+    group_rank = max(group.rank, 0)
+    param_sink = param_sink if param_sink else {}
+    if max_chunk_bytes is None:
+        max_chunk_bytes = _broadcast_max_chunk_bytes
+
+    # 1. Describe what this rank owns. Unlike the host path this does not touch
+    #    the data, so nothing is copied and nothing is freed here.
+    local_meta = {}
+    for k, v in state_dict.items():
+        assert isinstance(v, paddle.Tensor), f"{k}: expected a Tensor, got {type(v)}"
+        assert not v.place.is_cpu_place(), f"{k}: on host, all_gather_on_device expects device tensors"
+        local_meta[k] = (str(v.dtype).split(".")[-1], list(v.shape), group_rank)
+
+    # 2. Exchange descriptions -- Python objects, not tensor payloads -- and
+    #    agree on one global order. Every rank must build the same buckets in
+    #    the same sequence or the broadcasts would not line up.
+    total_meta = {}
+    for part in all_gather_simple_object(local_meta, group):
+        for k, meta in part.items():
+            assert k not in total_meta, f"{k} is owned by more than one rank"
+            total_meta[k] = meta
+    meta_list = sorted(total_meta.items(), key=lambda kv: (kv[1][2], kv[0]))
+
+    # 3. Resolve destinations up front so packing and scattering agree.
+    destinations = {}
+    for k, (dtype, shape, _rank) in meta_list:
+        destination = _device_destination(k, shape, dtype, param_sink)
+        if destination is not None:
+            destinations[k] = destination
+
+    gathered = {}
+    buckets, empty_items = _build_state_dict_broadcast_buckets(meta_list, max_chunk_bytes)
+    for k, (dtype, shape, rank) in empty_items:
+        if rank == group_rank:
+            assert k in state_dict
+            del state_dict[k]
+        gathered[k] = paddle.empty(shape, dtype=dtype)
+
+    for chunk in _iter_state_dict_bucket_chunks(buckets, _STATE_DICT_BROADCAST_CHUNK_SIZE, max_chunk_bytes):
+        gpu_buckets = []
+        for bucket in chunk:
+            if bucket["rank"] == group_rank:
+                tensor = _fill_bucket_from_device(bucket, state_dict)
+            else:
+                tensor = paddle.empty([bucket["numel"]], dtype=bucket["dtype"])
+            gpu_buckets.append((bucket, tensor))
+
+        _broadcast_state_dict_chunk(gpu_buckets, group)
+
+        # The broadcast was enqueued on the calc stream with
+        # use_calc_stream=True, so these copies are already ordered after it.
+        for bucket, tensor in gpu_buckets:
+            _scatter_bucket_on_device(bucket, tensor, destinations, gathered)
+        # Release before packing the next chunk, otherwise both chunks would be
+        # resident and max_chunk_bytes would stop bounding anything. The scatter
+        # only enqueues, so wait for it before the buffers are dropped -- without
+        # this the host would run ahead allocating buckets for later chunks
+        # while earlier ones are still in flight.
+        del gpu_buckets
+        paddle.device.synchronize()
+
+    assert not state_dict, f"{len(state_dict)} source tensors were never packed"
+    return OrderedDict((k, gathered[k]) for k, _ in meta_list)
+
+
 def all_gather_state_dict(state_dict, filter_func, group):
     if group.nranks < 2:
         # A lone rank has nothing to exchange, so skip the pack/broadcast/unpack
