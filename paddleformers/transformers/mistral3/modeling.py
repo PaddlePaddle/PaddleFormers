@@ -39,7 +39,7 @@ from ..llama.modeling import (
 )
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast, ModelOutput
 from ..model_utils import PretrainedModel, register_base_model
-from ..pixtral.modeling import PixtralRMSNorm, PixtralVisionModel
+from ..pixtral.modeling import PixtralVisionModel
 from .configuration import Mistral3Config
 
 
@@ -281,7 +281,13 @@ class Mistral3PatchMerger(nn.Layer):
 class Mistral3MultiModalProjector(nn.Layer):
     def __init__(self, config: Mistral3Config):
         super().__init__()
-        self.norm = PixtralRMSNorm(config.vision_config.hidden_size, eps=config.text_config.rms_norm_eps)
+        self.norm = GeneralNorm.create(
+            config=config.text_config,
+            norm_type="rms_norm",
+            hidden_size=config.vision_config.hidden_size,
+            has_bias=False,
+            norm_eps=config.text_config.rms_norm_eps,
+        )
         self.patch_merger = Mistral3PatchMerger(config)
         self.num_feature_layers = (
             1 if isinstance(config.vision_feature_layer, int) else len(config.vision_feature_layer)
