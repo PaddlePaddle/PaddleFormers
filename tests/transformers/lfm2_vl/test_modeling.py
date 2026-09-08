@@ -52,6 +52,13 @@ def get_config():
 
 
 class Lfm2VlModelTest(unittest.TestCase):
+    def test_text_layer_types_must_match_hidden_layers(self):
+        with self.assertRaisesRegex(ValueError, "num_hidden_layers"):
+            Lfm2Config(num_hidden_layers=2, layer_types=["full_attention"])
+
+        with self.assertRaisesRegex(ValueError, "layer_types"):
+            Lfm2Config(num_hidden_layers=1, layer_types=["unsupported"])
+
     def get_inputs(self):
         input_ids = paddle.to_tensor([[1, 7, 2, 3]], dtype="int64")
         return {

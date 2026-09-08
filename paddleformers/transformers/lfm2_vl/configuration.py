@@ -67,6 +67,14 @@ class Lfm2Config(PretrainedConfig):
         if layer_types is None:
             full_attn_idxs = full_attn_idxs if full_attn_idxs is not None else list(range(num_hidden_layers))
             layer_types = ["full_attention" if i in full_attn_idxs else "conv" for i in range(num_hidden_layers)]
+        allowed_layer_types = ("full_attention", "conv")
+        if not all(layer_type in allowed_layer_types for layer_type in layer_types):
+            raise ValueError(f"The `layer_types` entries must be in {allowed_layer_types}")
+        if len(layer_types) != num_hidden_layers:
+            raise ValueError(
+                f"`num_hidden_layers` ({num_hidden_layers}) must be equal to the number of layer types "
+                f"({len(layer_types)})"
+            )
         self.layer_types = layer_types
         super().__init__(
             tie_word_embeddings=kwargs.pop("tie_embedding", tie_word_embeddings),
