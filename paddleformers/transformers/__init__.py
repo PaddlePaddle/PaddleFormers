@@ -189,6 +189,17 @@ import_structure = {
         "GraniteForCausalLM",
         "GraniteForCausalLMPipe",
     ],
+    "cohere.configuration": ["CohereConfig"],
+    "cohere.modeling": [
+        "CohereAttention",
+        "CohereDecoderLayer",
+        "CohereForCausalLM",
+        "CohereForCausalLMPipe",
+        "CohereLayerNorm",
+        "CohereModel",
+        "CoherePretrainedModel",
+        "CohereRotaryEmbedding",
+    ],
     "kimi_k25.vision_processor": ["KimiK25VisionProcessor"],
     "kimi_k25.processor": ["KimiK25Processor"],
     "kimi_k25.tokenizer": ["TikTokenTokenizer"],
@@ -367,13 +378,14 @@ import_structure = {
     "qwen2_vl": [],
     "qwen3_moe": [],
     "qwen3_next": [],
+    "cohere": [],
     "minicpm3": [],
     "glm4_moe.configuration": ["Glm4MoeConfig"],
     "whisper.processor": ["WhisperFeatureExtractor"],
     "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM", "Glm4MoeForCausalLMDeprecated"],
     "glm_moe_dsa.configuration": ["GlmMoeDsaConfig"],
     "glm_moe_dsa": ["GlmMoeDsaForCausalLMPipe", "GlmMoeDsaForCausalLM"],
-    "granite": ["GraniteModel", "GranitePretrainedModel", "GraniteForCausalLM"],
+    "granite": [],
     "minimax_m2.configuration": ["MiniMaxM2Config"],
     "minimax_m2": ["MiniMaxM2ForCausalLMPipe", "MiniMaxM2ForCausalLM"],
     "minicpm.configuration": ["MiniCPMConfig"],
@@ -538,6 +550,7 @@ if TYPE_CHECKING:
     from .deepseek_v4 import *
     from .gpt_oss import *
     from .minicpm3 import *
+    from .cohere import *
     from .granite import *
     from .phi3 import *
     from .gemma3_text import *
