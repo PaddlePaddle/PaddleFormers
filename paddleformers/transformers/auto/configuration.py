@@ -33,6 +33,8 @@ __all__ = [
 
 CONFIG_MAPPING_NAMES = OrderedDict(
     [
+        ("aya_vision", "AyaVisionConfig"),
+        ("cohere2", "Cohere2Config"),
         ("deepseek_v3", "DeepseekV3Config"),
         ("deepseek_v32", "DeepseekV32Config"),
         ("paligemma", "PaliGemma2Config"),
@@ -69,6 +71,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("gemma3", "Gemma3Config"),
         ("gemma3_text", "Gemma3TextConfig"),
         ("shieldgemma2", "ShieldGemma2Config"),
+        ("siglip_vision_model", "SiglipVisionConfig"),
         ("glm4v_moe", "Glm4vMoeConfig"),
         ("glm_ocr", "GlmOcrConfig"),
         ("qwen3_5", "Qwen3_5Config"),
@@ -88,6 +91,8 @@ CONFIG_MAPPING_NAMES = OrderedDict(
 MODEL_NAMES_MAPPING = OrderedDict(
     # Base model mapping
     [
+        ("aya_vision", "AyaVision"),
+        ("cohere2", "Cohere2"),
         ("deepseek_v2", "DeepseekV2"),
         ("deepseek_v3", "DeepseekV3"),
         ("paligemma", "PaliGemma2"),
@@ -128,6 +133,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("gemma4", "Gemma4MoeForCausalLM"),
         ("phi4", "Phi4ForCausalLM"),
         ("phi4flash", "Phi4ForCausalLM"),
+        ("siglip_vision_model", "SiglipVision"),
     ]
 )
 
