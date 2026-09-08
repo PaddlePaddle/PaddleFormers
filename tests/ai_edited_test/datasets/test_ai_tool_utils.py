@@ -25,6 +25,7 @@ from paddleformers.datasets.template.tool_utils import (
     GLM_5ToolUtils,
     Llama3ToolUtils,
     QwenToolUtils,
+    SeedOssToolUtils,
     get_tool_utils,
 )
 
@@ -261,6 +262,35 @@ class TestLlama3ToolUtils(unittest.TestCase):
         self.assertEqual(len(parsed), 2)
 
 
+class TestSeedOssToolUtils(unittest.TestCase):
+    """Tests for SeedOssToolUtils."""
+
+    def test_tool_formatter(self):
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "test_func",
+                    "description": "A test function",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ]
+        result = SeedOssToolUtils.tool_formatter(tools)
+        self.assertIn("<seed:tool_call>", result)
+        self.assertIn("</seed:tool_call>", result)
+        self.assertIn("test_func", result)
+
+    def test_function_formatter(self):
+        functions = [FunctionCall(name="test_func", arguments='{"key": "val", "count": 2}')]
+        result = SeedOssToolUtils.function_formatter(functions)
+        self.assertIn("<seed:tool_call>", result)
+        self.assertIn("<function=test_func>", result)
+        self.assertIn("<parameter=key>val</parameter>", result)
+        self.assertIn("<parameter=count>2</parameter>", result)
+        self.assertIn("</seed:tool_call>", result)
+
+
 class TestERNIEToolUtils(unittest.TestCase):
     """Tests for ERNIEToolUtils."""
 
@@ -312,7 +342,18 @@ class TestGetToolUtils(unittest.TestCase):
     """Tests for get_tool_utils function."""
 
     def test_get_existing_tool(self):
-        for name in ["default", "ernie", "ernie_vl", "qwen", "qwen3_5", "glm4", "glm4_moe", "glm_moe_dsa", "llama3"]:
+        for name in [
+            "default",
+            "ernie",
+            "ernie_vl",
+            "qwen",
+            "qwen3_5",
+            "glm4",
+            "glm4_moe",
+            "glm_moe_dsa",
+            "llama3",
+            "seed_oss",
+        ]:
             result = get_tool_utils(name)
             self.assertIsNotNone(result)
 

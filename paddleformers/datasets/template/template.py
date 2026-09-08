@@ -295,6 +295,70 @@ class GLM5ReasoningTemplate(ReasoningTemplate):
 
 
 @dataclass
+class SeedOssTemplate(ReasoningTemplate):
+    r"""Reasoning template for Seed-OSS using Seed added-token ids."""
+
+    seed_tokens = (
+        "<seed:bos>",
+        "<seed:eos>",
+        "<seed:pad>",
+        "<seed:think>",
+        "</seed:think>",
+        "<seed:cot_budget_reflect>",
+        "</seed:cot_budget_reflect>",
+        "<seed:tool_call>",
+        "</seed:tool_call>",
+    )
+    seed_token_pattern = re.compile("(" + "|".join(re.escape(token) for token in seed_tokens) + ")")
+
+    @override
+    def _convert_elements_to_ids(self, tokenizer: "PreTrainedTokenizer", elements: "SLOTS") -> list[int]:
+        token_ids = []
+        for elem in elements:
+            if isinstance(elem, str):
+                for part in filter(None, self.seed_token_pattern.split(elem)):
+                    if part in self.seed_tokens:
+                        token_ids += [tokenizer.convert_tokens_to_ids(part)]
+                    else:
+                        token_ids += tokenizer.encode(part, add_special_tokens=False)
+            elif isinstance(elem, dict):
+                token_ids += [tokenizer.convert_tokens_to_ids(elem.get("token"))]
+            elif isinstance(elem, set):
+                if "bos_token" in elem and tokenizer.bos_token_id is not None:
+                    token_ids += [tokenizer.bos_token_id]
+                elif "eos_token" in elem and tokenizer.eos_token_id is not None:
+                    token_ids += [tokenizer.eos_token_id]
+            else:
+                raise ValueError(f"Input must be string, set[str] or dict[str, str], got {type(elem)}")
+
+        return token_ids
+
+    def get_thought_word_ids(self, tokenizer: "PreTrainedTokenizer") -> list[int]:
+        r"""Get the Seed thought token ids without BPE splitting."""
+        return self._convert_elements_to_ids(tokenizer, [self.add_thought()])
+
+    @override
+    def encode_oneturn(
+        self,
+        tokenizer: "PreTrainedTokenizer",
+        messages: list[dict[str, str]],
+        system: Optional[str] = None,
+        tools: Optional[str] = None,
+    ) -> tuple[list[int], list[int]]:
+        return Template.encode_oneturn(self, tokenizer, messages, system, tools)
+
+    @override
+    def encode_multiturn(
+        self,
+        tokenizer: "PreTrainedTokenizer",
+        messages: list[dict[str, str]],
+        system: Optional[str] = None,
+        tools: Optional[str] = None,
+    ) -> list[tuple[list[int], list[int]]]:
+        return Template.encode_multiturn(self, tokenizer, messages, system, tools)
+
+
+@dataclass
 class Llama2Template(Template):
     r"""A template that fuse the system message to first user message."""
 
@@ -926,6 +990,36 @@ register_template(
     chat_sep="<|end|>",
     default_system="You are ChatGPT, a large language model trained by OpenAI.",
     template_class=Template,
+)
+
+register_template(
+    name="seed_oss",
+    format_user=StringFormatter(
+        slots=[
+            {"token": "<seed:bos>"},
+            "user\n{{content}}",
+            {"token": "<seed:eos>"},
+            {"token": "<seed:bos>"},
+            "assistant\n",
+        ]
+    ),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=[{"token": "<seed:bos>"}, "system\n{{content}}", {"token": "<seed:eos>"}]),
+    format_function=FunctionFormatter(slots=["{{content}}"], tool_format="seed_oss"),
+    format_observation=StringFormatter(
+        slots=[
+            {"token": "<seed:bos>"},
+            "tool\n{{content}}",
+            {"token": "<seed:eos>"},
+            {"token": "<seed:bos>"},
+            "assistant\n",
+        ]
+    ),
+    format_tools=ToolFormatter(tool_format="seed_oss"),
+    chat_sep="<seed:eos>",
+    suffix=["<seed:eos>"],
+    thought_words=("<seed:think>", "</seed:think>"),
+    template_class=SeedOssTemplate,
 )
 
 register_template(

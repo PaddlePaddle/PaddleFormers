@@ -22,6 +22,7 @@ from paddleformers.datasets.template.formatter import (
     ToolFormatter,
 )
 from paddleformers.datasets.template.template import (
+    TEMPLATES,
     GLM5ReasoningTemplate,
     ReasoningTemplate,
     Role,
@@ -265,6 +266,75 @@ class TestGLM5ReasoningTemplate(unittest.TestCase):
         template.get_thought_word_ids(tokenizer)
         # Should only encode the closing tag
         tokenizer.encode.assert_called_with("\n</think\n", add_special_tokens=False)
+
+
+class TestSeedOssTemplate(unittest.TestCase):
+    """Tests for Seed-OSS registered template."""
+
+    class SeedTokenizer:
+        bos_token_id = 0
+        eos_token_id = 2
+        pad_token_id = 1
+        eos_token = "<seed:eos>"
+
+        token_ids = {
+            "<seed:bos>": 0,
+            "<seed:eos>": 2,
+            "<seed:think>": 3,
+            "</seed:think>": 4,
+            "<seed:tool_call>": 7,
+            "</seed:tool_call>": 8,
+        }
+
+        def encode(self, text, add_special_tokens=False):
+            del add_special_tokens
+            if text in self.token_ids:
+                return [self.token_ids[text]]
+            return [ord(char) + 100 for char in text]
+
+        def convert_tokens_to_ids(self, token):
+            return self.token_ids[token]
+
+    def test_seed_oss_registered_template_uses_seed_tokens(self):
+        tokenizer = self.SeedTokenizer()
+        template = TEMPLATES["seed_oss"]
+        messages = [
+            {"role": Role.USER, "content": "hello"},
+            {"role": Role.ASSISTANT, "content": "world"},
+        ]
+
+        prompt_ids, response_ids = template.encode_oneturn(tokenizer, messages)
+
+        self.assertEqual(prompt_ids[0], tokenizer.token_ids["<seed:bos>"])
+        self.assertIn(tokenizer.token_ids["<seed:eos>"], prompt_ids)
+        self.assertNotIn(tokenizer.token_ids["<seed:think>"], response_ids)
+        self.assertNotIn(tokenizer.token_ids["</seed:think>"], response_ids)
+
+    def test_seed_oss_tool_call_uses_seed_tokens(self):
+        tokenizer = self.SeedTokenizer()
+        template = TEMPLATES["seed_oss"]
+        messages = [
+            {"role": Role.USER, "content": "hello"},
+            {
+                "role": Role.ASSISTANT,
+                "content": "",
+                "tool_calls": '[{"name": "test_func", "arguments": {"key": "val"}}]',
+            },
+        ]
+
+        _, response_ids = template.encode_oneturn(tokenizer, messages)
+
+        self.assertIn(tokenizer.token_ids["<seed:tool_call>"], response_ids)
+        self.assertIn(tokenizer.token_ids["</seed:tool_call>"], response_ids)
+
+    def test_seed_oss_mixed_seed_tokens_are_not_split(self):
+        tokenizer = self.SeedTokenizer()
+        template = TEMPLATES["seed_oss"]
+
+        token_ids = template._convert_elements_to_ids(tokenizer, ["x<seed:think>y</seed:think>z"])
+
+        self.assertIn(tokenizer.token_ids["<seed:think>"], token_ids)
+        self.assertIn(tokenizer.token_ids["</seed:think>"], token_ids)
 
 
 class TestGetTemplateAndFixTokenizer(unittest.TestCase):
