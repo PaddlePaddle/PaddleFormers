@@ -22,9 +22,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
-SPEC = importlib.util.spec_from_file_location(
-    "checkpoint_export", ROOT / "paddleformers/trainer/checkpoint_export.py"
-)
+SPEC = importlib.util.spec_from_file_location("checkpoint_export", ROOT / "paddleformers/trainer/checkpoint_export.py")
 EXPORT = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(EXPORT)
 
@@ -32,9 +30,12 @@ SPEC.loader.exec_module(EXPORT)
 class ExportProvenanceTests(unittest.TestCase):
     def test_live_provider_and_aoa_snapshot_are_serializable_and_independent(self):
         config = SimpleNamespace(
-            multi_latent_attention=True, moe_expert_fusion=True,
-            index_n_heads=32, indexer_types=["full", "shared"],
-            num_nextn_predict_layers=1, n_routed_experts=16,
+            multi_latent_attention=True,
+            moe_expert_fusion=True,
+            index_n_heads=32,
+            indexer_types=["full", "shared"],
+            num_nextn_predict_layers=1,
+            n_routed_experts=16,
         )
         aoa = {"aoa_statements": ["internal.weight^T -> official.weight"]}
         record = EXPORT.hf_export_provenance(config, aoa, "results/checkpoint", 2)

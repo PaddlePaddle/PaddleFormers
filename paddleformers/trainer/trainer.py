@@ -2380,9 +2380,7 @@ class Trainer:
         if not divisor or divisor <= 0:
             return
 
-        parameters = (
-            model._layers.parameters() if hasattr(model, "_layers") else model.parameters()
-        )
+        parameters = model._layers.parameters() if hasattr(model, "_layers") else model.parameters()
 
         from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
             DygraphShardingOptimizerV2,
