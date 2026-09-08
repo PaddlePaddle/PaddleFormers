@@ -100,6 +100,11 @@ class Llama4MultimodalModelTest(unittest.TestCase):
 
         self.assertEqual(len(output.hidden_states), self.config.text_config.num_hidden_layers + 1)
 
+    def test_multimodal_projector_honors_bias_config(self):
+        self.config.vision_config.multi_modal_projector_bias = True
+        model = Llama4ForConditionalGeneration(self.config)
+        self.assertIsNotNone(model.multi_modal_projector.linear_1.bias)
+
     def test_image_token_count_validation(self):
         model = Llama4ForConditionalGeneration(self.config)
         input_ids = paddle.to_tensor([[1, 2, 3]], dtype="int64")

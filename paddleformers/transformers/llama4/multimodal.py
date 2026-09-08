@@ -86,7 +86,7 @@ class Llama4MultiModalProjector(nn.Layer):
         self.linear_1 = nn.Linear(
             config.vision_config.vision_output_dim,
             config.text_config.hidden_size,
-            bias_attr=False,
+            bias_attr=config.vision_config.multi_modal_projector_bias,
         )
 
     def forward(self, image_features):
