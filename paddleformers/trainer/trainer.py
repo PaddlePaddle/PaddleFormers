@@ -2257,15 +2257,74 @@ class Trainer:
         if not divisor or divisor <= 0:
             return
 
-        scale = 1.0 / divisor
-        parameters = model._layers.parameters() if hasattr(model, "_layers") else model.parameters()
-        with paddle.no_grad():
+        parameters = (
+            model._layers.parameters() if hasattr(model, "_layers") else model.parameters()
+        )
+
+        from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
+            DygraphShardingOptimizerV2,
+        )
+
+        candidates, queue, seen = [], [self.optimizer], set()
+        while queue:
+            opt = queue.pop()
+            if opt is None or id(opt) in seen:
+                continue
+            seen.add(id(opt))
+            if isinstance(opt, DygraphShardingOptimizerV2):
+                candidates.append(opt)
+            try:
+                fields = vars(opt)
+            except TypeError:
+                continue
+            for key in ("_inner_opt", "_opt", "inner_opt", "_optimizer"):
+                child = fields.get(key)
+                if child is not None:
+                    queue.append(child)
+        if len(candidates) > 1:
+            raise RuntimeError("multiple native sharding optimizers in deferred normalization")
+        inner = candidates[0] if candidates else None
+        native_v2 = inner is not None
+        # Native fused buffers average through AVG or SUM followed by 1/R.
+        # Restore the per-parameter sum before the deferred token division.
+        # Validate every mapping before changing any gradient.
+        pending = []
+        if native_v2:
+            param2bucket = vars(inner).get("param2bucket")
+            if not param2bucket:
+                raise RuntimeError("native DygraphShardingOptimizerV2 missing param2bucket")
             for p in parameters:
                 grad = getattr(p, "main_grad", None)
-                if grad is not None:
-                    grad.scale_(scale)
-                elif p.grad is not None:
-                    p.grad.scale_(scale)
+                if grad is None:
+                    grad = p.grad
+                if grad is None:
+                    continue
+                buckets = param2bucket.get(getattr(p, "name", None))
+                if not buckets:
+                    raise RuntimeError("grad-bearing param missing FusedCommBuffer mapping")
+                r = 1
+                for buf in buckets:
+                    g = getattr(buf, "_comm_group", None)
+                    if g is None:
+                        raise RuntimeError("invalid comm group on fused buffer")
+                    n = int(getattr(g, "nranks", 0) or 0)
+                    if n < 1:
+                        raise RuntimeError("invalid comm group nranks on fused buffer")
+                    r = max(r, n)
+                pending.append((grad, float(r) / float(divisor)))
+        else:
+            scale = float(1) / float(divisor)
+            for p in parameters:
+                grad = getattr(p, "main_grad", None)
+                if grad is None:
+                    grad = p.grad
+                if grad is None:
+                    continue
+                pending.append((grad, scale))
+
+        with paddle.no_grad():
+            for grad, scale in pending:
+                grad.scale_(scale)
 
     def optimizer_step(self, args, model, parameters_list=None):
         # When freeze_training is enabled, skip optimizer step and lr scheduler step
