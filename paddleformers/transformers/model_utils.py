@@ -4029,12 +4029,11 @@ def save_full_param(
 
     os.makedirs(save_dir, exist_ok=True)
 
-    use_pinned_arena = paddle.get_device().startswith("gpu")
+    use_pinned_arena = paddle.get_device().startswith("gpu") and max_shard_size_bytes < 5 * 1024**3
     if use_pinned_arena:
-        # Scoped to this save, so nothing stays page-locked between checkpoints. A few-GB
-        # arena is carved out of Paddle's already-warm pinned pool for free, while a much
-        # larger max_shard_size would fall through to a direct cudaHostAlloc costing
-        # seconds per rank.
+        # Keep the pinned staging buffer bounded. Larger shards use synchronous CPU
+        # copies so max_shard_size remains the file-sharding limit without allocating
+        # an equally large pinned arena.
         arena_cpu = core.eager.Tensor()
         arena_cpu.get_tensor()._set_dims([max_shard_size_bytes])
         arena_cpu.get_tensor()._mutable_data(paddle.CUDAPinnedPlace(), core.VarDesc.VarType.UINT8)
