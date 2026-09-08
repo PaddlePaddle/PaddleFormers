@@ -221,6 +221,29 @@ class Llama4ModelTest(ModelTesterMixin, unittest.TestCase):
         experts(hidden_states).sum().backward()
         self.assertGreater(paddle.count_nonzero(experts.gate_up_proj.grad).item(), 0)
 
+    def test_router_uses_checkpoint_compatible_weight(self):
+        config = self.model_tester.get_config()
+        model = Llama4ForCausalLM(config)
+        state_dict = model.state_dict()
+
+        self.assertIn("model.layers.0.feed_forward.router.weight", state_dict)
+        self.assertNotIn("model.layers.0.feed_forward.router.linear.weight", state_dict)
+        statements = Llama4ForCausalLM._gen_aoa_config(config)["aoa_statements"]
+        self.assertIn(
+            "model.layers.0.feed_forward.router.weight -> model.layers.0.feed_forward.router.weight",
+            statements,
+        )
+
+    def test_chunked_attention_rejects_non_eager_backend(self):
+        config = self.model_tester.get_config()
+        config._attn_implementation = "flashmask"
+        with self.assertRaisesRegex(ValueError, "requires.*eager"):
+            Llama4TextModel(config)
+
+    def test_layer_types_must_match_hidden_layers(self):
+        with self.assertRaisesRegex(ValueError, "num_hidden_layers"):
+            Llama4TextConfig(num_hidden_layers=2, layer_types=["full_attention"])
+
     def test_auto_model_mapping(self):
         config = self.model_tester.get_config()
         model = AutoModel.from_config(config)

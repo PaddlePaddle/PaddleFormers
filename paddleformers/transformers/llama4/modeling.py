@@ -195,10 +195,14 @@ class Llama4Router(nn.Layer):
         super().__init__()
         self.num_experts = config.num_local_experts
         self.top_k = config.num_experts_per_tok
-        self.linear = nn.Linear(config.hidden_size, config.num_local_experts, bias_attr=False)
+        self.weight = self.create_parameter(
+            shape=[config.num_local_experts, config.hidden_size],
+            dtype=paddle.get_default_dtype(),
+            default_initializer=nn.initializer.Normal(mean=0.0, std=config.initializer_range),
+        )
 
     def forward(self, hidden_states):
-        router_logits = self.linear(hidden_states)
+        router_logits = paddle.matmul(hidden_states, self.weight, transpose_y=True)
         router_top_value, router_indices = paddle.topk(router_logits, self.top_k, axis=1)
         router_scores = paddle.full_like(router_logits, float("-inf"))
         router_scores = paddle.put_along_axis(router_scores, router_indices, router_top_value, axis=1)
@@ -233,17 +237,6 @@ class Llama4TextMoe(nn.Layer):
         out = out + routed_out.reshape([self.num_experts, -1, self.hidden_dim]).sum(axis=0)
         out = out.reshape(list(batch_seq_shape) + [self.hidden_dim])
         return out, router_logits
-
-
-class Llama4TextMoeFused(nn.Layer):
-    """Fused MoE implementation for optimized inference."""
-
-    def __init__(self, config: Llama4TextConfig):
-        super().__init__()
-        self.moe = Llama4TextMoe(config)
-
-    def forward(self, hidden_states):
-        return self.moe(hidden_states)
 
 
 class Llama4TextAttention(nn.Layer):
@@ -427,10 +420,7 @@ class Llama4TextDecoderLayer(nn.Layer):
             hidden_states, _ = hidden_states
         hidden_states = residual + hidden_states.reshape(residual.shape)
 
-        outputs = (hidden_states,)
-        if len(outputs) == 1 and isinstance(outputs, tuple):
-            outputs = outputs[0]
-        return outputs
+        return hidden_states
 
 
 class Llama4TextPretrainedModel(PretrainedModel):
@@ -444,7 +434,6 @@ class Llama4TextPretrainedModel(PretrainedModel):
         "gate_proj",
         "up_proj",
         "down_proj",
-        "router.linear",
     ]
 
     @classmethod
@@ -474,7 +463,7 @@ class Llama4TextPretrainedModel(PretrainedModel):
 
             if layer_id in config.moe_layers:
                 aoa_statements.append(
-                    f"{hf_prefix}.feed_forward.router.weight^T -> {pd_prefix}.feed_forward.router.linear.weight"
+                    f"{hf_prefix}.feed_forward.router.weight -> {pd_prefix}.feed_forward.router.weight"
                 )
                 aoa_statements.extend(
                     [
@@ -535,7 +524,7 @@ class Llama4TextPretrainedModel(PretrainedModel):
 
             if layer_id in config.moe_layers:
                 aoa_statements.append(
-                    f"{pd_prefix}.feed_forward.router.linear.weight^T -> {hf_prefix}.feed_forward.router.weight"
+                    f"{pd_prefix}.feed_forward.router.weight -> {hf_prefix}.feed_forward.router.weight"
                 )
                 aoa_statements.extend(
                     [
@@ -571,6 +560,11 @@ class Llama4TextPretrainedModel(PretrainedModel):
 class Llama4TextModel(Llama4TextPretrainedModel):
     def __init__(self, config: Llama4TextConfig):
         super().__init__(config)
+        if config.attention_chunk_size is not None and config._attn_implementation != "eager":
+            raise ValueError(
+                "Llama4 chunked attention currently requires `_attn_implementation='eager'`; "
+                f"got {config._attn_implementation!r}."
+            )
         self.config = config
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size

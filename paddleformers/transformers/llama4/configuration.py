@@ -16,6 +16,17 @@ from ..configuration_utils import PretrainedConfig
 from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
 
+def _validate_layer_types(layer_types, num_hidden_layers):
+    allowed_layer_types = ("full_attention", "chunked_attention")
+    if not all(layer_type in allowed_layer_types for layer_type in layer_types):
+        raise ValueError(f"The `layer_types` entries must be in {allowed_layer_types}")
+    if len(layer_types) != num_hidden_layers:
+        raise ValueError(
+            f"`num_hidden_layers` ({num_hidden_layers}) must be equal to the number of layer types "
+            f"({len(layer_types)})"
+        )
+
+
 class Llama4VisionConfig(PretrainedConfig):
     model_type = "llama4_vision_model"
     base_config_key = "vision_config"
@@ -159,6 +170,7 @@ class Llama4TextConfig(PretrainedConfig):
                     for i in range(num_hidden_layers)
                 ]
             )
+        _validate_layer_types(self.layer_types, self.num_hidden_layers)
 
         self.rope_theta = kwargs.get("rope_theta", 500000.0)
         self.rope_scaling = kwargs.pop("rope_scaling", None)

@@ -149,6 +149,15 @@ class TestTemplate(unittest.TestCase):
             template.format_system.apply(content="system"),
             ["<|header_start|>system<|header_end|>\n\nsystem<|eot|>"],
         )
+        self.assertEqual(
+            template.format_observation.apply(content="tool output"),
+            [
+                (
+                    "<|header_start|>ipython<|header_end|>\n\ntool output<|eot|>"
+                    "<|header_start|>assistant<|header_end|>\n\n"
+                )
+            ],
+        )
         self.assertEqual(template.suffix, ["<|eot|>"])
 
 

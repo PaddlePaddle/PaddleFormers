@@ -331,7 +331,6 @@ class Llama4ForConditionalGeneration(PretrainedModel):
         "gate_proj",
         "up_proj",
         "down_proj",
-        "router.linear",
     ]
 
     @classmethod

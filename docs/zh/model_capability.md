@@ -14,7 +14,7 @@
 |Qwen2|✓|✓|✓|✓|✓|
 |Qwen3|✓|✓|✓|✓|✓|
 |Qwen3-Next|✓|✓|✓|✓|✓|
-|Llama Guard 4|x|✓|x|x|x|
+|Llama Guard 4|x|x|x|x|x|
 |🏛️ERNIE-4.5-VL|x|✓|✓|x|x|
 |🏛️PaddleOCR-VL|x|✓|✓|x|x|
 |Qwen2.5-VL|x|✓|✓|x|x|
