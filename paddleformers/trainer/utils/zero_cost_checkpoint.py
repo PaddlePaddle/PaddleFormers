@@ -2384,7 +2384,25 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
             if static_name in local_2d_names:
                 filtered[k] = sw
             elif static_name in all_2d_names:
-                continue
+                # A 2D parameter owned by another rank is bit-identical on this rank --
+                # _broadcast_2d_params() broadcasts them after every optimizer step -- so
+                # keep it as a local replica when replicate_saved_into_local is on.
+                # Without it these keys are single-replica in the metadata, and
+                # check_resumable_locally is a global AND, so one such key drags the whole
+                # model_state off the local fast path and forces a reshard on resume.
+                #
+                # This stays cheap only because the master-weight deletion below removes
+                # every bf16 trainable 2D parameter again; the fp32 ones (no master weight)
+                # are the only ones that reach the file. Do not move or relax that loop.
+                #
+                # Correctness note: replicas are only safe because these params are staged
+                # into MuonPerParamStagingBuffer with real element offsets. Before that,
+                # each was CUDA-IPC-shared on its own and _share_tensor_ipc_meta() reported
+                # offset 0 for all of them, so every param sharing a device allocation was
+                # dumped with the content of whichever one sat at the allocation base.
+                if not self.args.replicate_saved_into_local:
+                    continue
+                filtered[k] = sw
             elif static_name in all_1d_names:
                 filtered[k] = sw
             else:

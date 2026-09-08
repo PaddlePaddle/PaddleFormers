@@ -756,6 +756,22 @@ class TrainingArguments:
         },
     )
 
+    reshard_master_weight_device_gather: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "When rebuilding bf16 parameters from fp32 master weights on checkpoint resume, gather the "
+                "2D (whole-parameter-per-rank) Muon master weights entirely in device memory and write them "
+                "straight into their bf16 parameters, instead of staging every byte through host memory. "
+                "Only the 2D branch qualifies: each 2D parameter is owned whole by one rank, so a broadcast "
+                "bucket slice is already a complete parameter. 1D master weights are element-wise slices "
+                "that ShardingV2 must redistribute and concatenate on host first, so they keep the host "
+                "path regardless of this flag. Costs a little device memory (this rank's own contribution "
+                "stays resident until it is packed). Default False (host path)."
+            )
+        },
+    )
+
     tensor_model_parallel_size: int = field(
         default=-1,
         metadata={

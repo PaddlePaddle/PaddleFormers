@@ -1837,6 +1837,30 @@ def _get_muon_2d_param_names(muon_opt):
     return names
 
 
+def _restore_master_weights_2d_on_device(master_weights, group, param_sink):
+    """Restore 2D Muon master weights without ever touching host memory.
+
+    ``sharding_v1.restore`` only calls ``drop_rank()``, and the NodeModelState
+    round trip around it (pack_keys -> merge_from -> drop_rank -> unpack_keys)
+    maps a parameter name back to itself. The one thing it really does is force
+    every value to host via the ``.cpu()`` calls in pack_keys, which is exactly
+    what we are trying to avoid here, so bypass the container and gather
+    directly.
+
+    Only 2D parameters qualify: each is owned whole by one rank, so a bucket
+    slice is a complete parameter and can be written straight into its bf16
+    parameter. 1D parameters are element-wise slices that ShardingV2 has to
+    redistribute and concatenate first, and that machinery is host-resident, so
+    they stay on the original path.
+
+    Returns None when the switch is off, so the caller falls back to the host
+    path without duplicating the decision.
+    """
+    if not reshard_util.use_device_gather():
+        return None
+    return reshard_util.all_gather_on_device(master_weights, group, param_sink=param_sink)
+
+
 def _restore_master_weights_single(master_weights, model, optimizer, group, structure_name_map, restore_func):
     nms = reshard_util.NodeModelState(group=group)
     nms_tmp = reshard_util.NodeModelState(group=group)
