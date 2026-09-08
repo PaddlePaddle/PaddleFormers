@@ -592,14 +592,14 @@ def get_sharded_file_name(args, file_name, is_optimizer=False):
         dp_group = hcg.get_data_parallel_group()
         size = dp_group.nranks if not args.use_expert_parallel else 1
         shard_file = file_name.replace(
-            ".pdparams", f"-{args.logical_process_index + 1:05d}-of-{args.world_size//size:05d}.pdparams"
+            ".pdparams", f"-{args.logical_process_index + 1:05d}-of-{args.world_size // size:05d}.pdparams"
         )
         shard_file = shard_file.replace(
             ".safetensors",
-            f"-{args.logical_process_index + 1:05d}-of-{args.world_size//size:05d}.safetensors",
+            f"-{args.logical_process_index + 1:05d}-of-{args.world_size // size:05d}.safetensors",
         )
         shard_file = shard_file.replace(
-            ".pdopt", f"-{args.logical_process_index + 1:05d}-of-{args.world_size//size:05d}.pdopt"
+            ".pdopt", f"-{args.logical_process_index + 1:05d}-of-{args.world_size // size:05d}.pdopt"
         )
     return shard_file
 
@@ -721,11 +721,11 @@ def rename_shard_file(args, shard_file, file_name):
     sd_degree = args.sharding_parallel_size if args.sharding_parallel_size > 1 else 1
     shard_file = file_name.replace(
         ".pdparams",
-        f"-{new_index + 1:05d}-of-{args.world_size//sd_degree:05d}.pdparams",
+        f"-{new_index + 1:05d}-of-{args.world_size // sd_degree:05d}.pdparams",
     )
     shard_file = shard_file.replace(
         ".safetensors",
-        f"-{new_index + 1:05d}-of-{args.world_size//sd_degree:05d}.safetensors",
+        f"-{new_index + 1:05d}-of-{args.world_size // sd_degree:05d}.safetensors",
     )
     return shard_file
 
@@ -734,7 +734,7 @@ def is_sharding_split_param_mode(args):
     return args.sharding_parallel_size > 1 and ShardingOption.SHARD_OP in args.sharding and args.split_param
 
 
-def save_model_config(model_to_save, save_directory, save_to_hf=False):
+def save_model_config(model_to_save, save_directory, save_safetensors=False):
     """
     Save model config.
     """
@@ -762,7 +762,7 @@ def save_model_config(model_to_save, save_directory, save_to_hf=False):
     else:
         config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
 
-    config_to_save.save_pretrained(save_directory, save_to_hf=save_to_hf)
+    config_to_save.save_pretrained(save_directory, save_safetensors=save_safetensors)
     # save generation config
     if model_to_save.can_generate():
         model_to_save.generation_config.save_pretrained(save_directory)

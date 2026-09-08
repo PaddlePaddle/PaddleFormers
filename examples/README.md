@@ -120,14 +120,14 @@ paddleformers-cli export examples/config/run_export.yaml \
 
 ### Paddle 权重使用说明
 
-如需使用 **Paddle** 格式权重，需要在启动脚本中添加 `convert_from_hf=False` 和 `save_to_hf=False` 参数。
+如需使用 **Paddle** 格式权重，需要在启动脚本中添加 `convert_from_hf=False` 和 `save_safetensors=False` 参数。
 
 ```bash
 paddleformers-cli export examples/config/run_export.yaml \
     output_dir=${lora_model_path} \
     model_name_or_path=${base_model_path} \
     convert_from_hf=False \
-    save_to_hf=False
+    save_safetensors=False
 ```
 
 ## 5. PaddleNLP 权重转 HF 权重

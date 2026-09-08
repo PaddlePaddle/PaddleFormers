@@ -77,20 +77,22 @@ def common_test_save_and_load(config_first, config_second, model_class):
 
     with tempfile.TemporaryDirectory() as tempdir:
         # test load pdparams: model.pdparams
-        model_first.save_pretrained(save_dir=tempdir, save_to_hf=False, save_checkpoint_format="")
+        model_first.save_pretrained(save_dir=tempdir, save_safetensors=False, save_checkpoint_format="")
         common_test_load(model_class, model_first, config_second, tempdir)
 
         # test load shard pdparams: model-001-0f-008.pdparams
-        model_first.save_pretrained(tempdir, max_shard_size="5MB", save_to_hf=False, save_checkpoint_format="")
+        model_first.save_pretrained(tempdir, max_shard_size="5MB", save_safetensors=False, save_checkpoint_format="")
         common_test_load(model_class, model_first, config_second, tempdir)
 
         # test save safetensors: model.safetensors
-        model_first.save_pretrained(tempdir, safe_serialization=True, save_to_hf=False, save_checkpoint_format="")
+        model_first.save_pretrained(
+            tempdir, safe_serialization=True, save_safetensors=False, save_checkpoint_format=""
+        )
         common_test_load(model_class, model_first, config_second, tempdir)
 
         # test load shard safetensors: model-001-0f-008.safetensors
         model_first.save_pretrained(
-            tempdir, max_shard_size="5MB", safe_serialization=True, save_to_hf=False, save_checkpoint_format=""
+            tempdir, max_shard_size="5MB", safe_serialization=True, save_safetensors=False, save_checkpoint_format=""
         )
         common_test_load(model_class, model_first, config_second, tempdir)
 

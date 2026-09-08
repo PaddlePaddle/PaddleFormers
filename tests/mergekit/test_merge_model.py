@@ -31,10 +31,10 @@ class TestMergeModel(unittest.TestCase):
                 "PaddleFormers/tiny-random-qwen3", convert_from_hf=True, dtype="bfloat16", load_checkpoint_format=""
             )
             pd_path = os.path.join(tempdir, "pd_model")
-            model.save_pretrained(pd_path, save_to_hf=False, save_checkpoint_format="")
+            model.save_pretrained(pd_path, save_safetensors=False, save_checkpoint_format="")
             safe_path = os.path.join(tempdir, "safe_model")
             model.save_pretrained(
-                safe_path, safe_serialization="safetensors", save_to_hf=False, save_checkpoint_format=""
+                safe_path, safe_serialization="safetensors", save_safetensors=False, save_checkpoint_format=""
             )
 
             # test mix
@@ -79,10 +79,10 @@ class TestMergeModel(unittest.TestCase):
                 "PaddleFormers/tiny-random-qwen3", convert_from_hf=True, dtype="bfloat16", load_checkpoint_format=""
             )
             pd_path = os.path.join(tempdir, "pd_model")
-            model.save_pretrained(pd_path, save_to_hf=False, save_checkpoint_format="")
+            model.save_pretrained(pd_path, save_safetensors=False, save_checkpoint_format="")
             safe_path = os.path.join(tempdir, "safe_model")
             model.save_pretrained(
-                safe_path, safe_serialization="safetensors", save_to_hf=False, save_checkpoint_format=""
+                safe_path, safe_serialization="safetensors", save_safetensors=False, save_checkpoint_format=""
             )
 
             # test mix
@@ -176,7 +176,7 @@ class TestMergeModel(unittest.TestCase):
                 lora_model_path=lora_model_path,
                 output_path=output_path,
                 convert_from_hf=True,
-                save_to_hf=True,
+                save_safetensors=True,
             )
             mergekit = MergeModel(merge_config)
             mergekit.merge_model()
@@ -216,7 +216,7 @@ class TestMergeModel(unittest.TestCase):
                 lora_model_path=lora_model_path,
                 output_path=output_path,
                 convert_from_hf=True,
-                save_to_hf=True,
+                save_safetensors=True,
             )
             mergekit = MergeModel(merge_config)
             mergekit.merge_model()
@@ -297,7 +297,7 @@ class TestMergeModel(unittest.TestCase):
                 lora_model_path=lora_model_path,
                 output_path=output_path,
                 convert_from_hf=True,
-                save_to_hf=True,
+                save_safetensors=True,
                 merge_with_qdq_base_model=True,
             )
             mergekit = MergeModel(merge_config)

@@ -387,7 +387,7 @@ class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
     @slow
     def test_inference_no_attention(self):
         model = LlamaModel.from_pretrained(
-            "Paddleformers/tiny-random-llama", save_to_hf=False, save_checkpoint_format=""
+            "Paddleformers/tiny-random-llama", save_safetensors=False, save_checkpoint_format=""
         )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
@@ -413,7 +413,10 @@ class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
     @slow
     def test_inference_with_attention(self):
         model = LlamaModel.from_pretrained(
-            "Paddleformers/tiny-random-llama", download_hub="aistudio", save_to_hf=False, save_checkpoint_format=""
+            "Paddleformers/tiny-random-llama",
+            download_hub="aistudio",
+            save_safetensors=False,
+            save_checkpoint_format="",
         )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])

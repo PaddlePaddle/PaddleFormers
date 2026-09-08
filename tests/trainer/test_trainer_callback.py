@@ -19,10 +19,12 @@
 import shutil
 import tempfile
 import unittest
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from paddleformers.trainer import (
     DefaultFlowCallback,
+    InternalMedicineCallback,
     IntervalStrategy,
     PrinterCallback,
     ProgressCallback,
@@ -159,6 +161,35 @@ class TrainerCallbackTest(unittest.TestCase):
         expected_callbacks = DEFAULT_CALLBACKS.copy() + [PrinterCallback]
         self.check_callbacks_equality(trainer.callback_handler.callbacks, expected_callbacks)
 
+    def test_internal_medicine_skips_first_step_only_on_resume(self):
+        callback = InternalMedicineCallback(monitor_interval=5)
+        cold_monitor = Mock()
+        callback._monitor_dict = {"cold": cold_monitor}
+        callback._skip_first_step_on_resume(SimpleNamespace(global_step=0))
+        cold_monitor.skip_next_steps.assert_not_called()
+
+        resumed_monitor_a = Mock()
+        resumed_monitor_b = Mock()
+        callback._monitor_dict = {
+            "resumed_a": resumed_monitor_a,
+            "resumed_b": resumed_monitor_b,
+        }
+        callback._skip_first_step_on_resume(SimpleNamespace(global_step=123))
+        resumed_monitor_a.skip_next_steps.assert_called_once_with(1)
+        resumed_monitor_b.skip_next_steps.assert_called_once_with(1)
+
+    def test_internal_medicine_does_not_gather_unsampled_step(self):
+        callback = InternalMedicineCallback(monitor_interval=5)
+        callback._setup_done = True
+        callback._monitor_dict = {"monitor": SimpleNamespace(sampled_this_step=False)}
+        callback._training_logs = Mock()
+        callback._maybe_write_jsonl = Mock()
+
+        callback.on_log(None, SimpleNamespace(global_step=124), None)
+
+        callback._training_logs.gather_and_aggregate.assert_not_called()
+        callback._maybe_write_jsonl.assert_not_called()
+
     def test_add_remove_callback(self):
         expected_callbacks = DEFAULT_CALLBACKS.copy() + [ProgressCallback]
         trainer = self.get_trainer()
@@ -225,17 +256,19 @@ class TrainerCallbackTest(unittest.TestCase):
         expected_callbacks = DEFAULT_CALLBACKS.copy() + [PrinterCallback] + [MyTestTrainerCallback]
         self.check_callbacks_equality(trainer.callback_handler.callbacks, expected_callbacks)
 
-        trainer = self.get_trainer(callbacks=[MyTestTrainerCallback], save_steps=5)
+        trainer = self.get_trainer(callbacks=[MyTestTrainerCallback], logging_steps=500, save_steps=5)
         trainer.train()
         events = trainer.callback_handler.callbacks[-2].events
         self.assertEqual(events, self.get_expected_events(trainer))
 
-        trainer = self.get_trainer(callbacks=[MyTestTrainerCallback], eval_steps=5, evaluation_strategy="steps")
+        trainer = self.get_trainer(
+            callbacks=[MyTestTrainerCallback], logging_steps=500, eval_steps=5, evaluation_strategy="steps"
+        )
         trainer.train()
         events = trainer.callback_handler.callbacks[-2].events
         self.assertEqual(events, self.get_expected_events(trainer))
 
-        trainer = self.get_trainer(callbacks=[MyTestTrainerCallback], evaluation_strategy="epoch")
+        trainer = self.get_trainer(callbacks=[MyTestTrainerCallback], logging_steps=500, evaluation_strategy="epoch")
         trainer.train()
         events = trainer.callback_handler.callbacks[-2].events
         self.assertEqual(events, self.get_expected_events(trainer))
@@ -256,6 +289,7 @@ class TrainerCallbackTest(unittest.TestCase):
         # from paddleformers import transformers
         with patch("paddleformers.trainer.logger.warning") as warn_mock:
             trainer = self.get_trainer(
+                logging_steps=500,
                 callbacks=[MyTestTrainerCallback, MyTestTrainerCallback],
             )
             assert str(MyTestTrainerCallback) in warn_mock.call_args[0][0]
