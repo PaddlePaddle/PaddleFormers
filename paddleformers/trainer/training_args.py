@@ -1300,6 +1300,10 @@ class TrainingArguments:
     mtp_num_layers: int = field(
         default=0, metadata={"help": "Whether to use Autoregressive MTP Training, activate if > 1."}
     )
+    mtp_loss_scaling_factor: Optional[float] = field(
+        default=None,
+        metadata={"help": "Override the MTP loss weight; None preserves the model configuration default."},
+    )
     profile: bool = field(default=False, metadata={"help": "Enable nsys profiling."})
     profile_step_start: int = field(default=10, metadata={"help": "Step to start nsys profiling."})
     profile_step_end: int = field(default=12, metadata={"help": "Step to end nsys profiling."})
