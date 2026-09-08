@@ -32,6 +32,83 @@ from typing import Dict, Iterable, List, Optional, Tuple
 HF_CHECKPOINT_PREFIX = "hf_checkpoint"
 
 
+def hf_export_provenance(config, aoa_config, output_dir, global_step=None):
+    """Snapshot the live provider inputs used for this export, not config_to_save.
+
+    This describes export preparation, not successful checkpoint completion.
+    Source identity and terminal status belong to the enclosing invocation.
+    """
+    fields = (
+        "num_hidden_layers",
+        "num_nextn_predict_layers",
+        "mtp_num_layers",
+        "n_routed_experts",
+        "num_experts",
+        "n_shared_experts",
+        "multi_latent_attention",
+        "index_n_heads",
+        "index_head_dim",
+        "index_topk",
+        "indexer_types",
+        "dsa_index_n_heads",
+        "dsa_index_head_dim",
+        "dsa_index_topk",
+        "dsa_indexer_types",
+        "dsa_index_share_for_mtp_iteration",
+        "mtp_loss_scaling_factor",
+        "moe_expert_fusion",
+        "using_sonic_moe",
+        "first_k_dense_replace",
+        "num_attention_heads",
+        "num_key_value_heads",
+        "hidden_size",
+        "moe_intermediate_size",
+        "q_lora_rank",
+        "kv_lora_rank",
+        "qk_nope_head_dim",
+        "qk_rope_head_dim",
+        "v_head_dim",
+        "tensor_model_parallel_size",
+        "pipeline_model_parallel_size",
+        "expert_model_parallel_size",
+        "expert_tensor_parallel_size",
+        "sequence_parallel",
+        "params_dtype",
+        "dtype",
+        "use_bias",
+        "use_qk_norm",
+        "gpt_model_use_experimental_version",
+        "moe_routed_expert_use_bias",
+    )
+
+    def json_value(value):
+        if value is None or isinstance(value, (bool, int, float, str)):
+            return value
+        if isinstance(value, (list, tuple)):
+            return [json_value(item) for item in value]
+        if isinstance(value, dict):
+            return {str(key): json_value(item) for key, item in value.items()}
+        return str(value)
+
+    values = {}
+    missing = []
+    for field in fields:
+        if hasattr(config, field):
+            values[field] = json_value(getattr(config, field))
+        else:
+            missing.append(field)
+    return {
+        "schema": "paddleformers-hf-export/v1",
+        "stage": "prepared",
+        "provider_class": f"{type(config).__module__}.{type(config).__qualname__}",
+        "provider_config": values,
+        "missing_provider_fields": missing,
+        "aoa_config": json_value(aoa_config),
+        "output_dir": os.path.abspath(output_dir),
+        "global_step": global_step,
+    }
+
+
 def resolve_hf_checkpoint_dir(
     output_dir: str,
     global_step: int,

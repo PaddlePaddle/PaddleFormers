@@ -2198,16 +2198,104 @@ class Trainer:
                 raise ValueError(f"unsupported type: {type(dtensors)}")
         return global_micro_batchs
 
+    def _deferred_token_replica_group(self):
+        """Return the constructed group holding the leftover data replicas."""
+        hcg = getattr(self, "hcg", None)
+        if hcg is None:
+            return getattr(self, "dp_group", None)
+        try:
+            group = hcg.get_sharding_parallel_group()
+            if group is not None and getattr(group, "nranks", 1) > 1:
+                return group
+        except Exception:
+            pass
+        try:
+            from paddlefleet.parallel_state import get_data_parallel_group
+
+            group = get_data_parallel_group(check_initialized=False)
+            if group is not None and getattr(group, "nranks", 1) > 1:
+                return group
+        except Exception:
+            pass
+        return getattr(self, "dp_group", None)
+
+    def _requires_native_token_weighted_logging(self):
+        if os.environ.get("FLAGS_use_accuracy_compatible_kernel", "0") != "1":
+            return False
+        # Pipeline accumulation buffers several calls before computing MAIN.
+        # The single-microbatch receipt is valid only without that buffering.
+        if self.args.gradient_accumulation_steps != 1:
+            return False
+        from paddlefleet.ieee_kernel import ieee_kernel_enabled
+
+        if not ieee_kernel_enabled():
+            return False
+        group = self._deferred_token_replica_group()
+        return group is not None and getattr(group, "nranks", 1) > 1
+
+    def _note_native_microbatch_loss(self):
+        """Carry the MAIN numerator once from its actual PP owner to each stage."""
+        from paddlefleet.models.common.language_loss.language_loss import (
+            consume_main_reporting_microbatch,
+            get_local_main_valid_tokens,
+        )
+        from paddlefleet.parallel_state import get_pipeline_model_parallel_group
+
+        local_count = get_local_main_valid_tokens()
+        count = paddle.full([], 0.0 if local_count is None else float(local_count), dtype="float32")
+        pp_group = get_pipeline_model_parallel_group(check_initialized=False)
+        if pp_group is not None and getattr(pp_group, "nranks", 1) > 1:
+            paddle.distributed.all_reduce(count, op=paddle.distributed.ReduceOp.MAX, group=pp_group)
+        count_value = float(count.item())
+        step = self.state.global_step + 1
+        microbatch = self._reporting_microbatch
+        receipt = consume_main_reporting_microbatch(step, microbatch)
+        rank = paddle.distributed.get_rank()
+        owner = pp_group.ranks[-1] if pp_group is not None else rank
+        if (receipt is not None) != (rank == owner):
+            raise RuntimeError("MAIN numerator must exist only on the actual PP loss owner")
+        if count_value <= 0:
+            raise RuntimeError("MAIN reporting requires a positive valid-token count")
+        if receipt is not None:
+            if receipt["step"] != step or receipt["microbatch"] != microbatch or receipt["count"] != count_value:
+                raise RuntimeError("MAIN numerator step/microbatch/count mismatch")
+            numerator = receipt["sum"]
+        else:
+            numerator = paddle.full([], 0.0, dtype="float32")
+        if pp_group is not None and getattr(pp_group, "nranks", 1) > 1:
+            paddle.distributed.broadcast(numerator, src=owner, group=pp_group)
+        if getattr(self, "_native_log_numerator", None) is None:
+            self._native_log_numerator = numerator
+            self._native_log_count = count
+        else:
+            self._native_log_numerator = self._native_log_numerator + numerator
+            self._native_log_count = self._native_log_count + count
+
+    def _native_token_weighted_log_loss(self):
+        """Reduce native numerators and MAIN counts over the actual data replicas."""
+        group = self._deferred_token_replica_group()
+        numerator = getattr(self, "_native_log_numerator", None)
+        count = getattr(self, "_native_log_count", None)
+        if numerator is None or count is None:
+            numerator = paddle.full([], 0.0, dtype="float32")
+            count = paddle.full([], 0.0, dtype="float32")
+        paddle.distributed.all_reduce(numerator, op=paddle.distributed.ReduceOp.SUM, group=group)
+        paddle.distributed.all_reduce(count, op=paddle.distributed.ReduceOp.SUM, group=group)
+        self._native_log_numerator = None
+        self._native_log_count = None
+        count_value = float(count.item())
+        if count_value <= 0:
+            raise RuntimeError("Native token-weighted reporting has no valid MAIN tokens")
+        return numerator.cast("float32") / paddle.full([], count_value, dtype="float32")
+
     def _resolve_deferred_token_normalization(self):
-        """Broadcast the deferred token-count divisor to every pipeline rank.
+        """Resolve MAIN tokens with PP MAX, then leftover-replica SUM.
 
-        Only the last PP stage computes the loss. MAX all-reduce: the stage
-        that registered a divisor contributes it, others contribute 0.
-
-        Skip when FLAGS_use_accuracy_compatible_kernel is off: DeferToken
-        never registers a divisor on that path, and a CPU float64
-        all-reduce still constructs an NCCL collective. That aborted Qwen
-        SFT and GLM-4.5 LoRA on H20-multi with 'unhandled cuda error'.
+        The last PP stage registers its replica's MAIN count. Broadcast that
+        count to the other PP stages before summing over data replicas; TP,
+        EP and PP ranks must not be counted as additional data replicas.
+        Keep the compatibility guard and the device allocation: ordinary
+        losses do not publish a deferred divisor, and NCCL needs GPU storage.
         """
         try:
             from paddlefleet.models.common.language_loss.language_loss import (
@@ -2221,19 +2309,28 @@ class Trainer:
             return
 
         divisor = get_pending_gradient_divisor()
-        if self.args.pipeline_model_parallel_size <= 1 or not paddle.distributed.is_initialized():
+        if not paddle.distributed.is_initialized():
             return
 
-        from paddlefleet.parallel_state import get_pipeline_model_parallel_group
+        from paddlefleet.parallel_state import (
+            get_data_parallel_group,
+            get_pipeline_model_parallel_group,
+        )
 
         pp_group = get_pipeline_model_parallel_group(check_initialized=False)
-        if pp_group is None or pp_group.nranks <= 1:
+        replica_group = self._deferred_token_replica_group()
+        if replica_group is None:
+            replica_group = get_data_parallel_group(check_initialized=False)
+        pp_collective = pp_group is not None and getattr(pp_group, "nranks", 1) > 1
+        replica_collective = replica_group is not None and getattr(replica_group, "nranks", 1) > 1
+        if not pp_collective and not replica_collective:
             return
 
-        # Allocate on the current training device. paddle.to_tensor(list)
-        # of Python floats is CPU-only and NCCL rejects that buffer.
         holder = paddle.full([1], 0.0 if divisor is None else float(divisor), dtype="float64")
-        paddle.distributed.all_reduce(holder, op=paddle.distributed.ReduceOp.MAX, group=pp_group)
+        if pp_collective:
+            paddle.distributed.all_reduce(holder, op=paddle.distributed.ReduceOp.MAX, group=pp_group)
+        if replica_collective:
+            paddle.distributed.all_reduce(holder, op=paddle.distributed.ReduceOp.SUM, group=replica_group)
         value = float(holder.numpy()[0])
         if value > 0:
             set_pending_gradient_divisor(value)
@@ -2704,6 +2801,14 @@ class Trainer:
                             self.trained_effective_tokens += (inputs["input_ids"] != self.args.pad_token_id).sum()
                             self.trained_tokens += inputs["input_ids"].numel()
 
+                    native_reporting = self._requires_native_token_weighted_logging()
+                    if native_reporting:
+                        from paddlefleet.models.common.language_loss.language_loss import (
+                            begin_main_reporting_microbatch,
+                        )
+
+                        self._reporting_microbatch = step_control + 1
+                        begin_main_reporting_microbatch(self.state.global_step + 1, self._reporting_microbatch)
                     if not self.args.enable_auto_parallel:
                         with sync_context:
                             if "step_control" in inspect.signature(self.training_step).parameters:
@@ -2718,6 +2823,9 @@ class Trainer:
                             tr_loss += tr_loss_step
                     else:
                         tr_loss += tr_loss_step
+
+                    if native_reporting:
+                        self._note_native_microbatch_loss()
 
                     def fused_allreduce_gradients_no_sync(paramlist, hcg):
                         paramlist = list(paramlist)
@@ -3104,14 +3212,16 @@ class Trainer:
             logs: Dict[str, float] = {}
             num_steps = self.state.global_step - self._globalstep_last_logged - self._skip_steps_since_last_logged
             self._skip_steps_since_last_logged = 0
-            # all_gather + mean() to get average loss over all processes
-            avg_loss = self._nested_gather(tr_loss).mean()
-            tr_loss_scalar = self._get_item_from_loss(avg_loss)
-
-            # reset tr_loss to zero
+            if self._requires_native_token_weighted_logging():
+                avg_loss = self._native_token_weighted_log_loss()
+                raw_loss = 0.0 if num_steps == 0 else self._get_item_from_loss(avg_loss)
+                # Preserve the existing accumulated-loss sum contract.
+                tr_loss_scalar = raw_loss * num_steps
+            else:
+                avg_loss = self._nested_gather(tr_loss).mean()
+                tr_loss_scalar = self._get_item_from_loss(avg_loss)
+                raw_loss = 0.0 if num_steps == 0 else tr_loss_scalar / num_steps
             tr_loss.subtract_(tr_loss)
-            # set loss to zero if all steps are skipped since last log
-            raw_loss = 0.0 if num_steps == 0 else tr_loss_scalar / num_steps
             logs["loss"] = round(raw_loss, 8)
 
             logs["learning_rate"] = float("{0:.3e}".format(self._get_learning_rate()))
@@ -5208,6 +5318,7 @@ class Trainer:
                             is_main_process,
                             save_checkpoint_format=self.args.save_checkpoint_format,
                             memory_growth_threshold=memory_growth_threshold_bytes,
+                            export_global_step=self.state.global_step,
                         )
                 else:
                     self._save_flex_model_state(output_dir)
