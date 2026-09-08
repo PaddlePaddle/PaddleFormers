@@ -22,7 +22,10 @@ import paddle.nn.functional as F
 from paddleformers.nn.norm import RMSNorm
 from paddleformers.transformers import MiniMaxConfig, MiniMaxForCausalLM, MiniMaxModel
 from paddleformers.transformers.auto.modeling import AutoModelForCausalLM
-from paddleformers.transformers.minimax.modeling import MiniMaxLightningAttention
+from paddleformers.transformers.minimax.modeling import (
+    MiniMaxLightningAttention,
+    MiniMaxSparseMoeBlock,
+)
 from tests.testing_utils import gpu_device_initializer
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_modeling_common import (
@@ -217,6 +220,44 @@ class MiniMaxModelTest(ModelTesterMixin, unittest.TestCase):
             [self.model_tester.batch_size, self.model_tester.seq_length, self.model_tester.hidden_size],
         )
         self.assertEqual(mock_recompute.call_count, config.num_hidden_layers)
+
+    def test_sparse_moe_visits_all_experts_in_fixed_order(self):
+        config = self.model_tester.get_config()
+        block = MiniMaxSparseMoeBlock(config)
+        hidden_states = paddle.randn([1, 2, config.hidden_size])
+        router_logits = paddle.full([2, config.num_local_experts], -100.0)
+        router_logits[:, : config.num_experts_per_tok] = 100.0
+
+        expert_calls = []
+        original_forwards = [expert.forward for expert in block.experts]
+
+        def record_expert(expert_idx):
+            def forward(inputs):
+                expert_calls.append(expert_idx)
+                return original_forwards[expert_idx](inputs)
+
+            return forward
+
+        with patch.object(block.gate, "forward", return_value=router_logits):
+            for expert_idx, expert in enumerate(block.experts):
+                expert.forward = record_expert(expert_idx)
+            output = block(hidden_states)
+
+        self.assertEqual(expert_calls, list(range(config.num_local_experts)))
+        self.assertEqual(output.shape, hidden_states.shape)
+
+    def test_linear_attention_accepts_3d_causal_mask(self):
+        config = self.model_tester.get_config()
+        config.num_hidden_layers = 1
+        config.layer_types = ["linear_attention"]
+        model = MiniMaxModel(config).eval()
+        input_ids = ids_tensor([1, self.model_tester.seq_length], self.model_tester.vocab_size, dtype=paddle.int64)
+        attention_mask = paddle.tril(
+            paddle.ones([1, self.model_tester.seq_length, self.model_tester.seq_length], dtype=paddle.bool)
+        )
+
+        output = model(input_ids, attention_mask=attention_mask, return_dict=True)
+        self.assertEqual(output.last_hidden_state.shape, [1, self.model_tester.seq_length, config.hidden_size])
 
     def test_transpose_weight_keys_match_minimax_modules(self):
         self.assertNotIn("gate_up_proj", MiniMaxForCausalLM.transpose_weight_keys)

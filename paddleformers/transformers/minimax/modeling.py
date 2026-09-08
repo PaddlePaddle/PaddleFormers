@@ -749,24 +749,24 @@ class MiniMaxSparseMoeBlock(nn.Layer):
         with paddle.no_grad():
             expert_mask = F.one_hot(selected_experts, num_classes=self.num_experts)
             expert_mask = expert_mask.transpose([2, 1, 0])
-            expert_indices = [
-                int(expert_idx[0].item())
-                for expert_idx in paddle.greater(
-                    expert_mask.sum(axis=(-1, -2)),
-                    paddle.to_tensor(0, dtype="int64"),
-                ).nonzero()
-            ]
 
-        for expert_idx in expert_indices:
+        # Stage3 shards expert parameters. Every rank must therefore visit all experts in the
+        # same order, including experts that receive no local tokens, to keep collectives aligned.
+        for expert_idx in range(self.num_experts):
             top_k_pos, token_idx = paddle.where(expert_mask[expert_idx])
             current_state = hidden_states_flat[token_idx]
             current_hidden_states = self.experts[expert_idx](current_state)
-            current_hidden_states = current_hidden_states * routing_weights[token_idx, top_k_pos, None]
-            final_hidden_states = final_hidden_states.index_add_(
-                axis=0,
-                index=token_idx,
-                value=current_hidden_states.astype(final_hidden_states.dtype),
-            )
+            if token_idx.shape[0] > 0:
+                current_hidden_states = current_hidden_states * routing_weights[token_idx, top_k_pos, None]
+                final_hidden_states = final_hidden_states.index_add_(
+                    axis=0,
+                    index=token_idx,
+                    value=current_hidden_states.astype(final_hidden_states.dtype),
+                )
+            else:
+                final_hidden_states = (
+                    final_hidden_states + current_hidden_states.sum().astype(final_hidden_states.dtype) * 0.0
+                )
 
         return final_hidden_states.reshape([batch_size, sequence_length, hidden_dim])
 
@@ -1099,6 +1099,10 @@ class MiniMaxModel(MiniMaxPretrainedModel):
             ).unsqueeze(0)
             position_ids = position_ids.expand([bsz, -1])
 
+        linear_attention_mask = attention_mask
+        if attention_mask is not None and attention_mask.ndim == 3:
+            linear_attention_mask = attention_mask.unsqueeze(1)
+
         mask_kwargs = {
             "config": self.config,
             "inputs_embeds": inputs_embeds,
@@ -1122,12 +1126,13 @@ class MiniMaxModel(MiniMaxPretrainedModel):
                 input_attention_mask = causal_mask
                 input_mask_startend = attn_mask_startend_row_indices
             else:
-                input_attention_mask = attention_mask
+                input_attention_mask = linear_attention_mask
                 input_mask_startend = attn_mask_startend_row_indices
 
             has_gradient = not hidden_states.stop_gradient
             if (
-                self.config.recompute_granularity == "full"
+                self.training
+                and self.config.recompute_granularity == "full"
                 and self.config.recompute_method == "uniform"
                 and self.config.recompute_num_layers == 1
                 and has_gradient
