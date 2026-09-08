@@ -277,7 +277,8 @@ class Phi4MultimodalVisionEncoder(nn.Layer):
                 all_hidden_states = all_hidden_states + (hidden_states,)
             has_gradient = not hidden_states.stop_gradient
             if (
-                self.config.recompute_granularity == "full"
+                self.training
+                and self.config.recompute_granularity == "full"
                 and self.config.recompute_method == "uniform"
                 and self.config.recompute_num_layers == 1
                 and has_gradient
@@ -972,7 +973,8 @@ class Phi4MultimodalAudioModel(_Phi4MultimodalComponentPreTrainedModel):
         for layer in self.encoders:
             has_gradient = not hidden_states.stop_gradient
             if (
-                self.config.recompute_granularity == "full"
+                self.training
+                and self.config.recompute_granularity == "full"
                 and self.config.recompute_method == "uniform"
                 and self.config.recompute_num_layers == 1
                 and has_gradient
@@ -1729,7 +1731,8 @@ class Phi4MultimodalModel(Phi4MultimodalPreTrainedModel):
 
                 has_gradient = not hidden_states.stop_gradient
                 if (
-                    self.config.recompute_granularity == "full"
+                    self.training
+                    and self.config.recompute_granularity == "full"
                     and self.config.recompute_method == "uniform"
                     and self.config.recompute_num_layers == 1
                     and has_gradient
