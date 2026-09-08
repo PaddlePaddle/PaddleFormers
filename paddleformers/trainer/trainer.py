@@ -74,7 +74,7 @@ from paddle.distributed.fleet.meta_parallel.sharding.group_sharded_optimizer_sta
 from paddle.distributed.fleet.utils.hybrid_parallel_util import (
     obtain_optimizer_parameters_list,
 )
-from paddle.distributed.fsdp.fully_shard import fully_shard
+from paddle.distributed.fsdp.fully_shard import MixedPrecisionPolicy, fully_shard
 
 _obtain_optimizer_parameters_list = obtain_optimizer_parameters_list
 
@@ -102,6 +102,10 @@ from ..data import (
 )
 from ..peft import LoRAModel
 from ..peft.lora import QuantizationLoRABaseLinear
+from ..quantization.hf_checkpoint import (
+    build_hf_dequant_load_transform,
+    hf_checkpoint_is_quantized,
+)
 from ..quantization.quantization_linear import (
     ColumnParallelQuantizationLinear,
     QuantizationLinear,
@@ -197,6 +201,7 @@ from .trainer_utils import (  # set_hyrbid_parallel_seed,
     _get_muon_2d_param_names,
     _insert_sync,
     _is_muon_sharding_optimizer,
+    _restore_master_weights_2d_on_device,
     _restore_master_weights_single,
     _unwrap_muon_sharding_optimizer,
     download_recovery_ckpt_from_pdc,
@@ -361,14 +366,17 @@ class Trainer:
             args = TrainingArguments(output_dir=output_dir)
 
         self.args = args
+        _model_config = getattr(model, "config", None)
+        if getattr(_model_config, "use_accuracy_compatible", False) and getattr(self.args, "max_grad_norm", 0) > 0:
+            self.args.max_grad_norm = 0.0
         # Apply the reshard broadcast toggle once here: Trainer.__init__ is the
         # single point every reshard/EMA path runs after, so all_gather_state_dict
-        # need not thread the flag and no construction site is missed (incl. the
-        # non-ZCC EMA assembler that bypasses create_ema_state_assembler). Difers
-        reshard_util.set_bucketed_broadcast(getattr(self.args, "use_reshard_bucketed_broadcast", False))
+        # need not thread the value and no construction site is missed (incl. the
+        # non-ZCC EMA assembler that bypasses create_ema_state_assembler).
         reshard_util.set_broadcast_max_chunk_bytes(
             int(getattr(self.args, "reshard_bucketed_broadcast_max_chunk_gb", 2.0) * (1024**3))
         )
+        reshard_util.set_device_gather(getattr(self.args, "reshard_master_weight_device_gather", False))
         self.is_in_train = False
         # self.do_grad_scaling = args.fp16
 
@@ -526,6 +534,7 @@ class Trainer:
                     monitors=_im_monitors,
                     monitor_interval=_im_interval,
                     qk_row_stride=getattr(self.args, "internal_medicine_qk_row_stride", 1),
+                    debug_mode=getattr(self.args, "internal_medicine_debug_mode", False),
                     log_dir=_im_log_dir,
                 )
             )
@@ -702,7 +711,7 @@ class Trainer:
             self.scaler = fleet.distributed_scaler(self.scaler)
         elif self.sharding is not None:
             if self.amp_dtype == "float16" or self.amp_dtype == "bfloat16":
-                if ShardingOption.SHARD_OP in self.args.sharding:
+                if ShardingOption.SHARD_OP in self.args.sharding or ShardingOption.FSDP in self.args.sharding:
                     if self.args.amp_master_grad:
                         mix_precision_utils.MixPrecisionScaler(self.scaler)  # return value has no use
                     self.scaler = fleet.distributed_scaler(self.scaler)
@@ -1257,6 +1266,17 @@ class Trainer:
 
         if self.args.load_from_hf:
             hf_aoa_config = self.model._gen_aoa_config(self.model.config)
+            # The checkpoint's own config.json states whether its weights are
+            # quantized, so nothing has to declare it through an argument.
+            hf_quan_config = None
+            if hf_checkpoint_is_quantized(resume_from_checkpoint):
+                gen_hf_quan_config = getattr(self.model, "_gen_hf_quan_config", None)
+                if not callable(gen_hf_quan_config):
+                    raise ValueError(
+                        f"Checkpoint '{resume_from_checkpoint}' declares a quantization_config, but "
+                        f"{type(self.model).__name__} defines no _gen_hf_quan_config() to describe its layout."
+                    )
+                hf_quan_config = gen_hf_quan_config()
             assert (
                 self.args.ignore_load_lr_and_optim
             ), "Loading from HuggingFace format is only allowed when learning rate and optimizer state are ignored."
@@ -1273,6 +1293,13 @@ class Trainer:
             except Exception as e:
                 logger.error(f"Failed to delete {metadata_path}: {e}")
 
+            load_transform = build_hf_dequant_load_transform(
+                checkpoint_path=resume_from_checkpoint,
+                quan_config=hf_quan_config,
+            )
+            # Only forward load_transform when a transform exists, so that a
+            # Paddle without the keyword keeps working for unquantized loads.
+            load_transform_kwargs = {} if load_transform is None else {"load_transform": load_transform}
             dist.load_state_dict(
                 model_sharded_state_dict,
                 resume_from_checkpoint,
@@ -1282,6 +1309,7 @@ class Trainer:
                 process_group=None,
                 comm_method=flex_ckpt_comm_method,
                 worker_groups=worker_groups,
+                **load_transform_kwargs,
             )
             if hasattr(self.model, "_synchronize_shared_weights"):
                 self.model._synchronize_shared_weights()
@@ -1375,6 +1403,8 @@ class Trainer:
             if self.args.tensorwise_offload_optimizer:
                 logger.info("Offloading optimizer state for FC...")
                 for k, v in optimizer_sharded_state_dict.items():
+                    if v.local_tensor.numel() <= 1:
+                        continue
                     offload(v.local_tensor)
                 del opt_states, master_weights, optimizer_sharded_state_dict
 
@@ -1463,32 +1493,47 @@ class Trainer:
                 model_state_dict = self.model.state_dict()
                 for key, param in model_state_dict.items():
                     if param.name in master_weights and param.dtype == paddle.bfloat16:
+                        value = master_weights[param.name]
                         logger.debug(
                             f"key {key}, convert master weights {param.name} "
-                            f"shape {master_weights[param.name].shape} to param "
+                            f"shape {value.shape} to param "
                             f"{param.name} shape{param.shape}"
                         )
-                        assert (
-                            param.shape == master_weights[param.name].shape
-                        ), f"got {param.shape} vs {master_weights[param.name].shape}"
-                        master_weight = paddle.reshape(master_weights[param.name], param.shape)
+                        assert param.shape == value.shape, f"got {param.shape} vs {value.shape}"
+                        if isinstance(value, reshard_util.AssignedMasterWeight):
+                            # Already written straight into this parameter by the
+                            # device gather, while the buffer was still on device.
+                            # Keep walking the loop anyway so this stays the single
+                            # place that checks every parameter got a master weight
+                            # of the right shape.
+                            continue
+                        master_weight = paddle.reshape(value, param.shape)
                         paddle.assign(paddle.cast(to_device(master_weight), paddle.bfloat16), model_state_dict[key])
 
             def recover_params_from_master_weight(opt_state_dict, group):
                 master_weights = opt_state_dict.get("master_weights", {})
                 tmp = OrderedDict()
                 master_weights, tmp = (tmp, master_weights)
-                # cast to bf16 and move to cpu
+
+                muon_opt = _unwrap_muon_sharding_optimizer(self.optimizer)
+                param_2d_names = _get_muon_2d_param_names(muon_opt) if muon_opt is not None else set()
+
+                # Cast to bf16. 2D Muon parameters stay on device: each is owned
+                # whole by one rank, so nothing has to be reassembled on host and
+                # _restore_master_weights_2d_on_device can gather them in place.
+                # 1D parameters go through ShardingV2's redistribute-and-
+                # concatenate, which is host-resident, so they move to host here.
                 for k, v in tmp.items():
                     name = v.name
-                    master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
+                    if k in param_2d_names and reshard_util.use_device_gather():
+                        master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16)
+                    else:
+                        master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
                     master_weights[k].name = name
 
                 structure_name_map = {k: v.name for (k, v) in self.model.state_dict().items()}
 
-                muon_opt = _unwrap_muon_sharding_optimizer(self.optimizer)
                 if muon_opt is not None:
-                    param_2d_names = _get_muon_2d_param_names(muon_opt)
                     logger.debug(f"Muon recovery: {len(param_2d_names)} 2D params detected")
 
                     mw_2d = OrderedDict()
@@ -1500,14 +1545,23 @@ class Trainer:
                             mw_1d[k] = v
 
                     all_master_weights = OrderedDict()
-                    restored_2d = _restore_master_weights_single(
-                        mw_2d,
-                        self.model,
-                        self.optimizer,
-                        group,
-                        structure_name_map,
-                        reshard_util.sharding_v1.restore,
-                    )
+                    # Destinations for the device gather to write into, so the
+                    # gathered 2D union never needs host storage. Passed as an
+                    # argument rather than module state: a leaked sink would make a
+                    # later reshard write into parameters from this load.
+                    device_param_sink = {
+                        p.name: p for p in self.model.state_dict().values() if p.dtype == paddle.bfloat16
+                    }
+                    restored_2d = _restore_master_weights_2d_on_device(mw_2d, group, device_param_sink)
+                    if restored_2d is None:  # reshard_master_weight_device_gather=False
+                        restored_2d = _restore_master_weights_single(
+                            mw_2d,
+                            self.model,
+                            self.optimizer,
+                            group,
+                            structure_name_map,
+                            reshard_util.sharding_v1.restore,
+                        )
                     all_master_weights.update(restored_2d)
 
                     restored_1d = _restore_master_weights_single(
@@ -3585,11 +3639,11 @@ class Trainer:
             optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
             if self.args.optim == OptimizerNames.ADAMW_CUSTOM:
                 optimizer_kwargs["quantization_config"] = self.model.config.quantization_config
-                optimizer_kwargs["use_lowprecision_moment"] = self.args.use_lowprecision_moment
                 optimizer_kwargs["tensorwise_offload_optimizer"] = self.args.tensorwise_offload_optimizer
-
+            optimizer_kwargs["use_lowprecision_moment"] = self.args.use_lowprecision_moment
+            bf16_master = optimizer_kwargs.get("use_lowprecision_moment", False)
             if hasattr(optimizer_cls, "_create_master_weight") and self.args.fp16_opt_level == "O2":
-                optimizer_kwargs["multi_precision"] = True
+                optimizer_kwargs["multi_precision"] = not bf16_master
 
             if self.args.optim == OptimizerNames.MUON:
                 self.model.config.muon_configs = {
@@ -3734,6 +3788,7 @@ class Trainer:
                 "ns_steps": args.muon_ns_steps,
                 "ns_coeff_type": args.muon_ns_coeff_type,
                 "ns_coeffs": args.muon_ns_coeffs,
+                "use_symmetric_gemm": args.muon_use_symmetric_gemm,
             }
             optimizer_cls = Muon
             optimizer_kwargs.update(muon_kwargs)
@@ -3963,9 +4018,17 @@ class Trainer:
                 assert self.optimizer is not None, "optimizer is empty!"
                 self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
 
+        # Paddle native FSDP (`--sharding fsdp`). fully_shard() owns param / grad /
+        # optimizer-state sharding, registers the main_grad hooks itself and must therefore run
+        # before MixPrecisionLayer, so the wrapping order below differs from the group-sharded path.
+        in_fsdp_mode = ShardingOption.FSDP in self.args.sharding
+        fsdp_mp_policy = None
+        if in_fsdp_mode and not self.args.amp_master_grad and self.amp_dtype in ("float16", "bfloat16"):
+            fsdp_mp_policy = MixedPrecisionPolicy(reduce_dtype=getattr(paddle, self.amp_dtype))
+
         # Pipeline mode
         if in_pipeline_parallel_mode:
-            if self.args.amp_master_grad:
+            if self.args.amp_master_grad and not in_fsdp_mode:
                 mix_precision_utils.MixPrecisionLayer(model, dtype=self.amp_dtype)  # return value has no use
             # hack for pipeline model mini batch to batch
             # need batter solution @ZHUI
@@ -4016,9 +4079,16 @@ class Trainer:
                 model._prepare_pipeline_inputs_func = _prepare_pipeline_inputs_func
 
             assert self.optimizer is not None, "Pipeline mode need decorate optimizer, pelease init optimizer."
-            if self.args.amp_master_grad:
-                self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
-            self.optimizer = self._wrap_distributed_optimizer(self.optimizer)
+            if in_fsdp_mode:
+                fsdp_layers = model._layers if hasattr(model, "_layers") else model
+                fully_shard(fsdp_layers, enable_tensor_fusion_and_overlap=True, mp_policy=fsdp_mp_policy)
+                if self.args.amp_master_grad:
+                    mix_precision_utils.MixPrecisionLayer(fsdp_layers, dtype=self.amp_dtype)
+                    self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
+            else:
+                if self.args.amp_master_grad:
+                    self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
+                self.optimizer = self._wrap_distributed_optimizer(self.optimizer)
 
             if (
                 hasattr(self.args, "enable_sharding_comm_overlap")
@@ -4034,7 +4104,12 @@ class Trainer:
         # No pipeline mode, sharding only
         if not in_pipeline_parallel_mode and in_sharding_parallel_mode:
             # Sharded DDP!
-            if self.args.tensor_model_parallel_size > 1:
+            if in_fsdp_mode:
+                fully_shard(model, enable_tensor_fusion_and_overlap=True, mp_policy=fsdp_mp_policy)
+                if self.args.amp_master_grad:
+                    mix_precision_utils.MixPrecisionLayer(model, dtype=self.amp_dtype)
+                    self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
+            elif self.args.tensor_model_parallel_size > 1:
                 hcg = fleet.get_hybrid_communicate_group()
                 assert (
                     ShardingOption.SHARD_GRAD_OP in self.args.sharding or ShardingOption.SHARD_OP in self.args.sharding
@@ -4045,7 +4120,10 @@ class Trainer:
                         model, hcg, strategy=fleet.fleet._user_defined_strategy
                     )
 
-            if ShardingOption.SHARD_OP in self.args.sharding:
+            if in_fsdp_mode:
+                # model is already wrapped by fully_shard above, skip group sharded parallel
+                pass
+            elif ShardingOption.SHARD_OP in self.args.sharding:
                 if self.args.amp_master_grad:
                     mix_precision_utils.MixPrecisionLayer(model, dtype=self.amp_dtype)  # return value has no use
                 model = fleet.distributed_model(model)
@@ -4374,6 +4452,17 @@ class Trainer:
 
         return loss.detach()
 
+    def _fsdp_all_gather_params(self):
+        from paddle.distributed.fsdp._fsdp_context import get_fsdp_context
+
+        fsdp_context = get_fsdp_context()
+        if fsdp_context is None:
+            logger.warning("sharding=fsdp but no fsdp context is registered, skip param all_gather.")
+            return
+        comm_manager = fsdp_context.comm_manager
+        for group in fsdp_context.buffer_manager.buffer_groups:
+            comm_manager.all_gather_params(group.params)
+
     def save_model(
         self,
         output_dir: Optional[str] = None,
@@ -4396,6 +4485,9 @@ class Trainer:
 
         if ShardingOption.FULL_SHARD in self.args.sharding:
             self.model_wrapped.get_all_parameters(convert2cpu=True, with_freeze_param=True)
+
+        if ShardingOption.FSDP in self.args.sharding:
+            self._fsdp_all_gather_params()
 
         if self.args.should_save_model_state:
             self._save(output_dir=output_dir, merge_tensor_parallel=merge_tensor_parallel, last_fc_to_hf=last_fc_to_hf)

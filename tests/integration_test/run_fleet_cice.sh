@@ -465,8 +465,6 @@ if [[ "$model" == "gemma4" ]]; then
     exit 1
   fi
   output_dir=$root_dir/checkpoints/gemma4-pt
-  unset FLAGS_cudnn_deterministic
-  #Todo fix later by zhuxinming
   export data_dir model_name_or_path output_dir
   yq_write "$config_yaml" '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
     | .eval_dataset_path = strenv(data_dir) + "/train.jsonl"
@@ -490,7 +488,9 @@ master=$(hostname -i)
 port=36677
 
 export FLAGS_embedding_deterministic=1
-export FLAGS_cudnn_deterministic=1
+if [[ "$model" != "gemma4" ]]; then
+  export FLAGS_cudnn_deterministic=1
+fi
 export FLAGS_use_stride_compute_kernel=False
 # 不设置 CUDA_VISIBLE_DEVICES 的 case：单卡 case，以及 qwen3vl 的 lora/moe/single
 # （与原脚本行为一致：qwen3vl_sft.sh 的 tp8/fsdp 分支设置了 8 卡，但 qwen3vl_lora.sh 和
@@ -535,4 +535,3 @@ esac
 
 run_training "$config_yaml" "$log_file" "$check_string"
 check_precision "$log_file" "$use_compare_step"
-
