@@ -350,17 +350,6 @@ class Llama4TextAttention(nn.Layer):
         return attn_output, attn_weights
 
 
-class Llama4TextAttentionFused(nn.Layer):
-    """Fused attention for optimized inference (delegates to standard impl)."""
-
-    def __init__(self, config: Llama4TextConfig, layer_idx: int):
-        super().__init__()
-        self.attn = Llama4TextAttention(config, layer_idx)
-
-    def forward(self, *args, **kwargs):
-        return self.attn(*args, **kwargs)
-
-
 class Llama4TextDecoderLayer(nn.Layer):
     def __init__(self, config: Llama4TextConfig, layer_idx: int):
         super().__init__()
