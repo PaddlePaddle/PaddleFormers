@@ -145,7 +145,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
     <tr>
       <td>Molmo</td>
       <td>allenai/Molmo-7B-D-0924、allenai/Molmo-7B-O-0924、allenai/Molmo-72B-0924</td>
-      <td>jinja</td>
+      <td>molmo</td>
     </tr>
     <tr>
       <td>Qwen2.5-VL</td>

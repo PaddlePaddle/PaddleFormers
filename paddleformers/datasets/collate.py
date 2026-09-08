@@ -978,7 +978,8 @@ def mm_collate_fn(
             value = paddle.to_tensor([])
         if len(value) > 0:
             input_dict[key] = value
-    molmo_images = _pad_and_stack_optional_multimodal_tensors(batch_molmo_images)
+    # Molmo detects padded/absent crops by checking whether every pixel is -1.
+    molmo_images = _pad_and_stack_optional_multimodal_tensors(batch_molmo_images, padding_value=-1)
     if molmo_images is not None:
         input_dict["images"] = molmo_images
         input_dict["image_masks"] = _pad_and_stack_optional_multimodal_tensors(batch_molmo_image_masks)

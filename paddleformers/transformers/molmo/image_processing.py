@@ -17,12 +17,11 @@ from __future__ import annotations
 
 from typing import Optional
 
-import einops
 import numpy as np
 import paddle
-from transformers.image_utils import OPENAI_CLIP_MEAN, OPENAI_CLIP_STD
 
 from ..image_processing_utils import BaseImageProcessor
+from ..image_utils import OPENAI_CLIP_MEAN, OPENAI_CLIP_STD
 from ..paddle_vision_utils import resize as paddle_resize
 
 
@@ -93,7 +92,6 @@ def resize_and_pad(
 
 
 def select_tiling(h, w, patch_size, max_num_patches):
-    original_res = h * w
     tilings = []
     for i in range(1, max_num_patches + 1):
         for j in range(1, max_num_patches + 1):
@@ -111,7 +109,6 @@ def select_tiling(h, w, patch_size, max_num_patches):
     else:
         required_scale = np.where(required_scale < 1.0, 10e9, required_scale)
         ix = np.argmin(required_scale)
-    del original_res
     return candidate_tilings[ix]
 
 
@@ -234,21 +231,17 @@ class MolmoImageProcessor(BaseImageProcessor):
         patch_ordering = np.stack(patch_ordering_arr)
         img_mask = np.stack(mask_arr)
 
-        patches = einops.rearrange(
-            patches,
-            "p (h dh) (w dw) c -> p (h w) (dh dw c)",
-            dh=base_image_input_d,
-            dw=base_image_input_d,
-            h=image_base_patch_h,
-            w=image_base_patch_w,
+        patches = patches.reshape(
+            [-1, image_base_patch_h, base_image_input_d, image_base_patch_w, base_image_input_d, 3]
         )
-        img_mask = einops.rearrange(
-            img_mask,
-            "p (h dh) (w dw) -> p (h w) (dh dw)",
-            dh=base_image_input_d,
-            dw=base_image_input_d,
-            h=image_base_patch_h,
-            w=image_base_patch_w,
+        patches = patches.transpose([0, 1, 3, 2, 4, 5]).reshape(
+            [-1, image_base_patch_h * image_base_patch_w, base_image_input_d * base_image_input_d * 3]
+        )
+        img_mask = img_mask.reshape(
+            [-1, image_base_patch_h, base_image_input_d, image_base_patch_w, base_image_input_d]
+        )
+        img_mask = img_mask.transpose([0, 1, 3, 2, 4]).reshape(
+            [-1, image_base_patch_h * image_base_patch_w, base_image_input_d * base_image_input_d]
         )
 
         img_mask = img_mask.astype(np.float32).mean(axis=-1)
@@ -275,13 +268,9 @@ class MolmoImageProcessor(BaseImageProcessor):
             image_mean=self.image_mean,
             image_std=self.image_std,
         )
-        resized = einops.rearrange(
-            resized,
-            "(h dh) (w dw) c -> (h w) (dh dw c)",
-            dh=base_image_input_d,
-            dw=base_image_input_d,
-            h=image_base_patch_h,
-            w=image_base_patch_w,
+        resized = resized.reshape([image_base_patch_h, base_image_input_d, image_base_patch_w, base_image_input_d, 3])
+        resized = resized.transpose([0, 2, 1, 3, 4]).reshape(
+            [image_base_patch_h * image_base_patch_w, base_image_input_d * base_image_input_d * 3]
         )
         patches = np.concatenate([np.expand_dims(resized, 0), patches], 0)
 
@@ -343,12 +332,12 @@ class MolmoImageProcessor(BaseImageProcessor):
         image_patch_size: Optional[int] = None,
         **kwargs,
     ):
-        max_crops = max_crops or self.max_crops
-        overlap_margins = overlap_margins or self.overlap_margins
-        base_image_input_size = base_image_input_size or self.base_image_input_size
-        image_token_length_w = image_token_length_w or self.image_token_length_w
-        image_token_length_h = image_token_length_h or self.image_token_length_h
-        image_patch_size = image_patch_size or self.image_patch_size
+        max_crops = self.max_crops if max_crops is None else max_crops
+        overlap_margins = self.overlap_margins if overlap_margins is None else overlap_margins
+        base_image_input_size = self.base_image_input_size if base_image_input_size is None else base_image_input_size
+        image_token_length_w = self.image_token_length_w if image_token_length_w is None else image_token_length_w
+        image_token_length_h = self.image_token_length_h if image_token_length_h is None else image_token_length_h
+        image_patch_size = self.image_patch_size if image_patch_size is None else image_patch_size
 
         crops, image_tokens, patch_ordering, img_mask = self.image_to_patches_and_tokens(
             image,
@@ -384,21 +373,8 @@ class MolmoImageProcessor(BaseImageProcessor):
         image_end_token_id: int,
         **kwargs,
     ):
-        max_total_crops = kwargs.get("max_crops") or self.max_crops
-        image_token_length_w = kwargs.get("image_token_length_w") or self.image_token_length_w
-        image_token_length_h = kwargs.get("image_token_length_h") or self.image_token_length_h
-        image_patch_size = kwargs.get("image_patch_size") or self.image_patch_size
-        base_image_input_size = kwargs.get("base_image_input_size") or self.base_image_input_size
-        image_num_patch = (
-            base_image_input_size[0] // image_patch_size,
-            base_image_input_size[1] // image_patch_size,
-        )
-        image_padding_mask = kwargs.get("image_padding_mask") or self.image_padding_mask
-
-        tokens_per_image = image_token_length_w * image_token_length_h
-        n_pixels = image_patch_size * image_patch_size * 3
-        n_patches = image_num_patch[0] * image_num_patch[1]
-        del max_total_crops, tokens_per_image, n_pixels, n_patches, sequence_length
+        image_padding_mask = kwargs.get("image_padding_mask")
+        image_padding_mask = self.image_padding_mask if image_padding_mask is None else image_padding_mask
 
         if images is None:
             return {"input_ids": tokens}

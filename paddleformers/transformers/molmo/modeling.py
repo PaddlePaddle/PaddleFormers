@@ -241,14 +241,14 @@ class MolmoAttention(nn.Layer):
         key_states = self.k_proj(hidden_states)
         value_states = self.v_proj(hidden_states)
 
-        if self.q_norm is not None and self.k_norm is not None:
-            query_states = self.q_norm(query_states)
-            key_states = self.k_norm(key_states)
-
         if self.config.clip_qkv is not None:
             query_states = paddle.clip(query_states, min=-self.config.clip_qkv, max=self.config.clip_qkv)
             key_states = paddle.clip(key_states, min=-self.config.clip_qkv, max=self.config.clip_qkv)
             value_states = paddle.clip(value_states, min=-self.config.clip_qkv, max=self.config.clip_qkv)
+
+        if self.q_norm is not None and self.k_norm is not None:
+            query_states = self.q_norm(query_states)
+            key_states = self.k_norm(key_states)
 
         query_states = query_states.reshape(q_shape).transpose([0, 2, 1, 3])
         key_states = key_states.reshape(kv_shape).transpose([0, 2, 1, 3])
@@ -287,6 +287,8 @@ class MolmoAttention(nn.Layer):
 class MolmoMLP(nn.Layer):
     def __init__(self, config: MolmoConfig):
         super().__init__()
+        if config.activation_type != "swiglu":
+            raise NotImplementedError(f"Unsupported Molmo activation_type: {config.activation_type}")
         self.ff_proj = GeneralLinear.create(
             config.hidden_size,
             config.intermediate_size,
@@ -594,8 +596,11 @@ class MolmoPretrainedVisionBackbone(nn.Layer):
 
         if config.image_pooling_2d != "attention-meanq":
             raise NotImplementedError(f"Unsupported image_pooling_2d: {config.image_pooling_2d}")
+        if config.image_projector != "mlp":
+            raise NotImplementedError(f"Unsupported image_projector: {config.image_projector}")
         self.image_pooling_2d = MolmoVisionAttention(config, is_vit_layer=False)
         self.image_projector = MolmoVisionProjectorMLP(config, v_cfg["image_emb_dim"])
+        self.image_feature_dropout = nn.Dropout(config.image_feature_dropout)
 
     def encode_image(self, images: paddle.Tensor) -> tuple[paddle.Tensor, paddle.Tensor | None]:
         cfg = self.config
@@ -638,9 +643,35 @@ class MolmoPretrainedVisionBackbone(nn.Layer):
             image_features = image_features + pad_embed[0] * all_pad.unsqueeze(-1)
             image_features = image_features + pad_embed[1] * partial_pad.unsqueeze(-1)
 
+        image_features = self.image_feature_dropout(image_features)
+        if cls_embed is not None:
+            cls_embed = self.image_feature_dropout(cls_embed)
+
         image_features = image_features.reshape([batch_size, num_image] + list(cfg.image_num_patch) + [-1])
-        if cfg.image_num_patch[0] % cfg.image_pooling_h == 1:
-            image_features = F.pad(image_features, [0, 0, 0, 1, 0, 1, 0, 0, 0, 0])
+        pad_h = (-cfg.image_num_patch[0]) % cfg.image_pooling_h
+        pad_w = (-cfg.image_num_patch[1]) % cfg.image_pooling_w
+        if pad_w:
+            image_features = paddle.concat(
+                [
+                    image_features,
+                    paddle.zeros(
+                        [batch_size, num_image, image_features.shape[2], pad_w, image_features.shape[-1]],
+                        dtype=image_features.dtype,
+                    ),
+                ],
+                axis=3,
+            )
+        if pad_h:
+            image_features = paddle.concat(
+                [
+                    image_features,
+                    paddle.zeros(
+                        [batch_size, num_image, pad_h, image_features.shape[3], image_features.shape[-1]],
+                        dtype=image_features.dtype,
+                    ),
+                ],
+                axis=2,
+            )
 
         h_patch, w_patch = cfg.image_num_patch
         h_blocks = (h_patch + cfg.image_pooling_h - 1) // cfg.image_pooling_h
@@ -677,9 +708,8 @@ class MolmoPretrainedModel(PretrainedModel):
         "k_proj",
         "v_proj",
         "o_proj",
-        "gate_proj",
-        "up_proj",
-        "down_proj",
+        "ff_proj",
+        "ff_out",
     ]
 
     @classmethod
@@ -941,7 +971,7 @@ class MolmoExtendedEmbedding(nn.Layer):
 class MolmoLMHead(nn.Layer):
     def __init__(self, config: MolmoConfig):
         super().__init__()
-        vocab_size = config.embedding_size if config.embedding_size != config.vocab_size else config.vocab_size
+        vocab_size = config.embedding_size
         self.weight = self.create_parameter(
             shape=[vocab_size, config.hidden_size],
             dtype=paddle.get_default_dtype(),
@@ -1044,7 +1074,7 @@ class MolmoModel(MolmoPretrainedModel):
             past_key_values = DynamicCache(config=self.config)
         kv_seq_len = past_key_values.get_seq_length() if past_key_values is not None else 0
 
-        if position_ids is None:
+        if position_ids is None or not self.config.use_position_ids:
             position_ids = (
                 paddle.arange(kv_seq_len, seq_length + kv_seq_len, dtype=paddle.int64).unsqueeze(0).tile((bsz, 1))
             )
@@ -1070,7 +1100,8 @@ class MolmoModel(MolmoPretrainedModel):
                 all_hidden_states.append(hidden_states)
             has_gradient = not hidden_states.stop_gradient
             if (
-                self.config.recompute_granularity == "full"
+                self.training
+                and self.config.recompute_granularity == "full"
                 and self.config.recompute_method == "uniform"
                 and self.config.recompute_num_layers == 1
                 and has_gradient

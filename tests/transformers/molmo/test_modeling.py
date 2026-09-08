@@ -17,7 +17,9 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
+import numpy as np
 import paddle
 
 from paddleformers.datasets.collate import (
@@ -28,8 +30,23 @@ from paddleformers.datasets.collate import (
 )
 from paddleformers.datasets.SFTDataset import Sequence
 from paddleformers.transformers import AutoModel, AutoModelForCausalLM
-from paddleformers.transformers.molmo import MolmoConfig, MolmoForCausalLM, MolmoModel
-from paddleformers.transformers.molmo.modeling import MolmoPretrainedVisionBackbone
+from paddleformers.transformers.molmo import (
+    MolmoConfig,
+    MolmoForCausalLM,
+    MolmoImageProcessor,
+    MolmoModel,
+)
+from paddleformers.transformers.molmo.modeling import (
+    MolmoAttention,
+    MolmoPretrainedVisionBackbone,
+)
+from paddleformers.transformers.molmo.processing import (
+    DEFAULT_IM_COL_TOKEN,
+    DEFAULT_IM_END_TOKEN,
+    DEFAULT_IM_START_TOKEN,
+    DEFAULT_IMAGE_PATCH_TOKEN,
+    MolmoProcessor,
+)
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_modeling_common import (
     ModelTesterMixin,
@@ -481,6 +498,14 @@ class MolmoModelTest(ModelTesterMixin, unittest.TestCase):
         self.assertTrue((image_input_idx[0, 1] == -1).all())
         self.assertTrue((image_input_idx[1] == -1).all())
 
+    def test_molmo_image_rows_use_negative_one_for_invalid_crops(self):
+        first = paddle.ones([1, 2, 3])
+        second = paddle.ones([2, 2, 3])
+
+        images = _pad_and_stack_optional_multimodal_tensors([first, second], padding_value=-1)
+
+        self.assertTrue((images[0, 1] == -1).all())
+
     def test_multimodal_generate_with_cache(self):
         config = self.model_tester.get_config(with_vision=True)
         config.eos_token_id = None
@@ -514,6 +539,115 @@ class MolmoModelTest(ModelTesterMixin, unittest.TestCase):
 
     def test_vision_backbone(self):
         self.model_tester.create_and_check_vision_backbone()
+
+    def test_vision_backbone_pads_spatial_axes(self):
+        config = self.model_tester.get_config(with_vision=True)
+        config.vision_backbone["image_default_input_size"] = (6, 6)
+        config.vision_backbone["image_num_pos"] = 10
+        config.image_pooling_h = 2
+        config.image_pooling_w = 2
+        config.image_feature_dropout = 0.25
+        model = MolmoPretrainedVisionBackbone(config)
+        self.assertEqual(model.image_feature_dropout.p, config.image_feature_dropout)
+        model.eval()
+        images = paddle.randn([1, 1, 9, 12])
+        image_masks = paddle.ones([1, 1, 9])
+
+        with paddle.no_grad():
+            image_features, _ = model(images, image_masks)
+
+        self.assertEqual(image_features.shape, [1, 1, 4, config.hidden_size])
+
+    def test_attention_clips_before_query_key_norm(self):
+        class RecordingNorm(paddle.nn.Layer):
+            def __init__(self):
+                super().__init__()
+                self.maximum = None
+
+            def forward(self, hidden_states):
+                self.maximum = float(paddle.abs(hidden_states).max())
+                return hidden_states
+
+        config = self.model_tester.get_config()
+        config.clip_qkv = 0.25
+        attention = MolmoAttention(config, layer_idx=0)
+        attention.q_proj.weight.set_value(paddle.full_like(attention.q_proj.weight, 2.0))
+        attention.k_proj.weight.set_value(paddle.full_like(attention.k_proj.weight, 2.0))
+        attention.q_norm = RecordingNorm()
+        attention.k_norm = RecordingNorm()
+        hidden_states = paddle.ones([1, 2, config.hidden_size])
+        position_embeddings = (
+            paddle.ones([1, 2, config.head_dim]),
+            paddle.zeros([1, 2, config.head_dim]),
+        )
+
+        attention(hidden_states, position_embeddings=position_embeddings)
+
+        self.assertLessEqual(attention.q_norm.maximum, config.clip_qkv)
+        self.assertLessEqual(attention.k_norm.maximum, config.clip_qkv)
+
+    def test_processor_uses_image_processor_defaults_and_preserves_false(self):
+        image_processor = MolmoImageProcessor(max_crops=3, image_padding_mask=True)
+        image_processor.multimodal_preprocess = mock.Mock(return_value={"input_ids": np.array([2, 3])})
+        tokenizer = SimpleNamespace(bos_token_id=1, eos_token_id=1)
+        processor = object.__new__(MolmoProcessor)
+        processor.image_processor = image_processor
+        processor.tokenizer = tokenizer
+        processor._special_tokens = {
+            DEFAULT_IMAGE_PATCH_TOKEN: 4,
+            DEFAULT_IM_COL_TOKEN: 5,
+            DEFAULT_IM_START_TOKEN: 6,
+            DEFAULT_IM_END_TOKEN: 7,
+        }
+
+        processor.process(tokens=[2, 3], max_crops=None, image_padding_mask=False, return_tensors="np")
+
+        call_kwargs = image_processor.multimodal_preprocess.call_args.kwargs
+        self.assertEqual(call_kwargs["max_crops"], 3)
+        self.assertFalse(call_kwargs["image_padding_mask"])
+
+    def test_image_processor_uses_native_reshape_transpose_path(self):
+        processor = MolmoImageProcessor(
+            max_crops=1,
+            overlap_margins=[0, 0],
+            base_image_input_size=[8, 8],
+            image_token_length_w=2,
+            image_token_length_h=2,
+            image_patch_size=2,
+        )
+
+        crops, _, patch_ordering, image_masks = processor.preprocess(
+            np.arange(8 * 8 * 3, dtype=np.uint8).reshape([8, 8, 3]),
+            image_patch_token_id=4,
+            image_col_token_id=5,
+            image_start_token_id=6,
+            image_end_token_id=7,
+        )
+
+        self.assertEqual(crops.shape, (2, 16, 12))
+        self.assertEqual(patch_ordering.shape, (2, 4))
+        self.assertEqual(image_masks.shape, (2, 16))
+
+    def test_transpose_weight_keys_match_molmo_layers(self):
+        self.assertIn("ff_proj", MolmoModel.transpose_weight_keys)
+        self.assertIn("ff_out", MolmoModel.transpose_weight_keys)
+        self.assertNotIn("gate_proj", MolmoModel.transpose_weight_keys)
+
+    def test_use_position_ids_false_ignores_supplied_ids(self):
+        config = self.model_tester.get_config(with_vision=True)
+        config.use_position_ids = False
+        model = MolmoModel(config)
+        model.eval()
+        input_ids = ids_tensor([1, self.model_tester.seq_length], config.vocab_size, dtype=paddle.int64)
+        supplied_position_ids = paddle.arange(self.model_tester.seq_length - 1, -1, -1, dtype=paddle.int64).unsqueeze(
+            0
+        )
+
+        with paddle.no_grad():
+            reference = model(input_ids, return_dict=True).last_hidden_state
+            actual = model(input_ids, position_ids=supplied_position_ids, return_dict=True).last_hidden_state
+
+        self.assertTrue(paddle.equal_all(reference, actual))
 
     def test_multimodal_causal_lm(self):
         self.model_tester.create_and_check_multimodal_causal_lm()

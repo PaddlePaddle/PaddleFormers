@@ -22,6 +22,7 @@ import paddle
 from PIL import ImageOps
 from PIL.Image import Image
 
+from ...utils.log import logger
 from ..auto.tokenizer import AutoTokenizer
 from ..processing_utils import ProcessorMixin
 from .image_processing import MolmoImageProcessor
@@ -50,7 +51,8 @@ def get_special_token_ids(tokenizer):
 class MolmoProcessor(ProcessorMixin):
     attributes = ["image_processor", "tokenizer"]
     image_processor_class = "MolmoImageProcessor"
-    tokenizer_class = ("GPT2Tokenizer", "GPT2TokenizerFast")
+    # Molmo-O uses GPT2Tokenizer while Molmo-D uses Qwen2Tokenizer.
+    tokenizer_class = ("GPT2Tokenizer", "GPT2TokenizerFast", "Qwen2Tokenizer", "Qwen2TokenizerFast")
     model_input_names = ["input_ids", "images", "image_masks", "image_input_idx"]
 
     def __init__(self, image_processor: Optional[MolmoImageProcessor] = None, tokenizer=None, **kwargs):
@@ -66,7 +68,12 @@ class MolmoProcessor(ProcessorMixin):
             image_processor = MolmoImageProcessor.from_pretrained(
                 pretrained_model_name_or_path, **image_processor_kwargs
             )
-        except Exception:
+        except Exception as error:
+            logger.warning(
+                "Could not load the Molmo image processor from %s; using defaults instead: %s",
+                pretrained_model_name_or_path,
+                error,
+            )
             image_processor = MolmoImageProcessor()
         return cls(image_processor=image_processor, tokenizer=tokenizer)
 
@@ -96,13 +103,13 @@ class MolmoProcessor(ProcessorMixin):
         images=None,
         *,
         tokens=None,
-        max_crops: int = 12,
+        max_crops: Optional[int] = None,
         overlap_margins: Optional[list[int]] = None,
         base_image_input_size: Optional[list[int]] = None,
-        image_token_length_w: int = 12,
-        image_token_length_h: int = 12,
-        image_patch_size: int = 14,
-        image_padding_mask: bool = True,
+        image_token_length_w: Optional[int] = None,
+        image_token_length_h: Optional[int] = None,
+        image_patch_size: Optional[int] = None,
+        image_padding_mask: Optional[bool] = None,
         style: str = "long_caption",
         system_prompt: str = "none",
         message_format: str = "role",
@@ -111,7 +118,6 @@ class MolmoProcessor(ProcessorMixin):
         return_tensors: str = "pd",
         **kwargs,
     ):
-        del style, system_prompt, kwargs
         if tokens is None:
             tokens = self.get_tokens_input(text, message_format, always_start_with_space)
 
@@ -143,16 +149,26 @@ class MolmoProcessor(ProcessorMixin):
             image_col_token_id=self.special_token_ids[DEFAULT_IM_COL_TOKEN],
             image_start_token_id=self.special_token_ids[DEFAULT_IM_START_TOKEN],
             image_end_token_id=self.special_token_ids[DEFAULT_IM_END_TOKEN],
-            max_crops=max_crops,
-            overlap_margins=overlap_margins or [4, 4],
-            base_image_input_size=base_image_input_size or [336, 336],
-            image_token_length_w=image_token_length_w,
-            image_token_length_h=image_token_length_h,
-            image_patch_size=image_patch_size,
-            image_padding_mask=image_padding_mask,
+            max_crops=self.image_processor.max_crops if max_crops is None else max_crops,
+            overlap_margins=self.image_processor.overlap_margins if overlap_margins is None else overlap_margins,
+            base_image_input_size=(
+                self.image_processor.base_image_input_size if base_image_input_size is None else base_image_input_size
+            ),
+            image_token_length_w=(
+                self.image_processor.image_token_length_w if image_token_length_w is None else image_token_length_w
+            ),
+            image_token_length_h=(
+                self.image_processor.image_token_length_h if image_token_length_h is None else image_token_length_h
+            ),
+            image_patch_size=(self.image_processor.image_patch_size if image_patch_size is None else image_patch_size),
+            image_padding_mask=(
+                self.image_processor.image_padding_mask if image_padding_mask is None else image_padding_mask
+            ),
         )
 
-        bos = self.tokenizer.bos_token_id or self.tokenizer.eos_token_id
+        bos = self.tokenizer.bos_token_id
+        if bos is None:
+            bos = self.tokenizer.eos_token_id
         out["input_ids"] = np.pad(out["input_ids"], [[1, 0]], constant_values=bos)
         if "image_input_idx" in out:
             image_input_idx = out["image_input_idx"]
@@ -172,4 +188,4 @@ class MolmoProcessor(ProcessorMixin):
         return tensor_out
 
 
-__all__ = ["MolmoProcessor", "MolmoImageProcessor"]
+__all__ = ["MolmoProcessor"]
