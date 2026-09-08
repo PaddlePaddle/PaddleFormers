@@ -715,7 +715,8 @@ class Llama4TextModel(Llama4TextPretrainedModel):
 
             has_gradient = not hidden_states.stop_gradient
             if (
-                getattr(self.config, "recompute_granularity", None) == "full"
+                self.training
+                and getattr(self.config, "recompute_granularity", None) == "full"
                 and getattr(self.config, "recompute_method", None) == "uniform"
                 and getattr(self.config, "recompute_num_layers", 0) == 1
                 and has_gradient
