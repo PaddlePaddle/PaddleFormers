@@ -977,6 +977,18 @@ register_template(
     format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
     suffix=["<|eot|>"],
     chat_sep="<|eot|>",
+    mm_plugin=get_mm_plugin(
+        name="llama4",
+        image_token="<|image|>",
+        masked_tokens=[
+            "<|image|>",
+            "<|image_start|>",
+            "<|image_end|>",
+            "<|patch|>",
+            "<|tile_x_separator|>",
+            "<|tile_y_separator|>",
+        ],
+    ),
 )
 
 

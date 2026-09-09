@@ -241,6 +241,8 @@ import_structure = {
     "llama.tokenizer": ["LlamaTokenizer", "Llama3Tokenizer"],
     "llama.tokenizer_fast": ["LlamaTokenizerFast"],
     "llama4.configuration": ["Llama4Config", "Llama4TextConfig", "Llama4VisionConfig"],
+    "llama4.image_processor": ["Llama4ImageProcessor", "Llama4ImageProcessorKwargs"],
+    "llama4.image_processor_fast": ["Llama4ImageProcessorFast"],
     "llama4.modeling": [
         "Llama4ForCausalLM",
         "Llama4TextDecoderLayer",
@@ -248,6 +250,7 @@ import_structure = {
         "Llama4TextPretrainedModel",
     ],
     "llama4.multimodal": ["Llama4ForConditionalGeneration", "Llama4VisionEncoderLayer", "Llama4VisionModel"],
+    "llama4.processor": ["Llama4Processor", "Llama4ProcessorKwargs"],
     "optimization": [
         "LinearDecayWithWarmup",
         "ConstScheduleWithWarmup",

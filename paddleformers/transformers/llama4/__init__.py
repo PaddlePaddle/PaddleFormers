@@ -19,6 +19,8 @@ from ...utils.lazy_import import _LazyModule
 
 import_structure = {
     "configuration": ["Llama4Config", "Llama4TextConfig", "Llama4VisionConfig"],
+    "image_processor": ["Llama4ImageProcessor", "Llama4ImageProcessorKwargs"],
+    "image_processor_fast": ["Llama4ImageProcessorFast"],
     "modeling": [
         "Llama4TextDecoderLayer",
         "Llama4TextModel",
@@ -26,10 +28,13 @@ import_structure = {
         "Llama4TextPretrainedModel",
     ],
     "multimodal": ["Llama4ForConditionalGeneration", "Llama4VisionEncoderLayer", "Llama4VisionModel"],
+    "processor": ["Llama4Processor", "Llama4ProcessorKwargs"],
 }
 
 if TYPE_CHECKING:
     from .configuration import Llama4Config, Llama4TextConfig, Llama4VisionConfig
+    from .image_processor import Llama4ImageProcessor, Llama4ImageProcessorKwargs
+    from .image_processor_fast import Llama4ImageProcessorFast
     from .modeling import (
         Llama4ForCausalLM,
         Llama4TextDecoderLayer,
@@ -41,6 +46,7 @@ if TYPE_CHECKING:
         Llama4VisionEncoderLayer,
         Llama4VisionModel,
     )
+    from .processor import Llama4Processor, Llama4ProcessorKwargs
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
