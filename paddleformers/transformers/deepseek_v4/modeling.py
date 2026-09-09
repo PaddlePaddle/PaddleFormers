@@ -382,6 +382,42 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         return info_map
 
     @classmethod
+    def _gen_hf_quan_config(cls):
+        """Describe the FP8 block-quantized DeepSeek-V4 HF checkpoint.
+
+        Consumed by ``Trainer`` when ``load_from_hf`` is enabled and the
+        checkpoint's ``config.json`` declares a ``quantization_config``; the
+        descriptor is passed to
+        ``paddleformers.quantization.hf_checkpoint`` to build the dequantization
+        transform.  The logical ``.weight`` names this produces are exactly the
+        AOA sources in :meth:`_gen_aoa_config`.
+        """
+        return {
+            "schema_version": 1,
+            "component_pairing": {"weight_suffix": ".weight", "scale_suffix": ".scale"},
+            "logic_name_suffix": ".weight",
+            "groups": [
+                {
+                    "name": "fp8_block",
+                    "targets": [
+                        r"re:^(?:"
+                        r"layers\.[0-9]+\.attn\.(?:indexer\.wq_b|wkv|wo_a|wo_b|wq_a|wq_b)|"
+                        r"layers\.[0-9]+\.ffn\.(?:shared_experts\.w[123]|experts\.[0-9]+\.w[123])|"
+                        r"mtp\.[0-9]+\.(?:attn\.(?:wkv|wo_a|wo_b|wq_a|wq_b)|"
+                        r"ffn\.(?:shared_experts\.w[123]|experts\.[0-9]+\.w[123])|e_proj|h_proj)"
+                        r")\.weight$"
+                    ],
+                    "quant_method": "fp8_block",
+                    "value_format": "e4m3",
+                    # The HF config calls the scale encoding UE8M0, but this
+                    # checkpoint stores the decoded power-of-two scales as F32.
+                    "scale_format": "float32",
+                    "block_shape": [128, 128],
+                }
+            ],
+        }
+
+    @classmethod
     def _gen_aoa_config(cls, config: DeepseekV4Config):
         """Weight conversion: HuggingFace DSv4 checkpoint -> PaddleFleet internal format.
 
@@ -1024,6 +1060,7 @@ class DeepseekV4ForCausalLM(DeepseekV4PreTrainedModel):
         gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        gpt_model._gen_hf_quan_config = cls._gen_hf_quan_config
         gpt_model.build_muon_param_info_map = cls.build_muon_param_info_map
         gpt_model.config_to_save = config
         gpt_model.is_fleet = cls.is_fleet
@@ -1057,6 +1094,7 @@ class DeepseekV4ForCausalLMPipe(DeepseekV4PreTrainedModel, GeneralModelForCausal
         gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        gpt_model._gen_hf_quan_config = cls._gen_hf_quan_config
         gpt_model.build_muon_param_info_map = cls.build_muon_param_info_map
         if not hasattr(config, "architectures"):
             config.architectures = [cls.__name__.replace("Pipe", "")]
