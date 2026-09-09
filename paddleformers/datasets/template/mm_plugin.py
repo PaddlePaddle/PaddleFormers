@@ -1403,6 +1403,42 @@ class Gemma3Plugin(BasePlugin):
 
 
 @dataclass
+class Llama4Plugin(BasePlugin):
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        mm_inputs,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        if not images:
+            return messages
+
+        aspect_ratios = mm_inputs.get("aspect_ratios")
+        if aspect_ratios is None or len(aspect_ratios) != len(images):
+            raise ValueError("Llama 4 requires one aspect ratio for each input image.")
+
+        messages = deepcopy(messages)
+        image_index = 0
+        num_patches_per_chunk = processor._num_patches_per_chunk()
+        for message in messages:
+            content = message["content"]
+            while IMAGE_PLACEHOLDER in content:
+                image_string = processor._prompt_split_image(aspect_ratios[image_index], num_patches_per_chunk)
+                if not self.expand_mm_tokens:
+                    image_string = self.image_token
+                content = content.replace(IMAGE_PLACEHOLDER, image_string, 1)
+                image_index += 1
+            message["content"] = content
+        return messages
+
+
+@dataclass
 class GlmOcrPlugin(BasePlugin):
     """
     GLM-OCR 专用插件：
@@ -1608,6 +1644,7 @@ PLUGINS = {
     "qwen3_vl": Qwen3VLPlugin,
     "glm4v": GLM4VPlugin,
     "gemma3": Gemma3Plugin,
+    "llama4": Llama4Plugin,
     "qwen2_omni": Qwen2OmniPlugin,
     "glm_ocr": GlmOcrPlugin,
     "kimi_k3": KimiK3Plugin,

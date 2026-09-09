@@ -1,0 +1,55 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import sys
+from typing import TYPE_CHECKING
+
+from ...utils.lazy_import import _LazyModule
+
+import_structure = {
+    "configuration": ["Llama4Config", "Llama4TextConfig", "Llama4VisionConfig"],
+    "image_processor": ["Llama4ImageProcessor", "Llama4ImageProcessorKwargs"],
+    "image_processor_fast": ["Llama4ImageProcessorFast"],
+    "modeling": [
+        "Llama4TextDecoderLayer",
+        "Llama4TextModel",
+        "Llama4ForCausalLM",
+        "Llama4TextPretrainedModel",
+    ],
+    "multimodal": ["Llama4ForConditionalGeneration", "Llama4VisionEncoderLayer", "Llama4VisionModel"],
+    "processor": ["Llama4Processor", "Llama4ProcessorKwargs"],
+}
+
+if TYPE_CHECKING:
+    from .configuration import Llama4Config, Llama4TextConfig, Llama4VisionConfig
+    from .image_processor import Llama4ImageProcessor, Llama4ImageProcessorKwargs
+    from .image_processor_fast import Llama4ImageProcessorFast
+    from .modeling import (
+        Llama4ForCausalLM,
+        Llama4TextDecoderLayer,
+        Llama4TextModel,
+        Llama4TextPretrainedModel,
+    )
+    from .multimodal import (
+        Llama4ForConditionalGeneration,
+        Llama4VisionEncoderLayer,
+        Llama4VisionModel,
+    )
+    from .processor import Llama4Processor, Llama4ProcessorKwargs
+else:
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+    )
