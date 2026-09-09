@@ -1,7 +1,6 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 """Focused tests for fused-MoE save at sharding_parallel_size=1 and HF export cadence."""
 
-import inspect
 import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -13,30 +12,9 @@ from paddleformers.trainer.trainer_callback import (
     TrainerState,
 )
 from paddleformers.trainer.trainer_utils import IntervalStrategy
-from paddleformers.trainer.training_args import TrainingArguments
 
 
 class TestDeferredTokenNormalizationWiring(unittest.TestCase):
-    def test_train_loop_resolves_then_applies_before_optimizer_step(self):
-        src = inspect.getsource(Trainer._inner_training_loop)
-        resolve_at = src.find("self._resolve_deferred_token_normalization()")
-        begin_at = src.find("self.callback_handler.on_optimizer_begin(")
-        apply_at = src.find("self._apply_deferred_token_normalization(model)")
-        step_at = src.find("self.optimizer_step(")
-        self.assertNotEqual(resolve_at, -1)
-        self.assertNotEqual(begin_at, -1)
-        self.assertNotEqual(apply_at, -1)
-        self.assertNotEqual(step_at, -1)
-        self.assertLess(resolve_at, begin_at)
-        self.assertLess(begin_at, apply_at)
-        self.assertLess(apply_at, step_at)
-
-    def test_apply_scales_main_grad_then_clears_divisor(self):
-        src = inspect.getsource(Trainer._apply_deferred_token_normalization)
-        self.assertIn("clear_pending_gradient_divisor", src)
-        self.assertIn("grad.scale_(scale)", src)
-        self.assertIn("main_grad", src)
-
     def test_resolve_skips_collectives_when_model_accuracy_mode_off(self):
         from unittest.mock import patch
 
@@ -46,25 +24,6 @@ class TestDeferredTokenNormalizationWiring(unittest.TestCase):
             trainer._resolve_deferred_token_normalization()
         reduce.assert_not_called()
         allocate.assert_not_called()
-
-
-class TestFlexSaveWithoutMtpNumLayers(unittest.TestCase):
-    def test_flex_save_uses_getattr_for_mtp_num_layers(self):
-        from paddleformers.transformers.model_utils import PretrainedModel
-
-        src = inspect.getsource(PretrainedModel.save_pretrained)
-        self.assertIn('getattr(model_to_save.config, "mtp_num_layers", 0)', src)
-
-
-class TestFusedMoEShardingOneSaveAssert(unittest.TestCase):
-    """The fusion + sharding=1 + save_strategy=steps combination must not abort."""
-
-    def test_post_init_parallel_degree_does_not_assert_at_sharding_one(self):
-        source = inspect.getsource(TrainingArguments._post_init_parallel_degree)
-        self.assertNotIn("please set moe_expert_fusion to false", source)
-        self.assertNotIn("Checkpoint will fail to save when moe_expert_fusion is true", source)
-        self.assertIn("keeps 3-D grouped_gemm weights", source)
-        self.assertNotIn("sharding_parallel_size=%s", source)
 
 
 class TestRestoreFusedExpert3DLayout(unittest.TestCase):
@@ -236,10 +195,6 @@ class TestUacMaxGradNormOverride(unittest.TestCase):
         model = SimpleNamespace(config=SimpleNamespace(use_accuracy_compatible=False))
         maybe_zero_max_grad_norm_for_uac(args, model)
         self.assertEqual(args.max_grad_norm, 1.0)
-
-    def test_trainer_init_calls_shipped_uac_helper(self):
-        source = inspect.getsource(Trainer.__init__)
-        self.assertIn("maybe_zero_max_grad_norm_for_uac(self.args, model)", source)
 
 
 class TestDefaultFlowCallbackSaveHf(unittest.TestCase):

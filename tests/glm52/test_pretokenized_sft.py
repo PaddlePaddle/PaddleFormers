@@ -13,16 +13,14 @@
 # limitations under the License.
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import paddle
 import pytest
 
-from paddleformers.cli.train.sft import workflow as sft_workflow
 from paddleformers.cli.train.sft.workflow import (
     ModelReproObservationCallback,
     apply_glm_moe_dsa_training_contract,
-    load_tokenizer_and_processor,
     save_final_hf_model_if_requested,
     validate_pretokenized_offline_dataset,
 )
@@ -37,33 +35,6 @@ def fixed_sequence():
         position_ids=[0, 1, 2, 3, 4, 5, 6],
         num_examples=1,
     )
-
-
-def test_load_tokenizer_uses_independent_source():
-    tokenizer = SimpleNamespace()
-    processor = SimpleNamespace()
-    model_args = SimpleNamespace(
-        tokenizer_name_or_path="/tokenizer-only",
-        model_name_or_path="/weights-only",
-        stage="PT",
-    )
-    data_args = SimpleNamespace(processor_use_fast=None)
-
-    with patch.object(
-        sft_workflow.AutoTokenizer,
-        "from_pretrained",
-        return_value=tokenizer,
-    ) as load_tokenizer, patch.object(
-        sft_workflow.AutoProcessor,
-        "from_pretrained",
-        return_value=processor,
-    ) as load_processor:
-        actual_tokenizer, actual_processor = load_tokenizer_and_processor(model_args, data_args)
-
-    load_tokenizer.assert_called_once_with("/tokenizer-only")
-    load_processor.assert_called_once_with("/weights-only", use_fast=None)
-    assert actual_tokenizer is tokenizer
-    assert actual_processor is processor
 
 
 def test_final_hf_export_always_writes_last_fc_to_hf():

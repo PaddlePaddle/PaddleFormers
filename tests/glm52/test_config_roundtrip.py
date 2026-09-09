@@ -1,29 +1,28 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 """Focused tests for GLM MoE DSA config needles used by the formal YAML."""
 
-import inspect
 import unittest
 
 from paddleformers.transformers.glm_moe_dsa.configuration import GlmMoeDsaConfig
 
 
 class TestGlmMoeDsaRopeParameters(unittest.TestCase):
-    def test_init_pops_nested_partial_rotary_factor(self):
-        source = inspect.getsource(GlmMoeDsaConfig.__init__)
-        self.assertIn('self.rope_parameters.pop("partial_rotary_factor", None)', source)
-        self.assertIn("isinstance(self.rope_scaling, dict)", source)
-        self.assertIn('self.rope_scaling.pop("partial_rotary_factor", None)', source)
+    def test_nested_rotary_fraction_is_normalized_without_serializing_derived_fields(self):
+        cfg = GlmMoeDsaConfig(
+            rope_parameters={"rope_theta": 8000000, "partial_rotary_factor": 0.5},
+        )
+        import json
+        import tempfile
+        from pathlib import Path
 
-        cfg = GlmMoeDsaConfig()
+        with tempfile.TemporaryDirectory() as directory:
+            cfg.save_pretrained(directory)
+            saved = json.loads((Path(directory) / "config.json").read_text())
         self.assertEqual(cfg.partial_rotary_factor, 0.5)
-        self.assertNotIn("partial_rotary_factor", cfg.rope_parameters or {})
-        self.assertNotIn("partial_rotary_factor", cfg.rope_scaling or {})
-
-    def test_init_registers_derived_rope_fields_unsavable(self):
-        source = inspect.getsource(GlmMoeDsaConfig.__init__)
-        self.assertIn("self.register_unsavable_keys(", source)
-        self.assertIn('"rotary_base", "rope_type"', source)
-        self.assertNotIn('register_unsavable_keys(["rope_parameters"', source)
+        self.assertNotIn("partial_rotary_factor", saved["rope_parameters"])
+        self.assertNotIn("rotary_base", saved)
+        self.assertNotIn("rope_type", saved)
+        self.assertEqual(saved["rope_parameters"]["rope_theta"], 8000000)
 
     def test_save_pretrained_keeps_official_rope_parameters(self):
         import json
