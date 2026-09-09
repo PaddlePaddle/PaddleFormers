@@ -89,45 +89,135 @@ class TestRestoreFusedExpert3DLayout(unittest.TestCase):
         self.assertEqual(shard.local_shape, (2, 4, 6))
         self.assertEqual(shard.global_shape, (2, 4, 6))
 
-    def test_optimizer_path_restores_3d_layout_then_saves(self):
-        source = inspect.getsource(
-            __import__("paddleformers.trainer.trainer", fromlist=["Trainer"]).Trainer._save_flex_optimizer_state
-        )
-        self.assertIn("optimizer=self.optimizer", source)
-        self.assertIn("restore_fused_expert_3d_layout", source)
-        self.assertIn("self.optimizer.sharded_state_dict(model_sharded_state_dict)", source)
-        self.assertNotIn("Fused-expert optimizer FlexCheckpoint save is not supported", source)
 
-    def test_fused_expert_optimizer_round_trip_keeps_3d_moments(self):
+class TestFusedExpertOptimizerSave(unittest.TestCase):
+    def make_trainer(self, dtype="bfloat16"):
         import paddle
         from paddle.distributed import ShardedWeight
 
-        from paddleformers.trainer.trainer import restore_fused_expert_3d_layout
+        class Model(paddle.nn.Layer):
+            def __init__(self):
+                super().__init__()
+                self.grouped_gemm_experts = paddle.nn.Layer()
+                self.grouped_gemm_experts.add_parameter(
+                    "weight1",
+                    self.create_parameter(
+                        [2, 4, 6], dtype=dtype, default_initializer=paddle.nn.initializer.Constant(0.25)
+                    ),
+                )
+                self.add_parameter(
+                    "unrelated",
+                    self.create_parameter(
+                        [2, 3, 4], dtype=dtype, default_initializer=paddle.nn.initializer.Constant(0.5)
+                    ),
+                )
 
-        key = "model.layers.3.mlp.grouped_gemm_experts.weight1"
-        param = paddle.zeros([2, 4, 6], dtype="float32")
-        shard = ShardedWeight(
-            key=key,
-            local_tensor=param,
-            local_shape=tuple(param.shape),
-            global_shape=tuple(param.shape),
-            global_offset=(0, 0, 0),
+            def sharded_state_dict(self):
+                result = {}
+                for key, param in self.named_parameters():
+                    tensor = param.reshape([-1, param.shape[-1]]) if key.startswith("grouped_gemm_experts") else param
+                    tensor.name = param.name
+                    result[key] = ShardedWeight(
+                        key, tensor, tuple(tensor.shape), tuple(tensor.shape), (0,) * tensor.ndim
+                    )
+                return result
+
+        trainer = object.__new__(Trainer)
+        trainer.model = Model()
+        trainer.optimizer = paddle.optimizer.AdamW(
+            learning_rate=0.01, parameters=trainer.model.parameters(), multi_precision=True
         )
-        moment = paddle.ones([2, 4, 6], dtype="float32")
-        optimizer = type(
-            "Opt",
-            (),
-            {"_accumulators": {"moment1": {key: moment}}, "_master_weights": {}},
-        )()
-        model = MagicMock()
-        model.named_parameters.return_value = [(key, param)]
+        trainer.args = SimpleNamespace(replicate_saved_into_local=False)
+        self.step(trainer)
+        return trainer
 
-        restore_fused_expert_3d_layout(model, {key: shard}, optimizer=optimizer)
+    @staticmethod
+    def step(trainer):
+        loss = sum((param.astype("float32") ** 2).sum() for param in trainer.model.parameters())
+        loss.backward()
+        trainer.optimizer.step()
+        trainer.optimizer.clear_grad()
 
-        self.assertEqual(tuple(moment.shape), (8, 6))
-        restored = moment.reshape([2, 4, 6])
-        self.assertEqual(tuple(restored.shape), tuple(param.shape))
-        self.assertEqual(int(restored.numel()), int(param.numel()))
+    @staticmethod
+    def snapshot(optimizer):
+        return [
+            (mapping, key, value, tuple(value.shape))
+            for mapping in [*optimizer._accumulators.values(), optimizer._master_weights]
+            for key, value in mapping.items()
+        ]
+
+    def assert_unchanged(self, snapshot):
+        for mapping, key, tensor, shape in snapshot:
+            self.assertIs(mapping[key], tensor)
+            self.assertEqual(tuple(tensor.shape), shape)
+
+    def test_save_load_then_step_matches_uninterrupted(self):
+        import tempfile
+        from pathlib import Path
+
+        import numpy as np
+        import paddle.distributed as dist
+
+        from paddleformers.trainer.trainer import (
+            MASTER_WEIGHT_DIC,
+            OPTIMIZER_STATE_DIC,
+            _fused_expert_optimizer_save_views,
+        )
+
+        for dtype in ("float32", "bfloat16"):
+            with self.subTest(dtype=dtype), tempfile.TemporaryDirectory() as directory:
+                trainer = self.make_trainer(dtype)
+                snapshot = self.snapshot(trainer.optimizer)
+                trainer._save_flex_optimizer_state(directory)
+                self.assert_unchanged(snapshot)
+                self.assertTrue((Path(directory) / "saved_signal_0").is_file())
+                resumed = self.make_trainer(dtype)
+                self.step(resumed)
+                resumed.model.set_state_dict(trainer.model.state_dict())
+                resumed_snapshot = self.snapshot(resumed.optimizer)
+                with _fused_expert_optimizer_save_views(
+                    resumed.model, resumed.model.sharded_state_dict(), resumed.optimizer
+                ):
+                    shards = resumed.optimizer.sharded_state_dict(resumed.model.sharded_state_dict())
+                    dist.load_state_dict(
+                        {k: v for k, v in shards.items() if not k.endswith(".w_0")},
+                        str(Path(directory) / OPTIMIZER_STATE_DIC),
+                    )
+                    if dtype == "bfloat16":
+                        dist.load_state_dict(
+                            {k: v for k, v in shards.items() if k.endswith(".w_0")},
+                            str(Path(directory) / MASTER_WEIGHT_DIC),
+                        )
+                self.assert_unchanged(resumed_snapshot)
+                self.step(trainer)
+                self.step(resumed)
+                for left, right in zip(trainer.model.parameters(), resumed.model.parameters()):
+                    np.testing.assert_array_equal(left.numpy(), right.numpy())
+                for left_mapping, right_mapping in zip(
+                    [*trainer.optimizer._accumulators.values(), trainer.optimizer._master_weights],
+                    [*resumed.optimizer._accumulators.values(), resumed.optimizer._master_weights],
+                ):
+                    for left, right in zip(left_mapping.values(), right_mapping.values()):
+                        np.testing.assert_array_equal(left.numpy(), right.numpy())
+
+    def test_failures_restore_original_objects_and_shapes(self):
+        import tempfile
+        from unittest.mock import patch
+
+        for location in ("sharded_state_dict", "save_state_dict"):
+            with self.subTest(location=location), tempfile.TemporaryDirectory() as directory:
+                trainer = self.make_trainer()
+                snapshot = self.snapshot(trainer.optimizer)
+                target = (
+                    trainer.optimizer
+                    if location == "sharded_state_dict"
+                    else __import__("paddle.distributed", fromlist=["save_state_dict"])
+                )
+                with patch.object(target, location, side_effect=RuntimeError("save failure")):
+                    with self.assertRaisesRegex(RuntimeError, "save failure"):
+                        trainer._save_flex_optimizer_state(directory)
+                self.assert_unchanged(snapshot)
+                self.step(trainer)
 
 
 class TestUacMaxGradNormOverride(unittest.TestCase):
