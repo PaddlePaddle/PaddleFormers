@@ -1283,6 +1283,10 @@ class TrainingArguments:
             )
         },
     )
+    bias_activation_fusion: Optional[bool] = field(
+        default=None,
+        metadata={"help": "Fuse bias and activation; None preserves the model provider default."},
+    )
     moe_expert_fusion: Optional[bool] = field(
         default=None,
         metadata={

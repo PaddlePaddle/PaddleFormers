@@ -15,6 +15,8 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 from paddleformers.cli.train.sft import workflow as sft_workflow
 from paddleformers.cli.train.sft.workflow import (
     apply_glm_moe_dsa_training_contract,
@@ -208,29 +210,33 @@ def test_glm_moe_dsa_training_contract_copies_variable_seq_lengths_from_training
     assert model_config.variable_seq_lengths is True
 
 
-def test_glm_moe_dsa_training_contract_applies_pp_p2p_needles_from_env(monkeypatch, capsys):
-    model_config = SimpleNamespace(
-        model_type="glm_moe_dsa",
-        overlap_p2p_comm=True,
-        batch_p2p_comm=None,
-        variable_seq_lengths=False,
+@pytest.mark.parametrize("enabled", [False, True])
+def test_glm_moe_dsa_training_contract_uses_yaml_despite_legacy_env(monkeypatch, enabled):
+    model_config = SimpleNamespace(model_type="glm_moe_dsa", use_accuracy_compatible=not enabled)
+    training_args = _base_training_args(
+        use_accuracy_compatible=enabled,
+        overlap_p2p_comm=enabled,
+        batch_p2p_comm=not enabled,
+        variable_seq_lengths=enabled,
+        bias_activation_fusion=enabled,
     )
-    training_args = _base_training_args()
     model_args = SimpleNamespace(mtp_attention_flexible=True, persist_layer_norm=False)
-    data_args = SimpleNamespace()
-    monkeypatch.setenv("MODEL_REPRO_OVERLAP_P2P_COMM", "0")
-    monkeypatch.setenv("MODEL_REPRO_BATCH_P2P_COMM", "1")
-    monkeypatch.setenv("MODEL_REPRO_VARIABLE_SEQ_LENGTHS", "1")
+    for name, value in {
+        "MODEL_REPRO_IEEE_KERNEL": not enabled,
+        "MODEL_REPRO_OVERLAP_P2P_COMM": not enabled,
+        "MODEL_REPRO_BATCH_P2P_COMM": enabled,
+        "MODEL_REPRO_VARIABLE_SEQ_LENGTHS": not enabled,
+        "MODEL_REPRO_BIAS_ACTIVATION_FUSION": not enabled,
+    }.items():
+        monkeypatch.setenv(name, str(int(value)))
 
-    apply_glm_moe_dsa_training_contract(model_config, training_args, model_args, data_args)
+    apply_glm_moe_dsa_training_contract(model_config, training_args, model_args, SimpleNamespace())
 
-    assert model_config.overlap_p2p_comm is False
-    assert model_config.batch_p2p_comm is True
-    assert model_config.variable_seq_lengths is True
-    captured = capsys.readouterr()
-    assert "[PP-P2P] model_config.overlap_p2p_comm=False" in captured.out
-    assert "batch_p2p_comm=True" in captured.out
-    assert "variable_seq_lengths=True" in captured.out
+    assert model_config.use_accuracy_compatible is enabled
+    assert model_config.overlap_p2p_comm is enabled
+    assert model_config.batch_p2p_comm is not enabled
+    assert model_config.variable_seq_lengths is enabled
+    assert model_config.bias_activation_fusion is enabled
 
 
 def test_glm_moe_dsa_training_contract_keeps_registered_mtp_loss_weight_when_cli_is_silent():
@@ -244,15 +250,12 @@ def test_glm_moe_dsa_training_contract_keeps_registered_mtp_loss_weight_when_cli
     assert model_config.mtp_loss_scaling_factor == 0.1
 
 
-def test_glm_moe_dsa_training_contract_applies_bias_activation_fusion_env(monkeypatch, capsys):
+def test_glm_moe_dsa_training_contract_preserves_unspecified_fusion_default(monkeypatch):
     model_config = SimpleNamespace(model_type="glm_moe_dsa", bias_activation_fusion=True)
-    training_args = _base_training_args()
+    training_args = _base_training_args(bias_activation_fusion=None)
     model_args = SimpleNamespace(mtp_attention_flexible=True, persist_layer_norm=False)
-    data_args = SimpleNamespace()
-
     monkeypatch.setenv("MODEL_REPRO_BIAS_ACTIVATION_FUSION", "0")
-    apply_glm_moe_dsa_training_contract(model_config, training_args, model_args, data_args)
 
-    assert model_config.bias_activation_fusion is False
-    captured = capsys.readouterr()
-    assert "[BIAS-ACT-FUSION] model_config.bias_activation_fusion=False" in captured.out
+    apply_glm_moe_dsa_training_contract(model_config, training_args, model_args, SimpleNamespace())
+
+    assert model_config.bias_activation_fusion is True

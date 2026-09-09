@@ -2246,15 +2246,11 @@ class Trainer:
         return getattr(self, "dp_group", None)
 
     def _requires_native_token_weighted_logging(self):
-        if os.environ.get("FLAGS_use_accuracy_compatible_kernel", "0") != "1":
+        if not getattr(getattr(self.model, "config", None), "use_accuracy_compatible", False):
             return False
         # Pipeline accumulation buffers several calls before computing MAIN.
         # The single-microbatch receipt is valid only without that buffering.
         if self.args.gradient_accumulation_steps != 1:
-            return False
-        from paddlefleet.ieee_kernel import ieee_kernel_enabled
-
-        if not ieee_kernel_enabled():
             return False
         group = self._deferred_token_replica_group()
         return group is not None and getattr(group, "nranks", 1) > 1
@@ -2331,7 +2327,7 @@ class Trainer:
         except ImportError:
             return
 
-        if os.environ.get("FLAGS_use_accuracy_compatible_kernel", "0") != "1":
+        if not getattr(getattr(self.model, "config", None), "use_accuracy_compatible", False):
             return
 
         divisor = get_pending_gradient_divisor()
