@@ -821,6 +821,12 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
         if not usages:
             return
         usages_tensor = paddle.stack(usages, 0)  # [num_layers, num_local_experts]
+        if os.environ.get("FLAGS_use_accuracy_compatible_kernel", "0") == "1":
+            # Preserve the frozen DSv4 path: its Fleet runtime does not expose
+            # ``fleet._hcg`` here, so the callback only performs this all-reduce
+            # and returns without updating correction bias or clearing usage.
+            dist.all_reduce(usages_tensor)
+            return
         if not hasattr(fleet, "_hcg"):
             dist.all_reduce(usages_tensor)
             return
