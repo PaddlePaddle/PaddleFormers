@@ -39,6 +39,7 @@ from ..feature_extraction_utils import FeatureExtractionMixin
 
 FEATURE_EXTRACTOR_MAPPING_NAMES = OrderedDict(
     [
+        ("phi4_multimodal", "Phi4MultimodalFeatureExtractor"),
         ("whisper", "WhisperFeatureExtractor"),
     ]
 )
@@ -56,6 +57,9 @@ def safe_load_json_file(json_file: str):
 
 
 def feature_extractor_class_from_name(class_name: str):
+    if class_name == "Phi4MMAudioFeatureExtractor":
+        class_name = "Phi4MultimodalFeatureExtractor"
+
     for module_name, extractors in FEATURE_EXTRACTOR_MAPPING_NAMES.items():
         if class_name in extractors:
             module_name = model_type_to_module_name(module_name)

@@ -351,10 +351,10 @@ class BasePlugin(MMPluginMixin):
         self._validate_input(processor, images, videos, audios)
         return messages
 
-    def process_tokens(self, tokens, processor):
+    def process_tokens(self, tokens, processor, labels=None):
         r"""Pre-process input tokens for VLMs."""
 
-        labels = deepcopy(tokens)
+        labels = deepcopy(tokens) if labels is None else deepcopy(labels)
 
         tokenizer = getattr(processor, "tokenizer")
 
@@ -368,8 +368,8 @@ class BasePlugin(MMPluginMixin):
                 )
 
             # Mask tokens that should be ignored in loss calculation
-            for i, token in enumerate(labels):
-                if token in masked_tokens_ids:
+            for i, token in enumerate(tokens):
+                if token in masked_tokens_ids or labels[i] in masked_tokens_ids:
                     labels[i] = -100
 
         return labels
@@ -390,6 +390,90 @@ class BasePlugin(MMPluginMixin):
 
         self._validate_input(processor, images, videos, audios)
         return self._get_mm_inputs(images, videos, audios, processor, **kwargs)
+
+
+@dataclass
+class Phi4MultimodalPlugin(BasePlugin):
+    mask_mm_token_labels: bool = True
+
+    @staticmethod
+    def _as_int(value):
+        if hasattr(value, "item"):
+            value = value.item()
+        return int(value)
+
+    @override
+    def _validate_input(self, processor, images, videos, audios) -> None:
+        if len(videos) != 0:
+            raise ValueError("Phi-4 multimodal does not support video input in this template.")
+        if len(images) != 0:
+            if processor is None:
+                raise ValueError("Processor was not found for Phi-4 multimodal image input.")
+            if getattr(processor, "image_processor", None) is None:
+                raise ValueError("Image processor was not found for Phi-4 multimodal image input.")
+        if len(audios) != 0:
+            if processor is None:
+                raise ValueError("Processor was not found for Phi-4 multimodal audio input.")
+            if getattr(processor, "feature_extractor", None) is None:
+                raise ValueError("Audio feature extractor was not found for Phi-4 multimodal audio input.")
+
+    @override
+    def _get_mm_inputs(self, images, videos, audios, processor, **kwargs):
+        mm_inputs = {}
+        if len(images) != 0:
+            images = self._regularize_images(
+                images,
+                image_max_pixels=getattr(processor, "image_max_pixels", 768 * 768),
+                image_min_pixels=getattr(processor, "image_min_pixels", 32 * 32),
+            )["images"]
+            mm_inputs.update(processor.image_processor(images, return_tensors="pd"))
+
+        if len(audios) != 0:
+            feature_extractor = getattr(processor, "feature_extractor", None)
+            sampling_rate = getattr(
+                feature_extractor, "sampling_rate", getattr(processor, "audio_sampling_rate", 16000)
+            )
+            audios = self._regularize_audios(audios, sampling_rate=sampling_rate)["audios"]
+            mm_inputs.update(
+                feature_extractor(
+                    audios,
+                    sampling_rate=sampling_rate,
+                    return_attention_mask=True,
+                    return_tensors="pd",
+                )
+            )
+
+        if len(images) != 0 or len(audios) != 0:
+            input_mode = 3 if len(images) != 0 and len(audios) != 0 else 1 if len(images) != 0 else 2
+            mm_inputs["input_mode"] = paddle.to_tensor([input_mode], dtype="int64")
+
+        return mm_inputs
+
+    @override
+    def process_messages(self, messages, images, videos, audios, mm_inputs, processor):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        messages = deepcopy(messages)
+        num_img_tokens = mm_inputs.get("num_img_tokens", [])
+        audio_embed_sizes = mm_inputs.get("audio_embed_sizes", [])
+        num_image_tokens, num_audio_tokens = 0, 0
+
+        for message in messages:
+            content = message["content"]
+            while IMAGE_PLACEHOLDER in content:
+                image_seqlen = self._as_int(num_img_tokens[num_image_tokens]) if self.expand_mm_tokens else 1
+                content = content.replace(IMAGE_PLACEHOLDER, self.image_token * image_seqlen, 1)
+                num_image_tokens += 1
+
+            while AUDIO_PLACEHOLDER in content:
+                audio_seqlen = self._as_int(audio_embed_sizes[num_audio_tokens]) if self.expand_mm_tokens else 1
+                content = content.replace(AUDIO_PLACEHOLDER, self.audio_token * audio_seqlen, 1)
+                num_audio_tokens += 1
+
+            message["content"] = content
+
+        self.masked_tokens = [token for token in [self.image_token, self.audio_token] if token is not None]
+        return messages
 
 
 @dataclass
@@ -1602,6 +1686,7 @@ class KimiK3Plugin(BasePlugin):
 
 PLUGINS = {
     "base": BasePlugin,
+    "phi4_multimodal": Phi4MultimodalPlugin,
     "ernie_vl": ErnieVLPlugin,
     "qwen2_vl": Qwen2VLPlugin,
     "paddleocr_vl": PaddleOCRVLPlugin,

@@ -619,10 +619,9 @@ class BaseSFTDataset:
                 # Truncate the sequence to the maximum length
                 tokens = tokens[: self.max_seq_len + 1]
 
-            labels = self.template.mm_plugin.process_tokens(tokens, self.processor)
-
             # label shift
-            labels = labels[1:] + [-100]
+            labels = tokens[1:] + [-100]
+            labels = self._mask_mm_token_labels(tokens, labels)
 
             pos_ids = list(range(len(tokens)))  # only pure text, mm_position_ids will be reconstructed in collate.py
 
@@ -836,6 +835,7 @@ class BaseSFTDataset:
 
         # label shift
         labels = labels[1:] + [-100]
+        labels = self._mask_mm_token_labels(tokens, labels)
 
         pos_ids = list(range(len(tokens)))
 
@@ -914,6 +914,16 @@ class BaseSFTDataset:
         labels = [labels[i] for i in keep_idx]
 
         return input_ids, labels
+
+    def _mask_mm_token_labels(self, tokens, labels):
+        if not self.use_template or self.template_backend == "jinja" or self.template is None:
+            return labels
+
+        mm_plugin = getattr(self.template, "mm_plugin", None)
+        if not getattr(mm_plugin, "mask_mm_token_labels", False):
+            return labels
+
+        return mm_plugin.process_tokens(tokens, self.processor, labels=labels)
 
     def _encode_truncated(self, input_ids, labels):
         length = self._get_length(input_ids, labels)

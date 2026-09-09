@@ -402,6 +402,24 @@ import_structure = {
     "phi3.configuration": ["Phi3Config"],
     "phi3.tokenizer": ["Phi3Tokenizer"],
     "phi3.modeling": ["Phi3Model", "Phi3ForCausalLM", "Phi3ForCausalLMPipe"],
+    "phi4_multimodal.configuration": [
+        "Phi4MultimodalAudioConfig",
+        "Phi4MultimodalConfig",
+        "Phi4MultimodalVisionConfig",
+    ],
+    "phi4_multimodal.feature_extraction": ["Phi4MultimodalFeatureExtractor"],
+    "phi4_multimodal.image_processor": ["Phi4MultimodalImageProcessor"],
+    "phi4_multimodal.modeling": [
+        "Phi4MMForCausalLM",
+        "Phi4MMForConditionalGeneration",
+        "Phi4MultimodalAudioModel",
+        "Phi4MultimodalForCausalLM",
+        "Phi4MultimodalForConditionalGeneration",
+        "Phi4MultimodalModel",
+        "Phi4MultimodalPreTrainedModel",
+        "Phi4MultimodalVisionModel",
+    ],
+    "phi4_multimodal.processor": ["Phi4MultimodalProcessor"],
     "glm4v_moe.configuration": ["Glm4vMoeConfig", "Glm4vMoeTextConfig", "Glm4vMoeVisionConfig"],
     "glm4v_moe.modeling": [
         "Glm4vMoeForConditionalGeneration",
@@ -540,6 +558,7 @@ if TYPE_CHECKING:
     from .minicpm3 import *
     from .granite import *
     from .phi3 import *
+    from .phi4_multimodal import *
     from .gemma3_text import *
     from .gemma3 import *
     from .shieldgemma2 import *
