@@ -101,6 +101,15 @@ class Lfm2VlModelTest(unittest.TestCase):
         outputs = model(**inputs)
         self.assertEqual(list(outputs.logits.shape), [1, 4, 128])
 
+    def test_common_collator_multimodal_aliases(self):
+        model = Lfm2VlForConditionalGeneration(get_config())
+        inputs = self.get_inputs()
+        inputs["feature_attention_mask"] = inputs.pop("pixel_attention_mask")
+        inputs["image_grid_thw"] = inputs.pop("spatial_shapes")
+        outputs = model(**inputs)
+        self.assertEqual(list(outputs.logits.shape), [1, 4, 128])
+        self.assertEqual(list(outputs.image_hidden_states.shape), [1, 32])
+
     def test_auto_model(self):
         model = AutoModelForConditionalGeneration.from_config(get_config())
         self.assertIsInstance(model, Lfm2VlForConditionalGeneration)

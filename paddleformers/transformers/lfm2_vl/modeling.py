@@ -299,9 +299,15 @@ class Lfm2VlModel(Lfm2VlPreTrainedModel):
         pixel_values=None,
         spatial_shapes=None,
         pixel_attention_mask=None,
+        image_grid_thw=None,
+        feature_attention_mask=None,
         inputs_embeds=None,
         **kwargs,
     ):
+        if spatial_shapes is None:
+            spatial_shapes = image_grid_thw
+        if pixel_attention_mask is None:
+            pixel_attention_mask = feature_attention_mask
         if (input_ids is None) == (inputs_embeds is None):
             raise ValueError("Specify exactly one of input_ids and inputs_embeds")
         if inputs_embeds is None:
